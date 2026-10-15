@@ -2,8 +2,14 @@
 
 This file records third-party components used by Node preparation and preview. Official map artwork
 and fonts are owned and published by `@tileflow/maps`; `@tileflow/dev` does not carry an `assets/`
-directory. Runtime dependencies are installed as separate npm packages, and their code and native
+directory. Map DevTools interface fonts are distributed separately under `ui-fonts/`. Runtime dependencies are installed as separate npm packages, and their code and native
 binaries are not copied into the dev package.
+
+## Map DevTools interface fonts
+
+Mona Sans and Hubot Sans by GitHub are distributed under the SIL Open Font License 1.1.
+Their complete notices accompany the WOFF2 files in `ui-fonts/mona-sans-OFL.txt` and
+`ui-fonts/hubot-sans-OFL.txt`. These fonts style the development interface and do not alter map text.
 
 ## Bitmap distance transform
 
@@ -31,7 +37,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SO
 ## Package-owned map fonts
 
 The generic font preparation pipeline reads map-owned TTF, OTF, and WOFF2 directories; it does not
-embed fonts in `@tileflow/dev`. Each source directory must carry its own `LICENSE.txt`, which is
+embed map fonts in `@tileflow/dev`. Each source directory must carry its own `LICENSE.txt`, which is
 copied into the deterministic build artifacts whenever that directory contributes a selected face.
 
 The source repository's generic font tests retain pinned Oxanium fixtures and their complete

@@ -22,9 +22,9 @@ Run these commands from the project directory. After installation, `npx tileflow
 executable. With another package manager, use its local-execution command and the existing lockfile;
 do not add a second lockfile or rely on a globally installed CLI.
 
-`init` creates a singular `tileflow.config.ts` extending the official Streets map. `preview` serves
-the exported map using its configured view; it does not replace an application's normal development
-server.
+`init` creates a singular `tileflow.config.ts` extending the official Streets map. `preview` opens
+Map DevTools with that map, live reload, rendered-feature inspection, compiler attribution, zoom
+curves, a sprite atlas, scene selection, saved captures, and before/after review.
 
 Local validation, compilation, and asset preparation require no account or API key. Preview and
 capture may fetch configured remote tiles and fonts. Config files are executable trusted code,
@@ -51,35 +51,15 @@ explicitly or supply an application-owned production source.
 To work on another map, use `--config <path>`. An ordinary config exports one map. Multi-map
 workspaces are advanced repository orchestration, not a second application authoring model.
 
-## Discover the language and inspect a change
+## Map development tools
 
-Agents should read generated contracts instead of guessing property names, expression syntax, or
-compiler-generated layer IDs:
+Use `describe` for bounded language discovery, `inspect` for configuration and data, `capture`
+for reproducible evidence, and `compare` for saved captures, semantic edits, styles, references or
+baselines. `preview` opens Map DevTools. These tools work in independent projects with
+custom maps and data; official maps are optional.
 
-```sh
-npx tileflow language manifest --json
-npx tileflow language schema --json
-npx tileflow inspect --json
-npx tileflow explain --theme dark --json
-npx tileflow semantic-diff --from-config before/tileflow.config.ts --to-config after/tileflow.config.ts --json
-```
-
-The language commands need no project and perform no network access. `language manifest` returns
-the raw authoring manifest (schema version 2); `language schema` returns the raw generated config
-reference (version 4). Use their versions and schema references when consuming the output.
-
-`validate`, `inspect`, `explain`, and `semantic-diff` return one version-1 command envelope on
-stdout. JSON-mode failures leave stdout empty, write one structured failure to stderr, and exit
-nonzero. Diagnostics include `phase`, `code`, `path`, `severity`, `message`, and `suggestion`.
-A non-empty semantic diff is informational, not a command failure.
-
-Inspection includes resolved inheritance, merge provenance, and the theme contract. `explain`
-returns compilation diagnostics and a report, not the complete Style JSON. Add `--inspection` only
-when physical output provenance is needed; those layer IDs are not stable authoring targets.
-
-For a normal config, map selection is implicit. Paired `--from-config` and `--to-config` compare
-two ordinary configs. Workspace comparisons use their documented explicit map selectors; do not
-mix the paired-config and same-workspace forms.
+See the [map authoring workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md)
+for command examples, bounded JSON queries, compatible aliases and efficient agent workflows.
 
 ## Preview and compare
 
@@ -87,20 +67,51 @@ mix the paired-config and same-workspace forms.
 it does not implicitly expose a public listener. `--theme <name>` selects a concrete theme.
 `--scene <name>` selects a committed standalone scene.
 
-Compare two configs in the live workbench:
+Run from the project directory and keep selected configs inside it, so capture commands copied from
+Map DevTools resolve the same files. The project itself can live anywhere, independently of this SDK.
+
+The default is one Map DevTools pane, one watched artifact session, and one map renderer. Choose a
+saved view or theme in the toolbar. Map and theme pickers appear when there are multiple choices. **Compare → Compare live maps** adds a reference from the current
+project; `--against-*` also supports a reference from another config. The native renderer retains its assets-only
+preview endpoint.
+
+Compare two configs live in Map DevTools:
 
 ```sh
 npx tileflow preview --config candidate/tileflow.config.ts --against-config reference/tileflow.config.ts
 ```
 
-The workbench shares a camera across side-by-side, split, overlay, or blink views. Its inspector
+Map DevTools shares a camera across side-by-side, split, overlay, or blink views. Its inspector
 shows bounded feature and compiler information; invalid edits keep the last valid generation.
-Use headless capture, not the live viewport, when exact dimensions and device-pixel ratio matter.
+**Capture as reference** saves a starting point. After editing, **Capture & compare** reuses its
+camera and frame to review the change. The selected reference lasts for this browser session.
+
+**Capture** renders the compiled map at the current camera and the fixed dimensions in **Capture settings** (the sliders icon).
+Temporary preview visibility switches are excluded. **Captures** retains local evidence across
+reloads; **Compare** checks saved captures before offering a before/after slider and pixel difference.
+It reports incompatible cameras, frames, renderers or data without presenting pixel metrics.
+
+**Copy context for AI** exports the selected feature, semantic configuration paths, camera, revision
+and reproducible commands. An agent can also read the active browser context:
+
+```sh
+npx tileflow inspect session --url http://127.0.0.1:3333 --json
+```
+
+Use the origin printed by your running preview. This reads browser observations, including their
+age and stale flag; exact source lines and token ownership are not inferred. See the
+[Map DevTools workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md#work-with-a-person-and-an-agent)
+for storage and context bounds.
 
 `--api-base-url` or `TILEFLOW_API_URL` changes the API origin used by the official preview sources.
 It does not change the map's authored data ownership or publish any data.
 
 ## Capture a reproducible scene
+
+Captures return reusable IDs. Compare two saved renders with
+`tileflow compare --before <id> --after <id> --json`; no config, browser, or network is needed.
+The [authoring workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md)
+describes storage, integrity checks, mismatch outcomes and watch-session reuse.
 
 Add a concrete-theme scene to `tileflow.config.ts`:
 

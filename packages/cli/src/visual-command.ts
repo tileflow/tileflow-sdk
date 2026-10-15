@@ -141,15 +141,16 @@ type BaselineFiles =
 export function registerVisualCommands(
   program: Command,
   dependencies: {defaultConfigPath: string; openReport?: (path: string) => void},
-): void {
+  canonical = false,
+): Command {
   const visual = program
-    .command('visual')
+    .command(canonical ? 'compare' : 'visual')
     .description('Review deliberate variants, external references or approved baselines');
 
-  registerVisualCompareCommand(visual, dependencies);
+  registerVisualCompareCommand(visual, dependencies, canonical ? 'styles' : 'compare');
 
   visual
-    .command('analyze')
+    .command(canonical ? 'reference' : 'analyze')
     .description('Compare one current scene render with any reference PNG')
     .argument('<scene>', 'one named committed capture scene')
     .requiredOption('--reference <path>', 'reference PNG; it is never modified')
@@ -167,13 +168,13 @@ export function registerVisualCommands(
       try {
         await runVisualAnalyze(scene, options);
       } catch (error) {
-        printCaptureError(error);
+        printCaptureError(error, {command: 'visual.analyze', json: options.json});
         process.exitCode = 1;
       }
     });
 
   visual
-    .command('diff')
+    .command(canonical ? 'baseline' : 'diff')
     .description('Compare fresh scene renders with approved baselines without changing them')
     .argument('[scenes...]', 'named committed capture scenes')
     .option('--all', 'compare every configured committed scene')
@@ -192,10 +193,12 @@ export function registerVisualCommands(
       try {
         await runVisualDiff(scenes ?? [], options);
       } catch (error) {
-        printCaptureError(error);
+        printCaptureError(error, {command: 'visual.diff', json: options.json});
         process.exitCode = 1;
       }
     });
+
+  if (canonical) return visual;
 
   visual
     .command('update')
@@ -211,10 +214,11 @@ export function registerVisualCommands(
       try {
         await runVisualUpdate(scenes ?? [], options);
       } catch (error) {
-        printCaptureError(error);
+        printCaptureError(error, {command: 'visual.update', json: options.json});
         process.exitCode = 1;
       }
     });
+  return visual;
 }
 
 export function createTileflowVisualDiffJson(
@@ -284,7 +288,7 @@ async function runVisualAnalyze(scene: string, options: VisualAnalyzeOptions): P
     appOrigin: options.appOrigin ?? process.env.TILEFLOW_APP_ORIGIN,
     config: options.config,
     cwd,
-    onBrowserInstallProgress: printInstallProgress,
+    onBrowserInstallProgress: options.json ? undefined : printInstallProgress,
     signal: controller.signal,
   });
 
@@ -349,7 +353,7 @@ async function runVisualDiff(scenes: string[], options: VisualDiffOptions): Prom
     appOrigin: options.appOrigin ?? process.env.TILEFLOW_APP_ORIGIN,
     config: options.config,
     cwd,
-    onBrowserInstallProgress: printInstallProgress,
+    onBrowserInstallProgress: options.json ? undefined : printInstallProgress,
     signal: controller.signal,
   });
 
@@ -447,7 +451,7 @@ async function runVisualUpdate(scenes: string[], options: VisualUpdateOptions): 
     appOrigin: options.appOrigin ?? process.env.TILEFLOW_APP_ORIGIN,
     config: options.config,
     cwd,
-    onBrowserInstallProgress: printInstallProgress,
+    onBrowserInstallProgress: options.json ? undefined : printInstallProgress,
     signal: controller.signal,
   });
 

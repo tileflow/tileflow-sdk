@@ -10,11 +10,11 @@ import {type TileflowCaptureReceipt, validateTileflowCaptureReceipt} from './rec
 import {
   analyzeTileflowCapturePairForReview,
   tileflowVisualArtifactLimits,
-  type TileflowVisualRegion,
-  type TileflowVisualReviewAppearance,
   type TileflowVisualImageIdentity,
   type TileflowVisualPaletteColor,
   type TileflowVisualPixelMetric,
+  type TileflowVisualRegion,
+  type TileflowVisualReviewAppearance,
 } from './visual';
 
 export const tileflowVisualReviewSchemaVersion = 1 as const;
@@ -205,7 +205,9 @@ function inspectReviewInput(
   role: 'left' | 'right',
 ): InspectedReviewInput {
   const wrapper = readPlainDataRecord(input, `${role} review input`, ['capture', 'definition']);
-  const capture = readPlainDataRecord(wrapper.capture, `${role} capture`, reviewCaptureKeys);
+  const capture = readPlainDataRecord(wrapper.capture, `${role} capture`, reviewCaptureKeys, [
+    'definition',
+  ]);
   const definition = clonePlainDataValue(
     wrapper.definition,
     `${role} definition`,
@@ -223,6 +225,14 @@ function inspectReviewInput(
 
   return {
     capture: {
+      ...(capture.definition === undefined
+        ? {}
+        : {
+            definition: clonePlainDataValue(
+              capture.definition,
+              `${role} capture.definition`,
+            ) as TileflowVisualReviewDefinition,
+          }),
       scene: capture.scene as string,
       map: capture.map as string,
       theme: capture.theme as string,
@@ -418,6 +428,7 @@ function readPlainDataRecord(
   value: unknown,
   path: string,
   expectedKeys?: readonly string[],
+  optionalKeys: readonly string[] = [],
 ): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw invalidReview(`The ${path} must be a plain data object.`);
@@ -442,7 +453,10 @@ function readPlainDataRecord(
     entries.push([key, descriptor.value]);
   }
   if (expectedKeys) {
-    const actual = entries.map(([key]) => key).sort(compareCodeUnits);
+    const actual = entries
+      .map(([key]) => key)
+      .filter((key) => !optionalKeys.includes(key))
+      .sort(compareCodeUnits);
     const wanted = [...expectedKeys].sort(compareCodeUnits);
     if (actual.length !== wanted.length || actual.some((key, index) => key !== wanted[index])) {
       throw invalidReview(`The ${path} contains missing or unsupported fields.`);
@@ -471,6 +485,12 @@ async function validateReviewCapture(
   const definition: TileflowVisualReviewDefinition = normalized;
   if (!sameCanonicalValue(input.definition, definition)) {
     throw invalidReview(`The ${role} review definition must be the exact normalized shape.`);
+  }
+  if (
+    input.capture.definition !== undefined &&
+    !sameCanonicalValue(input.capture.definition, definition)
+  ) {
+    throw invalidReview(`The ${role} retained capture definition does not match its review.`);
   }
   let parsedReceipt: ReturnType<typeof validateTileflowCaptureReceipt>;
   try {

@@ -18,10 +18,10 @@ The 85 Streets POI discs under `assets/streets/icons/`, each with a light `<id>.
 `embassy`, `fast-food`, `ferry`, `fire-station`, `fitness-centre`, `florist`, `fuel`, `garden`,
 `golf`, `grocery`, `hairdresser`, `harbor`, `hardware`, `historic`, `hospital`, `information`,
 `landmark`, `laundry`, `library`, `lodging`, `mobile-phone`, `monument`, `mountain`, `museum`,
-`music`, `natural`, `nightclub`, `paint`, `park`, `parking`, `parking-garage`, `pharmacy`, `pitch`,
+`music`, `natural`, `nightclub`, `paint`, `park`, `parking`, `parking-garage`, `pharmacy`,
 `place-of-worship`, `playground`, `police`, `post`, `prison`, `rail`, `rail-light`, `rail-metro`,
 `religious-buddhist`, `religious-christian`, `religious-jewish`, `religious-muslim`, `restaurant`,
-`school`, `shop`, `stadium`, `star`, `swimming`, `theatre`, `toilet`, `town-hall`, `viewpoint`,
+`shop`, `soccer`, `stadium`, `star`, `swimming`, `theatre`, `toilet`, `town-hall`, `viewpoint`,
 `waterfall`, and `zoo` icons in `@mapbox/maki` 8.2.0, upstream commit
 `6ab50f392294aeb20b3af83e8a10067151876eb9`. Each SVG names its source icon in its description;
 `src/official/streets-poi.ts` maps every disc to its source.
@@ -30,9 +30,18 @@ Maki is dedicated to the public domain under CC0-1.0. Tileflow authored the circ
 color system, sizing, composition, and SVG simplifications around those pictograms. The complete
 upstream license is included at `assets/streets/LICENSE-MAKI.txt`.
 
+POI discs occupy 20px inside a 24px cell. The 15px Maki source geometry is scaled to a centered
+12px box before rasterization, keeping space between the pictograms and the circular border.
+
 The `ferraris` map and its nine SVG patterns are original Tileflow code and artwork. This package
 does not include or redistribute any FerrarGIS assets, code, style files, textures, fonts, source
 scans, or map data.
+
+## Streets relief
+
+Streets requests hillshade DEM tiles from Mapterhorn at runtime. No DEM tile is packaged here.
+Mapterhorn's constituent open terrain sources, attribution, and license terms are listed at
+<https://mapterhorn.com/attribution/>. The compiled source carries that attribution link.
 
 ## Baedeker map references and terrain data
 

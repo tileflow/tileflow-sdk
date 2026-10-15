@@ -18,7 +18,7 @@ npx tileflow validate
 npx tileflow preview
 ```
 
-`init` creates `tileflow.config.ts`. `preview` serves that map on a loopback interface. Local
+`init` creates `tileflow.config.ts`. `preview` opens that map in Map DevTools on a loopback interface. Local
 validation, compilation, and asset preparation need no Tileflow account or API key. Rendering may
 still fetch the tiles, glyphs, or other remote resources referenced by the map; local does not mean
 offline.
@@ -108,14 +108,16 @@ Start with the relevant package README or the [documentation index](llms.txt). D
 language from the installed CLI rather than inventing properties or renderer layer IDs:
 
 ```sh
-npx tileflow language manifest --json
-npx tileflow language schema --json
-npx tileflow validate --json
-npx tileflow inspect --json
-npx tileflow explain --theme dark --json
+npx tileflow describe --json
+npx tileflow describe roads --json
+npx tileflow inspect --domain roads --json
+npx tileflow inspect compiled --domain roads --theme dark --json
 ```
 
-The two language commands return generated contracts without loading a project or accessing the
+Use `capture` to create evidence and `compare --before <id> --after <id>` to reuse saved captures
+without rendering again. The [CLI guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/README.md)
+documents config, data, reference and baseline inspection/comparison, along with compatible legacy
+aliases. `describe` returns bounded generated contracts without loading a project or accessing the
 network. Other config-aware commands execute trusted repository code. Do not load an untrusted
 `tileflow.config.ts` with credentials available.
 

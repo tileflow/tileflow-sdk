@@ -593,9 +593,10 @@ function compileRoundabouts(
     contributions.push({
       kind: 'layer',
       layer: applyCircleStyle({...base, id: 'tileflow-road-circular-casing'}, config.casing),
-      localOrder: 10,
+      localOrder: 900,
       owner: 'roads',
-      slot: 'transport-symbols',
+      // Approach fills must cover the circular casing where the roads meet.
+      slot: 'transport-surface-casing',
       target: 'roads.roundabouts.casing',
     });
   }
@@ -603,9 +604,9 @@ function compileRoundabouts(
     contributions.push({
       kind: 'layer',
       layer: applyCircleStyle({...base, id: 'tileflow-road-circular-fill'}, config.fill),
-      localOrder: 20,
+      localOrder: 900,
       owner: 'roads',
-      slot: 'transport-symbols',
+      slot: 'transport-surface-fill',
       target: 'roads.roundabouts.fill',
     });
   }
@@ -687,7 +688,7 @@ const circularRoadBorderTotalWidth = 1;
 function circularRoadInnerRadius(fields: CircularRoadFields, casing: boolean): readonly unknown[] {
   const values = circularRoadValues(fields);
   const stops: unknown[] = [];
-  for (let level = 15; level <= 22; level += 1) {
+  for (let level = 15; level <= 24; level += 1) {
     const centerlineRadius =
       level === 15 ? values.radiusAtZoom15 : ['*', values.radiusAtZoom15, 2 ** (level - 15)];
     const physicalInnerRadius = [
@@ -706,14 +707,16 @@ function circularRoadInnerRadius(fields: CircularRoadFields, casing: boolean): r
       casing ? ['-', innerRadius, circularRoadBorderTotalWidth / 2] : innerRadius,
     ]);
   }
-  return ['interpolate', ['linear'], ['zoom'], ...stops];
+  // Metric rings scale with the map, including between integer zoom levels.
+  // Linear interpolation makes a ring bulge away from its approach geometry.
+  return ['interpolate', ['exponential', 2], ['zoom'], ...stops];
 }
 
 function circularRoadStrokeWidth(fields: CircularRoadFields, casing: boolean): readonly unknown[] {
   const values = circularRoadValues(fields);
   const baseWidth = circularRoadBaseWidth(fields.class);
   const stops: unknown[] = [];
-  for (let level = 15; level <= 22; level += 1) {
+  for (let level = 15; level <= 24; level += 1) {
     const centerlineRadius =
       level === 15 ? values.radiusAtZoom15 : ['*', values.radiusAtZoom15, 2 ** (level - 15)];
     const physicalWidth = [
@@ -730,7 +733,7 @@ function circularRoadStrokeWidth(fields: CircularRoadFields, casing: boolean): r
       casing ? ['+', fallbackWidth, circularRoadBorderTotalWidth] : fallbackWidth,
     ]);
   }
-  return ['interpolate', ['linear'], ['zoom'], ...stops];
+  return ['interpolate', ['exponential', 2], ['zoom'], ...stops];
 }
 
 function circularRoadBaseWidth(classField: string): readonly unknown[] {
@@ -943,6 +946,16 @@ function applyRoadTreatments(
         : [{condition, resolve: () => expressionOutput(value)} satisfies ConditionalBranch];
     });
     if (branches.length > 0) {
+      // An all-solid treatment must use the solid-line shader. Even [1, 0]
+      // runs through the SDF dash atlas, which stipples thin hollow casings.
+      if (
+        property === 'dash' &&
+        isSolidRoadDash(result[property] ?? treatmentPaintDefaults.dash) &&
+        branches.every(({resolve}) => isSolidRoadDash(resolve()))
+      ) {
+        delete result[property];
+        continue;
+      }
       result[property] = conditionalStyleValue(
         result[property],
         branches,
@@ -962,9 +975,24 @@ function applyRoadTreatments(
       widthScales,
       treatmentPaintDefaults.width,
     );
+    // A hollow casing's gap follows the carriageway. Scaling only its stroke
+    // lets the widened fill cover the border as the road grows with zoom.
+    if (result.gapWidth !== undefined && result.gapWidth !== 0) {
+      result.gapWidth = conditionalWidthScaleValue(
+        result.gapWidth,
+        widthScales,
+        treatmentPaintDefaults.gapWidth,
+      );
+    }
   }
 
   return result as typeof base;
+}
+
+function isSolidRoadDash(value: unknown): boolean {
+  const output = expressionOutput(value);
+  const dash = Array.isArray(output) && output[0] === 'literal' ? output[1] : output;
+  return Array.isArray(dash) && dash.length === 2 && dash[0] === 1 && dash[1] === 0;
 }
 
 function roadTreatmentPhaseConditions(

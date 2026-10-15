@@ -15,7 +15,7 @@ import {
 import {linkWorkspacePackages} from './workspace-packages';
 
 export const tileflowIconSetFixtureGlyphs =
-  "{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold']}";
+  "{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}";
 
 const unreferencedModules = "{poi:{type:'poi',icons:false},roads:disable()}";
 const localOverrideSvg =

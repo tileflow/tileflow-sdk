@@ -89,6 +89,22 @@ const preparedOfficialAssets = {
         'civica-poi-transit',
         'civica-water-lines',
         'coffee',
+        'nature',
+        'sport',
+        'worship',
+        'coffee-dark',
+        'culture-dark',
+        'education-dark',
+        'food-dark',
+        'health-dark',
+        'lodging-dark',
+        'major-transit-dark',
+        'parking-dark',
+        'services-dark',
+        'shopping-dark',
+        'nature-dark',
+        'worship-dark',
+        'sport-dark',
         'crosswalk',
         'culture',
 
@@ -204,15 +220,18 @@ function compiledRenderTargets(
   compiled: ReturnType<typeof createStyleWithInspection>,
   domain: Domain,
 ): string[] {
-  return compiled.inspection.layers
-    .flatMap((layer) =>
-      layer.contributions.flatMap((contribution) =>
-        contribution.operations
-          .filter((operation) => operation.owner === domain)
-          .map((operation) => operation.target),
+  // One refinement can contribute to several zoom ranges of its semantic target.
+  return [
+    ...new Set(
+      compiled.inspection.layers.flatMap((layer) =>
+        layer.contributions.flatMap((contribution) =>
+          contribution.operations
+            .filter((operation) => operation.owner === domain)
+            .map((operation) => operation.target),
+        ),
       ),
-    )
-    .sort();
+    ),
+  ].sort();
 }
 
 test('raw layer overrides are absent from the public authoring surface', () => {

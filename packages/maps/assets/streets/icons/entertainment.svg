@@ -1,12 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
   <title>Entertainment venue</title>
   <desc>Tileflow POI disc with a Maki star pictogram, CC0-1.0.</desc>
-  <circle cx="12" cy="12.75" r="9.5" fill="#44515E" opacity=".16"/>
-  <circle cx="12" cy="12" r="9.5" fill="#FFFFFF"/>
-  <circle cx="12" cy="12" r="8" fill="#B85CA4"/>
+  <circle cx="12" cy="12" r="10" fill="#FFFFFF" />
+  <circle cx="12" cy="12" r="8.5" fill="#F37CCC" />
   <path
     fill="#FFFFFF"
-    transform="translate(6.375 6.375) scale(.75)"
+    transform="translate(6 6) scale(.8)"
     d="M7.5,0l-2,5h-5l4,3.5l-2,6l5-3.5 l5,3.5l-2-6l4-3.5h-5L7.5,0z"
   />
 </svg>

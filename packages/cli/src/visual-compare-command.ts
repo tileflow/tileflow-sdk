@@ -10,9 +10,9 @@ import {
   type TileflowCapture,
   type TileflowCaptureSession,
   tileflowSyntheticAssetOrigin,
+  type TileflowVisualRegion,
   type TileflowVisualReviewDefinition,
   type TileflowVisualReviewDocument,
-  type TileflowVisualRegion,
 } from '@tileflow/capture';
 import {
   compareCodeUnits,
@@ -193,9 +193,10 @@ type PreparedVisualCompareOutput = {
 export function registerVisualCompareCommand(
   visual: Command,
   dependencies: VisualCompareDependencies,
+  name = 'compare',
 ): void {
   visual
-    .command('compare')
+    .command(name)
     .description('Review two maps or themes at one synchronized camera without using baselines')
     .requiredOption('--against-config <path>', 'right-hand Tileflow config')
     .requiredOption('--center <lng,lat>', 'shared center camera')

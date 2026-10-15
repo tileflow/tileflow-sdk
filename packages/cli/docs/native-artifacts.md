@@ -39,7 +39,7 @@ npx tileflow preview --renderer native --map stores --theme light
 Native mode creates the existing watched artifact session with renderer `native`. It keeps the
 last-known-good native artifact family when a watched generation becomes invalid and replaces it
 only after a later valid generation is prepared. The endpoint is an **assets-only** development
-endpoint: it does not render a browser map, open the visual workbench, start Metro, launch a device,
+endpoint: it does not render a browser map, open Map DevTools, start Metro, launch a device,
 or establish visual/native acceptance.
 
 With the default host and port, the canonical runtime manifest is:
@@ -77,7 +77,7 @@ developer remain responsible for making an explicitly selected development endpo
 under their own platform/network policy.
 
 Browser-only selections fail before config execution in native mode. In particular, committed
-`--scene` preview and every `--against-*` comparison-workbench option are unavailable with
+`--scene` preview and every `--against-*` live-comparison option are unavailable with
 `--renderer native`. Native mode does not serve the browser preview root, preview JavaScript runtime,
 compiler-inspection sidecars, or the dev handler's status/event control routes. Use ordinary/default
 web preview for those workflows.

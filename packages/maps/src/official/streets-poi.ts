@@ -7,18 +7,58 @@ import {
 } from '@tileflow/core';
 
 type StreetsPoiPictogram = Readonly<{
-  /** The disc takes this category's theme color. */
+  /** The disc takes this category's color from `streetsPoiDiscColors`. */
   category: TileflowPoiCategory;
+  /** A disc color of its own, such as the blue of parking. */
+  disc?: 'parking';
   /** The CC0 Maki 8.2.0 icon the white pictogram is adapted from. */
   maki: string;
   title: string;
 }>;
 
 /**
- * Streets' POI pictograms. Each image is a disc in its category's color with a white pictogram;
- * the dark theme uses `<id>-dark`, a pale disc with a dark pictogram. The SVGs under
- * `assets/streets/icons` are generated from this table by
- * `scripts/generate-streets-poi-icons.ts`.
+ * Disc colors of the POI pictograms. Discs are brighter than the category's label color in the
+ * light theme and pale in the dark theme; the ring and pictogram take the theme's `poi.halo`.
+ */
+export const streetsPoiDiscColors = Object.freeze({
+  light: {
+    'arts-entertainment': '#F37CCC',
+    education: '#BF803F',
+    'food-drink': '#FF9933',
+    landmark: '#F37CCC',
+    lodging: '#8D73E6',
+    medical: '#F46A75',
+    'park-nature': '#36AD1F',
+    parking: '#5474D5',
+    'public-services': '#7D8F9F',
+    religion: '#7D8F9F',
+    retail: '#5FA0E5',
+    'sport-leisure': '#4BB5C3',
+    transport: '#465DCD',
+    'visitor-amenity': '#7D8F9F',
+  },
+  dark: {
+    'arts-entertainment': '#C786BC',
+    education: '#B6A783',
+    'food-drink': '#D8BD65',
+    landmark: '#C786BC',
+    lodging: '#AA94DA',
+    medical: '#DC7C89',
+    'park-nature': '#89B871',
+    parking: '#94BCE3',
+    'public-services': '#9DAAB0',
+    religion: '#9DAAB0',
+    retail: '#94BCE3',
+    'sport-leisure': '#89B871',
+    transport: '#8296E6',
+    'visitor-amenity': '#9DAAB0',
+  },
+} as const satisfies Record<'dark' | 'light', Record<TileflowPoiCategory | 'parking', string>>);
+
+/**
+ * Streets' POI pictograms. Each image is a colored disc with a white pictogram; the dark theme
+ * uses `<id>-dark`, a pale disc with a dark pictogram. The SVGs under `assets/streets/icons` are
+ * generated from this table by `scripts/generate-streets-poi-icons.ts`.
  */
 export const streetsPoiPictograms = Object.freeze({
   'major-transit': {category: 'transport', maki: 'rail-metro', title: 'Metro'},
@@ -66,7 +106,7 @@ export const streetsPoiPictograms = Object.freeze({
   dentist: {category: 'medical', maki: 'dentist', title: 'Dentist'},
   pharmacy: {category: 'medical', maki: 'pharmacy', title: 'Pharmacy'},
 
-  park: {category: 'park-nature', maki: 'park', title: 'Park'},
+  nature: {category: 'park-nature', maki: 'park', title: 'Park'},
   garden: {category: 'park-nature', maki: 'garden', title: 'Garden'},
   playground: {category: 'park-nature', maki: 'playground', title: 'Playground'},
   'dog-park': {category: 'park-nature', maki: 'dog-park', title: 'Dog park'},
@@ -102,15 +142,20 @@ export const streetsPoiPictograms = Object.freeze({
   electronics: {category: 'retail', maki: 'mobile-phone', title: 'Electronics store'},
   beauty: {category: 'retail', maki: 'hairdresser', title: 'Beauty'},
 
-  sport: {category: 'sport-leisure', maki: 'pitch', title: 'Sport'},
+  sport: {category: 'sport-leisure', maki: 'soccer', title: 'Sport'},
   stadium: {category: 'sport-leisure', maki: 'stadium', title: 'Stadium'},
   golf: {category: 'sport-leisure', maki: 'golf', title: 'Golf course'},
   swimming: {category: 'sport-leisure', maki: 'swimming', title: 'Swimming pool'},
   fitness: {category: 'sport-leisure', maki: 'fitness-centre', title: 'Fitness'},
 
   services: {category: 'visitor-amenity', maki: 'information', title: 'Information'},
-  parking: {category: 'visitor-amenity', maki: 'parking', title: 'Parking'},
-  'parking-garage': {category: 'visitor-amenity', maki: 'parking-garage', title: 'Parking garage'},
+  parking: {category: 'visitor-amenity', disc: 'parking', maki: 'parking', title: 'Parking'},
+  'parking-garage': {
+    category: 'visitor-amenity',
+    disc: 'parking',
+    maki: 'parking-garage',
+    title: 'Parking garage',
+  },
   toilet: {category: 'visitor-amenity', maki: 'toilet', title: 'Toilets'},
   bank: {category: 'visitor-amenity', maki: 'bank', title: 'Bank or cash machine'},
   fuel: {category: 'visitor-amenity', maki: 'fuel', title: 'Fuel'},
@@ -123,7 +168,7 @@ export const streetsPoiPictograms = Object.freeze({
   harbor: {category: 'visitor-amenity', maki: 'harbor', title: 'Marina'},
   laundry: {category: 'visitor-amenity', maki: 'laundry', title: 'Laundry'},
 
-  education: {category: 'education', maki: 'school', title: 'School'},
+  education: {category: 'education', maki: 'college', title: 'Education'},
   college: {category: 'education', maki: 'college', title: 'College or university'},
   library: {category: 'education', maki: 'library', title: 'Library'},
 } as const satisfies Record<string, StreetsPoiPictogram>);
@@ -249,7 +294,7 @@ export const streetsPoiCategoryPictograms = Object.freeze({
   landmark: 'landmark',
   lodging: 'lodging',
   medical: 'doctor',
-  'park-nature': 'park',
+  'park-nature': 'nature',
   'public-services': 'town-hall',
   religion: 'worship',
   retail: 'shopping',

@@ -12,13 +12,13 @@ import {
   createTileflowCaptureReceipt,
   createTileflowCaptureRendererIdentity,
   createTileflowVisualReviewDocument,
-  tileflowVisualArtifactLimits,
-  tileflowVisualReviewLimits,
   type TileflowCapture,
   type TileflowCaptureDataInput,
+  tileflowVisualArtifactLimits,
   type TileflowVisualReviewCapture,
   type TileflowVisualReviewDefinition,
   TileflowVisualReviewError,
+  tileflowVisualReviewLimits,
 } from '../src/index';
 import {validateTileflowVisualReviewPngByteLengths} from '../src/review';
 
@@ -79,6 +79,53 @@ test('compares deliberate map, theme, and style variants without creating baseli
   assert.equal(withoutDiff.status, 'comparable');
   assert.ok(withoutDiff.exact);
   assert.equal(withoutDiff.diffPng, undefined);
+});
+
+test('reviews retained capture definitions while preserving legacy inputs and strict validation', async () => {
+  const legacy = await createReviewCapture({
+    color: [26, 84, 52, 255],
+    definition: mapDefinition('streets', 'day'),
+    scene: 'retained-review',
+  });
+  const retained = {
+    ...legacy,
+    capture: {...legacy.capture, definition: legacy.definition},
+  };
+  assert.equal((await compareTileflowCapturesForReview(retained, legacy)).status, 'comparable');
+  assert.equal((await compareTileflowCapturesForReview(retained, retained)).exact?.ratio, 0);
+
+  await assert.rejects(
+    compareTileflowCapturesForReview(
+      {...retained, capture: {...retained.capture, definition: mapDefinition('other', 'day')}},
+      legacy,
+    ),
+    isReviewError(/retained capture definition does not match/i),
+  );
+
+  let reads = 0;
+  const executable = {...legacy.definition};
+  Object.defineProperty(executable, 'camera', {
+    enumerable: true,
+    get() {
+      reads += 1;
+      return legacy.definition.camera;
+    },
+  });
+  await assert.rejects(
+    compareTileflowCapturesForReview(
+      {...retained, capture: {...retained.capture, definition: executable}},
+      legacy,
+    ),
+    isReviewError(/accessor/i),
+  );
+  assert.equal(reads, 0);
+  await assert.rejects(
+    compareTileflowCapturesForReview(
+      {...retained, capture: {...retained.capture, unexpected: true} as TileflowCapture},
+      legacy,
+    ),
+    isReviewError(/unsupported fields/i),
+  );
 });
 
 test('reports right-minus-left appearance metrics for one physical review region', async () => {

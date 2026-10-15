@@ -2,10 +2,9 @@ import assert from 'node:assert/strict';
 import {execFile} from 'node:child_process';
 import {readdir, readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {streetsThemes} from '../src';
-import {streetsPoiPictograms} from '../src/official/streets-poi';
-import {streetsPoiImageIds} from './streets-poi-fixture';
 import {promisify} from 'node:util';
+import {streetsPoiDiscColors, streetsPoiPictograms} from '../src/official/streets-poi';
+import {streetsPoiImageIds} from './streets-poi-fixture';
 
 const execFileAsync = promisify(execFile);
 
@@ -161,12 +160,13 @@ test('publishes every official icon and font directory with provenance', async (
     'utf8',
   );
   assert.notEqual(darkSidewalkDot, lightSidewalkDot);
-  assert.match(lightSidewalkDot, /fill="#C1C5D7"/u);
-  assert.match(darkSidewalkDot, /fill="#525664"/u);
+  assert.match(lightSidewalkDot, /fill="#000000" fill-opacity="0.2"/u);
+  assert.match(darkSidewalkDot, /fill="#FFFFFF" fill-opacity="0.2"/u);
 
-  // Each POI disc takes its category's theme color; its pictogram and provenance are Maki's.
+  // Each POI disc takes its palette color; its pictogram and provenance are Maki's.
   const notices = await readFile(new URL('../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8');
   for (const [id, pictogram] of Object.entries(streetsPoiPictograms)) {
+    const role = 'disc' in pictogram ? pictogram.disc : pictogram.category;
     for (const [theme, file] of [
       ['light', `${id}.svg`],
       ['dark', `${id}-dark.svg`],
@@ -175,10 +175,9 @@ test('publishes every official icon and font directory with provenance', async (
         new URL(`../assets/streets/icons/${file}`, import.meta.url),
         'utf8',
       );
-      const colors = streetsThemes[theme].tokens.color as Record<string, string>;
       assert.match(
         svg,
-        new RegExp(`r="8" fill="${colors[`poi.${pictogram.category}`]}"`, 'u'),
+        new RegExp(`r="8.5" fill="${streetsPoiDiscColors[theme][role]}"`, 'u'),
         file,
       );
       assert.match(svg, new RegExp(`Maki ${pictogram.maki} pictogram, CC0-1.0`, 'u'), file);
@@ -343,7 +342,7 @@ test('imports and compiles all packaged official maps against public Core APIs',
               'civica-poi-garden', 'civica-poi-hospital', 'civica-poi-lodging',
               'civica-poi-monument', 'civica-poi-museum', 'civica-poi-shopping',
               'civica-poi-transit',
-              'coffee', 'crosswalk', 'culture', 'education', 'food', 'health', 'lodging',
+              'coffee', 'nature', 'sport', 'worship', 'coffee-dark', 'culture-dark', 'education-dark', 'food-dark', 'health-dark', 'lodging-dark', 'major-transit-dark', 'parking-dark', 'services-dark', 'shopping-dark', 'nature-dark', 'worship-dark', 'sport-dark', 'crosswalk', 'culture', 'education', 'food', 'health', 'lodging',
               'ferraris-crop-hatch', 'ferraris-heath', 'ferraris-orchard',
               'ferraris-paper-grain', 'ferraris-residential', 'ferraris-sand',
               'ferraris-water-ripples', 'ferraris-wetland', 'ferraris-woodland',

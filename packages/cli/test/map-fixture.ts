@@ -20,6 +20,8 @@ export type TileflowMapFixtureOptions = {
 /** Emit one executable singular Tileflow map config for CLI integration tests. */
 export function tileflowMapFixture(options: TileflowMapFixtureOptions): string {
   const fields = [
+    // Hermetic CLI fixtures do not need the official map's remote DEM.
+    `terrain: 'none'`,
     options.data === 'fixture'
       ? `data: vectorTiles({
   attribution: '© Tileflow CLI fixture',
@@ -46,7 +48,7 @@ export function tileflowMapFixture(options: TileflowMapFixtureOptions): string {
     `glyphs: {
   kind: 'url',
   url: 'https://fixtures.tileflow.test/fonts/{fontstack}/{range}.pbf',
-  fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']
+  fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']
 }`,
     options.fields?.trim() ?? '',
   ]

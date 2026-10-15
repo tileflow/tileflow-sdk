@@ -1,11 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
-  <title>Clothing store (night)</title>
+  <title>Night Clothing store</title>
   <desc>Tileflow POI disc with a Maki clothing-store pictogram, CC0-1.0.</desc>
-  <circle cx="12" cy="12" r="9.5" fill="#252839"/>
-  <circle cx="12" cy="12" r="8" fill="#76B59A"/>
+  <circle cx="12" cy="12" r="10" fill="#252839" />
+  <circle cx="12" cy="12" r="8.5" fill="#94BCE3" />
   <path
     fill="#252839"
-    transform="translate(6.375 6.375) scale(.75)"
+    transform="translate(6 6) scale(.8)"
     d="M4 2L1 4.5L1 7H4V13H11V7H14V4.5L11 2H9.5L7.5 6L5.5 2L4 2Z"
   />
 </svg>

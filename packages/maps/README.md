@@ -46,11 +46,24 @@ npx tileflow preview
 Rendering can request remote tiles, glyphs, or terrain. Installing the package does not make those
 resources available offline.
 
+### Develop Streets in an SDK checkout
+
+After installing and building this workspace, run from its root:
+
+```sh
+node packages/cli/dist/index.js preview --config packages/maps/tileflow.config.ts
+```
+
+Open `http://127.0.0.1:3333`. This example imports Streets from source, so edits to the map reload in
+Map DevTools without publishing a package. Add `--scene nyc` for the New York scene or
+`--against-theme dark --map streets-workbench` to compare themes. The example is a map configuration;
+the CLI owns the shared development interface. Changes to compiler or runtime packages require
+rebuilding those packages.
+
 ## Choose a map
 
-- `streets`: contemporary street cartography with coordinated light and dark themes, POIs placed
-  in one importance order with pictograms by transport mode and type, and generic road-reference
-  shields.
+- `streets`: contemporary street cartography with coordinated light and dark themes, ranked POIs,
+  generic road-reference shields, and regional hillshade.
 - `baedeker`: warm travel-atlas styling, serif labels, original engraved patterns, and contours.
 - `civica`: illustrated civic-print styling with warm paper, olive parks, blue annotations, and
   vermilion landmarks.
@@ -63,6 +76,88 @@ resources available offline.
 Every official map is a complete, independent root using the same Core compiler. Official map
 objects are deeply frozen shared instances. Do not mutate them; use `defineMap({extends: ...})`
 to create an application-owned map.
+
+### Streets appearance
+
+Streets follows the visual direction of [Mapbox Standard](https://docs.mapbox.com/playground/standard-style/)
+(default theme, day and night), reviewed on 2026-10-14. Its own semantic design retains slate-blue
+roads, uppercase road names, warm building footprints, green parks, and compact category-colored
+POI discs. Dark mode uses pale discs with dark pictograms. Pictograms adapted from Maki follow
+World's transport mode and POI type: metro, rail, tram, bus, ferry, cable-car, and airport stations
+are distinct, as are bars, cafés, museums, galleries, car dealers, and places of worship by
+religion.
+
+The reference uses DIN Pro Medium for POIs, roads, major settlements, and districts.
+Streets uses hosted Noto Sans Regular for these roles: Noto Sans Bold makes their strokes and
+word widths too heavy at the reference's sizes. Bold is reserved for administrative regions and
+road shields; water labels keep Italic. This is a visual approximation, not a bundled DIN face.
+POI discs use vivid category colors, 20px containers, and fixed native icon scale at every zoom.
+Maki's 15px artwork is composed into a centered 12px box, leaving room inside the 17px colored
+interior. Their 1x and 2x atlases rasterize these SVG compositions separately; the map displays
+each complete icon at native scale instead of rescaling the bitmap as the zoom changes.
+
+The light surface palette is compared with lossless captures of Standard with 3D buildings and
+trees disabled. Parks use a stronger green with lighter lawns and meadows drawn above them;
+flat buildings use a neutral cream. City roads keep the same slate-blue family through the
+z14–z15 transition, with blue borders and translucent tunnels. Road widths retain their hierarchy.
+Road carriageways follow the reference's exponential zoom curves (base 1.5), including
+fractional zooms. Motorways and trunks start at z3, primary roads at z6, secondary and tertiary
+roads at z8, streets and links at z12, and service roads at z15. Surface casings begin at z15
+(z16 for service roads and tracks); they grow from a fine edge independently of the matching
+carriageway gap. This keeps regional views light while preserving detail at street zooms.
+Surface and bridge casings use continuous strokes, including paved footpaths. Construction
+dashes stay in the fill, and tunnel borders keep their dashed treatment.
+Surface caps become round at z14; tunnels retain butt caps and bridges use round fills.
+The road regression checks every quarter zoom from 0 through 24 and both sides of the handoffs.
+Crosswalks and one-way arrows fade in from z16.5 so city-scale roads retain their surface color.
+From z17, mapped sidewalks and pedestrian plazas use a translucent neutral tint and dot pattern:
+grass stays green underneath, while paved ground stays neutral. The surface has its own
+`roads.sidewalk.surface` token, independent of road borders.
+Mapped parking polygons use an opaque neutral fill above overlapping vegetation and below
+roads. This requires a `landuse` polygon classified as `parking`; parking POIs and aisle lines
+alone do not provide the boundary needed to fill the surface.
+
+Ferry routes fade in from z8, use fine blue dashes from z13, and show uppercase route names
+along the line from z15 when the data includes them. Their labels use a water-colored halo.
+
+Regional hillshade uses [Mapterhorn's public Terrarium DEM](https://mapterhorn.com/data-access/)
+from z5 through z13, with source attribution. This is an additional remote data request. To omit
+it, set `terrain: 'none'` in a map extending `streets`. Hillshade does not change road geometry or
+raise the terrain. Street views retain the flat footprints and optional building extrusion group;
+the preview's **3D** control enables those buildings, and its **Trees** control enables vegetation.
+Daytime 3D buildings use warm cream roofs and a soft, map-anchored light. Two blurred contact
+bands darken the ground at their base, fading in from z15.5; elevated parts and zero-height
+footprints do not cast these bands. The `buildings.contactShadow` token styles them independently
+of flat-map shadows. This shading uses the existing style layers: it does not round building
+edges or cast shadows between buildings.
+Street names follow the road plane and draw below buildings, so roofs and walls hide the
+stretches behind them in pitched views. POIs, transit names, and route shields remain above the
+buildings. The street-name passes belong to the Streets labels module and retain their zoom
+scales in 2D; replacing that module also replaces these passes. Disabling roads omits them.
+Browser atmosphere is separately enabled with `atmosphere: true` on a globe map; the base definition
+also remains usable with Mercator and native targets.
+
+POI categories use World eligibility and ranks at one density and are placed in one importance
+order, so a category never displaces a more important place of another category. World's two most
+important ranks are placed before street and place names. Each disc needs its name; parking and
+toilets appear as a disc alone, and other unnamed POIs are omitted.
+Ordinary POI and transit names use 13 px lettering, with 18 px for the highest-priority destinations.
+World's size ranks differ from the reference, so a small park with size rank zero does not become
+a large destination label by that value alone. Text padding falls from 6 px to 4 px between z16
+and z17, and collision determines which names fit.
+
+City labels hand over at z15, smaller settlements at z13, and districts at z15. Co-located city
+candidates share one anchor to prevent duplicate names at world scale. Districts retain an overview
+rank gate below z12; from z12 onward, source availability and collisions control their appearance
+because World ranks can change between tile zooms. Street names use 0.15 em letter spacing and
+a 1 px halo; administrative regions use bold lettering and water names use italic lettering.
+House numbers appear from z17 with wide collision padding. Local-language labels remain the default.
+
+The map uses Tileflow data and assets, including hosted Noto Sans Regular, Bold, and Italic. The
+reference's DIN Pro Medium is not part of that glyph provider, so font shapes and stroke weight
+remain an approximation. Available POIs, abbreviated names,
+proprietary landmark models, transit branding, and building detail can differ from the reference.
+See [map design and asset provenance](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/docs/design-and-assets.md).
 
 ### Blueprint naming
 

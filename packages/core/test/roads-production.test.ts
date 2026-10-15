@@ -6,7 +6,7 @@ import {
 } from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {openMapTiles, resolveTileflowData, roads} from '../src';
+import {openMapTiles, resolveTileflowData, roads, zoom} from '../src';
 import {tileflowCompilerMetadataKeys} from '../src/cartography/contributions';
 import {roadClassesForDetail} from '../src/modules/roads';
 import {compileRoads} from '../src/modules/roads/compiler';
@@ -47,12 +47,13 @@ function evaluateProperty(
   value: unknown,
   specification: Record<string, unknown>,
   properties: Record<string, unknown>,
+  zoomLevel = 18,
 ): unknown {
   const parsed = createPropertyExpression(value, specification as never);
   assert.equal(parsed.result, 'success', JSON.stringify(parsed.value));
   if (parsed.result !== 'success') throw new Error('Expression did not parse.');
   return parsed.value.evaluate(
-    {zoom: 18},
+    {zoom: zoomLevel},
     {
       type: 'Feature',
       properties,
@@ -67,6 +68,86 @@ function evaluateProperty(
     {},
   );
 }
+
+test('width treatments keep hollow road casings aligned with their fill at fractional zooms', () => {
+  const width = zoom.exponential(1.5, [
+    [12, 3],
+    [18, 30],
+    [22, 300],
+  ]);
+  const structure = {casing: {gapWidth: width, width: 1}, fill: {width}};
+  const layers = compileRoads(
+    roads({
+      detail: 'none',
+      classes: {primary: {surface: structure, bridge: structure, tunnel: structure}},
+      modifiers: {expressway: {widthScale: 1.06}, ramp: {widthScale: 0.7}},
+    }),
+    context,
+  ).map(({layer}) => layer);
+  assert.deepEqual(styleErrors(layers), []);
+  for (const kind of ['surface', 'bridge', 'tunnel']) {
+    const fill = layers.find(({id}) => id === `tileflow-road-${kind}-primary-fill`)!;
+    const casing = layers.find(({id}) => id === `tileflow-road-${kind}-primary-casing`)!;
+    for (const properties of [{}, {expressway: 1}, {ramp: 1}]) {
+      for (const zoomLevel of [12, 15.25, 17.97, 18.1, 20.5, 22]) {
+        const evaluate = (layer: typeof fill, property: 'line-width' | 'line-gap-width') =>
+          evaluateProperty(
+            (layer.paint as Record<string, unknown>)[property],
+            mapLibreStyleSpec.paint_line[property],
+            properties,
+            zoomLevel,
+          );
+        assert.equal(
+          evaluate(casing, 'line-gap-width'),
+          evaluate(fill, 'line-width'),
+          `${kind} casing must track its fill at z${zoomLevel}: ${JSON.stringify(properties)}`,
+        );
+      }
+    }
+  }
+});
+
+test('solid road treatments avoid the dash shader while preserving real dash patterns', () => {
+  for (const dash of [
+    [1, 0],
+    [2, 1],
+  ] as const) {
+    const layers = compileRoads(
+      roads({
+        detail: 'none',
+        classes: {
+          primary: {
+            surface: {casing: {gapWidth: 20, width: 1}},
+            tunnel: {casing: {dash: [3, 3], gapWidth: 20, width: 1}},
+          },
+        },
+        modifiers: {indoor: {surface: {casing: {dash, opacity: 0.8}}}},
+      }),
+      context,
+    ).map(({layer}) => layer);
+    assert.deepEqual(styleErrors(layers), []);
+    const paint = layers.find(({id}) => id === 'tileflow-road-surface-primary-casing')!
+      .paint as Record<string, unknown>;
+    if (dash[1] === 0) {
+      assert.equal(paint['line-dasharray'], undefined);
+    } else {
+      assert.deepEqual(
+        evaluateProperty(paint['line-dasharray'], mapLibreStyleSpec.paint_line['line-dasharray'], {
+          indoor: 1,
+        }),
+        dash,
+      );
+    }
+    assert.equal(
+      evaluateProperty(paint['line-opacity'], mapLibreStyleSpec.paint_line['line-opacity'], {
+        indoor: 1,
+      }),
+      0.8,
+    );
+    const tunnel = layers.find(({id}) => id === 'tileflow-road-tunnel-primary-casing')!;
+    assert.deepEqual((tunnel.paint as Record<string, unknown>)['line-dasharray'], [3, 3]);
+  }
+});
 
 function styleErrors(layers: readonly Record<string, unknown>[]): string[] {
   return validateStyleMin({
@@ -355,6 +436,53 @@ test('detailed road extensions compile through remappable semantic contracts', (
   assert.equal(portableIds.includes('tileflow-sidewalk-surface'), false);
   assert.equal(portableIds.includes('tileflow-road-circular-fill'), false);
   assert.equal(portableIds.includes('tileflow-road-crossing'), false);
+});
+
+test('metric roundabouts stay anchored to geographic distances at fractional and maximum zooms', () => {
+  const layers = assembleTileflowLayers(compileRoads(roads({detail: 'all'}), context));
+  const fill = layers.find(({id}) => id === 'tileflow-road-circular-fill')!;
+  const casing = layers.find(({id}) => id === 'tileflow-road-circular-casing')!;
+  const properties = {
+    class: 'minor',
+    radius_px_z15: 10.458,
+    radius_m: 18.9,
+    inner_radius_m: 16.2,
+    outer_radius_m: 21,
+  };
+  const evaluate = (layer: Layer, property: 'circle-radius' | 'circle-stroke-width', z: number) =>
+    evaluateProperty(
+      (layer.paint as Record<string, unknown>)[property],
+      mapLibreStyleSpec.paint_circle[property],
+      properties,
+      z,
+    ) as number;
+  for (let z = 15; z <= 24; z += 0.25) {
+    const pixelsPerMeter = (properties.radius_px_z15 * 2 ** (z - 15)) / properties.radius_m;
+    const inner = properties.inner_radius_m * pixelsPerMeter;
+    const outer = properties.outer_radius_m * pixelsPerMeter;
+    for (const [layer, border] of [
+      [fill, 0],
+      [casing, 0.5],
+    ] as const) {
+      const radius = evaluate(layer, 'circle-radius', z);
+      const width = evaluate(layer, 'circle-stroke-width', z);
+      assert.ok(Math.abs(radius - (inner - border)) < 1e-8, `${layer.id} inner edge at z${z}`);
+      assert.ok(
+        Math.abs(radius + width - (outer + border)) < 1e-8,
+        `${layer.id} outer edge at z${z}`,
+      );
+    }
+  }
+
+  for (const layer of layers) {
+    if (layer.id.startsWith('tileflow-road-surface-') && layer.id.endsWith('-fill')) {
+      assert.ok(layers.indexOf(casing) < layers.indexOf(layer), 'Approaches cover the ring casing');
+    }
+    if (layer.id.startsWith('tileflow-road-bridge-')) {
+      assert.ok(layers.indexOf(fill) < layers.indexOf(layer), 'Bridges remain above surface rings');
+    }
+  }
+  assert.deepEqual(styleErrors(layers), []);
 });
 
 test('hatch consolidation encodes original class crossing priority in valid sort keys', () => {

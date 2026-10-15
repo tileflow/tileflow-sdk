@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
@@ -79,6 +80,19 @@ export default defineMap({
     assert.doesNotMatch(first.stdout, new RegExp(`${escapeRegExp(directory)}|tf_live_`, 'u'));
     assertCommandContract(JSON.parse(first.stdout) as CommandDocument, command[0]);
   }
+
+  const bounded = await runCli(directory, ['inspect', '--depth', '1', '--json'], secret);
+  assert.equal(bounded.code, 0, bounded.stderr);
+  assert.equal(JSON.parse(bounded.stdout).maps[0].projection.truncated, true);
+  assert.equal(JSON.parse(bounded.stdout).maps[0].projection.depth, 1);
+  const domain = await runCli(
+    directory,
+    ['inspect', '--domain', 'poi', '--limit', '4', '--json'],
+    secret,
+  );
+  assert.equal(domain.code, 0, domain.stderr);
+  assert.equal(JSON.parse(domain.stdout).maps[0].path, '/modules/poi');
+  assert.equal(JSON.parse(domain.stdout).maps[0].projection.limit, 4);
 
   const inspection = JSON.parse(
     (await runCli(directory, ['inspect', '--json'], secret)).stdout,
@@ -252,6 +266,7 @@ function assertCommandContract(document: CommandDocument, command: string): void
 
 async function createDirectoryFixture(t: TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-ai-commands-'));
+  await linkWorkspacePackages(directory);
   t.after(() => rm(directory, {force: true, recursive: true}));
   return directory;
 }

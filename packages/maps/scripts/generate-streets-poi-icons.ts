@@ -1,8 +1,7 @@
 /**
- * Writes Streets' POI discs from `streetsPoiPictograms` and the Streets theme colors:
- * `<id>.svg`, a disc in the light theme's category color with a white pictogram, and
- * `<id>-dark.svg`, a disc in the dark theme's category color with a pictogram in the dark POI
- * halo color.
+ * Writes Streets' POI discs from `streetsPoiPictograms` and `streetsPoiDiscColors`: `<id>.svg`, a
+ * colored disc with a pictogram in the light theme's POI halo color, and `<id>-dark.svg`, a pale
+ * disc with a pictogram in the dark theme's POI halo color.
  *
  * A pictogram's outline comes from its existing light SVG. A new pictogram needs the pinned Maki
  * release it is adapted from:
@@ -10,12 +9,12 @@
  *   pnpm --filter @tileflow/maps exec tsx scripts/generate-streets-poi-icons.ts \
  *     --maki <directory of an extracted @mapbox/maki@8.2.0 package>
  *
- * Run it again after changing a POI color in `streets-themes.ts`.
+ * Run it again after changing a disc color or the POI halo color of a theme.
  */
 import {existsSync} from 'node:fs';
 import {readFile, writeFile} from 'node:fs/promises';
 import {resolve} from 'node:path';
-import {streetsPoiPictograms} from '../src/official/streets-poi';
+import {streetsPoiDiscColors, streetsPoiPictograms} from '../src/official/streets-poi';
 import {streetsThemes} from '../src/official/streets-themes';
 
 const iconDirectory = resolve(import.meta.dirname, '../assets/streets/icons');
@@ -52,21 +51,17 @@ function disc(options: {
   path: string;
   pictogram: string;
   ring: string;
-  shadow: boolean;
   title: string;
 }): string {
   return [
     '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">',
     `  <title>${options.title}</title>`,
     `  <desc>${options.description}</desc>`,
-    ...(options.shadow
-      ? ['  <circle cx="12" cy="12.75" r="9.5" fill="#44515E" opacity=".16"/>']
-      : []),
-    `  <circle cx="12" cy="12" r="9.5" fill="${options.ring}"/>`,
-    `  <circle cx="12" cy="12" r="8" fill="${options.disc}"/>`,
+    `  <circle cx="12" cy="12" r="10" fill="${options.ring}" />`,
+    `  <circle cx="12" cy="12" r="8.5" fill="${options.disc}" />`,
     '  <path',
     `    fill="${options.pictogram}"`,
-    '    transform="translate(6.375 6.375) scale(.75)"',
+    '    transform="translate(6 6) scale(.8)"',
     `    d="${options.path}"`,
     '  />',
     '</svg>',
@@ -77,28 +72,19 @@ function disc(options: {
 for (const [id, pictogram] of Object.entries(streetsPoiPictograms)) {
   const path = await pictogramPath(id, pictogram.maki);
   const description = `Tileflow POI disc with a Maki ${pictogram.maki} pictogram, CC0-1.0.`;
-  await writeFile(
-    resolve(iconDirectory, `${id}.svg`),
-    disc({
-      description,
-      disc: color('light', `poi.${pictogram.category}`),
-      path,
-      pictogram: color('light', 'poi.halo'),
-      ring: color('light', 'poi.halo'),
-      shadow: true,
-      title: pictogram.title,
-    }),
-  );
-  await writeFile(
-    resolve(iconDirectory, `${id}-dark.svg`),
-    disc({
-      description,
-      disc: color('dark', `poi.${pictogram.category}`),
-      path,
-      pictogram: color('dark', 'poi.halo'),
-      ring: color('dark', 'poi.halo'),
-      shadow: false,
-      title: `${pictogram.title} (night)`,
-    }),
-  );
+  const role = 'disc' in pictogram ? pictogram.disc : pictogram.category;
+  for (const theme of ['light', 'dark'] as const) {
+    const halo = color(theme, 'poi.halo');
+    await writeFile(
+      resolve(iconDirectory, theme === 'light' ? `${id}.svg` : `${id}-dark.svg`),
+      disc({
+        description,
+        disc: streetsPoiDiscColors[theme][role],
+        path,
+        pictogram: halo,
+        ring: halo,
+        title: theme === 'light' ? pictogram.title : `Night ${pictogram.title}`,
+      }),
+    );
+  }
 }

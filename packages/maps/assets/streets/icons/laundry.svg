@@ -1,12 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
   <title>Laundry</title>
   <desc>Tileflow POI disc with a Maki laundry pictogram, CC0-1.0.</desc>
-  <circle cx="12" cy="12.75" r="9.5" fill="#44515E" opacity=".16"/>
-  <circle cx="12" cy="12" r="9.5" fill="#FFFFFF"/>
-  <circle cx="12" cy="12" r="8" fill="#557BC4"/>
+  <circle cx="12" cy="12" r="10" fill="#FFFFFF" />
+  <circle cx="12" cy="12" r="8.5" fill="#7D8F9F" />
   <path
     fill="#FFFFFF"
-    transform="translate(6.375 6.375) scale(.75)"
+    transform="translate(6 6) scale(.8)"
     d="M8,1L6,3H3c0,0-1,0-1,1v9c0,1,1,1,1,1h9c0,0,1,0,1-1V2c0-1-1-1-1-1 S8,1,8,1z M8.5,2h2C10.777,2,11,2.223,11,2.5S10.777,3,10.5,3h-2C8.223,3,8,2.777,8,2.5S8.223,2,8.5,2z M7.5,6 c1.6569,0,3,1.3431,3,3s-1.3431,3-3,3s-3-1.3431-3-3S5.8431,6,7.5,6z"
   />
 </svg>

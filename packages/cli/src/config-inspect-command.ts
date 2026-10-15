@@ -5,11 +5,16 @@ import {
   serializeTileflowCommandDocument,
 } from '@tileflow/dev/validation';
 import {withTileflowConfigSecretsHidden} from './config-execution';
+import {boundJson, parseQueryInteger, selectJsonPointer} from './query-output';
 
 type ConfigInspectCommandOptions = {
   config: string;
   json?: boolean;
   map?: string;
+  domain?: string;
+  path?: string;
+  limit?: string;
+  depth?: string;
 };
 
 export function registerConfigInspectCommand(
@@ -17,15 +22,47 @@ export function registerConfigInspectCommand(
   dependencies: {defaultConfigPath: string},
 ): void {
   inspect
+    .enablePositionalOptions()
     .description('Inspect resolved maps, lineage, and merge provenance')
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
     .option('--map <name>', 'inspect one exact configured map')
+    .option('--domain <name>', 'project one resolved semantic module')
+    .option('--path <pointer>', 'project an RFC 6901 pointer in each resolved map')
+    .option('--limit <count>', 'bound returned tree entries per map (1–500)')
+    .option('--depth <count>', 'maximum projection depth (1–12; default: 6)')
     .option('--json', 'print deterministic schema-version-1 JSON')
     .action(async (options: ConfigInspectCommandOptions) => {
       try {
         const document = await withTileflowConfigSecretsHidden(() =>
           inspectTileflowConfig({config: options.config, cwd: process.cwd(), map: options.map}),
         );
+        if (
+          options.domain !== undefined ||
+          options.path !== undefined ||
+          options.limit !== undefined ||
+          options.depth !== undefined
+        ) {
+          if (options.domain !== undefined && options.path !== undefined)
+            throw new Error('Choose --domain or --path.');
+          const path =
+            options.path ??
+            (options.domain
+              ? `/modules/${options.domain.replace(/~/gu, '~0').replace(/\//gu, '~1')}`
+              : '');
+          const limit = parseQueryInteger(options.limit ?? '100', '--limit', 500);
+          const depth = parseQueryInteger(options.depth ?? '6', '--depth', 12);
+          process.stdout.write(
+            serializeTileflowCommandDocument({
+              ...document,
+              maps: document.maps.map((map) => ({
+                id: map.id,
+                path,
+                ...boundJson(selectJsonPointer(map.resolved, path), {limit, depth}),
+              })),
+            }),
+          );
+          return;
+        }
         if (options.json) {
           process.stdout.write(serializeTileflowCommandDocument(document));
           return;

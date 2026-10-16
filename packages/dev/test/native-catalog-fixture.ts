@@ -37,7 +37,7 @@ export async function evaluateNativeCatalog(cwd: string) {
     const resolved = parseTileflowMap(definition);
     for (const theme of Object.keys(resolved.themes).sort()) {
       // Each row is a theme compatibility check, not a new identity for the full authored map.
-      const {systemThemes: _systemThemes, ...common} = resolved;
+      const {systemThemes: _systemThemes, timeOfDay: _timeOfDay, ...common} = resolved;
       const map = {...common, defaultTheme: theme, themes: {[theme]: resolved.themes[theme]!}};
       const prepared = await prepareTileflowCatalogIcons(
         {

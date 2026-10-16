@@ -78,15 +78,18 @@ test('matches the pinned expression and filter evaluators at range and camera bo
   const result = lowered.styles.fixture!.light!;
   assert.deepEqual(validateTileflowNativePreparedStyle(result), []);
   const expressions = ['line-cap', 'line-dasharray'].map((property) => {
-    const parsed = createExpression(source[property === 'line-cap' ? 'layout' : 'paint'][property]);
+    const parsed = createExpression(
+      source[property === 'line-cap' ? 'layout' : 'paint'][property],
+      property,
+    );
     assert.equal(parsed.result, 'success');
     if (parsed.result !== 'success') throw new Error('Expected a valid fixture expression.');
     return parsed.value;
   });
-  const originalFilter = featureFilter(source.filter);
+  const originalFilter = featureFilter(source.filter, source.id + '.filter');
   const physical = result.layers.map((layer: any) => ({
     layer,
-    filter: featureFilter(layer.filter),
+    filter: featureFilter(layer.filter, layer.id + '.filter'),
   }));
   for (const properties of [
     {},
@@ -375,12 +378,12 @@ test('compact grouped predicates agree with the pinned evaluator for every overl
   layer.paint = {'line-dasharray': [1, 0]};
   const lowered = lowerTileflowNativeCompiledStyles({fixture: {light: input}}).styles.fixture!
     .light!;
-  const parsed = createExpression(cap);
+  const parsed = createExpression(cap, 'line-cap');
   assert.equal(parsed.result, 'success');
   if (parsed.result !== 'success') throw new Error('Expected a valid finite expression.');
   const filters = lowered.layers.map((physical: any) => ({
     physical,
-    filter: featureFilter(physical.filter),
+    filter: featureFilter(physical.filter, physical.id + '.filter'),
   }));
   for (let mask = 0; mask < 4096; mask++) {
     const properties = Object.fromEntries(

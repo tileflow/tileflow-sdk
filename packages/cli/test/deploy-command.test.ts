@@ -271,6 +271,7 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
       madrid: {
         defaultTheme: string;
         systemThemes?: {dark: string; light: string};
+        timeOfDay?: Record<string, unknown>;
         themes: Record<
           string,
           {
@@ -286,8 +287,14 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
     };
     version: number;
   };
-  assert.equal(manifestDocument.version, 1);
+  assert.equal(manifestDocument.version, 2);
   assert.equal(manifestDocument.maps.madrid.defaultTheme, 'light');
+  assert.deepEqual(manifestDocument.maps.madrid.timeOfDay?.light, {
+    day: 'light',
+    dawn: 'dawn',
+    dusk: 'dusk',
+    night: 'dark',
+  });
   assert.deepEqual(manifestDocument.maps.madrid.systemThemes, {dark: 'dark', light: 'light'});
   assert.deepEqual(Object.keys(manifestDocument.maps.madrid.themes), streetsThemeNames);
   assert.equal(manifestDocument.maps.madrid.themes.dark?.colorScheme, 'dark');
@@ -483,7 +490,7 @@ test('a failed singular deploy preserves the previous manifest and a retry conve
     maps: Record<string, {mapId: string}>;
     version: number;
   };
-  assert.equal(manifest.version, 1);
+  assert.equal(manifest.version, 2);
   assert.equal(manifest.maps.beta?.mapId, managedMapId);
   assert.deepEqual(Object.keys(manifest.maps), ['previous', 'beta']);
 });
@@ -548,7 +555,7 @@ test('deploy refuses a self-hosted manifest unless replacement is explicit', asy
     apiUrl?: string;
     version: number;
   };
-  assert.equal(manifest.version, 1);
+  assert.equal(manifest.version, 2);
   assert.equal(manifest.apiUrl, api.url);
 });
 

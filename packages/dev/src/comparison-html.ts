@@ -1,3 +1,4 @@
+import {devtoolsStyles} from './devtools/styles';
 import {workbenchClient} from './workbench-client';
 import {controlsClient, controlsPanel, controlsStyles} from './workbench-controls';
 import {workbenchIcon, workbenchPanels, workbenchStyles} from './workbench-ui';
@@ -38,6 +39,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(options.title)}</title>
     <style${nonceAttribute}>
+      @font-face { font-family:'Inter'; font-weight:100 900; font-display:swap; src:url('${fontBasePath}/__workbench-fonts/inter.woff2') format('woff2'); }
+      @font-face { font-family:'JetBrains Mono'; font-weight:400; font-display:swap; src:url('${fontBasePath}/__workbench-fonts/jetbrains-mono.woff2') format('woff2'); }
       @font-face { font-family:'Mona Sans'; font-weight:200 900; font-display:swap; src:url('${fontBasePath}/__workbench-fonts/mona-sans.woff2') format('woff2'); }
       @font-face { font-family:'Hubot Sans'; font-weight:200 900; font-display:swap; src:url('${fontBasePath}/__workbench-fonts/hubot-sans.woff2') format('woff2'); }
       :root {
@@ -77,49 +80,10 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
         outline-offset: 2px;
       }
-      .toolbar {
-        z-index: 10;
-        display: flex;
-        min-height: 48px;
-        align-items: center;
-        gap: 8px;
-        padding: 7px 10px;
-        border-bottom: 1px solid var(--border);
-        background: rgba(255, 255, 255, .97);
-        flex-wrap: wrap;
-      }
-      .toolbar-title { font-weight: 750; margin-right: 4px; }
-      .toolbar-group { display: inline-flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
-      .toolbar-separator { width: 1px; height: 25px; flex: 0 0 auto; background: var(--border); }
-      .toolbar label { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
-      .toolbar input[type="range"] { width: 96px; }
-      .toolbar input[type="text"] { width: 150px; padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; }
       .workspace { position: relative; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; }
       .stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #d8dadd; }
       .pane { position: absolute; inset: 0; min-width: 0; min-height: 0; overflow: hidden; background: #d8dadd; }
       .pane iframe { width: 100%; height: 100%; display: block; border: 0; background: #d8dadd; }
-      .pane-label {
-        position: absolute;
-        z-index: 3;
-        top: 10px;
-        left: 10px;
-        display: flex;
-        max-width: calc(100% - 20px);
-        align-items: center;
-        gap: 7px;
-        border: 1px solid rgba(0, 0, 0, .12);
-        border-radius: 999px;
-        background: rgba(255, 255, 255, .93);
-        box-shadow: 0 3px 14px rgba(0, 0, 0, .12);
-        padding: 5px 9px;
-        pointer-events: none;
-      }
-      .pane-label-text { overflow: hidden; text-overflow: ellipsis; }
-      .side-state-text { flex: 0 0 auto; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .03em; }
-      .side-state { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #8d929b; }
-      .side-state[data-status="ready"] { background: #248a4a; }
-      .side-state[data-status="building"] { background: #cf8114; }
-      .side-state[data-status="invalid"], .side-state[data-status="error"] { background: #ba3838; }
       .stage[data-mode="side-by-side"] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1px; }
       .stage[data-mode="side-by-side"] .pane { position: relative; inset: auto; }
       .stage[data-mode="side-by-side"] .pane-right { grid-column: 2; }
@@ -159,16 +123,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       .sprite-card { min-width: 0; border: 1px solid var(--border); border-radius: 7px; padding: 7px; background: var(--paper); text-align: center; }
       .sprite-card canvas { display: block; margin: auto; max-width: 64px; max-height: 64px; image-rendering: auto; }
       .sprite-name { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
-      .feedback { color: var(--muted); min-width: 64px; }
       .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
       @media (max-width: 760px) {
-        .toolbar { align-content: center; gap: 6px; padding: 6px; }
-        .toolbar-title { flex: 1 0 calc(100% - 12px); }
-        .toolbar-separator { display: none; }
-        .toolbar-group { flex: 1 1 100%; gap: 5px; }
-        .toolbar-group button { padding-inline: 7px; }
-        .toolbar input[type="range"] { width: min(24vw, 86px); }
-        .toolbar input[type="text"] { width: min(34vw, 130px); }
         .workspace { grid-template-columns: minmax(0, 1fr); }
         .inspector { position: absolute; z-index: 20; right: 0; inset-block: 0; width: min(92vw, 390px); box-shadow: -8px 0 28px rgba(0,0,0,.18); }
       }
@@ -177,64 +133,26 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       }
       ${workbenchStyles}
       ${controlsStyles}
+      ${devtoolsStyles}
     </style>
   </head>
   <body>
-    <div class="brandbar"><span class="wordmark">Tileflow</span><span class="product-name">Map DevTools</span><details><summary id="wb-project">Local workspace</summary><div class="project-path" id="wb-project-path">Local project</div></details></div>
-    <header class="toolbar" aria-label="Map DevTools controls">
-      <span class="toolbar-title" id="title"></span>
-      <div class="toolbar-actions">
-      <button type="button" id="inspect-toggle" aria-controls="inspector" aria-expanded="false" aria-pressed="false" aria-keyshortcuts="i" title="Select a map element (I). Escape to stop.">${workbenchIcon('inspect')}<span>Inspect</span><kbd class="shortcut" aria-hidden="true">I</kbd></button>
-      <button type="button" id="controls-toggle" aria-controls="map-controls" aria-expanded="false">${workbenchIcon('settings')}<span>Controls</span></button>
-      <button id="wb-compare-toggle" class="workbench-only" ${options.workbenchUrl ? '' : 'hidden'}>${workbenchIcon('compare')}Compare</button>
-      <button id="wb-history-toggle" class="workbench-only" aria-controls="wb-history" aria-expanded="false" ${options.workbenchUrl ? '' : 'hidden'}>${workbenchIcon('history')}Captures</button>
-      <span class="tool-divider" aria-hidden="true"></span>
-      <button id="wb-capture" class="primary workbench-only" ${options.workbenchUrl ? '' : 'hidden'} disabled>${workbenchIcon('capture')}<span id="wb-capture-label">Capture</span></button>
-      <details class="export-menu" id="capture-settings"><summary aria-label="Capture settings and export" title="Capture settings and export">${workbenchIcon('settings')}<span class="visually-hidden">Capture settings</span></summary><div>
-        <label>Capture name<input id="scene-name" type="text" value="${options.right ? 'comparison-view' : 'map-view'}" aria-label="Capture name" /></label>
-        <div class="dimensions workbench-only" ${options.workbenchUrl ? '' : 'hidden'}><label>Width<input id="wb-width" type="number" min="64" max="4096" value="1280"></label><label>Height<input id="wb-height" type="number" min="64" max="4096" value="800"></label></div>
-        <label>Pixel ratio<select id="scene-dpr" aria-label="DPR"><option value="1">1</option><option value="2">2</option></select></label>
-        <label class="frame-option workbench-only" ${options.workbenchUrl ? '' : 'hidden'}><input id="wb-frame" type="checkbox">Show capture frame</label>
-        <button id="wb-save-reference" class="workbench-only" ${options.workbenchUrl ? '' : 'hidden'}>${workbenchIcon('pin')}Capture as reference</button>
-        <button type="button" id="copy-scene">Copy scene</button><button type="button" id="copy-command">Copy command</button>
-        <button id="wb-copy-context" class="workbench-only" ${options.workbenchUrl ? '' : 'hidden'}>Copy context for AI</button>
-        <p class="compact-note workbench-only" ${options.workbenchUrl ? '' : 'hidden'}>Captures render the compiled map at this camera and frame. 3D and tree visibility switches affect this preview only. Captures use the compiled style.</p>
-      </div></details>
-      </div>
-    </header>
-    <div class="reference-bar" id="wb-reference-bar" hidden><span id="wb-reference-summary"></span><button id="wb-capture-compare" class="primary">${workbenchIcon('compare')}Capture &amp; compare</button><button id="wb-clear-reference" aria-label="Clear reference">${workbenchIcon('close')}</button></div>
-    <div class="comparison-tools" id="wb-live-tools" ${options.right ? '' : 'hidden'}>
-      <span class="compact-note">Live maps · both update</span><div class="toolbar-group" role="group" aria-label="Comparison mode">
-        <button type="button" data-mode="single">Back to single map</button>
-        <button type="button" data-mode="side-by-side">Side by side</button>
-        <button type="button" data-mode="split">Slider</button>
-<details><summary>More views</summary><button type="button" data-mode="overlay">Overlay</button><button type="button" data-mode="blink">Blink</button></details>
-      </div>
-      <div class="toolbar-group">
-        <label id="split-control">Split <input id="split" type="range" min="5" max="95" value="50" aria-label="Split position" /></label>
-        <label id="alpha-control">Opacity <input id="alpha" type="range" min="0" max="100" value="50" aria-label="Overlay opacity" /></label>
-        <button type="button" id="driver" ${options.right ? '' : 'hidden'}>Active map: left</button>
-        <button type="button" id="blink-pause">Pause blink</button>
-      </div>
-    </div>
     <div class="workspace">
       <main class="stage" id="stage" data-driver="left" data-tileflow-capture-id="tileflow-comparison" data-tileflow-state="loading">
         <section class="pane pane-left" data-side="left">
-          <div class="pane-label"><span class="side-state" id="left-state" role="status" aria-live="polite"></span><span class="pane-label-text" id="left-label"></span><span class="side-state-text" id="left-status-text">Building</span></div>
           <iframe id="left-frame" title="${options.right ? 'Left Tileflow preview' : 'Tileflow map preview'}" referrerpolicy="no-referrer"></iframe>
         </section>
         <section class="pane pane-right" data-side="right">
-          <div class="pane-label"><span class="side-state" id="right-state" role="status" aria-live="polite"></span><span class="pane-label-text" id="right-label"></span><span class="side-state-text" id="right-status-text">Building</span></div>
           <iframe id="right-frame" title="Right Tileflow preview" referrerpolicy="no-referrer"></iframe>
         </section>
         <div class="split-line" aria-hidden="true"></div>
         <div class="inspect-hint" id="wb-inspect-hint" hidden>Click an element to inspect · Esc to exit</div>
-        <div class="frame-note" id="wb-frame-note" hidden></div>
       </main>
       <aside class="inspector" id="inspector" tabindex="-1" aria-labelledby="inspector-title" hidden>
+        <button type="button" id="inspect-toggle" aria-controls="inspector" aria-expanded="false" aria-pressed="false" aria-keyshortcuts="i" title="Select a map element (I). Escape to stop.">${workbenchIcon('inspect')}Inspect</button>
+        <button type="button" id="controls-toggle" aria-controls="map-controls" aria-expanded="false">Scene</button>
         <div class="inspector-heading"><h2 id="inspector-title">${workbenchIcon('inspect')} Inspect the map</h2><button type="button" id="inspector-close" aria-label="Close inspector">${workbenchIcon('close')}</button></div>
         <div id="inspection" class="empty">Click a feature to understand how it is drawn and find its configuration.</div>
-        <div class="workbench-only" ${options.workbenchUrl ? '' : 'hidden'}><button id="wb-selection-context" class="selection-context">Copy map context for AI</button></div>
         <details class="zoom-details"><summary>Appearance at different zoom levels</summary>
         <select id="curve-property" disabled><option>Select a rendered layer first</option></select>
         <div id="curve-output" class="empty">Select an element to explore its appearance.</div></details>
@@ -246,7 +164,6 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       ${workbenchPanels}
       ${controlsPanel}
     </div>
-    <footer class="statusbar"><span id="wb-status">Local preview</span><button id="wb-help" class="workbench-only" ${options.workbenchUrl ? '' : 'hidden'}>Quick start</button><span class="feedback" id="feedback" role="status"></span></footer>
     <script type="module"${nonceAttribute}>
       const options = ${documentOptions};
       const bridgeSchemaVersion = 1;
@@ -263,15 +180,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       const curveOutput = document.getElementById("curve-output");
       const sidecarOutput = document.getElementById("sidecar-output");
       const spriteOutput = document.getElementById("sprite-output");
-      const feedback = document.getElementById("feedback");
-      const splitInput = document.getElementById("split");
-      const alphaInput = document.getElementById("alpha");
-      const driverButton = document.getElementById("driver");
-      const blinkPauseButton = document.getElementById("blink-pause");
       const inspectButton = document.getElementById("inspect-toggle");
       const inspectorCloseButton = document.getElementById("inspector-close");
-      const sceneNameInput = document.getElementById("scene-name");
-      const sceneDprInput = document.getElementById("scene-dpr");
       const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
       const sideIds = options.right ? ["left", "right"] : ["left"];
       const states = Object.fromEntries(sideIds.map((id) => {
@@ -280,8 +190,6 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           id,
           definition,
           frame: document.getElementById(id + "-frame"),
-          stateElement: document.getElementById(id + "-state"),
-          statusTextElement: document.getElementById(id + "-status-text"),
           map: undefined,
           camera: undefined,
           bridgeReady: false,
@@ -310,45 +218,25 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       let spriteLoadSequence = 0;
       let spriteOwnerId;
 
-      document.getElementById("title").textContent = options.title;
       const initialUi = readUiFromUrl();
-      splitInput.value = String(initialUi.split);
-      alphaInput.value = String(initialUi.alpha);
+
       applySliders();
       setMode(initialUi.mode || options.initialMode);
-      updateBlinkMotionPreference();
       for (const id of sideIds) {
         const side = states[id];
-        document.getElementById(id + "-label").textContent = side.definition.label;
         side.frame.src = side.definition.previewUrl;
         side.frame.addEventListener("load", () => connectSide(side));
         side.frame.addEventListener("focus", () => selectSide(side.id));
         startStatus(side);
       }
 
-      for (const button of document.querySelectorAll("[data-mode]")) {
-        button.addEventListener("click", () => setMode(button.dataset.mode));
-      }
-      splitInput.addEventListener("input", () => { applySliders(); writeUrlState(); });
-      alphaInput.addEventListener("input", () => { applySliders(); writeUrlState(); });
-      driverButton.addEventListener("click", () => {
-        selectSide(stage.dataset.driver === "left" ? "right" : "left");
-      });
-      blinkPauseButton.addEventListener("click", () => {
-        blinkPaused = !blinkPaused;
-        updateBlinkMotionPreference();
-        restartBlink();
-      });
       inspectButton.addEventListener("click", () => setInspectionEnabled(!inspectionEnabled, true));
       inspectorCloseButton.addEventListener("click", () => setInspectionEnabled(false, true));
-      document.getElementById("copy-scene").addEventListener("click", () => copyScene(false));
-      document.getElementById("copy-command").addEventListener("click", () => copyScene(true));
       document.getElementById("load-sprites").addEventListener("click", () => loadSprites(states[activeSideId]));
       curveProperty.addEventListener("change", renderCurve);
       reducedMotion.addEventListener?.("change", () => {
         blinkPaused = reducedMotion.matches;
-        updateBlinkMotionPreference();
-        restartBlink();
+          restartBlink();
       });
       addEventListener("keydown", (event) => {
         if (event.key === "Escape" && inspectionEnabled) setInspectionEnabled(false, true);
@@ -370,8 +258,6 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         const previousSpriteOwner = spriteOwnerId;
         activeSideId = id;
         stage.dataset.driver = id;
-        driverButton.textContent = "Active map: " + id;
-        driverButton.setAttribute("aria-label", "Active map: " + id + ". Switch active map");
         if (changed && previousSpriteOwner && previousSpriteOwner !== id) {
           states[previousSpriteOwner].spriteAbort?.abort();
           spriteLoadSequence += 1;
@@ -384,12 +270,14 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
 
       function setInspectionEnabled(enabled, manageFocus = false) {
         inspectionEnabled = enabled;
-        if (enabled) toggleMapControls(false);
-        if (enabled && options.workbenchUrl) {
-          document.getElementById("wb-review").hidden = true;
-          document.getElementById("wb-history").hidden = true;
-          document.getElementById("wb-history-toggle").setAttribute("aria-expanded", "false");
+        if (globalThis.__tileflowDevtoolsUI) {
+          inspectButton.setAttribute("aria-pressed", String(enabled));
+          document.getElementById("wb-inspect-hint").hidden = !enabled;
+          for (const side of Object.values(states)) sendInspectionState(side);
+          globalThis.__tileflowDevtoolsUI.inspectionChanged(enabled);
+          return;
         }
+        if (enabled) toggleMapControls(false);
         inspectButton.setAttribute("aria-pressed", String(enabled));
         inspectButton.setAttribute("aria-expanded", String(enabled));
         inspector.hidden = !enabled;
@@ -401,29 +289,12 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         }
       }
 
-      function updateBlinkMotionPreference() {
-        const motionBlocked = reducedMotion.matches;
-        blinkPauseButton.disabled = motionBlocked;
-        blinkPauseButton.textContent = motionBlocked
-          ? "Blink paused (reduced motion)"
-          : blinkPaused ? "Resume blink" : "Pause blink";
-      }
 
       function setMode(mode) {
         if (!options.right) mode = "single";
         if (!["single", "side-by-side", "split", "overlay", "blink"].includes(mode)) return;
         if (mode === "single" && activeSideId !== "left") selectSide("left", false);
-        driverButton.hidden = mode === "single";
-        document.getElementById("wb-frame").disabled = mode !== "single";
         stage.dataset.mode = mode;
-        if (options.workbenchUrl) document.getElementById("wb-live-tools").hidden = mode === "single";
-        if (mode !== "single") { document.getElementById("wb-frame").checked = false; stage.dataset.frame = "false"; document.getElementById("wb-frame-note").hidden = true; }
-        for (const button of document.querySelectorAll("[data-mode]")) {
-          button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
-        }
-        document.getElementById("split-control").hidden = mode !== "split";
-        document.getElementById("alpha-control").hidden = mode !== "overlay";
-        blinkPauseButton.hidden = mode !== "blink";
         restartBlink();
         writeUrlState();
         setTimeout(() => {
@@ -432,8 +303,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       }
 
       function applySliders() {
-        const split = boundedNumber(Number(splitInput.value), 5, 95, 50);
-        const alpha = boundedNumber(Number(alphaInput.value), 0, 100, 50);
+        const split = boundedNumber(initialUi.split, 5, 95, 50);
+        const alpha = boundedNumber(initialUi.alpha, 0, 100, 50);
         stage.style.setProperty("--split", split + "%");
         stage.style.setProperty("--overlay-alpha", String(alpha / 100));
       }
@@ -460,6 +331,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
 
       function connectSide(side) {
         side.loadEpoch += 1;
+        side.appliedSceneStyle = undefined;
+        side.pendingAppearance = undefined;
         const epoch = side.loadEpoch;
         cleanupSideBridge(side);
         side.cleanupBridge = undefined;
@@ -468,6 +341,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         side.sidecarAbort = undefined;
         side.spriteAbort = undefined;
         side.map = undefined;
+        side.bridgeConnected = false;
         side.bridgeReady = false;
         side.camera = undefined;
         side.sidecar = undefined;
@@ -491,7 +365,6 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           curveOutput.textContent = "Paint and layout values appear here.";
           sidecarOutput.textContent = "No layer selected.";
         }
-        renderSideStatus(side);
         updateDocumentReadiness();
         const started = performance.now();
         const findMap = () => {
@@ -502,7 +375,13 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
             const map = childWindow?.__tileflowPreviewMap;
             if (map) {
               side.map = map;
+              // DevTools can edit a connected map while its tiles are still loading.
+              // bridgeReady remains the separate renderer-readiness signal.
+              side.bridgeConnected = true;
+              side.camera = readMapCamera(map);
               side.cleanupBridge = installChildBridge(side, childWindow, map, epoch);
+              if (options.workbenchUrl) void refreshWorkbench();
+              if (!controlsPanel.hidden) void loadMapControls();
               return;
             }
           } catch (error) {
@@ -530,11 +409,12 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         let readyAnnounced = false;
         let inspectedFeatures = [];
         let highlightedIndex = -1;
+        let hoveredFeature, hoveredCoordinate, hoverFrame, hoverHint;
         let inspectedCoordinate;
         let highlight;
         const drawHighlight = () => {
-          const geometry = inspectedFeatures[highlightedIndex]?.geometry;
-          if (!inspectionActive || !geometry || !map.getContainer || !map.project) { if (highlight) highlight.style.display = "none"; return; }
+          const geometry = hoveredFeature?.geometry || inspectedFeatures[highlightedIndex]?.geometry;
+          if ((!inspectionActive && !globalThis.__tileflowDevtoolsUI) || !geometry || !map.getContainer || !map.project) { if (highlight) highlight.style.display = "none"; return; }
           if (!highlight) {
             highlight = document.createElementNS("http://www.w3.org/2000/svg", "svg");
             highlight.setAttribute("aria-hidden", "true");
@@ -555,14 +435,15 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
             if (!points.length) return;
             const shape = document.createElementNS("http://www.w3.org/2000/svg", "path");
             shape.setAttribute("d", points.map((point,index) => (index ? "L" : "M") + point.x + " " + point.y).join(" ") + (closed ? "Z" : ""));
-            shape.setAttribute("fill", closed ? "#a73b4d22" : "none");
-            shape.setAttribute("stroke", "#a73b4d"); shape.setAttribute("stroke-width", "3");
+            shape.setAttribute("fill", closed ? "#1a73e822" : "none");
+            shape.setAttribute("stroke", "#1a73e8"); shape.setAttribute("stroke-width", "3");
             shape.setAttribute("stroke-linejoin", "round"); highlight.append(shape);
           };
           const coordinates = geometry.coordinates;
           const containsPoint = (ring) => {
-            if (!inspectedCoordinate) return false;
-            const [x,y] = inspectedCoordinate;
+            const coordinate = hoveredCoordinate || inspectedCoordinate;
+            if (!coordinate) return false;
+            const [x,y] = coordinate;
             let inside = false;
             for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
               const [xi,yi] = ring[i], [xj,yj] = ring[j];
@@ -578,10 +459,11 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
             const point = project(coordinate); if (!point) continue;
             const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
             circle.setAttribute("cx", point.x); circle.setAttribute("cy", point.y); circle.setAttribute("r", "10");
-            circle.setAttribute("fill", "#a73b4d22"); circle.setAttribute("stroke", "#a73b4d"); circle.setAttribute("stroke-width", "3"); highlight.append(circle);
+            circle.setAttribute("fill", "#1a73e822"); circle.setAttribute("stroke", "#1a73e8"); circle.setAttribute("stroke-width", "3"); highlight.append(circle);
           }
         };
         side.highlightFeature = (index) => { highlightedIndex = index; drawHighlight(); };
+        side.getInspectedFeature = () => inspectedFeatures[highlightedIndex];
         const handleKey = (event) => {
           if (event.target.closest?.("input,select,textarea,[contenteditable]")) return;
           if (event.key === "Escape" && inspectionEnabled) { event.preventDefault(); setInspectionEnabled(false, true); }
@@ -609,11 +491,11 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           });
         };
         const handleMoveStart = (event) => {
-          if (applyingRequestId === undefined && event?.originalEvent) userMovementActive = true;
+          if (applyingRequestId === undefined && (event?.originalEvent || event?.tileflowDevtools === true)) userMovementActive = true;
         };
         const handleMove = (event) => {
           if (applyingRequestId !== undefined) return;
-          if (event?.originalEvent) userMovementActive = true;
+          if (event?.originalEvent || event?.tileflowDevtools === true) userMovementActive = true;
           queuedUserMovement = queuedUserMovement || userMovementActive;
           if (movementFrame !== undefined) return;
           movementFrame = childWindow.requestAnimationFrame(() => {
@@ -629,7 +511,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
             scheduleApplyingRelease(applyingRequestId);
             return;
           }
-          if (event?.originalEvent) userMovementActive = true;
+          if (event?.originalEvent || event?.tileflowDevtools === true) userMovementActive = true;
           if (movementFrame !== undefined) {
             childWindow.cancelAnimationFrame(movementFrame);
             movementFrame = undefined;
@@ -638,10 +520,44 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           postCamera("end", undefined, userMovementActive);
           userMovementActive = false;
         };
+        const clearHover = () => {
+          if (hoverFrame !== undefined) childWindow.cancelAnimationFrame(hoverFrame);
+          hoverFrame = undefined; hoveredFeature = undefined; hoveredCoordinate = undefined;
+          if (hoverHint) hoverHint.hidden = true;
+          drawHighlight();
+        };
+        side.hoverFeature = (index) => {
+          clearHover();
+          if (!inspectedFeatures[index]) return;
+          hoveredFeature = inspectedFeatures[index];
+          hoveredCoordinate = inspectedCoordinate;
+          drawHighlight();
+        };
+        const handleHover = (event) => {
+          if (!inspectionActive || !globalThis.__tileflowDevtoolsUI || hoverFrame !== undefined) return;
+          hoverFrame = childWindow.requestAnimationFrame(() => {
+            hoverFrame = undefined;
+            hoveredFeature = map.queryRenderedFeatures(event.point).find((feature) => !feature.layer.id.startsWith("__tileflow-devtools-"));
+            hoveredCoordinate = [event.lngLat.lng, event.lngLat.lat];
+            if (!hoverHint) {
+              hoverHint = document.createElement("div");
+              hoverHint.style.cssText = "position:absolute;z-index:6;pointer-events:none;padding:4px 7px;background:#fff;color:#202124;border:1px solid #dadce0;border-radius:3px;box-shadow:0 2px 5px #0003;font:11px/1.5 monospace;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+              map.getContainer().append(hoverHint);
+            }
+            hoverHint.hidden = !hoveredFeature;
+            if (hoveredFeature) {
+              hoverHint.textContent = hoveredFeature.layer.id + " · " + hoveredFeature.geometry.type + (hoveredFeature.id === undefined ? "" : " #" + hoveredFeature.id);
+              hoverHint.style.left = Math.max(4,Math.min(event.point.x + 14,map.getContainer().clientWidth - 310)) + "px";
+              hoverHint.style.top = Math.max(4,Math.min(event.point.y + 14,map.getContainer().clientHeight - 32)) + "px";
+            }
+            drawHighlight();
+          });
+        };
         const handleClick = (event) => {
           if (!inspectionActive) return;
+          clearHover();
           inspectedCoordinate = [event.lngLat.lng, event.lngLat.lat];
-          inspectedFeatures = map.queryRenderedFeatures(event.point).slice(0, 16);
+          inspectedFeatures = map.queryRenderedFeatures(event.point).filter((feature) => !feature.layer.id.startsWith("__tileflow-devtools-")).slice(0, 16);
           const features = inspectedFeatures.map(projectFeature);
           postToParent({
             type: bridgeInspectionType,
@@ -650,6 +566,13 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
             coordinate: [event.lngLat.lng, event.lngLat.lat],
             features
           });
+        };
+        side.inspectRenderedFeature = (feature, coordinate) => {
+          clearHover();
+          inspectedCoordinate = coordinate;
+          inspectedFeatures = [feature];
+          postToParent({type: bridgeInspectionType, schemaVersion: bridgeSchemaVersion,
+            side: side.id, coordinate, features: [projectFeature(feature)]});
         };
         const handleError = (event) => {
           postToParent({
@@ -665,6 +588,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           if (!message || message.schemaVersion !== bridgeSchemaVersion) return;
           if (message.type === bridgeSetInspectionType && typeof message.enabled === "boolean") {
             inspectionActive = message.enabled;
+            if (!inspectionActive) clearHover();
             map.getCanvas().style.cursor = inspectionActive ? "crosshair" : "";
             drawHighlight();
             return;
@@ -726,6 +650,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         map.on("move", handleMove);
         map.on("moveend", handleMoveEnd);
         map.on("click", handleClick);
+        map.on("mousemove", handleHover);
+        map.on("mouseout", clearHover);
         map.on("error", handleError);
         childWindow.addEventListener("message", handleCommand);
         if (map.loaded?.()) announceReady();
@@ -738,13 +664,17 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           if (movementFrame !== undefined) childWindow.cancelAnimationFrame(movementFrame);
           cancelApplyingRelease();
           clearTimeout(readyTimer);
-          highlight?.remove(); side.highlightFeature = undefined;
+          clearHover(); hoverHint?.remove();
+          highlight?.remove(); side.highlightFeature = undefined; side.hoverFeature = undefined;
+          side.getInspectedFeature = undefined; side.inspectRenderedFeature = undefined;
           map.off("move", drawHighlight); map.off("resize", drawHighlight);
           childWindow.removeEventListener("keydown", handleKey);
           map.off("movestart", handleMoveStart);
           map.off("move", handleMove);
           map.off("moveend", handleMoveEnd);
           map.off("click", handleClick);
+          map.off("mousemove", handleHover);
+          map.off("mouseout", clearHover);
           map.off("error", handleError);
           map.off("load", announceReady);
           map.off("idle", announceReady);
@@ -760,10 +690,11 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         if (message.type === bridgeReadyType && validCamera(message.camera)) {
           side.bridgeReady = true;
           side.camera = message.camera;
-          renderSideStatus(side);
           maybeEstablishInitialCamera();
           sendInspectionState(side);
           void loadSidecar(side);
+          if (options.workbenchUrl) void refreshWorkbench();
+          if (!controlsPanel.hidden) void loadMapControls();
           updateDocumentReadiness();
           return;
         }
@@ -812,7 +743,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       }
 
       function sendCamera(side, camera) {
-        if (!side.bridgeReady || !camera || !side.frame.contentWindow) return;
+        if (!side?.bridgeReady || !camera || !side.frame.contentWindow) return;
         if (side.camera && camerasEqual(side.camera, camera)) return;
         const requestId = ++requestSequence;
         side.lastCameraRequestId = requestId;
@@ -862,6 +793,16 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           .catch(() => undefined);
         const events = new EventSource(side.definition.eventsUrl);
         side.eventSource = events;
+        let connected = false, disconnected = false;
+        events.addEventListener("open", () => {
+          if (connected && disconnected) {
+            side.artifactGeneration = -1;
+            side.latestArtifactStatus = undefined;
+            side.frame.contentWindow?.location.reload();
+          }
+          connected = true; disconnected = false;
+        });
+        events.addEventListener("error", () => { if (connected) disconnected = true; });
         for (const name of ["building", "ready", "invalid"]) {
           events.addEventListener(name, (event) => {
             try { applyArtifactStatus(side, JSON.parse(event.data)); } catch {}
@@ -884,7 +825,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           ? status.lastGoodGeneration
           : undefined;
         side.artifactDiagnostic = status.diagnostics?.[0]?.message;
-        renderSideStatus(side);
+        side.latestArtifactStatus = status;
+        side.previewStatusReceiver?.(status);
         maybeEstablishInitialCamera();
         updateDocumentReadiness();
       }
@@ -903,31 +845,26 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         stage.dataset.tileflowState = value;
       }
 
-      function renderSideStatus(side) {
-        const diagnostic = side.artifactDiagnostic;
-        const message = side.runtimeFailed
-          ? "Runtime error: " + (side.runtimeErrors.at(-1) || "Preview runtime failed")
-          : side.artifactStatus === "invalid"
-            ? "Invalid generation; showing last valid preview" + (diagnostic ? ": " + diagnostic : "")
-            : "Generation " + String(Math.max(0, side.artifactGeneration)) + " · " + side.artifactStatus;
-        side.stateElement.dataset.status = side.runtimeFailed ? "error" : side.artifactStatus;
-        side.stateElement.title = message;
-        side.stateElement.setAttribute("aria-label", side.definition.label + ": " + message);
-        side.statusTextElement.textContent = side.runtimeFailed ? "Runtime error" : side.artifactStatus;
-      }
 
       async function loadSidecar(side) {
         if (!side.definition.sidecarUrl) return undefined;
+        const key = currentSidecarUrl(side);
+        if (side.sidecarKey !== key) {
+          side.sidecarAbort?.abort();
+          side.sidecar = undefined;
+          side.sidecarPromise = undefined;
+          side.sidecarKey = key;
+        }
         if (side.sidecar !== undefined) return side.sidecar;
         if (side.sidecarPromise) return side.sidecarPromise;
         const epoch = side.loadEpoch;
         const controller = new AbortController();
         side.sidecarAbort?.abort();
         side.sidecarAbort = controller;
-        const promise = fetch(currentSidecarUrl(side), {cache: "no-store", signal: controller.signal})
+        const promise = fetch(key, {cache: "no-store", signal: controller.signal})
           .then((response) => response.ok ? response.json() : Promise.reject(new Error("Compiler sidecar unavailable")))
           .then((document) => {
-            if (side.loadEpoch !== epoch || controller.signal.aborted) return undefined;
+            if (side.loadEpoch !== epoch || side.sidecarKey !== key || controller.signal.aborted) return undefined;
             side.sidecar = document;
             if (selectedInspection?.side === side) renderInspection();
             return document;
@@ -965,8 +902,9 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           return configured.href;
         }
         configured.pathname = configured.pathname.slice(0, markerIndex) + marker + map + "/" + theme + ".json";
-        const controls = new URL(side.frame.src, location.href).searchParams.get("controls");
+        const controls = livePreviewUrl(side).searchParams.get("controls");
         if (controls) configured.searchParams.set("controls", controls);
+        else configured.searchParams.delete("controls");
         return configured.href;
       }
 
@@ -976,7 +914,6 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         const feature = selectedInspection.features[selectedInspection.featureIndex];
         inspectionOutput.replaceChildren();
         for (const entry of Object.values(states)) entry.highlightFeature?.(entry === side ? selectedInspection.featureIndex : -1);
-        document.getElementById("wb-selection-context").textContent = feature ? "Copy element context for AI" : "Copy map context for AI";
         if (!feature) {
           inspectionOutput.className = "empty";
           inspectionOutput.textContent = side.definition.label + ": no rendered feature at this point.";
@@ -984,6 +921,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           curveOutput.className = "empty";
           curveOutput.textContent = "Paint and layout values appear here.";
           sidecarOutput.textContent = "No layer selected.";
+          globalThis.__tileflowDevtoolsUI?.selectionChanged();
           return;
         }
         inspectionOutput.className = "";
@@ -1030,6 +968,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           ? boundedJson(sidecarLayerWithSemanticAttribution(sidecarLayer))
           : "No compiler sidecar entry for this layer.";
         if (side.sidecar === undefined && !side.sidecarPromise) void loadSidecar(side);
+        globalThis.__tileflowDevtoolsUI?.selectionChanged();
       }
 
       function populateCurveProperties(layer) {
@@ -1307,105 +1246,14 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           value.x + value.width <= image.naturalWidth && value.y + value.height <= image.naturalHeight;
       }
 
-      async function copyScene(commandOnly) {
-        const name = sceneNameInput.value;
-        if (!validPortableName(name)) {
-          setFeedback("Use a portable kebab-case scene name.");
-          return;
-        }
-        const side = states[activeSideId];
-        const camera = side.camera || canonicalCamera;
-        if (!camera) {
-          setFeedback("Wait for the maps to become ready.");
-          return;
-        }
-        const style = side.map?.getStyle?.();
-        const map = style?.metadata?.["tileflow:map"];
-        const theme = style?.metadata?.["tileflow:theme"];
-        if (!validPortableName(map) || !validConcreteThemeName(theme)) {
-          setFeedback("The active preview does not expose a concrete map and theme.");
-          return;
-        }
-        const dpr = Number(sceneDprInput.value) === 2 ? 2 : 1;
-        let viewport;
-        try { viewport = readMapViewport(side, dpr); } catch (error) { setFeedback(safeErrorMessage(error)); return; }
-        const {width, height} = viewport;
-        if (commandOnly) {
-          const command = [
-            "tileflow capture",
-            ...(side.definition.captureConfig
-              ? ["--config " + quoteCliArgument(side.definition.captureConfig)]
-              : []),
-            "--map " + quoteCliArgument(map),
-            "--theme " + quoteCliArgument(theme),
-            "--center=" + formatNumber(camera.center[0]) + "," + formatNumber(camera.center[1]),
-            "--zoom=" + formatNumber(camera.zoom),
-            "--bearing=" + formatNumber(camera.bearing),
-            "--pitch=" + formatNumber(camera.pitch),
-            "--width=" + width,
-            "--height=" + height,
-            "--dpr=" + dpr,
-            "--out=" + quoteCliArgument(name + ".png")
-          ].join(" ");
-          if (!await copyText(command)) {
-            setFeedback("Clipboard access is unavailable.");
-            return;
-          }
-          setFeedback("Exploratory capture command copied.");
-          return;
-        }
-        const definition = {
-          theme,
-          camera: {
-            type: "center",
-            center: [roundNumber(camera.center[0]), roundNumber(camera.center[1])],
-            zoom: roundNumber(camera.zoom),
-            bearing: roundNumber(camera.bearing),
-            pitch: roundNumber(camera.pitch)
-          },
-          viewport: {width, height, dpr},
-          target: {kind: "map"}
-        };
-        const serialized = JSON.stringify(definition, null, 2).replace(/^/gm, "  ");
-        if (!await copyText("'" + name + "': " + serialized.trimStart() + ",")) {
-          setFeedback("Clipboard access is unavailable.");
-          return;
-        }
-        setFeedback("Scene entry copied.");
-      }
 
-      function readMapViewport(side, dpr) {
-        if (options.workbenchUrl) return currentWorkbenchDefinition().viewport;
-        const container = side.map?.getContainer?.();
-        const canvas = side.map?.getCanvas?.();
-        const maximum = dpr === 2 ? 2048 : 4096;
-        const width = boundedInteger(container?.clientWidth || canvas?.clientWidth, 64, maximum, 1280);
-        const height = boundedInteger(container?.clientHeight || canvas?.clientHeight, 64, maximum, 800);
-        return {width, height};
-      }
 
-      async function copyText(value) {
-        try {
-          await navigator.clipboard.writeText(value);
-          return true;
-        } catch {
-          const textarea = document.createElement("textarea");
-          textarea.value = value;
-          textarea.style.position = "fixed";
-          textarea.style.opacity = "0";
-          document.body.append(textarea);
-          textarea.select();
-          const copied = document.execCommand("copy");
-          textarea.remove();
-          return copied;
-        }
-      }
 
       function writeUrlState() {
         const url = new URL(location.href);
         url.searchParams.set("mode", stage.dataset.mode);
-        url.searchParams.set("split", String(Math.round(Number(splitInput.value))));
-        url.searchParams.set("alpha", String(Math.round(Number(alphaInput.value))));
+        url.searchParams.set("split", String(Math.round(initialUi.split)));
+        url.searchParams.set("alpha", String(Math.round(initialUi.alpha)));
         url.searchParams.set("driver", stage.dataset.driver);
         if (canonicalCamera) {
           const values = {
@@ -1524,7 +1372,6 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         if (!side.runtimeErrors.includes(message)) side.runtimeErrors.push(message);
         side.runtimeErrors = side.runtimeErrors.slice(-16);
         side.runtimeFailed = true;
-        renderSideStatus(side);
         updateDocumentReadiness();
       }
 
@@ -1592,10 +1439,32 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       function roundNumber(value) { return Number(value.toFixed(6)); }
       function formatNumber(value) { return String(roundNumber(value)); }
       function wrapLongitude(value) { return ((value + 180) % 360 + 360) % 360 - 180; }
-      function setFeedback(value) { feedback.textContent = value; setTimeout(() => { if (feedback.textContent === value) feedback.textContent = ""; }, 6000); }
+      function setFeedback(value) { globalThis.__tileflowDevtoolsUI?.feedback(value); }
       ${controlsClient}
       ${workbenchClient}
+      globalThis.__tileflowDevtoolsHost = {
+        schemaVersion: 1,
+        subscribePreviewStatus: (child, receive) => {
+          const side = Object.values(states).find((entry) => entry.frame.contentWindow === child);
+          if (!side) return undefined;
+          side.previewStatusReceiver = receive;
+          if (side.latestArtifactStatus) receive(side.latestArtifactStatus);
+          return () => { if (side.previewStatusReceiver === receive) side.previewStatusReceiver = undefined; };
+        },
+        sides: () => Object.values(states), active: () => states[activeSideId],
+        selection: () => selectedInspection,
+        clearFeatureSelection: () => {
+          selectedInspection = undefined;
+          for (const side of Object.values(states)) { side.highlightFeature?.(-1); side.hoverFeature?.(-1); }
+        },
+        loadSidecar: (side) => loadSidecar(side),
+        selectFeature: (index) => { if (selectedInspection && selectedInspection.features[index]) { selectedInspection.featureIndex = index; renderInspection(); } },
+        inspect: (enabled) => setInspectionEnabled(enabled), inspecting: () => inspectionEnabled,
+        controls: () => loadMapControls(),
+        sprites: () => loadSprites(states[activeSideId])
+      };
     </script>
+    <script type="module"${nonceAttribute} src="${fontBasePath}/__workbench-runtime/devtools.js"></script>
   </body>
 </html>`;
 }

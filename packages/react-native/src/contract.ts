@@ -43,6 +43,7 @@ export type MapThemeBlend = Readonly<{
 export type MapSourceProps = Readonly<{
   source: MapSource;
   theme?: MapThemeSelection;
+  timeOfDay?: TileflowNativeSourceOptions['timeOfDay'];
   /** Cross-fades theme changes, including entering and leaving a blend. */
   themeTransition?: MapThemeTransition;
   /**

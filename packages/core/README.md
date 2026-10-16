@@ -60,7 +60,7 @@ Omitted fields inherit, but declaring a field does not imply a recursive merge:
 - `modules` merges by domain. Declaring `roads(...)` replaces that domain's inherited request and
   render contributions. Use `refine(...)` to patch it, `disable()` to remove it, and `reset()` for
   an explicit reset inside a supported patch.
-- `themes` replaces the complete collection and clears an inherited `systemThemes` mapping.
+- `themes` replaces the complete collection and clears inherited `systemThemes` and `timeOfDay` mappings.
   `defaultTheme` can select an inherited concrete theme; `systemThemes` replaces its complete mapping.
 - `icons` replaces the ordered contributor list. Omission inherits it; `[]` disables it. Local and
   package directories can be combined with explicit locked `iconSet('@team/set')` descriptors.
@@ -141,7 +141,7 @@ receipts must use a concrete theme such as `light` or `dark`.
 
 Because every theme of a map shares one structure, a browser map can cross-fade between themes or
 show a continuous blend of them on the same MapLibre instance, with no extra requests. See
-[theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md).
+[theme transitions, time-of-day presets and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md).
 The same controller can make chosen modules recede and the map's labels fade so an application's
 own content reads first; see [map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md).
 It also sets the style-wide states that themes read with `expr.globalState`, easing numbers so the

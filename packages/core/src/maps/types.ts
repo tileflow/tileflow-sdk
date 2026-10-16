@@ -13,6 +13,7 @@ import type {
 } from '../overlays';
 import {tileflowPortableIdSchema} from '../portable-identity';
 import type {TileflowTheme, TileflowThemeName} from '../themes';
+import type {TileflowTimeOfDayVariants} from '../time-of-day';
 import type {TileflowProjection, TileflowTerrain, TileflowViewConfig} from '../types';
 import type {TileflowFontDirectory, TileflowGlyphs, TileflowModelDirectory} from './assets';
 import type {TileflowAuthoringModules} from './operations';
@@ -76,6 +77,8 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
   terrain?: TileflowTerrain;
   /** Complete named appearances. Omission inherits; declaration replaces the collection. */
   themes?: Readonly<Record<TileflowThemeName, TileflowTheme>>;
+  /** Optional artistic moments per theme family. Omission inherits; {} disables inheritance. */
+  timeOfDay?: TileflowTimeOfDayVariants;
   view?: TileflowViewConfig;
 };
 

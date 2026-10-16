@@ -1,11 +1,12 @@
 import {validateTileflowBrowserThemeBlendSelection} from '@tileflow/core/browser';
 import {
+  isTileflowTimeOfDay,
   validateTileflowRuntimeSource,
   validateTileflowThemeSelection,
 } from '@tileflow/core/runtime';
 
 /**
- * @typedef {{source?: unknown, theme?: unknown, themeBlend?: unknown, themeTransition?: unknown}}
+ * @typedef {{source?: unknown, theme?: unknown, timeOfDay?: unknown, themeBlend?: unknown, themeTransition?: unknown}}
  *   TileflowMapStyleInput
  */
 /** @typedef {{ok: true} | {error: string; ok: false}} TileflowMapStyleInputValidation */
@@ -19,6 +20,9 @@ export function validateTileflowMapStyleInputs(input) {
   if (!sourceValidation.ok) return sourceValidation;
   if (input.theme !== undefined && !validateTileflowThemeSelection(input.theme)) {
     return {error: 'theme must be a concrete portable theme name or "system"', ok: false};
+  }
+  if (input.timeOfDay !== undefined && !isTileflowTimeOfDay(input.timeOfDay)) {
+    return {error: 'timeOfDay must be day, dawn, dusk, or night', ok: false};
   }
   if (
     input.themeBlend !== undefined &&

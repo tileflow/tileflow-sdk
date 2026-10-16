@@ -7,6 +7,8 @@ import {
   tileflowComparisonSchemaVersion,
 } from '../src/comparison';
 import {renderTileflowComparisonHtml} from '../src/comparison-html';
+import type {DevtoolsHost} from '../src/devtools/types';
+import {previewSceneClient} from '../src/preview-scene';
 import {fixtureLightTheme} from './theme-fixture';
 
 const leftHandler = (request: Request) =>
@@ -14,7 +16,7 @@ const leftHandler = (request: Request) =>
 const rightHandler = (request: Request) =>
   new Response(`right:${new URL(request.url).pathname}`, {headers: {'x-side': 'right'}});
 
-test('renders a self-contained comparison workbench with versioned bridge and review tools', () => {
+test('renders a map-only workspace with a versioned bridge and no capture or comparison chrome', () => {
   const html = renderTileflowComparisonHtml({
     basePath: '',
     initialMode: 'side-by-side',
@@ -46,10 +48,6 @@ test('renders a self-contained comparison workbench with versioned bridge and re
   assert.match(html, /history\.replaceState/);
   assert.match(html, /singleQueryValue\(query, "split"\)/);
   assert.match(html, /singleQueryValue\(query, "alpha"\)/);
-  assert.ok(
-    html.indexOf('splitInput.value = String(initialUi.split)') <
-      html.indexOf('setMode(initialUi.mode || options.initialMode)'),
-  );
   assert.match(html, /side\.sidecarPromise = undefined/);
   assert.match(html, /side\.sidecarAbort\?\.abort\(\)/);
   assert.match(html, /side\.loadEpoch !== epoch/);
@@ -66,11 +64,26 @@ test('renders a self-contained comparison workbench with versioned bridge and re
   assert.match(html, /Sprite atlas/);
   assert.match(html, /spriteAssetUrl\(base, "\.json"\)/);
   assert.match(html, /urlBelongsToSide\(base, side\)/);
-  assert.match(html, /tileflow capture/);
-  assert.match(html, /"--center="/);
-  assert.match(html, /side\.map\?\.getContainer\?\.\(\)/);
+  for (const id of [
+    'capture-settings',
+    'copy-scene',
+    'copy-command',
+    'wb-capture',
+    'wb-review',
+    'wb-history',
+    'wb-live-tools',
+    'wb-selection-context',
+    'controls-copy',
+    'controls-close',
+    'controls-owner',
+    'wb-view',
+    'wb-map',
+    'wb-scene',
+  ])
+    assert.doesNotMatch(html, new RegExp('id="' + id + '"'));
+  assert.doesNotMatch(html, /class="(?:brandbar|toolbar|pane-label|statusbar)"/);
+  assert.match(html, /__workbench-runtime\/devtools\.js/);
   assert.match(html, /roundNumber\(camera\.zoom\)/);
-  assert.match(html, /target: \{kind: "map"\}/);
   assert.match(html, /prefers-reduced-motion/);
   assert.match(html, /aria-controls="inspector"/);
   assert.match(html, /message\.requestId !== side\.lastCameraRequestId/);
@@ -91,17 +104,70 @@ test('single-map Workbench loads one viewer and retains camera and inspection co
   assert.equal(harness.element('right-frame').listeners.has('load'), false);
   harness.element('inspect-toggle').dispatch('click');
   assert.equal(harness.element('inspector').hidden, false);
-  harness.element('copy-command').dispatch('click');
-  await harness.settle();
-  assert.match(harness.clipboardText(), /tileflow capture/);
   assert.equal(harness.maps.right.jumpCalls.length, 0);
+});
+
+test('Inspect row hover previews geometry without changing the selected edit target', async () => {
+  const harness = runComparisonHarness('', {single: true});
+  const container = Object.assign(new FakeElement(), {clientHeight: 600, clientWidth: 800});
+  let offset = 0;
+  Object.assign(harness.maps.left, {
+    getContainer: () => container,
+    project: ([x, y]: number[]) => ({x: x * 10 + offset, y: y * 10}),
+  });
+  const selected = {
+    geometry: {type: 'Point', coordinates: [2, 3]},
+    id: 1,
+    layer: {id: 'selected'},
+    properties: {},
+  };
+  const hovered = {
+    geometry: {type: 'Point', coordinates: [7, 8]},
+    id: 2,
+    layer: {id: 'hovered'},
+    properties: {},
+  };
+  harness.maps.left.renderedFeatures = [selected, hovered];
+  harness.load('left');
+  await harness.settle();
+  harness.host.inspect(true);
+  harness.maps.left.emit('click', {point: {x: 20, y: 30}, lngLat: {lng: 2, lat: 3}});
+  const side = harness.host.active();
+  const overlay = container.children[0] as FakeElement;
+  const circle = () => overlay.children[0] as FakeElement;
+  assert.equal(circle().attributes.get('cx'), '20');
+
+  side.hoverFeature!(1);
+  assert.equal(circle().attributes.get('cx'), '70');
+  assert.equal(harness.host.selection()!.featureIndex, 0);
+  assert.equal(side.getInspectedFeature!(), selected);
+  // The preview follows the camera while leaving the selected feature untouched.
+  offset = 5;
+  harness.maps.left.emit('move');
+  assert.equal(circle().attributes.get('cx'), '75');
+  side.hoverFeature!(-1);
+  assert.equal(circle().attributes.get('cx'), '25');
+  assert.equal(side.getInspectedFeature!(), selected);
+  side.hoverFeature!(999);
+  assert.equal(circle().attributes.get('cx'), '25');
+
+  side.hoverFeature!(1);
+  harness.host.selectFeature(1);
+  side.hoverFeature!(-1);
+  assert.equal(side.getInspectedFeature!(), hovered);
+  assert.equal(circle().attributes.get('cx'), '75');
+  // Reconnecting must remove the old overlay and discard the old hover data.
+  harness.load('left');
+  assert.equal(overlay.removed, true);
+  side.hoverFeature!(1);
+  assert.equal(container.children.length, 1);
 });
 
 test('Controls waits safely while the map is replacing its style', async () => {
   const harness = runComparisonHarness('', {single: true});
+  harness.maps.left.getStyle = () => undefined as never;
   harness.load('left');
   await harness.settle();
-  harness.maps.left.getStyle = () => undefined as never;
   harness.element('map-controls').hidden = true;
   await harness.click('controls-toggle');
   await harness.settle();
@@ -122,25 +188,20 @@ test('Controls recovers after a temporary style gap without changing the map gen
   harness.maps.left.getStyle = () => undefined as never;
   harness.pollIntervals();
   await harness.settle();
-  assert.equal(harness.element('controls-modules').disabled, true);
+  assert.equal(harness.element('controls-modules').disabled, false);
   harness.maps.left.getStyle = getStyle;
   harness.pollIntervals();
   await harness.settle();
   assert.equal(harness.element('controls-modules').disabled, false);
 });
 
-test('Controls opens above review and history and toggles on the first click', async () => {
+test('Controls toggles on the first click', async () => {
   const harness = runComparisonHarness('', {single: true});
   harness.load('left');
   await harness.settle();
   harness.element('map-controls').hidden = true;
-  harness.element('wb-review').hidden = false;
-  harness.element('wb-history').hidden = false;
   await harness.click('controls-toggle');
   assert.equal(harness.element('map-controls').hidden, false);
-  assert.equal(harness.element('wb-review').hidden, true);
-  assert.equal(harness.element('wb-history').hidden, true);
-  assert.equal(harness.element('wb-history-toggle').attributes.get('aria-expanded'), 'false');
   await harness.click('controls-toggle');
   assert.equal(harness.element('map-controls').hidden, true);
 });
@@ -189,10 +250,8 @@ test('Vegetation Auto inherits the map and returning to it removes only the mode
   representation().dispatch('change');
   harness.flushTimeouts();
   await harness.settle();
-  const patch = () =>
-    JSON.parse(new URL(harness.element('left-frame').src).searchParams.get('controls')!);
+  const patch = () => JSON.parse(new URL(harness.previewUrl()).searchParams.get('controls')!);
   assert.equal(patch().vegetation.mode, 'auto');
-  harness.load('left');
   harness.pollIntervals();
   await harness.settle();
   assert.equal(representation().value, 'auto');
@@ -201,7 +260,6 @@ test('Vegetation Auto inherits the map and returning to it removes only the mode
   harness.flushTimeouts();
   await harness.settle();
   assert.deepEqual(patch(), {vegetation: {threeDimensional: {heightScale: 1.2}}});
-  harness.load('left');
   harness.pollIntervals();
   await harness.settle();
   assert.equal(representation().value, 'inherit');
@@ -237,11 +295,15 @@ test('Controls automatically groups edits, preserves the camera and keeps detail
     vegetation: {threeDimensional: {heightScale: 1.6}},
   });
   const frame = harness.element('left-frame');
-  const url = new URL(frame.src);
+  const url = new URL(harness.previewUrl());
   assert.equal(url.searchParams.get('lng'), '-5');
   assert.equal(url.searchParams.get('zoom'), '5');
-  assert.equal(modules.disabled, true);
-  harness.load('left');
+  assert.equal(modules.disabled, false);
+  assert.equal(frame.src, '/left/');
+  assert.equal(
+    modules.querySelectorAll('input').find((input) => input.type === 'number'),
+    height,
+  );
   harness.pollIntervals();
   await harness.settle();
   assert.equal(modules.disabled, false);
@@ -272,17 +334,280 @@ test('Controls discards an obsolete compile and applies the latest edit without 
   harness.flushTimeouts();
   height.value = '3';
   height.dispatch('input');
+  const modules = harness.element('controls-modules');
+  assert.equal(modules.disabled, false);
+  assert.equal(harness.element('controls-runtime').disabled, false);
+  const camera = {center: [-3, 41] as [number, number], zoom: 14, bearing: 30, pitch: 45};
+  harness.maps.left.camera = camera;
   harness.flushTimeouts();
   assert.equal(requests.length, 1);
   requests[0]!.resolve(Response.json({}));
   await harness.settle();
   assert.equal(frame.src, initial);
+  assert.equal(harness.maps.left.styleCalls.length, 0);
   assert.equal(requests.length, 2);
   requests[1]!.resolve(Response.json({}));
   await harness.settle();
-  assert.deepEqual(JSON.parse(new URL(frame.src).searchParams.get('controls')!), {
+  assert.deepEqual(JSON.parse(new URL(harness.previewUrl()).searchParams.get('controls')!), {
     vegetation: {threeDimensional: {heightScale: 3}},
   });
+  assert.equal(harness.maps.left.styleCalls.length, 1);
+  assert.deepEqual(harness.maps.left.camera, camera);
+  assert.equal(new URL(harness.previewUrl()).searchParams.get('zoom'), '14');
+  assert.equal(
+    modules.querySelectorAll('input').find((input) => input.type === 'number'),
+    height,
+  );
+});
+
+test('3D and animation update the existing runtime without fetching or replacing the style', async () => {
+  const compiled: URL[] = [];
+  const harness = runComparisonHarness('', {
+    single: true,
+    controlsRequest: (url) => {
+      if (url.pathname.endsWith('/__controls')) return Response.json(controlsFixture);
+      compiled.push(url);
+      return Response.json({});
+    },
+  });
+  harness.load('left');
+  await harness.settle();
+  harness.element('controls-3d').checked = true;
+  harness.element('controls-3d').dispatch('change');
+  harness.element('controls-animation').value = '800';
+  harness.element('controls-animation').dispatch('change');
+  harness.flushTimeouts();
+  await harness.settle();
+  const query = new URL(harness.previewUrl()).searchParams;
+  assert.equal(query.get('buildings3d'), 'on');
+  assert.equal(query.get('animation'), '800');
+  assert.equal(compiled.length, 0);
+  assert.equal(harness.maps.left.styleCalls.length, 0);
+  assert.equal(harness.element('left-frame').src, '/left/');
+  assert.equal(harness.maps.left.getPitch(), 60);
+});
+
+test('scene style changes keep custom 3D layers above reinserted surfaces without remounting', async () => {
+  const ground = {id: 'ground', type: 'fill'};
+  const labels = {id: 'labels', type: 'symbol'};
+  const buildings = {id: 'buildings-3d', type: 'custom'};
+  const trees = {id: 'trees-3d', type: 'custom'};
+  const overlay = {id: 'overlay', type: 'custom'};
+  const harness = runComparisonHarness('', {
+    single: true,
+    controlsRequest: (url) =>
+      Response.json(
+        url.pathname.endsWith('/__controls') ? controlsFixture : {layers: [ground, labels]},
+      ),
+  });
+  harness.load('left');
+  await harness.settle();
+  const map = harness.maps.left;
+  map.styleLayers = [ground, buildings, trees, {id: 'old-label', type: 'symbol'}, labels, overlay];
+  const setStyle = map.setStyle.bind(map);
+  map.setStyle = (style, options) => {
+    setStyle(style, options);
+    // MapLibre excludes custom layers from style diffs. Reinserted source layers land
+    // above the still-mounted custom layers, which must keep their relative anchors.
+    map.styleLayers = [buildings, trees, overlay, ...map.styleLayers];
+  };
+  harness.element('controls-3d').checked = true;
+  const height = harness
+    .element('controls-modules')
+    .querySelectorAll('input')
+    .find((input) => input.type === 'number')!;
+  for (const value of ['2', '3']) {
+    height.value = value;
+    height.dispatch('input');
+    harness.flushTimeouts();
+    await harness.settle();
+    assert.deepEqual(map.getLayersOrder(), [
+      'ground',
+      'buildings-3d',
+      'trees-3d',
+      'labels',
+      'overlay',
+    ]);
+    assert.equal(map.getLayer('buildings-3d'), buildings);
+    assert.equal(map.getLayer('trees-3d'), trees);
+    assert.equal(map.getLayer('overlay'), overlay);
+    assert.equal(new URL(harness.previewUrl()).searchParams.get('buildings3d'), 'on');
+    assert.equal(harness.element('left-frame').src, '/left/');
+  }
+});
+
+test('restorable styles strip renderer timing flags before reaching style validation', async () => {
+  const saved = {
+    version: 8,
+    collectResourceTiming: true,
+    sources: {
+      tiles: {type: 'vector', url: 'https://example.test/tiles.json', collectResourceTiming: true},
+    },
+    layers: [],
+  };
+  const harness = runComparisonHarness('', {
+    single: true,
+    controlsRequest: (url) =>
+      Response.json(url.pathname.endsWith('/__controls') ? controlsFixture : saved),
+  });
+  harness.load('left');
+  await harness.settle();
+  const height = harness
+    .element('controls-modules')
+    .querySelectorAll('input')
+    .find((input) => input.type === 'number')!;
+  height.value = '2';
+  height.dispatch('input');
+  harness.flushTimeouts();
+  await harness.settle();
+  const applied = harness.maps.left.styleCalls.at(-1)!.style as typeof saved;
+  assert.equal('collectResourceTiming' in applied, false);
+  assert.equal('collectResourceTiming' in applied.sources.tiles, false);
+  assert.equal(applied.sources.tiles.url, saved.sources.tiles.url);
+  assert.equal(saved.sources.tiles.collectResourceTiming, true);
+});
+
+test('an edit superseded during font preparation never reaches MapLibre', async () => {
+  let finishFonts!: () => void;
+  let preparations = 0;
+  const harness = runComparisonHarness('', {
+    single: true,
+    prepareScene: () =>
+      ++preparations === 1
+        ? new Promise<void>((resolve) => {
+            finishFonts = resolve;
+          })
+        : Promise.resolve(),
+    controlsRequest: (url) =>
+      Response.json(url.pathname.endsWith('/__controls') ? controlsFixture : {}),
+  });
+  harness.load('left');
+  await harness.settle();
+  const height = harness
+    .element('controls-modules')
+    .querySelectorAll('input')
+    .find((input) => input.type === 'number')!;
+  height.value = '2';
+  height.dispatch('input');
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.equal(preparations, 1);
+  height.value = '4';
+  height.dispatch('input');
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.equal(harness.maps.left.styleCalls.length, 0);
+  finishFonts();
+  await harness.settle();
+  assert.equal(harness.maps.left.styleCalls.length, 1);
+  assert.deepEqual(JSON.parse(new URL(harness.previewUrl()).searchParams.get('controls')!), {
+    vegetation: {threeDimensional: {heightScale: 4}},
+  });
+  assert.equal(harness.element('left-frame').src, '/left/');
+});
+
+test('a failed compile leaves the map and editable values intact, and a later edit recovers', async () => {
+  let failed = true;
+  const harness = runComparisonHarness('', {
+    single: true,
+    controlsRequest: (url) =>
+      url.pathname.endsWith('/__controls')
+        ? Response.json(controlsFixture)
+        : failed
+          ? Response.json({error: 'Invalid setting'}, {status: 400})
+          : Response.json({}),
+  });
+  harness.load('left');
+  await harness.settle();
+  const modules = harness.element('controls-modules');
+  const height = modules.querySelectorAll('input').find((input) => input.type === 'number')!;
+  height.value = '2';
+  height.dispatch('input');
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.equal(harness.element('controls-status').hidden, false);
+  assert.equal(modules.disabled, false);
+  assert.equal(harness.maps.left.styleCalls.length, 0);
+  assert.equal(height.value, '2');
+  failed = false;
+  height.value = '3';
+  height.dispatch('input');
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.equal(harness.maps.left.styleCalls.length, 1);
+  assert.equal(harness.element('controls-status').hidden, true);
+  assert.equal(harness.element('left-frame').src, '/left/');
+});
+
+test('palette changes share the latest-edit queue and never replace focused module fields', async () => {
+  const requests: {url: URL; resolve: (response: Response) => void}[] = [];
+  const harness = runComparisonHarness('', {
+    single: true,
+    controlsRequest: (url) =>
+      url.pathname.endsWith('/__controls')
+        ? Response.json({...controlsFixture, theme: url.searchParams.get('theme')})
+        : !url.searchParams.has('controls')
+          ? Response.json({layers: []}) // Palette swatches read base styles independently of edits.
+          : new Promise<Response>((resolve) => requests.push({url, resolve})),
+    workbenchRequest: (path) =>
+      path === ''
+        ? {
+            sides: {
+              left: {
+                generation: 1,
+                status: 'ready',
+                selections: ['theme', 'dark'].map((theme) => ({
+                  id: 'map:map:' + theme,
+                  map: 'map',
+                  theme,
+                  url: '/left/?map=map&theme=' + theme,
+                })),
+              },
+            },
+          }
+        : {saved: true},
+  });
+  harness.load('left');
+  await harness.settle();
+  const modules = harness.element('controls-modules');
+  const height = modules.querySelectorAll('input').find((input) => input.type === 'number')!;
+  height.value = '2';
+  height.dispatch('input');
+  harness.flushTimeouts();
+  harness.element('wb-theme').value = 'dark';
+  harness.element('wb-theme').dispatch('change');
+  height.value = '3';
+  height.dispatch('input');
+  harness.focus(height);
+  harness.flushTimeouts();
+  await harness.settle();
+  harness.pollIntervals();
+  await harness.settle();
+  assert.equal(harness.element('wb-theme').value, 'dark');
+  assert.equal(modules.disabled, false);
+  assert.equal(harness.activeElement(), height);
+  assert.equal(
+    modules.querySelectorAll('input').find((input) => input.type === 'number'),
+    height,
+  );
+  assert.equal(height.value, '3');
+  requests[0]!.resolve(Response.json({}));
+  await harness.settle();
+  assert.equal(harness.maps.left.styleCalls.length, 0);
+  assert.equal(requests.length, 2);
+  assert.match(requests[1]!.url.pathname, /\/dark.json$/);
+  assert.deepEqual(JSON.parse(requests[1]!.url.searchParams.get('controls')!), {
+    vegetation: {threeDimensional: {heightScale: 3}},
+  });
+  requests[1]!.resolve(
+    Response.json({metadata: {'tileflow:map': 'map', 'tileflow:theme': 'dark'}}),
+  );
+  await harness.settle();
+  harness.pollIntervals();
+  await harness.settle();
+  assert.equal(harness.maps.left.metadata['tileflow:theme'], 'dark');
+  assert.equal(harness.activeElement(), height);
+  assert.equal(harness.element('left-frame').src, '/left/');
 });
 
 test('Controls rejects incomplete input and Reset supersedes a pending compilation', async () => {
@@ -315,11 +640,9 @@ test('Controls rejects incomplete input and Reset supersedes a pending compilati
   harness.flushTimeouts();
   requests[0]!.resolve(Response.json({}));
   await harness.settle();
-  assert.equal(requests.length, 2);
-  assert.equal(requests[1]!.url.searchParams.has('controls'), false);
-  requests[1]!.resolve(Response.json({}));
-  await harness.settle();
-  const url = new URL(harness.element('left-frame').src);
+  // Reset matches the already displayed original style; no second compile is necessary.
+  assert.equal(requests.length, 1);
+  const url = new URL(harness.previewUrl());
   assert.equal(url.searchParams.has('controls'), false);
   assert.equal(url.searchParams.get('buildings3d'), 'off');
 });
@@ -406,7 +729,6 @@ test('keeps the selected driver when a mode resize emits a passive camera event'
   assert.equal(afterSplit.searchParams.get('mode'), 'split');
   assert.equal(afterSplit.searchParams.get('driver'), 'left');
   assert.equal(afterSplit.searchParams.get('lng'), '-5');
-  assert.equal(harness.element('driver').textContent, 'Active map: left');
   assert.deepEqual(harness.maps.right.jumpCalls.at(-1), {
     bearing: 1,
     center: [-5, 40],
@@ -463,7 +785,6 @@ test('selects the inspected side and exposes every bounded rendered feature', ()
   harness.maps.right.emit('click', {lngLat: {lat: 10, lng: 20}, point: {x: 4, y: 5}});
 
   assert.equal(new URL(harness.currentUrl()).searchParams.get('driver'), 'right');
-  assert.equal(harness.element('driver').textContent, 'Active map: right');
   const inspection = harness.element('inspection');
   const pickerLabel = inspection.children[1] as FakeElement;
   const picker = pickerLabel.children[1] as FakeElement;
@@ -544,100 +865,6 @@ test('emits semantic attribution from the selected compiler-sidecar layer', asyn
       authoringPaths: ['modules.land'],
     },
   ]);
-});
-
-test('copies a complete scene and exploratory command from the real map viewport', async () => {
-  const harness = runComparisonHarness();
-  harness.maps.left.camera = {
-    bearing: 1.123456789,
-    center: [-5.123456789, 40.987654321],
-    pitch: 2.987654321,
-    zoom: 15.213399999999979,
-  };
-  harness.load('left');
-  harness.load('right');
-
-  await harness.click('copy-scene');
-  const scene = harness.clipboardText();
-  assert.match(scene, /"theme": "theme"/);
-  assert.match(scene, /"width": 800/);
-  assert.match(scene, /"height": 600/);
-  assert.match(scene, /"center": \[\s+-5\.123457,\s+40\.987654/);
-  assert.match(scene, /"zoom": 15\.2134/);
-  assert.doesNotMatch(scene, /15\.213399999999979/);
-  assert.match(scene, /"target": \{\s+"kind": "map"/);
-  const sceneMatch = /^'([^']+)': ([\s\S]+),$/u.exec(scene);
-  assert.ok(sceneMatch);
-  const sceneDefinition = JSON.parse(sceneMatch[2]!) as TileflowMapScene;
-  assert.equal(Object.hasOwn(sceneDefinition, 'map'), false);
-  assert.doesNotThrow(() =>
-    parseTileflowMap(
-      defineMap({
-        id: 'map',
-        version: 1,
-        defaultTheme: 'theme',
-        themes: {theme: fixtureLightTheme},
-        scenes: {[sceneMatch[1]!]: sceneDefinition},
-      }),
-    ),
-  );
-
-  await harness.click('copy-command');
-  assert.doesNotMatch(harness.clipboardText(), /--config/u);
-  assert.match(
-    harness.clipboardText(),
-    /^tileflow capture --map map --theme theme --center=-5\.123457,40\.987654 --zoom=15\.2134 --bearing=1\.123457 --pitch=2\.987654 --width=800 --height=600 --dpr=1 --out=comparison-view\.png$/,
-  );
-});
-
-test('copies the active side config with shell-safe quoting', async () => {
-  const harness = runComparisonHarness('', {
-    leftCaptureConfig: 'configs/candidate map.ts',
-    rightCaptureConfig: "configs/reference's map.ts",
-  });
-  harness.load('left');
-  harness.load('right');
-
-  await harness.click('copy-command');
-  assert.match(
-    harness.clipboardText(),
-    /^tileflow capture --config 'configs\/candidate map\.ts' --map map --theme theme /u,
-  );
-
-  await harness.click('driver');
-  await harness.click('copy-command');
-  assert.match(
-    harness.clipboardText(),
-    /^tileflow capture --config 'configs\/reference'"'"'s map\.ts' --map map --theme theme /u,
-  );
-});
-
-test('enforces the Core portable-id boundary for copied scene names', async () => {
-  const maximumName = `a${'b'.repeat(63)}`;
-  const validHarness = runComparisonHarness();
-  validHarness.load('left');
-  validHarness.load('right');
-  validHarness.element('scene-name').value = maximumName;
-  await validHarness.click('copy-scene');
-  assert.match(validHarness.clipboardText(), new RegExp(`^'${maximumName}':`, 'u'));
-
-  for (const name of [
-    'constructor',
-    'prototype',
-    'con',
-    'aux',
-    'com1',
-    'lpt9',
-    `a${'b'.repeat(64)}`,
-    'Mixed-case',
-  ]) {
-    const harness = runComparisonHarness();
-    harness.load('left');
-    harness.load('right');
-    harness.element('scene-name').value = name;
-    await harness.click('copy-scene');
-    assert.equal(harness.clipboardText(), '', name);
-  }
 });
 
 test('routes the shell and two existing handlers without changing side routes', async () => {
@@ -782,15 +1009,14 @@ test('validates same-origin owned URLs and disjoint bounded route prefixes', () 
   );
 });
 
-test('Workbench copies fixed-frame context, blocks capture while switching scenes and restores the left driver', async () => {
+test('Workbench publishes viewport context and changes palette without replacing its camera', async () => {
   const requests: Array<{path: string; body: unknown}> = [];
   const selection = {
-    id: 'scene:proof',
-    scene: 'proof',
-    label: 'Proof',
+    id: 'map:map:faded',
+    label: 'Faded',
     map: 'map',
-    theme: 'theme',
-    url: '/left/?scene=proof',
+    theme: 'faded',
+    url: '/left/?map=map&theme=faded',
     camera: {type: 'center', center: [2, 41], zoom: 7},
     viewport: {width: 640, height: 480, dpr: 1},
   };
@@ -802,7 +1028,21 @@ test('Workbench copies fixed-frame context, blocks capture while switching scene
       if (path === '')
         return {
           busy: false,
-          sides: {left: {generation: 1, status: 'ready', selections: [selection]}},
+          sides: {
+            left: {
+              generation: 1,
+              status: 'ready',
+              selections: [
+                {
+                  ...selection,
+                  id: 'map:map:theme',
+                  theme: 'theme',
+                  url: '/left/?map=map&theme=theme',
+                },
+                selection,
+              ],
+            },
+          },
         };
       if (path === '/context') return {saved: true};
       if (path === '/capture') return {captureId: 'a'.repeat(64)};
@@ -812,42 +1052,30 @@ test('Workbench copies fixed-frame context, blocks capture while switching scene
   });
   harness.load('left');
   await harness.settle();
-  await harness.click('wb-copy-context');
-  const context = JSON.parse(harness.clipboardText());
-  assert.equal(context.definition.viewport.width, 1280);
-  assert.equal(context.definition.viewport.height, 800);
+  harness.pollIntervals();
+  await harness.settle();
+  const context = (
+    requests.find((request) => request.path === '/context')!.body as {
+      context: {
+        definition: {viewport: {width: number; height: number}};
+        displayedGeneration: number;
+      };
+    }
+  ).context;
+  assert.equal(context.definition.viewport.width, 800);
+  assert.equal(context.definition.viewport.height, 600);
   assert.equal(context.displayedGeneration, 1);
-  assert.match(context.commands.capture, /--width=1280/);
-  harness.element('wb-view').value = selection.id;
-  harness.element('wb-view').dispatch('change');
-  assert.equal(harness.element('wb-width').value, '640');
-  assert.equal(harness.element('wb-capture').disabled, true);
-  await harness.click('wb-capture');
-  assert.equal(requests.filter((request) => request.path === '/capture').length, 0);
-  assert.match(harness.currentUrl(), /view=scene%3Aproof/);
-  harness.load('left');
+  const camera = structuredClone(harness.maps.left.camera);
+  harness.element('wb-theme').value = selection.theme;
+  harness.element('wb-theme').dispatch('change');
+  assert.match(harness.currentUrl(), /view=map%3Amap%3Afaded/);
+  harness.flushTimeouts();
   await harness.settle();
-  const frame = harness.element('left-frame') as FakeElement & {src: string};
-  const source = frame.src;
-  frame.src = source + '&controls=' + encodeURIComponent('{"roads":{"enabled":false}}');
-  await harness.click('wb-capture');
-  assert.equal(requests.filter((request) => request.path === '/capture').length, 0);
-  frame.src = source;
-  await harness.click('wb-capture');
-  const capture = requests.find((request) => request.path === '/capture')!.body as {
-    generation: number;
-    definition: {viewport: {width: number}};
-  };
-  assert.equal(capture.generation, 1);
-  assert.equal(capture.definition.viewport.width, 640);
-  harness.element('wb-reference').value = 'left|scene:proof';
-  await harness.click('wb-add-reference');
-  harness.load('right');
+  harness.flushTimeouts();
   await harness.settle();
-  harness.element('right-frame').dispatch('focus');
-  assert.equal(harness.element('stage').dataset.driver, 'right');
-  harness.clickMode('single');
-  assert.equal(harness.element('stage').dataset.driver, 'left');
+  assert.equal(new URL(harness.previewUrl()).searchParams.get('theme'), 'faded');
+  assert.deepEqual(harness.maps.left.camera, camera);
+  assert.equal(requests.filter((request) => request.path === '/capture').length, 0);
 });
 
 test('Controls resolves the active map theme and populates its theme selector from the catalog', async () => {
@@ -891,149 +1119,10 @@ test('Controls resolves the active map theme and populates its theme selector fr
   );
   assert.equal(harness.element('wb-theme').value, 'theme');
   assert.equal(harness.element('wb-theme-field').hidden, false);
-  assert.equal(harness.element('wb-map-field').hidden, true);
+  assert.equal(harness.element('wb-time-of-day-field').hidden, true);
 });
 
-test('Workbench compares a new revision using the pinned reference camera and frame after navigation', async () => {
-  const reference = {
-    id: 'a'.repeat(64),
-    scene: 'before-edit',
-    map: 'map',
-    theme: 'theme',
-    savedAt: '2026-10-14T10:00:00Z',
-    imageUrl: '/before.png',
-    definition: {
-      map: 'map',
-      theme: 'theme',
-      camera: {type: 'center', center: [3, 40], zoom: 12, bearing: 0, pitch: 0},
-      viewport: {width: 640, height: 480, dpr: 2},
-    },
-  };
-  const after = {...reference, id: 'b'.repeat(64), scene: 'after-edit', imageUrl: '/after.png'};
-  let captured: {definition: typeof reference.definition; generation: number} | undefined;
-  let compared: unknown;
-  const harness = runComparisonHarness('', {
-    single: true,
-    workbenchRequest: (path, body) => {
-      if (path === '')
-        return {
-          busy: false,
-          sides: {
-            left: {
-              generation: 1,
-              status: 'ready',
-              selections: [
-                {id: 'map:map:theme', map: 'map', theme: 'theme', label: 'Map', url: '/left/'},
-              ],
-            },
-          },
-        };
-      if (path === '/context') return {saved: true};
-      if (path === '/captures')
-        return {records: captured ? [after, reference] : [reference], next: null, warnings: []};
-      if (path === '/capture') {
-        captured = body as typeof captured;
-        return {captureId: after.id};
-      }
-      if (path === '/compare') {
-        compared = body;
-        return {review: {status: 'comparable', exact: {ratio: 0.1}, warnings: []}};
-      }
-      throw new Error('Unexpected request ' + path);
-    },
-  });
-  harness.load('left');
-  await harness.settle();
-  await harness.click('wb-compare-toggle');
-  harness.element('wb-before').value = reference.id;
-  await harness.click('wb-pin-reference');
-  harness.maps.left.camera.center = [-74, 41];
-  harness.maps.left.camera.zoom = 8;
-  harness.element('wb-width').value = '1000';
-  harness.element('wb-height').value = '700';
-  await harness.click('wb-capture-compare');
-  assert.deepEqual(JSON.parse(JSON.stringify(captured?.definition)), {
-    ...reference.definition,
-    target: {kind: 'map'},
-  });
-  assert.equal(captured?.generation, 1);
-  assert.deepEqual(JSON.parse(JSON.stringify(compared)), {before: reference.id, after: after.id});
-  assert.equal(harness.element('wb-review').hidden, false);
-  assert.equal(harness.element('wb-live-picker').hidden, true);
-  assert.match(harness.element('wb-review-result').textContent, /10.00%/);
-  await harness.click('wb-copy-context');
-  assert.equal(JSON.parse(harness.clipboardText()).review.referenceId, reference.id);
-});
-
-test('Deleting a capture confirms first and clears a deleted pinned reference', async () => {
-  const record = {
-    id: 'a'.repeat(64),
-    scene: 'reference',
-    map: 'map',
-    theme: 'theme',
-    savedAt: '2026-10-14T10:00:00Z',
-    imageUrl: '/before.png',
-    definition: {
-      map: 'map',
-      theme: 'theme',
-      camera: {type: 'center', center: [3, 40], zoom: 12},
-      viewport: {width: 640, height: 480, dpr: 1},
-    },
-  };
-  let records = [record],
-    accept = false,
-    deletions = 0;
-  const harness = runComparisonHarness('', {
-    single: true,
-    confirm: (message) => {
-      assert.match(message, /permanently removes/);
-      return accept;
-    },
-    workbenchRequest: (path, body) => {
-      if (path === '')
-        return {
-          busy: false,
-          sides: {
-            left: {
-              generation: 1,
-              status: 'ready',
-              selections: [
-                {id: 'map:map:theme', map: 'map', theme: 'theme', label: 'Map', url: '/left/'},
-              ],
-            },
-          },
-        };
-      if (path === '/captures') return {records, next: null, warnings: []};
-      if (path === '/captures/delete') {
-        assert.deepEqual(JSON.parse(JSON.stringify(body)), {id: record.id});
-        records = [];
-        deletions++;
-        return {deleted: record.id};
-      }
-      return {saved: true};
-    },
-  });
-  harness.load('left');
-  await harness.settle();
-  harness.element('wb-history').hidden = true;
-  await harness.click('wb-history-toggle');
-  const buttons = harness.element('wb-captures').querySelectorAll('button');
-  await Promise.all(
-    buttons.find((button) => button.className === 'capture-reference')!.dispatch('click'),
-  );
-  const remove = buttons.find((button) => button.className === 'capture-delete')!;
-  await Promise.all(remove.dispatch('click'));
-  assert.equal(deletions, 0);
-  assert.equal(harness.element('wb-captures').childElementCount, 1);
-  accept = true;
-  await Promise.all(remove.dispatch('click'));
-  assert.equal(deletions, 1);
-  assert.equal(harness.element('wb-captures').childElementCount, 0);
-  assert.equal(harness.element('wb-reference-bar').hidden, true);
-  assert.equal(harness.element('wb-run-compare').disabled, true);
-});
-
-test('Workbench starts with the selected scene frame without reloading its preview', async () => {
+test('Workbench respects the command’s scene without exposing a scene selector', async () => {
   const harness = runComparisonHarness('', {
     single: true,
     leftPreviewUrl: '/left/?scene=proof',
@@ -1062,12 +1151,8 @@ test('Workbench starts with the selected scene frame without reloading its previ
   });
   harness.load('left');
   await harness.settle();
-  assert.equal(harness.element('wb-width').value, '390');
-  assert.equal(harness.element('wb-height').value, '844');
-  assert.equal(harness.element('scene-dpr').value, '2');
-  assert.equal(harness.element('scene-name').value, 'proof');
-  await harness.click('wb-copy-context');
-  assert.equal(JSON.parse(harness.clipboardText()).definition.viewport.width, 390);
+  assert.equal(harness.element('wb-theme').value, 'theme');
+  assert.equal(harness.element('left-frame').src, '/left/?scene=proof');
 });
 
 test('Workbench API routes cannot shadow previews and bundled UI fonts are served locally', async () => {
@@ -1106,6 +1191,7 @@ function runComparisonHarness(
     single?: boolean;
     confirm?: (message: string) => boolean;
     controlsRequest?: (url: URL) => Response | Promise<Response>;
+    prepareScene?: () => Promise<void>;
     cleanupSecurityError?: boolean;
     workbenchRequest?: (path: string, body?: unknown) => unknown;
     leftCaptureConfig?: string;
@@ -1118,13 +1204,9 @@ function runComparisonHarness(
   const origin = 'http://localhost';
   const location = {href: `${origin}/${search}`, origin};
   const elements = new Map<string, FakeElement>();
-  const modeButtons = ['single', 'side-by-side', 'split', 'overlay', 'blink'].map((mode) => {
-    const button = new FakeElement();
-    button.dataset.mode = mode;
-    return button;
-  });
   const documentElement = new FakeElement();
   const document = {
+    activeElement: undefined as FakeElement | undefined,
     body: new FakeElement(),
     documentElement,
     createElement: (tag: string) => new FakeElement(tag),
@@ -1138,7 +1220,7 @@ function runComparisonHarness(
       }
       return element;
     },
-    querySelectorAll: (selector: string) => (selector === '[data-mode]' ? modeButtons : []),
+    querySelectorAll: () => [],
   };
   const animationFrames = new Map<number, () => void>();
   let nextAnimationFrame = 0;
@@ -1179,10 +1261,6 @@ function runComparisonHarness(
   };
   frames.left.contentWindow = childWindows.left;
   frames.right.contentWindow = childWindows.right;
-  document.getElementById('scene-name').value = 'comparison-view';
-  document.getElementById('scene-dpr').value = '1';
-  document.getElementById('wb-width').value = '1280';
-  document.getElementById('wb-height').value = '800';
   frames.left.contentDocument = frames.right.contentDocument = {
     documentElement: {dataset: {tileflowArtifactGeneration: '1'}},
   };
@@ -1192,6 +1270,45 @@ function runComparisonHarness(
   };
   childWindows.left.__tileflowPreviewMap = maps.left;
   childWindows.right.__tileflowPreviewMap = maps.right;
+  for (const side of ['left', 'right'] as const) {
+    const child = childWindows[side];
+    const setQuery = (name: string, value: string) => {
+      const url = new URL(child.location.href);
+      url.searchParams.set(name, value);
+      child.location.href = url.href;
+    };
+    new Script(previewSceneClient).runInNewContext({
+      globalThis: child,
+      map: maps[side],
+      URL,
+      location: child.location,
+      history: {
+        replaceState: (_: unknown, _unused: string, url: string) => {
+          child.location.href = url;
+        },
+      },
+      previewSearchParameters: new URLSearchParams(),
+      previewFontFaces: [],
+      loadTileflowStyleFonts: configs.prepareScene ?? (async () => undefined),
+      threeDimensionalControl: {
+        setEnabled: (value: boolean) => setQuery('buildings3d', value ? 'on' : 'off'),
+      },
+      treeControl: {setEnabled: () => undefined, update: () => undefined},
+      mountCoreScene: () => undefined,
+      updateGlobeBackdrop: () => undefined,
+      writeCameraToUrl: () => {
+        const camera = maps[side].camera;
+        for (const [name, value] of Object.entries({
+          lng: camera.center[0],
+          lat: camera.center[1],
+          zoom: camera.zoom,
+          bearing: camera.bearing,
+          pitch: camera.pitch,
+        }))
+          setQuery(name, String(value));
+      },
+    });
+  }
 
   const html = renderTileflowComparisonHtml({
     basePath: '',
@@ -1231,7 +1348,11 @@ function runComparisonHarness(
   const timeouts = new Map<number, () => void>();
   const intervals: (() => void)[] = [];
   let nextTimeout = 0;
-  new Script(source).runInNewContext({
+  const testHooks = {} as {setMode: (mode: string) => void; host: DevtoolsHost};
+  new Script(
+    source + '\ntestHooks.setMode = setMode; testHooks.host = globalThis.__tileflowDevtoolsHost;',
+  ).runInNewContext({
+    testHooks,
     AbortController,
     DOMException,
     EventSource: class {
@@ -1249,6 +1370,7 @@ function runComparisonHarness(
     URL,
     URLSearchParams,
     structuredClone,
+    queueMicrotask,
     addEventListener(type: string, listener: (event: unknown) => void) {
       const listeners = windowListeners.get(type) ?? new Set();
       listeners.add(listener);
@@ -1265,6 +1387,20 @@ function runComparisonHarness(
       if (configs.controlsRequest && (url.includes('/__controls?') || url.includes('/styles/'))) {
         return Promise.resolve(configs.controlsRequest(new URL(url)));
       }
+      if (url.includes('/__controls?'))
+        return Promise.resolve(
+          Response.json({...controlsFixture, theme: new URL(url).searchParams.get('theme')}),
+        );
+      if (url.includes('/styles/'))
+        return Promise.resolve(
+          Response.json({
+            layers: [],
+            metadata: {
+              'tileflow:map': 'map',
+              'tileflow:theme': new URL(url).pathname.split('/').at(-1)!.replace('.json', ''),
+            },
+          }),
+        );
       if (configs.workbenchRequest && url.startsWith('/__workbench')) {
         const result = configs.workbenchRequest(
           url.slice('/__workbench'.length),
@@ -1307,17 +1443,18 @@ function runComparisonHarness(
       return intervals.length;
     },
     setTimeout(callback: () => void) {
-      if (configs.controlsRequest) {
-        const id = ++nextTimeout;
-        timeouts.set(id, callback);
-        return id;
-      }
-      callback();
-      return 1;
+      const id = ++nextTimeout;
+      timeouts.set(id, callback);
+      return id;
     },
   });
 
   return {
+    focus: (element: FakeElement) => {
+      document.activeElement = element;
+    },
+    activeElement: () => document.activeElement,
+    host: testHooks.host,
     flushTimeouts() {
       const pending = [...timeouts.values()];
       timeouts.clear();
@@ -1330,9 +1467,7 @@ function runComparisonHarness(
       await Promise.all(document.getElementById(id).dispatch('click'));
     },
     clickMode(mode: string) {
-      const button = modeButtons.find((candidate) => candidate.dataset.mode === mode);
-      assert.ok(button);
-      button.dispatch('click');
+      testHooks.setMode(mode);
     },
     clipboardText: () => clipboardText,
     currentUrl: () => location.href,
@@ -1351,8 +1486,9 @@ function runComparisonHarness(
       frames[side].dispatch('load');
     },
     maps,
+    previewUrl: () => childWindows.left.location.href,
     async settle() {
-      for (let index = 0; index < 8; index += 1) await Promise.resolve();
+      for (let index = 0; index < 32; index += 1) await Promise.resolve();
     },
   };
 }
@@ -1374,11 +1510,13 @@ class FakeElement {
   dataset: Record<string, string> = {};
   disabled = false;
   hidden = false;
+  removed = false;
   listeners = new Map<string, Set<(event: unknown) => void>>();
   style = {setProperty() {}};
   textContent = '';
   title = '';
   value = '';
+  tabIndex = -1;
 
   get childElementCount() {
     return this.children.length;
@@ -1434,9 +1572,29 @@ class FakeElement {
 
   select() {}
 
-  setAttribute(name: string, value: string) {
-    this.attributes.set(name, value);
+  remove() {
+    this.removed = true;
   }
+
+  setAttribute(name: string, value: string) {
+    this.attributes.set(name, String(value));
+  }
+}
+
+function timeSegment(harness: ReturnType<typeof runComparisonHarness>, moment: string) {
+  const segment = harness
+    .element('wb-time-of-day')
+    .querySelectorAll('button')
+    .find((item) => item.value === moment);
+  assert.ok(segment);
+  return segment;
+}
+
+function selectedMoment(harness: ReturnType<typeof runComparisonHarness>) {
+  return harness
+    .element('wb-time-of-day')
+    .querySelectorAll('button')
+    .find((item) => item.attributes.get('aria-checked') === 'true')?.value;
 }
 
 type FakeCamera = {bearing: number; center: [number, number]; pitch: number; zoom: number};
@@ -1447,6 +1605,14 @@ class FakeMap {
   listeners = new Map<string, Set<(event?: unknown) => void>>();
   renderedFeatures: unknown[] = [];
   styleLayers: unknown[] = [];
+  metadata = {'tileflow:map': 'map', 'tileflow:theme': 'theme'};
+  styleCalls: {style: unknown; options: unknown}[] = [];
+  triggerRepaint() {}
+  setStyle(style: {layers?: unknown[]; metadata?: typeof this.metadata}, options: unknown) {
+    this.styleCalls.push({style, options});
+    this.styleLayers = style.layers ?? this.styleLayers;
+    this.metadata = style.metadata ?? this.metadata;
+  }
 
   constructor(camera: FakeCamera) {
     this.camera = structuredClone(camera);
@@ -1457,7 +1623,12 @@ class FakeMap {
   }
 
   getCanvas() {
-    return {clientHeight: 600, clientWidth: 800, style: {cursor: ''}};
+    return {
+      clientHeight: 600,
+      clientWidth: 800,
+      style: {cursor: ''},
+      getContext: () => ({isContextLost: () => false}),
+    };
   }
 
   getCenter() {
@@ -1475,9 +1646,33 @@ class FakeMap {
   getPitch() {
     return this.camera.pitch;
   }
+  getMaxPitch() {
+    return 85;
+  }
+  easeTo(options: Partial<FakeCamera>, event?: unknown) {
+    this.camera = {...this.camera, ...options};
+    this.emit('move', event);
+    this.emit('moveend', event);
+  }
 
   getStyle() {
-    return {layers: this.styleLayers, metadata: {'tileflow:map': 'map', 'tileflow:theme': 'theme'}};
+    return {layers: this.styleLayers, metadata: this.metadata};
+  }
+
+  getLayersOrder() {
+    return (this.styleLayers as {id: string}[]).map((layer) => layer.id);
+  }
+
+  getLayer(id: string) {
+    return (this.styleLayers as {id: string; type: string}[]).find((layer) => layer.id === id);
+  }
+
+  moveLayer(id: string, before?: string) {
+    const layer = this.getLayer(id)!;
+    this.styleLayers = this.styleLayers.filter((entry) => entry !== layer);
+    const index =
+      before === undefined ? this.styleLayers.length : this.getLayersOrder().indexOf(before);
+    this.styleLayers.splice(index, 0, layer);
   }
 
   getZoom() {
@@ -1515,3 +1710,234 @@ class FakeMap {
 
   resize() {}
 }
+
+test('Controls groups preset families and applies time segments with pointer and keyboard', async () => {
+  const camera = {type: 'center', center: [0, 0], zoom: 10};
+  const selections = ['theme', 'dark', 'faded', 'dark-faded', 'standalone'].map((theme) => ({
+    id: `map:map:${theme}`,
+    map: 'map',
+    theme,
+    label: theme,
+    camera,
+    url: `/left/?map=map&theme=${theme}`,
+  }));
+  const harness = runComparisonHarness('', {
+    single: true,
+    workbenchRequest: (path) =>
+      path === ''
+        ? {
+            busy: false,
+            sides: {
+              left: {
+                generation: 1,
+                status: 'ready',
+                selections,
+                timeOfDay: {
+                  map: {
+                    theme: {day: 'theme', dawn: 'theme', night: 'dark'},
+                    faded: {day: 'faded', dawn: 'dark-faded', night: 'dark-faded'},
+                  },
+                },
+              },
+            },
+          }
+        : {saved: true},
+  });
+  harness.load('left');
+  await harness.settle();
+  const values = (id: string) =>
+    (harness.element(id).options as FakeElement[]).map((option) => option.value);
+  assert.deepEqual(values('wb-theme'), ['theme', 'faded', 'standalone']);
+  assert.deepEqual(values('wb-time-of-day'), ['day', 'dawn', 'dusk', 'night']);
+  assert.equal(timeSegment(harness, 'dusk').disabled, true);
+  assert.equal(timeSegment(harness, 'day').tabIndex, 0);
+  assert.equal(harness.element('wb-time-of-day-field').hidden, false);
+  // Two presets may share one style; preserve the explicit moment when switching family.
+  const initialFrame = harness.element('left-frame').src;
+  timeSegment(harness, 'dawn').dispatch('click');
+  assert.equal(selectedMoment(harness), 'dawn');
+  assert.equal(timeSegment(harness, 'dawn').tabIndex, 0);
+  assert.equal(timeSegment(harness, 'day').tabIndex, -1);
+  assert.equal(harness.element('left-frame').src, initialFrame);
+  assert.match(harness.currentUrl(), /time-of-day=dawn/);
+  harness.element('wb-theme').value = 'faded';
+  harness.element('wb-theme').dispatch('change');
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.equal(new URL(harness.previewUrl()).searchParams.get('theme'), 'dark-faded');
+  assert.equal(selectedMoment(harness), 'dawn');
+  harness.element('wb-theme').value = 'theme';
+  harness.element('wb-theme').dispatch('change');
+  // Keyboard navigation skips the disabled Dusk segment.
+  timeSegment(harness, 'dawn').dispatch('keydown', {key: 'ArrowRight', preventDefault() {}});
+  assert.equal(selectedMoment(harness), 'night');
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.equal(new URL(harness.previewUrl()).searchParams.get('theme'), 'dark');
+  assert.equal(harness.element('wb-theme').value, 'theme');
+  assert.match(harness.currentUrl(), /view=map%3Amap%3Adark/);
+  harness.element('wb-theme').value = 'faded';
+  harness.element('wb-theme').dispatch('change');
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.equal(new URL(harness.previewUrl()).searchParams.get('theme'), 'dark-faded');
+  assert.equal(selectedMoment(harness), 'night');
+  timeSegment(harness, 'night').dispatch('keydown', {key: 'ArrowRight', preventDefault() {}});
+  assert.equal(selectedMoment(harness), 'day');
+  timeSegment(harness, 'day').dispatch('keydown', {key: 'End', preventDefault() {}});
+  assert.equal(selectedMoment(harness), 'night');
+  timeSegment(harness, 'night').dispatch('keydown', {key: 'Home', preventDefault() {}});
+  assert.equal(selectedMoment(harness), 'day');
+  harness.element('wb-theme').value = 'standalone';
+  harness.element('wb-theme').dispatch('change');
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.equal(new URL(harness.previewUrl()).searchParams.get('theme'), 'standalone');
+  assert.equal(harness.element('wb-time-of-day-field').hidden, true);
+});
+
+test('single-map user navigation updates the URL without requiring a second viewer', async () => {
+  const harness = runComparisonHarness('', {single: true});
+  harness.load('left');
+  await harness.settle();
+  const originalEvent = {type: 'wheel'};
+  harness.maps.left.emit('movestart', {originalEvent});
+  harness.maps.left.camera = {center: [-3.7, 40.4], zoom: 17, bearing: 45, pitch: 30};
+  harness.maps.left.emit('move', {originalEvent});
+  harness.maps.left.emit('moveend', {originalEvent});
+  harness.flushAnimationFrames();
+  const query = new URL(harness.currentUrl()).searchParams;
+  assert.equal(query.get('lng'), '-3.7');
+  assert.equal(query.get('zoom'), '17');
+  assert.equal(query.get('bearing'), '45');
+  assert.equal(harness.maps.right.jumpCalls.length, 0);
+});
+
+test('appearance waits for the command’s map and rejects saved URLs for a different map', async () => {
+  const selections = [
+    {id: 'map:other:dark', map: 'other', theme: 'dark', url: '/left/?map=other&theme=dark'},
+    {id: 'scene:other', map: 'other', theme: 'dark', scene: 'other'},
+    {id: 'map:map:theme', map: 'map', theme: 'theme', url: '/left/?map=map&theme=theme'},
+    {id: 'map:map:faded', map: 'map', theme: 'faded', url: '/left/?map=map&theme=faded'},
+  ];
+  const harness = runComparisonHarness('?view=map%3Aother%3Adark', {
+    single: true,
+    workbenchRequest: (path) =>
+      path === '' ? {sides: {left: {generation: 1, status: 'ready', selections}}} : {saved: true},
+  });
+  await harness.settle();
+  assert.equal(harness.element('wb-theme').disabled, true);
+  harness.load('left');
+  await harness.settle();
+  assert.equal(harness.element('left-frame').src, '/left/');
+  assert.equal(harness.element('wb-theme').value, 'theme');
+  assert.deepEqual(
+    (harness.element('wb-theme').options as FakeElement[]).map((option) => option.value),
+    ['theme', 'faded'],
+  );
+  harness.element('wb-theme').value = 'faded';
+  harness.element('wb-theme').dispatch('change');
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.equal(new URL(harness.previewUrl()).searchParams.get('map'), 'map');
+});
+
+test('appearance restores a same-map palette and an explicit aliased moment', async () => {
+  const harness = runComparisonHarness('?view=map%3Amap%3Afaded&time-of-day=dawn', {
+    single: true,
+    leftPreviewUrl: '/left/?scene=proof',
+    workbenchRequest: (path) =>
+      path === ''
+        ? {
+            sides: {
+              left: {
+                generation: 1,
+                status: 'ready',
+                selections: [
+                  {id: 'scene:proof', scene: 'proof', map: 'map', theme: 'theme'},
+                  ...['theme', 'faded'].map((theme) => ({
+                    id: 'map:map:' + theme,
+                    map: 'map',
+                    theme,
+                    url: '/left/?map=map&theme=' + theme,
+                  })),
+                ],
+                timeOfDay: {map: {theme: {day: 'theme'}, faded: {day: 'faded', dawn: 'faded'}}},
+              },
+            },
+          }
+        : {saved: true},
+  });
+  await harness.settle();
+  assert.equal(harness.element('left-frame').src, '/left/?scene=proof');
+  assert.equal(harness.element('wb-theme').disabled, true);
+  harness.load('left');
+  await harness.settle();
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.equal(new URL(harness.previewUrl()).searchParams.get('theme'), 'faded');
+  assert.equal(harness.element('wb-theme').value, 'faded');
+  assert.equal(selectedMoment(harness), 'dawn');
+  // A palette without Dawn falls back to its own supported moment.
+  harness.element('wb-theme').value = 'theme';
+  harness.element('wb-theme').dispatch('change');
+  assert.equal(selectedMoment(harness), 'day');
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.equal(new URL(harness.previewUrl()).searchParams.get('theme'), 'theme');
+});
+
+test('palettes and modules are available while Streets tiles are still loading', async () => {
+  const harness = runComparisonHarness('', {
+    single: true,
+    controlsRequest: () => Response.json(controlsFixture),
+    workbenchRequest: (path) =>
+      path === ''
+        ? {
+            sides: {
+              left: {
+                generation: 1,
+                status: 'ready',
+                selections: ['theme', 'dark'].map((theme) => ({
+                  id: 'map:map:' + theme,
+                  map: 'map',
+                  theme,
+                  url: '/left/?map=map&theme=' + theme,
+                })),
+                timeOfDay: {map: {theme: {day: 'theme', night: 'dark'}}},
+              },
+            },
+          }
+        : {saved: true},
+  });
+  harness.maps.left.loaded = () => false;
+  harness.load('left');
+  await harness.settle();
+  assert.equal(harness.element('stage').dataset.tileflowState, 'loading');
+  assert.equal(harness.element('wb-theme').value, 'theme');
+  assert.equal(timeSegment(harness, 'night').disabled, false);
+  assert.equal(harness.element('controls-modules').disabled, false);
+  assert.ok(harness.element('controls-modules').childElementCount > 0);
+  timeSegment(harness, 'night').dispatch('click');
+  harness.flushTimeouts();
+  await harness.settle();
+  const query = new URL(harness.previewUrl()).searchParams;
+  assert.equal(query.get('theme'), 'dark');
+  assert.equal(query.get('lng'), '-5');
+  assert.equal(query.get('zoom'), '5');
+});
+
+test('Beacon camera commands update the single-map bridge without being rolled back', async () => {
+  const harness = runComparisonHarness('', {single: true});
+  harness.load('left');
+  await harness.settle();
+  harness.maps.left.camera = {center: [-3, 40], zoom: 13, bearing: 0, pitch: 0};
+  const event = {tileflowDevtools: true};
+  harness.maps.left.emit('movestart', event);
+  harness.maps.left.emit('move', event);
+  harness.maps.left.emit('moveend', event);
+  harness.flushAnimationFrames();
+  assert.equal(new URL(harness.currentUrl()).searchParams.get('zoom'), '13');
+  assert.deepEqual(harness.maps.left.camera.center, [-3, 40]);
+  assert.equal(harness.maps.right.jumpCalls.length, 0);
+});

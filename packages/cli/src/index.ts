@@ -88,7 +88,12 @@ import {registerConfigInspectCommand} from './config-inspect-command';
 import {registerCoordinatesCommands} from './coordinates-command';
 import {allowsStoredDeployCredential, resolveDeploySource} from './deploy-source';
 import {registerDescribeCommand} from './describe-command';
-import {defaultTileflowDevHost, parseTileflowDevHost, tileflowDevOrigin} from './dev-host';
+import {
+  defaultTileflowDevHost,
+  parseTileflowDevHost,
+  redirectTileflowDevNavigation,
+  tileflowDevOrigin,
+} from './dev-host';
 import {registerFeatureInspectCommand} from './feature-inspect-command';
 import {
   apiProfileCanTargetMap,
@@ -553,6 +558,7 @@ program
   .option('--theme <name>', 'preview one concrete theme; defaults to the map default')
   .option('--renderer <renderer>', 'artifact renderer: web or native', 'web')
   .option('-p, --port <port>', 'preview port', '3333')
+  .option('--no-open', 'start Map DevTools without opening the browser')
   .option('--scene <name>', 'preview one committed standalone map scene')
   .option(
     '--api-base-url <url>',
@@ -575,6 +581,7 @@ program
       json?: boolean;
       map?: string;
       offline?: boolean;
+      open: boolean;
       port: string;
       renderer: string;
       scene?: string;
@@ -841,7 +848,17 @@ program
 
         try {
           await new Promise<void>((resolveListening, rejectListening) => {
-            const createdServer = serve({fetch, hostname: host, port}, () => resolveListening());
+            const createdServer = serve(
+              {
+                fetch: (request) =>
+                  (renderer === 'web'
+                    ? redirectTileflowDevNavigation(request, origin)
+                    : undefined) ?? fetch(request),
+                hostname: host,
+                port,
+              },
+              () => resolveListening(),
+            );
             createdServer.once('error', rejectListening);
             server = createdServer;
           });
@@ -865,6 +882,7 @@ program
               if (options.theme) printKeyValue('Theme', options.theme);
               if (options.scene) printKeyValue('Scene', options.scene);
               logMuted('Press Ctrl+C to stop.');
+              if (options.open) openBrowser(origin);
             }
           }
           await waitForTerminationSignal(server!);
@@ -1317,6 +1335,9 @@ program
           environment: mapName,
           mapId: body.mapId,
           ...(resolvedMap.systemThemes ? {systemThemes: resolvedMap.systemThemes} : {}),
+          ...(resolvedMap.timeOfDay && Object.keys(resolvedMap.timeOfDay).length
+            ? {timeOfDay: resolvedMap.timeOfDay}
+            : {}),
           themes: Object.fromEntries(
             themeNames.map((themeName) => {
               const deployedTheme = body.themes[themeName]!;
@@ -1349,7 +1370,11 @@ program
       const manifestPath = await writeDeployManifest(options.manifest, {
         apiUrl: api.apiUrl,
         maps: {...(existingManifest?.maps ?? {}), ...deployedMaps},
-        version: 1,
+        version: Object.values({...existingManifest?.maps, ...deployedMaps}).some(
+          (map) => map.timeOfDay,
+        )
+          ? 2
+          : 1,
       });
 
       logSuccess('Deployed Tileflow maps.');
@@ -1531,6 +1556,7 @@ type TileflowComparisonPreviewCommandOptions = {
   json?: boolean;
   map?: string;
   offline?: boolean;
+  open: boolean;
   scene?: string;
   theme?: string;
 };
@@ -1707,8 +1733,13 @@ async function runTileflowComparisonPreview(
       });
 
       await new Promise<void>((resolveListening, rejectListening) => {
-        const createdServer = serve({fetch, hostname: address.host, port: address.port}, () =>
-          resolveListening(),
+        const createdServer = serve(
+          {
+            fetch: (request) => redirectTileflowDevNavigation(request, origin) ?? fetch(request),
+            hostname: address.host,
+            port: address.port,
+          },
+          () => resolveListening(),
         );
         createdServer.once('error', rejectListening);
         server = createdServer;
@@ -1720,6 +1751,7 @@ async function runTileflowComparisonPreview(
         printKeyValue('Left', `${leftPreview.label} · ${pathLabel(options.config)}`);
         printKeyValue('Right', `${rightPreview.label} · ${pathLabel(rightConfig)}`);
         logMuted('Press Ctrl+C to stop.');
+        if (options.open) openBrowser(origin);
       }
       await waitForTerminationSignal(server!);
     } catch (error) {

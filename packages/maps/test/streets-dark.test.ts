@@ -1555,3 +1555,16 @@ test('Streets water uses a declared hosted italic face without a heavy halo', ()
   const resolved = resolveMap(streets);
   assert.ok(resolved.glyphs?.fontStacks?.includes('Noto Sans Italic'));
 });
+
+test('Streets time presets reuse the exact existing palette, lighting and geometry for every theme', () => {
+  const map = resolveMap(streets);
+  assert.deepEqual(Object.keys(map.timeOfDay ?? {}), ['light', 'faded', 'monochrome']);
+  for (const [family, moments] of Object.entries(map.timeOfDay!)) {
+    for (const timeOfDay of ['day', 'dawn', 'dusk', 'night'] as const) {
+      assert.deepEqual(
+        createStyle(streets, {...preparedAssets, theme: family, timeOfDay}),
+        createStyle(streets, {...preparedAssets, theme: moments[timeOfDay]}),
+      );
+    }
+  }
+});

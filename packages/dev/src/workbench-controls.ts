@@ -1,12 +1,13 @@
-import {workbenchIcon} from './workbench-ui';
-
 export const controlsStyles = `
   .map-controls { flex:0 0 360px; width:360px; max-width:45vw; min-height:0; overflow:auto; border-left:1px solid var(--border); background:var(--paper); padding:0 18px 18px; }
   .map-controls[hidden] { display:none; }
-  .controls-heading { display:flex; justify-content:space-between; align-items:center; position:sticky; top:0; background:var(--paper); z-index:2; padding:15px 0 10px; }
-  .controls-heading h2 { display:flex; align-items:center; gap:8px; font-size:16px; margin:0; }
-  .controls-heading button { padding:6px; }
-  .controls-subtitle { color:var(--muted); font-size:12px; line-height:1.5; margin:4px 0 14px; }
+  .controls-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:8px 0; border-bottom:1px solid var(--border); }
+  .controls-heading h2 { margin:0; font:inherit; }
+  .controls-segments { display:flex; min-width:0; width:max-content; max-width:100%; border:1px solid var(--border); border-radius:4px; overflow:hidden; }
+  .controls-segments button { flex:1; min-width:0; padding:4px 10px; border:0; border-radius:0; background:var(--paper); color:var(--muted); cursor:pointer; }
+  .controls-segments button + button { border-left:1px solid var(--border); }
+  .controls-segments button[aria-checked=true] { color:var(--accent); background:var(--dt-selected,var(--surface)); box-shadow:inset 0 -2px var(--accent); }
+  .controls-segments button:disabled { opacity:.4; cursor:not-allowed; }
   .controls-selection { border-bottom:1px solid var(--border); padding-bottom:8px; }
   .controls-selection .control-field select { width:190px; max-width:70%; }
   .controls-selection [hidden] { display:none; }
@@ -28,41 +29,29 @@ export const controlsStyles = `
   .controls-runtime { border:0; border-bottom:1px solid var(--border); padding:0 0 12px; margin:0; min-width:0; }
   #controls-modules { border:0; padding:0; margin:0; min-width:0; }
   .controls-runtime:disabled,#controls-modules:disabled { opacity:.6; }
-  .controls-footer { position:sticky; bottom:-18px; background:var(--paper); border-top:1px solid var(--border); margin-top:18px; padding:12px 0; z-index:2; }
-  .controls-actions { display:flex; gap:6px; }
-  .controls-actions button { flex:1; }
   #controls-status { font-size:12px; line-height:1.5; color:var(--muted); margin:8px 0; overflow-wrap:anywhere; }
   #controls-status[data-error=true] { color:#a32e36; }
-  .controls-export { width:100%; margin-top:8px; }
-  .controls-code { font:11px/1.5 monospace; white-space:pre-wrap; overflow-wrap:anywhere; max-height:220px; overflow:auto; }
   @media(max-width:760px) { .workspace:has(.map-controls:not([hidden])) { display:flex; flex-direction:column; } .map-controls { flex:0 1 55vh; width:auto; max-width:none; border-left:0; border-top:1px solid var(--border); } .workspace:has(.map-controls:not([hidden])) .stage { flex:1 0 35vh; } }
 `;
 
 export const controlsPanel = `
-  <aside class="map-controls" id="map-controls" aria-labelledby="controls-title" tabindex="-1" hidden>
-    <div class="controls-heading"><h2 id="controls-title">${workbenchIcon('settings')}Map controls</h2><button id="controls-close" aria-label="Close map controls">${workbenchIcon('close')}</button></div>
-    <p class="controls-subtitle" id="controls-owner">Loading map…</p>
+  <aside class="map-controls" id="map-controls" aria-label="Scene settings" tabindex="-1" hidden>
+    <div class="controls-heading"><h2>Styles</h2><button id="controls-reset">Reset</button></div>
+    <div class="controls-grid">
     <div class="controls-selection workbench-only" id="controls-selection" hidden>
-      <select id="wb-view" aria-label="Scene or theme" hidden><option>Loading scenes…</option></select>
-      <label class="control-field" id="wb-map-field">Map<select id="wb-map" aria-label="Map"></select></label>
-      <label class="control-field" id="wb-theme-field">Theme<select id="wb-theme" aria-label="Theme"></select></label>
-      <label class="control-field" id="wb-scene-field">Saved view<select id="wb-scene" aria-label="Saved view" aria-describedby="controls-scene-help"></select></label>
-      <p class="controls-subtitle" id="controls-scene-help">A saved view restores a configured place, camera, theme and capture frame.</p>
+      <div class="controls-section-title">Appearance</div>
+      <div class="control-field" id="wb-time-of-day-field" hidden><span>Time of day</span><div class="controls-segments" id="wb-time-of-day" role="radiogroup" aria-label="Time of day"></div></div>
+      <div class="control-field dt-palette-field" id="wb-theme-field"><span>Theme</span><select id="wb-theme" aria-label="Palette" disabled hidden><option value="">Waiting for map…</option></select><div id="wb-palettes" class="dt-palettes" role="radiogroup" aria-label="Theme palette"></div></div>
     </div>
     <fieldset class="controls-runtime" id="controls-runtime">
       <div class="controls-section-title">Preview rendering</div>
-      <label class="control-field">3D view<input id="controls-3d" type="checkbox"></label>
-      <label class="control-field">Building animation<select id="controls-animation"><option value="0">Off</option><option value="300">Quick · 300 ms</option><option value="800">Smooth · 800 ms</option><option value="1500">Slow · 1.5 s</option></select></label>
+      <label class="control-field">3D view<input id="controls-3d" type="checkbox" role="switch"></label>
+      <label class="control-field">Building animation<select id="controls-animation" hidden><option value="0">Off</option><option value="800">Grow</option><option value="fade">Fade</option></select><span class="controls-segments" id="controls-animation-segments" role="radiogroup" aria-label="Building animation"></span></label>
     </fieldset>
+    </div>
     <div class="controls-section-title">Map modules</div>
     <fieldset id="controls-modules"></fieldset>
-    <div class="controls-footer">
-      <p id="controls-status" role="status">Loading controls…</p>
-      <div class="controls-actions"><button id="controls-reset">Reset</button></div>
-      <button id="controls-copy" class="controls-export">Copy module overrides</button>
-      <details><summary>Configuration changes</summary><pre id="controls-code" class="controls-code"></pre></details>
-      <p class="controls-subtitle">Changes apply automatically to this preview. Source files stay unchanged. Reset before capturing the source configuration.</p>
-    </div>
+    <p id="controls-status" role="status" hidden></p>
   </aside>
 `;
 
@@ -73,9 +62,11 @@ export const controlsClient = String.raw`
       const controlsButton = document.getElementById("controls-toggle");
       let controlsKey = "", controlsSequence = 0, controlsModel, controlsDraft = {}, controlsBusy = false;
       let controlsApplyTimer, controlsRevision = 0, controlsPending = false, controlsResetPending = false;
+      let controlsLoadingKey = "", controlsBindings = [], controlsLastError = "";
+      let controlsHistoryCurrent, controlsInitial, controlsHistoryQuiet = 0;
+      const controlsUndo = [], controlsRedo = [];
       ctl("selection").hidden = !options.workbenchUrl;
       controlsButton.addEventListener("click", () => toggleMapControls(controlsPanel.hidden, true));
-      ctl("close").addEventListener("click", () => toggleMapControls(false, true));
       ctl("reset").addEventListener("click", () => {
         if (!controlsModel) return;
         controlsDraft = {};
@@ -83,11 +74,17 @@ export const controlsClient = String.raw`
         renderMapControls();
         scheduleMapControls(true);
       });
-      ctl("copy").addEventListener("click", async () => {
-        try { await navigator.clipboard.writeText(JSON.stringify(controlsDraft, null, 2)); controlsNotice("Module overrides copied as JSON."); }
-        catch { controlsNotice("Copy the JSON under Configuration changes.", true); }
+      for (const name of ["3d", "animation"]) ctl(name).addEventListener("change", () => { syncAnimationSegments(); scheduleMapControls(); });
+      ctl("3d").addEventListener("change", () => {
+        const map = states[activeSideId].map;
+        if (map) map.easeTo({pitch:ctl("3d").checked ? Math.min(60,map.getMaxPitch()) : 0, duration:matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 350}, {tileflowDevtools:true});
       });
-      for (const name of ["3d", "animation"]) ctl(name).addEventListener("change", () => scheduleMapControls());
+      for (const [value,label] of [["0","Off"],["800","Grow"],["fade","Fade"]]) {
+        const button=document.createElement("button"); button.type="button";button.value=value;button.textContent=label;button.setAttribute("role","radio");
+        button.addEventListener("click",()=>{ctl("animation").value=value;ctl("animation").dispatchEvent(new Event("change"));});ctl("animation-segments").append(button);
+      }
+      function syncAnimationSegments(){for(const button of ctl("animation-segments").children)button.setAttribute("aria-checked",String(button.value===ctl("animation").value));}
+      syncAnimationSegments();
       addEventListener("keydown", (event) => { if (event.key === "Escape" && !controlsPanel.hidden) toggleMapControls(false, true); });
       const controlsTimer = setInterval(() => { if (!controlsPanel.hidden) void loadMapControls(); }, 1000);
       addEventListener("beforeunload", () => { clearInterval(controlsTimer); cancelMapControlsApply(); });
@@ -110,12 +107,9 @@ export const controlsClient = String.raw`
       }
 
       function toggleMapControls(open, focus = false) {
+        if (globalThis.__tileflowDevtoolsUI) { globalThis.__tileflowDevtoolsUI.controls(open); return; }
         if (open) {
           setInspectionEnabled(false);
-          document.getElementById("wb-welcome").hidden = true;
-          document.getElementById("wb-review").hidden = true;
-          document.getElementById("wb-history").hidden = true;
-          document.getElementById("wb-history-toggle").setAttribute("aria-expanded", "false");
         }
         controlsPanel.hidden = !open;
         controlsButton.setAttribute("aria-expanded", String(open));
@@ -123,40 +117,45 @@ export const controlsClient = String.raw`
         if (open) void loadMapControls();
         if (focus) (open ? controlsPanel : controlsButton).focus();
       }
-      function hasMapControlOverrides(side) {
-        return Boolean(new URL(side.frame.src, location.href).searchParams.get("controls"));
-      }
       function controlsNotice(text, error = false) {
-        ctl("status").textContent = text;
+        ctl("status").hidden = !error;
+        ctl("status").textContent = error ? text : "";
         ctl("status").dataset.error = String(error);
       }
       function controlsIdentity(side) {
         const meta = side.map?.getStyle?.()?.metadata;
         return meta ? {map:meta["tileflow:map"], theme:meta["tileflow:theme"]} : undefined;
       }
+      function livePreviewUrl(side) {
+        return new URL(side.frame.contentWindow.location.href, location.href);
+      }
       async function loadMapControls() {
         const side = states[activeSideId], identity = controlsIdentity(side);
-        if (!side.bridgeReady || !identity?.map || !identity.theme) {
-          setMapControlsDisabled(true);
+        if (!side.bridgeConnected || !identity?.map || !identity.theme) {
+          setMapControlsDisabled(!side.bridgeConnected || !controlsModel);
           controlsNotice("Waiting for the map to finish loading…");
           return;
         }
-        const key = JSON.stringify([side.id, side.definition.basePath, identity, side.artifactGeneration, side.loadEpoch]);
+        identity.theme = side.workbenchTheme || identity.theme;
+        const key = JSON.stringify([side.id, side.definition.basePath, identity.map, side.loadEpoch]);
         const epoch = side.loadEpoch;
-        if (key === controlsKey) {
-          if (controlsModel && ctl("modules").disabled) {
-            setMapControlsDisabled(false);
-            controlsNotice(Object.keys(controlsDraft).length ? "Preview overrides applied." : "Using the map’s original settings.");
-          }
+        const loadingKey = key + identity.theme;
+        if (key === controlsKey && controlsModel?.theme === identity.theme) {
+          setMapControlsDisabled(false);
           return;
         }
-        cancelMapControlsApply();
-        controlsKey = key;
+        if (loadingKey === controlsLoadingKey) return;
+        const preserve = key === controlsKey && controlsModel;
+        if (!preserve) {
+          const pendingAppearance = side.pendingAppearance;
+          cancelMapControlsApply();
+          controlsPending = Boolean(pendingAppearance);
+          controlsKey = key;
+          controlsModel = undefined;
+          ctl("modules").replaceChildren(); setMapControlsDisabled(true);
+        }
+        controlsLoadingKey = loadingKey;
         const sequence = ++controlsSequence;
-        const keepExpanded = controlsModel?.side === side && controlsModel.map === identity.map && controlsModel.theme === identity.theme;
-        const expanded = keepExpanded ? [...ctl("modules").querySelectorAll("details[open]")].map((item) => item.dataset.module) : [];
-        controlsModel = undefined;
-        ctl("modules").replaceChildren(); setMapControlsDisabled(true);
         controlsNotice("Reading this map’s modules…");
         try {
           const url = new URL(side.definition.basePath + "/__controls", location.href);
@@ -164,18 +163,38 @@ export const controlsClient = String.raw`
           const response = await fetch(url, {cache:"no-store"});
           const model = await response.json();
           if (!response.ok) throw new Error(model.error || "Controls are unavailable for this preview.");
-          if (sequence !== controlsSequence || activeSideId !== side.id || key !== controlsKey || epoch !== side.loadEpoch) return;
-          controlsModel = {...model, side, key, epoch};
-          const query = new URL(side.frame.src, location.href).searchParams;
-          controlsDraft = JSON.parse(query.get("controls") || "{}");
-          const liveQuery = new URL(side.frame.contentWindow.location.href).searchParams;
-          ctl("3d").checked = liveQuery.get("buildings3d") === "on";
-          ctl("animation").value = query.get("animation") || "0";
-          ctl("owner").textContent = identity.map + " · " + identity.theme + " · " + (options.right ? side.id + " map" : "Local preview");
-          renderMapControls(expanded); setMapControlsDisabled(false);
+          if (sequence !== controlsSequence || activeSideId !== side.id || key !== controlsKey || epoch !== side.loadEpoch || identity.theme !== (side.workbenchTheme || controlsIdentity(side)?.theme)) return;
+          if (preserve) {
+            // Keep the actual inputs and their handlers mounted, including focus/selection.
+            for (const module of controlsModel.modules) {
+              const updated = model.modules.find((item) => item.id === module.id);
+              if (!updated) continue;
+              module.enabled = updated.enabled;
+              for (const field of module.fields) Object.assign(field, updated.fields.find((item) => item.path === field.path));
+            }
+            controlsModel.theme = model.theme;
+            for (const sync of controlsBindings) sync();
+          } else {
+            controlsModel = {...model, side, key, epoch};
+            const query = livePreviewUrl(side).searchParams;
+            controlsDraft = JSON.parse(query.get("controls") || "{}");
+            side.appliedSceneStyle ||= JSON.stringify([identity.map, controlsIdentity(side).theme, controlsDraft]);
+            ctl("3d").checked = query.get("buildings3d") === "on";
+            ctl("animation").value = query.get("animation") === "fade" ? "fade" : Number(query.get("animation")) > 0 ? "800" : "0"; syncAnimationSegments();
+            renderMapControls();
+            controlsUndo.length = controlsRedo.length = 0;
+            controlsHistoryCurrent = globalThis.__tileflowScene.snapshot();
+            controlsInitial = structuredClone(controlsHistoryCurrent);
+          }
+          setMapControlsDisabled(false);
           controlsNotice(Object.keys(controlsDraft).length ? "Preview overrides applied." : "Using the map’s original settings.");
         } catch (error) {
-          if (sequence === controlsSequence) { controlsKey = ""; controlsNotice(safeErrorMessage(error), true); }
+          if (sequence === controlsSequence) { if (!preserve) controlsKey = ""; controlsNotice(safeErrorMessage(error), true); }
+        } finally {
+          if (sequence === controlsSequence) {
+            controlsLoadingKey = "";
+            if (controlsPending && controlsApplyTimer === undefined) void applyMapControls();
+          }
         }
       }
       function controlValue(object, path) { return path.split(".").reduce((value, key) => value?.[key], object); }
@@ -187,11 +206,11 @@ export const controlsClient = String.raw`
         if (value === original) delete parent[leaf]; else parent[leaf] = value;
         for (const [key, item] of Object.entries(patch)) if (item && typeof item === "object" && !Object.keys(item).length) delete patch[key];
         if (!Object.keys(patch).length) delete controlsDraft[module];
-        ctl("code").textContent = JSON.stringify(controlsDraft, null, 2);
         scheduleMapControls();
       }
       function renderMapControls(expanded = [...ctl("modules").querySelectorAll("details[open]")].map((item) => item.dataset.module)) {
         ctl("modules").replaceChildren();
+        controlsBindings = [];
         const names = {poi:"Points of interest", land:"Land", water:"Water", nautical:"Nautical", roads:"Roads", buildings:"Buildings", boundaries:"Boundaries", labels:"Labels", aeroways:"Airports", transit:"Transit", vegetation:"Vegetation", addresses:"Addresses", landforms:"Landforms"};
         const modules = [...controlsModel.modules].sort((a,b) => {
           const priority = {vegetation:0, buildings:1};
@@ -202,9 +221,14 @@ export const controlsClient = String.raw`
           const row = document.createElement("div"); row.className = "control-module-header";
           const label = document.createElement("label"); label.textContent = names[module.id] || module.id;
           const toggle = document.createElement("input"); toggle.type = "checkbox"; toggle.checked = controlsDraft[module.id]?.enabled ?? module.enabled;
+          toggle.setAttribute("role", "switch");
           toggle.setAttribute("aria-label", "Enable " + (names[module.id] || module.id));
           label.append(toggle); row.append(label); card.append(row);
           const fieldset = document.createElement("fieldset"); fieldset.disabled = !toggle.checked;
+          controlsBindings.push(() => {
+            if (document.activeElement !== toggle) toggle.checked = controlsDraft[module.id]?.enabled ?? module.enabled;
+            fieldset.disabled = !toggle.checked;
+          });
           toggle.addEventListener("change", () => { changeControl(module.id, "enabled", toggle.checked, module.enabled); fieldset.disabled = !toggle.checked; });
           if (module.fields.length) {
             const details = document.createElement("details");
@@ -217,13 +241,21 @@ export const controlsClient = String.raw`
               const input = document.createElement(field.choices ? "select" : "input");
               const override = controlValue(controlsDraft[module.id], field.path);
               const value = field.inherit && override === undefined ? "inherit" : override ?? field.value;
+              const labels = {"3d":"Always 3D",auto:"Follow 2D / 3D view",flat:"Flat (2D)",none:"Hidden",style:"Map light",sun:"Scene sun",faceted:"Faceted",smooth:"Smooth",toon:"Toon"};
               if (field.choices) {
-                const labels = {"3d":"Always 3D",auto:"Follow 2D / 3D view",flat:"Flat (2D)",none:"Hidden",style:"Map light",sun:"Scene sun",faceted:"Faceted",smooth:"Smooth",toon:"Toon"};
                 const choices = field.choices.map((choice) => new Option(labels[choice] || choice, choice));
                 if (field.inherit) choices.unshift(new Option("Auto · " + (labels[field.value] || field.value), "inherit"));
                 input.replaceChildren(...choices); input.value = String(value);
-              } else if (typeof field.value === "boolean") { input.type = "checkbox"; input.checked = value; }
+              } else if (typeof field.value === "boolean") { input.type = "checkbox"; input.setAttribute("role", "switch"); input.checked = value; }
               else { input.type = "number"; input.required = true; input.min = String(field.min); input.max = String(field.max); input.step = "any"; input.value = String(value); }
+              controlsBindings.push(() => {
+                if (document.activeElement === input || !input.checkValidity()) return;
+                const override = controlValue(controlsDraft[module.id], field.path);
+                const value = field.inherit && override === undefined ? "inherit" : override ?? field.value;
+                if (input.type === "checkbox") input.checked = value;
+                else input.value = String(value);
+                if (field.inherit) input.options[0].textContent = "Auto · " + (labels[field.value] || field.value);
+              });
               input.addEventListener(input.type === "number" ? "input" : "change", () => {
                 if (!input.checkValidity()) { cancelMapControlsApply(); controlsNotice("Enter a valid value to update the preview.", true); return; }
                 const value = field.inherit && input.value === "inherit" ? undefined : input.type === "checkbox" ? input.checked : input.type === "number" ? Number(input.value) : input.value;
@@ -234,48 +266,110 @@ export const controlsClient = String.raw`
           }
           ctl("modules").append(card);
         }
-        ctl("code").textContent = JSON.stringify(controlsDraft, null, 2);
       }
       async function applyMapControls() {
         if (!controlsModel || controlsBusy || !controlsPending) return;
         const revision = controlsRevision, reset = controlsResetPending;
-        const {side, map, theme, key} = controlsModel;
+        const {side, map, key} = controlsModel;
+        const theme = side.workbenchTheme || controlsModel.theme;
         const epoch = side.loadEpoch, source = side.frame.src;
-        if (!side.bridgeReady || side.id !== activeSideId || side.loadEpoch !== controlsModel.epoch) return;
+        if (!side.bridgeConnected || side.id !== activeSideId || side.loadEpoch !== controlsModel.epoch) return;
         if (!reset && [...ctl("modules").querySelectorAll("input")].some((input) => !input.checkValidity())) {
           controlsPending = false;
           controlsNotice("Enter valid field values to update the preview.", true); return;
         }
         const draft = reset ? {} : structuredClone(controlsDraft);
-        const url = new URL(side.frame.src, location.href);
-        if (Object.keys(draft).length) url.searchParams.set("controls", JSON.stringify(draft)); else url.searchParams.delete("controls");
-        url.searchParams.set("buildings3d", !reset && ctl("3d").checked ? "on" : "off");
-        url.searchParams.delete("trees3d");
-        if (!reset && ctl("animation").value !== "0") url.searchParams.set("animation", ctl("animation").value); else url.searchParams.delete("animation");
-        controlsBusy = true; controlsPending = false;
+        const next = {map, theme, controls:draft, buildings3d:!reset && ctl("3d").checked, animation:reset ? 0 : ctl("animation").value === "fade" ? "fade" : Number(ctl("animation").value)};
+        const styleKey = JSON.stringify([map, theme, draft]);
+        const isCurrent = () => revision === controlsRevision && controlsKey === key && side.id === activeSideId && side.bridgeConnected && epoch === side.loadEpoch && source === side.frame.src;
+        const before = controlsHistoryCurrent && {...controlsHistoryCurrent, style:side.map.getStyle()};
+        controlsBusy = true; controlsPending = false; controlsLastError = "";
         controlsNotice("Compiling preview…");
         try {
-          const style = new URL(side.definition.basePath + "/styles/" + map + "/" + theme + ".json", location.href);
-          if (Object.keys(draft).length) style.searchParams.set("controls", JSON.stringify(draft));
-          const response = await fetch(style, {cache:"no-store"});
-          if (!response.ok) { const failure = await response.json(); throw new Error(failure.error || "Unable to compile these settings."); }
-          if (revision !== controlsRevision || controlsKey !== key || side.id !== activeSideId || !side.bridgeReady || epoch !== side.loadEpoch || source !== side.frame.src) return;
-          const camera = side.camera || canonicalCamera;
-          if (camera) {
-            const values = {lng:camera.center[0], lat:camera.center[1], zoom:camera.zoom, bearing:camera.bearing, pitch:camera.pitch};
-            for (const [name, value] of Object.entries(values)) url.searchParams.set(name, String(value));
+          if (styleKey !== side.appliedSceneStyle) {
+            const style = new URL(side.definition.basePath + "/styles/" + map + "/" + theme + ".json", location.href);
+            if (Object.keys(draft).length) style.searchParams.set("controls", JSON.stringify(draft));
+            const response = await fetch(style, {cache:"no-store"});
+            const document = await response.json();
+            if (!response.ok) throw new Error(document.error || "Unable to compile these settings.");
+            next.style = document;
           }
-          controlsDraft = draft;
-          setMapControlsDisabled(true);
-          side.bridgeReady = false;
-          side.frame.src = url.href;
-          controlsKey = "";
-          controlsNotice(reset ? "Restoring the original map…" : "Loading the compiled preview…");
+          if (!isCurrent()) return;
+          const apply = side.frame.contentWindow.__tileflowApplyScene;
+          if (!apply) throw new Error("Reload DevTools once to enable live scene updates.");
+          if (!await apply(JSON.stringify(next), isCurrent)) return;
+          side.appliedSceneStyle = styleKey;
+          const after = globalThis.__tileflowScene.snapshot();
+          if (!controlsHistoryQuiet && before && JSON.stringify([before.theme,before.controls,before.buildings3d,before.animation]) !== JSON.stringify([after.theme,after.controls,after.buildings3d,after.animation])) {
+            controlsUndo.push({before,after,time:performance.now()}); if(controlsUndo.length>100)controlsUndo.shift(); controlsRedo.length=0;
+          }
+          controlsHistoryCurrent=after;
+          side.pendingAppearance = undefined;
+          side.definition.previewUrl = livePreviewUrl(side).href;
+          side.sidecarAbort?.abort(); side.sidecar = undefined; side.sidecarPromise = undefined;
+          if (selectedInspection?.side === side) void loadSidecar(side);
+          if (isCurrent()) controlsNotice("");
         } catch (error) {
-          if (revision === controlsRevision && controlsKey === key) controlsNotice(safeErrorMessage(error) + " The previous map is still shown.", true);
+          if (revision === controlsRevision && controlsKey === key) { controlsLastError = safeErrorMessage(error); controlsNotice(controlsLastError + " The previous map is still shown.", true); }
         } finally {
           controlsBusy = false;
           if (controlsPending && controlsApplyTimer === undefined) void applyMapControls();
         }
       }
+      globalThis.__tileflowScene = {
+        get history() {return {undo:controlsUndo.at(-1)?.time || 0,redo:controlsRedo.at(-1)?.redoTime || 0,changed:controlsUndo.length>0||controlsRedo.length>0};},
+        async undo() {const entry=controlsUndo.at(-1);if(!entry)return;await this.restore(entry.before);controlsUndo.pop();entry.redoTime=performance.now();controlsRedo.push(entry);},
+        async redo() {const entry=controlsRedo.at(-1);if(!entry)return;await this.restore(entry.after);controlsRedo.pop();entry.time=performance.now();controlsUndo.push(entry);},
+        async reset() {if(controlsInitial)await this.restore(controlsInitial);controlsUndo.length=controlsRedo.length=0;},
+        audit(active) {controlsHistoryQuiet=Math.max(0,controlsHistoryQuiet+(active?1:-1));},
+        variants() {
+          const side = states[activeSideId], owner = wbCatalog?.sides[side.serviceId || side.id];
+          const variants = owner?.timeOfDay?.[side.workbenchMap] || {};
+          return (owner?.selections || []).filter(entry => entry.map === side.workbenchMap && !entry.scene).map(entry => {
+            const family = Object.keys(variants).find(name => Object.values(variants[name]).includes(entry.theme));
+            return {theme:entry.theme, palette:family || entry.theme, timeOfDay:family ? Object.keys(variants[family]).find(moment => variants[family][moment] === entry.theme) : undefined};
+          });
+        },
+        snapshot() {
+          const side = states[activeSideId];
+          return {side:side.id, theme:side.workbenchTheme || controlsIdentity(side)?.theme, controls:structuredClone(controlsDraft), buildings3d:ctl("3d").checked, animation:ctl("animation").value, style:side.map?.getStyle()};
+        },
+        async style(theme, signal) {
+          const side = states[activeSideId], identity = controlsIdentity(side);
+          const url = new URL(side.definition.basePath + "/styles/" + identity.map + "/" + theme + ".json", location.href);
+          if (Object.keys(controlsDraft).length) url.searchParams.set("controls", JSON.stringify(controlsDraft));
+          const response = await fetch(url, {signal});
+          if (!response.ok) throw new Error("Could not read theme " + theme);
+          return response.json();
+        },
+        async apply(theme, signal) {
+          if (signal?.aborted) throw new Error("Audit cancelled.");
+          const side = states[activeSideId], owner = wbCatalog?.sides[side.serviceId || side.id];
+          const entry = owner?.selections.find(item => item.map === side.workbenchMap && item.theme === theme && !item.scene);
+          if (!entry) throw new Error("Theme is not available: " + theme);
+          applyWorkbenchAppearance(side, entry);
+          const started = performance.now();
+          do {
+            if (signal?.aborted) throw new Error("Audit cancelled.");
+            if (states[activeSideId] !== side) throw new Error("The active map changed.");
+            if (performance.now() - started > 30000) throw new Error("Theme update timed out.");
+            await new Promise(resolve => setTimeout(resolve,40));
+          } while (controlsBusy || controlsPending || controlsLoadingKey || controlsApplyTimer !== undefined);
+          if (controlsLastError) throw new Error(controlsLastError);
+          if (controlsIdentity(side)?.theme !== theme) throw new Error("Theme could not be applied.");
+        },
+        async restore(saved) {
+          if (states[activeSideId].id !== saved.side) return;
+          controlsHistoryQuiet++;
+          try {
+          controlsDraft = structuredClone(saved.controls);
+          ctl("3d").checked = saved.buildings3d; ctl("animation").value = saved.animation;
+          scheduleMapControls();
+          await this.apply(saved.theme);
+          const side = states[activeSideId];
+          if (saved.style) await side.frame.contentWindow.__tileflowApplyScene(JSON.stringify({map:controlsIdentity(side).map,theme:saved.theme,controls:saved.controls,buildings3d:saved.buildings3d,animation:saved.animation === "fade" ? "fade" : Number(saved.animation),style:saved.style}), () => states[activeSideId] === side);
+          renderMapControls();syncAnimationSegments();controlsHistoryCurrent=this.snapshot();
+          } finally {controlsHistoryQuiet--;}
+        }
+      };
 `;

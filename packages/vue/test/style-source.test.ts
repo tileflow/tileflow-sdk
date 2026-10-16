@@ -85,3 +85,13 @@ test('component rendering rejects renderer input before mounting', async () => {
     await assert.rejects(() => renderToString(app), /Invalid TileflowMap source/u);
   }
 });
+
+test('timeOfDay accepts the four artistic presets and rejects malformed values', () => {
+  const source = {map: 'streets'};
+  for (const timeOfDay of [undefined, 'day', 'dawn', 'dusk', 'night']) {
+    assert.deepEqual(validateTileflowMapStyleInputs({source, timeOfDay}), {ok: true});
+  }
+  for (const timeOfDay of ['auto', 'sunset', '', null, 12, {}]) {
+    assert.equal(validateTileflowMapStyleInputs({source, timeOfDay}).ok, false);
+  }
+});

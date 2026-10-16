@@ -711,3 +711,5 @@ export {
   type TileflowVegetationRepresentation,
   type TileflowViewMode,
 } from './vegetation-display';
+export {isTileflowTimeOfDay, tileflowTimesOfDay} from './time-of-day';
+export type {TileflowTimeOfDay, TileflowTimeOfDayVariants} from './time-of-day';

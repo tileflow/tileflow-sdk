@@ -199,6 +199,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     mapOptions,
     analytics,
     theme,
+    timeOfDay,
     themeBlend,
     themeTransition,
     vegetation,
@@ -341,12 +342,17 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       }
       return {
         error: false,
-        name: resolveTileflowRuntimeTheme(manifestMap, selection, systemColorScheme).name,
+        name: resolveTileflowRuntimeTheme(
+          manifestMap,
+          selection,
+          systemColorScheme,
+          themeBlendKey ? undefined : timeOfDay,
+        ).name,
       } as const;
     } catch {
       return {error: true, name: undefined} as const;
     }
-  }, [blendThemeName, manifestMap, systemColorScheme, theme, themeBlendKey]);
+  }, [blendThemeName, manifestMap, systemColorScheme, theme, themeBlendKey, timeOfDay]);
   const resolvedThemeName = themeResolution.name;
   const manifestView = resolveTileflowRuntimeView({manifestMap});
   const manifestCenter = useStableMapOptionValue<[number, number]>(

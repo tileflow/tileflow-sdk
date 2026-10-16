@@ -1,3 +1,4 @@
+import type {TileflowTimeOfDay} from './time-of-day';
 import type {TileflowRuntimeManifest} from './manifest-types';
 import type {TileflowNativeNetworkOptions} from './native-url-policy';
 import type {
@@ -54,6 +55,7 @@ export type TileflowNativeSource = {
 
 export type TileflowNativeSourceOptions = {
   theme?: string;
+  timeOfDay?: TileflowTimeOfDay;
   /** Required only for theme="system"; no ambient appearance access. */
   colorScheme?: TileflowRuntimeColorScheme;
   signal?: TileflowNativeAbortSignal;

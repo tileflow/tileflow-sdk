@@ -73,3 +73,13 @@ test('accepts theme transitions of zero to five seconds', () => {
     assert.equal(validateTileflowMapStyleInputs({source, themeTransition}).ok, false);
   }
 });
+
+test('timeOfDay accepts the four artistic presets and rejects malformed values', () => {
+  const source = {map: 'streets'};
+  for (const timeOfDay of [undefined, 'day', 'dawn', 'dusk', 'night']) {
+    assert.deepEqual(validateTileflowMapStyleInputs({source, timeOfDay}), {ok: true});
+  }
+  for (const timeOfDay of ['auto', 'sunset', '', null, 12, {}]) {
+    assert.equal(validateTileflowMapStyleInputs({source, timeOfDay}).ok, false);
+  }
+});

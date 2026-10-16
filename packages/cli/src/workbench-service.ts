@@ -8,7 +8,12 @@ import {
   createTileflowVisualReviewDocument,
   type TileflowCaptureSession,
 } from '@tileflow/capture';
-import {tileflowCaptureSceneNameSchema, tileflowCaptureSceneSchema} from '@tileflow/core';
+import {
+  parseResolvedTileflowMap,
+  tileflowCaptureSceneNameSchema,
+  tileflowCaptureSceneSchema,
+  type TileflowTimeOfDayVariants,
+} from '@tileflow/core';
 import {resolveTileflowPreview} from '@tileflow/dev/preview';
 import type {TileflowArtifactSession} from '@tileflow/dev/server';
 import {
@@ -71,8 +76,11 @@ export function createWorkbenchService(options: Options) {
         const state = side.session.getState();
         const artifacts = side.session.getLastGoodArtifacts();
         const selections: Array<Record<string, unknown>> = [];
+        const timeOfDay: Record<string, TileflowTimeOfDayVariants> = {};
         if (artifacts) {
           for (const [map, themes] of Object.entries(artifacts.styles)) {
+            const variants = parseResolvedTileflowMap(artifacts.project.maps[map]!).timeOfDay;
+            if (variants && Object.keys(variants).length) timeOfDay[map] = variants;
             for (const theme of Object.keys(themes)) {
               const preview = resolveTileflowPreview(artifacts.project, {map, theme});
               selections.push({
@@ -112,6 +120,7 @@ export function createWorkbenchService(options: Options) {
             lastGoodGeneration: state.lastGoodGeneration,
             diagnostics: state.status === 'invalid' ? state.diagnostics : [],
             selections,
+            timeOfDay,
           },
         ];
       }),

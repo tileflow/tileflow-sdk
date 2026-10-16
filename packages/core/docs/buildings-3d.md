@@ -38,6 +38,8 @@ export function raiseTheCity(map: TileflowBuildings3DMap, controller: TileflowTh
 ```
 
 `show()`, `hide()` and `grow(scale)` change the height immediately by default (duration 0).
+`show({transition: {duration: 800, mode: 'fade'}})` reveals full-height buildings with a
+dithered fade. The default animation mode is `grow`; both modes respect reduced-motion settings.
 To animate, pass `{transition: {duration: 800}}` explicitly; `grow(scale)` accepts a height share
 from 0 to 1. Each returns a promise that resolves once the change ends; a newer call takes over from where the buildings stand. A browser preference for reduced
 motion changes at once. `dispose()` takes the layer off the map.

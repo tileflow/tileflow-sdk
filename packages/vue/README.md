@@ -88,6 +88,12 @@ Omitting `theme` uses `defaultTheme`. `system` needs the map's explicit light/da
 Streets supplies. Switching themes preserves the map, camera, and interactions, with rollback on
 failure. Listen to `themeChange` for transitions.
 
+Add `time-of-day="dusk"` beside `theme` to select a map's optional `day`, `dawn`, `dusk`, or
+`night` preset. For Streets, `theme="light"` with this preset selects the existing `dusk` palette.
+Maps without this capability ignore the option; omitting it keeps the selected theme unchanged.
+Changing it uses the existing theme transition. `themeBlend` takes precedence. See the
+[authoring contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md#style-with-themes-and-semantic-modules).
+
 `:theme-transition="{duration: 450}"` cross-fades theme changes over that many milliseconds.
 `:theme-blend="{themes: ['night', 'dusk', 'day'], position}"` shows a continuous blend of the
 map's themes instead of `theme`: position 0 is the first theme and 1.5 is halfway from the second to

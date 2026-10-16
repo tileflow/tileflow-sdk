@@ -74,6 +74,15 @@ test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good 
   assert.match(preview, /Tileflow Map DevTools/);
   assert.match(preview, /"initialMode":"single"/);
   assert.match(preview, /Inspect the map/);
+  const viewQuery = '?lng=-3.70345&lat=40.417134&zoom=16.27&theme=faded';
+  const alias = await fetch(`http://localhost:${port}/${viewQuery}`, {redirect: 'manual'});
+  assert.equal(alias.status, 307);
+  assert.equal(alias.headers.get('location'), `http://127.0.0.1:${port}/${viewQuery}`);
+  const navigation = await fetch(`http://localhost:${port}/${viewQuery}`);
+  assert.equal(navigation.url, `http://127.0.0.1:${port}/${viewQuery}`);
+  assert.match(await navigation.text(), /Tileflow Map DevTools/);
+  assert.equal((await fetch(new URL('/__workbench', navigation.url))).status, 200);
+  assert.equal((await fetch(`http://localhost:${port}/__workbench`)).status, 403);
   assert.equal(
     (await fetch(`http://127.0.0.1:${port}/map/__inspection/main/light.json`)).status,
     200,
@@ -144,10 +153,13 @@ test('preview comparison serves two watched sides and their memory-only inspecti
 
   const shell = await (await fetch(`http://127.0.0.1:${port}/`)).text();
   assert.match(shell, /Tileflow Map DevTools/u);
-  assert.match(shell, /Side by side/u);
-  assert.match(shell, /Copy scene/u);
+  assert.doesNotMatch(shell, /Side by side|Copy scene|id="wb-capture"|id="wb-review"/u);
+  assert.match(shell, /__workbench-runtime\/devtools\.js/u);
   assert.doesNotMatch(shell, /"captureConfig":/u);
   assert.equal(shell.includes(cwd), false);
+  const alias = await fetch(`http://localhost:${port}/?mode=split`, {redirect: 'manual'});
+  assert.equal(alias.status, 307);
+  assert.equal(alias.headers.get('location'), `http://127.0.0.1:${port}/?mode=split`);
   assert.equal((await fetch(`http://127.0.0.1:${port}/left/styles/main/light.json`)).status, 200);
   assert.equal((await fetch(`http://127.0.0.1:${port}/right/styles/main/light.json`)).status, 200);
 
@@ -175,7 +187,7 @@ test('preview comparison serves two watched sides and their memory-only inspecti
   assert.equal(completion.code, 0, completion.stderr);
 });
 
-test('preview comparison publishes distinct cwd-relative config arguments for Copy command', async (t) => {
+test('preview comparison publishes distinct cwd-relative config arguments for browser context', async (t) => {
   const cwd = await createFixture('tileflow-dev-compare-configs-');
   await writeWatchFixture(cwd, '#315744');
   const leftConfig = join(cwd, 'candidate config.ts');

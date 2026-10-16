@@ -22,10 +22,11 @@ Each public field has one explicit merge rule:
 - Omitted design fields inherit.
 - `view` merges recursively.
 - `themes` replaces as one complete collection when declared; omission inherits it. Replacing the
-  collection clears an inherited `systemThemes` mapping so it cannot point into an obsolete family.
+  collection clears inherited `systemThemes` and `timeOfDay` mappings so they cannot point into an obsolete family.
   `defaultTheme` may independently select one inherited concrete theme, and an explicit
   `systemThemes` replaces the complete light/dark mapping. Every resolved selector must name a
   member of the final collection.
+- `timeOfDay` replaces the complete theme-to-preset catalog; `{}` disables an inherited catalog.
 - `atmosphere`, `data`, `projection`, and `terrain` replace atomically when declared.
   Enabled atmosphere requires globe projection; `false` disables an inherited atmosphere.
 - `modules` merges by domain name. Declaring `roads(...)`, for example, replaces that inherited

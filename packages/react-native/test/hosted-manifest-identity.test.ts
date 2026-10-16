@@ -197,3 +197,19 @@ test('non-session metadata does not inspect configuration or incidental delivery
     resolver.dispose();
   }
 });
+
+test('Hosted V2 time-of-day catalogs retain the same exact credential and revision boundary', () => {
+  const input = source();
+  const timeOfDay = {light: {day: 'light'}};
+  Object.assign(input.manifest, {version: 2});
+  Object.assign(input.manifest.maps.streets!, {timeOfDay});
+  Object.assign(input.map, {timeOfDay});
+  assert.deepEqual(snapshotHostedNativeManifestIdentity(input), {
+    mapId,
+    apiOrigin,
+    deploymentVersion: 7,
+  });
+  assert.doesNotThrow(() => assertHostedNativeStyleDocument(input, document()));
+  Object.assign(input.manifest, {version: 3});
+  assert.throws(() => snapshotHostedNativeManifestIdentity(input));
+});

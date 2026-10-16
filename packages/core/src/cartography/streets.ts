@@ -1,3 +1,4 @@
+import type {TileflowTimeOfDay} from '../time-of-day';
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import {tileflowAtmosphereMetadataKey} from '../atmosphere';
 import {compileTileflowSky, resolveTileflowAtmosphere} from '../atmosphere-compile';
@@ -122,6 +123,8 @@ export type TileflowSemanticCompileOptions = {
   preparedAssets?: TileflowPreparedMapAssets;
   /** Concrete named theme. Omission deterministically selects map.defaultTheme. */
   theme?: string;
+  /** Optional artistic preset declared by the map. */
+  timeOfDay?: TileflowTimeOfDay;
 };
 
 export type TileflowSemanticCompilationOptions = TileflowSemanticCompileOptions & {
@@ -202,7 +205,9 @@ function compileSemanticStyleInternal(
       suggestion,
       ...(target ? {target} : {}),
     }));
-  const selected = runCompilationPhase('theme', () => resolveThemeSelection(input, options.theme));
+  const selected = runCompilationPhase('theme', () =>
+    resolveThemeSelection(input, options.theme, options.timeOfDay),
+  );
   const resolvedTheme = runCompilationPhase('theme', () => resolveTileflowTheme(selected.theme));
   const {overlays, themes: _themes, ...themeableConfig} = input;
   const resolvedThemeConfig = runCompilationPhase('theme', () =>

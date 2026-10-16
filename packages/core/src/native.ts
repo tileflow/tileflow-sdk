@@ -1,3 +1,4 @@
+export type {TileflowTimeOfDay, TileflowTimeOfDayVariants} from './time-of-day';
 export {
   resolveTileflowNativeManifestUrl,
   resolveTileflowNativeResourceUrl,

@@ -1489,6 +1489,16 @@ export const streets = bindOfficialMapTheme(
       fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic'],
     },
     themes: streetsThemes,
+    timeOfDay: {
+      light: {day: 'light', dawn: 'dawn', dusk: 'dusk', night: 'dark'},
+      faded: {day: 'faded', dawn: 'dawn-faded', dusk: 'dusk-faded', night: 'dark-faded'},
+      monochrome: {
+        day: 'monochrome',
+        dawn: 'dawn-monochrome',
+        dusk: 'dusk-monochrome',
+        night: 'dark-monochrome',
+      },
+    },
     defaultTheme: 'light',
     systemThemes: {light: 'light', dark: 'dark'},
     projection: 'globe', // 'globe' | 'mercator'. Globe becomes planar at street zooms.

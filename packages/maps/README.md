@@ -236,7 +236,7 @@ are not enabled by that official map.
 `streetsThemes` and `siegfriedThemes` expose complete `light` and `dark` themes. Import those
 collections when using `defineTheme()` to derive a new appearance. A declared `themes` collection
 replaces the inherited collection, so also declare the intended `defaultTheme` and `systemThemes`
-mapping. `system` belongs to browser selection; captures and builds use concrete theme names.
+and optional `timeOfDay` mappings. `system` belongs to browser selection; captures and builds use concrete theme names.
 
 Every map exports an icon-directory descriptor: `streetsIcons`, `baedekerIcons`, `civicaIcons`,
 `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, and `blueprintIcons`. The descriptors point into this installed package; they are not sprite URLs.
@@ -296,3 +296,10 @@ for exact names. The installed package's definitions and README take precedence 
 
 The [design and asset notes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/docs/design-and-assets.md) describe each map's visual grammar, source references, and third-party asset boundaries. They are also included under
 `docs/` in the installed package.
+
+Streets offers three time-of-day families: `light`, `faded`, and `monochrome`, each with
+`day`, `dawn`, `dusk`, and `night`. For example, `theme="faded" timeOfDay="night"` resolves to
+`dark-faded`. DevTools shows these as separate Theme and Time of day controls. All twelve
+concrete theme names remain available for existing applications and captures. This catalog
+reuses the existing palettes and lighting; extending Streets without overriding it inherits it.
+See the [time-of-day contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md#style-with-themes-and-semantic-modules).

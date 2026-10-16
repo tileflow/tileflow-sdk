@@ -1,3 +1,8 @@
+import {
+  resolveTileflowTimeOfDayTheme,
+  type TileflowTimeOfDay,
+  type TileflowTimeOfDayVariants,
+} from '../time-of-day';
 import {isMapLibreExpressionOperator} from '../cartography/expression-operators';
 import type {
   TileflowFixedValue,
@@ -275,8 +280,10 @@ export function resolveThemeSelection(
   map: {
     defaultTheme: string;
     themes: Readonly<Record<string, TileflowTheme>>;
+    timeOfDay?: TileflowTimeOfDayVariants;
   },
   requested?: string,
+  timeOfDay?: TileflowTimeOfDay,
 ): TileflowResolvedThemeSelection {
   const name = requested ?? map.defaultTheme;
   if (name === 'system') {
@@ -294,7 +301,8 @@ export function resolveThemeSelection(
     const available = Object.keys(map.themes).sort().join(', ') || '<none>';
     throw new Error(`Unknown Tileflow theme "${name}"; available themes: ${available}.`);
   }
-  return {name, theme};
+  const resolvedName = resolveTileflowTimeOfDayTheme(map.timeOfDay, name, timeOfDay);
+  return {name: resolvedName, theme: map.themes[resolvedName]!};
 }
 
 /** Find visual literals whose permanence is otherwise invisible to an agent. */

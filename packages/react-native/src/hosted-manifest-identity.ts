@@ -81,7 +81,9 @@ export function snapshotHostedNativeManifestIdentity(
     if (sourceUrl !== expected || finalUrl !== expected) throw new Error();
     const manifest = field(source, 'manifest');
     const maps = field(manifest, 'maps');
-    if (field(manifest, 'version') !== 1 || names(maps, 1)[0] !== name) throw new Error();
+    const manifestVersion = field(manifest, 'version');
+    if ((manifestVersion !== 1 && manifestVersion !== 2) || names(maps, 1)[0] !== name)
+      throw new Error();
     const declared = field(maps, name);
     if (field(declared, 'mapId') !== mapId || field(declared, 'usageMode') !== 'session')
       throw new Error();

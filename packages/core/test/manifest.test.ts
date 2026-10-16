@@ -155,7 +155,7 @@ test('canonical schema rejects drift, unsafe resources, and invalid theme relati
     tileflowRuntimeManifestSchema.safeParse({...validManifest, extra: true}).success,
     false,
   );
-  assert.throws(() => parseTileflowRuntimeManifest({...validManifest, version: 2}));
+  assert.throws(() => parseTileflowRuntimeManifest({...validManifest, version: 3}));
   assert.throws(() =>
     parseTileflowRuntimeManifest({
       ...validManifest,

@@ -64,6 +64,7 @@ export function createTileflowComparisonRequestHandler(options: TileflowComparis
     assertDisjointSideRoutes(workbenchUrl, left.basePath);
     if (right) assertDisjointSideRoutes(workbenchUrl, right.basePath);
     assertDisjointSideRoutes(workbenchUrl, `${comparisonBasePath}/__workbench-fonts`);
+    assertDisjointSideRoutes(workbenchUrl, `${comparisonBasePath}/__workbench-runtime`);
   }
   const title = normalizeLabel(options.title ?? 'Tileflow Map DevTools', 'title');
   const initialMode = right ? (options.initialMode ?? 'side-by-side') : 'single';
@@ -72,10 +73,26 @@ export function createTileflowComparisonRequestHandler(options: TileflowComparis
     const url = new URL(request.url);
     const pathname = url.pathname;
 
+    if (pathname === `${comparisonBasePath}/__workbench-runtime/devtools.js`) {
+      if (request.method !== 'GET' && request.method !== 'HEAD')
+        return jsonResponse({error: 'Method not allowed'}, 405);
+      const source = await readFile(
+        new URL('../dist/devtools-browser.js', import.meta.url),
+        'utf8',
+      );
+      return new Response(request.method === 'HEAD' ? null : source, {
+        headers: {
+          'Content-Type': 'text/javascript; charset=utf-8',
+          'Cache-Control': 'no-store',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    }
+
     const font = pathname.slice(`${comparisonBasePath}/__workbench-fonts/`.length);
     if (
       pathname.startsWith(`${comparisonBasePath}/__workbench-fonts/`) &&
-      ['mona-sans.woff2', 'hubot-sans.woff2'].includes(font)
+      ['mona-sans.woff2', 'hubot-sans.woff2', 'inter.woff2', 'jetbrains-mono.woff2'].includes(font)
     ) {
       if (request.method !== 'GET' && request.method !== 'HEAD')
         return jsonResponse({error: 'Method not allowed'}, 405);
@@ -151,6 +168,7 @@ function normalizeSide(
   if (!basePath) {
     throw new TypeError(`Tileflow comparison ${name} basePath must not own the server root.`);
   }
+  assertDisjointSideRoutes(basePath, `${comparisonBasePath}/__workbench-runtime`);
   if (comparisonBasePath && !matchesBasePath(basePath, comparisonBasePath)) {
     throw new TypeError(
       `Tileflow comparison ${name} basePath must be inside ${comparisonBasePath}.`,

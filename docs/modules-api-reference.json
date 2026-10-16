@@ -30,6 +30,7 @@
       "systemThemes": "atomic",
       "terrain": "atomic",
       "themes": "atomic",
+      "timeOfDay": "atomic",
       "version": "identity",
       "view": "deep"
     },
@@ -67,6 +68,11 @@
         "path": "systemThemes.{light,dark}",
         "enforcement": "config-validation",
         "rule": "Each declared selector must exist in themes and its theme.colorScheme must match the system key."
+      },
+      {
+        "path": "timeOfDay.{theme}.{day,dawn,dusk,night}",
+        "enforcement": "config-validation",
+        "rule": "Families and their presets must name existing themes. Each family includes itself; a concrete theme belongs to at most one family."
       },
       {
         "path": "themes.*",
@@ -287,11 +293,14 @@
         "themes": {
           "$ref": "#/$defs/__schema288"
         },
-        "version": {
+        "timeOfDay": {
           "$ref": "#/$defs/__schema296"
         },
-        "view": {
+        "version": {
           "$ref": "#/$defs/__schema297"
+        },
+        "view": {
+          "$ref": "#/$defs/__schema298"
         },
         "scenes": {
           "type": "object",
@@ -377,11 +386,14 @@
         "themes": {
           "$ref": "#/$defs/__schema288"
         },
-        "version": {
+        "timeOfDay": {
           "$ref": "#/$defs/__schema296"
         },
-        "view": {
+        "version": {
           "$ref": "#/$defs/__schema297"
+        },
+        "view": {
+          "$ref": "#/$defs/__schema298"
         },
         "scenes": {
           "type": "object",
@@ -1133,11 +1145,14 @@
         "themes": {
           "$ref": "#/$defs/__schema288"
         },
-        "version": {
+        "timeOfDay": {
           "$ref": "#/$defs/__schema296"
         },
-        "view": {
+        "version": {
           "$ref": "#/$defs/__schema297"
+        },
+        "view": {
+          "$ref": "#/$defs/__schema298"
         }
       },
       "required": ["defaultTheme", "id", "name", "themes", "version"],
@@ -9283,11 +9298,35 @@
       "additionalProperties": false
     },
     "__schema296": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/__schema24"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "properties": {
+          "day": {
+            "$ref": "#/$defs/__schema24"
+          },
+          "dawn": {
+            "$ref": "#/$defs/__schema24"
+          },
+          "dusk": {
+            "$ref": "#/$defs/__schema24"
+          },
+          "night": {
+            "$ref": "#/$defs/__schema24"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "__schema297": {
       "type": "integer",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991
     },
-    "__schema297": {
+    "__schema298": {
       "type": "object",
       "properties": {
         "bearing": {

@@ -99,6 +99,12 @@ for assets.
 explicit light/dark mapping, which Streets supplies. Theme changes preserve the MapLibre instance,
 camera, and interactions, and roll back on failure. `onThemeChange` reports transitions.
 
+Add `timeOfDay="dusk"` beside `theme` to select a map's optional `day`, `dawn`, `dusk`, or
+`night` preset. For Streets, `theme="light"` with this preset selects the existing `dusk` palette.
+Maps without this capability ignore the option; omitting it keeps the selected theme unchanged.
+Changing it uses the existing theme transition. `themeBlend` takes precedence. See the
+[authoring contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md#style-with-themes-and-semantic-modules).
+
 `themeTransition={{duration: 450}}` cross-fades theme changes over that many milliseconds.
 `themeBlend={{themes: ['night', 'dusk', 'day'], position}}` shows a continuous blend of the map's
 themes instead of `theme`: position 0 is the first theme and 1.5 is halfway from the second to the

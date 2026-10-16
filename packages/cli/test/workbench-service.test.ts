@@ -137,6 +137,12 @@ test('Workbench reuses pinned artifacts, saves verified history and compares wit
       }),
     );
   const catalog = await (await request('')).json();
+  assert.deepEqual(catalog.sides.left.timeOfDay.map.light, {
+    day: 'light',
+    dawn: 'dawn',
+    dusk: 'dusk',
+    night: 'dark',
+  });
   assert.ok(catalog.sides.left.selections.some((item: {id: string}) => item.id === 'scene:proof'));
   const generation = session.getState().generation;
   const input = {

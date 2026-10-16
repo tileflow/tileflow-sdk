@@ -13,7 +13,7 @@ function compare(value: unknown): void {
 test('native uses the canonical manifest grammar and preserves delivery/view/theme constraints', () => {
   compare(manifest());
   for (const change of [
-    {version: 2},
+    {version: 3},
     {maps: {}},
     {extra: true},
     {apiUrl: 'https://api.example.test/path'},

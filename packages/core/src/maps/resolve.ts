@@ -62,6 +62,7 @@ export const tileflowMapMergeStrategies = {
   systemThemes: 'atomic',
   terrain: 'atomic',
   themes: 'atomic',
+  timeOfDay: 'atomic',
   version: 'identity',
   view: 'deep',
 } as const satisfies Record<keyof TileflowMap, MapMergeStrategy>;
@@ -86,7 +87,10 @@ export function resolveMap(map: TileflowMap, options: ResolveMapOptions = {}): R
 
     // A theme collection and its browser scheme mapping form one semantic family. Replacing the
     // collection clears an inherited mapping; the same map may declare a new mapping explicitly.
-    if (current.themes !== undefined) delete design.systemThemes;
+    if (current.themes !== undefined) {
+      delete design.systemThemes;
+      delete design.timeOfDay;
+    }
 
     for (const key of Object.keys(current) as TileflowMapKey[]) {
       const value = current[key];

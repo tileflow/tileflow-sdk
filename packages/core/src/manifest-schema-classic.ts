@@ -38,6 +38,7 @@ export const classicManifestSchemaOperations: ManifestSchemaOperations = {
     return z.enum(values) as unknown as ManifestSchema<Values[number]>;
   },
   literal: (value) => z.literal(value),
+  union: (left, right) => z.union([classic(left), classic(right)]),
   tuplePair<A, B>(left: ManifestSchema<A>, right: ManifestSchema<B>) {
     return z.tuple([classic(left), classic(right)]) as unknown as ManifestSchema<[A, B]>;
   },

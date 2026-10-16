@@ -279,3 +279,27 @@ test('forged owned map options never reach the native renderer or leak their val
   assert.equal(f.events[0]?.type, 'renderer-error');
   await f.owner.dispose();
 });
+
+test('changing only timeOfDay selects a variant without replacing native ownership', async () => {
+  const f = fixture();
+  const catalog = f.documents[f.source.manifestUrl] as {version: number; maps: {main: object}};
+  catalog.version = 2;
+  Object.assign(catalog.maps.main, {timeOfDay: {light: {day: 'light', night: 'dark'}}});
+  f.update({theme: 'light', timeOfDay: 'day'});
+  await f.owner.whenIdle();
+  const key = f.owner.getSnapshot().renderer!.key;
+  assert.equal(f.owner.getSourceState()?.status, 'ready');
+  f.update({theme: 'light', timeOfDay: 'night'});
+  await f.owner.whenIdle();
+  const state = f.owner.getSourceState();
+  assert.equal(state?.status, 'ready');
+  if (state?.status !== 'ready') throw new Error('Expected ready state');
+  assert.equal(state.theme.name, 'dark');
+  assert.equal(f.owner.getSnapshot().renderer!.key, key);
+  assert.equal(f.contexts.length, 1);
+  f.update({theme: 'light'});
+  await f.owner.whenIdle();
+  const restored = f.owner.getSourceState();
+  assert.equal(restored?.status === 'ready' && restored.theme.name, 'light');
+  await f.owner.dispose();
+});

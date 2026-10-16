@@ -83,7 +83,8 @@ test('prepares Streets and every theme deterministically without changing logica
     web.buildManifest.maps.main!.mapRevisionSha256,
   );
   assert.deepEqual(parseTileflowRuntimeManifest(first.manifest), first.manifest);
-  assert.equal(first.manifest.version, 1);
+  assert.equal(first.manifest.version, 2);
+  assert.deepEqual(first.manifest.maps.main?.timeOfDay, web.manifest.maps.main?.timeOfDay);
   assert.equal(Object.hasOwn(first.manifest, 'renderer'), false);
   assert.equal(Object.hasOwn(first.manifest, 'profile'), false);
   assert.ok(first.nativeBuild);

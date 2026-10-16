@@ -33,6 +33,13 @@ export default defineMap({id: 'madrid', version: 1, extends: streets});
 Loading the config executes its imports. It is not a sandbox for untrusted code. Local preparation
 needs no API key, but serving a map can still cause requests to its remote data or font providers.
 
+The CLI's local Map DevTools provides a dockable layer inspector, loaded tiles, assets, scene
+controls and frame timing. Its element picker selects a layer and evaluates its rules using the
+feature clicked on the map.
+Performance's Overdraw overlay uses a heatmap with a visible pass-count legend and explanation.
+See [Map DevTools and compiler inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md)
+for interaction details and observation limits.
+
 ## Prepare a generation
 
 <!-- docs:check -->
@@ -130,10 +137,47 @@ loading, `/icons` and `/fonts` for asset preparation, `/inspect` for bounded ins
 for local PMTiles inspection, and `/validation` for diagnostics. `/preview` is the local preview
 contract, including experimental preview-only rendering; it does not promise hosted support.
 The package has no root entry point. `/server` also exposes the reusable Map DevTools shell. The CLI
-connects scene selection, saved capture/review and shared browser context through its optional local
+connects appearance controls and shared browser context through its optional local
 workflow adapter; see the [Map DevTools guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md).
-**Controls** groups map, theme and scene selection with module settings in one sidebar.
-**Captures** includes confirmed deletion of individual saved captures through the local adapter.
+The navigation contains **Map**, **Layers**, **Tiles**, **Assets**, **Debug** and **Beacon**.
+Zoom, Bearing and Pitch occupy a separate row directly below it, with a live zoom slider,
+**Reset** to restore all three initial camera values, and **Copy context for agent**.
+The active tab and selected layer remain in the URL across reloads. The menu provides left,
+right and bottom docking, System/Light/Dark appearance, and **Reset all changes**.
+
+**Map** exposes time-of-day segments, palette cards with actual style swatches, 3D view,
+Off/Grow/Fade building animation, and the map's module settings. The command selects the map.
+Changes update the existing map after a 300 ms pause while the form remains editable. Superseded
+compilations are discarded. Runtime controls do not recompile the style. Scene and layer edits
+share the header Undo/Redo controls; source files stay unchanged.
+
+**Layers** groups physical and runtime layers by module or draw order. Hover highlights geometry;
+selection keeps it highlighted independently of the element picker. The picker opens the clicked
+feature's layer in **Rules**. Rules expose live colors, numeric sliders, enums, expression curves,
+defaults, and checkboxes for temporarily disabling paint, layout and filters. Diagnosis, Data and
+Origin explain renderer state, sample features and available compiler provenance. **Visible**
+filters to the current viewport. Context can be reviewed as Markdown or JSON before copying.
+See [Layers inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/layers-inspection.md).
+
+**Tiles** shows resident map tiles as a coordinate grid and source-grouped list. Source layers,
+Features and Info expose raw payload sizes, consumer layers, paginated features, GeoJSON and bounds.
+Inspection reads resident data without issuing tile requests. MLT and inaccessible renderer data
+have explicit unavailable states.
+
+**Assets** separates Icons, 3D models and Fonts. Icons lists real registered images and loads actual
+sprite variants for the map's palettes and times of day. Models previews bounded samples of loaded
+controller meshes, with available counts, bytes and LODs. Fonts renders editable samples from actual
+font files or glyphs and links back to consuming layers.
+
+**Debug** contains overdraw, collision and tile-boundary overlays, explanations, and controls for
+the map's actual pixel ratio. **Beacon** runs 48 checks across Rendering, Loading, Legibility,
+Accessibility, Cartography and Integrity. Choose Desktop/Mobile and Active tour (default), Quick check or All zooms. The active tour measures
+navigation and settled frames across the current view and five world cities within an approximately
+one-minute budget, reports partial coverage explicitly and restores the original camera. Findings
+link to Layers, Tiles and Debug and can be copied with evidence for an agent. Unknown or
+informational measurements do not contribute passing scores. See
+[Beacon map audits](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/beacon-map-audits.md)
+for sampling, scoring and measurement limits.
 
 The preview's globe rim follows the rendered canvas silhouette, including camera and viewport
 changes, and fades between zooms 3 and 6. Its colors follow the map's atmosphere when declared.

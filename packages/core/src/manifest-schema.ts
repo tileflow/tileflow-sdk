@@ -14,6 +14,8 @@ import {createPortableIdentitySchemas} from './portable-identity-schema';
 import type {TileflowStyleFontFace} from './runtime';
 import {createTileflowRuntimeViewSchema} from './runtime-view-schema';
 import {tileflowThemeLimits} from './themes/model';
+import {validateTileflowTimeOfDayVariants} from './time-of-day';
+import {createTileflowTimeOfDaySchema} from './time-of-day-schema';
 
 /** Private primitives, not a second manifest wire format or a consumer configuration API. */
 export type TileflowManifestPrimitives = {
@@ -32,7 +34,7 @@ export type TileflowManifestPrimitives = {
   utf8ByteLength(value: string): number;
 };
 
-/** Canonical version-1 grammar; adapters only delegate constructors and checks to Zod. */
+/** Canonical version-1 and version-2 grammar; adapters only delegate constructors and checks to Zod. */
 export function createTileflowRuntimeManifestSchema(
   primitives: TileflowManifestPrimitives,
   operations: ManifestSchemaOperations,
@@ -91,12 +93,24 @@ export function createTileflowRuntimeManifestSchema(
         }),
       ),
       themes: operations.record(tileflowThemeNameSchema, manifestThemeSchema),
+      timeOfDay: operations.optional(
+        createTileflowTimeOfDaySchema(operations, tileflowThemeNameSchema),
+      ),
       usageMode: operations.optional(operations.literal('session')),
       view: operations.optional(viewSchema),
       worldGeneration: operations.optional(operations.literal('v1')),
     }),
     (entry, context) => {
       const names = Object.keys(entry.themes);
+      if (entry.timeOfDay) {
+        for (const issue of validateTileflowTimeOfDayVariants(entry.timeOfDay, entry.themes)) {
+          context.addIssue({
+            code: 'custom',
+            message: issue.message,
+            path: ['timeOfDay', ...issue.path],
+          });
+        }
+      }
       if (names.length === 0) {
         context.addIssue({
           code: 'custom',
@@ -151,10 +165,23 @@ export function createTileflowRuntimeManifestSchema(
     operations.object<TileflowRuntimeManifest>({
       apiUrl: operations.optional(apiOriginSchema),
       maps: operations.record(tileflowPortableIdSchema, manifestMapSchema),
-      version: operations.literal(tileflowRuntimeManifestVersion),
+      version: operations.union(
+        operations.literal(tileflowRuntimeManifestVersion),
+        operations.literal(2),
+      ),
     }),
     (manifest, context) => {
       const mapCount = Object.keys(manifest.maps).length;
+      if (manifest.version === 1) {
+        for (const [name, map] of Object.entries(manifest.maps)) {
+          if (map.timeOfDay !== undefined)
+            context.addIssue({
+              code: 'custom',
+              message: 'timeOfDay requires manifest version 2',
+              path: ['maps', name, 'timeOfDay'],
+            });
+        }
+      }
       if (mapCount === 0) {
         context.addIssue({code: 'custom', message: 'Expected at least one map', path: ['maps']});
       }

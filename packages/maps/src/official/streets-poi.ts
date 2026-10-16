@@ -308,9 +308,17 @@ export function streetsPoiPictogramToken(id: StreetsPoiPictogramId) {
   return token.image(`poi.pictogram.${id}`);
 }
 
-/** Image tokens for one theme: the light theme uses `<id>`, the dark theme `<id>-dark`. */
-export function streetsPoiImageTokens(variant: 'dark' | 'light'): Record<string, string> {
-  const image = (id: string) => (variant === 'dark' ? `${id}-dark` : id);
+/** Image tokens for category-color or monochrome POI artwork in one theme. */
+export function streetsPoiImageTokens(
+  variant: 'dark' | 'light' | 'monochrome' | 'monochrome-dark',
+): Record<string, string> {
+  const suffix = {
+    light: '',
+    dark: '-dark',
+    monochrome: '-monochrome',
+    'monochrome-dark': '-monochrome-dark',
+  }[variant];
+  const image = (id: string) => `${id}${suffix}`;
   return Object.fromEntries([
     ...Object.entries(streetsPoiCategoryPictograms).map(([category, id]) => [
       `poi.${category}`,

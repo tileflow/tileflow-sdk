@@ -67,6 +67,16 @@ for command examples, bounded JSON queries, compatible aliases and efficient age
 it does not implicitly expose a public listener. `--theme <name>` selects a concrete theme.
 `--scene <name>` selects a committed standalone scene.
 
+Run `npx tileflow preview` from your project directory to load `tileflow.config.ts`, start the
+watched server, and automatically open Map DevTools in your default browser once the server is
+listening. Use `--config <path>` for another config or `--no-open` to start without opening a tab.
+`--json` and `--renderer native` also keep the browser closed. The CLI always prints the local URL
+in ordinary web preview output, so you can open it manually if browser launch is unavailable.
+
+Opening Map DevTools through another loopback name, such as `localhost` instead of `127.0.0.1`,
+redirects to the **Local** origin printed by the CLI, preserving camera and theme query parameters.
+This keeps the map, palette controls, and workbench API on the same origin.
+
 Run from the project directory and keep selected configs inside it, so capture commands copied from
 Map DevTools resolve the same files. The project itself can live anywhere, independently of this SDK.
 

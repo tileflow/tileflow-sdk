@@ -1,3 +1,6 @@
+import {classicManifestSchemaOperations} from './manifest-schema-classic';
+import {createTileflowTimeOfDaySchema} from './time-of-day-schema';
+import {validateTileflowTimeOfDayVariants, type TileflowTimeOfDayVariants} from './time-of-day';
 import {z} from 'zod';
 import {
   assertTileflowInteractionManifestLayers,
@@ -84,6 +87,12 @@ const mapBuildSchema = z
       .strict()
       .optional(),
     themes: z.record(tileflowThemeNameSchema, themeBuildSchema),
+    timeOfDay: (
+      createTileflowTimeOfDaySchema(
+        classicManifestSchemaOperations,
+        tileflowThemeNameSchema,
+      ) as z.ZodType<TileflowTimeOfDayVariants>
+    ).optional(),
   })
   .strict();
 const buildManifestSchema = z
@@ -184,6 +193,8 @@ export const tileflowRendererDeploymentArtifactSchema = z
         map.lineage[0]?.mapVersion !== map.mapVersion ||
         Boolean(map.sourceAssets.iconComposition) !== (map.mapRevisionSchemaVersion === 2)
       )
+        fail();
+      if (map.timeOfDay && validateTileflowTimeOfDayVariants(map.timeOfDay, map.themes).length)
         fail();
       for (const scheme of ['light', 'dark'] as const) {
         if (map.systemThemes && map.themes[map.systemThemes[scheme]]?.colorScheme !== scheme)

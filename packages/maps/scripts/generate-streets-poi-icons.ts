@@ -1,7 +1,6 @@
 /**
- * Writes Streets' POI discs from `streetsPoiPictograms` and `streetsPoiDiscColors`: `<id>.svg`, a
- * colored disc with a pictogram in the light theme's POI halo color, and `<id>-dark.svg`, a pale
- * disc with a pictogram in the dark theme's POI halo color.
+ * Writes Streets' POI discs from `streetsPoiPictograms` and `streetsPoiDiscColors`: default and
+ * monochrome artwork for the light and dark themes.
  *
  * A pictogram's outline comes from its existing light SVG. A new pictogram needs the pinned Maki
  * release it is adapted from:
@@ -25,6 +24,23 @@ function color(theme: 'dark' | 'light', role: string): string {
   const value = (streetsThemes[theme].tokens.color as Record<string, unknown>)[role];
   if (typeof value !== 'string') throw new Error(`Streets ${theme} theme has no ${role} color.`);
   return value.toUpperCase();
+}
+
+function paletteColor(value: string, palette: 'default' | 'monochrome') {
+  if (palette === 'default') return value;
+  const match = /^#([\da-f]{6})$/iu.exec(value);
+  if (!match) throw new Error(`Expected an opaque hex POI color, received ${value}.`);
+  const [r, g, b] = [0, 2, 4].map((offset) =>
+    Number.parseInt(match[1]!.slice(offset, offset + 2), 16),
+  );
+  const gray = r! * 0.2126 + g! * 0.7152 + b! * 0.0722;
+  const channel = Math.round(gray).toString(16).padStart(2, '0');
+  return `#${channel}${channel}${channel}`;
+}
+
+function filename(id: string, theme: 'dark' | 'light', palette: 'default' | 'monochrome') {
+  const suffix = palette === 'default' ? '' : `-${palette}`;
+  return `${id}${suffix}${theme === 'dark' ? '-dark' : ''}.svg`;
 }
 
 async function pictogramPath(id: string, maki: string): Promise<string> {
@@ -75,16 +91,20 @@ for (const [id, pictogram] of Object.entries(streetsPoiPictograms)) {
   const role = 'disc' in pictogram ? pictogram.disc : pictogram.category;
   for (const theme of ['light', 'dark'] as const) {
     const halo = color(theme, 'poi.halo');
-    await writeFile(
-      resolve(iconDirectory, theme === 'light' ? `${id}.svg` : `${id}-dark.svg`),
-      disc({
-        description,
-        disc: streetsPoiDiscColors[theme][role],
-        path,
-        pictogram: halo,
-        ring: halo,
-        title: theme === 'light' ? pictogram.title : `Night ${pictogram.title}`,
-      }),
-    );
+    for (const palette of ['default', 'monochrome'] as const) {
+      const categoryColor = paletteColor(streetsPoiDiscColors[theme][role], palette);
+      const iconColor = paletteColor(halo, palette);
+      await writeFile(
+        resolve(iconDirectory, filename(id, theme, palette)),
+        disc({
+          description,
+          disc: categoryColor,
+          path,
+          pictogram: iconColor,
+          ring: iconColor,
+          title: `${palette === 'default' ? '' : `${palette} `}${theme === 'light' ? '' : 'Night '}${pictogram.title}`,
+        }),
+      );
+    }
   }
 }

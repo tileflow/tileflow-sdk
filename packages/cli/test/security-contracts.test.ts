@@ -7,7 +7,12 @@ import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {withTileflowConfigSecretsHidden} from '../src/config-execution';
-import {defaultTileflowDevHost, parseTileflowDevHost, tileflowDevOrigin} from '../src/dev-host';
+import {
+  defaultTileflowDevHost,
+  parseTileflowDevHost,
+  redirectTileflowDevNavigation,
+  tileflowDevOrigin,
+} from '../src/dev-host';
 import {inspectTileflowHostedCompatibility} from '../src/hosted-preflight';
 import {
   hostedMapStatusSchema,
@@ -82,6 +87,48 @@ test('dev host defaults to IPv4 loopback and accepts only explicit host literals
   assert.equal(parseTileflowDevHost('example.test'), null);
   assert.equal(parseTileflowDevHost(' 127.0.0.1'), null);
   assert.equal(tileflowDevOrigin('::1', 3333), 'http://[::1]:3333');
+});
+
+test('DevTools navigation canonicalizes loopback aliases and preserves view parameters', () => {
+  const query = '?lng=-3.70345&lat=40.417134&zoom=16.27&theme=faded';
+  for (const host of ['127.0.0.1', 'localhost', '::1']) {
+    const origin = tileflowDevOrigin(host, 3333);
+    for (const alias of ['127.0.0.1', 'localhost', '::1'].filter((value) => value !== host)) {
+      for (const method of ['GET', 'HEAD']) {
+        const response = redirectTileflowDevNavigation(
+          new Request(`${tileflowDevOrigin(alias, 3333)}/${query}`, {method}),
+          origin,
+        );
+        assert.equal(response?.status, 307);
+        assert.equal(response.headers.get('location'), `${origin}/${query}`);
+        assert.equal(response.headers.get('cache-control'), 'no-store');
+      }
+    }
+    assert.equal(redirectTileflowDevNavigation(new Request(`${origin}/`), origin), undefined);
+  }
+});
+
+test('DevTools alias redirects do not rewrite API requests or unrelated origins', () => {
+  const origin = 'http://127.0.0.1:3333';
+  for (const url of [
+    'http://localhost:3333/__workbench',
+    'http://localhost:3333/__workbench/capture',
+    'http://localhost:3333/map/',
+    'http://localhost:4444/',
+    'https://localhost:3333/',
+    'http://unrelated.example:3333/',
+    'http://localhost.unrelated.example:3333/',
+  ]) {
+    assert.equal(redirectTileflowDevNavigation(new Request(url), origin), undefined, url);
+  }
+  assert.equal(
+    redirectTileflowDevNavigation(new Request('http://localhost:3333/', {method: 'POST'}), origin),
+    undefined,
+  );
+  assert.equal(
+    redirectTileflowDevNavigation(new Request('http://localhost:3333/'), 'http://0.0.0.0:3333'),
+    undefined,
+  );
 });
 
 test('one hosted preflight rejects external data for validation and deploy callers', () => {

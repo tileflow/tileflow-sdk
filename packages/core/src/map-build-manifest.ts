@@ -1,3 +1,4 @@
+import type {TileflowTimeOfDayVariants} from './time-of-day';
 import {tileflowSemanticCompilerIdentity} from './cartography/semantic-compiler';
 import {
   inferTileflowDataRequirements,
@@ -114,6 +115,7 @@ export type TileflowMapBuildManifestEntryV1 = {
   };
   sourceAssets: TileflowEffectiveMapSourceAssets;
   systemThemes?: {dark: string; light: string};
+  timeOfDay?: TileflowTimeOfDayVariants;
   themes: Record<string, TileflowThemeBuildManifestEntryV1>;
 };
 
@@ -192,6 +194,9 @@ export async function createTileflowMapBuildManifest(
             semanticCompiler: {...tileflowSemanticCompilerIdentity},
             sourceAssets,
             ...(map.systemThemes ? {systemThemes: {...map.systemThemes}} : {}),
+            ...(map.timeOfDay && Object.keys(map.timeOfDay).length
+              ? {timeOfDay: map.timeOfDay}
+              : {}),
             themes,
           },
         ] as const;

@@ -34,7 +34,7 @@ export default defineMap({
 });
 ```
 
-This inherits both Streets themes and changes only the default selection and initial view.
+This inherits Streets' themes and changes only the default selection and initial view.
 Coordinates are `[longitude, latitude]`. To preview it:
 
 ```sh
@@ -62,8 +62,8 @@ rebuilding those packages.
 
 ## Choose a map
 
-- `streets`: contemporary street cartography with coordinated light and dark themes, ranked POIs,
-  generic road-reference shields, and regional hillshade.
+- `streets`: contemporary street cartography with Mapbox-inspired time-of-day and color themes,
+  ranked POIs, generic road-reference shields, and regional hillshade.
 - `baedeker`: warm travel-atlas styling, serif labels, original engraved patterns, and contours.
 - `civica`: illustrated civic-print styling with warm paper, olive parks, blue annotations, and
   vermilion landmarks.
@@ -80,7 +80,17 @@ to create an application-owned map.
 ### Streets appearance
 
 Streets follows the visual direction of [Mapbox Standard](https://docs.mapbox.com/playground/standard-style/)
-(default theme, day and night), reviewed on 2026-10-14. Its own semantic design retains slate-blue
+(default theme, day and night), reviewed on 2026-10-14. `light` retains the existing day/default
+palette unchanged, and `dark` retains the existing night/default palette. Additional complete themes
+cover dawn and dusk, plus faded and monochrome palettes in each of Mapbox's four time presets
+(`day`, `dawn`, `dusk`, `night`). Day/default is `light`; night/default is `dark`. The other themes
+are `dawn`, `dusk`, `faded`, `monochrome`, `dawn-faded`, `dawn-monochrome`, `dusk-faded`,
+`dusk-monochrome`, `dark-faded`, and `dark-monochrome`. Mapbox exposes time and color as independent
+controls; Streets flattens the combinations into selectable themes. Dawn/dusk adjust map colors
+while retaining the current 3D lighting, so switching themes does not alter building shadows or
+extrusion lighting.
+The underlying tile data and rendering pipeline differ, so these are close palette matches rather
+than a pixel-identical copy. Streets' own semantic design retains slate-blue
 roads, uppercase road names, warm building footprints, green parks, and compact category-colored
 POI discs. Dark mode uses pale discs with dark pictograms. Pictograms adapted from Maki follow
 World's transport mode and POI type: metro, rail, tram, bus, ferry, cable-car, and airport stations
@@ -226,7 +236,7 @@ are not enabled by that official map.
 `streetsThemes` and `siegfriedThemes` expose complete `light` and `dark` themes. Import those
 collections when using `defineTheme()` to derive a new appearance. A declared `themes` collection
 replaces the inherited collection, so also declare the intended `defaultTheme` and `systemThemes`
-mapping. `system` belongs to browser selection; captures and builds use concrete theme names.
+and optional `timeOfDay` mappings. `system` belongs to browser selection; captures and builds use concrete theme names.
 
 Every map exports an icon-directory descriptor: `streetsIcons`, `baedekerIcons`, `civicaIcons`,
 `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, and `blueprintIcons`. The descriptors point into this installed package; they are not sprite URLs.
@@ -286,3 +296,10 @@ for exact names. The installed package's definitions and README take precedence 
 
 The [design and asset notes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/docs/design-and-assets.md) describe each map's visual grammar, source references, and third-party asset boundaries. They are also included under
 `docs/` in the installed package.
+
+Streets offers three time-of-day families: `light`, `faded`, and `monochrome`, each with
+`day`, `dawn`, `dusk`, and `night`. For example, `theme="faded" timeOfDay="night"` resolves to
+`dark-faded`. DevTools shows these as separate Theme and Time of day controls. All twelve
+concrete theme names remain available for existing applications and captures. This catalog
+reuses the existing palettes and lighting; extending Streets without overriding it inherits it.
+See the [time-of-day contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md#style-with-themes-and-semantic-modules).

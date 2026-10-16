@@ -524,6 +524,12 @@ test('show, hide and grow are immediate unless animation is requested', async ()
     assert.equal(buildings.scale, 0.4);
     await animated;
     assert.equal(buildings.scale, 1);
+    await buildings.hide();
+    const faded = buildings.show({transition: {duration: 40, mode: 'fade'}});
+    assert.equal(buildings.scale, 1, 'Fade reveals full-height geometry instead of growing it');
+    await faded;
+    await buildings.hide();
+    assert.equal(buildings.scale, 0);
   } finally {
     buildings.dispose();
   }

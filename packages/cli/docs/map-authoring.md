@@ -87,46 +87,23 @@ needed, rather than compiling the same map before every capture.
 ## Work with a person and an agent
 
 Start `npx tileflow preview --config tileflow.config.ts` in your project. Map DevTools provides
-separate map, theme and saved-view controls, feature inspection, zoom curves and sprite inspection.
-Map and theme controls appear when there is more than one choice. Its quick start explains
-the first action; press **I** to toggle the inspector and **Escape** to close capture/review panels.
-The inspector starts off. Select **Inspect** or press **I**, then click an element to highlight it
-and see its styling and available semantic configuration paths. Press **Escape** to exit inspection. Edit the config in
-your editor or coding agent; the existing watcher updates the map and retains the last valid view
-through invalid edits. **Controls**, beside Inspect, opens a shared sidebar for module enablement
-and advanced building/vegetation settings. Changes automatically recompile a temporary preview after
-a brief pause; Reset restores the
-source. Copy module overrides exports the JSON patch for adoption in configuration. These preview
-edits do not rewrite source files, and capture is disabled while module overrides are displayed.
+palette and time-of-day controls, feature inspection, zoom curves and sprite inspection.
+The command selects the map and optional starting scene. The map fills the workspace beside
+one dockable developer-tools panel. Press **I** to toggle the element picker, click a map element to
+inspect its styling and semantic configuration paths, and press **Escape** to stop picking. The
+inspector starts off. **Scene** contains palette, time-of-day, camera and module controls. Appearance
+changes retain the current camera; module changes
+recompile a temporary preview after a brief pause and **Reset** restores the source configuration.
+Temporary style and geometry edits do not rewrite source files. Edit the config in your editor or
+coding agent to persist changes; the watcher updates the map and retains the last valid view through
+invalid edits.
 
-Use **Capture** before and after an edit, then **Compare**. Captures use the current camera, selected
-map/theme and a fixed frame (1280×800 at DPR 1 initially, or the selected scene's viewport). Adjust
-that frame in **Capture settings** (the sliders icon beside Capture). **Show capture frame** fits
-the fixed-size preview into the available space in single-map mode. Opening the inspector or resizing the window does not resize the capture.
-The capture renders the compiled map; temporary preview controls such as building visibility and
-experimental trees are excluded. Capture is unavailable while loading, invalid, or showing an older
-revision. The server pins the requested artifact generation until capture finishes.
+Capture, copy/export and comparison controls are absent from the browser interface. Use
+`tileflow capture` and `tileflow compare` for saved visual evidence as described above. Explicit
+`--against-map` or `--against-config` startup options still support synchronized two-map previews.
 
-For a before/after workflow, choose **Capture as reference** in Capture settings, or **Use as
-reference** on an existing capture. A reference bar identifies the frozen capture. Edit the config,
-then **Capture & compare** renders the current map and theme using the reference camera and viewport,
-even if you have navigated elsewhere. It requires the same map name; normal compatibility checks
-still apply to data and runtime. The reference selection lasts for this browser session. Saved
-captures remain available after restarting.
-
-**Captures** reads the same immutable `.tileflow/captures/records` evidence as the CLI. It survives
-browser and server restarts. History pages contain 20 records, scan at most 5,000 directory entries,
-and report unverified entries instead of displaying them. Saved comparison reuses those records;
-it does not compile or render again. In **Compare → Review saved changes**, comparable pairs offer a slider or side-by-side view, exact changed
-pixel ratio, contextual difference and JSON. Pixel change is not a visual-quality score.
-
-For exploratory live comparison, open **Compare → Compare live maps**, choose another map/theme
-or scene, and select **Open live comparison**. The two views share a camera. A second config can
-be supplied with `--against-config` at startup. The left view selection and camera persist in the
-URL; dynamically added references last for that browser session.
-
-**Copy map context for AI** (or **Copy element context for AI** after selection) includes the current selection, bounded style properties, compiler semantic
-ownership, camera/frame, generations, selected comparison/reference IDs and commands. The CLI reads the same browser observations:
+The browser publishes its current selection, bounded style properties, compiler semantic ownership,
+observed camera and viewport, generations and commands. The CLI reads these browser observations:
 
 ```sh
 npx tileflow inspect session --url http://127.0.0.1:3333 --json

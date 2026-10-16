@@ -5,6 +5,7 @@
 // source.
 import {tileflowBuildingGroundFragment, tileflowBuildingGroundVertex} from './buildings-3d-shaders';
 import {cameraFrame, type CameraTiles, createCameraTiles} from './camera-tiles-browser';
+import {inspectModelTriangles, type TileflowModelInspection} from './model-inspection';
 import {
   tileflowScene3D,
   type TileflowSceneCaster,
@@ -89,6 +90,8 @@ export type TileflowTrees3DOptions = Readonly<{
 export type TileflowTrees3DChange = Readonly<{transition?: Readonly<{duration?: number}>}>;
 
 export type TileflowTrees3D = {
+  /** Read-only snapshots of the meshes used by the active vegetation palette. */
+  inspectModels(): TileflowModelInspection[];
   /** Grows the trees out of the ground; resolves once they stand. */
   show(options?: TileflowTrees3DChange): Promise<void>;
   /** Sinks the trees back into the ground; resolves once they are gone. */
@@ -1075,6 +1078,63 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   }
 
   return {
+    inspectModels() {
+      const built = tileflowTreeMeshes(),
+        described = vegetation(),
+        results: TileflowModelInspection[] = [];
+      if (!described) return results;
+      for (const form of tileflowTreeForms) {
+        const counts: number[] = [];
+        for (const set of tiles)
+          for (const {value} of set.ready())
+            value.placement.forms[form].variants.forEach((range, index) => {
+              counts[index] = (counts[index] ?? 0) + range.count;
+            });
+        const owned = described.forms[form]?.models;
+        for (const [variant, id] of (owned?.length ? owned : [form]).entries()) {
+          const model = described.models[id];
+          const decoded = model ? decodeTileflowTreeModel(model.near, 'near') : undefined;
+          const mesh = decoded ? tileflowTreeModelMeshOf(decoded) : built[form].near;
+          const view = new DataView(
+            mesh.vertices.buffer,
+            mesh.vertices.byteOffset,
+            mesh.vertices.byteLength,
+          );
+          const indices = Array.from({length: mesh.count}, (_, i) => i);
+          const preview = inspectModelTriangles(indices, (index) => [
+            view.getFloat32(index * 24, true),
+            view.getFloat32(index * 24 + 4, true),
+            view.getFloat32(index * 24 + 8, true),
+          ]);
+          const colors: string[] = [];
+          for (let i = 0; i < mesh.count; i += 3) {
+            const part = view.getUint8(i * 24 + 15);
+            const palette =
+              described.colors[
+                form === 'conifer' ? 'conifer' : form === 'palm' ? 'palm' : 'broadleaf'
+              ];
+            colors.push(part === 0 || part === 3 ? described.colors.bark : palette[0]!);
+          }
+          results.push({
+            id: owned?.length ? id : form,
+            module: 'Vegetation',
+            format: owned?.length ? 'Tileflow tree model' : 'Procedural tree mesh',
+            vertices: mesh.count,
+            triangles: mesh.count / 3,
+            bytes:
+              mesh.vertices.byteLength +
+              (model
+                ? Math.floor(((model.far ?? model.near).length * 3) / 4)
+                : built[form].far.vertices.byteLength),
+            lods: 2,
+            instances: counts[variant] ?? 0,
+            ...preview,
+            colors,
+          });
+        }
+      }
+      return results;
+    },
     show: (change) => grow(1, change),
     hide: (change) => grow(0, change),
     grow,

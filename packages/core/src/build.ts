@@ -207,7 +207,7 @@ export function createStylesFromCatalogWithInspection(
 
 export function createManifest(
   catalog: TileflowBuildCatalog,
-  options: {styleBaseUrl?: string} = {},
+  options: {styleBaseUrl?: string; manifestVersion?: 1 | 2} = {},
 ): TileflowRuntimeManifest {
   const styleBaseUrl = (options.styleBaseUrl ?? '').replace(/\/+$/u, '');
   const maps = Object.fromEntries(
@@ -234,6 +234,11 @@ export function createManifest(
             defaultTheme: resolved.defaultTheme,
             ...(resolved.systemThemes ? {systemThemes: resolved.systemThemes} : {}),
             themes,
+            ...(options.manifestVersion !== 1 &&
+            resolved.timeOfDay &&
+            Object.keys(resolved.timeOfDay).length
+              ? {timeOfDay: resolved.timeOfDay}
+              : {}),
             ...(resolved.view ? {view: resolved.view} : {}),
           },
         ];
@@ -242,7 +247,9 @@ export function createManifest(
 
   const manifest: TileflowRuntimeManifest = {
     maps,
-    version: tileflowRuntimeManifestVersion,
+    version:
+      options.manifestVersion ??
+      (Object.values(maps).some((map) => map.timeOfDay) ? 2 : tileflowRuntimeManifestVersion),
   };
   return parseTileflowRuntimeManifest(manifest);
 }

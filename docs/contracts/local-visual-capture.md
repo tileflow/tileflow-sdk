@@ -194,12 +194,12 @@ canonical record JSON; the receipt binds the PNG and scene hashes. Identical rec
 and different contents never replace an existing ID. JSON results and captured watch events expose
 `captureId`. Timed shots retain their separate frame/video contract.
 
-Map DevTools offers confirmed deletion of an individual capture. Its local
+The local adapter supports deletion of an individual capture through its
 `POST /__workbench/captures/delete` action accepts `{id}` with a full capture ID and removes only that
 record's JSON and PNG. It rejects symbolic links and paths outside the project, shares the
 capture/compare busy guard and same-origin JSON request checks, and is idempotent for missing files.
-Scene exports and source configuration are unchanged. Deleting the pinned reference clears it in
-the requesting browser; other saved captures remain available.
+Scene exports, source configuration and other saved captures remain unchanged. The browser
+interface does not expose capture deletion or reference selection.
 
 `tileflow compare --before <id> --after <id>` reads these saved records without executing a config,
 compiling, starting a browser or fetching data. It checks bounded regular files, hashes, receipt
@@ -388,16 +388,16 @@ same-origin preview handler with its own watched session, synchronizes their
 camera, persists Map DevTools state in the URL, and provides side-by-side, split, opacity-overlay, and
 blink views. An invalid edit retains that side's last valid artifacts and exposes only bounded
 diagnostics until it recovers. The opt-in compiler sidecar, rendered-feature inspector, zoom-curve
-samples, compiled sprite atlas, and scene/capture-command copy helpers are local diagnostics; the
+samples and compiled sprite atlas are local diagnostics; the
 sidecar is never a build artifact or runtime manifest field.
 
-The **Capture** action in Map DevTools pins the displayed, ready artifact generation and invokes the same
-capture session with the selected map/theme, current camera and explicit fixed frame. Temporary
-preview visibility overrides are excluded. The renderer starts lazily and is reused until shutdown.
-The action stores the same immutable records as `tileflow capture`; history and saved comparison
-verify and reuse those records. Resizing the UI does not alter the capture frame. An invalid or
-stale revision cannot begin capture. Saved review retains the ordinary frame, renderer and data
-compatibility gates before exposing exact pixel metrics; the result is never baseline approval.
+The browser interface focuses on map inspection and temporary edits; it exposes no capture,
+copy/export, history or comparison controls. The local capture adapter continues to pin a requested
+ready artifact generation and use the capture session with an explicit map/theme, camera and frame.
+Temporary preview edits are excluded. The renderer starts lazily and is reused until shutdown.
+The adapter stores the same immutable records as `tileflow capture`. Invalid or stale revisions
+cannot begin capture. Saved comparison retains the ordinary frame, renderer and data compatibility
+gates before exposing exact pixel metrics; the result is never baseline approval.
 
 The local Map DevTools adapter exposes version-1 catalog, history, capture, compare and context JSON.
 `tileflow inspect session --url <local-preview-origin> --json` reads browser observations with their

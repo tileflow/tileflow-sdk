@@ -181,6 +181,9 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
   let sourceKey: string | undefined;
   let sourceObject: unknown;
   let selectedTheme: string | undefined;
+  let selectedTimeOfDay: MountedMapProps['timeOfDay'];
+  const timeSelection = () =>
+    !blendSelection && props?.timeOfDay !== undefined ? {timeOfDay: props.timeOfDay} : {};
   let colorScheme: 'light' | 'dark' | undefined;
   let appearanceRelease: (() => void) | undefined;
   let appearanceEpoch = 0;
@@ -550,7 +553,13 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
           epoch.cache.clear();
           // Do not call select(): only an explicit selection replenishes the one-reload budget.
           if (!disposed && foreground && current === epoch && epoch.live && props) {
-            track(core.replace(props.source, {theme: selectionTheme(), colorScheme}));
+            track(
+              core.replace(props.source, {
+                theme: selectionTheme(),
+                colorScheme,
+                ...timeSelection(),
+              }),
+            );
           }
           return;
         }
@@ -588,7 +597,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
   function select() {
     if (disposed || !props || !current?.live) return;
     current.hosted.select();
-    track(core.replace(props.source, {theme: selectionTheme(), colorScheme}));
+    track(core.replace(props.source, {theme: selectionTheme(), colorScheme, ...timeSelection()}));
   }
   function appearance(theme: string | undefined) {
     if ((theme === 'system') === Boolean(appearanceRelease)) return;
@@ -680,7 +689,9 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
       const key = source && JSON.stringify(source);
       const changedSource =
         !initialized || key !== sourceKey || (key === undefined && sourceObject !== next.source);
-      const changedTheme = !initialized || (!blend && next.theme !== selectedTheme);
+      const changedTheme =
+        !initialized ||
+        (!blend && (next.theme !== selectedTheme || next.timeOfDay !== selectedTimeOfDay));
       const changedOptions = JSON.stringify(options) !== JSON.stringify(mapOptions);
       camera = input;
       mapOptions = options;
@@ -693,6 +704,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
         sourceObject = next.source;
       }
       selectedTheme = next.theme;
+      selectedTimeOfDay = next.timeOfDay;
       initialized = true;
       try {
         appearance(next.theme);

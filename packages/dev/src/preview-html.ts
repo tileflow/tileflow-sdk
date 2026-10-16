@@ -5,6 +5,7 @@ import {
   readBoundedTileflowResponse,
 } from './landmarks';
 import type {ResolvedTileflowPreview} from './preview';
+import {previewSceneClient} from './preview-scene';
 
 export function renderTileflowPreviewHtml(
   preview: ResolvedTileflowPreview | undefined,
@@ -97,6 +98,7 @@ export function renderTileflowPreviewHtml(
         padding: 12px;
         white-space: pre-wrap;
       }
+      html[data-devtools-embedded=true] .status { display:none !important; }
       .maplibregl-ctrl-group .tileflow-3d-toggle,
       .maplibregl-ctrl-group .tileflow-tree-toggle,
       .maplibregl-ctrl-group .tileflow-theme-toggle {
@@ -132,6 +134,7 @@ export function renderTileflowPreviewHtml(
     <script type="importmap">{"imports":{"fflate":"${basePath}/__runtime/fflate.js","three":"${basePath}/__runtime/three.module.js"}}</script>
     <script type="module">
       import * as maplibregl from "${basePath}/__runtime/maplibre-gl.mjs";
+      import {createPreviewObserver} from "${basePath}/__runtime/devtools-observer.js";
       import {loadTileflowStyleFonts} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowContourProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowPmtilesProtocol} from "${basePath}/__runtime/tileflow-browser.js";
@@ -139,6 +142,10 @@ export function renderTileflowPreviewHtml(
       import {readTileflowSunPreset, resolveTileflowSun, tileflowDefaultSunPreset} from "${basePath}/__runtime/tileflow-browser.js";
 
       maplibregl.setWorkerUrl("${basePath}/__runtime/maplibre-gl-worker.mjs");
+
+      const devtoolsObserver = window.parent !== window ? createPreviewObserver() : undefined;
+      globalThis.__tileflowDevtoolsObserver = devtoolsObserver;
+      if (window.parent !== window) document.documentElement.dataset.devtoolsEmbedded = "true";
 
       const initialStatus = ${JSON.stringify(initialStatus)};
       const normalizeTileflowLandmarkManifest = ${normalizeTileflowLandmarkManifest.toString()};
@@ -1802,8 +1809,22 @@ export function renderTileflowPreviewHtml(
       // buildings, trees and street lights look, and the controls only show and hide them. The
       // vegetation control hides all trees when off. The preview shows one theme at a
       // time, so the style on screen holds the sun and the design.
-      const coreScene = {buildings: undefined, trees: undefined, lights: undefined, buildingsShown: false};
+      const coreScene = {buildings: undefined, trees: undefined, lights: undefined, buildingsShown: false, animation: "0"};
+      const runtimeLayerVisibility = {};
       globalThis.__tileflowPreviewScene = coreScene;
+      globalThis.__tileflowRuntimeVisibility = (id, visible) => {
+        if (!['tileflow-buildings-3d','tileflow-trees-3d','tileflow-street-lights'].includes(id)) return undefined;
+        if (typeof visible === 'boolean') { runtimeLayerVisibility[id]=visible; mountCoreScene(map); map.triggerRepaint(); }
+        return runtimeLayerVisibility[id] !== false;
+      };
+      // Explicit observation capability: controllers stay private to the preview and expose
+      // only their public state/statistics to the parent inspector.
+      globalThis.__tileflowInspectModels = () => [...(coreScene.buildings?.inspectModels?.() || []), ...(coreScene.trees?.inspectModels?.() || [])];
+      globalThis.__tileflowDescribeRuntimeLayers = () => ({
+        ...(coreScene.buildings ? {"tileflow-buildings-3d": {controller:"Buildings 3D", state:{visible:runtimeLayerVisibility["tileflow-buildings-3d"] !== false, shown:coreScene.buildingsShown, scale:coreScene.buildings.scale}, stats:coreScene.buildings.stats}} : {}),
+        ...(coreScene.trees ? {"tileflow-trees-3d": {controller:"Vegetation", state:{visible:runtimeLayerVisibility["tileflow-trees-3d"] !== false, representation:coreScene.trees.representation}, stats:coreScene.trees.stats}} : {}),
+        ...(coreScene.lights ? {"tileflow-street-lights": {controller:"Street lights", state:{visible:runtimeLayerVisibility["tileflow-street-lights"] !== false, mounted:true}, stats:coreScene.lights.stats}} : {})
+      });
       function coreSceneThemes(map) {
         return {
           getSun() {
@@ -1832,7 +1853,7 @@ export function renderTileflowPreviewHtml(
             coreScene.trees = createTileflowVegetation({map, controller, visible: treesEnabled,
               viewMode: threeDimensionalEnabled ? "3d" : "2d", transformRequest: previewTransformRequest});
           }
-          coreScene.trees.setVisible(treesEnabled);
+          coreScene.trees.setVisible(treesEnabled && runtimeLayerVisibility["tileflow-trees-3d"] !== false);
           coreScene.trees.setViewMode(threeDimensionalEnabled ? "3d" : "2d");
           // Street lights have no capture fallback, so they shine only with the 3D control on.
           if (!coreScene.lights && threeDimensionalEnabled && metadata["tileflow:street-lights"]) {
@@ -1841,12 +1862,24 @@ export function renderTileflowPreviewHtml(
             coreScene.lights.dispose();
             coreScene.lights = undefined;
           }
+          const lightLayer = map.getLayer("tileflow-street-lights");
+          const lightRenderer = lightLayer?.implementation || lightLayer;
+          if (lightRenderer?.render && !lightRenderer.__previewVisibility) {
+            const render = lightRenderer.render;
+            lightRenderer.render = function(...args) {
+              if (runtimeLayerVisibility["tileflow-street-lights"] !== false) return render.apply(this,args);
+            };
+            lightRenderer.__previewVisibility = true;
+          }
+          const showBuildings = threeDimensionalEnabled && runtimeLayerVisibility["tileflow-buildings-3d"] !== false;
           const instant = {transition: {duration: 0}};
-          const duration = Math.min(3000, Math.max(0, Number(previewSearchParameters.get('animation')) || 0));
+          const animation = previewSearchParameters.get('animation') || '0';
+          const duration = animation === 'fade' ? 800 : Math.min(3000, Math.max(0, Number(animation) || 0));
           // Only a change of the controls moves the layers, so a style event does not restart them.
-          if (coreScene.buildings && coreScene.buildingsShown !== threeDimensionalEnabled) {
-            coreScene.buildingsShown = threeDimensionalEnabled;
-            void (threeDimensionalEnabled ? coreScene.buildings.show({transition: {duration}}) : coreScene.buildings.hide(instant));
+          if (coreScene.buildings && (coreScene.buildingsShown !== showBuildings || coreScene.animation !== animation)) {
+            coreScene.buildingsShown = showBuildings;
+            coreScene.animation = animation;
+            void (showBuildings ? coreScene.buildings.show({transition: {duration, mode: animation === "fade" ? "fade" : "grow"}}) : coreScene.buildings.hide(instant));
           }
         } finally {mountingCoreScene = false;}
       }
@@ -2055,23 +2088,19 @@ export function renderTileflowPreviewHtml(
         }
         const vegetationLayers = map.getStyle()?.metadata?.["tileflow:vegetation-display"]?.flatLayers;
         for (const layer of map.getStyle()?.layers || []) {
-          if (!defaultLayerVisibility.has(layer.id)) {
-            defaultLayerVisibility.set(
-              layer.id,
-              map.getLayoutProperty(layer.id, "visibility") || "visible"
-            );
-          }
           if (layer.type === "symbol" && layer.layout?.["text-field"] !== undefined) {
-            if (!defaultLayerTextField.has(layer.id)) {
+            const hideLabels = !visibleLayerGroups.has("labels");
+            if (hideLabels && !defaultLayerTextField.has(layer.id)) {
               defaultLayerTextField.set(
                 layer.id,
                 map.getLayoutProperty(layer.id, "text-field")
               );
             }
-            const textField = visibleLayerGroups.has("labels")
-              ? defaultLayerTextField.get(layer.id)
-              : "";
+            const restoreText = !hideLabels && defaultLayerTextField.has(layer.id);
+            const textField = hideLabels ? "" : defaultLayerTextField.get(layer.id);
+            if (restoreText) defaultLayerTextField.delete(layer.id);
             if (
+              (hideLabels || restoreText) &&
               !previewLayoutValuesEqual(
                 map.getLayoutProperty(layer.id, "text-field"),
                 textField
@@ -2083,8 +2112,16 @@ export function renderTileflowPreviewHtml(
           // The shared vegetation controller owns every flat representation.
           if (vegetationLayers?.some((entry) => entry.id === layer.id.split("::")[0])) continue;
           const groups = previewLayerGroups(layer);
+          const hideLayer = groups.some((group) => !visibleLayerGroups.has(group));
+          // Group controls only own the properties they mask. Ordinary style events must
+          // preserve temporary DevTools edits, including visibility and label text.
+          if (hideLayer && !defaultLayerVisibility.has(layer.id)) {
+            defaultLayerVisibility.set(layer.id, map.getLayoutProperty(layer.id, "visibility") || "visible");
+          }
+          if (!hideLayer && !defaultLayerVisibility.has(layer.id)) continue;
           const threeDimensionalToggle = layer.metadata?.["tileflow:3d-toggle"];
           const authoredVisibility = defaultLayerVisibility.get(layer.id);
+          if (!hideLayer) defaultLayerVisibility.delete(layer.id);
           const styleMetadata = map.getStyle()?.metadata ?? {};
           // Core's 3D buildings and trees stand in for compiled extrusions and flat trees.
           const replacedByCore =
@@ -2094,7 +2131,7 @@ export function renderTileflowPreviewHtml(
             : threeDimensionalToggle === "building" || threeDimensionalToggle === "landmark"
               ? (threeDimensionalEnabled ? "visible" : "none")
               : authoredVisibility;
-          const visibility = groups.some((group) => !visibleLayerGroups.has(group))
+          const visibility = hideLayer
             ? "none"
             : toggleVisibility;
           if (map.getLayoutProperty(layer.id, "visibility") !== visibility) {
@@ -2129,15 +2166,16 @@ export function renderTileflowPreviewHtml(
         registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
         registerTileflowPmtilesProtocol({addProtocol: maplibregl.addProtocol});
         const map = new maplibregl.Map({
-          collectResourceTiming: mapBenchmarkEnabled,
+          collectResourceTiming: mapBenchmarkEnabled || Boolean(devtoolsObserver),
           container: "map",
           style: styleUrl,
           transformRequest: previewTransformRequest,
           ...resolveInitialMapOptions(previewMapOptions)
         });
         globalThis.__tileflowPreviewMap = map;
+        devtoolsObserver?.attach(map);
         installMapBenchmark(map);
-        map.addControl(new maplibregl.NavigationControl(), "top-right");
+        if (window.parent === window) map.addControl(new maplibregl.NavigationControl(), "top-right");
         let threeDimensionalControl;
         let treeControl;
         if (isSemanticPreview) {
@@ -2152,7 +2190,9 @@ export function renderTileflowPreviewHtml(
             treeControl.container.hidden = true;
           }
         }
-        if (previewThemes.length > 1) map.addControl(new ThemeControl(), "top-right");
+        // Map DevTools has a shared theme selector in its Controls panel; keep the map-level
+        // cycling button for standalone previews only.
+        if (previewThemes.length > 1 && window.parent === window) map.addControl(new ThemeControl(), "top-right");
         let ensuringThreeDimensionalLayers;
         const ensureThreeDimensionalLayers = () => {
           if (ensuringThreeDimensionalLayers) return ensuringThreeDimensionalLayers;
@@ -2248,6 +2288,7 @@ export function renderTileflowPreviewHtml(
         map.on("move", () => updateGlobeBackdrop(map));
         map.on("style.load", () => updateGlobeBackdrop(map));
         map.on("moveend", () => writeCameraToUrl(map));
+        ${previewSceneClient}
         addEventListener("message", (event) => {
           if (
             window.parent === window ||
@@ -2318,6 +2359,15 @@ export function renderTileflowPreviewHtml(
       }
 
       applyStatus(initialStatus);
+      // Embedded previews share their host's stream. Two streams per tab can exhaust Chrome's
+      // six HTTP/1 connections and leave even local module/font requests waiting indefinitely.
+      let unsubscribePreviewStatus;
+      try {
+        if (window.parent !== window) unsubscribePreviewStatus = window.parent.__tileflowDevtoolsHost?.subscribePreviewStatus?.(window, applyStatus);
+      } catch { /* Other embedders keep the standalone stream. */ }
+      if (unsubscribePreviewStatus) {
+        addEventListener("beforeunload", unsubscribePreviewStatus);
+      } else {
       const events = new EventSource(${JSON.stringify(`${basePath}/__events`)});
       // Generations are monotonic only within one dev-server process. A source-code watcher can
       // restart that process at generation 1, so reconnecting after a live connection was lost
@@ -2337,6 +2387,7 @@ export function renderTileflowPreviewHtml(
       });
       for (const eventName of ["building", "ready", "invalid"]) {
         events.addEventListener(eventName, (event) => applyStatus(JSON.parse(event.data)));
+      }
       }
     </script>
   </body>

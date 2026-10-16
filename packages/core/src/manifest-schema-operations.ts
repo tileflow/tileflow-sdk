@@ -29,6 +29,7 @@ export type ManifestSchemaOperations = ManifestStringOperations & {
   array<T>(schema: ManifestSchema<T>): ManifestSchema<T[]>;
   enum<const Values extends readonly string[]>(values: Values): ManifestSchema<Values[number]>;
   literal<const Value extends string | number>(value: Value): ManifestSchema<Value>;
+  union<A, B>(left: ManifestSchema<A>, right: ManifestSchema<B>): ManifestSchema<A | B>;
   tuplePair<A, B>(left: ManifestSchema<A>, right: ManifestSchema<B>): ManifestSchema<[A, B]>;
   object<T extends object>(shape: {[K in keyof T]-?: ManifestSchema<T[K]>}): ManifestSchema<T>;
   record<T>(

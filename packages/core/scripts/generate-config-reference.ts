@@ -333,6 +333,11 @@ function createThemeContractReference(): JsonSchema {
         rule: 'Each declared selector must exist in themes and its theme.colorScheme must match the system key.',
       },
       {
+        path: 'timeOfDay.{theme}.{day,dawn,dusk,night}',
+        enforcement: 'config-validation',
+        rule: 'Families and their presets must name existing themes. Each family includes itself; a concrete theme belongs to at most one family.',
+      },
+      {
         path: 'themes.*',
         enforcement: 'theme-resolution',
         rule: 'Unknown, cyclic, and cross-category token references are rejected before style compilation.',

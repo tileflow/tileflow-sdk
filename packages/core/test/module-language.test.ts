@@ -303,6 +303,7 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     systemThemes: 'atomic',
     terrain: 'atomic',
     themes: 'atomic',
+    timeOfDay: 'atomic',
     version: 'identity',
     view: 'deep',
   });
@@ -322,6 +323,7 @@ test('publishes AI-reference constraints that match exact assets and capture aut
         path: 'themes.*.tokens.{color,font,image,number}',
       },
       {enforcement: 'config-validation', path: 'systemThemes.{light,dark}'},
+      {enforcement: 'config-validation', path: 'timeOfDay.{theme}.{day,dawn,dusk,night}'},
       {enforcement: 'theme-resolution', path: 'themes.*'},
       {enforcement: 'schema-and-theme-audit', path: 'modules|terrain'},
     ],

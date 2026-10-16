@@ -31,7 +31,7 @@ export function narrow(state: TileflowNativeSourceState): string | undefined {
   const url: string = state.manifestUrl;
   const map: string = state.map.name;
   const theme: string = state.theme.name;
-  const version: 1 = state.manifest.version;
+  const version: 1 | 2 = state.manifest.version;
   const view: TileflowNativeInitialView = resolveTileflowNativeInitialView({
     manifestView: state.map.view,
   });

@@ -64,6 +64,7 @@ import {
   resolveTileflowManifestMap,
   resolveTileflowMapMode,
   resolveTileflowRuntimeStyle,
+  type TileflowTimeOfDay,
   resolveTileflowRuntimeTheme,
   resolveTileflowRuntimeThemeBlend,
   resolveTileflowRuntimeView,
@@ -239,6 +240,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     vegetation: {type: Boolean as PropType<boolean | undefined>, default: undefined},
     viewMode: {type: String as PropType<TileflowViewMode>, default: '2d'},
     theme: String,
+    timeOfDay: String as PropType<TileflowTimeOfDay>,
     themeBlend: Object as PropType<TileflowBrowserThemeBlendSelection>,
     themeTransition: Object as PropType<TileflowThemeTransitionOptions>,
     zoom: Number,
@@ -407,8 +409,12 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         }
         return {
           error: false,
-          name: resolveTileflowRuntimeTheme(manifestMap.value, selection, systemColorScheme.value)
-            .name,
+          name: resolveTileflowRuntimeTheme(
+            manifestMap.value,
+            selection,
+            systemColorScheme.value,
+            props.themeBlend ? undefined : props.timeOfDay,
+          ).name,
         } as const;
       } catch {
         return {error: true, name: undefined} as const;
@@ -634,6 +640,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       assertTileflowMapStyleInputs({
         source: props.source,
         theme: props.theme,
+        timeOfDay: props.timeOfDay,
         themeBlend: props.themeBlend,
         themeTransition: props.themeTransition,
       });

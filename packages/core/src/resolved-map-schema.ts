@@ -56,6 +56,9 @@ import {
 } from './terrain/contour-protocol';
 import {resolveTileflowTheme, type TileflowTheme, tileflowThemeLimits} from './themes';
 import {tileflowTreeModelIdPattern} from './trees-3d';
+import {classicManifestSchemaOperations} from './manifest-schema-classic';
+import {validateTileflowTimeOfDayVariants, type TileflowTimeOfDayVariants} from './time-of-day';
+import {createTileflowTimeOfDaySchema} from './time-of-day-schema';
 import {tileflowPoiCategories, type ValidationMessage} from './types';
 
 /** Structured schema failure preserved for CLI/editor diagnostics. */
@@ -2341,6 +2344,12 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
     systemThemes: systemThemesSchema.optional(),
     terrain: terrainSchema.optional(),
     themes: themesSchema,
+    timeOfDay: (
+      createTileflowTimeOfDaySchema(
+        classicManifestSchemaOperations,
+        tileflowThemeNameSchema,
+      ) as z.ZodType<TileflowTimeOfDayVariants>
+    ).optional(),
     version: z.number().int().positive(),
     view: viewSchema.optional(),
   })
@@ -2366,6 +2375,15 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
         message: `Expected an existing theme name; available themes: ${Object.keys(map.themes).sort().join(', ')}`,
         path: ['defaultTheme'],
       });
+    }
+    if (map.timeOfDay) {
+      for (const issue of validateTileflowTimeOfDayVariants(map.timeOfDay, map.themes)) {
+        context.addIssue({
+          code: 'custom',
+          message: issue.message,
+          path: ['timeOfDay', ...issue.path],
+        });
+      }
     }
     const themeEntries = Object.entries(map.themes).sort(([left], [right]) =>
       left < right ? -1 : left > right ? 1 : 0,

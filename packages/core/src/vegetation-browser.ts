@@ -21,6 +21,7 @@ export type TileflowVegetationOptions = Omit<TileflowTrees3DOptions, 'manageFlat
 };
 
 export type TileflowVegetationController = {
+  inspectModels: TileflowTrees3D['inspectModels'];
   setVisible(visible: boolean | undefined): void;
   setViewMode(mode: TileflowViewMode): void;
   /** Reapplies the policy after application layer controls change. */
@@ -105,6 +106,7 @@ export function createTileflowVegetation(
   map.on('remove', dispose);
   refresh();
   return {
+    inspectModels: () => trees?.inspectModels() ?? [],
     setVisible(value) {
       if (visible !== value) {
         visible = value;

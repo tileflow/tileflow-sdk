@@ -28,6 +28,7 @@ import {
 } from './buildings-3d-shaders';
 import {cameraFrame, cameraTileAt, createCameraTiles} from './camera-tiles-browser';
 import {tileflowFeatureColour} from './feature-colour-browser';
+import {inspectModelTriangles, type TileflowModelInspection} from './model-inspection';
 import {createTileflowPlacedModels, type TileflowPlacedModel} from './models-3d-browser';
 import {type TileflowModelPart, tileflowModelParts} from './models-3d-model';
 import {
@@ -86,9 +87,13 @@ export type TileflowBuildings3DOptions = Readonly<{
   transformRequest?: TileflowTileRequestTransform;
 }>;
 
-export type TileflowBuildings3DChange = Readonly<{transition?: Readonly<{duration?: number}>}>;
+export type TileflowBuildings3DChange = Readonly<{
+  transition?: Readonly<{duration?: number; mode?: 'grow' | 'fade'}>;
+}>;
 
 export type TileflowBuildings3D = {
+  /** Read-only, bounded snapshots of resident prepared model meshes. */
+  inspectModels(): TileflowModelInspection[];
   /** Shows buildings immediately; pass a transition duration to animate their rise. */
   show(options?: TileflowBuildings3DChange): Promise<void>;
   /** Hides buildings immediately; pass a transition duration to animate their descent. */
@@ -176,6 +181,7 @@ export function createTileflowBuildings3D(
     throw new RangeError('Tileflow 3D buildings maxTiles must be from 1 to 64.');
 
   let scale = 0;
+  let opacity = 1;
   let target = 0;
   let blank: WebGLTexture | undefined;
   let motion:
@@ -640,6 +646,7 @@ export function createTileflowBuildings3D(
       const program = programs.depth;
       if (!program) return;
       context.useProgram(program.program);
+      context.uniform1f(program.uniforms.u_preview_opacity ?? null, opacity);
       context.uniform1f(program.uniforms.u_scale!, visibleScale());
       context.uniform1f(program.uniforms.u_metres!, frame.metres);
       context.uniformMatrix4fv(program.uniforms.u_light_matrix!, false, frame.light.matrix);
@@ -651,6 +658,7 @@ export function createTileflowBuildings3D(
       const modelDepth = programs.modelDepth;
       if (!modelDepth) return;
       context.useProgram(modelDepth.program);
+      context.uniform1f(modelDepth.uniforms.u_preview_opacity ?? null, opacity);
       context.uniformMatrix4fv(modelDepth.uniforms.u_light_matrix!, false, frame.light.matrix);
       context.uniform1f(modelDepth.uniforms.u_scale!, visibleScale());
       context.uniform1f(modelDepth.uniforms.u_metres!, frame.metres);
@@ -782,6 +790,7 @@ export function createTileflowBuildings3D(
     const buildings = programs.buildings!;
     const u = buildings.uniforms;
     context.useProgram(buildings.program);
+    context.uniform1f(buildings.uniforms.u_preview_opacity ?? null, opacity);
     context.uniform1f(u.u_scale!, shown);
     context.uniform1f(u.u_metres!, placed(0, 0).metres);
     context.uniform3fv(u.u_colour!, themeColour());
@@ -843,6 +852,7 @@ export function createTileflowBuildings3D(
     if (model && standing.length > 0) {
       const m = model.uniforms;
       context.useProgram(model.program);
+      context.uniform1f(model.uniforms.u_preview_opacity ?? null, opacity);
       context.disable(context.CULL_FACE);
       context.uniform1f(m.u_scale!, shown);
       context.uniform3fv(m.u_sun_dir!, [...light.direction]);
@@ -878,6 +888,7 @@ export function createTileflowBuildings3D(
     ) {
       const program = programs.ground!;
       context.useProgram(program.program);
+      context.uniform1f(program.uniforms.u_preview_opacity ?? null, opacity);
       context.uniform1f(program.uniforms.u_metres!, frame.metres);
       context.uniform3fv(program.uniforms.u_ground_shadow!, light.groundShadow);
       scene.bindShadow(context, program.uniforms, light.strength);
@@ -917,6 +928,7 @@ export function createTileflowBuildings3D(
     if (occlusionOn) {
       const program = programs.band!;
       context.useProgram(program.program);
+      context.uniform1f(program.uniforms.u_preview_opacity ?? null, opacity);
       context.uniform1f(program.uniforms.u_scale!, shown);
       context.uniform1f(program.uniforms.u_metres!, camera.metres);
       context.uniform1f(program.uniforms.u_band!, occlusion.ground);
@@ -926,6 +938,7 @@ export function createTileflowBuildings3D(
     if (nightLight > 0 && light.night > 0.01) {
       const program = programs.flood!;
       context.useProgram(program.program);
+      context.uniform1f(program.uniforms.u_preview_opacity ?? null, opacity);
       context.blendFuncSeparate(context.ONE, context.ONE, context.ZERO, context.ONE);
       context.uniform1f(program.uniforms.u_scale!, shown);
       context.uniform1f(program.uniforms.u_metres!, camera.metres);
@@ -963,7 +976,14 @@ export function createTileflowBuildings3D(
       };
       const program = context.createProgram()!;
       const vertex = shader(context.VERTEX_SHADER, vertexText);
-      const fragment = shader(context.FRAGMENT_SHADER, fragmentText);
+      // Screen-door transparency preserves depth ordering for opaque 3D batches while fading.
+      const fadeFragment = name.toLowerCase().includes('depth')
+        ? fragmentText
+        : fragmentText.replace(
+            'void main() {',
+            'uniform float u_preview_opacity;\nvoid main() {\n  if (u_preview_opacity < 1.0 && fract(sin(dot(floor(gl_FragCoord.xy), vec2(12.9898, 78.233))) * 43758.5453) >= u_preview_opacity) discard;',
+          );
+      const fragment = shader(context.FRAGMENT_SHADER, fadeFragment);
       context.attachShader(program, vertex);
       context.attachShader(program, fragment);
       const bound =
@@ -1088,18 +1108,30 @@ export function createTileflowBuildings3D(
     if (!(duration >= 0 && duration <= 10_000))
       return Promise.reject(new RangeError('A transition lasts from 0 to 10000 ms.'));
     attach();
+    const fading = change?.transition?.mode === 'fade' && to > 0;
+    if (fading) {
+      scale = to;
+      opacity = 0;
+    } else opacity = 1;
     target = to;
     if (to > 0) camera.update();
     const reduced =
       typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (duration === 0 || reduced) {
       scale = to;
+      opacity = 1;
       motion = undefined;
       map.triggerRepaint();
       return Promise.resolve();
     }
     return new Promise((resolve) => {
-      const current = {from: scale, to, start: performance.now(), duration, done: () => resolve()};
+      const current = {
+        from: fading ? opacity : scale,
+        to: fading ? 1 : to,
+        start: performance.now(),
+        duration,
+        done: () => resolve(),
+      };
       motion = current;
       const step = () => {
         if (motion !== current || disposed) {
@@ -1108,7 +1140,8 @@ export function createTileflowBuildings3D(
         }
         const t = Math.min(1, (performance.now() - current.start) / duration);
         const eased = t * t * (3 - 2 * t);
-        scale = current.from + (current.to - current.from) * eased;
+        if (fading) opacity = current.from + (current.to - current.from) * eased;
+        else scale = current.from + (current.to - current.from) * eased;
         map.triggerRepaint();
         if (t >= 1) {
           motion = undefined;
@@ -1120,6 +1153,41 @@ export function createTileflowBuildings3D(
   }
 
   return {
+    inspectModels() {
+      const grouped = new Map<string, TileflowPlacedModel[]>();
+      for (const placed of models.shown())
+        grouped.set(placed.model.id, [...(grouped.get(placed.model.id) ?? []), placed]);
+      return [...grouped].slice(0, 64).map(([id, placements]) => {
+        const model = placements[0]!.model,
+          level = model.levels[model.levels.length - 1]!;
+        const view = new DataView(
+          level.vertices.buffer,
+          level.vertices.byteOffset,
+          level.vertices.byteLength,
+        );
+        const mesh = inspectModelTriangles(level.indices, (index) => {
+          const at = index * 16,
+            x = level.centre[0] + view.getInt16(at, true) * level.step,
+            up = level.centre[1] + view.getInt16(at + 2, true) * level.step,
+            south = level.centre[2] + view.getInt16(at + 4, true) * level.step;
+          return [x, -south, up];
+        });
+        return {
+          id,
+          module: 'Buildings',
+          format: 'Tileflow prepared model',
+          vertices: model.levels[0]!.vertices.byteLength / 16,
+          triangles: model.levels[0]!.indices.length / 3,
+          bytes: model.levels.reduce(
+            (sum, item) => sum + item.vertices.byteLength + item.indices.byteLength,
+            0,
+          ),
+          lods: model.levels.length,
+          instances: placements.length,
+          ...mesh,
+        };
+      });
+    },
     show: (change) => grow(1, change),
     hide: (change) => grow(0, change),
     grow,

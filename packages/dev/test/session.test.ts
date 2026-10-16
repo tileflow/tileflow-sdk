@@ -969,7 +969,7 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.equal(unknownThemeResponse.status, 400);
   assert.match(
     ((await unknownThemeResponse.json()) as {error: string}).error,
-    /theme selection is invalid or unknown.*dark, light/u,
+    /theme selection is invalid or unknown.*dark, dark-faded, dark-monochrome, dawn, dawn-faded, dawn-monochrome, dusk, dusk-faded, dusk-monochrome, faded, light, monochrome/u,
   );
 
   const missingQueryMapResponse = await createTileflowDevRequestHandler({
@@ -1079,6 +1079,14 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.equal(restoredToggles.buildingVisibility(), 'visible');
   assert.equal(restoredToggles.treeVisibility(), 'visible');
 
+  // Ordinary style events must not undo a temporary Rules visibility edit.
+  restoredToggles.setBusinessAreaVisibility('none');
+  restoredToggles.emit('styledata');
+  assert.equal(restoredToggles.businessAreaVisibility(), 'none');
+  restoredToggles.setBusinessAreaVisibility('visible');
+  restoredToggles.emit('styledata');
+  assert.equal(restoredToggles.businessAreaVisibility(), 'visible');
+
   restoredToggles.applyParentMapState({
     type: 'tileflow:set-map-state',
     schemaVersion: 1,
@@ -1170,6 +1178,11 @@ test('selects map and scene previews with their configured cameras and viewport'
   restartedServer.emitServerEvent('error');
   restartedServer.emitServerEvent('open');
   assert.equal(restartedServer.reloads(), 1);
+
+  const embedded = runPreviewScript(boundsHtml, persistedUrl.href, {sharedStatus: true});
+  assert.equal(embedded.eventSources(), 0);
+  embedded.emitParentStatus({status: 'ready', generation: 999});
+  assert.equal(embedded.reloads(), 1);
 
   const invalidCamera = runPreviewScript(
     mapHtml,
@@ -1446,17 +1459,20 @@ export default defineMap({id: 'main', version: 1, extends: streets, icons: [...s
 function runPreviewScript(
   html: string,
   href: string,
-  options: {coreScene?: boolean; vegetationVisible?: boolean} = {},
+  options: {coreScene?: boolean; vegetationVisible?: boolean; sharedStatus?: boolean} = {},
 ): {
   applyParentMapState(data: unknown): void;
   bearing(): number;
   businessAreaVisibility(): string;
+  setBusinessAreaVisibility(value: string): void;
   buildingVisibility(): string;
   center(): [number, number];
   coreCalls(): string[];
   currentUrl(): string;
   emit(eventName: string): void;
   emitServerEvent(eventName: string, data?: unknown): void;
+  emitParentStatus(status: unknown): void;
+  eventSources(): number;
   mapOptions: Record<string, unknown> | undefined;
   pitch(): number;
   reloads(): number;
@@ -1497,6 +1513,8 @@ function runPreviewScript(
     : {};
   let currentPitch = 0;
   let reloadCount = 0;
+  let eventSources = 0;
+  let parentStatusReceiver: ((status: unknown) => void) | undefined;
   let styleReady = false;
   let activeCamera:
     {bearing: number; center: [number, number]; pitch: number; zoom: number} | undefined;
@@ -1691,6 +1709,9 @@ function runPreviewScript(
   }
 
   class FakeEventSource {
+    constructor() {
+      eventSources++;
+    }
     addEventListener(name: string, listener: (event: {data: string}) => void): void {
       const eventListeners = eventSourceListeners.get(name) ?? new Set();
       eventListeners.add(listener);
@@ -1698,9 +1719,26 @@ function runPreviewScript(
     }
   }
 
-  const parentWindow = {};
+  const parentWindow = options.sharedStatus
+    ? {
+        __tileflowDevtoolsHost: {
+          subscribePreviewStatus(_child: unknown, receive: (status: unknown) => void) {
+            parentStatusReceiver = receive;
+            return () => {
+              parentStatusReceiver = undefined;
+            };
+          },
+        },
+      }
+    : {};
   const sandbox: Record<string, any> = {
     EventSource: FakeEventSource,
+    // Browser imports are supplied by the harness; the observer itself has bounded-log tests.
+    createPreviewObserver: () => ({
+      attach(map: unknown) {
+        assert.ok(map instanceof FakeMap);
+      },
+    }),
     createTileflowBuildings3D: () => coreLayer('buildings'),
     createTileflowStreetLights: () => coreLayer('lights'),
     createTileflowVegetation: ({visible}: {visible: boolean}) => {
@@ -1761,12 +1799,17 @@ function runPreviewScript(
   runInNewContext(script, sandbox);
 
   return {
+    emitParentStatus: (status) => parentStatusReceiver?.(status),
+    eventSources: () => eventSources,
     applyParentMapState(data) {
       const event = {data, origin: new URL(href).origin, source: parentWindow};
       for (const listener of windowListeners.get('message') ?? []) listener(event);
     },
     bearing: () => activeCamera?.bearing ?? 0,
     businessAreaVisibility: () => businessAreaVisibility,
+    setBusinessAreaVisibility: (value) => {
+      businessAreaVisibility = value;
+    },
     buildingVisibility: () => buildingVisibility,
     center: () => activeCamera?.center ?? [0, 0],
     coreCalls: () => [...coreCalls],

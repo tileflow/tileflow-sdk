@@ -101,6 +101,7 @@
   export let popup: TileflowMapProps['popup'] = undefined;
   export let source: TileflowMapProps['source'];
   export let theme: TileflowMapProps['theme'] = undefined;
+  export let timeOfDay: TileflowMapProps['timeOfDay'] = undefined;
   export let themeBlend: TileflowMapProps['themeBlend'] = undefined;
   export let vegetation: TileflowMapProps['vegetation'] = undefined;
   export let viewMode: NonNullable<TileflowMapProps['viewMode']> = '2d';
@@ -179,7 +180,7 @@
         : {defaultInteractionState: initialInteractionState}),
     });
   $: resolvedMode = resolveTileflowMapMode({mode});
-  $: assertTileflowMapStyleInputs({source, theme, themeBlend, themeTransition});
+  $: assertTileflowMapStyleInputs({source, theme, timeOfDay, themeBlend, themeTransition});
   $: resolvedCaptureId = normalizeTileflowCaptureId(captureId);
   $: isImageMode = resolvedMode === 'image';
   $: mapName = source.map;
@@ -195,6 +196,7 @@
     colorScheme: systemColorScheme,
     manifestMap,
     theme,
+    timeOfDay,
     themeBlend,
   });
   $: themeBlendKey = themeBlend ? JSON.stringify(themeBlend.themes) : undefined;
@@ -1265,6 +1267,7 @@
     colorScheme: 'dark' | 'light';
     manifestMap: TileflowRuntimeManifestMap | null;
     theme: TileflowMapProps['theme'];
+    timeOfDay: TileflowMapProps['timeOfDay'];
     themeBlend: TileflowMapProps['themeBlend'];
   }): Readonly<{error: boolean; name: string | undefined}> {
     // A blend shows its nearest theme until the blend style is ready, and names it while blending.
@@ -1282,7 +1285,12 @@
       }
       return {
         error: false,
-        name: resolveTileflowRuntimeTheme(input.manifestMap, selection, input.colorScheme).name,
+        name: resolveTileflowRuntimeTheme(
+          input.manifestMap,
+          selection,
+          input.colorScheme,
+          input.themeBlend ? undefined : input.timeOfDay,
+        ).name,
       };
     } catch {
       return {error: true, name: undefined};

@@ -17,6 +17,7 @@ import {
   superRefine,
   tuple,
   unknown,
+  union,
   type ZodMiniType,
 } from 'zod/mini';
 import type {ManifestSchema, ManifestSchemaOperations} from './manifest-schema-operations';
@@ -41,6 +42,7 @@ export const miniManifestSchemaOperations: ManifestSchemaOperations = {
     return enumeration(values) as unknown as ManifestSchema<Values[number]>;
   },
   literal: (value) => literal(value),
+  union: (left, right) => union([left, right]),
   tuplePair<A, B>(left: ManifestSchema<A>, right: ManifestSchema<B>) {
     return tuple([left, right]) as unknown as ManifestSchema<[A, B]>;
   },

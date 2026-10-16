@@ -15,8 +15,10 @@ or third-party sprite; normalized source metadata selects among them and falls b
 rectangle when no supported network classification is available.
 
 Official maps use the same public asset contract as application maps. Streets declares
-`icons: [streetsIcons]`; its light and dark themes select distinct semantic image IDs from that
-shared atlas. Every official map is an independent root and declares only its own asset descriptors.
+`icons: [streetsIcons]`; its light, dark, and monochrome themes select semantic image IDs from that
+shared atlas. Faded themes retain the category-colored POI artwork; monochrome themes use matching
+grayscale markers. Every official map is an independent root and declares only its own asset
+descriptors.
 
 Streets also declares `models: [streetsModels]`. Its seven original tree models live in
 `streets/models/`, each with a lighter `.far.glb` companion. The `streets-tree-*.pattern.svg`

@@ -12,6 +12,12 @@ let localPmtilesJavaScript: string | undefined;
 let localFflateJavaScript: string | undefined;
 
 export function getTileflowPreviewRuntimeResponse(path: string): Response | undefined {
+  if (path === '/__runtime/devtools-observer.js') {
+    return textAssetResponse(
+      readFileSync(new URL('../dist/devtools-observer.js', import.meta.url), 'utf8'),
+      'text/javascript; charset=utf-8',
+    );
+  }
   if (path === '/__runtime/maplibre-gl.mjs') {
     return textAssetResponse(
       getLocalMapLibreAsset('maplibre-gl.mjs'),

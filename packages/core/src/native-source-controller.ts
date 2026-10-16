@@ -1,3 +1,4 @@
+import {isTileflowTimeOfDay, type TileflowTimeOfDay} from './time-of-day';
 import {loadNativeManifest} from './native-manifest';
 import {NativeSourceCancellation} from './native-source-cancellation';
 import {
@@ -102,6 +103,7 @@ export function createTileflowNativeSourceController(options: {
           throw new TileflowNativeSourceError('NATIVE_SOURCE_INVALID', 'source');
         if (
           (selection.theme !== undefined && !validateTileflowThemeSelection(selection.theme)) ||
+          (selection.timeOfDay !== undefined && !isTileflowTimeOfDay(selection.timeOfDay)) ||
           (selection.colorScheme !== undefined &&
             selection.colorScheme !== 'light' &&
             selection.colorScheme !== 'dark')
@@ -149,6 +151,7 @@ export function createTileflowNativeSourceController(options: {
             map,
             selection.theme as string | undefined,
             selection.colorScheme as 'dark' | 'light' | undefined,
+            selection.timeOfDay as TileflowTimeOfDay | undefined,
           );
         } catch {
           throw new TileflowNativeSourceError('NATIVE_THEME_INVALID', 'theme');

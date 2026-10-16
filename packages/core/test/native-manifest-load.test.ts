@@ -63,7 +63,7 @@ test('keeps declared identity and resolves font resources from their owning styl
 
 for (const invalid of [
   {...manifest(), extra: true},
-  {...manifest(), version: 2},
+  {...manifest(), version: 3},
   {version: 1, maps: {}},
   {...manifest(), maps: {streets: {...manifest().maps.streets, extra: true}}},
   {...manifest(), maps: {streets: {...manifest().maps.streets, defaultTheme: 'missing'}}},

@@ -202,7 +202,7 @@ pnpm exec tsx scripts/native-lowering-audit.ts > native-lowering-audit.json
 ```
 
 This diagnostic report compiles the unchanged full Streets family through the web preparation
-path, then measures the native representation for **both** dark and light before applying output
+path, then measures the native representation for **all twelve** themes before applying output
 budget assertions. It writes no native artifact generation and is not a compatibility verdict.
 Each theme includes layer counts, visited JSON nodes, UTF-8 bytes and maximum depth before/after;
 every transformed layer is listed with its ID, physical span, branch count and zoom intervals,
@@ -214,7 +214,7 @@ cap/dash decisions. They identify whether predicate expansion or repetition of o
 dominates; they are not an additive byte decomposition. The counters include array keys, matching
 the profile's existing node convention. Retain the report with the checkout SHA. An over-budget
 result must not be treated as a successful native build or fixed by dropping layers or weakening
-validation. The test suite prints the two-theme size summary even when a budget assertion fails.
+validation. The test suite prints the full theme size summary even when a budget assertion fails.
 
 ## Prepare Streets for a directed native check
 
@@ -251,7 +251,7 @@ actually contains features for the transformed layers listed in
 `/tmp/native-lowering-audit.json`. Use the audit's exact physical IDs, source layers, branch counts
 and zoom intervals rather than assuming that a map location exercises every branch.
 
-Check both themes at the same center, viewport, pitch 0 and bearing 0. Exercise at least one cap
+Check all themes at the same center, viewport, pitch 0 and bearing 0. Exercise at least one cap
 partition, one dashed/solid partition and an overlap between simultaneously active branches. Pan
 slightly and inspect just below/at/above the relevant audit zoom cuts (for example 15.99/16/16.01
 when a selected interval changes at 16). Check that caps and dash patterns are visible, layers do

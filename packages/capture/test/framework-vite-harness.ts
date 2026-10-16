@@ -57,7 +57,7 @@ export async function verifyFrameworkViteCapture(
   const manifestResponse = await fetch(`${appOrigin}/tileflow/manifest.json`);
   const manifestBody = await manifestResponse.text();
   assert.equal(manifestResponse.status, 200, manifestBody);
-  assert.equal((JSON.parse(manifestBody) as {version?: unknown}).version, 1);
+  assert.equal((JSON.parse(manifestBody) as {version?: unknown}).version, 2);
 
   const originalListen = Server.prototype.listen;
   let additionalListeners = 0;

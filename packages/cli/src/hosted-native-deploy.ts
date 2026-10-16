@@ -356,7 +356,8 @@ export async function runHostedNativeDeploy(options: NativeHostedDeployOptions, 
     const build = artifact.renderers.web.buildManifest.maps[artifact.mapId]!;
     const manifest = parseTileflowRuntimeManifest({
       apiUrl: apiOrigin,
-      version: 1,
+      version:
+        build.timeOfDay || Object.values(existing?.maps ?? {}).some((map) => map.timeOfDay) ? 2 : 1,
       maps: {
         ...(existing?.maps ?? {}),
         [prepared.mapName]: {
@@ -364,6 +365,7 @@ export async function runHostedNativeDeploy(options: NativeHostedDeployOptions, 
           environment: prepared.mapName,
           mapId,
           ...(build.systemThemes ? {systemThemes: build.systemThemes} : {}),
+          ...(build.timeOfDay ? {timeOfDay: build.timeOfDay} : {}),
           ...(artifact.view ? {view: artifact.view} : {}),
           usageMode: 'session',
           worldGeneration: 'v1',

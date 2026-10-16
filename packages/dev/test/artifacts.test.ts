@@ -355,7 +355,7 @@ test('refuses to replace a Hosted manifest unless the caller opts in explicitly'
     version?: number;
   };
   assert.equal(replacement.apiUrl, undefined);
-  assert.equal(replacement.version, 1);
+  assert.equal(replacement.version, 2);
   assert.match(
     replacement.maps?.main?.themes?.light?.styleUrl ?? '',
     /styles\/main\/light\.json$/u,

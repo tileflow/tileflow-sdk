@@ -23,6 +23,20 @@ import {lowerTileflowNativeCompiledStyles} from '../src/native-artifacts';
 import {lowerNativeStyleRepresentation, nativeLoweringVersion} from '../src/native-lowering';
 import {auditNativeLowering, measureNativeJson as footprint} from './native-lowering-audit-fixture';
 
+const streetsThemeNames = [
+  'dark',
+  'dark-faded',
+  'dark-monochrome',
+  'dawn',
+  'dawn-faded',
+  'dawn-monochrome',
+  'dusk',
+  'dusk-faded',
+  'dusk-monochrome',
+  'faded',
+  'light',
+  'monochrome',
+] as const;
 const propertyCase = ['case', ['==', ['get', 'class'], 'primary'], 'round', 'butt'];
 function inputStyle(): MapLibreStyle {
   return {
@@ -64,15 +78,18 @@ test('matches the pinned expression and filter evaluators at range and camera bo
   const result = lowered.styles.fixture!.light!;
   assert.deepEqual(validateTileflowNativePreparedStyle(result), []);
   const expressions = ['line-cap', 'line-dasharray'].map((property) => {
-    const parsed = createExpression(source[property === 'line-cap' ? 'layout' : 'paint'][property]);
+    const parsed = createExpression(
+      source[property === 'line-cap' ? 'layout' : 'paint'][property],
+      property,
+    );
     assert.equal(parsed.result, 'success');
     if (parsed.result !== 'success') throw new Error('Expected a valid fixture expression.');
     return parsed.value;
   });
-  const originalFilter = featureFilter(source.filter);
+  const originalFilter = featureFilter(source.filter, source.id + '.filter');
   const physical = result.layers.map((layer: any) => ({
     layer,
-    filter: featureFilter(layer.filter),
+    filter: featureFilter(layer.filter, layer.id + '.filter'),
   }));
   for (const properties of [
     {},
@@ -221,7 +238,7 @@ test('Streets themes retain identity and audited native transformation spans', a
   );
   const web = await createTileflowBuildArtifacts({cwd, styleBaseUrl: '.'});
   t.after(() => disposeTileflowBuildArtifacts(web));
-  // Collect both themes before any assertion, so a failing dark budget cannot hide light evidence.
+  // Collect every theme before assertions, so one budget failure cannot hide evidence from others.
   const measured = Object.entries(web.styles.streets!)
     .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
     .map(([theme, input]) => {
@@ -233,7 +250,7 @@ test('Streets themes retain identity and audited native transformation spans', a
     });
   assert.deepEqual(
     measured.map(({theme}) => theme),
-    ['dark', 'light'],
+    streetsThemeNames,
   );
   t.diagnostic(JSON.stringify({scope: 'Streets lowering measurements', themes: measured}));
   for (const item of measured) {
@@ -269,7 +286,7 @@ test('Streets themes retain identity and audited native transformation spans', a
   assert.equal(record.preparationVersion, nativeLoweringVersion);
   assert.deepEqual(
     record.transformations.map(({theme}) => theme),
-    ['dark', 'light'],
+    streetsThemeNames,
   );
   assert.equal(
     native.buildManifest.maps.streets!.mapRevisionSha256,
@@ -361,12 +378,12 @@ test('compact grouped predicates agree with the pinned evaluator for every overl
   layer.paint = {'line-dasharray': [1, 0]};
   const lowered = lowerTileflowNativeCompiledStyles({fixture: {light: input}}).styles.fixture!
     .light!;
-  const parsed = createExpression(cap);
+  const parsed = createExpression(cap, 'line-cap');
   assert.equal(parsed.result, 'success');
   if (parsed.result !== 'success') throw new Error('Expected a valid finite expression.');
   const filters = lowered.layers.map((physical: any) => ({
     physical,
-    filter: featureFilter(physical.filter),
+    filter: featureFilter(physical.filter, physical.id + '.filter'),
   }));
   for (let mask = 0; mask < 4096; mask++) {
     const properties = Object.fromEntries(
@@ -380,7 +397,7 @@ test('compact grouped predicates agree with the pinned evaluator for every overl
   }
 });
 
-test('runs the complete two-theme lowering audit through the workspace tsx loader', async () => {
+test('runs the complete Streets-theme lowering audit through the workspace tsx loader', async () => {
   const root = fileURLToPath(new URL('../../../', import.meta.url));
   const {stdout} = await promisify(execFile)(
     process.execPath,
@@ -394,7 +411,7 @@ test('runs the complete two-theme lowering audit through the workspace tsx loade
   assert.equal(report.preparedLimits.maximumNodes, 540_000);
   assert.deepEqual(
     report.themes.map((row: {theme: string}) => row.theme),
-    ['dark', 'light'],
+    streetsThemeNames,
   );
   for (const row of report.themes) {
     assert.equal(row.withinInputBudget, true);

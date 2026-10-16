@@ -258,3 +258,53 @@ export async function duskWhileFlying(
 The React, Vue, and Svelte maps take the same flag in `themeBlend`: pass
 `themeBlend={{hold: true, position, themes}}` while the camera moves and drop `hold` when it rests.
 The React Native `Map` blends natively and does not take `hold`.
+
+## Time of day
+
+`timeOfDay` is an optional map capability. It maps a theme and an artistic preset (`day`,
+`dawn`, `dusk`, `night`) to a complete theme already in `themes`:
+
+<!-- docs:check -->
+
+```ts
+import {defineMap} from '@tileflow/core';
+import {streets, streetsThemes} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'city',
+  version: 1,
+  extends: streets,
+  themes: {
+    paper: streetsThemes.light,
+    sunrise: streetsThemes.dawn,
+    evening: streetsThemes.dusk,
+    ink: streetsThemes.dark,
+  },
+  defaultTheme: 'paper',
+  systemThemes: {light: 'paper', dark: 'ink'},
+  timeOfDay: {
+    paper: {day: 'paper', dawn: 'sunrise', dusk: 'evening', night: 'ink'},
+  },
+});
+```
+
+Applications keep `theme` and optionally add `timeOfDay`: `theme="paper" timeOfDay="dusk"`
+selects `evening`. Compilation supports `createStyle(map, {theme: 'paper', timeOfDay: 'dusk'})`;
+`resolveTileflowRuntimeTheme(map, theme, colorScheme, timeOfDay)` uses the same resolution.
+Omitting the preset preserves the existing selection. `system` resolves its light/dark theme
+first. A concrete variant such as `ink` also identifies its family when a preset is supplied.
+Maps or themes without a family ignore this option. Within a declared family, an unavailable
+preset is an error; controls should offer only declared presets. Families must include their own
+name in their presets, and a concrete theme can belong to only one family.
+
+The catalog inherits atomically; `timeOfDay: {}` disables it on an extension. Replacing `themes`
+clears an inherited catalog. `defaultTheme`, `systemThemes`, and `themeTransition` retain their
+behavior. An explicit `themeBlend` owns its concrete theme sequence and takes precedence over
+`timeOfDay`. Changing the preset does not start a clock or call `setSun`; lighting is whatever the
+selected theme already declares, and an application's sun override retains its existing behavior.
+Captures, style URLs, and transition events use the resolved concrete theme name.
+
+Maps with a catalog publish runtime manifest version 2. Updated browser and native readers accept
+both versions. Old readers need a version 1 manifest: `createManifest(project, {manifestVersion: 1})`
+omits the catalog and keeps every concrete theme available. Maps without a catalog still emit
+version 1. Update readers before delivering a version 2 manifest.

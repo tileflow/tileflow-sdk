@@ -47,8 +47,9 @@ motion changes at once. `dispose()` takes the layer off the map.
 The renderer reads the source's z15 tiles round the camera (z15 is where World's buildings carry
 their heights; a source that stops earlier is read at its own maximum zoom), up to `maxTiles`
 tiles (25 by default), and meshes them a few milliseconds per frame. It reads World's
-`render_height`, `render_min_height`, `hide_3d`, `building_tone`, `class` and `night_use`, and the places in
-World's `poi` layer (see [night light](#night-light)). `stats.declared` tells whether the map's
+`render_height`, `render_min_height`, `hide_3d`, `height_source`, `building_tone`, `class`,
+`night_use` and the roof fields (see [roofs](#roofs)), and the places in World's `poi` layer (see
+[night light](#night-light)). `stats.declared` tells whether the map's
 style describes its 3D buildings. Recompile existing maps to pick up the new defaults: previously
 compiled metadata with explicit effects enabled continues to honour those values.
 
@@ -217,6 +218,22 @@ that cannot be downloaded leaves those buildings standing. Reading a prepared mo
 meshoptimizer's WebAssembly decoder, so a page with a Content Security Policy allows
 `'wasm-unsafe-eval'` in its `script-src`.
 
+## Roofs
+
+A building whose tiles carry a roof shape (World's `roof_shape`) gets that roof: `gabled`,
+`hipped`, `half_hipped`, `pyramidal`, `skillion`, `gambrel`, `mansard` and `saltbox` roofs, and
+faceted `dome`, `onion` and `round` ones. The ridge follows the building's long side, or
+`roof_orientation` and `roof_direction` when the tiles state them, and the walls rise to the roof,
+so gable ends are walls. Each slope takes the sun, shadows and edges like any face: the ridge and
+the hips are drawn as edges too.
+
+The roof's height is `roof_height` where the tiles state it, taken from the building's height.
+Otherwise the roof keeps the pitch of its shape (30° for a gabled or hipped roof, a half sphere for a
+dome); it stands on the walls when the height came from levels or a fallback, and reaches the
+building's height when that was measured (`height_source` `height`). A building without a roof
+shape, a flat roof, a building with courtyards or one far from a rectangle (an L, a U) keeps a flat
+roof, and so does a building a tile's buffer cuts short.
+
 ## Light and shadows
 
 `threeDimensional.lighting` defaults to `'style'`: it uses MapLibre's `light` position,
@@ -294,8 +311,9 @@ way kept the frame pacing of the same city drawn without shadows.
 
 - Mercator only; the layer draws nothing below its `minzoom`.
 - No terrain: buildings stand on flat ground.
-- One building colour per feature and theme; facades, roof shapes and building parts as separate
-  shapes are not drawn.
+- One building colour per feature and theme, on its roof and walls alike; facades are not drawn.
+- Roofs follow the building's smallest enclosing rectangle: a building with courtyards or far from a
+  rectangle keeps a flat roof, and `sawtooth` roofs are drawn flat.
 - A colour expression is evaluated at zoom 16.
 - Building models and landmarks take no edges or night light of their own yet, and cannot be
   picked or styled by state.

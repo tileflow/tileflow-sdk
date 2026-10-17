@@ -5,6 +5,7 @@
 // marked with the sides that are the roof's outline, so the renderer can draw the outline a constant
 // width on screen. It has no DOM dependency.
 import earcut from 'earcut';
+import {type TileflowRoof, tileflowRoofOf} from './buildings-3d-roofs';
 import {tileflowInsideRings, tileflowRingsOverlap} from './models-3d-model';
 import type {TileflowTileLayer} from './vector-tile-decode';
 
@@ -186,49 +187,30 @@ export function meshTileflowBuildings(
         : seed;
       const building: Building = {base, top: height, jitter, seed, tone, group, use, cx, cy, index};
 
-      // The roof: three corners of its own for each triangle, which knows its sides on the outline.
-      const flat: number[] = [];
-      const starts: number[] = [];
-      for (const ring of rings) {
-        starts.push(flat.length / 2);
-        flat.push(...ring);
-      }
-      starts.push(flat.length / 2);
-      const outline = (a: number, b: number) => {
-        const ring = starts.findIndex((start, at) => a >= start && a < starts[at + 1]!);
-        const [start, end] = [starts[ring]!, starts[ring + 1]! - 1];
-        if (b < start || b > end) return false;
-        const [low, high] = a < b ? [a, b] : [b, a];
-        if (high - low !== 1 && !(low === start && high === end)) return false;
-        return !onBorder(flat[a * 2]!, flat[a * 2 + 1]!, flat[b * 2]!, flat[b * 2 + 1]!);
-      };
-      const triangles = earcut(flat, starts.slice(1, -1), 2);
-      for (let at = 0; at + 2 < triangles.length; at += 3) {
-        const corners = [triangles[at]!, triangles[at + 1]!, triangles[at + 2]!];
-        let sides = 0;
-        for (let corner = 0; corner < 3; corner += 1)
-          if (outline(corners[(corner + 1) % 3]!, corners[(corner + 2) % 3]!)) sides |= 1 << corner;
-        for (const [corner, point] of corners.entries())
-          roofs.push(
-            vertices.write(
-              building,
-              flat[point * 2]!,
-              flat[point * 2 + 1]!,
-              1,
-              0,
-              0,
-              0,
-              0,
-              0,
-              0,
-              corner,
-              sides,
-            ),
-          );
+      // A roof with its shape, from the building's whole outline as the tile holds it, so each tile
+      // drawing a piece of the building draws the same roof; else a flat one.
+      const roof =
+        polygon.length === 1 && rings.length === 1
+          ? tileflowRoofOf(
+              polygon[0]!,
+              rings[0]!,
+              properties,
+              base,
+              height,
+              metresPerUnit,
+              tileflowBuildingExtent,
+            )
+          : undefined;
+      if (roof) {
+        tallest = Math.max(tallest, roof.ridge);
+        writeRoof(roof, building, vertices, roofs);
+      } else {
+        writeFlatRoof(rings, building, vertices, roofs);
       }
 
       // The walls, facing out of the building: away from the outer ring, into each courtyard.
-      // Edges along the tile's border are inside the building; the next tile carries it on.
+      // Edges along the tile's border are inside the building; the next tile carries it on. Under a
+      // roof with its shape they rise to it, cut where its slope changes, as at a gable.
       for (const [ringIndex, ring] of rings.entries()) {
         const left = area(ring) > 0;
         const outward = ringIndex === 0 ? (left ? -1 : 1) : left ? 1 : -1;
@@ -250,6 +232,7 @@ export function meshTileflowBuildings(
           const outY = ((qx - px) / before) * outward;
           return (outX * (nx - qx) + outY * (ny - qy)) / after > cornerTurn;
         };
+        const topAt = (x: number, y: number) => (roof ? roof.heightAt(x, y) : height);
         let along = 0;
         for (let at = 0; at < points; at += 1) {
           const [ax, ay] = point(at);
@@ -258,29 +241,87 @@ export function meshTileflowBuildings(
           if (length === 0 || onBorder(ax, ay, bx, by)) continue;
           const normalX = (-(by - ay) / length) * outward;
           const normalY = ((bx - ax) / length) * outward;
-          const metres = (length / tileflowBuildingExtent) * options.tileMetres;
-          const corners = (tight(at) ? 1 : 0) | (tight(at + 1) ? 2 : 0) | (ringIndex > 0 ? 4 : 0);
-          const cut = (onEdge(ax, ay) ? 1 : 0) | (onEdge(bx, by) ? 2 : 0);
-          const end = along + metres;
-          const v = vertices.write(
-            building,
-            ax,
-            ay,
-            0,
-            normalX,
-            normalY,
-            1,
-            along,
-            corners,
-            metres,
-            0,
-            cut,
-          );
-          vertices.write(building, bx, by, 0, normalX, normalY, 1, end, corners, metres, 1, cut);
-          vertices.write(building, ax, ay, 1, normalX, normalY, 1, along, corners, metres, 0, cut);
-          vertices.write(building, bx, by, 1, normalX, normalY, 1, end, corners, metres, 1, cut);
-          walls.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
-          along += metres;
+          const shares = [0, ...(roof ? roof.breaks(ax, ay, bx, by) : []), 1];
+          for (let piece = 0; piece + 1 < shares.length; piece += 1) {
+            const first = piece === 0;
+            const last = piece + 2 === shares.length;
+            const sx = ax + (bx - ax) * shares[piece]!;
+            const sy = ay + (by - ay) * shares[piece]!;
+            const ex = ax + (bx - ax) * shares[piece + 1]!;
+            const ey = ay + (by - ay) * shares[piece + 1]!;
+            const metres =
+              (Math.hypot(ex - sx, ey - sy) / tileflowBuildingExtent) * options.tileMetres;
+            const corners =
+              (first && tight(at) ? 1 : 0) |
+              (last && tight(at + 1) ? 2 : 0) |
+              (ringIndex > 0 ? 4 : 0);
+            const cut = (first && onEdge(ax, ay) ? 1 : 0) | (last && onEdge(bx, by) ? 2 : 0);
+            const end = along + metres;
+            const startTop = topAt(sx, sy);
+            const endTop = topAt(ex, ey);
+            const v = vertices.write(
+              building,
+              sx,
+              sy,
+              0,
+              normalX,
+              normalY,
+              1,
+              along,
+              corners,
+              metres,
+              0,
+              cut,
+              startTop,
+            );
+            vertices.write(
+              building,
+              ex,
+              ey,
+              0,
+              normalX,
+              normalY,
+              1,
+              end,
+              corners,
+              metres,
+              1,
+              cut,
+              endTop,
+            );
+            vertices.write(
+              building,
+              sx,
+              sy,
+              1,
+              normalX,
+              normalY,
+              1,
+              along,
+              corners,
+              metres,
+              0,
+              cut,
+              startTop,
+            );
+            vertices.write(
+              building,
+              ex,
+              ey,
+              1,
+              normalX,
+              normalY,
+              1,
+              end,
+              corners,
+              metres,
+              1,
+              cut,
+              endTop,
+            );
+            walls.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
+            along = end;
+          }
         }
       }
     }
@@ -297,6 +338,104 @@ export function meshTileflowBuildings(
     top: tallest,
     features,
   };
+}
+
+/** A flat roof at the building's top: three corners of its own for each triangle, which knows its
+ * sides on the outline. */
+function writeFlatRoof(
+  rings: readonly number[][],
+  building: Building,
+  vertices: VertexWriter,
+  roofs: IndexWriter,
+): void {
+  const flat: number[] = [];
+  const starts: number[] = [];
+  for (const ring of rings) {
+    starts.push(flat.length / 2);
+    flat.push(...ring);
+  }
+  starts.push(flat.length / 2);
+  const outline = (a: number, b: number) => {
+    const ring = starts.findIndex((start, at) => a >= start && a < starts[at + 1]!);
+    const [start, end] = [starts[ring]!, starts[ring + 1]! - 1];
+    if (b < start || b > end) return false;
+    const [low, high] = a < b ? [a, b] : [b, a];
+    if (high - low !== 1 && !(low === start && high === end)) return false;
+    return !onBorder(flat[a * 2]!, flat[a * 2 + 1]!, flat[b * 2]!, flat[b * 2 + 1]!);
+  };
+  const triangles = earcut(flat, starts.slice(1, -1), 2);
+  for (let at = 0; at + 2 < triangles.length; at += 3) {
+    const corners = [triangles[at]!, triangles[at + 1]!, triangles[at + 2]!];
+    let sides = 0;
+    for (let corner = 0; corner < 3; corner += 1)
+      if (outline(corners[(corner + 1) % 3]!, corners[(corner + 2) % 3]!)) sides |= 1 << corner;
+    for (const [corner, point] of corners.entries())
+      roofs.push(
+        vertices.write(
+          building,
+          flat[point * 2]!,
+          flat[point * 2 + 1]!,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          corner,
+          sides,
+        ),
+      );
+  }
+}
+
+/**
+ * A roof with its shape: each face's triangles at the roof's height, with corners of their own and
+ * every side of the face drawn as an edge (the eaves, the ridge and the hips), sloped by the face's
+ * normal.
+ */
+function writeRoof(
+  roof: TileflowRoof,
+  building: Building,
+  vertices: VertexWriter,
+  roofs: IndexWriter,
+): void {
+  for (const face of roof.faces) {
+    const ring = face.ring;
+    const points = ring.length / 2;
+    const outline = (a: number, b: number) => {
+      const [low, high] = a < b ? [a, b] : [b, a];
+      if (high - low !== 1 && !(low === 0 && high === points - 1)) return false;
+      return !onBorder(ring[a * 2]!, ring[a * 2 + 1]!, ring[b * 2]!, ring[b * 2 + 1]!);
+    };
+    for (let at = 0; at + 2 < face.triangles.length; at += 3) {
+      const corners = [face.triangles[at]!, face.triangles[at + 1]!, face.triangles[at + 2]!];
+      let sides = 0;
+      for (let corner = 0; corner < 3; corner += 1)
+        if (outline(corners[(corner + 1) % 3]!, corners[(corner + 2) % 3]!)) sides |= 1 << corner;
+      for (const [corner, point] of corners.entries()) {
+        const x = ring[point * 2]!;
+        const y = ring[point * 2 + 1]!;
+        roofs.push(
+          vertices.write(
+            building,
+            x,
+            y,
+            1,
+            face.normal[0],
+            face.normal[1],
+            0,
+            0,
+            0,
+            0,
+            corner,
+            sides,
+            roof.heightAt(x, y),
+          ),
+        );
+      }
+    }
+  }
 }
 
 type Building = {
@@ -330,6 +469,7 @@ class VertexWriter {
     length: number,
     corner = 0,
     sides = 0,
+    top = building.top,
   ): number {
     const stride = tileflowBuildingVertexBytes;
     if ((this.count + 1) * stride > this.#buffer.byteLength) {
@@ -343,7 +483,7 @@ class VertexWriter {
     view.setUint16(at, clampUnit(x), true);
     view.setUint16(at + 2, clampUnit(y), true);
     view.setUint16(at + 4, Math.min(65535, Math.round(building.base * 10)), true);
-    view.setUint16(at + 6, Math.min(65535, Math.round(building.top * 10)), true);
+    view.setUint16(at + 6, Math.min(65535, Math.max(0, Math.round(top * 10))), true);
     view.setInt8(at + 8, Math.round(normalX * 127));
     view.setInt8(at + 9, Math.round(normalY * 127));
     view.setUint8(at + 10, raised);

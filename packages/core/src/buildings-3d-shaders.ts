@@ -20,7 +20,7 @@ export const tileflowBuildingAttributes = [
 const attributes = `
 in vec2 a_pos;
 in vec2 a_height; // base and top, in decimetres
-in vec2 a_normal; // the wall's outward normal in the tile (x east, y south); none on roofs
+in vec2 a_normal; // the wall's outward normal in the tile (x east, y south); on a roof, its tilt
 in vec2 a_flags; // raised to the top; part of a wall
 in float a_along; // decimetres along the wall
 in vec2 a_wave; // the building's jitter; seed
@@ -185,7 +185,9 @@ void main() {
   float elevation = elevationOf(own, top, p);
   gl_Position = projectTileFor3D(a_pos, elevation);
   float wall = a_flags.y;
-  vec3 normal = wall > 0.5 ? vec3(a_normal.x, -a_normal.y, 0.0) : vec3(0.0, 0.0, 1.0);
+  // A wall faces out level; a roof faces up, tilted by its slope.
+  vec3 normal = wall > 0.5 ? vec3(a_normal.x, -a_normal.y, 0.0)
+    : vec3(a_normal.x, -a_normal.y, sqrt(max(0.0, 1.0 - dot(a_normal, a_normal))));
   float facing = clamp(dot(normal, u_shadow_dir), 0.0, 1.0);
   vec4 shadow = u_light_matrix *
     vec4(localOf(a_pos, elevation) + normal * u_normal_offset * mix(1.0, 0.5, facing), 1.0);

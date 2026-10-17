@@ -1524,3 +1524,38 @@ function deferred<T>(): {
   });
   return {promise, resolve};
 }
+
+test('URL theme metadata serializes the style once until a style event and releases listeners', () => {
+  const listeners = new Map<string, Set<() => void>>();
+  let reads = 0;
+  let revision = 1;
+  const map = {
+    getStyle() {
+      reads++;
+      return {metadata: {vegetation: {revision}}};
+    },
+    on(event: string, listener: () => void) {
+      const group = listeners.get(event) ?? new Set();
+      group.add(listener);
+      listeners.set(event, group);
+    },
+    off(event: string, listener: () => void) {
+      listeners.get(event)?.delete(listener);
+    },
+    setStyle() {},
+  };
+  const controller = createTileflowThemeController({
+    initial: {style: '/style.json', theme: 'light'},
+    map,
+  });
+  const first = controller.getThemeMetadata('vegetation').values[0];
+  for (let i = 0; i < 100; i++)
+    assert.equal(controller.getThemeMetadata('vegetation').values[0], first);
+  assert.equal(reads, 1);
+  revision = 2;
+  for (const listener of listeners.get('styledata') ?? []) listener();
+  assert.deepEqual(controller.getThemeMetadata('vegetation').values[0], {revision: 2});
+  assert.equal(reads, 2);
+  controller.dispose();
+  assert.ok([...listeners.values()].every((group) => group.size === 0));
+});

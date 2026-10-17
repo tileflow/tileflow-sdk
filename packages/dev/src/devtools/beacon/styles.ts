@@ -1,4 +1,5 @@
 export const beaconStyles = `
+.beacon-diagnostic{display:grid;place-items:center;width:64px;height:64px;border:1px solid var(--border);border-radius:10px;background:var(--surface);color:var(--muted);font:500 12px var(--mono)}
 .devtools-ready .beacon-content{background:var(--paper);padding:0;font:13px/1.5 Inter,system-ui,sans-serif;color:var(--ink)}
 .beacon-hero{max-width:640px;margin:auto;padding:44px 24px 40px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px}
 .beacon-logo{width:150px;height:150px;display:grid;place-items:center;border-radius:50%;color:var(--accent);background:radial-gradient(circle at 50% 45%,var(--accent-soft),transparent 70%)}.beacon-logo svg{width:116px;height:116px}.beacon-pulse{transform-origin:48px 48px;animation:beacon-pulse 3s ease-out infinite}.beacon-running .beacon-pulse{animation-duration:1.2s}@keyframes beacon-pulse{0%{transform:scale(.2);opacity:.9}100%{transform:scale(1.15);opacity:0}}@media(prefers-reduced-motion:reduce){.beacon-pulse{animation:none}}

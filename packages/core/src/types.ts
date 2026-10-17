@@ -217,6 +217,13 @@ export type TileflowTerrainContoursConfig = {
   thresholds: Readonly<Record<number, readonly [number, number]>>;
 };
 export type TileflowTerrainConfig = {
+  /** Explicit DEM tile templates, mutually exclusive with the TileJSON url. */
+  tiles?: readonly string[];
+  /** Native DEM resolution limits, independent of hillshade visibility. */
+  minZoom?: number;
+  maxZoom?: number;
+  /** Raster tile width in pixels. Defaults to the renderer default when omitted. */
+  tileSize?: 256 | 512;
   attribution?: string;
   contours?: TileflowTerrainContoursConfig;
   encoding?: TileflowTerrainEncoding;

@@ -261,7 +261,7 @@ export class BeaconPanel {
       heading = el('div', 'beacon-report-title'),
       copy = el('div');
     copy.append(
-      el('h2', '', 'Map score'),
+      el('h2', '', 'Measured score'),
       el(
         'p',
         'beacon-counts',
@@ -282,10 +282,12 @@ export class BeaconPanel {
         this.landing();
       }),
     );
-    heading.append(this.gauge(report.score, 'Map score', 72), copy, actions);
+    heading.append(this.gauge(report.score, 'Measured score', 72), copy, actions);
     summary.append(heading);
     const gauges = el('div', 'beacon-scores');
     for (const cat of report.categories) {
+      const diagnostic = cat.checks.every((c) => c.assessment === 'diagnostic');
+      const observed = cat.checks.filter((c) => c.status !== 'unavailable').length;
       const b = button(
         '',
         () =>
@@ -296,21 +298,30 @@ export class BeaconPanel {
       );
       const issues = cat.checks.filter((c) => ['warn', 'fail'].includes(c.status)).length;
       b.append(
-        this.gauge(cat.score, cat.title),
+        diagnostic ? el('span', 'beacon-diagnostic', 'Review') : this.gauge(cat.score, cat.title),
         el('strong', '', cat.title),
         el(
           'small',
           '',
-          issues
-            ? `${issues} to look at`
-            : `${cat.checks.filter((c) => c.score !== undefined).length}/${cat.checks.length} scored`,
+          diagnostic
+            ? `${observed}/${cat.checks.length} observed`
+            : `${cat.checks.filter((c) => c.score !== undefined).length}/${cat.checks.length} scored${issues ? ` · ${issues} to review` : ''}`,
         ),
       );
+      if (cat.scoreBasis) {
+        const sample = cat.checks.find((c) => c.sample)?.sample;
+        b.append(el('small', '', `${cat.scoreBasis} · ${sample?.total ?? 0} samples`));
+      }
       gauges.append(b);
     }
     summary.append(
       gauges,
-      el('p', 'beacon-legend', '0–49 poor · 50–89 needs work · 90–100 good · — not measured'),
+      el('p', 'beacon-legend', '0–49 poor · 50–89 needs work · 90–100 good · — not scored'),
+      el(
+        'p',
+        'beacon-legend',
+        'Scores cover the stated checks and samples. Legibility uses a text-size budget; Cartography uses size-rule continuity. Diagnostics remain unscored. A high score does not establish overall visual quality.',
+      ),
     );
     if (report.scope === 'tour') {
       const tour = el('details', 'beacon-tour');
@@ -324,7 +335,14 @@ export class BeaconPanel {
       const table = el('table', 'dt-table'),
         head = el('thead'),
         header = el('tr');
-      for (const name of ['Location / zoom', 'Moving p95', 'Settled p95', 'Frames', 'Readiness'])
+      for (const name of [
+        'Location / zoom',
+        'Moving p95',
+        'Settled p95',
+        'Frames',
+        'Tile wait',
+        'Total readiness',
+      ])
         header.append(el('th', '', name));
       head.append(header);
       table.append(head);
@@ -338,6 +356,7 @@ export class BeaconPanel {
             ? '—'
             : `${sample.settled.p95Ms.toFixed(1)} ms`,
           `${sample.motion?.frames ?? 0} / ${sample.settled.frames}`,
+          sample.loaded ? `${(sample.tileWaitMs / 1000).toFixed(2)} s` : 'Timed out',
           sample.loaded ? `${(sample.readyMs / 1000).toFixed(1)} s` : 'Timed out',
         ])
           row.append(el('td', '', text));
@@ -353,7 +372,7 @@ export class BeaconPanel {
         el(
           'p',
           '',
-          'Moving and settled windows are separate. At least 30 frame intervals are required per p95. Timed-out views do not receive a settled performance score. Cache and computer load affect comparisons.',
+          'Moving and settled windows are separate. At least 30 frame intervals are required per p95. Tile wait excludes scripted navigation; total readiness includes it. Timed-out views do not receive a settled performance score. Cache and computer load affect comparisons.',
         ),
       );
       summary.append(tour);
@@ -370,6 +389,8 @@ export class BeaconPanel {
       groups.append(section);
     }
     for (const cat of report.categories) {
+      const diagnostic = cat.checks.every((c) => c.assessment === 'diagnostic');
+      const measured = cat.checks.filter((c) => c.score !== undefined).length;
       const section = el('section', 'beacon-category');
       section.dataset.category = cat.id;
       const title = el('div', 'dt-section-heading', cat.title);
@@ -377,10 +398,16 @@ export class BeaconPanel {
         el(
           'span',
           '',
-          `${cat.score ?? '—'} · ${cat.checks.filter((c) => c.status === 'pass').length}/${cat.checks.length} passed`,
+          diagnostic
+            ? `Diagnostics · ${cat.checks.filter((c) => c.status !== 'unavailable').length}/${cat.checks.length} observed`
+            : `${cat.score ?? '—'} · ${cat.checks.filter((c) => c.status === 'pass').length}/${measured} scored checks passed`,
         ),
       );
       section.append(title);
+      if (cat.scoreBasis)
+        section.append(
+          el('p', '', `Score basis: ${cat.scoreBasis}. Other checks are diagnostic observations.`),
+        );
       for (const check of [...cat.checks].sort(
         (a, b) =>
           ({fail: 0, warn: 1, unavailable: 2, info: 3, pass: 4})[a.status] -
@@ -422,12 +449,26 @@ export class BeaconPanel {
     values.append(
       el('dt', '', 'Measured'),
       el('dd', '', check.value),
-      el('dt', '', 'Target'),
+      el('dt', '', check.assessment === 'diagnostic' ? 'Reference' : 'Target'),
       el('dd', '', check.target),
     );
+    if (check.assessment === 'diagnostic')
+      body.append(
+        el(
+          'p',
+          'beacon-note',
+          'Diagnostic · not scored. Review the evidence before changing the map.',
+        ),
+      );
     body.append(values, el('p', '', check.what), el('p', 'beacon-evidence', check.evidence));
     if (check.fix && check.status !== 'pass')
-      body.append(el('p', 'beacon-fix', `How to fix. ${check.fix}`));
+      body.append(
+        el(
+          'p',
+          'beacon-fix',
+          `${check.assessment === 'diagnostic' ? 'Investigate' : 'How to fix'}. ${check.fix}`,
+        ),
+      );
     const links = el('div', 'beacon-links');
     for (const finding of check.findings) {
       if (finding.layer) {

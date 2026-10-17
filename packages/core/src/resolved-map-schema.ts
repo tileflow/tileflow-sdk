@@ -2312,11 +2312,40 @@ const terrainSchema = z.union([
       encoding: z.enum(['mapbox', 'terrarium']).optional(),
       exaggeration: z.number().finite().min(0).max(10).optional(),
       hillshade: terrainHillshadeSchema.optional(),
+      tiles: z
+        .array(
+          z
+            .string()
+            .refine(
+              isSafeTileflowDemUrlTemplate,
+              'Expected an HTTP(S) DEM template containing {z}, {x}, and {y}',
+            ),
+        )
+        .min(1)
+        .max(8)
+        .optional(),
+      tileSize: z.union([z.literal(256), z.literal(512)]).optional(),
+      minZoom: z.number().int().min(0).max(24).optional(),
+      maxZoom: z.number().int().min(0).max(24).optional(),
       mode: z.enum(['none', 'hillshade', '3d']).optional(),
       sourceId: z.string().trim().min(1).optional(),
       url: z.string().trim().min(1).optional(),
     })
-    .strict(),
+    .strict()
+    .superRefine((value, context) => {
+      if (value.tiles && value.url)
+        context.addIssue({
+          code: 'custom',
+          message: 'Terrain accepts tiles or url, not both',
+          path: ['tiles'],
+        });
+      if ((value.minZoom ?? 0) > (value.maxZoom ?? 24))
+        context.addIssue({
+          code: 'custom',
+          message: 'Terrain maxZoom must be at least minZoom',
+          path: ['maxZoom'],
+        });
+    }),
 ]);
 const atmosphereColorLiteralSchema = z
   .string()

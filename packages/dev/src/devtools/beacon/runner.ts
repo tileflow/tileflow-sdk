@@ -15,6 +15,7 @@ import {
   percentile,
   type Scenario,
 } from './audit';
+import {sampledTextSize} from './quality';
 import {previewViewport, type ViewportSize} from './viewport';
 
 export function readCamera(map: MapLibreMap): Camera {
@@ -63,7 +64,21 @@ export function sampleLabels(map: MapLibreMap, limit = 40): LabelSample[] {
     camera = readCamera(map),
     samples: LabelSample[] = [];
   const seen = new Set<string>();
-  const features = map.queryRenderedFeatures().slice(0, 5000);
+  // Share the bounded label sample between layers; a dense topmost POI layer must
+  // not crowd road or place labels out of the text-size benchmark.
+  const byLayer = new Map<string, MapGeoJSONFeature[]>();
+  for (const feature of map.queryRenderedFeatures().slice(0, 5000)) {
+    if (feature.layer.type !== 'symbol' || !feature.layer.layout?.['text-field']) continue;
+    const list = byLayer.get(feature.layer.id) ?? [];
+    list.push(feature);
+    byLayer.set(feature.layer.id, list);
+  }
+  const features: MapGeoJSONFeature[] = [];
+  let groups = [...byLayer.values()];
+  for (let index = 0; groups.length; index++) {
+    groups = groups.filter((group) => index < group.length);
+    for (const group of groups) features.push(group[index]);
+  }
   for (const feature of features) {
     if (feature.layer.type !== 'symbol' || !feature.layer.layout?.['text-field']) continue;
     const id = feature.layer.id;
@@ -76,7 +91,7 @@ export function sampleLabels(map: MapLibreMap, limit = 40): LabelSample[] {
     const color = evaluatedValue(map, id, 'paint', 'text-color', feature);
     const opacity = evaluatedValue(map, id, 'paint', 'text-opacity', feature);
     if (opacity === 0) continue;
-    const size = evaluatedValue(map, id, 'layout', 'text-size', feature);
+    const size = sampledTextSize(map, feature);
     const halo = evaluatedValue(map, id, 'paint', 'text-halo-color', feature);
     const haloWidth = evaluatedValue(map, id, 'paint', 'text-halo-width', feature);
     const coordinate = sampleCoordinate(feature);

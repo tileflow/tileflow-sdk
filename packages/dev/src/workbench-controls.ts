@@ -75,10 +75,6 @@ export const controlsClient = String.raw`
         scheduleMapControls(true);
       });
       for (const name of ["3d", "animation"]) ctl(name).addEventListener("change", () => { syncAnimationSegments(); scheduleMapControls(); });
-      ctl("3d").addEventListener("change", () => {
-        const map = states[activeSideId].map;
-        if (map) map.easeTo({pitch:ctl("3d").checked ? Math.min(60,map.getMaxPitch()) : 0, duration:matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 350}, {tileflowDevtools:true});
-      });
       for (const [value,label] of [["0","Off"],["800","Grow"],["fade","Fade"]]) {
         const button=document.createElement("button"); button.type="button";button.value=value;button.textContent=label;button.setAttribute("role","radio");
         button.addEventListener("click",()=>{ctl("animation").value=value;ctl("animation").dispatchEvent(new Event("change"));});ctl("animation-segments").append(button);
@@ -225,14 +221,20 @@ export const controlsClient = String.raw`
           toggle.setAttribute("aria-label", "Enable " + (names[module.id] || module.id));
           label.append(toggle); row.append(label); card.append(row);
           const fieldset = document.createElement("fieldset"); fieldset.disabled = !toggle.checked;
+          let details;
+          const syncModuleEnabled = () => {
+            const wasEnabled = !fieldset.disabled;
+            fieldset.disabled = !toggle.checked;
+            if (details && wasEnabled !== toggle.checked) details.open = toggle.checked;
+          };
           controlsBindings.push(() => {
             if (document.activeElement !== toggle) toggle.checked = controlsDraft[module.id]?.enabled ?? module.enabled;
-            fieldset.disabled = !toggle.checked;
+            syncModuleEnabled();
           });
-          toggle.addEventListener("change", () => { changeControl(module.id, "enabled", toggle.checked, module.enabled); fieldset.disabled = !toggle.checked; });
+          toggle.addEventListener("change", () => { changeControl(module.id, "enabled", toggle.checked, module.enabled); syncModuleEnabled(); });
           if (module.fields.length) {
-            const details = document.createElement("details");
-            details.dataset.module = module.id; details.open = expanded.includes(module.id);
+            details = document.createElement("details");
+            details.dataset.module = module.id; details.open = toggle.checked || expanded.includes(module.id);
             const summary = document.createElement("summary"); summary.textContent = "Appearance & behavior";
             details.append(summary, fieldset); card.append(details);
             for (const field of module.fields) {

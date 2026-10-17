@@ -566,6 +566,21 @@ export function createTileflowThemeController(options: {
   const blendMetadata = new WeakMap<TileflowThemeBlendPlan, readonly unknown[]>();
   let nextStyleIdentity = 0;
   let current = options.initial;
+  // getStyle serializes every layer. URL-backed themes must not repeat that work for
+  // every 3D draw, shadow query and palette lookup while their metadata is unchanged.
+  let metadataStyle: {metadata?: unknown} | undefined;
+  const invalidateMetadata = () => {
+    metadataStyle = undefined;
+  };
+  const releaseMetadata = () => {
+    options.map.off('styledata', invalidateMetadata);
+    options.map.off('style.load', invalidateMetadata);
+    options.map.off('remove', releaseMetadata);
+    invalidateMetadata();
+  };
+  options.map.on('styledata', invalidateMetadata);
+  options.map.on('style.load', invalidateMetadata);
+  options.map.on('remove', releaseMetadata);
   let shown: Shown = {style: options.initial.style};
   let activeBlend: ActiveBlend | undefined;
   let pendingBlend: PendingBlend | undefined;
@@ -625,6 +640,7 @@ export function createTileflowThemeController(options: {
   return {
     dispose() {
       disposed = true;
+      releaseMetadata();
       images?.dispose();
       requestId += 1;
       activeBlend?.blender.dispose();
@@ -677,7 +693,10 @@ export function createTileflowThemeController(options: {
       const blended = activeBlend && blendMetadata.get(activeBlend.plan);
       if (activeBlend && blended)
         return {values: blended.map(read), position: activeBlend.blender.position};
-      const style = typeof current.style === 'string' ? shownStyleDocument() : current.style;
+      const style =
+        typeof current.style === 'string'
+          ? (metadataStyle ??= shownStyleDocument())
+          : current.style;
       return {values: [read(style?.metadata)], position: 0};
     },
     getSun() {
@@ -899,7 +918,9 @@ export function createTileflowThemeController(options: {
 
     try {
       if (target.kind === 'blend') images?.assertBlend(target.plan.images);
+      invalidateMetadata();
       await applyMapStyle(options.map, styleInput, timeoutMs);
+      invalidateMetadata();
       if (disposed) {
         cover?.cancel();
         return {status: 'superseded', theme: targetTheme};

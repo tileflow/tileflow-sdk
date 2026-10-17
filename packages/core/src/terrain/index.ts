@@ -191,7 +191,10 @@ function resolveRaster(
       ...(terrain.attribution ? {attribution: terrain.attribution} : {}),
       encoding,
       type: 'raster-dem',
-      url,
+      ...(terrain.tiles ? {tiles: [...terrain.tiles]} : {url}),
+      ...(terrain.minZoom === undefined ? {} : {minzoom: terrain.minZoom}),
+      ...(terrain.maxZoom === undefined ? {} : {maxzoom: terrain.maxZoom}),
+      ...(terrain.tileSize === undefined ? {} : {tileSize: terrain.tileSize}),
     },
   };
 }

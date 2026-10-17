@@ -5,6 +5,7 @@ import {inspectModelTriangles} from '../../core/src/model-inspection';
 import {auditCategories} from '../src/devtools/beacon/catalog';
 import {type InspectorCheck, summarizeChecks} from '../src/devtools/beacon/inspector-audit';
 import {rendererProbe} from '../src/devtools/beacon/probes';
+import {inspectionSample, inspectorAssessment} from '../src/devtools/beacon/scoring';
 import {StyleEdits} from '../src/devtools/style-edits';
 
 test('inspector reports all 48 checks and excludes unknown observations from scores', () => {
@@ -169,4 +170,18 @@ test('tour protocol is deterministic, respects bounds and zoom limits, and prese
   assert.equal(slow.p95Ms, 2500);
   assert.equal(slow.maxMs, 2500);
   assert.equal(slow.longFrameRate, 0.1);
+});
+
+test('diagnostic proxies never establish a measured defect and feature sampling covers the input', () => {
+  for (const id of ['render-6', 'legibility-0', 'legibility-7', 'a11y-4', 'carto-6', 'integrity-5'])
+    assert.equal(inspectorAssessment(id), 'diagnostic');
+  for (const id of ['render-0', 'render-7', 'a11y-0', 'integrity-6', 'integrity-7'])
+    assert.equal(inspectorAssessment(id), 'measured');
+  const candidates = Array.from({length: 200}, (_, i) => i);
+  const sampled = inspectionSample(candidates);
+  assert.equal(sampled.length, 24);
+  assert.equal(new Set(sampled).size, 24);
+  assert.equal(sampled[0], 0);
+  assert.equal(sampled.at(-1), 199);
+  assert.deepEqual(inspectionSample([1, 2]), [1, 2]);
 });

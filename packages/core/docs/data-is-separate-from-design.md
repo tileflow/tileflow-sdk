@@ -295,10 +295,129 @@ opt-in.
 
 The vector palette uses thresholds −11 000, −8 000, −6 000, −4 000, −2 000, −1 000, −500, −200,
 −100, −50, −20, −10, and 0 metres. `bands`, `contours`, and `labels` remain separate controls.
-Until native contour fields are contracted, contours are a visual fallback drawn from band polygon
-edges, not surveyed isolines. The V1 schema exposes optional source-layer names
-`bathymetry_contour`, `seafloor_landform`, `water_name`, and `bathymetry_coverage`, but promises
-fields only for required `bathymetry.min_depth` and `bathymetry.sort_key`.
+Without an optional-layer declaration, contours and depth labels retain the legacy polygon-band
+behavior. `marine` shorthands and existing maps keep that behavior.
+
+### Declare contour and name layers
+
+For a compatible source, `vectorLayers` explicitly declares optional layers. Core never fetches
+TileJSON to detect them and never substitutes polygon edges for declared contour lines. A missing
+declared layer therefore draws no features; validate the selected dataset before rendering.
+`display: 'bands'` or `'hybrid'` loads the vector source.
+
+| Declaration                             | Source layer         | Geometry and fields                                                                                                 |
+| --------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `contours: true`                        | `bathymetry_contour` | Lines with numeric `depth`, negative metres below the source vertical datum. Zero and positive depths are excluded. |
+| `landforms: true` or a range inventory  | `seafloor_landform`  | Named points, lines, or polygons with stable source `id`, provider `class`, and `name`.                             |
+| `waterNames: true` or a range inventory | `water_name`         | Named points, lines, or polygons with the same name contract.                                                       |
+
+Name geometry stays in its source representation. `placement: 'point'` (the default) lets the
+renderer place names inside polygons or on points. Use `placement: 'line'` to label source lines.
+Core creates no substitute point, centroid, or line feature.
+
+Name layers preserve source properties; `id` is a source identifier, with no guarantee of a numeric
+renderer feature ID. Optional `name:<language>` fields retain the source's language assignments.
+`labels({language: 'es'})` selects a nonempty `name:es`, falling back to `name`; `auto` and `local`
+use `name` directly. Core does not infer the language of an unqualified name or invent translations.
+Optional `min_zoom` is inclusive and `max_zoom` exclusive, defaulting to 0 and 24. These nominal
+ranges intersect the symbol style's range. With `true`, MapLibre evaluates feature zoom filters at
+integer zooms: `min_zoom: 7.6` first becomes eligible at zoom 8. For exact fractional boundaries,
+declare an exhaustive range inventory instead:
+
+```ts
+vectorLayers: {
+  contours: true,
+  landforms: {zoomRanges: [{minZoom: 0, maxZoom: 24}]},
+  waterNames: {
+    zoomRanges: [{minZoom: 1, maxZoom: 6.5}, {minZoom: 7.6, maxZoom: 10}],
+  },
+}
+```
+
+Each declared pair becomes a separate symbol layer with fractional renderer bounds and equality
+filters on the source's original range. A `7.6–10` feature appears at 7.6 and disappears at 10.
+Unlisted pairs are omitted. Core never discovers ranges from tiles: validate the source inventory
+against this exhaustive declaration before rendering, and retain that inventory with reproducible
+captures. Numeric pairs must match the source's encoded values exactly.
+
+Each name layer accepts 1–128 unique pairs with `0 <= minZoom < maxZoom <= 24`;
+`tileflowBathymetryNameLayerLimits.maxZoomRanges` exposes the limit. Input order does not affect
+output. Different pairs can overlap in zoom because equality filters keep their feature sets
+disjoint. A style may narrow a pair's visibility; an empty intersection emits no layer.
+Missing or null source bounds default to 0/24. Nonnumeric values use the same numeric-conversion
+fallbacks; numeric strings are converted. Such features draw only if their normalized pair is
+declared. Core preserves the original source properties.
+
+Optional numeric `sort_key` defaults to 0; smaller values enter collision placement first within
+each cohort. Cohorts follow ascending minimum then maximum zoom and sit below ordinary map labels.
+Names use normal collision placement without overlap by default.
+
+This example declares a source whose regional detail supports zoom 14. Its extended ranges are
+explicit design choices, not a promise of worldwide detail:
+
+<!-- docs:check -->
+
+```ts
+import {bathymetry, defineMap, expr, field, fixed, labels, water} from '@tileflow/core';
+import {soundings} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'regional-depth',
+  version: 1,
+  extends: soundings,
+  marine: {
+    bathymetry: bathymetry({
+      url: 'https://tiles.example.test/regional-depth/tiles.json',
+      vectorLayers: {
+        contours: true,
+        landforms: {zoomRanges: [{minZoom: 0, maxZoom: 24}]},
+        waterNames: {zoomRanges: [{minZoom: 7.6, maxZoom: 10}]},
+      },
+      contours: {},
+      labels: {},
+    }),
+    nautical: false,
+  },
+  modules: {
+    labels: labels({language: 'es'}),
+    water: water({
+      bathymetry: {
+        maxZoom: 15,
+        opacity: fixed(0.8, {reason: 'The selected regional source supplies detailed bands'}),
+      },
+      bathymetryContours: {maxZoom: 15},
+      bathymetryLabels: {
+        maxZoom: 15,
+        text: {
+          field: expr.concat(
+            expr.toString(expr.abs(expr.get(field('bathymetryContourDepth')))),
+            ' m',
+          ),
+        },
+      },
+      bathymetryLandforms: {maxZoom: 15},
+      bathymetryWaterNames: {maxZoom: 15},
+    }),
+  },
+});
+```
+
+`water.bathymetryContours` and `water.bathymetryLabels` now consume the declared lines and `depth`;
+labels default to line placement. Band fills still consume `min_depth` and `sort_key`.
+`water.bathymetryLandforms` and `water.bathymetryWaterNames` style the declared names; set
+`visible: false` to hide either. Without their declaration, those styles emit no name layers.
+Name styles may use `class` in expressions without changing the source classification.
+
+Water-module styles override product-level `bands`, `contours`, and `labels`. Existing custom
+`text.field` expressions remain authoritative: when refining a map from legacy polygons to native
+contours, use `expr.get(field('bathymetryContourDepth'))` for its depth. That auxiliary binding
+resolves to `depth` independently of the primary World schema; `bathymetryMinDepth` keeps its
+legacy band meaning. Raw `expr.get('depth')` is rejected by authoring validation.
+Increasing only `maxZoom` does not remove an opacity curve that fades out earlier. Extend ranges
+and opacity only where the selected source supports the intended detail.
+
+The V1 schema also reserves `bathymetry_coverage`; Core adds no coverage rendering by default.
+Derived contours and names provide geographic context, not certified navigation data.
 
 The DEM enables future client-side sampling and depth profiles, but Core intentionally exposes no
 profile or remote sampling API yet. Rendered relief must not be interpreted as navigation-safe

@@ -65,7 +65,13 @@ test('resolves marine shorthands to stable independent TileJSON sources', () => 
     waterNames: 'water_name',
   });
   assert.deepEqual(tileflowBathymetryV1Schema.fields, {
+    class: 'class',
+    depth: 'depth',
+    id: 'id',
+    maxZoom: 'max_zoom',
     minDepth: 'min_depth',
+    minZoom: 'min_zoom',
+    name: 'name',
     sortKey: 'sort_key',
   });
   assert.deepEqual(tileflowBathymetryV1Schema.requiredLayers, ['bands']);

@@ -215,6 +215,10 @@ surveyed isoline. `water({bathymetryLabels: {}})` separately opts into numeric m
 from each polygon's absolute minimum band depth. Existing maps gain neither detail by default, and
 sources without bathymetry bindings omit both requested layers. These labels describe coarse band
 floors, not measured survey soundings, and must not be presented as hydrographic sounding data.
+An explicitly selected Bathymetry source can instead declare `vectorLayers.contours: true` to use
+real contour lines and their `depth` values. Its optional named seafloor and water features have
+separate `water.bathymetryLandforms` and `water.bathymetryWaterNames` styles, with the language
+selected by `labels(...)`. See [the marine source contract](data-is-separate-from-design.md#declare-contour-and-name-layers).
 
 `addresses` renders the standard OpenMapTiles `housenumber` points at detailed zooms and exposes a
 single semantic `labels` style. `landforms` renders the standard `mountain_peak` classes (`peak`,

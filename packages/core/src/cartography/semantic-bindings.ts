@@ -1,10 +1,11 @@
 import {
-  tileflowWorldV1Schema,
   type OpenMapTilesFieldBindings,
   type OpenMapTilesLayerBindings,
   type OpenMapTilesSchema,
   type ResolvedTileflowData,
+  tileflowWorldV1Schema,
 } from '../data';
+import {tileflowBathymetryV1Schema} from '../marine';
 
 /*
  * Build the runtime vocabularies from the most complete supported data contract.
@@ -21,9 +22,21 @@ export const tileflowSemanticLayerNames = Object.freeze(
   Object.keys(completeSemanticDataContract.layers).sort(compareCodeUnits),
 ) as readonly [keyof OpenMapTilesLayerBindings, ...(keyof OpenMapTilesLayerBindings)[]];
 
+const auxiliaryFieldBindings = Object.freeze({
+  bathymetryContourDepth: tileflowBathymetryV1Schema.fields.depth,
+});
+
+export type TileflowDataFieldName =
+  keyof OpenMapTilesFieldBindings | keyof typeof auxiliaryFieldBindings;
+
+/** Expression fields include fixed auxiliary contracts without extending the primary schema. */
+export const tileflowSemanticExpressionFieldNames = Object.freeze(
+  [...tileflowSemanticFieldNames, ...Object.keys(auxiliaryFieldBindings)].sort(compareCodeUnits),
+) as readonly TileflowDataFieldName[];
+
 /** A schema-bound data field whose physical name is assigned only during compilation. */
 export type TileflowDataFieldReference<
-  TName extends keyof OpenMapTilesFieldBindings = keyof OpenMapTilesFieldBindings,
+  TName extends TileflowDataFieldName = TileflowDataFieldName,
 > = Readonly<{
   kind: 'tileflow-data-field';
   name: TName;
@@ -32,6 +45,7 @@ export type TileflowDataFieldReference<
 export type TileflowNumericDataFieldName =
   | 'activityScore'
   | 'adminLevel'
+  | 'bathymetryContourDepth'
   | 'bathymetryMinDepth'
   | 'bathymetrySortKey'
   | 'canopyClearanceAtZoom15'
@@ -65,7 +79,7 @@ export type TileflowNumericDataFieldName =
   | 'shieldRank';
 
 /** Runtime value implied by one registered semantic field, independent of its physical name. */
-export type TileflowDataFieldValue<TName extends keyof OpenMapTilesFieldBindings> =
+export type TileflowDataFieldValue<TName extends TileflowDataFieldName> =
   TName extends TileflowNumericDataFieldName ? number : string;
 
 /** Internal source-layer reference preserved until the compiler's lowering boundary. */
@@ -83,11 +97,10 @@ export type TileflowDataSourceReference = Readonly<{
 }>;
 
 /**
- * Reference a semantic field in a typed expression without capturing an
- * OpenMapTiles property name. The active data schema supplies the physical
- * binding at the final lowering boundary.
+ * Reference a semantic field in a typed expression. Primary fields follow the active data schema;
+ * auxiliary fields use their fixed product contract at the final lowering boundary.
  */
-export function field<const TName extends keyof OpenMapTilesFieldBindings>(
+export function field<const TName extends TileflowDataFieldName>(
   name: TName,
 ): TileflowDataFieldReference<TName> {
   return Object.freeze({kind: 'tileflow-data-field', name});
@@ -134,7 +147,10 @@ export function bindSemanticReferences<T>(value: T, data: ResolvedTileflowData):
 
 function bindSemanticValue(value: unknown, schema: OpenMapTilesSchema, sourceId: string): unknown {
   if (isDataFieldReference(value)) {
-    const binding = schema.fields[value.name];
+    if (Object.hasOwn(auxiliaryFieldBindings, value.name)) {
+      return auxiliaryFieldBindings[value.name as keyof typeof auxiliaryFieldBindings];
+    }
+    const binding = schema.fields[value.name as keyof OpenMapTilesFieldBindings];
     if (!binding) throw new Error(`Tileflow data schema does not provide field ${value.name}.`);
     return binding;
   }

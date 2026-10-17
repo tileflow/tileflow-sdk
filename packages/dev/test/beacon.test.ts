@@ -202,7 +202,7 @@ function fixture() {
       listeners.get(type)?.delete(listener);
     },
   } as unknown as MapLibreMap;
-  const observer = {recording: false, records: [], dropped: 0};
+  const observer = {recording: false, records: [] as ResourceRecord[], dropped: 0};
   const side = {
     id: 'left',
     map,
@@ -432,7 +432,8 @@ test('active tour measures motion and settled windows across countries within it
       await Promise.resolve();
     }
     const report = await result;
-    assert.equal(report.version, 3);
+    assert.equal(report.version, 4);
+    assert.equal(report.scoring, 'measured-evidence-v3');
     assert.equal(report.protocol, 'active-tour-v1');
     assert.equal(report.plannedViews, 12);
     assert.ok(report.duration <= 60_000, `duration ${report.duration}`);
@@ -443,6 +444,16 @@ test('active tour measures motion and settled windows across countries within it
     assert.equal(report.budgetExhausted, !loaded);
     assert.equal(report.scenarios.length === 12, loaded);
     assert.ok(report.scenarios.every((s) => s.loaded === loaded));
+    assert.ok(report.scenarios.every((s) => s.readyMs - s.tileWaitMs >= 1200));
+    // The mock clock advances while the ready promise resumes; no tile wait can
+    // include the 1.2-second navigation window on an already-loaded fixture.
+    if (loaded) assert.ok(report.scenarios.every((s) => s.tileWaitMs <= 64));
+    const loading = report.categories.flatMap((c) => c.checks).find((c) => c.id === 'loading-3')!;
+    assert.equal(
+      loading.score,
+      loaded ? 100 : 0,
+      'scripted motion is excluded, incomplete loading still fails',
+    );
     assert.ok((f.jumps[0] as any).camera.duration > 0);
     assert.deepEqual((f.jumps[0] as any).event, {tileflowDevtools: true});
     assert.deepEqual(f.camera().center, f.original.center);
@@ -450,6 +461,167 @@ test('active tour measures motion and settled windows across countries within it
     assert.equal(f.observer.recording, false);
     assert.ok([...f.listeners.values()].every((list) => list.size === 0));
     assert.ok(performance.now() >= began);
+  }
+});
+
+test('inspector scores current errors, preserves diagnostic evidence and excludes earlier session failures', async (t) => {
+  const {runInspectorAudit} = await import('../src/devtools/beacon/inspector-audit');
+  t.mock.timers.enable({apis: ['setTimeout', 'Date'], now: 0});
+  t.mock.method(performance, 'now', () => Date.now());
+  const prior = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', {configurable: true, value: {}});
+  t.after(() => {
+    if (prior) Object.defineProperty(globalThis, 'window', prior);
+    else Reflect.deleteProperty(globalThis, 'window');
+  });
+  for (const failsNow of [false, true]) {
+    const f = fixture();
+    f.side.runtimeErrors.push('Repeated renderer failure', 'Earlier runtime failure');
+    const oldResource: ResourceRecord = {
+      id: 10,
+      url: 'https://example.test/old.png',
+      name: 'old.png',
+      kind: 'Tile',
+      transport: 'resource',
+      status: '404',
+      start: 0,
+    };
+    f.observer.records.push(oldResource);
+    let recorded = false;
+    const result = runInspectorAudit({
+      side: f.side,
+      device: 'desktop',
+      scope: 'view',
+      signal: new AbortController().signal,
+      isCurrent: () => true,
+      progress() {
+        if (!failsNow || recorded) return;
+        recorded = true;
+        // The bridge may deduplicate this message from the earlier session; the map event
+        // must still count its recurrence in this audit.
+        f.emit('error', {error: new Error('Repeated renderer failure')});
+        f.observer.records.push({
+          ...oldResource,
+          id: 11,
+          name: 'new.png',
+          url: 'https://example.test/new.png',
+        });
+      },
+    });
+    for (let i = 0; i < 250; i++) {
+      t.mock.timers.tick(32);
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+    const report = await result;
+    const checks = report.categories.flatMap((category) => category.checks);
+    const errors = checks.find((check) => check.id === 'integrity-7')!;
+    assert.equal(errors.value, `${failsNow ? 2 : 0} errors`);
+    assert.equal(errors.score, failsNow ? 0 : 100);
+    assert.ok(errors.findings.every((finding) => !/old.png|Earlier runtime/.test(finding.message)));
+    const coverage = checks.find((check) => check.id === 'carto-6')!;
+    assert.equal(coverage.status, 'info');
+    assert.equal(coverage.score, undefined);
+    assert.notEqual(coverage.value, 'Not measurable in this sample');
+    assert.equal(report.categories.find((category) => category.id === 'carto')!.score, null);
+    assert.equal(checks.find((check) => check.id === 'render-0')!.assessment, 'measured');
+    assert.ok([...f.listeners.values()].every((list) => list.size === 0));
+  }
+});
+
+test('inspector scores legibility and cartography from ready samples and exports their coverage', async (t) => {
+  const {runInspectorAudit} = await import('../src/devtools/beacon/inspector-audit');
+  t.mock.timers.enable({apis: ['setTimeout', 'Date'], now: 0});
+  t.mock.method(performance, 'now', () => Date.now());
+  const prior = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  Object.defineProperty(globalThis, 'window', {configurable: true, value: {}});
+  t.after(() => {
+    if (prior) Object.defineProperty(globalThis, 'window', prior);
+    else Reflect.deleteProperty(globalThis, 'window');
+  });
+  for (const ready of [true, false]) {
+    const f = fixture();
+    const layers = [
+      {
+        id: 'roads',
+        type: 'line',
+        source: 'data',
+        paint: {'line-width': ['step', ['zoom'], 2, 11.5, 6]},
+      },
+      {
+        id: 'places',
+        type: 'symbol',
+        source: 'data',
+        layout: {'text-field': ['get', 'name'], 'text-size': ['get', 'size']},
+        paint: {'text-halo-color': '#fff', 'text-halo-width': 1},
+      },
+    ];
+    const features = [
+      {
+        id: 1,
+        layer: layers[0],
+        source: 'data',
+        properties: {},
+        geometry: {
+          type: 'LineString',
+          coordinates: [
+            [-3, 40],
+            [-3.1, 40],
+          ],
+        },
+      },
+      ...[8, 12].map((size, id) => ({
+        id: id + 2,
+        source: 'data',
+        layer: layers[1],
+        properties: {size, name: `Place ${id}`},
+        geometry: {type: 'Point', coordinates: [-3, 40]},
+      })),
+    ];
+    Object.assign(f.side.map!.getStyle(), {
+      layers,
+      sources: {data: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}},
+    });
+    Object.assign(f.side.map!, {
+      areTilesLoaded: () => ready,
+      queryRenderedFeatures: () => features,
+      getLayer: (id: string) => layers.find((l) => l.id === id),
+      getPaintProperty: (id: string, key: string) =>
+        (layers.find((l) => l.id === id)?.paint as any)?.[key],
+      getLayoutProperty: (id: string, key: string) =>
+        (layers.find((l) => l.id === id)?.layout as any)?.[key],
+      getFeatureState: () => ({}),
+      listImages: () => [],
+    });
+    const result = runInspectorAudit({
+      side: f.side,
+      device: 'desktop',
+      scope: 'view',
+      signal: new AbortController().signal,
+      isCurrent: () => true,
+      progress() {},
+    });
+    for (let i = 0; i < 400; i++) {
+      t.mock.timers.tick(32);
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+    const report = await result;
+    for (const id of ['legibility', 'carto']) {
+      const category = report.categories.find((c) => c.id === id)!;
+      assert.equal(category.score, ready ? 50 : null);
+      assert.ok(category.scoreBasis);
+      const check = category.checks.find((c) => c.sample)!;
+      assert.equal(check.sample!.total, ready ? 2 : 0);
+      assert.equal(check.sample!.passed, ready ? 1 : 0);
+      assert.equal(check.status, ready ? 'warn' : 'unavailable');
+      if (ready) assert.ok(check.findings[0].layer);
+    }
+    assert.equal(
+      report.categories.find((c) => c.id === 'carto')!.checks.find((c) => c.id === 'carto-6')!
+        .score,
+      undefined,
+    );
   }
 });
 

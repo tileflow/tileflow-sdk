@@ -1509,13 +1509,16 @@ export const streets = bindOfficialMapTheme(
     },
     icons: [streetsIcons],
     models: [streetsModels],
-    // The same open DEM used by the other terrain maps. Restrict relief to
-    // regional zooms so street detail does not fetch high-resolution DEM tiles.
+    // Global regional relief: native resolution is capped independently of visibility.
+    // Higher zooms reuse z12 DEM tiles instead of requesting unavailable local detail.
     terrain: {
       mode: 'hillshade',
       encoding: 'terrarium',
-      url: 'https://tiles.mapterhorn.com/tilejson.json',
-      attribution: 'Terrain: <a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
+      tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      maxZoom: 12,
+      attribution:
+        'Terrain: <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md">© Mapzen, data sources</a>',
       hillshade: {
         minZoom: 5,
         maxZoom: 14,
@@ -2667,7 +2670,7 @@ export const streets = bindOfficialMapTheme(
                 font: streetsVisual.font.places,
                 haloColor: streetsDetailPalette.halo,
                 haloWidth: 1,
-                size: 9,
+                size: 10,
               },
             },
             shields: {
@@ -2693,7 +2696,7 @@ export const streets = bindOfficialMapTheme(
                   padding: 2,
                   pitchAlignment: 'viewport',
                   rotationAlignment: 'viewport',
-                  size: 9,
+                  size: 10,
                 },
               },
               overview: {
@@ -2803,7 +2806,7 @@ export const streets = bindOfficialMapTheme(
               priority: 68,
               text: {
                 font: streetsVisual.font.default,
-                color: streetsDetailPalette.transit,
+                color: streetsVisual.label.aerodrome,
                 haloColor: streetsDetailPalette.halo,
                 haloWidth: 1,
                 letterSpacing: 0.01,

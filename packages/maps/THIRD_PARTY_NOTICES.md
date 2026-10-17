@@ -39,9 +39,18 @@ scans, or map data.
 
 ## Streets relief
 
-Streets requests hillshade DEM tiles from Mapterhorn at runtime. No DEM tile is packaged here.
-Mapterhorn's constituent open terrain sources, attribution, and license terms are listed at
-<https://mapterhorn.com/attribution/>. The compiled source carries that attribution link.
+Streets requests Mapzen Terrain Tiles from the AWS Open Data elevation tiles bucket at runtime.
+No DEM tile is packaged here. The compiled source links to the upstream data attribution:
+<https://github.com/tilezen/joerd/blob/master/docs/attribution.md>.
+The dataset is described at <https://registry.opendata.aws/terrain-tiles/>.
+
+The upstream attribution catalog includes ArcticDEM (DigitalGlobe imagery, NSF awards 1043681,
+1559691 and 1542736); © Commonwealth of Australia (Geoscience Australia) 2017;
+© offene Daten Österreichs — Digitales Geländemodell (DGM) Österreich; Canadian information
+licensed under the Open Government Licence – Canada; Copernicus EU-DEM data funded by the
+European Union; ETOPO1 from U.S. NOAA; INEGI Continental relief data; New Zealand Crown/LINZ
+data; © Kartverket; © Environment Agency; and USGS 3DEP, GMTED2010 and SRTM data.
+Consult the linked catalog for each source's complete required attribution and license terms.
 
 ## Baedeker map references and terrain data
 

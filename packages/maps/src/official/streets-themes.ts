@@ -1,5 +1,5 @@
 import {defineTheme, token} from '@tileflow/core';
-import {streetsPoiImageTokens} from './streets-poi';
+import {streetsPoiDiscColors, streetsPoiImageTokens} from './streets-poi';
 
 // Tileflow-owned semantic colors, calibrated from rendered Mapbox Standard
 // default/day and default/night references on 2026-10-14. Standard is evergreen;
@@ -46,6 +46,7 @@ const streetsLightColors = {
   'hydro.ocean': '#98DCFE',
   'hydro.water': '#98DCFE',
   'hydro.waterway': '#98DCFE',
+  'labels.aerodrome': '#5C74D6',
   'labels.country': '#000000',
   'labels.ferry': '#2682D9',
   'labels.ferryHalo': '#98DCFE',
@@ -203,6 +204,7 @@ const streetsDarkColors = {
   'hydro.ocean': '#13192F',
   'hydro.water': '#18223B',
   'hydro.waterway': '#18223B',
+  'labels.aerodrome': '#8296E6',
   'labels.country': '#A6A7AC',
   'labels.ferry': '#8799BE',
   'labels.ferryHalo': '#18223B',
@@ -476,10 +478,49 @@ function applyStreetsColorTheme(
   });
 }
 
+// Keep category hue in the lettering without inheriting the brighter marker-disc ink.
+// Apply after time/palette transforms so faded and dawn/dusk keep the same contrast budget.
+function readableLabelColors(colors: StreetsColorSet): Record<string, string> {
+  const result = {...colors};
+  const luminance = (value: string) => {
+    const color = parseStreetsColor(value);
+    const linear = (v: number) =>
+      v / 255 <= 0.04045 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4;
+    return linear(color.r) * 0.2126 + linear(color.g) * 0.7152 + linear(color.b) * 0.0722;
+  };
+  const pairs = [
+    ...Object.keys(streetsPoiDiscColors.light).map(
+      (category) => [`poi.${category}`, 'poi.halo'] as const,
+    ),
+    ['labels.aerodrome', 'labels.halo'] as const,
+  ];
+  for (const [role, halo] of pairs) {
+    const background = luminance(colors[halo]!);
+    const contrast = (value: string) => {
+      const foreground = luminance(value);
+      return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
+    };
+    const toward = contrast('#000000') > contrast('#ffffff') ? '#000000' : '#ffffff';
+    const value = colors[role];
+    if (!value || contrast(value) >= 4.5) continue;
+    const original = parseStreetsColor(value);
+    for (let step = 1; step <= 100; step++) {
+      const candidate = formatStreetsColor(mixStreetsColor(original, toward, step / 100), value);
+      if (contrast(candidate) >= 4.6) {
+        result[role] = candidate;
+        break;
+      }
+    }
+  }
+  return result;
+}
+
 function streetsPaletteColors(preset: StreetsLightPreset, colorTheme: StreetsColorTheme) {
   const isDark = preset === 'night';
   const base = isDark ? streetsDarkColors : streetsLightColors;
-  return applyStreetsColorTheme(applyStreetsLightPreset(base, preset), colorTheme, isDark);
+  return readableLabelColors(
+    applyStreetsColorTheme(applyStreetsLightPreset(base, preset), colorTheme, isDark),
+  );
 }
 
 const streetsFonts = {
@@ -515,7 +556,7 @@ const streetsLightTheme = defineTheme({
   version: 1,
   colorScheme: 'light',
   tokens: {
-    color: streetsLightColors,
+    color: readableLabelColors(streetsLightColors),
     number: {},
     font: streetsFonts,
     image: {...streetsImages, ...streetsPoiImageTokens('light')},
@@ -541,7 +582,7 @@ const streetsDarkTheme = defineTheme({
   version: 1,
   colorScheme: 'dark',
   tokens: {
-    color: streetsDarkColors,
+    color: readableLabelColors(streetsDarkColors),
     number: {},
     font: streetsFonts,
     image: {
@@ -635,6 +676,7 @@ export const streetsVisual = {
     water: token.color('hydro.water'),
   },
   label: {
+    aerodrome: token.color('labels.aerodrome'),
     country: token.color('labels.country'),
     ferry: token.color('labels.ferry'),
     ferryHalo: token.color('labels.ferryHalo'),

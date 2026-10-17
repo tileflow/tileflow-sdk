@@ -33,6 +33,7 @@ import {
   type TileflowIconSource,
   tileflowIconSourceLimit,
 } from './icon-set';
+import {classicManifestSchemaOperations} from './manifest-schema-classic';
 import {
   isTileflowLocalDirectory,
   tileflowLocalDirectoryMaximumLength,
@@ -55,10 +56,9 @@ import {
   isTileflowContourDensityWithinBudget,
 } from './terrain/contour-protocol';
 import {resolveTileflowTheme, type TileflowTheme, tileflowThemeLimits} from './themes';
-import {tileflowTreeModelIdPattern} from './trees-3d';
-import {classicManifestSchemaOperations} from './manifest-schema-classic';
-import {validateTileflowTimeOfDayVariants, type TileflowTimeOfDayVariants} from './time-of-day';
+import {type TileflowTimeOfDayVariants, validateTileflowTimeOfDayVariants} from './time-of-day';
 import {createTileflowTimeOfDaySchema} from './time-of-day-schema';
+import {tileflowTreeModelIdPattern} from './trees-3d';
 import {tileflowPoiCategories, type ValidationMessage} from './types';
 
 /** Structured schema failure preserved for CLI/editor diagnostics. */
@@ -2256,11 +2256,40 @@ const terrainSchema = z.union([
       encoding: z.enum(['mapbox', 'terrarium']).optional(),
       exaggeration: z.number().finite().min(0).max(10).optional(),
       hillshade: terrainHillshadeSchema.optional(),
+      tiles: z
+        .array(
+          z
+            .string()
+            .refine(
+              isSafeTileflowDemUrlTemplate,
+              'Expected an HTTP(S) DEM template containing {z}, {x}, and {y}',
+            ),
+        )
+        .min(1)
+        .max(8)
+        .optional(),
+      tileSize: z.union([z.literal(256), z.literal(512)]).optional(),
+      minZoom: z.number().int().min(0).max(24).optional(),
+      maxZoom: z.number().int().min(0).max(24).optional(),
       mode: z.enum(['none', 'hillshade', '3d']).optional(),
       sourceId: z.string().trim().min(1).optional(),
       url: z.string().trim().min(1).optional(),
     })
-    .strict(),
+    .strict()
+    .superRefine((value, context) => {
+      if (value.tiles && value.url)
+        context.addIssue({
+          code: 'custom',
+          message: 'Terrain accepts tiles or url, not both',
+          path: ['tiles'],
+        });
+      if ((value.minZoom ?? 0) > (value.maxZoom ?? 24))
+        context.addIssue({
+          code: 'custom',
+          message: 'Terrain maxZoom must be at least minZoom',
+          path: ['maxZoom'],
+        });
+    }),
 ]);
 const atmosphereColorLiteralSchema = z
   .string()

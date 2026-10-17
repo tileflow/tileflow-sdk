@@ -85,9 +85,7 @@ export const layersStyles = `
 .dt-layer-dialog textarea { flex:1; min-height:100px; resize:none; background:var(--surface); color:var(--ink); padding:10px; border:1px solid var(--border); font:11px/1.6 ui-monospace,monospace; }
 .dt-layer-dialog .dt-layer-copy { margin-left:auto; }
 @container(max-width:700px) {
-  .dt-layer-split { display:flex; flex-direction:column; }
-  .dt-layer-list { flex:0 0 32%; min-height:100px; border-right:0; border-bottom:1px solid var(--border); }
-  .dt-layer-detail { flex:1; }.dt-layer-heading { padding:6px 9px; }.dt-layer-title { flex-basis:100%; }
+  .dt-layer-heading { padding:6px 9px; }.dt-layer-title { flex-basis:100%; }
   .dt-layer-tools input[type=search] { order:1; flex:1 0 100%; }.dt-layer-tools .dt-layer-copy { margin-left:auto; }
   .dt-layer-evidence-row { grid-template-columns:12px 92px minmax(0,1fr); gap:5px; }
 }

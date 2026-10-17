@@ -429,3 +429,36 @@ test('validates explicit safe DEM templates, thresholds, and contour bounds', ()
     );
   }
 });
+
+test('explicit DEM tiles keep resolution limits separate from hillshade visibility', () => {
+  const terrain = {
+    mode: 'hillshade' as const,
+    encoding: 'terrarium' as const,
+    tiles: ['https://dem.example.test/{z}/{x}/{y}.png'],
+    tileSize: 256 as const,
+    minZoom: 0,
+    maxZoom: 12,
+    hillshade: {minZoom: 5, maxZoom: 14},
+  };
+  const style = createStyle(extendStreets({terrain}), {preparedAssets});
+  assert.deepEqual(style.sources['tileflow-terrain'], {
+    type: 'raster-dem',
+    encoding: 'terrarium',
+    tiles: terrain.tiles,
+    tileSize: 256,
+    minzoom: 0,
+    maxzoom: 12,
+  });
+  const relief = style.layers.find((layer) => layer.id === 'tileflow-terrain-hillshade')!;
+  assert.equal(relief.maxzoom, 14);
+  assert.deepEqual(
+    validateStyleMin(style as never).map((error) => error.message),
+    [],
+  );
+  assert.throws(() =>
+    parseTileflowMap(
+      extendStreets({terrain: {...terrain, url: 'https://dem.example.test/tilejson.json'}}),
+    ),
+  );
+  assert.throws(() => parseTileflowMap(extendStreets({terrain: {...terrain, minZoom: 13}})));
+});

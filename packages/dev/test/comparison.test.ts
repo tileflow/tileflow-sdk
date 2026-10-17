@@ -281,7 +281,7 @@ test('Controls automatically groups edits, preserves the camera and keeps detail
   await harness.settle();
   const modules = harness.element('controls-modules');
   const details = modules.querySelectorAll('details')[0]!;
-  details.open = true;
+  assert.equal(details.open, true);
   const height = modules.querySelectorAll('input').find((input) => input.type === 'number')!;
   for (const value of ['1.2', '1.4', '1.6']) {
     height.value = value;
@@ -372,6 +372,7 @@ test('3D and animation update the existing runtime without fetching or replacing
   });
   harness.load('left');
   await harness.settle();
+  const camera = structuredClone(harness.maps.left.camera);
   harness.element('controls-3d').checked = true;
   harness.element('controls-3d').dispatch('change');
   harness.element('controls-animation').value = '800';
@@ -384,7 +385,13 @@ test('3D and animation update the existing runtime without fetching or replacing
   assert.equal(compiled.length, 0);
   assert.equal(harness.maps.left.styleCalls.length, 0);
   assert.equal(harness.element('left-frame').src, '/left/');
-  assert.equal(harness.maps.left.getPitch(), 60);
+  assert.deepEqual(harness.maps.left.camera, camera);
+  harness.element('controls-3d').checked = false;
+  harness.element('controls-3d').dispatch('change');
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.equal(new URL(harness.previewUrl()).searchParams.get('buildings3d'), 'off');
+  assert.deepEqual(harness.maps.left.camera, camera);
 });
 
 test('scene style changes keep custom 3D layers above reinserted surfaces without remounting', async () => {

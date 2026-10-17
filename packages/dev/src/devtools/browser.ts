@@ -40,6 +40,7 @@ const paths: Record<string, string> = {
   record: '<circle cx="12" cy="12" r="6" fill="currentColor" stroke="none"/>',
   undo: '<path d="M8 5 3 10l5 5M3 10h10a7 7 0 0 1 7 7"/>',
   redo: '<path d="m16 5 5 5-5 5m5-5H11a7 7 0 0 0-7 7"/>',
+  reset: '<path d="M3 10a9 9 0 1 1 2.6 8.4M3 4v6h6"/>',
   bottom:
     '<rect x="3" y="4" width="18" height="16" rx="1"/><path d="M3 13h18"/><path d="M5 15h14v3H5z" fill="currentColor" stroke="none"/>',
   right:
@@ -502,7 +503,7 @@ class Devtools {
   private applyLayout() {
     const w = this.workspace.clientWidth || innerWidth,
       h = this.workspace.clientHeight || innerHeight;
-    this.layout.width = Math.max(300, Math.min(this.layout.width, Math.max(300, w - 240)));
+    this.layout.width = Math.max(640, Math.min(this.layout.width, Math.max(640, w - 240)));
     this.layout.height = Math.max(180, Math.min(this.layout.height, Math.max(180, h - 160)));
     this.workspace.dataset.dock = this.dock;
     for (const [key, value] of Object.entries(this.layout))
@@ -1370,6 +1371,7 @@ class Devtools {
       const field = element('label', 'dt-camera-field'),
         input = element('input');
       const label = key[0].toUpperCase() + key.slice(1);
+      field.title = label;
       input.id = `dt-camera-${key}`;
       input.type = 'number';
       input.step = key === 'zoom' ? '0.1' : '1';
@@ -1377,7 +1379,7 @@ class Devtools {
       input.addEventListener('input', () => {
         if (input.value && input.validity.valid) apply(key, input.valueAsNumber);
       });
-      field.append(element('span', '', label), input);
+      field.append(element('span', '', label[0]), input);
       let range: HTMLInputElement | undefined;
       if (key === 'zoom') {
         range = element('input');
@@ -1389,11 +1391,11 @@ class Devtools {
           apply(key, range!.valueAsNumber);
         });
         field.append(range);
-      } else field.append(element('span', 'dt-unit', '°'));
+      }
       this.cameraFields.push({key, input, range});
       this.cameraControls.append(field);
     }
-    const reset = button('↶  Reset', () => {
+    const reset = icon('reset', 'Reset view', () => {
       if (this.cameraFrame !== undefined) cancelAnimationFrame(this.cameraFrame);
       const map = this.host.active().map,
         initial = this.initialCamera;
@@ -1411,38 +1413,38 @@ class Devtools {
         );
       this.syncCameraControls();
     });
+    reset.classList.add('dt-camera-reset');
     reset.title = 'Restore the initial zoom, bearing and pitch';
-    this.cameraControls.append(
-      reset,
-      button(
-        'Copy context for agent',
-        () => {
-          if (this.activePanel === 'layers') {
-            this.layers.openContext();
-            return;
-          }
-          if (this.activePanel === 'beacon') {
-            void this.beacon.copyReport();
-            return;
-          }
-          const side = this.host.active(),
-            map = side.map;
-          const context = safeContext({
-            panel: this.activePanel,
-            camera: map && readCamera(map),
-            metadata: map?.getStyle()?.metadata,
-            tile: this.networkTile,
-            tiles: map && visibleTiles(map).tiles,
-            edits: [...(this.edits.get(side.id)?.entries.values() ?? [])],
-          }).value;
-          void navigator.clipboard.writeText(JSON.stringify(context, null, 2)).then(
-            () => this.report('Context copied'),
-            () => this.report('Clipboard unavailable'),
-          );
-        },
-        'dt-copy-agent',
-      ),
+    const copy = button(
+      'Copy for AI',
+      () => {
+        if (this.activePanel === 'layers') {
+          this.layers.openContext();
+          return;
+        }
+        if (this.activePanel === 'beacon') {
+          void this.beacon.copyReport();
+          return;
+        }
+        const side = this.host.active(),
+          map = side.map;
+        const context = safeContext({
+          panel: this.activePanel,
+          camera: map && readCamera(map),
+          metadata: map?.getStyle()?.metadata,
+          tile: this.networkTile,
+          tiles: map && visibleTiles(map).tiles,
+          edits: [...(this.edits.get(side.id)?.entries.values() ?? [])],
+        }).value;
+        void navigator.clipboard.writeText(JSON.stringify(context, null, 2)).then(
+          () => this.report('Context copied'),
+          () => this.report('Clipboard unavailable'),
+        );
+      },
+      'dt-copy-agent',
     );
+    copy.title = 'Copy map context for an AI agent';
+    this.cameraControls.append(reset, copy);
   }
   private syncCameraControls() {
     const map = this.host.active().map;

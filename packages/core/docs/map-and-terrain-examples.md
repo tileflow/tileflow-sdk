@@ -92,9 +92,16 @@ then transition to Mercator between zoom 10 and 12 so detailed streets remain pl
 property, or set it to `'mercator'`, for a consistently flat map.
 
 Terrain keeps the original `'none' | 'hillshade' | '3d'` shorthand. The object form can style every
-MapLibre hillshade paint control, or generate vector contours in the browser from an explicit DEM
-tile template. Contours require `demUrl`, `demMaxZoom`, and zoom-indexed `[minor, index]`
-`thresholds`; the raster `url` remains the separate TileJSON endpoint. Set `mode: 'none'` to compile
+MapLibre hillshade paint control. Raster terrain accepts either a TileJSON `url` or explicit `tiles`
+templates, with optional `tileSize` (256 or 512) and native `minZoom`/`maxZoom` limits. The templates
+must contain `{z}`, `{x}` and `{y}` and use HTTPS (HTTP is allowed for loopback development).
+These source limits control DEM requests independently of `hillshade.minZoom`/`maxZoom` visibility;
+the renderer reuses the highest available native resolution for closer views. Select resolution
+limits supported by the provider and retain its required attribution.
+
+Contours generate vector lines in the browser from their own explicit DEM tile template. They
+require `demUrl`, `demMaxZoom`, and zoom-indexed `[minor, index]` `thresholds`; these are separate
+from the raster source's `url` or `tiles`. Set `mode: 'none'` to compile
 contours without adding a raster source, hillshade, or 3D terrain:
 
 ```ts

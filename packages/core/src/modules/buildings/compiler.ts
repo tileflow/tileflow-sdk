@@ -145,7 +145,21 @@ function buildingColorExpression(context: TileflowDomainCompileContext): unknown
     colors.destination,
     ['==', ['coalesce', ['get', fields.buildingTone], ''], 'commercial'],
     colors.commercial,
-    colors.generic,
+    // Without a tone, World's use class: housing, shops and offices, public buildings and works
+    // each take their theme colour; a shed, a garage or an unknown use the generic one.
+    [
+      'match',
+      ['coalesce', ['get', fields.class], ''],
+      'residential',
+      colors.residential,
+      'commercial',
+      colors.commercial,
+      ['civic', 'education', 'entertainment', 'medical', 'military', 'religious', 'transportation'],
+      colors.civic,
+      ['agricultural', 'industrial', 'service'],
+      colors.industrial,
+      colors.generic,
+    ],
   ];
 }
 

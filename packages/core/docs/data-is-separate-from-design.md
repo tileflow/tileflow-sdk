@@ -430,7 +430,11 @@ buildings. Its `activity_score`, `rank`, `min_zoom`, and `confidence` fields con
 warm tint without drawing POI-radius circles. Current building footprints may carry sparse
 `building_tone=commercial|destination|active`; absence means the neutral base building. The three
 values preserve why the warm tone was selected even when a theme maps them to the same color.
-Building visibility is fixed by the layer zoom contract and never by optional semantics. The land
+Buildings may also carry World's `class`, their use in Overture's building subtype values; without
+a tone, the buildings module colours `residential`, `commercial`, public buildings (`civic`,
+`education`, `medical`, `religious` and the like) and works (`industrial`, `agricultural`,
+`service`) with the theme's `residential`, `commercial`, `civic` and `industrial` building colours,
+and every other building with `generic`. Building visibility is fixed by the layer zoom contract and never by optional semantics. The land
 module also exposes
 `medical`, `education`, and `government` independently instead of collapsing their already distinct
 source classes into one civic color.

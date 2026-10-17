@@ -22,7 +22,10 @@ export type TileflowBuildingsThreeDimensionalStyle = {
   occlusion?: boolean;
   /** Shadows from the sun, on the buildings and the flat map; defaults to false. */
   shadows?: boolean;
-  /** Invented night windows, lit by rooms: decoration, not data. Defaults to false. */
+  /**
+   * Invented night windows, lit by rooms: decoration, not data. With World's `class`, none on sheds,
+   * barns, factories and churches, and homes lit apart from offices. Defaults to false.
+   */
   windows?: boolean;
   /**
    * Building models the map places in its city, from the glTF binaries in its `models`

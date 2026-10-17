@@ -47,7 +47,7 @@ motion changes at once. `dispose()` takes the layer off the map.
 The renderer reads the source's z15 tiles round the camera (z15 is where World's buildings carry
 their heights; a source that stops earlier is read at its own maximum zoom), up to `maxTiles`
 tiles (25 by default), and meshes them a few milliseconds per frame. It reads World's
-`render_height`, `render_min_height`, `hide_3d`, `building_tone` and `night_use`, and the places in
+`render_height`, `render_min_height`, `hide_3d`, `building_tone`, `class` and `night_use`, and the places in
 World's `poi` layer (see [night light](#night-light)). `stats.declared` tells whether the map's
 style describes its 3D buildings. Recompile existing maps to pick up the new defaults: previously
 compiled metadata with explicit effects enabled continues to honour those values.
@@ -108,7 +108,10 @@ export default defineMap({
   moving blend costs nothing per frame.
 - `threeDimensional.shadows` and `occlusion` (the band at the foot of the walls and the darker tight
   corners) default to false. `windows: true` adds invented night windows, lit by rooms; they are
-  decoration, not data, and are off by default.
+  decoration, not data, and are off by default. Where World says what a building is used for
+  (`class`), sheds, garages, barns, factories, churches and service buildings get no rows of
+  windows, homes light more of theirs at night, in a warm light, and offices, schools and hospitals
+  fewer, in a cooler one.
 - `threeDimensional.edges` and `edgeColor` set the [edges](#edges), and `nightLight` the
   [night light](#night-light). Numbers and colours may be theme tokens.
 

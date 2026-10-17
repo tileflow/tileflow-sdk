@@ -60,6 +60,20 @@ function vertex(mesh: NonNullable<ReturnType<typeof meshTileflowBuildings>>, ind
   };
 }
 
+test("a building's use class is packed above its tone for the windows", () => {
+  const packed = (properties: Record<string, unknown>) =>
+    vertex(
+      meshTileflowBuildings(layerOf([{geometry: [square], properties}]), {tileMetres: 1000})!,
+      0,
+    ).tone;
+  assert.equal(packed({}), 0);
+  assert.equal(packed({class: 'residential'}), 4);
+  assert.equal(packed({class: 'education'}), 8);
+  assert.equal(packed({class: 'outbuilding'}), 12);
+  assert.equal(packed({class: 'industrial', building_tone: 'destination'}), 15);
+  assert.equal(packed({class: 'unknown', building_tone: 'commercial'}), 1);
+});
+
 test('a building becomes a roof and four walls facing out of it', () => {
   const mesh = meshTileflowBuildings(
     layerOf([{geometry: [square], properties: {building_tone: 'commercial'}}]),

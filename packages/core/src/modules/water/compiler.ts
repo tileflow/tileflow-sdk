@@ -22,7 +22,11 @@ import {
 import {alpha, mix} from '../../themes';
 import type {TileflowLabelLanguage} from '../../types';
 import type {TileflowResolvedModuleConfig} from '../resolved';
-import type {TileflowWaterModuleConfig, TileflowWaterwayClass} from './index';
+import type {
+  TileflowBathymetryNameStyle,
+  TileflowWaterModuleConfig,
+  TileflowWaterwayClass,
+} from './index';
 
 const waterwayClasses: Record<TileflowWaterwayClass, readonly string[]> = {
   canal: ['canal'],
@@ -321,7 +325,11 @@ export function compileWater(
 
   if (sidecarBathymetry) {
     const {layers: marineLayers} = tileflowBathymetryV1Schema;
-    // Reserve two 128-entry ranges below ordinary map labels.
+    // Reserve disjoint name ranges below ordinary map labels.
+    const splitPlacement = Boolean(
+      config.bathymetryLandforms?.placementByGeometry ||
+      config.bathymetryWaterNames?.placementByGeometry,
+    );
     const landforms = bathymetryProduct?.vectorLayers?.landforms;
     const waterNames = bathymetryProduct?.vectorLayers?.waterNames;
     if (landforms) {
@@ -329,7 +337,7 @@ export function compileWater(
         availability: landforms,
         context,
         language,
-        localOrder: -300,
+        localOrder: splitPlacement ? -900 : -300,
         source: sidecarBathymetry.sourceId,
         sourceLayer: marineLayers.landforms,
         style: config.bathymetryLandforms,
@@ -342,7 +350,7 @@ export function compileWater(
         availability: waterNames,
         context,
         language,
-        localOrder: -150,
+        localOrder: splitPlacement ? -450 : -150,
         source: sidecarBathymetry.sourceId,
         sourceLayer: marineLayers.waterNames,
         style: config.bathymetryWaterNames,
@@ -430,7 +438,7 @@ function appendBathymetryNames(
     localOrder: number;
     source: string;
     sourceLayer: string;
-    style: TileflowSymbolStyle | undefined;
+    style: TileflowBathymetryNameStyle | undefined;
     target: string;
   },
 ): void {
@@ -446,7 +454,7 @@ function appendBathymetryNames(
           ['to-string', ['get', `name:${language}`]],
           localName,
         ];
-  const style = mergeTileflowDesign<TileflowSymbolStyle>(
+  const style = mergeTileflowDesign<TileflowBathymetryNameStyle>(
     {
       minZoom: 0,
       placement: 'point',
@@ -469,67 +477,95 @@ function appendBathymetryNames(
   );
   if (style.visible === false || style.text?.visible === false) return;
 
-  const layer: TileflowLayerContribution['layer'] = applySymbolStyle(
-    {
-      id: options.id,
-      type: 'symbol',
-      source: options.source,
-      'source-layer': options.sourceLayer,
-      filter: [
-        'all',
-        ['match', ['geometry-type'], ['Point', 'LineString', 'Polygon'], true, false],
-        ['!=', name, ''],
-      ],
-    },
-    style,
-  );
   const sourceMinimum = ['to-number', ['coalesce', ['get', fields.minZoom], 0], 0];
   const sourceMaximum = ['to-number', ['coalesce', ['get', fields.maxZoom], 24], 24];
-  const baseFilter = layer.filter as unknown[];
-  const append = (result: TileflowLayerContribution['layer'], target: string, order = 0) => {
-    contributions.push({
-      kind: 'layer',
-      layer: result,
-      localOrder: options.localOrder + order,
-      owner: 'water',
-      slot: 'symbols',
-      target,
-    });
-  };
-  if (options.availability === true) {
-    append(
-      {
-        ...layer,
-        filter: [...baseFilter, ['>=', ['zoom'], sourceMinimum], ['<', ['zoom'], sourceMaximum]],
-      },
-      options.target,
-    );
-    return;
-  }
+  const ranges =
+    options.availability === true
+      ? undefined
+      : [...options.availability.zoomRanges].sort(
+          (left, right) => left.minZoom - right.minZoom || left.maxZoom - right.maxZoom,
+        );
+  const policy = style.placementByGeometry;
+  const geometryFamilies = [
+    ['Point', policy?.point],
+    ['LineString', policy?.line],
+    ['Polygon', policy?.polygon],
+  ] as const;
+  const groups = policy
+    ? (['point', 'line', 'line-center'] as const).flatMap((placement) => {
+        const geometries = geometryFamilies
+          .filter(([, value]) => value === placement)
+          .map(([geometry]) => geometry);
+        return geometries.length ? [{placement, geometries}] : [];
+      })
+    : [{placement: style.placement, geometries: ['Point', 'LineString', 'Polygon']}];
 
-  const ranges = [...options.availability.zoomRanges].sort(
-    (left, right) => left.minZoom - right.minZoom || left.maxZoom - right.maxZoom,
-  );
-  for (const [index, range] of ranges.entries()) {
-    const minzoom = Math.max(Number(layer.minzoom ?? 0), range.minZoom);
-    const maxzoom = Math.min(Number(layer.maxzoom ?? 24), range.maxZoom);
-    if (minzoom >= maxzoom) continue;
-
-    append(
+  for (const [groupIndex, group] of groups.entries()) {
+    const suffix = policy ? `-placement-${group.placement}` : '';
+    const placementTarget =
+      group.placement === 'line-center'
+        ? 'LineCenter'
+        : group.placement === 'line'
+          ? 'Line'
+          : 'Point';
+    const target = policy ? `${options.target}.placement${placementTarget}` : options.target;
+    const layer: TileflowLayerContribution['layer'] = applySymbolStyle(
       {
-        ...layer,
-        id: `${options.id}-cohort-${index}`,
-        minzoom,
-        maxzoom,
+        id: `${options.id}${suffix}`,
+        type: 'symbol',
+        source: options.source,
+        'source-layer': options.sourceLayer,
         filter: [
-          ...baseFilter,
-          ['==', sourceMinimum, range.minZoom],
-          ['==', sourceMaximum, range.maxZoom],
+          'all',
+          ['match', ['geometry-type'], group.geometries, true, false],
+          ['!=', name, ''],
         ],
       },
-      `${options.target}.cohort${index}`,
-      index,
+      {...style, placement: group.placement},
     );
+    const baseFilter = layer.filter as unknown[];
+    const append = (result: TileflowLayerContribution['layer'], rangeTarget: string, order = 0) => {
+      contributions.push({
+        kind: 'layer',
+        layer: result,
+        localOrder: options.localOrder + order * (policy ? 3 : 1) + groupIndex,
+        owner: 'water',
+        slot: 'symbols',
+        target: rangeTarget,
+      });
+    };
+    if (!ranges) {
+      append(
+        {
+          ...layer,
+          filter: [...baseFilter, ['>=', ['zoom'], sourceMinimum], ['<', ['zoom'], sourceMaximum]],
+        },
+        target,
+      );
+      continue;
+    }
+
+    for (const [index, range] of ranges.entries()) {
+      const minzoom = Math.max(Number(layer.minzoom ?? 0), range.minZoom);
+      const maxzoom = Math.min(Number(layer.maxzoom ?? 24), range.maxZoom);
+      if (minzoom >= maxzoom) continue;
+
+      append(
+        {
+          ...layer,
+          id: `${layer.id}-cohort-${index}`,
+          minzoom,
+          maxzoom,
+          filter: [
+            ...baseFilter,
+            ['==', sourceMinimum, range.minZoom],
+            ['==', sourceMaximum, range.maxZoom],
+          ],
+        },
+        `${target}.cohort${index}`,
+        index,
+      );
+    }
   }
 }
 

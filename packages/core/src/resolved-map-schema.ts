@@ -813,6 +813,18 @@ const symbolStyleSchema = z
 const markerSymbolStyleSchema = symbolStyleSchema
   .extend({marker: circleStyleSchema.optional()})
   .strict();
+const bathymetryNameStyleSchema = symbolStyleSchema
+  .extend({
+    placementByGeometry: z
+      .object({
+        point: z.literal('point'),
+        line: z.enum(['line', 'line-center', 'point']),
+        polygon: z.enum(['line', 'line-center', 'point']),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 const poiCategoryStyleSchema = markerSymbolStyleSchema
   .omit({priority: true, priorityOrder: true})
   .strict();
@@ -1121,8 +1133,8 @@ const waterModuleSchema = z
     bathymetry: fillStyleSchema.optional(),
     bathymetryContours: lineStyleSchema.optional(),
     bathymetryLabels: symbolStyleSchema.optional(),
-    bathymetryLandforms: symbolStyleSchema.optional(),
-    bathymetryWaterNames: symbolStyleSchema.optional(),
+    bathymetryLandforms: bathymetryNameStyleSchema.optional(),
+    bathymetryWaterNames: bathymetryNameStyleSchema.optional(),
     bodies: areaStyleSchema.optional(),
     enabled: z.boolean().optional(),
     intermittent: z

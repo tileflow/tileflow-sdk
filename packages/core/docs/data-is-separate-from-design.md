@@ -408,6 +408,58 @@ labels default to line placement. Band fills still consume `min_depth` and `sort
 `visible: false` to hide either. Without their declaration, those styles emit no name layers.
 Name styles may use `class` in expressions without changing the source classification.
 
+Mixed geometry can opt into `placementByGeometry` on either name style. Its resolved policy must
+include `point`, `line`, and `polygon`; `point` must be `'point'`, while the other two accept
+`'point'`, `'line'`, or `'line-center'`. The policy overrides scalar `placement`, including an
+inherited value. Without it, scalar placement and existing generated layers remain unchanged.
+
+For example, this map labels point features at their coordinates and retains line placement for
+lines and polygon boundaries:
+
+<!-- docs:check -->
+
+```ts
+import {bathymetry, defineMap, labels, water} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'marine-names',
+  version: 1,
+  extends: streets,
+  marine: {
+    bathymetry: bathymetry({
+      vectorLayers: {landforms: {zoomRanges: [{minZoom: 0, maxZoom: 24}]}},
+    }),
+    nautical: false,
+  },
+  modules: {
+    labels: labels({language: 'es'}),
+    water: water({
+      bathymetryLandforms: {
+        placementByGeometry: {point: 'point', line: 'line', polygon: 'line'},
+      },
+    }),
+  },
+});
+```
+
+This example declares source availability; the selected source must actually contain those
+features. Equal placements share one geometry-filtered group per source range. A policy emits
+at most three groups per range (384 layers for one name family at the 128-range limit). Groups
+compile in `point`, `line`, `line-center` order below ordinary map labels; source priority orders
+features within each group. Module refinements inherit the policy and style every group.
+Render-stack refinements still address exact semantic targets; inspect each placement/range
+target when applying a narrower refinement.
+Normal collision still applies and can hide a name.
+
+Placement uses the received geometry: `point` places a line label at its first rendered vertex;
+it does not compute a stable line midpoint. Polygon `point` placement uses an interior position
+of the rendered polygon, while `line` follows its boundary. Core does not generate source anchors,
+merge identities or deduplicate names by text. A source can supply multiple stable point anchors
+with shared identity properties and distinct anchor properties; their extent, visibility and
+editorial policy belong to that source. Keep original source identities as properties rather than
+assuming a universal numeric `feature.id`.
+
 Water-module styles override product-level `bands`, `contours`, and `labels`. Existing custom
 `text.field` expressions remain authoritative: when refining a map from legacy polygons to native
 contours, use `expr.get(field('bathymetryContourDepth'))` for its depth. That auxiliary binding

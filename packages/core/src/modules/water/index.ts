@@ -2,10 +2,23 @@ import type {
   TileflowAreaStyle,
   TileflowFillStyle,
   TileflowLineStyle,
+  TileflowSymbolPlacement,
   TileflowSymbolStyle,
 } from '../../cartography/styles';
 
 export type TileflowWaterwayClass = 'canal' | 'other' | 'river' | 'stream';
+
+/** Explicit placement for every geometry family in a declared Bathymetry name layer. */
+export type TileflowBathymetryNamePlacement = {
+  point: 'point';
+  line: TileflowSymbolPlacement;
+  polygon: TileflowSymbolPlacement;
+};
+
+export type TileflowBathymetryNameStyle = TileflowSymbolStyle & {
+  /** Overrides scalar placement for these names; omission preserves scalar placement. */
+  placementByGeometry?: TileflowBathymetryNamePlacement;
+};
 
 export type TileflowWaterModuleOptions = {
   bathymetry?: TileflowFillStyle;
@@ -14,9 +27,9 @@ export type TileflowWaterModuleOptions = {
   /** Contour-depth or legacy band-floor labels, not measured survey soundings. */
   bathymetryLabels?: TileflowSymbolStyle;
   /** Names from an explicitly declared seafloor_landform layer. */
-  bathymetryLandforms?: TileflowSymbolStyle;
+  bathymetryLandforms?: TileflowBathymetryNameStyle;
   /** Names from an explicitly declared water_name layer. */
-  bathymetryWaterNames?: TileflowSymbolStyle;
+  bathymetryWaterNames?: TileflowBathymetryNameStyle;
   bodies?: TileflowAreaStyle;
   intermittent?: {
     bodies?: TileflowAreaStyle;

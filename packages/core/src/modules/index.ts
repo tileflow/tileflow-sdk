@@ -50,6 +50,8 @@ export type {
 } from './vegetation';
 export {water} from './water';
 export type {
+  TileflowBathymetryNamePlacement,
+  TileflowBathymetryNameStyle,
   TileflowWaterModuleConfig,
   TileflowWaterModuleOptions,
   TileflowWaterwayClass,

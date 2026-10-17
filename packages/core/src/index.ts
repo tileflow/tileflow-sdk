@@ -44,6 +44,7 @@ export {
 } from './cartography/compilation-report';
 export {field} from './cartography/semantic-bindings';
 export type {
+  TileflowDataFieldName,
   TileflowDataFieldReference,
   TileflowDataFieldValue,
   TileflowNumericDataFieldName,
@@ -405,6 +406,7 @@ export {
   bathymetry,
   resolveMarine,
   tileflowBathymetryDemSourceId,
+  tileflowBathymetryNameLayerLimits,
   tileflowBathymetrySourceId,
   tileflowBathymetryV1Schema,
   tileflowNauticalSourceId,
@@ -418,8 +420,11 @@ export type {
   TileflowBathymetryConfig,
   TileflowBathymetryDemSourceIdentity,
   TileflowBathymetryDisplay,
+  TileflowBathymetryNameLayer,
+  TileflowBathymetryNameZoomRange,
   TileflowBathymetryOptions,
   TileflowBathymetryReliefConfig,
+  TileflowBathymetryVectorLayers,
   TileflowMarine,
   TileflowMarineConfig,
   TileflowMarineMode,

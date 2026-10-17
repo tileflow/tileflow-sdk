@@ -6,7 +6,7 @@ import {tileflowCaptureSceneSchema} from '../src/capture-scene';
 import {tileflowCaptureShotLimits, tileflowCaptureShotSchema} from '../src/capture-shot';
 import {tileflowDataExpressionLimits} from '../src/cartography/data-expression';
 import {tileflowRenderStackLimits} from '../src/cartography/render-stack';
-import {tileflowSemanticFieldNames} from '../src/cartography/semantic-bindings';
+import {tileflowSemanticExpressionFieldNames} from '../src/cartography/semantic-bindings';
 import {tileflowThemeTokenCategories} from '../src/cartography/values';
 import {tileflowMapDefaultMaxDepth, tileflowMapMergeStrategies} from '../src/maps/resolve';
 import {resolvedTileflowMapSchema} from '../src/resolved-map-schema';
@@ -592,7 +592,7 @@ function enrichDataExpressionSchemas(root: JsonSchema): void {
     description: 'Schema-bound semantic field emitted by field(name); never a physical column.',
     properties: {
       kind: {const: 'tileflow-data-field'},
-      name: {enum: tileflowSemanticFieldNames, type: 'string'},
+      name: {enum: tileflowSemanticExpressionFieldNames, type: 'string'},
     },
     required: ['kind', 'name'],
     type: 'object',

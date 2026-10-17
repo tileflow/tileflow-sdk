@@ -404,6 +404,12 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
   match = /^landforms\.classes\.([^.]+)$/u.exec(semanticKey);
   if (match) return `tileflow-landform-${match[1]}`;
 
+  match = /^water\.(bathymetryLandforms|bathymetryWaterNames)\.cohort(\d+)$/u.exec(semanticKey);
+  if (match) {
+    const base = match[1] === 'bathymetryLandforms' ? 'landforms' : 'water-names';
+    return `tileflow-bathymetry-${base}-cohort-${match[2]}`;
+  }
+
   match = /^poi\.([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)$/u.exec(semanticKey);
   if (match) return `tileflow-poi-${match[1]!.replaceAll('.', '-')}`;
 
@@ -442,6 +448,8 @@ const exactPhysicalLayerIds: Readonly<Record<string, string>> = Object.freeze({
   'water.bathymetry': 'tileflow-bathymetry',
   'water.bathymetryContours': 'tileflow-bathymetry-contours',
   'water.bathymetryLabels': 'tileflow-bathymetry-labels',
+  'water.bathymetryLandforms': 'tileflow-bathymetry-landforms',
+  'water.bathymetryWaterNames': 'tileflow-bathymetry-water-names',
   'water.bathymetryRelief.color': 'tileflow-bathymetry-color-relief',
   'water.bathymetryRelief.hillshade': 'tileflow-bathymetry-relief',
 });

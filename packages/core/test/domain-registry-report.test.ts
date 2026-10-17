@@ -41,7 +41,6 @@ const streetsPreparedAssets = {
 
 const compileOrder = [
   'land',
-  'water',
   'nautical',
   'buildings',
   'vegetation',
@@ -50,6 +49,7 @@ const compileOrder = [
   'aeroways',
   'boundaries',
   'labels',
+  'water',
   'landforms',
   'addresses',
   'poi',
@@ -73,7 +73,7 @@ test('keeps names, defaults, dependencies, and orchestration in one closed regis
     compileOrder.map((name, order) => ({
       dependencies: {
         modules: name === 'labels' ? ['roads'] : [],
-        services: name === 'landforms' || name === 'poi' ? ['language'] : [],
+        services: name === 'landforms' || name === 'poi' || name === 'water' ? ['language'] : [],
       },
       name,
       order,

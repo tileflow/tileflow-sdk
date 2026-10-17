@@ -16,6 +16,7 @@ import {
   validateTileflowRenderSelectorConstraints,
 } from './cartography/render-stack';
 import {
+  tileflowSemanticExpressionFieldNames,
   tileflowSemanticFieldNames,
   tileflowSemanticLayerNames,
 } from './cartography/semantic-bindings';
@@ -33,6 +34,7 @@ import {
   type TileflowIconSource,
   tileflowIconSourceLimit,
 } from './icon-set';
+import {classicManifestSchemaOperations} from './manifest-schema-classic';
 import {
   isTileflowLocalDirectory,
   tileflowLocalDirectoryMaximumLength,
@@ -42,6 +44,7 @@ import {
   type ResolvedTileflowMap as TileflowCompilerConfig,
   tileflowMapIdSchema,
 } from './maps/types';
+import {tileflowBathymetryNameLayerLimits} from './marine';
 import {tileflowLandformClasses} from './modules/landforms';
 import {tileflowRoadClasses} from './modules/roads/semantics';
 import {
@@ -55,10 +58,9 @@ import {
   isTileflowContourDensityWithinBudget,
 } from './terrain/contour-protocol';
 import {resolveTileflowTheme, type TileflowTheme, tileflowThemeLimits} from './themes';
-import {tileflowTreeModelIdPattern} from './trees-3d';
-import {classicManifestSchemaOperations} from './manifest-schema-classic';
-import {validateTileflowTimeOfDayVariants, type TileflowTimeOfDayVariants} from './time-of-day';
+import {type TileflowTimeOfDayVariants, validateTileflowTimeOfDayVariants} from './time-of-day';
 import {createTileflowTimeOfDaySchema} from './time-of-day-schema';
+import {tileflowTreeModelIdPattern} from './trees-3d';
 import {tileflowPoiCategories, type ValidationMessage} from './types';
 
 /** Structured schema failure preserved for CLI/editor diagnostics. */
@@ -260,7 +262,7 @@ function validateExpressionFieldNames(
   if (
     candidate.kind === 'tileflow-data-field' &&
     (typeof candidate.name !== 'string' ||
-      !Object.hasOwn(fieldBindingsSchema.shape, candidate.name))
+      !tileflowSemanticExpressionFieldNames.some((name) => name === candidate.name))
   ) {
     context.addIssue({
       code: 'custom',
@@ -1119,6 +1121,8 @@ const waterModuleSchema = z
     bathymetry: fillStyleSchema.optional(),
     bathymetryContours: lineStyleSchema.optional(),
     bathymetryLabels: symbolStyleSchema.optional(),
+    bathymetryLandforms: symbolStyleSchema.optional(),
+    bathymetryWaterNames: symbolStyleSchema.optional(),
     bodies: areaStyleSchema.optional(),
     enabled: z.boolean().optional(),
     intermittent: z
@@ -1867,6 +1871,38 @@ const bathymetryReliefSchema = z
       });
     }
   });
+const bathymetryNameLayerSchema = z.union([
+  z.boolean(),
+  z
+    .object({
+      zoomRanges: z
+        .array(z.object({minZoom: zoomNumberSchema, maxZoom: zoomNumberSchema}).strict())
+        .min(1)
+        .max(tileflowBathymetryNameLayerLimits.maxZoomRanges)
+        .superRefine((ranges, context) => {
+          const seen = new Set<string>();
+          for (const [index, range] of ranges.entries()) {
+            if (range.minZoom >= range.maxZoom) {
+              context.addIssue({
+                code: 'custom',
+                message: 'Expected minZoom < maxZoom',
+                path: [index, 'maxZoom'],
+              });
+            }
+            const key = `${range.minZoom}/${range.maxZoom}`;
+            if (seen.has(key)) {
+              context.addIssue({
+                code: 'custom',
+                message: 'Expected unique nominal zoom ranges',
+                path: [index],
+              });
+            }
+            seen.add(key);
+          }
+        }),
+    })
+    .strict(),
+]);
 const bathymetryConfigSchema = z
   .object({
     ...marineSourceSchema.shape,
@@ -1876,6 +1912,14 @@ const bathymetryConfigSchema = z
     labels: z.union([z.literal(false), symbolStyleSchema]).optional(),
     relief: z.union([z.literal(false), bathymetryReliefSchema]).optional(),
     type: z.literal('bathymetry'),
+    vectorLayers: z
+      .object({
+        contours: z.boolean().optional(),
+        landforms: bathymetryNameLayerSchema.optional(),
+        waterNames: bathymetryNameLayerSchema.optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 const marineSchema = z.union([

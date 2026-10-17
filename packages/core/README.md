@@ -238,10 +238,12 @@ package uses this contract for its mounted Map; it is not yet published.
 
 ## Data, terrain, and browser resources
 
-Tileflow World is the hosted primary-data path. `vectorTiles()` with `openMapTiles()` supports
-compatible externally supplied vector data for local/self-hosted use; it does not make that source
-eligible for hosted deployment. `hostedTileset()` and semantic overlay placement add named data
-sources. Local PMTiles inputs are for local tooling, not implicit production data publication.
+Tileflow World is the hosted primary source. `vectorTiles()` with `openMapTiles()` supports
+external local/self-hosted data; hosted eligibility is separate. `hostedTileset()` and semantic
+overlays add named sources. Local PMTiles inputs are tooling-only.
+
+`bathymetry({vectorLayers: {...}})` declares compatible contour/name layers; omission retains
+legacy band geometry.
 
 World attribution links to Tileflow's source notice, OpenMapTiles, and OpenStreetMap. External
 vector data retains the attribution supplied by its owner.

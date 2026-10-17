@@ -9,10 +9,14 @@ export type TileflowWaterwayClass = 'canal' | 'other' | 'river' | 'stream';
 
 export type TileflowWaterModuleOptions = {
   bathymetry?: TileflowFillStyle;
-  /** Opt-in approximate contours traced from discrete bathymetry polygon band edges. */
+  /** Contour lines when declared by Bathymetry; otherwise approximate polygon band edges. */
   bathymetryContours?: TileflowLineStyle;
-  /** Opt-in labels for bathymetry polygon band floors, not measured survey soundings. */
+  /** Contour-depth or legacy band-floor labels, not measured survey soundings. */
   bathymetryLabels?: TileflowSymbolStyle;
+  /** Names from an explicitly declared seafloor_landform layer. */
+  bathymetryLandforms?: TileflowSymbolStyle;
+  /** Names from an explicitly declared water_name layer. */
+  bathymetryWaterNames?: TileflowSymbolStyle;
   bodies?: TileflowAreaStyle;
   intermittent?: {
     bodies?: TileflowAreaStyle;

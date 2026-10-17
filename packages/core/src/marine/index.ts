@@ -12,7 +12,16 @@ export const tileflowBathymetryDemSourceId = 'tileflow-bathymetry-dem' as const;
 export const tileflowNauticalSourceId = 'tileflow-nautical' as const;
 
 export const tileflowBathymetryV1Schema = Object.freeze({
-  fields: Object.freeze({minDepth: 'min_depth', sortKey: 'sort_key'}),
+  fields: Object.freeze({
+    class: 'class',
+    depth: 'depth',
+    id: 'id',
+    maxZoom: 'max_zoom',
+    minDepth: 'min_depth',
+    minZoom: 'min_zoom',
+    name: 'name',
+    sortKey: 'sort_key',
+  }),
   layer: 'bathymetry',
   layers: Object.freeze({
     bands: 'bathymetry',
@@ -90,6 +99,25 @@ export type TileflowMarineSourceConfig = {
 
 export type TileflowBathymetryDisplay = 'bands' | 'relief' | 'hybrid';
 
+export const tileflowBathymetryNameLayerLimits = Object.freeze({maxZoomRanges: 128});
+
+/** One exact, inclusive minimum and exclusive maximum nominal source range. */
+export type TileflowBathymetryNameZoomRange = Readonly<{minZoom: number; maxZoom: number}>;
+
+/** Exhaustive source range inventory; unmatched pairs are omitted from rendering. */
+export type TileflowBathymetryNameLayer =
+  | boolean
+  | {
+      zoomRanges: readonly TileflowBathymetryNameZoomRange[];
+    };
+
+/** Explicit availability of compatible optional vector layers; compilation never probes TileJSON. */
+export type TileflowBathymetryVectorLayers = {
+  contours?: boolean;
+  landforms?: TileflowBathymetryNameLayer;
+  waterNames?: TileflowBathymetryNameLayer;
+};
+
 /**
  * Styling and physical-source overrides for the optional Bathymetry DEM.
  * Terrarium and 512 px tiles are the hosted defaults; advanced compatible sources may override
@@ -114,6 +142,7 @@ export type TileflowBathymetryConfig = TileflowMarineSourceConfig & {
   labels?: false | TileflowSymbolStyle;
   relief?: false | TileflowBathymetryReliefConfig;
   type: 'bathymetry';
+  vectorLayers?: TileflowBathymetryVectorLayers;
 };
 
 export type TileflowBathymetryOptions = Omit<TileflowBathymetryConfig, 'type'>;
@@ -179,6 +208,7 @@ export type ResolvedBathymetry = Readonly<{
   labels?: false | TileflowSymbolStyle;
   relief?: ResolvedBathymetryRelief;
   vector?: ResolvedMarineSource;
+  vectorLayers?: TileflowBathymetryVectorLayers;
 }>;
 
 export type ResolvedMarine = Readonly<{
@@ -243,6 +273,9 @@ function resolveBathymetry(
     ...(advanced?.contours === undefined ? {} : {contours: advanced.contours}),
     display,
     ...(advanced?.labels === undefined ? {} : {labels: advanced.labels}),
+    ...(advanced?.vectorLayers === undefined
+      ? {}
+      : {vectorLayers: cloneJson(advanced.vectorLayers)}),
     ...(reliefVisible ? {relief: resolveBathymetryRelief(reliefConfig ?? {}, apiBaseUrl)} : {}),
     ...(usesVector
       ? {

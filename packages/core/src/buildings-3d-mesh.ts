@@ -15,6 +15,24 @@ export const tileflowBuildingVertexBytes = 28;
 
 /** World's `building_tone`, which the renderer uses to choose the buildings it flood-lights. */
 const tones: Readonly<Record<string, number>> = {commercial: 1, active: 2, destination: 3};
+/**
+ * World's `class`, the building's use, as the renderer groups it for its windows: 1 housing, 2 a
+ * place of work, study or care, 3 a building without rows of windows (a shed, a barn, a factory, a
+ * church). Packed above the tone, four values apart.
+ */
+const classGroups: Readonly<Record<string, number>> = {
+  residential: 1,
+  ...Object.fromEntries(
+    ['civic', 'commercial', 'education', 'entertainment', 'medical', 'transportation'].map(
+      (value) => [value, 2],
+    ),
+  ),
+  ...Object.fromEntries(
+    ['agricultural', 'industrial', 'military', 'outbuilding', 'religious', 'service'].map(
+      (value) => [value, 3],
+    ),
+  ),
+};
 /** World's `night_use`: the strongest night use of the places a building holds. */
 const nightUses: Readonly<Record<string, number>> = {dining: 1, entertainment: 2, nightlife: 3};
 /**
@@ -103,12 +121,13 @@ export type TileflowBuildingMesh = Readonly<{
 
 /**
  * Meshes the buildings of one decoded tile layer, or returns undefined when it has none. It reads
- * World's `render_height`, `render_min_height`, `hide_3d`, `building_tone` and `night_use`. Vertex layout:
+ * World's `render_height`, `render_min_height`, `hide_3d`, `building_tone`, `class` and `night_use`.
+ * Vertex layout:
  * 0 position in the tile, 0 to 8192 (uint16 ×2); 4 base and top in decimetres (uint16 ×2); 8 the
  * wall's outward normal (int8 ×2, normalised); 10 raised to the top, part of a wall (uint8 ×2);
  * 12 decimetres along the wall (uint16); 14 a per-building jitter and seed (uint8 ×2, normalised);
- * 16 the building's centre in the tile (uint16 ×2); 20 tone and night use (uint8 ×2: none, dining,
- * entertainment, nightlife); 22 the wall's
+ * 16 the building's centre in the tile (uint16 ×2); 20 tone plus four times its class group, and
+ * night use (uint8 ×2: none, dining, entertainment, nightlife); 22 the wall's
  * tight corners, bit 0 at its start and bit 1 at its end, and bit 2 when it faces a courtyard, and
  * its length in metres up to 255
  * (uint8 ×2); 24 the building's feature index (uint16); 26 on a roof, the vertex's corner of its
@@ -141,6 +160,7 @@ export function meshTileflowBuildings(
     const height = Math.min(6000, positive(properties.render_height) ?? fallback);
     const base = Math.min(height, positive(properties.render_min_height) ?? 0);
     const tone = tones[String(properties.building_tone ?? '')] ?? 0;
+    const group = classGroups[String(properties.class ?? '')] ?? 0;
     const use = uses.get(featureIndex) ?? 0;
     const index = features.length;
     let used = false;
@@ -164,7 +184,7 @@ export function meshTileflowBuildings(
       const jitter = rings[0]!.some((value) => value <= 0 || value >= tileflowBuildingExtent)
         ? hash(height * 7.31 + base * 3.17 + tone)
         : seed;
-      const building: Building = {base, top: height, jitter, seed, tone, use, cx, cy, index};
+      const building: Building = {base, top: height, jitter, seed, tone, group, use, cx, cy, index};
 
       // The roof: three corners of its own for each triangle, which knows its sides on the outline.
       const flat: number[] = [];
@@ -285,6 +305,7 @@ type Building = {
   jitter: number;
   seed: number;
   tone: number;
+  group: number;
   use: number;
   cx: number;
   cy: number;
@@ -332,7 +353,7 @@ class VertexWriter {
     view.setUint8(at + 15, Math.round(building.seed * 255));
     view.setUint16(at + 16, clampUnit(building.cx), true);
     view.setUint16(at + 18, clampUnit(building.cy), true);
-    view.setUint8(at + 20, building.tone);
+    view.setUint8(at + 20, building.tone + 4 * building.group);
     view.setUint8(at + 21, building.use);
     view.setUint8(at + 22, corners);
     view.setUint8(at + 23, Math.min(255, Math.round(length)));

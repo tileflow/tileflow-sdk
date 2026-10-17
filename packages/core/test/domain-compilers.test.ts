@@ -349,7 +349,7 @@ test('compiles buildings, boundaries, aeroways, and transit without shared layer
   assert.equal(new Set(ids).size, ids.length);
 });
 
-test('colors building tones without making geometry visibility semantic', () => {
+test('colors building tones and use classes without making geometry visibility semantic', () => {
   const contributions = compileBuildings(undefined, context);
   const corridor = contributions.find((entry) => entry.layer.id === 'tileflow-business-corridor')!;
   const buildings = contributions.find((entry) => entry.layer.id === 'tileflow-buildings-fill')!;
@@ -365,7 +365,19 @@ test('colors building tones without making geometry visibility semantic', () => 
     context.colors.buildings.destination,
     ['==', ['coalesce', ['get', 'building_tone'], ''], 'commercial'],
     context.colors.buildings.commercial,
-    context.colors.buildings.generic,
+    [
+      'match',
+      ['coalesce', ['get', 'class'], ''],
+      'residential',
+      context.colors.buildings.residential,
+      'commercial',
+      context.colors.buildings.commercial,
+      ['civic', 'education', 'entertainment', 'medical', 'military', 'religious', 'transportation'],
+      context.colors.buildings.civic,
+      ['agricultural', 'industrial', 'service'],
+      context.colors.buildings.industrial,
+      context.colors.buildings.generic,
+    ],
   ]);
 });
 

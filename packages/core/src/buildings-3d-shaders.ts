@@ -25,7 +25,7 @@ in vec2 a_flags; // raised to the top; part of a wall
 in float a_along; // decimetres along the wall
 in vec2 a_wave; // the building's jitter; seed
 in vec2 a_centre; // the building's centre in the tile
-in vec2 a_paint; // tone; night use (none, dining, entertainment, nightlife)
+in vec2 a_paint; // tone plus four times the class group (none, housing, work, no windows); night use (none, dining, entertainment, nightlife)
 in vec2 a_corners; // the wall's tight corners (bit 0 at its start, bit 1 at its end) and courtyard (bit 2); its length in metres
 in float a_feature; // the building's feature in the tile
 in vec2 a_edge; // a roof triangle's corner and its sides on the outline; a wall's end and its ends on the tile's edge
@@ -59,8 +59,17 @@ vec3 localOf(vec2 position, float elevation) {
 const nightLight = `
 uniform vec3 u_flood_colour;
 
-vec3 floodOf(float tone, float top, float seed) {
-  return u_flood_colour * step(0.5, seed) * max(step(2.5, tone), step(40.0, top));
+// The tone packed with the class group four values apart; the group alone.
+float toneOf(float paint) {
+  return mod(paint + 0.5, 4.0) - 0.5;
+}
+
+float groupOf(float paint) {
+  return floor((paint + 0.5) / 4.0);
+}
+
+vec3 floodOf(float paint, float top, float seed) {
+  return u_flood_colour * step(0.5, seed) * max(step(2.5, toneOf(paint)), step(40.0, top));
 }
 
 vec3 shopOf(float use, float seed) {
@@ -135,7 +144,7 @@ uniform float u_style_gradient;
 out vec3 v_style_colour;
 out vec3 v_colour;
 out vec3 v_facade; // metres along the wall, metres up as built, the building's top
-out vec4 v_building; // seed, tone, wall, night use
+out vec4 v_building; // seed, tone and class group, wall, night use
 out vec3 v_normal;
 out vec3 v_shadow;
 flat out vec3 v_wall; // where the wall starts along its ring, its tight corners, its length
@@ -279,7 +288,10 @@ void main() {
     if (mod(floor(v_wall.y / 2.0), 2.0) >= 1.0)
       corner = max(corner, 1.0 - smoothstep(0.0, u_corner, v_wall.z - along));
     colour *= foot * (1.0 - u_occlusion * 0.7 * corner * mix(1.0, 0.5, clamp(up / 30.0, 0.0, 1.0)));
-    if (u_windows > 0.5 && top > 5.5 && up > 3.2 && up < top - 1.0) {
+    // Sheds, barns, factories and churches have no rows of windows; homes light more of theirs at
+    // night than offices, in a warm light, and offices more of theirs in a cool one.
+    float group = groupOf(v_building.y);
+    if (u_windows > 0.5 && group < 2.5 && top > 5.5 && up > 3.2 && up < top - 1.0) {
       float tower = step(40.0, top);
       float column = mix(mix(4.6, 3.8, step(12.0, top)), 3.0, tower) + (seed - 0.5) * 0.8;
       vec2 grid = vec2(v_facade.x / column, up / 3.2);
@@ -294,7 +306,8 @@ void main() {
       float run = 2.0 + floor(seed * 2.99);
       vec2 room = vec2(floor(cell.x / run), cell.y);
       float h = hash(room + seed * 61.7);
-      float share = u_night * mix(0.42, 0.5, tower) * clamp(seed * 1.7 - 0.25, 0.0, 1.0);
+      float share = u_night * mix(0.42, 0.5, tower) * clamp(seed * 1.7 - 0.25, 0.0, 1.0) *
+        (group > 1.5 ? 0.55 : group > 0.5 ? 1.3 : 1.0);
       float floorShare = clamp(share * (0.15 + 1.7 * hash(vec2(cell.y, seed * 13.1))), 0.0, 1.0);
       // A room flares as it comes on, then settles.
       float since = floorShare - (1.0 - h);
@@ -302,7 +315,8 @@ void main() {
       float flare = 1.0 + 1.4 * (1.0 - smoothstep(0.0, 0.07, since));
       vec3 warm = mix(vec3(1.0, 0.72, 0.38), vec3(1.0, 0.87, 0.6), hash(room.yx + seed));
       float kind = hash(room + seed * 3.7);
-      vec3 glow = (kind > 0.9 ? vec3(0.8, 0.9, 1.0) : warm) * mix(0.72, 1.0, hash(room.yx + seed * 7.3));
+      float cool = group > 1.5 ? 0.45 : group > 0.5 ? 1.0 : 0.9;
+      vec3 glow = (kind > cool ? vec3(0.8, 0.9, 1.0) : warm) * mix(0.72, 1.0, hash(room.yx + seed * 7.3));
       // Unlit panes stay close to the wall at night; by day the glass catches the sky.
       vec3 unlit = mix(colour * 0.84, vec3(0.6, 0.72, 0.84), (1.0 - u_night) * 0.45);
       float area = size.x * size.y;

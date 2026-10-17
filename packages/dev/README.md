@@ -140,13 +140,15 @@ The package has no root entry point. `/server` also exposes the reusable Map Dev
 connects appearance controls and shared browser context through its optional local
 workflow adapter; see the [Map DevTools guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md).
 The navigation contains **Map**, **Layers**, **Tiles**, **Assets**, **Debug** and **Beacon**.
-Zoom, Bearing and Pitch occupy a separate row directly below it, with a live zoom slider,
-**Reset** to restore all three initial camera values, and **Copy context for agent**.
+Zoom, Bearing and Pitch appear as **Z**, **B** and **P** directly below it, with a live zoom slider,
+a **Reset view** icon to restore all three initial camera values, and **Copy for AI**.
 The active tab and selected layer remain in the URL across reloads. The menu provides left,
 right and bottom docking, System/Light/Dark appearance, and **Reset all changes**.
+Side docking has a minimum width of 640 CSS pixels, including restored layouts.
 
 **Map** exposes time-of-day segments, palette cards with actual style swatches, 3D view,
 Off/Grow/Fade building animation, and the map's module settings. The command selects the map.
+Toggling 3D view preserves the current camera, including pitch.
 Changes update the existing map after a 300 ms pause while the form remains editable. Superseded
 compilations are discarded. Runtime controls do not recompile the style. Scene and layer edits
 share the header Undo/Redo controls; source files stay unchanged.
@@ -175,7 +177,11 @@ Accessibility, Cartography and Integrity. Choose Desktop/Mobile and Active tour 
 navigation and settled frames across the current view and five world cities within an approximately
 one-minute budget, reports partial coverage explicitly and restores the original camera. Findings
 link to Layers, Tiles and Debug and can be copied with evidence for an agent. Unknown or
-informational measurements do not contribute passing scores. See
+informational measurements do not contribute passing scores. Structural and cartographic heuristics
+are labelled as unscored diagnostics. Legibility scores sampled labels against a 10 CSS px text-size
+budget; Cartography scores size-rule continuity at declared zoom stops. Both show their score basis
+and sample counts, and exclude views that did not finish loading. Reports version the scoring policy separately from the tour
+protocol, and runtime/resource error scores cover only the current audit. See
 [Beacon map audits](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/beacon-map-audits.md)
 for sampling, scoring and measurement limits.
 

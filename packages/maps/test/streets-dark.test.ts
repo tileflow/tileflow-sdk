@@ -68,7 +68,7 @@ const preparedAssets = {
 // Symmetric physical-output review for the complete Standard-day calibration.
 const approvedLightStyleColors = new Set([
   '#000000',
-  '#1891AA',
+  '#158096',
   '#3359CC',
   '#F2F2F2',
   '#A6AB91',
@@ -80,9 +80,9 @@ const approvedLightStyleColors = new Set([
   '#2682D9',
   '#479CEB',
   '#404040',
-  '#2D87E1',
+  '#2877C6',
   '#5A88A9',
-  '#5C74D6',
+  '#5267BE',
   '#626361',
   '#586E84',
   '#67AD73',
@@ -111,7 +111,7 @@ const approvedLightStyleColors = new Set([
   '#AFD4A7',
   '#A7DFA0',
   '#B3EAAD',
-  '#F042B6',
+  '#CA3799',
   '#BDB7B1',
   '#BEC5D8',
   '#BFE6AE',
@@ -119,7 +119,7 @@ const approvedLightStyleColors = new Set([
   '#C2E7B5',
   '#C6C8D4',
   '#C8C8CF',
-  '#F53D3D',
+  '#DA3636',
   '#CCE5C6',
   '#CE9298',
   '#CE9698',
@@ -131,7 +131,7 @@ const approvedLightStyleColors = new Set([
   '#BEC8D6',
   '#D5E8D0',
   '#E2F3D1',
-  '#F57A00',
+  '#B55A00',
   '#D7E9DE',
   '#C2EEBE',
   '#E0CDA5',
@@ -438,7 +438,7 @@ test('Streets exposes complete palette variants on one map identity', () => {
     assert.deepEqual(shield.layout?.['text-field'], ['to-string', ['get', 'shield_text']]);
     assert.equal(shield.layout?.['icon-optional'], false);
     assert.equal(shield.layout?.['text-optional'], false);
-    assert.equal(shield.layout?.['text-size'], 9);
+    assert.equal(shield.layout?.['text-size'], 10);
     assert.equal(shield.layout?.['text-letter-spacing'], 0.05);
     assert.deepEqual(shield.paint?.['text-color'], [
       'match',
@@ -1302,8 +1302,13 @@ test('Streets keeps ferries subordinate and limits attributed hillshade to regio
     const source = style.sources['tileflow-terrain'] as Record<string, unknown>;
     assert.equal(source.type, 'raster-dem');
     assert.equal(source.encoding, 'terrarium');
-    assert.equal(source.url, 'https://tiles.mapterhorn.com/tilejson.json');
-    assert.match(String(source.attribution), /mapterhorn.com\/attribution/u);
+    assert.equal(source.url, undefined);
+    assert.deepEqual(source.tiles, [
+      'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
+    ]);
+    assert.equal(source.maxzoom, 12);
+    assert.equal(source.tileSize, 256);
+    assert.match(String(source.attribution), /tilezen\/joerd/u);
     assert.equal(style.terrain, undefined);
     const ferry = style.layers.find(({id}) => id.includes('ferry') && !id.includes('label'));
     assert.ok(ferry);
@@ -1566,5 +1571,36 @@ test('Streets time presets reuse the exact existing palette, lighting and geomet
         createStyle(streets, {...preparedAssets, theme: moments[timeOfDay]}),
       );
     }
+  }
+});
+
+test('every Streets palette keeps category text readable against its own opaque halo', () => {
+  const categories = [
+    'arts-entertainment',
+    'education',
+    'food-drink',
+    'landmark',
+    'lodging',
+    'medical',
+    'park-nature',
+    'public-services',
+    'religion',
+    'retail',
+    'sport-leisure',
+    'transport',
+    'visitor-amenity',
+  ];
+  for (const [name, theme] of Object.entries(streetsThemes)) {
+    const resolved = resolveTileflowTheme(theme);
+    const colors = resolved.tokens.color;
+    assert.ok(
+      contrastRatio(String(colors['labels.aerodrome']), String(colors['labels.halo'])) >= 4.5,
+      `${name}: aerodrome`,
+    );
+    for (const category of categories)
+      assert.ok(
+        contrastRatio(String(colors[`poi.${category}`]), String(colors['poi.halo'])) >= 4.5,
+        `${name}: ${category}`,
+      );
   }
 });

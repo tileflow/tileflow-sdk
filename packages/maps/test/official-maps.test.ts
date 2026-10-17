@@ -1066,17 +1066,17 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
   assert.equal(byId.has('tileflow-parking-symbol-label'), false);
 
   const expectedPoiTextColors = {
-    'arts-entertainment': '#F042B6',
+    'arts-entertainment': '#CA3799',
     education: '#916130',
-    'food-drink': '#F57A00',
-    landmark: '#F042B6',
+    'food-drink': '#B55A00',
+    landmark: '#CA3799',
     lodging: '#664CE6',
-    medical: '#F53D3D',
+    medical: '#DA3636',
     'park-nature': '#267915',
     'public-services': '#586E84',
     religion: '#586E84',
-    retail: '#2D87E1',
-    'sport-leisure': '#1891AA',
+    retail: '#2877C6',
+    'sport-leisure': '#158096',
     transport: '#3359CC',
     'visitor-amenity': '#586E84',
   } as const;

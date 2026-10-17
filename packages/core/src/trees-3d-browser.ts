@@ -173,6 +173,8 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   let gl: WebGL2RenderingContext | undefined;
   let programs: Partial<Record<'trees' | 'depth' | 'ground' | 'edges', Program>> = {};
   let variant: string | undefined;
+  const programVariants = new Map<string, typeof programs>();
+  let fallbackMetadata: {metadata?: Record<string, unknown>} | undefined;
   let meshes: Record<TileflowTreeForm, Record<TileflowTreeLevel, Mesh>> | undefined;
   // The map's own models, uploaded once each, by level and prepared text, with their proportion.
   const modelMeshes = new Map<string, (Mesh & {proportion: number}) | undefined>();
@@ -196,9 +198,8 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   } {
     const read = options.controller?.getThemeMetadata?.(tileflowVegetationMetadataKey) ?? {
       values: [
-        (map.getStyle() as {metadata?: Record<string, unknown>} | undefined)?.metadata?.[
-          tileflowVegetationMetadataKey
-        ],
+        (fallbackMetadata ??= map.getStyle() as {metadata?: Record<string, unknown>} | undefined)
+          ?.metadata?.[tileflowVegetationMetadataKey],
       ],
       position: 0,
     };
@@ -830,40 +831,52 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
 
   function link(context: WebGL2RenderingContext, shaderData: ProjectionArgs['shaderData']): void {
     const projected = `${shaderData.vertexShaderPrelude}\n${shaderData.define}`;
-    const next: typeof programs = {
-      trees: compile(
+    const cached = programVariants.get(projected);
+    if (cached) {
+      programVariants.delete(projected);
+      programVariants.set(projected, cached);
+      programs = cached;
+      variant = projected;
+      return;
+    }
+    const next: typeof programs = {};
+    try {
+      next.trees = compile(
         context,
         tileflowTreeVertex(projected),
         tileflowTreeFragment,
         tileflowTreeAttributes,
-      ),
-      ground: compile(
+      );
+      next.ground = compile(
         context,
         tileflowBuildingGroundVertex(projected),
         tileflowBuildingGroundFragment,
         ['a_pos'],
-      ),
-      edges: compile(
-        context,
-        tileflowTreeEdgeVertex(projected),
-        tileflowTreeEdgeFragment,
-        tileflowTreeAttributes,
-      ),
-      depth:
+      );
+      next.depth =
         programs.depth ??
         compile(
           context,
           tileflowTreeDepthVertex,
           tileflowTreeDepthFragment,
           tileflowTreeAttributes,
-        ),
-    };
-    for (const name of ['trees', 'ground', 'edges'] as const) {
-      const previous = programs[name];
-      if (previous) context.deleteProgram(previous.program);
+        );
+    } catch (error) {
+      for (const name of ['trees', 'ground'] as const)
+        if (next[name]) context.deleteProgram(next[name]!.program);
+      throw error;
+    }
+    programVariants.set(projected, next);
+    // Projection variants are reused across zoom transitions, with a bounded GPU footprint.
+    if (programVariants.size > 4) {
+      const oldest = programVariants.keys().next().value!;
+      const expired = programVariants.get(oldest)!;
+      for (const name of ['trees', 'ground', 'edges'] as const)
+        if (expired[name]) context.deleteProgram(expired[name]!.program);
+      programVariants.delete(oldest);
     }
     programs = next;
-    variant = shaderData.variantName;
+    variant = projected;
   }
 
   function createMeshes(context: WebGL2RenderingContext): void {
@@ -916,14 +929,14 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     onAdd(_: unknown, context: WebGLRenderingContext | WebGL2RenderingContext) {
       if (!isWebGL2(context)) return;
       gl = context;
-      createMeshes(context);
     },
     onRemove(_: unknown, context: WebGLRenderingContext | WebGL2RenderingContext) {
       if (!isWebGL2(context)) return;
       for (const set of tiles)
         for (const entry of set.all()) if (entry.value) release(context, entry.value);
-      for (const program of Object.values(programs))
-        if (program) context.deleteProgram(program.program);
+      const owned = new Set([...programVariants.values()].flatMap((value) => Object.values(value)));
+      for (const program of owned) if (program) context.deleteProgram(program.program);
+      programVariants.clear();
       if (meshes)
         for (const levels of Object.values(meshes))
           for (const mesh of Object.values(levels)) context.deleteBuffer(mesh.buffer);
@@ -953,13 +966,22 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     },
     render(context: WebGLRenderingContext | WebGL2RenderingContext, args: ProjectionArgs) {
       if (!isWebGL2(context)) return;
-      try {
-        if (variant !== args.shaderData.variantName) link(context, args.shaderData);
-      } catch {
-        return;
-      }
       if (visibleScale() <= 0 || map.getZoom() < minzoom) {
         drawnLast = 0;
+        return;
+      }
+      try {
+        const projected = `${args.shaderData.vertexShaderPrelude}\n${args.shaderData.define}`;
+        if (variant !== projected) link(context, args.shaderData);
+        if (colours().edges > 0.01 && !programs.edges)
+          programs.edges = compile(
+            context,
+            tileflowTreeEdgeVertex(projected),
+            tileflowTreeEdgeFragment,
+            tileflowTreeAttributes,
+          );
+        if (!meshes) createMeshes(context);
+      } catch {
         return;
       }
       ensureTiles();
@@ -1020,6 +1042,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   }
 
   const onStyle = () => {
+    fallbackMetadata = undefined;
     attach();
     if (target > 0) {
       standIn(true);

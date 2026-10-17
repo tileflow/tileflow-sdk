@@ -130,11 +130,15 @@ alone do not provide the boundary needed to fill the surface.
 Ferry routes fade in from z8, use fine blue dashes from z13, and show uppercase route names
 along the line from z15 when the data includes them. Their labels use a water-colored halo.
 
-Regional hillshade uses [Mapterhorn's public Terrarium DEM](https://mapterhorn.com/data-access/)
-from z5 through z13, with source attribution. This is an additional remote data request. To omit
+Regional hillshade uses [Mapzen Terrain Tiles on AWS](https://registry.opendata.aws/terrain-tiles/)
+from z5 through z13, with source attribution. The 256-pixel Terrarium source is capped at native z12;
+closer views reuse that resolution, avoiding requests for coverage-dependent high-resolution DEM tiles. This is an additional remote data request. To omit
 it, set `terrain: 'none'` in a map extending `streets`. Hillshade does not change road geometry or
 raise the terrain. Street views retain the flat footprints and optional building extrusion group;
 the preview's **3D** control enables those buildings, and its **Trees** control enables vegetation.
+Road shields and exit references use 10 px text. POI category and aerodrome lettering keep at least 4.5:1
+contrast against their opaque halos across all palettes and times of day; marker discs retain their
+independent colors. This does not certify every map label or background for accessibility.
 Daytime 3D buildings use warm cream roofs and a soft, map-anchored light. Two blurred contact
 bands darken the ground at their base, fading in from z15.5; elevated parts and zero-height
 footprints do not cast these bands. The `buildings.contactShadow` token styles them independently

@@ -7,7 +7,7 @@ export const auditCategories = [
     checks: [
       {
         id: 'render-0',
-        title: 'Frame time p95',
+        title: 'Worst frame time p95',
         target: '≤ 16.7 ms',
         what: 'The 95th percentile of intervals between continuously requested frames. A 60 fps budget is about 16.7 ms; scheduling and other browser work contribute.',
       },
@@ -26,7 +26,7 @@ export const auditCategories = [
       },
       {
         id: 'render-3',
-        title: 'Layers drawn at this zoom',
+        title: 'Eligible layers',
         target: '≤ 150',
         what: 'Enabled layers whose zoom range includes this view. Eligibility does not guarantee a draw call: data, filters and placement also matter.',
       },
@@ -45,8 +45,8 @@ export const auditCategories = [
       {
         id: 'render-6',
         title: 'Data-driven paint',
-        target: '≤ 10',
-        what: 'Paint properties evaluated per feature (like ["get","height"]). Cheap in small numbers, slow when every layer does it.',
+        target: 'Profile before simplifying',
+        what: 'Paint declarations depending on feature data. This count does not measure expression execution time or establish a performance defect.',
       },
       {
         id: 'render-7',
@@ -76,7 +76,7 @@ export const auditCategories = [
       },
       {
         id: 'loading-1',
-        title: 'Time to first render',
+        title: 'Initial map readiness',
         target: '≤ 1 s',
         what: 'Original preview navigation to the map load event. This readiness proxy is not a first-pixel or cold-start measurement.',
       },
@@ -88,9 +88,9 @@ export const auditCategories = [
       },
       {
         id: 'loading-3',
-        title: 'Time until idle',
+        title: 'Tile wait after navigation',
         target: '≤ 2 s',
-        what: 'Elapsed time after a camera change until the style and visible tiles report readiness. Symbol fades and custom animation may continue.',
+        what: 'Remaining wait for style and visible tiles after the scripted camera movement. Animation duration is excluded. Symbol fades and custom animation may continue.',
       },
       {
         id: 'loading-4',
@@ -121,18 +121,18 @@ export const auditCategories = [
   {
     id: 'legibility',
     title: 'Legibility',
-    description: 'Labels that are readable, not dropped or cut',
+    description: 'Sampled text-size budget and label placement diagnostics',
     checks: [
       {
         id: 'legibility-0',
-        title: 'Labels dropped by collisions',
+        title: 'Rejected label candidates',
         target: '≤ 20%',
         what: 'Rejected text placement candidates. Collision, offscreen and line-fit causes are not separately exposed; inspect collision boxes to investigate.',
         overlay: 'collision',
       },
       {
         id: 'legibility-1',
-        title: 'Line labels that don’t fit',
+        title: 'Rejected line-label candidates',
         target: '0',
         what: 'Rejected line-label candidates. The renderer does not expose whether a rejection specifically came from insufficient line length.',
       },
@@ -144,20 +144,20 @@ export const auditCategories = [
       },
       {
         id: 'legibility-3',
-        title: 'Smallest text size',
+        title: 'Label text-size budget',
         target: '≥ 10 px',
-        what: 'The smallest label on screen. Below 10 px most people can’t read it without zooming.',
+        what: 'Percentage of sampled labels meeting a 10 CSS pixel text-size budget in ready views. This is a design benchmark; font, script and perspective affect readability.',
       },
       {
         id: 'legibility-4',
         title: 'Label density',
         target: '≤ 60',
-        what: 'Labels per tile on average. Too many and the eye can’t find anything.',
+        what: 'Queried symbols per resident tile, including possible tile-boundary duplicates. This is not a visual clutter measurement.',
       },
       {
         id: 'legibility-5',
         title: 'Halos',
-        target: 'every label',
+        target: 'Review actual background contrast',
         what: 'A halo separates text from what is underneath, so labels stay readable over roads and buildings.',
       },
       {
@@ -168,9 +168,9 @@ export const auditCategories = [
       },
       {
         id: 'legibility-7',
-        title: 'Language coverage',
+        title: 'Localized name fields',
         target: '≥ 90%',
-        what: 'Labels that have a name in the chosen language rather than falling back to the local name.',
+        what: 'Presence of localized name fields referenced anywhere in the text expression. Missing fields may have valid local-name fallbacks.',
       },
     ],
   },
@@ -205,7 +205,7 @@ export const auditCategories = [
       },
       {
         id: 'a11y-4',
-        title: 'Non-text contrast',
+        title: 'Non-text contrast estimate',
         target: '≥ 3:1',
         what: 'Roads, boundaries and icons against the land colour, so shapes stay visible.',
       },
@@ -223,16 +223,16 @@ export const auditCategories = [
       },
       {
         id: 'a11y-7',
-        title: 'Scales with pixel ratio',
-        target: 'no clipping',
-        what: 'Labels and icons keep their layout when the scale factor changes.',
+        title: 'Placement at 3× pixel ratio',
+        target: 'Review placement differences',
+        what: 'Compares sampled label identities after changing canvas pixel ratio. Differences can reflect placement or sampling; this does not detect clipped glyphs.',
       },
     ],
   },
   {
     id: 'carto',
     title: 'Cartography',
-    description: 'Hierarchy and how the map changes across zooms',
+    description: 'Size-rule continuity and cartographic hierarchy diagnostics',
     checks: [
       {
         id: 'carto-0',
@@ -244,7 +244,7 @@ export const auditCategories = [
         id: 'carto-1',
         title: 'Pop-in',
         target: 'fade in',
-        what: 'Layers that appear at full opacity in a single step when you cross their minzoom.',
+        what: 'Layers without a declared zoom opacity ramp. This does not observe a visual jump or account for renderer transitions.',
       },
       {
         id: 'carto-2',
@@ -260,21 +260,21 @@ export const auditCategories = [
       },
       {
         id: 'carto-4',
-        title: 'Smooth size changes',
-        target: '≤ 1.5× per zoom',
-        what: 'Line widths and text sizes don’t jump more than 1.5× between neighbouring zooms.',
+        title: 'Size-rule continuity',
+        target: 'No jumps exceeding both 1 px and 25%',
+        what: 'Evaluates size rules immediately around their declared zoom stops using sampled features. Continuous physical scaling passes. Intentional steps can exceed this design budget; final GPU pixels are not measured.',
       },
       {
         id: 'carto-5',
         title: 'Detail grows with zoom',
         target: 'no dead zooms',
-        what: 'Zooming in should always reveal more. Zooms where nothing changes feel broken.',
+        what: 'Changes in eligible-layer count. Data and expressions can add detail without adding layers.',
       },
       {
         id: 'carto-6',
-        title: 'Visual weight',
+        title: 'Fill coverage',
         target: '≤ 75%',
-        what: 'How much of the screen is solid fill. Too much and labels and roads lose contrast.',
+        what: 'Sample grid points intersecting a fill. A full-screen land surface is normal; this does not measure perceived visual weight.',
       },
     ],
   },
@@ -297,7 +297,7 @@ export const auditCategories = [
       },
       {
         id: 'integrity-2',
-        title: 'Hidden layers still loading',
+        title: 'Hidden layers sharing resident sources',
         target: '0',
         what: 'Hidden layers referencing resident sources. Shared source residency does not prove that the hidden layer caused a request or parsing work.',
       },
@@ -315,9 +315,9 @@ export const auditCategories = [
       },
       {
         id: 'integrity-5',
-        title: 'Filters that never match',
+        title: 'Filters without sampled matches',
         target: '0',
-        what: 'Layers whose filter matched no features in any sampled tile.',
+        what: 'Filters with no matches in a bounded source-feature sample. This cannot establish that the filter never matches globally.',
       },
       {
         id: 'integrity-6',
@@ -329,7 +329,7 @@ export const auditCategories = [
         id: 'integrity-7',
         title: 'Failed tiles and console errors',
         target: '0',
-        what: 'Failed observed map resources and errors retained by the preview bridge. Unbridged browser console messages are outside this check.',
+        what: 'Failed map resources and bridged runtime errors observed during this audit. Earlier session errors remain in Debug and do not affect this score.',
       },
     ],
   },

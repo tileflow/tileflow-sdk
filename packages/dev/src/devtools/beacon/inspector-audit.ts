@@ -18,11 +18,19 @@ import {
   residentGpuBytes,
   sampleOverdraw,
 } from './probes';
+import {
+  combineQualitySamples,
+  labelSizeSample,
+  type QualitySample,
+  scaleContinuitySample,
+} from './quality';
 import {moveCamera, readCamera, sampleLabels} from './runner';
+import {inspectionSample, inspectorAssessment, inspectorScoringPolicy} from './scoring';
 import {activeTour, activeTourProtocol, frameSample, type FrameSample, type TourStop} from './tour';
 import {previewViewport} from './viewport';
 
 export type InspectorCheck = {
+  assessment: 'diagnostic' | 'measured';
   id: string;
   title: string;
   target: string;
@@ -34,6 +42,7 @@ export type InspectorCheck = {
   findings: Finding[];
   overlay?: string;
   score?: number;
+  sample?: Omit<QualitySample, 'findings'>;
 };
 export type InspectorCategory = {
   id: string;
@@ -41,9 +50,11 @@ export type InspectorCategory = {
   description: string;
   score: number | null;
   checks: InspectorCheck[];
+  scoreBasis?: string;
 };
 export type InspectorReport = {
-  version: 3;
+  version: 4;
+  scoring: typeof inspectorScoringPolicy;
   date: string;
   map: string;
   theme: string;
@@ -65,7 +76,10 @@ export type InspectorReport = {
     zoom: number;
     motion?: FrameSample;
     settled: FrameSample;
+    /** End-to-end view readiness, including the scripted camera movement. */
     readyMs: number;
+    /** Remaining readiness wait after scripted navigation; used for loading scores. */
+    tileWaitMs: number;
     loaded: boolean;
     labels: number;
     requests: number;
@@ -83,6 +97,8 @@ type Options = {
   progress: (fraction: number, message: string) => void;
 };
 type Observation = {
+  ready: boolean;
+  scaleContinuity: QualitySample;
   theme: string;
   time?: string;
   palette: string;
@@ -126,6 +142,7 @@ function observe(
   theme: string,
   time: string | undefined,
   palette: string,
+  ready: boolean,
 ): Observation {
   const style = map.getStyle(),
     camera = readCamera(map),
@@ -183,7 +200,8 @@ function observe(
         ? featureFilter(layer.filter, layer.id + '.filter', map.getGlobalState?.())
         : undefined;
     let matches = 0;
-    for (const f of candidates.slice(0, 24)) {
+    const sampled = inspectionSample(candidates);
+    for (const f of sampled) {
       const type = f.geometry.type.replace('Multi', '');
       if (
         filter &&
@@ -219,7 +237,7 @@ function observe(
         }
       }
     }
-    if (filter) filters.set(layer.id, {samples: candidates.length, matches});
+    if (filter) filters.set(layer.id, {samples: sampled.length, matches});
     if (layer.type === 'symbol') {
       const image = layer.layout?.['icon-image'];
       if (typeof image === 'string' && image && !image.includes('{') && !map.hasImage(image))
@@ -248,6 +266,10 @@ function observe(
         fills++;
     }
   return {
+    ready,
+    scaleContinuity: ready
+      ? scaleContinuitySample(map, style, features, camera)
+      : combineQualitySamples([]),
     theme,
     time,
     palette,
@@ -339,7 +361,13 @@ export async function runInspectorAudit({
   const observations: Observation[] = [],
     scenarios: InspectorReport['scenarios'] = [],
     missing = new Set<string>();
-  let resourceCursor = resources?.records.at(-1)?.id ?? 0;
+  const auditResourceCursor = resources?.records.at(-1)?.id ?? 0;
+  const priorRuntimeErrors = new Set(side.runtimeErrors);
+  const auditErrors = new Set<string>();
+  const recordError = (event: {error?: {message?: string}}) => {
+    if (event.error?.message) auditErrors.add(event.error.message);
+  };
+  let resourceCursor = auditResourceCursor;
   let interrupted = false,
     probe: ReturnType<typeof rendererProbe> | undefined,
     overdraw: Awaited<ReturnType<typeof sampleOverdraw>>,
@@ -351,6 +379,7 @@ export async function runInspectorAudit({
   const imageMissing = (event: {id: string}) => missing.add(event.id);
   map.on('movestart', userMove);
   map.on('styleimagemissing', imageMissing);
+  map.on('error', recordError);
   const assert = () => {
     if (signal.aborted) throw new Error('Audit cancelled.');
     if (interrupted) throw new Error('Audit stopped because you moved the map.');
@@ -418,12 +447,14 @@ export async function runInspectorAudit({
           await wait(64);
         }
         update('Waiting for tiles');
+        const tilesBegan = performance.now();
         const loaded = await wait(
           scope === 'tour'
             ? Math.min(activeTourProtocol.readinessMs, Math.max(0, budgetRemaining() - 800))
             : 5000,
           () => Boolean(map.isStyleLoaded() && map.areTilesLoaded() && !map.isMoving()),
         );
+        const tileWaitMs = performance.now() - tilesBegan;
         const readyMs = performance.now() - began;
         map.stop();
         update('Measuring settled frames');
@@ -438,7 +469,7 @@ export async function runInspectorAudit({
         );
         probe.stop();
         const settled = frameSample(probe.frames.slice(from));
-        const observation = observe(map, theme.theme, theme.timeOfDay, theme.palette);
+        const observation = observe(map, theme.theme, theme.timeOfDay, theme.palette, loaded);
         // One immutable style per concrete theme; do not retain geometry across a sweep.
         observation.style =
           observations.find((v) => v.theme === theme.theme)?.style ?? observation.style;
@@ -459,6 +490,7 @@ export async function runInspectorAudit({
           theme: theme.theme,
           zoom: observation.camera.zoom,
           readyMs,
+          tileWaitMs,
           loaded,
           labels: observation.labels.length,
           requests: newRequests.length,
@@ -496,8 +528,14 @@ export async function runInspectorAudit({
       gpu,
       scaleDelta,
       resources: resources?.records ?? [],
+      auditResourceCursor,
       mapReady: resources?.mapReadyMs,
-      runtimeErrors: [...side.runtimeErrors],
+      runtimeErrors: [
+        ...new Set([
+          ...auditErrors,
+          ...side.runtimeErrors.filter((error) => !priorRuntimeErrors.has(error)),
+        ]),
+      ],
       missing: [...missing].filter((id) => !map.hasImage(id)),
       initialTheme: currentTheme,
       scope,
@@ -507,7 +545,8 @@ export async function runInspectorAudit({
     progress(1, 'Building report…');
     const scores = report.map((c) => c.score).filter((n): n is number => n !== null);
     return {
-      version: 3,
+      version: 4,
+      scoring: inspectorScoringPolicy,
       protocol: scope === 'tour' ? activeTourProtocol.id : `inspector-${scope}-v2`,
       plannedViews,
       budgetExhausted,
@@ -539,8 +578,11 @@ export async function runInspectorAudit({
             ]
           : []),
         'Mobile uses a 390×844 CSS viewport on this computer; CPU, GPU and network are not throttled.',
-        'Network observations include the existing session cache. No cold-load claim is made.',
-        'Style-based contrast and cartographic heuristics are diagnostic samples, not accessibility certification.',
+        'Network observations include the existing session cache. No cold-load claim is made. Error scoring covers this audit only; earlier session errors remain in Debug.',
+        'Loading scores use tileWaitMs after scripted navigation. readyMs also includes camera motion and remains available as end-to-end readiness.',
+        `Scoring: ${inspectorScoringPolicy}. Structural and cartographic diagnostics are unscored; scores from older policies are not comparable.`,
+        'Legibility scores sampled text-size against a 10 CSS px design budget. Cartography scores size-rule continuity at declared zoom stops (jumps exceeding both 1 px and 25%). These are explicit benchmarks, not a complete visual-quality assessment. Only ready views contribute; missing data never passes.',
+        'Style-based contrast is a bounded estimate, not accessibility certification. Diagnostics never establish a defect by themselves.',
         'Overdraw saturates at 8 passes and excludes unsupported custom renderers. GPU memory is a lower-bound estimate.',
       ],
     };
@@ -548,6 +590,7 @@ export async function runInspectorAudit({
     probe?.dispose();
     map.off('movestart', userMove);
     map.off('styleimagemissing', imageMissing);
+    map.off('error', recordError);
     if (resources) resources.recording = recording!;
     const same = side.map === map && side.loadEpoch === epoch;
     try {
@@ -579,6 +622,7 @@ type Input = {
   scaleDelta?: number;
   resources: NonNullable<PreviewWindow['__tileflowDevtoolsObserver']>['records'];
   mapReady?: number;
+  auditResourceCursor: number;
   runtimeErrors: string[];
   missing: string[];
   initialTheme: string;
@@ -594,6 +638,7 @@ function analyzeInspector(input: Input): InspectorCategory[] {
     for (const check of cat.checks)
       checks.set(check.id, {
         ...check,
+        assessment: inspectorAssessment(check.id),
         status: 'unavailable',
         value: 'Not measurable in this sample',
         evidence: 'No usable observation was returned for this check.',
@@ -608,6 +653,7 @@ function analyzeInspector(input: Input): InspectorCategory[] {
     fix?: string,
   ) => {
     const check = checks.get(id)!;
+    if (check.assessment === 'diagnostic') score = undefined;
     Object.assign(check, {
       value,
       evidence,
@@ -643,6 +689,26 @@ function analyzeInspector(input: Input): InspectorCategory[] {
   };
   const count = (id: string, findings: Finding[], evidence: string, fix: string) =>
     set(id, `${findings.length} to review`, evidence, findings.length ? 60 : 100, findings, fix);
+  const quality = (id: string, sample: QualitySample, evidence: string, fix: string) => {
+    const {findings, ...coverage} = sample;
+    const check = checks.get(id)!;
+    check.sample = coverage;
+    check.evidence = `${evidence} ${sample.skipped} ${sample.unit} excluded because evaluation was incomplete. ${views.filter((v) => v.ready).length}/${views.length} views ready.`;
+    if (!sample.total) {
+      check.value = 'No eligible samples in ready views';
+      return;
+    }
+    set(
+      id,
+      `${sample.passed}/${sample.total} ${sample.unit} within budget`,
+      check.evidence,
+      Math.round((100 * sample.passed) / sample.total),
+      findings,
+      fix,
+    );
+    // Keep sparse outliers actionable even when the percentage rounds to a high score.
+    if (sample.passed < sample.total && check.status === 'pass') check.status = 'warn';
+  };
   const allLabels = views.flatMap((v) => v.labels),
     first = views.find((v) => v.theme === input.initialTheme) ?? views[0],
     style = first.style;
@@ -668,6 +734,29 @@ function analyzeInspector(input: Input): InspectorCategory[] {
     [],
     'Review overdraw and draw-call counts; repeat while the browser is otherwise idle.',
   );
+  if (input.scope === 'tour') {
+    const moving = input.scenarios.flatMap((s) =>
+      s.motion?.p95Ms === undefined ? [] : [s.motion.p95Ms],
+    );
+    const settled = input.scenarios.flatMap((s) =>
+      !s.loaded || s.settled.p95Ms === undefined ? [] : [s.settled.p95Ms],
+    );
+    const display = (values: number[]) =>
+      values.length ? `${round(Math.max(...values), 1)} ms` : 'unavailable';
+    checks.get('render-0')!.value = `${display(moving)} moving · ${display(settled)} settled`;
+    checks.get('render-0')!.findings = input.scenarios.flatMap((s) =>
+      (['motion', 'settled'] as const).flatMap((phase) => {
+        const sample = s[phase];
+        if (!sample?.p95Ms || sample.p95Ms <= 16.7 || (phase === 'settled' && !s.loaded)) return [];
+        return [
+          {
+            camera: s.camera,
+            message: `${s.location} · ${phase === 'motion' ? 'moving' : 'settled'}: ${round(sample.p95Ms, 1)} ms p95 from ${sample.frames} frame intervals.`,
+          },
+        ];
+      }),
+    );
+  }
   metric(
     'render-1',
     overdraw ? overdraw.hot * 100 : undefined,
@@ -740,10 +829,6 @@ function analyzeInspector(input: Input): InspectorCategory[] {
     ' MB observed allocation estimate',
     'Resident renderer buffer sizes plus observable RGBA textures. Driver caches and inaccessible allocations are excluded; a low value does not prove low total GPU memory.',
   );
-  if (checks.get('render-8')!.score === 100) {
-    checks.get('render-8')!.score = undefined;
-    checks.get('render-8')!.status = 'info';
-  }
   const rawTotal = views.reduce((a, v) => a + v.sourceBytes, 0),
     unused = views.reduce((a, v) => a + v.unusedBytes, 0);
   metric(
@@ -783,11 +868,15 @@ function analyzeInspector(input: Input): InspectorCategory[] {
   );
   metric(
     'loading-3',
-    Math.max(...input.scenarios.map((s) => s.readyMs)) / 1000,
+    Math.max(...input.scenarios.map((s) => s.tileWaitMs)) / 1000,
     2,
-    ' s worst view readiness',
-    `${input.scenarios.filter((s) => !s.loaded).length} timed-out views. Readiness starts after a camera change and waits for style and tile loading; cached resources are retained.`,
+    ' s worst wait after navigation',
+    `${input.scenarios.filter((s) => !s.loaded).length} timed-out views. Waits for style, tiles and camera readiness after the scripted movement. Camera animation is excluded from loading cost.`,
   );
+  if (input.scenarios.some((s) => !s.loaded)) {
+    checks.get('loading-3')!.score = 0;
+    checks.get('loading-3')!.status = 'fail';
+  }
   const sized = input.scenarios.filter((s) => s.transferred !== undefined);
   metric(
     'loading-4',
@@ -843,6 +932,8 @@ function analyzeInspector(input: Input): InspectorCategory[] {
       for (let j = i + 1; j < view.labels.length; j++) {
         const a = view.labels[i],
           b = view.labels[j];
+        if (a.layer === b.layer && a.featureId !== undefined && a.featureId === b.featureId)
+          continue;
         if (a.message !== b.message || !a.coordinate || !b.coordinate) continue;
         // Project using the observed zoom without changing the live map; Mercator screen distance is approximate at pitch.
         const lng =
@@ -861,16 +952,11 @@ function analyzeInspector(input: Input): InspectorCategory[] {
     'Pairs of sampled label anchors within approximately 200 px. Repeated names on different features may be intentional.',
     'Increase symbol-spacing or review repetition at these zoom levels.',
   );
-  const sizedLabels = allLabels.filter((l) => l.size !== undefined);
-  metric(
+  quality(
     'legibility-3',
-    sizedLabels.length ? Math.min(...sizedLabels.map((l) => l.size!)) : undefined,
-    10,
-    ' px',
-    'Smallest evaluated text-size among up to 100 rendered label samples per view.',
-    sizedLabels.filter((l) => l.size! < 10),
+    labelSizeSample(views.filter((v) => v.ready).flatMap((v) => v.labels)),
+    'Percentage of sampled labels with an evaluated text-size of at least 10 CSS px. Up to 100 labels per ready view; this design budget does not measure glyph rasterization, perspective, script or font readability.',
     'Increase the smallest text size or hide low-priority labels until a closer zoom.',
-    true,
   );
   metric(
     'legibility-4',
@@ -884,6 +970,10 @@ function analyzeInspector(input: Input): InspectorCategory[] {
       .filter(
         (l) =>
           l.layout?.['text-field'] &&
+          !(
+            l.layout?.['icon-image'] &&
+            ['both', 'width', 'height'].includes(String(l.layout?.['icon-text-fit']))
+          ) &&
           !(Number(evaluatedValue(map, l.id, 'paint', 'text-halo-width')) > 0),
       )
       .map((l) =>
@@ -895,7 +985,7 @@ function analyzeInspector(input: Input): InspectorCategory[] {
   count(
     'legibility-5',
     noHalo,
-    'Checks declared label layers for a positive evaluated halo width. A halo is a readability aid, not a requirement for every design.',
+    'Checks declared text layers without a fitted icon background for a positive evaluated halo width. Halos are optional; review actual contrast before changing them.',
     'Review text contrast against real backgrounds; add a halo where needed.',
   );
   const angles = symbols
@@ -1030,12 +1120,10 @@ function analyzeInspector(input: Input): InspectorCategory[] {
   );
   const gaps: Finding[] = [],
     pop: Finding[] = [],
-    jumps: Finding[] = [],
     inversions: Finding[] = [],
     hierarchy: Finding[] = [];
   let roadComparisons = 0,
-    placeComparisons = 0,
-    sizeComparisons = 0;
+    placeComparisons = 0;
   const groups = new Map<string, typeof layers>();
   for (const layer of layers) {
     const key = 'source-layer' in layer ? `${layer.type}:${layer['source-layer']}` : layer.type;
@@ -1045,22 +1133,6 @@ function analyzeInspector(input: Input): InspectorCategory[] {
       if (opacity === undefined || (typeof opacity === 'number' && opacity > 0))
         pop.push(issue(layer.id, `Starts at z${layer.minzoom} without a zoom opacity ramp.`));
     }
-    for (const property of layer.type === 'line'
-      ? ['line-width']
-      : layer.type === 'symbol'
-        ? ['text-size']
-        : [])
-      for (let z = 0; z < 22; z++) {
-        if (!active(layer, z) || !active(layer, z + 1)) continue;
-        const section = property === 'text-size' ? 'layout' : 'paint',
-          a = evaluatedValue(map, layer.id, section, property, undefined, z),
-          b = evaluatedValue(map, layer.id, section, property, undefined, z + 1);
-        if (typeof a === 'number' && typeof b === 'number') sizeComparisons++;
-        if (typeof a === 'number' && typeof b === 'number' && a > 0 && b / a > 1.5)
-          jumps.push(
-            issue(layer.id, `${property}: ${round(a)} → ${round(b)} from z${z} to z${z + 1}`),
-          );
-      }
   }
   for (const [key, group] of groups) {
     const ranges = group
@@ -1154,11 +1226,11 @@ function analyzeInspector(input: Input): InspectorCategory[] {
     'City/town/village text-size comparisons where layer IDs expose those roles. Data-driven sizes without samples are excluded.',
     'Review place label sizes and priorities across shared zoom ranges.',
   );
-  count(
+  quality(
     'carto-4',
-    jumps,
-    'Evaluated constant/zoom text sizes and line widths at adjacent integer zooms. Data-driven declarations require feature-specific inspection.',
-    'Use interpolation and smoother stops for abrupt size changes.',
+    combineQualitySamples(views.filter((v) => v.ready).map((v) => v.scaleContinuity)),
+    'Percentage of sampled size rules without a jump exceeding both 1 px and 25% across a declared zoom stop (±0.0001 zoom). One rule per visible layer per ready view, with up to four feature contexts. Constant sizes and continuous scaling pass. Layer entry/exit is excluded. This evaluates authored line widths, text sizes and circle radii, not final screen pixels or transitions.',
+    'Review the reported zoom stop. Use interpolation if smooth scaling is intended; deliberate step changes can be valid design choices.',
   );
   const coverage = Array.from({length: 23}, (_, z) => layers.filter((l) => active(l, z)).length),
     dead = coverage.slice(1).flatMap((n, i) => (n === coverage[i] ? [i + 1] : []));
@@ -1250,7 +1322,12 @@ function analyzeInspector(input: Input): InspectorCategory[] {
     }
   const noMatches = [...filters]
     .filter(([, v]) => v.samples > 0 && v.matches === 0)
-    .map(([id, v]) => issue(id, `No matches in ${v.samples} sampled source features.`));
+    .map(([id, v]) =>
+      issue(
+        id,
+        `No matches in ${v.samples} evaluated source-feature samples across visited views.`,
+      ),
+    );
   count(
     'integrity-5',
     noMatches,
@@ -1281,14 +1358,14 @@ function analyzeInspector(input: Input): InspectorCategory[] {
     ...new Set([
       ...input.runtimeErrors,
       ...input.resources
-        .filter((r) => /^([45]\d\d|error)/iu.test(r.status))
+        .filter((r) => r.id > input.auditResourceCursor && /^([45]\d\d|error)/iu.test(r.status))
         .map((r) => `${r.name}: ${r.error ?? r.status}`),
     ]),
   ];
   set(
     'integrity-7',
     `${errors.length} errors`,
-    'Retained MapLibre/runtime errors and failed resource responses. Browser console messages outside this bridge are not captured.',
+    'MapLibre/runtime errors and failed resource responses observed during this audit. Earlier session errors and console messages outside the bridge are excluded.',
     errors.length ? 0 : 100,
     errors.map((message) => ({message})),
     'Inspect the failed resource or runtime error and rerun the audit.',
@@ -1299,7 +1376,6 @@ function analyzeInspector(input: Input): InspectorCategory[] {
     ['a11y-2', colors.length > 1],
     ['carto-2', roadComparisons > 0],
     ['carto-3', placeComparisons > 0],
-    ['carto-4', sizeComparisons > 0],
     ['integrity-5', [...filters.values()].some((v) => v.samples > 0)],
   ] as const) {
     if (!covered) {
@@ -1316,6 +1392,11 @@ function analyzeInspector(input: Input): InspectorCategory[] {
       title: category.title,
       description: category.description,
       score: summarizeChecks(items),
+      ...(category.id === 'legibility'
+        ? {scoreBasis: 'Text-size budget'}
+        : category.id === 'carto'
+          ? {scoreBasis: 'Size-rule continuity'}
+          : {}),
       checks: items,
     };
   });

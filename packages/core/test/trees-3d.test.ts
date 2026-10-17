@@ -543,3 +543,107 @@ test('the description reads the models a map draws and drops references to missi
   assert.deepEqual(read.forms.palm?.models, ['royal-palm']);
   assert.equal(read.forms.open?.models, undefined);
 });
+
+test('trees skip hidden GPU work, reuse projection programs and release every cached program', async (t) => {
+  const created = new Set<object>(),
+    deleted = new Set<object>();
+  let buffers = 0;
+  let failProgram = Infinity;
+  class TestWebGL2 {
+    LINK_STATUS = 1;
+    ACTIVE_UNIFORMS = 2;
+    createProgram() {
+      const value = {};
+      created.add(value);
+      return value;
+    }
+    deleteProgram(value: object) {
+      assert.ok(!deleted.has(value));
+      deleted.add(value);
+    }
+    getProgramParameter(_program: unknown, key: number) {
+      return key === this.LINK_STATUS ? created.size !== failProgram : 0;
+    }
+    createBuffer() {
+      buffers++;
+      return {};
+    }
+    createShader() {
+      return {};
+    }
+    createVertexArray() {
+      return {};
+    }
+  }
+  const old = Object.getOwnPropertyDescriptor(globalThis, 'WebGL2RenderingContext');
+  Object.defineProperty(globalThis, 'WebGL2RenderingContext', {
+    configurable: true,
+    value: TestWebGL2,
+  });
+  t.after(() => {
+    if (old) Object.defineProperty(globalThis, 'WebGL2RenderingContext', old);
+    else Reflect.deleteProperty(globalThis, 'WebGL2RenderingContext');
+  });
+  const context = new Proxy(new TestWebGL2(), {
+    get(target, key, receiver) {
+      if (key in target) return Reflect.get(target, key, receiver);
+      return typeof key === 'string' && key === key.toUpperCase() ? 3 : () => {};
+    },
+  });
+  let layer: any;
+  let zoom = 10;
+  let styleReads = 0;
+  const map = {
+    addLayer(value: any) {
+      layer = value;
+      value.onAdd(map, context);
+    },
+    getBearing: () => 0,
+    getCenter: () => ({lat: 40, lng: -3}),
+    getPitch: () => 0,
+    getLayer: () => layer,
+    getSource: () => undefined,
+    getStyle() {
+      styleReads++;
+      return {layers: [], metadata: {}};
+    },
+    getZoom: () => zoom,
+    isStyleLoaded: () => true,
+    on() {},
+    off() {},
+    triggerRepaint() {},
+    removeLayer() {
+      layer.onRemove(map, context);
+      layer = undefined;
+    },
+  };
+  const trees = createTileflowTrees3D({map});
+  const render = (name: string) =>
+    layer.render(context, {shaderData: {variantName: name, vertexShaderPrelude: name, define: ''}});
+  render('globe');
+  assert.equal(created.size, 0);
+  assert.equal(buffers, 0);
+  await trees.show({transition: {duration: 0}});
+  render('globe');
+  assert.equal(created.size, 0, 'shown trees below minzoom still do not compile');
+  zoom = 16;
+  render('mercator');
+  assert.equal(created.size, 3, 'trees, ground and depth; unused outlines are not compiled');
+  const firstReads = styleReads;
+  for (let i = 0; i < 20; i++) render('mercator');
+  assert.equal(styleReads, firstReads, 'standalone metadata is reused between style events');
+  render('globe');
+  assert.equal(created.size, 5, 'depth is shared across projections');
+  render('mercator');
+  assert.equal(created.size, 5, 'returning to a projection reuses its programs');
+  for (let i = 0; i < 6; i++) render(`variant-${i}`);
+  assert.ok(deleted.size > 0, 'unusual variants cannot grow the cache without bound');
+  failProgram = created.size + 2;
+  const resident = created.size - deleted.size;
+  render('unsupported-projection');
+  assert.equal(created.size - deleted.size, resident, 'partial link failure releases new programs');
+  failProgram = Infinity;
+  render('mercator');
+  trees.dispose();
+  assert.deepEqual(deleted, created);
+});

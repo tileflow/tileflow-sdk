@@ -5,6 +5,7 @@ import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildi
 import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
+import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../boundary-areas/compile';
 import {resolveMarine} from '../marine';
 import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
 import {
@@ -226,6 +227,9 @@ function compileSemanticStyleInternal(
   const data = runCompilationPhase('data', () => resolveTileflowData(config.data, {apiBaseUrl}));
   const marine = runCompilationPhase('data', () => resolveMarine(config.marine, apiBaseUrl));
   const terrain = runCompilationPhase('data', () => resolveTerrain(config.terrain, apiBaseUrl));
+  const boundaryAreas = runCompilationPhase('data', () =>
+    resolveBoundaryAreas(config.boundaryAreas, apiBaseUrl),
+  );
   const terrainSources = [terrain?.raster, terrain?.contours].filter(
     (source): source is NonNullable<typeof source> => source !== undefined,
   );
@@ -266,11 +270,22 @@ function compileSemanticStyleInternal(
       }
       marineSourceIds.add(source.sourceId);
     }
+    if (
+      boundaryAreas &&
+      (boundaryAreas.sourceId === data.sourceId ||
+        terrainSourceIds.has(boundaryAreas.sourceId) ||
+        marineSourceIds.has(boundaryAreas.sourceId))
+    ) {
+      throw new Error(
+        `Boundaries source ID "${boundaryAreas.sourceId}" conflicts with another Tileflow source.`,
+      );
+    }
   });
   const platformSourceIds = [
     data.sourceId,
     ...terrainSources.map(({sourceId}) => sourceId),
     ...marineSources.map(({sourceId}) => sourceId),
+    ...(boundaryAreas ? [boundaryAreas.sourceId] : []),
   ];
   const hostedSources = runCompilationPhase('data', () =>
     resolveTileflowHostedSources(config.id, config.sources, new Set(platformSourceIds)),
@@ -370,8 +385,11 @@ function compileSemanticStyleInternal(
     insertTileflowOverlays({
       basemapLayers,
       mapId: config.id,
-      overlays: config.overlays,
-      sourceIds: Object.keys(hostedSources.definitions),
+      overlays: validateBoundaryChoroplethOverlays(config.id, config.overlays, boundaryAreas),
+      sourceIds: [
+        ...Object.keys(hostedSources.definitions),
+        ...(boundaryAreas ? [boundaryAreas.sourceId] : []),
+      ],
     }),
   );
   const plannedLayers = loweredOverlays.layers;
@@ -533,6 +551,7 @@ function compileSemanticStyleInternal(
     ...(marine?.nautical ? {[marine.nautical.sourceId]: marine.nautical.source} : {}),
     ...(terrain?.raster ? {[terrain.raster.sourceId]: terrain.raster.source} : {}),
     ...(terrain?.contours ? {[terrain.contours.sourceId]: terrain.contours.source} : {}),
+    ...(boundaryAreas ? {[boundaryAreas.sourceId]: boundaryAreas.source} : {}),
     ...hostedSources.definitions,
   };
   const sourceIdentities = {
@@ -544,6 +563,7 @@ function compileSemanticStyleInternal(
       ? {[marine.bathymetry.relief.sourceId]: marine.bathymetry.relief.identity}
       : {}),
     ...(marine?.nautical ? {[marine.nautical.sourceId]: marine.nautical.identity} : {}),
+    ...(boundaryAreas ? {[boundaryAreas.sourceId]: boundaryAreas.identity} : {}),
     ...hostedSources.identities,
   };
   const sourceRequirements = runCompilationPhase('data', () =>

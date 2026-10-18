@@ -4,7 +4,9 @@ import {
   Map,
   type MapProps,
   type TileflowMapLibreConfiguration,
+  useBoundaryFeatureState,
 } from '../src/index';
+import type {Map as MapLibreMap} from 'maplibre-gl';
 
 const source = {map: 'main'};
 const mapLibreConfiguration = {
@@ -176,3 +178,15 @@ void [
   imageInteractionState,
   semanticRequiresGeneralContext,
 ];
+
+type BoundaryHookParameters = Parameters<typeof useBoundaryFeatureState>;
+const boundaryMap = null as MapLibreMap | null;
+const boundaryHookCall = [
+  boundaryMap,
+  {joinBy: 'ref', rows: [{key: 'ES:INE:28079', value: 9.8}]},
+  {state: 'rate'},
+] satisfies BoundaryHookParameters;
+void boundaryHookCall;
+// @ts-expect-error feature-state rows join by a polygon key.
+const boundaryHookNuts: BoundaryHookParameters = [boundaryMap, {joinBy: 'nuts', rows: []}];
+void boundaryHookNuts;

@@ -236,8 +236,8 @@ package uses this contract for its mounted Map; it is not yet published.
 ## Data, terrain, and browser resources
 
 Tileflow World is the hosted primary source. `vectorTiles()` with `openMapTiles()` supports
-external local/self-hosted data; hosted eligibility is separate. `hostedTileset()` and semantic
-overlays add named sources. Local PMTiles inputs are tooling-only.
+external local/self-hosted data; hosted eligibility is separate. `hostedTileset()`, `boundaryAreas`
+and semantic overlays add named sources. Local PMTiles inputs are tooling-only.
 
 `bathymetry({vectorLayers: {...}})` declares compatible contour/name layers; omission retains
 legacy band geometry.
@@ -304,6 +304,7 @@ revision; prefer the installed copy when working with an older release.
 - [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md)
 - [Street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md)
 - [3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md)
+- [Boundary areas and choropleths](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/boundary-areas-and-choropleths.md)
 - [Data is separate from design](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/data-is-separate-from-design.md)
 - [Capture scenes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-scenes.md)
 - [Capture shots](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)

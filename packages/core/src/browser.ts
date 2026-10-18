@@ -57,6 +57,12 @@ import type {MapLibreStyle} from './types';
 
 export {attachTileflowAtmosphere, type TileflowAtmosphereMap} from './atmosphere-browser';
 export {
+  createBoundaryFeatureState,
+  type CreateBoundaryFeatureStateOptions,
+  type TileflowBoundaryFeatureState,
+  type TileflowFeatureStateMap,
+} from './boundary-areas/feature-state';
+export {
   tileflowLineProgressGradient,
   type TileflowLineProgressGradientOptions,
   type TileflowLineProgressState,

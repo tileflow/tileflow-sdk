@@ -26,6 +26,11 @@ returns. The Layers tab remains in the existing `tab=layers` parameter.
 
 ## Read the evidence
 
+Open **Diagnosis** in the selected layer's detail tabs. With a picked feature or a
+Data sample, it explains the filter result and any evaluated zero-size or zero-opacity components.
+A zero component is not proof that the whole layer is invisible. Diagnostics findings can open a
+specific paint, layout or filter declaration directly in Rules, highlighting its row.
+
 - **Diagnosis** reports presence, declared visibility, the inclusive minimum/exclusive maximum zoom
   range, source loading, shared source tiles and viewport-query observations. Pixel visibility,
   occlusion, transparency and depth are explicitly unmeasured. Later draw calls do not necessarily
@@ -68,7 +73,7 @@ change original paint, layout, source data or feature state. A highlight outline
 it is not a reconstruction of glyphs, symbols or 3D meshes. Hidden, out-of-zoom, custom and raster
 layers without queryable rendered geometry report that limitation instead of moving the camera.
 
-**Source tiles** opens Network filtered by source. Tile costs belong to the shared source, not to a
+**Tiles** inspects tiles grouped by source. Tile costs belong to the shared source, not to a
 single style layer. Sprite and font links in Rules open Assets. Other inspection tabs remain usable
 while compilation or tile loading continues; obsolete scheduled measurements are discarded.
 

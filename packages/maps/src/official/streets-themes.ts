@@ -1,12 +1,18 @@
 import {defineTheme, token} from '@tileflow/core';
-import {streetsPoiDiscColors, streetsPoiImageTokens} from './streets-poi';
+import {streetsCartographyColors} from './streets-cartography-colors';
+import {streetsLighting} from './streets-lighting';
+import {streetsPoiImageTokens} from './streets-poi';
+import {streetsRoadCasingProfiles} from './streets-road-colors';
+import {
+  type StreetsColorTheme,
+  type StreetsLightPreset,
+  streetsSurfaceProfiles,
+} from './streets-theme-colors';
+import {streetsTreeProfiles} from './streets-tree-colors';
 
-// Tileflow-owned semantic colors, calibrated from rendered Mapbox Standard
-// default/day and default/night references on 2026-10-14. Standard is evergreen;
-// this dated snapshot keeps our public themes deterministic.
-// Day surfaces use lossless 2D reference captures with buildings and trees
-// disabled. Compare flat interiors separately from borders and translucent
-// tunnels; browser screenshot JPEGs can shift the apparent surface palette.
+// Legacy decorative inks and species variations retain their semantic roles. Ground,
+// building, road and foreground materials are overridden by the independently evaluated
+// sRGB palette in streets-cartography-colors.ts; they do not inherit family-wide offsets.
 /**
  * Streets' public visual vocabulary. Token IDs describe cartographic roles,
  * never physical layer IDs, so agents can edit the design without knowing the
@@ -145,6 +151,7 @@ const streetsLightColors = {
   'roads.path.casing': '#D1C7C7',
   'roads.path.transition': '#F8F6F8',
   'roads.path.tunnel': '#E4E1E5',
+  'roads.pedestrian.surface': '#F7F5F5',
   'roads.primary': '#BEC5D8',
   'roads.rail': '#8B8E99',
   'roads.railTransit': '#8E909D',
@@ -303,6 +310,7 @@ const streetsDarkColors = {
   'roads.path.casing': '#373A46',
   'roads.path.transition': '#4E5260',
   'roads.path.tunnel': '#3D414D',
+  'roads.pedestrian.surface': '#434856',
   'roads.primary': '#636779',
   'roads.rail': '#7C7F8C',
   'roads.railTransit': '#777B89',
@@ -333,8 +341,6 @@ const streetsDarkColors = {
 
 type StreetsColor = {a: number; b: number; g: number; r: number};
 type StreetsColorSet = Readonly<Record<string, string>>;
-type StreetsLightPreset = 'day' | 'dawn' | 'dusk' | 'night';
-type StreetsColorTheme = 'default' | 'faded' | 'monochrome';
 
 function parseStreetsColor(value: string): StreetsColor {
   const hex = /^#([\da-f]{3,4}|[\da-f]{6}|[\da-f]{8})$/i.exec(value);
@@ -370,18 +376,8 @@ function formatStreetsColor({a, b, g, r}: StreetsColor, format: string): string 
   if (format.startsWith('rgba')) {
     return `rgba(${channel(r)}, ${channel(g)}, ${channel(b)}, ${Number(a.toFixed(3))})`;
   }
-  const hex = (value: number) => channel(value).toString(16).padStart(2, '0');
+  const hex = (value: number) => channel(value).toString(16).padStart(2, '0').toUpperCase();
   return `#${hex(r)}${hex(g)}${hex(b)}${format.length === 9 ? hex(a * 255) : ''}`;
-}
-
-function mixStreetsColor(color: StreetsColor, tint: string, amount: number): StreetsColor {
-  const target = parseStreetsColor(tint);
-  return {
-    r: color.r + (target.r - color.r) * amount,
-    g: color.g + (target.g - color.g) * amount,
-    b: color.b + (target.b - color.b) * amount,
-    a: color.a,
-  };
 }
 
 function adjustStreetsColors(
@@ -396,131 +392,135 @@ function adjustStreetsColors(
   );
 }
 
-function applyStreetsLightPreset(
-  colors: StreetsColorSet,
-  preset: StreetsLightPreset,
-): Record<string, string> {
-  if (preset === 'day' || preset === 'night') return {...colors};
-
-  const dawn = preset === 'dawn';
-  return adjustStreetsColors(colors, (role, color) => {
-    if (
-      role.startsWith('hydro.') ||
-      role === 'boundaries.maritime' ||
-      role === 'surface.water' ||
-      role === 'labels.water' ||
-      role === 'labels.waterHalo' ||
-      role === 'labels.ferry' ||
-      role === 'labels.ferryHalo'
-    ) {
-      return mixStreetsColor(color, dawn ? '#8EA9B8' : '#7893AA', dawn ? 0.24 : 0.2);
-    }
-    if (role.startsWith('roads.')) {
-      return mixStreetsColor(color, dawn ? '#B8AEB0' : '#9698A8', dawn ? 0.17 : 0.2);
-    }
-    const greenLandcover =
-      role.startsWith('landcover.') && !/(?:^|\.)(?:barren|ice|rock|sand|snow|urban)$/.test(role);
-    if (
-      greenLandcover ||
-      role.startsWith('vegetation.tree.') ||
-      role === 'surface.park' ||
-      role === 'landuse.cemetery' ||
-      role === 'landuse.recreation' ||
-      role === 'landuse.recreationOutline'
-    ) {
-      return mixStreetsColor(color, dawn ? '#B9D5AB' : '#A6BDA8', dawn ? 0.13 : 0.17);
-    }
-    const halo = role === 'labels.halo' || role.endsWith('Halo') || role === 'poi.halo';
-    if (role.startsWith('labels.') && !halo) {
-      return mixStreetsColor(color, dawn ? '#514B48' : '#494A54', dawn ? 0.06 : 0.08);
-    }
-    if (halo) {
-      return mixStreetsColor(color, dawn ? '#F2E3D7' : '#E5DFE4', dawn ? 0.23 : 0.18);
-    }
-    if (role.startsWith('landuse.parking')) {
-      return mixStreetsColor(color, dawn ? '#D7D6D5' : '#CECFD7', dawn ? 0.16 : 0.2);
-    }
-    if (
-      role.startsWith('buildings.') ||
-      role.startsWith('landuse.') ||
-      role.startsWith('surface.') ||
-      role === 'boundaries.halo'
-    ) {
-      return mixStreetsColor(color, dawn ? '#F2E3D7' : '#E5DFE4', dawn ? 0.23 : 0.18);
-    }
-    return color;
-  });
+function grayscale(color: StreetsColor): StreetsColor {
+  const gray = color.r * 0.2126 + color.g * 0.7152 + color.b * 0.0722;
+  return {...color, r: gray, g: gray, b: gray};
 }
 
-function applyStreetsColorTheme(
-  colors: StreetsColorSet,
-  theme: StreetsColorTheme,
-  isDark: boolean,
-): Record<string, string> {
-  if (theme === 'default') return {...colors};
-  if (theme === 'monochrome') {
-    return adjustStreetsColors(colors, (_role, color) => {
-      const gray = color.r * 0.2126 + color.g * 0.7152 + color.b * 0.0722;
-      return {...color, r: gray, g: gray, b: gray};
-    });
+function isDarkStreetsPreset(preset: StreetsLightPreset): boolean {
+  return preset === 'dusk' || preset === 'night';
+}
+
+/** Keep the differences within a cartographic family around its observed surface anchor. */
+function transferStreetsColor(
+  color: StreetsColor,
+  from: string,
+  to: string,
+  monochrome: boolean,
+): StreetsColor {
+  const source = parseStreetsColor(from);
+  const target = parseStreetsColor(to);
+  if (monochrome) {
+    const gray = grayscale(color).r + target.r - grayscale(source).r;
+    return {...color, r: gray, g: gray, b: gray};
   }
-
-  const background = isDark ? '#292C3A' : '#F1F0ED';
-  return adjustStreetsColors(colors, (_role, color) => {
-    const gray = color.r * 0.2126 + color.g * 0.7152 + color.b * 0.0722;
-    const desaturated = {
-      ...color,
-      r: gray + (color.r - gray) * 0.52,
-      g: gray + (color.g - gray) * 0.52,
-      b: gray + (color.b - gray) * 0.52,
-    };
-    return mixStreetsColor(desaturated, background, isDark ? 0.08 : 0.12);
-  });
-}
-
-// Keep category hue in the lettering without inheriting the brighter marker-disc ink.
-// Apply after time/palette transforms so faded and dawn/dusk keep the same contrast budget.
-function readableLabelColors(colors: StreetsColorSet): Record<string, string> {
-  const result = {...colors};
-  const luminance = (value: string) => {
-    const color = parseStreetsColor(value);
-    const linear = (v: number) =>
-      v / 255 <= 0.04045 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4;
-    return linear(color.r) * 0.2126 + linear(color.g) * 0.7152 + linear(color.b) * 0.0722;
+  return {
+    ...color,
+    r: color.r + target.r - source.r,
+    g: color.g + target.g - source.g,
+    b: color.b + target.b - source.b,
   };
-  const pairs = [
-    ...Object.keys(streetsPoiDiscColors.light).map(
-      (category) => [`poi.${category}`, 'poi.halo'] as const,
-    ),
-    ['labels.aerodrome', 'labels.halo'] as const,
-  ];
-  for (const [role, halo] of pairs) {
-    const background = luminance(colors[halo]!);
-    const contrast = (value: string) => {
-      const foreground = luminance(value);
-      return (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05);
-    };
-    const toward = contrast('#000000') > contrast('#ffffff') ? '#000000' : '#ffffff';
-    const value = colors[role];
-    if (!value || contrast(value) >= 4.5) continue;
-    const original = parseStreetsColor(value);
-    for (let step = 1; step <= 100; step++) {
-      const candidate = formatStreetsColor(mixStreetsColor(original, toward, step / 100), value);
-      if (contrast(candidate) >= 4.6) {
-        result[role] = candidate;
-        break;
-      }
+}
+
+function calibratedStreetsColors(
+  preset: StreetsLightPreset,
+  theme: StreetsColorTheme,
+): Record<string, string> {
+  const dark = isDarkStreetsPreset(preset);
+  const base = dark ? streetsDarkColors : streetsLightColors;
+  const profile = streetsSurfaceProfiles[`${theme}-${preset}`];
+  const trees = streetsTreeProfiles[`${theme}-${preset}`];
+  const roadCasings = streetsRoadCasingProfiles[`${theme}-${preset}`];
+  const baseline = streetsSurfaceProfiles[dark ? 'default-night' : 'default-day'];
+  const monochrome = theme === 'monochrome';
+  const colors = adjustStreetsColors(base, (role, color) => {
+    // White/black sign artwork and the translucent pavement overlay are authored inks,
+    // not ground surfaces. A surface offset would discolor signs and turn black overlays gray.
+    if (role.startsWith('labels.shield.') || role === 'roads.sidewalk.surface') return color;
+    const shift = (from: string, to: string) => transferStreetsColor(color, from, to, monochrome);
+    const foreground = () => (monochrome ? grayscale(color) : color);
+    const water = () => shift(baseline.pool, profile.pool);
+    if (role === 'vegetation.tree.bark') return {...parseStreetsColor(trees.bark), a: color.a};
+    if (role.startsWith('vegetation.tree.')) {
+      const anchor = parseStreetsColor(trees.crown);
+      const varied = shift(base['vegetation.tree.broadleaf.b'], trees.crown);
+      // Compress species variation near black instead of clipping the darkest conifers
+      // to black. Every crown retains detail in the independently dark night profiles.
+      const variation = Math.min(1, Math.min(anchor.r, anchor.g, anchor.b) / 20);
+      return {
+        ...varied,
+        r: anchor.r + (varied.r - anchor.r) * variation,
+        g: anchor.g + (varied.g - anchor.g) * variation,
+        b: anchor.b + (varied.b - anchor.b) * variation,
+      };
     }
-  }
-  return result;
+    if (role === 'buildings.extrusion')
+      return {...parseStreetsColor(profile.extrusion), a: color.a};
+    if (role.startsWith('buildings.businessCorridor'))
+      return shift(base['landuse.commercial'], profile.commercial);
+    if (role.startsWith('buildings.') || role === 'surface.building')
+      return shift(base['buildings.fill'], profile.building);
+    if (role === 'labels.ferryHalo') return water();
+    if (
+      (role.startsWith('hydro.') && !['hydro.ferry', 'hydro.label'].includes(role)) ||
+      role === 'surface.water'
+    )
+      return water();
+    if (
+      role === 'poi.halo' ||
+      role === 'boundaries.halo' ||
+      role === 'labels.halo' ||
+      role.endsWith('Halo')
+    )
+      // Halos are independent foreground aids. Transfer the observed preset change,
+      // preserving their established day/night inks instead of treating them as ground.
+      return shift(baseline.land, profile.land);
+    if (
+      role.startsWith('labels.') ||
+      role.startsWith('poi.') ||
+      role.startsWith('boundaries.') ||
+      role === 'hydro.ferry' ||
+      role === 'hydro.label' ||
+      role === 'roads.ferry' ||
+      role.startsWith('transit.')
+    )
+      return foreground();
+    if (role === 'roads.pedestrian.surface') return shift(baseline.land, profile.land);
+    // Border appearance depends on its own zero-emission lighting, not the fill's offset.
+    if (role === 'roads.motorway.casing')
+      return {...parseStreetsColor(roadCasings.motorway), a: color.a};
+    if (role === 'roads.trunk.casing') return {...parseStreetsColor(roadCasings.trunk), a: color.a};
+    if (role === 'roads.path.casing') return {...parseStreetsColor(roadCasings.path), a: color.a};
+    if (
+      [
+        'roads.casing',
+        'roads.default.casing',
+        'roads.city.casing',
+        'roads.city.tunnelCasing',
+      ].includes(role)
+    )
+      return {...parseStreetsColor(roadCasings.generic), a: color.a};
+    if (role.startsWith('roads.')) return shift(base['roads.default'], profile.road);
+    if (role.startsWith('landuse.recreation'))
+      return shift(base['landuse.recreation'], profile.sport);
+    if (role.startsWith('landuse.businessCorridor') || role === 'landuse.commercial')
+      return shift(base['landuse.commercial'], profile.commercial);
+    const green =
+      role.startsWith('landcover.') && !/(?:^|\.)(?:barren|ice|rock|sand|snow|urban)$/.test(role);
+    if (green || role === 'surface.park' || role === 'landuse.cemetery')
+      return shift(base['landcover.urbanPark'], profile.green);
+    if (role.startsWith('surface.') || role.startsWith('landuse.') || role.startsWith('landcover.'))
+      return shift(base['surface.background'], profile.land);
+    return foreground();
+  });
+  return {...colors, 'roads.detail.casing': roadCasings.hd};
 }
 
 function streetsPaletteColors(preset: StreetsLightPreset, colorTheme: StreetsColorTheme) {
-  const isDark = preset === 'night';
-  const base = isDark ? streetsDarkColors : streetsLightColors;
-  return readableLabelColors(
-    applyStreetsColorTheme(applyStreetsLightPreset(base, preset), colorTheme, isDark),
-  );
+  return {
+    ...calibratedStreetsColors(preset, colorTheme),
+    ...streetsCartographyColors(colorTheme, preset),
+  };
 }
 
 const streetsFonts = {
@@ -556,7 +556,7 @@ const streetsLightTheme = defineTheme({
   version: 1,
   colorScheme: 'light',
   tokens: {
-    color: readableLabelColors(streetsLightColors),
+    color: streetsPaletteColors('day', 'default'),
     number: {},
     font: streetsFonts,
     image: {...streetsImages, ...streetsPoiImageTokens('light')},
@@ -569,12 +569,12 @@ const streetsLightTheme = defineTheme({
     water: {font: token.font('default')},
   },
   lighting: {
-    // A broad, high light keeps warm roofs bright and facades softly shaded.
-    // Anchor it to the map so rotating the camera does not move the light.
+    ...streetsLighting.default.day,
+    // Retain a gentle native-extrusion fallback; the scene uses sun and ambient.
     anchor: 'map',
     color: '#FFFFFF',
     intensity: 0.08,
-    position: [1.15, 210, 30],
+    position: [1.15, 180, 20],
   },
 });
 const streetsDarkTheme = defineTheme({
@@ -582,7 +582,7 @@ const streetsDarkTheme = defineTheme({
   version: 1,
   colorScheme: 'dark',
   tokens: {
-    color: readableLabelColors(streetsDarkColors),
+    color: streetsPaletteColors('night', 'default'),
     number: {},
     font: streetsFonts,
     image: {
@@ -604,10 +604,13 @@ const streetsDarkTheme = defineTheme({
     water: {font: token.font('default')},
   },
   lighting: {
-    anchor: 'viewport',
-    color: '#9FB6D0',
+    ...streetsLighting.default.night,
+    // Keep the native-extrusion fallback neutral: its shading does not normalize
+    // illumination against authored paint as the custom scene renderer does.
+    anchor: 'map',
+    color: '#FFFFFF',
     intensity: 0.08,
-    position: [1.15, 210, 30],
+    position: [1.15, 270, 20],
   },
 });
 
@@ -616,13 +619,14 @@ function defineStreetsPaletteTheme(
   preset: StreetsLightPreset,
   colorTheme: StreetsColorTheme,
 ) {
-  const isDark = preset === 'night';
+  const isDark = isDarkStreetsPreset(preset);
   const imageVariant =
     colorTheme === 'monochrome' ? (isDark ? 'monochrome-dark' : 'monochrome') : undefined;
   return defineTheme(isDark ? streetsDarkTheme : streetsLightTheme, {
     id: `streets-${name}`,
     version: 1,
     colorScheme: isDark ? 'dark' : 'light',
+    lighting: streetsLighting[colorTheme][preset],
     tokens: {
       color: streetsPaletteColors(preset, colorTheme),
       ...(imageVariant ? {image: streetsPoiImageTokens(imageVariant)} : {}),
@@ -674,6 +678,9 @@ export const streetsVisual = {
     depth7000: token.color('hydro.depth.m7000'),
     ocean: token.color('hydro.ocean'),
     water: token.color('hydro.water'),
+    overview: token.color('hydro.water.overview'),
+    regional: token.color('hydro.water.regional'),
+    waterway: token.color('hydro.waterway'),
   },
   label: {
     aerodrome: token.color('labels.aerodrome'),
@@ -765,6 +772,7 @@ export const streetsVisual = {
   ),
   road: {
     casing: token.color('roads.default.casing'),
+    detailCasing: token.color('roads.detail.casing'),
     cityCasing: token.color('roads.city.casing'),
     cityMinor: token.color('roads.city.minor'),
     cityPrimary: token.color('roads.city.primary'),
@@ -783,6 +791,7 @@ export const streetsVisual = {
     pathCasing: token.color('roads.path.casing'),
     pathTransition: token.color('roads.path.transition'),
     pathTunnel: token.color('roads.path.tunnel'),
+    pedestrianSurface: token.color('roads.pedestrian.surface'),
     rail: token.color('roads.rail'),
     railTransit: token.color('roads.railTransit'),
     sidewalkSurface: token.color('roads.sidewalk.surface'),
@@ -793,6 +802,7 @@ export const streetsVisual = {
   },
   surface: {
     background: token.color('surface.background'),
+    backgroundOverview: token.color('surface.background.overview'),
     building: token.color('surface.building'),
     land: token.color('surface.land'),
     park: token.color('surface.park'),

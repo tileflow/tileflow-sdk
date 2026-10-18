@@ -1,3 +1,5 @@
+import {tileflowShadowLookup} from './scene-3d-shaders';
+
 // Shaders of Tileflow's 3D trees (trees-3d-browser.ts). A unit tree mesh is stretched to each tree's
 // height and crown, turned, and stood on its point in the tile, projected with MapLibre's
 // custom-layer projection. Light follows the 3D buildings' model: a crown facing a sunlit sky takes
@@ -67,9 +69,21 @@ vec3 sceneOf(vec3 local) {
 }
 `;
 
+const treeDither = `
+// An ordered dither shared by visible and depth passes, so faded trees cast faded shadows.
+float dither(vec2 p) {
+  ivec2 i = ivec2(mod(p, 4.0));
+  int index = i.x + i.y * 4;
+  float table[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
+  return (table[index] + 0.5) / 16.0;
+}`;
+
 export const tileflowTreeDepthVertex = `#version 300 es
 ${attributes}
 uniform mat4 u_light_matrix;
+uniform vec2 u_centre;
+uniform vec2 u_reach;
+out float v_fade;
 ${placement}
 void main() {
   float growth = growthOf();
@@ -78,11 +92,18 @@ void main() {
     return;
   }
   gl_Position = u_light_matrix * vec4(sceneOf(standing(growth)), 1.0);
+  float distance = length((a_tree_pos - u_centre) * u_metres);
+  v_fade = 1.0 - smoothstep(u_reach.x, u_reach.y, distance);
 }`;
 
 export const tileflowTreeDepthFragment = `#version 300 es
 precision highp float;
-void main() {}`;
+in float v_fade;
+uniform float u_fade;
+${treeDither}
+void main() {
+  if (v_fade * u_fade < dither(gl_FragCoord.xy)) discard;
+}`;
 
 export const tileflowTreeVertex = (projected: string): string => `#version 300 es
 ${projected}
@@ -134,31 +155,10 @@ uniform float u_toon; // 1 for light in bands, as a drawing has it
 uniform vec3 u_bark;
 uniform vec3 u_leaves[4]; // the form's colours, sunlit
 uniform float u_leaf_count;
-uniform highp sampler2DShadow u_shadow_map;
-uniform vec2 u_shadow_texel;
-uniform float u_shadow;
-uniform float u_depth_unit;
 out vec4 fragColor;
+${tileflowShadowLookup}
 
-float visibility(vec3 c, float bias) {
-  if (u_shadow <= 0.0 || c.x <= 0.0 || c.y <= 0.0 || c.x >= 1.0 || c.y >= 1.0 || c.z >= 1.0)
-    return 1.0;
-  float z = c.z - bias * u_depth_unit;
-  vec2 o = u_shadow_texel * 0.75;
-  return 0.25 * (
-    texture(u_shadow_map, vec3(c.xy + vec2(-o.x, -o.y), z)) +
-    texture(u_shadow_map, vec3(c.xy + vec2(o.x, -o.y), z)) +
-    texture(u_shadow_map, vec3(c.xy + vec2(-o.x, o.y), z)) +
-    texture(u_shadow_map, vec3(c.xy + vec2(o.x, o.y), z)));
-}
-
-// An ordered dither, so a fading tree thins out instead of turning see-through.
-float dither(vec2 p) {
-  ivec2 i = ivec2(mod(p, 4.0));
-  int index = i.x + i.y * 4;
-  float table[16] = float[16](0.0, 8.0, 2.0, 10.0, 12.0, 4.0, 14.0, 6.0, 3.0, 11.0, 1.0, 9.0, 15.0, 7.0, 13.0, 5.0);
-  return (table[index] + 0.5) / 16.0;
-}
+${treeDither}
 
 vec3 leafColour() {
   float count = max(u_leaf_count, 1.0);
@@ -202,9 +202,10 @@ void main() {
   vec3 roof = u_sky_light + u_sun_light * max(u_sun_dir.z, 0.0);
   vec3 colour = base * min(pow(light / max(roof, vec3(1e-4)), vec3(1.0 / 2.2)), vec3(1.5));
   // At night the tops of crowns keep near their theme's colour, as a night theme draws them, so
-  // trees stay apart from the dark ground.
+  // trees stay apart from the dark ground. The lift is neutral: colour comes from the material
+  // and scene illumination, so a grey tree in neutral light stays grey.
   float crownTop = bark ? 0.0 : smoothstep(0.1, 0.9, normal.z);
-  colour = mix(colour, base * 0.95 + vec3(0.02, 0.03, 0.04), u_night * 0.45 * crownTop);
+  colour = mix(colour, base * 0.95 + vec3(0.03), u_night * 0.45 * crownTop);
   fragColor = vec4(colour, 1.0);
 }`;
 

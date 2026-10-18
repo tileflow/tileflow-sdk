@@ -36,7 +36,7 @@ needs no API key, but serving a map can still cause requests to its remote data 
 The CLI's local Map DevTools provides a dockable layer inspector, loaded tiles, assets, scene
 controls and frame timing. Its element picker selects a layer and evaluates its rules using the
 feature clicked on the map.
-Performance's Overdraw overlay uses a heatmap with a visible pass-count legend and explanation.
+Debug's Overdraw overlay uses a heatmap with a visible pass-count legend and explanation.
 See [Map DevTools and compiler inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md)
 for interaction details and observation limits.
 
@@ -139,16 +139,20 @@ contract, including experimental preview-only rendering; it does not promise hos
 The package has no root entry point. `/server` also exposes the reusable Map DevTools shell. The CLI
 connects appearance controls and shared browser context through its optional local
 workflow adapter; see the [Map DevTools guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md).
-The navigation contains **Map**, **Layers**, **Tiles**, **Assets**, **Debug** and **Beacon**.
-Zoom, Bearing and Pitch appear as **Z**, **B** and **P** directly below it, with a live zoom slider,
-a **Reset view** icon to restore all three initial camera values, and **Copy for AI**.
+The navigation contains **Map**, **Layers**, **Tiles**, **Assets**, **Debug** and **Diagnostics**.
+Zoom, Pitch and Bearing appear as **Z**, **P** and **B** directly below it, with live Zoom and Pitch
+sliders and **Copy for AI**. Pitch and Bearing each have an inline reset to 0° within the map's
+camera limits. Camera resets preserve the current zoom and map position.
 The active tab and selected layer remain in the URL across reloads. The menu provides left,
 right and bottom docking, System/Light/Dark appearance, and **Reset all changes**.
 Side docking has a minimum width of 640 CSS pixels, including restored layouts.
 
-**Map** exposes time-of-day segments, palette cards with actual style swatches, 3D view,
+**Map** exposes time-of-day segments, theme cards with actual style swatches, 3D view,
 Off/Grow/Fade building animation, and the map's module settings. The command selects the map.
-Toggling 3D view preserves the current camera, including pitch.
+Streets shows **Default**, **Faded** and **Monochrome**; Default keeps the compatible `light`
+theme ID in configs, URLs and capture commands. Time of day is selected independently.
+3D view defaults to on for every map. Buildings fade in between zoom 15 and 15.25.
+Toggling 3D view preserves the camera, including pitch; an explicit off setting stays off.
 Changes update the existing map after a 300 ms pause while the form remains editable. Superseded
 compilations are discarded. Runtime controls do not recompile the style. Scene and layer edits
 share the header Undo/Redo controls; source files stay unchanged.
@@ -167,23 +171,21 @@ Inspection reads resident data without issuing tile requests. MLT and inaccessib
 have explicit unavailable states.
 
 **Assets** separates Icons, 3D models and Fonts. Icons lists real registered images and loads actual
-sprite variants for the map's palettes and times of day. Models previews bounded samples of loaded
+sprite variants for the map's themes and times of day. Models previews bounded samples of loaded
 controller meshes, with available counts, bytes and LODs. Fonts renders editable samples from actual
 font files or glyphs and links back to consuming layers.
 
 **Debug** contains overdraw, collision and tile-boundary overlays, explanations, and controls for
-the map's actual pixel ratio. **Beacon** runs 48 checks across Rendering, Loading, Legibility,
-Accessibility, Cartography and Integrity. Choose Desktop/Mobile and Active tour (default), Quick check or All zooms. The active tour measures
-navigation and settled frames across the current view and five world cities within an approximately
-one-minute budget, reports partial coverage explicitly and restores the original camera. Findings
-link to Layers, Tiles and Debug and can be copied with evidence for an agent. Unknown or
-informational measurements do not contribute passing scores. Structural and cartographic heuristics
-are labelled as unscored diagnostics. Legibility scores sampled labels against a 10 CSS px text-size
-budget; Cartography scores size-rule continuity at declared zoom stops. Both show their score basis
-and sample counts, and exclude views that did not finish loading. Reports version the scoring policy separately from the tour
-protocol, and runtime/resource error scores cover only the current audit. See
-[Beacon map audits](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/beacon-map-audits.md)
-for sampling, scoring and measurement limits.
+the map's actual pixel ratio. **Diagnostics** lists actionable findings under Readability, Style,
+Assets and Performance. Problems identify confirmed failures; Review findings describe situations
+that can be intentional. There are no quality scores or automatic camera tours. Style checks refresh
+when the map changes; **Check view** collects bounded current-view evidence and briefly samples
+drawing work. Findings open the affected layer and rule, show available evidence, and copy context
+for an agent. Unavailable observations and stale results remain explicit. **Diagnosis** in
+Layers describes the selected layer's zoom, visibility and feature-rule context without turning
+empty viewport queries into errors. Legacy `tab=beacon` links open Diagnostics.
+See [Map design diagnostics](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/map-design-diagnostics.md)
+for detectors, sampling and interpretation limits.
 
 The preview's globe rim follows the rendered canvas silhouette, including camera and viewport
 changes, and fades between zooms 3 and 6. Its colors follow the map's atmosphere when declared.

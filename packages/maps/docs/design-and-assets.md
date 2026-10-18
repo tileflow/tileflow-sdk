@@ -83,23 +83,14 @@ Cormorant faces are unmodified upstream font software under the SIL Open Font Li
 Mapterhorn terrain tile is packaged or redistributed. Baedeker is an official Tileflow map and is
 not affiliated with or endorsed by Baedeker or Wagner & Debes.
 
-## ferraris
+## 1777
 
-`ferraris` is a self-contained printed-atlas design. It uses Core's semantic compiler, but
+`map1777` is a self-contained printed-atlas design. It uses Core's semantic compiler, but
 it does not import or extend the `streets` map and it does not inherit Streets assets. It declares
-only `[ferrarisIcons]`, which contains nine original seamless SVG patterns for paper, cultivated
-land, vegetation, settlements, sand, wetlands, and water. Applications can import it directly or
+only `[map1777Icons]`, which contains eleven original material patterns in four palettes for paper,
+cultivated land, vegetation, settlements, sand, wetlands, and water. Its three Cormorant Garamond
+faces are packaged in `[map1777Fonts]`. Applications can import it directly or
 extend it like any other root.
-
-## harad
-
-`harad` is a self-contained historical green-map design named “Härad”. It uses Core's semantic
-compiler ABI without importing or extending the `streets` map or reusing any Streets asset.
-It declares only `[haradIcons]`, whose nine original Tileflow SVG patterns describe arable land,
-coniferous and deciduous woodland, orchards, paper grain, sand, settlements, water lines, and
-wetlands. The visual grammar is inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series
-(1859–1934) and official legend. The package redistributes no Lantmäteriet scan, source pixel, legend
-artwork, font, or map data; the shipped style and SVG patterns are original Tileflow work.
 
 ## soundings
 

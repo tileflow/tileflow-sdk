@@ -13,7 +13,8 @@ import {
   tileflowSceneLight,
   tileflowSceneShadowFloor,
 } from './scene-3d-browser';
-import {resolveTileflowSun, tileflowDefaultSunPreset, type TileflowSun} from './sun';
+import {tileflowSceneMinzoom, tileflowSceneOpacity} from './scene-3d-visibility';
+import {resolveTileflowSun, tileflowStyleSunPreset, type TileflowSun} from './sun';
 import {tileflowColourChannels} from './theme-blend';
 import type {TileflowTileRequestTransform} from './tile-reader';
 import {
@@ -43,6 +44,7 @@ import {
   tileflowTreeFragment,
   tileflowTreeVertex,
 } from './trees-3d-shaders';
+import {tileflowTreeView} from './trees-3d-view';
 
 /** The MapLibre GL JS map capabilities the trees use. */
 export type TileflowTrees3DMap = {
@@ -75,7 +77,7 @@ export type TileflowTrees3DOptions = Readonly<{
   controller?: TileflowTrees3DThemes;
   /** The vector source with the canopy points, when not the map's World source. */
   canopySource?: string;
-  /** The zoom from which trees stand; they fade in over the zoom above it. Defaults to 15. */
+  /** The zoom from which trees stand; they reach full opacity 0.25 zoom later. Defaults to 15. */
   minzoom?: number;
   /** The most tiles of trees round the camera, from 1 to 64; defaults to 25. */
   maxTiles?: number;
@@ -159,7 +161,7 @@ type ProjectionArgs = {
  */
 export function createTileflowTrees3D(options: TileflowTrees3DOptions): TileflowTrees3D {
   const {map} = options;
-  const minzoom = options.minzoom ?? 15;
+  const minzoom = options.minzoom ?? tileflowSceneMinzoom;
   const maxTiles = Math.round(options.maxTiles ?? 25);
   if (!Number.isFinite(minzoom) || minzoom < 0 || minzoom > 24)
     throw new RangeError('Tileflow 3D trees minzoom must be a zoom from 0 to 24.');
@@ -174,7 +176,11 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   let programs: Partial<Record<'trees' | 'depth' | 'ground' | 'edges', Program>> = {};
   let variant: string | undefined;
   const programVariants = new Map<string, typeof programs>();
-  let fallbackMetadata: {metadata?: Record<string, unknown>} | undefined;
+  let fallbackStyle: {light?: unknown; metadata?: Record<string, unknown>} | undefined;
+  let fallbackSun: TileflowSun | undefined;
+  function standaloneStyle() {
+    return (fallbackStyle ??= (map.getStyle() as typeof fallbackStyle) ?? {});
+  }
   let meshes: Record<TileflowTreeForm, Record<TileflowTreeLevel, Mesh>> | undefined;
   // The map's own models, uploaded once each, by level and prepared text, with their proportion.
   const modelMeshes = new Map<string, (Mesh & {proportion: number}) | undefined>();
@@ -197,10 +203,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     position: number;
   } {
     const read = options.controller?.getThemeMetadata?.(tileflowVegetationMetadataKey) ?? {
-      values: [
-        (fallbackMetadata ??= map.getStyle() as {metadata?: Record<string, unknown>} | undefined)
-          ?.metadata?.[tileflowVegetationMetadataKey],
-      ],
+      values: [standaloneStyle().metadata?.[tileflowVegetationMetadataKey]],
       position: 0,
     };
     if (
@@ -358,6 +361,8 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
         context.bindVertexArray(null);
         tile.gl = {vbo, vaos};
         generation += 1;
+        // The shared shadow pass ran before these instances were ready.
+        map.triggerRepaint();
       }
   }
 
@@ -429,7 +434,10 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   // --- Light and colour ---
 
   function sunNow(): TileflowSun {
-    return options.controller?.getSun?.() ?? resolveTileflowSun(tileflowDefaultSunPreset);
+    return (
+      options.controller?.getSun?.() ??
+      (fallbackSun ??= resolveTileflowSun(tileflowStyleSunPreset(standaloneStyle())))
+    );
   }
 
   const parsedColours = new Map<string, readonly number[]>();
@@ -524,24 +532,16 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   }
 
   function fadeIn(): number {
-    const t = Math.min(1, Math.max(0, (map.getZoom() - minzoom) / 0.8));
-    return t * t * (3 - 2 * t);
+    return tileflowSceneOpacity(map.getZoom(), minzoom);
   }
 
-  /** How far trees reach from the map's centre before they fade out, in metres. */
-  function reach(): [number, number] {
-    const zoom = map.getZoom();
-    const far = Math.min(3000, Math.max(500, 900 * 2 ** (16 - zoom) * (1 + map.getPitch() / 90)));
-    return [far * 0.7, far];
-  }
-
-  /** The highest rank shown in a tile, by zoom and by its distance from the centre. */
-  function rankOf(distance: number): number {
-    const zoom = map.getZoom();
-    const base = zoom >= 16.5 ? 15 : zoom >= 16 ? 12 : zoom >= 15.5 ? 9 : 7;
-    const [start, end] = reach();
-    const fall = distance > start ? Math.ceil(((distance - start) / (end - start)) * 6) : 0;
-    return Math.max(2, Math.min(15, base - fall));
+  function view() {
+    return tileflowTreeView({
+      ...map.getCenter(),
+      zoom: map.getZoom(),
+      pitch: map.getPitch(),
+      tileZoom: preferredZoom,
+    });
   }
 
   const caster: TileflowSceneCaster = {
@@ -549,7 +549,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     bounds() {
       const shown = visibleScale();
       const entries = drawn();
-      if (shown <= 0 || entries.length === 0 || map.getZoom() < minzoom) return undefined;
+      if (shown <= 0 || entries.length === 0 || fadeIn() <= 0) return undefined;
       let [left, top, right, bottom, tallest] = [Infinity, Infinity, -Infinity, -Infinity, 0];
       for (const {x, y, set, value} of entries) {
         if (set.zoom !== preferredZoom) continue;
@@ -567,9 +567,9 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
         tallest: tallest * shown * size[0]!,
       };
     },
-    // The shadow map is drawn again only when the trees it holds or their size change.
+    // Camera-dependent density, detail and fading also change the trees casting shadows.
     key: () =>
-      `trees:${visibleScale().toFixed(4)}:${generation}:${programs.depth ? 1 : 0}:${Object.values(
+      `trees:${view().key}:${fadeIn().toFixed(4)}:${visibleScale().toFixed(4)}:${generation}:${programs.depth ? 1 : 0}:${Object.values(
         colours().sizes,
       )
         .flat()
@@ -586,15 +586,26 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       context.uniform1f(u.u_metres!, frame.metres);
       context.uniformMatrix4fv(u.u_light_matrix!, false, frame.light.matrix);
       const sizes = colours().sizes;
+      const camera = view();
+      context.uniform1f(u.u_fade!, 1);
+      context.uniform2fv(u.u_reach!, [...camera.reach]);
       for (const {x, y, set, value} of drawn()) {
+        const selection = camera.tile(x, y);
+        if (!selection) continue;
         context.uniform2f(u.u_offset!, ...frame.offsetOf({x, y}, set.zoom));
+        context.uniform2f(
+          u.u_centre!,
+          (camera.centre[0] - x) * tileflowSceneExtent,
+          (camera.centre[1] - y) * tileflowSceneExtent,
+        );
         for (const form of tileflowTreeForms)
           value.placement.forms[form].variants.forEach((range, model) => {
-            const drawing = value.gl!.vaos.get(`${form}:${model}:far`);
-            if (range.count === 0 || !drawing) return;
+            const instances = range.upTo[selection.rank] ?? 0;
+            const drawing = value.gl!.vaos.get(`${form}:${model}:${selection.level}`);
+            if (instances === 0 || !drawing) return;
             context.uniform2f(u.u_size_scale!, sizes[form][0]!, sizes[form][1]! * drawing.crown);
             context.bindVertexArray(drawing.vao);
-            context.drawArraysInstanced(context.TRIANGLES, 0, drawing.count, range.count);
+            context.drawArraysInstanced(context.TRIANGLES, 0, drawing.count, instances);
           });
       }
     },
@@ -621,17 +632,13 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     drawnLast = 0;
     if (entries.length === 0 || !meshes || !programs.trees) return;
     const sun = sunNow();
-    const light = tileflowSceneLight(sun);
+    const sunLight = tileflowSceneLight(sun);
+    const light = {...sunLight, strength: sunLight.strength * fadeIn()};
     const palette = colours();
     const frame = scene.frame();
-    const centre = map.getCenter();
-    const zoom = preferredZoom;
-    const n = 2 ** zoom;
-    const cx = ((centre.lng + 180) / 360) * n;
-    const phi = (centre.lat * Math.PI) / 180;
-    const cy = ((1 - Math.log(Math.tan(phi) + 1 / Math.cos(phi)) / Math.PI) / 2) * n;
-    const metres = frame?.metres ?? (40_075_016.686 * Math.cos(phi)) / n / tileflowSceneExtent;
-    const [near, far] = reach();
+    const camera = view();
+    const [cx, cy] = camera.centre;
+    const metres = frame?.metres ?? camera.metres;
 
     const program = programs.trees;
     const u = program.uniforms;
@@ -651,7 +658,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     context.uniform3fv(u.u_sky_light!, light.skyLight);
     context.uniform1f(u.u_night!, light.night);
     context.uniform1f(u.u_fade!, fadeIn());
-    context.uniform2fv(u.u_reach!, reach());
+    context.uniform2fv(u.u_reach!, [...camera.reach]);
     context.uniform3fv(u.u_bark!, palette.bark);
     context.uniform1f(u.u_leaf_count!, leafSlots);
     scene.bindShadow(context, u, light.strength);
@@ -674,14 +681,9 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
         (cx - x) * tileflowSceneExtent,
         (cy - y) * tileflowSceneExtent,
       );
-      const distance =
-        Math.hypot(Math.max(x, Math.min(cx, x + 1)) - cx, Math.max(y, Math.min(cy, y + 1)) - cy) *
-        tileflowSceneExtent *
-        metres;
-      // A tile wholly beyond the reach has faded out: none of its trees is drawn.
-      if (distance > far) continue;
-      const level: TileflowTreeLevel = distance < near * 0.45 ? 'near' : 'far';
-      const rank = rankOf(distance);
+      const selection = camera.tile(x, y);
+      if (!selection) continue;
+      const {level, rank} = selection;
       for (const form of tileflowTreeForms) {
         const leaves =
           form === 'palm'
@@ -717,7 +719,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       context.uniform1f(e.u_metres!, metres);
       context.uniform1f(e.u_round!, finishes[palette.finish].round);
       context.uniform1f(e.u_fade!, fadeIn());
-      context.uniform2fv(e.u_reach!, reach());
+      context.uniform2fv(e.u_reach!, [...camera.reach]);
       context.uniform2f(e.u_viewport!, context.drawingBufferWidth, context.drawingBufferHeight);
       context.uniform1f(e.u_edge_width!, edges * 1.5 * pixelRatio(context));
       let tile = '';
@@ -966,7 +968,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     },
     render(context: WebGLRenderingContext | WebGL2RenderingContext, args: ProjectionArgs) {
       if (!isWebGL2(context)) return;
-      if (visibleScale() <= 0 || map.getZoom() < minzoom) {
+      if (visibleScale() <= 0 || fadeIn() <= 0) {
         drawnLast = 0;
         return;
       }
@@ -1042,7 +1044,8 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   }
 
   const onStyle = () => {
-    fallbackMetadata = undefined;
+    fallbackStyle = undefined;
+    fallbackSun = undefined;
     attach();
     if (target > 0) {
       standIn(true);
@@ -1050,7 +1053,8 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     }
   };
   map.on('styledata', onStyle);
-  map.on('idle', onStyle);
+  // Idle may retry attachment, but must not update tiles and request another frame.
+  map.on('idle', attach);
   attach();
 
   // --- Motion ---
@@ -1192,7 +1196,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       motion?.done();
       standIn(false);
       map.off('styledata', onStyle);
-      map.off('idle', onStyle);
+      map.off('idle', attach);
       unregister();
       try {
         if (map.getLayer(tileflowTrees3DLayerId)) map.removeLayer(tileflowTrees3DLayerId);

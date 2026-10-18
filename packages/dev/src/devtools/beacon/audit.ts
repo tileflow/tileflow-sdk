@@ -343,7 +343,7 @@ export function analyzeAudit(input: AuditInput): Category[] {
       manual(
         'visual-review',
         'Placement and hierarchy',
-        `${input.labels.length - contrasts.length} sampled labels have no reliable background estimate. Review overlaps, label offsets, halos and hierarchy across locations and palette/time-of-day combinations.`,
+        `${input.labels.length - contrasts.length} sampled labels have no reliable background estimate. Review overlaps, label offsets, halos and hierarchy across locations and theme/time-of-day combinations.`,
       ),
     ]),
     category('style', [
@@ -410,7 +410,7 @@ export function analyzeAudit(input: AuditInput): Category[] {
       manual(
         'coverage',
         'Geographic and theme coverage',
-        'This run covers the current concrete theme and the sampled cameras. Rerun for other locations, zoom ranges, palettes and times of day. It cannot validate the whole dataset.',
+        'This run covers the current concrete theme and the sampled cameras. Rerun for other locations, zoom ranges, themes and times of day. It cannot validate the whole dataset.',
       ),
     ]),
   ];

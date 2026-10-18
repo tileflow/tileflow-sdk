@@ -26,8 +26,6 @@ export const layersStyles = `
 .dt-layer-title { display:flex; flex-direction:column; gap:2px; min-width:0; flex:1 0 200px; }
 .dt-layer-title strong { font-size:13px; font-weight:500; overflow-wrap:anywhere; }
 .dt-layer-title code { font:10px ui-monospace,monospace; overflow-wrap:anywhere; color:var(--muted); }
-.dt-layer-actions { display:flex; gap:4px; flex-wrap:wrap; }
-.dt-layer-actions button { font-size:11px; padding:3px 6px; border-color:var(--border); }
 .dt-layer-content { padding:0; }
 .dt-layer-evidence { padding:5px 12px; }
 .dt-layer-evidence-row { display:grid; grid-template-columns:16px 115px minmax(0,1fr); gap:8px; padding:7px 0; border-bottom:1px solid var(--border); font-size:11px; align-items:baseline; }
@@ -66,6 +64,7 @@ export const layersStyles = `
 .dt-layer-rule-error { display:block; padding-top:4px; color:light-dark(#b3261e,#f28b82); font-size:10px; }
 .dt-layer-rule-error[hidden] { display:none; }
 .dt-layer-rules tr[data-selected=true] { background:var(--dt-selected); }
+.dt-layer-content [data-diagnostic-target=true] { background:var(--dt-selected); outline:1px solid var(--accent); outline-offset:-1px; }
 .dt-layer-swatch { display:inline-block; width:11px; height:11px; border:1px solid #8888; border-radius:2px; margin-right:5px; vertical-align:middle; }
 .dt-layer-json { margin:6px 0; font:11px/1.6 ui-monospace,SFMono-Regular,monospace; white-space:pre-wrap; overflow-wrap:anywhere; color:var(--dt-string); max-height:300px; overflow:auto; }
 .dt-layer-curve { display:flex; flex-wrap:wrap; gap:5px 10px; margin-top:6px; padding:6px; background:var(--surface); }

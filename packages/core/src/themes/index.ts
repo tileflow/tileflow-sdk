@@ -287,41 +287,65 @@ export function resolveColors(
   };
 }
 
+const baseThemeColorRoles = {
+  background: 'surface.background',
+  boundary: 'boundaries.default',
+  building: 'surface.building',
+  land: 'surface.land',
+  park: 'surface.park',
+  road: 'roads.default',
+  roadCasing: 'roads.casing',
+  roadMajor: 'roads.major',
+  text: 'labels.primary',
+  textHalo: 'labels.halo',
+  textMuted: 'labels.muted',
+  water: 'surface.water',
+} as const;
+
+/** Base color roles required by the semantic compiler; other roles derive from these. */
+export const tileflowRequiredThemeColorRoles = Object.freeze(Object.values(baseThemeColorRoles));
+const baseThemeColorRoleSet: ReadonlySet<string> = new Set(tileflowRequiredThemeColorRoles);
+
+/** Read-only provenance from the same resolution that supplies compiler colors. */
+export type TileflowThemeColorDecision = {
+  role: string;
+  source: 'theme' | 'derived';
+  value: string;
+};
+
 /** Build the semantic compiler's concrete color context from semantic theme roles. */
-export function resolveThemeColors(theme: TileflowTheme): TileflowResolvedColors {
+export function resolveThemeColors(
+  theme: TileflowTheme,
+  onDecision?: (decision: TileflowThemeColorDecision) => void,
+): TileflowResolvedColors {
   const tokens = resolveTileflowTheme(theme).tokens.color;
   const requireColor = (name: string): string => {
     const value = tokens[name];
-    if (value !== undefined) return value;
+    if (value !== undefined) {
+      onDecision?.({role: name, source: 'theme', value: cssColor(value)});
+      return value;
+    }
     throw new Error(
       `Tileflow semantic compiler requires color token "${name}" in theme "${theme.id}".`,
     );
   };
+  const groupRoles: Array<{group: keyof TileflowColorGroupsConfig; keys: readonly string[]}> = [];
   const optionalGroup = <const TKeys extends readonly string[]>(
-    group: string,
+    group: keyof TileflowColorGroupsConfig,
     keys: TKeys,
-  ): Partial<Record<TKeys[number], string>> =>
-    Object.fromEntries(
+  ): Partial<Record<TKeys[number], string>> => {
+    if (onDecision) groupRoles.push({group, keys});
+    return Object.fromEntries(
       keys.flatMap((key) => {
         const value = tokens[`${group}.${key}`];
         return value === undefined ? [] : [[key, value]];
       }),
     ) as Partial<Record<TKeys[number], string>>;
+  };
 
-  const base = {
-    background: requireColor('surface.background'),
-    boundary: requireColor('boundaries.default'),
-    building: requireColor('surface.building'),
-    land: requireColor('surface.land'),
-    park: requireColor('surface.park'),
-    road: requireColor('roads.default'),
-    roadCasing: requireColor('roads.casing'),
-    roadMajor: requireColor('roads.major'),
-    text: requireColor('labels.primary'),
-    textHalo: requireColor('labels.halo'),
-    textMuted: requireColor('labels.muted'),
-    water: requireColor('surface.water'),
-  } as TileflowColorConfig;
+  const base = Object.fromEntries(
+    Object.entries(baseThemeColorRoles).map(([key, role]) => [key, requireColor(role)]),
+  ) as TileflowColorConfig;
   const modules = {
     boundaries: optionalGroup('boundaries', ['admin', 'disputed', 'major', 'maritime']),
     buildings: optionalGroup('buildings', [
@@ -417,8 +441,24 @@ export function resolveThemeColors(theme: TileflowTheme): TileflowResolvedColors
     ]),
   } as TileflowColorGroupsConfig;
   const colors = resolveColors({}, base, {}, modules);
-  const optionalColor = (name: string, fallback: string): string =>
-    cssColor(tokens[name] ?? fallback);
+  if (onDecision) {
+    for (const {group, keys} of groupRoles) {
+      for (const key of keys) {
+        const role = `${group}.${key}`;
+        if (baseThemeColorRoleSet.has(role)) continue;
+        onDecision({
+          role,
+          source: tokens[role] === undefined ? 'derived' : 'theme',
+          value: (colors[group] as unknown as Record<string, string>)[key]!,
+        });
+      }
+    }
+  }
+  const optionalColor = (name: string, fallback: string): string => {
+    const value = cssColor(tokens[name] ?? fallback);
+    onDecision?.({role: name, source: tokens[name] === undefined ? 'derived' : 'theme', value});
+    return value;
+  };
   return {
     ...colors,
     hydro: {

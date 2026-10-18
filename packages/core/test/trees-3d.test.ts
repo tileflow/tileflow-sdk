@@ -647,3 +647,47 @@ test('trees skip hidden GPU work, reuse projection programs and release every ca
   trees.dispose();
   assert.deepEqual(deleted, created);
 });
+
+test('idle only retries tree attachment and does not schedule another frame', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(new Uint8Array(0)));
+  const listeners = new Map<string, Set<() => void>>();
+  const layers = new Set<string>();
+  let repaints = 0;
+  const map = {
+    addLayer: (layer: {id: string}) => layers.add(layer.id),
+    getBearing: () => 0,
+    getCenter: () => ({lat: 40.42, lng: -3.7}),
+    getPitch: () => 60,
+    getLayer: (id: string) => (layers.has(id) ? {} : undefined),
+    getSource: () => ({tiles: ['https://idle-trees.invalid/{z}/{x}/{y}.pbf'], maxzoom: 15}),
+    getStyle: () => ({layers: [], metadata: {}}),
+    getZoom: () => 18,
+    isStyleLoaded: () => true,
+    on(event: string, listener: () => void) {
+      const set = listeners.get(event) ?? new Set();
+      set.add(listener);
+      listeners.set(event, set);
+    },
+    off(event: string, listener: () => void) {
+      listeners.get(event)?.delete(listener);
+    },
+    removeLayer: (id: string) => layers.delete(id),
+    triggerRepaint() {
+      repaints++;
+    },
+  };
+  const trees = createTileflowTrees3D({map});
+  try {
+    await trees.show();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    repaints = 0;
+    for (let n = 0; n < 20; n++) for (const listener of listeners.get('idle') ?? []) listener();
+    assert.equal(repaints, 0);
+    layers.delete(tileflowTrees3DLayerId);
+    for (const listener of listeners.get('idle') ?? []) listener();
+    assert.ok(layers.has(tileflowTrees3DLayerId));
+  } finally {
+    trees.dispose();
+  }
+  for (const set of listeners.values()) assert.equal(set.size, 0);
+});

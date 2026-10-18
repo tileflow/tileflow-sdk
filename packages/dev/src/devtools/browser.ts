@@ -1,9 +1,9 @@
 import {Color} from '@maplibre/maplibre-gl-style-spec';
 import type {MapGeoJSONFeature} from 'maplibre-gl';
 import {AssetsPanel} from './assets';
-import {BeaconPanel} from './beacon/panel';
 import {moveCamera, readCamera} from './beacon/runner';
 import {DebugPanel} from './debug';
+import {DiagnosticsPanel} from './diagnostics/panel';
 import {GeometryEditor, geometryVertices} from './geometry';
 import {safeContext} from './layers/model';
 import {LayersPanel} from './layers/panel';
@@ -101,7 +101,6 @@ class Devtools {
   }[] = [];
   private initialCamera?: {
     map: NonNullable<Side['map']>;
-    zoom: number;
     bearing: number;
     pitch: number;
   };
@@ -161,7 +160,7 @@ class Devtools {
   private debug!: DebugPanel;
   private overdraw = new OverdrawHeatmap();
   private layers!: LayersPanel;
-  private beacon!: BeaconPanel;
+  private diagnostics!: DiagnosticsPanel;
   private assets!: AssetsPanel;
   private timer?: ReturnType<typeof setInterval>;
   private resizeObserver?: ResizeObserver;
@@ -203,50 +202,61 @@ class Devtools {
       },
     );
     this.buildPerformance();
-    this.beacon = new BeaconPanel(this.panels.get('beacon')!, {
+    this.diagnostics = new DiagnosticsPanel(this.panels.get('diagnostics')!, {
       active: () => this.host.active(),
+      loadProvenance: async (side) => {
+        await this.host.loadSidecar?.(side);
+      },
       beforeRun: () => {
         this.stopPerformance();
         this.host.inspect(false);
         this.clearTileHighlight();
       },
-      network: () => this.show('network'),
-      overlay: (kind) => {
-        this.show('performance');
-        this.debug.setOverlay(
-          kind === 'overdraw' ? 'showOverdrawInspector' : 'showCollisionBoxes',
-          true,
-        );
+      temporary: (side) => ({
+        styleEdits: [...(this.edits.get(side.id)?.entries.values() ?? [])],
+        geometryEdited: this.geometries.has(side.id),
+      }),
+      assets: (category, filter = '') => {
+        this.show('assets');
+        this.assets.reveal(category, filter);
       },
-      reveal: (side, finding) =>
+      overlay: () => {
+        this.show('performance');
+        this.debug.setOverlay('showOverdrawInspector', true);
+      },
+      reveal: (side, finding, action) =>
         this.guarded(() => {
-          if (!side.map || !finding.layer || !side.map.getLayer(finding.layer)) return;
-          if (finding.camera) moveCamera(side.map, finding.camera);
-          this.selectedLayer = {side, id: finding.layer};
-          this.scope = 'layer';
-          this.subtab = 'Styles';
-          this.filter = '';
-          this.show('layers');
-          this.layers.reveal(side, finding.layer);
-          const map = side.map,
-            epoch = side.loadEpoch;
-          requestAnimationFrame(() => {
-            if (side.map !== map || side.loadEpoch !== epoch || !finding.coordinate) return;
-            const feature = map
-              .queryRenderedFeatures(undefined, {layers: [finding.layer!]})
-              .find((feature) =>
-                finding.featureId !== undefined
-                  ? feature.id === finding.featureId
-                  : feature.geometry.type === 'Point' &&
-                    Math.abs(feature.geometry.coordinates[0] - finding.coordinate![0]) < 1e-6 &&
-                    Math.abs(feature.geometry.coordinates[1] - finding.coordinate![1]) < 1e-6,
+          const id = finding.target?.layer ?? finding.layers[0];
+          if (!side.map || !id || !side.map.getLayer(id)) {
+            this.report('This layer is no longer present. Check the current view again.');
+            return;
+          }
+          const sample = finding.samples?.find((entry) => entry.layer === id);
+          // The panel restores a finding's observed camera only for the explicit map action.
+          const feature =
+            sample &&
+            side.map
+              .queryRenderedFeatures(undefined, {layers: [id]})
+              .find((entry) =>
+                sample.featureId !== undefined
+                  ? entry.id === sample.featureId
+                  : sample.coordinate &&
+                    entry.geometry.type === 'Point' &&
+                    Math.abs(entry.geometry.coordinates[0] - sample.coordinate[0]) < 1e-6 &&
+                    Math.abs(entry.geometry.coordinates[1] - sample.coordinate[1]) < 1e-6,
               );
-            if (feature && side.inspectRenderedFeature) {
-              this.scope = feature.id === undefined ? 'layer' : 'feature';
-              side.inspectRenderedFeature(feature, finding.coordinate);
-            }
-          });
-          this.report(`Beacon · ${finding.message}`);
+          this.show('layers');
+          this.layers.reveal(
+            side,
+            id,
+            feature,
+            sample?.coordinate,
+            action === 'map' ? undefined : finding.target,
+            action === 'map' && !(feature && sample?.coordinate && side.inspectRenderedFeature),
+          );
+          if (action === 'map' && feature && sample?.coordinate)
+            side.inspectRenderedFeature?.(feature, sample.coordinate);
+          this.report(`Diagnostics · ${finding.title}`);
         }),
     });
     this.workspace.append(this.shell);
@@ -277,9 +287,12 @@ class Devtools {
     addEventListener('resize', this.resizeWindow);
     const requested = new URL(location.href).searchParams.get('tab') ?? '';
     const panel =
-      ({map: 'scene', tiles: 'network', debug: 'performance'} as Record<string, Panel>)[
-        requested
-      ] ?? (requested as Panel);
+      (
+        {map: 'scene', tiles: 'network', debug: 'performance', beacon: 'diagnostics'} as Record<
+          string,
+          Panel
+        >
+      )[requested] ?? (requested as Panel);
     this.show(panel && this.panels.has(panel) ? panel : 'layers');
     this.tick();
   }
@@ -303,7 +316,7 @@ class Devtools {
       network: 'Tiles',
       assets: 'Assets',
       performance: 'Debug',
-      beacon: 'Beacon',
+      diagnostics: 'Diagnostics',
     })) {
       const panel = element('section', 'dt-panel');
       panel.id = `dt-panel-${id}`;
@@ -416,7 +429,7 @@ class Devtools {
       icon('close', 'Close DevTools', () => {
         this.clearInspectHover();
         this.cancelColorPreviews();
-        this.beacon?.cancel();
+        this.diagnostics?.setActive(false);
         this.layers?.cancel();
         this.workspace.dataset.collapsed = 'true';
         this.host.inspect(false);
@@ -448,6 +461,7 @@ class Devtools {
   show(panel: Panel) {
     // Old links and picker integrations resolve to the unified layer inspector.
     if (panel === 'inspect') panel = 'layers';
+    if (panel === 'beacon') panel = 'diagnostics';
     if (!this.panels.has(panel)) return;
     this.clearInspectHover();
     this.cancelColorPreviews();
@@ -478,8 +492,7 @@ class Devtools {
     if (panel === 'performance') this.renderPerformance();
     if (panel === 'assets') this.assets.show();
     else this.assets.cancel();
-    if (panel === 'beacon') this.beacon.refresh();
-    else this.beacon?.cancel();
+    this.diagnostics?.setActive(panel === 'diagnostics');
   }
   private restoreLayout() {
     try {
@@ -1038,7 +1051,6 @@ class Devtools {
         if (this.initialCamera?.map === activeMap)
           moveCamera(activeMap, {
             ...readCamera(activeMap),
-            zoom: this.initialCamera.zoom,
             bearing: this.initialCamera.bearing,
             pitch: this.initialCamera.pitch,
           });
@@ -1367,11 +1379,13 @@ class Devtools {
         this.syncCameraControls();
       });
     };
-    for (const key of ['zoom', 'bearing', 'pitch'] as const) {
-      const field = element('label', 'dt-camera-field'),
+    for (const key of ['zoom', 'pitch', 'bearing'] as const) {
+      const field = element('div', 'dt-camera-field'),
         input = element('input');
       const label = key[0].toUpperCase() + key.slice(1);
       field.title = label;
+      field.setAttribute('role', 'group');
+      field.setAttribute('aria-label', label);
       input.id = `dt-camera-${key}`;
       input.type = 'number';
       input.step = key === 'zoom' ? '0.1' : '1';
@@ -1381,40 +1395,29 @@ class Devtools {
       });
       field.append(element('span', '', label[0]), input);
       let range: HTMLInputElement | undefined;
-      if (key === 'zoom') {
+      if (key === 'zoom' || key === 'pitch') {
         range = element('input');
         range.type = 'range';
-        range.step = '0.05';
-        range.setAttribute('aria-label', 'Zoom slider');
+        range.step = key === 'zoom' ? '0.05' : '1';
+        range.setAttribute('aria-label', `${label} slider`);
         range.addEventListener('input', () => {
           input.value = range!.value;
           apply(key, range!.valueAsNumber);
         });
         field.append(range);
       }
+      if (key !== 'zoom') {
+        const reset = icon('reset', `Reset ${key}`, () => {
+          const map = this.host.active().map;
+          if (map) apply(key, key === 'pitch' ? Math.max(0, map.getMinPitch()) : 0);
+        });
+        reset.classList.add('dt-camera-reset');
+        reset.title = `Reset ${key} to 0°`;
+        field.append(reset);
+      }
       this.cameraFields.push({key, input, range});
       this.cameraControls.append(field);
     }
-    const reset = icon('reset', 'Reset view', () => {
-      if (this.cameraFrame !== undefined) cancelAnimationFrame(this.cameraFrame);
-      const map = this.host.active().map,
-        initial = this.initialCamera;
-      if (map && initial?.map === map)
-        moveCamera(
-          map,
-          {
-            ...readCamera(map),
-            zoom: initial.zoom,
-            bearing: initial.bearing,
-            pitch: initial.pitch,
-          },
-          0,
-          true,
-        );
-      this.syncCameraControls();
-    });
-    reset.classList.add('dt-camera-reset');
-    reset.title = 'Restore the initial zoom, bearing and pitch';
     const copy = button(
       'Copy for AI',
       () => {
@@ -1422,8 +1425,8 @@ class Devtools {
           this.layers.openContext();
           return;
         }
-        if (this.activePanel === 'beacon') {
-          void this.beacon.copyReport();
+        if (this.activePanel === 'diagnostics') {
+          void this.diagnostics.copyReport();
           return;
         }
         const side = this.host.active(),
@@ -1444,14 +1447,15 @@ class Devtools {
       'dt-copy-agent',
     );
     copy.title = 'Copy map context for an AI agent';
-    this.cameraControls.append(reset, copy);
+    this.cameraControls.append(copy);
   }
   private syncCameraControls() {
     const map = this.host.active().map;
     this.cameraControls.disabled = !map;
     if (!map) return;
     const camera = readCamera(map);
-    if (this.initialCamera?.map !== map) this.initialCamera = {map, ...camera};
+    if (this.initialCamera?.map !== map)
+      this.initialCamera = {map, bearing: camera.bearing, pitch: camera.pitch};
     for (const {key, input, range} of this.cameraFields) {
       const min = key === 'zoom' ? map.getMinZoom() : key === 'pitch' ? map.getMinPitch() : -180;
       const max = key === 'zoom' ? map.getMaxZoom() : key === 'pitch' ? map.getMaxPitch() : 180;
@@ -1503,8 +1507,8 @@ class Devtools {
         this.renderInspect();
       }
     }
+    this.diagnostics.refresh();
     if (this.workspace.dataset.collapsed === 'true') return;
-    if (this.activePanel === 'beacon') this.beacon.refresh();
     if (this.activePanel === 'network') this.renderNetwork();
     if (this.activePanel === 'layers') this.layers.refresh();
     if (this.activePanel === 'assets') this.assets.refresh();
@@ -1516,7 +1520,7 @@ class Devtools {
     this.clearInspectHover();
     this.disposed = true;
     if (this.cameraFrame !== undefined) cancelAnimationFrame(this.cameraFrame);
-    this.beacon.dispose();
+    this.diagnostics.dispose();
     this.assets.dispose();
     this.layers.dispose();
     this.overdraw.dispose();

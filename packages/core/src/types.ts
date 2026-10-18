@@ -8,6 +8,7 @@ import type {
   TileflowLineStackStyle,
   TileflowLineStyle,
   TileflowMarkerSymbolStyle,
+  TileflowNumberStyleValue,
   TileflowSymbolStyle,
 } from './cartography/styles';
 import type {
@@ -297,7 +298,11 @@ export type TileflowRoadAreaStyle = {
 export type TileflowRoadCrossingStyle = Omit<TileflowIconStyle, 'image'> &
   Required<Pick<TileflowIconStyle, 'image'>>;
 export type TileflowRoadRoundaboutStyle = {
+  /** Extra casing width in pixels, split equally across both edges; defaults to the road border. */
+  borderWidth?: TileflowNumberStyleValue;
   casing?: TileflowCircleStyle;
+  /** Road width in pixels when metric radii are absent; defaults to the effective surface fill width. */
+  fallbackWidth?: TileflowNumberStyleValue;
   fill?: TileflowCircleStyle;
 };
 /**
@@ -307,7 +312,7 @@ export type TileflowRoadRoundaboutStyle = {
 export type TileflowRoadStreetLightStyle = {
   /** The light of lamps whose data gives no colour; a warm white by default. */
   color?: TileflowThemeColorValue;
-  /** Whether the map has street lights; defaults to true where the data binds street furniture. */
+  /** Whether the map has street lights; defaults to false. Set true to opt in. */
   enabled?: boolean;
   /**
    * Where light is estimated where the data maps no lamps: `lit` (the default) along streets and
@@ -335,6 +340,8 @@ export type TileflowRoadsModuleConfig = {
   mountainBike?: Partial<Record<TileflowMountainBikeScale, TileflowRoadTreatmentStyle>>;
   oneWayMarkers?: boolean;
   outline?: TileflowRoadOutline;
+  /** Draw ramp fills below receiving roads by default; `by-class` keeps their class's order. */
+  rampOrder?: 'below-roads' | 'by-class';
   restrictions?: Partial<Record<TileflowRoadRestriction, TileflowRoadTreatmentStyle>>;
   roundabouts?: TileflowRoadRoundaboutStyle;
   serviceTypes?: Partial<Record<TileflowRoadServiceType, TileflowRoadTreatmentStyle>>;
@@ -378,6 +385,14 @@ export type TileflowLabelsModuleConfig = {
   language?: TileflowLabelLanguage;
   places?: TileflowLabelDetail;
   roadClasses?: readonly TileflowRoadClass[];
+  /**
+   * Where street names draw. `foreground` (the default) keeps them above buildings and
+   * vegetation. `ground` places them below buildings, with map-aligned text by default.
+   * Ground names retain their road-class collision order, but foreground symbols are offered
+   * first by the renderer; `collisionPriority` cannot make ground names outrank those symbols.
+   * Shields and junction numbers keep their foreground placement.
+   */
+  roadPlacement?: 'ground' | 'foreground';
   roads?: TileflowRoadLabelDetail;
   shields?: TileflowRoadShieldDetail;
   styles?: TileflowLabelStyles;

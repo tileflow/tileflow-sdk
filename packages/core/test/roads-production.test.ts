@@ -8,6 +8,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {openMapTiles, resolveTileflowData, roads, zoom} from '../src';
 import {tileflowCompilerMetadataKeys} from '../src/cartography/contributions';
+import {createTileflowLayerFamilyIR, lowerTileflowDomainIR} from '../src/cartography/domain-ir';
+import {assembleTileflowLayerFamilies} from '../src/cartography/graph';
+import {planTileflowLayerFamilies} from '../src/cartography/physical-planner';
+import {expression} from '../src/cartography/values';
 import {roadClassesForDetail} from '../src/modules/roads';
 import {compileRoads} from '../src/modules/roads/compiler';
 import {tileflowRoadClassFilter} from '../src/modules/roads/semantics';
@@ -343,7 +347,7 @@ test('detailed road extensions compile through remappable semantic contracts', (
   const contributions = compileRoads(
     roads({
       crossings: {image: 'crosswalk'},
-      detail: 'none',
+      detail: 'all',
       roundabouts: {fill: {strokeColor: '#123456'}},
       sidewalks: {
         outline: {color: '#345678', width: 1},
@@ -439,7 +443,9 @@ test('detailed road extensions compile through remappable semantic contracts', (
 });
 
 test('metric roundabouts stay anchored to geographic distances at fractional and maximum zooms', () => {
-  const layers = assembleTileflowLayers(compileRoads(roads({detail: 'all'}), context));
+  const layers = assembleTileflowLayers(
+    compileRoads(roads({detail: 'all', roundabouts: {borderWidth: 1}}), context),
+  );
   const fill = layers.find(({id}) => id === 'tileflow-road-circular-fill')!;
   const casing = layers.find(({id}) => id === 'tileflow-road-circular-casing')!;
   const properties = {
@@ -539,5 +545,543 @@ test('hatch consolidation encodes original class crossing priority in valid sort
       Number(lowerClassAtHighLayer) < Number(higherClassAtLowLayer),
       `${sortKeyProperty} must keep the later service hatch above track at crossings`,
     );
+  }
+});
+
+test('roundabout fallbacks follow resolved road widths and hollow borders', () => {
+  for (const width of [4, 18]) {
+    const layers = compileRoads(
+      roads({
+        detail: 'none',
+        classes: {
+          minor: {
+            surface: {
+              fill: {width, color: '#123456', opacity: 0.6},
+              casing: {gapWidth: width, width: 2, opacity: 0.4},
+            },
+          },
+        },
+      }),
+      context,
+    ).map(({layer}) => layer);
+    const fill = layers.find(({id}) => id === 'tileflow-road-circular-fill')!;
+    const casing = layers.find(({id}) => id === 'tileflow-road-circular-casing')!;
+    for (const level of [15, 15.25, 17.75, 22, 24]) {
+      const properties = {class: 'minor', radius_px_z15: 20};
+      const value = (layer: Layer, property: keyof typeof mapLibreStyleSpec.paint_circle) =>
+        evaluateProperty(
+          (layer.paint as Record<string, unknown>)[property],
+          mapLibreStyleSpec.paint_circle[property],
+          properties,
+          level,
+        ) as number;
+      assert.equal(value(fill, 'circle-stroke-width'), width);
+      assert.equal(value(casing, 'circle-stroke-width'), width + 4);
+      assert.ok(
+        Math.abs(value(fill, 'circle-radius') - (20 * 2 ** (level - 15) - width / 2)) < 1e-8,
+      );
+      assert.equal(value(fill, 'circle-stroke-opacity'), 1);
+      assert.equal(value(casing, 'circle-stroke-opacity'), 1);
+    }
+    assert.ok(
+      JSON.stringify((fill.paint as Record<string, unknown>)['circle-stroke-color']).includes(
+        context.colors.roads.minor,
+      ),
+    );
+    assert.deepEqual(styleErrors(layers), []);
+  }
+});
+
+test('roundabouts follow enabled classes, phase visibility, zoom ranges and data capabilities', () => {
+  assert.equal(
+    compileRoads(roads({detail: 'none'}), context).some(({target}) =>
+      target.startsWith('roads.roundabouts'),
+    ),
+    false,
+  );
+  const contributions = compileRoads(
+    roads({
+      detail: 'all',
+      classes: {
+        motorway: {enabled: false},
+        minor: {surface: {fill: {visible: false}}},
+        primary: {surface: {casing: {visible: false}, fill: {minZoom: 17}}},
+      },
+    }),
+    context,
+  );
+  const fill = contributions.find(({target}) => target === 'roads.roundabouts.fill')!.layer;
+  const casing = contributions.find(({target}) => target === 'roads.roundabouts.casing')!.layer;
+  for (const roadClass of ['motorway', 'minor']) {
+    assert.equal(
+      matchesFilter(fill.filter, {class: roadClass, circle_kind: 'road_ring'}, 'Point'),
+      false,
+    );
+  }
+  for (const level of [16, 16.99, 17, 17.25]) {
+    assert.equal(
+      evaluateProperty(
+        (fill.paint as Record<string, unknown>)['circle-stroke-opacity'],
+        mapLibreStyleSpec.paint_circle['circle-stroke-opacity'],
+        {class: 'primary'},
+        level,
+      ),
+      level < 17 ? 0 : 1,
+    );
+    assert.equal(
+      evaluateProperty(
+        (fill.paint as Record<string, unknown>)['circle-stroke-opacity'],
+        mapLibreStyleSpec.paint_circle['circle-stroke-opacity'],
+        {class: 'secondary'},
+        level,
+      ),
+      1,
+    );
+  }
+  assert.equal(
+    matchesFilter(casing.filter, {class: 'primary', circle_kind: 'road_ring'}, 'Point'),
+    false,
+  );
+  assert.equal(
+    matchesFilter(fill.filter, {class: 'secondary', circle_kind: 'road_ring'}, 'Point'),
+    true,
+  );
+  assert.equal(
+    compileRoads(roads(), {
+      ...context,
+      data: resolveTileflowData({
+        url: '/tiles.json',
+        type: 'vector',
+        attribution: 'Road test',
+        schema: openMapTiles(),
+      }),
+    }).some(({target}) => target.startsWith('roads.roundabouts')),
+    false,
+  );
+});
+
+test('explicit roundabout widths and circle properties replace automatic geometry independently', () => {
+  const layers = compileRoads(
+    roads({
+      detail: 'none',
+      classes: {primary: {surface: {fill: {width: 20}}}},
+      roundabouts: {
+        fallbackWidth: 7,
+        borderWidth: 0,
+        fill: {radius: 12, strokeOpacity: 0},
+        casing: {strokeWidth: 3},
+      },
+    }),
+    context,
+  ).map(({layer}) => layer);
+  const fill = layers.find(({id}) => id === 'tileflow-road-circular-fill')!;
+  const casing = layers.find(({id}) => id === 'tileflow-road-circular-casing')!;
+  const properties = {class: 'primary', radius_px_z15: 20};
+  assert.equal((fill.paint as Record<string, unknown>)['circle-radius'], 12);
+  assert.equal((fill.paint as Record<string, unknown>)['circle-stroke-opacity'], 0);
+  assert.equal((casing.paint as Record<string, unknown>)['circle-stroke-width'], 3);
+  assert.equal(
+    evaluateProperty(
+      (fill.paint as Record<string, unknown>)['circle-stroke-width'],
+      mapLibreStyleSpec.paint_circle['circle-stroke-width'],
+      properties,
+    ),
+    7,
+  );
+  assert.deepEqual(styleErrors(layers), []);
+});
+
+test('ramps precede receiving fills within each structure and can keep class order', () => {
+  const request = {detail: 'none' as const, classes: {motorway: {}, minor: {}}};
+  for (const planned of [false, true]) {
+    const contributions = compileRoads(roads(request), context);
+    const layers = planned
+      ? [
+          ...lowerTileflowDomainIR(
+            planTileflowLayerFamilies(
+              assembleTileflowLayerFamilies(contributions.map(createTileflowLayerFamilyIR)),
+            ),
+            context.data,
+          ).layers,
+        ]
+      : assembleTileflowLayers(contributions);
+    for (const structure of ['surface', 'bridge', 'tunnel']) {
+      const ramps = layers.filter(
+        ({id}) => id.startsWith(`tileflow-road-${structure}-`) && id.endsWith('-rampFill'),
+      );
+      const fills = layers.filter(
+        ({id}) => id.startsWith(`tileflow-road-${structure}-`) && id.endsWith('-fill'),
+      );
+      assert.ok(ramps.length > 0);
+      assert.ok(
+        ramps.every((ramp) => fills.every((fill) => layers.indexOf(ramp) < layers.indexOf(fill))),
+      );
+      for (const roadClass of ['minor', 'motorway']) {
+        const properties = {
+          class: roadClass,
+          ramp: 1,
+          ...(structure === 'surface' ? {} : {brunnel: structure}),
+        };
+        assert.equal(ramps.filter((layer) => matchesFilter(layer.filter, properties)).length, 1);
+        assert.equal(fills.filter((layer) => matchesFilter(layer.filter, properties)).length, 0);
+      }
+    }
+    assert.deepEqual(styleErrors(layers), []);
+  }
+  const classic = compileRoads(roads({...request, rampOrder: 'by-class'}), context);
+  assert.equal(
+    classic.some(({target}) => target.endsWith('.rampFill')),
+    false,
+  );
+  const fill = classic.find(({target}) => target === 'roads.classes.motorway.surface.fill')!.layer;
+  assert.equal(matchesFilter(fill.filter, {class: 'motorway', ramp: 1}), true);
+});
+
+test('an authored fallback curve preserves ring geometry at fractional and overzoom levels', () => {
+  const levels = Array.from({length: 10}, (_, index) => 15 + index);
+  const widthAt = (level: number) => 3 * (1 + ((1.35 ** (level - 15) - 1) / (1.35 ** 7 - 1)) * 1.2);
+  const fallbackWidth = zoom.exponential(
+    2,
+    levels.map((level) => [level, widthAt(level)] as const),
+  );
+  const layers = compileRoads(roads({roundabouts: {fallbackWidth, borderWidth: 1}}), context).map(
+    ({layer}) => layer,
+  );
+  const fill = layers.find(({id}) => id === 'tileflow-road-circular-fill')!;
+  const casing = layers.find(({id}) => id === 'tileflow-road-circular-casing')!;
+  for (let level = 15; level <= 24; level += 0.25) {
+    const lower = Math.floor(level);
+    const upper = Math.min(lower + 1, 24);
+    const width = widthAt(lower) + (widthAt(upper) - widthAt(lower)) * (2 ** (level - lower) - 1);
+    const radius = 20 * 2 ** (level - 15) - width / 2;
+    const properties = {class: 'minor', radius_px_z15: 20};
+    for (const [layer, expectedRadius, expectedWidth] of [
+      [fill, radius, width],
+      [casing, radius - 0.5, width + 1],
+    ] as const) {
+      const paint = layer.paint as Record<string, unknown>;
+      assert.ok(
+        Math.abs(
+          (evaluateProperty(
+            paint['circle-radius'],
+            mapLibreStyleSpec.paint_circle['circle-radius'],
+            properties,
+            level,
+          ) as number) - expectedRadius,
+        ) < 1e-8,
+      );
+      assert.ok(
+        Math.abs(
+          (evaluateProperty(
+            paint['circle-stroke-width'],
+            mapLibreStyleSpec.paint_circle['circle-stroke-width'],
+            properties,
+            level,
+          ) as number) - expectedWidth,
+        ) < 1e-8,
+      );
+    }
+  }
+});
+
+test('mixed road color curves do not alter explicit roundabout appearance', () => {
+  const color = zoom.exponential(1.5, [
+    [15, '#102030'],
+    [22, '#d0c0b0'],
+  ]);
+  const opacity = zoom.step([
+    [15, 0.2],
+    [17.25, 0.8],
+  ]);
+  const layers = compileRoads(
+    roads({
+      detail: 'none',
+      classes: {
+        minor: {
+          surface: {
+            fill: {
+              color: zoom.linear([
+                [15, '#000000'],
+                [22, '#ffffff'],
+              ]),
+            },
+          },
+        },
+        primary: {
+          surface: {
+            fill: {
+              color: zoom.step([
+                [15, '#123456'],
+                [18, '#fedcba'],
+              ]),
+            },
+          },
+        },
+      },
+      roundabouts: {fill: {strokeColor: color, strokeOpacity: opacity}},
+    }),
+    context,
+  ).map(({layer}) => layer);
+  const fill = layers.find(({id}) => id === 'tileflow-road-circular-fill')!;
+  const expected = ['interpolate', ['exponential', 1.5], ['zoom'], 15, '#102030', 22, '#d0c0b0'];
+  assert.deepEqual((fill.paint as Record<string, unknown>)['circle-stroke-color'], expected);
+  for (const level of [15, 16.9, 17.24, 17.25, 18.7, 22]) {
+    for (const roadClass of ['minor', 'primary']) {
+      assert.equal(
+        evaluateProperty(
+          (fill.paint as Record<string, unknown>)['circle-stroke-opacity'],
+          mapLibreStyleSpec.paint_circle['circle-stroke-opacity'],
+          {class: roadClass},
+          level,
+        ),
+        level < 17.25 ? 0.2 : 0.8,
+      );
+    }
+  }
+  assert.deepEqual(styleErrors(layers), []);
+});
+
+test('roundabout width and radius retain integer and fractional width steps', () => {
+  const width = zoom.step([
+    [15, 4],
+    [16, 20],
+    [17.25, 6],
+  ]);
+  const borderWidth = zoom.step([
+    [15, 2],
+    [16, 6],
+    [17.25, 1],
+  ]);
+  const layers = compileRoads(
+    roads({
+      detail: 'none',
+      classes: {primary: {surface: {fill: {width}}}},
+      roundabouts: {borderWidth},
+    }),
+    context,
+  ).map(({layer}) => layer);
+  assert.deepEqual(styleErrors(layers), []);
+  for (const metric of [false, true]) {
+    const properties = {
+      class: 'primary',
+      radius_px_z15: 100,
+      ...(metric ? {radius_m: 20, inner_radius_m: 18, outer_radius_m: 22} : {}),
+    };
+    for (const level of [
+      15,
+      15.5,
+      15.999,
+      16 - 0.000001,
+      16,
+      16.000001,
+      17.125,
+      17.249,
+      17.25 - 0.000001,
+      17.25,
+      17.250001,
+      18.5,
+      24,
+    ]) {
+      const centerline = 100 * 2 ** (level - 15);
+      const roadWidth = level < 16 ? 4 : level < 17.25 ? 20 : 6;
+      const border = level < 16 ? 2 : level < 17.25 ? 6 : 1;
+      for (const phase of ['fill', 'casing']) {
+        const paint = layers.find(({id}) => id === `tileflow-road-circular-${phase}`)!
+          .paint as Record<string, unknown>;
+        const extra = phase === 'casing' ? border : 0;
+        const expected = {
+          'circle-radius': (metric ? centerline * 0.9 : centerline - roadWidth / 2) - extra / 2,
+          'circle-stroke-width': (metric ? centerline * 0.2 : roadWidth) + extra,
+        };
+        for (const property of ['circle-radius', 'circle-stroke-width'] as const) {
+          const actual = evaluateProperty(
+            paint[property],
+            mapLibreStyleSpec.paint_circle[property],
+            properties,
+            level,
+          ) as number;
+          assert.ok(
+            Math.abs(actual - expected[property]) < 1e-8,
+            `${phase} ${property} metric=${metric} z${level}: ${actual} != ${expected[property]}`,
+          );
+        }
+      }
+    }
+  }
+});
+
+test('roundabout sampling limits non-base-two width error with bounded default growth', () => {
+  for (const width of [
+    zoom.linear([
+      [15, 2],
+      [16, 100],
+    ]),
+    zoom.exponential(1.5, [
+      [15, 2],
+      [16, 100],
+    ]),
+  ]) {
+    const layers = compileRoads(
+      roads({
+        detail: 'none',
+        classes: {primary: {surface: {fill: {width}}}},
+        roundabouts: {borderWidth: 1},
+      }),
+      context,
+    ).map(({layer}) => layer);
+    const ring = layers.find(({id}) => id === 'tileflow-road-circular-fill')!;
+    const road = layers.find(({id}) => id === 'tileflow-road-surface-primary-fill')!;
+    const paint = ring.paint as Record<string, unknown>;
+    const properties = {class: 'primary', radius_px_z15: 100};
+    for (let sample = 0; sample <= 100; sample++) {
+      const level = 15 + sample / 100;
+      const expected = evaluateProperty(
+        (road.paint as Record<string, unknown>)['line-width'],
+        mapLibreStyleSpec.paint_line['line-width'],
+        properties,
+        level,
+      ) as number;
+      const actual = evaluateProperty(
+        paint['circle-stroke-width'],
+        mapLibreStyleSpec.paint_circle['circle-stroke-width'],
+        properties,
+        level,
+      ) as number;
+      const radius = evaluateProperty(
+        paint['circle-radius'],
+        mapLibreStyleSpec.paint_circle['circle-radius'],
+        properties,
+        level,
+      ) as number;
+      assert.ok(Math.abs(actual - expected) < 0.1, `width at z${level}`);
+      assert.ok(
+        Math.abs(radius - (100 * 2 ** (level - 15) - expected / 2)) < 0.05,
+        `radius at z${level}`,
+      );
+    }
+    assert.deepEqual(styleErrors(layers), []);
+  }
+  for (const [request, expectedStops] of [
+    [roads(), 11],
+    [
+      roads({
+        roundabouts: {
+          fallbackWidth: zoom.exponential(2, [
+            [15, 4],
+            [24, 40],
+          ]),
+          borderWidth: 1,
+        },
+      }),
+      10,
+    ],
+  ] as const) {
+    const ring = compileRoads(request, context).find(
+      ({target}) => target === 'roads.roundabouts.fill',
+    )!.layer;
+    const radius = (ring.paint as Record<string, unknown>)['circle-radius'] as unknown[];
+    assert.equal((radius.length - 3) / 2, expectedStops);
+  }
+});
+
+test('feature-dependent ring widths preserve data and authored stops without dense sampling', () => {
+  const data = resolveTileflowData({
+    type: 'vector-tiles',
+    attribution: 'Test',
+    url: '/tiles.json',
+    schema: openMapTiles({
+      fields: {class: 'kind', circularKind: 'ring_kind', circularRadiusAtZoom15: 'ring_z15'},
+      layers: {circularFeature: 'road_circles'},
+    }),
+  });
+  const output = (scale: number) => [
+    'case',
+    ['==', ['get', 'expressway'], 1],
+    ['*', ['to-number', ['get', 'lanes'], 1], scale],
+    scale / 2,
+  ];
+  const width = expression<number>([
+    'interpolate',
+    ['exponential', 1.5],
+    ['zoom'],
+    15.25,
+    output(4),
+    17.5,
+    output(10),
+    20.25,
+    output(20),
+  ]);
+  const borderWidth = expression<number>([
+    'step',
+    ['zoom'],
+    1,
+    17.75,
+    ['case', ['==', ['get', 'kind'], 'primary'], 5, 2],
+  ]);
+  const layers = compileRoads(
+    roads({
+      detail: 'none',
+      classes: {primary: {surface: {fill: {width}}}, minor: {surface: {fill: {width: 3}}}},
+      roundabouts: {borderWidth},
+    }),
+    {...context, data},
+  ).map(({layer}) => layer);
+  const rings = layers.filter(({id}) => id.startsWith('tileflow-road-circular-'));
+  assert.deepEqual(styleErrors(layers), []);
+  assert.ok(
+    JSON.stringify(rings).length < 100_000,
+    'geometry must not duplicate large expression trees densely',
+  );
+  for (const ring of rings) {
+    const radius = (ring.paint as Record<string, unknown>)['circle-radius'] as unknown[];
+    assert.equal((radius.length - 3) / 2, 15);
+    assert.equal(ring['source-layer'], 'road_circles');
+  }
+  for (const roadClass of ['primary', 'minor']) {
+    const road = layers.find(({id}) => id === `tileflow-road-surface-${roadClass}-fill`)!;
+    for (const expressway of [0, 1])
+      for (const lanes of [1, 3]) {
+        const properties = {
+          kind: roadClass,
+          ring_kind: 'road_ring',
+          ring_z15: 100,
+          expressway,
+          lanes,
+        };
+        for (const level of [15, 15.25, 16, 17.5, 17.75 - 0.000001, 17.75, 18, 20.25, 24]) {
+          const roadWidth = evaluateProperty(
+            (road.paint as Record<string, unknown>)['line-width'],
+            mapLibreStyleSpec.paint_line['line-width'],
+            properties,
+            level,
+          ) as number;
+          for (const ring of rings) {
+            assert.equal(matchesFilter(ring.filter, properties, 'Point'), true);
+            const border = ring.id.endsWith('-casing')
+              ? level < 17.75
+                ? 1
+                : roadClass === 'primary'
+                  ? 5
+                  : 2
+              : 0;
+            const paint = ring.paint as Record<string, unknown>;
+            for (const [property, expected] of [
+              ['circle-stroke-width', roadWidth + border],
+              ['circle-radius', 100 * 2 ** (level - 15) - (roadWidth + border) / 2],
+            ] as const) {
+              const actual = evaluateProperty(
+                paint[property],
+                mapLibreStyleSpec.paint_circle[property],
+                properties,
+                level,
+              ) as number;
+              assert.ok(
+                Math.abs(actual - expected) < 1e-8,
+                `${property}, ${roadClass}, z${level}, expressway=${expressway}, lanes=${lanes}`,
+              );
+            }
+          }
+        }
+      }
   }
 });

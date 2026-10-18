@@ -7,6 +7,30 @@ import {
   previewGlyphBaseline,
   readPreviewGlyphs,
 } from '../src/devtools/font-preview';
+import {themeLabel, themeVariantLabel} from '../src/devtools/theme-labels';
+
+test('asset variants display Default independently from the concrete day or night theme', () => {
+  const streets = {'tileflow:map': 'streets'};
+  assert.equal(themeLabel('light', streets), 'Default');
+  assert.equal(themeLabel('light', {'tileflow:map': 'map-1777'}), 'Default');
+  assert.equal(
+    themeVariantLabel({palette: 'light', timeOfDay: 'dusk'}, {'tileflow:extends': ['map-1777']}),
+    'Default · Dusk',
+  );
+  assert.equal(themeLabel('light', {'tileflow:map': 'custom'}), 'Light');
+  assert.equal(themeLabel('light'), 'Light');
+  assert.equal(
+    themeLabel('light', {'tileflow:map': 'custom', 'tileflow:extends': ['streets']}),
+    'Default',
+  );
+  assert.equal(
+    themeVariantLabel({palette: 'light', timeOfDay: 'night'}, streets),
+    'Default · Night',
+  );
+  assert.equal(themeVariantLabel({palette: 'faded', timeOfDay: 'dawn'}), 'Faded · Dawn');
+  assert.equal(themeVariantLabel({palette: 'monochrome', timeOfDay: 'dusk'}), 'Monochrome · Dusk');
+  assert.equal(themeLabel('custom-theme'), 'custom theme');
+});
 
 test('sprite catalog includes every atlas and runtime image beyond the old 256-entry limit', () => {
   const ids = [

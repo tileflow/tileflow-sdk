@@ -38,9 +38,8 @@ export default defineMap({
 });
 ```
 
-Coordinates use `[longitude, latitude]`. The map inherits Streets' themes and asset providers.
-A complete root map uses the same `defineMap()` call without `extends`; most applications should
-extend an existing map instead of rebuilding its complete visual contract.
+Coordinates use `[longitude, latitude]`. This map inherits Streets' themes and assets.
+A standalone map uses `defineMap()` without `extends`.
 
 Validate and preview the file with the project-local CLI:
 
@@ -158,12 +157,11 @@ A theme can describe its sun and sky light (`lighting.sun`, `lighting.ambient`);
 returns the sun the map shows with `getSun()`, mixed during a blend, for an application's own 3D
 layers, and `setSun()` places it by direction or by the real sun of a date and place; see
 [sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md).
-`createTileflowBuildings3D` raises the map's buildings with their authored colours and native
-extrusion lighting. Height changes are immediate by default; scene sun lighting, shadows,
-illuminated edges, colour variation, night lights and animation are explicit options; see
+`createTileflowBuildings3D` enables worker-meshed buildings fading in at zoom 15–15.25, with scene
+sun, cast/contact shadows and 0.8 m rounded corners. Each effect is independently overridable. See
 [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md).
-`createTileflowStreetLights` lights the streets as the sun sets, from the lamps and lit streets the
-map's data holds; see
+Street lights default to off, including in Streets. Set `roads.streetLights.enabled: true` and mount
+`createTileflowStreetLights` to enable them; see
 [street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md).
 `createTileflowVegetation` controls all trees using the map's `3d`, `flat` or `auto` policy; see
 [vegetation controls and 3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md).
@@ -184,15 +182,14 @@ validates the authoring input and throws on failure. `createStyle(map, options)`
 throws; `createStyleResult(map, options)` returns structured diagnostics and a compilation report.
 Only a successful result contains `style`.
 
-Core compilation is not asset preparation. A map that references package or local icon/font
-directories needs the CLI, a build plugin, or
+Maps with package/local icon or font directories need the CLI, a build plugin, or
 [`@tileflow/dev/artifacts`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/README.md)
-to produce deployable sprites and font files. Browser components consume the resulting manifest;
-they do not import executable configs.
+to prepare assets. Browser components consume the resulting manifest.
 
-Use these commands to discover the installed language and inspect a prepared map:
+Discover the language and inspect a prepared map:
 
 ```sh
+npx tileflow describe themes --json
 npx tileflow language manifest --json
 npx tileflow language schema --json
 npx tileflow inspect --json
@@ -271,8 +268,8 @@ In a 3D scene, `createTileflowDepthMarkers` from `@tileflow/core/browser` draws 
 that nearer buildings hide, facing the viewer or lying on the ground. See
 [depth markers](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/depth-markers.md).
 
-A map with text must declare exactly one text provider. Streets, Ferraris, Härad, Soundings,
-and Blueprint use URL glyph providers. Baedeker and Siegfried use packaged Cormorant
+A map with text must declare exactly one text provider. Streets, Soundings,
+and Blueprint use URL glyph providers. Baedeker, 1777, and Siegfried use packaged Cormorant
 fonts, and Cívica uses its packaged lettering. Hosted deployment currently rejects
 package/local font bundles; use self-hosted output or explicitly replace the provider with compatible
 public glyphs. Tile URLs and font providers do not establish redistribution rights.
@@ -297,6 +294,7 @@ revision; prefer the installed copy when working with an older release.
 - [Shared visual primitives](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/shared-visual-primitives.md)
 - [Compiled-style performance](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/compiled-style-performance.md)
 - [Camera moves and the tile cache](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/camera-moves-and-tile-cache.md)
+- [Cartographic defaults and overrides](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/cartographic-defaults.md)
 - [Themes and module styles](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/themes-and-module-styles.md)
 - [Theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md)
 - [Map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md)

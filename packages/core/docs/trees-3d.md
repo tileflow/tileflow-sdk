@@ -140,7 +140,9 @@ tile's buffer belong to the neighbouring tile, so no tree stands twice.
 Colours come from the theme: `vegetation.tree.bark`, `vegetation.tree.broadleaf.a` to `.d`,
 `vegetation.tree.conifer.a` to `.c` and `vegetation.tree.palm.a` to `.c`, sunlit, from darkest to
 lightest. A crown facing a sunlit sky takes its colour; shade takes the sky's light, as on 3D
-buildings. The vegetation module's `threeDimensional` options refine them for one map:
+buildings. At night a neutral lift keeps crown tops visible; grey materials stay grey under neutral
+lighting, while coloured scene lighting can tint them. The vegetation module's `threeDimensional`
+options refine them for one map:
 
 <!-- docs:check -->
 
@@ -239,16 +241,20 @@ the same name; omitting `models` inherits them, and `[]` declares none.
 The light comes from `controller.getSun()`: the theme's sun, mixed during a blend, or the sun an
 application places by direction or by date and place (see
 [sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md)).
+Without a controller, trees read the compiled style's sun and light direction, falling back to
+SDK daylight, just as 3D buildings do. This cached light refreshes when the style changes.
 Leaves take light round their edges and glow a little against a low sun; the underside and the
 inside of a crown stay darker.
 
 Trees and 3D buildings on one map share one shadow map: trees cast shadows on the ground and on the
 buildings, and stand in the buildings' shade. The flat map darkens under both. Without 3D buildings
-the trees darken the map themselves.
+the trees darken the map themselves. The depth pass uses the same visible tree ranks, near/far
+models and distance fade as the colour pass, so hidden trees do not leave full shadows behind.
+Shadow direction stops lowering at 15° above the horizon; the actual scene light keeps its angle.
 
 ## Options
 
-`minzoom` (15 by default) and `maxTiles` (25 by default, at most 64) bound where and how far trees
+`minzoom` (15 by default, fading to full coverage at 15.25 like buildings) and `maxTiles` (25 by default, at most 64) bound where and how far trees
 stand; trees thin out and fade with distance from the map's centre, and near trees take more detail
 than far ones. `canopySource` names a vector source with canopy points when they are not in the
 map's World source. `beforeId` places the layer before another one; `transformRequest` applies the
@@ -258,9 +264,10 @@ tile's download.
 ## Cost
 
 A near tree has 60 to 120 triangles and a far one about 20, and each form is one instanced draw per
-tile. The shadow map is drawn again only when the sun, the trees on screen or their size change, not
-when the camera moves. Over the Champ de Mars in Paris, where OpenStreetMap maps every tree, about
-13,000 trees stand in a pitched view at zoom 16.6.
+tile. The shared shadow map concentrates resolution on the view when its public camera methods
+provide a safe planar fit. It is drawn again when that focused area, the light, visible tree
+selection, fading or geometry changes. Unchanged views reuse it. Over the Champ de Mars in Paris,
+where OpenStreetMap maps every tree, about 13,000 trees stand in a pitched view at zoom 16.6.
 
 ## Limits
 

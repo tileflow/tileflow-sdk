@@ -60,7 +60,19 @@ export type TileflowCompilationPlannerDecision = Readonly<{
   stage: TileflowCompilationPlannerStage;
 }>;
 
+/** A resolved semantic choice, with an authoring path rather than a physical layer ID. */
+export type TileflowCompilationDesignDecision = Readonly<{
+  /** Dot path in the resolved map; a theme token's complete role is its final key. */
+  path: string;
+  source: 'default' | 'map' | 'theme' | 'derived';
+  value: unknown;
+  reason: string;
+  override: string;
+}>;
+
 export type TileflowCompilationReport = Readonly<{
+  /** Color roles and selected module policies, not a trace of every paint/layout property. */
+  decisions?: readonly TileflowCompilationDesignDecision[];
   domains: readonly TileflowCompilationDomainReport[];
   map: string;
   planner: readonly TileflowCompilationPlannerDecision[];
@@ -99,6 +111,7 @@ export function createTileflowCompilationFailure(input: {
     diagnostics: diagnosticsFromError(input.error, input.phase ?? 'input'),
     ok: false,
     report: {
+      ...(input.report?.decisions ? {decisions: input.report.decisions} : {}),
       domains: input.report?.domains ?? [],
       map: input.report?.map ?? input.map,
       planner: input.report?.planner ?? [],

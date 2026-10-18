@@ -121,14 +121,14 @@ their source faces' shapes. Browser adapters load local faces before MapLibre. N
 `glyphs` URL provider instead, which enumerates the exact comma-joined MapLibre request keys in
 `fontStacks`.
 
-Streets, Ferraris, Härad, Soundings, and Blueprint each declare
+Streets, Soundings, and Blueprint each declare
 `https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf`
 with the exact `Noto Sans Regular` and `Noto Sans Bold` stacks. The full hash identifies one
 published, immutable glyph collection independent of World data. The older `/fonts/...` endpoint
 remains a mutable compatibility URL and does not make a resolved map byte-reproducible. The global
 glyph `assetSetSha256` is not the same-domain value as the per-map `assetSetSha256` in
 `build-manifest.json`.
-Baedeker and Siegfried each own a packaged directory containing Cormorant Garamond Regular, SemiBold, and Italic.
+Baedeker, 1777, and Siegfried each own a packaged directory containing Cormorant Garamond Regular, SemiBold, and Italic.
 
 Name the official generation deliberately, or use another OpenMapTiles-compatible vector source:
 

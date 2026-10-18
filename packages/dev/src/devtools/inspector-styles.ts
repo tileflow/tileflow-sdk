@@ -7,6 +7,7 @@ body.devtools-ready {
   --danger:#B13C34; --dt-string:var(--ink); --dt-number:var(--accent); --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   --ui:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;
   --dt-control-height:22px; --dt-row-height:22px; --dt-nav-height:27px;
+  --dt-header-height:44px; --dt-camera-control-height:30px;
   color-scheme:light; font:12px/1.35 var(--ui); -webkit-font-smoothing:antialiased;
 }
 body.devtools-ready[data-inspector-theme=dark] {
@@ -130,19 +131,20 @@ body.devtools-ready[data-inspector-theme=dark] {
 .devtools-ready .dt-shell :is(button,input,select,summary) { min-height:var(--dt-control-height); }
 .devtools-ready .dt-shell button { padding:2px 6px; border-radius:3px; }
 .devtools-ready .dt-shell :is(input[type=checkbox],input[type=radio],input[type=range],input[type=color]) { min-height:0; }
-.devtools-ready .dt-shell .dt-head { height:var(--dt-nav-height); min-height:var(--dt-nav-height); padding:0 4px; }
+.devtools-ready .dt-shell .dt-head { height:var(--dt-header-height); min-height:var(--dt-header-height); padding:0 4px; }
 .devtools-ready .dt-shell .dt-tabs { gap:0; }
-.devtools-ready .dt-shell .dt-tabs button { height:26px; min-height:26px; padding:0 8px; border-radius:2px; }
-.devtools-ready .dt-shell .dt-head .dt-icon { width:24px; height:24px; min-height:24px; padding:3px; margin-block:0; }
-.devtools-ready .dt-shell > .dt-camera { padding:4px 8px; gap:4px; }
-.devtools-ready .dt-shell .dt-camera-field { height:var(--dt-control-height); border-radius:3px; }
+.devtools-ready .dt-shell .dt-tabs button { height:34px; min-height:34px; padding:0 8px; border-radius:4px; }
+.devtools-ready .dt-shell .dt-head .dt-icon { width:30px; height:30px; min-height:30px; padding:5px; margin-block:0; }
+.devtools-ready .dt-shell > .dt-camera { min-height:48px; padding:8px; gap:6px; }
+.devtools-ready .dt-shell .dt-camera-field { height:var(--dt-camera-control-height); border-radius:5px; }
 .devtools-ready .dt-shell .dt-camera-field > span:first-child { padding-left:6px; }
-.devtools-ready .dt-shell .dt-camera-field input[type=number] { width:48px; min-height:0; padding:0 3px; font-size:11px; }
+.devtools-ready .dt-shell .dt-camera-field input[type=number] { width:48px; min-height:0; padding:0 3px; font-size:12px; }
 .devtools-ready .dt-shell .dt-camera-field input[type=range] { width:88px; margin:0 6px 0 2px; }
 .devtools-ready .dt-shell .dt-unit { padding-right:6px; }
-.devtools-ready .dt-shell .dt-camera-reset { display:inline-flex; align-items:center; justify-content:center; width:24px; height:var(--dt-control-height); padding:2px; }
-.devtools-ready .dt-shell .dt-copy-agent { font-size:11px; white-space:nowrap; }
-.devtools-ready .dt-shell .dt-menu { top:var(--dt-nav-height); right:4px; width:216px; padding:6px; border-radius:4px; }
+.devtools-ready .dt-shell .dt-camera-reset { display:inline-flex; align-items:center; justify-content:center; flex:none; width:26px; height:100%; min-height:0; padding:4px; border:0; border-left:1px solid var(--border); border-radius:0; background:transparent; }
+.devtools-ready .dt-shell .dt-camera-reset:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.devtools-ready .dt-shell .dt-copy-agent { min-height:var(--dt-camera-control-height); padding:4px 10px; font-size:12px; white-space:nowrap; }
+.devtools-ready .dt-shell .dt-menu { top:var(--dt-header-height); right:4px; width:216px; padding:6px; border-radius:4px; }
 .devtools-ready .dt-shell .dt-dock-options { gap:4px; margin-bottom:6px; }
 .devtools-ready .dt-shell .dt-dock-options button { height:26px; padding:2px; }
 .devtools-ready .dt-shell :is(.dt-segments,.dt-layer-modes,.controls-segments) { padding:1px; gap:1px; border-radius:3px; }
@@ -214,40 +216,12 @@ body.devtools-ready[data-inspector-theme=dark] {
 .devtools-ready .dt-shell .control-module-header { padding:6px 10px; }
 .devtools-ready .dt-shell .control-module-header label { font-size:12px; gap:6px; }
 .devtools-ready .dt-shell .control-module-header input { margin-right:6px; }
-.devtools-ready .dt-shell .control-module summary { padding:0 10px 4px; }
 .devtools-ready .dt-shell .control-module .control-field { padding-left:38px; }
 .devtools-ready .dt-shell .map-controls .control-field.dt-palette-field { grid-template-columns:70px minmax(0,1fr); align-items:center; }
 .devtools-ready .dt-shell .dt-palettes { gap:4px; align-items:center; }
 .devtools-ready .dt-shell .dt-palettes button { flex-direction:row; align-items:center; gap:5px; padding:2px 6px; min-width:0; height:var(--dt-control-height); font-size:11px; white-space:nowrap; }
 .devtools-ready .dt-shell .dt-palette-swatches { width:24px; height:10px; flex:none; border-radius:2px; }
 .devtools-ready .dt-shell .dt-palette-swatches i { min-width:0; }
-.devtools-ready .dt-shell .beacon-content { font:12px/1.4 var(--ui); }
-.devtools-ready .dt-shell .beacon-hero { max-width:560px; padding:20px 16px; gap:8px; }
-.devtools-ready .dt-shell .beacon-logo { width:88px; height:88px; }
-.devtools-ready .dt-shell .beacon-logo svg { width:72px; height:72px; }
-.devtools-ready .dt-shell .beacon-hero h1 { font-size:18px; }
-.devtools-ready .dt-shell .beacon-lead { font-size:12px; line-height:1.4; }
-.devtools-ready .dt-shell .beacon-scope { margin-top:6px; border-radius:4px; }
-.devtools-ready .dt-shell .beacon-scope > div { padding:6px 8px; }
-.devtools-ready .dt-shell .beacon-actions { gap:6px; margin-top:6px; }
-.devtools-ready .dt-shell .beacon-run { height:26px; padding:0 12px; font-size:12px; }
-.devtools-ready .dt-shell .beacon-report-title { gap:8px; padding:8px 10px; }
-.devtools-ready .dt-shell .beacon-report-title h2 { font-size:13px; }
-.devtools-ready .dt-shell .beacon-score { gap:5px; padding:10px 4px 8px; border-radius:0; }
-.devtools-ready .dt-shell .beacon-gauge { max-width:48px; max-height:48px; }
-.devtools-ready .dt-shell .beacon-report-title .beacon-gauge { max-width:56px; max-height:56px; }
-.devtools-ready .dt-shell .beacon-gauge::before { inset:3px; }
-.devtools-ready .dt-shell .beacon-gauge b { font-size:14px; }
-.devtools-ready .dt-shell .beacon-diagnostic { width:48px; height:48px; border-radius:4px; font-size:11px; }
-.devtools-ready .dt-shell .beacon-legend { padding:6px 8px; }
-.devtools-ready .dt-shell .beacon-check > summary { grid-template-columns:16px minmax(100px,1fr) minmax(80px,45%); min-height:28px; padding:4px 10px; gap:6px; }
-.devtools-ready .dt-shell .beacon-indicator { width:16px; height:16px; }
-.devtools-ready .dt-shell .beacon-check-detail { padding:0 10px 8px 32px; gap:6px; }
-.devtools-ready .dt-shell .beacon-check-detail p { font-size:12px; }
-.devtools-ready .dt-shell .beacon-check-detail .dt-kv { padding:4px 0; }
-.devtools-ready .dt-shell .beacon-tour { padding:6px 10px; }
-.devtools-ready .dt-shell .beacon-tour p { margin:5px 0; }
-.devtools-ready .dt-shell .beacon-method { padding:10px; }
 @container(max-width:480px) {
  .devtools-ready .dt-shell .map-controls .control-field { grid-template-columns:110px minmax(0,1fr); }
  .devtools-ready .dt-shell .control-module .control-field { padding-left:24px; }

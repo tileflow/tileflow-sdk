@@ -734,7 +734,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         if (message.type === bridgeInspectionType && Array.isArray(message.features)) {
           selectSide(side.id);
           selectedInspection = {side, coordinate: message.coordinate, features: message.features.slice(0, 16), featureIndex: 0};
-          renderInspection();
+          renderInspection(true);
           return;
         }
         if (message.type === bridgeRuntimeErrorType) {
@@ -908,7 +908,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         return configured.href;
       }
 
-      function renderInspection() {
+      // Metadata refreshes update the inspection without navigating away from the active tab.
+      function renderInspection(reveal = false) {
         if (!selectedInspection) return;
         const side = selectedInspection.side;
         const feature = selectedInspection.features[selectedInspection.featureIndex];
@@ -921,7 +922,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           curveOutput.className = "empty";
           curveOutput.textContent = "Paint and layout values appear here.";
           sidecarOutput.textContent = "No layer selected.";
-          globalThis.__tileflowDevtoolsUI?.selectionChanged();
+          if (reveal) globalThis.__tileflowDevtoolsUI?.selectionChanged();
           return;
         }
         inspectionOutput.className = "";
@@ -943,7 +944,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         picker.value = String(selectedInspection.featureIndex);
         picker.addEventListener("change", () => {
           selectedInspection.featureIndex = boundedInteger(Number(picker.value), 0, selectedInspection.features.length - 1, 0);
-          renderInspection();
+          renderInspection(true);
         });
         pickerLabel.append(picker);
         const summary = document.createElement("pre");
@@ -968,7 +969,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           ? boundedJson(sidecarLayerWithSemanticAttribution(sidecarLayer))
           : "No compiler sidecar entry for this layer.";
         if (side.sidecar === undefined && !side.sidecarPromise) void loadSidecar(side);
-        globalThis.__tileflowDevtoolsUI?.selectionChanged();
+        if (reveal) globalThis.__tileflowDevtoolsUI?.selectionChanged();
       }
 
       function populateCurveProperties(layer) {
@@ -1458,7 +1459,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           for (const side of Object.values(states)) { side.highlightFeature?.(-1); side.hoverFeature?.(-1); }
         },
         loadSidecar: (side) => loadSidecar(side),
-        selectFeature: (index) => { if (selectedInspection && selectedInspection.features[index]) { selectedInspection.featureIndex = index; renderInspection(); } },
+        selectFeature: (index) => { if (selectedInspection && selectedInspection.features[index]) { selectedInspection.featureIndex = index; renderInspection(true); } },
         inspect: (enabled) => setInspectionEnabled(enabled), inspecting: () => inspectionEnabled,
         controls: () => loadMapControls(),
         sprites: () => loadSprites(states[activeSideId])

@@ -21,7 +21,9 @@ export type TileflowBuildings3DDesign = Readonly<{
   color: string | readonly unknown[];
   /** How strongly roof outlines and outer corners catch the light, from 0 to 1. */
   edges: number;
-  /** Style extrusion light by default; scene sun lighting is opt-in. */
+  /** Exterior corner radius and roof lighting transition, in metres; 0 keeps sharp edges. */
+  edgeRadius?: number;
+  /** Scene sun lighting by default; `style` uses the native extrusion light. */
   lighting: 'style' | 'sun';
   /** Per-building brightness variation, from 0 to 1; 0 preserves the authored colour. */
   colorVariation: number;
@@ -60,19 +62,20 @@ export type TileflowBuildingModelPlacement = Readonly<{
 }>;
 
 /** The 3D buildings of a style compiled without this description. */
-export const tileflowDefaultBuildings3DDesign: TileflowBuildings3DDesign = Object.freeze({
+export const tileflowDefaultBuildings3DDesign = Object.freeze({
   source: 'tileflow',
   layers: Object.freeze({building: 'building', places: 'poi'}),
   color: '#d8d0c0',
   edges: 0,
-  lighting: 'style',
+  edgeRadius: 0.8,
+  lighting: 'sun',
   colorVariation: 0,
   verticalGradient: true,
   nightLight: 0,
   windows: false,
-  shadows: false,
-  occlusion: false,
-});
+  shadows: true,
+  occlusion: true,
+} satisfies TileflowBuildings3DDesign);
 
 /** The metadata a compiled style publishes for its 3D buildings. */
 export function tileflowBuildingsMetadata(
@@ -95,6 +98,7 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
   if (typeof color !== 'string' && !Array.isArray(color)) return undefined;
   const within = (number: unknown, high: number, fallback: number) =>
     typeof number === 'number' && number >= 0 && number <= high ? number : fallback;
+  const defaults = tileflowDefaultBuildings3DDesign;
   return {
     source,
     layers: {
@@ -103,14 +107,15 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
     },
     color: color as string | readonly unknown[],
     edges: within(value.edges, 1, 0),
-    lighting: value.lighting === 'sun' ? 'sun' : 'style',
+    edgeRadius: within(value.edgeRadius, 1, defaults.edgeRadius),
+    lighting: value.lighting === 'style' ? 'style' : defaults.lighting,
     colorVariation: within(value.colorVariation, 1, 0),
     verticalGradient: value.verticalGradient !== false,
     ...(typeof value.edgeColor === 'string' ? {edgeColor: value.edgeColor} : {}),
     nightLight: within(value.nightLight, 2, 0),
     windows: value.windows === true,
-    shadows: value.shadows === true,
-    occlusion: value.occlusion === true,
+    shadows: typeof value.shadows === 'boolean' ? value.shadows : defaults.shadows,
+    occlusion: typeof value.occlusion === 'boolean' ? value.occlusion : defaults.occlusion,
     ...modelsOf(value.models),
     ...modelColorsOf(value.modelColors),
     ...landmarksOf(value.landmarks),

@@ -216,7 +216,9 @@ export class TileDetailsPanel {
         body.append(row);
       }
       table.append(head, body);
-      this.body.append(table);
+      const card = el('div', 'dt-card dt-card-table');
+      card.append(table);
+      this.body.append(card);
     }
     if (contents.message) this.body.append(el('p', 'dt-note', contents.message));
   }

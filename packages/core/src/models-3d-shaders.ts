@@ -1,3 +1,5 @@
+import {tileflowShadowLookup} from './scene-3d-shaders';
+
 // Shaders of the building models a map places in its 3D city, drawn by Tileflow's 3D buildings
 // renderer (buildings-3d-browser.ts) in the same light as its buildings. A model's vertices are whole
 // steps from its level's centre in glTF's axes (x east, y up, z south), as its file holds them
@@ -110,23 +112,8 @@ uniform vec3 u_sun_dir;
 uniform vec3 u_sun_light;
 uniform vec3 u_sky_light;
 uniform float u_night;
-uniform highp sampler2DShadow u_shadow_map;
-uniform vec2 u_shadow_texel;
-uniform float u_shadow;
-uniform float u_depth_unit;
 out vec4 fragColor;
-
-float visibility(vec3 c, float bias) {
-  if (u_shadow <= 0.0 || c.x <= 0.0 || c.y <= 0.0 || c.x >= 1.0 || c.y >= 1.0 || c.z >= 1.0)
-    return 1.0;
-  float z = c.z - bias * u_depth_unit;
-  vec2 o = u_shadow_texel * 0.75;
-  return 0.25 * (
-    texture(u_shadow_map, vec3(c.xy + vec2(-o.x, -o.y), z)) +
-    texture(u_shadow_map, vec3(c.xy + vec2(o.x, -o.y), z)) +
-    texture(u_shadow_map, vec3(c.xy + vec2(-o.x, o.y), z)) +
-    texture(u_shadow_map, vec3(c.xy + vec2(o.x, o.y), z)));
-}
+${tileflowShadowLookup}
 
 // The buildings' light: a sunlit roof keeps its colour, a face turned to a low sun glows, and shade
 // takes the sky's colour; a face that looks down sees little sky.

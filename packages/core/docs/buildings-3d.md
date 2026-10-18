@@ -1,19 +1,22 @@
 # 3D buildings
 
 `createTileflowBuildings3D` raises the buildings of a Tileflow map's vector tiles round the camera.
-By default it preserves the map's building colours and native extrusion lighting (`style.light`
-and its vertical wall gradient). Showing, hiding and changing height are immediate. Cast shadows,
-contact shadow, illuminated outlines, random colour variation and night lights are off.
-
-Scene sun lighting, shadows, decorative effects and animated height remain available through
-explicit options. They are independent of the map's trees.
+By default it preserves the map's building colours, uses the scene sun, casts shadows, adds soft
+contact shading and rounds exterior corners by 0.8 metres. An unspecified sun uses soft daylight
+with directional intensity 0.2 and ambient intensity 0.8; authored theme lighting stays in control.
+Showing, hiding and changing height are immediate. Illuminated outlines, random colour variation,
+invented windows and night lights remain off. Every effect is independently overridable and
+independent of the map's trees.
 
 Tileflow landmarks and a map's own building models can stand in the same 3D scene, replacing
 the buildings under their footprints.
 
 It is a custom WebGL2 layer for MapLibre GL JS, drawn above the map's buildings and below its
 labels. It needs WebGL2 and the Mercator projection, which MapLibre's globe turns into from about
-zoom 12; the buildings stand from zoom 14.5 by default.
+zoom 12. On every map, buildings and placed models appear automatically from zoom 15,
+with opacity rising linearly from 0 at 15 to 1 at 15.25. Zooming back out reverses the fade.
+Their height stays unchanged throughout; shadows and contact shading fade with them.
+`hide()` keeps them hidden at every zoom until `show()` is called.
 
 ## Show the buildings
 
@@ -31,15 +34,14 @@ import {
 
 export function raiseTheCity(map: TileflowBuildings3DMap, controller: TileflowThemeController) {
   const buildings = createTileflowBuildings3D({map, controller});
-  // No animation unless requested.
-  void buildings.show();
+  // Enabled on creation; hide() and show() override visibility.
   return buildings;
 }
 ```
 
 `show()`, `hide()` and `grow(scale)` change the height immediately by default (duration 0).
 `show({transition: {duration: 800, mode: 'fade'}})` reveals full-height buildings with a
-dithered fade. The default animation mode is `grow`; both modes respect reduced-motion settings.
+smooth opacity fade. The default animation mode is `grow`; both modes respect reduced-motion settings.
 To animate, pass `{transition: {duration: 800}}` explicitly; `grow(scale)` accepts a height share
 from 0 to 1. Each returns a promise that resolves once the change ends; a newer call takes over from where the buildings stand. A browser preference for reduced
 motion changes at once. `dispose()` takes the layer off the map.
@@ -51,7 +53,7 @@ tiles (25 by default), and meshes them a few milliseconds per frame. It reads Wo
 `night_use` and the roof fields (see [roofs](#roofs)), and the places in World's `poi` layer (see
 [night light](#night-light)). `stats.declared` tells whether the map's
 style describes its 3D buildings. Recompile existing maps to pick up the new defaults: previously
-compiled metadata with explicit effects enabled continues to honour those values.
+compiled metadata keeps explicit settings, including `false`, `0` and `lighting: 'style'`.
 
 ## Design the buildings in the map
 
@@ -108,13 +110,36 @@ export default defineMap({
   set of themes changes, and the themes either side of a blend's position mix on the GPU, so a
   moving blend costs nothing per frame.
 - `threeDimensional.shadows` and `occlusion` (the band at the foot of the walls and the darker tight
-  corners) default to false. `windows: true` adds invented night windows, lit by rooms; they are
+  corners) default to true. Set either to false independently. `windows: true` adds invented night windows, lit by rooms; they are
   decoration, not data, and are off by default. Where World says what a building is used for
   (`class`), sheds, garages, barns, factories, churches and service buildings get no rows of
   windows, homes light more of theirs at night, in a warm light, and offices, schools and hospitals
   fewer, in a cooler one.
 - `threeDimensional.edges` and `edgeColor` set the [edges](#edges), and `nightLight` the
   [night light](#night-light). Numbers and colours may be theme tokens.
+- `threeDimensional.edgeRadius` rounds convex exterior corners in the mesh and softens the
+  roof/wall lighting transition. It accepts 0–1 metres and defaults to 0.8; use 0 for sharp corners.
+  Courtyard corners and tile cuts stay unchanged. The authored roof shape is preserved; the top
+  edge is softened through lighting, not a geometric roof bevel. Rounding adds a bounded number
+  of vertices at convex corners, with no extra render pass. Changes to this radius rebuild the
+  resident building meshes.
+
+In both `style` and `sun` lighting, the vertical gradient darkens the foot of a facade by ten percent, fading smoothly over
+at most three metres (half the height for low buildings). It is evaluated per fragment, so a tall
+building does not acquire a full-height dark ramp. Disabling the authored extrusion's
+`verticalGradient` disables this shading. Ground contact shadow is controlled by `occlusion`, enabled by default. It extends three metres
+from grounded walls, darkening the ground by at most 16%, with a smooth distance falloff and round
+corners. Every map uses these defaults when it enables `occlusion`. The reach is measured in world
+metres, so its screen width scales continuously with zoom and becomes subtle at distant views.
+Overlaps use the strongest
+shade once, so shared walls, courtyards and tile joins do not accumulate dark bands. Raised building
+parts do not cast contact shade. Facade occlusion darkens the base by at most 14% and fades
+exponentially with a three-metre decay radius: about 5% remains one floor up and 2% two floors up.
+It follows height above ground, so raised parts do not restart the contact gradient at their base.
+The facade gradient, contact and inner-corner shade use the strongest contribution once, avoiding
+an extra dark strip where they overlap. Both lighting modes use the same falloff at every zoom.
+The ground mask uses one byte per drawing-buffer pixel while enabled and is released when disabled
+or the renderer is removed; it resizes with the drawing buffer.
 
 ## Landmarks
 
@@ -236,16 +261,49 @@ roof, and so does a building a tile's buffer cuts short.
 
 ## Light and shadows
 
-`threeDimensional.lighting` defaults to `'style'`: it uses MapLibre's `light` position,
+Sun lighting and cast shadows are SDK defaults, including for Streets. Each map can choose its
+own finish. For native extrusion lighting, sharp corners and no shadows in an extending map:
+
+<!-- docs:check -->
+
+```ts
+import {defineMap, refine} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'graphic-streets',
+  name: 'Graphic streets',
+  version: 1,
+  extends: streets,
+  modules: {
+    buildings: refine({
+      threeDimensional: {lighting: 'style', edgeRadius: 0, shadows: false, occlusion: false},
+    }),
+  },
+});
+```
+
+Select `timeOfDay` through your map adapter to change the authored direction, colour and strength
+of direct and ambient light. Streets includes moonlight and shadows in its night presets. These
+presets are independent of the user's clock and location. In DevTools, use the 3D view and
+**Map → Buildings → Building light / Cast shadows**. The theme's `lighting.sun.shadowIntensity`
+controls shadow strength; `lighting.ambient` fills the shade. Use `controller.setSun({date,
+location})` for an astronomical direction instead, as described in
+[sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md).
+
+`threeDimensional.lighting: 'style'` uses MapLibre's `light` position,
 anchor, colour and intensity, together with the authored extrusion's `verticalGradient`.
 Changing the scene sun does not change this base lighting. The style's native lighting defaults
 apply when it declares no light.
 
-With `lighting: 'sun'`, the light comes from `controller.getSun()`: the theme's sun, mixed during a blend, or the sun an
+With the default `lighting: 'sun'`, the light comes from `controller.getSun()`: the theme's sun, mixed during a blend, or the sun an
 application places by direction or by date and place (see
 [sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md)).
+Without a controller, the renderer reads the compiled style's sun, falling back to the style's
+light direction and then the SDK daylight. It refreshes this cached light on style changes.
 A sunlit roof keeps the building's colour, a wall turned to a low sun glows, and shade takes the
-sky's colour. As the sun sets, shadows lengthen while they fade; a sun below the horizon casts none.
+sky's colour. Shadows lengthen as the sun lowers, with their projected direction limited to 15°
+above the horizon. The actual light retains its authored altitude; a sun below the horizon casts none.
 
 A wall sees half the sky, so at night, when the ground gives back little light, walls in shade
 stay darker than roofs. A theme's night `lighting.sun` set high (60° or more) lights roofs more than
@@ -297,15 +355,37 @@ download.
 
 ## Options
 
-The renderer's own options say only how it is delivered: `minzoom` (14.5 by default), `maxTiles`,
+The renderer's own options say only how it is delivered: `minzoom` (15 by default, with a 0.25-zoom opacity ramp), `maxTiles`,
 `beforeId` to place the layer before another one, and `transformRequest` to apply the map's request
 rules to the tiles it reads.
 
 ## Cost
 
-The shadow map (up to 4096 × 4096) is drawn again only when the sun, the buildings or their height
-change, not when the camera moves. In a campaign over Miami at 1512 × 860 at 2×, a city lit this
-way kept the frame pacing of the same city drawn without shadows.
+During partial opacity, a depth-only geometry pass resolves the nearest surfaces before colour
+blending, preventing rear walls from bleeding through. At full opacity only the normal geometry
+pass runs; zoom fading schedules no extra animation frames or per-zoom mesh rebuilds.
+
+The browser bundle prepares building meshes in one worker per renderer and transfers the finished
+vertex and index buffers. No worker URL or extra asset hosting is needed. A Content Security Policy
+must allow `worker-src blob:` to use this path; if workers are unavailable or blocked, the renderer
+falls back to local meshing. The worker is terminated on `dispose()`. Pending tile updates retain
+the previous mesh until their replacement is ready; cancelled and obsolete results are discarded.
+
+Mercator rendering batches buildings spatially and skips batches outside the camera. Shadow
+casting uses the light's bounds independently, so an offscreen building can still cast a visible
+shadow. Ground contact and flood bands retain their physical reach when testing visibility.
+Rounded corners use fewer segments when their screen radius is small and retain the original
+tessellation up close. Latitude, radius and pitch inform this choice; very oblique views keep full
+detail. Changes are prepared asynchronously; heights, feature colours,
+and the contact-shadow settings stay the same. GPU uploads remain limited to two tiles per frame.
+
+The shared shadow map is at most 4096 × 4096. On a planar view it concentrates resolution on visible
+ground and raised surfaces, while every loaded caster can still project into that area. A snapped
+Mercator texel grid stays stable during small pans, including changes of latitude, without fixing
+the meshes' physical metre scale. One filtered depth comparison keeps edges sharp.
+Missing camera capabilities, terrain or a view near the horizon use the full loaded area instead.
+The depth pass runs again when its focused area, light or casting geometry changes and is reused
+when they stay unchanged.
 
 ## Limits
 

@@ -1,10 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
   <title>Night Synagogue</title>
   <desc>Tileflow POI disc with a Maki religious-jewish pictogram, CC0-1.0.</desc>
-  <circle cx="12" cy="12" r="10" fill="#252839" />
+  <circle cx="12" cy="12" r="10" fill="#0C0C0C" />
   <circle cx="12" cy="12" r="8.5" fill="#9DAAB0" />
   <path
-    fill="#252839"
+    fill="#0C0C0C"
     transform="translate(6 6) scale(.8)"
     d="M7.50049 0.5L5.49949 4H1L3.49949 7.5L1 11H5.49949L7.50049 14.5L9.50049 11H14L11.5005 7.5L14 4H9.50049L7.50049 0.5Z"
   />

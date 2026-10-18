@@ -6,6 +6,7 @@ import {
 } from './landmarks';
 import type {ResolvedTileflowPreview} from './preview';
 import {previewSceneClient} from './preview-scene';
+import {createPreviewSceneThemes} from './preview-scene-themes';
 
 export function renderTileflowPreviewHtml(
   preview: ResolvedTileflowPreview | undefined,
@@ -196,7 +197,7 @@ export function renderTileflowPreviewHtml(
         if (values[0] === "off") return false;
         return fallback;
       }
-      let threeDimensionalEnabled = readToggleFromUrl("buildings3d", false);
+      let threeDimensionalEnabled = readToggleFromUrl("buildings3d", true);
       let treesEnabled = readToggleFromUrl("trees3d", true);
       const landmarkState = {
         active: [],
@@ -1809,7 +1810,7 @@ export function renderTileflowPreviewHtml(
       // buildings, trees and street lights look, and the controls only show and hide them. The
       // vegetation control hides all trees when off. The preview shows one theme at a
       // time, so the style on screen holds the sun and the design.
-      const coreScene = {buildings: undefined, trees: undefined, lights: undefined, buildingsShown: false, animation: "0"};
+      const coreScene = {buildings: undefined, trees: undefined, lights: undefined, buildingsShown: undefined, animation: "0"};
       const runtimeLayerVisibility = {};
       globalThis.__tileflowPreviewScene = coreScene;
       globalThis.__tileflowRuntimeVisibility = (id, visible) => {
@@ -1825,16 +1826,16 @@ export function renderTileflowPreviewHtml(
         ...(coreScene.trees ? {"tileflow-trees-3d": {controller:"Vegetation", state:{visible:runtimeLayerVisibility["tileflow-trees-3d"] !== false, representation:coreScene.trees.representation}, stats:coreScene.trees.stats}} : {}),
         ...(coreScene.lights ? {"tileflow-street-lights": {controller:"Street lights", state:{visible:runtimeLayerVisibility["tileflow-street-lights"] !== false, mounted:true}, stats:coreScene.lights.stats}} : {})
       });
+      const createPreviewSceneThemes = ${createPreviewSceneThemes.toString()};
+      const coreSceneThemeControllers = new WeakMap();
       function coreSceneThemes(map) {
-        return {
-          getSun() {
-            const preset = readTileflowSunPreset(map.getStyle()?.metadata);
-            return resolveTileflowSun(preset ?? tileflowDefaultSunPreset);
-          },
-          getThemeMetadata(key) {
-            return {values: [map.getStyle()?.metadata?.[key]], position: 0};
-          }
-        };
+        let controller = coreSceneThemeControllers.get(map);
+        if (!controller) {
+          controller = createPreviewSceneThemes(map, metadata =>
+            resolveTileflowSun(readTileflowSunPreset(metadata) ?? tileflowDefaultSunPreset));
+          coreSceneThemeControllers.set(map, controller);
+        }
+        return controller;
       }
       let mountingCoreScene = false;
       function mountCoreScene(map) {
@@ -1855,10 +1856,10 @@ export function renderTileflowPreviewHtml(
           }
           coreScene.trees.setVisible(treesEnabled && runtimeLayerVisibility["tileflow-trees-3d"] !== false);
           coreScene.trees.setViewMode(threeDimensionalEnabled ? "3d" : "2d");
-          // Street lights have no capture fallback, so they shine only with the 3D control on.
+          // Street lights require an explicit map opt-in and the 3D control; defaults stay off.
           if (!coreScene.lights && threeDimensionalEnabled && metadata["tileflow:street-lights"]) {
             coreScene.lights = createTileflowStreetLights({map, controller});
-          } else if (coreScene.lights && !threeDimensionalEnabled) {
+          } else if (coreScene.lights && (!threeDimensionalEnabled || !metadata["tileflow:street-lights"])) {
             coreScene.lights.dispose();
             coreScene.lights = undefined;
           }

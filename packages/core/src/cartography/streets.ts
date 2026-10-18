@@ -1,4 +1,3 @@
-import type {TileflowTimeOfDay} from '../time-of-day';
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import {tileflowAtmosphereMetadataKey} from '../atmosphere';
 import {compileTileflowSky, resolveTileflowAtmosphere} from '../atmosphere-compile';
@@ -31,7 +30,9 @@ import {
   resolveThemeValues,
   resolveTileflowTheme,
   TileflowThemeAuditError,
+  type TileflowThemeColorDecision,
 } from '../themes';
+import type {TileflowTimeOfDay} from '../time-of-day';
 import {
   type TileflowVegetation3D,
   tileflowVegetationMetadata,
@@ -40,8 +41,8 @@ import {
 import type {TileflowTreeModel} from '../trees-3d-model';
 import type {MapLibreStyle} from '../types';
 import {
-  tileflowVegetationDisplayMetadataKey,
   type TileflowVegetationDisplay,
+  tileflowVegetationDisplayMetadataKey,
 } from '../vegetation-display';
 import {
   createTileflowCompilationFailure,
@@ -61,6 +62,7 @@ import {
   type TileflowStyleInspection,
 } from './compiler-inspection';
 import {tileflowCompilerMetadataKeys} from './contributions';
+import {describeTileflowDesignDecisions} from './design-decisions';
 import {
   createTileflowDomainIR,
   createTileflowLayerFamilyIR,
@@ -296,7 +298,13 @@ function compileSemanticStyleInternal(
   const semanticCompilerData = runCompilationPhase('data', () =>
     createSemanticDataView(semanticData),
   );
-  const colors = runCompilationPhase('theme', () => resolveThemeColors(selected.theme));
+  const colorDecisions: TileflowThemeColorDecision[] = [];
+  const colors = runCompilationPhase('theme', () =>
+    resolveThemeColors(
+      selected.theme,
+      onReport ? (decision) => colorDecisions.push(decision) : undefined,
+    ),
+  );
   const images = runCompilationPhase('theme', () => resolveThemeImages(selected.theme));
   const typography = resolvedTheme.typography;
   const context = {
@@ -652,6 +660,17 @@ function compileSemanticStyleInternal(
   };
   const report: TileflowCompilationReport = {
     ...partialReport,
+    ...(onReport
+      ? {
+          decisions: describeTileflowDesignDecisions({
+            map: input,
+            modules,
+            theme: selected.name,
+            colors: colorDecisions,
+            ...(buildings3D ? {buildings: buildings3D} : {}),
+          }),
+        }
+      : {}),
     requirements: sourceRequirements,
   };
   onReport?.(report);

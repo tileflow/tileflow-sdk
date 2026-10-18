@@ -4,7 +4,7 @@ import {readdir, readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {createStyle, openMapTiles, resolveMap, vectorTiles} from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
-import {baedeker, baedekerFonts, baedekerIcons, ferraris} from '../src';
+import {baedeker, baedekerFonts, baedekerIcons, map1777} from '../src';
 
 const baedekerPatternIds = [
   'baedeker-hachures',
@@ -21,16 +21,18 @@ const preparedAssets = {
   icons: {ids: baedekerPatternIds, sprite: '/tileflow/icons/baedeker/sprite'},
 } as const;
 
-const ferrarisPatternIds = [
-  'ferraris-crop-hatch',
-  'ferraris-heath',
-  'ferraris-orchard',
-  'ferraris-paper-grain',
-  'ferraris-residential',
-  'ferraris-sand',
-  'ferraris-water-ripples',
-  'ferraris-wetland',
-  'ferraris-woodland',
+const map1777PatternIds = [
+  'map-1777-crop-cross',
+  'map-1777-crop-hatch',
+  'map-1777-crop-lines',
+  'map-1777-heath',
+  'map-1777-orchard',
+  'map-1777-paper-grain',
+  'map-1777-residential',
+  'map-1777-sand',
+  'map-1777-water-ripples',
+  'map-1777-wetland',
+  'map-1777-woodland',
 ] as const;
 
 test('Baedeker is a deeply frozen standalone map with only its own assets', async () => {
@@ -44,7 +46,7 @@ test('Baedeker is a deeply frozen standalone map with only its own assets', asyn
   assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(
     source,
-    /from\s+['"]\.\/(?:cyberpunk|ferraris|harad|matrix|siegfried|soundings|streets)['"]/u,
+    /from\s+['"]\.\/(?:cyberpunk|map-1777|matrix|siegfried|soundings|streets)['"]/u,
   );
   assert.doesNotMatch(source, /\bextends\s*:/u);
   assert.doesNotMatch(
@@ -237,35 +239,35 @@ test('Baedeker emits only its three packaged Cormorant faces', () => {
   );
 });
 
-test('Baedeker keeps a distinct engraved travel-plan grammar from Ferraris', () => {
+test('Baedeker keeps a distinct engraved travel-plan grammar from 1777', () => {
   const baedekerStyle = createStyle(baedeker, {preparedAssets});
-  const ferrarisStyle = createStyle(ferraris, {
+  const map1777Style = createStyle(map1777, {
     preparedAssets: {
-      icons: {ids: ferrarisPatternIds, sprite: '/tileflow/icons/ferraris/sprite'},
+      icons: {ids: map1777PatternIds, sprite: '/tileflow/icons/map-1777/sprite'},
     },
   });
   const baedekerById = new Map(baedekerStyle.layers.map((layer) => [layer.id, layer]));
-  const ferrarisById = new Map(ferrarisStyle.layers.map((layer) => [layer.id, layer]));
+  const map1777ById = new Map(map1777Style.layers.map((layer) => [layer.id, layer]));
 
   assert.ok(baedekerById.has('tileflow-buildings-render-engravedBlocks'));
   assert.equal(baedekerById.has('tileflow-buildings-render-printShadow'), false);
-  assert.equal(ferrarisById.has('tileflow-buildings-render-printShadow'), true);
-  assert.equal(ferrarisById.has('tileflow-buildings-render-engravedBlocks'), false);
+  assert.equal(map1777ById.has('tileflow-buildings-render-printShadow'), true);
+  assert.equal(map1777ById.has('tileflow-buildings-render-engravedBlocks'), false);
   assert.notDeepEqual(
     baedekerById.get('tileflow-buildings-fill')?.paint?.['fill-opacity'],
-    ferrarisById.get('tileflow-buildings-fill')?.paint?.['fill-opacity'],
+    map1777ById.get('tileflow-buildings-fill')?.paint?.['fill-opacity'],
   );
   assert.deepEqual(baedekerById.get('tileflow-label-road-minor')?.layout?.['text-font'], [
     'Cormorant Garamond Italic',
   ]);
-  assert.deepEqual(ferrarisById.get('tileflow-label-road-minor')?.layout?.['text-font'], [
-    'Noto Sans Regular',
+  assert.deepEqual(map1777ById.get('tileflow-labels-render-roadMinor')?.layout?.['text-font'], [
+    'Cormorant Garamond Italic',
   ]);
   assert.equal(baedekerById.has('tileflow-poi-transport-label'), true);
-  assert.equal(ferrarisById.has('tileflow-poi-transport-label'), false);
+  assert.equal(map1777ById.has('tileflow-poi-transport-label'), false);
   assert.notEqual(
     baedekerById.get('tileflow-water')?.paint?.['fill-color'],
-    ferrarisById.get('tileflow-water')?.paint?.['fill-color'],
+    map1777ById.get('tileflow-water')?.paint?.['fill-color'],
   );
 });
 

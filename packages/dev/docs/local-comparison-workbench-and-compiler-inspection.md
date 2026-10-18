@@ -3,7 +3,7 @@
 Start with the [@tileflow/dev guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/README.md) for installation and a complete first example.
 
 The CLI opens Map DevTools through `tileflow preview`. It uses one map and one watched artifact
-session by default. A developer-tools panel groups Map, Layers, Tiles, Assets, Debug and Beacon. Camera controls
+session by default. A developer-tools panel groups Map, Layers, Tiles, Assets, Debug and Diagnostics. Camera controls
 occupy a separate row below the navigation. Use the three-dot menu to dock left, right or below
 the map and choose System, Light or Dark appearance. Drag the divider to resize it; focused dividers
 also support arrow keys. Dock position and dimensions persist locally. Layer observations and highlights stay local to the preview. The map fills the remaining
@@ -41,7 +41,7 @@ the fixed scene viewport by default.
 Each side handler retains ownership of its styles, fonts, sprites, events, diagnostics, and
 last-known-good artifact generation. The comparison router owns the shell, its bundled UI fonts and
 strict dispatch to disjoint same-origin route prefixes. An optional `workbench: {url, handle}`
-adapter enables palette selection and browser context. Existing CLI capture-record and comparison
+adapter enables theme selection and browser context. Existing CLI capture-record and comparison
 APIs remain separate from this interface. Custom servers that omit the adapter retain inspection,
 zoom-curve sampling and the sprite atlas. Explicit two-map server configurations retain synchronized
 cameras and URL-driven side-by-side/split/overlay/blink layouts without comparison controls.
@@ -116,7 +116,7 @@ traffic or other HTTP resources. Sprite and font sources remain in **Assets**.
 ### Assets and debug overlays
 
 **Assets** separates Icons, 3D models and Fonts. Icons lists registered images, including runtime
-additions, with lazy thumbnails and searchable IDs. Palette and time filters load the actual
+additions, with lazy thumbnails and searchable IDs. Theme and time-of-day filters load the actual
 registered theme atlases; the selected icon's sidebar compares its day/night variants and links to
 consuming layers. Missing variants are marked, never synthesized from a naming convention.
 
@@ -127,4 +127,4 @@ provider and shows observed glyph ranges and consuming layers. Pending requests 
 when leaving the panel; unavailable sources do not silently use a fallback font.
 
 **Debug** offers collision boxes, overdraw with a color legend, tile boundaries and real pixel-ratio
-controls. **Beacon** provides controlled map audits; see [Beacon map audits](./beacon-map-audits.md).
+controls. **Diagnostics** lists design findings and optional drawing-cost observations; see [Map design diagnostics](./map-design-diagnostics.md).

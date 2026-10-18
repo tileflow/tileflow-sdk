@@ -20,9 +20,8 @@ export const controlsStyles = `
   .control-module-header input:checked { background:var(--accent); }
   .control-module-header input:checked::before { transform:translateX(12px); }
   .control-module-header input:focus-visible { outline:2px solid var(--accent); outline-offset:3px; }
-  .control-module summary { cursor:pointer; padding:0 12px 10px; font-size:11px; color:var(--muted); }
   .control-module fieldset { border:0; padding:0 12px 12px; margin:0; }
-  .control-module fieldset:disabled { opacity:.45; }
+  .control-module fieldset[hidden] { display:none; }
   .control-field { display:flex; align-items:center; justify-content:space-between; flex-direction:row; gap:12px; font-size:12px; margin:9px 0; }
   .control-field select,.control-field input[type=number] { width:132px; min-width:0; padding:5px 7px; font:inherit; }
   .control-field input[type=checkbox] { accent-color:var(--accent); }
@@ -38,19 +37,21 @@ export const controlsPanel = `
   <aside class="map-controls" id="map-controls" aria-label="Scene settings" tabindex="-1" hidden>
     <div class="controls-heading"><h2>Styles</h2><button id="controls-reset">Reset</button></div>
     <div class="controls-grid">
-    <div class="controls-selection workbench-only" id="controls-selection" hidden>
+    <div class="controls-selection workbench-only dt-card" id="controls-selection" hidden>
       <div class="controls-section-title">Appearance</div>
       <div class="control-field" id="wb-time-of-day-field" hidden><span>Time of day</span><div class="controls-segments" id="wb-time-of-day" role="radiogroup" aria-label="Time of day"></div></div>
-      <div class="control-field dt-palette-field" id="wb-theme-field"><span>Theme</span><select id="wb-theme" aria-label="Palette" disabled hidden><option value="">Waiting for map…</option></select><div id="wb-palettes" class="dt-palettes" role="radiogroup" aria-label="Theme palette"></div></div>
+      <div class="control-field dt-palette-field" id="wb-theme-field"><span>Theme</span><select id="wb-theme" aria-label="Theme" disabled hidden><option value="">Waiting for map…</option></select><div id="wb-palettes" class="dt-palettes" role="radiogroup" aria-label="Theme"></div></div>
     </div>
-    <fieldset class="controls-runtime" id="controls-runtime">
+    <fieldset class="controls-runtime dt-card" id="controls-runtime">
       <div class="controls-section-title">Preview rendering</div>
       <label class="control-field">3D view<input id="controls-3d" type="checkbox" role="switch"></label>
       <label class="control-field">Building animation<select id="controls-animation" hidden><option value="0">Off</option><option value="800">Grow</option><option value="fade">Fade</option></select><span class="controls-segments" id="controls-animation-segments" role="radiogroup" aria-label="Building animation"></span></label>
     </fieldset>
     </div>
-    <div class="controls-section-title">Map modules</div>
-    <fieldset id="controls-modules"></fieldset>
+    <section class="dt-card controls-module-card">
+      <div class="controls-section-title">Map modules</div>
+      <fieldset id="controls-modules"></fieldset>
+    </section>
     <p id="controls-status" role="status" hidden></p>
   </aside>
 `;
@@ -175,7 +176,7 @@ export const controlsClient = String.raw`
             const query = livePreviewUrl(side).searchParams;
             controlsDraft = JSON.parse(query.get("controls") || "{}");
             side.appliedSceneStyle ||= JSON.stringify([identity.map, controlsIdentity(side).theme, controlsDraft]);
-            ctl("3d").checked = query.get("buildings3d") === "on";
+            ctl("3d").checked = query.get("buildings3d") !== "off";
             ctl("animation").value = query.get("animation") === "fade" ? "fade" : Number(query.get("animation")) > 0 ? "800" : "0"; syncAnimationSegments();
             renderMapControls();
             controlsUndo.length = controlsRedo.length = 0;
@@ -204,7 +205,7 @@ export const controlsClient = String.raw`
         if (!Object.keys(patch).length) delete controlsDraft[module];
         scheduleMapControls();
       }
-      function renderMapControls(expanded = [...ctl("modules").querySelectorAll("details[open]")].map((item) => item.dataset.module)) {
+      function renderMapControls() {
         ctl("modules").replaceChildren();
         controlsBindings = [];
         const names = {poi:"Points of interest", land:"Land", water:"Water", nautical:"Nautical", roads:"Roads", buildings:"Buildings", boundaries:"Boundaries", labels:"Labels", aeroways:"Airports", transit:"Transit", vegetation:"Vegetation", addresses:"Addresses", landforms:"Landforms"};
@@ -220,23 +221,19 @@ export const controlsClient = String.raw`
           toggle.setAttribute("role", "switch");
           toggle.setAttribute("aria-label", "Enable " + (names[module.id] || module.id));
           label.append(toggle); row.append(label); card.append(row);
-          const fieldset = document.createElement("fieldset"); fieldset.disabled = !toggle.checked;
-          let details;
+          const fieldset = document.createElement("fieldset");
           const syncModuleEnabled = () => {
-            const wasEnabled = !fieldset.disabled;
             fieldset.disabled = !toggle.checked;
-            if (details && wasEnabled !== toggle.checked) details.open = toggle.checked;
+            fieldset.hidden = !toggle.checked;
           };
+          syncModuleEnabled();
           controlsBindings.push(() => {
             if (document.activeElement !== toggle) toggle.checked = controlsDraft[module.id]?.enabled ?? module.enabled;
             syncModuleEnabled();
           });
           toggle.addEventListener("change", () => { changeControl(module.id, "enabled", toggle.checked, module.enabled); syncModuleEnabled(); });
           if (module.fields.length) {
-            details = document.createElement("details");
-            details.dataset.module = module.id; details.open = toggle.checked || expanded.includes(module.id);
-            const summary = document.createElement("summary"); summary.textContent = "Appearance & behavior";
-            details.append(summary, fieldset); card.append(details);
+            card.append(fieldset);
             for (const field of module.fields) {
               const line = document.createElement("label"); line.className = "control-field";
               const title = document.createElement("span"); title.textContent = field.label;
@@ -281,7 +278,7 @@ export const controlsClient = String.raw`
           controlsNotice("Enter valid field values to update the preview.", true); return;
         }
         const draft = reset ? {} : structuredClone(controlsDraft);
-        const next = {map, theme, controls:draft, buildings3d:!reset && ctl("3d").checked, animation:reset ? 0 : ctl("animation").value === "fade" ? "fade" : Number(ctl("animation").value)};
+        const next = {map, theme, controls:draft, buildings3d:reset || ctl("3d").checked, animation:reset ? 0 : ctl("animation").value === "fade" ? "fade" : Number(ctl("animation").value)};
         const styleKey = JSON.stringify([map, theme, draft]);
         const isCurrent = () => revision === controlsRevision && controlsKey === key && side.id === activeSideId && side.bridgeConnected && epoch === side.loadEpoch && source === side.frame.src;
         const before = controlsHistoryCurrent && {...controlsHistoryCurrent, style:side.map.getStyle()};

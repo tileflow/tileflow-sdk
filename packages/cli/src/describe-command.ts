@@ -11,7 +11,7 @@ export function registerDescribeCommand(program: Command): void {
   program
     .command('describe')
     .description('Discover domains and query the generated authoring schema without loading a map')
-    .argument('[topic]', 'domain name, expressions, or schema')
+    .argument('[topic]', 'domain name, themes, expressions, or schema')
     .option(
       '--ref <pointer>',
       'exact local schema reference, such as #/$defs/TileflowRoadsModuleOptions',
@@ -31,7 +31,7 @@ export function registerDescribeCommand(program: Command): void {
           const manifest = tileflowAuthoringManifest;
           let value: unknown;
           let schemaRef: string | undefined;
-          if (options.ref || (topic && topic !== 'expressions')) {
+          if (options.ref || (topic && topic !== 'expressions' && topic !== 'themes')) {
             const schema = await loadPackagedSchema();
             const domain = manifest.domains.find((entry) => entry.name === topic);
             if (topic && topic !== 'schema' && !domain)
@@ -44,6 +44,8 @@ export function registerDescribeCommand(program: Command): void {
             value = selectJsonPointer(schema, schemaRef.replace(/^#/u, ''));
           } else if (topic === 'expressions') {
             value = manifest.expressions;
+          } else if (topic === 'themes') {
+            value = manifest.themes;
           } else {
             value = {
               domains: manifest.domains.map(({name, api, optionsSchemaRef}) => ({
@@ -51,7 +53,7 @@ export function registerDescribeCommand(program: Command): void {
                 api,
                 schemaRef: optionsSchemaRef,
               })),
-              topics: ['expressions', 'schema'],
+              topics: ['expressions', 'schema', 'themes'],
               commands: ['describe', 'inspect', 'capture', 'compare', 'preview'],
             };
           }

@@ -8,10 +8,8 @@ import {type TileflowSun} from './sun';
 /** Tile units across a tile, as Tileflow's 3D layers lay out their meshes. */
 export const tileflowSceneExtent = 8192;
 
-// Shadows lengthen as the sun sets while they fade: they fall from a sun no lower than 3° and fade
-// out between 7° and half a degree.
-export const tileflowSceneShadowFloor = 3;
-const shadowFade: readonly [number, number] = [0.5, 7];
+// Limit the projected shadow direction to 15°; the actual light keeps its authored altitude.
+export const tileflowSceneShadowFloor = 15;
 
 /** The light a scene is drawn in, from a sun, in linear colour. */
 export type TileflowSceneLight = Readonly<{
@@ -31,8 +29,8 @@ export type TileflowSceneLight = Readonly<{
 
 /** The light of a sun for the scene's layers; `shadows: false` keeps every shadow off. */
 export function tileflowSceneLight(sun: TileflowSun, shadows = true): TileflowSceneLight {
-  const linear = (value: number) =>
-    value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  // Match the gamma-2.2 radiance used by the directional/ambient shadow receiver.
+  const linear = (value: number) => value ** 2.2;
   const sunLight = sun.rgb.map((channel) => linear(channel) * sun.intensity);
   const skyLight = sun.ambient.rgb.map((channel) => linear(channel) * sun.ambient.intensity);
   const up = sun.direction[2];
@@ -47,13 +45,9 @@ export function tileflowSceneLight(sun: TileflowSun, shadows = true): TileflowSc
     Math.cos(azimuth) * Math.cos(floor),
     Math.sin(floor),
   ];
-  const low = Math.min(
-    1,
-    Math.max(0, (sun.altitude - shadowFade[0]) / (shadowFade[1] - shadowFade[0])),
-  );
-  const strength = shadows
-    ? Math.min(1, sun.shadowIntensity) * Math.min(1, sun.intensity * 4) * low * low * (3 - 2 * low)
-    : 0;
+  // Sun intensity already fades at the horizon in resolveTileflowSun. Do not attenuate
+  // the authored shadow intensity again: radiance controls how much light shade removes.
+  const strength = shadows && sun.intensity > 0 ? Math.min(1, sun.shadowIntensity) : 0;
   const night = Math.min(1, Math.max(0, (0.14 - sun.brightness) / 0.09));
   return {
     direction: sun.direction,
@@ -134,13 +128,13 @@ const scenes = new WeakMap<object, TileflowScene3D>();
 export function tileflowScene3D(map: object): TileflowScene3D {
   let scene = scenes.get(map);
   if (!scene) {
-    scene = createScene();
+    scene = createScene(map);
     scenes.set(map, scene);
   }
   return scene;
 }
 
-function createScene(): TileflowScene3D {
+function createScene(map: object): TileflowScene3D {
   const casters = new Set<TileflowSceneCaster>();
   let target: ShadowTarget | undefined;
   let key: string | undefined;
@@ -187,6 +181,8 @@ function createScene(): TileflowScene3D {
     light: TileflowSceneLight,
     metres: number,
   ): void {
+    // Do not allocate a full depth texture for a scene with no solar shadows.
+    if (light.strength <= 0) return;
     const shadow = ensureTarget(context);
     if (shadow.failed) return;
     const casting: {
@@ -197,8 +193,6 @@ function createScene(): TileflowScene3D {
       const bounds = caster.bounds();
       if (bounds) casting.push({caster, bounds});
     }
-    // No sun to cast from: the map drawn last stays, unread, until the sun returns.
-    if (light.strength <= 0) return;
     if (casting.length === 0) {
       frame = undefined;
       key = undefined;
@@ -216,6 +210,21 @@ function createScene(): TileflowScene3D {
       tallest = Math.max(tallest, bounds.tallest);
     }
     const origin = [left, top] as const;
+    const scale = metres;
+    const unit = tileflowSceneExtent * scale;
+    const lightView = tileflowSunLightMatrix(
+      light.shadowDirection,
+      {
+        min: [0, -(bottom + 1 - top) * unit, 0],
+        max: [(right + 1 - left) * unit, 0, tallest],
+      },
+      {
+        receivers: viewportReceivers(map, zoom, origin, scale, tallest),
+        resolution: shadow.size,
+        origin: [origin[0] * unit, -origin[1] * unit, 0],
+        gridScale: unit * 2 ** zoom,
+      },
+    );
     const next = [
       ...light.shadowDirection.map((value) => value.toFixed(5)),
       zoom,
@@ -224,15 +233,11 @@ function createScene(): TileflowScene3D {
       right,
       bottom,
       tallest.toFixed(2),
+      scale,
+      ...lightView.matrix,
       ...casting.map(({caster}) => caster.key()),
     ].join();
     if (next === key && frame) return;
-    const scale = metres;
-    const unit = tileflowSceneExtent * scale;
-    const lightView = tileflowSunLightMatrix(light.shadowDirection, {
-      min: [0, -(bottom + 1 - top) * unit, 0],
-      max: [(right + 1 - left) * unit, 0, tallest],
-    });
     const offsetOf = (tile: {x: number; y: number}, tileZoom = zoom): [number, number] => {
       const factor = 2 ** (zoom - tileZoom);
       return [
@@ -296,18 +301,22 @@ function createScene(): TileflowScene3D {
       const on = strength > 0 && frame && target && !target.failed;
       context.activeTexture(context.TEXTURE0);
       context.bindTexture(context.TEXTURE_2D, target?.texture ?? null);
-      context.uniform1i(uniforms.u_shadow_map!, 0);
-      context.uniform1f(uniforms.u_shadow!, on ? strength : 0);
+      context.uniform1i(uniforms.u_shadow_map ?? null, 0);
+      context.uniform1f(uniforms.u_shadow ?? null, on ? strength : 0);
       if (!on || !frame || !target) return;
-      context.uniformMatrix4fv(uniforms.u_light_matrix!, false, frame.light.matrix);
-      context.uniform2f(uniforms.u_shadow_texel!, 1 / target.size, 1 / target.size);
-      context.uniform1f(uniforms.u_depth_unit!, 1 / frame.light.depth);
-      context.uniform1f(uniforms.u_normal_offset!, (frame.light.extent / target.size) * 1.2);
+      context.uniformMatrix4fv(uniforms.u_light_matrix ?? null, false, frame.light.matrix);
+      context.uniform1f(uniforms.u_depth_unit ?? null, 1 / frame.light.depth);
+      context.uniform1f(
+        uniforms.u_normal_offset ?? null,
+        Math.min(0.15, Math.max(0.02, (frame.light.extent / target.size) * 0.5)),
+      );
     },
     drawsGround(caster) {
       let first: TileflowSceneCaster | undefined;
-      for (const entry of casters)
+      for (const entry of casters) {
+        if (!entry.bounds()) continue;
         if (!first || entry.groundOrder < first.groundOrder) first = entry;
+      }
       return first === caster;
     },
     release(context) {
@@ -321,15 +330,146 @@ function createScene(): TileflowScene3D {
   };
 }
 
+type ShadowPoint = readonly number[];
+type ShadowBox = Readonly<{min: ShadowPoint; max: ShadowPoint}>;
+type ShadowView = Readonly<{
+  /** Visible receiver points, in the caster box's metre frame. All casters still draw. */
+  receivers?: readonly ShadowPoint[];
+  /** Snap to world-aligned texels; omit for an unsnapped mathematical projection. */
+  resolution?: number;
+  origin?: ShadowPoint;
+  /** Metres per fixed world unit; keeps texel quantization independent of latitude scale. */
+  gridScale?: number;
+}>;
+
 /**
- * The sun's view of a box of buildings: an orthographic projection along `direction` (towards the
- * sun; x east, y north, z up, in metres) as a column-major matrix to clip space, with the metres its
- * depth runs over and the metres its wider side spans. It follows only the sun, never the camera,
- * so shadows hold still while the camera moves.
+ * Ground and raised corners of the visible frustum, using public MapLibre camera methods only.
+ * An unsafe horizon, terrain or unavailable camera API keeps the conservative full-scene fit.
+ */
+function viewportReceivers(
+  input: object,
+  zoom: number,
+  origin: readonly [number, number],
+  metres: number,
+  tallest: number,
+): ShadowPoint[] | undefined {
+  const map = input as {
+    getCanvas?(): {clientWidth: number; clientHeight: number};
+    getCenter?(): {lng: number; lat: number};
+    getBearing?(): number;
+    getPitch?(): number;
+    getZoom?(): number;
+    getVerticalFieldOfView?(): number;
+    getCenterElevation?(): number;
+    getTerrain?(): unknown;
+    project?(point: {lng: number; lat: number}): {x: number; y: number};
+    unproject?(point: [number, number]): {lng: number; lat: number};
+  };
+  try {
+    if (
+      typeof map.getCanvas !== 'function' ||
+      typeof map.getCenter !== 'function' ||
+      typeof map.getBearing !== 'function' ||
+      typeof map.getPitch !== 'function' ||
+      typeof map.getZoom !== 'function' ||
+      typeof map.getVerticalFieldOfView !== 'function' ||
+      typeof map.project !== 'function' ||
+      typeof map.unproject !== 'function'
+    )
+      return undefined;
+    if (map.getTerrain?.()) return undefined;
+    if (map.getCenterElevation && Math.abs(map.getCenterElevation()) > 1e-5) return undefined;
+    const {clientWidth: width, clientHeight: height} = map.getCanvas();
+    const pitch = map.getPitch();
+    const fov = map.getVerticalFieldOfView();
+    if (!(width > 0 && height > 0 && fov > 0 && fov < 90 && pitch >= 0 && pitch + fov / 2 < 85))
+      return undefined;
+    const count = 2 ** zoom;
+    const unit = tileflowSceneExtent * metres;
+    const centre = map.getCenter();
+    const centreX = ((centre.lng + 180) / 360) * count;
+    const point = ({lng, lat}: {lng: number; lat: number}): number[] => {
+      if (!Number.isFinite(lng) || !Number.isFinite(lat) || Math.abs(lat) >= 85.051129)
+        throw new Error('Unprojected shadow receiver is outside Mercator.');
+      const x = ((lng + 180) / 360) * count;
+      const wrappedX = x + Math.round((centreX - x) / count) * count;
+      const phi = (lat * Math.PI) / 180;
+      const y = ((1 - Math.log(Math.tan(phi) + 1 / Math.cos(phi)) / Math.PI) / 2) * count;
+      return [(wrappedX - origin[0]) * unit, -(y - origin[1]) * unit, 0];
+    };
+    const pixels: [number, number][] = [
+      [0, 0],
+      [width, 0],
+      [width, height],
+      [0, height],
+    ];
+    const ground = pixels.map((pixel) => point(map.unproject!(pixel)));
+    const centrePoint = point(centre);
+    // MapLibre's public zoom uses a 512-pixel Mercator world. The field of view supplies
+    // the camera distance; intersect the same corner rays with the raised receiver plane.
+    const pixel = unit / (512 * 2 ** (map.getZoom() - zoom));
+    const distance = (height * pixel) / (2 * Math.tan((fov * Math.PI) / 360));
+    const angle = (pitch * Math.PI) / 180;
+    const bearing = (map.getBearing() * Math.PI) / 180;
+    const elevation = distance * Math.cos(angle);
+    if (!(elevation > 0.1 && Number.isFinite(elevation))) return undefined;
+    const camera = [
+      centrePoint[0]! - distance * Math.sin(angle) * Math.sin(bearing),
+      centrePoint[1]! - distance * Math.sin(angle) * Math.cos(bearing),
+      elevation,
+    ];
+    // A declared globe becomes planar at street zooms; its name cannot decide the fit.
+    // Check the public corner rays instead. project(center) includes asymmetric map padding.
+    const screenCentre = map.project(centre);
+    const right = [Math.cos(bearing), -Math.sin(bearing), 0];
+    const forward = [
+      Math.sin(bearing) * Math.sin(angle),
+      Math.cos(bearing) * Math.sin(angle),
+      -Math.cos(angle),
+    ];
+    const up = [
+      Math.sin(bearing) * Math.cos(angle),
+      Math.cos(bearing) * Math.cos(angle),
+      Math.sin(angle),
+    ];
+    const dot = (a: number[], b: number[]) =>
+      a.reduce((sum, value, index) => sum + value * b[index]!, 0);
+    for (const [index, corner] of ground.entries()) {
+      const ray = corner.map((value, axis) => value - camera[axis]!);
+      const depth = dot(ray, forward);
+      if (!(depth > 0)) return undefined;
+      const x = screenCentre.x + (dot(ray, right) / depth) * (distance / pixel);
+      const y = screenCentre.y - (dot(ray, up) / depth) * (distance / pixel);
+      if (
+        !Number.isFinite(x) ||
+        !Number.isFinite(y) ||
+        Math.abs(x - pixels[index]![0]) > Math.max(2, width * 0.005) ||
+        Math.abs(y - pixels[index]![1]) > Math.max(2, height * 0.005)
+      )
+        return undefined;
+    }
+    // All corner rays point downward here. Geometry above the camera cannot enter the view.
+    const fraction = Math.min(Math.max(0, tallest) / elevation, 1);
+    return [
+      ...ground,
+      ...ground.map((corner) =>
+        corner.map((value, index) => value + (camera[index]! - value) * fraction),
+      ),
+    ];
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The sun's orthographic view, in metres, with room for each caster's shadow to reach the ground.
+ * Optional receivers concentrate XY resolution without dropping offscreen casters along a ray;
+ * quantized extents and a world-anchored texel grid keep stationary shadows stable during pans.
  */
 export function tileflowSunLightMatrix(
   direction: readonly number[],
-  box: Readonly<{min: readonly number[]; max: readonly number[]}>,
+  box: ShadowBox,
+  view: ShadowView = {},
 ): {matrix: Float32Array; depth: number; extent: number} {
   const length = Math.hypot(direction[0]!, direction[1]!, direction[2]!) || 1;
   const towards = direction.map((value) => value / length);
@@ -348,25 +488,53 @@ export function tileflowSunLightMatrix(
   const up = cross(right, forward);
   const dot = (a: readonly number[], b: readonly number[]) =>
     a[0]! * b[0]! + a[1]! * b[1]! + a[2]! * b[2]!;
-  const range = (axis: readonly number[]) => {
+  const corners: number[][] = [];
+  for (const x of [box.min[0]!, box.max[0]!])
+    for (const y of [box.min[1]!, box.max[1]!])
+      for (const z of [box.min[2]!, box.max[2]!]) corners.push([x, y, z]);
+  const range = (axis: readonly number[], points: readonly ShadowPoint[]) => {
     let low = Infinity;
     let high = -Infinity;
-    for (const x of [box.min[0]!, box.max[0]!])
-      for (const y of [box.min[1]!, box.max[1]!])
-        for (const z of [box.min[2]!, box.max[2]!]) {
-          const value = dot([x, y, z], axis);
-          low = Math.min(low, value);
-          high = Math.max(high, value);
-        }
+    for (const point of points) {
+      const value = dot(point, axis);
+      low = Math.min(low, value);
+      high = Math.max(high, value);
+    }
     return [low, high] as const;
   };
   const pad = ([low, high]: readonly [number, number], extra: number) =>
     [low - extra, high + extra] as const;
-  const [u0, u1] = range(right);
-  const [v0, v1] = range(up);
-  const [a0, a1] = pad([u0, u1], (u1 - u0) * 0.01 + 2);
-  const [b0, b1] = pad([v0, v1], (v1 - v0) * 0.01 + 2);
-  const [c0, c1] = pad(range(forward), 10);
+  const receivers = view.receivers?.length ? view.receivers : corners;
+  const fit = (axis: ShadowPoint) => {
+    const [low, high] = range(axis, receivers);
+    const extra = (high - low) * 0.01 + 2;
+    if (!(view.resolution && view.resolution >= 1)) return pad([low, high], extra);
+    const span = high - low + extra * 2;
+    // Quantize in a stable Mercator frame. Quantizing metre extents while the absolute
+    // world origin changes with cos(latitude) shifts texels even on centimetre pans.
+    // Convert back for drawing: meshes retain their current physical metre scale.
+    const gridScale = view.gridScale && view.gridScale > 0 ? view.gridScale : 1;
+    const gridSpan = span / gridScale;
+    const quantum = 2 ** Math.floor(Math.log2(gridSpan)) / 16;
+    const extent = Math.ceil(gridSpan / quantum) * quantum * gridScale;
+    const texel = extent / view.resolution;
+    const offset = dot(view.origin ?? [0, 0, 0], axis);
+    const centre = Math.round(((low + high) / 2 + offset) / texel) * texel - offset;
+    return [centre - extent / 2, centre + extent / 2] as const;
+  };
+  const [a0, a1] = fit(right);
+  const [b0, b1] = fit(up);
+  // A ground endpoint has the same light-space XY as its roof, but is farther from the
+  // sun. Extend depth only: widening the XY box would waste the newly focused resolution.
+  const endpoints =
+    towards[2]! > 1e-5
+      ? corners.map(([x, y, z]) => [
+          x! - (z! * towards[0]!) / towards[2]!,
+          y! - (z! * towards[1]!) / towards[2]!,
+          0,
+        ])
+      : [];
+  const [c0, c1] = pad(range(forward, [...corners, ...endpoints, ...receivers]), 10);
   const hu = (a1 - a0) / 2;
   const hv = (b1 - b0) / 2;
   const hd = (c1 - c0) / 2;

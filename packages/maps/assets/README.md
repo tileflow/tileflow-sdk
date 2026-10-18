@@ -1,13 +1,13 @@
 # Official map assets
 
 These directories contain the package-owned sources required by the official Streets, Baedeker,
-Ferraris, Härad, Siegfried, Soundings, Blueprint, and Cívica maps. Their SVG icons and
+1777, Siegfried, Soundings, Blueprint, and Cívica maps. Their SVG icons and
 patterns live under each map's `icons/` directory. Streets includes a pinned CC0 subset of Maki
 pictograms inside Tileflow-authored circular POI markers; its provenance is recorded in
 `../THIRD_PARTY_NOTICES.md` and the upstream license is kept at `streets/LICENSE-MAKI.txt`. A map
-refers to those directories through the exported `streetsIcons`, `baedekerIcons`, `ferrarisIcons`,
-`haradIcons`, `siegfriedIcons`, `soundingsIcons`, `blueprintIcons`, and `civicaIcons` descriptors. Baedeker, Cívica, and Siegfried refer to their own
-packaged font directories through `baedekerFonts`, `civicaFonts`, and `siegfriedFonts`; the files and their `LICENSE.txt` remain beside the map that owns them.
+refers to those directories through the exported `streetsIcons`, `baedekerIcons`, `map1777Icons`,
+`siegfriedIcons`, `soundingsIcons`, `blueprintIcons`, and `civicaIcons` descriptors. Baedeker, Cívica, 1777, and Siegfried refer to their own
+packaged font directories through `baedekerFonts`, `civicaFonts`, `map1777Fonts`, and `siegfriedFonts`; the files and their `LICENSE.txt` remain beside the map that owns them.
 
 The seven `road-shield-*` SVGs are original Tileflow artwork: a deliberately generic neutral,
 colored-rectangle, and neutral-circle vocabulary. They do not reproduce a national sign template
@@ -38,11 +38,12 @@ supporting branches, reducing tessellation at distance instead of dropping limbs
 Package tests prepare and decode the real models, verify finite
 geometry and normals, and check the committed assets against the generator.
 
-The Ferraris directory contains nine
-original intrinsic-size SVG patterns:
-`ferraris-crop-hatch`, `ferraris-heath`, `ferraris-orchard`, `ferraris-paper-grain`,
-`ferraris-residential`, `ferraris-sand`, `ferraris-water-ripples`, `ferraris-wetland`, and
-`ferraris-woodland`.
+The 1777 directory contains eleven original intrinsic-size material patterns, each with
+Day, Dawn, Dusk and Night pigments (44 SVG files). The Day IDs are
+`map-1777-crop-cross`, `map-1777-crop-hatch`, `map-1777-crop-lines`, `map-1777-heath`, `map-1777-orchard`, `map-1777-paper-grain`,
+`map-1777-residential`, `map-1777-sand`, `map-1777-water-ripples`, `map-1777-wetland`, and
+`map-1777-woodland`. Woods and gardens use pigment grain, not repeated tree symbols.
+1777 also owns three licensed Cormorant Garamond faces under `map-1777/fonts/`.
 
 The Baedeker directory contains eight original intrinsic-size SVG patterns:
 `baedeker-hachures`, `baedeker-orchard`, `baedeker-paper-grain`, `baedeker-park-stipple`,
@@ -57,13 +58,6 @@ the three Cormorant Garamond faces selected by the map. Browser-derived Mapterho
 runtime terrain and no Mapterhorn tile is packaged here. Baedeker is not affiliated with or
 endorsed by Baedeker or Wagner & Debes. See `baedeker/README.md` and the package-level
 `THIRD_PARTY_NOTICES.md`.
-
-The Härad directory contains nine original intrinsic-size SVG patterns: `harad-arable`,
-`harad-conifer`, `harad-deciduous`, `harad-orchard`, `harad-paper-grain`, `harad-sand`,
-`harad-settlement`, `harad-water-lines`, and `harad-wetland`. Tileflow authored these vectors from
-scratch using Lantmäteriet's CC0 Häradsekonomiska kartan series (1859–1934) and official legend
-as visual references. No Lantmäteriet scan, raster pixel, legend artwork, font, or map data is
-included or redistributed. See `harad/README.md` and the package-level `THIRD_PARTY_NOTICES.md`.
 
 The Siegfried directory contains nine original intrinsic-size motifs, each drawn in coordinated
 light and dark artwork: forest, glacier, gravel, orchard, paper grain, rock, scree, water lines, and
@@ -106,9 +100,9 @@ OpenType full names, includes only used faces, and publishes content-addressed f
 assets. A self-hosted Baedeker build materializes its selected font files and license without
 a map-name special case. Its manifest and Style carry the strict `tileflow:fontFaces`
 public-asset contract; Style font values are exact OpenType full names.
-The compiler never manufactures a face ID by adding a weight. Streets, Ferraris, Härad, Soundings,
+The compiler never manufactures a face ID by adding a weight. Streets, Soundings,
 and Blueprint each declare the canonical Tileflow glyph URL with exact
-`Noto Sans Regular` and `Noto Sans Bold` stacks. Baedeker and Siegfried each name `Cormorant Garamond Regular`,
+`Noto Sans Regular` and `Noto Sans Bold` stacks. Baedeker, 1777 and Siegfried each name `Cormorant Garamond Regular`,
 `Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic` from their respective packaged
 directories. Cívica packages `DM Serif Text Regular` and `DM Serif Text Italic` for its place
 and water lettering, `Barlow Semi Condensed Regular` and `Barlow Semi Condensed SemiBold` for

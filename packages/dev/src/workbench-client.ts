@@ -1,3 +1,5 @@
+import {defaultPaletteMapIds, themeLabels} from './devtools/theme-labels';
+
 /** Runs in the comparison document's scope and uses its existing map bridge. */
 export const workbenchClient = String.raw`
       let wbCatalog;
@@ -9,6 +11,9 @@ export const workbenchClient = String.raw`
       let wbPickerKey = "";
       let wbTimeOfDay = "";
       const wbPaletteColors = new Map();
+      const wbThemeLabels = ${JSON.stringify(themeLabels)};
+      const wbDefaultPaletteMaps = ${JSON.stringify(defaultPaletteMapIds)};
+      const wbThemeLabel = (theme, metadata) => theme === "light" && wbDefaultPaletteMaps.some(id => metadata?.["tileflow:map"] === id || (Array.isArray(metadata?.["tileflow:extends"]) && metadata["tileflow:extends"].includes(id))) ? "Default" : Object.hasOwn(wbThemeLabels,theme) ? wbThemeLabels[theme] : theme.replace(/[-_]/g," ");
       const wbClient = "view-" + Math.random().toString(36).slice(2);
       const wb = (id) => document.getElementById("wb-" + id);
       if (options.workbenchUrl) initializeWorkbench();
@@ -124,13 +129,18 @@ export const workbenchClient = String.raw`
           return;
         }
         const variants = owner?.timeOfDay?.[side.workbenchMap] || {};
-        const key = JSON.stringify([activeSideId, selectedTheme, selections, variants, side.requestedTimeOfDay]);
+        const themeMetadata = side.map?.getStyle?.()?.metadata;
+        const key = JSON.stringify([activeSideId, selectedTheme, selections, variants, side.requestedTimeOfDay, themeMetadata?.["tileflow:map"], themeMetadata?.["tileflow:extends"]]);
         if (key === wbPickerKey) return;
         wbPickerKey = key;
         const allThemes = [...new Set(selections.map((entry) => entry.theme))];
         const family = Object.keys(variants).find((name) => Object.values(variants[name]).includes(selectedTheme));
         const members = new Set(Object.values(variants).flatMap((moments) => Object.values(moments)));
         const themes = allThemes.filter((name) => !members.has(name) || Object.hasOwn(variants, name));
+        if (themeMetadata?.["tileflow:map"] === "streets" || (Array.isArray(themeMetadata?.["tileflow:extends"]) && themeMetadata["tileflow:extends"].includes("streets"))) {
+          const streetsOrder = new Map([["light", 0], ["faded", 1], ["monochrome", 2]]);
+          themes.sort((left, right) => (streetsOrder.get(left) ?? 3) - (streetsOrder.get(right) ?? 3));
+        }
         const moments = family ? variants[family] : {};
         wbTimeOfDay = moments[side.requestedTimeOfDay] === selectedTheme ? side.requestedTimeOfDay : Object.keys(moments).find((moment) => moments[moment] === selectedTheme) || "";
         for (const segment of wb("time-of-day").querySelectorAll("button")) {
@@ -140,20 +150,20 @@ export const workbenchClient = String.raw`
           segment.disabled = !moments[segment.value];
         }
         wb("time-of-day-field").hidden = !family;
-        wb("theme").replaceChildren(...themes.map((theme) => new Option(theme, theme)));
+        wb("theme").replaceChildren(...themes.map((theme) => new Option(wbThemeLabel(theme,themeMetadata), theme)));
         wb("theme").value = family || selectedTheme;
         wb("theme").disabled = themes.length < 2;
         wb("palettes").replaceChildren(...themes.map(theme => {
           const button=document.createElement("button");button.type="button";button.setAttribute("role","radio");button.setAttribute("aria-checked",String(theme===(family||selectedTheme)));
           const swatches=document.createElement("span");swatches.className="dt-palette-swatches";
-          const label=document.createElement("span");label.textContent=theme.replace(/[-_]/g," ");button.append(swatches,label);
+          const label=document.createElement("span");label.textContent=wbThemeLabel(theme,themeMetadata);button.append(swatches,label);
           button.onclick=()=>{wb("theme").value=theme;selectWorkbenchAppearance();};
           const concrete=variants[theme]?.[wbTimeOfDay] || variants[theme]?.day || theme;
           const fill=colors=>{if(!button.isConnected)return;swatches.replaceChildren(...colors.map(color=>{const swatch=document.createElement("i");swatch.style.background=color;return swatch;}));};
           if(wbPaletteColors.has(concrete))queueMicrotask(()=>fill(wbPaletteColors.get(concrete)));
           else {
             const url=new URL(side.definition.basePath+"/styles/"+side.workbenchMap+"/"+concrete+".json",location.href);
-            fetch(url).then(response=>{if(!response.ok)throw new Error("Palette unavailable");return response.json();}).then(style=>{
+            fetch(url).then(response=>{if(!response.ok)throw new Error("Theme unavailable");return response.json();}).then(style=>{
               const choices=[/background/,/water/,/land.*(?:park|vegetation)|vegetation/,/building/];
               const colors=choices.map(pattern=>style.layers.flatMap(layer=>pattern.test(layer.id)||pattern.test(layer.type)?Object.entries(layer.paint||{}).filter(([key,value])=>key.endsWith("-color")&&typeof value==="string").map(([,value])=>value):[])[0]).filter(Boolean);
               wbPaletteColors.set(concrete,colors);fill(colors);
@@ -194,10 +204,17 @@ export const workbenchClient = String.raw`
         const layerObservation = globalThis.__tileflowDevtoolsUI?.layerContext?.();
         const selected = !layerObservation && selectedInspection?.side === side ? selectedInspection : undefined;
         const feature = selected?.features[selected.featureIndex];
-        const layer = feature && side.map?.getStyle?.().layers?.find((entry) => entry.id === feature.layerId);
+        const style = side.map?.getStyle?.();
+        const metadata = style?.metadata;
+        const layer = feature && style?.layers?.find((entry) => entry.id === feature.layerId);
         const provenance = feature && findSidecarLayer(side.sidecar, feature.layerId);
         let definition;
         try { definition = currentWorkbenchDefinition(); } catch { /* Loading previews have no camera yet. */ }
+        const themeVariants = wbCatalog?.sides[side.serviceId || side.id]?.timeOfDay?.[definition?.map] || {};
+        const themeFamily = definition && Object.keys(themeVariants).find(name => Object.values(themeVariants[name]).includes(definition.theme));
+        const appearance = definition ? {theme:wbThemeLabel(themeFamily || definition.theme,metadata), themeId:themeFamily || definition.theme,
+          timeOfDay:themeFamily ? (themeVariants[themeFamily][wbTimeOfDay] === definition.theme ? wbTimeOfDay : Object.keys(themeVariants[themeFamily]).find(moment => themeVariants[themeFamily][moment] === definition.theme)) : undefined,
+          concreteThemeId:definition.theme} : undefined;
         const configuration = side.definition.captureConfig ? " --config " + quoteCliArgument(side.definition.captureConfig) : "";
         const semanticOwner = provenance && sidecarLayerWithSemanticAttribution(provenance).semanticAttribution[0]?.semanticOwner;
         const captureCommand = definition ? "tileflow capture" + configuration + " --map " + quoteCliArgument(definition.map) + " --theme " + quoteCliArgument(definition.theme) +
@@ -205,7 +222,7 @@ export const workbenchClient = String.raw`
           " --width=" + definition.viewport.width + " --height=" + definition.viewport.height + " --dpr=" + definition.viewport.dpr + " --json" : undefined;
         return {schemaVersion:1, source:"browser-observation", config:side.definition.captureConfig || "tileflow.config.ts",
           status:side.artifactStatus, generation:side.artifactGeneration, inspectionEnabled,
-          displayedGeneration:Number(side.frame.contentDocument?.documentElement.dataset.tileflowArtifactGeneration), definition,
+          displayedGeneration:Number(side.frame.contentDocument?.documentElement.dataset.tileflowArtifactGeneration), definition, appearance,
           captureSemantics:"Compiled map at the observed camera and viewport; temporary preview edits are excluded.",
           review:{referenceId:null, before:null, after:null, liveMode:stage.dataset.mode, source:"map"},
           commands:{inspect:"tileflow inspect" + configuration + (semanticOwner ? " --domain " + quoteCliArgument(semanticOwner) : " --limit 80") + " --json", capture:captureCommand,

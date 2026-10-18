@@ -62,8 +62,8 @@ authoring:
 ```sh
 # Two maps or themes from one config.
 npx tileflow preview \
-  --map harad --theme light \
-  --against-map ferraris --against-theme light
+  --map baedeker --theme light \
+  --against-map map-1777 --against-theme light
 
 # Or compare against another config.
 npx tileflow preview \

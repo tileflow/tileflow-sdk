@@ -657,6 +657,26 @@ test('waterway consolidation uses a solid dash fallback for regular lines', () =
   assert.match(JSON.stringify(layers[0]?.paint), /\[1,0\]/);
 });
 
+test('zoom-dependent road selectors remain separate instead of entering paint expressions', () => {
+  const input = (['motorway', 'trunk'] as const).map((roadClass) =>
+    roadLayer(roadClass, roadClass === 'motorway' ? 8 : 6, {
+      filter: [
+        'all',
+        ['==', ['get', 'class'], roadClass],
+        ['step', ['zoom'], ['!=', ['get', 'ramp'], 1], 12, true],
+      ],
+      paint: {
+        'line-color': roadClass === 'motorway' ? '#8899aa' : '#aabbcc',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2, 18, 8],
+      },
+    }),
+  );
+  const planned = planTileflowLayers(input);
+  assert.deepEqual(styleErrors(input), []);
+  assert.deepEqual(styleErrors(planned), []);
+  assert.deepEqual(planned, input);
+});
+
 test('multi-branch match filters retain every boolean branch', () => {
   const first = roadLayer('motorway', 5, {
     filter: ['match', ['get', 'class'], 'motorway', true, 'secondary', true, false],

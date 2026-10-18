@@ -6,16 +6,14 @@ import {
   type TileflowNativeDiagnostic,
   tileflowNativeProfile,
 } from '@tileflow/core/native-profile';
-import {baedeker, blueprint, ferraris, harad, siegfried, soundings, streets} from '@tileflow/maps';
+import {baedeker, blueprint, map1777, siegfried, soundings, streets} from '@tileflow/maps';
 import {createTileflowArtifactPlan, disposeTileflowBuildArtifacts} from '../src/artifacts';
 import {prepareTileflowCatalogIcons} from '../src/icons';
 
 export const nativeCatalogMaps = [
   baedeker,
 
-  ferraris,
-  harad,
-
+  map1777,
   blueprint,
   siegfried,
   soundings,

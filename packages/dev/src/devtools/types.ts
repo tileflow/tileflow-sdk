@@ -2,7 +2,7 @@ import type {MapGeoJSONFeature, Map as MapLibreMap} from 'maplibre-gl';
 
 export type Dock = 'bottom' | 'right' | 'left';
 export type Panel =
-  'inspect' | 'layers' | 'network' | 'scene' | 'assets' | 'performance' | 'beacon';
+  'inspect' | 'layers' | 'network' | 'scene' | 'assets' | 'performance' | 'diagnostics' | 'beacon';
 export type ResourceRecord = {
   id: number;
   url: string;

@@ -3,9 +3,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   aeroways,
+  buildings,
+  createStyle,
+  defineMap,
   defineTheme,
+  disable,
   openMapTiles,
   poi,
+  refine,
   resolveTileflowData,
   tileflowPoiImageRoles,
   tileflowWorldV1Schema,
@@ -27,7 +32,7 @@ import {compileWater} from '../src/modules/water/compiler';
 import {tileflowColourChannels} from '../src/theme-blend';
 import {resolveColors, resolveThemeColors, resolveThemeImages} from '../src/themes';
 import {assembleTileflowLayers} from './layer-ir-fixture';
-import {testLightTheme} from './map-fixture';
+import {extendStreets, testLightTheme} from './map-fixture';
 
 const context = {
   colors: resolveColors(),
@@ -587,7 +592,7 @@ function evaluate(value: unknown, properties: Record<string, unknown>): unknown 
   }
 }
 
-test('compiled buildings keep style lighting and require explicit enhanced effects', () => {
+test('compiled buildings inherit the shared finish and retain independent overrides', () => {
   const layers = [
     {
       id: 'tileflow-buildings-render-extrusion',
@@ -600,12 +605,13 @@ test('compiled buildings keep style lighting and require explicit enhanced effec
   const plain = tileflowBuildings3DDesignOf({}, context, layers)!;
   assert.equal(plain.color, '#eee4da');
   assert.equal(plain.verticalGradient, false);
-  assert.equal(plain.lighting, 'style');
+  assert.equal(plain.lighting, 'sun');
+  assert.equal(plain.edgeRadius, 0.8);
   assert.equal(plain.colorVariation, 0);
   assert.equal(plain.edges, 0);
   assert.equal(plain.nightLight, 0);
-  assert.equal(plain.shadows, false);
-  assert.equal(plain.occlusion, false);
+  assert.equal(plain.shadows, true);
+  assert.equal(plain.occlusion, true);
   const enhanced = {
     lighting: 'sun',
     colorVariation: 0.06,
@@ -618,5 +624,34 @@ test('compiled buildings keep style lighting and require explicit enhanced effec
   const compiled = tileflowBuildings3DDesignOf({threeDimensional: enhanced}, context, layers)!;
   for (const [name, value] of Object.entries(enhanced))
     assert.equal(compiled[name as keyof typeof compiled], value);
+  for (const override of [
+    {lighting: 'style'},
+    {edgeRadius: 0},
+    {edgeRadius: 0.45},
+    {shadows: false},
+    {occlusion: false},
+    {lighting: 'style', edgeRadius: 0, shadows: false, occlusion: false},
+  ]) {
+    const result = tileflowBuildings3DDesignOf({threeDimensional: override}, context, layers)!;
+    assert.deepEqual(result, {...plain, ...override});
+  }
   assert.equal(tileflowBuildings3DDesignOf({enabled: false}, context, layers), undefined);
+});
+
+test('an inherited graphic building design keeps false and zero when another property changes', () => {
+  const authored = {lighting: 'style', edgeRadius: 0, shadows: false, occlusion: false} as const;
+  const base = extendStreets({
+    modules: {poi: disable(), buildings: buildings({threeDimensional: authored})},
+  });
+  const derived = defineMap({
+    id: 'graphic-buildings',
+    version: 1,
+    extends: base,
+    modules: {buildings: refine({threeDimensional: {edges: 0.3}})},
+  });
+  const baseDesign = createStyle(base).metadata?.['tileflow:buildings'];
+  const derivedDesign = createStyle(derived).metadata?.['tileflow:buildings'];
+  assert.deepEqual(derivedDesign, {...(baseDesign as object), edges: 0.3});
+  for (const [key, value] of Object.entries(authored))
+    assert.equal((derivedDesign as Record<string, unknown>)[key], value);
 });

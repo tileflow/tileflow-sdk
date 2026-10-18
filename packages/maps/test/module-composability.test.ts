@@ -25,7 +25,7 @@ import {
   water,
 } from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
-import {baedeker, blueprint, civica, ferraris, harad, siegfried, soundings, streets} from '../src';
+import {baedeker, blueprint, civica, map1777, siegfried, soundings, streets} from '../src';
 import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
 import {streetsPoiImageIds} from './streets-poi-fixture';
 
@@ -53,9 +53,7 @@ const officialMaps = {
   baedeker,
   civica,
 
-  ferraris,
-  harad,
-
+  'map-1777': map1777,
   blueprint: blueprint,
   siegfried,
   soundings,
@@ -112,25 +110,18 @@ const preparedOfficialAssets = {
         'culture',
 
         'education',
-        'ferraris-crop-hatch',
-        'ferraris-heath',
-        'ferraris-orchard',
-        'ferraris-paper-grain',
-        'ferraris-residential',
-        'ferraris-sand',
-        'ferraris-water-ripples',
-        'ferraris-wetland',
-        'ferraris-woodland',
+        'map-1777-crop-cross',
+        'map-1777-crop-hatch',
+        'map-1777-crop-lines',
+        'map-1777-heath',
+        'map-1777-orchard',
+        'map-1777-paper-grain',
+        'map-1777-residential',
+        'map-1777-sand',
+        'map-1777-water-ripples',
+        'map-1777-wetland',
+        'map-1777-woodland',
         'food',
-        'harad-arable',
-        'harad-conifer',
-        'harad-deciduous',
-        'harad-orchard',
-        'harad-paper-grain',
-        'harad-sand',
-        'harad-settlement',
-        'harad-water-lines',
-        'harad-wetland',
         'health',
         'lodging',
         'major-transit',
@@ -240,6 +231,28 @@ function compiledRenderTargets(
 test('raw layer overrides are absent from the public authoring surface', () => {
   for (const name of ['addLayer', 'moveLayer', 'patchLayer', 'removeLayer']) {
     assert.equal(name in publicCore, false, `Unexpected public raw override export ${name}`);
+  }
+});
+
+test('Streets plazas retain their ground ordering without depending on a private land pass', () => {
+  const compiled = compileOfficialMap('streets', streets);
+  const position = (target: string) => {
+    const index = compiled.inspection.layers.findIndex((layer) =>
+      layer.contributions.some((contribution) => contribution.target === target),
+    );
+    assert.ok(index >= 0, `Missing ${target}`);
+    return index;
+  };
+  const plaza = position('roads.areas.pedestrian.fill');
+  assert.ok(position('land.landuse.residential.fill') < plaza);
+  assert.ok(position('land.render.businessArea') < plaza);
+  for (const target of [
+    'land.landuse.recreation.fill',
+    'land.landcover.grass.fill',
+    'land.landcover.meadow.fill',
+    'land.landcover.urbanPark.fill',
+  ]) {
+    assert.ok(plaza < position(target), `${target} must remain above broad plazas`);
   }
 });
 

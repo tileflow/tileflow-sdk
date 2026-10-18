@@ -81,6 +81,12 @@ const streetsLightColors = {
   'landcover.global.snow': '#F4F7F8',
   'landcover.global.trees': '#C1EFBE',
   'landcover.global.urban': '#F5F1F0',
+  // Mapbox Standard's fences, and its hedges: the park green 25 points less saturated and 14
+  // points darker.
+  'land.fence': '#D9D9D9',
+  'land.wall': '#CBC6C1',
+  'landcover.hedge': '#90C58A',
+  'landcover.hedgeShade': '#6F9F69',
   'landcover.grass': '#C2EEBE',
   'landcover.greenspace': '#B3EAAD',
   'landcover.greenspaceDark': '#B8E0AE',
@@ -240,6 +246,10 @@ const streetsDarkColors = {
   'landcover.global.snow': '#3A4550',
   'landcover.global.trees': '#34453F',
   'landcover.global.urban': '#2D3043',
+  'land.fence': '#55595C',
+  'land.wall': '#5E6164',
+  'landcover.hedge': '#3B4943',
+  'landcover.hedgeShade': '#303E38',
   'landcover.grass': '#3E4B47',
   'landcover.greenspace': '#4D5D54',
   'landcover.greenspaceDark': '#44504C',
@@ -509,7 +519,12 @@ function calibratedStreetsColors(
       role.startsWith('landcover.') && !/(?:^|\.)(?:barren|ice|rock|sand|snow|urban)$/.test(role);
     if (green || role === 'surface.park' || role === 'landuse.cemetery')
       return shift(base['landcover.urbanPark'], profile.green);
-    if (role.startsWith('surface.') || role.startsWith('landuse.') || role.startsWith('landcover.'))
+    if (
+      role.startsWith('surface.') ||
+      role.startsWith('landuse.') ||
+      role.startsWith('landcover.') ||
+      role.startsWith('land.')
+    )
       return shift(base['surface.background'], profile.land);
     return foreground();
   });
@@ -809,6 +824,12 @@ export const streetsVisual = {
     water: token.color('surface.water'),
   },
   transit: token.color('transit.primary'),
+  barrier: {
+    fence: token.color('land.fence'),
+    hedge: token.color('landcover.hedge'),
+    hedgeShade: token.color('landcover.hedgeShade'),
+    wall: token.color('land.wall'),
+  },
   tree: {
     bark: token.color('vegetation.tree.bark'),
     broadleaf: ['a', 'b', 'c', 'd'].map((suffix) =>

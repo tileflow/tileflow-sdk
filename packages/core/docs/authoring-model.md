@@ -208,7 +208,10 @@ receive two opaque green fills. Parking areas are polygons from the configured l
 parking access aisles remain road features under `roads.serviceTypes.parkingAisle`. The
 `commercial` target recognizes ordinary `commercial` and `retail` values plus Tileflow's derived
 `business_area` ground class. Its `globalLandcover` fill styles the optional low-zoom global
-land-cover extension without a raw layer patch. The `water.bathymetry` fill does the same for the
+land-cover extension without a raw layer patch. Its `barriers` draw `hedge`, `fence` and `wall`
+from the data's barrier layer (Tileflow World V1's `traffic_control`) at the top of the land band:
+a `line`, a `shadow` line under it, and an `area` fill for the hedges the data maps as areas.
+Nothing is drawn for a barrier without a style, nor for data without the layer. The `water.bathymetry` fill does the same for the
 typed Tileflow World V1 depth bands. An explicit `water({bathymetryContours: {}})` traces the
 submerged edges between those discrete polygon bands; it is an approximate visual contour, not a
 surveyed isoline. `water({bathymetryLabels: {}})` separately opts into numeric metre values derived

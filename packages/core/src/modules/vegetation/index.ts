@@ -17,6 +17,13 @@ export type TileflowVegetationThreeDimensionalStyle = {
   coniferColors?: readonly TileflowThemeColorValue[];
   /** Sunlit frond colours of palms, from darkest to lightest; the broadleaf colours by default. */
   palmColors?: readonly TileflowThemeColorValue[];
+  /**
+   * Whether the data's hedges stand as clipped green walls beside the trees, at their height or
+   * 1.3 m, a metre higher on an earth bank. Defaults to true where the data has hedges.
+   */
+  hedges?: boolean;
+  /** Sunlit colours of hedges, from darkest to lightest; the two darkest broadleaf colours by default. */
+  hedgeColors?: readonly TileflowThemeColorValue[];
   crownScale?: TileflowThemeNumberValue;
   heightScale?: TileflowThemeNumberValue;
   /**

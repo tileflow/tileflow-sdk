@@ -459,6 +459,8 @@ export type {
   TileflowAerowaysModuleOptions,
   TileflowBoundariesModuleConfig,
   TileflowBoundariesModuleOptions,
+  TileflowBarrierClass,
+  TileflowBarrierStyle,
   TileflowBuildingMode,
   TileflowBuildingModelPart,
   TileflowBuildingModelPlacementConfig,

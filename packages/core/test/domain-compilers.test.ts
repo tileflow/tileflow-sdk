@@ -1,7 +1,17 @@
 import {featureFilter} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {labels, land, openMapTiles, poi, resolveTileflowData, roads, water, zoom} from '../src';
+import {
+  labels,
+  land,
+  openMapTiles,
+  poi,
+  resolveTileflowData,
+  roads,
+  vectorTiles,
+  water,
+  zoom,
+} from '../src';
 import {expression} from '../src/cartography/values';
 import {compileAeroways} from '../src/modules/aeroways/compiler';
 import {compileBoundaries} from '../src/modules/boundaries/compiler';
@@ -115,6 +125,50 @@ test('renders the seven global land-cover classes below OSM and fades them out a
   );
   assert.ok(
     ordered.indexOf('tileflow-global-landcover') < ordered.indexOf('tileflow-landcover-wood'),
+  );
+});
+
+test('land draws only the barriers a map styles, from the barrier layer, hedge areas as polygons', () => {
+  const barriers = land({
+    barriers: {
+      fence: {line: {color: '#d9d9d9'}},
+      hedge: {area: {color: '#90c58a'}, shadow: {color: '#6f9f69'}, line: {color: '#90c58a'}},
+    },
+  });
+  const drawn = (module: Parameters<typeof compileLand>[0], data = context.data) =>
+    assembleTileflowLayers(compileLand(module, {...context, data})).filter((layer) =>
+      String(layer.id).startsWith('tileflow-barrier-'),
+    );
+  const layers = drawn(barriers);
+  assert.deepEqual(
+    layers.map((layer) => layer.id),
+    [
+      'tileflow-barrier-fence',
+      'tileflow-barrier-hedge-area',
+      'tileflow-barrier-hedge-shadow',
+      'tileflow-barrier-hedge',
+    ],
+  );
+  assert.ok(layers.every((layer) => layer['source-layer'] === 'traffic_control'));
+  const matches = (id: string, type: 2 | 3, subclass: string) =>
+    featureFilter(layers.find((layer) => layer.id === id)?.filter as never).filter({zoom: 17}, {
+      type,
+      properties: {class: 'barrier', subclass},
+    } as never);
+  assert.equal(matches('tileflow-barrier-hedge-area', 3, 'hedge'), true);
+  assert.equal(matches('tileflow-barrier-hedge-area', 2, 'hedge'), false);
+  assert.equal(matches('tileflow-barrier-hedge', 3, 'hedge'), true, 'an area hedge is outlined');
+  assert.equal(matches('tileflow-barrier-fence', 2, 'hedge'), false);
+  // No style draws no barrier, and neither does data without a barrier layer.
+  assert.deepEqual(drawn(undefined), []);
+  assert.deepEqual(
+    drawn(
+      barriers,
+      resolveTileflowData(
+        vectorTiles({attribution: 'Fixture', schema: openMapTiles(), url: '/t.json'}),
+      ),
+    ),
+    [],
   );
 });
 

@@ -11,6 +11,7 @@ import {
 } from '../src/trees-3d';
 import {createTileflowTrees3D, tileflowTrees3DLayerId} from '../src/trees-3d-browser';
 import {
+  tileflowHedgeMesh,
   tileflowTreeMeshes,
   tileflowTreeModelMeshOf,
   tileflowTreeVertexBytes,
@@ -283,6 +284,105 @@ test('a row of trees in the tree layer stands a tree every few metres along its 
   assert.equal(placement.mapped, placed.length);
 });
 
+function hedgesOf(placement: ReturnType<typeof placeTileflowTrees>) {
+  const pieces = [];
+  for (let at = 0; at < placement.hedges.length; at += tileflowTreeBytes) {
+    const view = new DataView(placement.hedges.buffer, placement.hedges.byteOffset + at);
+    pieces.push({
+      x: view.getUint16(0, true) / 2,
+      y: view.getUint16(2, true) / 2,
+      height: view.getUint16(4, true) / 10,
+      length: view.getUint16(6, true) / 10,
+      // In degrees, anticlockwise from east.
+      turn: Math.round((view.getUint8(8) / 256) * 360),
+    });
+  }
+  return pieces;
+}
+
+test('hedges stand as pieces along their lines and round their areas, a metre higher on a bank', () => {
+  const hedges: TileflowTileLayer = {
+    extent: 4096,
+    features: [
+      {
+        type: 'LineString',
+        properties: {class: 'barrier', subclass: 'hedge'},
+        // 12 m east, then on out of the tile.
+        geometry: [
+          [1000, 1000, 1012, 1000],
+          [4090, 2000, 4200, 2000],
+        ],
+      },
+      {
+        type: 'LineString',
+        properties: {class: 'barrier', subclass: 'hedge', height: 2, hedge: 'hedge_bank'},
+        // 6 m north.
+        geometry: [[2000, 2006, 2000, 2000]],
+      },
+      {
+        type: 'Polygon',
+        properties: {class: 'barrier', subclass: 'hedge', height: 0.8},
+        // A closed square of 6 m sides.
+        geometry: [[3000, 3000, 3006, 3000, 3006, 3006, 3000, 3006, 3000, 3000]],
+      },
+      {
+        type: 'LineString',
+        properties: {class: 'barrier', subclass: 'fence'},
+        geometry: [[500, 500, 600, 500]],
+      },
+    ],
+  };
+  const placement = placeTileflowTrees({hedges}, options);
+  const pieces = hedgesOf(placement);
+  assert.equal(treesOf(placement).length, 0, 'a hedge is no tree');
+  // A piece every 1.2 m from 0.6 m in, each 1.5 m long so they overlap; nothing in the buffer.
+  // Positions keep to the renderer's grid, half a metre in this 4096 m tile.
+  const plain = pieces.filter((piece) => piece.y === 1000);
+  const expected = [0.6, 1.8, 3, 4.2, 5.4, 6.6, 7.8, 9, 10.2, 11.4];
+  assert.equal(plain.length, expected.length);
+  plain.forEach((piece, index) => assert.ok(Math.abs(piece.x - 1000 - expected[index]!) <= 0.25));
+  assert.ok(
+    plain.every((piece) => piece.height === 1.3 && piece.length === 1.5 && piece.turn === 0),
+  );
+  // The line leaving the tile stands pieces up to its edge and none beyond.
+  const edge = pieces.filter((piece) => piece.y === 2000);
+  assert.equal(edge.length, 5);
+  assert.ok(
+    pieces.every((piece) => piece.x < 4096),
+    'nothing stands outside the tile',
+  );
+  // Northward, on a bank: its height and a metre more.
+  const bank = pieces.filter((piece) => piece.x === 2000);
+  assert.equal(bank.length, 5);
+  assert.ok(bank.every((piece) => piece.height === 3 && piece.turn === 90));
+  // Round the 24 m of the square's sides, turning at each corner; the fence stands nothing.
+  const area = pieces.filter((piece) => piece.height === 0.8);
+  assert.equal(area.length, 20);
+  assert.deepEqual(
+    [...new Set(area.map((piece) => piece.turn))].sort((a, b) => a - b),
+    [0, 90, 180, 270],
+  );
+  assert.equal(pieces.length, plain.length + edge.length + bank.length + area.length);
+  assert.equal(placement.tallest, 3);
+});
+
+test('a hedge piece is a clipped unit hedge with its top facing up', () => {
+  const mesh = tileflowHedgeMesh();
+  assert.ok(mesh.count / 3 > 0 && mesh.count / 3 <= 24, `${mesh.count / 3} triangles`);
+  const view = new DataView(mesh.vertices.buffer);
+  let up = 0;
+  for (let index = 0; index < mesh.count; index += 1) {
+    const at = index * tileflowTreeVertexBytes;
+    const [x, y, z] = [0, 4, 8].map((offset) => view.getFloat32(at + offset, true));
+    assert.ok(Math.abs(x!) <= 0.5 && Math.abs(y!) <= 0.28 && z! >= 0 && z! <= 1);
+    assert.equal(mesh.vertices[at + 15], 1, 'a hedge is all leaves');
+    const normal = [12, 13, 14].map((offset) => view.getInt8(at + offset) / 127);
+    assert.ok(Math.abs(Math.hypot(...normal) - 1) < 0.05, 'unit normals');
+    if (z === 1) up += normal[2]!;
+  }
+  assert.ok(up > 0, 'the top of a hedge faces up');
+});
+
 test('a taxon gives a form, and a canopy point’s measured height sizes its trees', () => {
   assert.equal(tileflowTreeFormOf({taxon: 'Arecaceae'}), 'palm');
   assert.equal(tileflowTreeFormOf({taxon: 'Platanus × hispanica'}), 'tall');
@@ -316,8 +416,17 @@ test('the 3D tree description is read only in a known version and shape', () => 
   const read = readTileflowVegetation3D({[tileflowVegetationMetadataKey]: described})!;
   assert.equal(read.fields.leafType, 'hoja');
   assert.equal(read.fields.genus, 'genus');
-  // Palms take the broadleaf colours when a style gives none of their own.
+  // Palms take the broadleaf colours when a style gives none of their own, and hedges the two
+  // darkest; a description without a hedge layer stands no hedges.
   assert.deepEqual(read.colors.palm, ['#335533', '#447744']);
+  assert.deepEqual(read.colors.hedge, ['#335533', '#447744']);
+  assert.equal(read.layers.hedge, undefined);
+  assert.equal(
+    readTileflowVegetation3D({
+      [tileflowVegetationMetadataKey]: {...described, layers: {tree: 'tree', hedge: 'barriers'}},
+    })!.layers.hedge,
+    'barriers',
+  );
   assert.equal(read.heightScale, 1.2);
   assert.equal(read.crownScale, 1);
   // An unknown form falls back to the default mix, and a region with south above north is dropped.

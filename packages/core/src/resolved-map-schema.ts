@@ -1088,10 +1088,26 @@ const roadTreatmentStyleSchema = z
   })
   .strict();
 
+const barrierStyleSchema = z
+  .object({
+    area: fillStyleSchema.optional(),
+    shadow: lineStyleSchema.optional(),
+    line: lineStyleSchema.optional(),
+  })
+  .strict();
+
 const landModuleSchema = z
   .object({
     type: z.literal('land'),
     background: backgroundStyleSchema.optional(),
+    barriers: z
+      .object({
+        fence: barrierStyleSchema.optional(),
+        hedge: barrierStyleSchema.optional(),
+        wall: barrierStyleSchema.optional(),
+      })
+      .strict()
+      .optional(),
     enabled: z.boolean().optional(),
     globalLandcover: fillStyleSchema.optional(),
     landcover: z
@@ -1608,6 +1624,8 @@ const modulesSchema = z
             broadleafColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
             coniferColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
             palmColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
+            hedges: z.boolean().optional(),
+            hedgeColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
             finish: z.enum(['faceted', 'smooth', 'toon']).optional(),
             edges: boundedThemeNumberSchema(0, 1).optional(),
             edgeColor: themeColorValueSchema.optional(),
@@ -1719,6 +1737,7 @@ const layerBindingsSchema = z
     roadShield: z.string().trim().min(1).optional(),
     sidewalk: z.string().trim().min(1).optional(),
     streetFurniture: z.string().trim().min(1).optional(),
+    trafficControl: z.string().trim().min(1).optional(),
     tree: z.string().trim().min(1).optional(),
     water: z.string().trim().min(1),
     waterName: z.string().trim().min(1),
@@ -1756,6 +1775,7 @@ const fieldBindingsSchema = z
     elevationFeet: z.string().trim().min(1),
     expressway: z.string().trim().min(1),
     foot: z.string().trim().min(1),
+    hedge: z.string().trim().min(1).optional(),
     height: z.string().trim().min(1),
     hasParts: z.string().trim().min(1),
     hide3d: z.string().trim().min(1),

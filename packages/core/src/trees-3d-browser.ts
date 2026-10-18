@@ -1,5 +1,5 @@
-// Tileflow's 3D trees: a custom WebGL2 layer that stands the trees of a Tileflow map's own vector
-// tiles round the camera, as the map's vegetation module describes them, lit by the theme
+// Tileflow's 3D trees: a custom WebGL2 layer that stands the trees and hedges of a Tileflow map's own
+// vector tiles round the camera, as the map's vegetation module describes them, lit by the theme
 // controller's sun. Trees cast shadows on the ground and on the 3D buildings and take theirs, in the
 // map's shared 3D scene; nearer buildings hide them. Showing, hiding and growing them lays out no
 // source.
@@ -29,6 +29,7 @@ import {
   tileflowVegetationMetadataKey,
 } from './trees-3d';
 import {
+  tileflowHedgeMesh,
   type TileflowTreeLevel,
   tileflowTreeMeshes,
   tileflowTreeModelMeshOf,
@@ -104,7 +105,8 @@ export type TileflowTrees3D = {
   readonly scale: number;
   /**
    * Whether the map's style describes 3D trees (`vegetation({mode: '3d'})`), tiles of trees,
-   * trees placed (mapped and from canopy points) and trees drawn in the last frame.
+   * trees placed (mapped and from canopy points), pieces of hedge placed and trees drawn in the
+   * last frame.
    */
   readonly stats: Readonly<{
     declared: boolean;
@@ -112,6 +114,7 @@ export type TileflowTrees3D = {
     trees: number;
     mapped: number;
     canopy: number;
+    hedges: number;
     drawn: number;
   }>;
   /** Takes the layer off the map and lets go of its buffers. */
@@ -139,8 +142,8 @@ type Drawing = {
 };
 type TreeTile = {
   placement: TileflowTreePlacement;
-  /** A vertex array per form, model and level (`round:0:near`). */
-  gl?: {vbo: WebGLBuffer; vaos: Map<string, Drawing>};
+  /** A vertex array per form, model and level (`round:0:near`), and one for the hedges. */
+  gl?: {vbo: WebGLBuffer; vaos: Map<string, Drawing>; hedge?: Drawing & {vbo: WebGLBuffer}};
 };
 type ProjectionArgs = {
   getProjectionData(params: {
@@ -182,6 +185,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     return (fallbackStyle ??= (map.getStyle() as typeof fallbackStyle) ?? {});
   }
   let meshes: Record<TileflowTreeForm, Record<TileflowTreeLevel, Mesh>> | undefined;
+  let hedgeMesh: Mesh | undefined;
   // The map's own models, uploaded once each, by level and prepared text, with their proportion.
   const modelMeshes = new Map<string, (Mesh & {proportion: number}) | undefined>();
   let ground: {vao: WebGLVertexArrayObject; vbo: WebGLBuffer} | undefined;
@@ -257,11 +261,11 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     tilesKey = key;
     generation += 1;
     if (!described) return tiles;
-    const make = (source: string, layers: {tree?: string; canopy?: string}) =>
+    const make = (source: string, layers: {tree?: string; canopy?: string; hedge?: string}) =>
       createCameraTiles<TreeTile>({
         map,
         source,
-        layers: [layers.tree, layers.canopy].filter((name): name is string => !!name),
+        layers: [layers.tree, layers.canopy, layers.hedge].filter((name): name is string => !!name),
         zoom: preferredZoom,
         minzoom,
         maxTiles,
@@ -270,9 +274,10 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
         build(tile, tileMetres) {
           const trees = layers.tree ? tile.layers[layers.tree] : undefined;
           const canopy = layers.canopy ? tile.layers[layers.canopy] : undefined;
-          if (!trees && !canopy) return emptyTile;
+          const hedges = layers.hedge ? tile.layers[layers.hedge] : undefined;
+          if (!trees && !canopy && !hedges) return emptyTile;
           const placement = placeTileflowTrees(
-            {...(trees ? {trees} : {}), ...(canopy ? {canopy} : {})},
+            {...(trees ? {trees} : {}), ...(canopy ? {canopy} : {}), ...(hedges ? {hedges} : {})},
             {
               tile,
               tileMetres,
@@ -287,7 +292,9 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
               ),
             },
           );
-          return placement.trees.length > 0 ? {placement} : emptyTile;
+          return placement.trees.length > 0 || placement.hedges.length > 0
+            ? {placement}
+            : emptyTile;
         },
         empty: emptyTile,
         release(value) {
@@ -303,6 +310,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       make(described.source, {
         tree: described.layers.tree,
         ...(canopyElsewhere || !described.layers.canopy ? {} : {canopy: described.layers.canopy}),
+        ...(described.layers.hedge ? {hedge: described.layers.hedge} : {}),
       }),
     );
     if (canopyElsewhere)
@@ -315,6 +323,10 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     if (!tile.gl) return;
     for (const {vao} of tile.gl.vaos.values()) context.deleteVertexArray(vao);
     context.deleteBuffer(tile.gl.vbo);
+    if (tile.gl.hedge) {
+      context.deleteVertexArray(tile.gl.hedge.vao);
+      context.deleteBuffer(tile.gl.hedge.vbo);
+    }
     tile.gl = undefined;
   }
 
@@ -330,11 +342,12 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
 
   /** Uploads up to two tiles of trees a frame. */
   function upload(context: WebGL2RenderingContext): void {
-    if (!meshes) return;
+    if (!meshes || !hedgeMesh) return;
     let budget = 2;
     for (const set of tiles)
       for (const {value: tile} of set.ready()) {
-        if (tile.gl || tile.placement.trees.length === 0) continue;
+        if (tile.gl || (tile.placement.trees.length === 0 && tile.placement.hedges.length === 0))
+          continue;
         if (budget-- <= 0) {
           map.triggerRepaint();
           return;
@@ -358,8 +371,19 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
               vaos.set(`${form}:${model}:${level}`, {vao, count: mesh.count, crown});
             }
           });
+        let hedge: (Drawing & {vbo: WebGLBuffer}) | undefined;
+        if (tile.placement.hedges.length > 0) {
+          const hedgeVbo = context.createBuffer()!;
+          context.bindBuffer(context.ARRAY_BUFFER, hedgeVbo);
+          context.bufferData(context.ARRAY_BUFFER, tile.placement.hedges, context.STATIC_DRAW);
+          const vao = context.createVertexArray()!;
+          context.bindVertexArray(vao);
+          bindMesh(context, hedgeMesh.buffer);
+          bindTrees(context, hedgeVbo, 0);
+          hedge = {vao, vbo: hedgeVbo, count: hedgeMesh.count, crown: 1};
+        }
         context.bindVertexArray(null);
-        tile.gl = {vbo, vaos};
+        tile.gl = {vbo, vaos, ...(hedge ? {hedge} : {})};
         generation += 1;
         // The shared shadow pass ran before these instances were ready.
         map.triggerRepaint();
@@ -491,6 +515,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       broadleaf: slots(theme?.colors.broadleaf ?? ['#6f9a5b']),
       conifer: slots(theme?.colors.conifer ?? ['#557f52']),
       palm: slots(theme?.colors.palm ?? ['#7fa45f']),
+      hedge: slots(theme?.colors.hedge ?? ['#5f8a55']),
       size: [[theme?.heightScale ?? 1, theme?.crownScale ?? 1, 0]],
       forms: tileflowTreeForms.map((form) => [
         theme?.forms[form]?.heightScale ?? 1,
@@ -509,6 +534,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       broadleaf: mixList(x.broadleaf, y.broadleaf),
       conifer: mixList(x.conifer, y.conifer),
       palm: mixList(x.palm, y.palm),
+      hedge: mixList(x.hedge, y.hedge),
       size,
       /** Each form's height and crown scale: the map's times the form's own. */
       sizes: Object.fromEntries(
@@ -607,6 +633,17 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
             context.bindVertexArray(drawing.vao);
             context.drawArraysInstanced(context.TRIANGLES, 0, drawing.count, instances);
           });
+        const hedge = value.gl!.hedge;
+        if (hedge) {
+          context.uniform2f(u.u_size_scale!, 1, 1);
+          context.bindVertexArray(hedge.vao);
+          context.drawArraysInstanced(
+            context.TRIANGLES,
+            0,
+            hedge.count,
+            value.placement.hedges.length / tileflowTreeBytes,
+          );
+        }
       }
     },
   };
@@ -668,7 +705,9 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       x: number;
       y: number;
       offset: number[];
-      form: TileflowTreeForm;
+      /** The sunlit colours drawn, darkest first, and the height and crown scales. */
+      leaves: number[][];
+      size: [number, number];
       instances: number;
       drawing: Drawing;
     }[] = [];
@@ -696,13 +735,26 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
           const drawing = value.gl!.vaos.get(`${form}:${model}:${level}`);
           if (instances === 0 || !drawing) return;
           context.uniform3fv(u.u_leaves!, leaves.flat());
-          const size = palette.sizes[form];
-          context.uniform2f(u.u_size_scale!, size[0]!, size[1]! * drawing.crown);
+          const size: [number, number] = [
+            palette.sizes[form][0]!,
+            palette.sizes[form][1]! * drawing.crown,
+          ];
+          context.uniform2f(u.u_size_scale!, ...size);
           context.bindVertexArray(drawing.vao);
           context.drawArraysInstanced(context.TRIANGLES, 0, drawing.count, instances);
           count += instances;
-          draws.push({x, y, offset, form, instances, drawing});
+          draws.push({x, y, offset, leaves, size, instances, drawing});
         });
+      }
+      // Hedges stand whole wherever their tile is drawn: they are low and thin out no view.
+      const hedge = value.gl!.hedge;
+      if (hedge) {
+        const instances = value.placement.hedges.length / tileflowTreeBytes;
+        context.uniform3fv(u.u_leaves!, palette.hedge.flat());
+        context.uniform2f(u.u_size_scale!, 1, 1);
+        context.bindVertexArray(hedge.vao);
+        context.drawArraysInstanced(context.TRIANGLES, 0, hedge.count, instances);
+        draws.push({x, y, offset, leaves: palette.hedge, size: [1, 1], instances, drawing: hedge});
       }
     }
     drawnLast = count;
@@ -735,21 +787,15 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
           );
         }
         // The map's edge colour, or the form's darkest leaf colour deepened.
-        const leaves =
-          draw.form === 'palm'
-            ? palette.palm
-            : draw.form === 'conifer' || draw.form === 'columnar'
-              ? palette.conifer
-              : palette.broadleaf;
         const own = palette.ownEdge;
         context.uniform3fv(
           e.u_edge_colour!,
           [0, 1, 2].map(
-            (channel) => palette.edgeColor[channel]! * own + leaves[0]![channel]! * 0.4 * (1 - own),
+            (channel) =>
+              palette.edgeColor[channel]! * own + draw.leaves[0]![channel]! * 0.4 * (1 - own),
           ),
         );
-        const size = palette.sizes[draw.form];
-        context.uniform2f(e.u_size_scale!, size[0]!, size[1]! * draw.drawing.crown);
+        context.uniform2f(e.u_size_scale!, ...draw.size);
         context.bindVertexArray(draw.drawing.vao);
         context.drawArraysInstanced(context.TRIANGLES, 0, draw.drawing.count, draw.instances);
       }
@@ -882,6 +928,11 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   }
 
   function createMeshes(context: WebGL2RenderingContext): void {
+    const hedge = tileflowHedgeMesh();
+    const hedgeBuffer = context.createBuffer()!;
+    context.bindBuffer(context.ARRAY_BUFFER, hedgeBuffer);
+    context.bufferData(context.ARRAY_BUFFER, hedge.vertices, context.STATIC_DRAW);
+    hedgeMesh = {buffer: hedgeBuffer, count: hedge.count};
     const built = tileflowTreeMeshes();
     meshes = Object.fromEntries(
       tileflowTreeForms.map((form) => [
@@ -944,6 +995,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
           for (const mesh of Object.values(levels)) context.deleteBuffer(mesh.buffer);
       for (const mesh of modelMeshes.values()) if (mesh) context.deleteBuffer(mesh.buffer);
       modelMeshes.clear();
+      if (hedgeMesh) context.deleteBuffer(hedgeMesh.buffer);
       if (ground) {
         context.deleteVertexArray(ground.vao);
         context.deleteBuffer(ground.vbo);
@@ -953,6 +1005,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       scene.release(context);
       programs = {};
       meshes = undefined;
+      hedgeMesh = undefined;
       ground = undefined;
       variant = undefined;
       gl = undefined;
@@ -1173,13 +1226,15 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       let trees = 0;
       let mapped = 0;
       let canopy = 0;
+      let hedges = 0;
       for (const set of tiles)
         for (const {value} of set.ready()) {
-          if (value.placement.trees.length === 0) continue;
+          if (value.placement.trees.length === 0 && value.placement.hedges.length === 0) continue;
           count += 1;
           trees += value.placement.trees.length / tileflowTreeBytes;
           mapped += value.placement.mapped;
           canopy += value.placement.canopy;
+          hedges += value.placement.hedges.length / tileflowTreeBytes;
         }
       return {
         declared: vegetation() !== undefined,
@@ -1187,6 +1242,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
         trees,
         mapped,
         canopy,
+        hedges,
         drawn: drawnLast,
       };
     },
@@ -1215,6 +1271,7 @@ const emptyTile: TreeTile = Object.freeze({
     forms: Object.fromEntries(
       tileflowTreeForms.map((form) => [form, {start: 0, count: 0, upTo: new Array(16).fill(0)}]),
     ) as unknown as TileflowTreePlacement['forms'],
+    hedges: new Uint8Array(0),
     tallest: 0,
     mapped: 0,
     canopy: 0,

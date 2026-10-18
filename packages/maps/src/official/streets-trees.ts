@@ -202,6 +202,8 @@ export const streetsTrees = withRenderStack(
         token.color(`vegetation.tree.conifer.${shade}`),
       ),
       palmColors: ['a', 'b', 'c'].map((shade) => token.color(`vegetation.tree.broadleaf.${shade}`)),
+      // The flat hedge's shade and fill, so a hedge keeps its colour as it rises.
+      hedgeColors: [token.color('landcover.hedgeShade'), token.color('landcover.hedge')],
       crownScale: 1,
       heightScale: 1,
       finish: 'faceted',

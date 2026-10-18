@@ -68,6 +68,11 @@ const preparedAssets = {
 
 // Approved physical-output snapshot after the 2026-10-18 reference and framebuffer audit.
 const approvedLightStyleColors = new Set([
+  // Hedges, their shade, fences and walls: Mapbox Standard's gate-fence-hedge colours.
+  '#9AC38F',
+  '#799D6E',
+  '#D8D8D8',
+  '#CAC5C0',
   '#000000',
   '#0494DC',
   '#1891AA',
@@ -164,6 +169,11 @@ const approvedLightStyleColors = new Set([
 // includes Core-derived blends and the unreachable #000000 expression fallback so any
 // new physical color requires an explicit dark-map review.
 const approvedDarkStyleColors = new Set([
+  // Hedges, their shade, fences and walls.
+  '#31403D',
+  '#263532',
+  '#54585B',
+  '#5D6063',
   '#000000',
   '#001638',
   '#05131A',

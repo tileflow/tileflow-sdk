@@ -109,6 +109,9 @@ export function tileflowVegetationDescription(
     layers: {
       tree: schema.layers.tree,
       ...(schema.layers.canopy ? {canopy: schema.layers.canopy} : {}),
+      ...(schema.layers.trafficControl && style.hedges !== false
+        ? {hedge: schema.layers.trafficControl}
+        : {}),
     },
     fields: {
       ...tileflowWorldTreeFields,
@@ -120,12 +123,15 @@ export function tileflowVegetationDescription(
       canopyRank: field('canopyRank', tileflowWorldTreeFields.canopyRank),
       canopyClearance: field('canopyClearanceAtZoom15', tileflowWorldTreeFields.canopyClearance),
       canopyCover: field('canopyCoverPercent', tileflowWorldTreeFields.canopyCover),
+      subclass: field('subclass', tileflowWorldTreeFields.subclass),
+      hedge: field('hedge', tileflowWorldTreeFields.hedge),
     },
     colors: {
       bark: typeof style.barkColor === 'string' ? style.barkColor : tree.bark,
       broadleaf: colours(style.broadleafColors, tree.broadleaf),
       conifer: colours(style.coniferColors, tree.conifer),
       palm: colours(style.palmColors, tree.palm),
+      hedge: colours(style.hedgeColors, tree.broadleaf.slice(0, 2)),
     },
     heightScale: number(style.heightScale),
     crownScale: number(style.crownScale),

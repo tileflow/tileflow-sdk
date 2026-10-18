@@ -1,7 +1,10 @@
 import type {z} from 'zod';
-import {serializeTileflowFontBundleManifest} from '@tileflow/core';
+import {
+  serializeTileflowFontBundleManifest,
+  serializeTileflowModelBundleManifest,
+} from '@tileflow/core';
 import type {CompiledTileflowFontBundle} from '@tileflow/dev/fonts';
-import type {CompiledTileflowIconPackage} from '@tileflow/dev/icons';
+import type {CompiledTileflowIconPackage, TileflowModelBundle} from '@tileflow/dev/icons';
 import {
   type AccountIdentity,
   type CliAccountSession,
@@ -14,6 +17,7 @@ import {
   hostedIconPackageResponseSchema,
   type HostedMapStatus,
   hostedMapStatusSchema,
+  hostedModelBundleResponseSchema,
   hostedStyleDeploymentResponseSchema,
   readBoundedResponseText,
 } from './hosted-response';
@@ -551,6 +555,56 @@ export async function uploadHostedFontBundle(
     publicBaseUrl.search !== ''
   ) {
     throw new Error('Font bundle upload response did not confirm the submitted bundle.');
+  }
+  return {ok: true, value};
+}
+
+export async function uploadHostedModelBundle(
+  api: HostedApi,
+  bundle: TileflowModelBundle,
+  options: HostedRequestOptions = {},
+): Promise<
+  {ok: false; status: number} | {ok: true; value: z.infer<typeof hostedModelBundleResponseSchema>}
+> {
+  const formData = new FormData();
+  formData.append(
+    'manifest',
+    new Blob([serializeTileflowModelBundleManifest(bundle.manifest)], {
+      type: 'application/json',
+    }),
+    'manifest.json',
+  );
+  for (const file of bundle.files) {
+    const bytes = new Uint8Array(file.source.byteLength);
+    bytes.set(file.source);
+    formData.append(
+      `file:${encodeURIComponent(file.fileName)}`,
+      new Blob([bytes.buffer], {type: file.contentType}),
+      file.fileName,
+    );
+  }
+  const response = await requestHostedJson(
+    api.apiUrl,
+    `/v1/model-bundles/${encodeURIComponent(bundle.contentHash)}`,
+    {body: formData, headers: authorizationHeaders(api.apiKey, api.mapId), method: 'PUT'},
+    options,
+  );
+  if (!response.ok) return {ok: false, status: response.status};
+  const value = parseResponse(
+    response,
+    hostedModelBundleResponseSchema,
+    'Model bundle upload response',
+  );
+  const publicBaseUrl = new URL(value.baseUrl);
+  if (
+    value.contentHash !== bundle.contentHash ||
+    value.modelCount !== bundle.manifest.models.length ||
+    value.totalBytes !==
+      bundle.manifest.models.reduce((total, model) => total + model.byteLength, 0) ||
+    publicBaseUrl.pathname !== `/model-bundles/${value.id}` ||
+    publicBaseUrl.search !== ''
+  ) {
+    throw new Error('Model bundle upload response did not confirm the submitted bundle.');
   }
   return {ok: true, value};
 }

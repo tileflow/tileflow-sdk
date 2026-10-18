@@ -184,8 +184,19 @@ Hosted deploy currently rejects local or package-owned web fonts before authenti
 writes. Use self-hosted delivery or an explicit public glyph provider. Enabling managed font bundles
 requires a separately deployed ownership, quota, retention, and immutable-delivery contract.
 
-For both managed resource kinds, `assetSetSha256` remains a separate per-map output identity. It
+A map's own 3D building models (the building models of its `models` directories) deploy as one
+model bundle per map. Deploy prepares them as `build` does, uploads the bundle with
+`PUT /v1/model-bundles/:contentHash` after authentication and before the first style write, compiles
+each placement's `url` at the bundle's hosted address and publishes the style with the bundle's
+content hash. Byte-identical bundles are reused by content hash. A bundle holds at most 64 models,
+16 MiB a prepared file and 32 MiB together, and shares the organization's hosted-storage pool like
+icon packages. Upload success must confirm the submitted `contentHash`, model count and byte total,
+one opaque `mdb_<id>` and the query-free `/model-bundles/<id>` base URL. A deploy with
+`--with-native` rejects a map's own building models, because MapLibre Native draws no models.
+
+For every managed resource kind, `assetSetSha256` remains a separate per-map output identity. It
 hashes each generated file's exact portable name, media type, byte count, and SHA-256 using Core's
 asset-set v1 contract; it does not hash only the icon-package manifest. Hosted must
 confirm the immutable resource bytes, reconstruct those same per-file identities (including the
-`icons/<mapId>/` prefix), and reject the Style when the submitted build-manifest hash diverges.
+`icons/<mapId>/` and `models/<mapId>/` prefixes), and reject the Style when the submitted
+build-manifest hash diverges.

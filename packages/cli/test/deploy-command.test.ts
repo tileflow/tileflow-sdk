@@ -9,6 +9,7 @@ import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
+import {writeGlb} from '../../dev/test/tree-model-fixtures';
 import {tileflowMapFixture} from './map-fixture';
 
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
@@ -842,6 +843,119 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
   assert.match(result.stdout, /Uploaded icon package madrid \(5 icons,/);
   assert.match(result.stdout, /Published madrid \(v1\)\./);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(fakeApiKey));
+});
+
+test("deploy uploads a map's own building models as its model bundle before the style that places them", async (t) => {
+  const fixture = await createFixture(t);
+  await mkdir(join(fixture.directory, 'models'));
+  // A block 20 m wide and 120 m tall, its walls and roof named as a building's parts.
+  await writeFile(
+    join(fixture.directory, 'models', 'tower.glb'),
+    writeGlb([
+      {
+        material: 'roof',
+        positions: [-10, 120, -10, 10, 120, -10, 10, 120, 10, -10, 120, 10],
+        indices: [0, 2, 1, 0, 3, 2],
+      },
+      {
+        material: 'surface',
+        positions: [-10, 0, 10, 10, 0, 10, 10, 120, 10, -10, 120, 10],
+        indices: [0, 1, 2, 0, 2, 3],
+      },
+    ]),
+  );
+  await writeFile(
+    fixture.configPath,
+    tileflowMapFixture({
+      id: 'madrid',
+      imports: `import {buildings} from '@tileflow/core';`,
+      fields: `models: ['./models'],
+modules: {
+  addresses: disable(), aeroways: disable(), boundaries: disable(), labels: disable(), land: disable(),
+  landforms: disable(), poi: disable(), roads: disable(), transit: disable(), vegetation: disable(),
+  water: disable(),
+  buildings: buildings({mode: '3d', threeDimensional: {models: [{model: 'tower', at: [-3.7038, 40.4168], heading: 30}]}})
+},
+name: 'Madrid'`,
+    }),
+  );
+  const bundleId = 'mdb_12345678-1234-1234-1234-123456789abc';
+  const requests: string[] = [];
+  let bundle: {contentHash: string; file: string} | undefined;
+  const api = await createFakeApi(t, async (request) => {
+    const bodyBytes = await readRequestBodyBytes(request);
+    requests.push(`${request.method} ${request.url?.split('/').slice(0, 3).join('/')}`);
+    if (request.method === 'PUT') {
+      const form = await new Request('http://fixture.test/', {
+        body: bodyBytes,
+        headers: {'content-type': request.headers['content-type'] ?? ''},
+        method: 'PUT',
+      }).formData();
+      const manifest = JSON.parse(await (form.get('manifest') as Blob).text()) as {
+        models: Array<{byteLength: number; file: string; id: string}>;
+      };
+      assert.deepEqual(
+        manifest.models.map(({id}) => id),
+        ['tower'],
+      );
+      const [model] = manifest.models;
+      const file = form.get(`file:${model!.file}`) as Blob;
+      assert.equal(file.size, model!.byteLength);
+      assert.equal(file.type, 'model/gltf-binary');
+      bundle = {contentHash: request.url!.split('/').pop()!, file: model!.file};
+      return {
+        baseUrl: `${api.url}/model-bundles/${bundleId}`,
+        changed: true,
+        contentHash: bundle.contentHash,
+        id: bundleId,
+        modelCount: 1,
+        totalBytes: model!.byteLength,
+      };
+    }
+    const parsed = JSON.parse(bodyBytes.toString('utf8')) as {
+      artifact: {
+        buildManifest: {
+          maps: Record<string, {sourceAssets: {models?: Array<{id: string; level: string}>}}>;
+        };
+        styles: Record<string, {metadata?: Record<string, unknown>}>;
+      };
+      modelBundle?: {contentHash: string};
+    };
+    assert.deepEqual(parsed.modelBundle, {contentHash: bundle?.contentHash});
+    for (const style of Object.values(parsed.artifact.styles)) {
+      const design = style.metadata?.['tileflow:buildings'] as {
+        models: Array<{model: string; url: string}>;
+      };
+      assert.deepEqual(
+        design.models.map(({model, url}) => [model, url]),
+        [['tower', `${api.url}/model-bundles/${bundleId}/${bundle?.file}`]],
+      );
+    }
+    assert.deepEqual(
+      parsed.artifact.buildManifest.maps.madrid!.sourceAssets.models?.map(
+        ({id, level}) => `${id}:${level}`,
+      ),
+      ['tower:near'],
+    );
+    return hostedDeploymentResponse(managedMapId, streetsThemeNames, {changed: true, version: 1});
+  });
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      api.url,
+    ],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+  assert.deepEqual(requests, ['PUT /v1/model-bundles', 'POST /v1/styles']);
+  assert.match(result.stdout, /Uploaded 3D model bundle \(1 model,/);
 });
 
 test('deploy binds one composition receipt to the effective package in manifest and body', async (t) => {

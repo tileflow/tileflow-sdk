@@ -397,5 +397,6 @@ when they stay unchanged.
 - A colour expression is evaluated at zoom 16.
 - Building models and landmarks take no edges or night light of their own yet, and cannot be
   picked or styled by state.
-- Hosted deploys do not take a map's own model files yet: `tileflow validate --target hosted` reports
-  them. Models named by `url` deploy as they are.
+- A hosted map takes up to 64 building models of its own, 32 MiB once prepared; `tileflow deploy`
+  uploads them with the map. A deploy with `--with-native` does not take them, since MapLibre Native
+  draws no models. Models named by `url` deploy as they are.

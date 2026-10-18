@@ -1,5 +1,5 @@
 import {z} from 'zod';
-import {tileflowIconPackageLimits} from '@tileflow/core';
+import {tileflowIconPackageLimits, tileflowModelBundleLimits} from '@tileflow/core';
 
 const maximumHostedResponseBytes = 1024 * 1024;
 const safeTextSchema = z
@@ -67,6 +67,15 @@ export const hostedFontBundleResponseSchema = z.object({
   fontFaceCount: z.number().int().positive().max(16),
   id: z.string().regex(/^fnb_[A-Za-z0-9_-]{16,64}$/u),
   totalBytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+});
+
+export const hostedModelBundleResponseSchema = z.object({
+  baseUrl: publicHttpUrlSchema,
+  changed: z.boolean().optional(),
+  contentHash: z.string().regex(/^[a-f0-9]{64}$/u),
+  id: z.string().regex(/^mdb_[A-Za-z0-9_-]{16,64}$/u),
+  modelCount: z.number().int().positive().max(tileflowModelBundleLimits.maxModelCount),
+  totalBytes: z.number().int().positive().max(tileflowModelBundleLimits.maxPackageBytes),
 });
 
 const hostedStatusStyleSchema = z.object({

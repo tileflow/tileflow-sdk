@@ -15,9 +15,14 @@ import {
   compareCodeUnits,
   encodeTileflowModels,
   encodeTileflowTreeModel,
+  hashTileflowModelBundleManifest,
   serializeTileflowLandmarkRegion,
   type TileflowLandmarkRegion,
   tileflowLandmarkTileOf,
+  tileflowModelBundleFileName,
+  tileflowModelBundleLimits,
+  type TileflowModelBundleManifest,
+  tileflowModelContentType,
   type TileflowModelDirectory,
   type TileflowModelEntry,
   type TileflowModelMesh,
@@ -59,6 +64,7 @@ export type PreparedTileflowBuildingModel = {
   /** Its file name, content-addressed: `<id>-<first 16 hex of its SHA-256>.glb`. */
   fileName: string;
   bytes: Uint8Array;
+  sha256: string;
 };
 
 /** A building model's glTF binaries, nearest level first. */
@@ -165,6 +171,50 @@ function buildingModelEntry(id: string, levels: TileflowBuildingModelLevels): Ti
     footprint: tileflowBuildingModelFootprint(
       tileflowBuildingModelDeclaredFootprint(primitives) ?? meshes[0]!,
     ),
+  };
+}
+
+/** A map's building models as the model bundle a hosted deploy uploads before its styles. */
+export type TileflowModelBundle = {
+  /** The SHA-256 of the manifest's canonical JSON. */
+  contentHash: string;
+  manifest: TileflowModelBundleManifest;
+  /** Each model's prepared file, named as the manifest names it. */
+  files: {contentType: string; fileName: string; source: Uint8Array}[];
+};
+
+/**
+ * Bundles a map's prepared building models, or returns undefined when it has none. Throws a
+ * `RangeError` an author can act on when the models together are too large to host.
+ */
+export async function createTileflowModelBundle(
+  buildings: Readonly<Record<string, PreparedTileflowBuildingModel>>,
+): Promise<TileflowModelBundle | undefined> {
+  const entries = Object.entries(buildings).sort(([a], [b]) => compareCodeUnits(a, b));
+  if (entries.length === 0) return undefined;
+  const totalBytes = entries.reduce((total, [, model]) => total + model.bytes.byteLength, 0);
+  if (totalBytes > tileflowModelBundleLimits.maxPackageBytes)
+    throw new RangeError(
+      `The map's building models together are ${totalBytes} bytes once prepared; a hosted map takes at most ${tileflowModelBundleLimits.maxPackageBytes}. Simplify or remove models.`,
+    );
+  const manifest: TileflowModelBundleManifest = {
+    format: 'tileflow-model-bundle-v1',
+    models: entries.map(([id, model]) => ({
+      byteLength: model.bytes.byteLength,
+      contentType: tileflowModelContentType,
+      file: model.fileName,
+      id,
+      sha256: model.sha256,
+    })),
+  };
+  return {
+    contentHash: await hashTileflowModelBundleManifest(manifest),
+    manifest,
+    files: entries.map(([, model]) => ({
+      contentType: tileflowModelContentType,
+      fileName: model.fileName,
+      source: model.bytes,
+    })),
   };
 }
 
@@ -283,8 +333,9 @@ export async function prepareTileflowMapTreeModels(
         failing = entry.near;
         const prepared = await prepareTileflowBuildingModel(id, files);
         buildings[id] = {
-          fileName: `${id}-${prepared.sha256.slice(0, 16)}.glb`,
+          fileName: tileflowModelBundleFileName(id, prepared.sha256),
           bytes: prepared.bytes,
+          sha256: prepared.sha256,
         };
       } catch (error) {
         issues.push({

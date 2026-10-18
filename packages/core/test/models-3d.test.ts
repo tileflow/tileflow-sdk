@@ -7,6 +7,7 @@ import {createTileflowPlacedModels} from '../src/models-3d-browser';
 import {
   decodeTileflowModels,
   encodeTileflowModels,
+  readTileflowModelFileIds,
   type TileflowModelEntry,
 } from '../src/models-3d-file';
 import {
@@ -168,6 +169,28 @@ test('meshoptimizer compresses a model file into the same triangles', async () =
   assert.deepEqual(triangles(b!), triangles(a!));
   assert.deepEqual(triangles(b!, 1), triangles(a!, 1));
   assert.deepEqual(b!.bounds, a!.bounds);
+});
+
+test('a model file names its models without decoding a mesh', async () => {
+  await MeshoptEncoder.ready;
+  const packed = encodeTileflowModels(
+    [tower(), tower({id: 'annex', footprint: [[-5, -5, 5, -5, 5, 5, -5, 5]]})],
+    MeshoptEncoder,
+  );
+  assert.deepEqual(readTileflowModelFileIds(packed), ['tower', 'annex']);
+  assert.deepEqual(readTileflowModelFileIds(encodeTileflowModels([tower()])), ['tower']);
+  // A glTF binary that is no prepared model file, and a damaged one, name nothing.
+  const json = new TextEncoder().encode(JSON.stringify({asset: {version: '2.0'}, scenes: [{}]}));
+  const plain = new Uint8Array(20 + json.byteLength);
+  const view = new DataView(plain.buffer);
+  view.setUint32(0, 0x46546c67, true);
+  view.setUint32(4, 2, true);
+  view.setUint32(8, plain.byteLength, true);
+  view.setUint32(12, json.byteLength, true);
+  view.setUint32(16, 0x4e4f534a, true);
+  plain.set(json, 20);
+  assert.equal(readTileflowModelFileIds(plain), undefined);
+  assert.equal(readTileflowModelFileIds(packed.subarray(0, packed.byteLength - 4)), undefined);
 });
 
 test('a landmark tile holds several models, each where it stands', async () => {

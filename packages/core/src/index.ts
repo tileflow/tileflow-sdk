@@ -481,6 +481,8 @@ export type {
   TileflowVegetationModuleOptions,
   TileflowVegetationThreeDimensionalStyle,
   TileflowWaterModuleConfig,
+  TileflowBathymetryNamePlacement,
+  TileflowBathymetryNameStyle,
   TileflowWaterModuleOptions,
   TileflowWaterwayClass,
 } from './modules';

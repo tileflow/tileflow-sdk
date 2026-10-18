@@ -404,10 +404,17 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
   match = /^landforms\.classes\.([^.]+)$/u.exec(semanticKey);
   if (match) return `tileflow-landform-${match[1]}`;
 
-  match = /^water\.(bathymetryLandforms|bathymetryWaterNames)\.cohort(\d+)$/u.exec(semanticKey);
+  match =
+    /^water\.(bathymetryLandforms|bathymetryWaterNames)(?:\.placement(Point|Line|LineCenter))?(?:\.cohort(\d+))?$/u.exec(
+      semanticKey,
+    );
   if (match) {
     const base = match[1] === 'bathymetryLandforms' ? 'landforms' : 'water-names';
-    return `tileflow-bathymetry-${base}-cohort-${match[2]}`;
+    const placement = match[2]
+      ? `-placement-${match[2] === 'LineCenter' ? 'line-center' : match[2].toLowerCase()}`
+      : '';
+    const cohort = match[3] === undefined ? '' : `-cohort-${match[3]}`;
+    return `tileflow-bathymetry-${base}${placement}${cohort}`;
   }
 
   match = /^poi\.([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)$/u.exec(semanticKey);

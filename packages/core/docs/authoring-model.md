@@ -219,6 +219,8 @@ An explicitly selected Bathymetry source can instead declare `vectorLayers.conto
 real contour lines and their `depth` values. Its optional named seafloor and water features have
 separate `water.bathymetryLandforms` and `water.bathymetryWaterNames` styles, with the language
 selected by `labels(...)`. See [the marine source contract](data-is-separate-from-design.md#declare-contour-and-name-layers).
+Those name styles can explicitly select placement for each geometry family with
+`placementByGeometry`; omitting it preserves scalar placement.
 
 `addresses` renders the standard OpenMapTiles `housenumber` points at detailed zooms and exposes a
 single semantic `labels` style. `landforms` renders the standard `mountain_peak` classes (`peak`,

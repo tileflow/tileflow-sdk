@@ -56,7 +56,12 @@ import {
 } from './icon-sprite';
 import {prepareTileflowMapTreeModels} from './tree-models';
 
-export {prepareTileflowMapTreeModels} from './tree-models';
+export {
+  createTileflowModelBundle,
+  prepareTileflowMapTreeModels,
+  type PreparedTileflowBuildingModel,
+  type TileflowModelBundle,
+} from './tree-models';
 
 export {renderTileflowIconAtlasPreview} from './icon-preview';
 

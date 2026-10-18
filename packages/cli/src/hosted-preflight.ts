@@ -91,29 +91,6 @@ export function inspectTileflowHostedCompatibility(
         });
       }
     }
-    // A map's own building models are files beside its style, which Hosted does not take yet;
-    // models it names by an HTTPS address, such as Tileflow's own, travel as they are.
-    const own = new Set<string>();
-    for (const style of Object.values(themes)) {
-      const models = (style?.metadata?.['tileflow:buildings'] as {models?: unknown} | undefined)
-        ?.models;
-      if (!Array.isArray(models)) continue;
-      for (const entry of models) {
-        const {model, url} = (entry ?? {}) as {model?: unknown; url?: unknown};
-        if (
-          typeof url === 'string' &&
-          url.includes(`models/${mapName}/`) &&
-          typeof model === 'string'
-        )
-          own.add(model);
-      }
-    }
-    if (own.size > 0)
-      issues.push({
-        map: mapName,
-        message: `Hosted deploy does not take a map's own 3D building models yet. Map ${mapName} places ${[...own].sort(compareCodeUnits).join(', ')}; keep the map local or remove them from buildings.threeDimensional.models.`,
-        path: `maps.${mapName}.modules.buildings.threeDimensional.models`,
-      });
   }
 
   return issues;

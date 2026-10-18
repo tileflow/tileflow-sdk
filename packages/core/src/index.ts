@@ -583,6 +583,15 @@ export type {
   TileflowFontBundleFontFace,
   TileflowFontBundleManifest,
 } from './font-bundle';
+export {
+  hashTileflowModelBundleManifest,
+  serializeTileflowModelBundleManifest,
+  tileflowModelBundleContentHashSchema,
+  tileflowModelBundleFileName,
+  tileflowModelBundleLimits,
+  tileflowModelBundleManifestSchema,
+} from './model-bundle';
+export type {TileflowModelBundleManifest, TileflowModelBundleModel} from './model-bundle';
 export {diffTileflowIconPackageManifests} from './icon-diff';
 export type {TileflowIconManifestDiff} from './icon-diff';
 export {
@@ -693,6 +702,7 @@ export {
 export {
   decodeTileflowModels,
   encodeTileflowModels,
+  readTileflowModelFileIds,
   tileflowModelContentType,
   type TileflowModelCompressor,
   type TileflowModelDecompressor,

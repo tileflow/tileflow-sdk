@@ -3,7 +3,13 @@ import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import {decodeTileflowModels, tileflowInsideRings, tileflowModelParts} from '@tileflow/core';
+import {
+  decodeTileflowModels,
+  hashTileflowModelBundleManifest,
+  tileflowInsideRings,
+  tileflowModelParts,
+} from '@tileflow/core';
+import {hashTileflowAssetSet} from '@tileflow/core/build';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {createTileflowBuildArtifacts} from '../src/artifacts';
 import {
@@ -15,6 +21,7 @@ import {
 import {readTileflowGltfTriangles} from '../src/gltf-reader';
 import {compilePreviewControls} from '../src/preview-controls';
 import {
+  createTileflowModelBundle,
   encodeTileflowLandmarkRegion,
   packageTileflowLandmarkTile,
   prepareTileflowBuildingModel,
@@ -148,6 +155,28 @@ test('a map prepares its building models as files and its tree models for its st
     'tower:near',
   ]);
 
+  // A hosted deploy uploads the building models, not the tree models, as the map's model bundle.
+  const bundle = await createTileflowModelBundle(prepared.buildings);
+  const tower = prepared.buildings.tower!;
+  assert.deepEqual(bundle?.manifest, {
+    format: 'tileflow-model-bundle-v1',
+    models: [
+      {
+        byteLength: tower.bytes.byteLength,
+        contentType: 'model/gltf-binary',
+        file: tower.fileName,
+        id: 'tower',
+        sha256: tower.sha256,
+      },
+    ],
+  });
+  assert.equal(bundle?.contentHash, await hashTileflowModelBundleManifest(bundle!.manifest));
+  assert.deepEqual(
+    bundle?.files.map(({fileName, source}) => [fileName, source]),
+    [[tower.fileName, tower.bytes]],
+  );
+  assert.equal(await createTileflowModelBundle({}), undefined);
+
   await writeFile(join(cwd, 'models', 'royal-palm.mid.glb'), smallTree());
   await assert.rejects(
     prepareTileflowMapTreeModels(['./models'], {
@@ -190,8 +219,20 @@ test('a map places its building models: the style names their files, which the b
   assert.equal(asset.contentType, 'model/gltf-binary');
   assert.ok(await decodeTileflowModels(asset.source as Uint8Array));
   const manifest = plan.buildManifest as unknown as {
-    maps: Record<string, {sourceAssets: {models?: {id: string; level: string}[]}}>;
+    maps: Record<
+      string,
+      {assetSetSha256: string; sourceAssets: {models?: {id: string; level: string}[]}}
+    >;
   };
+  // The map's asset set covers its model files as a hosted deploy's does.
+  assert.equal(
+    manifest.maps.city!.assetSetSha256,
+    await hashTileflowAssetSet(
+      plan.assets.filter(
+        ({fileName}) => fileName.startsWith('icons/city/') || fileName.startsWith('models/city/'),
+      ),
+    ),
+  );
   assert.deepEqual(
     manifest.maps
       .city!.sourceAssets.models?.filter(({id}) => id === 'tower')

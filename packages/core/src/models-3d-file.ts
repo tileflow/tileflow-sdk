@@ -325,6 +325,40 @@ export async function decodeTileflowModels(
   }
 }
 
+/**
+ * The ids of the models a prepared model file holds, in the order of its scene, read from its glTF
+ * header and JSON chunk without decoding a mesh; undefined when it is not a prepared model file. A
+ * server checks an uploaded file with it without running meshoptimizer's decoder.
+ */
+export function readTileflowModelFileIds(
+  buffer: ArrayBuffer | Uint8Array,
+): readonly string[] | undefined {
+  try {
+    const {json} = readGlb(buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer));
+    const required: unknown[] = Array.isArray(json.extensionsRequired)
+      ? json.extensionsRequired
+      : [];
+    if (
+      json.asset?.version !== '2.0' ||
+      !required.includes(quantisation) ||
+      required.some((name) => name !== meshopt && name !== quantisation)
+    )
+      return undefined;
+    const roots: unknown[] = json.scenes?.[json.scene ?? 0]?.nodes ?? [];
+    if (roots.length < 1 || roots.length > tileflowModelLimits.models) return undefined;
+    const ids: string[] = [];
+    for (const root of roots) {
+      const node = json.nodes?.[root as number];
+      const children: unknown[] = Array.isArray(node?.children) ? node.children : [];
+      if (children.length < 1 || children.length > tileflowModelLimits.levels) return undefined;
+      ids.push(readModelNode(node).id);
+    }
+    return new Set(ids).size === ids.length ? ids : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 let decoderLoad: Promise<TileflowModelDecompressor> | undefined;
 
 /** meshoptimizer's decoder, loaded once, the first time a compressed file is read. */

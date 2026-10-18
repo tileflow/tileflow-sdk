@@ -749,7 +749,11 @@ function getMapBuildAssets(
 ): TileflowBuildAsset[] {
   const selected = new Map<string, TileflowBuildAsset>();
   for (const asset of assets) {
-    if (asset.fileName.startsWith(`icons/${mapName}/`)) selected.set(asset.fileName, asset);
+    if (
+      asset.fileName.startsWith(`icons/${mapName}/`) ||
+      asset.fileName.startsWith(`models/${mapName}/`)
+    )
+      selected.set(asset.fileName, asset);
   }
   for (const asset of fontAssets) {
     selected.set(asset.fileName, asset);

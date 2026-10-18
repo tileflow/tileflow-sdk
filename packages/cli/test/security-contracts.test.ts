@@ -163,7 +163,7 @@ test('one hosted preflight rejects external data for validation and deploy calle
     },
   ]);
 
-  // A model Tileflow hosts travels by its address; a map's own model file does not deploy yet.
+  // A map's building models travel in its model bundle; a placement's own address travels as it is.
   const withModels = (url: string) => ({
     ...compatible,
     metadata: {
@@ -171,29 +171,14 @@ test('one hosted preflight rejects external data for validation and deploy calle
       'tileflow:buildings': {models: [{model: 'tower', url, at: [2.29, 48.86], heading: 0}]},
     },
   });
-  assert.deepEqual(
-    inspectTileflowHostedCompatibility(project, {
-      main: {light: withModels('https://models.example.test/tower.glb')},
-    }),
-    [],
-  );
-  assert.deepEqual(
-    inspectTileflowHostedCompatibility(project, {
-      main: {
-        light: withModels(
-          'https://maps.example.test/tileflow/models/main/tower-0123456789abcdef.glb',
-        ),
-      },
-    }),
-    [
-      {
-        map: 'main',
-        message:
-          "Hosted deploy does not take a map's own 3D building models yet. Map main places tower; keep the map local or remove them from buildings.threeDimensional.models.",
-        path: 'maps.main.modules.buildings.threeDimensional.models',
-      },
-    ],
-  );
+  for (const url of [
+    'https://models.example.test/tower.glb',
+    'https://api.example.test/model-bundles/preflight/tower-0123456789abcdef.glb',
+  ])
+    assert.deepEqual(
+      inspectTileflowHostedCompatibility(project, {main: {light: withModels(url)}}),
+      [],
+    );
 });
 
 test('hosted success responses validate exact atomic theme families and bounded bodies', async () => {

@@ -105,6 +105,7 @@ import {
   startDeviceAuthorization,
   uploadHostedFontBundle,
   uploadHostedIconPackage,
+  uploadHostedModelBundle,
   validateAccountSession,
   validateApiKey,
 } from './hosted-client';
@@ -119,7 +120,7 @@ import {registerIconListCommand} from './icon-list-command';
 import {registerIconLockCommands} from './icon-lock-command';
 import {registerIconSetCommands} from './icon-set-command';
 import {registerLanguageCommand} from './language-command';
-import {prepareModelAssets} from './model-assets';
+import {mapAssetsWithBuildingModels, prepareModelAssets} from './model-assets';
 import {
   createTileflowNativePreviewRequestHandler,
   getTileflowNativePreviewManifestUrl,
@@ -393,7 +394,11 @@ program
             options.target === 'hosted'
               ? `${normalizeUrl(options.apiBaseUrl)}/sprites/preflight/${binding.packageHash}/sprite`
               : `/tileflow/icons/${binding.mapName}/sprite`,
-          modelAssets,
+          mapAssetsWithBuildingModels(modelAssets, (mapName) =>
+            options.target === 'hosted'
+              ? `${normalizeUrl(options.apiBaseUrl)}/model-bundles/preflight`
+              : `/tileflow/models/${mapName}`,
+          ),
         );
         failureDefaults = {code: 'STYLE_INVALID', phase: 'style-validation'};
         const compiledStyles = createTileflowStyles(project, {
@@ -1015,7 +1020,7 @@ program
       const preflightMapAssets = createCompiledMapAssets(
         compiledIcons,
         (binding) => `${apiUrl}/sprites/preflight/${binding.packageHash}/sprite`,
-        modelAssets,
+        mapAssetsWithBuildingModels(modelAssets, () => `${apiUrl}/model-bundles/preflight`),
       );
       const compiledPreflightStyles = createTileflowStyles(deploymentProject, {
         apiBaseUrl: apiUrl,
@@ -1104,6 +1109,27 @@ program
         hostedSpriteByPackageHash.set(iconPackage.contentHash, uploaded.value.spriteUrl);
       }
 
+      // A map's own building models go up as its model bundle before the styles that name them.
+      const hostedModelBaseByHash = new Map<string, string>();
+      const uniqueModelBundles = [
+        ...new Map(
+          Object.values(modelAssets.bundles).map((bundle) => [bundle.contentHash, bundle]),
+        ).values(),
+      ].sort((left, right) => left.contentHash.localeCompare(right.contentHash));
+      for (const bundle of uniqueModelBundles) {
+        const uploaded = await uploadHostedModelBundle(api, bundle);
+        if (!uploaded.ok) {
+          logError(`Model bundle upload failed: ${uploaded.status}.`);
+          process.exitCode = 1;
+          return;
+        }
+        const action = uploaded.value.changed === false ? 'Reused' : 'Uploaded';
+        logSuccess(
+          `${action} 3D model bundle (${plural(bundle.manifest.models.length, 'model')}, ${formatBytes(uploaded.value.totalBytes)}, ${bundle.contentHash.slice(0, 12)}).`,
+        );
+        hostedModelBaseByHash.set(bundle.contentHash, uploaded.value.baseUrl);
+      }
+
       const hostedMapAssets = createCompiledMapAssets(
         compiledIcons,
         (binding) => {
@@ -1111,7 +1137,11 @@ program
           if (!sprite) throw new Error(`Missing hosted sprite URL for map ${binding.mapName}`);
           return sprite;
         },
-        modelAssets,
+        mapAssetsWithBuildingModels(modelAssets, (mapName, bundle) => {
+          const base = hostedModelBaseByHash.get(bundle.contentHash);
+          if (!base) throw new Error(`Missing hosted model bundle URL for map ${mapName}.`);
+          return base;
+        }),
       );
       const compiledHostedStyles = createTileflowStyles(deploymentProject, {
         apiBaseUrl: api.apiUrl,
@@ -1209,6 +1239,11 @@ program
                     source: file.source,
                   })),
                   ...(hostedFonts.bundles[mapName]?.files ?? []),
+                  ...(modelAssets.bundles[mapName]?.files ?? []).map((file) => ({
+                    contentType: file.contentType,
+                    fileName: `models/${mapName}/${file.fileName}`,
+                    source: file.source,
+                  })),
                 ],
                 lineage: deploymentProject.mapMetadata?.[mapName]?.lineage ?? [
                   {id: map.id, mapVersion: map.version},
@@ -1219,6 +1254,9 @@ program
                   icons: compiledIcons.sourceIdentities[mapName] ?? [],
                   ...(compiledIcons.compositions[mapName]
                     ? {iconComposition: compiledIcons.compositions[mapName]}
+                    : {}),
+                  ...(modelAssets.identities[mapName]
+                    ? {models: modelAssets.identities[mapName]}
                     : {}),
                 },
                 styles: styles[mapName]!,
@@ -1232,11 +1270,13 @@ program
         const iconBinding = bindingsByMap.get(mapName);
         const iconPackage = iconBinding ? packagesByHash.get(iconBinding.packageHash) : undefined;
         const fontBundle = hostedFonts.bundles[mapName];
+        const modelBundle = modelAssets.bundles[mapName];
         return {
           iconBinding,
           iconComposition: compiledIcons.compositions[mapName],
           iconPackage,
           fontBundle,
+          modelBundle,
           mapName,
           teamSources: hostedThemeFamilies[mapName]!.teamSources,
           buildManifest: {
@@ -1258,6 +1298,7 @@ program
           iconComposition,
           iconPackage,
           mapName,
+          modelBundle,
           teamSources,
           styles: themeStyles,
         } = deployment;
@@ -1295,6 +1336,7 @@ program
               : {}),
             ...(iconComposition ? {iconComposition} : {}),
             ...(fontBundle ? {fontBundle: {contentHash: fontBundle.contentHash}} : {}),
+            ...(modelBundle ? {modelBundle: {contentHash: modelBundle.contentHash}} : {}),
             source,
           },
           `Deploy response for ${mapName}`,

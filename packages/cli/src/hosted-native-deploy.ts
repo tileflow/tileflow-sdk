@@ -122,13 +122,18 @@ export async function prepareNativeHostedDeploy(
     ? `${apiOrigin}/sprites/preflight/${binding.packageHash}/sprite`
     : undefined;
   const modelAssets = await prepareModelAssets(project, {baseDirectory, target: 'hosted'});
+  // MapLibre Native draws no models, so a renderer collection does not carry a model bundle.
+  if (modelAssets.bundles[mapName])
+    throw failure(
+      "A deployment with --with-native does not take a map's own 3D building models yet. Deploy without --with-native, or remove them from the map's models directories.",
+    );
   const mapAssets = {
-    ...modelAssets,
+    ...modelAssets.assets,
     ...Object.fromEntries(
       compiledIcons.bindings.map((entry) => [
         entry.mapName,
         {
-          ...modelAssets[entry.mapName],
+          ...modelAssets.assets[entry.mapName],
           icons: {
             ids: entry.iconIds,
             sprite: `${apiOrigin}/sprites/preflight/${entry.packageHash}/sprite`,

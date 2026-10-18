@@ -346,6 +346,9 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
     return match[3] === 'fill' ? base : `${base}-outline`;
   }
 
+  match = /^land\.barriers\.(fence|hedge|wall)\.(area|shadow|line)$/u.exec(semanticKey);
+  if (match) return `tileflow-barrier-${match[1]}${match[2] === 'line' ? '' : `-${match[2]}`}`;
+
   match = /^land\.compatibility\.legacyPark\.(fill|outline)$/u.exec(semanticKey);
   if (match) {
     return match[1] === 'fill'

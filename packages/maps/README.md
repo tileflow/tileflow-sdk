@@ -139,6 +139,7 @@ theme and time of day. From z17, mapped sidewalks add a translucent tint and dot
 Mapped parking polygons use an opaque neutral fill above overlapping vegetation and below
 roads. This requires a `landuse` polygon classified as `parking`; parking POIs and aisle lines
 alone do not provide the boundary needed to fill the surface.
+Hedges (from z15, shaded from z17), fences and walls (from z16) come from `traffic_control`.
 
 Ferry routes fade in from z8, use fine blue dashes from z13, and show uppercase route names
 along the line from z15 when the data includes them. Their labels use a water-colored halo.

@@ -13,6 +13,7 @@ import {
   renderPass,
   roads,
   type TileflowDataExpressionInput,
+  type TileflowLandModuleOptions,
   type TileflowLineCap,
   type TileflowLineJoin,
   type TileflowLineStyle,
@@ -694,6 +695,62 @@ function streetsLandRenderStack() {
     }),
   };
 }
+
+// Hedges, fences and walls, as Mapbox Standard's gate-fence-hedge layer draws them: hedges in a
+// darker park green over a shade offset from z17, fences and walls in grey from z16. Hedges start
+// at z15, a zoom before Standard's, and a hedge mapped as an area is filled, where Standard's line
+// layer only outlines it. The land module draws them last in its band, above car parks.
+const hedgeWidth = zoom.linear([
+  [15, 0.6],
+  [16, 1],
+  [18, 2],
+  [20, 3.5],
+]);
+
+const streetsBarriers = {
+  fence: {
+    line: {
+      color: streetsVisual.barrier.fence,
+      minZoom: 16,
+      width: zoom.linear([
+        [16, 1],
+        [20, 3],
+      ]),
+    },
+  },
+  wall: {
+    line: {
+      color: streetsVisual.barrier.wall,
+      minZoom: 16,
+      width: zoom.linear([
+        [16, 1],
+        [20, 3.5],
+      ]),
+    },
+  },
+  hedge: {
+    area: {color: streetsVisual.barrier.hedge, minZoom: 15, opacity: 1},
+    shadow: {
+      cap: 'round',
+      color: streetsVisual.barrier.hedgeShade,
+      join: 'round',
+      minZoom: 17,
+      opacity: zoom.linear([
+        [17, 0],
+        [18, 0.7],
+      ]),
+      translate: [1.5, 1.5],
+      width: hedgeWidth,
+    },
+    line: {
+      cap: 'round',
+      color: streetsVisual.barrier.hedge,
+      join: 'round',
+      minZoom: 15,
+      width: hedgeWidth,
+    },
+  },
+} as const satisfies TileflowLandModuleOptions['barriers'];
 
 function streetsBuildingRenderStack() {
   return {
@@ -1413,6 +1470,7 @@ export const streets = bindOfficialMapTheme(
       }),
       land: withRenderStack(
         land({
+          barriers: streetsBarriers,
           background: {
             color: streetsSurfacePalette.background,
             opacity: 1,

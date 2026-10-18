@@ -3,12 +3,25 @@ import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {
   applyBackgroundStyle,
   applyFillStyle,
+  applyLineStyle,
   createAreaLayers,
 } from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {expression, zoom} from '../../cartography/values';
 import type {TileflowResolvedModuleConfig} from '../resolved';
-import type {TileflowLandcoverClass, TileflowLandModuleConfig, TileflowLanduseClass} from './index';
+import type {
+  TileflowBarrierClass,
+  TileflowLandcoverClass,
+  TileflowLandModuleConfig,
+  TileflowLanduseClass,
+} from './index';
+
+// Hedges last, so a hedge along a wall or fence stays on top.
+const barrierClasses = [
+  'fence',
+  'wall',
+  'hedge',
+] as const satisfies readonly TileflowBarrierClass[];
 
 const landuseClasses: Record<TileflowLanduseClass, readonly string[]> = {
   cemetery: ['cemetery'],
@@ -314,6 +327,54 @@ export function compileLand(
   // means pitches, tracks, playgrounds and zoos, not the enclosing park itself.
   appendLanduse('parking', landuseClasses.parking);
   appendLanduse('recreation', landuseClasses.recreation);
+
+  // Barriers are lines; World also publishes the hedges OSM maps as areas, which `area` fills.
+  // A barrier's fill, shadow and line draw in that order.
+  const barrierLayer = schema.layers.trafficControl;
+  for (const name of barrierLayer ? barrierClasses : []) {
+    const style = config.barriers?.[name];
+    const kind = ['==', ['get', subclassField], name];
+    if (style?.area) {
+      contributions.push({
+        kind: 'layer',
+        layer: applyFillStyle(
+          {
+            id: `tileflow-barrier-${name}-area`,
+            type: 'fill',
+            source,
+            'source-layer': barrierLayer,
+            filter: ['all', ['==', ['geometry-type'], 'Polygon'], kind],
+          },
+          style.area,
+        ),
+        localOrder: localOrder++,
+        owner: 'land',
+        slot: 'land',
+        target: `land.barriers.${name}.area`,
+      });
+    }
+    for (const phase of ['shadow', 'line'] as const) {
+      const line = style?.[phase];
+      if (!line) continue;
+      contributions.push({
+        kind: 'layer',
+        layer: applyLineStyle(
+          {
+            id: `tileflow-barrier-${name}${phase === 'shadow' ? '-shadow' : ''}`,
+            type: 'line',
+            source,
+            'source-layer': barrierLayer,
+            filter: kind,
+          },
+          line,
+        ),
+        localOrder: localOrder++,
+        owner: 'land',
+        slot: 'land',
+        target: `land.barriers.${name}.${phase}`,
+      });
+    }
+  }
 
   return contributions;
 }

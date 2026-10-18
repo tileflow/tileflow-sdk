@@ -3,7 +3,7 @@
 `createTileflowTrees3D` stands the trees of a Tileflow map's vector tiles round the camera as 3D
 trees, lit by the theme controller's sun. Each tree takes the form and the size its data gives:
 palms, conifers, columns and three broadleaf forms, at their mapped height and crown where the data
-has them. Trees cast shadows on the ground and, with `createTileflowBuildings3D`, on the buildings,
+has them. The data's hedges stand beside them as clipped green walls. Trees cast shadows on the ground and, with `createTileflowBuildings3D`, on the buildings,
 and take the buildings' shadows; nearer buildings hide them.
 
 The map describes how its trees look; the renderer only stands them. A map that declares
@@ -107,7 +107,7 @@ sunk or the layer leaves the map.
 
 `stats.declared` tells whether the map's style describes 3D trees. When it is false the layer draws
 nothing: declare `vegetation({mode: '3d'})` in the map. `stats` also counts the tiles, the trees
-placed and the trees drawn in the last frame.
+placed, the pieces of hedge placed and the trees drawn in the last frame.
 
 ## What the trees come from
 
@@ -120,6 +120,10 @@ The renderer reads the source's z15 tiles round the camera:
 - World's `canopy` layer, where the data has it: decorative points in urban parks and gardens, each
   standing one to three trees by its canopy cover, inside the room it leaves before a path, a
   building or the park's edge. They stand for measured canopy, not for mapped trees.
+- World's `traffic_control` layer: its hedges (`subclass` `hedge`), the lines OpenStreetMap maps and
+  the hedges it maps as areas. A hedge stands as pieces 1.2 metres apart along each line and round
+  each area, 0.8 metres thick, at its `height` or 1.3 metres, a metre higher where `hedge` says
+  `hedge_bank`. The style still draws the hedge flat underneath, and fences and walls stay flat.
 
 | Form       | From the data                                                                |
 | ---------- | ---------------------------------------------------------------------------- |
@@ -139,7 +143,9 @@ tile's buffer belong to the neighbouring tile, so no tree stands twice.
 
 Colours come from the theme: `vegetation.tree.bark`, `vegetation.tree.broadleaf.a` to `.d`,
 `vegetation.tree.conifer.a` to `.c` and `vegetation.tree.palm.a` to `.c`, sunlit, from darkest to
-lightest. A crown facing a sunlit sky takes its colour; shade takes the sky's light, as on 3D
+lightest. Hedges take `hedgeColors`, the two darkest broadleaf colours unless the map gives its own;
+Streets gives its flat hedge's colours, so a hedge keeps its colour as it rises. `hedges: false`
+leaves hedges flat. A crown facing a sunlit sky takes its colour; shade takes the sky's light, as on 3D
 buildings. At night a neutral lift keeps crown tops visible; grey materials stay grey under neutral
 lighting, while coloured scene lighting can tint them. The vegetation module's `threeDimensional`
 options refine them for one map:

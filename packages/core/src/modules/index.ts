@@ -16,6 +16,8 @@ export type {
 export {labels} from './labels';
 export {land} from './land';
 export type {
+  TileflowBarrierClass,
+  TileflowBarrierStyle,
   TileflowLandcoverClass,
   TileflowLandModuleConfig,
   TileflowLandModuleOptions,

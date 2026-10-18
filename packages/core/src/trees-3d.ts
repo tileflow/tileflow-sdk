@@ -1,8 +1,9 @@
 // Places a vector tile's trees for Tileflow's 3D trees: the trees the map's data maps one by one
 // (World's `tree` points), each in the form and at the size its data gives, trees along mapped
 // rows of trees (`tree` lines), and one to three trees for each of World's decorative canopy points
-// (`canopy`), inside the room the point leaves. A tree keeps its form, size, turn and shade
-// wherever and whenever it is read. It has no DOM dependency.
+// (`canopy`), inside the room the point leaves; and clipped pieces along World's hedges
+// (`traffic_control` with `subclass=hedge`). A tree keeps its form, size, turn and shade wherever
+// and whenever it is read. It has no DOM dependency.
 import type {TileflowTreeModel} from './trees-3d-model';
 import type {TileflowTileLayer} from './vector-tile-decode';
 
@@ -47,6 +48,10 @@ export type TileflowTreeFields = Readonly<{
   canopyCover: string;
   /** A canopy point's measured canopy height, in metres. */
   canopyHeight: string;
+  /** The kind of barrier in the hedge layer: hedges are `hedge`. */
+  subclass: string;
+  /** A hedge's kind: `hedge_bank` when it stands on an earth bank. */
+  hedge: string;
 }>;
 
 export const tileflowWorldTreeFields: TileflowTreeFields = Object.freeze({
@@ -61,6 +66,8 @@ export const tileflowWorldTreeFields: TileflowTreeFields = Object.freeze({
   canopyClearance: 'clearance_px_z15',
   canopyCover: 'cover_pct',
   canopyHeight: 'height_m',
+  subclass: 'subclass',
+  hedge: 'hedge',
 });
 
 /** Trees of unknown form by default: the three broadleaf forms, evenly. */
@@ -93,6 +100,11 @@ export type TileflowTreeLayers = Readonly<{
   trees?: TileflowTileLayer;
   /** Decorative canopy points in parks and gardens (World's `canopy`). */
   canopy?: TileflowTileLayer;
+  /**
+   * World's `traffic_control`: its hedges, lines and areas of `subclass=hedge`, stand as clipped
+   * pieces along each line and round each area. Other barriers are left out.
+   */
+  hedges?: TileflowTileLayer;
 }>;
 
 /** Where some trees are in a placement, and how many of them have each rank or a lower one. */
@@ -115,7 +127,12 @@ export type TileflowTreePlacement = Readonly<{
   /** `tileflowTreeBytes` bytes per tree, ordered by form, model, then rank; see the layout below. */
   trees: Uint8Array;
   forms: Readonly<Record<TileflowTreeForm, TileflowTreeFormRange>>;
-  /** The tallest tree, in metres. */
+  /**
+   * `tileflowTreeBytes` bytes per piece of hedge, as a tree's: its middle, its height, its length
+   * as the crown, and its turn along the hedge.
+   */
+  hedges: Uint8Array;
+  /** The tallest tree or hedge, in metres. */
   tallest: number;
   /** Trees from the data's trees and rows, and trees from canopy points. */
   mapped: number;
@@ -153,6 +170,15 @@ export function tileflowTreeFormProportion(form: TileflowTreeForm): number {
 
 const heightBounds: readonly [number, number] = [2, 45];
 const crownBounds: readonly [number, number] = [1, 25];
+
+// Hedges stand as overlapping pieces 1.2 m apart, each 1.5 m long: the hedge mesh is 0.55 of its
+// length wide, so a hedge is 0.8 m thick. A hedge without a height is a clipped garden hedge of
+// 1.3 m; an earth bank raises it by 1 m.
+const hedgeSpacing = 1.2;
+const hedgeLength = 1.5;
+const hedgeHeight = 1.3;
+const hedgeBank = 1;
+const hedgeBounds: readonly [number, number] = [0.3, 10];
 
 // Genera whose form is known: palms, columns, conifers and the three broadleaf forms.
 const palms = new Set([
@@ -515,6 +541,62 @@ export function placeTileflowTrees(
     }
   }
 
+  // A hedge stands a piece every `hedgeSpacing` metres along each line and round each area, turned
+  // along it, from half a spacing in. Pieces in the tile's buffer belong to the neighbouring tile.
+  const hedges: {
+    x: number;
+    y: number;
+    height: number;
+    turn: number;
+    shade: number;
+    seed: number;
+  }[] = [];
+  const barriers = layers.hedges;
+  if (barriers) {
+    const scale = extent / barriers.extent;
+    const step = hedgeSpacing / (tileMetres / barriers.extent);
+    for (const feature of barriers.features) {
+      if (feature.type === 'Point' || feature.properties[fields.subclass] !== 'hedge') continue;
+      const bank = feature.properties[fields.hedge] === 'hedge_bank' ? hedgeBank : 0;
+      const height =
+        (measured(feature.properties[fields.height], hedgeBounds) ?? hedgeHeight) + bank;
+      // An area's rings come closed, and their edges along the tile's clip lie in its buffer.
+      for (const points of feature.geometry) {
+        let next = step / 2;
+        let along = 0;
+        for (let index = 0; index + 3 < points.length; index += 2) {
+          const [ax, ay, bx, by] = [
+            points[index]!,
+            points[index + 1]!,
+            points[index + 2]!,
+            points[index + 3]!,
+          ];
+          const length = Math.hypot(bx - ax, by - ay);
+          // The tile's y runs south; a turn runs anticlockwise from east.
+          const turn = (Math.atan2(ay - by, bx - ax) / (Math.PI * 2) + 1) % 1;
+          while (next <= along + length) {
+            const t = length > 0 ? (next - along) / length : 0;
+            const px = ax + (bx - ax) * t;
+            const py = ay + (by - ay) * t;
+            if (px >= 0 && py >= 0 && px < barriers.extent && py < barriers.extent) {
+              const seed = hash(tile.x * extent + px * scale, tile.y * extent + py * scale, 17);
+              hedges.push({
+                x: px * scale,
+                y: py * scale,
+                height,
+                turn,
+                shade: unit(seed, 5),
+                seed: unit(seed, 7),
+              });
+            }
+            next += step;
+          }
+          along += length;
+        }
+      }
+    }
+  }
+
   const variantsOf = (form: number) =>
     clamp(Math.floor(options.variants?.[tileflowTreeForms[form]!] ?? 1), [1, 4]);
   const variant = (tree: (typeof placed)[number]) =>
@@ -565,7 +647,20 @@ export function placeTileflowTrees(
     count(ranges, index, tree.rank);
     count(ranges.variants[variants[from]!]!, index, tree.rank);
   });
-  return {trees: bytes, forms, tallest, mapped, canopy};
+  const hedgeBytes = new Uint8Array(hedges.length * tileflowTreeBytes);
+  const hedgeView = new DataView(hedgeBytes.buffer);
+  hedges.forEach((piece, index) => {
+    const at = index * tileflowTreeBytes;
+    hedgeView.setUint16(at, Math.min(extent - 1, Math.round(piece.x)), true);
+    hedgeView.setUint16(at + 2, Math.min(extent - 1, Math.round(piece.y)), true);
+    hedgeView.setUint16(at + 4, Math.round(piece.height * 10), true);
+    hedgeView.setUint16(at + 6, Math.round(hedgeLength * 10), true);
+    hedgeBytes[at + 8] = Math.round(piece.turn * 256) & 255;
+    hedgeBytes[at + 9] = Math.floor(piece.shade * 256) & 255;
+    hedgeBytes[at + 12] = Math.floor(piece.seed * 256) & 255;
+    tallest = Math.max(tallest, piece.height);
+  });
+  return {trees: bytes, forms, hedges: hedgeBytes, tallest, mapped, canopy};
 }
 
 function broadleafOf(mix: TileflowTreeFormMix): TileflowTreeFormMix {
@@ -636,16 +731,20 @@ export const tileflowVegetationMetadataKey = 'tileflow:vegetation';
 
 /** How a compiled map's 3D trees look and where their data is, resolved for one theme. */
 export type TileflowVegetation3D = Readonly<{
-  /** The vector source and its layers with the trees and the canopy points. */
+  /** The vector source and its layers with the trees, the canopy points and the hedges. */
   source: string;
-  layers: Readonly<{tree: string; canopy?: string}>;
+  layers: Readonly<{tree: string; canopy?: string; hedge?: string}>;
   fields: TileflowTreeFields;
-  /** Sunlit colours: bark, and the leaves of each kind of tree from darkest to lightest. */
+  /**
+   * Sunlit colours: bark, the leaves of each kind of tree from darkest to lightest, and those of
+   * hedges.
+   */
   colors: Readonly<{
     bark: string;
     broadleaf: readonly string[];
     conifer: readonly string[];
     palm: readonly string[];
+    hedge: readonly string[];
   }>;
   heightScale: number;
   crownScale: number;
@@ -690,6 +789,7 @@ export function readTileflowVegetation3D(metadata: unknown): TileflowVegetation3
   const conifer = palette(colors.conifer);
   const palm = palette(colors.palm) ?? broadleaf;
   if (!broadleaf || !conifer || !palm) return undefined;
+  const hedge = palette(colors.hedge) ?? broadleaf.slice(0, 2);
   const scale = (number: unknown) =>
     typeof number === 'number' && number > 0 && number <= 10 ? number : 1;
   const mix = tileflowTreeFormMixProblem(unknownForms) === undefined ? unknownForms : undefined;
@@ -750,9 +850,10 @@ export function readTileflowVegetation3D(metadata: unknown): TileflowVegetation3
     layers: {
       tree: layers.tree,
       ...(typeof layers.canopy === 'string' ? {canopy: layers.canopy} : {}),
+      ...(typeof layers.hedge === 'string' ? {hedge: layers.hedge} : {}),
     },
     fields: named,
-    colors: {bark: colors.bark, broadleaf, conifer, palm},
+    colors: {bark: colors.bark, broadleaf, conifer, palm, hedge},
     heightScale: scale(heightScale),
     crownScale: scale(crownScale),
     forms,

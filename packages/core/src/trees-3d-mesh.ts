@@ -48,6 +48,88 @@ export function tileflowTreeMeshes(): Readonly<
 }
 
 /**
+ * A piece of clipped hedge: one unit long along x and 0.55 wide, standing from z 0 to 1, with its
+ * shoulders rounded off. The renderer stands pieces along a hedge, each turned along it and
+ * overlapping the next, so their ends meet inside the hedge; its round shape is a long cushion.
+ */
+export function tileflowHedgeMesh(): TileflowTreeMesh {
+  const out: Builder = {
+    positions: [],
+    normals: [],
+    rounds: [],
+    parts: [],
+    shades: [],
+    occlusion: [],
+  };
+  const half = 0.275;
+  // The profile across the hedge, from one foot over the top to the other.
+  const profile: readonly (readonly [number, number])[] = [
+    [-half, 0],
+    [-half, 0.78],
+    [-half * 0.62, 1],
+    [half * 0.62, 1],
+    [half, 0.78],
+    [half, 0],
+  ];
+  const round = ([y, z]: readonly [number, number]): Vec =>
+    normalize([0, y / half, Math.max(0, z - 0.45) / 0.55]);
+  const shaded = (z: number) => 0.55 + 0.45 * z;
+  for (let index = 0; index + 1 < profile.length; index += 1) {
+    const [y0, z0] = profile[index]!;
+    const [y1, z1] = profile[index + 1]!;
+    let facet = normalize([0, z1 - z0, -(y1 - y0)]);
+    if (facet[1] * (y0 + y1) + facet[2] * (z0 + z1 - 0.9) < 0)
+      facet = [-facet[0], -facet[1], -facet[2]];
+    const quad: [Vec, Vec, Vec, Vec] = [
+      [-0.5, y0, z0],
+      [0.5, y0, z0],
+      [0.5, y1, z1],
+      [-0.5, y1, z1],
+    ];
+    const rounds = [round([y0, z0]), round([y0, z0]), round([y1, z1]), round([y1, z1])];
+    for (const [a, b, c] of [
+      [0, 1, 2],
+      [0, 2, 3],
+    ] as const)
+      triangle(
+        out,
+        [quad[a], quad[b], quad[c]],
+        [facet, facet, facet],
+        tileflowTreeParts.leaves,
+        0,
+        [shaded(quad[a][2]), shaded(quad[b][2]), shaded(quad[c][2])],
+        [rounds[a]!, rounds[b]!, rounds[c]!],
+      );
+  }
+  // Each end closes the profile, for the ends of a hedge and its corners.
+  for (const x of [-0.5, 0.5]) {
+    const facet: Vec = [Math.sign(x), 0, 0];
+    const centre: Vec = [x, 0, 0.5];
+    for (let index = 0; index + 1 < profile.length; index += 1) {
+      const points: [Vec, Vec, Vec] = [
+        centre,
+        [x, ...profile[index]!],
+        [x, ...profile[index + 1]!],
+      ];
+      triangle(
+        out,
+        points,
+        [facet, facet, facet],
+        tileflowTreeParts.leaves,
+        0,
+        [shaded(0.5), shaded(points[1][2]), shaded(points[2][2])],
+        points.map((point) => normalize([Math.sign(x), point[1] / half, point[2] - 0.45])) as [
+          Vec,
+          Vec,
+          Vec,
+        ],
+      );
+    }
+  }
+  return pack(out);
+}
+
+/**
  * A map's own model as the renderer draws it: its triangles unindexed, each with its facet normal
  * beside the model's own normals as the round shape, and wound to face the way they point.
  */

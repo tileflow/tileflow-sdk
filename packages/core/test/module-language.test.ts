@@ -284,6 +284,7 @@ test('publishes AI-reference constraints that match exact assets and capture aut
   assert.equal(inheritance.maxDepth, tileflowMapDefaultMaxDepth);
   assert.deepEqual(inheritance.fields, {
     atmosphere: 'atomic',
+    boundaryAreas: 'atomic',
     data: 'atomic',
     defaultTheme: 'atomic',
     extends: 'lineage',

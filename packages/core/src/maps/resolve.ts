@@ -43,6 +43,7 @@ type MapMergeStrategy =
 /** Every public map key must choose one resolution strategy explicitly. */
 export const tileflowMapMergeStrategies = {
   atmosphere: 'atomic',
+  boundaryAreas: 'atomic',
   data: 'atomic',
   defaultTheme: 'atomic',
   extends: 'lineage',

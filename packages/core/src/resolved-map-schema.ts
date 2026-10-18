@@ -1997,6 +1997,16 @@ const marineSchema = z.union([
     })
     .strict(),
 ]);
+const boundaryAreasSchema = z.union([
+  z.literal(false),
+  z
+    .object({
+      family: z.enum(['boundaries']),
+      promoteId: z.literal('ref').optional(),
+      url: publicVectorUrlSchema.optional(),
+    })
+    .strict(),
+]);
 const directVectorDataSchema = z
   .object({
     ...vectorDataShape,
@@ -2465,6 +2475,7 @@ const systemThemesSchema = z
 export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
   .object({
     atmosphere: atmosphereSchema.optional(),
+    boundaryAreas: boundaryAreasSchema.optional(),
     data: dataSchema.optional(),
     defaultTheme: tileflowThemeNameSchema,
     fonts: fontDirectoriesSchema.optional(),

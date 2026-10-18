@@ -1,4 +1,5 @@
 import type {TileflowAtmosphere} from '../atmosphere';
+import type {TileflowBoundaryAreas} from '../boundary-areas';
 import type {TileflowCaptureScene} from '../capture-scene';
 import type {TileflowCaptureShot} from '../capture-shot';
 import type {TileflowResolvedSemanticModuleOverrides} from '../cartography/domain-registry';
@@ -50,6 +51,11 @@ type TileflowMapTextAssets =
 export type TileflowMapDesign = TileflowMapTextAssets & {
   /** Optional atmosphere for globe projection. False disables an inherited atmosphere. */
   atmosphere?: TileflowAtmosphere;
+  /**
+   * Tileflow's Boundaries tileset: administrative and neighbourhood areas for choropleths and
+   * selections. World's border lines remain the `boundaries` module. False removes inherited areas.
+   */
+  boundaryAreas?: TileflowBoundaryAreas;
   data?: TileflowDataConfig;
   /** Name used whenever a concrete theme is not explicitly requested. */
   defaultTheme?: TileflowThemeName;

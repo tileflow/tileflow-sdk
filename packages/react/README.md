@@ -124,6 +124,38 @@ a Tileflow map through its manifest; it has no renderer discriminator or direct-
 The obsolete source fields `kind` and `style` are rejected. For a completely unmanaged map, use
 `maplibre-gl` directly rather than a Tileflow component.
 
+## Color boundary areas from application data
+
+For a map that declares `boundaryAreas` and a `boundaryChoropleth()` overlay without `values`,
+`useBoundaryFeatureState` keeps its feature-state equal to your rows. Take the map from `onLoad`
+and memoize the values; each new object replaces the previous ones, and `null` clears them:
+
+<!-- docs:check -->
+
+```tsx
+import {useMemo, useState} from 'react';
+import type {Map as MapLibreMap} from 'maplibre-gl';
+import {Map, useBoundaryFeatureState} from '@tileflow/react';
+
+export function Unemployment({rates}: {rates: {ine: string; rate: number}[]}) {
+  const [map, setMap] = useState<MapLibreMap | null>(null);
+  const values = useMemo(
+    () => ({
+      joinBy: 'ref' as const,
+      rows: rates.map(({ine, rate}) => ({key: `ES:INE:${ine}`, value: rate})),
+    }),
+    [rates],
+  );
+  useBoundaryFeatureState(map, values);
+  return <Map source={{map: 'madrid-unemployment'}} onLoad={setMap} />;
+}
+```
+
+Rows join by `ref` here, so this map declares `boundaryAreas: {family: 'boundaries', promoteId:
+'ref'}`. Without `promoteId`, rows join by registry `id`. See
+[boundary areas and choropleths](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/boundary-areas-and-choropleths.md)
+for scales, joins and the lookup table.
+
 ## Add annotations and popups
 
 Install the contract package when importing its types directly:

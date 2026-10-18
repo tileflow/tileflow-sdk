@@ -404,6 +404,7 @@ export type {
   TileflowRasterDemSourceRequirementV1,
   TileflowSourceRequirementsV1,
 } from './data/requirements';
+export * from './boundary-areas';
 export {
   bathymetry,
   resolveMarine,

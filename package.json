@@ -19,7 +19,8 @@
   "scripts": {
     "build": "turbo build",
     "build:packages": "turbo build --filter='./packages/*'",
-    "check": "pnpm run legal:check && pnpm run reference:check && pnpm run docs:check && pnpm run test:release && pnpm run test:architecture && pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run verify",
+    "check": "pnpm run check:static && pnpm run verify",
+    "check:static": "pnpm run legal:check && pnpm run reference:check && pnpm run docs:check && pnpm run test:release && pnpm run test:architecture && pnpm run typecheck && pnpm run lint && pnpm run format:check",
     "typecheck": "turbo typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",

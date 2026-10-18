@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import {spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
-import {createServer} from 'node:http';
+import {createServer, type Server} from 'node:http';
+import {connect} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join, win32} from 'node:path';
 import test, {type TestContext} from 'node:test';
@@ -16,6 +16,7 @@ import {
   TileflowCaptureError,
   type TileflowShotCapture,
 } from '@tileflow/capture';
+import {startFixtureProcess} from '../../../test-support/fixture-process';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   createExploratoryScene,
@@ -41,6 +42,40 @@ import {tileflowMapFixture} from './map-fixture';
 
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const tsxLoader = import.meta.resolve('tsx');
+
+test('capture fixture cleanup closes unfinished HTTP connections', async () => {
+  let cleanup: (() => Promise<void>) | undefined;
+  const context = {
+    after(callback: () => Promise<void>) {
+      cleanup = callback;
+    },
+  } as unknown as TestContext;
+  const fixture = await createVectorFixtureServer(context);
+  const socket = connect(Number(new URL(fixture.origin).port), '127.0.0.1');
+  await once(socket, 'connect');
+  // Closing the server can reset this deliberately unfinished request.
+  socket.on('error', () => {});
+  socket.write('GET /tiles/world/0/0/0.pbf HTTP/1.1\r\nHost: localhost\r\n');
+  assert.ok(cleanup);
+  const closing = cleanup();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    assert.equal(
+      await Promise.race([
+        closing.then(() => 'closed'),
+        new Promise<string>((resolve) => {
+          timer = setTimeout(() => resolve('blocked'), 500);
+        }),
+      ]),
+      'closed',
+    );
+  } finally {
+    clearTimeout(timer);
+    socket.destroy();
+    await closing;
+  }
+});
 
 test('projects deterministic relative-only capture JSON', () => {
   const cwd = '/workspace/project';
@@ -264,8 +299,8 @@ test('normalizes promotable exploratory center and bounds definitions', () => {
 
 test('capture and setup help explain automatic, prepared, and no-system-browser behavior', async (t) => {
   const directory = await createDirectoryFixture(t, 'tileflow-capture-help-');
-  const captureHelp = await runCli(directory, ['capture', '--help'], {});
-  const setupHelp = await runCli(directory, ['setup', 'capture', '--help'], {});
+  const captureHelp = await runCli(t, directory, ['capture', '--help'], {});
+  const setupHelp = await runCli(t, directory, ['setup', 'capture', '--help'], {});
 
   assert.equal(captureHelp.code, 0, captureHelp.stderr);
   assert.match(captureHelp.stdout, /installs the exact pinned Chromium.*automatically/is);
@@ -591,7 +626,7 @@ test('validates shot selection before loading config', async (t) => {
   ];
 
   for (const [arguments_, message, command] of cases) {
-    const result = await runCli(directory, ['capture', ...arguments_, '--json'], {});
+    const result = await runCli(t, directory, ['capture', ...arguments_, '--json'], {});
     assert.equal(result.code, 1, arguments_.join(' '));
     assert.equal(result.stdout, '');
     const document = parseFailureDocument(result.stderr, command);
@@ -610,7 +645,7 @@ test('validates shot selection before loading config', async (t) => {
   ]}}`,
     }),
   );
-  const unknown = await runCli(directory, ['capture', '--shot', 'orbit', '--json'], {});
+  const unknown = await runCli(t, directory, ['capture', '--shot', 'orbit', '--json'], {});
   assert.equal(unknown.code, 1);
   assert.equal(unknown.stdout, '');
   const unknownDocument = parseFailureDocument(unknown.stderr, 'capture.shot');
@@ -621,7 +656,7 @@ test('validates shot selection before loading config', async (t) => {
 
 test('init creates a singular map and only creates a missing ignore file', async (t) => {
   const fresh = await createDirectoryFixture(t, 'tileflow-capture-init-');
-  const initialized = await runCli(fresh, ['init'], {});
+  const initialized = await runCli(t, fresh, ['init'], {});
   assert.equal(initialized.code, 0, initialized.stderr);
   const config = await readFile(join(fresh, 'tileflow.config.ts'), 'utf8');
   assert.match(config, /defineMap/);
@@ -647,14 +682,14 @@ test('init creates a singular map and only creates a missing ignore file', async
     /archiveVersion|revision|world-lock|world update/i,
   );
 
-  const validation = await runCli(fresh, ['validate', '--json'], {});
+  const validation = await runCli(t, fresh, ['validate', '--json'], {});
   assert.equal(validation.code, 0, validation.stderr);
   assert.equal(validation.stderr, '');
   const validationDocument = JSON.parse(validation.stdout) as {maps?: string[]; ok?: boolean};
   assert.equal(validationDocument.ok, true);
   assert.deepEqual(validationDocument.maps, ['madrid']);
 
-  const built = await runCli(fresh, ['build', '--out', 'dist/tileflow'], {});
+  const built = await runCli(t, fresh, ['build', '--out', 'dist/tileflow'], {});
   assert.equal(built.code, 0, `${built.stdout}\n${built.stderr}`);
   const style = JSON.parse(
     await readFile(join(fresh, 'dist/tileflow/styles/madrid/light.json'), 'utf8'),
@@ -666,14 +701,14 @@ test('init creates a singular map and only creates a missing ignore file', async
 
   const existing = await createDirectoryFixture(t, 'tileflow-capture-init-existing-ignore-');
   await writeFile(join(existing, '.gitignore'), 'owned-by-user\n');
-  const withExistingIgnore = await runCli(existing, ['init'], {});
+  const withExistingIgnore = await runCli(t, existing, ['init'], {});
   assert.equal(withExistingIgnore.code, 0, withExistingIgnore.stderr);
   assert.equal(await readFile(join(existing, '.gitignore'), 'utf8'), 'owned-by-user\n');
 });
 
 test('keeps selection and config failures on stderr with empty JSON stdout', async (t) => {
   const directory = await createDirectoryFixture(t, 'tileflow-capture-errors-');
-  const missingSelection = await runCli(directory, ['capture', '--json'], {});
+  const missingSelection = await runCli(t, directory, ['capture', '--json'], {});
   assert.equal(missingSelection.code, 1);
   assert.equal(missingSelection.stdout, '');
   const missingDocument = parseFailureDocument(missingSelection.stderr);
@@ -682,6 +717,7 @@ test('keeps selection and config failures on stderr with empty JSON stdout', asy
   assert.match(missingDocument.diagnostics[0]?.message ?? '', /Select at least one scene/);
 
   const conflictingApplicationLocation = await runCli(
+    t,
     directory,
     [
       'capture',
@@ -702,6 +738,7 @@ test('keeps selection and config failures on stderr with empty JSON stdout', asy
   );
 
   const invalidFrame = await runCli(
+    t,
     directory,
     ['capture', 'proof', '--frame', 'element', '--json'],
     {},
@@ -714,6 +751,7 @@ test('keeps selection and config failures on stderr with empty JSON stdout', asy
   );
 
   const reservedExploratoryName = await runCli(
+    t,
     directory,
     ['capture', '--map', 'CON', '--theme', 'light', '--center', '0,0', '--zoom', '1', '--json'],
     {},
@@ -726,6 +764,7 @@ test('keeps selection and config failures on stderr with empty JSON stdout', asy
   );
 
   const missingExploratoryTheme = await runCli(
+    t,
     directory,
     ['capture', '--map', 'proof', '--center', '0,0', '--zoom', '1', '--json'],
     {},
@@ -746,7 +785,7 @@ test('keeps selection and config failures on stderr with empty JSON stdout', asy
   scenes: {proof: {theme: 'light', camera: {type: 'center', center: [0, 0], zoom: 1}, viewport: {width: 64, height: 64}}}`,
     }),
   );
-  const invalid = await runCli(directory, ['capture', 'proof', '--json'], {
+  const invalid = await runCli(t, directory, ['capture', 'proof', '--json'], {
     TILEFLOW_API_KEY: `tf_live_${'s'.repeat(40)}`,
   });
   assert.equal(invalid.code, 1);
@@ -779,6 +818,7 @@ test('removed raw style overrides fail at the config boundary and preserve outpu
   await writeFile(receiptPath, 'preserved-receipt');
 
   const result = await runCli(
+    t,
     directory,
     ['capture', 'proof', '--out', 'proof.png', '--force', '--json', '--no-browser-install'],
     {},
@@ -807,6 +847,7 @@ test('one-shot JSON redacts credentials thrown by executable config', async (t) 
   );
 
   const result = await runCli(
+    t,
     directory,
     ['capture', 'proof', '--json', '--no-browser-install'],
     {},
@@ -843,10 +884,15 @@ test(
   scenes: {proof: {theme: 'light', camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 256, height: 256}}}`,
       }),
     );
-    const result = await runCli(directory, ['capture', 'proof', '--json', '--no-browser-install'], {
-      ...(process.env.HOME ? {HOME: process.env.HOME} : {}),
-      ...(process.env.USERPROFILE ? {USERPROFILE: process.env.USERPROFILE} : {}),
-    });
+    const result = await runCli(
+      t,
+      directory,
+      ['capture', 'proof', '--json', '--no-browser-install'],
+      {
+        ...(process.env.HOME ? {HOME: process.env.HOME} : {}),
+        ...(process.env.USERPROFILE ? {USERPROFILE: process.env.USERPROFILE} : {}),
+      },
+    );
 
     assert.equal(result.code, 0, result.stderr);
     const document = JSON.parse(result.stdout) as {
@@ -868,6 +914,7 @@ test(
     assert.match(document.captures[0]!.captureId, /^[a-f0-9]{64}$/);
     await rm(join(directory, 'tileflow.config.ts'));
     const reused = await runCli(
+      t,
       directory,
       [
         'compare',
@@ -927,6 +974,7 @@ test(
     };
 
     const video = await runCli(
+      t,
       directory,
       ['capture', '--shot', 'fly-in', '--json', '--no-browser-install'],
       environment,
@@ -949,6 +997,7 @@ test(
     assert.equal(video.stdout.includes(directory), false);
 
     const frames = await runCli(
+      t,
       directory,
       [
         'capture',
@@ -980,18 +1029,19 @@ test(
   },
 );
 
-test(
-  'captures Streets roads and emits a real promotable exploratory definition without setup',
-  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 45_000},
-  async (t) => {
-    const directory = await createDirectoryFixture(t, 'tileflow-capture-generated-road-');
-    const fixture = await createVectorFixtureServer(t);
-    await writeFile(
-      join(directory, 'tileflow.config.ts'),
-      tileflowMapFixture({
-        id: 'proof',
-        icons: 'official',
-        fields: `glyphs: {kind: 'url', url: ${JSON.stringify(`${fixture.origin}/fonts/{fontstack}/{range}.pbf`)}, fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']},
+for (const mode of ['named', 'exploratory'] as const) {
+  test(
+    `captures Streets roads through the ${mode} scene without setup`,
+    {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 45_000},
+    async (t) => {
+      const directory = await createDirectoryFixture(t, 'tileflow-capture-generated-road-');
+      const fixture = await createVectorFixtureServer(t);
+      await writeFile(
+        join(directory, 'tileflow.config.ts'),
+        tileflowMapFixture({
+          id: 'proof',
+          icons: 'official',
+          fields: `glyphs: {kind: 'url', url: ${JSON.stringify(`${fixture.origin}/fonts/{fontstack}/{range}.pbf`)}, fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']},
       data: {
         type: 'vector-tiles',
         tiles: [${JSON.stringify(`${fixture.origin}/tiles/world/{z}/{x}/{y}.pbf`)}],
@@ -1013,78 +1063,74 @@ test(
     camera: {type: 'center', center: [0, 0], zoom: 1},
     viewport: {width: 256, height: 256}
   }}`,
-      }),
-    );
-    const environment = {
-      ...(process.env.HOME ? {HOME: process.env.HOME} : {}),
-      ...(process.env.USERPROFILE ? {USERPROFILE: process.env.USERPROFILE} : {}),
-    };
-    const result = await runCli(
-      directory,
-      ['capture', 'proof', '--json', '--no-browser-install'],
-      environment,
-    );
+        }),
+      );
+      const environment = {
+        ...(process.env.HOME ? {HOME: process.env.HOME} : {}),
+        ...(process.env.USERPROFILE ? {USERPROFILE: process.env.USERPROFILE} : {}),
+      };
+      const result = await runCli(
+        t,
+        directory,
+        mode === 'named'
+          ? ['capture', 'proof', '--json', '--no-browser-install']
+          : [
+              'capture',
+              '--map',
+              'proof',
+              '--theme=light',
+              '--center=0,0',
+              '--zoom=1',
+              '--width=128',
+              '--height=128',
+              '--json',
+              '--no-browser-install',
+            ],
+        environment,
+      );
 
-    assert.equal(result.code, 0, result.stderr);
-    const document = JSON.parse(result.stdout) as {
-      captures: Array<{
+      assert.equal(result.code, 0, result.stderr);
+      const document = JSON.parse(result.stdout) as {
+        captures: Array<{
+          networkDependent: boolean;
+          outputPath: string;
+          receiptPath: string;
+          sha256: string;
+          warnings: string[];
+          definition?: unknown;
+        }>;
+      };
+      const entry = document.captures[0]!;
+      assert.equal(entry.networkDependent, false);
+      assert.deepEqual(entry.warnings, []);
+      assert.deepEqual(
+        [...(await readFile(join(directory, entry.outputPath))).subarray(0, 8)],
+        [137, 80, 78, 71, 13, 10, 26, 10],
+      );
+      const receipt = JSON.parse(await readFile(join(directory, entry.receiptPath), 'utf8')) as {
+        image: {sha256: string};
         networkDependent: boolean;
-        outputPath: string;
-        receiptPath: string;
-        sha256: string;
-        warnings: string[];
-      }>;
-    };
-    const entry = document.captures[0]!;
-    assert.equal(entry.networkDependent, false);
-    assert.deepEqual(entry.warnings, []);
-    assert.deepEqual(
-      [...(await readFile(join(directory, entry.outputPath))).subarray(0, 8)],
-      [137, 80, 78, 71, 13, 10, 26, 10],
-    );
-    const receipt = JSON.parse(await readFile(join(directory, entry.receiptPath), 'utf8')) as {
-      image: {sha256: string};
-      networkDependent: boolean;
-    };
-    assert.equal(receipt.image.sha256, entry.sha256);
-    assert.equal(receipt.networkDependent, false);
+      };
+      assert.equal(receipt.image.sha256, entry.sha256);
+      assert.equal(receipt.networkDependent, false);
 
-    const exploratory = await runCli(
-      directory,
-      [
-        'capture',
-        '--map',
-        'proof',
-        '--theme=light',
-        '--center=0,0',
-        '--zoom=1',
-        '--width=128',
-        '--height=128',
-        '--json',
-        '--no-browser-install',
-      ],
-      environment,
-    );
-    assert.equal(exploratory.code, 0, exploratory.stderr);
-    const exploratoryEntry = (
-      JSON.parse(exploratory.stdout) as {
-        captures: Array<{definition?: unknown}>;
+      if (mode === 'exploratory') {
+        assert.deepEqual(entry.definition, {
+          map: 'proof',
+          theme: 'light',
+          camera: {type: 'center', center: [0, 0], zoom: 1, bearing: 0, pitch: 0},
+          viewport: {width: 128, height: 128, dpr: 1},
+          target: {kind: 'map'},
+        });
       }
-    ).captures[0];
-    assert.deepEqual(exploratoryEntry?.definition, {
-      map: 'proof',
-      theme: 'light',
-      camera: {type: 'center', center: [0, 0], zoom: 1, bearing: 0, pitch: 0},
-      viewport: {width: 128, height: 128, dpr: 1},
-      target: {kind: 'map'},
-    });
-    assert.equal(fixture.requests.has('/tiles/world/tiles.json'), false);
-    assert.equal(
-      [...fixture.requests].some((path) => path.endsWith('.pbf')),
-      true,
-    );
-  },
-);
+      assert.equal(fixture.requests.has('/tiles/world/tiles.json'), false);
+      assert.equal(
+        [...fixture.requests].some((path) => path.endsWith('.pbf')),
+        true,
+      );
+    },
+  );
+}
 
 test(
   'captures a committed application scene through one existing loopback server',
@@ -1109,11 +1155,12 @@ test(
     });
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
-    t.after(() => new Promise<void>((resolveClose) => server.close(() => resolveClose())));
+    resourcesFor(t).push(() => closeFixtureServer(server));
     const address = server.address();
     assert.ok(address && typeof address === 'object');
 
     const result = await runCli(
+      t,
       directory,
       [
         'capture',
@@ -1140,6 +1187,7 @@ test(
     assert.equal(result.stdout.includes(directory), false);
 
     const oneOff = await runCli(
+      t,
       directory,
       [
         'capture',
@@ -1307,7 +1355,7 @@ function createCapture(scene: string): TileflowCapture {
 async function createDirectoryFixture(t: TestContext, prefix: string): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), prefix));
   await linkWorkspacePackages(directory);
-  t.after(() => rm(directory, {force: true, recursive: true}));
+  resourcesFor(t).push(() => rm(directory, {force: true, recursive: true, maxRetries: 5}));
   return directory;
 }
 
@@ -1342,11 +1390,41 @@ async function createVectorFixtureServer(
   const address = server.address();
   assert.ok(address && typeof address === 'object');
   origin = `http://127.0.0.1:${address.port}`;
-  t.after(() => new Promise<void>((resolveClose) => server.close(() => resolveClose())));
+  resourcesFor(t).push(() => closeFixtureServer(server));
   return {origin, requests};
 }
 
+const resources = new WeakMap<TestContext, Array<() => Promise<unknown>>>();
+
+function resourcesFor(t: TestContext): Array<() => Promise<unknown>> {
+  let owned = resources.get(t);
+  if (!owned) {
+    owned = [];
+    resources.set(t, owned);
+    t.after(async () => {
+      const failures: unknown[] = [];
+      for (const close of owned!.reverse()) {
+        try {
+          await close();
+        } catch (error) {
+          failures.push(error);
+        }
+      }
+      if (failures.length) throw new AggregateError(failures, 'Capture fixture cleanup failed');
+    });
+  }
+  return owned;
+}
+
+function closeFixtureServer(server: Server): Promise<void> {
+  return new Promise((resolve, reject) => {
+    server.close((error) => (error ? reject(error) : resolve()));
+    server.closeAllConnections();
+  });
+}
+
 function runCli(
+  t: TestContext,
   cwd: string,
   arguments_: string[],
   overrides: Record<string, string>,
@@ -1367,25 +1445,14 @@ function runCli(
     overrides,
   );
 
-  return new Promise((resolveResult, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
-      cwd,
-      env: environment,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stderr = '';
-    let stdout = '';
-    child.stderr.setEncoding('utf8');
-    child.stdout.setEncoding('utf8');
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk;
-    });
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk;
-    });
-    child.on('error', reject);
-    child.on('close', (code) => resolveResult({code, stderr, stdout}));
+  t.signal.throwIfAborted();
+  const running = startFixtureProcess(['--import', tsxLoader, cliEntry, ...arguments_], {
+    cwd,
+    env: environment,
+    signal: t.signal,
   });
+  resourcesFor(t).push(running.stop);
+  return running.completion;
 }
 
 const transparentPng = Buffer.from(

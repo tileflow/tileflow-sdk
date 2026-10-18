@@ -29,10 +29,9 @@ import {
   civica,
   civicaFonts,
   civicaIcons,
-  ferraris,
-  ferrarisIcons,
-  harad,
-  haradIcons,
+  map1777,
+  map1777Fonts,
+  map1777Icons,
   siegfried,
   siegfriedFonts,
   siegfriedIcons,
@@ -45,6 +44,7 @@ import {
 } from '../src';
 import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
 import {streetsPoiImageIds} from './streets-poi-fixture';
+import {standardCartographyReference as colorReference} from './streets-standard-cartography-fixture';
 
 const officialIconIds = [
   ...streetsTreeIconIds,
@@ -93,25 +93,18 @@ const officialIconIds = [
   'culture',
 
   'education',
-  'ferraris-crop-hatch',
-  'ferraris-heath',
-  'ferraris-orchard',
-  'ferraris-paper-grain',
-  'ferraris-residential',
-  'ferraris-sand',
-  'ferraris-water-ripples',
-  'ferraris-wetland',
-  'ferraris-woodland',
+  'map-1777-crop-cross',
+  'map-1777-crop-hatch',
+  'map-1777-crop-lines',
+  'map-1777-heath',
+  'map-1777-orchard',
+  'map-1777-paper-grain',
+  'map-1777-residential',
+  'map-1777-sand',
+  'map-1777-water-ripples',
+  'map-1777-wetland',
+  'map-1777-woodland',
   'food',
-  'harad-arable',
-  'harad-conifer',
-  'harad-deciduous',
-  'harad-orchard',
-  'harad-paper-grain',
-  'harad-sand',
-  'harad-settlement',
-  'harad-water-lines',
-  'harad-wetland',
   'health',
   'lodging',
   'major-transit',
@@ -174,27 +167,18 @@ const baedekerPatternIds = [
   'baedeker-water-lines',
   'baedeker-wetland',
 ] as const;
-const ferrarisPatternIds = [
-  'ferraris-crop-hatch',
-  'ferraris-heath',
-  'ferraris-orchard',
-  'ferraris-paper-grain',
-  'ferraris-residential',
-  'ferraris-sand',
-  'ferraris-water-ripples',
-  'ferraris-wetland',
-  'ferraris-woodland',
-] as const;
-const haradPatternIds = [
-  'harad-arable',
-  'harad-conifer',
-  'harad-deciduous',
-  'harad-orchard',
-  'harad-paper-grain',
-  'harad-sand',
-  'harad-settlement',
-  'harad-water-lines',
-  'harad-wetland',
+const map1777PatternIds = [
+  'map-1777-crop-cross',
+  'map-1777-crop-hatch',
+  'map-1777-crop-lines',
+  'map-1777-heath',
+  'map-1777-orchard',
+  'map-1777-paper-grain',
+  'map-1777-residential',
+  'map-1777-sand',
+  'map-1777-water-ripples',
+  'map-1777-wetland',
+  'map-1777-woodland',
 ] as const;
 const soundingsIconIds = [
   'soundings-buoy-cardinal',
@@ -296,9 +280,7 @@ test('exports every official map as an independent standalone semantic map', asy
     baedeker,
     civica,
 
-    ferraris,
-    harad,
-
+    'map-1777': map1777,
     blueprint: blueprint,
     siegfried,
     soundings,
@@ -344,7 +326,7 @@ test('exports every official map as an independent standalone semantic map', asy
 });
 
 test('deep-freezes only the exported official map singletons', () => {
-  for (const map of [streets, baedeker, civica, ferraris, harad, siegfried, soundings, blueprint]) {
+  for (const map of [streets, baedeker, civica, map1777, siegfried, soundings, blueprint]) {
     assertDeepFrozen(map);
   }
 
@@ -352,7 +334,7 @@ test('deep-freezes only the exported official map singletons', () => {
     (streets as {name: string}).name = 'Mutated Streets';
   }, TypeError);
   assert.throws(() => {
-    (streets as {extends: typeof ferraris}).extends = ferraris;
+    (streets as {extends: typeof map1777}).extends = map1777;
   }, TypeError);
   assert.throws(() => {
     (streets.themes!.dark.typography as {font: string}).font = 'Unpinned Font';
@@ -387,8 +369,7 @@ test('official maps declare their expected icon and typography providers', () =>
   const resolvedBaedeker = resolveMap(baedeker);
   const resolvedCivica = resolveMap(civica);
   const resolvedStreets = resolveMap(streets);
-  const resolvedFerraris = resolveMap(ferraris);
-  const resolvedHarad = resolveMap(harad);
+  const resolvedMap1777 = resolveMap(map1777);
   const resolvedBlueprint = resolveMap(blueprint);
   const resolvedSiegfried = resolveMap(siegfried);
   const resolvedSoundings = resolveMap(soundings);
@@ -396,8 +377,9 @@ test('official maps declare their expected icon and typography providers', () =>
   assert.deepEqual(resolvedBaedeker.icons, [baedekerIcons]);
   assert.deepEqual(resolvedCivica.icons, [civicaIcons]);
   assert.deepEqual(resolvedStreets.icons, [streetsIcons]);
-  assert.deepEqual(resolvedFerraris.icons, [ferrarisIcons]);
-  assert.deepEqual(resolvedHarad.icons, [haradIcons]);
+  assert.deepEqual(resolvedMap1777.icons, [map1777Icons]);
+  assert.deepEqual(resolvedMap1777.fonts, [map1777Fonts]);
+  assert.equal(resolvedMap1777.glyphs, undefined);
   assert.deepEqual(resolvedBlueprint.icons, [blueprintIcons]);
   assert.deepEqual(resolvedSiegfried.icons, [siegfriedIcons]);
   assert.deepEqual(resolvedSoundings.icons, [soundingsIcons]);
@@ -412,7 +394,7 @@ test('official maps declare their expected icon and typography providers', () =>
   });
   assert.deepEqual(resolvedCivica.fonts, [civicaFonts]);
   assert.equal(resolvedCivica.glyphs, undefined);
-  for (const map of [resolvedFerraris, resolvedHarad, resolvedSoundings, resolvedBlueprint]) {
+  for (const map of [resolvedSoundings, resolvedBlueprint]) {
     assert.deepEqual(map.glyphs, {
       fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
       kind: 'url',
@@ -424,8 +406,7 @@ test('official maps declare their expected icon and typography providers', () =>
     resolvedBaedeker.themes.light.typography?.places?.font,
     'Cormorant Garamond SemiBold',
   );
-  assert.equal(resolvedFerraris.themes.light.typography?.font, 'Noto Sans Regular');
-  assert.equal(resolvedHarad.themes.light.typography?.font, 'Noto Sans Regular');
+  assert.equal(resolvedMap1777.themes.light.typography?.font, 'Cormorant Garamond Regular');
   assert.equal(resolvedSiegfried.themes.light.typography?.font, 'Cormorant Garamond Regular');
   assert.equal(resolvedSiegfried.themes.dark.typography?.font, 'Cormorant Garamond Regular');
   assert.equal(resolvedSiegfried.defaultTheme, 'light');
@@ -478,16 +459,16 @@ test('Baedeker is self-contained and references exactly its package-owned patter
   assert.equal(targets.has('buildings.render.printShadow'), false);
 });
 
-test('Ferraris is self-contained and references exactly its package-owned patterns', () => {
-  const resolved = resolveMap(ferraris);
-  assert.equal(ferraris.name, '1777');
-  assert.equal('extends' in ferraris, false);
+test('1777 is self-contained and references exactly its package-owned patterns', () => {
+  const resolved = resolveMap(map1777);
+  assert.equal(map1777.name, '1777');
+  assert.equal('extends' in map1777, false);
   assert.equal('root' in resolved, false);
-  assert.deepEqual(resolved.icons, [ferrarisIcons]);
+  assert.deepEqual(resolved.icons, [map1777Icons]);
 
-  const compiled = createStyleWithInspection(ferraris, {
+  const compiled = createStyleWithInspection(map1777, {
     preparedAssets: {
-      icons: {ids: ferrarisPatternIds, sprite: '/tileflow/icons/ferraris/sprite'},
+      icons: {ids: map1777PatternIds, sprite: '/tileflow/icons/map-1777/sprite'},
     },
   });
   const {style} = compiled;
@@ -495,11 +476,13 @@ test('Ferraris is self-contained and references exactly its package-owned patter
   const patternIds = new Set(
     style.layers.flatMap((layer) =>
       Object.entries((layer.paint ?? {}) as Record<string, unknown>).flatMap(([property, value]) =>
-        property.endsWith('-pattern') && typeof value === 'string' ? [value] : [],
+        property.endsWith('-pattern')
+          ? [...JSON.stringify(value).matchAll(/"(map-1777-[a-z-]+)"/g)].map((match) => match[1])
+          : [],
       ),
     ),
   );
-  assert.deepEqual([...patternIds].sort(), [...ferrarisPatternIds]);
+  assert.deepEqual([...patternIds].sort(), map1777PatternIds);
 
   const targets = compiledTargets(compiled);
   for (const target of [
@@ -514,49 +497,8 @@ test('Ferraris is self-contained and references exactly its package-owned patter
     'water.render.intermittentRipples',
     'buildings.render.printShadow',
   ]) {
-    assert.equal(targets.has(target), true, `Missing Ferraris render target ${target}`);
+    assert.equal(targets.has(target), true, `Missing 1777 render target ${target}`);
   }
-});
-
-test('Härad is self-contained and references exactly its package-owned patterns', () => {
-  const resolved = resolveMap(harad);
-  assert.equal('extends' in harad, false);
-  assert.equal('root' in resolved, false);
-  assert.deepEqual(resolved.icons, [haradIcons]);
-
-  const compiled = createStyleWithInspection(harad, {
-    preparedAssets: {
-      icons: {ids: haradPatternIds, sprite: '/tileflow/icons/harad/sprite'},
-    },
-  });
-  const {style} = compiled;
-  assert.equal(style.metadata?.['tileflow:extends'], undefined);
-  const patternIds = new Set(
-    style.layers.flatMap((layer) =>
-      Object.entries((layer.paint ?? {}) as Record<string, unknown>).flatMap(([property, value]) =>
-        property.endsWith('-pattern') && typeof value === 'string' ? [value] : [],
-      ),
-    ),
-  );
-  assert.deepEqual([...patternIds].sort(), [...haradPatternIds]);
-
-  const targets = compiledTargets(compiled);
-  for (const target of [
-    'land.render.arableTexture',
-    'land.render.coniferTexture',
-    'land.render.deciduousTexture',
-    'land.render.orchardTexture',
-    'land.render.sandTexture',
-    'land.render.wetlandTexture',
-    'land.render.settlementTexture',
-    'land.render.fieldBoundaries',
-    'water.render.printLines',
-    'water.render.intermittentPrintLines',
-  ]) {
-    assert.equal(targets.has(target), true, `Missing Härad render target ${target}`);
-  }
-  const layerIds = new Set(style.layers.map((layer) => layer.id));
-  assert.equal(layerIds.has('harad-building-ink-shadow'), false);
 });
 
 test('Soundings is self-contained and references only its bathymetric-map artwork', () => {
@@ -633,9 +575,7 @@ test('all official maps compile directly after their packaged sprite is prepared
     baedeker,
     civica,
 
-    ferraris,
-    harad,
-
+    'map-1777': map1777,
     blueprint: blueprint,
     siegfried,
     soundings,
@@ -647,12 +587,115 @@ test('all official maps compile directly after their packaged sprite is prepared
     assert.equal(style.sprite, `/tileflow/icons/${id}/sprite`);
     assert.equal(
       style.glyphs,
-      id === 'baedeker' || id === 'civica' || id === 'siegfried' ? undefined : officialGlyphsUrl,
+      ['baedeker', 'civica', 'map-1777', 'siegfried'].includes(id) ? undefined : officialGlyphsUrl,
     );
     assert.ok(
       style.layers.length > (id === 'soundings' ? 50 : 100),
       `${id} compiled an unexpectedly incomplete layer stack`,
     );
+  }
+});
+
+test('Streets access restrictions preserve each road class fill and casing colors', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    const style = compileOfficialMap(streets, theme);
+    for (const zoom of [16.5, 18.37]) {
+      for (const roadClass of ['trunk', 'motorway', 'service']) {
+        const properties = {class: roadClass, surface: 'paved', oneway: 1};
+        for (const phase of ['fill', 'casing']) {
+          const layer = style.layers.find(
+            (candidate) =>
+              candidate.type === 'line' &&
+              candidate.id.startsWith('tileflow-road-surface-') &&
+              candidate.id.endsWith(`-${phase}`) &&
+              (candidate.minzoom ?? 0) <= zoom &&
+              (candidate.maxzoom ?? 24) > zoom &&
+              featureFilter(candidate.filter as never).filter({zoom}, {
+                type: 2,
+                properties,
+              } as never),
+          );
+          assert.ok(layer, `${theme}: missing ${roadClass} ${phase} at z${zoom}`);
+          const color = createPropertyExpression(
+            layer.paint?.['line-color'],
+            latest.paint_line['line-color'] as never,
+          );
+          assert.equal(color.result, 'success');
+          if (color.result !== 'success') throw new Error('Road color expression did not compile');
+          const baseline = String(color.value.evaluate({zoom}, {type: 2, properties} as never));
+          for (const access of ['no', 'private']) {
+            const restricted = {type: 2, properties: {...properties, access}};
+            assert.equal(
+              featureFilter(layer.filter as never).filter({zoom}, restricted as never),
+              true,
+              `${theme}: restricted ${roadClass} remains in the same physical layer`,
+            );
+            assert.equal(
+              String(color.value.evaluate({zoom}, restricted as never)),
+              baseline,
+              `${theme}: ${roadClass} ${phase} with access=${access} must preserve its class color at z${zoom}`,
+            );
+          }
+        }
+      }
+    }
+  }
+});
+
+test('Streets highway links retain class colors below receiving carriageways', () => {
+  for (const theme of ['light', 'dawn', 'dusk', 'dark'] as const) {
+    const {style, inspection} = createStyleWithInspection(streets, {
+      preparedAssets: preparedAssets(streets.id),
+      theme,
+    });
+    for (const zoom of [17.509138, 18.37]) {
+      for (const structure of ['surface', 'bridge', 'tunnel']) {
+        const fillFor = (roadClass: string, ramp: number) => {
+          const feature = {
+            type: 2,
+            properties: {class: roadClass, brunnel: structure, ramp, oneway: 1, surface: 'paved'},
+          } as never;
+          const fillTargets = new Set([
+            `roads.classes.${roadClass}.${structure}.fill`,
+            `roads.classes.${roadClass}.${structure}.rampFill`,
+          ]);
+          const layers = inspection.layers
+            .filter(({contributions}) => contributions.some(({target}) => fillTargets.has(target)))
+            .map(({index}) => style.layers[index]!)
+            .filter(
+              (layer) =>
+                (layer.minzoom ?? 0) <= zoom &&
+                (layer.maxzoom ?? 24) > zoom &&
+                featureFilter(layer.filter as never).filter({zoom}, feature),
+            );
+          assert.equal(layers.length, 1, `${theme}: one ${structure} ${roadClass} fill`);
+          const layer = layers[0]!;
+          const expression = createPropertyExpression(
+            layer.paint?.['line-color'],
+            latest.paint_line['line-color'] as never,
+          );
+          assert.equal(expression.result, 'success');
+          if (expression.result !== 'success') throw new Error('Invalid road color expression');
+          return {layer, color: String(expression.value.evaluate({zoom}, feature))};
+        };
+        const receiving = fillFor('primary', 0);
+        for (const roadClass of ['motorway', 'trunk']) {
+          const ramp = fillFor(roadClass, 1);
+          assert.equal(ramp.color, fillFor(roadClass, 0).color, 'Links keep their class color');
+          assert.notEqual(
+            ramp.color,
+            receiving.color,
+            'Highway links remain distinct from streets',
+          );
+          if (structure !== 'tunnel') {
+            assert.ok(
+              style.layers.indexOf(ramp.layer) < style.layers.indexOf(receiving.layer),
+              `${theme}: ${structure} ${roadClass} ramp endpoint must be covered by the receiving fill`,
+            );
+          }
+        }
+      }
+    }
   }
 });
 
@@ -730,8 +773,7 @@ test('official road maps avoid seam-prone caps on ordinary surface and bridge se
     baedeker,
     civica,
 
-    ferraris,
-    harad,
+    'map-1777': map1777,
     siegfried,
     blueprint: blueprint,
   })) {
@@ -745,7 +787,7 @@ test('official road maps avoid seam-prone caps on ordinary surface and bridge se
     assert.ok(ordinaryRoadLayers.length > 0, `${mapId} compiled no ordinary road lines`);
     for (const layer of ordinaryRoadLayers) {
       if (
-        mapId === 'streets' &&
+        (mapId === 'streets' || mapId === 'map-1777') &&
         layer.id.startsWith('tileflow-road-bridge-') &&
         layer.id.endsWith('-casing')
       )
@@ -788,9 +830,7 @@ test('official maps compile against generic OpenMapTiles without optional capabi
     baedeker,
     civica,
 
-    ferraris,
-    harad,
-
+    'map-1777': map1777,
     blueprint: blueprint,
     siegfried,
     soundings,
@@ -837,8 +877,13 @@ test('official maps emit only exact declared font-face stacks', () => {
       JSON.stringify(['Barlow Semi Condensed SemiBold', 'Noto Sans Regular']),
     ]),
 
-    ferraris: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
-    harad: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
+    'map-1777': new Set(
+      [
+        'Cormorant Garamond Regular',
+        'Cormorant Garamond SemiBold',
+        'Cormorant Garamond Italic',
+      ].map((font) => JSON.stringify([font])),
+    ),
 
     blueprint: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
     siegfried: new Set([
@@ -858,9 +903,7 @@ test('official maps emit only exact declared font-face stacks', () => {
     baedeker,
     civica,
 
-    ferraris,
-    harad,
-
+    'map-1777': map1777,
     blueprint: blueprint,
     siegfried,
     soundings,
@@ -887,17 +930,36 @@ function assertDeepFrozen(value: unknown, visited = new WeakSet<object>()): void
 }
 
 test('Streets green surfaces are typed and contain no legacy raw detail layers', () => {
-  const style = compileOfficialMap(streets);
+  const {style, inspection} = createStyleWithInspection(streets, {
+    preparedAssets: preparedAssets(streets.id),
+  });
   const ids = new Set(style.layers.map(({id}) => id));
-
-  for (const id of [
-    'tileflow-global-landcover',
-    'tileflow-landcover',
-    'tileflow-landcover-protected',
-    'tileflow-landuse-recreation',
-    'tileflow-landuse-recreation-outline',
+  const targetIndex = (target: string) => {
+    const layer = inspection.layers.find(({contributions}) =>
+      contributions.some((contribution) => contribution.target === target),
+    );
+    assert.ok(layer, `Missing compiled green target ${target}`);
+    return layer.index;
+  };
+  for (const target of [
+    'land.globalLandcover',
+    'land.landcover.grass.fill',
+    'land.landcover.meadow.fill',
+    'land.landcover.protected.fill',
+    'land.landcover.urbanPark.fill',
+    'land.landuse.recreation.fill',
+    'land.landuse.recreation.outline',
+    'land.landuse.parking.fill',
   ]) {
-    assert.equal(ids.has(id), true, `Missing compiled green layer ${id}`);
+    targetIndex(target);
+  }
+  for (const detail of ['grass', 'meadow', 'scrub', 'flowerbed']) {
+    const position = targetIndex(`land.landcover.${detail}.fill`);
+    for (const park of ['protected', 'urbanPark']) {
+      assert.ok(position > targetIndex(`land.landcover.${park}.fill`));
+    }
+    assert.ok(position < targetIndex('land.landuse.recreation.fill'));
+    assert.ok(position < targetIndex('land.landuse.parking.fill'));
   }
   for (const id of [
     'tileflow-landcover-meadow-detail',
@@ -937,6 +999,152 @@ test('Streets green surfaces are typed and contain no legacy raw detail layers',
   ]);
 });
 
+test('Streets native road labels retain their class selection, ground placement and typography', () => {
+  const expectations = [
+    ['motorway', 'motorway', undefined, 10, 9, 16, 0.15],
+    ['trunk', 'trunk', undefined, 10, 9, 16, 0.15],
+    ['primary', 'primary', undefined, 12, 9, 16, 0.15],
+    ['secondary', 'secondary', undefined, 12, 9, 16, 0.15],
+    ['tertiary', 'tertiary', undefined, 13, 9, 16, 0.15],
+    ['minor', 'minor', undefined, 13, 8, 14, 0.15],
+    ['service', 'service', undefined, 15, 6.5, 13, 0.15],
+    ['pathway', 'path', 'path', 15, 6.5, 13, 0.01],
+    ['footway', 'path', 'footway', 15, 6.5, 13, 0.01],
+    ['cycleway', 'path', 'cycleway', 15, 6.5, 13, 0.01],
+    ['steps', 'path', 'steps', 15, 6.5, 13, 0.01],
+    ['pedestrian', 'path', 'pedestrian', 12, 9, 14, 0.01],
+  ] as const;
+  const resolved = resolveMap(streets);
+  assert.equal(resolved.modules.labels?.roadPlacement, 'ground');
+  assert.equal(resolved.modules.labels?.roads, 'all');
+  assert.deepEqual(
+    [...resolved.modules.labels!.roadClasses!].sort(),
+    expectations.map(([roadClass]) => roadClass).sort(),
+  );
+  for (const [theme, reference] of [
+    ['light', 'default-day'],
+    ['dawn', 'default-dawn'],
+    ['dusk', 'default-dusk'],
+    ['dark', 'default-night'],
+  ] as const) {
+    const {style, inspection} = createStyleWithInspection(streets, {
+      preparedAssets: preparedAssets(streets.id),
+      theme,
+    });
+    const roadLayers = inspection.layers.filter(({contributions}) =>
+      contributions.some(({target}) => target.startsWith('labels.roads.')),
+    );
+    const nativeTargets = new Set(
+      roadLayers.flatMap(({contributions}) =>
+        contributions
+          .filter(({target}) => target.startsWith('labels.roads.'))
+          .map(({target}) => target),
+      ),
+    );
+    assert.deepEqual(
+      [...nativeTargets].sort(),
+      expectations.map(([roadClass]) => `labels.roads.${roadClass}`).sort(),
+    );
+    assert.ok(
+      !inspection.layers.some(({contributions}) =>
+        contributions.some(({target}) => target.startsWith('labels.render.street')),
+      ),
+    );
+    const buildingIndex = inspection.layers.find(({contributions}) =>
+      contributions.some(({target}) => target === 'buildings.flat.fill'),
+    )!.index;
+    for (const layer of roadLayers)
+      assert.ok(layer.index < buildingIndex, `${theme}: ground street names precede buildings`);
+    const physical = roadLayers.map(({index}) => style.layers[index]!);
+    const active = (properties: Record<string, unknown>, zoom: number) =>
+      physical.filter(
+        (layer) =>
+          (layer.minzoom ?? 0) <= zoom &&
+          (layer.maxzoom ?? 24) > zoom &&
+          featureFilter(layer.filter as never).filter({zoom}, {type: 2, properties} as never),
+      );
+    for (const [
+      roadClass,
+      sourceClass,
+      subclass,
+      minZoom,
+      startSize,
+      endSize,
+      letterSpacing,
+    ] of expectations) {
+      const properties = {
+        name: 'Local street',
+        class: sourceClass,
+        ...(subclass ? {subclass} : {}),
+      };
+      assert.equal(
+        active(properties, minZoom - 0.01).length,
+        0,
+        `${theme}: ${roadClass} starts at z${minZoom}`,
+      );
+      assert.equal(
+        active(properties, minZoom).length,
+        1,
+        `${theme}: ${roadClass} is visible at its threshold`,
+      );
+      for (const zoom of [16.25, 18]) {
+        const matching = active(properties, zoom);
+        assert.equal(matching.length, 1, `${theme}: one ${roadClass} street name at z${zoom}`);
+        const layer = matching[0]!;
+        const evaluate = (property: string, group: 'layout' | 'paint') => {
+          const expression = createPropertyExpression(
+            layer[group]?.[property],
+            (group === 'layout' ? latest.layout_symbol : latest.paint_symbol)[
+              property as never
+            ] as never,
+          );
+          assert.equal(expression.result, 'success', `${theme}: ${property}`);
+          if (expression.result !== 'success') throw new Error(`Invalid ${property}`);
+          return expression.value.evaluate({zoom}, {type: 2, properties} as never);
+        };
+        const expectedSize = startSize + (endSize - startSize) * ((zoom - 10) / 8);
+        assert.ok(Math.abs(Number(evaluate('text-size', 'layout')) - expectedSize) < 1e-6);
+        assert.equal(evaluate('text-letter-spacing', 'layout'), letterSpacing);
+        assert.equal(evaluate('symbol-spacing', 'layout'), 250);
+        assert.equal(evaluate('text-transform', 'layout'), 'uppercase');
+        assert.equal(evaluate('text-pitch-alignment', 'layout'), 'map');
+        assert.equal(evaluate('text-rotation-alignment', 'layout'), 'map');
+        assert.equal(evaluate('text-halo-width', 'paint'), 1);
+        assert.equal(
+          String(evaluate('text-color', 'paint')),
+          String(Color.parse(colorReference.colors[reference]['labels.road'])),
+        );
+        assert.equal(
+          String(evaluate('text-halo-color', 'paint')),
+          String(Color.parse(colorReference.colors[reference]['labels.roadHalo'])),
+        );
+      }
+      const construction = {...properties, class: `${sourceClass}_construction`};
+      assert.equal(
+        active(construction, 18).length,
+        1,
+        `${theme}: ${roadClass} construction stays in the native class`,
+      );
+    }
+    for (const subclass of [
+      'path',
+      'bridleway',
+      'corridor',
+      'footway',
+      'cycleway',
+      'steps',
+      'pedestrian',
+    ]) {
+      assert.equal(
+        active({name: 'Path', class: 'path', subclass}, 18).length,
+        1,
+        `${theme}: path classes stay disjoint`,
+      );
+    }
+    assert.equal(active({name: 'Track', class: 'track'}, 18).length, 0);
+  }
+});
+
 test('non-Streets official maps do not use Streets surface colors', () => {
   const compile = compileOfficialMap;
   const streetsSurfaceSignatures = ['#AEDBFC', '#B7E2AC', '#C2E8B3', '#D5E8D0', '#E0ECD8'];
@@ -945,11 +1153,9 @@ test('non-Streets official maps do not use Streets surface colors', () => {
     ['baedeker', baedeker, ['#E8DABD', '#9DC8CC']],
     ['civica', civica, ['#F7F3E8', '#B4C8D9']],
 
-    ['harad', harad, ['#C4DED5', '#E1B23B']],
-
     ['blueprint', blueprint, ['#061D35', '#EEF3EA']],
     ['siegfried', siegfried, ['#F0EBE0', '#A96C4D']],
-    ['streets-dark', streets, ['#2D3043', '#18223B']],
+    ['streets-dark', streets, ['#2B2F43', '#12233B']],
   ] as const) {
     const serialized = JSON.stringify(
       compile(map, id === 'streets-dark' ? 'dark' : undefined),
@@ -1005,19 +1211,21 @@ test('Streets keeps its runtime-toggle geometry and business surface in the comp
   assert.equal(vegetation.colors.broadleaf.length, 4);
   assert.equal(vegetation.colors.palm.length, 3);
   assert.deepEqual(vegetation.regions, []);
-  // Core's 3D buildings take the colour of Streets' 3D building pass; its street lights are declared.
+  // Core's 3D buildings take the colour of Streets' 3D building pass; street lights stay off.
   const buildings3D = readTileflowBuildings3D(style.metadata);
   assert.ok(buildings3D, 'Streets lost its 3D buildings description');
   const extrusion = byId.get('tileflow-buildings-render-extrusion');
   assert.equal(buildings3D.color, extrusion?.paint?.['fill-extrusion-color']);
   assert.equal(buildings3D.layers.building, extrusion?.['source-layer']);
   assert.equal(buildings3D.windows, false);
+  assert.equal(buildings3D.verticalGradient, true);
+  assert.equal(buildings3D.edgeRadius, 0.8);
+  assert.equal(buildings3D.lighting, 'sun');
+  assert.equal(buildings3D.shadows, true);
+  assert.equal(buildings3D.occlusion, true);
   // Tileflow's landmarks stand on Streets' Tileflow World buildings.
   assert.match(buildings3D.landmarks?.url ?? '', /\/landmarks\/tiles\.json$/u);
-  const lights = readTileflowStreetLights(style.metadata);
-  assert.ok(lights, 'Streets lost its street lights description');
-  assert.equal(lights.estimate, 'lit');
-  assert.equal(lights.source, trees.source);
+  assert.equal(readTileflowStreetLights(style.metadata), undefined);
 
   const businessArea = layerForTarget('land.render.businessArea');
   assert.ok(businessArea, 'Streets lost its business land-use surface');
@@ -1065,21 +1273,14 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
   assert.equal(byId.has('tileflow-parking-symbol-disc'), false);
   assert.equal(byId.has('tileflow-parking-symbol-label'), false);
 
-  const expectedPoiTextColors = {
-    'arts-entertainment': '#CA3799',
-    education: '#916130',
-    'food-drink': '#B55A00',
-    landmark: '#CA3799',
-    lodging: '#664CE6',
-    medical: '#DA3636',
-    'park-nature': '#267915',
-    'public-services': '#586E84',
-    religion: '#586E84',
-    retail: '#2877C6',
-    'sport-leisure': '#158096',
-    transport: '#3359CC',
-    'visitor-amenity': '#586E84',
-  } as const;
+  const expectedPoiTextColors = Object.fromEntries(
+    Object.entries(colorReference.colors['default-day'])
+      .filter(
+        ([role]) =>
+          role.startsWith('poi.') && !['poi.halo', 'poi.icon', 'poi.label'].includes(role),
+      )
+      .map(([role, color]) => [role.slice(4), color]),
+  );
   // Every category is placed in World's importance order: one layer for the most important
   // ranks, placed before street and place names, and one for the rest.
   assert.deepEqual(

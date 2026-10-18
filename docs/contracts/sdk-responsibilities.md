@@ -8,8 +8,8 @@ public API; this contract records the relationships between those APIs.
 
 - A **map** is the only public cartographic authoring unit. It has its own identity and version and
   is either standalone or extends another imported map.
-- A **standalone map** terminates an inheritance lineage. Streets, Baedeker, Cívica, Ferraris,
-  Härad, Siegfried, Soundings, and Blueprint are the first-party standalone
+- A **standalone map** terminates an inheritance lineage. Streets, Baedeker, Cívica, 1777,
+  Siegfried, Soundings, and Blueprint are the first-party standalone
   maps. The sole semantic compiler is implicit; none imports or extends another official map, and
   each declares its own asset providers.
 - A **theme** is one complete named visual appearance for a map. Every theme in a map shares one
@@ -99,20 +99,18 @@ PMTiles contract.
 
 ### `@tileflow/maps`
 
-Owns the official Streets, Baedeker, Cívica, Ferraris, Härad, Siegfried, Soundings,
+Owns the official Streets, Baedeker, Cívica, 1777, Siegfried, Soundings,
 and Blueprint map objects, their package-directory descriptors, and the icon, pattern,
 font, and notice files those maps require. All official maps are complete standalone maps.
-Baedeker, Ferraris, Härad, Siegfried, Soundings, and Blueprint declare only their own
-`baedekerIcons`, `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, and `blueprintIcons` directories. Cívica owns `[civicaIcons]` for its original civic-print artwork
+Baedeker, 1777, Siegfried, Soundings, and Blueprint declare only their own
+`baedekerIcons`, `map1777Icons`, `siegfriedIcons`, `soundingsIcons`, and `blueprintIcons` directories. Cívica owns `[civicaIcons]` for its original civic-print artwork
 and `[civicaFonts]` for its packaged lettering.
 Baedeker's eight patterns are original Tileflow artwork informed by historical Baedeker and Wagner
 & Debes maps without including scans, source pixels, historical typefaces, legend artwork,
 geospatial data, or source maps; the Tileflow map has no affiliation with or endorsement from
 Baedeker or Wagner & Debes. Its separately licensed Cormorant files and OFL license live in its own
 package asset closure. Its browser-derived contours use Mapterhorn terrain tiles that are not packaged.
-Härad's directory contains nine original Tileflow SVG patterns inspired by Lantmäteriet's CC0
-Häradsekonomiska kartan series (1859–1934) and official legend; no Lantmäteriet scan, pixel, legend
-artwork, font, or map data is redistributed. Soundings retains ten original chart symbols and
+Soundings retains ten original chart symbols and
 patterns in its asset closure, while its official style selects only the harbor and paper/water
 assets and excludes the experimental Nautical objects. It exposes broad GEBCO-derived bathymetric
 context, not navigation-grade survey soundings. Every standalone map uses the implicit semantic

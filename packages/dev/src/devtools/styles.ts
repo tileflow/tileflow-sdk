@@ -1,3 +1,4 @@
+import {cardStyles} from './card-styles';
 import {inspectorStyles} from './inspector-styles';
 
 /** Chrome-like tool chrome; the map retains its independently authored appearance. */
@@ -160,7 +161,7 @@ const legacyStyles = `
   @media (prefers-reduced-motion:reduce) { .dt-shell .map-controls input[type=checkbox],.dt-shell .map-controls input[type=checkbox]::before { transition:none; } }
   .dt-shell .control-module { border:0; border-bottom:1px solid var(--border); border-radius:0; background:var(--paper); margin:0; }
   .dt-shell .control-module-header { padding:5px 0; }.dt-shell .control-module-header label { font-size:12px; font-weight:400; }
-  .dt-shell .control-module fieldset { min-width:0; padding:0 0 8px 16px; }.dt-shell .control-module summary { padding:2px 0 5px; }
+  .dt-shell .control-module fieldset { min-width:0; padding:0 0 8px 16px; }
   .dt-shell .controls-section-title { margin:10px 0 4px; font-size:11px; letter-spacing:0; text-transform:none; }
   .dt-shell .control-field { margin:5px 0; }
   @container(max-width:680px) { .dt-shell .controls-grid,.dt-shell #controls-modules { grid-template-columns:minmax(0,1fr); }.dt-shell .map-controls .control-field,.dt-shell .control-module-header label { grid-template-columns:min(36%,160px) minmax(0,1fr); }.dt-shell .controls-segments button { padding-inline:8px; } }
@@ -198,4 +199,4 @@ const legacyStyles = `
   @container(max-width:680px) { .dt-inspect-grid { display:flex;flex-direction:column; }.dt-tree-column { flex:0 0 32%;border-right:0;border-bottom:1px solid var(--border); }.dt-details { flex:1; } }
 `;
 
-export const devtoolsStyles = legacyStyles + inspectorStyles;
+export const devtoolsStyles = legacyStyles + inspectorStyles + cardStyles;

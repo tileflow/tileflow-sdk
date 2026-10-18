@@ -8,19 +8,21 @@ export type TileflowBuildingMode = '3d' | 'flat';
  * building colour (its extrusion), else its roofs'.
  */
 export type TileflowBuildingsThreeDimensionalStyle = {
-  /** Use the style's extrusion light (default), or the theme controller's scene sun. */
+  /** Use the scene sun (default), or the style's native extrusion light. */
   lighting?: 'style' | 'sun';
   /** Per-building brightness variation, from 0 to 1; defaults to 0 (authored colour). */
   colorVariation?: TileflowThemeNumberValue;
   /** How strongly roof outlines and outer corners catch the light, from 0 (default) to 1. */
   edges?: TileflowThemeNumberValue;
+  /** Radius in metres for softened exterior corners and roof lighting, from 0 to 1; defaults to 0.8. */
+  edgeRadius?: number;
   /** Their own colour, drawn unlit; without it they take the building's colour, lightened. */
   edgeColor?: TileflowThemeColorValue;
   /** How bright the buildings light the street at night, from 0 (none) to 2; defaults to 0. */
   nightLight?: TileflowThemeNumberValue;
-  /** Contact shadow at the foot of the walls and in tight corners; defaults to false. */
+  /** Contact shadow at the foot of the walls and in tight corners; defaults to true. */
   occlusion?: boolean;
-  /** Shadows from the sun, on the buildings and the flat map; defaults to false. */
+  /** Shadows from the sun, on the buildings and the flat map; defaults to true. */
   shadows?: boolean;
   /**
    * Invented night windows, lit by rooms: decoration, not data. With World's `class`, none on sheds,

@@ -1,4 +1,8 @@
-# Beacon map audits
+# Beacon map audits (legacy)
+
+The Beacon scoring and tour interface has been replaced by **Diagnostics**. See
+[Map design diagnostics](./map-design-diagnostics.md) for the current workflow. This document
+describes historical audit reports; its scores are not comparable with Diagnostics findings.
 
 Open `tileflow preview`, select **Beacon**, choose **Desktop** or **Mobile** and
 **Active tour** (default), **Quick check** or **All zooms**, then **Run audit**. The report includes 48 checks grouped into Rendering (9), Loading
@@ -31,7 +35,7 @@ scheduling and other work on the machine, rather than isolated GPU execution tim
 
 Quick check samples the current camera and concrete theme for about three seconds. It is useful
 for static style checks and a short settled rendering sample. All zooms visits each integer zoom
-from 0 through 22 within map limits at the same geographic centre, for every registered palette and
+from 0 through 22 within map limits at the same geographic centre, for every registered theme and
 time-of-day variant. It waits up to five seconds for readiness and samples 150 ms per view. This
 exhaustive scope can take several minutes; it is not the one-minute navigation benchmark. Use
 **New audit** from a result to change scope or viewport.

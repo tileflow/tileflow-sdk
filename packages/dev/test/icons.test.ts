@@ -11,7 +11,7 @@ import {
   type TileflowMap,
 } from '@tileflow/core';
 import {createStyleFromCatalog, type TileflowBuildCatalog} from '@tileflow/core/build';
-import {baedeker, blueprint, ferraris, harad, siegfried, soundings, streets} from '@tileflow/maps';
+import {baedeker, blueprint, map1777, siegfried, soundings, streets} from '@tileflow/maps';
 import {
   compileTileflowIconPackages,
   prepareTileflowCatalogIcons,
@@ -84,8 +84,7 @@ test('prepares every independent official root from its package-owned directorie
       maps: {
         baedeker: resolveFixtureMap(baedeker),
 
-        ferraris: resolveFixtureMap(ferraris),
-        harad: resolveFixtureMap(harad),
+        'map-1777': resolveFixtureMap(map1777),
 
         blueprint: resolveFixtureMap(blueprint),
         siegfried: resolveFixtureMap(siegfried),
@@ -109,28 +108,23 @@ test('prepares every independent official root from its package-owned directorie
         'baedeker-wetland',
       ],
 
-      ferraris: [
-        'ferraris-crop-hatch',
-        'ferraris-heath',
-        'ferraris-orchard',
-        'ferraris-paper-grain',
-        'ferraris-residential',
-        'ferraris-sand',
-        'ferraris-water-ripples',
-        'ferraris-wetland',
-        'ferraris-woodland',
-      ],
-      harad: [
-        'harad-arable',
-        'harad-conifer',
-        'harad-deciduous',
-        'harad-orchard',
-        'harad-paper-grain',
-        'harad-sand',
-        'harad-settlement',
-        'harad-water-lines',
-        'harad-wetland',
-      ],
+      'map-1777': ['', 'dawn-', 'dusk-', 'night-']
+        .flatMap((moment) =>
+          [
+            'crop-cross',
+            'crop-hatch',
+            'crop-lines',
+            'heath',
+            'orchard',
+            'paper-grain',
+            'residential',
+            'sand',
+            'water-ripples',
+            'wetland',
+            'woodland',
+          ].map((plate) => `map-1777-${moment}${plate}`),
+        )
+        .sort(),
 
       blueprint: [
         'blueprint-building-hatch',
@@ -175,7 +169,7 @@ test('prepares every independent official root from its package-owned directorie
     } as const;
 
     assert.deepEqual(compiled.watchPaths, []);
-    assert.equal(compiled.packages.length, 7);
+    assert.equal(compiled.packages.length, 6);
     for (const binding of compiled.bindings) {
       assert.deepEqual(
         packagesByHash.get(binding.packageHash)?.manifest.iconNames,
@@ -184,7 +178,7 @@ test('prepares every independent official root from its package-owned directorie
     }
 
     const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
-    assert.equal(prepared.assets.length, 28);
+    assert.equal(prepared.assets.length, 24);
     for (const binding of compiled.bindings) {
       assert.deepEqual(prepared.mapAssets[binding.mapName]?.icons?.ids, binding.iconIds);
     }

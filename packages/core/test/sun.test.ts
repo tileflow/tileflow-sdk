@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createStyle, defineMap, defineTheme, disable, resolveTileflowTheme} from '../src';
+import {createStyle, defineMap, defineTheme, disable, reset, resolveTileflowTheme} from '../src';
 import {createTileflowThemeController} from '../src/browser';
 import type {TileflowRuntimeStyle} from '../src/runtime';
 import {
@@ -126,7 +126,7 @@ test('suns mix the short way round, in OKLab colours', () => {
   const half = mixTileflowSunPresets(tileflowDefaultSunPreset, evening, 0.5);
   near(half.azimuth, 250, 1e-9);
   near(half.altitude, 34, 1e-9);
-  near(half.intensity, 0.7, 1e-9);
+  near(half.intensity, 0.55, 1e-9);
   assert.notEqual(half.color, evening.color);
   assert.deepEqual(tileflowSunPresetAt([tileflowDefaultSunPreset, evening], 0.5), half);
   assert.equal(tileflowSunPresetAt([], 0), undefined);
@@ -215,6 +215,102 @@ test('a derived theme changes one value of its base sun', () => {
     ...tileflowDefaultSunPreset,
     ambient: {...tileflowDefaultSunPreset.ambient, intensity: 0.3},
   });
+});
+
+test('a derived theme can remove inherited sun and ambient without changing its palette', () => {
+  const native = defineTheme(evening, {
+    id: 'test-native-light',
+    version: 1,
+    colorScheme: 'dark',
+    lighting: {
+      sun: reset(),
+      ambient: reset(),
+      anchor: 'viewport',
+      position: [1.25, 90, 40],
+      intensity: 0,
+    },
+  });
+  const resolved = resolveTileflowTheme(native);
+  assert.equal(resolved.sun, undefined);
+  assert.deepEqual(resolved.lighting, {
+    anchor: 'viewport',
+    position: [1.25, 90, 40],
+    intensity: 0,
+  });
+  assert.deepEqual(native.tokens, evening.tokens);
+  assert.equal(evening.lighting.sun?.azimuth, 290);
+  assert.equal(JSON.stringify(native).includes('$tileflow'), false);
+
+  const style = createStyle(mapWith({light: native}));
+  assert.equal(readTileflowSunPreset(style.metadata), undefined);
+  assert.deepEqual(style.light, resolved.lighting);
+
+  const freshSun = defineTheme(native, {
+    id: 'test-new-sun',
+    version: 1,
+    colorScheme: 'dark',
+    lighting: {sun: {altitude: 20}},
+  });
+  assert.deepEqual(resolveTileflowTheme(freshSun).sun, {
+    ...tileflowDefaultSunPreset,
+    altitude: 20,
+  });
+});
+
+test('lighting reset removes the complete preset or selected properties before materialization', () => {
+  const base = defineTheme(evening, {
+    id: 'test-full-light',
+    version: 1,
+    colorScheme: 'dark',
+    lighting: {anchor: 'map', color: '#ffeeee', intensity: 0.4, position: [1, 60, 50]},
+  });
+  const cleared = defineTheme(base, {
+    id: 'test-cleared-light',
+    version: 1,
+    colorScheme: 'dark',
+    lighting: reset(),
+  });
+  assert.deepEqual(cleared.lighting, {});
+  assert.equal(resolveTileflowTheme(cleared).sun, undefined);
+  const selective = defineTheme(base, {
+    id: 'test-selective-light',
+    version: 1,
+    colorScheme: 'dark',
+    lighting: {sun: reset(), anchor: reset(), color: reset(), position: reset(), intensity: 0},
+  });
+  assert.deepEqual(selective.lighting, {ambient: base.lighting.ambient, intensity: 0});
+  assert.deepEqual(resolveTileflowTheme(selective).sun, {
+    ...tileflowDefaultSunPreset,
+    ambient: {color: '#4a3a7a', intensity: 0.4},
+  });
+  const standalone = defineTheme({
+    id: 'test-no-inherited-light',
+    version: 1,
+    colorScheme: 'light',
+    lighting: {sun: reset(), ambient: reset()},
+  });
+  assert.deepEqual(standalone.lighting, {});
+});
+
+test('lighting reset is an authoring operation and cannot leak into resolved themes', () => {
+  for (const lighting of [reset(), {sun: reset()}, {ambient: reset()}, {color: reset()}]) {
+    assert.throws(() => resolveTileflowTheme({...evening, lighting: lighting as never}));
+  }
+  for (const lighting of [
+    {$tileflow: 'reset', extra: true},
+    {unknown: reset()},
+    {sun: {$tileflow: 'reset', extra: true}},
+    {sun: {altitude: reset()}},
+  ]) {
+    assert.throws(() =>
+      defineTheme(evening, {
+        id: 'test-invalid-reset',
+        version: 1,
+        colorScheme: 'dark',
+        lighting: lighting as never,
+      }),
+    );
+  }
 });
 
 test('theme suns are validated', () => {

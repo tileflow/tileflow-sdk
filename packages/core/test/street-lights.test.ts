@@ -1,17 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {createStyle, disable, roads} from '../src';
 import {
   placeTileflowStreetLights,
   readTileflowStreetLights,
-  tileflowStreetLightsMetadataKey,
   tileflowStreetLightBytes,
   type TileflowStreetLightLayers,
+  tileflowStreetLightsMetadataKey,
 } from '../src/street-lights';
 import {
   createTileflowStreetLights,
   tileflowStreetLightsLayerId,
 } from '../src/street-lights-browser';
+import type {TileflowRoadStreetLightStyle} from '../src/types';
 import type {TileflowTileLayer} from '../src/vector-tile-decode';
+import {extendStreets} from './map-fixture';
 
 // Tiles of 4096 units and 4096 metres: a unit is a metre.
 const options = {tileMetres: 4096};
@@ -162,7 +165,7 @@ test('estimated light keeps clear of mapped lamps, and a well-mapped tile is lef
   assert.equal(placement?.estimated, 0);
 });
 
-function fakeMap() {
+function fakeMap(metadata: Record<string, unknown> = {}) {
   const listeners = new Map<string, Set<() => void>>();
   const layers = new Set<string>();
   return {
@@ -176,7 +179,7 @@ function fakeMap() {
     getLayer: (id: string) => (layers.has(id) ? {} : undefined),
     getPitch: () => 60,
     getSource: () => undefined,
-    getStyle: () => ({layers: [{id: 'labels', type: 'symbol'}]}),
+    getStyle: () => ({metadata, layers: [{id: 'labels', type: 'symbol'}]}),
     getZoom: () => 16,
     isStyleLoaded: () => true,
     off(event: string, listener: () => void) {
@@ -194,11 +197,40 @@ function fakeMap() {
   };
 }
 
+test('standalone street lights reuse metadata until the style changes', () => {
+  const map = fakeMap();
+  let reads = 0;
+  let metadata: Record<string, unknown> = {};
+  map.getStyle = () => {
+    reads += 1;
+    return {metadata, layers: [{id: 'labels', type: 'symbol'}]};
+  };
+  const lights = createTileflowStreetLights({map});
+  assert.equal(lights.stats.declared, false);
+  const initialReads = reads;
+  for (let frame = 0; frame < 120; frame += 1) assert.equal(lights.stats.declared, false);
+  assert.equal(reads, initialReads);
+  metadata = {
+    [tileflowStreetLightsMetadataKey]: {
+      version: 1,
+      source: 'tileflow',
+      layers: {streetFurniture: 'street_furniture', transportation: 'transportation'},
+    },
+  };
+  map.listeners.get('styledata')?.forEach((listener) => listener());
+  assert.equal(lights.stats.declared, true);
+  const updatedReads = reads;
+  for (let frame = 0; frame < 120; frame += 1) assert.equal(lights.stats.declared, true);
+  assert.equal(reads, updatedReads);
+  lights.dispose();
+  for (const set of map.listeners.values()) assert.equal(set.size, 0);
+});
+
 test('the lights follow the sun, put their layer on the map and leave cleanly', () => {
   const map = fakeMap();
   let brightness = 0.5;
   const sun = () => ({brightness}) as never;
-  const lights = createTileflowStreetLights({map, controller: {getSun: sun}});
+  const lights = createTileflowStreetLights({map, controller: {getSun: sun}, enabled: true});
   assert.ok(map.layers.has(tileflowStreetLightsLayerId));
   assert.equal(lights.on, 0);
   brightness = 0.02;
@@ -207,6 +239,60 @@ test('the lights follow the sun, put their layer on the map and leave cleanly', 
   lights.dispose();
   assert.equal(map.layers.has(tileflowStreetLightsLayerId), false);
   for (const set of map.listeners.values()) assert.equal(set.size, 0);
+});
+
+test('compiled SDK maps publish street lights only after an explicit opt-in', () => {
+  const compile = (streetLights?: TileflowRoadStreetLightStyle) =>
+    createStyle(extendStreets({modules: {poi: disable(), roads: roads({streetLights})}}));
+  for (const settings of [undefined, {enabled: false}, {intensity: 0.7}])
+    assert.equal(readTileflowStreetLights(compile(settings).metadata), undefined);
+  const optedIn = readTileflowStreetLights(
+    compile({enabled: true, estimate: 'none', intensity: 0.7}).metadata,
+  );
+  assert.ok(optedIn);
+  assert.equal(optedIn.source, 'tileflow');
+  assert.equal(optedIn.layers.streetFurniture, 'street_furniture');
+  assert.equal(optedIn.estimate, 'none');
+  assert.equal(optedIn.intensity, 0.7);
+});
+
+test('missing metadata keeps the runtime off even at night without mounting a layer', () => {
+  const map = fakeMap();
+  const lights = createTileflowStreetLights({
+    map,
+    controller: {getSun: () => ({brightness: 0}) as never},
+  });
+  assert.equal(lights.on, 0);
+  assert.equal(map.layers.size, 0);
+  assert.deepEqual(lights.stats, {declared: false, tiles: 0, lamps: 0, mapped: 0, estimated: 0});
+  lights.dispose();
+  for (const listeners of map.listeners.values()) assert.equal(listeners.size, 0);
+});
+
+test('compiled opt-in mounts at night and metadata removal switches the runtime off', () => {
+  const compiled = createStyle(
+    extendStreets({
+      modules: {poi: disable(), roads: roads({streetLights: {enabled: true}})},
+    }),
+  );
+  const metadata = {...compiled.metadata};
+  const map = fakeMap(metadata);
+  const controller = {getSun: () => ({brightness: 0}) as never};
+  const lights = createTileflowStreetLights({map, controller});
+  assert.equal(lights.on, 1);
+  assert.ok(map.layers.has(tileflowStreetLightsLayerId));
+  assert.equal(lights.stats.declared, true);
+  delete metadata[tileflowStreetLightsMetadataKey];
+  for (const listener of map.listeners.get('styledata') ?? []) listener();
+  assert.equal(lights.on, 0);
+  assert.equal(map.layers.size, 0);
+  lights.dispose();
+
+  const overriddenMap = fakeMap({...compiled.metadata});
+  const overridden = createTileflowStreetLights({map: overriddenMap, controller, enabled: false});
+  assert.equal(overridden.on, 0);
+  assert.equal(overriddenMap.layers.size, 0);
+  overridden.dispose();
 });
 
 test('street light options are validated', () => {

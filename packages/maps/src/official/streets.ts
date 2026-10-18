@@ -29,6 +29,7 @@ import {
 } from '@tileflow/core';
 import {streetsIcons, streetsModels} from '../assets';
 import {mapboxRailTransitStyle} from './mapbox-rail';
+import {withStreetsConstruction} from './streets-construction';
 import {streetsPoiImage} from './streets-poi';
 import {streetsThemes, streetsVisual} from './streets-themes';
 import {streetsTrees} from './streets-trees';
@@ -63,6 +64,7 @@ const mapboxRoadPalette = {
   trunkTunnel: streetsVisual.road.trunkTunnel,
   road: streetsVisual.road.default,
   roadCasing: streetsVisual.road.casing,
+  detailCasing: streetsVisual.road.detailCasing,
   roadTunnel: streetsVisual.road.tunnel,
   pathAtZ15: streetsVisual.road.pathTransition,
   pathFromZ16: streetsVisual.road.path,
@@ -77,7 +79,10 @@ const mapboxRailColor = streetsVisual.road.railTransit;
 // calibrated against the dated Mapbox Standard snapshot, but their names describe Tileflow's
 // data contract so the style does not depend on another vendor's taxonomy.
 const streetsSurfacePalette = {
-  background: streetsVisual.surface.background,
+  background: zoom.linear([
+    [13, streetsVisual.surface.backgroundOverview],
+    [14, streetsVisual.surface.background],
+  ]),
   barren: streetsVisual.landcover.barren,
   businessCorridor: streetsVisual.landuse.businessCorridor,
   businessCorridorOutline: streetsVisual.landuse.businessCorridorOutline,
@@ -105,7 +110,19 @@ const streetsSurfacePalette = {
   scrub: streetsVisual.landcover.scrub,
   urbanPark: streetsVisual.landcover.urbanPark,
   villageGreen: streetsVisual.landcover.villageGreen,
-  water: streetsVisual.hydro.water,
+  water: expr.interpolate<TileflowThemeColorValue>({kind: 'linear'}, expr.zoom(), [
+    [5, streetsVisual.hydro.overview],
+    [7, streetsVisual.hydro.regional],
+    [13, streetsVisual.hydro.regional],
+    [
+      14,
+      expr.match<string, TileflowThemeColorValue>(
+        expr.get(field('class')),
+        [{labels: ['ocean', 'sea'], value: streetsVisual.hydro.ocean}],
+        streetsVisual.hydro.water,
+      ),
+    ],
+  ]),
   waterOcean: streetsVisual.hydro.ocean,
   waterDepth0: streetsVisual.hydro.depth0,
   waterDepth200: streetsVisual.hydro.depth200,
@@ -154,10 +171,11 @@ const detailedUrbanGreenOpacity = zoom.linear([
   [8, 0],
   [9, 1],
 ]);
+// The material already carries the reference's 50% alpha; do not multiply it by
+// another translucent overlay at full visibility.
 const protectedAreaOpacity = zoom.linear([
-  [7, 0],
-  [8, 0.28],
-  [9, 0.32],
+  [5, 0],
+  [6, 1],
 ]);
 
 // World size ranks are not Mapbox sizeranks: even small named parks can be
@@ -250,7 +268,11 @@ function cityRoadColorStops(
 }
 
 function cityRoadCasingColorStops(minZoom: number): ColorStops {
-  return cityRoadColorStops(minZoom, streetsDetailPalette.roadCasing, mapboxRoadPalette.roadCasing);
+  return cityRoadColorStops(
+    minZoom,
+    streetsDetailPalette.roadCasing,
+    mapboxRoadPalette.detailCasing,
+  );
 }
 
 // Standard's surface casings start at street detail; an overview casing
@@ -259,7 +281,7 @@ const roadBorderZoom = 15;
 const roadBorderTotalWidth = 1;
 const roadWidthInterpolationBase = 1.5;
 const roadSurfaceColor = mapboxRoadPalette.road;
-const roadCasingColor = mapboxRoadPalette.roadCasing;
+const roadCasingColor = mapboxRoadPalette.detailCasing;
 const primaryRoadSurfaceColor = mapboxRoadPalette.road;
 const secondaryRoadSurfaceColor = mapboxRoadPalette.road;
 const tertiaryRoadSurfaceColor = mapboxRoadPalette.road;
@@ -315,16 +337,6 @@ const building3dBase = expr.max(
     building3dHeight,
   ),
 );
-const circularRoadRadiusAtZ15 = expr.toNumber(expr.get(field('circularRadiusAtZoom15')), 0);
-const circularRoadRadiusMetres = expr.toNumber(expr.get(field('circularRadiusMeters')), 0);
-const circularRoadOuterRadiusMetres = expr.toNumber(
-  expr.get(field('circularOuterRadiusMeters')),
-  0,
-);
-const circularRoadInnerRadiusMetres = expr.toNumber(
-  expr.get(field('circularInnerRadiusMeters')),
-  0,
-);
 // Surface caps follow the reference's z14 transition. Structural layers use
 // their own constant caps so tunnels cannot extend past their portals.
 const roadLineCap = zoom.step<TileflowLineCap>([
@@ -343,11 +355,6 @@ const pathLineJoin = zoom.step<TileflowLineJoin>([
   [12, 'miter'],
   [16, 'round'],
 ]);
-const hasPhysicalCircularRadii = expr.all(
-  expr.gt(circularRoadRadiusMetres, 0),
-  expr.gt(circularRoadOuterRadiusMetres, circularRoadInnerRadiusMetres),
-  expr.gte(circularRoadInnerRadiusMetres, 0),
-);
 const circularRoadBaseWidth = expr.match<string, number>(
   expr.coalesce(expr.get(field('class')), 'minor'),
   [
@@ -361,96 +368,23 @@ const circularRoadBaseWidth = expr.match<string, number>(
   ],
   3,
 );
-const circularRoadRadius = circularRoadInnerRadius(false);
-const circularRoadCasingRadius = circularRoadInnerRadius(true);
-const circularRoadWidth = circularRoadStrokeWidth(false);
-const circularRoadCasingWidth = circularRoadStrokeWidth(true);
+// Only Streets' fallback width profile is authored here. Core owns the physical
+// ring geometry, fractional-zoom scaling and its relationship to the road casing.
+const circularRoadFallbackWidth = expr.interpolate<number>(
+  {kind: 'exponential', base: 2},
+  expr.zoom(),
+  [
+    [15, circularRoadBaseWidth],
+    ...Array.from({length: 9}, (_, index) => {
+      const level = 16 + index;
+      const scale = 1 + ((1.35 ** (level - 15) - 1) / (1.35 ** 7 - 1)) * 1.2;
+      return [level, expr.multiply(circularRoadBaseWidth, scale)] as const;
+    }),
+  ],
+);
 const expresswayWidthScale = 1;
 const tunnelBorderDash = [3, 3] as const;
 const tunnelBorderWidth = 1;
-function circularRoadFallbackScale(level: number) {
-  const interpolationBase = 1.35;
-  const progress = (interpolationBase ** (level - 15) - 1) / (interpolationBase ** (22 - 15) - 1);
-  return 1 + progress * 1.2;
-}
-
-function circularRoadWidthAtLevel(level: number): TileflowDataExpressionInput<number> {
-  const scale = circularRoadFallbackScale(level);
-  return level === 15 ? circularRoadBaseWidth : expr.multiply(circularRoadBaseWidth, scale);
-}
-
-function circularRoadCenterlineRadiusAtLevel(level: number) {
-  return level === 15
-    ? circularRoadRadiusAtZ15
-    : expr.multiply(circularRoadRadiusAtZ15, 2 ** (level - 15));
-}
-
-function circularRoadInnerRadiusAtLevel(level: number, casing: boolean) {
-  const centerlineRadius = circularRoadCenterlineRadiusAtLevel(level);
-  const physicalInnerRadius = expr.multiply(
-    centerlineRadius,
-    expr.divide(circularRoadInnerRadiusMetres, circularRoadRadiusMetres),
-  );
-  const fallbackInnerRadius = expr.subtract(
-    centerlineRadius,
-    expr.divide(circularRoadWidthAtLevel(level), 2),
-  );
-  const innerRadius = expr.case<number>(
-    [{when: hasPhysicalCircularRadii, value: physicalInnerRadius}],
-    fallbackInnerRadius,
-  );
-  return expr.max(0, casing ? expr.subtract(innerRadius, roadBorderTotalWidth / 2) : innerRadius);
-}
-
-function circularRoadInnerRadius(casing: boolean) {
-  // Geographic distances double per zoom level. Keep the procedural ring
-  // aligned with its approaches throughout fractional zooms and above z22.
-  return expr.interpolate({kind: 'exponential', base: 2}, expr.zoom(), [
-    [15, circularRoadInnerRadiusAtLevel(15, casing)],
-    [16, circularRoadInnerRadiusAtLevel(16, casing)],
-    [17, circularRoadInnerRadiusAtLevel(17, casing)],
-    [18, circularRoadInnerRadiusAtLevel(18, casing)],
-    [19, circularRoadInnerRadiusAtLevel(19, casing)],
-    [20, circularRoadInnerRadiusAtLevel(20, casing)],
-    [21, circularRoadInnerRadiusAtLevel(21, casing)],
-    [22, circularRoadInnerRadiusAtLevel(22, casing)],
-    [23, circularRoadInnerRadiusAtLevel(23, casing)],
-    [24, circularRoadInnerRadiusAtLevel(24, casing)],
-  ]);
-}
-
-function circularRoadStrokeWidthAtLevel(level: number, casing: boolean) {
-  const fallbackWidth = circularRoadWidthAtLevel(level);
-  const centerlineRadius = circularRoadCenterlineRadiusAtLevel(level);
-  const physicalWidth = expr.multiply(
-    centerlineRadius,
-    expr.divide(
-      expr.subtract(circularRoadOuterRadiusMetres, circularRoadInnerRadiusMetres),
-      circularRoadRadiusMetres,
-    ),
-  );
-  const physicalOutput = casing ? expr.add(physicalWidth, roadBorderTotalWidth) : physicalWidth;
-  const fallbackOutput = casing ? expr.add(fallbackWidth, roadBorderTotalWidth) : fallbackWidth;
-  return expr.case<number>(
-    [{when: hasPhysicalCircularRadii, value: physicalOutput}],
-    fallbackOutput,
-  );
-}
-
-function circularRoadStrokeWidth(casing: boolean) {
-  return expr.interpolate({kind: 'exponential', base: 2}, expr.zoom(), [
-    [15, circularRoadStrokeWidthAtLevel(15, casing)],
-    [16, circularRoadStrokeWidthAtLevel(16, casing)],
-    [17, circularRoadStrokeWidthAtLevel(17, casing)],
-    [18, circularRoadStrokeWidthAtLevel(18, casing)],
-    [19, circularRoadStrokeWidthAtLevel(19, casing)],
-    [20, circularRoadStrokeWidthAtLevel(20, casing)],
-    [21, circularRoadStrokeWidthAtLevel(21, casing)],
-    [22, circularRoadStrokeWidthAtLevel(22, casing)],
-    [23, circularRoadStrokeWidthAtLevel(23, casing)],
-    [24, circularRoadStrokeWidthAtLevel(24, casing)],
-  ]);
-}
 
 function roadWidth(widths: WidthStops, oneWayScale: number, rampWidths?: WidthStops) {
   const augmentedWidths = [...widths].sort(([left], [right]) => left - right);
@@ -745,26 +679,8 @@ function streetsBoundaryRenderStack() {
 
 function streetsLandRenderStack() {
   return {
-    // A park polygon is the base surface. Explicit lawns and meadows inside
-    // it must remain visible instead of being painted over by the park fill.
-    grassDetail: refineRenderTarget({
-      placement: {above: 'land.landuse.recreation.fill'},
-      target: 'land.landcover.grass.fill',
-    }),
-    meadowDetail: refineRenderTarget({
-      placement: {above: 'land.landcover.grass.fill'},
-      target: 'land.landcover.meadow.fill',
-    }),
-    // Mapped parking surfaces cut through broad park/forest polygons. They
-    // remain below the road network and only fill areas present in the tiles.
-    parkingSurface: refineRenderTarget({
-      placement: 'above-land',
-      target: 'land.landuse.parking.fill',
-    }),
-    parkingOutline: refineRenderTarget({
-      placement: {above: 'land.landuse.parking.fill'},
-      target: 'land.landuse.parking.outline',
-    }),
+    // Core orders general cover, parks, lawn detail and mapped built surfaces.
+    // Streets adds only its own business-corridor treatment.
     businessArea: renderPass({
       placement: {above: 'land.landuse.residential.fill'},
       feature: 'landuse',
@@ -890,46 +806,6 @@ function streetsBuildingRenderStack() {
 
 function streetsLabelRenderStack() {
   return {
-    // Ground passes belong to Streets' label design. They do not depend on the
-    // optional class targets emitted by a replacement roads module. Keep the
-    // structural roads last within this group so they win road-name collisions.
-    streetPedestrian: streetNamePass(
-      'pedestrian',
-      12,
-      ['path', 'path_construction'],
-      ['pedestrian'],
-    ),
-    streetPaths: streetNamePass(
-      'path',
-      15,
-      ['path', 'path_construction'],
-      ['path', 'bridleway', 'corridor', 'footway', 'cycleway', 'steps'],
-    ),
-    streetService: streetNamePass('service', 15, [
-      'service',
-      'busway',
-      'bus_guideway',
-      'service_construction',
-    ]),
-    streetMinor: streetNamePass('street', 13, [
-      'minor',
-      'residential',
-      'unclassified',
-      'minor_construction',
-    ]),
-    streetTertiary: streetNamePass('major', 13, ['tertiary', 'tertiary_construction']),
-    streetArterial: streetNamePass('major', 12, [
-      'primary',
-      'primary_construction',
-      'secondary',
-      'secondary_construction',
-    ]),
-    streetHighway: streetNamePass('major', 10, [
-      'motorway',
-      'motorway_construction',
-      'trunk',
-      'trunk_construction',
-    ]),
     ferry: renderPass({
       feature: 'roadName',
       placement: 'below-labels',
@@ -1116,47 +992,61 @@ function streetsLabelRenderStack() {
 // overview until z12, matching the separate link classes in the reference.
 function streetsRoadEligibility() {
   return Object.fromEntries(
-    (['motorway', 'trunk', 'primary', 'secondary', 'tertiary'] as const).map((roadClass) => [
-      `${roadClass}-surface-eligibility`,
-      refineRenderTarget({
-        renderer: 'line',
-        selector: {
-          kind: 'all',
-          selectors: [
-            {kind: 'geometry', geometry: 'line'},
-            {kind: 'in', field: 'class', values: [roadClass, `${roadClass}_construction`]},
-            {
-              kind: 'step',
-              fallback: {kind: 'literal', value: true},
-              stops: [
-                {
-                  zoom: 5,
-                  selector: {
-                    kind: 'all',
-                    selectors: [
-                      {kind: 'compare', field: 'brunnel', operator: 'ne', value: 'tunnel'},
-                      {kind: 'compare', field: 'brunnel', operator: 'ne', value: 'bridge'},
-                    ],
+    (['motorway', 'trunk', 'primary', 'secondary', 'tertiary'] as const).flatMap((roadClass) =>
+      (['fill', 'rampFill'] as const).map((phase) => [
+        `${roadClass}-surface-${phase}-eligibility`,
+        refineRenderTarget({
+          renderer: 'line',
+          selector: {
+            kind: 'all',
+            selectors: [
+              {kind: 'geometry', geometry: 'line'},
+              {kind: 'in', field: 'class', values: [roadClass, `${roadClass}_construction`]},
+              {
+                kind: 'compare',
+                field: 'ramp',
+                operator: phase === 'rampFill' ? 'eq' : 'ne',
+                value: 1,
+              },
+              {
+                kind: 'step',
+                fallback: {kind: 'literal', value: true},
+                stops: [
+                  {
+                    zoom: 5,
+                    selector: {
+                      kind: 'all',
+                      selectors: [
+                        {kind: 'compare', field: 'brunnel', operator: 'ne', value: 'tunnel'},
+                        {kind: 'compare', field: 'brunnel', operator: 'ne', value: 'bridge'},
+                      ],
+                    },
                   },
-                },
-              ],
-            },
-            {
-              kind: 'step',
-              fallback: {kind: 'compare', field: 'ramp', operator: 'ne', value: 1},
-              stops: [{zoom: 12, selector: {kind: 'literal', value: true}}],
-            },
-          ],
-        },
-        style: {},
-        target: `roads.classes.${roadClass}.surface.fill`,
-      }),
-    ]),
+                ],
+              },
+            ],
+          },
+          // Core places links before receiving carriageways. Streets owns only
+          // their reference-specific visibility threshold and palette/widths.
+          style: phase === 'rampFill' ? {minZoom: 12} : {},
+          target: `roads.classes.${roadClass}.surface.${phase}`,
+        }),
+      ]),
+    ),
   );
 }
 
 function streetsRoadRenderStack() {
   return {
+    pedestrianGround: refineRenderTarget({
+      // Walkable ground covers commercial zoning, while explicit grass, gardens
+      // and parks remain above broad pedestrian complexes. Share the canonical
+      // anchor with the earlier business-area pass; replacement land modules do
+      // not inherit that Streets-only pass.
+      placement: {above: 'land.landuse.residential.fill'},
+      requirements: ['land'],
+      target: 'roads.areas.pedestrian.fill',
+    }),
     ...parkPathRefinements(),
     ...streetsRoadEligibility(),
     oneWayMarkers: refineRenderTarget({
@@ -1233,8 +1123,8 @@ const mapboxArterialRampWidthStops = [
 function roadCasingColorStops(explicitStops: ColorStops | undefined): ColorStops {
   if (explicitStops) return explicitStops;
   return [
-    [roadBorderZoom, mapboxRoadPalette.roadCasing],
-    [22, mapboxRoadPalette.roadCasing],
+    [roadBorderZoom, mapboxRoadPalette.detailCasing],
+    [22, mapboxRoadPalette.detailCasing],
   ];
 }
 
@@ -1310,7 +1200,10 @@ function cityRoadStyle(
             cap: 'butt',
             join: 'miter',
             minZoom: minZoom === 3 ? 13 : (minZoom ?? 0) < 12 ? 14 : minZoom === 12 ? 15 : 16,
-            color: tunnelCasingColor,
+            // Standard's HD setting unifies carriageway borders at z15, including tunnels.
+            color: expr.step<ColorValue>(expr.zoom(), tunnelCasingColor, [
+              [15, mapboxRoadPalette.detailCasing],
+            ]),
             dash: tunnelBorderDash,
             gapWidth: roadWidth(widths, oneWayScale, rampWidths),
             opacity: 1,
@@ -1411,43 +1304,7 @@ function pathRoadStyle(
 
 type RoadLabelKind = 'major' | 'path' | 'pedestrian' | 'service' | 'street';
 
-function streetNamePass(
-  kind: RoadLabelKind,
-  minZoom: number,
-  classes: readonly string[],
-  subclasses?: readonly string[],
-) {
-  const style = roadLabelStyle(kind);
-  return renderPass({
-    feature: 'roadName',
-    renderer: 'symbol',
-    requirements: ['roads'],
-    placement: 'below-buildings',
-    selector: {
-      kind: 'all',
-      selectors: [
-        {field: 'name', kind: 'has'},
-        {field: 'class', kind: 'in', values: classes},
-        ...(subclasses ? [{field: 'subclass', kind: 'in', values: subclasses} as const] : []),
-      ],
-    },
-    style: {
-      ...style,
-      minZoom,
-      text: {
-        ...style.text,
-        field: expr.coalesce(
-          expr.get(field('name')),
-          expr.get(field('nameLatin')),
-          expr.get(field('nameEnglish')),
-        ),
-        optional: true,
-      },
-    },
-  });
-}
-
-function roadLabelStyle(kind: RoadLabelKind): TileflowSymbolStyle {
+function roadLabelStyle(kind: RoadLabelKind, minZoom: number): TileflowSymbolStyle {
   const major = kind === 'major';
   const pedestrian = kind === 'pedestrian';
   const path = kind === 'path';
@@ -1457,6 +1314,7 @@ function roadLabelStyle(kind: RoadLabelKind): TileflowSymbolStyle {
 
   return {
     placement: 'line',
+    minZoom,
     priority: major ? 90 : 50,
     spacing: 250,
     text: {
@@ -1619,7 +1477,7 @@ export const streets = bindOfficialMapTheme(
             protected: {
               fill: {
                 color: streetsSurfacePalette.protected,
-                minZoom: 7,
+                minZoom: 5,
                 opacity: protectedAreaOpacity,
               },
             },
@@ -1747,11 +1605,7 @@ export const streets = bindOfficialMapTheme(
         },
         bodies: {
           fill: {
-            color: expr.match<string, ColorValue>(
-              expr.get(field('class')),
-              [{labels: ['ocean', 'sea'], value: streetsSurfacePalette.waterOcean}],
-              streetsSurfacePalette.water,
-            ),
+            color: streetsSurfacePalette.water,
             opacity: 1,
           },
         },
@@ -1761,7 +1615,7 @@ export const streets = bindOfficialMapTheme(
           // A continuous, nearly opaque stroke keeps the real source geometry
           // legible over woodland without inventing a permanent water body.
           waterways: {
-            color: streetsSurfacePalette.water,
+            color: streetsVisual.hydro.waterway,
             dash: [1, 0],
             opacity: 0.9,
           },
@@ -1769,7 +1623,7 @@ export const streets = bindOfficialMapTheme(
         waterways: {
           canal: {
             cap: 'round',
-            color: streetsSurfacePalette.water,
+            color: streetsVisual.hydro.waterway,
             join: 'round',
             minZoom: 8,
             opacity: 0.96,
@@ -1781,7 +1635,7 @@ export const streets = bindOfficialMapTheme(
           },
           other: {
             cap: 'round',
-            color: streetsSurfacePalette.water,
+            color: streetsVisual.hydro.waterway,
             join: 'round',
             minZoom: 12,
             opacity: 0.92,
@@ -1793,7 +1647,7 @@ export const streets = bindOfficialMapTheme(
           },
           river: {
             cap: 'round',
-            color: streetsSurfacePalette.water,
+            color: streetsVisual.hydro.waterway,
             join: 'round',
             minZoom: 6,
             opacity: 0.96,
@@ -1805,7 +1659,7 @@ export const streets = bindOfficialMapTheme(
           },
           stream: {
             cap: 'round',
-            color: streetsSurfacePalette.water,
+            color: streetsVisual.hydro.waterway,
             join: 'round',
             minZoom: 10,
             opacity: 0.94,
@@ -1865,8 +1719,9 @@ export const streets = bindOfficialMapTheme(
         }),
         streetsBoundaryRenderStack(),
       ),
-      roads: withRenderStack(
+      roads: withStreetsConstruction(
         roads({
+          streetLights: {enabled: false},
           detail: 'all', // 'none' | 'highways' | 'major' | 'streets' | 'all'.
           hierarchy: 'clear', // 'subtle' | 'clear' | 'strong'.
           outline: 'strong', // 'none' | 'subtle' | 'strong'.
@@ -1886,23 +1741,23 @@ export const streets = bindOfficialMapTheme(
             ]),
           },
           roundabouts: {
+            fallbackWidth: circularRoadFallbackWidth,
+            borderWidth: roadBorderTotalWidth,
             casing: {
               color: fixed('rgba(0, 0, 0, 0)', {reason: 'Invisible circular-road underlay'}),
               minZoom: 15,
               pitchAlignment: 'map',
               pitchScale: 'map',
-              radius: circularRoadCasingRadius,
               strokeColor: roadCasingColor,
-              strokeWidth: circularRoadCasingWidth,
+              strokeOpacity: 1,
             },
             fill: {
               color: fixed('rgba(0, 0, 0, 0)', {reason: 'Invisible circular-road underlay'}),
               minZoom: 15,
               pitchAlignment: 'map',
               pitchScale: 'map',
-              radius: circularRoadRadius,
               strokeColor: roadSurfaceColor,
-              strokeWidth: circularRoadWidth,
+              strokeOpacity: 1,
             },
           },
           sidewalks: {
@@ -1924,19 +1779,6 @@ export const streets = bindOfficialMapTheme(
             // Optional keys: construction, expressway, indoor, official, ramp, unpaved.
             // Treatments accept enabled, widthScale, surface, tunnel, and bridge;
             // phases accept color, opacity, dash, blur, gapWidth, offset, and width.
-            construction: {
-              surface: {
-                // Keep construction dashes in the fill. A conditional casing
-                // dash adds a [1, 0] fallback to every ordinary road, selecting
-                // MapLibre's SDF dash shader and stippling thin hollow borders.
-                casing: {dash: [1, 0], opacity: 0},
-                fill: {
-                  color: mapboxRoadPalette.road,
-                  dash: [1.5, 1],
-                  opacity: 0.96,
-                },
-              },
-            },
             expressway: {widthScale: expresswayWidthScale}, // Finite number > 0.
             indoor: {
               surface: {
@@ -1956,7 +1798,7 @@ export const streets = bindOfficialMapTheme(
                 // A continuous earth tone reads as a footpath without the
                 // bead-like texture produced by short round dashes.
                 casing: {
-                  color: mapboxRoadPalette.roadCasing,
+                  color: mapboxRoadPalette.detailCasing,
                   dash: [1, 0],
                   opacity: 0.9,
                 },
@@ -1972,17 +1814,15 @@ export const streets = bindOfficialMapTheme(
             // Optional keys: access, bicycle, foot, horse, toll. A key styles explicit
             // restrictions for that mode without exposing OpenMapTiles field names.
             access: {
-              // Private/service access is common inside the ministerial complex;
-              // Mapbox keeps those links visually equal to the surrounding
-              // service network at street zooms.
+              // Preserve each road class's colors across access restrictions so
+              // a restricted segment does not break the road's visual continuity.
               widthScale: 1,
               surface: {
                 casing: {
-                  color: mapboxRoadPalette.roadCasing,
                   dash: [1, 0],
                   opacity: 1,
                 },
-                fill: {color: roadSurfaceColor, dash: [1, 0], opacity: 1},
+                fill: {dash: [1, 0], opacity: 1},
               },
             },
             toll: {
@@ -2013,10 +1853,7 @@ export const streets = bindOfficialMapTheme(
             },
             // Polygon pedestrian plazas; line-like pedestrian ways use classes.pedestrian.
             pedestrian: {
-              // The source contains very broad pedestrian complexes around
-              // Nuevos Ministerios. Leave their underlying land use visible;
-              // the actual pedestrian ways are still rendered as lines.
-              fill: {visible: false},
+              fill: {color: streetsVisual.road.pedestrianSurface, minZoom: 13, opacity: 1},
               outline: {visible: false},
             },
             pier: {
@@ -2041,8 +1878,8 @@ export const streets = bindOfficialMapTheme(
               ],
               {
                 casingColorStops: [
-                  [15, mapboxRoadPalette.motorwayCasing],
-                  [22, mapboxRoadPalette.motorwayCasing],
+                  [15, mapboxRoadPalette.detailCasing],
+                  [22, mapboxRoadPalette.detailCasing],
                 ],
                 colorStops: [
                   [3, mapboxRoadPalette.motorway],
@@ -2065,8 +1902,8 @@ export const streets = bindOfficialMapTheme(
               ],
               {
                 casingColorStops: [
-                  [15, mapboxRoadPalette.trunkCasing],
-                  [22, mapboxRoadPalette.trunkCasing],
+                  [15, mapboxRoadPalette.detailCasing],
+                  [22, mapboxRoadPalette.detailCasing],
                 ],
                 colorStops: [
                   [3, mapboxRoadPalette.trunk],
@@ -2170,8 +2007,8 @@ export const streets = bindOfficialMapTheme(
               {
                 casingMinZoom: 16,
                 casingColorStops: [
-                  [14.5, mapboxRoadPalette.roadCasing],
-                  [22, mapboxRoadPalette.roadCasing],
+                  [14.5, mapboxRoadPalette.detailCasing],
+                  [22, mapboxRoadPalette.detailCasing],
                 ],
                 colorStops: [
                   [13.5, roadSurfaceColor],
@@ -2193,8 +2030,8 @@ export const streets = bindOfficialMapTheme(
               {
                 casingMinZoom: 16,
                 casingColorStops: [
-                  [14.5, mapboxRoadPalette.roadCasing],
-                  [22, mapboxRoadPalette.roadCasing],
+                  [14.5, mapboxRoadPalette.detailCasing],
+                  [22, mapboxRoadPalette.detailCasing],
                 ],
                 colorStops: [
                   [13.5, mapboxRoadPalette.road],
@@ -2324,12 +2161,42 @@ export const streets = bindOfficialMapTheme(
           collisionPriority: 'navigation',
           language: 'local', // 'auto' | 'local' | 'en' | another language field suffix.
           places: 'all', // 'none' | 'major' | 'all'.
-          // Street names use the ground passes below; shields remain in the foreground.
-          roads: 'none',
+          roadPlacement: 'ground',
+          roads: 'all',
+          // Preserve Streets' selection while Core owns class aliases, language
+          // fallback, ground placement and collision ordering.
+          roadClasses: [
+            'motorway',
+            'trunk',
+            'primary',
+            'secondary',
+            'tertiary',
+            'minor',
+            'service',
+            'pathway',
+            'footway',
+            'cycleway',
+            'steps',
+            'pedestrian',
+          ],
           shields: 'major', // 'none' | 'major' | 'all'.
           junctions: true, // true | false.
           water: 'all', // 'none' | 'major' | 'all'.
           styles: {
+            roads: {
+              motorway: roadLabelStyle('major', 10),
+              trunk: roadLabelStyle('major', 10),
+              primary: roadLabelStyle('major', 12),
+              secondary: roadLabelStyle('major', 12),
+              tertiary: roadLabelStyle('major', 13),
+              minor: roadLabelStyle('street', 13),
+              service: roadLabelStyle('service', 15),
+              pathway: roadLabelStyle('path', 15),
+              footway: roadLabelStyle('path', 15),
+              cycleway: roadLabelStyle('path', 15),
+              steps: roadLabelStyle('path', 15),
+              pedestrian: roadLabelStyle('pedestrian', 12),
+            },
             places: {
               // Standard overview hierarchy: continents disappear first, then
               // countries and administrative regions hand over to settlements.

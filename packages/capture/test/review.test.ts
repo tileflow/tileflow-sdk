@@ -39,14 +39,14 @@ const dataIdentity: TileflowCaptureDataInput = {
 test('compares deliberate map, theme, and style variants without creating baseline semantics', async () => {
   const left = await createReviewCapture({
     color: [26, 84, 52, 255],
-    definition: mapDefinition('harad', 'paper'),
-    scene: 'harad-review',
+    definition: mapDefinition('baedeker', 'paper'),
+    scene: 'baedeker-review',
     styleSha256: '1'.repeat(64),
   });
   const right = await createReviewCapture({
     color: [174, 68, 51, 255],
-    definition: mapDefinition('ferraris', 'historic'),
-    scene: 'ferraris-review',
+    definition: mapDefinition('map-1777', 'historic'),
+    scene: 'map-1777-review',
     styleSha256: '2'.repeat(64),
   });
 
@@ -58,9 +58,9 @@ test('compares deliberate map, theme, and style variants without creating baseli
   assert.equal(comparison.dimensionsMatch, true);
   assert.equal(comparison.rendererMatch, true);
   assert.equal(comparison.dataMatch, true);
-  assert.equal(comparison.left.scene.map, 'harad');
+  assert.equal(comparison.left.scene.map, 'baedeker');
   assert.equal(comparison.left.scene.theme, 'paper');
-  assert.equal(comparison.right.scene.map, 'ferraris');
+  assert.equal(comparison.right.scene.map, 'map-1777');
   assert.equal(comparison.right.scene.theme, 'historic');
   assert.equal(comparison.left.style.sha256, '1'.repeat(64));
   assert.equal(comparison.right.style.sha256, '2'.repeat(64));

@@ -2,6 +2,7 @@ import {isExpression} from '@maplibre/maplibre-gl-style-spec';
 import type {Map as MapLibreMap, StyleSpecification} from 'maplibre-gl';
 import {FontPreviews} from './font-preview';
 import {type IconSource, SpriteCatalog} from './sprite-catalog';
+import {themeLabel, themeVariantLabel} from './theme-labels';
 import type {PreviewWindow, Side} from './types';
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = '') {
@@ -158,7 +159,7 @@ export class AssetsPanel {
       clearTimeout(this.fontTimer);
       this.fontTimer = setTimeout(() => this.render(), 180);
     });
-    this.palette.setAttribute('aria-label', 'Icon theme palette');
+    this.palette.setAttribute('aria-label', 'Icon theme');
     this.moment.setAttribute('aria-label', 'Icon time of day');
     const changeVariant = () => {
       const variants = window.__tileflowScene?.variants() ?? [],
@@ -448,7 +449,7 @@ export class AssetsPanel {
       cell.dataset.night = String(variant.timeOfDay === 'night');
       cell.append(
         el('div', 'dt-sprite-preview', '…'),
-        el('code', '', `${variant.palette} · ${variant.timeOfDay ?? variant.theme}`),
+        el('code', '', themeVariantLabel(variant, this.style?.metadata)),
         el('small'),
       );
       matrix.append(cell);
@@ -510,7 +511,9 @@ export class AssetsPanel {
         this.iconTheme || (this.style?.metadata as Record<string, string>)?.['tileflow:theme'];
     const selected = variants.find((v) => v.theme === current);
     this.palette.replaceChildren(
-      ...[...new Set(variants.map((v) => v.palette))].map((name) => new Option(name, name)),
+      ...[...new Set(variants.map((v) => v.palette))].map(
+        (name) => new Option(themeLabel(name, this.style?.metadata), name),
+      ),
     );
     if (selected) this.palette.value = selected.palette;
     const times = [

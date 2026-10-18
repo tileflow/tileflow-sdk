@@ -30,7 +30,14 @@ const streetsThemeNames = [
   'light',
   'monochrome',
 ] as const;
-const streetsNightThemes = new Set(['dark', 'dark-faded', 'dark-monochrome']);
+const streetsDarkThemes = new Set([
+  'dark',
+  'dark-faded',
+  'dark-monochrome',
+  'dusk',
+  'dusk-faded',
+  'dusk-monochrome',
+]);
 
 test('Map deploy auto-selects one map, preserves its theme family, and writes a session manifest', async (t) => {
   const fixture = await createFixture(t);
@@ -798,8 +805,8 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
       const iconImage = JSON.stringify(foodPoiLayer?.layout?.['icon-image']);
       assert.match(iconImage, /"get","icon"/u);
       const paletteSuffix = theme.includes('monochrome') ? '-monochrome' : '';
-      const nightSuffix = streetsNightThemes.has(theme) ? '-dark' : '';
-      assert.match(iconImage, new RegExp(`"image","food${paletteSuffix}${nightSuffix}"`, 'u'));
+      const darkSuffix = streetsDarkThemes.has(theme) ? '-dark' : '';
+      assert.match(iconImage, new RegExp(`"image","food${paletteSuffix}${darkSuffix}"`, 'u'));
     }
     assert.deepEqual(parsed.iconPackage, {
       contentHash: requests[0]?.url?.split('/').pop(),

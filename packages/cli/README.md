@@ -53,7 +53,8 @@ workspaces are advanced repository orchestration, not a second application autho
 
 ## Map development tools
 
-Use `describe` for bounded language discovery, `inspect` for configuration and data, `capture`
+Use `describe` for bounded language discovery (`describe themes --json` lists palette requirements
+and optional time-of-day composition), `inspect` for configuration and data, `capture`
 for reproducible evidence, and `compare` for saved captures, semantic edits, styles, references or
 baselines. `preview` opens Map DevTools. These tools work in independent projects with
 custom maps and data; official maps are optional.

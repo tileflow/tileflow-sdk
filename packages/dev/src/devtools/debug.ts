@@ -24,8 +24,9 @@ export class DebugPanel {
     private active: () => Side,
     private overdraw: OverdrawHeatmap,
   ) {
-    const content = el('div', 'dt-scroll');
-    content.append(el('div', 'dt-section-heading', 'Map overlays'));
+    const content = el('div', 'dt-scroll dt-card-page');
+    const overlays = el('section', 'dt-card');
+    overlays.append(el('div', 'dt-section-heading', 'Map overlays'));
     const specs = [
       ['showOverdrawInspector', 'Overdraw', 'How many times each pixel is painted per frame'],
       ['showCollisionBoxes', 'Collision boxes', 'Which labels and icons are placed or dropped'],
@@ -44,9 +45,9 @@ export class DebugPanel {
       toggle.addEventListener('change', () => this.setOverlay(key, toggle.checked));
       this.switches.set(key, toggle);
       row.append(preview, copy, toggle);
-      content.append(row);
-      if (key === 'showOverdrawInspector') content.append(this.help);
-      if (key === 'showCollisionBoxes') content.append(this.collisionHelp);
+      overlays.append(row);
+      if (key === 'showOverdrawInspector') overlays.append(this.help);
+      if (key === 'showCollisionBoxes') overlays.append(this.collisionHelp);
     }
     const legend = el('div', 'dt-overdraw-legend');
     for (const passes of [0, 1, 2, 4, 8]) {
@@ -74,7 +75,8 @@ export class DebugPanel {
       ),
     );
     this.help.hidden = this.collisionHelp.hidden = true;
-    content.append(el('div', 'dt-section-heading', 'Scale factor'));
+    const scale = el('section', 'dt-card');
+    scale.append(el('div', 'dt-section-heading', 'Scale factor'));
     const controls = el('div', 'dt-debug-scale');
     controls.append(el('span', '', 'Pixel ratio'));
     for (const value of [1, 1.5, 2, 3]) {
@@ -103,7 +105,7 @@ export class DebugPanel {
         this.timer = setTimeout(() => this.applyRatio(value), 120);
       });
     controls.append(this.ratios, this.ratio, this.slider);
-    content.append(
+    scale.append(
       controls,
       el(
         'p',
@@ -119,7 +121,8 @@ export class DebugPanel {
       '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7" fill="var(--accent)"/><path d="M8 3v10M3.5 8.5 8 7l4.5 1.5M6 12.5h4" stroke="var(--paper)" stroke-width="1.2" fill="none"/></svg>',
     );
     preview.append(this.specimen);
-    content.append(preview);
+    scale.append(preview);
+    content.append(overlays, scale);
     root.append(content);
   }
   setOverlay(key: string, enabled: boolean) {

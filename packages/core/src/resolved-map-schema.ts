@@ -384,6 +384,12 @@ const numberValueSchema = z.union([
   numberExpressionSchema,
   numberZoomValueSchema,
 ]);
+const nonnegativeNumberLiteralSchema = terrainNumberValueSchema(z.number().finite().min(0));
+const nonnegativeNumberValueSchema = z.union([
+  nonnegativeNumberLiteralSchema,
+  numberExpressionSchema,
+  zoomValueSchemaFor(nonnegativeNumberLiteralSchema),
+]);
 const structuralNumberValueSchema = z.union([
   z.number().finite(),
   structuralExpressionSchema,
@@ -1182,6 +1188,7 @@ const buildingsModuleSchema = z
         lighting: z.enum(['style', 'sun']).optional(),
         colorVariation: boundedThemeNumberSchema(0, 1).optional(),
         edges: boundedThemeNumberSchema(0, 1).optional(),
+        edgeRadius: z.number().min(0).max(1).optional(),
         edgeColor: themeColorValueSchema.optional(),
         nightLight: boundedThemeNumberSchema(0, 2).optional(),
         occlusion: z.boolean().optional(),
@@ -1366,6 +1373,12 @@ const roadsModuleSchema = z
       .optional(),
     oneWayMarkers: z.boolean().optional(),
     outline: z.enum(['none', 'subtle', 'strong']).optional(),
+    rampOrder: z
+      .enum(['below-roads', 'by-class'])
+      .describe(
+        'Ramp fills draw below receiving roads by default. Use by-class to keep ramp fills in their road class order.',
+      )
+      .optional(),
     restrictions: z
       .object({
         access: roadTreatmentStyleSchema.optional(),
@@ -1378,7 +1391,20 @@ const roadsModuleSchema = z
       .optional(),
     renderStack: renderStackSchema.optional(),
     roundabouts: z
-      .object({casing: circleStyleSchema.optional(), fill: circleStyleSchema.optional()})
+      .object({
+        borderWidth: nonnegativeNumberValueSchema
+          .describe(
+            'Extra casing width in pixels, split across both edges. Defaults to the effective road border width.',
+          )
+          .optional(),
+        casing: circleStyleSchema.optional(),
+        fallbackWidth: nonnegativeNumberValueSchema
+          .describe(
+            'Road width in pixels used only when metric radii are absent. Defaults to the effective surface fill width.',
+          )
+          .optional(),
+        fill: circleStyleSchema.optional(),
+      })
       .strict()
       .optional(),
     serviceTypes: z
@@ -1444,6 +1470,12 @@ const labelsModuleSchema = z
     language: z.string().trim().min(1).optional(),
     places: z.enum(['none', 'major', 'all']).optional(),
     roadClasses: z.array(roadClassSchema).min(1).optional(),
+    roadPlacement: z
+      .enum(['ground', 'foreground'])
+      .describe(
+        'Street names draw in the foreground by default. Ground names draw below buildings, use map-aligned text by default, and yield collisions to foreground symbols. Shields and junction numbers stay in the foreground.',
+      )
+      .optional(),
     renderStack: renderStackSchema.optional(),
     roads: z.enum(['none', 'highways', 'major', 'streets', 'all']).optional(),
     styles: z

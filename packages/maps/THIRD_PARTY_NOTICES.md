@@ -1,7 +1,7 @@
 # Third-party notices
 
 Except for the Streets POI pictograms documented below, the official themed Streets, Baedeker,
-Ferraris, Härad, Siegfried, Soundings, Blueprint, and Cívica icon and pattern
+1777, Siegfried, Soundings, Blueprint, and Cívica icon and pattern
 artwork published under `assets/` is original Tileflow artwork.
 
 This file is shipped with `@tileflow/maps` so future third-party assets have a stable place for
@@ -33,9 +33,18 @@ upstream license is included at `assets/streets/LICENSE-MAKI.txt`.
 POI discs occupy 20px inside a 24px cell. The 15px Maki source geometry is scaled to a centered
 12px box before rasterization, keeping space between the pictograms and the circular border.
 
-The `ferraris` map and its nine SVG patterns are original Tileflow code and artwork. This package
-does not include or redistribute any FerrarGIS assets, code, style files, textures, fonts, source
-scans, or map data.
+## 1777 cabinet atlas reference
+
+The `map1777` map and its eleven SVG material patterns (each in four palettes) are
+original Tileflow code and artwork. Their visual reference is the eighteenth-century cabinet
+atlas held by KBR, particularly its watercolor washes, field strokes, tree marks, red
+footprints and serif lettering:
+
+- [Cabinet atlas detail published by KBR](https://www.kbr.be/wp-content/uploads/2026/05/detail-van-de-kabinetskaart.png)
+
+No historical scan, source pixel or atlas geospatial data is included. The map uses current
+Tileflow World data and the separately licensed Cormorant Garamond fonts documented below.
+This package does not redistribute third-party atlas assets, code, style files or textures.
 
 ## Streets relief
 
@@ -80,20 +89,6 @@ Mapterhorn tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn pub
 catalog of its constituent open terrain sources and their individual attribution and license terms
 at <https://mapterhorn.com/attribution/>. The compiled Style carries that link as source
 attribution.
-
-## Häradsekonomiska kartan reference
-
-The `harad` map and its nine SVG patterns are original Tileflow code and artwork inspired by the
-visual grammar of Lantmäteriet's Häradsekonomiska kartan series (1859–1934) and official legend.
-Lantmäteriet makes the [Häradsekonomiska kartan product](https://geotorget.lantmateriet.se/link/haradsekonomiska-kartan)
-available under CC0 and publishes its
-[official colored legend](https://www.lantmateriet.se/sv/kartor/vara-karttjanster/Historiska-kartor/Arkiven-som-ingar/Rikets-allmanna-kartverks-arkiv---RAK/contentassets/teckenforklaring.pdf).
-Lantmäteriet is the source of the historical visual reference, not of any packaged asset bytes.
-
-This package does not include or redistribute Lantmäteriet source scans, raster pixels, legend
-artwork, fonts, geospatial data, or map data. The package contains only Tileflow-authored style code
-and original SVG patterns for arable land, coniferous and deciduous woodland, orchards, paper grain,
-sand, settlements, water lines, and wetlands.
 
 ## Blueprint artwork and terrain data
 
@@ -142,9 +137,9 @@ attribution.
 
 ## Cormorant Garamond
 
-Baedeker and Siegfried each include their own unmodified Cormorant Garamond Regular, SemiBold, and
-Italic font files under `assets/baedeker/fonts/` and `assets/siegfried/fonts/`, respectively. Both
-copies are pinned to upstream revision `cc1bfb51ce6568cb3abf9199ab718d543f6fa189`. Cormorant is
+Baedeker, 1777 and Siegfried each include their own unmodified Cormorant Garamond Regular,
+SemiBold and Italic font files under `assets/baedeker/fonts/`, `assets/map-1777/fonts/` and
+`assets/siegfried/fonts/`, respectively. These copies are pinned to upstream revision `cc1bfb51ce6568cb3abf9199ab718d543f6fa189`. Cormorant is
 copyright 2015 the Cormorant Project Authors and is distributed under the SIL Open Font License
 1.1 included beside each map's font files as `LICENSE.txt`.
 

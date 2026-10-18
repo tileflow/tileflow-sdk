@@ -45,7 +45,7 @@ export type CameraTilesOptions<T> = Readonly<{
   /** Whether the layer wants tiles now. */
   active(): boolean;
   /** Builds a tile's value; a tile without the layers it needs gets `empty`. */
-  build(tile: TileflowTile, tileMetres: number): T;
+  build(tile: TileflowTile, tileMetres: number, signal: AbortSignal): T | Promise<T>;
   empty: T;
   /** Lets go of a tile's value when it is forgotten. */
   release(value: T): void;
@@ -83,7 +83,13 @@ const buildBudgetMs = 6;
 export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTiles<T> {
   const {map} = options;
   const tiles = new Map<string, CameraTile<T>>();
-  const queue: {key: string; tile: TileflowTile; metres: number}[] = [];
+  const queue: {
+    key: string;
+    entry: CameraTile<T>;
+    controller: AbortController;
+    tile: TileflowTile;
+    metres: number;
+  }[] = [];
   let wanted: string[] = [];
   let reader: TileflowTileReader | undefined;
   let zoom = options.zoom;
@@ -149,7 +155,11 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
         tiles.set(key, entry);
       }
       entry.used = now;
-      if (!entry.value && !entry.loading && (entry.retryAt ?? 0) <= now)
+      if (
+        (!entry.value || entry.retryAt !== undefined) &&
+        !entry.loading &&
+        (entry.retryAt ?? 0) <= now
+      )
         load(source, key, entry, tileMetres);
     }
     evict();
@@ -164,55 +174,85 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
   ): void {
     const controller = new AbortController();
     entry.loading = controller;
+    entry.retryAt = undefined;
     source
       .readTile({z: zoom, x: entry.x, y: entry.y}, {signal: controller.signal})
       .then((tile) => {
-        entry.loading = undefined;
-        if (disposed || tiles.get(key) !== entry) return;
+        if (disposed || tiles.get(key) !== entry || entry.loading !== controller) return;
         // An absent tile stays empty; it is not read again.
         if (!tile) {
           if (entry.value && entry.value !== options.empty) options.release(entry.value);
           entry.value = options.empty;
+          entry.loading = undefined;
+          options.changed();
+          map.triggerRepaint();
           return;
         }
-        queue.push({key, tile, metres: tileMetres});
+        // Rapid refreshes need not retain decoded tiles for superseded queued builds.
+        for (let at = queue.length - 1; at >= 0; at -= 1) {
+          const queued = queue[at]!;
+          if (queued.entry.loading !== queued.controller || queued.controller.signal.aborted)
+            queue.splice(at, 1);
+        }
+        queue.push({key, entry, controller, tile, metres: tileMetres});
         drain();
       })
       .catch(() => {
+        if (disposed || entry.loading !== controller) return;
         entry.loading = undefined;
         // A tile that failed is read again after a while, not at every camera move.
         entry.retryAt = performance.now() + 15_000;
       });
   }
 
-  /** Builds waiting tiles a few milliseconds per frame, so the map keeps its frame rate. */
+  /** Async builders keep expensive work off the map thread; synchronous layers retain a frame budget. */
   function drain(): void {
     if (building || disposed) return;
     building = true;
-    const step = () => {
+    const step = async () => {
       const started = performance.now();
       let built = false;
-      while (queue.length && performance.now() - started < buildBudgetMs) {
-        const {key, tile, metres: tileMetres} = queue.shift()!;
-        const entry = tiles.get(key);
-        if (!entry) continue;
-        // A tile built again lets go of what it held once the new build replaces it.
-        const previous = entry.value;
+      while (!disposed && queue.length && performance.now() - started < buildBudgetMs) {
+        const {key, entry, controller, tile, metres: tileMetres} = queue.shift()!;
+        const current = () =>
+          !disposed &&
+          tiles.get(key) === entry &&
+          entry.loading === controller &&
+          !controller.signal.aborted;
+        if (!current()) continue;
+        let value: T;
         try {
-          entry.value = options.build(tile, tileMetres);
+          value = await options.build(tile, tileMetres, controller.signal);
         } catch {
-          entry.value = options.empty;
+          if (current()) {
+            entry.loading = undefined;
+            entry.retryAt = performance.now() + 15_000;
+          }
+          continue;
         }
-        if (previous && previous !== options.empty && previous !== entry.value)
-          options.release(previous);
+        if (!current()) {
+          if (value !== options.empty) options.release(value);
+          continue;
+        }
+        const previous = entry.value;
+        entry.value = value;
+        entry.loading = undefined;
+        if (previous && previous !== options.empty && previous !== value) options.release(previous);
         built = true;
       }
-      if (built) options.changed();
-      map.triggerRepaint();
-      if (queue.length && !disposed) cameraFrame(step);
+      if (built && !disposed) {
+        options.changed();
+        map.triggerRepaint();
+      }
+      if (queue.length && !disposed)
+        cameraFrame(() => {
+          void step();
+        });
       else building = false;
     };
-    cameraFrame(step);
+    cameraFrame(() => {
+      void step();
+    });
   }
 
   /** Forgets the tiles least recently wanted beyond twice the tiles drawn. */

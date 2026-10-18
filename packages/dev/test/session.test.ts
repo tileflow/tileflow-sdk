@@ -634,7 +634,7 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /this\.setEnabled\(!this\.enabled\)/);
   assert.match(preview, /this\.enabled \? "3D ON" : "3D OFF"/);
   assert.match(preview, /this\.enabled \? "TREES ON" : "TREES OFF"/);
-  assert.match(preview, /readToggleFromUrl\("buildings3d", false\)/);
+  assert.match(preview, /readToggleFromUrl\("buildings3d", true\)/);
   assert.match(preview, /readToggleFromUrl\("trees3d", true\)/);
   assert.match(preview, /map\.fire\("tileflow:trees-toggle"/);
   assert.match(preview, /treeControl = new TreeControl\(\)/);
@@ -1044,10 +1044,15 @@ test('selects map and scene previews with their configured cameras and viewport'
   assert.equal('fitBoundsOptions' in (persisted.mapOptions ?? {}), false);
   persisted.emit('styledata');
   persisted.emit('load');
-  assert.equal(persisted.threeDimensionalLabel(), '3D OFF');
+  assert.equal(persisted.threeDimensionalLabel(), '3D ON');
   assert.equal(persisted.treeLabel(), 'TREES ON');
-  assert.equal(persisted.buildingVisibility(), 'none');
+  assert.equal(persisted.buildingVisibility(), 'visible');
   assert.equal(persisted.treeVisibility(), 'visible');
+  persisted.toggleThreeDimensional();
+  assert.equal(persisted.threeDimensionalLabel(), '3D OFF');
+  assert.equal(persisted.buildingVisibility(), 'none');
+  persisted.emit('styledata');
+  assert.equal(persisted.buildingVisibility(), 'none');
   persisted.toggleThreeDimensional();
   assert.equal(persisted.pitch(), 0);
   assert.equal(persisted.threeDimensionalLabel(), '3D ON');
@@ -1113,19 +1118,36 @@ test('selects map and scene previews with their configured cameras and viewport'
 
   // A style that describes its 3D scene: the controls show and hide Core's layers, which stand in
   // for the compiled extrusion and the flat trees.
-  const coreScene = runPreviewScript(boundsHtml, 'http://localhost/?lng=-3.7&lat=40.4&zoom=16', {
+  const automaticScene = runPreviewScript(boundsHtml, 'http://localhost/?zoom=16', {
     coreScene: true,
   });
+  automaticScene.emit('styledata');
+  automaticScene.emit('load');
+  assert.equal(automaticScene.threeDimensionalLabel(), '3D ON');
+  assert.ok(automaticScene.coreCalls().includes('buildings:show'));
+
+  const coreScene = runPreviewScript(
+    boundsHtml,
+    'http://localhost/?lng=-3.7&lat=40.4&zoom=16&buildings3d=off',
+    {
+      coreScene: true,
+    },
+  );
   coreScene.emit('styledata');
   coreScene.emit('load');
   // Model trees start enabled even with 3D buildings off and pitch zero.
-  assert.deepEqual(coreScene.coreCalls(), ['buildings:create', 'trees:create', 'trees:show']);
+  assert.deepEqual(coreScene.coreCalls(), [
+    'buildings:create',
+    'trees:create',
+    'trees:show',
+    'buildings:hide',
+  ]);
   assert.equal(coreScene.treeVisibility(), 'none');
   coreScene.toggleThreeDimensional();
   assert.equal(coreScene.buildingVisibility(), 'none');
   coreScene.toggleTrees();
   coreScene.emit('styledata');
-  assert.deepEqual(coreScene.coreCalls().slice(3), [
+  assert.deepEqual(coreScene.coreCalls().slice(4), [
     'lights:create',
     'buildings:show',
     'trees:hide',
@@ -1143,7 +1165,19 @@ test('selects map and scene previews with their configured cameras and viewport'
       zoom: 16,
     },
   });
-  assert.deepEqual(coreScene.coreCalls().slice(6), ['lights:dispose', 'buildings:hide']);
+  assert.deepEqual(coreScene.coreCalls().slice(7), ['lights:dispose', 'buildings:hide']);
+
+  const unlitScene = runPreviewScript(boundsHtml, 'http://localhost/?zoom=16&buildings3d=on', {
+    coreScene: true,
+    streetLights: false,
+  });
+  unlitScene.emit('styledata');
+  unlitScene.emit('load');
+  assert.ok(unlitScene.coreCalls().includes('buildings:show'));
+  assert.equal(
+    unlitScene.coreCalls().some((call) => call.startsWith('lights:')),
+    false,
+  );
 
   const hiddenVegetation = runPreviewScript(boundsHtml, 'http://localhost/?zoom=16', {
     coreScene: true,
@@ -1459,7 +1493,12 @@ export default defineMap({id: 'main', version: 1, extends: streets, icons: [...s
 function runPreviewScript(
   html: string,
   href: string,
-  options: {coreScene?: boolean; vegetationVisible?: boolean; sharedStatus?: boolean} = {},
+  options: {
+    coreScene?: boolean;
+    streetLights?: boolean;
+    vegetationVisible?: boolean;
+    sharedStatus?: boolean;
+  } = {},
 ): {
   applyParentMapState(data: unknown): void;
   bearing(): number;
@@ -1507,7 +1546,7 @@ function runPreviewScript(
   const coreMetadata = options.coreScene
     ? {
         'tileflow:buildings': {version: 1},
-        'tileflow:street-lights': {version: 1},
+        ...(options.streetLights !== false ? {'tileflow:street-lights': {version: 1}} : {}),
         'tileflow:vegetation': {version: 1, flatLayers: ['tileflow-vegetation-trees']},
       }
     : {};

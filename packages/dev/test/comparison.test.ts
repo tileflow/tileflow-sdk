@@ -23,16 +23,16 @@ test('renders a map-only workspace with a versioned bridge and no capture or com
     left: {
       basePath: '/__left',
       eventsUrl: '/__left/__events',
-      label: 'Härad',
-      previewUrl: '/__left/?map=harad&theme=paper',
-      sidecarUrl: '/__left/__inspection.json?map=harad',
+      label: 'Baedeker',
+      previewUrl: '/__left/?map=baedeker&theme=paper',
+      sidecarUrl: '/__left/__inspection.json?map=baedeker',
       statusUrl: '/__left/__status',
     },
     right: {
       basePath: '/__right',
       eventsUrl: '/__right/__events',
-      label: 'Ferraris',
-      previewUrl: '/__right/?map=ferraris&theme=paper',
+      label: '1777',
+      previewUrl: '/__right/?map=map-1777&theme=paper',
       statusUrl: '/__right/__status',
     },
     schemaVersion: 1,
@@ -265,7 +265,7 @@ test('Vegetation Auto inherits the map and returning to it removes only the mode
   assert.equal(representation().value, 'inherit');
 });
 
-test('Controls automatically groups edits, preserves the camera and keeps details expanded', async () => {
+test('Controls automatically groups edits, preserves the camera and keeps active module fields visible', async () => {
   const compiled: URL[] = [];
   const harness = runComparisonHarness('', {
     single: true,
@@ -280,8 +280,8 @@ test('Controls automatically groups edits, preserves the camera and keeps detail
   await harness.click('controls-toggle');
   await harness.settle();
   const modules = harness.element('controls-modules');
-  const details = modules.querySelectorAll('details')[0]!;
-  assert.equal(details.open, true);
+  const fields = modules.querySelectorAll('fieldset')[0]!;
+  assert.equal(fields.hidden, false);
   const height = modules.querySelectorAll('input').find((input) => input.type === 'number')!;
   for (const value of ['1.2', '1.4', '1.6']) {
     height.value = value;
@@ -307,7 +307,7 @@ test('Controls automatically groups edits, preserves the camera and keeps detail
   harness.pollIntervals();
   await harness.settle();
   assert.equal(modules.disabled, false);
-  assert.equal(modules.querySelectorAll('details')[0]!.open, true);
+  assert.equal(fields.hidden, false);
 });
 
 test('Controls discards an obsolete compile and applies the latest edit without another click', async () => {
@@ -546,7 +546,7 @@ test('a failed compile leaves the map and editable values intact, and a later ed
   assert.equal(harness.element('left-frame').src, '/left/');
 });
 
-test('palette changes share the latest-edit queue and never replace focused module fields', async () => {
+test('theme changes share the latest-edit queue and never replace focused module fields', async () => {
   const requests: {url: URL; resolve: (response: Response) => void}[] = [];
   const harness = runComparisonHarness('', {
     single: true,
@@ -554,7 +554,7 @@ test('palette changes share the latest-edit queue and never replace focused modu
       url.pathname.endsWith('/__controls')
         ? Response.json({...controlsFixture, theme: url.searchParams.get('theme')})
         : !url.searchParams.has('controls')
-          ? Response.json({layers: []}) // Palette swatches read base styles independently of edits.
+          ? Response.json({layers: []}) // Theme swatches read base styles independently of edits.
           : new Promise<Response>((resolve) => requests.push({url, resolve})),
     workbenchRequest: (path) =>
       path === ''
@@ -651,7 +651,7 @@ test('Controls rejects incomplete input and Reset supersedes a pending compilati
   assert.equal(requests.length, 1);
   const url = new URL(harness.previewUrl());
   assert.equal(url.searchParams.has('controls'), false);
-  assert.equal(url.searchParams.get('buildings3d'), 'off');
+  assert.equal(url.searchParams.get('buildings3d'), 'on');
 });
 
 test('single-map router serves only its configured side and advanced Workbench', async () => {
@@ -1016,7 +1016,7 @@ test('validates same-origin owned URLs and disjoint bounded route prefixes', () 
   );
 });
 
-test('Workbench publishes viewport context and changes palette without replacing its camera', async () => {
+test('Workbench publishes viewport context and changes theme without replacing its camera', async () => {
   const requests: Array<{path: string; body: unknown}> = [];
   const selection = {
     id: 'map:map:faded',
@@ -1803,6 +1803,152 @@ test('Controls groups preset families and applies time segments with pointer and
   assert.equal(harness.element('wb-time-of-day-field').hidden, true);
 });
 
+test('Streets theme cards use Default, Faded, Monochrome order while preserving legacy IDs and time of day', async () => {
+  const requests: Array<{path: string; body: any}> = [];
+  const variants = {
+    light: {day: 'light', dawn: 'dawn', dusk: 'dusk', night: 'dark'},
+    faded: {day: 'faded', dawn: 'dawn-faded', dusk: 'dusk-faded', night: 'dark-faded'},
+    monochrome: {
+      day: 'monochrome',
+      dawn: 'dawn-monochrome',
+      dusk: 'dusk-monochrome',
+      night: 'dark-monochrome',
+    },
+  };
+  const selections = Object.values(variants)
+    .flatMap((times) => Object.values(times))
+    .sort()
+    .map((theme) => ({
+      id: `map:map:${theme}`,
+      map: 'map',
+      theme,
+      label: theme,
+      url: `/left/?map=map&theme=${theme}`,
+    }));
+  const harness = runComparisonHarness('', {
+    single: true,
+    leftPreviewUrl: '/left/?map=map&theme=light',
+    workbenchRequest: (path, body) => {
+      requests.push({path, body});
+      return path === ''
+        ? {sides: {left: {generation: 1, status: 'ready', selections, timeOfDay: {map: variants}}}}
+        : {saved: true};
+    },
+  });
+  harness.maps.left.metadata['tileflow:theme'] = 'light';
+  Object.assign(harness.maps.left.metadata, {'tileflow:extends': ['streets']});
+  harness.load('left');
+  await harness.settle();
+  const options = harness.element('wb-theme').options as FakeElement[];
+  assert.deepEqual(
+    options.map(({textContent}) => textContent),
+    ['Default', 'Faded', 'Monochrome'],
+  );
+  assert.deepEqual(
+    options.map(({value}) => value),
+    ['light', 'faded', 'monochrome'],
+  );
+  assert.deepEqual(
+    (harness.element('wb-palettes').children as FakeElement[]).map(
+      (card) => (card.children[1] as FakeElement).textContent,
+    ),
+    ['Default', 'Faded', 'Monochrome'],
+  );
+  assert.equal(harness.element('wb-theme').value, 'light');
+  assert.equal(selectedMoment(harness), 'day');
+  harness.pollIntervals();
+  await harness.settle();
+  const context = requests.filter(({path}) => path === '/context').at(-1)?.body.context;
+  assert.equal(context.definition.theme, 'light');
+  assert.deepEqual(context.appearance, {
+    theme: 'Default',
+    themeId: 'light',
+    timeOfDay: 'day',
+    concreteThemeId: 'light',
+  });
+  timeSegment(harness, 'night').dispatch('click');
+  harness.flushTimeouts();
+  await harness.settle();
+  assert.equal(new URL(harness.previewUrl()).searchParams.get('theme'), 'dark');
+  assert.equal(harness.element('wb-theme').value, 'light');
+  assert.equal(selectedMoment(harness), 'night');
+});
+
+test('1777 exposes a single Default family while switching all four time presets', async () => {
+  const variants = {light: {day: 'light', dawn: 'dawn', dusk: 'dusk', night: 'dark'}};
+  const selections = Object.values(variants.light).map((theme) => ({
+    id: `map:map:${theme}`,
+    map: 'map',
+    theme,
+    label: theme,
+    url: `/left/?map=map&theme=${theme}`,
+  }));
+  const harness = runComparisonHarness('', {
+    single: true,
+    leftPreviewUrl: '/left/?map=map&theme=light',
+    workbenchRequest: (path) =>
+      path === ''
+        ? {sides: {left: {generation: 1, status: 'ready', selections, timeOfDay: {map: variants}}}}
+        : {saved: true},
+  });
+  Object.assign(harness.maps.left.metadata, {
+    'tileflow:theme': 'light',
+    'tileflow:extends': ['map-1777'],
+  });
+  harness.load('left');
+  await harness.settle();
+  assert.deepEqual(
+    (harness.element('wb-theme').options as FakeElement[]).map(({textContent}) => textContent),
+    ['Default'],
+  );
+  for (const [moment, concrete] of Object.entries(variants.light)) {
+    timeSegment(harness, moment).dispatch('click');
+    harness.flushTimeouts();
+    await harness.settle();
+    assert.equal(new URL(harness.previewUrl()).searchParams.get('theme'), concrete);
+    assert.equal(selectedMoment(harness), moment);
+    assert.equal(harness.element('wb-theme').value, 'light');
+  }
+});
+
+test('custom map theme cards retain catalog order and their Light display name', async () => {
+  const variants = {
+    light: {day: 'light', night: 'dark'},
+    faded: {day: 'faded', night: 'dark-faded'},
+    monochrome: {day: 'monochrome', night: 'dark-monochrome'},
+  };
+  const selections = ['monochrome', 'dark-monochrome', 'faded', 'dark-faded', 'light', 'dark'].map(
+    (theme) => ({
+      id: `map:map:${theme}`,
+      map: 'map',
+      theme,
+      label: theme,
+      url: `/left/?map=map&theme=${theme}`,
+    }),
+  );
+  const harness = runComparisonHarness('', {
+    single: true,
+    leftPreviewUrl: '/left/?map=map&theme=light',
+    workbenchRequest: (path) =>
+      path === ''
+        ? {sides: {left: {generation: 1, status: 'ready', selections, timeOfDay: {map: variants}}}}
+        : {saved: true},
+  });
+  harness.maps.left.metadata['tileflow:theme'] = 'light';
+  harness.load('left');
+  await harness.settle();
+  assert.deepEqual(
+    (harness.element('wb-theme').options as FakeElement[]).map(({value}) => value),
+    ['monochrome', 'faded', 'light'],
+  );
+  assert.deepEqual(
+    (harness.element('wb-palettes').children as FakeElement[]).map(
+      (card) => (card.children[1] as FakeElement).textContent,
+    ),
+    ['Monochrome', 'Faded', 'Light'],
+  );
+});
+
 test('single-map user navigation updates the URL without requiring a second viewer', async () => {
   const harness = runComparisonHarness('', {single: true});
   harness.load('left');
@@ -1849,7 +1995,7 @@ test('appearance waits for the command’s map and rejects saved URLs for a diff
   assert.equal(new URL(harness.previewUrl()).searchParams.get('map'), 'map');
 });
 
-test('appearance restores a same-map palette and an explicit aliased moment', async () => {
+test('appearance restores a same-map theme and an explicit aliased moment', async () => {
   const harness = runComparisonHarness('?view=map%3Amap%3Afaded&time-of-day=dawn', {
     single: true,
     leftPreviewUrl: '/left/?scene=proof',
@@ -1885,7 +2031,7 @@ test('appearance restores a same-map palette and an explicit aliased moment', as
   assert.equal(new URL(harness.previewUrl()).searchParams.get('theme'), 'faded');
   assert.equal(harness.element('wb-theme').value, 'faded');
   assert.equal(selectedMoment(harness), 'dawn');
-  // A palette without Dawn falls back to its own supported moment.
+  // A theme without Dawn falls back to its own supported moment.
   harness.element('wb-theme').value = 'theme';
   harness.element('wb-theme').dispatch('change');
   assert.equal(selectedMoment(harness), 'day');
@@ -1894,7 +2040,7 @@ test('appearance restores a same-map palette and an explicit aliased moment', as
   assert.equal(new URL(harness.previewUrl()).searchParams.get('theme'), 'theme');
 });
 
-test('palettes and modules are available while Streets tiles are still loading', async () => {
+test('themes and modules are available while Streets tiles are still loading', async () => {
   const harness = runComparisonHarness('', {
     single: true,
     controlsRequest: () => Response.json(controlsFixture),

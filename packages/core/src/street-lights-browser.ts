@@ -38,6 +38,11 @@ export type TileflowStreetLightsMap = {
 export type TileflowStreetLightsOptions = Readonly<{
   map: TileflowStreetLightsMap;
   /**
+   * By default, only a map that enables roads.streetLights supplies lights. Set true to opt in
+   * with the fallback design when metadata is absent, or false to keep every theme's lights off.
+   */
+  enabled?: boolean;
+  /**
    * The theme controller, whose sun switches the lights on and off and whose themes hold the map's
    * street lights (the roads module's `streetLights`).
    */
@@ -122,6 +127,7 @@ export function createTileflowStreetLights(
 
   // --- The map's design ---
 
+  let fallbackMetadata: Record<string, unknown> | undefined;
   let designs:
     | {values: readonly unknown[]; parsed: TileflowStreetLightsDesign[]; declared: boolean}
     | undefined;
@@ -130,7 +136,8 @@ export function createTileflowStreetLights(
   function designsOnScreen() {
     const read = options.controller?.getThemeMetadata?.(tileflowStreetLightsMetadataKey) ?? {
       values: [
-        (map.getStyle() as {metadata?: Record<string, unknown>} | undefined)?.metadata?.[
+        (fallbackMetadata ??=
+          (map.getStyle() as {metadata?: Record<string, unknown>} | undefined)?.metadata ?? {})[
           tileflowStreetLightsMetadataKey
         ],
       ],
@@ -146,7 +153,14 @@ export function createTileflowStreetLights(
       );
       designs = {
         values: read.values,
-        parsed: parsed.map((entry) => entry ?? tileflowDefaultStreetLightsDesign),
+        parsed: parsed.map((entry) =>
+          options.enabled === false
+            ? disabledStreetLightsDesign
+            : (entry ??
+              (options.enabled === true
+                ? tileflowDefaultStreetLightsDesign
+                : disabledStreetLightsDesign)),
+        ),
         declared: parsed.some((entry) => entry !== undefined),
       };
     }
@@ -247,6 +261,7 @@ export function createTileflowStreetLights(
 
   /** How far the lights have switched on, from 0 by day to 1 at night. */
   function onNow(): number {
+    if (appearance().intensity <= 0) return 0;
     const brightness = sunNow().brightness;
     return Math.min(1, Math.max(0, (switchOn[1] - brightness) / (switchOn[1] - switchOn[0])));
   }
@@ -451,7 +466,13 @@ export function createTileflowStreetLights(
   }
 
   function attach(): void {
-    if (disposed || map.getLayer(tileflowStreetLightsLayerId) || !map.isStyleLoaded()) return;
+    if (disposed || !map.isStyleLoaded()) return;
+    const enabled = designsOnScreen().themes.some((theme) => theme.intensity > 0);
+    if (!enabled) {
+      if (map.getLayer(tileflowStreetLightsLayerId)) map.removeLayer(tileflowStreetLightsLayerId);
+      return;
+    }
+    if (map.getLayer(tileflowStreetLightsLayerId)) return;
     try {
       map.addLayer(layer, beforeId());
     } catch {
@@ -460,7 +481,10 @@ export function createTileflowStreetLights(
   }
 
   // A style still loading takes the layer once it has loaded.
-  const onStyle = () => attach();
+  const onStyle = () => {
+    fallbackMetadata = undefined;
+    attach();
+  };
   map.on('styledata', onStyle);
   map.on('idle', onStyle);
   attach();
@@ -498,6 +522,11 @@ export function createTileflowStreetLights(
     },
   };
 }
+
+const disabledStreetLightsDesign: TileflowStreetLightsDesign = Object.freeze({
+  ...tileflowDefaultStreetLightsDesign,
+  intensity: 0,
+});
 
 const emptyTile: LightTile = Object.freeze({
   placement: Object.freeze({lamps: new Uint8Array(0), mapped: 0, estimated: 0}),

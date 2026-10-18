@@ -73,9 +73,15 @@ function evaluate(
   return parsed.value.evaluate(
     {zoom},
     {
-      type: 'Feature',
+      // Physical cohorts may dispatch on geometry as well as class. Supply the vector-feature
+      // geometry the renderer sees; a GeoJSON Point would select no road branch.
+      type:
+        layer.type === 'line'
+          ? 2
+          : layer.type === 'fill' || layer.type === 'fill-extrusion'
+            ? 3
+            : 1,
       properties,
-      geometry: {type: 'Point', coordinates: [0, 0]},
     } as never,
     {},
   );

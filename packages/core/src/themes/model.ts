@@ -1,8 +1,3 @@
-import {
-  resolveTileflowTimeOfDayTheme,
-  type TileflowTimeOfDay,
-  type TileflowTimeOfDayVariants,
-} from '../time-of-day';
 import {isMapLibreExpressionOperator} from '../cartography/expression-operators';
 import type {
   TileflowFixedValue,
@@ -20,6 +15,7 @@ import {
   isTileflowThemeTokenReference,
   tileflowThemeTokenCategories,
 } from '../cartography/values';
+import {isTileflowReset, type TileflowReset} from '../maps/operations';
 import {isTileflowThemeName} from '../portable-identity-rules';
 import {
   normalizeTileflowAzimuth,
@@ -27,6 +23,11 @@ import {
   tileflowSunLight,
   type TileflowSunPreset,
 } from '../sun';
+import {
+  resolveTileflowTimeOfDayTheme,
+  type TileflowTimeOfDay,
+  type TileflowTimeOfDayVariants,
+} from '../time-of-day';
 import type {ResolvedTileflowTypography, TileflowLight, TileflowTypographyStyle} from '../types';
 import {classifyTileflowVisualProperty, type TileflowVisualValueCategory} from './visual-semantics';
 
@@ -113,9 +114,14 @@ type TileflowThemeTokenOverrides = {
   [TCategory in keyof TileflowThemeTokens]?: Readonly<Partial<TileflowThemeTokens[TCategory]>>;
 };
 
+type TileflowThemeLightingOverrides = {
+  [TKey in keyof TileflowThemeLighting]?: TileflowThemeLighting[TKey] | TileflowReset;
+};
+
 /** Input accepted by defineTheme. The returned theme is always fully materialized. */
 export type TileflowThemeDefinition = Pick<TileflowTheme, 'colorScheme' | 'id' | 'version'> & {
-  lighting?: TileflowThemeLighting;
+  /** Refine inherited light, or use reset() to remove all or one direct lighting property. */
+  lighting?: TileflowThemeLightingOverrides | TileflowReset;
   tokens?: TileflowThemeTokenOverrides;
   typography?: TileflowThemeTypography;
 };
@@ -1170,7 +1176,7 @@ function assertThemeDefinition(definition: TileflowThemeDefinition): void {
     assertThemeTypography(record.typography, 'theme.typography');
   }
   if (Object.hasOwn(record, 'lighting')) {
-    assertThemeLighting(record.lighting, 'theme.lighting');
+    assertThemeLighting(record.lighting, 'theme.lighting', true);
   }
   cloneJson(definition);
 }
@@ -1244,9 +1250,15 @@ function assertThemeTypographyStyleFields(
   }
 }
 
-function assertThemeLighting(value: unknown, path: string): void {
-  const lighting = assertPlainThemeRecord(value, path);
-  assertExactThemeKeys(lighting, path, themeLightingKeys);
+function assertThemeLighting(value: unknown, path: string, allowReset = false): void {
+  if (allowReset && isTileflowReset(value)) return;
+  const authored = assertPlainThemeRecord(value, path);
+  assertExactThemeKeys(authored, path, themeLightingKeys);
+  // Reset belongs only to authoring composition. Resolved theme documents remain free of
+  // inheritance operations, so their schema and runtime representation do not change.
+  const lighting = allowReset
+    ? Object.fromEntries(Object.entries(authored).filter(([, entry]) => !isTileflowReset(entry)))
+    : authored;
   if (Object.hasOwn(lighting, 'sun')) {
     const sun = assertPlainThemeRecord(lighting.sun, `${path}.sun`);
     assertExactThemeKeys(sun, `${path}.sun`, themeSunKeys);
@@ -1584,18 +1596,25 @@ function mergeOptionalStyle(
   return Object.keys(value).length ? {[key]: value} : {};
 }
 
-/** Lighting over a base: the sun and the ambient light merge value by value. */
+/** Lighting over a base: sun and ambient merge; reset() removes an inherited property. */
 function mergeLighting(
   base: TileflowThemeLighting,
-  overlay: TileflowThemeLighting,
+  overlay: TileflowThemeLightingOverrides | TileflowReset,
 ): TileflowThemeLighting {
-  const merged = mergeRecord(base, overlay);
-  for (const key of ['sun', 'ambient'] as const) {
-    if (base[key] !== undefined && overlay[key] !== undefined) {
-      (merged as Record<string, unknown>)[key] = mergeRecord(base[key]!, overlay[key]!);
+  if (isTileflowReset(overlay)) return {};
+  const merged: Record<string, unknown> = cloneJson(base);
+  for (const key of themeLightingKeys) {
+    const value = overlay[key];
+    if (isTileflowReset(value)) {
+      delete merged[key];
+    } else if (value !== undefined) {
+      merged[key] =
+        (key === 'sun' || key === 'ambient') && base[key] !== undefined
+          ? mergeRecord(base[key]!, value as TileflowThemeSun | TileflowThemeAmbient)
+          : cloneJson(value);
     }
   }
-  return merged;
+  return merged as TileflowThemeLighting;
 }
 
 function mergeRecord<T extends object>(base: T, overlay: Partial<T>): T {

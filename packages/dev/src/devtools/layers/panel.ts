@@ -4,6 +4,7 @@ import {FontPreviews} from '../font-preview';
 import {bindLiveColorInput} from '../live-color';
 import {evaluatedValue, propertiesFor, propertySpec, type StyleEdits} from '../style-edits';
 import type {DevtoolsHost, PreviewWindow, Side} from '../types';
+import {explainFeatureVisibility} from './explain';
 import {LayerHighlight} from './highlight';
 import {
   contextMarkdown,
@@ -96,6 +97,8 @@ export class LayersPanel {
     revision: string;
   };
   private revealSelection = true;
+  private ruleTarget?: {section: 'paint' | 'layout' | 'filter'; property: string};
+  private focusTarget = false;
   private map?: MapLibreMap;
   private side?: Side;
   private epoch = -1;
@@ -401,11 +404,21 @@ export class LayersPanel {
     return sample;
   }
   /** The map picker and the layer list share one selection and one Rules panel. */
-  reveal(side: Side, id: string, feature?: MapGeoJSONFeature, coordinate?: [number, number]) {
+  reveal(
+    side: Side,
+    id: string,
+    feature?: MapGeoJSONFeature,
+    coordinate?: [number, number],
+    target?: {section: 'paint' | 'layout' | 'filter'; property: string},
+    preview = false,
+  ) {
     if (this.options.host.active() !== side) return;
-    if (feature && this.picked?.feature === feature && this.selectedId === id) return;
+    if (!target && feature && this.picked?.feature === feature && this.selectedId === id) return;
     this.refresh();
     this.select(id, true);
+    this.ruleTarget = target;
+    this.focusTarget = Boolean(target);
+    if (target && target.section !== 'filter') this.showDefaults = true;
     if (feature) this.visibleIds?.add(id);
     if (feature)
       this.picked = {
@@ -421,6 +434,24 @@ export class LayersPanel {
     this.revealSelection = true;
     this.renderList(true);
     this.selectTab('Rules');
+    if (preview) this.preview.select(id);
+  }
+  private focusRuleTarget() {
+    const target = this.ruleTarget;
+    if (!target) return;
+    const row = [...this.content.querySelectorAll<HTMLElement>('[data-rule-property]')].find(
+      (node) =>
+        node.dataset.ruleSection === target.section &&
+        node.dataset.ruleProperty === target.property,
+    );
+    if (!row) return;
+    row.dataset.diagnosticTarget = 'true';
+    row.tabIndex = -1;
+    if (this.focusTarget) {
+      row.scrollIntoView({block: 'nearest'});
+      row.focus({preventScroll: true});
+      this.focusTarget = false;
+    }
   }
   private pickRevision() {
     return JSON.stringify([
@@ -431,6 +462,7 @@ export class LayersPanel {
   }
   private select(id: string, fromPicker = false) {
     this.selectedId = id;
+    this.ruleTarget = undefined;
     this.picked = undefined;
     if (!fromPicker) this.options.host.clearFeatureSelection?.();
     this.sampleIndex = 0;
@@ -545,6 +577,8 @@ export class LayersPanel {
   private renderFilter(layer: LayerRecord) {
     const section = el('section', 'dt-layer-section'),
       head = el('div', 'dt-rule-toggle');
+    section.dataset.ruleSection = 'filter';
+    section.dataset.ruleProperty = 'filter';
     const edits = this.options.editor(this.side!),
       target = {layer: layer.id, section: 'filter' as const, property: 'filter'};
     const entry = edits.entries.get(edits.key(target)),
@@ -783,6 +817,8 @@ export class LayersPanel {
     this.detailKey = key;
     this.copy.disabled = !this.map || !this.selectedId;
     const scroll = this.content.scrollTop;
+    if ((document.activeElement as HTMLElement | null)?.dataset.diagnosticTarget === 'true')
+      this.focusTarget = true;
     this.clearRuleInputs();
     this.heading.replaceChildren();
     this.content.replaceChildren();
@@ -797,27 +833,10 @@ export class LayersPanel {
       el('strong', '', layer ? layerLabel(layer) : 'Layer no longer present'),
       el('code', '', this.selectedId),
     );
-    const actions = el('div', 'dt-layer-actions');
     if (layer) {
-      actions.append(
-        action(layer.layout.visibility === 'none' ? 'Show layer' : 'Hide layer', () =>
-          this.toggleVisibility([layer]),
-        ),
-      );
       const status = el('div', 'dt-layer-status');
       status.dataset.state = eligibility(layer, this.map.getZoom());
-      const inView = this.samples.status === 'ready' && (this.samples.total ?? 0) > 0;
-      status.append(
-        el(
-          'span',
-          '',
-          inView
-            ? `● Drawing · z${this.map.getZoom().toFixed(1)}`
-            : `${status.dataset.state} · z${this.map.getZoom().toFixed(1)}`,
-        ),
-        this.zoomRange(layer),
-        el('span', '', `z${layer.minzoom}–${layer.maxzoom}`),
-      );
+      status.append(this.zoomRange(layer), el('span', '', `z${layer.minzoom}–${layer.maxzoom}`));
       if (status.dataset.state === 'Outside zoom')
         status.append(
           action('Go to range', () =>
@@ -827,10 +846,8 @@ export class LayersPanel {
           ),
         );
       title.append(status);
-      if (layer.source)
-        actions.append(action('Source tiles ↗', () => this.options.network(layer.source!)));
     }
-    this.heading.append(title, actions);
+    this.heading.append(title);
     if (this.tab === 'Diagnosis') this.renderDiagnosis(layer);
     if (this.tab === 'Rules' && layer) this.renderRules(layer);
     if (this.tab === 'Data' && layer) this.renderData(layer);
@@ -844,10 +861,15 @@ export class LayersPanel {
         ),
       );
     this.content.scrollTop = force ? 0 : scroll;
+    if (this.tab === 'Rules') this.focusRuleTarget();
   }
   private renderDiagnosis(layer?: LayerRecord) {
     const evidence = el('div', 'dt-layer-evidence');
-    for (const item of diagnoseLayer(this.map!, layer, this.samples)) {
+    const feature = this.picked?.feature ?? this.samples.features[this.sampleIndex];
+    for (const item of [
+      ...diagnoseLayer(this.map!, layer, this.samples),
+      ...(layer ? explainFeatureVisibility(this.map!, layer, feature) : []),
+    ]) {
       const row = el('div', 'dt-layer-evidence-row');
       row.dataset.state = item.state;
       row.append(
@@ -946,6 +968,8 @@ export class LayersPanel {
         const row = el('tr'),
           rule = el('td'),
           value = el('td');
+        row.dataset.ruleSection = section;
+        row.dataset.ruleProperty = key;
         rule.append(
           el('code', 'dt-layer-rule-name', key),
           el(
@@ -1021,7 +1045,9 @@ export class LayersPanel {
         body.append(row);
       }
       table.append(body);
-      this.content.append(table);
+      const card = el('div', 'dt-card dt-card-table');
+      card.append(table);
+      this.content.append(card);
     }
     this.renderFilter(layer);
   }

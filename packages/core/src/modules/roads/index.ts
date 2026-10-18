@@ -21,6 +21,7 @@ export type ResolvedRoadsModuleOptions = {
   hierarchy: TileflowRoadHierarchy;
   oneWayMarkers: boolean;
   outline: TileflowRoadOutline;
+  rampOrder: 'below-roads' | 'by-class';
   weight: TileflowRoadWeight;
   widthScale?: Record<TileflowRoadClass, number>;
 };
@@ -43,6 +44,7 @@ const defaults = {
   hierarchy: 'clear',
   oneWayMarkers: false,
   outline: 'subtle',
+  rampOrder: 'below-roads',
   weight: 'regular',
 } as const satisfies Omit<ResolvedRoadsModuleOptions, 'widthScale'>;
 
@@ -115,6 +117,7 @@ export function resolveRoads(
     hierarchy: request?.hierarchy ?? defaults.hierarchy,
     oneWayMarkers: request?.oneWayMarkers ?? defaults.oneWayMarkers,
     outline: request?.outline ?? defaults.outline,
+    rampOrder: request?.rampOrder ?? defaults.rampOrder,
     weight: request?.weight ?? defaults.weight,
     ...(request?.widthScale
       ? {

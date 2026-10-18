@@ -88,6 +88,7 @@ export type {
   TileflowRenderVisibilityGroup,
 } from './cartography/render-stack';
 export type {
+  TileflowCompilationDesignDecision,
   TileflowCompilationDiagnostic,
   TileflowCompilationDomainReport,
   TileflowCompilationFailure,
@@ -332,6 +333,7 @@ export {
   resolveThemeValues,
   resolveTileflowTheme,
   tileflowThemeLimits,
+  tileflowRequiredThemeColorRoles,
   TileflowThemeAuditError,
 } from './themes';
 export {

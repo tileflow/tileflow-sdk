@@ -5,7 +5,6 @@ import type {
   TileflowPhysicalFamilyDeclaration,
 } from '../../cartography/contributions';
 import {
-  applyCircleStyle,
   applyFillStyle,
   applyIconStyle,
   applyLineStyle,
@@ -21,7 +20,6 @@ import type {
   TileflowRoadClassStyle,
   TileflowRoadCrossingStyle,
   TileflowRoadLayerStyle,
-  TileflowRoadRoundaboutStyle,
   TileflowRoadSidewalkStyle,
   TileflowRoadsModuleConfig,
   TileflowRoadStructure,
@@ -30,6 +28,7 @@ import type {
 } from '../../types';
 import type {TileflowResolvedModuleConfig} from '../resolved';
 import {resolveRoads, roadStyleMetrics, visibleRoadClasses} from './index';
+import {compileRoundabouts, type RoundaboutSurface} from './roundabouts';
 import {
   isTileflowPathRoadClass,
   tileflowPathRoadClasses,
@@ -114,6 +113,7 @@ export function compileRoads(
 
   const defaults = defaultClassStyles(context, metrics, semantics);
   const contributions: TileflowLayerContribution[] = [];
+  const roundaboutSurfaces: RoundaboutSurface[] = [];
   const {sourceId: source, schema} = context.data;
 
   for (const [classIndex, roadClass] of roadClassOrder.entries()) {
@@ -129,6 +129,8 @@ export function compileRoads(
       request?.classes?.[roadClass],
     );
     const treatments = resolveRoadTreatments(request, schema.fields, roadClass);
+    const roundaboutSurface: RoundaboutSurface = {roadClass};
+    roundaboutSurfaces.push(roundaboutSurface);
 
     for (const structure of ['tunnel', 'surface', 'bridge'] as const) {
       const structureConfig = classConfig[structure];
@@ -154,7 +156,7 @@ export function compileRoads(
           phase,
           phaseDefaults.color as string,
         );
-        contributions.push({
+        const contribution: TileflowLayerContribution = {
           family: roadLinePhysicalFamily(roadClass, structure, phase),
           kind: 'layer',
           layer: applyLineStyle(
@@ -187,7 +189,36 @@ export function compileRoads(
           owner: 'roads',
           slot: structureSlots[structure][phase],
           target: `roads.classes.${roadClass}.${structure}.${phase}`,
-        });
+        };
+        if (structure === 'surface' && phase !== 'shadow') {
+          roundaboutSurface[phase] = treatedStyle;
+        }
+        if (
+          phase === 'fill' &&
+          !isTileflowPathRoadClass(roadClass) &&
+          semantics.rampOrder === 'below-roads'
+        ) {
+          // Links meet their receiving roads in the same structural band. Paint their
+          // fills first so darker links cannot leave rounded patches over a junction.
+          const rampFilter = flagFilter(schema.fields.ramp);
+          contributions.push({
+            ...contribution,
+            family: {
+              ...roadLinePhysicalFamily(roadClass, structure, 'fill'),
+              group: `${structure}:rampFill:${roadPhysicalCohort(roadClass)}`,
+              outputKey: `roads.cohorts.${structure}.${roadPhysicalCohort(roadClass)}.rampFill`,
+            },
+            layer: {
+              ...contribution.layer,
+              id: `tileflow-road-${structure}-${roadClass}-rampFill`,
+              filter: ['all', contribution.layer.filter, rampFilter],
+            },
+            localOrder: -1000 + classIndex,
+            target: `roads.classes.${roadClass}.${structure}.rampFill`,
+          });
+          contribution.layer.filter = ['all', contribution.layer.filter, ['!', rampFilter]];
+        }
+        contributions.push(contribution);
       }
 
       const hatch = structureConfig.hatch;
@@ -380,7 +411,7 @@ export function compileRoads(
   }
 
   compileSidewalks(request?.sidewalks, areaStyles.pedestrian?.fill?.color, context, contributions);
-  compileRoundabouts(request?.roundabouts, context, contributions);
+  compileRoundabouts(request?.roundabouts, roundaboutSurfaces, context, contributions);
   compileCrossings(request?.crossings, context, contributions);
 
   if (semantics.oneWayMarkers && visible.size > 0) {
@@ -530,88 +561,6 @@ function compileSidewalks(
   }
 }
 
-function compileRoundabouts(
-  request: TileflowRoadRoundaboutStyle | undefined,
-  context: TileflowDomainCompileContext,
-  contributions: TileflowLayerContribution[],
-): void {
-  const {fields, layers} = context.data.schema;
-  if (!layers.circularFeature) return;
-
-  const circularFields: CircularRoadFields = {
-    circularInnerRadiusMeters: fields.circularInnerRadiusMeters,
-    circularOuterRadiusMeters: fields.circularOuterRadiusMeters,
-    circularRadiusAtZoom15: fields.circularRadiusAtZoom15,
-    circularRadiusMeters: fields.circularRadiusMeters,
-    class: fields.class,
-  };
-  const radius = expression<number>(circularRoadInnerRadius(circularFields, false));
-  const casingRadius = expression<number>(circularRoadInnerRadius(circularFields, true));
-  const config = mergeTileflowDesign<TileflowRoadRoundaboutStyle>(
-    {
-      casing: {
-        color: 'rgba(0, 0, 0, 0)',
-        minZoom: 15,
-        pitchAlignment: 'map',
-        pitchScale: 'map',
-        radius: casingRadius,
-        strokeColor: context.colors.roads.casing,
-        strokeWidth: expression<number>(circularRoadStrokeWidth(circularFields, true)),
-      },
-      fill: {
-        color: 'rgba(0, 0, 0, 0)',
-        minZoom: 15,
-        pitchAlignment: 'map',
-        pitchScale: 'map',
-        radius,
-        strokeColor: expression<string>([
-          'match',
-          ['coalesce', ['get', fields.class], 'minor'],
-          'motorway',
-          context.colors.roads.motorway,
-          'trunk',
-          context.colors.roads.trunk,
-          'primary',
-          context.colors.roads.primary,
-          ['secondary', 'tertiary'],
-          context.colors.roads.secondary,
-          context.colors.roads.minor,
-        ]),
-        strokeWidth: expression<number>(circularRoadStrokeWidth(circularFields, false)),
-      },
-    },
-    request,
-  );
-  const base = {
-    type: 'circle',
-    source: context.data.sourceId,
-    'source-layer': layers.circularFeature,
-    filter: ['==', ['get', fields.circularKind], 'road_ring'],
-  } as const;
-
-  if (config.casing && config.casing.visible !== false) {
-    contributions.push({
-      kind: 'layer',
-      layer: applyCircleStyle({...base, id: 'tileflow-road-circular-casing'}, config.casing),
-      localOrder: 900,
-      owner: 'roads',
-      // Approach fills must cover the circular casing where the roads meet.
-      slot: 'transport-surface-casing',
-      target: 'roads.roundabouts.casing',
-    });
-  }
-  if (config.fill && config.fill.visible !== false) {
-    contributions.push({
-      kind: 'layer',
-      layer: applyCircleStyle({...base, id: 'tileflow-road-circular-fill'}, config.fill),
-      localOrder: 900,
-      owner: 'roads',
-      slot: 'transport-surface-fill',
-      target: 'roads.roundabouts.fill',
-    });
-  }
-}
-
 function compileCrossings(
   request: TileflowRoadCrossingStyle | undefined,
   context: TileflowDomainCompileContext,
@@ -673,114 +622,6 @@ function compileCrossings(
     slot: 'transport-symbols',
     target: 'roads.crossings',
   });
-}
-
-type CircularRoadFields = {
-  circularRadiusAtZoom15: string;
-  circularRadiusMeters: string;
-  circularInnerRadiusMeters: string;
-  circularOuterRadiusMeters: string;
-  class: string;
-};
-
-const circularRoadBorderTotalWidth = 1;
-
-function circularRoadInnerRadius(fields: CircularRoadFields, casing: boolean): readonly unknown[] {
-  const values = circularRoadValues(fields);
-  const stops: unknown[] = [];
-  for (let level = 15; level <= 24; level += 1) {
-    const centerlineRadius =
-      level === 15 ? values.radiusAtZoom15 : ['*', values.radiusAtZoom15, 2 ** (level - 15)];
-    const physicalInnerRadius = [
-      '*',
-      centerlineRadius,
-      ['/', values.innerRadiusMeters, values.radiusMeters],
-    ];
-    const baseWidth = circularRoadBaseWidth(fields.class);
-    const fallbackWidth =
-      level === 15 ? baseWidth : ['*', baseWidth, circularRoadFallbackScale(level)];
-    const fallbackInnerRadius = ['-', centerlineRadius, ['/', fallbackWidth, 2]];
-    const innerRadius = ['case', values.hasPhysicalRadii, physicalInnerRadius, fallbackInnerRadius];
-    stops.push(level, [
-      'max',
-      0,
-      casing ? ['-', innerRadius, circularRoadBorderTotalWidth / 2] : innerRadius,
-    ]);
-  }
-  // Metric rings scale with the map, including between integer zoom levels.
-  // Linear interpolation makes a ring bulge away from its approach geometry.
-  return ['interpolate', ['exponential', 2], ['zoom'], ...stops];
-}
-
-function circularRoadStrokeWidth(fields: CircularRoadFields, casing: boolean): readonly unknown[] {
-  const values = circularRoadValues(fields);
-  const baseWidth = circularRoadBaseWidth(fields.class);
-  const stops: unknown[] = [];
-  for (let level = 15; level <= 24; level += 1) {
-    const centerlineRadius =
-      level === 15 ? values.radiusAtZoom15 : ['*', values.radiusAtZoom15, 2 ** (level - 15)];
-    const physicalWidth = [
-      '*',
-      centerlineRadius,
-      ['/', ['-', values.outerRadiusMeters, values.innerRadiusMeters], values.radiusMeters],
-    ];
-    const fallbackWidth =
-      level === 15 ? baseWidth : ['*', baseWidth, circularRoadFallbackScale(level)];
-    stops.push(level, [
-      'case',
-      values.hasPhysicalRadii,
-      casing ? ['+', physicalWidth, circularRoadBorderTotalWidth] : physicalWidth,
-      casing ? ['+', fallbackWidth, circularRoadBorderTotalWidth] : fallbackWidth,
-    ]);
-  }
-  return ['interpolate', ['exponential', 2], ['zoom'], ...stops];
-}
-
-function circularRoadBaseWidth(classField: string): readonly unknown[] {
-  return [
-    'match',
-    ['coalesce', ['get', classField], 'minor'],
-    'motorway',
-    6,
-    'trunk',
-    5.5,
-    'primary',
-    5,
-    'secondary',
-    4.5,
-    'tertiary',
-    4,
-    'service',
-    2.5,
-    'track',
-    2,
-    3,
-  ];
-}
-
-function circularRoadValues(fields: CircularRoadFields) {
-  const radiusAtZoom15 = ['to-number', ['get', fields.circularRadiusAtZoom15], 0];
-  const radiusMeters = ['to-number', ['get', fields.circularRadiusMeters], 0];
-  const outerRadiusMeters = ['to-number', ['get', fields.circularOuterRadiusMeters], 0];
-  const innerRadiusMeters = ['to-number', ['get', fields.circularInnerRadiusMeters], 0];
-  return {
-    hasPhysicalRadii: [
-      'all',
-      ['>', radiusMeters, 0],
-      ['>', outerRadiusMeters, innerRadiusMeters],
-      ['>=', innerRadiusMeters, 0],
-    ],
-    innerRadiusMeters,
-    outerRadiusMeters,
-    radiusAtZoom15,
-    radiusMeters,
-  };
-}
-
-function circularRoadFallbackScale(level: number): number {
-  const interpolationBase = 1.35;
-  const progress = (interpolationBase ** (level - 15) - 1) / (interpolationBase ** (22 - 15) - 1);
-  return 1 + progress * 1.2;
 }
 
 function widthMatchedHatchPattern(
@@ -943,7 +784,12 @@ function applyRoadTreatments(
       const value = style[structure]?.[phase]?.[property];
       return value === undefined
         ? []
-        : [{condition, resolve: () => expressionOutput(value)} satisfies ConditionalBranch];
+        : [
+            {
+              condition,
+              resolve: () => expressionOutput(toMapLibreStyleValue(value)),
+            } satisfies ConditionalBranch,
+          ];
     });
     if (branches.length > 0) {
       // An all-solid treatment must use the solid-line shader. Even [1, 0]

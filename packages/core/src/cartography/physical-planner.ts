@@ -115,6 +115,10 @@ function canMergeRoadLines(layers: LayerFamily[]): boolean {
 function mergeRoadLineGroup(key: string, layers: LayerFamily[]): LayerFamily | undefined {
   const first = layers[0]!;
   const conditions = layers.map((layer) => asFilter(layer.selector));
+  // A zoom-dependent filter is valid on its own, but copying it into paint and
+  // sort-key case branches introduces nested zoom expressions that MapLibre rejects.
+  // Keep these roads separate until selector zoom gates can be safely lifted.
+  if (conditions.some(containsZoom)) return undefined;
   const paint: Record<string, unknown> = {};
   const paintKeys = new Set(layers.flatMap((layer) => Object.keys(layer.style.appearance ?? {})));
   for (const key of paintKeys) {

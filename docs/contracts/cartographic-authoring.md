@@ -7,7 +7,7 @@ and visual evidence must change atomically. The canonical workbench is
 the official maps under `packages/maps/src/official/`. The Tileflow Tiles playground consumes
 exact npm packages after publication; it is not the place to invent SDK controls.
 
-Streets, Baedeker, Cívica, Ferraris, Härad, Siegfried, Soundings, and Blueprint are Tileflow's first-party standalone maps, declared with `defineMap()` and compiled
+Streets, Baedeker, Cívica, 1777, Siegfried, Soundings, and Blueprint are Tileflow's first-party standalone maps, declared with `defineMap()` and compiled
 directly from Tileflow-owned semantic modules. The sole semantic compiler is implicit, and they
 define their full designs independently: no official map imports or extends another official map,
 and each owns its asset providers. Streets owns coordinated light and dark appearances.
@@ -96,8 +96,8 @@ in `placement.iconOnlyTypes` (by default parking and public toilets), which are 
 pictogram alone. A coupled POI requires both its pictogram and its name.
 
 Official maps own their source assets in `@tileflow/maps/assets/<id>/`. Streets declares
-`icons: [streetsIcons]`. Baedeker, Ferraris, Härad, Siegfried, Soundings, and Blueprint likewise
-declare only `[baedekerIcons]`, `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
+`icons: [streetsIcons]`. Baedeker, 1777, Siegfried, Soundings, and Blueprint likewise
+declare only `[baedekerIcons]`, `[map1777Icons]`, `[siegfriedIcons]`,
 `[soundingsIcons]`, and `[blueprintIcons]`, respectively; none composes another
 official map's assets. Cívica declares `[civicaIcons]` for its original civic-print patterns and
 symbols and `[civicaFonts]` for its packaged lettering. Baedeker owns eight original patterns informed by historical Baedeker and
@@ -105,9 +105,7 @@ Wagner & Debes visual references without redistributing scans, source pixels, hi
 typefaces, legend artwork, geospatial data, or source maps; it is not affiliated with or endorsed
 by Baedeker or Wagner & Debes. Its separately licensed Cormorant files and OFL license live in its
 own package asset closure. Its contours are derived in the browser from Mapterhorn terrain tiles,
-none of which are packaged. Härad's directory contains nine original Tileflow SVG patterns inspired by
-Lantmäteriet's CC0 Häradsekonomiska kartan series (1859–1934) and official legend. The package
-redistributes no Lantmäteriet scan, source pixel, legend artwork, font, or map data.
+none of which are packaged.
 Siegfried owns nine semantic engraving motifs with separate light and dark SVG sources in one asset
 directory. Both themes compile the same layer topology; the dark theme changes only semantic ink,
 paper, and image-token values and is documented as an original nocturnal interpretation.
@@ -137,9 +135,9 @@ names as IDs, requires a
 `LICENSE.txt` in each contributing directory, applies later exact-name replacements, and emits only
 faces used by the final style. `font` contains an exact face ID; local `fallbacks` contain exact face
 names or explicit CSS generic families. There is no weight field or family-plus-weight synthesis.
-After inheritance resolves, a map that emits text has exactly one provider. Streets, Ferraris,
-Härad, Soundings, and Blueprint each declare the canonical Tileflow URL with exact
-`Noto Sans Regular` and `Noto Sans Bold` stacks. Baedeker and Siegfried each use their own packaged
+After inheritance resolves, a map that emits text has exactly one provider. Streets,
+Soundings, and Blueprint each declare the canonical Tileflow URL with exact
+`Noto Sans Regular` and `Noto Sans Bold` stacks. Baedeker, 1777, and Siegfried each use their own packaged
 `Cormorant Garamond Regular`, `Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic`
 faces. The glyph URL is canonical
 rather than content-addressed; the service uses revalidating cache semantics and does not claim an

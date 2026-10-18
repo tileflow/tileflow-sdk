@@ -375,7 +375,7 @@ export type TileflowStreetLightsDesign = Readonly<{
   intensity: number;
 }>;
 
-/** The street lights of a style compiled without this description. */
+/** The fallback design used only when the runtime explicitly enables undeclared street lights. */
 export const tileflowDefaultStreetLightsDesign: TileflowStreetLightsDesign = Object.freeze({
   source: 'tileflow',
   layers: Object.freeze({

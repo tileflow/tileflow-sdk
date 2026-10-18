@@ -320,12 +320,13 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
   );
   if (match) return `tileflow-${match[1]}-render-${match[2]!.replaceAll('.', '-')}`;
 
-  match = /^roads\.classes\.([^.]+)\.(tunnel|surface|bridge)\.(shadow|casing|fill|hatch)$/u.exec(
-    semanticKey,
-  );
+  match =
+    /^roads\.classes\.([^.]+)\.(tunnel|surface|bridge)\.(shadow|casing|fill|hatch|rampFill)$/u.exec(
+      semanticKey,
+    );
   if (match) return `tileflow-road-${match[2]}-${match[1]}-${match[3]}`;
 
-  match = /^roads\.cohorts\.(tunnel|surface|bridge)\.([^.]+)\.(shadow|casing|fill)$/u.exec(
+  match = /^roads\.cohorts\.(tunnel|surface|bridge)\.([^.]+)\.(shadow|casing|fill|rampFill)$/u.exec(
     semanticKey,
   );
   if (match) return `tileflow-road-${match[1]}-highzoom-${match[2]}-${match[3]}`;

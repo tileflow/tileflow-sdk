@@ -25,6 +25,7 @@ Start with bounded queries, then request more detail at the returned JSON Pointe
 ```sh
 npx tileflow describe --json
 npx tileflow describe roads --path /properties/classes --json
+npx tileflow describe themes --json
 npx tileflow inspect --domain roads --limit 80 --json
 npx tileflow inspect compiled --domain roads --theme dark --json
 npx tileflow compare configs --from-config before/tileflow.config.ts --to-config after/tileflow.config.ts --json
@@ -53,6 +54,12 @@ A non-empty semantic diff is informational, not a command failure.
 Inspection includes resolved inheritance, merge provenance, and the theme contract. `explain`
 returns compilation diagnostics and a report, not the complete Style JSON. Add `--inspection` only
 when physical output provenance is needed; those layer IDs are not stable authoring targets.
+
+`describe themes` lists the minimal palette roles and optional time-of-day behavior. Compiled
+inspection includes `report.decisions` for resolved color roles and selected module defaults,
+with the effective value, source, reason and override guidance. Query it with
+`inspect compiled --path /report/decisions --limit 80 --json`. It describes semantic decisions,
+not every final paint property; config inspection retains inheritance provenance separately.
 
 For a normal config, map selection is implicit. Paired `--from-config` and `--to-config` compare
 two ordinary configs. Workspace comparisons use their documented explicit map selectors; do not

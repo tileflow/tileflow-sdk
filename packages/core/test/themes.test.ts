@@ -19,7 +19,13 @@ import {
   zoom,
 } from '../src';
 import {expression} from '../src/cartography/values';
-import {assertTileflowMapThemeValues, TileflowThemeAuditError} from '../src/themes';
+import {
+  assertTileflowMapThemeValues,
+  resolveThemeColors,
+  tileflowRequiredThemeColorRoles,
+  TileflowThemeAuditError,
+  type TileflowThemeColorDecision,
+} from '../src/themes';
 import {extendStreets, testLightTheme} from './map-fixture';
 
 test('defineTheme materializes a flat theme and resolves typed derivations deterministically', () => {
@@ -68,6 +74,73 @@ test('defineTheme(base, definition) returns an inheritance-free complete documen
   assert.equal(dark.tokens.image.marker, 'pin-dark');
   assert.equal('extends' in dark, false);
   assert.notEqual(dark.tokens, testLightTheme.tokens);
+});
+
+test('the required color roles form a complete single-theme map with replaceable derived colors', () => {
+  assert.deepEqual(
+    [...tileflowRequiredThemeColorRoles].sort(),
+    Object.keys(testLightTheme.tokens.color).sort(),
+  );
+  const paper = defineTheme({
+    id: 'minimal-paper',
+    version: 1,
+    colorScheme: 'light',
+    tokens: {
+      color: Object.fromEntries(tileflowRequiredThemeColorRoles.map((role) => [role, '#dddddd'])),
+    },
+  });
+  const map = extendStreets({
+    themes: {paper},
+    defaultTheme: 'paper',
+    modules: {poi: disable()},
+  });
+  const resolved = parseTileflowMap(map);
+  assert.equal(resolved.timeOfDay, undefined);
+  assert.equal(resolved.systemThemes, undefined);
+  assert.deepEqual(Object.keys(resolved.themes), ['paper']);
+  assert.deepEqual(createStyle(map), createStyle(map, {timeOfDay: 'night'}));
+
+  const accent = defineTheme(paper, {
+    id: 'minimal-accent',
+    version: 1,
+    colorScheme: 'light',
+    tokens: {color: {'roads.major': '#ff8800', 'roads.motorway': '#8800ff'}},
+  });
+  const colors = resolveThemeColors(accent);
+  assert.equal(colors.roads.primary, '#ff8800');
+  assert.equal(colors.roads.motorway, '#8800ff');
+  assert.equal(resolveThemeColors(paper).roads.motorway, '#dddddd');
+});
+
+test('color provenance reports resolved fallbacks and authored overrides without changing colors', () => {
+  const theme = defineTheme(testLightTheme, {
+    id: 'color-provenance',
+    version: 1,
+    colorScheme: 'light',
+    tokens: {
+      color: {
+        'roads.motorway': '#7c33ff',
+        'terrain.contour.label': '#123456',
+        'hydro.depth.m200': color.mix('#000000', '#ffffff', {amount: 0.5}),
+      },
+    },
+  });
+  const decisions: TileflowThemeColorDecision[] = [];
+  const colors = resolveThemeColors(theme, (decision) => decisions.push(decision));
+  assert.deepEqual(colors, resolveThemeColors(theme));
+  assert.equal(new Set(decisions.map(({role}) => role)).size, decisions.length);
+  const byRole = new Map(decisions.map((decision) => [decision.role, decision]));
+  for (const [role, value, source] of [
+    ['surface.water', colors.water, 'theme'],
+    ['roads.motorway', colors.roads.motorway, 'theme'],
+    ['roads.primary', colors.roads.primary, 'derived'],
+    ['terrain.contour.label', colors.terrain.contour.label, 'theme'],
+    ['hydro.depth.m200', colors.hydro.depth.m200, 'theme'],
+    ['vegetation.tree.bark', colors.vegetation.tree.bark, 'derived'],
+  ]) {
+    assert.deepEqual(byRole.get(role!), {role, value, source});
+  }
+  assert.ok(decisions.every(({value}) => typeof value === 'string'));
 });
 
 test('theme identities are concrete portable names across authoring and selection', () => {

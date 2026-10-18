@@ -359,9 +359,9 @@ test('the design reads the models a map places, the colours of their parts and i
     {model: 'eiffel-tower', url: '/models/eiffel-tower.glb', at: [2.2945, 48.8583], heading: 315},
   ]);
   assert.deepEqual(design?.modelColors, {accent: '#806040'});
-  assert.equal(design?.lighting, 'style');
-  assert.equal(design?.shadows, false);
-  assert.equal(design?.occlusion, false);
+  assert.equal(design?.lighting, 'sun');
+  assert.equal(design?.shadows, true);
+  assert.equal(design?.occlusion, true);
   assert.deepEqual(design?.landmarks, {url: 'https://api.tileflow.dev/landmarks/tiles.json'});
   assert.equal(read({}).models, undefined);
   assert.equal(read({models: 'none'})?.models, undefined);

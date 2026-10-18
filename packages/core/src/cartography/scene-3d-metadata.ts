@@ -2,9 +2,10 @@
 // their design from the buildings and roads modules, with the data's references still semantic
 // (the caller binds them with the rest of the style), the buildings' colour as the map's own final
 // 3D building colour, else its roofs', and the tileset of Tileflow's landmarks the map shows.
-import type {
-  TileflowBuildingModelPlacement,
-  TileflowBuildings3DDesign,
+import {
+  type TileflowBuildingModelPlacement,
+  type TileflowBuildings3DDesign,
+  tileflowDefaultBuildings3DDesign,
 } from '../buildings-3d-design';
 import type {TileflowModelPart} from '../models-3d-model';
 import type {TileflowStreetLightsDesign} from '../street-lights';
@@ -37,6 +38,7 @@ export function tileflowBuildings3DDesignOf(
   };
   if (config.enabled === false) return undefined;
   const style = config.threeDimensional ?? {};
+  const defaults = tileflowDefaultBuildings3DDesign;
   let color: string | readonly unknown[] | undefined;
   let verticalGradient = true;
   for (const [id, property] of colourSources) {
@@ -62,15 +64,16 @@ export function tileflowBuildings3DDesignOf(
       ...(context.data.schema.layers.poi ? {places: context.data.schema.layers.poi} : {}),
     },
     color: color ?? context.colors.buildings.generic,
-    lighting: style.lighting === 'sun' ? 'sun' : 'style',
+    lighting: style.lighting === 'style' ? 'style' : defaults.lighting,
     colorVariation: number(style.colorVariation, 0),
     verticalGradient,
     edges: number(style.edges, 0),
+    edgeRadius: number(style.edgeRadius, defaults.edgeRadius),
     ...(typeof edgeColor === 'string' ? {edgeColor} : {}),
     nightLight: number(style.nightLight, 0),
     windows: style.windows === true,
-    shadows: style.shadows === true,
-    occlusion: style.occlusion === true,
+    shadows: typeof style.shadows === 'boolean' ? style.shadows : defaults.shadows,
+    occlusion: typeof style.occlusion === 'boolean' ? style.occlusion : defaults.occlusion,
     ...placedModels(style.models, buildingModels),
     ...modelColours(style.modelColors),
     ...landmarksOf(style.landmarks, tileflowLandmarks),
@@ -144,7 +147,7 @@ function modelColours(value: unknown): {
 
 /**
  * The street lights a map describes, or undefined when its roads module or their street lights are
- * off, or the data binds no street furniture.
+ * not explicitly enabled, or the data binds no street furniture.
  */
 export function tileflowStreetLightsDesignOf(
   module: unknown,
@@ -156,7 +159,7 @@ export function tileflowStreetLightsDesignOf(
   };
   const layers = context.data.schema.layers;
   const style = config.streetLights ?? {};
-  if (config.enabled === false || style.enabled === false || !layers.streetFurniture)
+  if (config.enabled === false || style.enabled !== true || !layers.streetFurniture)
     return undefined;
   const color = style.color === undefined ? undefined : toMapLibreStyleValue(style.color as never);
   const intensity =

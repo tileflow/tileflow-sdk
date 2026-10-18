@@ -57,6 +57,7 @@ export function compileLabels(
 ): TileflowLayerContribution[] {
   if (request?.enabled === false) return [];
   const semantics = resolveLabels(request);
+  const groundRoadNames = semantics.roadPlacement === 'ground';
   const roads = resolveRoads(roadRequest);
   const {colors} = context;
   const rankField = context.data.schema.fields.rank;
@@ -149,6 +150,7 @@ export function compileLabels(
               ? 15
               : 13,
           placement: 'line',
+          ...(groundRoadNames ? ({pitchAlignment: 'map', rotationAlignment: 'map'} as const) : {}),
           size: zoom.linear([
             [10, 10],
             [16, 14],
@@ -266,13 +268,10 @@ export function compileLabels(
   }
 
   const visibleRoads = visibleRoadLabelClasses(semantics.roads, roads, semantics.roadClasses);
-  // Road names, shields and junction numbers draw in the final symbol stack,
-  // above boundaries, buildings and vegetation; the collision policy only
-  // orders them within it. MapLibre resolves collisions from the top of that
-  // stack. Balanced maps keep them at its bottom, below every other symbol
-  // family. Navigation-priority maps put minor road names first and the
-  // structural classes last, after POIs, so dense destinations cannot erase
-  // orientation labels.
+  // MapLibre resolves collisions from the top of the drawing stack. Foreground
+  // navigation names outrank ordinary POIs. Ground names retain this road-class
+  // ordering, but foreground symbols are offered first; moving them below buildings
+  // does not preserve priority over POIs. Shields and junctions remain foreground.
   const orderedRoads = navigationPriority ? [...visibleRoads].reverse() : visibleRoads;
   for (const roadClass of orderedRoads as TileflowRoadClass[]) {
     const style = styles.roads?.[roadClass];
@@ -281,7 +280,7 @@ export function compileLabels(
     result.push(
       symbolContribution(
         `labels.roads.${roadClass}`,
-        (navigationPriority ? 1200 : 200) + order++,
+        (groundRoadNames ? -1000 : navigationPriority ? 1200 : 200) + order++,
         applySymbolStyle(
           {
             id,
@@ -296,7 +295,7 @@ export function compileLabels(
           },
           mergeTileflowDesign(style, {text: {field}}),
         ),
-        'symbols',
+        groundRoadNames ? 'buildings' : 'symbols',
         {group: 'roads', kind: 'road-label', member: roadClass},
       ),
     );

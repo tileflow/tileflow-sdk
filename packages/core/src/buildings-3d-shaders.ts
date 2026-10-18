@@ -1,3 +1,5 @@
+import {tileflowShadowLookup} from './scene-3d-shaders';
+
 // Shaders of Tileflow's 3D buildings renderer (buildings-3d-browser.ts). Positions are in tile
 // units and projected with MapLibre's custom-layer projection; the shadow pass works in metres from
 // the scene's origin (x east, y north, z up).
@@ -84,25 +86,6 @@ vec3 shopOf(float use, float seed) {
 }
 `;
 
-const shadowLookup = `
-uniform highp sampler2DShadow u_shadow_map;
-uniform vec2 u_shadow_texel;
-uniform float u_shadow; // how dark shadows fall, 0 for none
-uniform float u_depth_unit; // the depth of a metre
-
-float visibility(vec3 c, float bias) {
-  if (u_shadow <= 0.0 || c.x <= 0.0 || c.y <= 0.0 || c.x >= 1.0 || c.y >= 1.0 || c.z >= 1.0)
-    return 1.0;
-  float z = c.z - bias * u_depth_unit;
-  vec2 o = u_shadow_texel * 0.75;
-  return 0.25 * (
-    texture(u_shadow_map, vec3(c.xy + vec2(-o.x, -o.y), z)) +
-    texture(u_shadow_map, vec3(c.xy + vec2(o.x, -o.y), z)) +
-    texture(u_shadow_map, vec3(c.xy + vec2(-o.x, o.y), z)) +
-    texture(u_shadow_map, vec3(c.xy + vec2(o.x, o.y), z)));
-}
-`;
-
 export const tileflowBuildingDepthVertex = `#version 300 es
 ${attributes}
 uniform mat4 u_light_matrix;
@@ -137,12 +120,8 @@ uniform vec2 u_palette_themes; // the themes either side of the blend position
 uniform float u_palette_mix;
 uniform float u_variation; // how far buildings' brightness strays from their colour, either way
 ${growth}
-uniform vec3 u_style_light_position;
-uniform vec3 u_style_light_colour;
-uniform float u_style_light_intensity;
-uniform float u_style_gradient;
-out vec3 v_style_colour;
 out vec3 v_colour;
+out float v_base;
 out vec3 v_facade; // metres along the wall, metres up as built, the building's top
 out vec4 v_building; // seed, tone and class group, wall, night use
 out vec3 v_normal;
@@ -155,22 +134,6 @@ vec3 paletteColour(float theme) {
   float row = theme * u_palette_rows.x + floor(a_feature / u_palette_rows.y);
   float column = mod(a_feature, u_palette_rows.y);
   return texelFetch(u_palette, ivec2(int(column), int(row)), 0).rgb;
-}
-
-// MapLibre GL JS 6.13 fill-extrusion lighting, adapted to this mesh's normals and heights.
-// Copyright MapLibre contributors and Mapbox; BSD-3-Clause, see THIRD_PARTY_NOTICES.md.
-vec3 styleColour(vec3 colour, vec3 normal, float base, float top) {
-  float luminance = dot(colour, vec3(0.2126, 0.7152, 0.0722));
-  float facing = clamp(dot(normal * vec3(1.0, -1.0, 1.0), u_style_light_position), 0.0, 1.0);
-  float brightness = mix(1.0 - u_style_light_intensity,
-    max(1.0 - luminance + u_style_light_intensity, 1.0), facing);
-  if (a_flags.y > 0.5) {
-    float gradient = clamp((a_flags.x + base) * sqrt(top / 150.0),
-      mix(0.7, 0.98, 1.0 - u_style_light_intensity), 1.0);
-    brightness *= mix(1.0, gradient, u_style_gradient);
-  }
-  return clamp((colour + 0.03) * brightness * u_style_light_colour,
-    0.3 * (1.0 - u_style_light_colour), vec3(1.0));
 }
 
 void main() {
@@ -198,7 +161,7 @@ void main() {
     : u_colour;
   // Neighbours of one colour stay apart: each building a little lighter or darker than its colour.
   v_colour *= 1.0 + (a_wave.x - 0.5) * 2.0 * u_variation;
-  v_style_colour = styleColour(v_colour, normal, base, top);
+  v_base = base;
   v_edge = wall > 0.5 ? vec3(a_edge.x, 0.0, 0.0) : vec3(equal(vec3(a_edge.x), vec3(0.0, 1.0, 2.0)));
   v_outline = a_edge.y;
   v_facade = vec3(a_along * 0.1, own, top);
@@ -209,7 +172,12 @@ void main() {
 export const tileflowBuildingFragment = `#version 300 es
 precision highp float;
 in vec3 v_colour;
-in vec3 v_style_colour;
+in float v_base;
+uniform vec3 u_style_light_position;
+uniform vec3 u_style_light_colour;
+uniform float u_style_light_intensity;
+uniform float u_style_gradient;
+uniform float u_edge_radius;
 uniform float u_sun_lighting;
 in vec3 v_facade;
 in vec4 v_building;
@@ -222,6 +190,7 @@ uniform vec3 u_sun_dir;
 uniform vec3 u_sun_light;
 uniform vec3 u_sky_light;
 uniform float u_occlusion;
+uniform float u_occlusion_radius;
 uniform float u_corner;
 uniform float u_night; // 0 by day, 1 at night
 uniform float u_windows; // whether to draw night windows
@@ -231,11 +200,46 @@ uniform float u_edge_width; // their width, in the drawing buffer's pixels
 uniform vec3 u_edge_colour; // the application's colour for them
 uniform float u_edge_own; // how much of them takes the application's colour, from 0 to 1
 ${nightLight}
-${shadowLookup}
+${tileflowShadowLookup}
 out vec4 fragColor;
 
 float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+}
+
+// The contact shade rises gradually up the facade, in world metres. Use one bounded shade
+// for the authored gradient, ground contact and inner corners, rather than multiplying them.
+float facadeShade() {
+  if (v_building.z < 0.5) return 1.0;
+  float reach = min(3.0, max((v_facade.z - v_base) * 0.5, 0.1));
+  float gradient = 0.1 * u_style_gradient * (1.0 - smoothstep(0.0, reach, v_facade.y - v_base));
+  // Exponential attenuation leaves a soft tail above the first floor, without a band ending
+  // at its radius. Height above ground also keeps raised parts from acquiring a dark lower rim.
+  float up = max(v_facade.y, 0.0);
+  float contact = u_occlusion * exp(-up / max(u_occlusion_radius, 0.001));
+  float along = v_facade.x - v_wall.x;
+  float corner = 0.0;
+  if (mod(v_wall.y, 2.0) >= 1.0) corner = 1.0 - smoothstep(0.0, u_corner, along);
+  if (mod(floor(v_wall.y / 2.0), 2.0) >= 1.0)
+    corner = max(corner, 1.0 - smoothstep(0.0, u_corner, v_wall.z - along));
+  float inner = u_occlusion * 0.7 * corner * mix(1.0, 0.5, clamp(up / 30.0, 0.0, 1.0));
+  return 1.0 - max(gradient, max(contact, inner));
+}
+
+// MapLibre GL JS 6.13 fill-extrusion light, evaluated per fragment for curved corner normals.
+// Copyright MapLibre contributors and Mapbox; BSD-3-Clause, see THIRD_PARTY_NOTICES.md.
+vec3 styleColour(vec3 colour, vec3 normal) {
+  float luminance = dot(colour, vec3(0.2126, 0.7152, 0.0722));
+  float facing = clamp(dot(normal * vec3(1.0, -1.0, 1.0), u_style_light_position), 0.0, 1.0);
+  float brightness = mix(1.0 - u_style_light_intensity,
+    max(1.0 - luminance + u_style_light_intensity, 1.0), facing);
+  if (v_building.z > 0.5) {
+    float wallLight = clamp((1.0 + v_base) * sqrt(v_facade.z / 150.0),
+      mix(0.7, 0.98, 1.0 - u_style_light_intensity), 1.0);
+    brightness *= mix(1.0, mix(wallLight, 1.0, normal.z), u_style_gradient);
+  }
+  return clamp((colour + 0.03) * brightness * u_style_light_colour,
+    0.3 * (1.0 - u_style_light_colour), vec3(1.0));
 }
 
 // A surface's light over the light a sunlit roof takes, in the map's colours: a sunlit roof keeps
@@ -271,9 +275,17 @@ float edgeOf() {
 
 void main() {
   vec3 normal = normalize(v_normal);
+  // A narrow lighting transition softens the roof/wall junction without moving the roof
+  // or adding a bright outline. Exterior vertical corners are rounded in the mesh itself.
+  if (v_building.z > 0.5 && u_edge_radius > 0.0) {
+    float radius = min(u_edge_radius, max((v_facade.z - v_base) * 0.25, 0.01));
+    float rim = 1.0 - smoothstep(0.0, radius, v_facade.z - v_facade.y);
+    normal = normalize(mix(normal, vec3(0.0, 0.0, 1.0), rim));
+  }
   float lit = dot(normal, u_sun_dir) > 0.0 ? visibility(v_shadow, 0.3) : 0.0;
-  vec3 colour = mix(v_style_colour * (1.0 - u_shadow * (1.0 - lit)),
+  vec3 colour = mix(styleColour(v_colour, normal) * (1.0 - u_shadow * (1.0 - lit)),
     v_colour * shade(normal, lit), u_sun_lighting);
+  colour *= facadeShade();
   // Roof outlines and outer corners catch the light, so where one building ends and the next starts
   // stays legible, at night most of all.
   float edge = u_edge > 0.0 ? edgeOf() * u_edge : 0.0;
@@ -283,13 +295,6 @@ void main() {
     float up = v_facade.y;
     float top = v_facade.z;
     float seed = v_building.x;
-    float foot = 1.0 - u_occlusion * pow(1.0 - clamp(up / 9.0, 0.0, 1.0), 2.0);
-    float along = v_facade.x - v_wall.x;
-    float corner = 0.0;
-    if (mod(v_wall.y, 2.0) >= 1.0) corner = 1.0 - smoothstep(0.0, u_corner, along);
-    if (mod(floor(v_wall.y / 2.0), 2.0) >= 1.0)
-      corner = max(corner, 1.0 - smoothstep(0.0, u_corner, v_wall.z - along));
-    colour *= foot * (1.0 - u_occlusion * 0.7 * corner * mix(1.0, 0.5, clamp(up / 30.0, 0.0, 1.0)));
     // Sheds, barns, factories and churches have no rows of windows; homes light more of theirs at
     // night than offices, in a warm light, and offices more of theirs in a cool one.
     float group = groupOf(v_building.y);
@@ -374,15 +379,15 @@ export const tileflowBuildingGroundFragment = `#version 300 es
 precision highp float;
 in vec3 v_shadow;
 uniform vec3 u_ground_shadow;
-${shadowLookup}
+${tileflowShadowLookup}
 out vec4 fragColor;
 void main() {
   float shaded = u_shadow * (1.0 - visibility(v_shadow, 0.15));
   fragColor = vec4(mix(vec3(1.0), u_ground_shadow, shaded), 1.0);
 }`;
 
-// The band at the foot of every wall: the wall's own quad laid on the ground, its top edge moved
-// out by the band's reach. The same geometry carries the flood lights' light on the ground.
+// Flood lights spill from each wall onto the ground, with the top edge moved out by their reach.
+// Contact occlusion uses a separate distance mask so wall bands cannot accumulate at corners.
 export const tileflowBuildingBandVertex = (projected: string): string => `#version 300 es
 ${projected}
 ${attributes}
@@ -408,19 +413,6 @@ void main() {
   gl_Position = projectTileFor3D(a_pos + a_normal * (u_band / u_metres) * a_flags.x, 0.0);
   v_out = a_flags.x;
   v_strength = p;
-}`;
-
-export const tileflowBuildingBandFragment = `#version 300 es
-precision highp float;
-in float v_out;
-in float v_strength;
-in vec3 v_flood;
-in vec3 v_shop;
-uniform float u_band_strength;
-out vec4 fragColor;
-void main() {
-  float near = 1.0 - v_out;
-  fragColor = vec4(vec3(1.0 - u_band_strength * near * near * v_strength), 1.0);
 }`;
 
 export const tileflowBuildingFloodFragment = `#version 300 es

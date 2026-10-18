@@ -20,7 +20,7 @@ const iconDirectory = resolve(import.meta.dirname, '../assets/streets/icons');
 const makiIndex = process.argv.indexOf('--maki');
 const makiDirectory = makiIndex >= 0 ? process.argv[makiIndex + 1] : undefined;
 
-function color(theme: 'dark' | 'light', role: string): string {
+function color(theme: keyof typeof streetsThemes, role: string): string {
   const value = (streetsThemes[theme].tokens.color as Record<string, unknown>)[role];
   if (typeof value !== 'string') throw new Error(`Streets ${theme} theme has no ${role} color.`);
   return value.toUpperCase();
@@ -90,10 +90,11 @@ for (const [id, pictogram] of Object.entries(streetsPoiPictograms)) {
   const description = `Tileflow POI disc with a Maki ${pictogram.maki} pictogram, CC0-1.0.`;
   const role = 'disc' in pictogram ? pictogram.disc : pictogram.category;
   for (const theme of ['light', 'dark'] as const) {
-    const halo = color(theme, 'poi.halo');
     for (const palette of ['default', 'monochrome'] as const) {
       const categoryColor = paletteColor(streetsPoiDiscColors[theme][role], palette);
-      const iconColor = paletteColor(halo, palette);
+      const haloTheme =
+        palette === 'monochrome' ? (theme === 'dark' ? 'dark-monochrome' : 'monochrome') : theme;
+      const iconColor = paletteColor(color(haloTheme, 'poi.halo'), palette);
       await writeFile(
         resolve(iconDirectory, filename(id, theme, palette)),
         disc({

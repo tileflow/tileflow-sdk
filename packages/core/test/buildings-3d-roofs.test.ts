@@ -122,3 +122,50 @@ test('the mesh raises gable ends and tilts the roof', () => {
   );
   assert.ok(tilted > 0, 'roof normals tilt');
 });
+
+test('rounded walls join shaped roofs and culling bounds contain the ridge', () => {
+  const mesh = meshTileflowBuildings(
+    {
+      extent: 4096,
+      features: [
+        {
+          type: 'Polygon',
+          properties: {
+            render_height: 12,
+            roof_shape: 'gabled',
+            height_source: 'levels',
+            class: 'residential',
+          },
+          geometry: [[1000, 1000, 1100, 1000, 1100, 1050, 1000, 1050, 1000, 1000]],
+        },
+      ],
+    },
+    {tileMetres: 1000, edgeRadius: 0.8},
+  )!;
+  assert.ok(mesh.top > 12, 'the roof rises above the level-derived wall height');
+  assert.ok(
+    mesh.groups!.every(({bounds}) => bounds[4] >= mesh.top),
+    'the ridge is not culled',
+  );
+  const roofPoints = new Set<string>();
+  const wallPoints: string[] = [];
+  for (let offset = 0; offset < mesh.vertices.length; offset += tileflowBuildingVertexBytes) {
+    const view = new DataView(
+      mesh.vertices.buffer,
+      mesh.vertices.byteOffset + offset,
+      tileflowBuildingVertexBytes,
+    );
+    const key = [view.getUint16(0, true), view.getUint16(2, true), view.getUint16(6, true)].join(
+      ',',
+    );
+    assert.equal(
+      Math.floor(view.getUint8(20) / 4),
+      1,
+      'the residential window class survives rounding',
+    );
+    if (view.getUint8(11) === 0) roofPoints.add(key);
+    else if (view.getUint8(10) === 1) wallPoints.push(key);
+  }
+  assert.ok(wallPoints.length > 16, 'the footprint has rounded corner segments');
+  for (const point of wallPoints) assert.ok(roofPoints.has(point), `wall meets roof at ${point}`);
+});

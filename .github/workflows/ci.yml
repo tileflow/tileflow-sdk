@@ -20,7 +20,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 25
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -47,8 +47,50 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Typecheck, lint, and test
-        run: pnpm check
+      - name: Static checks
+        env:
+          NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
+        run: pnpm run check:static
+
+      - name: Verify remaining packages
+        env:
+          NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
+        run: pnpm -r --workspace-concurrency=1 --filter '!tileflow' --filter '!@tileflow/dev' --if-present run verify
+
+  verify-heavy:
+    name: Package verification (${{ matrix.package }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [tileflow, '@tileflow/dev']
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Build public packages
+        run: pnpm build
+
+      - name: Verify package
+        env:
+          NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
+        run: pnpm --filter '${{ matrix.package }}' run verify
 
   peer-compatibility:
     name: Peer compatibility (${{ matrix.suite }})
@@ -78,10 +120,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Compile packed consumers at declared peer boundaries
+        env:
+          NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
         run: pnpm run smoke:peer-compat --suite ${{ matrix.suite }}
 
   capture-smoke:
-    name: Capture smoke (${{ matrix.os }}, Node ${{ matrix.node }})
+    name: Capture smoke (${{ matrix.os }}, Node ${{ matrix.node }}, ${{ matrix.suite }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     strategy:
@@ -89,6 +133,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
         node: [22, 24]
+        suite: [capture, cli]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -134,13 +179,17 @@ jobs:
         run: bash scripts/configure-linux-chromium-sandbox.sh
 
       - name: Run cross-platform capture browser suite
+        if: matrix.suite == 'capture'
         run: pnpm --filter @tileflow/capture run smoke:browser
         env:
+          NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
           TILEFLOW_RUN_BROWSER_TESTS: '1'
 
       - name: Run cross-platform CLI browser suite
+        if: matrix.suite == 'cli'
         run: pnpm --filter tileflow run test
         env:
+          NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
           TILEFLOW_RUN_BROWSER_TESTS: '1'
           TILEFLOW_CLI_TEST_PROGRESS: ${{ runner.os == 'Windows' && '1' || '' }}
           NODE_OPTIONS: ${{ runner.os == 'Windows' && format('--require={0}/test-support/cli-test-progress.cjs', github.workspace) || '' }}
@@ -189,6 +238,8 @@ jobs:
         run: bash scripts/configure-linux-chromium-sandbox.sh
 
       - name: Audit and smoke packed packages
+        env:
+          NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
         run: pnpm run smoke:capture-public
 
   required:
@@ -196,6 +247,7 @@ jobs:
     if: always()
     needs:
       - verify
+      - verify-heavy
       - peer-compatibility
       - capture-smoke
       - capture-public-tarball
@@ -208,8 +260,10 @@ jobs:
           CAPTURE_SMOKE_RESULT: ${{ needs.capture-smoke.result }}
           PEER_COMPATIBILITY_RESULT: ${{ needs.peer-compatibility.result }}
           VERIFY_RESULT: ${{ needs.verify.result }}
+          VERIFY_HEAVY_RESULT: ${{ needs.verify-heavy.result }}
         run: |
           test "$VERIFY_RESULT" = "success"
+          test "$VERIFY_HEAVY_RESULT" = "success"
           test "$PEER_COMPATIBILITY_RESULT" = "success"
           test "$CAPTURE_SMOKE_RESULT" = "success"
           test "$CAPTURE_PUBLIC_TARBALL_RESULT" = "success"

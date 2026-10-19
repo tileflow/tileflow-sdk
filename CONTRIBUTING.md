@@ -20,6 +20,22 @@ pnpm --filter @tileflow/core verify
 pnpm --filter @tileflow/core typecheck
 ```
 
+CI runs Dev and CLI verification in separate jobs; the remaining packages run with static checks.
+Every package still runs its full `verify` script, and `Required` joins every job. `pnpm check`
+retains complete local verification. `pnpm check:static` runs only documentation, release, architecture,
+types, lint and formatting checks.
+
+Capture and CLI browser suites run independently on each Linux, macOS and Windows / Node 22 and 24
+combination. This repeats runner preparation to reduce elapsed time while retaining every test.
+
+CI shares a temporary Node compile cache between subprocesses in each job. It caches bytecode,
+not test results, and is discarded with the runner. For a local comparison, set `NODE_COMPILE_CACHE`
+to a temporary directory or use `NODE_DISABLE_COMPILE_CACHE=1` to disable it.
+
+Tests own their subprocesses and loopback servers. Stop consumers before closing their servers and
+removing fixtures. Capture tests request shutdown over IPC, then terminate the process tree if the
+consumer does not stop. A timeout must fail the test without leaving its worker running.
+
 Do not edit package versions, add changesets, create release tags, or run `npm publish`. Every
 source package keeps `0.0.0-development`. Merging to `main` creates a candidate; it does not
 publish to npm. Publication requires an explicit workflow dispatch from `main`, verification of the

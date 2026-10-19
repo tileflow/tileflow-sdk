@@ -6,6 +6,8 @@ import test from 'node:test';
 import {
   decodeTileflowModels,
   hashTileflowModelBundleManifest,
+  readTileflowLandmarkRegion,
+  readTileflowLandmarkTileFootprints,
   tileflowInsideRings,
   tileflowModelParts,
 } from '@tileflow/core';
@@ -314,12 +316,26 @@ test('landmarks standing in one tile package into its file, and a region names i
     packageTileflowLandmarkTile([{...landmarks[0]!, levels: {near: smallTree()}}]),
     /Landmark pont-d-iena: is not a building model/,
   );
+  // The tile names each landmark's place and footprint, as its bytes hold them.
+  assert.deepEqual(tile.landmarks, readTileflowLandmarkTileFootprints(tile.bytes));
+  assert.deepEqual(
+    tile.landmarks.map((landmark) => [landmark.id, landmark.at, landmark.heading]),
+    [
+      ['eiffel-tower', [2.2944962, 48.8582621], 0],
+      ['pont-d-iena', [2.2929, 48.8597], 30],
+    ],
+  );
+  assert.ok(tile.landmarks.every((landmark) => landmark.footprint.length > 0));
   const region = encodeTileflowLandmarkRegion({
     region: [32, 22],
-    tiles: [[8296, 5636, tile.sha256]],
+    tiles: [[8296, 5636, tile.sha256, tile.landmarks]],
   });
   assert.match(region.sha256, /^[0-9a-f]{64}$/u);
-  assert.match(new TextDecoder().decode(region.bytes), new RegExp(tile.sha256));
+  const read = readTileflowLandmarkRegion(JSON.parse(new TextDecoder().decode(region.bytes)));
+  assert.deepEqual(
+    read?.tiles[0]?.[3]?.map((landmark) => landmark.id),
+    ['eiffel-tower', 'pont-d-iena'],
+  );
 });
 
 test('a map places a model served elsewhere by its address, with no file of its own', async (t) => {

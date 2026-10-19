@@ -146,11 +146,17 @@ or the renderer is removed; it resizes with the drawing buffer.
 Maps on Tileflow World show Tileflow's landmarks, such as the Eiffel Tower, as 3D models in place of
 the buildings under them. They come from a landmarks tileset kept apart from the map's data: each of
 its tiles carries the models standing in it, with their levels of detail and footprints, and each
-region's index names its tiles by their hash. The renderer reads the tileset's TileJSON once the
-buildings show in 3D, then only the indexes of the regions round the camera and the landmark tiles
-near it, so a landmark in Paris costs nothing in Madrid. New and improved landmarks reach every map
-without a new build of the map. A tileset that cannot be read is tried again after five minutes,
-and the buildings stay drawn meanwhile.
+region's index names its tiles by their hash, with where each landmark stands and its footprint.
+The renderer reads the tileset's TileJSON, then only the indexes of the regions round the camera
+and the landmark tiles near it, from a zoom before the buildings show, so a landmark in Paris costs
+nothing in Madrid. New and improved landmarks reach every map without a new build of the map.
+
+The buildings under a landmark are never raised and then taken away. A tile of buildings is built
+once the indexes round it have arrived, waiting at most a second and a half; while a landmark's
+tile is still on its way, the footprint its index names keeps the buildings under it flat, and the
+landmark fades in when it arrives. A landmark tile that fails, or has not arrived three seconds
+after the buildings round it show, lets those buildings rise until it does. A tileset that cannot be read is tried again
+after five minutes, and the buildings stay drawn meanwhile.
 
 A map switches them off, or names the TileJSON of another landmarks tileset:
 
@@ -238,8 +244,10 @@ footprint and writes it beside the style as a prepared model file: a glTF binary
 quantised (`KHR_mesh_quantization`) and compressed by meshoptimizer (`EXT_meshopt_compression`),
 which any glTF viewer opens. The renderer downloads a model only when it stands near the tiles round
 the camera, keeps the nearest dozen, and builds the tiles under it again without the buildings that
-reach more than half a metre into its footprint; a neighbour that only touches it stays. A model
-that cannot be downloaded leaves those buildings standing. Reading a prepared model file loads
+reach more than half a metre into its footprint; a neighbour that only touches it stays. A tile of
+buildings near a model waits for it, at most a second and a half, so its buildings are not raised
+and then taken away, and the model fades in when it comes to stand. A model that cannot be
+downloaded leaves those buildings standing. Reading a prepared model file loads
 meshoptimizer's WebAssembly decoder, so a page with a Content Security Policy allows
 `'wasm-unsafe-eval'` in its `script-src`.
 

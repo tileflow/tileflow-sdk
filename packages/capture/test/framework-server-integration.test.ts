@@ -5,7 +5,7 @@ import {once} from 'node:events';
 import {copyFile, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {createServer, type Server as NodeServer, Server} from 'node:http';
 import {dirname, join, relative, resolve} from 'node:path';
-import test from 'node:test';
+import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import webpack from 'webpack';
@@ -20,43 +20,7 @@ test(
   'captures an interactive wrapper map through one Next application server and no Tileflow listener',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 90_000},
   async (t) => {
-    const browserFailures: string[] = [];
-    const observedBrowsers = new WeakSet();
-    const recordFailure = (message: string) => {
-      if (browserFailures.length < 12) browserFailures.push(message.slice(0, 800));
-    };
-    const getBrowser = TileflowCaptureBrowserManager.prototype.getBrowser;
-    t.mock.method(
-      TileflowCaptureBrowserManager.prototype,
-      'getBrowser',
-      async function (this: TileflowCaptureBrowserManager, signal?: AbortSignal) {
-        const browser = await getBrowser.call(this, signal);
-        if (observedBrowsers.has(browser)) return browser;
-        observedBrowsers.add(browser);
-        const newContext = browser.newContext.bind(browser);
-
-        t.mock.method(browser, 'newContext', async (...options: Parameters<typeof newContext>) => {
-          const context = await newContext(...options);
-          context.on('page', (page) => {
-            page.on('pageerror', (error) => recordFailure(`pageerror: ${error.message}`));
-            page.on('console', (message) => {
-              if (message.type() === 'error') recordFailure(`console: ${message.text()}`);
-            });
-            page.on('response', (response) => {
-              if (response.status() >= 400)
-                recordFailure(`response: ${response.status()} ${new URL(response.url()).pathname}`);
-            });
-            page.on('requestfailed', (request) => {
-              recordFailure(
-                `requestfailed: ${request.failure()?.errorText} ${new URL(request.url()).pathname}`,
-              );
-            });
-          });
-          return context;
-        });
-        return browser;
-      },
-    );
+    const browserFailures = observeBrowserFailures(t);
 
     const fixture = await createFrameworkFixture('next');
     await buildNextFixture(fixture.cwd, 'webpack');
@@ -95,7 +59,8 @@ test(
 test(
   'captures an interactive wrapper map through a default Next application server and no Tileflow listener',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 90_000},
-  async () => {
+  async (t) => {
+    const browserFailures = observeBrowserFailures(t);
     const fixture = await createFrameworkFixture('next');
     await buildNextFixture(fixture.cwd, 'default');
     const port = await reservePort();
@@ -119,6 +84,9 @@ test(
       assert.equal(capture.target, 'application');
       assert.equal(capture.width, 222);
       assert.equal(capture.height, 240);
+    } catch (error) {
+      t.diagnostic(JSON.stringify(browserFailures));
+      throw error;
     } finally {
       await closeServer(server);
       await application.close();
@@ -130,7 +98,8 @@ test(
 test(
   'captures an interactive wrapper map through a Next basePath and no Tileflow listener',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 90_000},
-  async () => {
+  async (t) => {
+    const browserFailures = observeBrowserFailures(t);
     const fixture = await createFrameworkFixture('next', {basePath: '/app'});
     await buildNextFixture(fixture.cwd, 'default');
     const port = await reservePort();
@@ -154,6 +123,9 @@ test(
       assert.equal(capture.target, 'application');
       assert.equal(capture.width, 222);
       assert.equal(capture.height, 240);
+    } catch (error) {
+      t.diagnostic(JSON.stringify(browserFailures));
+      throw error;
     } finally {
       await closeServer(server);
       await application.close();
@@ -253,6 +225,47 @@ test(
     }
   },
 );
+
+function observeBrowserFailures(t: TestContext): string[] {
+  const browserFailures: string[] = [];
+  const observedBrowsers = new WeakSet();
+  const recordFailure = (message: string) => {
+    if (browserFailures.length < 12) browserFailures.push(message.slice(0, 800));
+  };
+  const getBrowser = TileflowCaptureBrowserManager.prototype.getBrowser;
+  t.mock.method(
+    TileflowCaptureBrowserManager.prototype,
+    'getBrowser',
+    async function (this: TileflowCaptureBrowserManager, signal?: AbortSignal) {
+      const browser = await getBrowser.call(this, signal);
+      if (observedBrowsers.has(browser)) return browser;
+      observedBrowsers.add(browser);
+      const newContext = browser.newContext.bind(browser);
+
+      t.mock.method(browser, 'newContext', async (...options: Parameters<typeof newContext>) => {
+        const context = await newContext(...options);
+        context.on('page', (page) => {
+          page.on('pageerror', (error) => recordFailure(`pageerror: ${error.message}`));
+          page.on('console', (message) => {
+            if (message.type() === 'error') recordFailure(`console: ${message.text()}`);
+          });
+          page.on('response', (response) => {
+            if (response.status() >= 400)
+              recordFailure(`response: ${response.status()} ${new URL(response.url()).pathname}`);
+          });
+          page.on('requestfailed', (request) => {
+            recordFailure(
+              `requestfailed: ${request.failure()?.errorText} ${new URL(request.url()).pathname}`,
+            );
+          });
+        });
+        return context;
+      });
+      return browser;
+    },
+  );
+  return browserFailures;
+}
 
 async function captureFromOnlyApplicationServer(cwd: string, appOrigin: string) {
   const originalListen = Server.prototype.listen;

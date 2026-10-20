@@ -1192,15 +1192,29 @@ function boundedThemeNumberSchema(min: number, max: number) {
 
 const modelRoleLightingSchema = z
   .object({
-    emissiveStrength: boundedThemeNumberSchema(0, 2).optional(),
+    emissiveStrength: boundedThemeNumberSchema(0, 5).optional(),
+    emissiveVariation: boundedThemeNumberSchema(0, 1).optional(),
     emissiveColor: themeColorValueSchema.optional(),
+    color: themeColorValueSchema.optional(),
+    colorMix: boundedThemeNumberSchema(0, 1).optional(),
+    metallic: boundedThemeNumberSchema(0, 1).optional(),
+    roughness: boundedThemeNumberSchema(0, 1).optional(),
+    colorVariation: z
+      .object({
+        hue: z.tuple([boundedThemeNumberSchema(0, 360), boundedThemeNumberSchema(0, 360)]),
+        saturation: z.tuple([boundedThemeNumberSchema(0, 100), boundedThemeNumberSchema(0, 100)]),
+        lightness: z.tuple([boundedThemeNumberSchema(0, 100), boundedThemeNumberSchema(0, 100)]),
+        space: z.enum(['srgb', 'linear']).optional(),
+      })
+      .strict()
+      .optional(),
     emissiveHeight: z
       .tuple([
-        z.number().finite().min(0).max(1),
-        z.number().finite().min(0).max(1),
-        z.number().finite().min(0).max(1),
-        z.number().finite().min(0).max(1),
-        z.number().finite().min(-1).max(1),
+        boundedThemeNumberSchema(0, 1),
+        boundedThemeNumberSchema(0, 1),
+        boundedThemeNumberSchema(0, 1),
+        boundedThemeNumberSchema(0, 1),
+        boundedThemeNumberSchema(-1, 1),
       ])
       .optional(),
   })

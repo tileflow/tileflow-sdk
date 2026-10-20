@@ -697,6 +697,18 @@ export {
 } from './models-3d-model';
 export type {TileflowModelEmissionGradient} from './building-illumination';
 export {
+  checkTileflowModelSurface,
+  tileflowModelImageSize,
+  tileflowModelSurfaceLimits,
+  tileflowModelTextureChannels,
+  type TileflowModelEmitter,
+  type TileflowModelMaterial,
+  type TileflowModelMaterialRange,
+  type TileflowModelSurface,
+  type TileflowModelTexture,
+  type TileflowModelTextureReference,
+} from './models-3d-materials';
+export {
   decodeTileflowModels,
   encodeTileflowModels,
   readTileflowLandmarkTileFootprints,

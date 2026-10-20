@@ -27,6 +27,10 @@ out vec3 v_shadow;
 out float v_light;
 flat out int v_lighting_role;
 out float v_height;
+out vec4 v_uv;
+out vec4 v_rgba;
+out vec3 v_position;
+flat out int v_part;
 void main() {
   vec2 uv = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
   gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
@@ -36,6 +40,10 @@ void main() {
   v_light = u_test_visibility;
   v_lighting_role = u_test_role;
   v_height = u_test_height;
+  v_uv = vec4(0.0);
+  v_rgba = vec4(1.0);
+  v_position = vec3(0.0);
+  v_part = 0;
 }`;
         for (const [type, source] of [
           [gl.VERTEX_SHADER, vertex],
@@ -55,6 +63,24 @@ void main() {
         const scalar = (name: string, value: number) =>
           gl.uniform1f(gl.getUniformLocation(program, name), value);
         scalar('u_ambient_occlusion', 1);
+        for (let channel = 0; channel < 5; channel++)
+          gl.uniform1i(gl.getUniformLocation(program, `u_material_texture${channel}`), 1);
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texImage2D(
+          gl.TEXTURE_2D,
+          0,
+          gl.RGBA8,
+          1,
+          1,
+          0,
+          gl.RGBA,
+          gl.UNSIGNED_BYTE,
+          new Uint8Array([255, 255, 255, 255]),
+        );
+        gl.activeTexture(gl.TEXTURE0);
         gl.uniform3f(gl.getUniformLocation(program, 'u_sun_dir'), 0, 0, 1);
         const texture = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, texture);

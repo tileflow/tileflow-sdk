@@ -168,7 +168,7 @@ export function encodeTileflowLandmarkRegion(region: TileflowLandmarkRegion): {
 
 /** A building model, read from its glTF binaries, with its footprint. */
 function buildingModelEntry(id: string, levels: TileflowBuildingModelLevels): TileflowModelEntry {
-  const primitives = readTileflowGltfTriangles(levels.near);
+  const primitives = readTileflowGltfTriangles(levels.near, {materials: true});
   if (!isTileflowBuildingModel(primitives))
     throw new TileflowGltfError(
       'is not a building model; name each material surface, secondary, glass, accent or roof',

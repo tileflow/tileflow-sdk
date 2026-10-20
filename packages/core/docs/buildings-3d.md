@@ -389,20 +389,31 @@ Architectural illumination has two independent controls:
   `wallHeightRatio` (default `1/3`). `intensity` is zero to one and `color` is a theme colour.
   The effect fades with scene brightness; `brightnessScale` compensates an authored light-colour
   transform and defaults to one. Overlapping ground contributions use their strongest value.
-- `modelLighting` assigns emission to architectural roles. Each profile accepts
-  `emissiveStrength` (zero to two), optional `emissiveColor` (otherwise the part's own colour), and
+- `modelLighting` assigns physical materials and emission to architectural roles. Each profile accepts
+  `emissiveStrength` (zero to five), optional `emissiveColor` (otherwise the surface's own colour), and
   `emissiveHeight`: `[beginHeight, endHeight, beginMultiplier, endMultiplier, curve]`.
-  Heights are fractions of the model's bounds, multipliers are zero to one, and the exponent is
+  Heights are fractions of the source mesh's vertical bounds (the full model for legacy files),
+  multipliers are zero to one, and the exponent is
   `10 ** curve`, with `curve` from -1 to 1. Equal heights give a constant multiplier of one.
-  Strength and colour may use theme tokens. Emission is mixed in linear light and is independent
+  Every gradient component, strength and colour may use theme tokens. Emission is mixed in linear light and is independent
   of ambient occlusion and solar shadows. Values above one saturate the surface emission at one;
-  they do not generate bloom or additional light geometry.
+  they also control the falloff of explicitly authored area emitters.
 
-Streets leaves both effects off in its light presets. Its dusk/night wall profile uses a strength
+Physical profiles also accept `color`, `colorMix` (zero to one, default one when a tint exists),
+`roughness` and `metallic` (zero to one). Explicit `modelColors` override role tints. Missing
+physical overrides retain the glTF material. `emissiveVariation` adds a stable, model-seeded amount
+from zero to its value. Optional `colorVariation` supplies independent `[min, max]` ranges for
+`hue` (0–360), `saturation` and `lightness` (0–100), with `space: 'srgb'` (default) or `'linear'`.
+The same model identity keeps its samples across LODs and theme changes.
+
+Streets leaves ordinary flood lighting off in its light presets. Its dusk/night wall profile uses a strength
 of `0.1` and `[0.5, 0, 0, 1, 0.8]`, concentrating a warm wash near the foot. Monochrome uses a
 weaker neutral wall profile and no architectural ground flood. Prepared models without role
-metadata use their documented palette mapping. A role does not imply a door light on the ground
-or generate missing windows.
+metadata use their documented palette mapping. Windows use metallic reflection and varied emission;
+doors and logos have separate profiles, and roofs remain non-emissive. Day/dawn profiles follow
+the scene's brighter material response. A role does not generate missing windows or ground emitters.
+See [building-model preparation](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/building-models.md)
+for glTF channels, explicit area emitters, compatibility and resource costs.
 
 The separate `nightLight` control retains its decorative building and shop effects:
 

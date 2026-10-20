@@ -1,6 +1,7 @@
 import {defineTheme, token} from '@tileflow/core';
 import {streetsCartographyColors} from './streets-cartography-colors';
 import {streetsLighting} from './streets-lighting';
+import {streetsModelLighting} from './streets-model-lighting';
 import {streetsPoiImageTokens} from './streets-poi';
 import {streetsRoadCasingProfiles} from './streets-road-colors';
 import {
@@ -542,21 +543,7 @@ function streetsPaletteColors(preset: StreetsLightPreset, colorTheme: StreetsCol
         : colorTheme === 'faded'
           ? '#F8E4C4'
           : '#F5CFA8',
-    // Model-part targets are linear radiance in Standard. These display-space equivalents
-    // preserve that target when Core mixes emission in linear light.
-    'buildings.modelEmission': !isDarkStreetsPreset(preset)
-      ? '#FFFFFF'
-      : colorTheme === 'monochrome'
-        ? preset === 'dusk'
-          ? '#F1F1F1'
-          : '#F0F0F0'
-        : colorTheme === 'faded'
-          ? preset === 'dusk'
-            ? '#FDF0DD'
-            : '#FDEFD9'
-          : preset === 'dusk'
-            ? '#FDE6CD'
-            : '#FDE4C8',
+    ...streetsModelLighting(preset, colorTheme).colors,
   };
 }
 
@@ -572,7 +559,7 @@ function streetsLightingNumbers(preset: StreetsLightPreset, colorTheme: StreetsC
             preset
           ]
         : 1,
-    'buildings.modelEmission.strength': dark ? (colorTheme === 'monochrome' ? 0.05 : 0.1) : 0,
+    ...streetsModelLighting(preset, colorTheme).numbers,
   };
 }
 

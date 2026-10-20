@@ -5,6 +5,7 @@
 // Tileflow's Node tooling prepares the glTF binaries a map declares, and its landmarks, into
 // prepared model files (models-3d-file.ts) that travel beside the compiled style or in the landmarks
 // tileset and are downloaded only near the camera. It has no DOM dependency.
+import type {TileflowModelSurface} from './models-3d-materials';
 
 /** The parts of a model, each coloured by the theme: the model's materials name them. */
 export const tileflowModelParts = Object.freeze({
@@ -69,6 +70,8 @@ export type TileflowModelMesh = Readonly<{
   occlusion: readonly number[];
   /** Three vertex indices per triangle. */
   indices: readonly number[];
+  /** Optional physical materials and their independent texture coordinates. */
+  surface?: TileflowModelSurface;
 }>;
 
 /** A prepared model: its levels, nearest first, and the footprint it replaces on the ground. */
@@ -95,6 +98,8 @@ export type TileflowModelLevelBytes = Readonly<{
   centre: readonly [number, number, number];
   /** Metres in one step of a position. */
   step: number;
+  /** Optional physical data; absent data retains the legacy palette lighting. */
+  surface?: TileflowModelSurface & {attributes: Float32Array};
 }>;
 
 /** A decoded model, as the renderer draws it. */

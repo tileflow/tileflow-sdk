@@ -1,4 +1,3 @@
-import type {TileflowModelEmissionGradient} from '../../building-illumination';
 import type {TileflowAreaStyle, TileflowExtrusionStyle} from '../../cartography/styles';
 import type {TileflowThemeColorValue, TileflowThemeNumberValue} from '../../cartography/values';
 import type {TileflowModelLightingRole} from '../../models-3d-model';
@@ -37,15 +36,35 @@ export type TileflowBuildingsThreeDimensionalStyle = {
     /** Wall radius as a fraction of building height; defaults to 1/3. */
     wallHeightRatio?: number;
   };
-  /** Per-role model emission. Colour slots, ambient occlusion and solar shadows remain independent. */
+  /** Per-role physical materials and emission, separate from palette slots and occlusion. */
   modelLighting?: Partial<
     Record<
       TileflowModelLightingRole,
       {
         emissiveStrength?: TileflowThemeNumberValue;
+        /** Stable per-model addition to emission, from zero to this amount. */
+        emissiveVariation?: TileflowThemeNumberValue;
         emissiveColor?: TileflowThemeColorValue;
         /** Height fractions, multipliers and curve exponent; defaults to a constant multiplier of one. */
-        emissiveHeight?: TileflowModelEmissionGradient;
+        emissiveHeight?: readonly [
+          TileflowThemeNumberValue,
+          TileflowThemeNumberValue,
+          TileflowThemeNumberValue,
+          TileflowThemeNumberValue,
+          TileflowThemeNumberValue,
+        ];
+        /** Physical-material tint. Explicit modelColors take precedence. */
+        color?: TileflowThemeColorValue;
+        colorMix?: TileflowThemeNumberValue;
+        metallic?: TileflowThemeNumberValue;
+        roughness?: TileflowThemeNumberValue;
+        /** Independent HSL ranges, seeded by model identity; no window geometry is invented. */
+        colorVariation?: {
+          hue: readonly [TileflowThemeNumberValue, TileflowThemeNumberValue];
+          saturation: readonly [TileflowThemeNumberValue, TileflowThemeNumberValue];
+          lightness: readonly [TileflowThemeNumberValue, TileflowThemeNumberValue];
+          space?: 'srgb' | 'linear';
+        };
       }
     >
   >;

@@ -98,6 +98,39 @@ export function tileflowBuildings3DDesignOf(
                     {
                       ...own,
                       emissiveStrength: number(own.emissiveStrength, 0),
+                      ...Object.fromEntries(
+                        ['emissiveVariation', 'colorMix', 'metallic', 'roughness']
+                          .filter((key) => own[key] !== undefined)
+                          .map((key) => [key, number(own[key], 0)]),
+                      ),
+                      ...(Array.isArray(own.emissiveHeight)
+                        ? {emissiveHeight: own.emissiveHeight.map((v) => number(v, 0))}
+                        : {}),
+                      ...(isRecord(own.colorVariation)
+                        ? {
+                            colorVariation: {
+                              ...own.colorVariation,
+                              ...Object.fromEntries(
+                                ['hue', 'saturation', 'lightness'].map((key) => [
+                                  key,
+                                  Array.isArray(
+                                    (own.colorVariation as Record<string, unknown>)[key],
+                                  )
+                                    ? (
+                                        (own.colorVariation as Record<string, unknown>)[
+                                          key
+                                        ] as unknown[]
+                                      ).map((v) => number(v, 0))
+                                    : [],
+                                ]),
+                              ),
+                            },
+                          }
+                        : {}),
+                      color:
+                        own.color === undefined
+                          ? undefined
+                          : toMapLibreStyleValue(own.color as never),
                       emissiveColor:
                         own.emissiveColor === undefined
                           ? undefined

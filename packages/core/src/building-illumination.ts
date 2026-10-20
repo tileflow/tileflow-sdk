@@ -7,8 +7,20 @@ export type TileflowModelEmissionGradient = readonly [number, number, number, nu
 
 export type TileflowModelRoleLighting = Readonly<{
   emissiveStrength: number;
+  emissiveVariation?: number;
   emissiveColor?: string;
   emissiveHeight: TileflowModelEmissionGradient;
+  color?: string;
+  colorMix?: number;
+  metallic?: number;
+  roughness?: number;
+  colorVariation?: Readonly<{
+    hue: readonly [number, number];
+    saturation: readonly [number, number];
+    lightness: readonly [number, number];
+    /** Colour factors may be authored in linear light, as in glTF. Defaults to sRGB. */
+    space?: 'srgb' | 'linear';
+  }>;
 }>;
 
 export type TileflowBuildingFloodLight = Readonly<{
@@ -65,8 +77,16 @@ export function readModelRoleLighting(
     if (!record(entry)) continue;
     const gradient = entry.emissiveHeight;
     result[role] = {
-      emissiveStrength: bounded(entry.emissiveStrength, 0, 2, 0),
+      emissiveStrength: bounded(entry.emissiveStrength, 0, 5, 0),
+      ...(entry.emissiveVariation === undefined
+        ? {}
+        : {emissiveVariation: bounded(entry.emissiveVariation, 0, 1, 0)}),
       ...(typeof entry.emissiveColor === 'string' ? {emissiveColor: entry.emissiveColor} : {}),
+      ...(typeof entry.color === 'string' ? {color: entry.color} : {}),
+      ...(entry.colorMix === undefined ? {} : {colorMix: bounded(entry.colorMix, 0, 1, 1)}),
+      ...(entry.metallic === undefined ? {} : {metallic: bounded(entry.metallic, 0, 1, 0)}),
+      ...(entry.roughness === undefined ? {} : {roughness: bounded(entry.roughness, 0, 1, 1)}),
+      ...readRoleColorVariation(entry.colorVariation),
       emissiveHeight:
         Array.isArray(gradient) &&
         gradient.length === 5 &&
@@ -79,6 +99,26 @@ export function readModelRoleLighting(
     };
   }
   return Object.keys(result).length ? result : undefined;
+}
+
+function readRoleColorVariation(value: unknown): Pick<TileflowModelRoleLighting, 'colorVariation'> {
+  if (!record(value)) return {};
+  for (const [key, max] of [
+    ['hue', 360],
+    ['saturation', 100],
+    ['lightness', 100],
+  ] as const) {
+    const range = value[key];
+    if (
+      !Array.isArray(range) ||
+      range.length !== 2 ||
+      range[0] > range[1] ||
+      !range.every((v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= max)
+    )
+      return {};
+  }
+  if (value.space !== undefined && value.space !== 'srgb' && value.space !== 'linear') return {};
+  return {colorVariation: value as TileflowModelRoleLighting['colorVariation']};
 }
 
 /**

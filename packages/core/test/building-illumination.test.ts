@@ -41,6 +41,34 @@ test('compiled architectural and model lights have bounded independent defaults'
   assert.equal(roles!.window, undefined);
 });
 
+test('physical role profiles keep material controls and emission independent', () => {
+  const role = readModelRoleLighting({
+    door: {
+      color: '#ffeedd',
+      colorMix: 0.6,
+      metallic: 0.2,
+      roughness: 0.8,
+      emissiveStrength: 2.5,
+      emissiveVariation: 0.3,
+    },
+    window: {
+      colorVariation: {hue: [0, 90], saturation: [20, 100], lightness: [87, 87], space: 'linear'},
+    },
+  })!;
+  assert.equal(role.door!.color, '#ffeedd');
+  assert.equal(role.door!.colorMix, 0.6);
+  assert.equal(role.door!.metallic, 0.2);
+  assert.equal(role.door!.roughness, 0.8);
+  assert.equal(role.door!.emissiveStrength, 2.5);
+  assert.equal(role.door!.emissiveVariation, 0.3);
+  assert.deepEqual(role.window!.colorVariation, {
+    hue: [0, 90],
+    saturation: [20, 100],
+    lightness: [87, 87],
+    space: 'linear',
+  });
+});
+
 test('an identified building keeps its lighting variation across tiles and feature order', () => {
   const feature = (geometry: number[]) => ({
     id: 9523,

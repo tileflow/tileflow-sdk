@@ -3,6 +3,8 @@
 // primitive's material. Tileflow reads glTF itself, with no dependency: a tree model needs only
 // this much of the format. It turns glTF's Y-up into Tileflow's Z-up. Textures, animations, skins
 // and morph targets are ignored; compressed geometry and external buffers are refused.
+import type {TileflowModelEmitter, TileflowModelSurface} from '@tileflow/core';
+import {createGltfMaterialReader} from './gltf-materials';
 
 export type TileflowGltfPrimitive = {
   /** The material's name, or undefined when the primitive has none. */
@@ -17,6 +19,8 @@ export type TileflowGltfPrimitive = {
   colours: number[];
   /** Three vertex indices per triangle. */
   indices: number[];
+  /** Retained only when the building-material reader is requested. */
+  surface?: TileflowModelSurface;
 };
 
 /** Why a file cannot be read, in words an author can act on. */
@@ -48,7 +52,10 @@ const componentBytes: Record<number, number> = {
 const typeSizes: Record<string, number> = {SCALAR: 1, VEC2: 2, VEC3: 3, VEC4: 4};
 
 /** The triangles of a glTF binary's default scene. Throws `TileflowGltfError`. */
-export function readTileflowGltfTriangles(bytes: Uint8Array): TileflowGltfPrimitive[] {
+export function readTileflowGltfTriangles(
+  bytes: Uint8Array,
+  {materials = false}: {materials?: boolean} = {},
+): TileflowGltfPrimitive[] {
   const {json, bin} = chunks(bytes);
   const required = array(json.extensionsRequired).filter((name) => typeof name === 'string');
   const compressed = required.find((name) => compressions.has(name as string));
@@ -69,17 +76,55 @@ export function readTileflowGltfTriangles(bytes: Uint8Array): TileflowGltfPrimit
         .map((_, index) => index)
         .filter((index) => !nodes.some((node) => array(node.children).includes(index)));
   const out: TileflowGltfPrimitive[] = [];
+  const physical = materials
+    ? createGltfMaterialReader(json, bin, (index) => accessorWithSize(json, bin, index))
+    : undefined;
+  const emitters: TileflowModelEmitter[] = [];
   const visit = (index: unknown, parent: Matrix, depth: number) => {
     if (typeof index !== 'number' || !nodes[index])
       throw new TileflowGltfError('names a node it does not hold');
     if (depth > 64) throw new TileflowGltfError('nests its nodes more than 64 deep');
     const node = nodes[index]!;
     const world = multiply(parent, local(node));
-    if (typeof node.mesh === 'number') out.push(...meshOf(json, bin, node.mesh, world));
+    if (physical) {
+      const lights = record(record(node.extras).tileflow).emitters;
+      if (lights !== undefined && !Array.isArray(lights))
+        throw new TileflowGltfError('area emitters must be an array');
+      for (const value of array(lights)) {
+        const own = record(value);
+        const point = (key: string): [number, number, number] => {
+          const input = array(own[key]);
+          if (
+            input.length !== 3 ||
+            !input.every((value) => typeof value === 'number' && Number.isFinite(value))
+          )
+            throw new TileflowGltfError('an area emitter needs finite three-dimensional endpoints');
+          const p = transform(world, input[0] as number, input[1] as number, input[2] as number, 1);
+          return [p[0]!, -p[2]!, p[1]!];
+        };
+        const heightScale = Math.hypot(...transform(world, 0, 1, 0, 0));
+        const depthScale = Math.hypot(...transform(world, 0, 0, 1, 0));
+        if (typeof own.height !== 'number')
+          throw new TileflowGltfError('an area emitter needs its height');
+        emitters.push({
+          start: point('start'),
+          end: point('end'),
+          height: own.height * heightScale,
+          ...(own.depth === undefined ? {} : {depth: Number(own.depth) * depthScale}),
+          role: own.role,
+          part: own.part,
+        } as TileflowModelEmitter);
+      }
+    }
+    if (typeof node.mesh === 'number') out.push(...meshOf(json, bin, node.mesh, world, physical));
     for (const child of array(node.children)) visit(child, world, depth + 1);
   };
   for (const root of roots) visit(root, identity(), 0);
   if (out.length === 0) throw new TileflowGltfError('holds no triangles in its scene');
+  if (emitters.length) {
+    const first = out.find((part) => !/^footprint(?:\.\d+)?$/i.test(part.material ?? ''));
+    if (first?.surface) first.surface = {...first.surface, emitters};
+  }
   return out;
 }
 
@@ -117,10 +162,11 @@ function meshOf(
   bin: Uint8Array | undefined,
   index: number,
   world: Matrix,
+  physical?: ReturnType<typeof createGltfMaterialReader>,
 ): TileflowGltfPrimitive[] {
   const mesh = record(array(json.meshes)[index]);
   const normalMatrix = inverseTranspose(world);
-  return array(mesh.primitives).map((value) => {
+  const result = array(mesh.primitives).map((value) => {
     const primitive = record(value);
     if ((primitive.mode ?? triangles) !== triangles)
       throw new TileflowGltfError('draws points or lines; a tree model draws triangles');
@@ -194,8 +240,30 @@ function meshOf(
       normals,
       colours,
       indices,
+      ...(physical ? {surface: physical(primitive, count, indices.length)} : {}),
     };
   });
+  if (physical) {
+    let low = Infinity,
+      high = -Infinity;
+    for (const part of result)
+      if (!/^footprint(?:\.\d+)?$/i.test(part.material ?? ''))
+        for (let at = 2; at < part.positions.length; at += 3) {
+          low = Math.min(low, part.positions[at]!);
+          high = Math.max(high, part.positions[at]!);
+        }
+    if (Number.isFinite(low))
+      for (const part of result)
+        if (part.surface)
+          part.surface = {
+            ...part.surface,
+            ranges: part.surface.ranges.map((range) => ({
+              ...range,
+              emissiveBounds: [low, high] as const,
+            })),
+          };
+  }
+  return result;
 }
 
 function accessor(json: Json, bin: Uint8Array | undefined, index: number, size: number): number[] {

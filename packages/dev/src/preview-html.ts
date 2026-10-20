@@ -140,7 +140,7 @@ export function renderTileflowPreviewHtml(
       import {registerTileflowContourProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowPmtilesProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {attachTileflowNotices} from "${basePath}/__runtime/tileflow-browser.js";
-      import {createTileflowBuildings3D, createTileflowStreetLights, createTileflowVegetation} from "${basePath}/__runtime/tileflow-browser.js";
+      import {createTileflowMap3D} from "${basePath}/__runtime/tileflow-browser.js";
       import {readTileflowSunPreset, resolveTileflowSun, tileflowDefaultSunPreset} from "${basePath}/__runtime/tileflow-browser.js";
 
       maplibregl.setWorkerUrl("${basePath}/__runtime/maplibre-gl-worker.mjs");
@@ -1807,11 +1807,11 @@ export function renderTileflowPreviewHtml(
         map.addLayer(createLandmarkLayer(map, configLayer, fallbackLayers), treeLayer);
       }
 
-      // Core's 3D layers, as an application mounts them: the map's style describes how its
+      // Core's 3D scene, as an application mounts it: the map's style describes how its
       // buildings, trees and street lights look, and the controls only show and hide them. The
       // vegetation control hides all trees when off. The preview shows one theme at a
       // time, so the style on screen holds the sun and the design.
-      const coreScene = {buildings: undefined, trees: undefined, lights: undefined, buildingsShown: undefined, animation: "0"};
+      const coreScene = {scene: undefined, shown: undefined, buildingsShown: undefined, animation: "0"};
       const runtimeLayerVisibility = {};
       globalThis.__tileflowPreviewScene = coreScene;
       globalThis.__tileflowRuntimeVisibility = (id, visible) => {
@@ -1821,12 +1821,15 @@ export function renderTileflowPreviewHtml(
       };
       // Explicit observation capability: controllers stay private to the preview and expose
       // only their public state/statistics to the parent inspector.
-      globalThis.__tileflowInspectModels = () => [...(coreScene.buildings?.inspectModels?.() || []), ...(coreScene.trees?.inspectModels?.() || [])];
-      globalThis.__tileflowDescribeRuntimeLayers = () => ({
-        ...(coreScene.buildings ? {"tileflow-buildings-3d": {controller:"Buildings 3D", state:{visible:runtimeLayerVisibility["tileflow-buildings-3d"] !== false, shown:coreScene.buildingsShown, scale:coreScene.buildings.scale}, stats:coreScene.buildings.stats}} : {}),
-        ...(coreScene.trees ? {"tileflow-trees-3d": {controller:"Vegetation", state:{visible:runtimeLayerVisibility["tileflow-trees-3d"] !== false, representation:coreScene.trees.representation}, stats:coreScene.trees.stats}} : {}),
-        ...(coreScene.lights ? {"tileflow-street-lights": {controller:"Street lights", state:{visible:runtimeLayerVisibility["tileflow-street-lights"] !== false, mounted:true}, stats:coreScene.lights.stats}} : {})
-      });
+      globalThis.__tileflowInspectModels = () => [...(coreScene.scene?.buildings?.inspectModels?.() || []), ...(coreScene.scene?.vegetation?.inspectModels?.() || [])];
+      globalThis.__tileflowDescribeRuntimeLayers = () => {
+        const {buildings, vegetation, streetLights} = coreScene.scene ?? {};
+        return {
+          ...(buildings ? {"tileflow-buildings-3d": {controller:"Buildings 3D", state:{visible:runtimeLayerVisibility["tileflow-buildings-3d"] !== false, shown:coreScene.buildingsShown, scale:buildings.scale}, stats:buildings.stats}} : {}),
+          ...(vegetation ? {"tileflow-trees-3d": {controller:"Vegetation", state:{visible:runtimeLayerVisibility["tileflow-trees-3d"] !== false, representation:vegetation.representation}, stats:vegetation.stats}} : {}),
+          ...(streetLights ? {"tileflow-street-lights": {controller:"Street lights", state:{visible:runtimeLayerVisibility["tileflow-street-lights"] !== false, mounted:true}, stats:streetLights.stats}} : {})
+        };
+      };
       const createPreviewSceneThemes = ${createPreviewSceneThemes.toString()};
       const coreSceneThemeControllers = new WeakMap();
       function coreSceneThemes(map) {
@@ -1844,25 +1847,33 @@ export function renderTileflowPreviewHtml(
         mountingCoreScene = true;
         try {
           const metadata = map.getStyle()?.metadata ?? {};
-          const controller = coreSceneThemes(map);
-          if (!coreScene.buildings && metadata["tileflow:buildings"]) {
-            coreScene.buildings = createTileflowBuildings3D({map, controller});
-          }
-          if (!coreScene.trees) {
+          const treesShown = () => treesEnabled && runtimeLayerVisibility["tileflow-trees-3d"] !== false;
+          if (!coreScene.scene) {
             if (!previewSearchParameters.has("trees3d")) {
               treesEnabled = metadata["tileflow:vegetation-display"]?.visible ?? true;
             }
-            coreScene.trees = createTileflowVegetation({map, controller, visible: treesEnabled,
-              viewMode: threeDimensionalEnabled ? "3d" : "2d", transformRequest: previewTransformRequest});
+            // The scene mounts what the style declares; street lights belong to the 3D view.
+            coreScene.scene = createTileflowMap3D({map, controller: coreSceneThemes(map),
+              viewMode: threeDimensionalEnabled ? "3d" : "2d", vegetation: treesShown(),
+              transformRequest: previewTransformRequest});
           }
-          coreScene.trees.setVisible(treesEnabled && runtimeLayerVisibility["tileflow-trees-3d"] !== false);
-          coreScene.trees.setViewMode(threeDimensionalEnabled ? "3d" : "2d");
-          // Street lights require an explicit map opt-in and the 3D control; defaults stay off.
-          if (!coreScene.lights && threeDimensionalEnabled && metadata["tileflow:street-lights"]) {
-            coreScene.lights = createTileflowStreetLights({map, controller});
-          } else if (coreScene.lights && (!threeDimensionalEnabled || !metadata["tileflow:street-lights"])) {
-            coreScene.lights.dispose();
-            coreScene.lights = undefined;
+          const scene = coreScene.scene;
+          scene.setVegetation(treesShown());
+          const instant = {transition: {duration: 0}};
+          const animation = previewSearchParameters.get('animation') || '0';
+          const duration = animation === 'fade' ? 800 : Math.min(3000, Math.max(0, Number(animation) || 0));
+          // Only a change of the controls moves the layers, so a style event does not restart them.
+          if (coreScene.shown !== threeDimensionalEnabled || coreScene.animation !== animation) {
+            coreScene.shown = threeDimensionalEnabled;
+            coreScene.buildingsShown = threeDimensionalEnabled;
+            coreScene.animation = animation;
+            void (threeDimensionalEnabled ? scene.show({transition: {duration, mode: animation === "fade" ? "fade" : "grow"}}) : scene.hide(instant));
+          }
+          // The inspector can hide the buildings alone.
+          const showBuildings = threeDimensionalEnabled && runtimeLayerVisibility["tileflow-buildings-3d"] !== false;
+          if (scene.buildings && coreScene.buildingsShown !== showBuildings) {
+            coreScene.buildingsShown = showBuildings;
+            void (showBuildings ? scene.buildings.show(instant) : scene.buildings.hide(instant));
           }
           const lightLayer = map.getLayer("tileflow-street-lights");
           const lightRenderer = lightLayer?.implementation || lightLayer;
@@ -1872,16 +1883,6 @@ export function renderTileflowPreviewHtml(
               if (runtimeLayerVisibility["tileflow-street-lights"] !== false) return render.apply(this,args);
             };
             lightRenderer.__previewVisibility = true;
-          }
-          const showBuildings = threeDimensionalEnabled && runtimeLayerVisibility["tileflow-buildings-3d"] !== false;
-          const instant = {transition: {duration: 0}};
-          const animation = previewSearchParameters.get('animation') || '0';
-          const duration = animation === 'fade' ? 800 : Math.min(3000, Math.max(0, Number(animation) || 0));
-          // Only a change of the controls moves the layers, so a style event does not restart them.
-          if (coreScene.buildings && (coreScene.buildingsShown !== showBuildings || coreScene.animation !== animation)) {
-            coreScene.buildingsShown = showBuildings;
-            coreScene.animation = animation;
-            void (showBuildings ? coreScene.buildings.show({transition: {duration, mode: animation === "fade" ? "fade" : "grow"}}) : coreScene.buildings.hide(instant));
           }
         } finally {mountingCoreScene = false;}
       }

@@ -86,6 +86,10 @@ import {
 } from '@tileflow/core/browser';
 ```
 
+`@tileflow/core/3d` holds only `createTileflowMap3D` and the 3D renderers it mounts, so an
+application can load them with a dynamic import when a style declares a 3D scene; see
+[3D buildings](buildings-3d.md#the-maps-3d-scene). The browser entry exports the same function.
+
 `attachTileflowNotices(map)` renders the notices a compiled style declares, such as Nautical's
 "Not for navigation", as a compact map control; see
 [Nautical marks](nautical-marks.md). The browser entry is not re-exported from the root. It is SSR-safe to import, has no MapLibre

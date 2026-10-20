@@ -24,12 +24,12 @@ import type {
 import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
+  attachTileflowMap3D,
   attachTileflowMapLifecycle,
   attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowThemeController,
-  createTileflowVegetation,
-  type TileflowVegetationController,
+  type TileflowMap3DAttachment,
   type TileflowViewMode,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
@@ -204,7 +204,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     themeBlend,
     themeTransition,
     vegetation,
-    viewMode = '2d',
+    viewMode = '3d',
     interactionState,
     interactions = defaultInteractions,
     onInteractionDiagnostic,
@@ -247,12 +247,12 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const containerRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
-  const vegetationRef = useRef<TileflowVegetationController | undefined>(undefined);
-  const vegetationInputsRef = useRef({vegetation, viewMode});
-  vegetationInputsRef.current = {vegetation, viewMode};
+  const sceneRef = useRef<TileflowMap3DAttachment | undefined>(undefined);
+  const sceneInputsRef = useRef({vegetation, viewMode});
+  sceneInputsRef.current = {vegetation, viewMode};
   useEffect(() => {
-    vegetationRef.current?.setVisible(vegetation);
-    vegetationRef.current?.setViewMode(viewMode);
+    sceneRef.current?.setVegetation(vegetation);
+    sceneRef.current?.setViewMode(viewMode);
   }, [vegetation, viewMode]);
   const themeControllerRef = useRef<TileflowThemeController | undefined>(undefined);
   const runtimeStyleRef = useRef<ReturnType<typeof resolveTileflowRuntimeStyle>>(null);
@@ -871,11 +871,14 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
             }
           });
         }
-        const vegetationController = createTileflowVegetation({
+        // The map's 3D scene loads only once its style declares one, so 2D maps do not pay for it.
+        const scene = attachTileflowMap3D({
           map,
           ...(themeController ? {controller: themeController} : {}),
-          visible: vegetationInputsRef.current.vegetation,
-          viewMode: vegetationInputsRef.current.viewMode,
+          vegetation: sceneInputsRef.current.vegetation,
+          viewMode: sceneInputsRef.current.viewMode,
+          load: () => import('@tileflow/core/3d'),
+          onError: (error) => console.error('Failed to load the Tileflow 3D scene', error),
           // Direct tile readers use HTTP, not MapLibre's custom World protocol.
           transformRequest: createTileflowTransformRequest({
             getAnalytics: () => resolvedAnalyticsRef.current,
@@ -888,10 +891,10 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
               ),
           }),
         });
-        vegetationRef.current = vegetationController;
+        sceneRef.current = scene;
         registerCleanup(() => {
-          vegetationController.dispose();
-          if (vegetationRef.current === vegetationController) vegetationRef.current = undefined;
+          scene.dispose();
+          if (sceneRef.current === scene) sceneRef.current = undefined;
         });
         const browserWindow = container.ownerDocument.defaultView;
         if (!browserWindow) {

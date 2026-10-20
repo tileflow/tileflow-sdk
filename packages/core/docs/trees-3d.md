@@ -20,7 +20,8 @@ for its models unless an extension explicitly chooses `flat` or `auto`.
 ## Visibility and representation
 
 Use `createTileflowVegetation` for application controls. React, Vue and Svelte mount it automatically
-in interactive maps. The map chooses `vegetation.mode` independently of visibility:
+in interactive maps, as part of the map's [3D scene](buildings-3d.md#the-maps-3d-scene). The map
+chooses `vegetation.mode` independently of visibility:
 
 | Mode           | 2D view             | 3D view             |
 | -------------- | ------------------- | ------------------- |
@@ -28,7 +29,8 @@ in interactive maps. The map chooses `vegetation.mode` independently of visibili
 | `flat`         | Flat crowns/circles | Flat crowns/circles |
 | `auto`         | Flat crowns/circles | Model trees         |
 
-`viewMode` is explicit application state (`2d` by default), not a pitch threshold. Tilting the camera
+`viewMode` is explicit application state, not a pitch threshold: `2d` by default for
+`createTileflowVegetation`, and `3d` by default in the framework components and `createTileflowMap3D`. Tilting the camera
 does not change representation. Visibility defaults to `vegetation.visible ?? true`; OFF hides every
 representation. Turning trees off releases model buffers and tile readers. Controls apply immediately,
 without a grow/sink animation, and do not change building appearance or lighting.
@@ -70,7 +72,7 @@ export default defineMap({
 Use `refine({visible: false})` for initially hidden vegetation that can be enabled at runtime.
 Use `vegetation: disable()` to remove the module entirely; a runtime toggle cannot restore a module
 that is absent from the compiled map. Browser framework components accept `vegetation={false}` and
-`viewMode="3d"` (Vue: `:vegetation="false"`, `view-mode="3d"`). Image mode uses the compiled static
+`viewMode="2d"` (Vue: `:vegetation="false"`, `view-mode="2d"`). Image mode uses the compiled static
 fallback and does not apply these interactive controls.
 
 ## Animate trees with the low-level renderer

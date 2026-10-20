@@ -122,10 +122,14 @@ export type TileflowScene3D = {
   release(context: WebGL2RenderingContext): void;
 };
 
-const scenes = new WeakMap<object, TileflowScene3D>();
+// `@tileflow/core/browser` and `@tileflow/core/3d` each bundle this module, so every copy on a
+// page keeps a map's scene in one registry shared through the global object.
+const sceneRegistry = Symbol.for('tileflow.scene-3d');
 
 /** The 3D scene of a map, made on first use. */
 export function tileflowScene3D(map: object): TileflowScene3D {
+  const global = globalThis as {[sceneRegistry]?: WeakMap<object, TileflowScene3D>};
+  const scenes = (global[sceneRegistry] ??= new WeakMap());
   let scene = scenes.get(map);
   if (!scene) {
     scene = createScene(map);

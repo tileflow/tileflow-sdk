@@ -702,6 +702,7 @@ export {
 export {
   decodeTileflowModels,
   encodeTileflowModels,
+  readTileflowLandmarkTileFootprints,
   readTileflowModelFileIds,
   tileflowModelContentType,
   type TileflowModelCompressor,
@@ -712,7 +713,9 @@ export {
   readTileflowLandmarkRegion,
   readTileflowLandmarksTileJson,
   serializeTileflowLandmarkRegion,
+  type TileflowLandmarkFootprint,
   type TileflowLandmarkRegion,
+  type TileflowLandmarkRegionTile,
   tileflowLandmarkRegionOf,
   tileflowLandmarkRegionZoom,
   type TileflowLandmarksTileJson,

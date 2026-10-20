@@ -58,6 +58,8 @@ export type CameraTiles<T> = {
   update(): void;
   /** The wanted tiles built so far, nearest first. */
   ready(): (CameraTile<T> & {value: T})[];
+  /** Every tile wanted round the camera, built or not, nearest first. */
+  wanted(): readonly Readonly<{x: number; y: number}>[];
   /** Every tile held, wanted or not. */
   all(): Iterable<CameraTile<T>>;
   /** The zoom tiles are read at. */
@@ -293,6 +295,14 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
         const entry = tiles.get(key);
         if (entry?.value && entry.value !== options.empty)
           list.push(entry as CameraTile<T> & {value: T});
+      }
+      return list;
+    },
+    wanted() {
+      const list: {x: number; y: number}[] = [];
+      for (const key of wanted) {
+        const entry = tiles.get(key);
+        if (entry) list.push(entry);
       }
       return list;
     },

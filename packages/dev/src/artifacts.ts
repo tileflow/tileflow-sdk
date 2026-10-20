@@ -128,6 +128,8 @@ export {
   type TileflowLandmarkSource,
 } from './tree-models';
 export {
+  readTileflowLandmarkTileFootprints,
+  type TileflowLandmarkFootprint,
   tileflowLandmarkRegionOf,
   tileflowLandmarkRegionZoom,
   tileflowLandmarkTileOf,

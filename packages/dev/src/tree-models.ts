@@ -16,7 +16,9 @@ import {
   encodeTileflowModels,
   encodeTileflowTreeModel,
   hashTileflowModelBundleManifest,
+  readTileflowLandmarkTileFootprints,
   serializeTileflowLandmarkRegion,
+  type TileflowLandmarkFootprint,
   type TileflowLandmarkRegion,
   tileflowLandmarkTileOf,
   tileflowModelBundleFileName,
@@ -106,11 +108,18 @@ export type TileflowLandmarkSource = Readonly<{
 /**
  * Packages the landmarks standing in one tile of a landmarks tileset into that tile's prepared
  * model file, the landmarks in the order of their ids. Every landmark's origin must fall in the
- * same zoom-14 tile. The result depends only on its input.
+ * same zoom-14 tile. It also returns each landmark's place and footprint, as the region's index
+ * names them. The result depends only on its input.
  */
 export async function packageTileflowLandmarkTile(
   landmarks: readonly TileflowLandmarkSource[],
-): Promise<{x: number; y: number; bytes: Uint8Array; sha256: string}> {
+): Promise<{
+  x: number;
+  y: number;
+  bytes: Uint8Array;
+  sha256: string;
+  landmarks: readonly TileflowLandmarkFootprint[];
+}> {
   if (landmarks.length === 0) throw new RangeError('A landmark tile holds at least one landmark.');
   if (new Set(landmarks.map((landmark) => landmark.id)).size !== landmarks.length)
     throw new RangeError('Every landmark has an id of its own.');
@@ -140,12 +149,16 @@ export async function packageTileflowLandmarkTile(
   }
   await MeshoptEncoder.ready;
   const bytes = encodeTileflowModels(models, MeshoptEncoder);
-  return {x: tile![0], y: tile![1], bytes, sha256: sha256Of(bytes)};
+  const footprints = readTileflowLandmarkTileFootprints(bytes);
+  if (!footprints) throw new Error('The packaged landmark tile cannot be read back.');
+  return {x: tile![0], y: tile![1], bytes, sha256: sha256Of(bytes), landmarks: footprints};
 }
 
 /**
- * Writes the index of one region of a landmarks tileset, `{region: [x, y], tiles: [[x, y,
- * sha256], ...]}`, as the bytes the tileset serves, with their SHA-256.
+ * Writes the index of one region of a landmarks tileset, `{region: [x, y], tiles: [[x, y, sha256,
+ * landmarks], ...]}`, as the bytes the tileset serves, with their SHA-256. A tile's `landmarks` are
+ * the ones `packageTileflowLandmarkTile` returned for it, or `readTileflowLandmarkTileFootprints`
+ * reads back from its bytes.
  */
 export function encodeTileflowLandmarkRegion(region: TileflowLandmarkRegion): {
   bytes: Uint8Array;

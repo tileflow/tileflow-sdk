@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {readTileflowBuildings3D, tileflowBuildingsMetadataKey} from '../src/buildings-3d-design';
 import {meshTileflowBuildings, tileflowBuildingExtent} from '../src/buildings-3d-mesh';
+import {cameraTileAt} from '../src/camera-tiles-browser';
 import {createTileflowPlacedModels} from '../src/models-3d-browser';
 import {
   decodeTileflowModels,
   encodeTileflowModels,
+  readTileflowLandmarkTileFootprints,
   readTileflowModelFileIds,
   type TileflowModelEntry,
 } from '../src/models-3d-file';
@@ -431,6 +433,192 @@ test(
   },
 );
 
+test(
+  "a landmark's footprint holds the buildings under it flat until its tile arrives, for a while",
+  {timeout: 5000},
+  async (t) => {
+    await MeshoptEncoder.ready;
+    const at = [2.2944962, 48.8582621] as const;
+    const bytes = encodeTileflowModels(
+      [tower({id: 'eiffel-tower', at, heading: 0})],
+      MeshoptEncoder,
+    );
+    const landmarks = readTileflowLandmarkTileFootprints(bytes)!;
+    const hash = 'a'.repeat(64);
+    const tilesUrl = 'https://api.tileflow.test/landmarks/tiles.json';
+    const index = serializeTileflowLandmarkRegion({
+      region: [32, 22],
+      tiles: [[8296, 5636, hash, landmarks]],
+    });
+    let release: (response: Response) => void = () => {};
+    let tileRequests = 0;
+    t.mock.method(globalThis, 'fetch', async (url: unknown) => {
+      const address = String(url);
+      if (address === tilesUrl)
+        return Response.json({
+          tilejson: '3.0.0',
+          format: 'tileflow-landmarks-v2',
+          minzoom: 14,
+          maxzoom: 14,
+          tiles: ['https://api.tileflow.test/landmarks/tiles/{sha256}.glb'],
+          regions: {
+            zoom: 6,
+            url: 'https://api.tileflow.test/landmarks/regions/{z}/{x}/{y}.json',
+            available: [[32, 22]],
+          },
+        });
+      if (address.endsWith('/regions/6/32/22.json')) return new Response(index);
+      tileRequests += 1;
+      return new Promise<Response>((resolve) => {
+        release = resolve;
+      });
+    });
+    const models = createTileflowPlacedModels({changed() {}, timing: {hold: 300, settle: 2000}});
+    t.after(() => models.dispose());
+    const [x, y] = cameraTileAt(at[0], at[1], 15);
+    const tile = {x: Math.floor(x), y: Math.floor(y), z: 15};
+    const update = () => models.update([], tilesUrl, [tile], 15);
+    const until = async (done: () => boolean) => {
+      for (let tries = 0; tries < 200 && !done(); tries += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        update();
+      }
+      assert.ok(done());
+    };
+
+    // A tile of buildings waits for the index round it, then builds with the footprint held.
+    update();
+    let settled = false;
+    void models.settle(tile, new AbortController().signal).then(() => {
+      settled = true;
+    });
+    await until(() => settled);
+    assert.ok(models.masksIn(tile, 8192), 'the footprint holds its buildings flat');
+    assert.equal(models.shown().length, 0);
+    assert.equal(tileRequests, 1);
+
+    // The tile is late: after the hold, the buildings rise.
+    await until(() => models.masksIn(tile, 8192) === undefined);
+
+    // It arrives: the tower stands, fading in, and its footprint is left to it again.
+    release(new Response(bytes));
+    await until(() => models.shown().length === 1);
+    assert.ok(models.masksIn(tile, 8192));
+    assert.equal(typeof models.shown()[0]!.standingSince, 'number');
+  },
+);
+
+test(
+  'a landmark holds its buildings flat for as long as they are hidden, then a while longer',
+  {timeout: 5000},
+  async (t) => {
+    await MeshoptEncoder.ready;
+    const at = [2.2944962, 48.8582621] as const;
+    const bytes = encodeTileflowModels(
+      [tower({id: 'eiffel-tower', at, heading: 0})],
+      MeshoptEncoder,
+    );
+    const index = serializeTileflowLandmarkRegion({
+      region: [32, 22],
+      tiles: [[8296, 5636, 'c'.repeat(64), readTileflowLandmarkTileFootprints(bytes)!]],
+    });
+    t.mock.method(globalThis, 'fetch', async (url: unknown) => {
+      const address = String(url);
+      if (address.endsWith('tiles.json'))
+        return Response.json({
+          tilejson: '3.0.0',
+          format: 'tileflow-landmarks-v2',
+          minzoom: 14,
+          maxzoom: 14,
+          tiles: ['https://api.tileflow.test/landmarks/tiles/{sha256}.glb'],
+          regions: {
+            zoom: 6,
+            url: 'https://api.tileflow.test/landmarks/regions/{z}/{x}/{y}.json',
+            available: [[32, 22]],
+          },
+        });
+      if (address.includes('/regions/')) return new Response(index);
+      return new Promise<Response>(() => {});
+    });
+    const models = createTileflowPlacedModels({changed() {}, timing: {hold: 100}});
+    t.after(() => models.dispose());
+    const [x, y] = cameraTileAt(at[0], at[1], 15);
+    const tile = {x: Math.floor(x), y: Math.floor(y), z: 15};
+    let shown = false;
+    const update = () =>
+      models.update([], 'https://api.tileflow.test/tiles.json', [tile], 15, shown);
+    const wait = async (ms: number) => {
+      const end = performance.now() + ms;
+      while (performance.now() < end) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        update();
+      }
+    };
+    update();
+    await wait(300);
+    assert.ok(models.masksIn(tile, 8192), 'hidden buildings stay held past the hold');
+    shown = true;
+    await wait(50);
+    assert.ok(models.masksIn(tile, 8192), 'shown buildings stay held for the hold');
+    await wait(200);
+    assert.equal(models.masksIn(tile, 8192), undefined, 'then they rise');
+  },
+);
+
+test(
+  'a landmark whose tile fails lets the buildings under it rise at once',
+  {timeout: 5000},
+  async (t) => {
+    await MeshoptEncoder.ready;
+    const at = [2.2944962, 48.8582621] as const;
+    const bytes = encodeTileflowModels(
+      [tower({id: 'eiffel-tower', at, heading: 0})],
+      MeshoptEncoder,
+    );
+    const index = serializeTileflowLandmarkRegion({
+      region: [32, 22],
+      tiles: [[8296, 5636, 'b'.repeat(64), readTileflowLandmarkTileFootprints(bytes)!]],
+    });
+    let fail: () => void = () => {};
+    t.mock.method(globalThis, 'fetch', async (url: unknown) => {
+      const address = String(url);
+      if (address.endsWith('tiles.json'))
+        return Response.json({
+          tilejson: '3.0.0',
+          format: 'tileflow-landmarks-v2',
+          minzoom: 14,
+          maxzoom: 14,
+          tiles: ['https://api.tileflow.test/landmarks/tiles/{sha256}.glb'],
+          regions: {
+            zoom: 6,
+            url: 'https://api.tileflow.test/landmarks/regions/{z}/{x}/{y}.json',
+            available: [[32, 22]],
+          },
+        });
+      if (address.includes('/regions/')) return new Response(index);
+      return new Promise<Response>((resolve) => {
+        fail = () => resolve(new Response(null, {status: 500}));
+      });
+    });
+    const models = createTileflowPlacedModels({changed() {}, timing: {hold: 60_000}});
+    t.after(() => models.dispose());
+    const [x, y] = cameraTileAt(at[0], at[1], 15);
+    const tile = {x: Math.floor(x), y: Math.floor(y), z: 15};
+    const update = () => models.update([], 'https://api.tileflow.test/tiles.json', [tile], 15);
+    const until = async (done: () => boolean) => {
+      for (let tries = 0; tries < 200 && !done(); tries += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        update();
+      }
+      assert.ok(done());
+    };
+    update();
+    await until(() => models.masksIn(tile, 8192) !== undefined);
+    fail();
+    await until(() => models.masksIn(tile, 8192) === undefined);
+  },
+);
+
 test("a landmarks tileset's TileJSON names its tile address, its regions and those that hold landmarks", () => {
   const url = 'https://api.tileflow.dev/landmarks/tiles.json';
   const json = {
@@ -467,27 +655,60 @@ test("a landmarks tileset's TileJSON names its tile address, its regions and tho
   );
 });
 
-test("a landmark's tile and region follow from where it stands, and a region's index names its tiles", () => {
+test("a landmark's tile and region follow from where it stands, and a region's index names its tiles and their landmarks", () => {
   const eiffel = tileflowLandmarkTileOf([2.2944962, 48.8582621]);
   assert.deepEqual(eiffel, [8296, 5636]);
   assert.deepEqual(tileflowLandmarkRegionOf(eiffel), [32, 22]);
   assert.throws(() => tileflowLandmarkTileOf([0, 89]), /longitude and a latitude/u);
   const hash = (digit: string) => digit.repeat(64);
+  const tower = {
+    id: 'eiffel-tower',
+    at: [2.2944962, 48.8582621] as const,
+    heading: 0,
+    footprint: [[-62.54, -62.5, 62.5, -62.5, 62.5, 62.5, -62.5, 62.5]],
+  };
+  const bridge = {
+    id: 'pont-d-iena',
+    at: [2.2929, 48.8597] as const,
+    heading: 30,
+    footprint: [[-7, -80, 7, -80, 7, 80, -7, 80]],
+  };
+  const montparnasse = {
+    id: 'tour-montparnasse',
+    at: [2.3219, 48.8421] as const,
+    heading: 0,
+    footprint: [[-25, -16, 25, -16, 25, 16, -25, 16]],
+  };
   const bytes = serializeTileflowLandmarkRegion({
     region: [32, 22],
     tiles: [
-      [8297, 5636, hash('b')],
-      [8296, 5636, hash('a')],
+      [8297, 5637, hash('b'), [montparnasse]],
+      [8296, 5636, hash('a'), [tower, bridge]],
     ],
   });
+  // Canonical bytes: tiles by x then y, their landmarks by id, footprints in whole decimetres.
   assert.equal(
     new TextDecoder().decode(bytes),
-    `{"format":"tileflow-landmark-region-v1","zoom":14,"region":[6,32,22],"tiles":[[8296,5636,"${hash('a')}"],[8297,5636,"${hash('b')}"]]}`,
+    `{"format":"tileflow-landmark-region-v2","zoom":14,"region":[6,32,22],"tiles":[[8296,5636,"${hash('a')}",[{"id":"eiffel-tower","at":[2.2944962,48.8582621],"heading":0,"footprint":[[-625,-625,625,-625,625,625,-625,625]]},{"id":"pont-d-iena","at":[2.2929,48.8597],"heading":30,"footprint":[[-70,-800,70,-800,70,800,-70,800]]}]],[8297,5637,"${hash('b')}",[{"id":"tour-montparnasse","at":[2.3219,48.8421],"heading":0,"footprint":[[-250,-160,250,-160,250,160,-250,160]]}]]]}`,
   );
   const region = readTileflowLandmarkRegion(JSON.parse(new TextDecoder().decode(bytes)));
-  assert.deepEqual(region?.tiles[0], [8296, 5636, hash('a')]);
+  assert.deepEqual(region?.tiles[0]?.slice(0, 3), [8296, 5636, hash('a')]);
+  assert.deepEqual(region?.tiles[0]?.[3]?.[0], {
+    ...tower,
+    footprint: [[-62.5, -62.5, 62.5, -62.5, 62.5, 62.5, -62.5, 62.5]],
+  });
+  // An index of the first format, which named no landmarks, is still read.
+  assert.deepEqual(
+    readTileflowLandmarkRegion({
+      format: 'tileflow-landmark-region-v1',
+      zoom: 14,
+      region: [6, 32, 22],
+      tiles: [[8296, 5636, hash('a')]],
+    })?.tiles,
+    [[8296, 5636, hash('a')]],
+  );
   assert.throws(
-    () => serializeTileflowLandmarkRegion({region: [32, 22], tiles: [[0, 0, hash('a')]]}),
+    () => serializeTileflowLandmarkRegion({region: [32, 22], tiles: [[0, 0, hash('a'), [tower]]]}),
     /outside region 32\/22/u,
   );
   assert.throws(
@@ -495,23 +716,54 @@ test("a landmark's tile and region follow from where it stands, and a region's i
       serializeTileflowLandmarkRegion({
         region: [32, 22],
         tiles: [
-          [8296, 5636, hash('a')],
-          [8296, 5636, hash('b')],
+          [8296, 5636, hash('a'), [tower]],
+          [8296, 5636, hash('b'), [tower]],
         ],
       }),
     /appears twice/u,
   );
   assert.throws(
-    () => serializeTileflowLandmarkRegion({region: [32, 22], tiles: [[8296, 5636, 'x']]}),
+    () => serializeTileflowLandmarkRegion({region: [32, 22], tiles: [[8296, 5636, 'x', [tower]]]}),
     /no SHA-256/u,
+  );
+  assert.throws(
+    () => serializeTileflowLandmarkRegion({region: [32, 22], tiles: [[8296, 5636, hash('a')]]}),
+    /names no landmark/u,
+  );
+  assert.throws(
+    () =>
+      serializeTileflowLandmarkRegion({
+        region: [32, 22],
+        tiles: [[8296, 5636, hash('a'), [montparnasse]]],
+      }),
+    /stands in tile 8297\/5637, not 8296\/5636/u,
+  );
+  assert.throws(
+    () =>
+      serializeTileflowLandmarkRegion({
+        region: [32, 22],
+        tiles: [[8296, 5636, hash('a'), [{...tower, footprint: [[0, 0, 1, 1]]}]]],
+      }),
+    /no valid footprint/u,
+  );
+  const written = JSON.parse(new TextDecoder().decode(bytes));
+  assert.equal(
+    readTileflowLandmarkRegion({...written, tiles: [[0, 0, hash('a'), written.tiles[0][3]]]}),
+    undefined,
+  );
+  assert.equal(
+    readTileflowLandmarkRegion({...written, tiles: [[8296, 5636, hash('a')]]}),
+    undefined,
+    'a tile of the second format names its landmarks',
   );
   assert.equal(
     readTileflowLandmarkRegion({
-      format: 'tileflow-landmark-region-v1',
-      zoom: 14,
-      region: [6, 32, 22],
-      tiles: [[0, 0, hash('a')]],
+      ...written,
+      tiles: [
+        [8296, 5636, hash('a'), [{...written.tiles[0][3][0], footprint: [[0.5, 0, 1, 0, 1, 1]]}]],
+      ],
     }),
     undefined,
+    'footprints travel in whole decimetres',
   );
 });

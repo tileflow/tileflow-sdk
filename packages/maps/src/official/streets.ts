@@ -23,6 +23,7 @@ import {
   type TileflowRoadClassStyle,
   type TileflowSymbolStyle,
   type TileflowThemeColorValue,
+  token,
   transit,
   water,
   withRenderStack,
@@ -2175,6 +2176,80 @@ export const streets = bindOfficialMapTheme(
       buildings: withRenderStack(
         buildings({
           mode: 'flat', // 'flat' | '3d'.
+          threeDimensional: {
+            floodLight: {
+              intensity: token.number('buildings.floodLight.intensity'),
+              brightnessScale: token.number('buildings.floodLight.brightnessScale'),
+              color: token.color('buildings.floodLight'),
+            },
+            modelLighting: {
+              wall: {
+                emissiveStrength: token.number('buildings.modelEmission.strength'),
+                emissiveColor: token.color('buildings.modelEmission'),
+                emissiveHeight: [
+                  token.number('buildings.modelEmission.start'),
+                  token.number('buildings.modelEmission.end'),
+                  0,
+                  1,
+                  token.number('buildings.modelEmission.curve'),
+                ],
+                color: token.color('buildings.modelEmission'),
+                roughness: 1,
+                metallic: 0,
+              },
+              roof: {color: token.color('buildings.modelRoof'), roughness: 1, metallic: 0},
+              window: {
+                roughness: 0,
+                metallic: 1,
+                emissiveStrength: token.number('buildings.modelWindow.strength'),
+                emissiveVariation: token.number('buildings.modelWindow.variation'),
+                emissiveHeight: [0, 0.9, 0, 1, 0.5],
+                colorVariation: {
+                  hue: [
+                    token.number('buildings.modelWindow.hueLow'),
+                    token.number('buildings.modelWindow.hueHigh'),
+                  ],
+                  saturation: [
+                    token.number('buildings.modelWindow.saturationLow'),
+                    token.number('buildings.modelWindow.saturationHigh'),
+                  ],
+                  lightness: [
+                    token.number('buildings.modelWindow.lightnessLow'),
+                    token.number('buildings.modelWindow.lightnessHigh'),
+                  ],
+                  space: 'linear',
+                },
+              },
+              ...Object.fromEntries(
+                (['unclassified', 'door', 'lamp', 'logo'] as const).map((role) => [
+                  role,
+                  {
+                    roughness: 1,
+                    metallic: 0,
+                    emissiveStrength:
+                      role === 'door'
+                        ? token.number('buildings.modelDoor.strength')
+                        : role === 'logo'
+                          ? 0.6
+                          : 0,
+                    colorMix: role === 'logo' ? token.number('buildings.modelLogo.mix') : 1,
+                    colorVariation: {
+                      hue: [10, 70],
+                      saturation: [
+                        token.number('buildings.modelOther.saturation'),
+                        token.number('buildings.modelOther.saturation'),
+                      ],
+                      lightness: [
+                        token.number('buildings.modelOther.lightnessLow'),
+                        token.number('buildings.modelOther.lightnessHigh'),
+                      ],
+                      space: 'linear',
+                    },
+                  },
+                ]),
+              ),
+            },
+          },
           businessCorridor: {
             // This compatibility layer contains selected building footprints,
             // not ground. Streets renders the derived business_area class through

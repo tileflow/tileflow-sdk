@@ -83,6 +83,7 @@ const tileflowBrowserModule = `${readFileSync(
 )}\nglobalThis.__tileflowRegisterContourProtocol = registerTileflowContourProtocol;
 globalThis.__tileflowRegisterPmtilesProtocol = registerTileflowPmtilesProtocol;
 globalThis.__tileflowAttachAtmosphere = attachTileflowAtmosphere;
+globalThis.__tileflowAttachNotices = attachTileflowNotices;
 globalThis.__tileflowCreateThemeController = createTileflowThemeController;`;
 
 type PagePhaseResult =
@@ -892,6 +893,8 @@ window.__tileflowCaptureLoad = async function(input) {
     window.__tileflowMap = map;
     window.__tileflowCaptureStyle = input.style;
     window.__tileflowAttachAtmosphere(map);
+    // Notices such as "Not for navigation" are part of the map, so captured images keep them.
+    window.__tileflowAttachNotices(map);
     return await waitForMapEvent(map, "load", input.mapEventTimeoutMs);
   } catch (error) {
     return {status: "failed", reason: "error", message: String(error?.message || error || "")};

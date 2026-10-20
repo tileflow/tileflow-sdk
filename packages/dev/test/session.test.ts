@@ -1793,6 +1793,7 @@ function runPreviewScript(
       setVisible(visible);
       return {setVisible, setViewMode() {}};
     },
+    attachTileflowNotices: () => () => {},
     readTileflowSunPreset: () => undefined,
     resolveTileflowSun: (preset: unknown) => preset,
     tileflowDefaultSunPreset: {},

@@ -79,13 +79,16 @@ import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
+  attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowTransformRequest,
   registerTileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
 ```
 
-The browser entry is not re-exported from the root. It is SSR-safe to import, has no MapLibre
+`attachTileflowNotices(map)` renders the notices a compiled style declares, such as Nautical's
+"Not for navigation", as a compact map control; see
+[Nautical marks](nautical-marks.md). The browser entry is not re-exported from the root. It is SSR-safe to import, has no MapLibre
 runtime dependency, and reads no browser global during module evaluation. See the
 [framework browser runtime contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/framework-browser-runtime.md) and the
 [cartographic authoring contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/cartographic-authoring.md). Exact field

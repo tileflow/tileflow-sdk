@@ -146,6 +146,7 @@ const officialIconIds = [
   'siegfried-water-lines',
   'siegfried-wetland',
   'soundings-buoy-cardinal',
+  'soundings-buoy-pillar',
   'soundings-buoy-port',
   'soundings-buoy-starboard',
   'soundings-harbor',
@@ -182,6 +183,7 @@ const map1777PatternIds = [
 ] as const;
 const soundingsIconIds = [
   'soundings-buoy-cardinal',
+  'soundings-buoy-pillar',
   'soundings-buoy-port',
   'soundings-buoy-starboard',
   'soundings-harbor',
@@ -531,20 +533,20 @@ test('Soundings is self-contained and references only its bathymetric-map artwor
   }
 
   const serialized = JSON.stringify(style);
-  for (const id of ['soundings-paper-grain', 'soundings-water-dots']) {
-    assert.match(serialized, new RegExp(`"${id}"`, 'u'), `Soundings does not reference ${id}`);
-  }
-  assert.doesNotMatch(serialized, /"soundings-harbor"/u);
+  // Chart patterns and the Nautical point symbols come only from the Soundings directory.
   for (const id of [
     'soundings-buoy-cardinal',
+    'soundings-buoy-pillar',
     'soundings-buoy-port',
     'soundings-buoy-starboard',
+    'soundings-harbor',
     'soundings-light-flare',
     'soundings-lighthouse',
-    'soundings-rock-awash',
+    'soundings-paper-grain',
+    'soundings-water-dots',
     'soundings-wreck',
   ]) {
-    assert.doesNotMatch(serialized, new RegExp(`"${id}"`, 'u'), `${id} leaked into Soundings`);
+    assert.match(serialized, new RegExp(`"${id}"`, 'u'), `Soundings does not reference ${id}`);
   }
 });
 

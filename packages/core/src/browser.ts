@@ -231,6 +231,19 @@ export {
   type TileflowEmphasisModule,
 } from './theme-emphasis';
 export {tileflowLayerDomainMetadataKey} from './layer-domain';
+export {
+  attachTileflowNotices,
+  type TileflowNoticeControl,
+  type TileflowNoticeControlPosition,
+  type TileflowNoticesMap,
+  type TileflowNoticesOptions,
+} from './notices-browser';
+export {
+  readTileflowNotices,
+  tileflowNoticeLimits,
+  tileflowNoticesMetadataKey,
+  type TileflowMapNotice,
+} from './notices';
 
 export * from './fair-use-browser';
 export {

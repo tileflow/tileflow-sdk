@@ -5524,11 +5524,23 @@
             "aids": {
               "$ref": "#/$defs/__schema225"
             },
+            "beacons": {
+              "$ref": "#/$defs/__schema225"
+            },
+            "buoys": {
+              "$ref": "#/$defs/__schema225"
+            },
+            "cables": {
+              "$ref": "#/$defs/__schema76"
+            },
             "coverage": {
               "$ref": "#/$defs/__schema214"
             },
             "enabled": {
               "type": "boolean"
+            },
+            "harbours": {
+              "$ref": "#/$defs/__schema225"
             },
             "hazardAreas": {
               "$ref": "#/$defs/__schema214"
@@ -5566,11 +5578,17 @@
             "navigationAreas": {
               "$ref": "#/$defs/__schema214"
             },
+            "ports": {
+              "$ref": "#/$defs/__schema225"
+            },
             "reefs": {
               "$ref": "#/$defs/__schema214"
             },
             "renderStack": {
               "$ref": "#/$defs/__schema168"
+            },
+            "routes": {
+              "$ref": "#/$defs/__schema76"
             },
             "soundings": {
               "$ref": "#/$defs/__schema225"
@@ -31909,8 +31927,20 @@
         "aids": {
           "$ref": "#/$defs/__schema225"
         },
+        "beacons": {
+          "$ref": "#/$defs/__schema225"
+        },
+        "buoys": {
+          "$ref": "#/$defs/__schema225"
+        },
+        "cables": {
+          "$ref": "#/$defs/__schema76"
+        },
         "coverage": {
           "$ref": "#/$defs/__schema214"
+        },
+        "harbours": {
+          "$ref": "#/$defs/__schema225"
         },
         "hazardAreas": {
           "$ref": "#/$defs/__schema214"
@@ -31948,11 +31978,17 @@
         "navigationAreas": {
           "$ref": "#/$defs/__schema214"
         },
+        "ports": {
+          "$ref": "#/$defs/__schema225"
+        },
         "reefs": {
           "$ref": "#/$defs/__schema214"
         },
         "renderStack": {
           "$ref": "#/$defs/__schema168"
+        },
+        "routes": {
+          "$ref": "#/$defs/__schema76"
         },
         "soundings": {
           "$ref": "#/$defs/__schema225"
@@ -31973,8 +32009,20 @@
         "aids": {
           "$ref": "#/$defs/__schema225"
         },
+        "beacons": {
+          "$ref": "#/$defs/__schema225"
+        },
+        "buoys": {
+          "$ref": "#/$defs/__schema225"
+        },
+        "cables": {
+          "$ref": "#/$defs/__schema76"
+        },
         "coverage": {
           "$ref": "#/$defs/__schema214"
+        },
+        "harbours": {
+          "$ref": "#/$defs/__schema225"
         },
         "hazardAreas": {
           "$ref": "#/$defs/__schema214"
@@ -32012,11 +32060,17 @@
         "navigationAreas": {
           "$ref": "#/$defs/__schema214"
         },
+        "ports": {
+          "$ref": "#/$defs/__schema225"
+        },
         "reefs": {
           "$ref": "#/$defs/__schema214"
         },
         "renderStack": {
           "$ref": "#/$defs/__schema168"
+        },
+        "routes": {
+          "$ref": "#/$defs/__schema76"
         },
         "soundings": {
           "$ref": "#/$defs/__schema225"
@@ -32045,6 +32099,36 @@
             }
           ]
         },
+        "beacons": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef136"
+            }
+          ]
+        },
+        "buoys": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef136"
+            }
+          ]
+        },
+        "cables": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef129"
+            }
+          ]
+        },
         "coverage": {
           "oneOf": [
             {
@@ -32052,6 +32136,16 @@
             },
             {
               "$ref": "#/$defs/TileflowModulePatchRef127"
+            }
+          ]
+        },
+        "harbours": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef136"
             }
           ]
         },
@@ -32168,6 +32262,16 @@
             }
           ]
         },
+        "ports": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef136"
+            }
+          ]
+        },
         "reefs": {
           "oneOf": [
             {
@@ -32185,6 +32289,16 @@
             },
             {
               "$ref": "#/$defs/TileflowModulePatchRef61"
+            }
+          ]
+        },
+        "routes": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef129"
             }
           ]
         },

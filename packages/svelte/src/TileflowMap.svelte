@@ -32,6 +32,7 @@
     attachTileflowAtmosphere,
     attachTileflowFairUseNotice,
     attachTileflowMapLifecycle,
+    attachTileflowNotices,
     createTileflowSessionStarter,
     createTileflowThemeController,
     createTileflowVegetation,
@@ -604,6 +605,7 @@
 
     mapInstance = maplibreMap;
     attachTileflowAtmosphere(maplibreMap);
+    attachTileflowNotices(maplibreMap);
     themeController =
       runtime.theme === undefined
         ? null

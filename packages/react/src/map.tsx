@@ -25,6 +25,7 @@ import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
+  attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowThemeController,
   createTileflowVegetation,
@@ -843,6 +844,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         setupResources.map = map;
         registerCleanup(() => map.remove());
         registerCleanup(attachTileflowAtmosphere(map));
+        registerCleanup(attachTileflowNotices(map));
         const themeController =
           initialRuntimeStyle.theme === undefined
             ? undefined

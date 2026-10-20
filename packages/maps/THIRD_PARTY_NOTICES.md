@@ -105,16 +105,17 @@ attribution.
 
 ## Nautical-chart references
 
-The `soundings` map and its ten SVG symbols and patterns are original Tileflow code and artwork.
+The `soundings` map and its eleven SVG symbols and patterns are original Tileflow code and artwork.
 Its visual grammar was informed by NOAA's
 [Historical Map & Chart Collection](https://historicalcharts.noaa.gov/) and the IHO
 [S-4 and INT 1 standards index](https://iho.int/standards-and-specifications) as cartographic
 references. This package does not include or redistribute NOAA chart images, IHO publication
 artwork, official symbol sheets, fonts, hydrographic surveys, or navigation data.
 
-The map can visualize broad GEBCO-derived bathymetric bands exposed by the selected Tileflow data
-source. Those bands are not packaged here and are not navigation-grade soundings. Soundings is a
-general-purpose visual map, not a nautical chart for navigation.
+The map can visualize broad GEBCO-derived bathymetric bands and `nautical-v1` navigation marks
+exposed by the selected data sources. Neither is packaged here; the bands are not navigation-grade
+soundings, and the marks keep the attribution of their own source. Soundings is a general-purpose
+visual map, not a nautical chart for navigation.
 
 ## Siegfried Map reference and terrain data
 

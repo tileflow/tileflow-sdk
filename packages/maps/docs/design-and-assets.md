@@ -99,18 +99,23 @@ depth-graded water, labelled band edges, continuous colour relief, multidirectio
 port context, named ferry routes, and restrained technical magenta. Its initial camera faces the
 Strait of Gibraltar, allowing an Iberian GEBCO pilot to exercise both Atlantic and Mediterranean
 relief. It selects the public semantic compiler contract without importing or extending `streets`
-and explicitly composes World with `bathymetry({display: 'hybrid'})` while setting Nautical to
-`false`.
+and explicitly composes World with `bathymetry({display: 'hybrid'})` and the `nautical-v1`
+navigation marks.
 
 Vector bands come from `tileflow-bathymetry`; continuous colour relief and hillshade come from
-`tileflow-bathymetry-dem`. The stronger DEM treatment is balanced against the vector wash and depth
-labels rather than against experimental navigation symbols. Dashed outlines remain an honest
+`tileflow-bathymetry-dem`. The DEM treatment is balanced against the vector wash, depth labels, and
+the navigation marks. Dashed outlines remain an honest
 fallback traced from broad GEBCO band polygons until native contour geometry is released. Labels
 show the absolute `min_depth` value, not an inferred range or vessel-specific safety contour.
-Harbours and ferries are ordinary World context. Experimental `nautical-v1` tiles, aids, lights,
-soundings, hazards, reefs, and wrecks are deliberately absent from the official map and remain
-available only to explicitly configured laboratory maps. Soundings is reference cartography and is
-not a navigation product.
+Ferries are ordinary World context. Navigation marks come from `tileflow-nautical`: the theme's
+`nautical.*` image tokens select the Soundings chart symbols for buoys (port can, starboard cone,
+cardinal double cone, and a pillar for other buoys), lights, lighthouses, wrecks, harbours, and
+ports. Buoys and light flares take each mark's own colour from the data; beacons stay small coloured
+dots, rocks are chart crosses and stars, and lighthouse, wreck, harbour, and port symbols are
+printed in the chart ink. Technical magenta remains reserved for operational overlays: restricted,
+military, anchorage, and traffic-separation areas, traffic-separation lines, and cables. Coverage is
+a faint tint before marks appear. The map shows a "Not for navigation" notice wherever it is
+displayed. Soundings is reference cartography and is not a navigation product.
 
 ## siegfried
 

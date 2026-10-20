@@ -110,10 +110,12 @@ export {
 } from './street-lights-browser';
 export {
   readTileflowBuildings3D,
-  tileflowBuildingModelPlacementLimit,
-  tileflowBuildingsMetadataKey,
+  readTileflowTeamModelName,
   type TileflowBuildingModelPlacement,
+  tileflowBuildingModelPlacementLimit,
   type TileflowBuildings3DDesign,
+  tileflowBuildingsMetadataKey,
+  tileflowTeamModelUrl,
 } from './buildings-3d-design';
 export {
   createTileflowTrees3D,

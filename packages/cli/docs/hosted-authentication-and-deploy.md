@@ -184,15 +184,17 @@ Hosted deploy currently rejects local or package-owned web fonts before authenti
 writes. Use self-hosted delivery or an explicit public glyph provider. Enabling managed font bundles
 requires a separately deployed ownership, quota, retention, and immutable-delivery contract.
 
-A map's own 3D building models (the building models of its `models` directories) deploy as one
-model bundle per map. Deploy prepares them as `build` does, uploads the bundle with
-`PUT /v1/model-bundles/:contentHash` after authentication and before the first style write, compiles
-each placement's `url` at the bundle's hosted address and publishes the style with the bundle's
-content hash. Byte-identical bundles are reused by content hash. A bundle holds at most 64 models,
-16 MiB a prepared file and 32 MiB together, and shares the organization's hosted-storage pool like
-icon packages. Upload success must confirm the submitted `contentHash`, model count and byte total,
-one opaque `mdb_<id>` and the query-free `/model-bundles/<id>` base URL. A deploy with
-`--with-native` rejects a map's own building models, because MapLibre Native draws no models.
+A map's own 3D building models (the building models of its `models` directories) are its Team's
+3D models, which `tileflow models publish` publishes by name. Deploy uploads no model files: it
+compiles each placement's `url` as the placeholder `tileflow://team-models/<name>`, leaves the
+building models out of the build's assets and model source identities, so the map's revision binds
+their names and not their bytes, and sends `teamModelSources`, the SHA-256 and size of each glTF
+binary a model was prepared from. Hosted replaces each placeholder with the model's address in the
+map's Team, which follows the model's current version, and fails the deploy for a model the Team has
+not published. The response's `teamModels` names each placed model's current version and whether it
+was prepared from the same files (`match`, `differ` or `unknown`); the CLI warns on `differ`. A
+deploy with `--with-native` rejects a map's own building models, because MapLibre Native draws no
+models.
 
 For every managed resource kind, `assetSetSha256` remains a separate per-map output identity. It
 hashes each generated file's exact portable name, media type, byte count, and SHA-256 using Core's

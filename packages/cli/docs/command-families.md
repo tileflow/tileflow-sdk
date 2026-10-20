@@ -9,6 +9,7 @@ Start with the [tileflow guide](https://github.com/tileflow/tileflow-sdk/blob/ma
 | Local evidence    | `setup capture`, `capture`, `visual compare`, `visual analyze`, `visual diff`, `visual update` |
 | Data and assets   | `tileset inspect`, `tileset publish/list/status/purge`, `inspect features`, `icons list/diff`  |
 | Team Icon Sets    | `icon-set publish/list/status/versions/uses/archive/unarchive/purge`                           |
+| Team 3D models    | `models publish/list/status/restore/purge`                                                     |
 | Repository locks  | `icons install`, `icons update`, `icons pin`                                                   |
 | Account           | `login`, `logout`, `whoami`                                                                    |
 | Hosted delivery   | `deploy`, `status`                                                                             |
@@ -27,6 +28,9 @@ artifacts. `icons diff` requires a managed `--map-id`, the configured map ID in 
 authority when resolving revisions and are the only commands that select revisions or write
 `tileflow.icons.lock.json`. See the
 [Team Icon Set workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/team-icon-sets.md).
+
+`models` publishes and manages the Team 3D models that maps place by name; see
+[Team 3D models](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/team-3d-models.md).
 
 The hidden `projects` command family lists and manages the internal application destinations of an
 account for support. It is not part of the ordinary workflow or the product catalog.

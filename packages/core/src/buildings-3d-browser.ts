@@ -297,7 +297,7 @@ export function createTileflowBuildings3D(
         models.update(
           design().models ?? [],
           design().landmarks?.url,
-          camera.wanted(),
+          camera.coverage(),
           camera.zoom,
           visibleScale() > 0,
         );

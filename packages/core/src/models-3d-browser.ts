@@ -13,7 +13,10 @@
 // is built once the indexes round it, and the map's own models near it, have arrived (or a moment
 // has passed). A model or tile that fails to load, or does not arrive in a few seconds, leaves the
 // map's own buildings standing.
-import type {TileflowBuildingModelPlacement} from './buildings-3d-design';
+import {
+  readTileflowTeamModelName,
+  type TileflowBuildingModelPlacement,
+} from './buildings-3d-design';
 import {cameraTileAt} from './camera-tiles-browser';
 import {decodeTileflowModels} from './models-3d-file';
 import {
@@ -472,6 +475,8 @@ export function createTileflowPlacedModels(
           bottom = Math.max(bottom, tile.y);
         }
         for (const placement of placements) {
+          // A hosted build's placeholder names a Team model before deployment gives it an address.
+          if (readTileflowTeamModelName(placement.url)) continue;
           const [x, y] = cameraTileAt(placement.at[0], placement.at[1], zoom);
           if (
             x < left - reachTiles ||

@@ -243,13 +243,40 @@ The build reads each model, reports a problem with the file and what to change, 
 footprint and writes it beside the style as a prepared model file: a glTF binary whose meshes are
 quantised (`KHR_mesh_quantization`) and compressed by meshoptimizer (`EXT_meshopt_compression`),
 which any glTF viewer opens. The renderer downloads a model only when it stands near the tiles round
-the camera, keeps the nearest dozen, and builds the tiles under it again without the buildings that
+the camera, whether or not those tiles hold buildings, keeps the nearest dozen, and builds the tiles
+under it again without the buildings that
 reach more than half a metre into its footprint; a neighbour that only touches it stays. A tile of
 buildings near a model waits for it, at most a second and a half, so its buildings are not raised
 and then taken away, and the model fades in when it comes to stand. A model that cannot be
 downloaded leaves those buildings standing. Reading a prepared model file loads
 meshoptimizer's WebAssembly decoder, so a page with a Content Security Policy allows
 `'wasm-unsafe-eval'` in its `script-src`.
+
+## Team 3D models
+
+On Tileflow Hosted, a map's building models are its Team's 3D models: each is published once, under
+its name, and every map of the Team that places a model of that name draws it. Locally, the map
+draws its own `.glb` files, so the map is previewed and developed without an account.
+
+```sh
+npx tileflow models publish ./models/eiffel-tower.glb --team @acme
+npx tileflow models status eiffel-tower --team @acme
+```
+
+`tileflow models publish` prepares each building model as a build does and publishes it as the
+model's new current version; with no path, it publishes the building models of every map in the
+project's config. Publishing the bytes of the current version again changes nothing. A hosted map
+follows each model's current version: a new version, or `tileflow models restore`, which makes the
+previous version current again, changes every map that places it the next time the map loads,
+without deploying the maps again. A model keeps its current and previous versions.
+
+`tileflow deploy` writes each placement of a building model as the placeholder
+`tileflow://team-models/<name>` (`tileflowTeamModelUrl(name)`), which the deploy replaces with the
+model's address in the map's Team; a model the Team has not published fails the deploy. The deploy
+also reports a model whose published version was prepared from other files than the map's, so an
+outdated model is easy to spot. A model's file, and what Tileflow shows about it, can be read
+without decoding its meshes with `readTileflowModelFileSummary`. Models are served publicly and may
+be cached, so they must not hold secrets or restricted personal data.
 
 ## Roofs
 
@@ -405,6 +432,6 @@ when they stay unchanged.
 - A colour expression is evaluated at zoom 16.
 - Building models and landmarks take no edges or night light of their own yet, and cannot be
   picked or styled by state.
-- A hosted map takes up to 64 building models of its own, 32 MiB once prepared; `tileflow deploy`
-  uploads them with the map. A deploy with `--with-native` does not take them, since MapLibre Native
-  draws no models. Models named by `url` deploy as they are.
+- A hosted map places its building models as its Team's 3D models: `tileflow deploy` uploads no
+  model files (see [Team 3D models](#team-3d-models)). A deploy with `--with-native` does not take
+  them, since MapLibre Native draws no models. Models named by `url` deploy as they are.

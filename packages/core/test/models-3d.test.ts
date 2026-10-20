@@ -10,6 +10,7 @@ import {
   encodeTileflowModels,
   readTileflowLandmarkTileFootprints,
   readTileflowModelFileIds,
+  readTileflowModelFileSummary,
   type TileflowModelEntry,
 } from '../src/models-3d-file';
 import {
@@ -193,6 +194,26 @@ test('a model file names its models without decoding a mesh', async () => {
   plain.set(json, 20);
   assert.equal(readTileflowModelFileIds(plain), undefined);
   assert.equal(readTileflowModelFileIds(packed.subarray(0, packed.byteLength - 4)), undefined);
+});
+
+test('a model file summarises its levels, size and footprint without decoding a mesh', async () => {
+  await MeshoptEncoder.ready;
+  const packed = encodeTileflowModels([tower()], MeshoptEncoder);
+  assert.deepEqual(readTileflowModelFileSummary(packed), {
+    model: 'tower',
+    levels: [
+      {level: 'near', vertices: 12, triangles: 7},
+      {level: 'mid', vertices: 12, triangles: 7},
+    ],
+    width: 20,
+    depth: 20,
+    height: 10,
+    footprint: {rings: 1, points: 4, area: 400},
+  });
+  // Only a file of exactly one model has a summary.
+  const two = encodeTileflowModels([tower(), tower({id: 'annex'})], MeshoptEncoder);
+  assert.equal(readTileflowModelFileSummary(two), undefined);
+  assert.equal(readTileflowModelFileSummary(packed.subarray(0, packed.byteLength - 4)), undefined);
 });
 
 test('a landmark tile holds several models, each where it stands', async () => {

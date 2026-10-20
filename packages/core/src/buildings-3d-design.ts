@@ -126,6 +126,25 @@ const modelId = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 /** The most models one map places. */
 export const tileflowBuildingModelPlacementLimit = 256;
 
+const teamModelPrefix = 'tileflow://team-models/';
+
+/**
+ * The address a hosted build gives a placement of one of the map's own models: a placeholder that
+ * Tileflow replaces, when the map is deployed, with that model's address in the map's Team.
+ */
+export function tileflowTeamModelUrl(model: string): string {
+  if (!modelId.test(model) || model.length > 64)
+    throw new RangeError(`"${model}" is not a 3D model name.`);
+  return `${teamModelPrefix}${model}`;
+}
+
+/** The Team model a placement's address is the placeholder of, if it is one. */
+export function readTileflowTeamModelName(url: string): string | undefined {
+  if (!url.startsWith(teamModelPrefix)) return undefined;
+  const model = url.slice(teamModelPrefix.length);
+  return modelId.test(model) && model.length <= 64 ? model : undefined;
+}
+
 /** The placements a design names, skipping any it cannot read. */
 function modelsOf(value: unknown): {models?: readonly TileflowBuildingModelPlacement[]} {
   if (!Array.isArray(value)) return {};

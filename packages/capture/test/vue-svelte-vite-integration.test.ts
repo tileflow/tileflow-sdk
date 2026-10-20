@@ -6,8 +6,8 @@ import {verifyFrameworkViteCapture} from './framework-vite-harness';
 test(
   'captures the public Vue adapter in interactive and image modes and proves cleanup',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
-  async () =>
-    verifyFrameworkViteCapture({
+  async (t) =>
+    verifyFrameworkViteCapture(t, {
       entry: 'main.ts',
       files: {
         'App.vue': vueApplicationSource,
@@ -22,8 +22,8 @@ test(
 test(
   'captures the public Svelte adapter in interactive and image modes and proves cleanup',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
-  async () =>
-    verifyFrameworkViteCapture({
+  async (t) =>
+    verifyFrameworkViteCapture(t, {
       entry: 'main.js',
       files: {
         'App.svelte': svelteApplicationSource,

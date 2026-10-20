@@ -1190,6 +1190,36 @@ function boundedThemeNumberSchema(min: number, max: number) {
   ]);
 }
 
+const modelRoleLightingSchema = z
+  .object({
+    emissiveStrength: boundedThemeNumberSchema(0, 5).optional(),
+    emissiveVariation: boundedThemeNumberSchema(0, 1).optional(),
+    emissiveColor: themeColorValueSchema.optional(),
+    color: themeColorValueSchema.optional(),
+    colorMix: boundedThemeNumberSchema(0, 1).optional(),
+    metallic: boundedThemeNumberSchema(0, 1).optional(),
+    roughness: boundedThemeNumberSchema(0, 1).optional(),
+    colorVariation: z
+      .object({
+        hue: z.tuple([boundedThemeNumberSchema(0, 360), boundedThemeNumberSchema(0, 360)]),
+        saturation: z.tuple([boundedThemeNumberSchema(0, 100), boundedThemeNumberSchema(0, 100)]),
+        lightness: z.tuple([boundedThemeNumberSchema(0, 100), boundedThemeNumberSchema(0, 100)]),
+        space: z.enum(['srgb', 'linear']).optional(),
+      })
+      .strict()
+      .optional(),
+    emissiveHeight: z
+      .tuple([
+        boundedThemeNumberSchema(0, 1),
+        boundedThemeNumberSchema(0, 1),
+        boundedThemeNumberSchema(0, 1),
+        boundedThemeNumberSchema(0, 1),
+        boundedThemeNumberSchema(-1, 1),
+      ])
+      .optional(),
+  })
+  .strict();
+
 const buildingsModuleSchema = z
   .object({
     type: z.literal('buildings'),
@@ -1207,7 +1237,35 @@ const buildingsModuleSchema = z
         edgeRadius: z.number().min(0).max(1).optional(),
         edgeColor: themeColorValueSchema.optional(),
         nightLight: boundedThemeNumberSchema(0, 2).optional(),
+        floodLight: z
+          .object({
+            intensity: boundedThemeNumberSchema(0, 1).optional(),
+            brightnessScale: boundedThemeNumberSchema(0, 16).optional(),
+            color: themeColorValueSchema.optional(),
+            groundRadius: z
+              .tuple([z.number().finite().min(0).max(2048), z.number().finite().min(0).max(2048)])
+              .refine(([min, max]) => min <= max, 'The minimum radius must not exceed the maximum.')
+              .optional(),
+            minGroundHeight: z.number().finite().min(0).max(6000).optional(),
+            minWallHeight: z.number().finite().min(0).max(6000).optional(),
+            wallHeightRatio: z.number().finite().min(0).max(1).optional(),
+          })
+          .strict()
+          .optional(),
+        modelLighting: z
+          .object({
+            unclassified: modelRoleLightingSchema.optional(),
+            wall: modelRoleLightingSchema.optional(),
+            door: modelRoleLightingSchema.optional(),
+            roof: modelRoleLightingSchema.optional(),
+            window: modelRoleLightingSchema.optional(),
+            lamp: modelRoleLightingSchema.optional(),
+            logo: modelRoleLightingSchema.optional(),
+          })
+          .strict()
+          .optional(),
         occlusion: z.boolean().optional(),
+        modelOcclusion: boundedThemeNumberSchema(0, 1).optional(),
         shadows: z.boolean().optional(),
         windows: z.boolean().optional(),
         models: z

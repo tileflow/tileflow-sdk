@@ -257,6 +257,15 @@ export function bindOfficialMapTheme<TMap extends TileflowMap>(map: TMap): TMap 
     property?: string,
   ): unknown => {
     if (property !== undefined && classifyTileflowVisualProperty(property, value) === 'number') {
+      // These tuples hold independent controls, rather than one vector-valued paint property.
+      if (
+        Array.isArray(value) &&
+        path.includes('.modelLighting.') &&
+        ['emissiveHeight', 'hue', 'saturation', 'lightness'].includes(property)
+      )
+        return value.map((entry, index) =>
+          bindNumericOutput(entry, `${path}[${index}]`, `${semanticPath}.${index}`),
+        );
       return bindNumericOutput(value, path, semanticPath);
     }
     if (typeof value === 'string') {

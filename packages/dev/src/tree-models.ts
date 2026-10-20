@@ -168,7 +168,7 @@ export function encodeTileflowLandmarkRegion(region: TileflowLandmarkRegion): {
 
 /** A building model, read from its glTF binaries, with its footprint. */
 function buildingModelEntry(id: string, levels: TileflowBuildingModelLevels): TileflowModelEntry {
-  const primitives = readTileflowGltfTriangles(levels.near);
+  const primitives = readTileflowGltfTriangles(levels.near, {materials: true});
   if (!isTileflowBuildingModel(primitives))
     throw new TileflowGltfError(
       'is not a building model; name each material surface, secondary, glass, accent or roof',
@@ -295,7 +295,7 @@ export async function prepareTileflowMapTreeModels(
           const bytes = level === 'near' ? nearBytes : new Uint8Array(await readFile(file.path));
           files[level] = bytes;
           // Each level is read on its own first, so a problem names its file.
-          if (level !== 'near') prepareTileflowBuildingModelMesh(bytes);
+          if (level !== 'near') prepareTileflowBuildingModelMesh(bytes, {ambientOcclusion: false});
           const sha256 = createHash('sha256').update(bytes).digest('hex');
           identities.push({id, level, sha256});
           sources.push({level, sha256, byteLength: bytes.byteLength});

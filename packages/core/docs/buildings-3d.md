@@ -8,6 +8,9 @@ Showing, hiding and changing height are immediate. Illuminated outlines, random 
 invented windows and night lights remain off. Every effect is independently overridable and
 independent of the map's trees.
 
+Streets supplies architectural flood lighting and subtle model wall emission for its dark
+presets. These controls are independent of invented windows and the optional `nightLight` effects.
+
 Tileflow landmarks and a map's own building models can stand in the same 3D scene, replacing
 the buildings under their footprints.
 
@@ -227,6 +230,10 @@ How to prepare a model:
   instead. Each part takes its colour from `modelColors`, or from the buildings' colour when the
   design gives it none, so the model follows the theme from day to night; vertex colours lighter or
   darker than the rest of their part shade it within that colour.
+- **Architectural roles control lighting.** A material may set
+  `extras.tileflow.lightingRole` to `wall`, `door`, `roof`, `window`, `lamp`, `logo` or
+  `unclassified`. This preserves its palette slot. Without a role, `surface`, `secondary` and
+  `accent` are walls, `glass` is a window, and `roof` is a roof.
 - **Metres round an origin on the ground.** The origin is where the model stands, with the model
   above it and its own north along +y once read Z up; nothing may lie more than half a metre below
   it.
@@ -251,6 +258,14 @@ and then taken away, and the model fades in when it comes to stand. A model that
 downloaded leaves those buildings standing. Reading a prepared model file loads
 meshoptimizer's WebAssembly decoder, so a page with a Content Security Policy allows
 `'wasm-unsafe-eval'` in its `script-src`.
+
+Preparation also computes local geometric ambient visibility, independently of the model's
+colour. `modelOcclusion` sets its strength from zero to one (default `0.75`); `occlusion: false`
+disables it. Occluded cavities receive less ambient light while direct sun and dynamic shadows
+remain independent. Existing prepared files with fully exposed vertices retain their appearance.
+Reprepare their original GLBs to gain geometric occlusion. See
+[model preparation](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/building-models.md)
+for authoring, sampling and costs.
 
 ## Team 3D models
 
@@ -366,6 +381,42 @@ by day and night, mixed between the themes either side of a blend's position.
 
 ## Night light
 
+Architectural illumination has two independent controls:
+
+- `floodLight` selects ordinary buildings by height. Ground light starts at `minGroundHeight`
+  (30 m by default), with a stable per-building `groundRadius` in metres (default `[30, 100]`).
+  Wall light starts above `minWallHeight` (200 m); its reach is building height times
+  `wallHeightRatio` (default `1/3`). `intensity` is zero to one and `color` is a theme colour.
+  The effect fades with scene brightness; `brightnessScale` compensates an authored light-colour
+  transform and defaults to one. Overlapping ground contributions use their strongest value.
+- `modelLighting` assigns physical materials and emission to architectural roles. Each profile accepts
+  `emissiveStrength` (zero to five), optional `emissiveColor` (otherwise the surface's own colour), and
+  `emissiveHeight`: `[beginHeight, endHeight, beginMultiplier, endMultiplier, curve]`.
+  Heights are fractions of the source mesh's vertical bounds (the full model for legacy files),
+  multipliers are zero to one, and the exponent is
+  `10 ** curve`, with `curve` from -1 to 1. Equal heights give a constant multiplier of one.
+  Every gradient component, strength and colour may use theme tokens. Emission is mixed in linear light and is independent
+  of ambient occlusion and solar shadows. Values above one saturate the surface emission at one;
+  they also control the falloff of explicitly authored area emitters.
+
+Physical profiles also accept `color`, `colorMix` (zero to one, default one when a tint exists),
+`roughness` and `metallic` (zero to one). Explicit `modelColors` override role tints. Missing
+physical overrides retain the glTF material. `emissiveVariation` adds a stable, model-seeded amount
+from zero to its value. Optional `colorVariation` supplies independent `[min, max]` ranges for
+`hue` (0–360), `saturation` and `lightness` (0–100), with `space: 'srgb'` (default) or `'linear'`.
+The same model identity keeps its samples across LODs and theme changes.
+
+Streets leaves ordinary flood lighting off in its light presets. Its dusk/night wall profile uses a strength
+of `0.1` and `[0.5, 0, 0, 1, 0.8]`, concentrating a warm wash near the foot. Monochrome uses a
+weaker neutral wall profile and no architectural ground flood. Prepared models without role
+metadata use their documented palette mapping. Windows use metallic reflection and varied emission;
+doors and logos have separate profiles, and roofs remain non-emissive. Day/dawn profiles follow
+the scene's brighter material response. A role does not generate missing windows or ground emitters.
+See [building-model preparation](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/building-models.md)
+for glTF channels, explicit area emitters, compatibility and resource costs.
+
+The separate `nightLight` control retains its decorative building and shop effects:
+
 With `nightLight` above 0, the buildings light the street from data at night (as the sun's
 `brightness` falls):
 
@@ -422,6 +473,11 @@ Missing camera capabilities, terrain or a view near the horizon use the full loa
 The depth pass runs again when its focused area, light or casting geometry changes and is reused
 when they stay unchanged.
 
+Model ambient visibility and lighting roles retain the existing 16-byte vertex stride. They add
+no geometry pass or texture. Architectural ground lighting uses a separate one-byte-per-pixel
+mask and one geometry/composite pair of passes while active; its mask is released when inactive.
+At 1280 × 720 and DPR 1, the mask occupies 921,600 bytes, excluding driver overhead.
+
 ## Limits
 
 - Mercator only; the layer draws nothing below its `minzoom`.
@@ -430,8 +486,9 @@ when they stay unchanged.
 - Roofs follow the building's smallest enclosing rectangle: a building with courtyards or far from a
   rectangle keeps a flat roof, and `sawtooth` roofs are drawn flat.
 - A colour expression is evaluated at zoom 16.
-- Building models and landmarks take no edges or night light of their own yet, and cannot be
-  picked or styled by state.
+- Building models and landmarks take no illuminated edges and cannot be picked or styled by state.
+- Model materials use semantic colours and role emission; physical roughness, metallic
+  reflections and authored textures are not rendered.
 - A hosted map places its building models as its Team's 3D models: `tileflow deploy` uploads no
   model files (see [Team 3D models](#team-3d-models)). A deploy with `--with-native` does not take
   them, since MapLibre Native draws no models. Models named by `url` deploy as they are.

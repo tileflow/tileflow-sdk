@@ -3,6 +3,8 @@ import {readdirSync} from 'node:fs';
 import test from 'node:test';
 import {createStyle, readTileflowSunPreset, resolveTileflowTheme} from '@tileflow/core';
 import {mixTileflowSunPresets, resolveTileflowSun} from '@tileflow/core/browser';
+import {buildingFloodLightShare} from '../../core/src/building-illumination';
+import {readTileflowBuildings3D} from '../../core/src/buildings-3d-design';
 import {streets, streetsThemes} from '../src';
 import {streetsPreparedModels} from './streets-assets';
 import {standardLightingReference as reference} from './streets-standard-lighting-fixture';
@@ -63,9 +65,38 @@ for (const [name, theme] of Object.entries(themes)) {
 
     const compiled = createStyle(streets, {theme, preparedAssets});
     assert.deepEqual(readTileflowSunPreset(compiled.metadata), preset);
+    const buildings = readTileflowBuildings3D(compiled.metadata)!;
+    assert.equal(buildings.occlusion, true);
+    assert.equal(buildings.modelOcclusion, 0.75);
+    const dark = name.endsWith('dusk') || name.endsWith('night');
+    const mono = name.startsWith('monochrome');
+    const wallStrength = dark
+      ? mono
+        ? 0.05
+        : 0.1
+      : name.endsWith('day')
+        ? mono
+          ? 0.8
+          : 0.488888888888889
+        : 0.1;
+    assert.ok(Math.abs(buildings.modelLighting!.wall!.emissiveStrength - wallStrength) < 1e-10);
+    if (dark) assert.deepEqual(buildings.modelLighting?.wall?.emissiveHeight, [0.5, 0, 0, 1, 0.8]);
+    assert.equal(buildings.modelLighting?.window?.metallic, 1);
+    assert.equal(buildings.modelLighting?.window?.roughness, 0);
+    assert.equal(buildings.modelLighting?.roof?.emissiveStrength, 0);
+    assert.equal(buildings.modelLighting?.lamp?.emissiveStrength, 0);
+    if (dark) {
+      assert.equal(buildings.modelLighting?.door?.emissiveStrength, mono ? 0.2 : 1.5);
+      assert.equal(buildings.modelLighting?.window?.emissiveVariation, 0.3);
+      assert.equal(buildings.modelLighting?.logo?.emissiveStrength, 0.6);
+    }
+    const flood = buildings.floodLight!;
+    assert.equal(flood.minGroundHeight, 30);
+    assert.equal(flood.minWallHeight, 200);
     assert.equal(
-      (compiled.metadata?.['tileflow:buildings'] as {occlusion?: boolean}).occlusion,
-      true,
+      flood.intensity * buildingFloodLightShare(light, flood.brightnessScale),
+      name.endsWith('night') && !mono ? 0.3 : 0,
+      'colour transforms must not switch ordinary building lights on during dusk',
     );
     assert.deepEqual(compiled.light?.position, [1.15, ...expected.direction]);
     assert.equal(compiled.light?.anchor, 'map');

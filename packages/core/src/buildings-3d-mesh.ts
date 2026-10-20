@@ -214,12 +214,16 @@ export function meshTileflowBuildings(
         }
       used = true;
       tallest = Math.max(tallest, height);
-      const seed = hash(cx * 0.0731 + cy * 0.19137 + index * 1.618);
+      const identified = Number.isSafeInteger(feature.id);
+      const seed = identified
+        ? hash(feature.id! * 0.0731)
+        : hash(cx * 0.0731 + cy * 0.19137 + index * 1.618);
       // A little of each building's own: its seed, or for a building a tile edge cuts, a value the
       // same for each of its pieces.
-      const jitter = rings[0]!.some((value) => value <= 0 || value >= tileflowBuildingExtent)
-        ? hash(height * 7.31 + base * 3.17 + tone)
-        : seed;
+      const jitter =
+        !identified && rings[0]!.some((value) => value <= 0 || value >= tileflowBuildingExtent)
+          ? hash(height * 7.31 + base * 3.17 + tone)
+          : seed;
       const building: Building = {base, top: height, jitter, seed, tone, group, use, cx, cy, index};
       const rounded = rings.map((ring, at) =>
         roundCorners(ring, at, edgeRadius, options.cornerAngle),

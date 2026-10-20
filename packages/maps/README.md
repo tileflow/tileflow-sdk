@@ -157,15 +157,13 @@ own colors.
 southeast at dawn, southwest at dusk and western moonlight at night. Monochrome has distinct
 directions and strengths. Tileflow holds zoom 14+ values; Standard varies intensity below z14.
 Shading differs; `controller.setSun({date, location})` uses the real sun instead of presets.
+Landmark material profiles and subtle dusk/night illumination are covered in
+[3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md).
 The buildings' `threeDimensional.lighting` and `shadows` options control the effect, and each
 theme's `lighting.sun.shadowIntensity` and `lighting.ambient` control its strength.
 Street lights are opt-in: set `roads.streetLights.enabled: true`.
-Core's 3D renderer
-adds a soft ten-percent shade at the foot of the facades, fading within the lowest three metres
-(less on low buildings). Exterior corners have a 0.8 m radius and the roof/wall junction has a narrow
-lighting transition; roofs keep their authored colour. Streets enables soft three-metre contact
-shadows without dark overlaps; `buildings.threeDimensional.occlusion: false` disables them.
-Core replaces the extrusion fallback's blurred bands, styled by `buildings.contactShadow`.
+Core adds contact shade and rounded exterior corners. `buildings.threeDimensional.occlusion: false`
+disables contact shade and model ambient occlusion; `buildings.contactShadow` styles the flat fallback.
 Streets selects Core's `labels.roadPlacement: 'ground'`: street names follow the road plane below
 buildings; POIs, transit names and shields remain above. Disabling roads omits their names.
 Road rings, ramp and surface ordering use [Core's replaceable defaults](../core/docs/cartographic-defaults.md).

@@ -150,6 +150,8 @@ const approvedLightStyleColors = new Set([
   '#F7F6F7',
   '#F8F5F5',
   '#FBF9F8',
+  // Physical roof albedo; its displayed colour depends on the scene lighting.
+  '#FDF1E9',
   '#FE809F',
   '#FEECDF',
   '#FEFEFE',
@@ -261,6 +263,10 @@ const approvedDarkStyleColors = new Set([
   '#E6BB62',
   '#E6E6E6',
   '#EFF6FF',
+  // Architectural ground light and model wall emission.
+  '#F5CFA8',
+  '#FDE4C8',
+  '#FDF1E9',
   '#FF668C',
   '#FFFFFF',
   'RGBA(0, 0, 0, 0)',

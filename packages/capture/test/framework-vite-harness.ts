@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import {mkdtemp, rm, symlink, writeFile} from 'node:fs/promises';
 import {Server} from 'node:http';
 import {dirname, join} from 'node:path';
+import type {TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {PNG} from 'pngjs';
 import {createServer as createViteServer, type PluginOption} from 'vite';
 import {tileflow} from '@tileflow/vite';
 import {createTileflowCaptureSession} from '../src/index';
+import {observeBrowserFailures} from './browser-failures';
 import {writeFrameworkMapFixture} from './tileflow-source-fixture';
 
 type FrameworkViteFixtureOptions = {
@@ -18,8 +20,10 @@ type FrameworkViteFixtureOptions = {
 };
 
 export async function verifyFrameworkViteCapture(
+  t: TestContext,
   options: FrameworkViteFixtureOptions,
 ): Promise<void> {
+  const browserFailures = observeBrowserFailures(t);
   const capturePackageRoot = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
   const cwd = await mkdtemp(
     join(capturePackageRoot, `.tileflow-test-${options.framework}-vite-capture-`),
@@ -112,6 +116,9 @@ export async function verifyFrameworkViteCapture(
         `${options.framework} ${scene} must become APPLICATION_ERROR`,
       );
     }
+  } catch (error) {
+    t.diagnostic(JSON.stringify({framework: options.framework, browserFailures}));
+    throw error;
   } finally {
     Server.prototype.listen = originalListen;
     await session.close();

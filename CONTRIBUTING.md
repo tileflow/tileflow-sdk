@@ -35,6 +35,9 @@ to a temporary directory or use `NODE_DISABLE_COMPILE_CACHE=1` to disable it.
 Tests own their subprocesses and loopback servers. Stop consumers before closing their servers and
 removing fixtures. Capture tests request shutdown over IPC, then terminate the process tree if the
 consumer does not stop. A timeout must fail the test without leaving its worker running.
+Restore the working directory before removing a temporary fixture; Windows keeps the current
+directory locked. CLI tests assert structured output and preserve the test runner's binary events.
+Next, Vue and Svelte capture failures include bounded browser console, page and network diagnostics.
 
 Do not edit package versions, add changesets, create release tags, or run `npm publish`. Every
 source package keeps `0.0.0-development`. Merging to `main` creates a candidate; it does not

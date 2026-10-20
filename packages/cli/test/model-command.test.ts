@@ -1,7 +1,7 @@
 import {Command} from 'commander';
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
-import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
@@ -56,12 +56,19 @@ function captureOutput(t: {after(callback: () => void): void}) {
     stderr: '',
     stdout: '',
     async run<T>(operation: () => Promise<T>): Promise<T> {
-      process.stdout.write = ((chunk: string | Uint8Array) => {
-        output.stdout += String(chunk);
+      // Node's test reporter uses binary frames; capture only the CLI's string writes.
+      process.stdout.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
+        if (typeof chunk !== 'string')
+          return Reflect.apply(originals.stdout, process.stdout, [chunk, ...args]);
+
+        output.stdout += chunk;
         return true;
       }) as typeof process.stdout.write;
-      process.stderr.write = ((chunk: string | Uint8Array) => {
-        output.stderr += String(chunk);
+      process.stderr.write = ((chunk: string | Uint8Array, ...args: unknown[]) => {
+        if (typeof chunk !== 'string')
+          return Reflect.apply(originals.stderr, process.stderr, [chunk, ...args]);
+
+        output.stderr += chunk;
         return true;
       }) as typeof process.stderr.write;
       console.log = (...values: unknown[]) => {
@@ -139,14 +146,21 @@ const model = (
 test('publish prepares a building model and sends its file with the sources it came from', async (t) => {
   const output = captureOutput(t);
   const captured: CapturedRequest[] = [];
+  const originalCwd = process.cwd();
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-model-publish-'));
-  t.after(() => rm(directory, {force: true, recursive: true}));
+  t.after(async () => {
+    process.chdir(originalCwd);
+    assert.notEqual(
+      await realpath(process.cwd()),
+      await realpath(directory),
+      'Leave the fixture before removing it.',
+    );
+    return rm(directory, {force: true, recursive: true});
+  });
   await mkdir(join(directory, 'models'));
   const source = tower();
   await writeFile(join(directory, 'models', 'tower.glb'), source);
-  const originalCwd = process.cwd();
   process.chdir(directory);
-  t.after(() => process.chdir(originalCwd));
 
   let sent: {file: Uint8Array; metadata: unknown; sha256: string} | undefined;
   const command = program(async (request) => {
@@ -207,12 +221,19 @@ test('publish prepares a building model and sends its file with the sources it c
 
 test('publish refuses a response that does not confirm the submitted file', async (t) => {
   const output = captureOutput(t);
-  const directory = await mkdtemp(join(tmpdir(), 'tileflow-model-publish-'));
-  t.after(() => rm(directory, {force: true, recursive: true}));
-  await writeFile(join(directory, 'tower.glb'), tower());
   const originalCwd = process.cwd();
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-model-publish-'));
+  t.after(async () => {
+    process.chdir(originalCwd);
+    assert.notEqual(
+      await realpath(process.cwd()),
+      await realpath(directory),
+      'Leave the fixture before removing it.',
+    );
+    return rm(directory, {force: true, recursive: true});
+  });
+  await writeFile(join(directory, 'tower.glb'), tower());
   process.chdir(directory);
-  t.after(() => process.chdir(originalCwd));
   const command = program(
     () =>
       Response.json({
@@ -249,7 +270,16 @@ test('restore names the current version it expects and confirms the previous one
   }, captured);
 
   await output.run(() =>
-    command.parseAsync(['node', 'tileflow', 'models', 'restore', 'tower', '--api-key', apiKey]),
+    command.parseAsync([
+      'node',
+      'tileflow',
+      'models',
+      'restore',
+      'tower',
+      '--api-key',
+      apiKey,
+      '--json',
+    ]),
   );
 
   assert.equal(process.exitCode ?? 0, 0, output.stderr);
@@ -258,7 +288,12 @@ test('restore names the current version it expects and confirms the previous one
     ['GET /v1/models/tower', 'POST /v1/models/tower/restore'],
   );
   assert.deepEqual(JSON.parse(String(captured[1]!.body)), {expectedCurrentVersion: 4});
-  assert.match(output.stdout, /tower is at version 3 again; version 4 is its previous one/u);
+  assert.deepEqual(JSON.parse(output.stdout), {
+    command: 'models restore',
+    ok: true,
+    schemaVersion: 1,
+    model: model(version(3, 'current', a), version(4, 'previous', b)),
+  });
 });
 
 test('purge sends nothing without the repeated name, then confirms it in a header', async (t) => {
@@ -286,10 +321,17 @@ test('purge sends nothing without the repeated name, then confirms it in a heade
       'tower',
       '--api-key',
       apiKey,
+      '--json',
     ]),
   );
   assert.equal(captured.length, 1);
   assert.equal(captured[0]!.method, 'DELETE');
   assert.equal(captured[0]!.headers.get('x-tileflow-confirm-model-purge'), 'tower');
-  assert.match(output.stdout, /tower is being purged/u);
+  assert.equal(process.exitCode, 0, output.stderr);
+  assert.deepEqual(JSON.parse(output.stdout), {
+    command: 'models purge',
+    ok: true,
+    schemaVersion: 1,
+    purge: {name: 'tower', state: 'purging'},
+  });
 });

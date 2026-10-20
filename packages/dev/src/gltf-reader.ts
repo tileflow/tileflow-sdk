@@ -7,6 +7,8 @@
 export type TileflowGltfPrimitive = {
   /** The material's name, or undefined when the primitive has none. */
   material: string | undefined;
+  /** Optional material.extras.tileflow.lightingRole, validated by the building importer. */
+  lightingRole?: unknown;
   /** x, y and z of each vertex, in metres, Z up. */
   positions: number[];
   /** The vertex normals, Z up; undefined when the file gives none. */
@@ -183,6 +185,11 @@ function meshOf(
         [indices[at + 1], indices[at + 2]] = [indices[at + 2]!, indices[at + 1]!];
     return {
       material: typeof material?.name === 'string' ? material.name : undefined,
+      ...(record(record(material?.extras).tileflow).lightingRole === undefined
+        ? {}
+        : {
+            lightingRole: record(record(material?.extras).tileflow).lightingRole,
+          }),
       positions,
       normals,
       colours,

@@ -535,6 +535,44 @@ function streetsPaletteColors(preset: StreetsLightPreset, colorTheme: StreetsCol
   return {
     ...calibratedStreetsColors(preset, colorTheme),
     ...streetsCartographyColors(colorTheme, preset),
+    'buildings.floodLight': !isDarkStreetsPreset(preset)
+      ? '#FFFFFF'
+      : colorTheme === 'monochrome'
+        ? '#E5E5E5'
+        : colorTheme === 'faded'
+          ? '#F8E4C4'
+          : '#F5CFA8',
+    // Model-part targets are linear radiance in Standard. These display-space equivalents
+    // preserve that target when Core mixes emission in linear light.
+    'buildings.modelEmission': !isDarkStreetsPreset(preset)
+      ? '#FFFFFF'
+      : colorTheme === 'monochrome'
+        ? preset === 'dusk'
+          ? '#F1F1F1'
+          : '#F0F0F0'
+        : colorTheme === 'faded'
+          ? preset === 'dusk'
+            ? '#FDF0DD'
+            : '#FDEFD9'
+          : preset === 'dusk'
+            ? '#FDE6CD'
+            : '#FDE4C8',
+  };
+}
+
+function streetsLightingNumbers(preset: StreetsLightPreset, colorTheme: StreetsColorTheme) {
+  const dark = isDarkStreetsPreset(preset);
+  return {
+    'buildings.floodLight.intensity': dark && colorTheme !== 'monochrome' ? 0.3 : 0,
+    // Light colours already include the Faded lookup table; lamp activation uses the
+    // corresponding untransformed brightness, independently of that appearance change.
+    'buildings.floodLight.brightnessScale':
+      colorTheme === 'faded'
+        ? {day: 1, dawn: 0.9203658119566795, dusk: 0.47333738050439994, night: 0.42688225390661877}[
+            preset
+          ]
+        : 1,
+    'buildings.modelEmission.strength': dark ? (colorTheme === 'monochrome' ? 0.05 : 0.1) : 0,
   };
 }
 
@@ -572,7 +610,7 @@ const streetsLightTheme = defineTheme({
   colorScheme: 'light',
   tokens: {
     color: streetsPaletteColors('day', 'default'),
-    number: {},
+    number: streetsLightingNumbers('day', 'default'),
     font: streetsFonts,
     image: {...streetsImages, ...streetsPoiImageTokens('light')},
   },
@@ -598,7 +636,7 @@ const streetsDarkTheme = defineTheme({
   colorScheme: 'dark',
   tokens: {
     color: streetsPaletteColors('night', 'default'),
-    number: {},
+    number: streetsLightingNumbers('night', 'default'),
     font: streetsFonts,
     image: {
       ...streetsImages,
@@ -644,6 +682,7 @@ function defineStreetsPaletteTheme(
     lighting: streetsLighting[colorTheme][preset],
     tokens: {
       color: streetsPaletteColors(preset, colorTheme),
+      number: streetsLightingNumbers(preset, colorTheme),
       ...(imageVariant ? {image: streetsPoiImageTokens(imageVariant)} : {}),
     },
   });

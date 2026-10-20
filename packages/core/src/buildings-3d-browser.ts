@@ -2,6 +2,11 @@
 // own vector tiles round the camera. Scene sun lighting, soft contact, cast shadows and rounded
 // corners are the defaults; decorative effects and timed height transitions are opt-in.
 import {
+  buildingFloodLightShare,
+  defaultBuildingFloodLight,
+  defaultModelEmissionGradient,
+} from './building-illumination';
+import {
   readTileflowBuildings3D,
   type TileflowBuildings3DDesign,
   tileflowBuildingsMetadataKey,
@@ -24,6 +29,9 @@ import {
 } from './buildings-3d-occlusion';
 import {drawBuildingOpacity} from './buildings-3d-opacity';
 import {
+  buildingArchitecturalFloodComposite,
+  buildingArchitecturalFloodFragment,
+  buildingArchitecturalFloodVertex,
   tileflowBuildingAttributes,
   tileflowBuildingBandVertex,
   tileflowBuildingDepthFragment,
@@ -39,7 +47,12 @@ import {cameraFrame, cameraTileAt, createCameraTiles} from './camera-tiles-brows
 import {tileflowFeatureColour} from './feature-colour-browser';
 import {inspectModelTriangles, type TileflowModelInspection} from './model-inspection';
 import {createTileflowPlacedModels, type TileflowPlacedModel} from './models-3d-browser';
-import {type TileflowModelPart, tileflowModelParts} from './models-3d-model';
+import {
+  type TileflowModelLightingRole,
+  tileflowModelLightingRoles,
+  type TileflowModelPart,
+  tileflowModelParts,
+} from './models-3d-model';
 import {
   tileflowModelAttributes,
   tileflowModelDepthFragment,
@@ -213,6 +226,8 @@ export function createTileflowBuildings3D(
       | 'contact'
       | 'contactComposite'
       | 'flood'
+      | 'architecturalFlood'
+      | 'architecturalFloodComposite'
       | 'model'
       | 'modelDepth',
       Program
@@ -222,6 +237,7 @@ export function createTileflowBuildings3D(
   let linking: Linking[] | undefined;
   let ground: {vao: WebGLVertexArrayObject; vbo: WebGLBuffer} | undefined;
   const contactMask = createBuildingContactMask();
+  const floodMask = createBuildingContactMask();
   let disposed = false;
   // Shadows are drawn in the map's shared 3D scene, with any other 3D layer on the map.
   const scene = tileflowScene3D(map);
@@ -280,6 +296,7 @@ export function createTileflowBuildings3D(
         context.deleteBuffer(ground.vbo);
       }
       contactMask.release(context);
+      floodMask.release(context);
       if (blank) context.deleteTexture(blank);
       blank = undefined;
       programs = {};
@@ -332,6 +349,7 @@ export function createTileflowBuildings3D(
       if (target > 0 || scale > 0) upload(context);
       if (visibleScale() <= 0) {
         contactMask.release(context);
+        floodMask.release(context);
         return;
       }
       draw(context, args);
@@ -848,6 +866,11 @@ export function createTileflowBuildings3D(
     const mesh = model.model.levels[level]!;
     context.uniform3f(program.uniforms.u_level_centre!, ...mesh.centre);
     context.uniform1f(program.uniforms.u_level_step!, mesh.step);
+    context.uniform2f(
+      program.uniforms.u_model_height ?? null,
+      model.model.bounds[2],
+      model.model.bounds[5] - model.model.bounds[2],
+    );
     context.bindVertexArray(buffers.vao);
     context.drawElements(context.TRIANGLES, mesh.indices.length, buffers.type, 0);
   }
@@ -868,6 +891,57 @@ export function createTileflowBuildings3D(
         out[index * 3 + channel] = below[channel]! + (above[channel]! - below[channel]!) * mix;
     }
     return out;
+  }
+
+  function modelLightingNow() {
+    const {themes, lower, upper, mix} = designsOnScreen();
+    const strengths = new Float32Array(7);
+    const colours = new Float32Array(28);
+    const gradients = new Float32Array(28);
+    const powers = new Float32Array(7);
+    for (const [role, id] of Object.entries(tileflowModelLightingRoles) as [
+      TileflowModelLightingRole,
+      number,
+    ][]) {
+      const from = themes[lower]!.modelLighting?.[role],
+        to = themes[upper]!.modelLighting?.[role];
+      strengths[id] = (from?.emissiveStrength ?? 0) * (1 - mix) + (to?.emissiveStrength ?? 0) * mix;
+      const a = rgbOf(from?.emissiveColor),
+        b = rgbOf(to?.emissiveColor);
+      for (let channel = 0; channel < 3; channel += 1)
+        colours[id * 4 + channel] =
+          (a?.[channel] ?? b?.[channel] ?? 0) * (1 - mix) +
+          (b?.[channel] ?? a?.[channel] ?? 0) * mix;
+      colours[id * 4 + 3] = (a ? 1 - mix : 0) + (b ? mix : 0);
+      const first = from?.emissiveHeight ?? defaultModelEmissionGradient;
+      const second = to?.emissiveHeight ?? defaultModelEmissionGradient;
+      for (let component = 0; component < 4; component += 1)
+        gradients[id * 4 + component] = first[component]! * (1 - mix) + second[component]! * mix;
+      powers[id] = first[4] * (1 - mix) + second[4] * mix;
+    }
+    return {strengths, colours, gradients, powers};
+  }
+
+  function floodLightNow() {
+    const {themes, lower, upper, mix} = designsOnScreen();
+    const first = themes[lower]!.floodLight ?? defaultBuildingFloodLight;
+    const second = themes[upper]!.floodLight ?? defaultBuildingFloodLight;
+    const number = (a: number, b: number) => a * (1 - mix) + b * mix;
+    const a = rgbOf(first.color) ?? rgbOf(defaultBuildingFloodLight.color)!;
+    const b = rgbOf(second.color) ?? rgbOf(defaultBuildingFloodLight.color)!;
+    return {
+      intensity:
+        number(first.intensity, second.intensity) *
+        buildingFloodLightShare(sunNow(), number(first.brightnessScale, second.brightnessScale)),
+      colour: a.map((value, i) => number(value, b[i]!)),
+      radius: [
+        number(first.groundRadius[0], second.groundRadius[0]),
+        number(first.groundRadius[1], second.groundRadius[1]),
+      ],
+      minGroundHeight: number(first.minGroundHeight, second.minGroundHeight),
+      minWallHeight: number(first.minWallHeight, second.minWallHeight),
+      wallHeightRatio: number(first.wallHeightRatio, second.wallHeightRatio),
+    };
   }
 
   /** A tile's corner and the metres per tile unit in the frame shadows are drawn in. */
@@ -957,6 +1031,7 @@ export function createTileflowBuildings3D(
     const shown = visibleScale();
     const themes = colouredByData() ? designsOnScreen() : undefined;
     const nightLight = mixed((entry) => entry.nightLight);
+    const architectural = floodLightNow();
     const edges = mixed((entry) => entry.edges);
     const {occlusion: occlusionOn, windows: windowsOn} = design();
     const now = performance.now();
@@ -985,6 +1060,13 @@ export function createTileflowBuildings3D(
       context.uniform1f(u.u_windows!, windowsOn ? 1 : 0);
       context.uniform1f(u.u_flood!, light.night * nightLight);
       context.uniform3fv(u.u_flood_colour!, flood.colour);
+      context.uniform1f(u.u_architectural_intensity!, architectural.intensity);
+      context.uniform3fv(u.u_architectural_colour!, architectural.colour);
+      context.uniform2f(
+        u.u_architectural_wall!,
+        architectural.minWallHeight,
+        architectural.wallHeightRatio,
+      );
       context.uniform1f(
         u.u_variation!,
         mixed((entry) => entry.colorVariation),
@@ -1060,7 +1142,16 @@ export function createTileflowBuildings3D(
         context.uniform3fv(m.u_sun_light!, light.sunLight);
         context.uniform3fv(m.u_sky_light!, light.skyLight);
         context.uniform1f(m.u_night!, light.night);
+        context.uniform1f(
+          m.u_ambient_occlusion!,
+          occlusionOn ? mixed((entry) => entry.modelOcclusion ?? 0.75) : 0,
+        );
         context.uniform3fv(m.u_part_colours!, partColoursNow());
+        const emission = modelLightingNow();
+        context.uniform1fv(m.u_role_emission!, emission.strengths);
+        context.uniform4fv(m.u_role_emission_colour!, emission.colours);
+        context.uniform4fv(m.u_role_emission_gradient!, emission.gradients);
+        context.uniform1fv(m.u_role_emission_power!, emission.powers);
         scene.bindShadow(context, m, light.strength);
         const centre = map.getCenter();
         for (const entry of list) {
@@ -1111,7 +1202,7 @@ export function createTileflowBuildings3D(
           context.drawArrays(context.TRIANGLE_STRIP, 0, 4);
         }
     }
-    const walls = (program: Program) => {
+    const walls = (program: Program, reach = flood.reach) => {
       for (const tile of entries) {
         const {x, y, value} = tile;
         const mesh = value.mesh;
@@ -1119,7 +1210,7 @@ export function createTileflowBuildings3D(
         project(context, program, args, x, y);
         context.uniform2f(program.uniforms.u_offset!, ...camera.offsetOf({x, y}));
         context.bindVertexArray(value.gl!.vao);
-        for (const range of viewRanges(args, tile, flood.reach, true))
+        for (const range of viewRanges(args, tile, reach, true))
           context.drawElements(
             context.TRIANGLES,
             range.count,
@@ -1184,6 +1275,49 @@ export function createTileflowBuildings3D(
       context.uniform3fv(program.uniforms.u_flood_colour!, flood.colour);
       walls(program);
     }
+    if (architectural.intensity > 0 && entries.length > 0 && ground) {
+      const program = programs.architecturalFlood!;
+      const texture = floodMask.render(context, () => {
+        context.useProgram(program.program);
+        context.uniform1f(program.uniforms.u_scale!, shown);
+        context.uniform1f(program.uniforms.u_metres!, camera.metres);
+        context.uniform2f(
+          program.uniforms.u_radius!,
+          architectural.radius[0]!,
+          architectural.radius[1]!,
+        );
+        context.uniform1f(program.uniforms.u_min_height!, architectural.minGroundHeight);
+        context.uniform1f(
+          program.uniforms.u_intensity!,
+          architectural.intensity * visibleOpacity(),
+        );
+        walls(program, architectural.radius[1]);
+      });
+      const composite = programs.architecturalFloodComposite!;
+      context.useProgram(composite.program);
+      context.activeTexture(context.TEXTURE2);
+      context.bindTexture(context.TEXTURE_2D, texture);
+      context.uniform1i(composite.uniforms.u_mask!, 2);
+      context.uniform3fv(composite.uniforms.u_colour!, architectural.colour);
+      context.blendFuncSeparate(
+        context.SRC_ALPHA,
+        context.ONE_MINUS_SRC_ALPHA,
+        context.ZERO,
+        context.ONE,
+      );
+      context.bindVertexArray(ground.vao);
+      const xs = entries.map(({x}) => x),
+        ys = entries.map(({y}) => y);
+      for (let x = Math.min(...xs) - 1; x <= Math.max(...xs) + 1; x += 1)
+        for (let y = Math.min(...ys) - 1; y <= Math.max(...ys) + 1; y += 1) {
+          if (!groundVisible(args, x, y)) continue;
+          project(context, composite, args, x, y);
+          context.drawArrays(context.TRIANGLE_STRIP, 0, 4);
+        }
+      context.bindTexture(context.TEXTURE_2D, null);
+    } else {
+      floodMask.release(context);
+    }
     context.bindVertexArray(null);
     context.depthMask(true);
   }
@@ -1199,6 +1333,14 @@ export function createTileflowBuildings3D(
       contact: [buildingContactVertex(projected), buildingContactFragment],
       contactComposite: [tileflowBuildingGroundVertex(projected), buildingContactCompositeFragment],
       flood: [tileflowBuildingBandVertex(projected), tileflowBuildingFloodFragment],
+      architecturalFlood: [
+        buildingArchitecturalFloodVertex(projected),
+        buildingArchitecturalFloodFragment,
+      ],
+      architecturalFloodComposite: [
+        tileflowBuildingGroundVertex(projected),
+        buildingArchitecturalFloodComposite,
+      ],
     };
     sources.model = [tileflowModelVertex(projected), tileflowModelFragment];
     if (!programs.depth)

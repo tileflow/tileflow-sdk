@@ -23,6 +23,7 @@ import {
   type TileflowRoadClassStyle,
   type TileflowSymbolStyle,
   type TileflowThemeColorValue,
+  token,
   transit,
   water,
   withRenderStack,
@@ -2175,6 +2176,20 @@ export const streets = bindOfficialMapTheme(
       buildings: withRenderStack(
         buildings({
           mode: 'flat', // 'flat' | '3d'.
+          threeDimensional: {
+            floodLight: {
+              intensity: token.number('buildings.floodLight.intensity'),
+              brightnessScale: token.number('buildings.floodLight.brightnessScale'),
+              color: token.color('buildings.floodLight'),
+            },
+            modelLighting: {
+              wall: {
+                emissiveStrength: token.number('buildings.modelEmission.strength'),
+                emissiveColor: token.color('buildings.modelEmission'),
+                emissiveHeight: [0.5, 0, 0, 1, 0.8],
+              },
+            },
+          },
           businessCorridor: {
             // This compatibility layer contains selected building footprints,
             // not ground. Streets renders the derived business_area class through

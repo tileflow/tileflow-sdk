@@ -261,6 +261,9 @@ const approvedDarkStyleColors = new Set([
   '#E6BB62',
   '#E6E6E6',
   '#EFF6FF',
+  // Architectural ground light and model wall emission.
+  '#F5CFA8',
+  '#FDE4C8',
   '#FF668C',
   '#FFFFFF',
   'RGBA(0, 0, 0, 0)',

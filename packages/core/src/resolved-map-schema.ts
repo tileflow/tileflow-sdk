@@ -1190,6 +1190,22 @@ function boundedThemeNumberSchema(min: number, max: number) {
   ]);
 }
 
+const modelRoleLightingSchema = z
+  .object({
+    emissiveStrength: boundedThemeNumberSchema(0, 2).optional(),
+    emissiveColor: themeColorValueSchema.optional(),
+    emissiveHeight: z
+      .tuple([
+        z.number().finite().min(0).max(1),
+        z.number().finite().min(0).max(1),
+        z.number().finite().min(0).max(1),
+        z.number().finite().min(0).max(1),
+        z.number().finite().min(-1).max(1),
+      ])
+      .optional(),
+  })
+  .strict();
+
 const buildingsModuleSchema = z
   .object({
     type: z.literal('buildings'),
@@ -1207,7 +1223,35 @@ const buildingsModuleSchema = z
         edgeRadius: z.number().min(0).max(1).optional(),
         edgeColor: themeColorValueSchema.optional(),
         nightLight: boundedThemeNumberSchema(0, 2).optional(),
+        floodLight: z
+          .object({
+            intensity: boundedThemeNumberSchema(0, 1).optional(),
+            brightnessScale: boundedThemeNumberSchema(0, 16).optional(),
+            color: themeColorValueSchema.optional(),
+            groundRadius: z
+              .tuple([z.number().finite().min(0).max(2048), z.number().finite().min(0).max(2048)])
+              .refine(([min, max]) => min <= max, 'The minimum radius must not exceed the maximum.')
+              .optional(),
+            minGroundHeight: z.number().finite().min(0).max(6000).optional(),
+            minWallHeight: z.number().finite().min(0).max(6000).optional(),
+            wallHeightRatio: z.number().finite().min(0).max(1).optional(),
+          })
+          .strict()
+          .optional(),
+        modelLighting: z
+          .object({
+            unclassified: modelRoleLightingSchema.optional(),
+            wall: modelRoleLightingSchema.optional(),
+            door: modelRoleLightingSchema.optional(),
+            roof: modelRoleLightingSchema.optional(),
+            window: modelRoleLightingSchema.optional(),
+            lamp: modelRoleLightingSchema.optional(),
+            logo: modelRoleLightingSchema.optional(),
+          })
+          .strict()
+          .optional(),
         occlusion: z.boolean().optional(),
+        modelOcclusion: boundedThemeNumberSchema(0, 1).optional(),
         shadows: z.boolean().optional(),
         windows: z.boolean().optional(),
         models: z

@@ -12,12 +12,14 @@ export const tileflowModelAttributes = [
   ['a_position', 3, 'SHORT', false, 0],
   ['a_normal', 3, 'BYTE', true, 8],
   ['a_paint', 3, 'UNSIGNED_BYTE', false, 12],
+  ['a_lighting_role', 1, 'UNSIGNED_BYTE', false, 15],
 ] as const;
 
 const attributes = `
 in vec3 a_position; // whole steps from the level's centre, in glTF's axes
 in vec3 a_normal; // in glTF's axes
 in vec3 a_paint; // part; shade (0 to 255); light (0 to 255)
+in float a_lighting_role;
 `;
 
 // Where a vertex stands: metres round the model's origin, turned by its heading, in the tile units
@@ -79,11 +81,14 @@ uniform mat4 u_light_matrix;
 uniform vec3 u_shadow_dir;
 uniform float u_normal_offset;
 uniform vec3 u_part_colours[5];
+uniform vec2 u_model_height;
 ${placement}
 out vec3 v_colour;
 out vec3 v_normal;
 out vec3 v_shadow;
 out float v_light;
+flat out int v_lighting_role;
+out float v_height;
 
 void main() {
   vec3 m = turned(metresOf());
@@ -100,6 +105,8 @@ void main() {
   // A material lighter or darker than mid-grey makes its part lighter or darker.
   v_colour = colour * (0.55 + 0.45 * (a_paint.y / 255.0) * 2.0);
   v_light = a_paint.z / 255.0;
+  v_lighting_role = clamp(int(a_lighting_role + 0.5), 0, 6);
+  v_height = (m.z - u_model_height.x) / max(u_model_height.y, 0.001);
 }`;
 
 export const tileflowModelFragment = `#version 300 es
@@ -108,10 +115,17 @@ in vec3 v_colour;
 in vec3 v_normal;
 in vec3 v_shadow;
 in float v_light;
+flat in int v_lighting_role;
+in float v_height;
 uniform vec3 u_sun_dir;
 uniform vec3 u_sun_light;
 uniform vec3 u_sky_light;
 uniform float u_night;
+uniform float u_ambient_occlusion;
+uniform float u_role_emission[7];
+uniform vec4 u_role_emission_colour[7];
+uniform vec4 u_role_emission_gradient[7];
+uniform float u_role_emission_power[7];
 out vec4 fragColor;
 ${tileflowShadowLookup}
 
@@ -120,6 +134,7 @@ ${tileflowShadowLookup}
 vec3 shade(vec3 normal, float lit) {
   float facing = dot(normal, u_sun_dir);
   vec3 sky = u_sky_light * mix(mix(0.8, 0.5, u_night), 1.0, max(normal.z, -0.4));
+  sky *= mix(1.0, v_light, u_ambient_occlusion);
   vec3 light = sky + u_sun_light * max(facing, 0.0) * (1.0 - u_shadow * (1.0 - lit));
   vec3 roof = u_sky_light + u_sun_light * max(u_sun_dir.z, 0.0);
   return min(pow(light / max(roof, vec3(1e-4)), vec3(1.0 / 2.2)), vec3(1.7));
@@ -128,5 +143,20 @@ vec3 shade(vec3 normal, float lit) {
 void main() {
   vec3 normal = normalize(gl_FrontFacing ? v_normal : -v_normal);
   float lit = dot(normal, u_sun_dir) > 0.0 ? visibility(v_shadow, 0.3) : 0.0;
-  fragColor = vec4(v_colour * shade(normal, lit) * mix(0.55, 1.0, v_light), 1.0);
+  vec3 colour = v_colour * shade(normal, lit);
+  int role = clamp(v_lighting_role, 0, 6);
+  vec4 gradient = u_role_emission_gradient[role];
+  float multiplier = 1.0;
+  if (gradient.x != gradient.y) {
+    float height = clamp((v_height - gradient.x) / (gradient.y - gradient.x), 0.0, 1.0);
+    multiplier = mix(gradient.z, gradient.w, pow(height, pow(10.0, u_role_emission_power[role])));
+  }
+  float emission = clamp(u_role_emission[role] * multiplier, 0.0, 1.0);
+  if (emission > 0.0) {
+    vec4 own = u_role_emission_colour[role];
+    vec3 target = mix(v_colour, own.rgb, own.a);
+    colour = pow(mix(pow(max(colour, vec3(0.0)), vec3(2.2)),
+      pow(max(target, vec3(0.0)), vec3(2.2)), emission), vec3(1.0 / 2.2));
+  }
+  fragColor = vec4(colour, 1.0);
 }`;

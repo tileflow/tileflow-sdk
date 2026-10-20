@@ -295,7 +295,7 @@ export async function prepareTileflowMapTreeModels(
           const bytes = level === 'near' ? nearBytes : new Uint8Array(await readFile(file.path));
           files[level] = bytes;
           // Each level is read on its own first, so a problem names its file.
-          if (level !== 'near') prepareTileflowBuildingModelMesh(bytes);
+          if (level !== 'near') prepareTileflowBuildingModelMesh(bytes, {ambientOcclusion: false});
           const sha256 = createHash('sha256').update(bytes).digest('hex');
           identities.push({id, level, sha256});
           sources.push({level, sha256, byteLength: bytes.byteLength});

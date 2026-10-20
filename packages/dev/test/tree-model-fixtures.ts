@@ -2,6 +2,7 @@
 
 export type GlbPart = {
   material?: string;
+  lightingRole?: string;
   /** x, y, z per vertex, Y up. */
   positions: number[];
   indices: number[];
@@ -53,6 +54,9 @@ export function writeGlb(parts: GlbPart[], extra: Record<string, unknown> = {}):
     if (part.material !== undefined) {
       materials.push({
         name: part.material,
+        ...(part.lightingRole === undefined
+          ? {}
+          : {extras: {tileflow: {lightingRole: part.lightingRole}}}),
         pbrMetallicRoughness: {baseColorFactor: [...(part.colour ?? [1, 1, 1]), 1]},
       });
       material = materials.length - 1;

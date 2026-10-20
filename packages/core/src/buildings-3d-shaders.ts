@@ -195,6 +195,9 @@ uniform float u_corner;
 uniform float u_night; // 0 by day, 1 at night
 uniform float u_windows; // whether to draw night windows
 uniform float u_flood; // flood light strength at night
+uniform float u_architectural_intensity;
+uniform vec3 u_architectural_colour;
+uniform vec2 u_architectural_wall; // minimum height, wall radius / building height
 uniform float u_edge; // how strongly roof outlines and outer corners catch the light, 0 for none
 uniform float u_edge_width; // their width, in the drawing buffer's pixels
 uniform vec3 u_edge_colour; // the application's colour for them
@@ -347,6 +350,11 @@ void main() {
     }
     // Flood lights wash the foot of lit buildings at night.
     colour += floodOf(v_building.y, top, seed) * u_flood * 0.3 * (1.0 - smoothstep(0.0, 6.0, up));
+    if (top > u_architectural_wall.x && u_architectural_intensity > 0.0) {
+      float radius = top * u_architectural_wall.y;
+      float share = u_architectural_intensity * max(0.0, 1.0 - up / max(radius, 0.001));
+      colour = mix(colour, u_architectural_colour, share);
+    }
     // The places busy at night light their ground floor's windows: panes of about 3.6 m, which far
     // away give way to their average so nothing shimmers.
     if (v_building.w > 0.5 && v_wall.z > 3.0 && v_wall.y < 4.0 && u_flood > 0.0) {
@@ -427,4 +435,42 @@ void main() {
   float near = 1.0 - v_out;
   float close = near * near * near * near * near * near;
   fragColor = vec4((v_flood * 0.35 * near * near + v_shop * 0.12 * close) * u_flood * v_strength, 0.0);
+}`;
+
+export const buildingArchitecturalFloodVertex = (projected: string): string => `#version 300 es
+${projected}
+${attributes}
+${growth}
+uniform vec2 u_radius;
+uniform float u_min_height;
+out float v_out;
+void main() {
+  if (a_height.y * 0.1 < u_min_height || a_height.x > 5.0 || progressOf() <= 0.0) {
+    gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
+    return;
+  }
+  float radius = mix(u_radius.x, u_radius.y, a_wave.x);
+  gl_Position = projectTileFor3D(a_pos + a_normal * (radius / u_metres) * a_flags.x, 0.0);
+  v_out = a_flags.x;
+}`;
+
+// Store remaining light transmission in the shared MIN mask; overlapping walls never accumulate.
+export const buildingArchitecturalFloodFragment = `#version 300 es
+precision highp float;
+in float v_out;
+uniform float u_intensity;
+out vec4 fragColor;
+void main() {
+  float near = 1.0 - v_out;
+  fragColor = vec4(vec3(1.0 - u_intensity * pow(near, 2.101)), 1.0);
+}`;
+
+export const buildingArchitecturalFloodComposite = `#version 300 es
+precision highp float;
+uniform sampler2D u_mask;
+uniform vec3 u_colour;
+out vec4 fragColor;
+void main() {
+  float light = 1.0 - texelFetch(u_mask, ivec2(gl_FragCoord.xy), 0).r;
+  fragColor = vec4(u_colour, light);
 }`;

@@ -2,6 +2,7 @@
 // their design from the buildings and roads modules, with the data's references still semantic
 // (the caller binds them with the rest of the style), the buildings' colour as the map's own final
 // 3D building colour, else its roofs', and the tileset of Tileflow's landmarks the map shows.
+import {readBuildingFloodLight, readModelRoleLighting} from '../building-illumination';
 import {
   type TileflowBuildingModelPlacement,
   type TileflowBuildings3DDesign,
@@ -71,9 +72,47 @@ export function tileflowBuildings3DDesignOf(
     edgeRadius: number(style.edgeRadius, defaults.edgeRadius),
     ...(typeof edgeColor === 'string' ? {edgeColor} : {}),
     nightLight: number(style.nightLight, 0),
+    ...(isRecord(style.floodLight)
+      ? {
+          floodLight: readBuildingFloodLight({
+            ...style.floodLight,
+            intensity: number(style.floodLight.intensity, 0),
+            brightnessScale: number(style.floodLight.brightnessScale, 1),
+            color:
+              style.floodLight.color === undefined
+                ? undefined
+                : toMapLibreStyleValue(style.floodLight.color as never),
+          }),
+        }
+      : {}),
+    ...(isRecord(style.modelLighting)
+      ? {
+          modelLighting: readModelRoleLighting(
+            Object.fromEntries(
+              Object.entries(style.modelLighting)
+                .filter(([, entry]) => isRecord(entry))
+                .map(([role, entry]) => {
+                  const own = entry as Record<string, unknown>;
+                  return [
+                    role,
+                    {
+                      ...own,
+                      emissiveStrength: number(own.emissiveStrength, 0),
+                      emissiveColor:
+                        own.emissiveColor === undefined
+                          ? undefined
+                          : toMapLibreStyleValue(own.emissiveColor as never),
+                    },
+                  ];
+                }),
+            ),
+          ),
+        }
+      : {}),
     windows: style.windows === true,
     shadows: typeof style.shadows === 'boolean' ? style.shadows : defaults.shadows,
     occlusion: typeof style.occlusion === 'boolean' ? style.occlusion : defaults.occlusion,
+    modelOcclusion: number(style.modelOcclusion, defaults.modelOcclusion),
     ...placedModels(style.models, buildingModels),
     ...modelColours(style.modelColors),
     ...landmarksOf(style.landmarks, tileflowLandmarks),

@@ -17,6 +17,22 @@ export const tileflowModelParts = Object.freeze({
 
 export type TileflowModelPart = keyof typeof tileflowModelParts;
 
+/** Architectural roles control lighting independently of the model's palette slots. */
+export const tileflowModelLightingRoles = Object.freeze({
+  unclassified: 0,
+  wall: 1,
+  door: 2,
+  roof: 3,
+  window: 4,
+  lamp: 5,
+  logo: 6,
+});
+
+export type TileflowModelLightingRole = keyof typeof tileflowModelLightingRoles;
+
+/** Legacy palette slots map to wall, wall, window, wall and roof; doors and logos are explicit. */
+export const tileflowModelDefaultLightingRoles = Object.freeze([1, 1, 4, 1, 3] as const);
+
 /** What a model may hold. */
 export const tileflowModelLimits = Object.freeze({
   /** Levels of detail, nearest first. */
@@ -45,6 +61,8 @@ export type TileflowModelMesh = Readonly<{
   normals: readonly number[];
   /** Each vertex's part, a value of `tileflowModelParts`. */
   parts: readonly number[];
+  /** Optional architectural role per vertex; absent roles use the palette slot's legacy mapping. */
+  lightingRoles?: readonly number[];
   /** Each vertex's shade within its part's colour, from -1 (darkest) to 1 (lightest). */
   shades: readonly number[];
   /** Each vertex's light, from 0 (fully occluded) to 1. */

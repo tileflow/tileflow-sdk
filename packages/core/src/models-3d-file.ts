@@ -13,7 +13,9 @@ import type {TileflowLandmarkFootprint} from './models-3d-landmarks';
 import {
   type TileflowModel,
   type TileflowModelBytes,
+  tileflowModelDefaultLightingRoles,
   type TileflowModelLevelBytes,
+  tileflowModelLightingRoles,
   tileflowModelLimits,
   tileflowModelParts,
   tileflowModelVertexBytes,
@@ -55,6 +57,7 @@ const meshopt = 'EXT_meshopt_compression';
 const quantisation = 'KHR_mesh_quantization';
 const steps = 32767;
 const partCount = Object.keys(tileflowModelParts).length;
+const roleCount = Object.keys(tileflowModelLightingRoles).length;
 const modelId = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const [glbMagic, jsonChunk, binChunk] = [0x46546c67, 0x4e4f534a, 0x004e4942];
 const [short, byte, unsignedByte, unsignedShort, unsignedInt] = [5122, 5120, 5121, 5123, 5125];
@@ -196,6 +199,7 @@ export function encodeTileflowModels(
       extras: {
         tileflow: {
           model: model.id,
+          lightingRoles: 1,
           footprint: model.footprint.map((ring) => ring.map((value) => round(value, 100))),
           ...(model.at ? {at: [model.at[0], model.at[1]]} : {}),
           ...(model.heading !== undefined ? {heading: model.heading} : {}),
@@ -288,6 +292,8 @@ export async function decodeTileflowModels(
     for (const root of roots) {
       const node = json.nodes?.[root as number];
       const model = readModelNode(node);
+      const roles = node.extras.tileflow.lightingRoles;
+      if (roles !== undefined && roles !== 1) return undefined;
       const children: unknown[] = Array.isArray(node.children) ? node.children : [];
       if (children.length < 1 || children.length > tileflowModelLimits.levels) return undefined;
       const levels: TileflowModelLevelBytes[] = [];
@@ -298,6 +304,7 @@ export async function decodeTileflowModels(
           json.nodes?.[child as number],
           levelNames[at]!,
           viewBytes,
+          roles === 1,
         );
         // Bounds in glTF's axes (x east, y up, z south), then east, north and up.
         const low = level.min.map((value, axis) => level.centre[axis]! + value * level.step);
@@ -564,6 +571,10 @@ function quantise(mesh: TileflowModel['levels'][number], compressor?: TileflowMo
     raw[at + 12] = part;
     raw[at + 13] = Math.round(((clamp(mesh.shades[vertex]!, -1, 1) + 1) / 2) * 255);
     raw[at + 14] = Math.round(clamp(mesh.occlusion[vertex]!, 0, 1) * 255);
+    const role = mesh.lightingRoles?.[vertex] ?? tileflowModelDefaultLightingRoles[part]!;
+    if (!Number.isInteger(role) || role < 0 || role >= roleCount)
+      throw new RangeError(`Vertex ${vertex} has no lighting role.`);
+    raw[at + 15] = role;
   }
 
   // Vertices alike in every byte become one.
@@ -641,6 +652,8 @@ function checkModel(model: TileflowModelEntry): void {
     for (const list of [level.parts, level.shades, level.occlusion])
       if (list.length !== count)
         throw new RangeError(`Every vertex of level ${at} needs a part, a shade and a light.`);
+    if (level.lightingRoles && level.lightingRoles.length !== count)
+      throw new RangeError(`Every vertex of level ${at} needs a lighting role.`);
     for (let index = 0; index < count; index += 1)
       for (let axis = 0; axis < 3; axis += 1) {
         const value = level.positions[index * 3 + axis]!;
@@ -707,6 +720,7 @@ function readLevelNode(
   node: any,
   name: string,
   viewBytes: (index: unknown, stride: number, length: number) => Uint8Array,
+  hasLightingRoles: boolean,
 ) {
   if (node?.name !== name || node.matrix !== undefined || node.rotation !== undefined)
     throw new Error();
@@ -773,8 +787,13 @@ function readLevelNode(
     tileflowModelVertexBytes,
     count * tileflowModelVertexBytes,
   );
-  for (let vertex = 0; vertex < count; vertex += 1)
-    if (vertices[vertex * tileflowModelVertexBytes + 12]! >= partCount) throw new Error();
+  for (let vertex = 0; vertex < count; vertex += 1) {
+    const at = vertex * tileflowModelVertexBytes;
+    const part = vertices[at + 12]!;
+    if (part >= partCount) throw new Error();
+    if (!hasLightingRoles) vertices[at + 15] = tileflowModelDefaultLightingRoles[part]!;
+    else if (vertices[at + 15]! >= roleCount) throw new Error();
+  }
   const indexBytes = viewBytes(index.bufferView, width, indexCount * width);
   const indices =
     width === 4

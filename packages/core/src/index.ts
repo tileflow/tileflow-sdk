@@ -683,15 +683,19 @@ export {
 export {
   tileflowInsideRings,
   tileflowModelLimits,
+  tileflowModelLightingRoles,
+  tileflowModelDefaultLightingRoles,
   tileflowModelParts,
   tileflowModelVertexBytes,
   tileflowRingsOverlap,
   type TileflowModel,
   type TileflowModelBytes,
   type TileflowModelLevelBytes,
+  type TileflowModelLightingRole,
   type TileflowModelMesh,
   type TileflowModelPart,
 } from './models-3d-model';
+export type {TileflowModelEmissionGradient} from './building-illumination';
 export {
   decodeTileflowModels,
   encodeTileflowModels,

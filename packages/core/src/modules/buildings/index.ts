@@ -1,5 +1,7 @@
+import type {TileflowModelEmissionGradient} from '../../building-illumination';
 import type {TileflowAreaStyle, TileflowExtrusionStyle} from '../../cartography/styles';
 import type {TileflowThemeColorValue, TileflowThemeNumberValue} from '../../cartography/values';
+import type {TileflowModelLightingRole} from '../../models-3d-model';
 
 export type TileflowBuildingMode = '3d' | 'flat';
 
@@ -20,8 +22,37 @@ export type TileflowBuildingsThreeDimensionalStyle = {
   edgeColor?: TileflowThemeColorValue;
   /** How bright the buildings light the street at night, from 0 (none) to 2; defaults to 0. */
   nightLight?: TileflowThemeNumberValue;
+  /** Height-selected architectural flood lighting. Off by default; follows scene darkness. */
+  floodLight?: {
+    intensity?: TileflowThemeNumberValue;
+    /** Compensates authored light-colour transforms during darkness evaluation; defaults to 1. */
+    brightnessScale?: TileflowThemeNumberValue;
+    color?: TileflowThemeColorValue;
+    /** Stable per-building ground radius range in metres; defaults to [30, 100]. */
+    groundRadius?: readonly [number, number];
+    /** Ground light starts at this height in metres; defaults to 30. */
+    minGroundHeight?: number;
+    /** Wall light starts above this height in metres; defaults to 200. */
+    minWallHeight?: number;
+    /** Wall radius as a fraction of building height; defaults to 1/3. */
+    wallHeightRatio?: number;
+  };
+  /** Per-role model emission. Colour slots, ambient occlusion and solar shadows remain independent. */
+  modelLighting?: Partial<
+    Record<
+      TileflowModelLightingRole,
+      {
+        emissiveStrength?: TileflowThemeNumberValue;
+        emissiveColor?: TileflowThemeColorValue;
+        /** Height fractions, multipliers and curve exponent; defaults to a constant multiplier of one. */
+        emissiveHeight?: TileflowModelEmissionGradient;
+      }
+    >
+  >;
   /** Contact shadow at the foot of the walls and in tight corners; defaults to true. */
   occlusion?: boolean;
+  /** Prepared model ambient occlusion strength, from 0 to 1; defaults to 0.75. */
+  modelOcclusion?: TileflowThemeNumberValue;
   /** Shadows from the sun, on the buildings and the flat map; defaults to true. */
   shadows?: boolean;
   /**

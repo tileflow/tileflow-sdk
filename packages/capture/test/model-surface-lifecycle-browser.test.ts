@@ -15,7 +15,10 @@ test(
     skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1',
   },
   async (t) => {
-    const directory = await mkdtemp(join(tmpdir(), 'tileflow-material-'));
+    // Exercise literal backslashes on POSIX too; Windows temporary paths contain them already.
+    const prefix =
+      process.platform === 'win32' ? 'tileflow-material-' : 'tileflow-material-\\literal-';
+    const directory = await mkdtemp(join(tmpdir(), prefix));
     t.after(() => rm(directory, {recursive: true, force: true}));
     const source = (file: string) =>
       JSON.stringify(fileURLToPath(new URL(`../../core/src/${file}.ts`, import.meta.url)));
@@ -28,7 +31,7 @@ export * from ${source('models-3d-emitters')};
 export * from ${source('models-3d-shaders')};`,
     );
     await build({
-      entry: [join(directory, 'fixture.ts')],
+      entry: {fixture: join(directory, 'fixture.ts')},
       outDir: directory,
       format: ['iife'],
       globalName: 'ModelFixture',

@@ -359,6 +359,109 @@ export function readTileflowModelFileIds(
   }
 }
 
+/** A prepared model file's name: its id and the start of its SHA-256, so a change is a new name. */
+export function tileflowModelFileName(id: string, sha256: string): string {
+  return `${id}-${sha256.slice(0, 16)}.glb`;
+}
+
+/** What a file holding one model is, in metres, read without decompressing its meshes. */
+export type TileflowModelFileSummary = Readonly<{
+  /** The model's id, as maps name it. */
+  model: string;
+  /** Its levels of detail, nearest first. */
+  levels: readonly Readonly<{
+    level: (typeof levelNames)[number];
+    vertices: number;
+    triangles: number;
+  }>[];
+  /** The nearest level's extent along east, north and up, from the ground. */
+  width: number;
+  depth: number;
+  height: number;
+  /** The base the model stands in for: its rings, their points and their area in square metres. */
+  footprint: Readonly<{rings: number; points: number; area: number}>;
+}>;
+
+/**
+ * Summarises a prepared file of one model from its glTF JSON alone: its id, the vertices and
+ * triangles of each level, its size and its footprint. It decompresses nothing, so it suits a
+ * server that checks an upload; `undefined` means the file is not a Tileflow model file of exactly
+ * one model.
+ */
+export function readTileflowModelFileSummary(
+  buffer: ArrayBuffer | Uint8Array,
+): TileflowModelFileSummary | undefined {
+  try {
+    const ids = readTileflowModelFileIds(buffer);
+    if (ids?.length !== 1) return undefined;
+    const {json} = readGlb(buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer));
+    const node = json.nodes[json.scenes[json.scene ?? 0].nodes[0]];
+    const {id, footprint} = readModelNode(node);
+    const levels = (node.children as unknown[]).map((child, at) => {
+      const level = json.nodes?.[child as number];
+      const name = levelNames[at]!;
+      if (level?.name !== name) throw new Error();
+      const primitive = json.meshes?.[level.mesh]?.primitives?.[0];
+      const position = json.accessors?.[primitive?.attributes?.POSITION];
+      const index = json.accessors?.[primitive?.indices];
+      const vertices = position?.count;
+      const indices = index?.count;
+      const centre = level.translation;
+      const step = level.scale?.[0];
+      if (
+        !Number.isInteger(vertices) ||
+        vertices < 3 ||
+        vertices > tileflowModelLimits.vertices ||
+        !Number.isInteger(indices) ||
+        indices < 3 ||
+        indices % 3 !== 0 ||
+        indices / 3 > tileflowModelLimits.triangles ||
+        !Array.isArray(centre) ||
+        centre.length !== 3 ||
+        !centre.every(Number.isFinite) ||
+        !(step > 0) ||
+        ![position.min, position.max].every(
+          (list) => Array.isArray(list) && list.length === 3 && list.every(Number.isFinite),
+        )
+      )
+        throw new Error();
+      // In glTF's axes: x east, y up, z south.
+      const low = (axis: number) => centre[axis] + position.min[axis] * step;
+      const high = (axis: number) => centre[axis] + position.max[axis] * step;
+      return {
+        level: name,
+        vertices: vertices as number,
+        triangles: (indices as number) / 3,
+        extent: [high(0) - low(0), high(2) - low(2), high(1)] as const,
+      };
+    });
+    const [width, depth, height] = levels[0]!.extent;
+    let area = 0;
+    for (const ring of footprint) {
+      let twice = 0;
+      for (let at = 0; at < ring.length; at += 2) {
+        const next = (at + 2) % ring.length;
+        twice += ring[at]! * ring[next + 1]! - ring[next]! * ring[at + 1]!;
+      }
+      area += twice / 2;
+    }
+    return {
+      model: id,
+      levels: levels.map(({level, vertices, triangles}) => ({level, vertices, triangles})),
+      width: round(width, 100),
+      depth: round(depth, 100),
+      height: round(height, 100),
+      footprint: {
+        rings: footprint.length,
+        points: footprint.reduce((sum, ring) => sum + ring.length / 2, 0),
+        area: round(Math.abs(area), 10),
+      },
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 let decoderLoad: Promise<TileflowModelDecompressor> | undefined;
 
 /** meshoptimizer's decoder, loaded once, the first time a compressed file is read. */

@@ -58,6 +58,11 @@ export type CameraTiles<T> = {
   update(): void;
   /** The wanted tiles built so far, nearest first. */
   ready(): (CameraTile<T> & {value: T})[];
+  /**
+   * Every tile wanted round the camera, nearest first, whether it has been read, holds nothing for
+   * the layer, or the style has no source to read it from.
+   */
+  coverage(): readonly Readonly<{x: number; y: number}>[];
   /** Every tile held, wanted or not. */
   all(): Iterable<CameraTile<T>>;
   /** The zoom tiles are read at. */
@@ -91,6 +96,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
     metres: number;
   }[] = [];
   let wanted: string[] = [];
+  let covered: Readonly<{x: number; y: number}>[] = [];
   let reader: TileflowTileReader | undefined;
   let zoom = options.zoom;
   let origin: [number, number] = [0, 0];
@@ -117,8 +123,9 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
     if (disposed) return;
     const currentZoom = map.getZoom();
     if (currentZoom < options.minzoom - 1 || !options.active()) return;
+    // Without a source to read, the tiles round the camera are still chosen: what stands on them
+    // without the source's data, such as a placed model, needs to know them.
     const source = ensureReader();
-    if (!source) return;
     const centre = map.getCenter();
     const pitch = map.getPitch();
     const reach = Math.min(5000, Math.max(800, 1600 * 2 ** (16 - currentZoom) * (1 + pitch / 60)));
@@ -144,8 +151,13 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
     candidates.sort((a, b) => a.distance - b.distance);
     const chosen = candidates.slice(0, options.maxTiles);
     wanted = chosen.map(({x, y}) => `${x}/${y}`);
+    covered = chosen.map(({x, y}) => ({x, y}));
     origin = cameraTileAt(centre.lng, centre.lat, zoom);
     metres = (earth * Math.cos((centre.lat * Math.PI) / 180)) / 2 ** zoom / extent;
+    if (!source) {
+      map.triggerRepaint();
+      return;
+    }
     const now = performance.now();
     for (const {x, y} of chosen) {
       const key = `${x}/${y}`;
@@ -296,6 +308,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       }
       return list;
     },
+    coverage: () => covered,
     all: () => tiles.values(),
     get zoom() {
       return zoom;

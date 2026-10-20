@@ -583,15 +583,6 @@ export type {
   TileflowFontBundleFontFace,
   TileflowFontBundleManifest,
 } from './font-bundle';
-export {
-  hashTileflowModelBundleManifest,
-  serializeTileflowModelBundleManifest,
-  tileflowModelBundleContentHashSchema,
-  tileflowModelBundleFileName,
-  tileflowModelBundleLimits,
-  tileflowModelBundleManifestSchema,
-} from './model-bundle';
-export type {TileflowModelBundleManifest, TileflowModelBundleModel} from './model-bundle';
 export {diffTileflowIconPackageManifests} from './icon-diff';
 export type {TileflowIconManifestDiff} from './icon-diff';
 export {
@@ -682,10 +673,12 @@ export {
 } from './trees-3d-model';
 export {
   readTileflowBuildings3D,
-  tileflowBuildingModelPlacementLimit,
-  tileflowBuildingsMetadataKey,
+  readTileflowTeamModelName,
   type TileflowBuildingModelPlacement,
+  tileflowBuildingModelPlacementLimit,
   type TileflowBuildings3DDesign,
+  tileflowBuildingsMetadataKey,
+  tileflowTeamModelUrl,
 } from './buildings-3d-design';
 export {
   tileflowInsideRings,
@@ -703,10 +696,13 @@ export {
   decodeTileflowModels,
   encodeTileflowModels,
   readTileflowModelFileIds,
+  readTileflowModelFileSummary,
   tileflowModelContentType,
+  tileflowModelFileName,
   type TileflowModelCompressor,
   type TileflowModelDecompressor,
   type TileflowModelEntry,
+  type TileflowModelFileSummary,
 } from './models-3d-file';
 export {
   readTileflowLandmarkRegion,

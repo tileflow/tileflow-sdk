@@ -66,3 +66,51 @@ test('async tile builds keep the old value, ignore stale refreshes and release l
     camera.dispose();
   }
 });
+
+test('the camera covers its tiles without a source to read and over tiles that hold nothing', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(null, {status: 404}));
+  const base = {
+    getBearing: () => 0,
+    getCenter: () => ({lat: 0.0005, lng: 0.0005}),
+    getPitch: () => 0,
+    getZoom: () => 18,
+    on() {},
+    off() {},
+    triggerRepaint() {},
+  };
+  const options = {
+    source: 'world',
+    layers: [],
+    zoom: 16,
+    minzoom: 14,
+    maxTiles: 4,
+    active: () => true,
+    empty: {},
+    build: () => ({}),
+    release() {},
+    changed() {},
+  };
+
+  // A style without the source still knows the tiles round its camera.
+  const sourceless = createCameraTiles({...options, map: {...base, getSource: () => undefined}});
+  sourceless.update();
+  const covered = sourceless.coverage();
+  assert.equal(covered.length, 4);
+  assert.deepEqual(covered[0], {x: 32768, y: 32767});
+  assert.equal(sourceless.ready().length, 0);
+  sourceless.dispose();
+
+  // An absent tile holds nothing for the layer, yet stays covered.
+  const empty = createCameraTiles({
+    ...options,
+    map: {
+      ...base,
+      getSource: () => ({tiles: ['https://camera-test.invalid/{z}/{x}/{y}.pbf'], maxzoom: 16}),
+    },
+  });
+  empty.update();
+  for (let n = 0; n < 100 && [...empty.all()].some((tile) => tile.loading); n++) await delay(5);
+  assert.equal(empty.ready().length, 0);
+  assert.deepEqual(empty.coverage(), covered);
+  empty.dispose();
+});

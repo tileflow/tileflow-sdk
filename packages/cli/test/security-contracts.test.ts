@@ -163,7 +163,7 @@ test('one hosted preflight rejects external data for validation and deploy calle
     },
   ]);
 
-  // A map's building models travel in its model bundle; a placement's own address travels as it is.
+  // A map's building models are Team 3D models by placeholder; a placement's own address travels as it is.
   const withModels = (url: string) => ({
     ...compatible,
     metadata: {
@@ -171,10 +171,7 @@ test('one hosted preflight rejects external data for validation and deploy calle
       'tileflow:buildings': {models: [{model: 'tower', url, at: [2.29, 48.86], heading: 0}]},
     },
   });
-  for (const url of [
-    'https://models.example.test/tower.glb',
-    'https://api.example.test/model-bundles/preflight/tower-0123456789abcdef.glb',
-  ])
+  for (const url of ['https://models.example.test/tower.glb', 'tileflow://team-models/tower'])
     assert.deepEqual(
       inspectTileflowHostedCompatibility(project, {main: {light: withModels(url)}}),
       [],

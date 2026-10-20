@@ -290,7 +290,12 @@ export function createTileflowBuildings3D(
       if (!isWebGL2(context)) return;
       ensureCamera();
       if (target > 0 || scale > 0)
-        models.update(design().models ?? [], design().landmarks?.url, camera.ready(), camera.zoom);
+        models.update(
+          design().models ?? [],
+          design().landmarks?.url,
+          camera.coverage(),
+          camera.zoom,
+        );
       if (!programs.depth) return;
       // A disabled building shadow pass must not claim the ground pass from the trees.
       if (!design().shadows || visibleScale() <= 0) {

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {once} from 'node:events';
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
@@ -845,7 +846,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(fakeApiKey));
 });
 
-test("deploy uploads a map's own building models as its model bundle before the style that places them", async (t) => {
+test("deploy places a map's own building models as Team 3D models by name and uploads none", async (t) => {
   const fixture = await createFixture(t);
   await mkdir(join(fixture.directory, 'models'));
   // A block 20 m wide and 120 m tall, its walls and roof named as a building's parts.
@@ -879,65 +880,51 @@ modules: {
 name: 'Madrid'`,
     }),
   );
-  const bundleId = 'mdb_12345678-1234-1234-1234-123456789abc';
+  const source = await readFile(join(fixture.directory, 'models', 'tower.glb'));
   const requests: string[] = [];
-  let bundle: {contentHash: string; file: string} | undefined;
   const api = await createFakeApi(t, async (request) => {
     const bodyBytes = await readRequestBodyBytes(request);
     requests.push(`${request.method} ${request.url?.split('/').slice(0, 3).join('/')}`);
-    if (request.method === 'PUT') {
-      const form = await new Request('http://fixture.test/', {
-        body: bodyBytes,
-        headers: {'content-type': request.headers['content-type'] ?? ''},
-        method: 'PUT',
-      }).formData();
-      const manifest = JSON.parse(await (form.get('manifest') as Blob).text()) as {
-        models: Array<{byteLength: number; file: string; id: string}>;
-      };
-      assert.deepEqual(
-        manifest.models.map(({id}) => id),
-        ['tower'],
-      );
-      const [model] = manifest.models;
-      const file = form.get(`file:${model!.file}`) as Blob;
-      assert.equal(file.size, model!.byteLength);
-      assert.equal(file.type, 'model/gltf-binary');
-      bundle = {contentHash: request.url!.split('/').pop()!, file: model!.file};
-      return {
-        baseUrl: `${api.url}/model-bundles/${bundleId}`,
-        changed: true,
-        contentHash: bundle.contentHash,
-        id: bundleId,
-        modelCount: 1,
-        totalBytes: model!.byteLength,
-      };
-    }
     const parsed = JSON.parse(bodyBytes.toString('utf8')) as {
       artifact: {
         buildManifest: {
-          maps: Record<string, {sourceAssets: {models?: Array<{id: string; level: string}>}}>;
+          maps: Record<
+            string,
+            {assets: unknown[]; sourceAssets: {models?: Array<{id: string; level: string}>}}
+          >;
         };
         styles: Record<string, {metadata?: Record<string, unknown>}>;
       };
-      modelBundle?: {contentHash: string};
+      modelBundle?: unknown;
+      teamModelSources?: Record<string, Array<{level: string; sha256: string; byteLength: number}>>;
     };
-    assert.deepEqual(parsed.modelBundle, {contentHash: bundle?.contentHash});
+    assert.equal(parsed.modelBundle, undefined);
+    // Every theme places the Team model by its placeholder; the deploy binds its address.
     for (const style of Object.values(parsed.artifact.styles)) {
       const design = style.metadata?.['tileflow:buildings'] as {
         models: Array<{model: string; url: string}>;
       };
       assert.deepEqual(
         design.models.map(({model, url}) => [model, url]),
-        [['tower', `${api.url}/model-bundles/${bundleId}/${bundle?.file}`]],
+        [['tower', 'tileflow://team-models/tower']],
       );
     }
-    assert.deepEqual(
-      parsed.artifact.buildManifest.maps.madrid!.sourceAssets.models?.map(
-        ({id, level}) => `${id}:${level}`,
-      ),
-      ['tower:near'],
-    );
-    return hostedDeploymentResponse(managedMapId, streetsThemeNames, {changed: true, version: 1});
+    // The map follows the model by name: its files are neither assets nor revision sources.
+    const built = parsed.artifact.buildManifest.maps.madrid!;
+    assert.equal(built.sourceAssets.models, undefined);
+    assert.deepEqual(parsed.teamModelSources, {
+      tower: [
+        {
+          level: 'near',
+          sha256: createHash('sha256').update(source).digest('hex'),
+          byteLength: source.byteLength,
+        },
+      ],
+    });
+    return {
+      ...hostedDeploymentResponse(managedMapId, streetsThemeNames, {changed: true, version: 1}),
+      teamModels: [{model: 'tower', version: 2, sources: 'differ'}],
+    };
   });
   const result = await runCli(
     fixture.directory,
@@ -954,8 +941,11 @@ name: 'Madrid'`,
   );
 
   assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
-  assert.deepEqual(requests, ['PUT /v1/model-bundles', 'POST /v1/styles']);
-  assert.match(result.stdout, /Uploaded 3D model bundle \(1 model,/);
+  assert.deepEqual(requests, ['POST /v1/styles']);
+  assert.match(
+    `${result.stdout}\n${result.stderr}`,
+    /3D model .*tower.* draws its published version 2, which was not prepared from this project's files/u,
+  );
 });
 
 test('deploy binds one composition receipt to the effective package in manifest and body', async (t) => {

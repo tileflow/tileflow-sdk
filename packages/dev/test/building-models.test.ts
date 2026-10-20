@@ -1,14 +1,10 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import {
-  decodeTileflowModels,
-  hashTileflowModelBundleManifest,
-  tileflowInsideRings,
-  tileflowModelParts,
-} from '@tileflow/core';
+import {decodeTileflowModels, tileflowInsideRings, tileflowModelParts} from '@tileflow/core';
 import {hashTileflowAssetSet} from '@tileflow/core/build';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {createTileflowBuildArtifacts} from '../src/artifacts';
@@ -21,7 +17,6 @@ import {
 import {readTileflowGltfTriangles} from '../src/gltf-reader';
 import {compilePreviewControls} from '../src/preview-controls';
 import {
-  createTileflowModelBundle,
   encodeTileflowLandmarkRegion,
   packageTileflowLandmarkTile,
   prepareTileflowBuildingModel,
@@ -155,27 +150,24 @@ test('a map prepares its building models as files and its tree models for its st
     'tower:near',
   ]);
 
-  // A hosted deploy uploads the building models, not the tree models, as the map's model bundle.
-  const bundle = await createTileflowModelBundle(prepared.buildings);
-  const tower = prepared.buildings.tower!;
-  assert.deepEqual(bundle?.manifest, {
-    format: 'tileflow-model-bundle-v1',
-    models: [
-      {
-        byteLength: tower.bytes.byteLength,
-        contentType: 'model/gltf-binary',
-        file: tower.fileName,
-        id: 'tower',
-        sha256: tower.sha256,
-      },
-    ],
-  });
-  assert.equal(bundle?.contentHash, await hashTileflowModelBundleManifest(bundle!.manifest));
-  assert.deepEqual(
-    bundle?.files.map(({fileName, source}) => [fileName, source]),
-    [[tower.fileName, tower.bytes]],
-  );
-  assert.equal(await createTileflowModelBundle({}), undefined);
+  // Each building model records the glTF binaries it was prepared from, for a Team 3D model's
+  // publication to compare with what a map places.
+  const sha256 = async (path: string) =>
+    createHash('sha256')
+      .update(await readFile(path))
+      .digest('hex');
+  assert.deepEqual(prepared.buildings.tower!.sources, [
+    {
+      level: 'near',
+      sha256: await sha256(join(cwd, 'models', 'tower.glb')),
+      byteLength: (await readFile(join(cwd, 'models', 'tower.glb'))).byteLength,
+    },
+    {
+      level: 'far',
+      sha256: await sha256(join(cwd, 'models', 'tower.far.glb')),
+      byteLength: (await readFile(join(cwd, 'models', 'tower.far.glb'))).byteLength,
+    },
+  ]);
 
   await writeFile(join(cwd, 'models', 'royal-palm.mid.glb'), smallTree());
   await assert.rejects(

@@ -9,6 +9,7 @@
 // tooling encodes files with meshoptimizer's encoder; Core decodes them for its 3D buildings
 // renderer. It has no DOM dependency, and loads meshoptimizer's decoder only to read a compressed
 // file.
+import type {TileflowLandmarkFootprint} from './models-3d-landmarks';
 import {
   type TileflowModel,
   type TileflowModelBytes,
@@ -457,6 +458,37 @@ export function readTileflowModelFileSummary(
         area: round(Math.abs(area), 10),
       },
     };
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The landmarks a landmarks tileset's tile holds, where each stands and the footprint it replaces,
+ * read from its glTF header and JSON chunk without decoding a mesh; undefined when it is not a
+ * prepared model file whose every model stands at a place. A region's index carries them so the
+ * renderer knows a landmark's footprint before its tile arrives.
+ */
+export function readTileflowLandmarkTileFootprints(
+  buffer: ArrayBuffer | Uint8Array,
+): readonly TileflowLandmarkFootprint[] | undefined {
+  const ids = readTileflowModelFileIds(buffer);
+  if (!ids) return undefined;
+  try {
+    const {json} = readGlb(buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer));
+    const roots: unknown[] = json.scenes?.[json.scene ?? 0]?.nodes ?? [];
+    const out: TileflowLandmarkFootprint[] = [];
+    for (const root of roots) {
+      const model = readModelNode(json.nodes?.[root as number]);
+      if (!model.at) return undefined;
+      out.push({
+        id: model.id,
+        at: model.at,
+        heading: model.heading ?? 0,
+        footprint: model.footprint,
+      });
+    }
+    return out;
   } catch {
     return undefined;
   }

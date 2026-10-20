@@ -136,6 +136,8 @@ const flood = {reach: 10, colour: [1, 0.7, 0.4] as const};
 // Roof outlines and outer corners are a CSS pixel wide, and half as strong by day as at night.
 const edgeLine = {width: 1, day: 0.5};
 const paletteWidth = 256;
+// A model that comes to stand over the flat ground left for it fades in over this long, in ms.
+const modelFade = 500;
 // Street lights draw over the buildings, so their lamps can hide behind them.
 const streetLightsLayerId = 'tileflow-street-lights';
 // The colours a model's parts take from the buildings' colour when the design gives them none.
@@ -289,12 +291,15 @@ export function createTileflowBuildings3D(
     prerender(context: WebGLRenderingContext | WebGL2RenderingContext) {
       if (!isWebGL2(context)) return;
       ensureCamera();
+      // Models and landmarks are read for every tile the camera wants, from a zoom before the
+      // buildings show, so they stand when the buildings fade in.
       if (target > 0 || scale > 0)
         models.update(
           design().models ?? [],
           design().landmarks?.url,
           camera.coverage(),
           camera.zoom,
+          visibleScale() > 0,
         );
       if (!programs.depth) return;
       // A disabled building shadow pass must not claim the ground pass from the trees.
@@ -356,6 +361,10 @@ export function createTileflowBuildings3D(
         // A tile without buildings stays flat.
         if (!decoded) return emptyTile;
         const places = layers.places ? tile.layers[layers.places] : undefined;
+        // Nothing a model will stand on is raised: wait for the landmarks' indexes and the map's
+        // models round the tile, briefly.
+        await models.settle(tile, signal);
+        signal.throwIfAborted();
         const masks = models.masksIn(tile, tileflowBuildingExtent);
         const mesh = await mesher.build(
           decoded,
@@ -789,6 +798,14 @@ export function createTileflowBuildings3D(
     return models.shown().filter((model) => model.gl);
   }
 
+  /** How far a model that has just come to stand has faded in, from 0 to 1. */
+  function appearanceOf(model: TileflowPlacedModel, now: number): number {
+    if (model.standingSince === undefined) return 1;
+    const reduced =
+      typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    return reduced ? 1 : Math.min(1, Math.max(0, (now - model.standingSince) / modelFade));
+  }
+
   /** Where a model stands at the camera's zoom: its tile, its origin in it and its reach in tiles. */
   function standOf(model: TileflowPlacedModel) {
     const [longitude, latitude] = model.placement.at;
@@ -942,6 +959,9 @@ export function createTileflowBuildings3D(
     const nightLight = mixed((entry) => entry.nightLight);
     const edges = mixed((entry) => entry.edges);
     const {occlusion: occlusionOn, windows: windowsOn} = design();
+    const now = performance.now();
+    const appearing = standing.filter((entry) => appearanceOf(entry, now) < 1);
+    const steady = standing.filter((entry) => !appearing.includes(entry));
 
     context.enable(context.DEPTH_TEST);
     context.depthFunc(context.LEQUAL);
@@ -1018,9 +1038,19 @@ export function createTileflowBuildings3D(
           );
       }
 
-      // The placed models, in the buildings' light.
+      drawModels(steady);
+    });
+    // A model that has just come to stand fades in over the flat ground left for it.
+    for (const entry of appearing)
+      drawBuildingOpacity(context, visibleOpacity() * appearanceOf(entry, now), () =>
+        drawModels([entry]),
+      );
+    if (appearing.length > 0) map.triggerRepaint();
+
+    /** The placed models, in the buildings' light. */
+    function drawModels(list: readonly TileflowPlacedModel[]): void {
       const model = programs.model;
-      if (model && standing.length > 0) {
+      if (model && list.length > 0) {
         const m = model.uniforms;
         context.useProgram(model.program);
         context.disable(context.CULL_FACE);
@@ -1033,7 +1063,7 @@ export function createTileflowBuildings3D(
         context.uniform3fv(m.u_part_colours!, partColoursNow());
         scene.bindShadow(context, m, light.strength);
         const centre = map.getCenter();
-        for (const entry of standing) {
+        for (const entry of list) {
           const stand = standOf(entry);
           project(context, model, args, stand.tileX, stand.tileY);
           const at = placed(stand.tileX, stand.tileY);
@@ -1043,7 +1073,7 @@ export function createTileflowBuildings3D(
           drawModel(context, model, entry, models.levelOf(entry, centre));
         }
       }
-    });
+    }
 
     // The ground: shadows, the contact band and, at night, the flood lights.
     context.depthMask(false);

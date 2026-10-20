@@ -1,9 +1,12 @@
 // The formats of a landmarks tileset, the tiles of building models that other web maps call
 // batched models. Its TileJSON names the regions that hold landmarks; a region's index names the
-// tiles inside it by the SHA-256 of their bytes; a tile is a prepared model file
-// (models-3d-file.ts) holding the landmarks whose origin falls in it. A release of the tileset
-// changes only the tiles and indexes whose landmarks changed, and the renderer downloads only the
-// indexes and tiles near the camera. It has no DOM dependency.
+// tiles inside it by the SHA-256 of their bytes, with where each landmark stands and the footprint
+// it replaces; a tile is a prepared model file (models-3d-file.ts) holding the landmarks whose
+// origin falls in it. A release of the tileset changes only the tiles and indexes whose landmarks
+// changed, and the renderer downloads only the indexes and tiles near the camera. Knowing the
+// footprints from the index, it keeps the buildings under a landmark flat while its tile loads
+// instead of raising them and then taking them away. It has no DOM dependency.
+import {tileflowModelLimits} from './models-3d-model';
 
 /** The zoom of a landmarks tileset's tiles. */
 export const tileflowLandmarkTileZoom = 14;
@@ -24,14 +27,37 @@ export type TileflowLandmarksTileJson = Readonly<{
   regions: ReadonlySet<string>;
 }>;
 
+/** A landmark as its region's index names it: where it stands and the footprint it replaces. */
+export type TileflowLandmarkFootprint = Readonly<{
+  id: string;
+  /** Its origin, longitude and latitude. */
+  at: readonly [number, number];
+  /** Degrees clockwise from north. */
+  heading: number;
+  /** Rings as flat `[x, y, ...]` arrays in metres, x east and y north of the origin. */
+  footprint: readonly (readonly number[])[];
+}>;
+
+/** A tile in a region's index: `[x, y, sha256]`, and the landmarks it holds. */
+export type TileflowLandmarkRegionTile =
+  | readonly [number, number, string]
+  | readonly [number, number, string, readonly TileflowLandmarkFootprint[]];
+
 /** A region's index: the tiles inside it that hold landmarks, by their hash. */
 export type TileflowLandmarkRegion = Readonly<{
   region: readonly [number, number];
-  /** `[x, y, sha256]` of each tile, sorted by x, then y. */
-  tiles: readonly (readonly [number, number, string])[];
+  /**
+   * Each tile, sorted by x, then y. A written index names every tile's landmarks; an index of the
+   * first format, which did not, is still read.
+   */
+  tiles: readonly TileflowLandmarkRegionTile[];
 }>;
 
 const sha256 = /^[a-f0-9]{64}$/u;
+const landmarkId = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+// Footprints travel in whole decimetres: a region's index stays small, and a few centimetres do
+// not change which buildings a footprint covers.
+const footprintStep = 10;
 
 /** The zoom-14 tile a landmark's origin, longitude and latitude, stands in. */
 export function tileflowLandmarkTileOf(at: readonly [number, number]): [number, number] {
@@ -53,8 +79,10 @@ export function tileflowLandmarkRegionOf(tile: readonly [number, number]): [numb
 }
 
 /**
- * Writes a region's index as the bytes a tileset serves: canonical JSON, its tiles sorted. Throws a
- * `RangeError` when a tile lies outside the region, appears twice or has no hash.
+ * Writes a region's index as the bytes a tileset serves: canonical JSON, its tiles sorted and each
+ * tile's landmarks sorted by id, footprints in whole decimetres. Throws a `RangeError` when a tile
+ * lies outside the region, appears twice, has no hash or names no landmark, or when a landmark
+ * stands outside its tile or has no valid footprint.
  */
 export function serializeTileflowLandmarkRegion(region: TileflowLandmarkRegion): Uint8Array {
   const [x, y] = region.region;
@@ -74,17 +102,63 @@ export function serializeTileflowLandmarkRegion(region: TileflowLandmarkRegion):
   if (tiles.length === 0) throw new RangeError('A region index names at least one tile.');
   return new TextEncoder().encode(
     JSON.stringify({
-      format: 'tileflow-landmark-region-v1',
+      format: 'tileflow-landmark-region-v2',
       zoom: tileflowLandmarkTileZoom,
       region: [tileflowLandmarkRegionZoom, x, y],
-      tiles: tiles.map(([tx, ty, hash]) => [tx, ty, hash]),
+      tiles: tiles.map((tile) => [tile[0], tile[1], tile[2], landmarksOf(tile)]),
     }),
   );
 }
 
-/** Reads a region's index, or undefined when it is not one. */
+/** A tile's landmarks as its index writes them, checked. */
+function landmarksOf(tile: TileflowLandmarkRegionTile) {
+  const [tx, ty] = tile;
+  const landmarks = tile[3];
+  if (!landmarks || landmarks.length === 0)
+    throw new RangeError(`Tile ${tx}/${ty} names no landmark.`);
+  const sorted = [...landmarks].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  return sorted.map((landmark, at) => {
+    const {id, heading} = landmark;
+    if (!landmarkId.test(id)) throw new RangeError(`Landmark ${JSON.stringify(id)} has no id.`);
+    if (sorted[at - 1]?.id === id) throw new RangeError(`Landmark ${id} appears twice.`);
+    let own: [number, number];
+    try {
+      own = tileflowLandmarkTileOf(landmark.at);
+    } catch {
+      throw new RangeError(`Landmark ${id} stands at no place on the map.`);
+    }
+    if (own[0] !== tx || own[1] !== ty)
+      throw new RangeError(`Landmark ${id} stands in tile ${own.join('/')}, not ${tx}/${ty}.`);
+    if (!(typeof heading === 'number' && heading >= 0 && heading < 360))
+      throw new RangeError(`Landmark ${id} is turned 0 to 360 degrees.`);
+    const footprint = landmark.footprint.map((ring) =>
+      ring.map((value) => Math.round(value * footprintStep)),
+    );
+    if (!validFootprint(footprint)) throw new RangeError(`Landmark ${id} has no valid footprint.`);
+    return {id, at: [landmark.at[0], landmark.at[1]], heading, footprint};
+  });
+}
+
+/** One to the model limit of rings of at least three points, in whole numbers. */
+function validFootprint(footprint: unknown): footprint is number[][] {
+  if (!Array.isArray(footprint) || footprint.length === 0) return false;
+  let points = 0;
+  for (const ring of footprint) {
+    if (!Array.isArray(ring) || ring.length < 6 || ring.length % 2 !== 0) return false;
+    if (!ring.every((value) => Number.isSafeInteger(value))) return false;
+    points += ring.length / 2;
+  }
+  return points <= tileflowModelLimits.footprintPoints;
+}
+
+/**
+ * Reads a region's index, or undefined when it is not one. An index of the first format names no
+ * landmarks; its tiles come back as `[x, y, sha256]`.
+ */
 export function readTileflowLandmarkRegion(json: unknown): TileflowLandmarkRegion | undefined {
-  if (!isRecord(json) || json.format !== 'tileflow-landmark-region-v1') return undefined;
+  if (!isRecord(json)) return undefined;
+  const named = json.format === 'tileflow-landmark-region-v2';
+  if (!named && json.format !== 'tileflow-landmark-region-v1') return undefined;
   const region = json.region;
   if (
     json.zoom !== tileflowLandmarkTileZoom ||
@@ -96,18 +170,56 @@ export function readTileflowLandmarkRegion(json: unknown): TileflowLandmarkRegio
     return undefined;
   const [, x, y] = region as unknown[];
   if (!Number.isInteger(x) || !Number.isInteger(y)) return undefined;
-  const tiles: [number, number, string][] = [];
+  const tiles: TileflowLandmarkRegionTile[] = [];
   for (const tile of json.tiles) {
-    if (!Array.isArray(tile) || tile.length !== 3) return undefined;
-    const [tx, ty, hash] = tile as unknown[];
+    if (!Array.isArray(tile) || tile.length !== (named ? 4 : 3)) return undefined;
+    const [tx, ty, hash, listed] = tile as unknown[];
     if (!Number.isInteger(tx) || !Number.isInteger(ty) || typeof hash !== 'string')
       return undefined;
     if (!sha256.test(hash)) return undefined;
     const [rx, ry] = tileflowLandmarkRegionOf([tx as number, ty as number]);
     if (rx !== x || ry !== y) return undefined;
-    tiles.push([tx as number, ty as number, hash]);
+    if (!named) {
+      tiles.push([tx as number, ty as number, hash]);
+      continue;
+    }
+    const landmarks = readLandmarks(listed, tx as number, ty as number);
+    if (!landmarks) return undefined;
+    tiles.push([tx as number, ty as number, hash, landmarks]);
   }
   return {region: [x as number, y as number], tiles};
+}
+
+function readLandmarks(
+  listed: unknown,
+  tx: number,
+  ty: number,
+): TileflowLandmarkFootprint[] | undefined {
+  if (!Array.isArray(listed) || listed.length === 0) return undefined;
+  const out: TileflowLandmarkFootprint[] = [];
+  for (const landmark of listed) {
+    if (!isRecord(landmark)) return undefined;
+    const {id, at, heading, footprint} = landmark;
+    if (typeof id !== 'string' || !landmarkId.test(id)) return undefined;
+    if (!Array.isArray(at) || at.length !== 2 || !at.every((value) => typeof value === 'number'))
+      return undefined;
+    if (!(typeof heading === 'number' && heading >= 0 && heading < 360)) return undefined;
+    if (!validFootprint(footprint)) return undefined;
+    let own: [number, number];
+    try {
+      own = tileflowLandmarkTileOf([at[0] as number, at[1] as number]);
+    } catch {
+      return undefined;
+    }
+    if (own[0] !== tx || own[1] !== ty) return undefined;
+    out.push({
+      id,
+      at: [at[0] as number, at[1] as number],
+      heading,
+      footprint: footprint.map((ring) => ring.map((value) => value / footprintStep)),
+    });
+  }
+  return out;
 }
 
 /** Reads a landmarks tileset's TileJSON, or undefined when it is not one. */

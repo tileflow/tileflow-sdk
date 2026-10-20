@@ -12,7 +12,7 @@ export default defineConfig(async () => {
     dts: false,
   });
   return {
-    entry: ['src/browser.ts'],
+    entry: ['src/browser.ts', 'src/3d.ts'],
     format: ['esm'],
     platform: 'browser',
     dts: true,

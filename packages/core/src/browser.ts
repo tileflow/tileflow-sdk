@@ -2300,3 +2300,21 @@ export {
   type TileflowVegetationOptions,
   type TileflowVegetationController,
 } from './vegetation-browser';
+
+export {
+  createTileflowMap3D,
+  type TileflowMap3D,
+  type TileflowMap3DMap,
+  type TileflowMap3DOptions,
+} from './map-3d-browser';
+
+export {
+  attachTileflowMap3D,
+  tileflowMap3DDeclarations,
+  tileflowMap3DMetadataKeys,
+  tileflowMapDeclares3D,
+  type AttachTileflowMap3DOptions,
+  type TileflowMap3DAttachment,
+  type TileflowMap3DLoader,
+  type TileflowMap3DSource,
+} from './map-3d-attach-browser';

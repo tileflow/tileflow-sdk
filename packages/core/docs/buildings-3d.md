@@ -21,6 +21,49 @@ with opacity rising linearly from 0 at 15 to 1 at 15.25. Zooming back out revers
 Their height stays unchanged throughout; shadows and contact shading fade with them.
 `hide()` keeps them hidden at every zoom until `show()` is called.
 
+## The map's 3D scene
+
+React, Vue and Svelte `Map` components show the 3D scene of every map whose style declares one, by
+default: buildings with Tileflow landmarks and the map's Team building models, 3D trees, and street
+lights where the map enables them. They load the 3D renderers from `@tileflow/core/3d` only when
+the style declares a scene, so a 2D map does not download them. Set `viewMode="2d"` (Vue:
+`view-mode="2d"`) to opt out: no 3D buildings or street lights are mounted, and vegetation follows
+its [display policy](trees-3d.md#visibility-and-representation) for the 2D view. Changing it back to
+`3d` shows the scene on the same map. React Native, image mode, Capture and Static Maps do not draw
+the scene.
+
+Applications that build their own MapLibre map mount the same scene with `createTileflowMap3D`.
+It mounts each renderer the style declares, follows theme and style changes, and releases a
+renderer when the style no longer declares it:
+
+<!-- docs:check -->
+
+```ts
+import {
+  createTileflowMap3D,
+  type TileflowMap3DMap,
+  type TileflowThemeController,
+} from '@tileflow/core/browser';
+
+export function showTheScene(map: TileflowMap3DMap, controller: TileflowThemeController) {
+  const scene = createTileflowMap3D({map, controller});
+  // Shown on creation; hide() and show() switch the whole scene, dispose() removes it.
+  return scene;
+}
+```
+
+`hide()` takes the buildings down and releases the street lights; `show()` brings them back. Both
+take the same transition as the buildings' `show()` and `hide()`. `setVegetation(false)` hides
+every tree and `setVegetation(undefined)` restores the map's default. To load the renderers only
+for maps that need them, call `attachTileflowMap3D({map, controller, load: () =>
+import('@tileflow/core/3d')})` from `@tileflow/core/browser`, as the framework components do; its
+`setViewMode()` and `setVegetation()` apply once the scene mounts.
+
+A MapLibre application that loads a compiled `style.json` directly gets no 3D scene: buildings,
+landmarks, models, trees and lights are custom WebGL layers added only by this runtime. Where a map
+draws a plain `fill-extrusion` building pass, the style ships it hidden and grouped under
+`metadata['tileflow:3d-toggle'] = 'building'`; showing those layers gives extruded footprints only.
+
 ## Show the buildings
 
 This example assumes an existing MapLibre map showing a Tileflow map whose vector source is called

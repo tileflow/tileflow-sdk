@@ -624,9 +624,7 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.doesNotMatch(preview, /const projection = map\.getStyle/);
   assert.match(preview, /class ThreeDimensionalControl/);
   // TREES and 3D mount Core's renderers, as an application does, from the style's description.
-  assert.match(preview, /createTileflowVegetation\(\{map, controller, visible: treesEnabled/);
-  assert.match(preview, /createTileflowBuildings3D\(\{map, controller\}\)/);
-  assert.match(preview, /createTileflowStreetLights\(\{map, controller\}\)/);
+  assert.match(preview, /createTileflowMap3D\(\{map, controller: coreSceneThemes\(map\)/);
   assert.match(preview, /metadata\["tileflow:vegetation-display"\]/);
   assert.doesNotMatch(preview, /treeRenderer/);
   assert.match(preview, /class TreeControl/);
@@ -1135,19 +1133,16 @@ test('selects map and scene previews with their configured cameras and viewport'
   );
   coreScene.emit('styledata');
   coreScene.emit('load');
-  // Model trees start enabled even with 3D buildings off and pitch zero.
-  assert.deepEqual(coreScene.coreCalls(), [
-    'buildings:create',
-    'trees:create',
-    'trees:show',
-    'buildings:hide',
-  ]);
+  // Model trees start enabled even with 3D buildings off and pitch zero; the 3D view mounts
+  // no buildings until it is shown.
+  assert.deepEqual(coreScene.coreCalls(), ['trees:create', 'trees:show']);
   assert.equal(coreScene.treeVisibility(), 'none');
   coreScene.toggleThreeDimensional();
   assert.equal(coreScene.buildingVisibility(), 'none');
   coreScene.toggleTrees();
   coreScene.emit('styledata');
-  assert.deepEqual(coreScene.coreCalls().slice(4), [
+  assert.deepEqual(coreScene.coreCalls().slice(2), [
+    'buildings:create',
     'lights:create',
     'buildings:show',
     'trees:hide',
@@ -1165,7 +1160,7 @@ test('selects map and scene previews with their configured cameras and viewport'
       zoom: 16,
     },
   });
-  assert.deepEqual(coreScene.coreCalls().slice(7), ['lights:dispose', 'buildings:hide']);
+  assert.deepEqual(coreScene.coreCalls().slice(6), ['lights:dispose', 'buildings:hide']);
 
   const unlitScene = runPreviewScript(boundsHtml, 'http://localhost/?zoom=16&buildings3d=on', {
     coreScene: true,
@@ -1778,20 +1773,52 @@ function runPreviewScript(
         assert.ok(map instanceof FakeMap);
       },
     }),
-    createTileflowBuildings3D: () => coreLayer('buildings'),
-    createTileflowStreetLights: () => coreLayer('lights'),
-    createTileflowVegetation: ({visible}: {visible: boolean}) => {
+    // Core's 3D scene, faked as the renderers it mounts for the style's declarations.
+    createTileflowMap3D: ({viewMode, vegetation}: {viewMode: string; vegetation: boolean}) => {
+      let shown = viewMode === '3d';
+      let buildings: ReturnType<typeof coreLayer> | undefined;
+      let lights: ReturnType<typeof coreLayer> | undefined;
+      const mountBuildings = () => {
+        if (shown && options.coreScene) buildings ??= coreLayer('buildings');
+      };
+      mountBuildings();
       if (options.coreScene) coreCalls.push('trees:create');
-      let enabled: boolean | undefined;
-      const setVisible = (value: boolean) => {
-        if (enabled !== value) {
-          enabled = value;
+      let trees: boolean | undefined;
+      const setVegetation = (value: boolean) => {
+        if (trees !== value) {
+          trees = value;
           if (options.coreScene) coreCalls.push(`trees:${value ? 'show' : 'hide'}`);
         }
         treeVisibility = value && !options.coreScene ? 'visible' : 'none';
       };
-      setVisible(visible);
-      return {setVisible, setViewMode() {}};
+      const mountLights = () => {
+        if (shown && options.coreScene && options.streetLights !== false)
+          lights ??= coreLayer('lights');
+      };
+      setVegetation(vegetation);
+      mountLights();
+      return {
+        get buildings() {
+          return buildings;
+        },
+        setVegetation,
+        async show() {
+          shown = true;
+          mountBuildings();
+          mountLights();
+          await buildings?.show();
+        },
+        async hide() {
+          shown = false;
+          lights?.dispose();
+          lights = undefined;
+          await buildings?.hide();
+        },
+        dispose() {
+          buildings?.dispose();
+          buildings = undefined;
+        },
+      };
     },
     attachTileflowNotices: () => () => {},
     readTileflowSunPreset: () => undefined,

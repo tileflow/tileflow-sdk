@@ -8992,7 +8992,7 @@
           "$ref": "#/$defs/__schema294"
         }
       },
-      "required": ["demMaxZoom", "demUrl", "thresholds"],
+      "required": ["demMaxZoom", "thresholds"],
       "additionalProperties": false,
       "x-tileflow-refinements": [
         {

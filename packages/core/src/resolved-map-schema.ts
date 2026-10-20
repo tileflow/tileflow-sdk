@@ -2286,7 +2286,8 @@ const terrainContoursSchema = z
       .refine(
         isSafeTileflowDemUrlTemplate,
         'Expected a safe HTTP(S) DEM URL template containing {z}, {x}, and {y}',
-      ),
+      )
+      .optional(),
     index: terrainContourLineSchema.optional(),
     labels: terrainContourLabelSchema.optional(),
     maxZoom: z.number().int().min(0).max(24).optional(),

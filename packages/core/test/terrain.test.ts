@@ -71,6 +71,23 @@ const contourTerrain = {
   mode: 'none',
 } as const;
 
+test('contours without a DEM template read the hosted Tileflow Terrain tiles', () => {
+  const {demUrl: _, ...contours} = contourTerrain.contours;
+  const terrain = {...contourTerrain, contours};
+  for (const [apiBaseUrl, expected] of [
+    [undefined, 'https://api.tileflow.dev/tiles/terrain/{z}/{x}/{y}.webp'],
+    ['http://localhost:8787', 'http://localhost:8787/tiles/terrain/{z}/{x}/{y}.webp'],
+  ] as const) {
+    const style = createStyle(extendStreets({terrain}), {
+      preparedAssets,
+      ...(apiBaseUrl ? {apiBaseUrl} : {}),
+    });
+    const tiles = style.sources['tileflow-contours']!.tiles as string[];
+    assert.equal(new URL(tiles[0]!).searchParams.get('demUrl'), expected);
+  }
+  assert.equal(validateTileflowMap(extendStreets({terrain})).valid, true);
+});
+
 test('compiles contour-only terrain into one standard vector source and three ordered layers', () => {
   const style = createStyle(extendStreets({terrain: contourTerrain}), {preparedAssets});
   const source = style.sources['tileflow-contours']!;

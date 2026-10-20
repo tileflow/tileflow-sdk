@@ -84,8 +84,8 @@ contains Tileflow-authored style code and original patterns plus the separately 
 Garamond files documented below. `baedeker` is an official Tileflow map; it is not affiliated with
 or endorsed by Baedeker or Wagner & Debes.
 
-At runtime, Baedeker derives contour vectors in the browser from Mapterhorn terrain tiles. No
-Mapterhorn tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
+At runtime, Baedeker derives contour vectors in the browser from Tileflow Terrain tiles, which
+carry Mapterhorn terrain data. No terrain tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
 catalog of its constituent open terrain sources and their individual attribution and license terms
 at <https://mapterhorn.com/attribution/>. The compiled Style carries that link as source
 attribution.
@@ -97,8 +97,8 @@ code and artwork. Its architectural-blueprint direction uses general drafting co
 package does not include or redistribute an architectural drawing, CAD file, municipal plan,
 survey sheet, font, source image, or third-party symbol artwork.
 
-At runtime, Blueprint derives contour vectors in the browser from Mapterhorn terrain tiles. No
-Mapterhorn tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
+At runtime, Blueprint derives contour vectors in the browser from Tileflow Terrain tiles, which
+carry Mapterhorn terrain data. No terrain tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
 catalog of its constituent open terrain sources and their individual attribution and license terms
 at <https://mapterhorn.com/attribution/>. The compiled Style carries that link as source
 attribution.
@@ -129,8 +129,8 @@ not a reproduced or historically documented swisstopo colourway.
 - Historical reference: <https://www.swisstopo.admin.ch/en/siegfried-map>
 - 1873 conventional signs: <https://www.swisstopo.admin.ch/dam/en/sd-web/4OmbRYHBFpcd/Zeichenerklaerung-Siegfriedkarte-EN.pdf>
 
-At runtime, Siegfried derives contour vectors in the browser from Mapterhorn terrain tiles. No
-Mapterhorn tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
+At runtime, Siegfried derives contour vectors in the browser from Tileflow Terrain tiles, which
+carry Mapterhorn terrain data. No terrain tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
 catalog of its constituent open terrain sources and their individual attribution and license terms
 at <https://mapterhorn.com/attribution/>. The compiled Style carries that link as source
 attribution.

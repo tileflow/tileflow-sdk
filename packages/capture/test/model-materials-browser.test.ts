@@ -142,6 +142,9 @@ void main() {
             return [...pixel];
           };
           const unlit = read();
+          gl.uniform4f(loc('u_base_colour'), 0.002, 0.002, 0.002, 1);
+          const darkTransfer = read();
+          gl.uniform4f(loc('u_base_colour'), 1, 1, 1, 1);
           scalar('u_texture_enabled[0]', 1);
           texture(2, [128, 255, 0, 255]);
           const textured = read();
@@ -199,6 +202,9 @@ void main() {
           scalar('u_test_visibility', 0);
           scalar('u_shadow', 1);
           const emittedOccluded = read();
+          scalar('u_role_emission[1]', 1);
+          gl.uniform4f(loc('u_role_emission_colour[1]'), 0, 0, 1, 1);
+          const roleEmission = read();
           // The depth shader must accept the same physical alpha interface.
           const depthProgram = program(depth);
           if (gl.getError()) throw new Error('Depth program setup failed.');
@@ -240,6 +246,7 @@ void main() {
           const depthOpaque = await query(0.4);
           return {
             unlit,
+            darkTransfer,
             textured,
             masked,
             blended,
@@ -258,6 +265,7 @@ void main() {
             metal,
             emitted,
             emittedOccluded,
+            roleEmission,
             depthMasked,
             depthOpaque,
             error: gl.getError(),
@@ -266,6 +274,11 @@ void main() {
         {fragment: tileflowModelFragment, depth: tileflowModelDepthFragment},
       );
       assert.equal(result.error, 0);
+      assert.deepEqual(
+        result.darkTransfer,
+        [11, 15, 15, 255],
+        'dark material radiance follows the cartographic gamma-2.2 transfer',
+      );
       assert.ok(
         result.unlit[0]! > 180 && result.unlit[1] === 255,
         'linear vertex colour is preserved',
@@ -305,6 +318,11 @@ void main() {
       );
       assert.ok(result.emitted[0]! > 130 && result.emitted[1] === 0);
       assert.deepEqual(result.emitted, result.emittedOccluded);
+      assert.deepEqual(
+        result.roleEmission,
+        [0, 0, 255, 255],
+        'full role emission selects its target without adding authored emission twice',
+      );
       assert.equal(result.depthMasked, false, 'masked pixels do not cast a solid solar shadow');
       assert.equal(result.depthOpaque, true);
     } finally {

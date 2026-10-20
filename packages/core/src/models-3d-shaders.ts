@@ -185,9 +185,9 @@ void main() {
     float alpha = materialAlpha();
     vec3 base = materialBase(role);
     vec3 radiance = physicalLight(base, normal, lit, role);
+    radiance += u_emissive * fromSRGB(materialTexture(4).rgb);
     vec4 own = u_role_emission_colour[role];
     radiance = mix(radiance, mix(base, fromSRGB(own.rgb), own.a), emission);
-    radiance += u_emissive * fromSRGB(materialTexture(4).rgb);
     fragColor = vec4(toSRGB(radiance), alpha * u_opacity);
     return;
   }

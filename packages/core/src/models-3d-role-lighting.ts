@@ -18,8 +18,7 @@ export function sampleModelRole(profile: TileflowModelRoleLighting | undefined, 
       ([low, high], channel) => low + (high - low) * random(channel + 1),
     );
     color = tileflowColourChannels(`hsl(${hsl[0]}, ${hsl[1]}%, ${hsl[2]}%)`)!.slice(0, 3);
-    if (variation.space === 'linear')
-      color = color.map((c) => (c <= 0.0031308 ? c * 12.92 : 1.055 * c ** (1 / 2.4) - 0.055));
+    if (variation.space === 'linear') color = color.map((c) => c ** (1 / 2.2));
   }
   return {
     strength: (profile?.emissiveStrength ?? 0) + (profile?.emissiveVariation ?? 0) * random(0),

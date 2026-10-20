@@ -61,6 +61,8 @@ The importer retains these glTF 2.0 channels independently of palette and role:
 
 `TEXCOORD_0`, `TEXCOORD_1`, glTF sampler wrapping/filtering and `KHR_texture_transform` are retained.
 Every referenced channel must have its declared UV set. UV and colour seams survive welding.
+Colour textures and lit output use the scene's gamma-2.2 transfer approximation.
+Role emission mixes the complete material radiance toward its target, including authored emission.
 Images must be embedded in buffer views or PNG/JPEG data URIs; preparation never fetches external
 images. Other image formats and physical-material extensions are not supported.
 

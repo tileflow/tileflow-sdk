@@ -59,14 +59,12 @@ uniform vec4 u_role_colour[7];
 uniform vec4 u_role_material[7]; // metallic, roughness, their respective override weights
 
 vec3 fromSRGB(vec3 colour) {
-  return mix(colour / 12.92, pow((colour + 0.055) / 1.055, vec3(2.4)),
-    step(vec3(0.04045), colour));
+  return pow(max(colour, vec3(0.0)), vec3(2.2));
 }
 
 vec3 toSRGB(vec3 colour) {
-  colour = max(colour, vec3(0.0));
-  return mix(colour * 12.92, 1.055 * pow(colour, vec3(1.0 / 2.4)) - 0.055,
-    step(vec3(0.0031308), colour));
+  // Use the scene's gamma-2.2 approximation, including at low night radiance.
+  return pow(max(colour, vec3(0.0)), vec3(1.0 / 2.2));
 }
 
 vec3 materialNormal(vec3 normal) {

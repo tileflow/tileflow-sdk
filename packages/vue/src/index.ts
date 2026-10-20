@@ -31,6 +31,7 @@ import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
+  attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowThemeController,
   createTileflowVegetation,
@@ -914,6 +915,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
 
       mapRef.value = map;
       attachTileflowAtmosphere(map);
+      attachTileflowNotices(map);
       themeController =
         runtime.theme === undefined
           ? null

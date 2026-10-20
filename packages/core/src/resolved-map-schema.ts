@@ -1556,8 +1556,12 @@ const nauticalModuleSchema = z
   .object({
     type: z.literal('nautical'),
     aids: markerSymbolStyleSchema.optional(),
+    beacons: markerSymbolStyleSchema.optional(),
+    buoys: markerSymbolStyleSchema.optional(),
+    cables: lineStyleSchema.optional(),
     coverage: areaStyleSchema.optional(),
     enabled: z.boolean().optional(),
+    harbours: markerSymbolStyleSchema.optional(),
     hazardAreas: areaStyleSchema.optional(),
     hazards: markerSymbolStyleSchema.optional(),
     labels: z
@@ -1573,8 +1577,10 @@ const nauticalModuleSchema = z
     lighthouses: markerSymbolStyleSchema.optional(),
     lights: markerSymbolStyleSchema.optional(),
     navigationAreas: areaStyleSchema.optional(),
+    ports: markerSymbolStyleSchema.optional(),
     reefs: areaStyleSchema.optional(),
     renderStack: renderStackSchema.optional(),
+    routes: lineStyleSchema.optional(),
     soundings: markerSymbolStyleSchema.optional(),
     wreckAreas: areaStyleSchema.optional(),
     wrecks: markerSymbolStyleSchema.optional(),

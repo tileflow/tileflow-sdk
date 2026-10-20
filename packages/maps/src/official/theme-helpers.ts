@@ -95,6 +95,7 @@ const ownerTokenGroups: Readonly<Record<string, readonly string[]>> = {
   labels: ['labels', 'poi', 'transit'],
   land: ['land', 'landcover', 'landuse', 'surface'],
   landforms: ['landforms', 'labels', 'surface'],
+  nautical: ['hydro', 'labels', 'poi', 'surface'],
   poi: ['poi', 'labels', 'transit'],
   roads: ['roads'],
   terrain: ['terrain', 'landcover', 'surface', 'labels'],

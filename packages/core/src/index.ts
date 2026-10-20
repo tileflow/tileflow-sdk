@@ -415,6 +415,12 @@ export {
   tileflowNauticalSourceId,
   tileflowNauticalV1Schema,
 } from './marine';
+export {
+  readTileflowNotices,
+  tileflowNoticeLimits,
+  tileflowNoticesMetadataKey,
+  type TileflowMapNotice,
+} from './notices';
 export type {
   ResolvedBathymetry,
   ResolvedBathymetryRelief,
@@ -446,6 +452,8 @@ export {
   poi,
   roads,
   tileflowLandformClasses,
+  tileflowNauticalImageRoles,
+  tileflowNauticalNotice,
   tileflowPoiIconOnlyTypes,
   tileflowPoiImageRoles,
   tileflowRoadClasses,

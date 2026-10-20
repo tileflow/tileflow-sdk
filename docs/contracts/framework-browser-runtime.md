@@ -221,6 +221,23 @@ listeners, and restores the previous filter. A map `remove` event also disposes 
 The native profile continues to reject `sky`. The capability does not change hosted Static Maps
 or native support. See Core's globe atmosphere guide for defaults and authoring examples.
 
+## Map notices
+
+A compiled style may declare short plain-text notices in `metadata['tileflow:notices']`: an array of
+at most eight `{id, sources, text}` entries with portable identifiers and at most 120 characters of
+text. Core declares exactly one today, `nautical-not-for-navigation` with the text "Not for
+navigation", whenever a layer reads the Nautical source. A notice never replaces a source's
+attribution, so the provider credit from the TileJSON remains intact.
+
+`attachTileflowNotices(map, {position?})` renders the declared notices as one compact MapLibre
+control, `bottom-right` by default, with `role="note"` and text content only. React, Vue, Svelte,
+the development preview, and standalone capture attach it once per map; direct integrations call it
+explicitly. It reads the style on attachment and `style.load`, settles other style changes before
+reading again, removes the control when the style declares no notice, and disposes its control,
+listeners, and pending read on disposal or map `remove`. Malformed entries are ignored rather than
+rendered. Native maps and images rendered outside these runtimes do not show the control and must
+present the notice themselves.
+
 ## Session starts
 
 `createTileflowSessionStarter` deduplicates the exact key `sessionId:mapId:styleId`, with an empty

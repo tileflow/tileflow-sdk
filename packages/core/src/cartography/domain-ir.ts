@@ -467,7 +467,11 @@ const exactPhysicalLayerIds: Readonly<Record<string, string>> = Object.freeze({
 
 const nauticalPhysicalBases: Readonly<Record<string, string>> = Object.freeze({
   'nautical.aids': 'tileflow-nautical-aids',
+  'nautical.beacons': 'tileflow-nautical-beacons',
+  'nautical.buoys': 'tileflow-nautical-buoys',
+  'nautical.cables': 'tileflow-nautical-cables',
   'nautical.coverage': 'tileflow-nautical-coverage',
+  'nautical.harbours': 'tileflow-nautical-harbours',
   'nautical.hazardAreas': 'tileflow-nautical-hazard-areas',
   'nautical.hazards': 'tileflow-nautical-hazards',
   'nautical.labels.coverage': 'tileflow-nautical-coverage-labels',
@@ -478,7 +482,9 @@ const nauticalPhysicalBases: Readonly<Record<string, string>> = Object.freeze({
   'nautical.lighthouses': 'tileflow-nautical-lighthouses',
   'nautical.lights': 'tileflow-nautical-lights',
   'nautical.navigationAreas': 'tileflow-nautical-navigation-areas',
+  'nautical.ports': 'tileflow-nautical-ports',
   'nautical.reefs': 'tileflow-nautical-reefs',
+  'nautical.routes': 'tileflow-nautical-routes',
   'nautical.soundings': 'tileflow-nautical-soundings',
   'nautical.wreckAreas': 'tileflow-nautical-wreck-areas',
   'nautical.wrecks': 'tileflow-nautical-wrecks',

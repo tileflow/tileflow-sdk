@@ -104,6 +104,7 @@ test('publishes every official icon and font directory with provenance', async (
     ],
     soundings: [
       'soundings-buoy-cardinal.svg',
+      'soundings-buoy-pillar.svg',
       'soundings-buoy-port.svg',
       'soundings-buoy-starboard.svg',
       'soundings-harbor.svg',
@@ -113,6 +114,7 @@ test('publishes every official icon and font directory with provenance', async (
       'soundings-rock-awash.svg',
       'soundings-water-dots.pattern.svg',
       'soundings-wreck.svg',
+      'tileflow.icons.json',
     ],
 
     streets: [
@@ -373,7 +375,7 @@ test('imports and compiles all packaged official maps against public Core APIs',
               'siegfried-forest', 'siegfried-glacier', 'siegfried-gravel',
               'siegfried-orchard', 'siegfried-paper-grain', 'siegfried-rock',
               'siegfried-scree', 'siegfried-water-lines', 'siegfried-wetland',
-              'soundings-buoy-cardinal', 'soundings-buoy-port',
+              'soundings-buoy-cardinal', 'soundings-buoy-pillar', 'soundings-buoy-port',
               'soundings-buoy-starboard', 'soundings-harbor', 'soundings-light-flare',
               'soundings-lighthouse', 'soundings-paper-grain', 'soundings-rock-awash',
               'soundings-water-dots', 'soundings-wreck',

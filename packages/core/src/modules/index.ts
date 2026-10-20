@@ -29,7 +29,7 @@ export type {
   TileflowLandformsModuleConfig,
   TileflowLandformsModuleOptions,
 } from './landforms';
-export {nautical} from './nautical';
+export {nautical, tileflowNauticalImageRoles, tileflowNauticalNotice} from './nautical';
 export type {
   TileflowNauticalAreaLabelStyles,
   TileflowNauticalModuleConfig,

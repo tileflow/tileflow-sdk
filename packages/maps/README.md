@@ -256,9 +256,9 @@ The GitHub-distributed `@tileflow/community-maps` package exports `cyberpunk`, `
 `superTileWorld`, plus each map's font and icon descriptors. Install an exact Git commit using
 the instructions and compatible Core version in that repository.
 
-Soundings is not a navigation product. Its depth-band edges are approximate reference geometry,
-not surveyed isolines or vessel-specific safety contours. Experimental nautical aids and hazards
-are not enabled by that official map.
+Soundings is not a navigation product; its depth-band edges are approximate. It draws Nautical
+marks with its chart symbols and a "Not for navigation" notice; other maps opt in with
+`marine: 'nautical'` (see Core's Nautical marks guide).
 
 ## Themes and assets
 

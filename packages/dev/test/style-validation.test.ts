@@ -240,7 +240,7 @@ export default defineMap({
   assert.equal(first.assets.length, 0);
 });
 
-test('local Soundings preview resolves World and both Bathymetry components from one API base', async (t) => {
+test('local Soundings preview resolves World, Bathymetry, and Nautical from one API base', async (t) => {
   const cwd = await createFixture(t, 'tileflow-dev-soundings-marine-');
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
@@ -268,7 +268,10 @@ export default soundings;
     type: 'raster-dem',
     url: 'http://127.0.0.1:4888/tiles/bathymetry/dem/tiles.json',
   });
-  assert.equal(style.sources['tileflow-nautical'], undefined);
+  assert.equal(
+    style.sources['tileflow-nautical']?.url,
+    'http://127.0.0.1:4888/tiles/nautical/tiles.json',
+  );
 
   for (const id of ['tileflow-bathymetry-color-relief', 'tileflow-bathymetry-relief']) {
     assert.equal(
@@ -278,16 +281,9 @@ export default soundings;
     );
   }
 
-  assert.equal(
-    style.layers.some((layer) => layer.source === 'tileflow-nautical'),
-    false,
-  );
+  assert.ok(style.layers.some((layer) => layer.source === 'tileflow-nautical'));
   assert.equal(
     style.layers.some((layer) => layer.id.startsWith('tileflow-poi')),
-    false,
-  );
-  assert.equal(
-    style.layers.some((layer) => layer.id.startsWith('tileflow-nautical-')),
     false,
   );
   assert.match(style.sprite ?? '', /\/icons\/soundings\/sprite$/u);

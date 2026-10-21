@@ -7,6 +7,7 @@ import {
 import type {ResolvedTileflowPreview} from './preview';
 import {previewSceneClient} from './preview-scene';
 import {createPreviewSceneThemes} from './preview-scene-themes';
+import {createPreviewStyleReads} from './preview-style-reads';
 
 export function renderTileflowPreviewHtml(
   preview: ResolvedTileflowPreview | undefined,
@@ -812,7 +813,10 @@ export function renderTileflowPreviewHtml(
       }
 
       function updateGlobeBackdrop(map) {
-        const projection = map.getProjection?.()?.type ?? map.getStyle?.()?.projection?.type;
+        // getProjection reads the style's projection without serializing the style.
+        const projection = map.getProjection
+          ? map.getProjection()?.type
+          : map.getStyle?.()?.projection?.type;
         const container = map.getContainer?.();
         if (!container || !projection) return;
         if (projection !== "globe") {
@@ -827,7 +831,7 @@ export function renderTileflowPreviewHtml(
       // Uses the map's declared atmosphere for the preview's space and rim, so a themed globe shows
       // its own colours; maps without one keep the default backdrop.
       function applyAtmosphereBackdrop(map, container) {
-        const atmosphere = map.getStyle?.()?.metadata?.["tileflow:atmosphere"];
+        const atmosphere = styleReads(map).metadata()?.["tileflow:atmosphere"];
         const rgba = (hex, alpha) => {
           const match = /^#([0-9a-f]{6})$/i.exec(String(hex ?? ""));
           if (!match) return undefined;
@@ -1830,6 +1834,17 @@ export function renderTileflowPreviewHtml(
           ...(streetLights ? {"tileflow-street-lights": {controller:"Street lights", state:{visible:runtimeLayerVisibility["tileflow-street-lights"] !== false, mounted:true}, stats:streetLights.stats}} : {})
         };
       };
+      const createPreviewStyleReads = ${createPreviewStyleReads.toString()};
+      const previewStyleReads = new WeakMap();
+      // Style reads for code that runs on every camera move or style event.
+      function styleReads(map) {
+        let reads = previewStyleReads.get(map);
+        if (!reads) {
+          reads = createPreviewStyleReads(map);
+          previewStyleReads.set(map, reads);
+        }
+        return reads;
+      }
       const createPreviewSceneThemes = ${createPreviewSceneThemes.toString()};
       const coreSceneThemeControllers = new WeakMap();
       function coreSceneThemes(map) {
@@ -1846,7 +1861,7 @@ export function renderTileflowPreviewHtml(
         if (mountingCoreScene) return;
         mountingCoreScene = true;
         try {
-          const metadata = map.getStyle()?.metadata ?? {};
+          const metadata = styleReads(map).metadata() ?? {};
           const treesShown = () => treesEnabled && runtimeLayerVisibility["tileflow-trees-3d"] !== false;
           if (!coreScene.scene) {
             if (!previewSearchParameters.has("trees3d")) {
@@ -1927,11 +1942,12 @@ export function renderTileflowPreviewHtml(
         }
 
         update() {
-          for (const layer of this.map.getStyle()?.layers || []) {
+          const reads = styleReads(this.map);
+          for (const layer of reads.layers()) {
             const toggle = layer.metadata?.["tileflow:3d-toggle"];
             if (toggle !== "building" && toggle !== "landmark") continue;
             // Core's 3D buildings stand in for the compiled extrusion where the style describes them.
-            const replaced = toggle === "building" && this.map.getStyle()?.metadata?.["tileflow:buildings"];
+            const replaced = toggle === "building" && reads.metadata()?.["tileflow:buildings"];
             const visibility = this.enabled && !replaced ? "visible" : "none";
             if (this.map.getLayoutProperty(layer.id, "visibility") !== visibility) {
               this.map.setLayoutProperty(layer.id, "visibility", visibility);
@@ -2089,9 +2105,10 @@ export function renderTileflowPreviewHtml(
             ...visibleLayerGroups,
           ].join(",");
         }
-        const vegetationLayers = map.getStyle()?.metadata?.["tileflow:vegetation-display"]?.flatLayers;
-        for (const layer of map.getStyle()?.layers || []) {
-          if (layer.type === "symbol" && layer.layout?.["text-field"] !== undefined) {
+        const reads = styleReads(map);
+        const vegetationLayers = reads.metadata()?.["tileflow:vegetation-display"]?.flatLayers;
+        for (const layer of reads.layers()) {
+          if (layer.type === "symbol" && map.getLayoutProperty(layer.id, "text-field") !== undefined) {
             const hideLabels = !visibleLayerGroups.has("labels");
             if (hideLabels && !defaultLayerTextField.has(layer.id)) {
               defaultLayerTextField.set(
@@ -2125,7 +2142,7 @@ export function renderTileflowPreviewHtml(
           const threeDimensionalToggle = layer.metadata?.["tileflow:3d-toggle"];
           const authoredVisibility = defaultLayerVisibility.get(layer.id);
           if (!hideLayer) defaultLayerVisibility.delete(layer.id);
-          const styleMetadata = map.getStyle()?.metadata ?? {};
+          const styleMetadata = reads.metadata() ?? {};
           // Core's 3D buildings and trees stand in for compiled extrusions and flat trees.
           const replacedByCore =
             threeDimensionalToggle === "building" && styleMetadata["tileflow:buildings"];
@@ -2200,7 +2217,7 @@ export function renderTileflowPreviewHtml(
         let ensuringThreeDimensionalLayers;
         const ensureThreeDimensionalLayers = () => {
           if (ensuringThreeDimensionalLayers) return ensuringThreeDimensionalLayers;
-          const currentStyleLayers = map.getStyle()?.layers || [];
+          const currentStyleLayers = styleReads(map).layers();
           const landmarkConfigLayer = currentStyleLayers.find(
             (layer) => layer.metadata?.["tileflow:landmark-manifest-url"]
           );

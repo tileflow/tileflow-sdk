@@ -157,9 +157,8 @@ A theme can describe its sun and sky light (`lighting.sun`, `lighting.ambient`);
 returns the sun the map shows with `getSun()`, mixed during a blend, for an application's own 3D
 layers, and `setSun()` places it by direction or by the real sun of a date and place; see
 [sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md).
-`createTileflowBuildings3D` enables worker-meshed buildings rising and fading in at zoom 15–15.3,
-after landmarks and placed models at 14.2–14.6, with scene sun, cast/contact shadows and 0.8 m
-rounded corners. Each effect is independently overridable. See
+`createTileflowBuildings3D` enables worker-meshed buildings rising in at zoom 15–15.3, with scene
+sun, cast/contact shadows and 0.8 m rounded corners. Each effect is independently overridable. See
 [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md).
 Street lights default to off, including in Streets. Set `roads.streetLights.enabled: true` and mount
 `createTileflowStreetLights` to enable them; see

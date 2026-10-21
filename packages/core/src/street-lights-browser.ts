@@ -4,9 +4,9 @@
 // head; streets and pavements the data maps as lit, without their lamps, take a soft light along
 // them that claims no lamp's place. As the controller's sun darkens the map the lights switch on
 // one by one, and they go out as day comes.
+import {acquireCameraTileBuilder} from './camera-tile-builder';
 import {cameraFrame, createCameraTiles} from './camera-tiles-browser';
 import {
-  placeTileflowStreetLights,
   readTileflowStreetLights,
   tileflowDefaultStreetLightsDesign,
   tileflowStreetLightBytes,
@@ -111,6 +111,8 @@ export function createTileflowStreetLights(
   options: TileflowStreetLightsOptions,
 ): TileflowStreetLights {
   const {map} = options;
+  // Places the tiles' lamps off the page, in a worker the map's 3D layers share.
+  const builder = acquireCameraTileBuilder();
   const minzoom = options.minzoom ?? 14;
   const maxTiles = Math.round(options.maxTiles ?? 25);
   if (!Number.isFinite(minzoom) || minzoom < 0 || minzoom > 24)
@@ -201,27 +203,20 @@ export function createTileflowStreetLights(
     createCameraTiles<LightTile>({
       map,
       source,
-      layers: [
-        layers.streetFurniture,
-        layers.transportation,
-        ...(layers.sidewalk ? [layers.sidewalk] : []),
-      ],
       zoom: preferredZoom,
       minzoom,
       maxTiles,
       ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
       active: () => onNow() > 0,
-      build(tile, tileMetres) {
-        const furniture = tile.layers[layers.streetFurniture];
-        const streets = tile.layers[layers.transportation];
-        const pavements = layers.sidewalk ? tile.layers[layers.sidewalk] : undefined;
-        const placement = placeTileflowStreetLights(
+      async build(tile, tileMetres, signal, priority) {
+        const placement = await builder.build(
           {
-            ...(furniture ? {streetFurniture: furniture} : {}),
-            ...(streets ? {transportation: streets} : {}),
-            ...(pavements ? {sidewalks: pavements} : {}),
+            url: tile.url,
+            bytes: tile.bytes,
+            priority,
+            task: {kind: 'lights', layers, options: {tileMetres, estimate}},
           },
-          {tileMetres, estimate},
+          signal,
         );
         return placement ? {placement} : emptyTile;
       },
@@ -520,6 +515,7 @@ export function createTileflowStreetLights(
         // A map already removed has no layers left to remove.
       }
       camera.dispose();
+      builder.dispose();
     },
   };
 }

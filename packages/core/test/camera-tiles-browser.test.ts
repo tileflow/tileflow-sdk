@@ -20,7 +20,6 @@ test('async tile builds keep the old value, ignore stale refreshes and release l
   const camera = createCameraTiles({
     map,
     source: 'world',
-    layers: [],
     zoom: 15,
     minzoom: 14,
     maxTiles: 1,
@@ -80,7 +79,6 @@ test('the camera covers its tiles without a source to read and over tiles that h
   };
   const options = {
     source: 'world',
-    layers: [],
     zoom: 16,
     minzoom: 14,
     maxTiles: 4,

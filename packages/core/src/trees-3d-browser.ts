@@ -4,6 +4,7 @@
 // map's shared 3D scene; nearer buildings hide them. Showing, hiding and growing them lays out no
 // source.
 import {tileflowBuildingGroundFragment, tileflowBuildingGroundVertex} from './buildings-3d-shaders';
+import {acquireCameraTileBuilder} from './camera-tile-builder';
 import {cameraFrame, type CameraTiles, createCameraTiles} from './camera-tiles-browser';
 import {inspectModelTriangles, type TileflowModelInspection} from './model-inspection';
 import {
@@ -18,7 +19,6 @@ import {resolveTileflowSun, tileflowStyleSunPreset, type TileflowSun} from './su
 import {tileflowColourChannels} from './theme-blend';
 import type {TileflowTileRequestTransform} from './tile-reader';
 import {
-  placeTileflowTrees,
   readTileflowVegetation3D,
   tileflowTreeBytes,
   type TileflowTreeForm,
@@ -168,6 +168,8 @@ type ProjectionArgs = {
  */
 export function createTileflowTrees3D(options: TileflowTrees3DOptions): TileflowTrees3D {
   const {map} = options;
+  // Places the tiles' trees off the page, in a worker the map's 3D layers share.
+  const builder = acquireCameraTileBuilder();
   const minzoom = options.minzoom ?? tileflowSceneMinzoom;
   const maxTiles = Math.round(options.maxTiles ?? 25);
   if (!Number.isFinite(minzoom) || minzoom < 0 || minzoom > 24)
@@ -269,36 +271,38 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       createCameraTiles<TreeTile>({
         map,
         source,
-        layers: [layers.tree, layers.canopy, layers.hedge].filter((name): name is string => !!name),
         zoom: preferredZoom,
         minzoom,
         maxTiles,
         ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
         active: () => target > 0 || scale > 0,
-        build(tile, tileMetres) {
-          const trees = layers.tree ? tile.layers[layers.tree] : undefined;
-          const canopy = layers.canopy ? tile.layers[layers.canopy] : undefined;
-          const hedges = layers.hedge ? tile.layers[layers.hedge] : undefined;
-          if (!trees && !canopy && !hedges) return emptyTile;
-          const placement = placeTileflowTrees(
-            {...(trees ? {trees} : {}), ...(canopy ? {canopy} : {}), ...(hedges ? {hedges} : {})},
+        async build(tile, tileMetres, signal, priority) {
+          const placement = await builder.build(
             {
-              tile,
-              tileMetres,
-              fields: described.fields,
-              unknownForms: described.unknownForms,
-              regions: described.regions,
-              variants: Object.fromEntries(
-                Object.entries(described.forms).map(([form, own]) => [
-                  form,
-                  own?.models?.length ?? 1,
-                ]),
-              ),
+              url: tile.url,
+              bytes: tile.bytes,
+              priority,
+              task: {
+                kind: 'trees',
+                layers,
+                options: {
+                  tile: {x: tile.x, y: tile.y, z: tile.z},
+                  tileMetres,
+                  fields: described.fields,
+                  unknownForms: described.unknownForms,
+                  regions: described.regions,
+                  variants: Object.fromEntries(
+                    Object.entries(described.forms).map(([form, own]) => [
+                      form,
+                      own?.models?.length ?? 1,
+                    ]),
+                  ),
+                },
+              },
             },
+            signal,
           );
-          return placement.trees.length > 0 || placement.hedges.length > 0
-            ? {placement}
-            : emptyTile;
+          return placement ? {placement} : emptyTile;
         },
         empty: emptyTile,
         release(value) {
@@ -1267,6 +1271,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       }
       for (const set of tiles) set.dispose();
       tiles = [];
+      builder.dispose();
     },
   };
 }

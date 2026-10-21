@@ -272,7 +272,8 @@ tile's download.
 ## Cost
 
 A near tree has 60 to 120 triangles and a far one about 20, and each form is one instanced draw per
-tile. The shared shadow map concentrates resolution on the view when its public camera methods
+tile. Trees are placed in the worker the page's 3D layers share, which decodes each tile once for
+all of them, nearest tiles first. The shared shadow map concentrates resolution on the view when its public camera methods
 provide a safe planar fit. It is drawn again when that focused area, the light, visible tree
 selection, fading or geometry changes. Unchanged views reuse it. While the camera moves, the trees'
 shadows follow their selection and fading in steps of a sixteenth of a tile, and exactly again once

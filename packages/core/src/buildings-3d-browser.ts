@@ -14,7 +14,6 @@ import {
 } from './buildings-3d-design';
 import {tileflowBuildingStyleLight} from './buildings-3d-light';
 import {tileflowBuildingExtent, tileflowBuildingVertexBytes} from './buildings-3d-mesh';
-import {createBuildingMesher} from './buildings-3d-mesher';
 import {
   buildingContactCompositeFragment,
   buildingContactFragment,
@@ -40,6 +39,7 @@ import {
 } from './buildings-3d-shaders';
 import {type BuildingTileData, type BuildingTileMesh} from './buildings-3d-tile';
 import {buildingBoxVisible, buildingCornerDetail, buildingDrawRanges} from './buildings-3d-view';
+import {acquireCameraTileBuilder} from './camera-tile-builder';
 import {cameraFrame, cameraTileAt, createCameraTiles} from './camera-tiles-browser';
 import {tileflowFeatureColour} from './feature-colour-browser';
 import {inspectModelTriangles, type TileflowModelInspection} from './model-inspection';
@@ -217,7 +217,8 @@ export function createTileflowBuildings3D(
   if (!(maxTiles >= 1 && maxTiles <= 64))
     throw new RangeError('Tileflow 3D buildings maxTiles must be from 1 to 64.');
 
-  const mesher = createBuildingMesher();
+  // Meshes the tiles off the page, in a worker the map's 3D layers share.
+  const builder = acquireCameraTileBuilder();
   let detail = buildingCornerDetail(map.getZoom());
   let scale = 1;
   let opacity = 1;
@@ -383,33 +384,39 @@ export function createTileflowBuildings3D(
     createCameraTiles<BuildingTile>({
       map,
       source,
-      layers: [layers.building, ...(layers.places ? [layers.places] : [])],
       zoom: preferredZoom,
       minzoom,
       maxTiles,
       ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
       active: () => target > 0 || scale > 0,
-      async build(tile, tileMetres, signal) {
-        const decoded = tile.layers[layers.building];
-        // A tile without buildings stays flat.
-        if (!decoded) return emptyTile;
-        const places = layers.places ? tile.layers[layers.places] : undefined;
+      async build(tile, tileMetres, signal, priority) {
         // Nothing a model will stand on is raised: wait for the landmarks' indexes and the map's
         // models round the tile, briefly.
         await models.settle(tile, signal);
         signal.throwIfAborted();
         const masks = models.masksIn(tile, tileflowBuildingExtent);
-        const prepared = await mesher.build(
-          decoded,
+        const prepared = await builder.build(
           {
-            tileMetres,
-            edgeRadius: detail === 0 ? 0 : edgeRadius,
-            cornerAngle: detail === 1 ? Math.PI / 3 : Math.PI / 6,
-            ...(places ? {places} : {}),
-            ...(masks ? {masks} : {}),
+            url: tile.url,
+            bytes: tile.bytes,
+            priority,
+            task: {
+              kind: 'buildings',
+              layers: {
+                building: layers.building,
+                ...(layers.places ? {places: layers.places} : {}),
+              },
+              options: {
+                tileMetres,
+                edgeRadius: detail === 0 ? 0 : edgeRadius,
+                cornerAngle: detail === 1 ? Math.PI / 3 : Math.PI / 6,
+                ...(masks ? {masks} : {}),
+              },
+            },
           },
           signal,
         );
+        // A tile without buildings stays flat.
         return prepared ? {mesh: prepared.mesh, data: prepared.data} : emptyTile;
       },
       empty: emptyTile,
@@ -1851,7 +1858,7 @@ export function createTileflowBuildings3D(
       if (gl) for (const {value} of camera.all()) if (value) release(gl, value);
       gl = undefined;
       camera.dispose();
-      mesher.dispose();
+      builder.dispose();
     },
   };
 }

@@ -476,6 +476,8 @@ when they stay unchanged.
 Model ambient visibility and lighting roles retain the existing 16-byte vertex stride. They add
 no geometry pass or texture. Architectural ground lighting uses a separate one-byte-per-pixel
 mask and one geometry/composite pair of passes while active; its mask is released when inactive.
+The contact band and the architectural light draw their masks in the layer's prerender, before
+the map's main pass, so the map's framebuffer is never switched while its layers draw.
 At 1280 × 720 and DPR 1, the mask occupies 921,600 bytes, excluding driver overhead.
 
 ## Limits

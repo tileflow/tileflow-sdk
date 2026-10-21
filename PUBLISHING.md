@@ -4,8 +4,8 @@ This repository is the only source of public Tileflow SDK releases. An ordinary 
 creates a release candidate; it never publishes to npm. Publication starts only when an authorized
 operator or Codex deliberately dispatches `.github/workflows/publish.yml` from `main`. The workflow
 has no package, version, SHA, or channel inputs: it always uses the exact current head of `main`,
-derives the changed packages and alpha versions, builds one immutable bundle, and then waits for one
-approval on the GitHub `npm-publish` environment. Approval publishes the tarballs already in that
+derives the changed packages and alpha versions, builds and verifies one immutable bundle, and waits
+for one approval on the GitHub `npm-publish` environment. Approval publishes the tarballs already in that
 bundle. It does not rebuild or recalculate them.
 
 There is no changeset, release PR, source-version commit, release tag, manual npm login, or publish
@@ -168,9 +168,17 @@ Candidate tarballs remain the immutability proof for unselected packages; their 
 output is neither selected nor bundled.
 
 After selection, the workflow applies target versions and dependency floors, forces a clean build,
-runs the complete repository check and packed public consumer, and packs again. A selected tarball
+packs again, and runs the packed public consumer. A selected tarball
 whose topology differs from `plan.json`, or an unselected final manifest version or dependency range
 that drifts, fails closed.
+
+Three isolated verification jobs then apply the bundled plan on the exact source SHA and preparation's
+Node version: one runs all static checks and remaining package verification, one verifies Dev, and
+one verifies CLI. Together they retain every check in `pnpm check`. Each job repacks all packages,
+validates every version and internal dependency range, and compares selected package contents with
+the immutable bundle. Any failure, cancellation or skipped verification blocks npm approval.
+Preparation and verification use temporary Node compile caches within each runner; test results
+are not cached. Publication still uses the original bundle without rebuilding.
 
 ## GitHub configuration contract
 
@@ -228,12 +236,14 @@ Preparation then:
 3. records npm baselines and configured first versions;
 4. builds and compares all public artifacts;
 5. derives only the material package set and next independent alphas;
-6. rebuilds, checks, packs, audits, and runs the clean consumer;
-7. rechecks the exact current `main` SHA; and
-8. uploads one immutable bundle and displays its plan and digest.
+6. rebuilds, packs, audits, and runs the clean consumer;
+7. rechecks the exact current `main` SHA;
+8. uploads one immutable bundle and displays its plan and digest; and
+9. runs all three verification jobs against its final graph and checks their rebuilt artifacts.
 
 If no artifact differs, the workflow succeeds without requesting environment approval. Otherwise,
-the `Approve and publish exact bundle` job waits at `npm-publish`. The reviewer checks the summary,
+after every verification job succeeds, the `Approve and publish exact bundle` job waits at
+`npm-publish`. The reviewer checks the summary,
 source SHA, package table, and bundle digest, then approves or rejects the whole bundle once. There
 is no approval per package. Approval cannot alter the plan; any correction requires a new source PR
 and a new deliberate workflow run.

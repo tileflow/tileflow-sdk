@@ -1,9 +1,5 @@
 import type {TileflowStyleFontFace} from '@tileflow/core';
-import {
-  normalizeTileflowLandmarkManifest,
-  readBoundedTileflowJsonResponse,
-  readBoundedTileflowResponse,
-} from './landmarks';
+import {readBoundedTileflowJsonResponse, readBoundedTileflowResponse} from './bounded-response';
 import type {ResolvedTileflowPreview} from './preview';
 import {previewSceneClient} from './preview-scene';
 import {createPreviewSceneThemes} from './preview-scene-themes';
@@ -133,7 +129,7 @@ export function renderTileflowPreviewHtml(
     <div class="badge" id="badge">Tileflow preview</div>
     <div class="status" id="status" role="status"></div>
     <div id="map"></div>
-    <script type="importmap">{"imports":{"fflate":"${basePath}/__runtime/fflate.js","three":"${basePath}/__runtime/three.module.js"}}</script>
+    <script type="importmap">{"imports":{"three":"${basePath}/__runtime/three.module.js"}}</script>
     <script type="module">
       import * as maplibregl from "${basePath}/__runtime/maplibre-gl.mjs";
       import {createPreviewObserver} from "${basePath}/__runtime/devtools-observer.js";
@@ -151,7 +147,6 @@ export function renderTileflowPreviewHtml(
       if (window.parent !== window) document.documentElement.dataset.devtoolsEmbedded = "true";
 
       const initialStatus = ${JSON.stringify(initialStatus)};
-      const normalizeTileflowLandmarkManifest = ${normalizeTileflowLandmarkManifest.toString()};
       const readBoundedTileflowResponse = ${readBoundedTileflowResponse.toString()};
       const readBoundedTileflowJsonResponse = ${readBoundedTileflowJsonResponse.toString()};
       const initialGeneration = initialStatus.generation;
@@ -201,16 +196,6 @@ export function renderTileflowPreviewHtml(
       }
       let threeDimensionalEnabled = readToggleFromUrl("buildings3d", true);
       let treesEnabled = readToggleFromUrl("trees3d", true);
-      const landmarkState = {
-        active: [],
-        cacheLimit: undefined,
-        enabled: threeDimensionalEnabled,
-        manifestId: undefined,
-        loaded: [],
-        loading: [],
-        errors: []
-      };
-      globalThis.__tileflowLandmarkState = landmarkState;
       const buildingWireframeMetrics = {
         buildingCount: 0,
         refreshMilliseconds: undefined,
@@ -219,22 +204,11 @@ export function renderTileflowPreviewHtml(
       };
       globalThis.__tileflowBuildingWireframeMetrics = buildingWireframeMetrics;
       let THREE;
-      let GLTFLoader;
-      let DRACOLoader;
-      let MeshoptDecoder;
       let LineMaterial;
       let LineSegments2;
       let LineSegmentsGeometry;
-      let PMTiles;
-      let FetchSource;
-      let landmarkDracoLoader;
       let threeCoreRuntimePromise;
       let buildingWireframeRuntimePromise;
-      let landmarkRuntimePromise;
-      let pmtilesRuntimePromise;
-      const landmarkManifestPromises = new Map();
-      const landmarkManifestMaximumBytes = 1024 * 1024;
-      const landmarkManifestTimeoutMs = 10000;
 
       function loadThreeCoreRuntime() {
         if (!threeCoreRuntimePromise) {
@@ -261,89 +235,6 @@ export function renderTileflowPreviewHtml(
           });
         }
         return buildingWireframeRuntimePromise;
-      }
-
-      function loadLandmarkRuntime() {
-        if (!landmarkRuntimePromise) {
-          landmarkRuntimePromise = Promise.all([
-            loadThreeCoreRuntime(),
-            import("${basePath}/__runtime/three-addons/loaders/GLTFLoader.js"),
-            import("${basePath}/__runtime/three-addons/loaders/DRACOLoader.js"),
-            import("${basePath}/__runtime/three-addons/libs/meshopt_decoder.module.js"),
-            loadPmtilesRuntime()
-          ]).then(([, gltfLoaderModule, dracoLoaderModule, meshoptDecoderModule, pmtilesModule]) => {
-            GLTFLoader = gltfLoaderModule.GLTFLoader;
-            DRACOLoader = dracoLoaderModule.DRACOLoader;
-            MeshoptDecoder = meshoptDecoderModule.MeshoptDecoder;
-            PMTiles = pmtilesModule.PMTiles;
-            FetchSource = pmtilesModule.FetchSource;
-            landmarkDracoLoader = new DRACOLoader()
-              .setDecoderPath("${basePath}/__runtime/three-addons/libs/draco/gltf/")
-              .setDecoderConfig({type: "wasm"});
-            landmarkDracoLoader.preload();
-          });
-        }
-        return landmarkRuntimePromise;
-      }
-
-      function loadPmtilesRuntime() {
-        if (!pmtilesRuntimePromise) {
-          pmtilesRuntimePromise = import("${basePath}/__runtime/pmtiles.js").then((pmtilesModule) => {
-            PMTiles = pmtilesModule.PMTiles;
-            FetchSource = pmtilesModule.FetchSource;
-            return pmtilesModule;
-          });
-        }
-        return pmtilesRuntimePromise;
-      }
-
-      function waitForLandmarkManifest(promise, signal) {
-        if (!signal) return promise;
-        if (signal.aborted) return Promise.reject(new DOMException("Aborted", "AbortError"));
-        return new Promise((resolve, reject) => {
-          const abort = () => reject(new DOMException("Aborted", "AbortError"));
-          signal.addEventListener("abort", abort, {once: true});
-          promise.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
-        });
-      }
-
-      function loadLandmarkManifestCandidate(manifestUrl, signal) {
-        const existing = landmarkManifestPromises.get(manifestUrl);
-        if (existing) return waitForLandmarkManifest(existing, signal);
-        const resolvedUrl = new URL(manifestUrl, location.href);
-        if (
-          !["http:", "https:"].includes(resolvedUrl.protocol) ||
-          resolvedUrl.username ||
-          resolvedUrl.password
-        ) throw new Error("invalid landmark manifest URL");
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), landmarkManifestTimeoutMs);
-        const pending = (async () => {
-          try {
-            const response = await fetch(resolvedUrl, {
-              credentials: "include",
-              signal: controller.signal
-            });
-            if (!response.ok) throw new Error("HTTP " + response.status);
-            return readBoundedTileflowJsonResponse(response, landmarkManifestMaximumBytes);
-          } finally {
-            clearTimeout(timeout);
-          }
-        })();
-        landmarkManifestPromises.set(manifestUrl, pending);
-        pending.catch(() => {
-          if (landmarkManifestPromises.get(manifestUrl) === pending) {
-            landmarkManifestPromises.delete(manifestUrl);
-          }
-        });
-        return waitForLandmarkManifest(pending, signal);
-      }
-
-      function loadLandmarkPrerequisites(manifestUrl, signal) {
-        return Promise.all([
-          loadLandmarkRuntime(),
-          loadLandmarkManifestCandidate(manifestUrl, signal)
-        ]);
       }
 
       function percentile(values, percentileValue) {
@@ -1307,510 +1198,6 @@ export function renderTileflowPreviewHtml(
         return zoom >= minzoom && zoom < maxzoom;
       }
 
-      function createLandmarkLayer(map, configLayer, fallbackLayers = []) {
-        const manifestUrl = configLayer.metadata?.["tileflow:landmark-manifest-url"];
-        const {minzoom: landmarkMinimumZoom, maxzoom: landmarkMaximumZoom} =
-          styleLayerZoomRange(configLayer);
-        const abortController = new AbortController();
-        const loaded = new Map();
-        const loading = new Map();
-        const archiveReaders = new Map();
-        const activeLandmarkIds = new Set();
-        let cacheClock = 0;
-        let camera;
-        let renderer;
-        let scene;
-        let group;
-        let sceneOriginMercator;
-        let sceneElevation = 0;
-        let manifest;
-        let fallbackSignature;
-        let queuedRefresh;
-        const mapMatrix = new THREE.Matrix4();
-        const sceneMatrix = new THREE.Matrix4();
-
-        function overlapsViewport(bounds, paddingRatio = 0) {
-          const viewport = map.getBounds();
-          const longitudePadding = Math.abs(viewport.getEast() - viewport.getWest()) * paddingRatio;
-          const latitudePadding = Math.abs(viewport.getNorth() - viewport.getSouth()) * paddingRatio;
-          return !(
-            bounds[2] < viewport.getWest() - longitudePadding ||
-            bounds[0] > viewport.getEast() + longitudePadding ||
-            bounds[3] < viewport.getSouth() - latitudePadding ||
-            bounds[1] > viewport.getNorth() + latitudePadding
-          );
-        }
-
-        function updateLandmarkFallbackFilters() {
-          const readyIds = [...activeLandmarkIds]
-            .filter((id) => loaded.has(id))
-            .sort();
-          const signature = JSON.stringify(readyIds);
-          if (signature === fallbackSignature) return;
-          fallbackSignature = signature;
-          for (const fallback of fallbackLayers) {
-            if (!map.getLayer(fallback.id)) continue;
-            const spatialExclusions = (fallback.spatialFallbacks ?? [])
-              .filter((entry) => readyIds.includes(entry.id))
-              .map((entry) => ["!", ["within", {
-                type: "Polygon",
-                coordinates: [[
-                  [entry.bounds[0], entry.bounds[1]],
-                  [entry.bounds[2], entry.bounds[1]],
-                  [entry.bounds[2], entry.bounds[3]],
-                  [entry.bounds[0], entry.bounds[3]],
-                  [entry.bounds[0], entry.bounds[1]]
-                ]]
-              }]]);
-            map.setFilter(
-              fallback.id,
-              readyIds.length === 0 && spatialExclusions.length === 0
-                ? (fallback.filter ?? null)
-                : [
-                    "all",
-                    ...(fallback.filter ? [fallback.filter] : []),
-                    [
-                      "!",
-                      ["in", ["get", "landmark_id"], ["literal", readyIds]]
-                    ],
-                    ...spatialExclusions
-                  ]
-            );
-          }
-        }
-
-        function queueRefresh() {
-          if (queuedRefresh !== undefined) return;
-          queuedRefresh = setTimeout(() => {
-            queuedRefresh = undefined;
-            refresh();
-          }, 100);
-        }
-
-        function ensureSceneOrigin(elevation) {
-          if (sceneOriginMercator) return;
-          sceneElevation = elevation;
-          sceneOriginMercator = maplibregl.MercatorCoordinate.fromLngLat(
-            map.getCenter(),
-            elevation
-          );
-        }
-
-        function localPosition(lng, lat, elevation) {
-          const mercator = maplibregl.MercatorCoordinate.fromLngLat([lng, lat]);
-          const mercatorPerMeter = sceneOriginMercator.meterInMercatorCoordinateUnits();
-          return new THREE.Vector3(
-            (mercator.x - sceneOriginMercator.x) / mercatorPerMeter,
-            elevation - sceneElevation,
-            (sceneOriginMercator.y - mercator.y) / mercatorPerMeter
-          );
-        }
-
-        function disposeModel(model) {
-          const disposed = new Set();
-          group?.remove(model);
-          for (const texture of model.userData?.tileflowDetachedTextures ?? []) {
-            if (!texture?.isTexture || disposed.has(texture)) continue;
-            disposed.add(texture);
-            texture.dispose();
-          }
-          for (const material of model.userData?.tileflowDetachedMaterials ?? []) {
-            if (!material || disposed.has(material)) continue;
-            for (const value of Object.values(material)) {
-              if (value?.isTexture && !disposed.has(value)) {
-                disposed.add(value);
-                value.dispose();
-              }
-            }
-            disposed.add(material);
-            material.dispose?.();
-          }
-          model.traverse((object) => {
-            if (object.geometry && !disposed.has(object.geometry)) {
-              disposed.add(object.geometry);
-              object.geometry.dispose?.();
-            }
-            const materials = Array.isArray(object.material)
-              ? object.material
-              : [object.material];
-            for (const material of materials) {
-              if (!material || disposed.has(material)) continue;
-              for (const value of Object.values(material)) {
-                if (value?.isTexture && !disposed.has(value)) {
-                  disposed.add(value);
-                  value.dispose();
-                }
-              }
-              disposed.add(material);
-              material.dispose?.();
-            }
-          });
-        }
-
-        function harmonizeLandmarkModel(model) {
-          const detachedMaterials = new Set();
-          const uniformMaterial = new THREE.MeshStandardMaterial({
-            alphaTest: 0,
-            color: "#EEE4D4",
-            depthWrite: true,
-            metalness: 0,
-            opacity: 1,
-            roughness: 0.9,
-            side: THREE.DoubleSide,
-            transparent: false
-          });
-          model.traverse((object) => {
-            if (!object.isMesh) return;
-            const originalMaterials = Array.isArray(object.material)
-              ? object.material
-              : [object.material];
-            for (const material of originalMaterials) {
-              if (material) detachedMaterials.add(material);
-            }
-            object.material = Array.isArray(object.material)
-              ? object.material.map(() => uniformMaterial)
-              : uniformMaterial;
-          });
-          model.userData.tileflowDetachedMaterials = [...detachedMaterials];
-        }
-
-        function normalizeLandmarkAxes(sourceModel, axisConvention) {
-          if (axisConvention === "EUN_Y_UP") return sourceModel;
-          if (axisConvention === "ENU_Z_UP") {
-            sourceModel.rotateX(-Math.PI / 2);
-          }
-          const normalizedModel = new THREE.Group();
-          normalizedModel.scale.z = -1;
-          normalizedModel.add(sourceModel);
-          return normalizedModel;
-        }
-
-        function unloadLandmark(id) {
-          const entry = loaded.get(id);
-          if (!entry) return;
-          disposeModel(entry.model);
-          loaded.delete(id);
-          landmarkState.loaded = [...loaded.keys()];
-          fallbackSignature = undefined;
-        }
-
-        function enforceCacheLimit() {
-          if (!manifest || loaded.size <= manifest.maximumCachedModels) return;
-          const evictionCandidates = [...loaded.entries()]
-            .filter(([id]) => !activeLandmarkIds.has(id))
-            .sort(
-              ([leftId, left], [rightId, right]) =>
-                left.lastUsed - right.lastUsed || leftId.localeCompare(rightId)
-            );
-          while (
-            loaded.size > manifest.maximumCachedModels &&
-            evictionCandidates.length > 0
-          ) {
-            unloadLandmark(evictionCandidates.shift()[0]);
-          }
-        }
-
-        function landmarkModelAtZoom(landmark, zoom) {
-          let selected = landmark.models[0];
-          for (const candidate of landmark.models) {
-            if (candidate.minzoom > zoom) break;
-            selected = candidate;
-          }
-          return selected;
-        }
-
-        async function sha256Hex(bytes) {
-          const digest = await crypto.subtle.digest("SHA-256", bytes);
-          return [...new Uint8Array(digest)]
-            .map((value) => value.toString(16).padStart(2, "0"))
-            .join("");
-        }
-
-        function archiveReader(archive) {
-          let reader = archiveReaders.get(archive.url);
-          if (!reader) {
-            reader = new PMTiles(
-              new FetchSource(archive.url, new Headers(), "include")
-            );
-            archiveReaders.set(archive.url, reader);
-          }
-          return reader;
-        }
-
-        async function loadLandmarkBytes(modelDefinition) {
-          const tile = await archiveReader(modelDefinition.archive).getZxy(
-            modelDefinition.z,
-            modelDefinition.x,
-            modelDefinition.y,
-            abortController.signal
-          );
-          if (!tile) throw new Error("landmark entry is missing from PMTiles");
-          if (tile.data.byteLength !== modelDefinition.bytes) {
-            throw new Error("landmark entry has an unexpected byte length");
-          }
-          if ((await sha256Hex(tile.data)) !== modelDefinition.sha256) {
-            throw new Error("landmark entry has an unexpected SHA-256");
-          }
-          return tile.data;
-        }
-
-        function loadLandmark(landmark, requestedModel) {
-          const cached = loaded.get(landmark.id);
-          const nextModel = cached ? requestedModel : landmark.models[0];
-          if (cached?.modelKey === nextModel.key) {
-            cached.lastUsed = ++cacheClock;
-            cached.model.visible = activeLandmarkIds.has(landmark.id);
-            return;
-          }
-          if (cached) {
-            // Keep the previous LOD visible until its replacement has loaded.
-            cached.lastUsed = ++cacheClock;
-            cached.model.visible = activeLandmarkIds.has(landmark.id);
-          }
-          if (loading.has(landmark.id)) return;
-          loading.set(landmark.id, nextModel.key);
-          landmarkState.loading = [...loading.keys()];
-          const loader = new GLTFLoader();
-          loader.setMeshoptDecoder(MeshoptDecoder);
-          loader.setDRACOLoader(landmarkDracoLoader);
-          loader.setWithCredentials(true);
-          const fail = (error) => {
-            if (loading.get(landmark.id) !== nextModel.key) return;
-            loading.delete(landmark.id);
-            landmarkState.loading = [...loading.keys()];
-            landmarkState.errors = [
-              ...landmarkState.errors.filter((item) => item.id !== landmark.id),
-              {id: landmark.id, message: String(error)}
-            ];
-            console.warn("Tileflow landmark failed to load", landmark.id, error);
-          };
-          void loadLandmarkBytes(nextModel).then((bytes) => {
-            if (loading.get(landmark.id) !== nextModel.key) return;
-            loader.parse(
-              bytes,
-              new URL(".", nextModel.archive.url).toString(),
-            (gltf) => {
-              if (loading.get(landmark.id) !== nextModel.key) {
-                disposeModel(gltf.scene);
-                return;
-              }
-              loading.delete(landmark.id);
-              landmarkState.loading = [...loading.keys()];
-              if (abortController.signal.aborted) {
-                disposeModel(gltf.scene);
-                return;
-              }
-              const elevation = map.queryTerrainElevation(landmark.center) ?? 0;
-              ensureSceneOrigin(elevation);
-              const model = normalizeLandmarkAxes(
-                gltf.scene,
-                nextModel.axisConvention
-              );
-              model.name = "tileflow-landmark-" + landmark.id;
-              harmonizeLandmarkModel(model);
-              model.position.copy(
-                localPosition(landmark.center[0], landmark.center[1], elevation)
-              );
-              model.traverse((object) => {
-                if (!object.isMesh) return;
-                object.frustumCulled = true;
-                object.castShadow = false;
-                object.receiveShadow = false;
-              });
-              model.visible = activeLandmarkIds.has(landmark.id);
-              if (loaded.has(landmark.id)) unloadLandmark(landmark.id);
-              loaded.set(landmark.id, {
-                lastUsed: ++cacheClock,
-                model,
-                modelKey: nextModel.key
-              });
-              landmarkState.errors = landmarkState.errors.filter(
-                (item) => item.id !== landmark.id
-              );
-              landmarkState.loaded = [...loaded.keys()];
-              group.add(model);
-              enforceCacheLimit();
-              fallbackSignature = undefined;
-              refresh();
-            },
-              fail
-            );
-          }).catch(fail);
-        }
-
-        function refresh() {
-          if (
-            !threeDimensionalEnabled ||
-            !manifest ||
-            !styleLayerIsVisibleAtZoom(configLayer, map.getZoom())
-          ) {
-            activeLandmarkIds.clear();
-            landmarkState.active = [];
-            for (const entry of loaded.values()) entry.model.visible = false;
-            updateLandmarkFallbackFilters();
-            return;
-          }
-          const zoom = map.getZoom();
-          const visible = manifest.landmarks
-            .filter((landmark) => overlapsViewport(landmark.bounds))
-            .sort(
-              (left, right) =>
-                right.priority - left.priority || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
-            )
-            .slice(0, manifest.maximumVisibleModels);
-          activeLandmarkIds.clear();
-          for (const landmark of visible) activeLandmarkIds.add(landmark.id);
-          landmarkState.active = visible.map((landmark) => landmark.id);
-          for (const [id, entry] of loaded) {
-            entry.model.visible = activeLandmarkIds.has(id);
-          }
-          for (const landmark of visible) {
-            loadLandmark(landmark, landmarkModelAtZoom(landmark, zoom));
-          }
-          const nearbyCacheSlots = Math.max(
-            0,
-            manifest.maximumCachedModels - visible.length
-          );
-          const nearby = manifest.landmarks
-            .filter(
-              (landmark) =>
-                !activeLandmarkIds.has(landmark.id) &&
-                overlapsViewport(landmark.bounds, 0.35)
-            )
-            .sort(
-              (left, right) =>
-                right.priority - left.priority || (left.id < right.id ? -1 : left.id > right.id ? 1 : 0)
-            )
-            .slice(0, nearbyCacheSlots);
-          for (const landmark of nearby) {
-            loadLandmark(landmark, landmark.models[0]);
-          }
-          enforceCacheLimit();
-          updateLandmarkFallbackFilters();
-          map.triggerRepaint();
-        }
-
-        function normalizeManifest(candidate) {
-          return normalizeTileflowLandmarkManifest(candidate, manifestUrl);
-        }
-
-        async function loadManifest() {
-          try {
-            const candidate = await loadLandmarkManifestCandidate(
-              manifestUrl,
-              abortController.signal
-            );
-            if (abortController.signal.aborted) return;
-            manifest = normalizeManifest(candidate);
-            landmarkState.manifestId = candidate.id;
-            landmarkState.cacheLimit = manifest.maximumCachedModels;
-            refresh();
-          } catch (error) {
-            if (error?.name !== "AbortError") {
-              console.warn("Tileflow landmark manifest failed to load", error);
-            }
-          }
-        }
-
-        return {
-          id: "tileflow-landmarks-3d",
-          type: "custom",
-          renderingMode: "3d",
-          minzoom: landmarkMinimumZoom,
-          ...(Number.isFinite(landmarkMaximumZoom)
-            ? {maxzoom: landmarkMaximumZoom}
-            : {}),
-          metadata: {"tileflow:3d-toggle": "landmark"},
-          onAdd(_map, gl) {
-            camera = new THREE.Camera();
-            scene = new THREE.Scene();
-            scene.rotateX(Math.PI / 2);
-            scene.scale.multiply(new THREE.Vector3(1, 1, -1));
-            group = new THREE.Group();
-            scene.add(group);
-            scene.add(new THREE.AmbientLight(0xffffff, 2.2));
-            scene.add(new THREE.HemisphereLight(0xfff8e8, 0xd8cfbd, 0.8));
-            const sun = new THREE.DirectionalLight(0xffffff, 0.45);
-            sun.position.set(-120, 220, 100);
-            scene.add(sun);
-            renderer = new THREE.WebGLRenderer({
-              canvas: map.getCanvas(),
-              context: gl
-            });
-            renderer.autoClear = false;
-            renderer.outputColorSpace = THREE.SRGBColorSpace;
-            map.on("move", queueRefresh);
-            map.on("moveend", refresh);
-            map.on("tileflow:3d-toggle", refresh);
-            void loadManifest();
-          },
-          render(_gl, options) {
-            if (
-              !threeDimensionalEnabled ||
-              !sceneOriginMercator ||
-              group.children.length === 0
-            ) return;
-            const meter = sceneOriginMercator.meterInMercatorCoordinateUnits();
-            mapMatrix.fromArray(options.defaultProjectionData.mainMatrix);
-            sceneMatrix
-              .makeTranslation(
-                sceneOriginMercator.x,
-                sceneOriginMercator.y,
-                sceneOriginMercator.z
-              )
-              .scale(new THREE.Vector3(meter, -meter, meter));
-            camera.projectionMatrix.copy(mapMatrix).multiply(sceneMatrix);
-            renderer.resetState();
-            renderer.render(scene, camera);
-          },
-          onRemove() {
-            abortController.abort();
-            if (queuedRefresh !== undefined) clearTimeout(queuedRefresh);
-            map.off("move", queueRefresh);
-            map.off("moveend", refresh);
-            map.off("tileflow:3d-toggle", refresh);
-            for (const entry of loaded.values()) disposeModel(entry.model);
-            loaded.clear();
-            for (const fallback of fallbackLayers) {
-              if (map.getLayer(fallback.id)) {
-                map.setFilter(fallback.id, fallback.filter ?? null);
-              }
-            }
-            renderer?.dispose();
-          }
-        };
-      }
-
-      function addLandmarkLayerIfConfigured(map, styleLayers) {
-        const configLayer = styleLayers.find(
-          (layer) => layer.metadata?.["tileflow:landmark-manifest-url"]
-        );
-        if (!configLayer || map.getLayer("tileflow-landmarks-3d")) return;
-        const fallbackLayers = styleLayers
-          .filter((layer) => layer.metadata?.["tileflow:landmark-fallback"] === true)
-          .map((layer) => ({
-            filter: layer.filter,
-            id: layer.id,
-            spatialFallbacks:
-              layer.metadata?.["tileflow:landmark-spatial-fallbacks"] ?? []
-          }));
-        // Landmark custom layers use Mercator world coordinates.
-        if (map.getProjection().type !== "mercator") {
-          map.setProjection({type: "mercator"});
-        }
-        const firstForegroundLabel = styleLayers.find(
-          (layer) =>
-            (layer.id.startsWith("tileflow-label-") &&
-              !layer.id.startsWith("tileflow-label-road-")) ||
-            layer.id === "tileflow-poi" ||
-            layer.id.startsWith("tileflow-poi-")
-        )?.id;
-        const treeLayer = map.getLayer("tileflow-vegetation-trees")
-          ? "tileflow-vegetation-trees"
-          : firstForegroundLabel;
-        map.addLayer(createLandmarkLayer(map, configLayer, fallbackLayers), treeLayer);
-      }
-
       // Core's 3D scene, as an application mounts it: the map's style describes how its
       // buildings, trees and street lights look, and the controls only show and hide them. The
       // vegetation control hides all trees when off. The preview shows one theme at a
@@ -1933,7 +1320,6 @@ export function renderTileflowPreviewHtml(
           if (typeof enabled !== "boolean" || enabled === this.enabled) return;
           this.enabled = enabled;
           threeDimensionalEnabled = this.enabled;
-          landmarkState.enabled = this.enabled;
           this.update();
           writeToggleStateToUrl();
           this.map.fire("tileflow:3d-toggle", {enabled: this.enabled});
@@ -2217,45 +1603,17 @@ export function renderTileflowPreviewHtml(
         let ensuringThreeDimensionalLayers;
         const ensureThreeDimensionalLayers = () => {
           if (ensuringThreeDimensionalLayers) return ensuringThreeDimensionalLayers;
-          const currentStyleLayers = styleReads(map).layers();
-          const landmarkConfigLayer = currentStyleLayers.find(
-            (layer) => layer.metadata?.["tileflow:landmark-manifest-url"]
-          );
-          const buildingWireframeConfigLayer = currentStyleLayers.find(
+          const buildingWireframeConfigLayer = styleReads(map).layers().find(
             (layer) => layer.metadata?.["tileflow:building-wireframe"] === true
           );
-          const landmarkManifestUrl =
-            landmarkConfigLayer?.metadata?.["tileflow:landmark-manifest-url"];
-          const landmarkPreloadZoom = landmarkConfigLayer
-            ? Math.max(0, styleLayerZoomRange(landmarkConfigLayer).minzoom - 1)
-            : Infinity;
-          const shouldPreloadLandmarks =
-            landmarkManifestUrl &&
-            threeDimensionalEnabled &&
-            map.getZoom() >= landmarkPreloadZoom;
-          const needsLandmarks =
-            landmarkConfigLayer &&
-            threeDimensionalEnabled &&
-            styleLayerIsVisibleAtZoom(landmarkConfigLayer, map.getZoom()) &&
-            !map.getLayer("tileflow-landmarks-3d");
           const needsBuildingWireframe =
             buildingWireframeConfigLayer &&
             threeDimensionalEnabled &&
             styleLayerIsVisibleAtZoom(buildingWireframeConfigLayer, map.getZoom()) &&
             !map.getLayer("tileflow-buildings-wireframe-3d");
-          if (
-            !needsLandmarks &&
-            !needsBuildingWireframe &&
-            !shouldPreloadLandmarks
-          ) return;
-          const runtimePrerequisites = [
-            shouldPreloadLandmarks
-              ? loadLandmarkPrerequisites(landmarkManifestUrl)
-              : loadThreeCoreRuntime(),
-            ...(needsBuildingWireframe ? [loadBuildingWireframeRuntime()] : [])
-          ];
-          ensuringThreeDimensionalLayers = Promise.all(runtimePrerequisites)
-            .then(async () => {
+          if (!needsBuildingWireframe) return;
+          ensuringThreeDimensionalLayers = loadBuildingWireframeRuntime()
+            .then(() => {
               const styleLayers = map.getStyle()?.layers || [];
               const buildingWireframeConfigLayer = styleLayers.find(
                 (layer) => layer.metadata?.["tileflow:building-wireframe"] === true
@@ -2265,27 +1623,7 @@ export function renderTileflowPreviewHtml(
                 threeDimensionalEnabled &&
                 styleLayerIsVisibleAtZoom(buildingWireframeConfigLayer, map.getZoom())
               ) {
-                // A tree-only load may already be in flight when buildings are
-                // enabled. Reassert the line runtime before mounting the layer.
-                await loadBuildingWireframeRuntime();
                 addBuildingWireframeLayerIfConfigured(map, styleLayers);
-              }
-              const landmarkConfigLayer = styleLayers.find(
-                (layer) => layer.metadata?.["tileflow:landmark-manifest-url"]
-              );
-              const shouldAddLandmarks =
-                landmarkConfigLayer &&
-                threeDimensionalEnabled &&
-                styleLayerIsVisibleAtZoom(landmarkConfigLayer, map.getZoom()) &&
-                !map.getLayer("tileflow-landmarks-3d");
-              if (shouldAddLandmarks) {
-                // The tree-only path may already be in flight when landmarks
-                // are enabled. Reassert the richer runtime here so a shared
-                // core promise can never expose an undefined GLTF loader.
-                await loadLandmarkPrerequisites(
-                  landmarkConfigLayer.metadata["tileflow:landmark-manifest-url"]
-                );
-                addLandmarkLayerIfConfigured(map, styleLayers);
               }
             })
             .catch((error) => console.warn("Tileflow 3D runtime failed to load", error))

@@ -553,29 +553,12 @@ test('serves pinned local preview assets and a cancellable session event stream'
   );
   assert.doesNotMatch(preview, /Oxanium|__runtime\/fonts\//);
   assert.match(preview, /__runtime\/three\.module\.js/);
-  assert.match(preview, /three-addons\/loaders\/GLTFLoader\.js/);
-  assert.match(preview, /three-addons\/libs\/meshopt_decoder\.module\.js/);
   assert.doesNotMatch(preview, /^\s*import \* as THREE/m);
   assert.match(preview, /function loadThreeCoreRuntime\(\)/);
   assert.match(preview, /function loadBuildingWireframeRuntime\(\)/);
   assert.match(preview, /three-addons\/lines\/LineMaterial\.js/);
   assert.match(preview, /three-addons\/lines\/LineSegments2\.js/);
   assert.match(preview, /three-addons\/lines\/LineSegmentsGeometry\.js/);
-  assert.match(preview, /function loadLandmarkRuntime\(\)/);
-  assert.match(preview, /function loadLandmarkManifestCandidate\(manifestUrl, signal\)/);
-  assert.match(preview, /function loadLandmarkPrerequisites\(manifestUrl, signal\)/);
-  assert.match(
-    preview,
-    /Promise\.all\(\[\s*loadLandmarkRuntime\(\),\s*loadLandmarkManifestCandidate\(manifestUrl, signal\)/,
-  );
-  assert.match(preview, /import\("\/__runtime\/three\.module\.js"\)/);
-  assert.match(preview, /const landmarkConfigLayer = currentStyleLayers\.find/);
-  assert.match(preview, /landmarkConfigLayer &&[\s\S]*?threeDimensionalEnabled/);
-  assert.match(
-    preview,
-    /shouldPreloadLandmarks[\s\S]*?loadLandmarkPrerequisites\(landmarkManifestUrl\)/,
-  );
-  assert.match(preview, /if \(shouldAddLandmarks\) \{[\s\S]*?await loadLandmarkPrerequisites\(/);
   assert.match(preview, /function createBuildingWireframeLayer\(map, styleLayer\)/);
   assert.match(preview, /function addBuildingWireframeLayerIfConfigured\(map, styleLayers\)/);
   assert.match(preview, /const maximumBuildings = 10000/);
@@ -595,7 +578,6 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /event\.isSourceLoaded !== true/);
   assert.equal(preview.match(/depthTest: false/g)?.length, 2);
   assert.match(preview, /const needsBuildingWireframe =/);
-  assert.match(preview, /await loadBuildingWireframeRuntime\(\)/);
   assert.match(
     preview,
     /map\.addLayer\(createBuildingWireframeLayer\(map, styleLayer\), layerAboveBuildings\)/,
@@ -605,10 +587,6 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /map\.queryRenderedFeatures\(/);
   assert.match(preview, /\{layers: \[styleLayer\.id\]\}/);
   assert.doesNotMatch(preview, /querySourceFeatures\(sourceId, \{sourceLayer\}\)/);
-  assert.match(preview, /scene\.rotateX\(Math\.PI \/ 2\)/);
-  assert.match(preview, /scene\.scale\.multiply\(new THREE\.Vector3\(1, 1, -1\)\)/);
-  assert.match(preview, /elevation - sceneElevation/);
-  assert.match(preview, /new THREE\.Vector3\(meter, -meter, meter\)/);
   assert.doesNotMatch(preview, /map\.project\(\[lng, lat\]\)/);
   assert.doesNotMatch(preview, /options\.modelViewProjectionMatrix/);
   assert.doesNotMatch(preview, /function queueRefreshWhenIdle\(\)/);
@@ -661,66 +639,9 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /event\.source !== window\.parent/);
   assert.match(preview, /event\.origin !== location\.origin/);
   assert.match(preview, /map\.jumpTo\(\{/);
-  assert.doesNotMatch(preview, /landmarkRuntimeMinimumZoom/);
   assert.match(preview, /function styleLayerZoomRange\(layer\)/);
   assert.match(preview, /return zoom >= minzoom && zoom < maxzoom/);
-  assert.match(
-    preview,
-    /const landmarkConfigLayer = currentStyleLayers\.find[\s\S]*?styleLayerIsVisibleAtZoom\(landmarkConfigLayer, map\.getZoom\(\)\)/,
-  );
-  assert.equal(
-    preview.match(/styleLayerIsVisibleAtZoom\(landmarkConfigLayer, map\.getZoom\(\)\)/g)?.length,
-    2,
-  );
-  assert.match(preview, /function createLandmarkLayer\(map, configLayer, fallbackLayers = \[\]\)/);
-  assert.match(preview, /minzoom: landmarkMinimumZoom/);
-  assert.match(preview, /\? \{maxzoom: landmarkMaximumZoom\}/);
-  assert.match(preview, /!styleLayerIsVisibleAtZoom\(configLayer, map\.getZoom\(\)\)/);
-  assert.match(
-    preview,
-    /function addLandmarkLayerIfConfigured\(map, styleLayers\)[\s\S]*?if \(map\.getProjection\(\)\.type !== "mercator"\) \{[\s\S]*?map\.setProjection\(\{type: "mercator"\}\);[\s\S]*?map\.addLayer\(createLandmarkLayer/,
-  );
-  assert.match(preview, /loader\.setMeshoptDecoder\(MeshoptDecoder\)/);
   assert.match(preview, /credentials: "include"/);
-  assert.match(preview, /manifest\.maximumVisibleModels/);
-  assert.match(preview, /manifest\.maximumCachedModels/);
-  assert.match(preview, /right\.priority - left\.priority/);
-  assert.match(preview, /function landmarkModelAtZoom\(landmark, zoom\)/);
-  assert.match(preview, /const nextModel = cached \? requestedModel : landmark\.models\[0\]/);
-  assert.match(preview, /new PMTiles\(/);
-  assert.match(preview, /new FetchSource\(archive\.url, new Headers\(\), "include"\)/);
-  assert.match(preview, /archiveReader\(modelDefinition\.archive\)\.getZxy/);
-  assert.match(preview, /crypto\.subtle\.digest\("SHA-256", bytes\)/);
-  assert.match(preview, /loader\.parse\(/);
-  assert.match(preview, /loader\.setDRACOLoader\(landmarkDracoLoader\)/);
-  assert.match(preview, /function normalizeLandmarkAxes\(sourceModel, axisConvention\)/);
-  assert.match(preview, /sourceModel\.rotateX\(-Math\.PI \/ 2\)/);
-  assert.match(preview, /normalizedModel\.scale\.z = -1/);
-  assert.match(preview, /fallbackSignature = undefined;\s*refresh\(\)/);
-  assert.match(preview, /tileflow:landmark-fallback/);
-  assert.match(preview, /function updateLandmarkFallbackFilters\(\)/);
-  assert.match(preview, /activeLandmarkIds[\s\S]*?\.filter\(\(id\) => loaded\.has\(id\)\)/);
-  assert.match(preview, /map\.setFilter\(/);
-  assert.match(preview, /const signature = JSON\.stringify\(readyIds\)/);
-  assert.match(
-    preview,
-    /const nearbyCacheSlots = Math\.max\(\s*0,\s*manifest\.maximumCachedModels - visible\.length\s*\);[\s\S]*?const nearby = manifest\.landmarks[\s\S]*?\.slice\(0, nearbyCacheSlots\)/,
-  );
-  assert.doesNotMatch(
-    preview,
-    /const nearby = manifest\.landmarks[\s\S]*?\.slice\(0, manifest\.maximumCachedModels\)/,
-  );
-  assert.match(preview, /function enforceCacheLimit\(\)/);
-  assert.match(preview, /function harmonizeLandmarkModel\(model\)/);
-  assert.match(preview, /new THREE\.MeshStandardMaterial\(\{/);
-  assert.match(preview, /color: "#EEE4D4"/);
-  assert.match(preview, /opacity: 1/);
-  assert.match(preview, /transparent: false/);
-  assert.match(preview, /side: THREE\.DoubleSide/);
-  assert.match(preview, /tileflowDetachedMaterials/);
-  assert.match(preview, /new THREE\.AmbientLight\(0xffffff, 2\.2\)/);
-  assert.match(preview, /new THREE\.DirectionalLight\(0xffffff, 0\.45\)/);
-  assert.match(preview, /value\?\.isTexture/);
   assert.doesNotMatch(preview, /material\.roughness = 0\.82/);
   assert.doesNotMatch(preview, /material\.metalness = Math\.min/);
   assert.doesNotMatch(preview, /material\.emissive\.setRGB/);
@@ -757,15 +678,9 @@ test('serves pinned local preview assets and a cancellable session event stream'
     stylesheet,
     three,
     threeCore,
-    gltfLoader,
-    dracoLoader,
-    dracoWasm,
-    meshoptDecoder,
     lineMaterial,
     lineSegments,
     lineSegmentsGeometry,
-    pmtiles,
-    fflate,
     tileflowBrowser,
   ] = await Promise.all([
     handler(new Request('http://localhost/__runtime/maplibre-gl.mjs')),
@@ -773,17 +688,9 @@ test('serves pinned local preview assets and a cancellable session event stream'
     handler(new Request('http://localhost/__runtime/maplibre-gl.css')),
     handler(new Request('http://localhost/__runtime/three.module.js')),
     handler(new Request('http://localhost/__runtime/three.core.min.js')),
-    handler(new Request('http://localhost/__runtime/three-addons/loaders/GLTFLoader.js')),
-    handler(new Request('http://localhost/__runtime/three-addons/loaders/DRACOLoader.js')),
-    handler(
-      new Request('http://localhost/__runtime/three-addons/libs/draco/gltf/draco_decoder.wasm'),
-    ),
-    handler(new Request('http://localhost/__runtime/three-addons/libs/meshopt_decoder.module.js')),
     handler(new Request('http://localhost/__runtime/three-addons/lines/LineMaterial.js')),
     handler(new Request('http://localhost/__runtime/three-addons/lines/LineSegments2.js')),
     handler(new Request('http://localhost/__runtime/three-addons/lines/LineSegmentsGeometry.js')),
-    handler(new Request('http://localhost/__runtime/pmtiles.js')),
-    handler(new Request('http://localhost/__runtime/fflate.js')),
     handler(new Request('http://localhost/__runtime/tileflow-browser.js')),
   ]);
   assert.match(mapLibreMain.headers.get('content-type') ?? '', /javascript/);
@@ -797,26 +704,14 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.ok((await three.text()).length > 300_000);
   assert.match(threeCore.headers.get('content-type') ?? '', /javascript/);
   assert.ok((await threeCore.text()).length > 100_000);
-  assert.match(gltfLoader.headers.get('content-type') ?? '', /javascript/);
-  assert.match(await gltfLoader.text(), /class GLTFLoader/);
-  assert.match(dracoLoader.headers.get('content-type') ?? '', /javascript/);
-  assert.match(await dracoLoader.text(), /class DRACOLoader/);
-  assert.match(dracoWasm.headers.get('content-type') ?? '', /application\/wasm/);
-  assert.ok((await dracoWasm.arrayBuffer()).byteLength > 100_000);
   assert.match(tileflowBrowser.headers.get('content-type') ?? '', /javascript/);
   assert.match(await tileflowBrowser.text(), /loadTileflowStyleFonts/);
-  assert.match(meshoptDecoder.headers.get('content-type') ?? '', /javascript/);
-  assert.match(await meshoptDecoder.text(), /MeshoptDecoder/);
   assert.match(lineMaterial.headers.get('content-type') ?? '', /javascript/);
   assert.match(await lineMaterial.text(), /class LineMaterial/);
   assert.match(lineSegments.headers.get('content-type') ?? '', /javascript/);
   assert.match(await lineSegments.text(), /class LineSegments2/);
   assert.match(lineSegmentsGeometry.headers.get('content-type') ?? '', /javascript/);
   assert.match(await lineSegmentsGeometry.text(), /class LineSegmentsGeometry/);
-  assert.match(pmtiles.headers.get('content-type') ?? '', /javascript/);
-  assert.match(await pmtiles.text(), /PMTiles/);
-  assert.match(fflate.headers.get('content-type') ?? '', /javascript/);
-  assert.match(await fflate.text(), /decompressSync/);
 
   const events = await handler(new Request('http://localhost/__events'));
   const reader = events.body!.getReader();

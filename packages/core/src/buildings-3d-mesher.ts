@@ -1,9 +1,12 @@
-import {
-  meshTileflowBuildings,
-  type TileflowBuildingMesh,
-  type TileflowBuildingMeshOptions,
-} from './buildings-3d-mesh';
+import {meshTileflowBuildings, type TileflowBuildingMeshOptions} from './buildings-3d-mesh';
+import {prepareBuildingTile, type PreparedBuildingTile} from './buildings-3d-tile';
 import type {TileflowTileLayer} from './vector-tile-decode';
+
+// Meshes a tile and prepares it for upload, as the worker does.
+const meshTile = (layer: TileflowTileLayer, options: TileflowBuildingMeshOptions) => {
+  const mesh = meshTileflowBuildings(layer, options);
+  return mesh && prepareBuildingTile(mesh);
+};
 
 // Replaced by the browser build. Source consumers and environments without workers use the same mesher locally.
 declare const TILEFLOW_BUILDING_WORKER_SOURCE: string;
@@ -33,7 +36,7 @@ export function createBuildingMesher(createWorker: () => Worker | undefined = br
       layer: TileflowTileLayer,
       options: TileflowBuildingMeshOptions,
       signal: AbortSignal,
-    ): Promise<TileflowBuildingMesh | undefined> {
+    ): Promise<PreparedBuildingTile | undefined> {
       const result = tail.then(async () => {
         if (disposed || signal.aborted) throw new Error('Building mesh cancelled');
         if (!worker && !unavailable) {
@@ -44,9 +47,9 @@ export function createBuildingMesher(createWorker: () => Worker | undefined = br
           }
           if (!worker) unavailable = true;
         }
-        if (!worker) return meshTileflowBuildings(layer, options);
+        if (!worker) return meshTile(layer, options);
         const active = worker;
-        return new Promise<TileflowBuildingMesh | undefined>((resolve, reject) => {
+        return new Promise<PreparedBuildingTile | undefined>((resolve, reject) => {
           const cleanup = () => {
             clearTimeout(timeout);
             finish = undefined;
@@ -63,7 +66,7 @@ export function createBuildingMesher(createWorker: () => Worker | undefined = br
               return;
             }
             try {
-              resolve(meshTileflowBuildings(layer, options));
+              resolve(meshTile(layer, options));
             } catch (error) {
               reject(error);
             }
@@ -80,11 +83,11 @@ export function createBuildingMesher(createWorker: () => Worker | undefined = br
           };
           active.onmessage = ({
             data,
-          }: MessageEvent<{mesh?: TileflowBuildingMesh; error?: string}>) => {
+          }: MessageEvent<{tile?: PreparedBuildingTile; error?: string}>) => {
             cleanup();
             if (disposed || signal.aborted) reject(new Error('Building mesh cancelled'));
             else if (data.error) reject(new Error(data.error));
-            else resolve(data.mesh);
+            else resolve(data.tile);
           };
           try {
             active.postMessage({layer, options});

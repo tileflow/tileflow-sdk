@@ -28,12 +28,11 @@ export function buildingContactSegments(mesh: TileflowBuildingMesh): Uint8Array 
 }
 
 // Distance to each segment gives round joins without relying on smoothed facade normals.
-export function createBuildingContactVao(gl: WebGL2RenderingContext, mesh: TileflowBuildingMesh) {
+export function createBuildingContactVao(gl: WebGL2RenderingContext, segments: Uint8Array) {
   const vao = gl.createVertexArray()!;
   const vbo = gl.createBuffer()!;
   gl.bindVertexArray(vao);
   gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-  const segments = buildingContactSegments(mesh);
   gl.bufferData(gl.ARRAY_BUFFER, segments, gl.STATIC_DRAW);
   const offset = (first: number) => {
     gl.bindBuffer(gl.ARRAY_BUFFER, vbo);

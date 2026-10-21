@@ -262,7 +262,7 @@ Shadow direction stops lowering at 15° above the horizon; the actual scene ligh
 
 ## Options
 
-`minzoom` (15 by default, fading to full coverage at 15.25 like buildings) and `maxTiles` (25 by default, at most 64) bound where and how far trees
+`minzoom` (15 by default, fading to full coverage at 15.25) and `maxTiles` (25 by default, at most 64) bound where and how far trees
 stand; trees thin out and fade with distance from the map's centre, and near trees take more detail
 than far ones. `canopySource` names a vector source with canopy points when they are not in the
 map's World source. `beforeId` places the layer before another one; `transformRequest` applies the

@@ -1190,6 +1190,11 @@ function boundedThemeNumberSchema(min: number, max: number) {
   ]);
 }
 
+// A zoom band a part of the 3D city comes in over, from where it starts to where it stands.
+const entranceBandSchema = z
+  .tuple([z.number().finite().min(0).max(24), z.number().finite().min(0).max(24)])
+  .refine(([from, to]) => from < to, 'A band starts at a lower zoom than it ends.');
+
 const modelRoleLightingSchema = z
   .object({
     emissiveStrength: boundedThemeNumberSchema(0, 5).optional(),
@@ -1262,6 +1267,10 @@ const buildingsModuleSchema = z
             lamp: modelRoleLightingSchema.optional(),
             logo: modelRoleLightingSchema.optional(),
           })
+          .strict()
+          .optional(),
+        entrance: z
+          .object({buildings: entranceBandSchema.optional(), models: entranceBandSchema.optional()})
           .strict()
           .optional(),
         occlusion: z.boolean().optional(),

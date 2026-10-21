@@ -67,7 +67,7 @@ import {
   tileflowSceneLight,
   tileflowSceneShadowFloor,
 } from './scene-3d-browser';
-import {tileflowSceneMinzoom, tileflowSceneOpacity} from './scene-3d-visibility';
+import {tileflowSceneMinzoom} from './scene-3d-visibility';
 import {resolveTileflowSun, tileflowStyleSunPreset, type TileflowSun} from './sun';
 import {tileflowColourChannels} from './theme-blend';
 import type {TileflowTileRequestTransform} from './tile-reader';
@@ -340,7 +340,7 @@ export function createTileflowBuildings3D(
       drawMasks(context, args);
       if (!programs.depth) return;
       // A disabled building shadow pass must not claim the ground pass from the trees.
-      if (!design().shadows || visibleScale() <= 0) {
+      if (!design().shadows || (visibleScale() <= 0 && modelScale() <= 0)) {
         if (registered) unregister();
         registered = false;
         return;
@@ -367,7 +367,7 @@ export function createTileflowBuildings3D(
       // Prepare resident tiles before the zoom entrance, so the fade starts with ready geometry.
       // Uploads are bounded and request frames only while work remains.
       if (target > 0 || scale > 0) upload(context);
-      if (visibleScale() <= 0) return;
+      if (visibleScale() <= 0 && modelScale() <= 0) return;
       draw(context, args);
     },
   };
@@ -730,18 +730,43 @@ export function createTileflowBuildings3D(
 
   function lighting() {
     const light = tileflowSceneLight(sunNow(), design().shadows);
-    return {...light, strength: light.strength * visibleOpacity()};
+    return {...light, strength: light.strength * Math.max(visibleOpacity(), modelOpacity())};
   }
 
   // --- Drawing ---
 
-  /** Zoom controls opacity; explicit grow() calls alone change building height. */
+  // Zooming in, the placed models and landmarks come in first, then the buildings: each fades in
+  // and rises from the ground across its zoom band, and sinks and fades again zooming out. With
+  // reduced motion they only fade. show() and hide() scale both on top of that.
+  const reducedMotion =
+    typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : undefined;
+  const defaultEntrance = {
+    buildings: [minzoom, minzoom + 0.3],
+    models: [minzoom - 0.8, minzoom - 0.4],
+  } as const;
+
+  /** How far one part of the city has come in at the map's zoom, from 0 to 1. */
+  function entering(part: keyof typeof defaultEntrance): number {
+    const [from, to] = design().entrance?.[part] ?? defaultEntrance[part];
+    return Math.min(1, Math.max(0, (map.getZoom() - from) / (to - from)));
+  }
+
+  /** The buildings' height scale shown now. */
   function visibleScale(): number {
-    return visibleOpacity() > 0 ? scale : 0;
+    return visibleOpacity() > 0 ? scale * (reducedMotion?.matches ? 1 : entering('buildings')) : 0;
   }
 
   function visibleOpacity(): number {
-    return opacity * tileflowSceneOpacity(map.getZoom(), minzoom);
+    return opacity * entering('buildings');
+  }
+
+  /** The placed models' and landmarks' height scale shown now. */
+  function modelScale(): number {
+    return modelOpacity() > 0 ? scale * (reducedMotion?.matches ? 1 : entering('models')) : 0;
+  }
+
+  function modelOpacity(): number {
+    return opacity * entering('models');
   }
 
   function drawn(): TileEntry[] {
@@ -754,17 +779,17 @@ export function createTileflowBuildings3D(
     groundOrder: 0,
     bounds() {
       const shown = visibleScale();
-      const entries = drawn();
-      const standing = modelsDrawn();
-      if (!design().shadows || shown <= 0 || (entries.length === 0 && standing.length === 0))
-        return undefined;
+      const modelsShown = modelScale();
+      const entries = shown > 0 ? drawn() : [];
+      const standing = modelsShown > 0 ? modelsDrawn() : [];
+      if (!design().shadows || (entries.length === 0 && standing.length === 0)) return undefined;
       let [left, top, right, bottom, tallest] = [Infinity, Infinity, -Infinity, -Infinity, 0];
       for (const entry of entries) {
         left = Math.min(left, entry.x);
         top = Math.min(top, entry.y);
         right = Math.max(right, entry.x);
         bottom = Math.max(bottom, entry.y);
-        tallest = Math.max(tallest, entry.value.mesh.top);
+        tallest = Math.max(tallest, entry.value.mesh.top * shown);
       }
       for (const model of standing) {
         const {x, y, reach} = standOf(model);
@@ -772,20 +797,21 @@ export function createTileflowBuildings3D(
         top = Math.min(top, Math.floor(y - reach));
         right = Math.max(right, Math.floor(x + reach));
         bottom = Math.max(bottom, Math.floor(y + reach));
-        tallest = Math.max(tallest, model.model.bounds[5]);
+        tallest = Math.max(tallest, model.model.bounds[5] * modelsShown);
       }
-      return {zoom: camera.zoom, tiles: [left, top, right, bottom], tallest: tallest * shown};
+      return {zoom: camera.zoom, tiles: [left, top, right, bottom], tallest};
     },
     key: () =>
-      `buildings:${visibleScale().toFixed(4)}:${generation}:${models.key()}:${programs.depth ? 1 : 0}`,
+      `buildings:${visibleScale().toFixed(4)}:${modelScale().toFixed(4)}:${generation}:${models.key()}:${programs.depth ? 1 : 0}`,
     drawDepth(context, frame) {
       const program = programs.depth;
       if (!program) return;
+      const shown = visibleScale();
       context.useProgram(program.program);
-      context.uniform1f(program.uniforms.u_scale!, visibleScale());
+      context.uniform1f(program.uniforms.u_scale!, shown);
       context.uniform1f(program.uniforms.u_metres!, frame.metres);
       context.uniformMatrix4fv(program.uniforms.u_light_matrix!, false, frame.light.matrix);
-      for (const {x, y, value} of drawn()) {
+      for (const {x, y, value} of shown > 0 ? drawn() : []) {
         const offset = frame.offsetOf({x, y}, camera.zoom);
         if (
           !buildingBoxVisible(frame.light.matrix, [
@@ -826,10 +852,11 @@ export function createTileflowBuildings3D(
       if (!modelDepth) return;
       context.useProgram(modelDepth.program);
       context.uniformMatrix4fv(modelDepth.uniforms.u_light_matrix!, false, frame.light.matrix);
-      context.uniform1f(modelDepth.uniforms.u_scale!, visibleScale());
+      const modelsShown = modelScale();
+      context.uniform1f(modelDepth.uniforms.u_scale!, modelsShown);
       context.uniform1f(modelDepth.uniforms.u_metres!, frame.metres);
       const centre = map.getCenter();
-      for (const model of modelsDrawn()) {
+      for (const model of modelsShown > 0 ? modelsDrawn() : []) {
         const stand = standOf(model);
         setPlacement(context, modelDepth, model, stand);
         context.uniform2f(
@@ -1245,11 +1272,12 @@ export function createTileflowBuildings3D(
   }
 
   function draw(context: WebGL2RenderingContext, args: ProjectionArgs): void {
-    const entries = drawn();
-    const standing = modelsDrawn();
+    const shown = visibleScale();
+    const modelsShown = modelScale();
+    const entries = shown > 0 ? drawn() : [];
+    const standing = modelsShown > 0 ? modelsDrawn() : [];
     if (entries.length === 0 && standing.length === 0) return;
     const light = lighting();
-    const shown = visibleScale();
     const themes = colouredByData() ? designsOnScreen() : undefined;
     const nightLight = mixed((entry) => entry.nightLight);
     const architectural = floodLightNow();
@@ -1263,7 +1291,7 @@ export function createTileflowBuildings3D(
     context.depthFunc(context.LEQUAL);
     context.depthMask(true);
     context.disable(context.BLEND);
-    drawBuildingOpacity(context, visibleOpacity(), () => {
+    const drawBuildings = () => {
       const buildings = programs.buildings!;
       const u = buildings.uniforms;
       context.useProgram(buildings.program);
@@ -1341,12 +1369,26 @@ export function createTileflowBuildings3D(
             range.from * buffers.indexBytes,
           );
       }
-
-      drawModels(steady);
-    });
+    };
+    const buildingsOpacity = visibleOpacity();
+    const modelsOpacity = modelOpacity();
+    if (buildingsOpacity === modelsOpacity)
+      drawBuildingOpacity(context, buildingsOpacity, () => {
+        drawBuildings();
+        drawModels(steady);
+      });
+    else {
+      // Each fades in over its own zoom band: the more opaque goes first, the other blends over it.
+      const buildingsPass = [buildingsOpacity, drawBuildings] as const;
+      const modelsPass = [modelsOpacity, () => drawModels(steady)] as const;
+      for (const [alpha, drawGroup] of buildingsOpacity >= modelsOpacity
+        ? [buildingsPass, modelsPass]
+        : [modelsPass, buildingsPass])
+        drawBuildingOpacity(context, alpha, drawGroup);
+    }
     // A model that has just come to stand fades in over the flat ground left for it.
     for (const entry of appearing)
-      drawBuildingOpacity(context, visibleOpacity() * appearanceOf(entry, now), () =>
+      drawBuildingOpacity(context, modelsOpacity * appearanceOf(entry, now), () =>
         drawModels([entry]),
       );
     if (appearing.length > 0) map.triggerRepaint();
@@ -1378,7 +1420,7 @@ export function createTileflowBuildings3D(
         const m = model.uniforms;
         context.useProgram(model.program);
         context.disable(context.CULL_FACE);
-        context.uniform1f(m.u_scale!, shown);
+        context.uniform1f(m.u_scale!, modelsShown);
         context.uniform3fv(m.u_sun_dir!, [...light.direction]);
         context.uniform3fv(m.u_shadow_dir!, light.shadowDirection);
         context.uniform3fv(m.u_sun_light!, light.sunLight);
@@ -1409,7 +1451,7 @@ export function createTileflowBuildings3D(
           context.uniform3fv(m.u_view_position!, modelCamera(entry));
           context.uniform1f(
             m.u_opacity!,
-            pass === 'blend' ? visibleOpacity() * appearanceOf(entry, now) : 1,
+            pass === 'blend' ? modelsOpacity * appearanceOf(entry, now) : 1,
           );
           drawModel(context, model, entry, models.levelOf(entry, centre), pass);
         }
@@ -1526,7 +1568,7 @@ export function createTileflowBuildings3D(
         context.ONE,
       );
       context.bindVertexArray(null);
-      context.uniform1f(u.u_scale!, shown);
+      context.uniform1f(u.u_scale!, modelsShown);
       const palette = partColoursNow();
       const paletteMix = partMixNow();
       for (const entry of standing) {
@@ -1537,7 +1579,7 @@ export function createTileflowBuildings3D(
           lighting = modelLightingNow(entry.model.id);
         project(context, emitterProgram, args, stand.tileX, stand.tileY);
         setPlacement(context, emitterProgram, entry, stand);
-        context.uniform1f(u.u_opacity!, visibleOpacity() * appearanceOf(entry, now));
+        context.uniform1f(u.u_opacity!, modelsOpacity * appearanceOf(entry, now));
         for (const [index, emitter] of surface.emitters.entries()) {
           const role = tileflowModelLightingRoles[emitter.role],
             part = tileflowModelParts[emitter.part];

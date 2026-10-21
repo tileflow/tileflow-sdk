@@ -86,6 +86,8 @@ const approvedLightStyleColors = new Set([
   '#404040',
   '#479CEA',
   '#586E84',
+  // The day sky over street-level views and its pale horizon.
+  '#5C9CE6',
   '#626060',
   '#664CE6',
   '#66CC6E',
@@ -129,6 +131,7 @@ const approvedLightStyleColors = new Set([
   '#D6F0D4',
   '#D8C49A',
   '#DBEAFE',
+  '#DCEBF7',
   '#DDF1D8',
   '#E2E5EC',
   '#E2F3D1',
@@ -176,6 +179,9 @@ const approvedDarkStyleColors = new Set([
   '#263532',
   '#54585B',
   '#5D6063',
+  // The night sky over street-level views and its horizon.
+  '#0B1630',
+  '#26365A',
   '#000000',
   '#001638',
   '#05131A',

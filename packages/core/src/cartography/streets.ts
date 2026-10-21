@@ -1,6 +1,12 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import {tileflowAtmosphereMetadataKey} from '../atmosphere';
-import {compileTileflowSky, resolveTileflowAtmosphere} from '../atmosphere-compile';
+import {tileflowSkyMetadataKey} from '../sky';
+import {
+  compileTileflowSky,
+  compileTileflowStreetSky,
+  resolveTileflowAtmosphere,
+  resolveTileflowSky,
+} from '../atmosphere-compile';
 import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
 import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
@@ -612,9 +618,15 @@ function compileSemanticStyleInternal(
   }
 
   const atmosphere = resolveTileflowAtmosphere(config.atmosphere);
+  // A declared sky paints the sky at every zoom; it takes over the globe atmosphere's sky colours.
+  const sky = resolveTileflowSky(config.sky);
   const notices = compiledNotices(layers, marine);
   const style: MapLibreStyle = {
-    ...(atmosphere ? {sky: compileTileflowSky(atmosphere)} : {}),
+    ...(sky
+      ? {sky: compileTileflowStreetSky(sky)}
+      : atmosphere
+        ? {sky: compileTileflowSky(atmosphere)}
+        : {}),
     version: 8,
     name: config.name ?? 'Streets',
     ...(glyphs ? {glyphs} : {}),
@@ -639,6 +651,9 @@ function compileSemanticStyleInternal(
           }
         : {}),
       ...(atmosphere ? {[tileflowAtmosphereMetadataKey]: {version: 1, ...atmosphere}} : {}),
+      ...(sky && sky.starIntensity > 0
+        ? {[tileflowSkyMetadataKey]: {version: 1, starIntensity: sky.starIntensity}}
+        : {}),
       'tileflow:theme': selected.name,
       'tileflow:colorScheme': resolvedTheme.colorScheme,
       [tileflowRouteMetadataKey]: tileflowRouteMetadata(resolveTileflowRouteInks(resolvedTheme)),

@@ -84,6 +84,7 @@ const tileflowBrowserModule = `${readFileSync(
 globalThis.__tileflowRegisterPmtilesProtocol = registerTileflowPmtilesProtocol;
 globalThis.__tileflowAttachAtmosphere = attachTileflowAtmosphere;
 globalThis.__tileflowAttachNotices = attachTileflowNotices;
+globalThis.__tileflowMaxPitch = tileflowMaxPitch;
 globalThis.__tileflowCreateThemeController = createTileflowThemeController;`;
 
 type PagePhaseResult =
@@ -888,6 +889,7 @@ window.__tileflowCaptureLoad = async function(input) {
       container: "map",
       fadeDuration: 0,
       interactive: false,
+      maxPitch: window.__tileflowMaxPitch,
       style: input.style
     });
     window.__tileflowMap = map;

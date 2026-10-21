@@ -62,6 +62,7 @@ import {type TileflowTimeOfDayVariants, validateTileflowTimeOfDayVariants} from 
 import {createTileflowTimeOfDaySchema} from './time-of-day-schema';
 import {tileflowTreeModelIdPattern} from './trees-3d';
 import {tileflowPoiCategories, type ValidationMessage} from './types';
+import {tileflowMaxPitch} from './camera-limits';
 
 /** Structured schema failure preserved for CLI/editor diagnostics. */
 export class TileflowResolvedMapValidationError extends Error {
@@ -2505,13 +2506,29 @@ const atmosphereSchema = z.union([
     })
     .strict(),
 ]);
+const skyNumberSchema = z.union([
+  z.number().finite().min(0).max(1),
+  fixedNumberSchema.extend({value: z.number().finite().min(0).max(1)}),
+  themeNumberReferenceSchema,
+]);
+const skySchema = z.union([
+  z.boolean(),
+  z
+    .object({
+      color: atmosphereColorSchema.optional(),
+      horizonColor: atmosphereColorSchema.optional(),
+      horizonBlend: skyNumberSchema.optional(),
+      starIntensity: skyNumberSchema.optional(),
+    })
+    .strict(),
+]);
 const viewSchema = z
   .object({
     bearing: z.number().finite().min(-180).max(180).optional(),
     center: z
       .tuple([z.number().finite().min(-180).max(180), z.number().finite().min(-90).max(90)])
       .optional(),
-    pitch: z.number().finite().min(0).max(85).optional(),
+    pitch: z.number().finite().min(0).max(tileflowMaxPitch).optional(),
     zoom: zoomNumberSchema.optional(),
   })
   .strict();
@@ -2562,6 +2579,7 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
     name: z.string().trim().min(1),
     overlays: overlaysSchema.optional(),
     projection: z.enum(['globe', 'mercator']).optional(),
+    sky: skySchema.optional(),
     sources: hostedSourcesSchema.optional(),
     systemThemes: systemThemesSchema.optional(),
     terrain: terrainSchema.optional(),

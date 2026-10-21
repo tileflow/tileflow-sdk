@@ -74,7 +74,7 @@ native representation because Native has no GL JS projection controller; this do
 logical map revision.
 
 Dev's `native-lowering-v1` preparation policy explicitly converts a fixed `{type: 'globe'}`
-projection to Native's implicit Mercator before this validator runs. This is a recorded projection
+projection to Native's implicit Mercator and removes a browser `sky` before this validator runs. This is a recorded projection
 change, not globe support or visual equivalence. One authored map serves web and native preparation;
 no native-specific Streets definition is used. Preparation adapts only finite `line-cap` and
 `line-dasharray` decisions into constant-property layers, and replaces constant `icon-overlap` and
@@ -88,7 +88,7 @@ a different composition even when every property value is retained.
 
 `native-build.json` uses strict schema version 2 and `preparationVersion: 'native-lowering-v1'`.
 Its `transformations` array is ordered by map/theme and binds the input/lowered style hashes,
-projection policy, physical layer spans and symbol overlap replacements. The runtime manifest remains version 1. An old v1
+projection policy, an optional `sky: 'removed'`, physical layer spans and symbol overlap replacements. The runtime manifest remains version 1. An old v1
 build-record decoder must reject v2 rather than silently ignore the preparation evidence.
 
 Text must use a valid glyph template containing `{fontstack}` and `{range}`, or a complete static

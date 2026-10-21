@@ -44,6 +44,7 @@ import {
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   subscribeTileflowSystemColorScheme,
+  tileflowMaxPitch,
   type TileflowFairUseNoticeController,
   type TileflowMapLifecycleAttachment,
   type TileflowThemeController,
@@ -896,6 +897,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         },
         // Tileflow's compiled styles are validated when they are built.
         validateStyle: props.mapOptions?.validateStyle ?? false,
+        maxPitch: props.mapOptions?.maxPitch ?? tileflowMaxPitch,
         bearing: resolvedBearing.value,
         center: resolvedCenter.value,
         container,

@@ -84,6 +84,7 @@ export function lowerTileflowNativeCompiledStyles(
             issue.code !== 'NATIVE_UNSUPPORTED_STYLE' ||
             !(
               issue.path === '/projection' ||
+              issue.path === '/sky' ||
               /^\/layers\/\d+\/(?:layout\/line-cap|paint\/line-dasharray)(?:\/|$)/u.test(
                 issue.path,
               ) ||
@@ -156,6 +157,7 @@ export function lowerTileflowNativeCompiledStyles(
           inputLayers: lowered.inputLayers,
           outputLayers: lowered.outputLayers,
           projection: lowered.projection,
+          ...(lowered.sky ? {sky: lowered.sky} : {}),
           layers: lowered.layers,
           symbolOverlap: lowered.symbolOverlap,
         });

@@ -78,6 +78,9 @@ Importing the browser entry is safe during server rendering. Call the attachment
 browser, after mounting. Raw MapLibre consumers that do not attach the helper display the compiled
 native atmosphere but do not receive Tileflow's stars or space background.
 
+A map that also declares a [street sky](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-sky.md)
+uses the sky's colors for MapLibre's `sky`; the atmosphere keeps its space background and stars.
+
 The native artifact profile does not support globe atmosphere and rejects `sky`. This browser
 capability does not establish React Native or hosted Static Maps support. Public availability is
 established by the installed package version, not by this repository's main branch.

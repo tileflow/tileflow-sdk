@@ -4,6 +4,7 @@ import {streetsLighting} from './streets-lighting';
 import {streetsModelLighting} from './streets-model-lighting';
 import {streetsPoiImageTokens} from './streets-poi';
 import {streetsRoadCasingProfiles} from './streets-road-colors';
+import {streetsSkyTokens} from './streets-sky';
 import {
   type StreetsColorTheme,
   type StreetsLightPreset,
@@ -544,6 +545,7 @@ function streetsPaletteColors(preset: StreetsLightPreset, colorTheme: StreetsCol
           ? '#F8E4C4'
           : '#F5CFA8',
     ...streetsModelLighting(preset, colorTheme).colors,
+    ...streetsSkyTokens(preset, colorTheme).colors,
   };
 }
 
@@ -560,6 +562,7 @@ function streetsLightingNumbers(preset: StreetsLightPreset, colorTheme: StreetsC
           ]
         : 1,
     ...streetsModelLighting(preset, colorTheme).numbers,
+    ...streetsSkyTokens(preset, colorTheme).numbers,
   };
 }
 

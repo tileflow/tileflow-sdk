@@ -1418,6 +1418,13 @@ export const streets = bindOfficialMapTheme(
     defaultTheme: 'light',
     systemThemes: {light: 'light', dark: 'dark'},
     projection: 'globe', // 'globe' | 'mercator'. Globe becomes planar at street zooms.
+    // Each theme paints the sky seen when the camera tilts up the street; night shows stars.
+    sky: {
+      color: token.color('sky.color'),
+      horizonColor: token.color('sky.horizon'),
+      horizonBlend: token.number('sky.horizonBlend'),
+      starIntensity: 0.6,
+    },
     data: {
       generation: 'v1',
       selection: {kind: 'current', product: 'world-v1'},

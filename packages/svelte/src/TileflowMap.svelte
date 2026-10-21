@@ -44,6 +44,7 @@
     registerTileflowPmtilesProtocol,
     registerTileflowWorldRequestBridge,
     subscribeTileflowSystemColorScheme,
+    tileflowMaxPitch,
     type TileflowFairUseNoticeController,
     type TileflowMapLifecycleAttachment,
     type TileflowThemeController,
@@ -589,6 +590,7 @@
       attributionControl: mapOptions?.attributionControl ?? {compact: true},
       // Tileflow's compiled styles are validated when they are built.
       validateStyle: mapOptions?.validateStyle ?? false,
+      maxPitch: mapOptions?.maxPitch ?? tileflowMaxPitch,
       bearing: resolvedBearing,
       center: resolvedCenter as LngLatLike,
       container: targetContainer,

@@ -56,6 +56,12 @@ import {
 import type {MapLibreStyle} from './types';
 
 export {attachTileflowAtmosphere, type TileflowAtmosphereMap} from './atmosphere-browser';
+export {tileflowMaxPitch} from './camera-limits';
+export {
+  attachTileflowSkyStars,
+  tileflowSkyStarsLayerId,
+  type TileflowSkyStarsMap,
+} from './sky-stars-browser';
 export {
   createBoundaryFeatureState,
   type CreateBoundaryFeatureStateOptions,

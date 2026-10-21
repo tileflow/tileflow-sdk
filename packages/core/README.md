@@ -66,7 +66,7 @@ Omitted fields inherit, but declaring a field does not imply a recursive merge:
   Spread the parent's list explicitly when composing contributors. Later contributors win for an
   exact icon ID.
 - `fonts` and `glyphs` are mutually exclusive text providers. Declaring either replaces the inherited
-  provider. `atmosphere`, `data`, `projection`, `terrain`, and `marine` are also atomic.
+  provider. `atmosphere`, `data`, `projection`, `sky`, `terrain`, and `marine` are also atomic.
 
 Identity (`id`, `name`, `version`) and tooling `scenes` and `shots` belong to the leaf map and do not inherit.
 Module object order does not determine rendering order. See the
@@ -252,12 +252,11 @@ tooling prepare browser resources; direct MapLibre integrations must register re
 before loading a style. See the
 [browser runtime contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/framework-browser-runtime.md).
 
-Set `projection: 'globe'` and `atmosphere: true` in `tileflow.config.ts` for a blue globe rim,
-space background, and stars. Use `atmosphere: false` to disable an inherited atmosphere, or an
-options object for theme-aware colors and bounded star brightness/motion. Frameworks and capture
-apply it; direct MapLibre integrations call `attachTileflowAtmosphere(map)` from
+Set `projection: 'globe'` and `atmosphere: true` for a globe rim, space, and stars, and `sky` for a
+themed street-level sky with night stars (pitch up to 85). Frameworks and capture apply both; direct MapLibre integrations call `attachTileflowAtmosphere(map)` from
 `@tileflow/core/browser`. See
-[globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md).
+[globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md)
+and [street sky](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-sky.md).
 
 Applications that need the map's data themselves, such as streets to route over or the place
 under the camera, read chosen layers of a vector source for an area at a fixed zoom with

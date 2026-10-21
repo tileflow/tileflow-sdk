@@ -1,4 +1,6 @@
 export type {TileflowAtmosphere, TileflowAtmosphereOptions} from './atmosphere';
+export type {TileflowSky, TileflowSkyOptions} from './sky';
+export {tileflowMaxPitch} from './camera-limits';
 export {createStyle, createStyleResult, parseTileflowMap, validateTileflowMap} from './map';
 export {
   validateTileflowCompiledIconCapabilities,

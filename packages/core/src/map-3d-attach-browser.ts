@@ -80,12 +80,15 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
   let loading = false;
   let disposed = false;
 
+  // Whether the style declares 3D changes with the style, not each time a 2D map settles.
+  let declares: boolean | undefined;
   const check = () => {
     if (disposed || loading || !map.isStyleLoaded()) return;
-    if (
-      !tileflowMapDeclares3D({map, ...(options.controller ? {controller: options.controller} : {})})
-    )
-      return;
+    declares ??= tileflowMapDeclares3D({
+      map,
+      ...(options.controller ? {controller: options.controller} : {}),
+    });
+    if (!declares) return;
     loading = true;
     stopWatching();
     load()
@@ -97,8 +100,13 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
         if (!disposed) onError?.(error);
       });
   };
+  const restyle = () => {
+    declares = undefined;
+    check();
+  };
   function stopWatching() {
-    map.off('styledata', check);
+    map.off('styledata', restyle);
+    map.off('style.load', restyle);
     map.off('idle', check);
   }
   function dispose() {
@@ -110,7 +118,8 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
     scene = undefined;
   }
 
-  map.on('styledata', check);
+  map.on('styledata', restyle);
+  map.on('style.load', restyle);
   map.on('idle', check);
   map.on('remove', dispose);
   check();

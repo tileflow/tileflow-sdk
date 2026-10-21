@@ -68,6 +68,11 @@ export {
   type TileflowSkyTimesOfDay,
 } from './sky';
 export {
+  attachTileflowSkyHaze,
+  tileflowSkyHazeLayerId,
+  type TileflowSkyHazeMap,
+} from './sky-haze-browser';
+export {
   createBoundaryFeatureState,
   type CreateBoundaryFeatureStateOptions,
   type TileflowBoundaryFeatureState,

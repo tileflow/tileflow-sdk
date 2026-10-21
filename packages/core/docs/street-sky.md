@@ -105,6 +105,21 @@ The glow, the sun, and the stars draw beneath every map layer and only where not
 drawn, so buildings and trees stand in front of them. With 3D terrain enabled, they are not
 drawn.
 
+## Distance haze
+
+Above 45 degrees of pitch, the far city fades into the sky's horizon color, so streets meet the sky
+instead of ending in a sharp edge. The haze starts at the camera's distance to the map's center and
+is complete where MapLibre stops drawing the ground, about 6.7 times farther, where the sky starts in
+the same color. It comes in between 45 and 60 degrees, follows the current sky (theme blends
+and a sky that follows the sun included), and leaves the globe alone. Place and POI labels above the
+3D layers stay clear.
+
+The haze is drawn twice, from one model: Tileflow's 3D buildings, trees, and placed models haze
+each pixel by its depth, and a band over the flat map, just under the first 3D layer, hazes the
+flat ground by the depth its screen row has. Road names and one-way arrows that a style draws on the
+ground before its 3D layers fade with the ground, and so do distant 3D shadows, contact shade, and
+night floodlight. A style without a sky, or whose sky has no opaque horizon color, has no haze.
+
 ## Browser integration
 
 The compiler emits MapLibre `sky` in every concrete style and versioned `metadata['tileflow:sky']`
@@ -114,13 +129,17 @@ globe, the sky blends into MapLibre's atmosphere at world zooms; when a map also
 `atmosphere`, the sky's colors replace the atmosphere's sky colors while its space background and
 globe stars stay.
 
-React, Vue, Svelte, and standalone browser capture draw the glow, the sun, and the stars through
-`attachTileflowAtmosphere(map)`. A direct MapLibre integration calls that function, or
-`attachTileflowSky(map)` from `@tileflow/core/browser` for the sky layer alone, after constructing
-the map; each returns a cleanup function. The layer is the custom layer `tileflow-sky` at the
-bottom of the layer stack. A sky that follows the sun needs the theme controller, which writes the
+React, Vue, Svelte, and standalone browser capture draw the glow, the sun, the stars, and the flat
+map's haze through `attachTileflowAtmosphere(map)`. A direct MapLibre integration calls that
+function, or `attachTileflowSky(map)` or `attachTileflowSkyHaze(map)` from `@tileflow/core/browser`
+for one of them alone, after constructing the map; each returns a cleanup function. The sky is the
+custom layer `tileflow-sky` at the bottom of the layer stack, and the haze the custom layer
+`tileflow-sky-haze` under the first 3D layer, or the first label layer without one. Tileflow's 3D
+layers haze themselves. A sky that follows the sun needs the theme controller, which writes the
 sky's colours; raw MapLibre consumers see each theme's own sky.
 
-MapLibre applies its fog only to 3D terrain, so flat layers and 3D buildings stay sharp up to the
-horizon. Native artifacts remove the sky during preparation and record the removal; see the
+MapLibre applies its own fog only to 3D terrain; with 3D terrain enabled, the flat haze band is not
+drawn and the terrain's fog takes its place. Other layers drawn by an application, such as
+`fill-extrusion` layers, stay sharp. Native artifacts remove the sky during preparation and record
+the removal; see the
 [native artifact profile](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-artifact-profile.md).

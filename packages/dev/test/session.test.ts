@@ -1726,6 +1726,7 @@ function runPreviewScript(
     },
     attachTileflowNotices: () => () => {},
     attachTileflowSky: () => () => {},
+    attachTileflowSkyHaze: () => () => {},
     tileflowMaxPitch: 85,
     readTileflowSunPreset: () => undefined,
     resolveTileflowSun: (preset: unknown) => preset,

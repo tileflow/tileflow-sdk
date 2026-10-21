@@ -8,6 +8,7 @@ import {
   wrapAtmosphereStar,
 } from './atmosphere';
 import {attachTileflowSky, type TileflowSkyMap} from './sky-browser';
+import {attachTileflowSkyHaze, type TileflowSkyHazeMap} from './sky-haze-browser';
 
 /** Structural MapLibre capabilities; importing this module never loads a renderer. */
 export type TileflowAtmosphereMap = {
@@ -20,10 +21,11 @@ export type TileflowAtmosphereMap = {
   getStyle(): {metadata?: unknown; projection?: {type?: unknown}} | undefined;
   on(event: 'move' | 'resize' | 'style.load' | 'remove', listener: () => void): unknown;
   off(event: 'move' | 'resize' | 'style.load' | 'remove', listener: () => void): unknown;
-} & Partial<TileflowSkyMap>;
+} & Partial<TileflowSkyMap> &
+  Partial<TileflowSkyHazeMap>;
 
 /**
- * Render compiled globe atmosphere metadata, and the stars of a declared sky. Call after
+ * Render compiled globe atmosphere metadata, and the stars and distance haze of a sky. Call after
  * constructing a browser map. Follows style replacements and releases its canvas, layer,
  * listeners, and pending frame on disposal.
  */
@@ -32,8 +34,9 @@ export function attachTileflowAtmosphere(map: TileflowAtmosphereMap): () => void
   const document = container.ownerDocument;
   const browser = document.defaultView;
   if (!browser) return () => {};
-  const detachSky =
-    typeof map.addLayer === 'function' ? attachTileflowSky(map as TileflowSkyMap) : () => {};
+  const layered = typeof map.addLayer === 'function';
+  const detachSky = layered ? attachTileflowSky(map as TileflowSkyMap) : () => {};
+  const detachHaze = layered ? attachTileflowSkyHaze(map as TileflowSkyHazeMap) : () => {};
   const mapCanvas = map.getCanvas();
   const previousFilter = mapCanvas.style.filter;
   const reducedMotion = browser.matchMedia('(prefers-reduced-motion: reduce)');
@@ -170,6 +173,7 @@ export function attachTileflowAtmosphere(map: TileflowAtmosphereMap): () => void
     if (disposed) return;
     disposed = true;
     detachSky();
+    detachHaze();
     if (frame !== undefined) browser!.cancelAnimationFrame(frame);
     map.off('move', schedule);
     map.off('resize', schedule);

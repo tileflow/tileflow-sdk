@@ -68,6 +68,7 @@ import {
   tileflowSceneShadowFloor,
 } from './scene-3d-browser';
 import {tileflowSceneMinzoom} from './scene-3d-visibility';
+import {bindTileflowSkyHaze, type TileflowSkyHazeArgs, tileflowSkyHazeOf} from './sky-haze-browser';
 import {resolveTileflowSun, tileflowStyleSunPreset, type TileflowSun} from './sun';
 import {tileflowColourChannels} from './theme-blend';
 import type {TileflowTileRequestTransform} from './tile-reader';
@@ -83,6 +84,7 @@ export type TileflowBuildings3DMap = {
   getLayer(id: string): unknown;
   getPaintProperty(layer: string, name: string): unknown;
   getPitch(): number;
+  getSky?(): unknown;
   getSource(id: string): unknown;
   getStyle(): unknown;
   getZoom(): number;
@@ -189,7 +191,7 @@ type BuildingTile = {
   palette?: {texture: WebGLTexture; key: string; rows: number};
 };
 type TileEntry = {x: number; y: number; value: BuildingTile};
-type ProjectionArgs = {
+type ProjectionArgs = TileflowSkyHazeArgs & {
   getProjectionData(params: {
     tileID: {canonical: {x: number; y: number; z: number}; wrap: number};
   }): {
@@ -1272,6 +1274,7 @@ export function createTileflowBuildings3D(
   }
 
   function draw(context: WebGL2RenderingContext, args: ProjectionArgs): void {
+    const haze = tileflowSkyHazeOf(map, args, context);
     const shown = visibleScale();
     const modelsShown = modelScale();
     const entries = shown > 0 ? drawn() : [];
@@ -1295,6 +1298,7 @@ export function createTileflowBuildings3D(
       const buildings = programs.buildings!;
       const u = buildings.uniforms;
       context.useProgram(buildings.program);
+      bindTileflowSkyHaze(context, buildings.uniforms, haze);
       context.uniform1f(u.u_scale!, shown);
       context.uniform1f(u.u_metres!, placed(0, 0).metres);
       context.uniform3fv(u.u_colour!, themeColour());
@@ -1419,6 +1423,7 @@ export function createTileflowBuildings3D(
       if (model && list.length > 0) {
         const m = model.uniforms;
         context.useProgram(model.program);
+        bindTileflowSkyHaze(context, model.uniforms, haze);
         context.disable(context.CULL_FACE);
         context.uniform1f(m.u_scale!, modelsShown);
         context.uniform3fv(m.u_sun_dir!, [...light.direction]);
@@ -1472,6 +1477,7 @@ export function createTileflowBuildings3D(
     ) {
       const program = programs.ground!;
       context.useProgram(program.program);
+      bindTileflowSkyHaze(context, program.uniforms, haze);
       context.uniform1f(program.uniforms.u_metres!, frame.metres);
       context.uniform3fv(program.uniforms.u_ground_shadow!, light.groundShadow);
       scene.bindShadow(context, program.uniforms, light.strength);
@@ -1507,6 +1513,7 @@ export function createTileflowBuildings3D(
       // preserves roofs and facades and avoids dark seams where bands or neighbouring tiles meet.
       const composite = programs.contactComposite!;
       context.useProgram(composite.program);
+      bindTileflowSkyHaze(context, composite.uniforms, haze);
       context.activeTexture(context.TEXTURE2);
       context.bindTexture(context.TEXTURE_2D, masks.contact);
       context.uniform1i(composite.uniforms.u_contact!, 2);
@@ -1524,6 +1531,7 @@ export function createTileflowBuildings3D(
     if (nightLight > 0 && light.night > 0.01) {
       const program = programs.flood!;
       context.useProgram(program.program);
+      bindTileflowSkyHaze(context, program.uniforms, haze);
       context.blendFuncSeparate(context.ONE, context.ONE, context.ZERO, context.ONE);
       context.uniform1f(program.uniforms.u_scale!, shown);
       context.uniform1f(program.uniforms.u_metres!, camera.metres);
@@ -1535,6 +1543,7 @@ export function createTileflowBuildings3D(
     if (masks.flood && entries.length > 0 && ground) {
       const composite = programs.architecturalFloodComposite!;
       context.useProgram(composite.program);
+      bindTileflowSkyHaze(context, composite.uniforms, haze);
       context.activeTexture(context.TEXTURE2);
       context.bindTexture(context.TEXTURE_2D, masks.flood);
       context.uniform1i(composite.uniforms.u_mask!, 2);
@@ -1560,6 +1569,7 @@ export function createTileflowBuildings3D(
     if (emitterProgram) {
       const u = emitterProgram.uniforms;
       context.useProgram(emitterProgram.program);
+      bindTileflowSkyHaze(context, emitterProgram.uniforms, haze);
       context.disable(context.CULL_FACE);
       context.blendFuncSeparate(
         context.SRC_ALPHA,

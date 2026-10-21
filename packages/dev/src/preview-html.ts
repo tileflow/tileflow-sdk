@@ -1207,7 +1207,11 @@ export function renderTileflowPreviewHtml(
       globalThis.__tileflowPreviewScene = coreScene;
       globalThis.__tileflowRuntimeVisibility = (id, visible) => {
         if (!['tileflow-buildings-3d','tileflow-trees-3d','tileflow-street-lights'].includes(id)) return undefined;
-        if (typeof visible === 'boolean') { runtimeLayerVisibility[id]=visible; mountCoreScene(map); map.triggerRepaint(); }
+        const previewMap = globalThis.__tileflowPreviewMap;
+        if (typeof visible === 'boolean') {
+          runtimeLayerVisibility[id] = visible;
+          if (previewMap) { mountCoreScene(previewMap); previewMap.triggerRepaint(); }
+        }
         return runtimeLayerVisibility[id] !== false;
       };
       // Explicit observation capability: controllers stay private to the preview and expose

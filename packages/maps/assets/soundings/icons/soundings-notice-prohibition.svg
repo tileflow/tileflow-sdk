@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="-16 -16 64 64">
+  <title>Prohibition notice</title>
+  <desc>Original Tileflow prohibition board pictogram with a diagonal bar.</desc>
+  <g fill="none" stroke="#000000" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4">
+    <rect x="5.2" y="3.2" width="21.6" height="19.6" rx="1.6"/>
+    <path d="m9.4 7 13.2 12"/>
+  </g>
+  <rect x="14.8" y="22" width="2.4" height="8" fill="#000000"/>
+</svg>

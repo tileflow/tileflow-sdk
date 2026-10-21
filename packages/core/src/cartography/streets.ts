@@ -6,9 +6,10 @@ import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
 import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../boundary-areas/compile';
-import {type ResolvedMarine, resolveMarine} from '../marine';
+import {type ResolvedMarine, resolveMarine, tileflowNauticalV1Schema} from '../marine';
 import {buildingTargetsOfOtherModes} from '../modules/buildings/compiler';
 import {tileflowNauticalNotice} from '../modules/nautical';
+import {declareTileflowNauticalLights, tileflowNauticalLightsMetadataKey} from '../nautical-lights';
 import {type TileflowMapNotice, tileflowNoticesMetadataKey} from '../notices';
 import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
 import {
@@ -613,6 +614,11 @@ function compileSemanticStyleInternal(
 
   const atmosphere = resolveTileflowAtmosphere(config.atmosphere);
   const notices = compiledNotices(layers, marine);
+  const nauticalLights = declareTileflowNauticalLights(
+    layers,
+    marine?.nautical?.sourceId,
+    tileflowNauticalV1Schema.layers.lights,
+  );
   const style: MapLibreStyle = {
     ...(atmosphere ? {sky: compileTileflowSky(atmosphere)} : {}),
     version: 8,
@@ -685,6 +691,7 @@ function compileSemanticStyleInternal(
         .sort(),
       ...(config.view ? {'tileflow:view': config.view} : {}),
       ...(notices.length > 0 ? {[tileflowNoticesMetadataKey]: notices} : {}),
+      ...(nauticalLights ? {[tileflowNauticalLightsMetadataKey]: nauticalLights} : {}),
     },
   };
   const report: TileflowCompilationReport = {

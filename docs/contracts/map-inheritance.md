@@ -110,7 +110,7 @@ source map is redistributed, and the map is not affiliated with or endorsed by B
 & Debes. Its separately licensed Cormorant files live in its own package asset closure.
 Its contours are browser-derived from Mapterhorn terrain tiles that are not packaged. Siegfried owns nine light/dark engraving-motif pairs in one directory; both
 themes select the same semantic image vocabulary without changing map structure. Soundings
-owns eleven original nautical symbols and patterns, and selects its chart symbols for Nautical marks
+owns twenty-seven original nautical symbols and patterns, and selects its chart symbols for Nautical marks
 through theme image tokens; GEBCO-derived depth bands are broad visual context, not navigation-grade
 soundings. Blueprint owns four original drafting patterns and one
 schematic POI symbol in its blueprint asset closure. There is no `builtin`, `source`, `sprite`,

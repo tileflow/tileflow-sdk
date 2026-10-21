@@ -214,7 +214,7 @@ and standalone capture attach it once per map. Direct integrations can call it e
 
 The helper reads the current style on attachment and `style.load`, removes the effect for absent or
 invalid metadata or non-globe styles, coalesces move/resize events into one animation frame, and
-honors reduced motion. There is no idle animation loop. Space and stars fade between zooms 3–6;
+honors reduced motion. The atmosphere has no idle animation loop. Space and stars fade between zooms 3–6;
 native sky scattering fades by zoom 7. Disposal cancels pending work, removes the canvas and event
 listeners, and restores the previous filter. A map `remove` event also disposes the helper.
 
@@ -258,6 +258,37 @@ the style JSON gets no 3D scene: Core's buildings, landmarks, models, trees and 
 WebGL layers that only these runtimes add. Where a map draws a plain `fill-extrusion` pass, the
 style keeps it hidden and grouped under `metadata['tileflow:3d-toggle'] = 'building'`; such a
 consumer may show those layers itself, and gets extruded footprints only.
+
+## Nautical light rhythms
+
+When the Nautical module animates lights (`animateLights`, on by default), the compiled style
+declares `metadata['tileflow:nautical-lights']` version 1: the Nautical source ID, the `light`
+source layer, and at most sixteen layer IDs whose paint reads the light feature states
+`tileflowLightIntensity` and `tileflowLightColour`. Each read falls back to its steady value, so a
+light without state draws exactly as an unanimated style. The Nautical source promotes each light's
+unique `provenance` as its feature ID (`promoteId: {light: 'provenance'}`), which keys the state.
+Native artifact preparation replaces the reads with their steady values and removes the
+declaration; native maps, static images, and capture show steady lights.
+
+`attachTileflowNauticalLights(map)` is the one bounded animation loop of the browser runtimes. React,
+Vue, Svelte, the development preview, and standalone capture attach it once per map; direct
+integrations call it explicitly and may dispose it. It reads the declaration on attachment and,
+after `style.load` or other style data, on the next `idle`. After `moveend`, or Nautical
+`sourcedata`, it queries the rendered features of the declared layers that are visible at the
+current zoom on the next `idle`, and groups the lights by rhythm. A rhythm comes from the light's
+published `sequence` or, without one, from its character, group and period by the conventions
+documented in Core's Nautical marks guide.
+
+The loop is one timer, never an animation frame callback. Each wake writes feature state only for
+lights whose phase changed, evaluating phases 25 ms ahead so near-simultaneous changes share one
+write, then sleeps until the next phase change, and never more often than every 40 ms. No timer runs
+and no state is written while the document is hidden, while no declared layer is visible at the
+current zoom, or when no rendered light has a rhythm and an ID. A light whose ID carries two rhythms
+stays steady. Lights that leave the rendered set return to steady. When the browser prefers reduced
+motion, the helper writes nothing, and a change to that preference returns every light to steady at
+once. Disposal or map `remove` returns every light to steady and removes the timer and all map,
+document, and media-query listeners. Capture runs with reduced motion, so its images are
+deterministic.
 
 ## Session starts
 

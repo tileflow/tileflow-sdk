@@ -136,7 +136,7 @@ export function renderTileflowPreviewHtml(
       import {loadTileflowStyleFonts} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowContourProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowPmtilesProtocol} from "${basePath}/__runtime/tileflow-browser.js";
-      import {attachTileflowNotices} from "${basePath}/__runtime/tileflow-browser.js";
+      import {attachTileflowNauticalLights, attachTileflowNotices} from "${basePath}/__runtime/tileflow-browser.js";
       import {createTileflowMap3D} from "${basePath}/__runtime/tileflow-browser.js";
       import {readTileflowSunPreset, resolveTileflowSun, tileflowDefaultSunPreset} from "${basePath}/__runtime/tileflow-browser.js";
 
@@ -1584,6 +1584,7 @@ export function renderTileflowPreviewHtml(
         });
         globalThis.__tileflowPreviewMap = map;
         attachTileflowNotices(map);
+        attachTileflowNauticalLights(map);
         devtoolsObserver?.attach(map);
         installMapBenchmark(map);
         if (window.parent === window) map.addControl(new maplibregl.NavigationControl(), "top-right");

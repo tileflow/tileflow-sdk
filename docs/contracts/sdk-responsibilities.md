@@ -110,9 +110,10 @@ Baedeker's eight patterns are original Tileflow artwork informed by historical B
 geospatial data, or source maps; the Tileflow map has no affiliation with or endorsement from
 Baedeker or Wagner & Debes. Its separately licensed Cormorant files and OFL license live in its own
 package asset closure. Its browser-derived contours use Mapterhorn terrain tiles that are not packaged.
-Soundings retains eleven original chart symbols and
+Soundings retains twenty-seven original chart symbols and
 patterns in its asset closure. Its official style draws Nautical marks with its buoy, light,
-lighthouse, wreck, and harbor symbols and its paper/water patterns. It exposes broad GEBCO-derived
+lighthouse, wreck, harbor, marina, notice-board, distance-mark, and facility symbols and its
+paper/water patterns. It exposes broad GEBCO-derived
 bathymetric context and reference navigation marks, never navigation-grade survey soundings or a
 chart for navigation. Every standalone map uses the implicit semantic
 compiler but does not import, extend, or inherit

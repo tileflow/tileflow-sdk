@@ -1724,6 +1724,7 @@ function runPreviewScript(
       };
     },
     attachTileflowNotices: () => () => {},
+    tileflowCanvasContextAttributes: (attributes: object) => ({antialias: true, ...attributes}),
     readTileflowSunPreset: () => undefined,
     resolveTileflowSun: (preset: unknown) => preset,
     tileflowDefaultSunPreset: {},

@@ -44,6 +44,7 @@ import {
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   subscribeTileflowSystemColorScheme,
+  tileflowCanvasContextAttributes,
   type TileflowFairUseNoticeController,
   type TileflowMapLifecycleAttachment,
   type TileflowThemeController,
@@ -891,6 +892,9 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       });
       const map = new maplibregl.Map({
         ...props.mapOptions,
+        canvasContextAttributes: tileflowCanvasContextAttributes(
+          props.mapOptions?.canvasContextAttributes,
+        ),
         attributionControl: props.mapOptions?.attributionControl ?? {
           compact: true,
         },

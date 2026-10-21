@@ -56,6 +56,7 @@ import {
 import type {MapLibreStyle} from './types';
 
 export {attachTileflowAtmosphere, type TileflowAtmosphereMap} from './atmosphere-browser';
+export {tileflowCanvasContextAttributes} from './canvas-context-browser';
 export {
   createBoundaryFeatureState,
   type CreateBoundaryFeatureStateOptions,

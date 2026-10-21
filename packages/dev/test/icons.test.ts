@@ -155,6 +155,7 @@ test('prepares every independent official root from its package-owned directorie
       ],
       soundings: [
         'soundings-buoy-cardinal',
+        'soundings-buoy-pillar',
         'soundings-buoy-port',
         'soundings-buoy-starboard',
         'soundings-harbor',

@@ -17,6 +17,11 @@ test('trees and their shadows share density, mesh detail and camera reach', () =
   assert.notEqual(view.key, close.key, 'zoom changes invalidate shadow density');
   assert.notEqual(view.key, tileflowTreeView({...camera, pitch: 60}).key);
   assert.notEqual(view.key, tileflowTreeView({...camera, lng: 0.001}).key);
+  // About 10 m east: a moving camera keeps the trees' shadows, a camera at rest does not.
+  const panned = tileflowTreeView({...camera, lng: 0.0001});
+  assert.notEqual(view.key, panned.key);
+  assert.equal(view.movingKey, panned.movingKey);
+  assert.notEqual(view.movingKey, tileflowTreeView({...camera, lng: 0.01}).movingKey);
 });
 
 test('trees use the distant mesh and fewer instances near the end of the fade', () => {

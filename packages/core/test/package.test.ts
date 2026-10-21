@@ -19,6 +19,11 @@ test('declares the browser entry without exposing it from the package root', asy
     import: './dist/browser.js',
     default: './dist/browser.js',
   });
+  assert.deepEqual(manifest.exports['./3d'], {
+    types: './dist/3d.d.ts',
+    import: './dist/3d.js',
+    default: './dist/3d.js',
+  });
   assert.deepEqual(manifest.exports['./manifest'], {
     types: './dist/manifest.d.ts',
     import: './dist/manifest.js',
@@ -60,7 +65,7 @@ test('imports the packaged manifest and runtime boundaries without browser globa
 });
 
 test('keeps config compilation out of runtime and browser bundles', async () => {
-  for (const entry of ['runtime.js', 'browser.js']) {
+  for (const entry of ['runtime.js', 'browser.js', '3d.js']) {
     const output = await readFile(new URL(`../dist/${entry}`, import.meta.url), 'utf8');
     assert.doesNotMatch(output, /createStyle|createStyleFromCatalog|compilerVersion/u);
   }
@@ -84,9 +89,11 @@ test('ships notices for every third-party component embedded in the browser entr
   }
 });
 
-test('keeps the native browser entry free of bare package imports', async () => {
-  const output = await readFile(new URL('../dist/browser.js', import.meta.url), 'utf8');
-  assert.doesNotMatch(output, /(?:from\s+|import\s*)["'][^./]/u);
+test('keeps the native browser entries free of bare package imports', async () => {
+  for (const entry of ['browser.js', '3d.js']) {
+    const output = await readFile(new URL(`../dist/${entry}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(output, /(?:from\s+|import\s*)["'][^./]/u);
+  }
 });
 
 test('imports the packaged browser entry without reading browser globals', async () => {
@@ -106,6 +113,8 @@ test('imports the packaged browser entry without reading browser globals', async
     const entry = await import('@tileflow/core/browser');
     if (typeof entry.attachTileflowMapLifecycle !== 'function') process.exit(2);
     if (typeof entry.attachTileflowAtmosphere !== 'function') process.exit(3);
+    const scene = await import('@tileflow/core/3d');
+    if (typeof scene.createTileflowMap3D !== 'function') process.exit(4);
   `;
 
   const {stderr, stdout} = await execFileAsync(

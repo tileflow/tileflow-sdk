@@ -5,6 +5,7 @@
 // Tileflow's Node tooling prepares the glTF binaries a map declares, and its landmarks, into
 // prepared model files (models-3d-file.ts) that travel beside the compiled style or in the landmarks
 // tileset and are downloaded only near the camera. It has no DOM dependency.
+import type {TileflowModelSurface} from './models-3d-materials';
 
 /** The parts of a model, each coloured by the theme: the model's materials name them. */
 export const tileflowModelParts = Object.freeze({
@@ -16,6 +17,22 @@ export const tileflowModelParts = Object.freeze({
 });
 
 export type TileflowModelPart = keyof typeof tileflowModelParts;
+
+/** Architectural roles control lighting independently of the model's palette slots. */
+export const tileflowModelLightingRoles = Object.freeze({
+  unclassified: 0,
+  wall: 1,
+  door: 2,
+  roof: 3,
+  window: 4,
+  lamp: 5,
+  logo: 6,
+});
+
+export type TileflowModelLightingRole = keyof typeof tileflowModelLightingRoles;
+
+/** Legacy palette slots map to wall, wall, window, wall and roof; doors and logos are explicit. */
+export const tileflowModelDefaultLightingRoles = Object.freeze([1, 1, 4, 1, 3] as const);
 
 /** What a model may hold. */
 export const tileflowModelLimits = Object.freeze({
@@ -45,12 +62,16 @@ export type TileflowModelMesh = Readonly<{
   normals: readonly number[];
   /** Each vertex's part, a value of `tileflowModelParts`. */
   parts: readonly number[];
+  /** Optional architectural role per vertex; absent roles use the palette slot's legacy mapping. */
+  lightingRoles?: readonly number[];
   /** Each vertex's shade within its part's colour, from -1 (darkest) to 1 (lightest). */
   shades: readonly number[];
   /** Each vertex's light, from 0 (fully occluded) to 1. */
   occlusion: readonly number[];
   /** Three vertex indices per triangle. */
   indices: readonly number[];
+  /** Optional physical materials and their independent texture coordinates. */
+  surface?: TileflowModelSurface;
 }>;
 
 /** A prepared model: its levels, nearest first, and the footprint it replaces on the ground. */
@@ -77,6 +98,8 @@ export type TileflowModelLevelBytes = Readonly<{
   centre: readonly [number, number, number];
   /** Metres in one step of a position. */
   step: number;
+  /** Optional physical data; absent data retains the legacy palette lighting. */
+  surface?: TileflowModelSurface & {attributes: Float32Array};
 }>;
 
 /** A decoded model, as the renderer draws it. */

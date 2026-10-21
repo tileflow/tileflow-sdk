@@ -8,15 +8,72 @@ Showing, hiding and changing height are immediate. Illuminated outlines, random 
 invented windows and night lights remain off. Every effect is independently overridable and
 independent of the map's trees.
 
+Streets supplies architectural flood lighting and subtle model wall emission for its dark
+presets. These controls are independent of invented windows and the optional `nightLight` effects.
+
 Tileflow landmarks and a map's own building models can stand in the same 3D scene, replacing
 the buildings under their footprints.
 
 It is a custom WebGL2 layer for MapLibre GL JS, drawn above the map's buildings and below its
 labels. It needs WebGL2 and the Mercator projection, which MapLibre's globe turns into from about
-zoom 12. On every map, buildings and placed models appear automatically from zoom 15,
-with opacity rising linearly from 0 at 15 to 1 at 15.25. Zooming back out reverses the fade.
-Their height stays unchanged throughout; shadows and contact shading fade with them.
+zoom 12. On every map the city comes in as the camera zooms in: placed models and landmarks first,
+fading in and rising from the ground between zooms 14.2 and 14.6, then the buildings between 15 and
+15.3. Their shadows and contact shading follow their height. Zooming back out lowers and fades them
+again. With reduced motion (`prefers-reduced-motion`) they keep their height and only fade.
 `hide()` keeps them hidden at every zoom until `show()` is called.
+
+A map sets these bands with the buildings module's `threeDimensional.entrance`, each a
+`[from, to]` pair of zooms; a band left out keeps its default:
+
+```ts
+buildings({threeDimensional: {entrance: {buildings: [15.5, 16], models: [14.5, 15]}}});
+```
+
+The renderer reads its tiles from a zoom below its `minzoom`, so a band that starts earlier than
+that comes in from there.
+
+## The map's 3D scene
+
+React, Vue and Svelte `Map` components show the 3D scene of every map whose style declares one, by
+default: buildings with Tileflow landmarks and the map's Team building models, 3D trees, and street
+lights where the map enables them. They load the 3D renderers from `@tileflow/core/3d` only when
+the style declares a scene, so a 2D map does not download them. Set `viewMode="2d"` (Vue:
+`view-mode="2d"`) to opt out: no 3D buildings or street lights are mounted, and vegetation follows
+its [display policy](trees-3d.md#visibility-and-representation) for the 2D view. Changing it back to
+`3d` shows the scene on the same map. React Native, image mode, Capture and Static Maps do not draw
+the scene.
+
+Applications that build their own MapLibre map mount the same scene with `createTileflowMap3D`.
+It mounts each renderer the style declares, follows theme and style changes, and releases a
+renderer when the style no longer declares it:
+
+<!-- docs:check -->
+
+```ts
+import {
+  createTileflowMap3D,
+  type TileflowMap3DMap,
+  type TileflowThemeController,
+} from '@tileflow/core/browser';
+
+export function showTheScene(map: TileflowMap3DMap, controller: TileflowThemeController) {
+  const scene = createTileflowMap3D({map, controller});
+  // Shown on creation; hide() and show() switch the whole scene, dispose() removes it.
+  return scene;
+}
+```
+
+`hide()` takes the buildings down and releases the street lights; `show()` brings them back. Both
+take the same transition as the buildings' `show()` and `hide()`. `setVegetation(false)` hides
+every tree and `setVegetation(undefined)` restores the map's default. To load the renderers only
+for maps that need them, call `attachTileflowMap3D({map, controller, load: () =>
+import('@tileflow/core/3d')})` from `@tileflow/core/browser`, as the framework components do; its
+`setViewMode()` and `setVegetation()` apply once the scene mounts.
+
+A MapLibre application that loads a compiled `style.json` directly gets no 3D scene: buildings,
+landmarks, models, trees and lights are custom WebGL layers added only by this runtime. Where a map
+draws a plain `fill-extrusion` building pass, the style ships it hidden and grouped under
+`metadata['tileflow:3d-toggle'] = 'building'`; showing those layers gives extruded footprints only.
 
 ## Show the buildings
 
@@ -191,7 +248,7 @@ longer raised while it stands. Put glTF binaries (`.glb`) in a directory, declar
 <!-- docs:check -->
 
 ```ts
-import {defineMap, refine} from '@tileflow/core';
+import {defineMap, fixed, refine} from '@tileflow/core';
 import {streets, streetsModels} from '@tileflow/maps';
 
 export default defineMap({
@@ -207,7 +264,10 @@ export default defineMap({
     buildings: refine({
       threeDimensional: {
         models: [{model: 'eiffel-tower', at: [2.294481, 48.858258], heading: 0}],
-        modelColors: {surface: '#7a5c45', accent: '#5b4332'},
+        modelColors: {
+          surface: fixed('#7a5c45', {reason: "The tower's bronze paint"}),
+          accent: fixed('#5b4332', {reason: "The tower's bronze paint, in shadow"}),
+        },
       },
     }),
   },
@@ -225,8 +285,14 @@ How to prepare a model:
   `roof` (an exporter's `.001` suffix is ignored); a model whose materials name a tree's parts is a
   [tree model](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md)
   instead. Each part takes its colour from `modelColors`, or from the buildings' colour when the
-  design gives it none, so the model follows the theme from day to night; vertex colours lighter or
+  design gives it none, so the model follows the theme from day to night. Like every visual
+  colour, a `modelColors` entry is a theme token such as `token.color('buildings.modelRoof')`, or
+  a literal wrapped in `fixed(value, {reason})`; vertex colours lighter or
   darker than the rest of their part shade it within that colour.
+- **Architectural roles control lighting.** A material may set
+  `extras.tileflow.lightingRole` to `wall`, `door`, `roof`, `window`, `lamp`, `logo` or
+  `unclassified`. This preserves its palette slot. Without a role, `surface`, `secondary` and
+  `accent` are walls, `glass` is a window, and `roof` is a roof.
 - **Metres round an origin on the ground.** The origin is where the model stands, with the model
   above it and its own north along +y once read Z up; nothing may lie more than half a metre below
   it.
@@ -243,13 +309,48 @@ The build reads each model, reports a problem with the file and what to change, 
 footprint and writes it beside the style as a prepared model file: a glTF binary whose meshes are
 quantised (`KHR_mesh_quantization`) and compressed by meshoptimizer (`EXT_meshopt_compression`),
 which any glTF viewer opens. The renderer downloads a model only when it stands near the tiles round
-the camera, keeps the nearest dozen, and builds the tiles under it again without the buildings that
+the camera, whether or not those tiles hold buildings, keeps the nearest dozen, and builds the tiles
+under it again without the buildings that
 reach more than half a metre into its footprint; a neighbour that only touches it stays. A tile of
 buildings near a model waits for it, at most a second and a half, so its buildings are not raised
 and then taken away, and the model fades in when it comes to stand. A model that cannot be
 downloaded leaves those buildings standing. Reading a prepared model file loads
 meshoptimizer's WebAssembly decoder, so a page with a Content Security Policy allows
 `'wasm-unsafe-eval'` in its `script-src`.
+
+Preparation also computes local geometric ambient visibility, independently of the model's
+colour. `modelOcclusion` sets its strength from zero to one (default `0.75`); `occlusion: false`
+disables it. Occluded cavities receive less ambient light while direct sun and dynamic shadows
+remain independent. Existing prepared files with fully exposed vertices retain their appearance.
+Reprepare their original GLBs to gain geometric occlusion. See
+[model preparation](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/building-models.md)
+for authoring, sampling and costs.
+
+## Team 3D models
+
+On Tileflow Hosted, a map's building models are its Team's 3D models: each is published once, under
+its name, and every map of the Team that places a model of that name draws it. Locally, the map
+draws its own `.glb` files, so the map is previewed and developed without an account.
+
+```sh
+npx tileflow models publish ./models/eiffel-tower.glb --team @acme
+npx tileflow models status eiffel-tower --team @acme
+```
+
+`tileflow models publish` prepares each building model as a build does and publishes it as the
+model's new current version; with no path, it publishes the building models of every map in the
+project's config. Publishing the bytes of the current version again changes nothing. A hosted map
+follows each model's current version: a new version, or `tileflow models restore`, which makes the
+previous version current again, changes every map that places it the next time the map loads,
+without deploying the maps again. A model keeps its current and previous versions.
+
+`tileflow deploy` writes each placement of a building model as the placeholder
+`tileflow://team-models/<name>` (`tileflowTeamModelUrl(name)`), which the deploy replaces with the
+model's address in the map's Team; a model the Team has not published fails the deploy. The deploy
+also reports a model whose published version was prepared from other files than the map's, so an
+outdated model is easy to spot. A model's file, and what Tileflow shows about it, can be read
+without decoding its meshes with `readTileflowModelFileSummary`. Models are served publicly and may
+be cached, so they must not hold secrets or restricted personal data.
 
 ## Roofs
 
@@ -339,6 +440,42 @@ by day and night, mixed between the themes either side of a blend's position.
 
 ## Night light
 
+Architectural illumination has two independent controls:
+
+- `floodLight` selects ordinary buildings by height. Ground light starts at `minGroundHeight`
+  (30 m by default), with a stable per-building `groundRadius` in metres (default `[30, 100]`).
+  Wall light starts above `minWallHeight` (200 m); its reach is building height times
+  `wallHeightRatio` (default `1/3`). `intensity` is zero to one and `color` is a theme colour.
+  The effect fades with scene brightness; `brightnessScale` compensates an authored light-colour
+  transform and defaults to one. Overlapping ground contributions use their strongest value.
+- `modelLighting` assigns physical materials and emission to architectural roles. Each profile accepts
+  `emissiveStrength` (zero to five), optional `emissiveColor` (otherwise the surface's own colour), and
+  `emissiveHeight`: `[beginHeight, endHeight, beginMultiplier, endMultiplier, curve]`.
+  Heights are fractions of the source mesh's vertical bounds (the full model for legacy files),
+  multipliers are zero to one, and the exponent is
+  `10 ** curve`, with `curve` from -1 to 1. Equal heights give a constant multiplier of one.
+  Every gradient component, strength and colour may use theme tokens. Emission is mixed in linear light and is independent
+  of ambient occlusion and solar shadows. Values above one saturate the surface emission at one;
+  they also control the falloff of explicitly authored area emitters.
+
+Physical profiles also accept `color`, `colorMix` (zero to one, default one when a tint exists),
+`roughness` and `metallic` (zero to one). Explicit `modelColors` override role tints. Missing
+physical overrides retain the glTF material. `emissiveVariation` adds a stable, model-seeded amount
+from zero to its value. Optional `colorVariation` supplies independent `[min, max]` ranges for
+`hue` (0–360), `saturation` and `lightness` (0–100), with `space: 'srgb'` (default) or `'linear'`.
+The same model identity keeps its samples across LODs and theme changes.
+
+Streets leaves ordinary flood lighting off in its light presets. Its dusk/night wall profile uses a strength
+of `0.1` and `[0.5, 0, 0, 1, 0.8]`, concentrating a warm wash near the foot. Monochrome uses a
+weaker neutral wall profile and no architectural ground flood. Prepared models without role
+metadata use their documented palette mapping. Windows use metallic reflection and varied emission;
+doors and logos have separate profiles, and roofs remain non-emissive. Day/dawn profiles follow
+the scene's brighter material response. A role does not generate missing windows or ground emitters.
+See [building-model preparation](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/building-models.md)
+for glTF channels, explicit area emitters, compatibility and resource costs.
+
+The separate `nightLight` control retains its decorative building and shop effects:
+
 With `nightLight` above 0, the buildings light the street from data at night (as the sun's
 `brightness` falls):
 
@@ -363,7 +500,8 @@ download.
 
 ## Options
 
-The renderer's own options say only how it is delivered: `minzoom` (15 by default, with a 0.25-zoom opacity ramp), `maxTiles`,
+The renderer's own options say only how it is delivered: `minzoom` (15 by default; the default
+entrance bands start from it), `maxTiles`,
 `beforeId` to place the layer before another one, and `transformRequest` to apply the map's request
 rules to the tiles it reads.
 
@@ -373,10 +511,14 @@ During partial opacity, a depth-only geometry pass resolves the nearest surfaces
 blending, preventing rear walls from bleeding through. At full opacity only the normal geometry
 pass runs; zoom fading schedules no extra animation frames or per-zoom mesh rebuilds.
 
-The browser bundle prepares building meshes in one worker per renderer and transfers the finished
-vertex and index buffers. No worker URL or extra asset hosting is needed. A Content Security Policy
-must allow `worker-src blob:` to use this path; if workers are unavailable or blocked, the renderer
-falls back to local meshing. The worker is terminated on `dispose()`. Pending tile updates retain
+The browser bundle builds from the tiles' bytes in one worker that the page's 3D buildings, trees
+and street lights share, nearest tiles first: it decodes each tile once for all of them, meshes its
+buildings, keeps their indices to 16 bits when the vertices allow, lays out the walls' contact-band
+segments and transfers the finished arrays. The renderer uploads them to the GPU and keeps no copy;
+a style reloaded in full keeps the uploaded buffers. No worker URL or extra asset hosting is needed.
+A Content Security Policy must allow `worker-src blob:` to use this path; if workers are
+unavailable or blocked, the layers build in the page instead. The worker is terminated when the
+last of those layers is disposed. Tiles the camera has left are not downloaded or built. Pending tile updates retain
 the previous mesh until their replacement is ready; cancelled and obsolete results are discarded.
 
 Mercator rendering batches buildings spatially and skips batches outside the camera. Shadow
@@ -393,7 +535,16 @@ Mercator texel grid stays stable during small pans, including changes of latitud
 the meshes' physical metre scale. One filtered depth comparison keeps edges sharp.
 Missing camera capabilities, terrain or a view near the horizon use the full loaded area instead.
 The depth pass runs again when its focused area, light or casting geometry changes and is reused
-when they stay unchanged.
+when they stay unchanged. While the camera moves, the focused area takes a quarter of its span as a
+margin on each side and is kept while it still covers the view at a similar resolution, so the
+depth pass is not drawn on every frame; once the camera stops, it is fitted to the view again.
+
+Model ambient visibility and lighting roles retain the existing 16-byte vertex stride. They add
+no geometry pass or texture. Architectural ground lighting uses a separate one-byte-per-pixel
+mask and one geometry/composite pair of passes while active; its mask is released when inactive.
+The contact band and the architectural light draw their masks in the layer's prerender, before
+the map's main pass, so the map's framebuffer is never switched while its layers draw.
+At 1280 × 720 and DPR 1, the mask occupies 921,600 bytes, excluding driver overhead.
 
 ## Limits
 
@@ -403,8 +554,9 @@ when they stay unchanged.
 - Roofs follow the building's smallest enclosing rectangle: a building with courtyards or far from a
   rectangle keeps a flat roof, and `sawtooth` roofs are drawn flat.
 - A colour expression is evaluated at zoom 16.
-- Building models and landmarks take no edges or night light of their own yet, and cannot be
-  picked or styled by state.
-- A hosted map takes up to 64 building models of its own, 32 MiB once prepared; `tileflow deploy`
-  uploads them with the map. A deploy with `--with-native` does not take them, since MapLibre Native
-  draws no models. Models named by `url` deploy as they are.
+- Building models and landmarks take no illuminated edges and cannot be picked or styled by state.
+- Model materials use semantic colours and role emission; physical roughness, metallic
+  reflections and authored textures are not rendered.
+- A hosted map places its building models as its Team's 3D models: `tileflow deploy` uploads no
+  model files (see [Team 3D models](#team-3d-models)). A deploy with `--with-native` does not take
+  them, since MapLibre Native draws no models. Models named by `url` deploy as they are.

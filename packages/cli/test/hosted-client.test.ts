@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {hashTileflowModelBundleManifest, type TileflowModelBundleManifest} from '@tileflow/core';
-import type {CompiledTileflowIconPackage, TileflowModelBundle} from '@tileflow/dev/icons';
+import type {CompiledTileflowIconPackage} from '@tileflow/dev/icons';
 import type {CliAccountSession} from '../src/account-session';
 import {
   publishHostedStyle,
@@ -9,7 +8,6 @@ import {
   requestMapCapability,
   requestTeamCapability,
   uploadHostedIconPackage,
-  uploadHostedModelBundle,
   validateAccountSession,
   validateApiKey,
 } from '../src/hosted-client';
@@ -287,76 +285,6 @@ test('icon upload accepts only the exact server-confirmed package identity and s
     request({changed: true, spriteUrl: exact.spriteUrl}),
     /Icon package upload response returned an invalid response/u,
   );
-});
-
-test('model upload sends one canonical bundle and accepts only its exact confirmed identity', async () => {
-  const manifest: TileflowModelBundleManifest = {
-    format: 'tileflow-model-bundle-v1',
-    models: [
-      {
-        byteLength: 4,
-        contentType: 'model/gltf-binary',
-        file: 'tower-0123456789abcdef.glb',
-        id: 'tower',
-        sha256: '0123456789abcdef'.repeat(4),
-      },
-    ],
-  };
-  const bundle: TileflowModelBundle = {
-    contentHash: await hashTileflowModelBundleManifest(manifest),
-    files: [
-      {
-        contentType: 'model/gltf-binary',
-        fileName: 'tower-0123456789abcdef.glb',
-        source: new Uint8Array([1, 2, 3, 4]),
-      },
-    ],
-    manifest,
-  };
-  const id = 'mdb_1234567890abcdef';
-  const exact = {
-    baseUrl: `https://assets.example.test/model-bundles/${id}`,
-    changed: true,
-    contentHash: bundle.contentHash,
-    id,
-    modelCount: 1,
-    totalBytes: 4,
-  };
-  let sent: {fields: string[]; method: string | undefined; url: string} | undefined;
-  const request = (body: Record<string, unknown>) =>
-    uploadHostedModelBundle(
-      {apiKey: 'tf_live_example', apiUrl: 'https://api.example.test'},
-      bundle,
-      {
-        fetch: (async (url: string, init: RequestInit) => {
-          sent = {
-            fields: [...(init.body as FormData).keys()],
-            method: init.method,
-            url: String(url),
-          };
-          return Response.json(body);
-        }) as unknown as typeof fetch,
-      },
-    );
-
-  assert.equal((await request(exact)).ok, true);
-  assert.deepEqual(sent, {
-    fields: ['manifest', 'file:tower-0123456789abcdef.glb'],
-    method: 'PUT',
-    url: `https://api.example.test/v1/model-bundles/${bundle.contentHash}`,
-  });
-  for (const drifted of [
-    {...exact, contentHash: 'b'.repeat(64)},
-    {...exact, modelCount: 2},
-    {...exact, totalBytes: 5},
-    {...exact, baseUrl: 'https://assets.example.test/model-bundles/mdb_other_value_1234'},
-    {...exact, baseUrl: `${exact.baseUrl}?mutable=1`},
-  ]) {
-    await assert.rejects(
-      request(drifted),
-      /Model bundle upload response did not confirm the submitted bundle/u,
-    );
-  }
 });
 
 function compiledIconPackageFixture(): CompiledTileflowIconPackage {

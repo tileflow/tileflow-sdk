@@ -100,8 +100,8 @@ Metadata-free RGBA icon packages retain `tileflow-icon-package-v1` identity. SDF
 
 These are portable contracts. `@tileflow/dev` composes declared contributors on its normal
 preparation path, and the `tileflow` CLI owns catalog management and exact lock maintenance.
-Importing `iconSet` adds a declaration; it performs no I/O, resolves no revision, and does not by
-itself make a Team catalog available to your deployment.
+Importing `iconSet` adds a declaration; it resolves no revision and does not by itself make a
+Team catalog available to your deployment.
 
 ## Style with themes and semantic modules
 
@@ -138,8 +138,8 @@ export default defineMap({
 `system` is a runtime selection policy, not a stored theme. Builds, captures, static scenes, and
 receipts must use a concrete theme such as `light` or `dark`.
 
-Because every theme of a map shares one structure, a browser map can cross-fade between themes or
-show a continuous blend of them on the same MapLibre instance, with no extra requests. See
+Every theme of a map shares one structure, so a browser map can cross-fade or blend themes on one
+MapLibre instance without extra requests. See
 [theme transitions, time-of-day presets and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md).
 The same controller can make chosen modules recede and the map's labels fade so an application's
 own content reads first; see [map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md).
@@ -157,7 +157,7 @@ A theme can describe its sun and sky light (`lighting.sun`, `lighting.ambient`);
 returns the sun the map shows with `getSun()`, mixed during a blend, for an application's own 3D
 layers, and `setSun()` places it by direction or by the real sun of a date and place; see
 [sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md).
-`createTileflowBuildings3D` enables worker-meshed buildings fading in at zoom 15–15.25, with scene
+`createTileflowBuildings3D` enables worker-meshed buildings rising in at zoom 15–15.3, with scene
 sun, cast/contact shadows and 0.8 m rounded corners. Each effect is independently overridable. See
 [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md).
 Street lights default to off, including in Streets. Set `roads.streetLights.enabled: true` and mount
@@ -239,8 +239,8 @@ Tileflow World is the hosted primary source. `vectorTiles()` with `openMapTiles(
 external local/self-hosted data; hosted eligibility is separate. `hostedTileset()`, `boundaryAreas`
 and semantic overlays add named sources. Local PMTiles inputs are tooling-only.
 
-`bathymetry({vectorLayers: {...}})` declares compatible contour/name layers; omission retains
-legacy band geometry.
+`bathymetry({vectorLayers: {...}})` declares compatible contour/name layers. `marine: 'nautical'`
+adds navigation marks and a "Not for navigation" notice.
 
 World attribution links to Tileflow's source notice, OpenMapTiles, and OpenStreetMap. External
 vector data retains the attribution supplied by its owner.
@@ -254,9 +254,9 @@ before loading a style. See the
 
 Set `projection: 'globe'` and `atmosphere: true` in `tileflow.config.ts` for a blue globe rim,
 space background, and stars. Use `atmosphere: false` to disable an inherited atmosphere, or an
-options object for theme-aware colors and bounded star brightness/motion. React, Vue, Svelte, and
-standalone capture apply the browser effect automatically. Direct MapLibre integrations call
-`attachTileflowAtmosphere(map)` from `@tileflow/core/browser`. See
+options object for theme-aware colors and bounded star brightness/motion. Frameworks and capture
+apply it; direct MapLibre integrations call `attachTileflowAtmosphere(map)` from
+`@tileflow/core/browser`. See
 [globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md).
 
 Applications that need the map's data themselves, such as streets to route over or the place
@@ -285,8 +285,8 @@ for exact options. Prefer the installed CLI's generated contracts when using a p
 
 ## Detailed guides
 
-These guides are also included in the installed package under `docs/`. They describe this source
-revision; prefer the installed copy when working with an older release.
+These guides also ship in the installed package under `docs/` and describe this source revision;
+prefer the installed copy for an older release.
 
 - [Globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md)
 - [Map and terrain examples](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-and-terrain-examples.md)
@@ -305,6 +305,7 @@ revision; prefer the installed copy when working with an older release.
 - [Street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md)
 - [3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md)
 - [Boundary areas and choropleths](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/boundary-areas-and-choropleths.md)
+- [Nautical marks](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/nautical-marks.md)
 - [Data is separate from design](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/data-is-separate-from-design.md)
 - [Capture scenes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-scenes.md)
 - [Capture shots](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)

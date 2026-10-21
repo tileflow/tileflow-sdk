@@ -277,34 +277,34 @@
           "$ref": "#/$defs/TileflowAuthoringModules"
         },
         "name": {
-          "$ref": "#/$defs/__schema256"
+          "$ref": "#/$defs/__schema262"
         },
         "overlays": {
           "$ref": "#/$defs/TileflowOverlayCollectionAuthoring"
         },
         "projection": {
-          "$ref": "#/$defs/__schema261"
+          "$ref": "#/$defs/__schema267"
         },
         "sources": {
           "$ref": "#/$defs/TileflowHostedSourceCollectionAuthoring"
         },
         "systemThemes": {
-          "$ref": "#/$defs/__schema270"
+          "$ref": "#/$defs/__schema276"
         },
         "terrain": {
-          "$ref": "#/$defs/__schema271"
+          "$ref": "#/$defs/__schema277"
         },
         "themes": {
-          "$ref": "#/$defs/__schema312"
+          "$ref": "#/$defs/__schema318"
         },
         "timeOfDay": {
-          "$ref": "#/$defs/__schema320"
+          "$ref": "#/$defs/__schema326"
         },
         "version": {
-          "$ref": "#/$defs/__schema321"
+          "$ref": "#/$defs/__schema327"
         },
         "view": {
-          "$ref": "#/$defs/__schema322"
+          "$ref": "#/$defs/__schema328"
         },
         "scenes": {
           "type": "object",
@@ -373,34 +373,34 @@
           "$ref": "#/$defs/TileflowAuthoringModules"
         },
         "name": {
-          "$ref": "#/$defs/__schema256"
+          "$ref": "#/$defs/__schema262"
         },
         "overlays": {
           "$ref": "#/$defs/TileflowOverlayCollectionAuthoring"
         },
         "projection": {
-          "$ref": "#/$defs/__schema261"
+          "$ref": "#/$defs/__schema267"
         },
         "sources": {
           "$ref": "#/$defs/TileflowHostedSourceCollectionAuthoring"
         },
         "systemThemes": {
-          "$ref": "#/$defs/__schema270"
+          "$ref": "#/$defs/__schema276"
         },
         "terrain": {
-          "$ref": "#/$defs/__schema271"
+          "$ref": "#/$defs/__schema277"
         },
         "themes": {
-          "$ref": "#/$defs/__schema312"
+          "$ref": "#/$defs/__schema318"
         },
         "timeOfDay": {
-          "$ref": "#/$defs/__schema320"
+          "$ref": "#/$defs/__schema326"
         },
         "version": {
-          "$ref": "#/$defs/__schema321"
+          "$ref": "#/$defs/__schema327"
         },
         "view": {
-          "$ref": "#/$defs/__schema322"
+          "$ref": "#/$defs/__schema328"
         },
         "scenes": {
           "type": "object",
@@ -1135,34 +1135,34 @@
           "$ref": "#/$defs/__schema167"
         },
         "name": {
-          "$ref": "#/$defs/__schema256"
-        },
-        "overlays": {
-          "$ref": "#/$defs/__schema257"
-        },
-        "projection": {
-          "$ref": "#/$defs/__schema261"
-        },
-        "sources": {
           "$ref": "#/$defs/__schema262"
         },
+        "overlays": {
+          "$ref": "#/$defs/__schema263"
+        },
+        "projection": {
+          "$ref": "#/$defs/__schema267"
+        },
+        "sources": {
+          "$ref": "#/$defs/__schema268"
+        },
         "systemThemes": {
-          "$ref": "#/$defs/__schema270"
+          "$ref": "#/$defs/__schema276"
         },
         "terrain": {
-          "$ref": "#/$defs/__schema271"
+          "$ref": "#/$defs/__schema277"
         },
         "themes": {
-          "$ref": "#/$defs/__schema312"
+          "$ref": "#/$defs/__schema318"
         },
         "timeOfDay": {
-          "$ref": "#/$defs/__schema320"
+          "$ref": "#/$defs/__schema326"
         },
         "version": {
-          "$ref": "#/$defs/__schema321"
+          "$ref": "#/$defs/__schema327"
         },
         "view": {
-          "$ref": "#/$defs/__schema322"
+          "$ref": "#/$defs/__schema328"
         }
       },
       "required": ["defaultTheme", "id", "name", "themes", "version"],
@@ -2073,6 +2073,10 @@
               "minLength": 1
             },
             "tree": {
+              "type": "string",
+              "minLength": 1
+            },
+            "transportationOutline": {
               "type": "string",
               "minLength": 1
             },
@@ -4935,8 +4939,181 @@
                     }
                   ]
                 },
+                "floodLight": {
+                  "type": "object",
+                  "properties": {
+                    "intensity": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "$ref": "#/$defs/__schema13"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "theme-fixed"
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "value": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            }
+                          },
+                          "required": ["kind", "reason", "value"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "brightnessScale": {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 16
+                        },
+                        {
+                          "$ref": "#/$defs/__schema13"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "const": "theme-fixed"
+                            },
+                            "reason": {
+                              "type": "string",
+                              "minLength": 1
+                            },
+                            "value": {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 16
+                            }
+                          },
+                          "required": ["kind", "reason", "value"],
+                          "additionalProperties": false
+                        }
+                      ]
+                    },
+                    "color": {
+                      "$ref": "#/$defs/__schema8"
+                    },
+                    "groundRadius": {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "$ref": "#/$defs/__schema219"
+                        },
+                        {
+                          "$ref": "#/$defs/__schema220"
+                        }
+                      ],
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "items": false
+                    },
+                    "minGroundHeight": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 6000
+                    },
+                    "minWallHeight": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 6000
+                    },
+                    "wallHeightRatio": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "modelLighting": {
+                  "type": "object",
+                  "properties": {
+                    "unclassified": {
+                      "$ref": "#/$defs/__schema221"
+                    },
+                    "wall": {
+                      "$ref": "#/$defs/__schema221"
+                    },
+                    "door": {
+                      "$ref": "#/$defs/__schema221"
+                    },
+                    "roof": {
+                      "$ref": "#/$defs/__schema221"
+                    },
+                    "window": {
+                      "$ref": "#/$defs/__schema221"
+                    },
+                    "lamp": {
+                      "$ref": "#/$defs/__schema221"
+                    },
+                    "logo": {
+                      "$ref": "#/$defs/__schema221"
+                    }
+                  },
+                  "additionalProperties": false
+                },
+                "entrance": {
+                  "type": "object",
+                  "properties": {
+                    "buildings": {
+                      "$ref": "#/$defs/__schema222"
+                    },
+                    "models": {
+                      "$ref": "#/$defs/__schema222"
+                    }
+                  },
+                  "additionalProperties": false
+                },
                 "occlusion": {
                   "type": "boolean"
+                },
+                "modelOcclusion": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
                 },
                 "shadows": {
                   "type": "boolean"
@@ -4948,7 +5125,7 @@
                   "maxItems": 256,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema219"
+                    "$ref": "#/$defs/__schema225"
                   }
                 },
                 "modelColors": {
@@ -5031,7 +5208,7 @@
               "minItems": 1,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema220"
+                "$ref": "#/$defs/__schema226"
               }
             },
             "roadPlacement": {
@@ -5088,7 +5265,7 @@
                 "roads": {
                   "type": "object",
                   "propertyNames": {
-                    "$ref": "#/$defs/__schema220"
+                    "$ref": "#/$defs/__schema226"
                   },
                   "additionalProperties": {
                     "$ref": "#/$defs/__schema104"
@@ -5209,13 +5386,13 @@
               "type": "object",
               "properties": {
                 "fence": {
-                  "$ref": "#/$defs/__schema221"
+                  "$ref": "#/$defs/__schema227"
                 },
                 "hedge": {
-                  "$ref": "#/$defs/__schema221"
+                  "$ref": "#/$defs/__schema227"
                 },
                 "wall": {
-                  "$ref": "#/$defs/__schema221"
+                  "$ref": "#/$defs/__schema227"
                 }
               },
               "additionalProperties": false
@@ -5361,7 +5538,16 @@
               "const": "nautical"
             },
             "aids": {
-              "$ref": "#/$defs/__schema222"
+              "$ref": "#/$defs/__schema228"
+            },
+            "beacons": {
+              "$ref": "#/$defs/__schema228"
+            },
+            "buoys": {
+              "$ref": "#/$defs/__schema228"
+            },
+            "cables": {
+              "$ref": "#/$defs/__schema76"
             },
             "coverage": {
               "$ref": "#/$defs/__schema214"
@@ -5369,11 +5555,14 @@
             "enabled": {
               "type": "boolean"
             },
+            "harbours": {
+              "$ref": "#/$defs/__schema228"
+            },
             "hazardAreas": {
               "$ref": "#/$defs/__schema214"
             },
             "hazards": {
-              "$ref": "#/$defs/__schema222"
+              "$ref": "#/$defs/__schema228"
             },
             "labels": {
               "type": "object",
@@ -5397,13 +5586,16 @@
               "additionalProperties": false
             },
             "lighthouses": {
-              "$ref": "#/$defs/__schema222"
+              "$ref": "#/$defs/__schema228"
             },
             "lights": {
-              "$ref": "#/$defs/__schema222"
+              "$ref": "#/$defs/__schema228"
             },
             "navigationAreas": {
               "$ref": "#/$defs/__schema214"
+            },
+            "ports": {
+              "$ref": "#/$defs/__schema228"
             },
             "reefs": {
               "$ref": "#/$defs/__schema214"
@@ -5411,14 +5603,17 @@
             "renderStack": {
               "$ref": "#/$defs/__schema168"
             },
+            "routes": {
+              "$ref": "#/$defs/__schema76"
+            },
             "soundings": {
-              "$ref": "#/$defs/__schema222"
+              "$ref": "#/$defs/__schema228"
             },
             "wreckAreas": {
               "$ref": "#/$defs/__schema214"
             },
             "wrecks": {
-              "$ref": "#/$defs/__schema222"
+              "$ref": "#/$defs/__schema228"
             }
           },
           "required": ["type"],
@@ -5502,7 +5697,7 @@
                   "maxItems": 64,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema225"
+                    "$ref": "#/$defs/__schema231"
                   }
                 },
                 "iconPadding": {
@@ -5576,7 +5771,7 @@
                     "$ref": "#/$defs/__schema136"
                   },
                   "marker": {
-                    "$ref": "#/$defs/__schema223"
+                    "$ref": "#/$defs/__schema229"
                   }
                 },
                 "additionalProperties": false
@@ -5611,7 +5806,7 @@
             "classes": {
               "type": "object",
               "propertyNames": {
-                "$ref": "#/$defs/__schema220"
+                "$ref": "#/$defs/__schema226"
               },
               "additionalProperties": {
                 "type": "object",
@@ -5620,13 +5815,13 @@
                     "type": "boolean"
                   },
                   "bridge": {
-                    "$ref": "#/$defs/__schema226"
+                    "$ref": "#/$defs/__schema232"
                   },
                   "surface": {
-                    "$ref": "#/$defs/__schema226"
+                    "$ref": "#/$defs/__schema232"
                   },
                   "tunnel": {
-                    "$ref": "#/$defs/__schema226"
+                    "$ref": "#/$defs/__schema232"
                   }
                 },
                 "additionalProperties": false
@@ -5732,22 +5927,22 @@
               "type": "object",
               "properties": {
                 "construction": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "expressway": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "indoor": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "official": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "ramp": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "unpaved": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 }
               },
               "additionalProperties": false
@@ -5756,37 +5951,37 @@
               "type": "object",
               "properties": {
                 "0": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "1": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "2": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "3": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "4": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "5": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "6": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "0+": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "1+": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "2+": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "3+": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 }
               },
               "additionalProperties": false
@@ -5807,19 +6002,19 @@
               "type": "object",
               "properties": {
                 "access": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "bicycle": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "foot": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "horse": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "toll": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 }
               },
               "additionalProperties": false
@@ -5832,17 +6027,17 @@
               "properties": {
                 "borderWidth": {
                   "description": "Extra casing width in pixels, split across both edges. Defaults to the effective road border width.",
-                  "$ref": "#/$defs/__schema241"
+                  "$ref": "#/$defs/__schema247"
                 },
                 "casing": {
-                  "$ref": "#/$defs/__schema224"
+                  "$ref": "#/$defs/__schema230"
                 },
                 "fallbackWidth": {
                   "description": "Road width in pixels used only when metric radii are absent. Defaults to the effective surface fill width.",
-                  "$ref": "#/$defs/__schema241"
+                  "$ref": "#/$defs/__schema247"
                 },
                 "fill": {
-                  "$ref": "#/$defs/__schema224"
+                  "$ref": "#/$defs/__schema230"
                 }
               },
               "additionalProperties": false
@@ -5851,19 +6046,19 @@
               "type": "object",
               "properties": {
                 "alley": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "crossover": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "driveway": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "parkingAisle": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 },
                 "yard": {
-                  "$ref": "#/$defs/__schema234"
+                  "$ref": "#/$defs/__schema240"
                 }
               },
               "additionalProperties": false
@@ -5935,13 +6130,13 @@
               "type": "object",
               "properties": {
                 "bridge": {
-                  "$ref": "#/$defs/__schema226"
+                  "$ref": "#/$defs/__schema232"
                 },
                 "surface": {
-                  "$ref": "#/$defs/__schema226"
+                  "$ref": "#/$defs/__schema232"
                 },
                 "tunnel": {
-                  "$ref": "#/$defs/__schema226"
+                  "$ref": "#/$defs/__schema232"
                 }
               },
               "additionalProperties": false
@@ -5953,7 +6148,7 @@
             "widthScale": {
               "type": "object",
               "propertyNames": {
-                "$ref": "#/$defs/__schema220"
+                "$ref": "#/$defs/__schema226"
               },
               "additionalProperties": {
                 "$ref": "#/$defs/__schema10"
@@ -6042,7 +6237,7 @@
               "type": "boolean"
             },
             "flat": {
-              "$ref": "#/$defs/__schema224"
+              "$ref": "#/$defs/__schema230"
             },
             "mode": {
               "type": "string",
@@ -6216,7 +6411,7 @@
                         "maxItems": 4,
                         "type": "array",
                         "items": {
-                          "$ref": "#/$defs/__schema242"
+                          "$ref": "#/$defs/__schema248"
                         }
                       }
                     },
@@ -6224,13 +6419,13 @@
                   }
                 },
                 "unknownForms": {
-                  "$ref": "#/$defs/__schema243"
+                  "$ref": "#/$defs/__schema249"
                 },
                 "regions": {
                   "maxItems": 16,
                   "type": "array",
                   "items": {
-                    "$ref": "#/$defs/__schema250"
+                    "$ref": "#/$defs/__schema256"
                   }
                 },
                 "crownScale": {
@@ -6321,10 +6516,10 @@
               "$ref": "#/$defs/__schema104"
             },
             "bathymetryLandforms": {
-              "$ref": "#/$defs/__schema255"
+              "$ref": "#/$defs/__schema261"
             },
             "bathymetryWaterNames": {
-              "$ref": "#/$defs/__schema255"
+              "$ref": "#/$defs/__schema261"
             },
             "bodies": {
               "$ref": "#/$defs/__schema214"
@@ -6454,6 +6649,7 @@
                     "sidewalk",
                     "streetFurniture",
                     "trafficControl",
+                    "transportationOutline",
                     "tree",
                     "water",
                     "waterName",
@@ -6512,6 +6708,7 @@
                     "sidewalk",
                     "streetFurniture",
                     "trafficControl",
+                    "transportationOutline",
                     "tree",
                     "water",
                     "waterName",
@@ -6570,6 +6767,7 @@
                     "sidewalk",
                     "streetFurniture",
                     "trafficControl",
+                    "transportationOutline",
                     "tree",
                     "water",
                     "waterName",
@@ -6628,6 +6826,7 @@
                     "sidewalk",
                     "streetFurniture",
                     "trafficControl",
+                    "transportationOutline",
                     "tree",
                     "water",
                     "waterName",
@@ -6686,6 +6885,7 @@
                     "sidewalk",
                     "streetFurniture",
                     "trafficControl",
+                    "transportationOutline",
                     "tree",
                     "water",
                     "waterName",
@@ -8096,6 +8296,607 @@
       "$ref": "#/$defs/__schema76"
     },
     "__schema219": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2048
+    },
+    "__schema220": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 2048
+    },
+    "__schema221": {
+      "type": "object",
+      "properties": {
+        "emissiveStrength": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 5
+            },
+            {
+              "$ref": "#/$defs/__schema13"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "theme-fixed"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 5
+                }
+              },
+              "required": ["kind", "reason", "value"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "emissiveVariation": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "$ref": "#/$defs/__schema13"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "theme-fixed"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": ["kind", "reason", "value"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "emissiveColor": {
+          "$ref": "#/$defs/__schema8"
+        },
+        "color": {
+          "$ref": "#/$defs/__schema8"
+        },
+        "colorMix": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "$ref": "#/$defs/__schema13"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "theme-fixed"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": ["kind", "reason", "value"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "metallic": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "$ref": "#/$defs/__schema13"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "theme-fixed"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": ["kind", "reason", "value"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "roughness": {
+          "anyOf": [
+            {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1
+            },
+            {
+              "$ref": "#/$defs/__schema13"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "const": "theme-fixed"
+                },
+                "reason": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "required": ["kind", "reason", "value"],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "colorVariation": {
+          "type": "object",
+          "properties": {
+            "hue": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 360
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 360
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 360
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 360
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "maxItems": 2,
+              "items": false
+            },
+            "saturation": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "maxItems": 2,
+              "items": false
+            },
+            "lightness": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 100
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 100
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              ],
+              "minItems": 2,
+              "maxItems": 2,
+              "items": false
+            },
+            "space": {
+              "type": "string",
+              "enum": ["srgb", "linear"]
+            }
+          },
+          "required": ["hue", "saturation", "lightness"],
+          "additionalProperties": false
+        },
+        "emissiveHeight": {
+          "type": "array",
+          "prefixItems": [
+            {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/__schema13"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "theme-fixed"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": ["kind", "reason", "value"],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/__schema13"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "theme-fixed"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": ["kind", "reason", "value"],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/__schema13"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "theme-fixed"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": ["kind", "reason", "value"],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/__schema13"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "theme-fixed"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": ["kind", "reason", "value"],
+                  "additionalProperties": false
+                }
+              ]
+            },
+            {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": -1,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/__schema13"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "theme-fixed"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "number",
+                      "minimum": -1,
+                      "maximum": 1
+                    }
+                  },
+                  "required": ["kind", "reason", "value"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          ],
+          "minItems": 5,
+          "maxItems": 5,
+          "items": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "__schema222": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/__schema223"
+        },
+        {
+          "$ref": "#/$defs/__schema224"
+        }
+      ],
+      "minItems": 2,
+      "maxItems": 2,
+      "items": false
+    },
+    "__schema223": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 24
+    },
+    "__schema224": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 24
+    },
+    "__schema225": {
       "type": "object",
       "properties": {
         "model": {
@@ -8133,7 +8934,7 @@
       "required": ["model", "at"],
       "additionalProperties": false
     },
-    "__schema220": {
+    "__schema226": {
       "type": "string",
       "enum": [
         "motorway",
@@ -8151,7 +8952,7 @@
         "pedestrian"
       ]
     },
-    "__schema221": {
+    "__schema227": {
       "type": "object",
       "properties": {
         "area": {
@@ -8166,7 +8967,7 @@
       },
       "additionalProperties": false
     },
-    "__schema222": {
+    "__schema228": {
       "type": "object",
       "properties": {
         "maxZoom": {
@@ -8200,15 +9001,15 @@
           "$ref": "#/$defs/__schema136"
         },
         "marker": {
-          "$ref": "#/$defs/__schema223"
+          "$ref": "#/$defs/__schema229"
         }
       },
       "additionalProperties": false
     },
-    "__schema223": {
-      "$ref": "#/$defs/__schema224"
+    "__schema229": {
+      "$ref": "#/$defs/__schema230"
     },
-    "__schema224": {
+    "__schema230": {
       "type": "object",
       "properties": {
         "maxZoom": {
@@ -8262,11 +9063,11 @@
       },
       "additionalProperties": false
     },
-    "__schema225": {
+    "__schema231": {
       "type": "string",
       "pattern": "^[a-z0-9]+(?:_[a-z0-9]+)*$"
     },
-    "__schema226": {
+    "__schema232": {
       "type": "object",
       "properties": {
         "casing": {
@@ -8291,25 +9092,25 @@
               "$ref": "#/$defs/__schema45"
             },
             "angle": {
-              "$ref": "#/$defs/__schema227"
+              "$ref": "#/$defs/__schema233"
             },
             "color": {
-              "$ref": "#/$defs/__schema228"
+              "$ref": "#/$defs/__schema234"
             },
             "opacity": {
-              "$ref": "#/$defs/__schema229"
+              "$ref": "#/$defs/__schema235"
             },
             "pattern": {
-              "$ref": "#/$defs/__schema230"
+              "$ref": "#/$defs/__schema236"
             },
             "patternWidths": {
-              "$ref": "#/$defs/__schema231"
+              "$ref": "#/$defs/__schema237"
             },
             "size": {
-              "$ref": "#/$defs/__schema232"
+              "$ref": "#/$defs/__schema238"
             },
             "spacing": {
-              "$ref": "#/$defs/__schema233"
+              "$ref": "#/$defs/__schema239"
             }
           },
           "additionalProperties": false,
@@ -8345,41 +9146,41 @@
       },
       "additionalProperties": false
     },
-    "__schema227": {
-      "$ref": "#/$defs/__schema55"
-    },
-    "__schema228": {
-      "$ref": "#/$defs/__schema48"
-    },
-    "__schema229": {
-      "$ref": "#/$defs/__schema55"
-    },
-    "__schema230": {
-      "$ref": "#/$defs/__schema63"
-    },
-    "__schema231": {
-      "$ref": "#/$defs/__schema88"
-    },
-    "__schema232": {
-      "$ref": "#/$defs/__schema55"
-    },
     "__schema233": {
       "$ref": "#/$defs/__schema55"
     },
     "__schema234": {
+      "$ref": "#/$defs/__schema48"
+    },
+    "__schema235": {
+      "$ref": "#/$defs/__schema55"
+    },
+    "__schema236": {
+      "$ref": "#/$defs/__schema63"
+    },
+    "__schema237": {
+      "$ref": "#/$defs/__schema88"
+    },
+    "__schema238": {
+      "$ref": "#/$defs/__schema55"
+    },
+    "__schema239": {
+      "$ref": "#/$defs/__schema55"
+    },
+    "__schema240": {
       "type": "object",
       "properties": {
         "bridge": {
-          "$ref": "#/$defs/__schema235"
+          "$ref": "#/$defs/__schema241"
         },
         "enabled": {
           "type": "boolean"
         },
         "surface": {
-          "$ref": "#/$defs/__schema235"
+          "$ref": "#/$defs/__schema241"
         },
         "tunnel": {
-          "$ref": "#/$defs/__schema235"
+          "$ref": "#/$defs/__schema241"
         },
         "widthScale": {
           "$ref": "#/$defs/__schema10"
@@ -8387,7 +9188,7 @@
       },
       "additionalProperties": false
     },
-    "__schema235": {
+    "__schema241": {
       "type": "object",
       "properties": {
         "casing": {
@@ -8474,10 +9275,10 @@
       },
       "additionalProperties": false
     },
-    "__schema236": {
+    "__schema242": {
       "anyOf": [
         {
-          "$ref": "#/$defs/__schema237"
+          "$ref": "#/$defs/__schema243"
         },
         {
           "type": "object",
@@ -8489,7 +9290,7 @@
               "$ref": "#/$defs/__schema12"
             },
             "value": {
-              "$ref": "#/$defs/__schema237"
+              "$ref": "#/$defs/__schema243"
             }
           },
           "required": ["kind", "reason", "value"],
@@ -8500,11 +9301,11 @@
         }
       ]
     },
-    "__schema237": {
+    "__schema243": {
       "type": "number",
       "minimum": 0
     },
-    "__schema238": {
+    "__schema244": {
       "oneOf": [
         {
           "type": "object",
@@ -8522,7 +9323,7 @@
               "const": "zoom"
             },
             "stops": {
-              "$ref": "#/$defs/__schema239"
+              "$ref": "#/$defs/__schema245"
             }
           },
           "required": ["base", "interpolation", "kind", "stops"],
@@ -8540,7 +9341,7 @@
               "const": "zoom"
             },
             "stops": {
-              "$ref": "#/$defs/__schema239"
+              "$ref": "#/$defs/__schema245"
             }
           },
           "required": ["interpolation", "kind", "stops"],
@@ -8558,7 +9359,7 @@
               "const": "zoom"
             },
             "stops": {
-              "$ref": "#/$defs/__schema239"
+              "$ref": "#/$defs/__schema245"
             }
           },
           "required": ["interpolation", "kind", "stops"],
@@ -8572,110 +9373,110 @@
         }
       ]
     },
-    "__schema239": {
+    "__schema245": {
       "minItems": 1,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema240"
+        "$ref": "#/$defs/__schema246"
       }
     },
-    "__schema240": {
+    "__schema246": {
       "type": "array",
       "prefixItems": [
         {
           "$ref": "#/$defs/__schema43"
         },
         {
-          "$ref": "#/$defs/__schema236"
+          "$ref": "#/$defs/__schema242"
         }
       ],
       "minItems": 2,
       "maxItems": 2,
       "items": false
     },
-    "__schema241": {
+    "__schema247": {
       "anyOf": [
         {
-          "$ref": "#/$defs/__schema236"
+          "$ref": "#/$defs/__schema242"
         },
         {
           "$ref": "#/$defs/__schema56"
         },
         {
-          "$ref": "#/$defs/__schema238"
+          "$ref": "#/$defs/__schema244"
         }
       ]
     },
-    "__schema242": {
+    "__schema248": {
       "type": "string",
       "maxLength": 64,
       "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
     },
-    "__schema243": {
+    "__schema249": {
       "type": "object",
       "properties": {
         "round": {
-          "$ref": "#/$defs/__schema244"
+          "$ref": "#/$defs/__schema250"
         },
         "open": {
-          "$ref": "#/$defs/__schema245"
+          "$ref": "#/$defs/__schema251"
         },
         "tall": {
-          "$ref": "#/$defs/__schema246"
+          "$ref": "#/$defs/__schema252"
         },
         "conifer": {
-          "$ref": "#/$defs/__schema247"
+          "$ref": "#/$defs/__schema253"
         },
         "columnar": {
-          "$ref": "#/$defs/__schema248"
+          "$ref": "#/$defs/__schema254"
         },
         "palm": {
-          "$ref": "#/$defs/__schema249"
+          "$ref": "#/$defs/__schema255"
         }
       },
       "additionalProperties": false
     },
-    "__schema244": {
-      "type": "number",
-      "minimum": 0
-    },
-    "__schema245": {
-      "type": "number",
-      "minimum": 0
-    },
-    "__schema246": {
-      "type": "number",
-      "minimum": 0
-    },
-    "__schema247": {
-      "type": "number",
-      "minimum": 0
-    },
-    "__schema248": {
-      "type": "number",
-      "minimum": 0
-    },
-    "__schema249": {
-      "type": "number",
-      "minimum": 0
-    },
     "__schema250": {
+      "type": "number",
+      "minimum": 0
+    },
+    "__schema251": {
+      "type": "number",
+      "minimum": 0
+    },
+    "__schema252": {
+      "type": "number",
+      "minimum": 0
+    },
+    "__schema253": {
+      "type": "number",
+      "minimum": 0
+    },
+    "__schema254": {
+      "type": "number",
+      "minimum": 0
+    },
+    "__schema255": {
+      "type": "number",
+      "minimum": 0
+    },
+    "__schema256": {
       "type": "object",
       "properties": {
         "bounds": {
           "type": "array",
           "prefixItems": [
             {
-              "$ref": "#/$defs/__schema251"
+              "$ref": "#/$defs/__schema257"
             },
             {
-              "$ref": "#/$defs/__schema252"
+              "$ref": "#/$defs/__schema258"
             },
             {
-              "$ref": "#/$defs/__schema253"
+              "$ref": "#/$defs/__schema259"
             },
             {
-              "$ref": "#/$defs/__schema254"
+              "$ref": "#/$defs/__schema260"
             }
           ],
           "minItems": 4,
@@ -8683,33 +9484,33 @@
           "items": false
         },
         "unknownForms": {
-          "$ref": "#/$defs/__schema243"
+          "$ref": "#/$defs/__schema249"
         }
       },
       "required": ["bounds", "unknownForms"],
       "additionalProperties": false
     },
-    "__schema251": {
+    "__schema257": {
       "type": "number",
       "minimum": -180,
       "maximum": 180
     },
-    "__schema252": {
+    "__schema258": {
       "type": "number",
       "minimum": -90,
       "maximum": 90
     },
-    "__schema253": {
+    "__schema259": {
       "type": "number",
       "minimum": -180,
       "maximum": 180
     },
-    "__schema254": {
+    "__schema260": {
       "type": "number",
       "minimum": -90,
       "maximum": 90
     },
-    "__schema255": {
+    "__schema261": {
       "type": "object",
       "properties": {
         "maxZoom": {
@@ -8764,11 +9565,11 @@
       },
       "additionalProperties": false
     },
-    "__schema256": {
+    "__schema262": {
       "type": "string",
       "minLength": 1
     },
-    "__schema257": {
+    "__schema263": {
       "type": "object",
       "propertyNames": {
         "$ref": "#/$defs/__schema26"
@@ -8784,7 +9585,7 @@
             "minItems": 1,
             "type": "array",
             "items": {
-              "$ref": "#/$defs/__schema258"
+              "$ref": "#/$defs/__schema264"
             }
           },
           "placement": {
@@ -8806,74 +9607,74 @@
         "additionalProperties": false
       }
     },
-    "__schema258": {
+    "__schema264": {
       "type": "object",
       "propertyNames": {
-        "$ref": "#/$defs/__schema259"
+        "$ref": "#/$defs/__schema265"
       },
       "additionalProperties": {
-        "$ref": "#/$defs/__schema260"
+        "$ref": "#/$defs/__schema266"
       }
     },
-    "__schema259": {
+    "__schema265": {
       "type": "string"
     },
-    "__schema260": {},
-    "__schema261": {
+    "__schema266": {},
+    "__schema267": {
       "type": "string",
       "enum": ["globe", "mercator"]
     },
-    "__schema262": {
+    "__schema268": {
       "type": "object",
       "propertyNames": {
         "$ref": "#/$defs/__schema26"
       },
       "additionalProperties": {
-        "$ref": "#/$defs/__schema263"
+        "$ref": "#/$defs/__schema269"
       }
     },
-    "__schema263": {
+    "__schema269": {
       "type": "object",
       "properties": {
         "attribution": {
-          "$ref": "#/$defs/__schema264"
+          "$ref": "#/$defs/__schema270"
         },
         "kind": {
-          "$ref": "#/$defs/__schema265"
+          "$ref": "#/$defs/__schema271"
         },
         "local": {
-          "$ref": "#/$defs/__schema266"
+          "$ref": "#/$defs/__schema272"
         },
         "tileset": {
-          "$ref": "#/$defs/__schema267"
+          "$ref": "#/$defs/__schema273"
         },
         "tileSize": {
-          "$ref": "#/$defs/__schema268"
+          "$ref": "#/$defs/__schema274"
         },
         "type": {
-          "$ref": "#/$defs/__schema269"
+          "$ref": "#/$defs/__schema275"
         }
       },
       "required": ["attribution", "kind", "local", "tileset", "type"],
       "additionalProperties": false
     },
-    "__schema264": {
+    "__schema270": {
       "type": "string",
       "minLength": 1,
       "maxLength": 4096
     },
-    "__schema265": {
+    "__schema271": {
       "type": "string",
       "const": "hosted-tileset"
     },
-    "__schema266": {
+    "__schema272": {
       "type": "string"
     },
-    "__schema267": {
+    "__schema273": {
       "type": "string",
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
     },
-    "__schema268": {
+    "__schema274": {
       "anyOf": [
         {
           "type": "number",
@@ -8885,11 +9686,11 @@
         }
       ]
     },
-    "__schema269": {
+    "__schema275": {
       "type": "string",
       "enum": ["raster", "vector"]
     },
-    "__schema270": {
+    "__schema276": {
       "type": "object",
       "properties": {
         "dark": {
@@ -8902,7 +9703,7 @@
       "required": ["dark", "light"],
       "additionalProperties": false
     },
-    "__schema271": {
+    "__schema277": {
       "anyOf": [
         {
           "type": "string",
@@ -8912,84 +9713,84 @@
           "type": "object",
           "properties": {
             "attribution": {
-              "$ref": "#/$defs/__schema272"
+              "$ref": "#/$defs/__schema278"
             },
             "contours": {
-              "$ref": "#/$defs/__schema273"
+              "$ref": "#/$defs/__schema279"
             },
             "encoding": {
-              "$ref": "#/$defs/__schema299"
+              "$ref": "#/$defs/__schema305"
             },
             "exaggeration": {
-              "$ref": "#/$defs/__schema300"
-            },
-            "hillshade": {
-              "$ref": "#/$defs/__schema301"
-            },
-            "tiles": {
-              "$ref": "#/$defs/__schema304"
-            },
-            "tileSize": {
               "$ref": "#/$defs/__schema306"
             },
-            "minZoom": {
+            "hillshade": {
               "$ref": "#/$defs/__schema307"
             },
-            "maxZoom": {
-              "$ref": "#/$defs/__schema308"
-            },
-            "mode": {
-              "$ref": "#/$defs/__schema309"
-            },
-            "sourceId": {
+            "tiles": {
               "$ref": "#/$defs/__schema310"
             },
+            "tileSize": {
+              "$ref": "#/$defs/__schema312"
+            },
+            "minZoom": {
+              "$ref": "#/$defs/__schema313"
+            },
+            "maxZoom": {
+              "$ref": "#/$defs/__schema314"
+            },
+            "mode": {
+              "$ref": "#/$defs/__schema315"
+            },
+            "sourceId": {
+              "$ref": "#/$defs/__schema316"
+            },
             "url": {
-              "$ref": "#/$defs/__schema311"
+              "$ref": "#/$defs/__schema317"
             }
           },
           "additionalProperties": false
         }
       ]
     },
-    "__schema272": {
+    "__schema278": {
       "type": "string"
     },
-    "__schema273": {
+    "__schema279": {
       "type": "object",
       "properties": {
         "demMaxZoom": {
-          "$ref": "#/$defs/__schema274"
+          "$ref": "#/$defs/__schema280"
         },
         "demUrl": {
-          "$ref": "#/$defs/__schema275"
+          "$ref": "#/$defs/__schema281"
         },
         "index": {
-          "$ref": "#/$defs/__schema276"
+          "$ref": "#/$defs/__schema282"
         },
         "labels": {
-          "$ref": "#/$defs/__schema283"
-        },
-        "maxZoom": {
-          "$ref": "#/$defs/__schema288"
-        },
-        "minZoom": {
           "$ref": "#/$defs/__schema289"
         },
+        "maxZoom": {
+          "$ref": "#/$defs/__schema294"
+        },
+        "minZoom": {
+          "$ref": "#/$defs/__schema295"
+        },
         "minor": {
-          "$ref": "#/$defs/__schema290"
+          "$ref": "#/$defs/__schema296"
         },
         "multiplier": {
-          "$ref": "#/$defs/__schema291"
+          "$ref": "#/$defs/__schema297"
         },
         "overzoom": {
-          "$ref": "#/$defs/__schema292"
+          "$ref": "#/$defs/__schema298"
         },
         "sourceId": {
-          "$ref": "#/$defs/__schema293"
+          "$ref": "#/$defs/__schema299"
         },
         "thresholds": {
-          "$ref": "#/$defs/__schema294"
+          "$ref": "#/$defs/__schema300"
         }
       },
       "required": ["demMaxZoom", "demUrl", "thresholds"],
@@ -9017,210 +9818,37 @@
         }
       ]
     },
-    "__schema274": {
+    "__schema280": {
       "type": "integer",
       "minimum": 0,
       "maximum": 24
     },
-    "__schema275": {
+    "__schema281": {
       "type": "string",
       "minLength": 1,
       "maxLength": 2048,
       "description": "Safe HTTP(S) DEM tile template containing each of {z}, {x}, and {y} exactly once; credentials, fragments, protocol-relative URLs, backslashes, controls, and non-loopback plain HTTP are forbidden.",
       "x-tileflow-refinement": "Must pass the exact Core DEM-template parser, including WHATWG URL and loopback checks."
     },
-    "__schema276": {
-      "$ref": "#/$defs/__schema277"
-    },
-    "__schema277": {
-      "type": "object",
-      "properties": {
-        "maxZoom": {
-          "$ref": "#/$defs/__schema278"
-        },
-        "minZoom": {
-          "$ref": "#/$defs/__schema279"
-        },
-        "visible": {
-          "$ref": "#/$defs/__schema280"
-        },
-        "color": {
-          "$ref": "#/$defs/__schema142"
-        },
-        "opacity": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/__schema281"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "$ref": "#/$defs/__schema11"
-                },
-                "reason": {
-                  "$ref": "#/$defs/__schema12"
-                },
-                "value": {
-                  "$ref": "#/$defs/__schema281"
-                }
-              },
-              "required": ["kind", "reason", "value"],
-              "additionalProperties": false
-            },
-            {
-              "$ref": "#/$defs/__schema13"
-            }
-          ]
-        },
-        "width": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/__schema282"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "$ref": "#/$defs/__schema11"
-                },
-                "reason": {
-                  "$ref": "#/$defs/__schema12"
-                },
-                "value": {
-                  "$ref": "#/$defs/__schema282"
-                }
-              },
-              "required": ["kind", "reason", "value"],
-              "additionalProperties": false
-            },
-            {
-              "$ref": "#/$defs/__schema13"
-            }
-          ]
-        }
-      },
-      "additionalProperties": false
-    },
-    "__schema278": {
-      "$ref": "#/$defs/__schema43"
-    },
-    "__schema279": {
-      "$ref": "#/$defs/__schema43"
-    },
-    "__schema280": {
-      "type": "boolean"
-    },
-    "__schema281": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 1
-    },
     "__schema282": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 32
+      "$ref": "#/$defs/__schema283"
     },
     "__schema283": {
       "type": "object",
       "properties": {
         "maxZoom": {
-          "$ref": "#/$defs/__schema278"
+          "$ref": "#/$defs/__schema284"
         },
         "minZoom": {
-          "$ref": "#/$defs/__schema279"
+          "$ref": "#/$defs/__schema285"
         },
         "visible": {
-          "$ref": "#/$defs/__schema280"
+          "$ref": "#/$defs/__schema286"
         },
         "color": {
           "$ref": "#/$defs/__schema142"
         },
-        "font": {
-          "$ref": "#/$defs/__schema137"
-        },
-        "haloColor": {
-          "$ref": "#/$defs/__schema142"
-        },
-        "haloWidth": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/__schema284"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "$ref": "#/$defs/__schema11"
-                },
-                "reason": {
-                  "$ref": "#/$defs/__schema12"
-                },
-                "value": {
-                  "$ref": "#/$defs/__schema284"
-                }
-              },
-              "required": ["kind", "reason", "value"],
-              "additionalProperties": false
-            },
-            {
-              "$ref": "#/$defs/__schema13"
-            }
-          ]
-        },
         "opacity": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/__schema285"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "$ref": "#/$defs/__schema11"
-                },
-                "reason": {
-                  "$ref": "#/$defs/__schema12"
-                },
-                "value": {
-                  "$ref": "#/$defs/__schema285"
-                }
-              },
-              "required": ["kind", "reason", "value"],
-              "additionalProperties": false
-            },
-            {
-              "$ref": "#/$defs/__schema13"
-            }
-          ]
-        },
-        "size": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/__schema286"
-            },
-            {
-              "type": "object",
-              "properties": {
-                "kind": {
-                  "$ref": "#/$defs/__schema11"
-                },
-                "reason": {
-                  "$ref": "#/$defs/__schema12"
-                },
-                "value": {
-                  "$ref": "#/$defs/__schema286"
-                }
-              },
-              "required": ["kind", "reason", "value"],
-              "additionalProperties": false
-            },
-            {
-              "$ref": "#/$defs/__schema13"
-            }
-          ]
-        },
-        "spacing": {
           "anyOf": [
             {
               "$ref": "#/$defs/__schema287"
@@ -9245,61 +9873,234 @@
               "$ref": "#/$defs/__schema13"
             }
           ]
+        },
+        "width": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/__schema288"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "$ref": "#/$defs/__schema11"
+                },
+                "reason": {
+                  "$ref": "#/$defs/__schema12"
+                },
+                "value": {
+                  "$ref": "#/$defs/__schema288"
+                }
+              },
+              "required": ["kind", "reason", "value"],
+              "additionalProperties": false
+            },
+            {
+              "$ref": "#/$defs/__schema13"
+            }
+          ]
         }
       },
       "additionalProperties": false
     },
     "__schema284": {
-      "type": "number",
-      "minimum": 0,
-      "maximum": 16
+      "$ref": "#/$defs/__schema43"
     },
     "__schema285": {
+      "$ref": "#/$defs/__schema43"
+    },
+    "__schema286": {
+      "type": "boolean"
+    },
+    "__schema287": {
       "type": "number",
       "minimum": 0,
       "maximum": 1
     },
-    "__schema286": {
+    "__schema288": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 32
+    },
+    "__schema289": {
+      "type": "object",
+      "properties": {
+        "maxZoom": {
+          "$ref": "#/$defs/__schema284"
+        },
+        "minZoom": {
+          "$ref": "#/$defs/__schema285"
+        },
+        "visible": {
+          "$ref": "#/$defs/__schema286"
+        },
+        "color": {
+          "$ref": "#/$defs/__schema142"
+        },
+        "font": {
+          "$ref": "#/$defs/__schema137"
+        },
+        "haloColor": {
+          "$ref": "#/$defs/__schema142"
+        },
+        "haloWidth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/__schema290"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "$ref": "#/$defs/__schema11"
+                },
+                "reason": {
+                  "$ref": "#/$defs/__schema12"
+                },
+                "value": {
+                  "$ref": "#/$defs/__schema290"
+                }
+              },
+              "required": ["kind", "reason", "value"],
+              "additionalProperties": false
+            },
+            {
+              "$ref": "#/$defs/__schema13"
+            }
+          ]
+        },
+        "opacity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/__schema291"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "$ref": "#/$defs/__schema11"
+                },
+                "reason": {
+                  "$ref": "#/$defs/__schema12"
+                },
+                "value": {
+                  "$ref": "#/$defs/__schema291"
+                }
+              },
+              "required": ["kind", "reason", "value"],
+              "additionalProperties": false
+            },
+            {
+              "$ref": "#/$defs/__schema13"
+            }
+          ]
+        },
+        "size": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/__schema292"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "$ref": "#/$defs/__schema11"
+                },
+                "reason": {
+                  "$ref": "#/$defs/__schema12"
+                },
+                "value": {
+                  "$ref": "#/$defs/__schema292"
+                }
+              },
+              "required": ["kind", "reason", "value"],
+              "additionalProperties": false
+            },
+            {
+              "$ref": "#/$defs/__schema13"
+            }
+          ]
+        },
+        "spacing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/__schema293"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "$ref": "#/$defs/__schema11"
+                },
+                "reason": {
+                  "$ref": "#/$defs/__schema12"
+                },
+                "value": {
+                  "$ref": "#/$defs/__schema293"
+                }
+              },
+              "required": ["kind", "reason", "value"],
+              "additionalProperties": false
+            },
+            {
+              "$ref": "#/$defs/__schema13"
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "__schema290": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 16
+    },
+    "__schema291": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "__schema292": {
       "type": "number",
       "minimum": 1,
       "maximum": 64
     },
-    "__schema287": {
+    "__schema293": {
       "type": "number",
       "minimum": 1,
       "maximum": 1000
     },
-    "__schema288": {
+    "__schema294": {
       "type": "integer",
       "minimum": 0,
       "maximum": 24
     },
-    "__schema289": {
+    "__schema295": {
       "$ref": "#/$defs/__schema43"
     },
-    "__schema290": {
-      "$ref": "#/$defs/__schema277"
+    "__schema296": {
+      "$ref": "#/$defs/__schema283"
     },
-    "__schema291": {
+    "__schema297": {
       "type": "number",
       "minimum": 0.001,
       "maximum": 100
     },
-    "__schema292": {
+    "__schema298": {
       "type": "integer",
       "minimum": 0,
       "maximum": 8
     },
-    "__schema293": {
+    "__schema299": {
       "$ref": "#/$defs/__schema39"
     },
-    "__schema294": {
+    "__schema300": {
       "type": "object",
       "propertyNames": {
-        "$ref": "#/$defs/__schema295"
+        "$ref": "#/$defs/__schema301"
       },
       "additionalProperties": {
-        "$ref": "#/$defs/__schema296"
+        "$ref": "#/$defs/__schema302"
       },
       "minProperties": 1,
       "maxProperties": 25,
@@ -9315,54 +10116,54 @@
         }
       ]
     },
-    "__schema295": {
+    "__schema301": {
       "type": "string",
       "pattern": "^(?:0|[1-9]|1\\d|2[0-4])$"
     },
-    "__schema296": {
+    "__schema302": {
       "type": "array",
       "prefixItems": [
         {
-          "$ref": "#/$defs/__schema297"
+          "$ref": "#/$defs/__schema303"
         },
         {
-          "$ref": "#/$defs/__schema298"
+          "$ref": "#/$defs/__schema304"
         }
       ],
       "minItems": 2,
       "maxItems": 2,
       "items": false
     },
-    "__schema297": {
+    "__schema303": {
       "type": "number",
       "minimum": 0.001,
       "maximum": 100000
     },
-    "__schema298": {
+    "__schema304": {
       "type": "number",
       "minimum": 0.001,
       "maximum": 100000
     },
-    "__schema299": {
+    "__schema305": {
       "type": "string",
       "enum": ["mapbox", "terrarium"]
     },
-    "__schema300": {
+    "__schema306": {
       "type": "number",
       "minimum": 0,
       "maximum": 10
     },
-    "__schema301": {
+    "__schema307": {
       "type": "object",
       "properties": {
         "maxZoom": {
-          "$ref": "#/$defs/__schema278"
+          "$ref": "#/$defs/__schema284"
         },
         "minZoom": {
-          "$ref": "#/$defs/__schema279"
+          "$ref": "#/$defs/__schema285"
         },
         "visible": {
-          "$ref": "#/$defs/__schema280"
+          "$ref": "#/$defs/__schema286"
         },
         "accentColor": {
           "$ref": "#/$defs/__schema142"
@@ -9370,7 +10171,7 @@
         "exaggeration": {
           "anyOf": [
             {
-              "$ref": "#/$defs/__schema302"
+              "$ref": "#/$defs/__schema308"
             },
             {
               "type": "object",
@@ -9382,7 +10183,7 @@
                   "$ref": "#/$defs/__schema12"
                 },
                 "value": {
-                  "$ref": "#/$defs/__schema302"
+                  "$ref": "#/$defs/__schema308"
                 }
               },
               "required": ["kind", "reason", "value"],
@@ -9403,7 +10204,7 @@
         "illuminationDirection": {
           "anyOf": [
             {
-              "$ref": "#/$defs/__schema303"
+              "$ref": "#/$defs/__schema309"
             },
             {
               "type": "object",
@@ -9415,7 +10216,7 @@
                   "$ref": "#/$defs/__schema12"
                 },
                 "value": {
-                  "$ref": "#/$defs/__schema303"
+                  "$ref": "#/$defs/__schema309"
                 }
               },
               "required": ["kind", "reason", "value"],
@@ -9432,28 +10233,28 @@
       },
       "additionalProperties": false
     },
-    "__schema302": {
+    "__schema308": {
       "type": "number",
       "minimum": 0,
       "maximum": 1
     },
-    "__schema303": {
+    "__schema309": {
       "type": "number",
       "minimum": 0,
       "maximum": 359
     },
-    "__schema304": {
+    "__schema310": {
       "minItems": 1,
       "maxItems": 8,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema305"
+        "$ref": "#/$defs/__schema311"
       }
     },
-    "__schema305": {
+    "__schema311": {
       "type": "string"
     },
-    "__schema306": {
+    "__schema312": {
       "anyOf": [
         {
           "type": "number",
@@ -9465,41 +10266,41 @@
         }
       ]
     },
-    "__schema307": {
+    "__schema313": {
       "type": "integer",
       "minimum": 0,
       "maximum": 24
     },
-    "__schema308": {
+    "__schema314": {
       "type": "integer",
       "minimum": 0,
       "maximum": 24
     },
-    "__schema309": {
+    "__schema315": {
       "type": "string",
       "enum": ["none", "hillshade", "3d"]
     },
-    "__schema310": {
+    "__schema316": {
       "type": "string",
       "minLength": 1
     },
-    "__schema311": {
+    "__schema317": {
       "type": "string",
       "minLength": 1
     },
-    "__schema312": {
+    "__schema318": {
       "type": "object",
       "propertyNames": {
         "$ref": "#/$defs/__schema25"
       },
       "additionalProperties": {
-        "$ref": "#/$defs/__schema313"
+        "$ref": "#/$defs/__schema319"
       },
       "description": "Between one and 64 concrete named themes.",
       "minProperties": 1,
       "maxProperties": 64
     },
-    "__schema313": {
+    "__schema319": {
       "type": "object",
       "properties": {
         "colorScheme": {
@@ -9593,7 +10394,7 @@
                 "$ref": "#/$defs/__schema6"
               },
               "additionalProperties": {
-                "$ref": "#/$defs/__schema314"
+                "$ref": "#/$defs/__schema320"
               }
             },
             "image": {
@@ -9622,28 +10423,28 @@
           "type": "object",
           "properties": {
             "fallbacks": {
-              "$ref": "#/$defs/__schema315"
+              "$ref": "#/$defs/__schema321"
             },
             "font": {
-              "$ref": "#/$defs/__schema316"
+              "$ref": "#/$defs/__schema322"
             },
             "letterSpacing": {
-              "$ref": "#/$defs/__schema317"
+              "$ref": "#/$defs/__schema323"
             },
             "transform": {
-              "$ref": "#/$defs/__schema318"
+              "$ref": "#/$defs/__schema324"
             },
             "places": {
-              "$ref": "#/$defs/__schema319"
+              "$ref": "#/$defs/__schema325"
             },
             "poi": {
-              "$ref": "#/$defs/__schema319"
+              "$ref": "#/$defs/__schema325"
             },
             "roads": {
-              "$ref": "#/$defs/__schema319"
+              "$ref": "#/$defs/__schema325"
             },
             "water": {
-              "$ref": "#/$defs/__schema319"
+              "$ref": "#/$defs/__schema325"
             }
           },
           "additionalProperties": false
@@ -9657,7 +10458,7 @@
       "required": ["colorScheme", "id", "lighting", "tokens", "typography", "version"],
       "additionalProperties": false
     },
-    "__schema314": {
+    "__schema320": {
       "anyOf": [
         {
           "type": "string",
@@ -9688,44 +10489,44 @@
       "description": "Exact NFC OpenType full name, exact glyph stack ID, or CSS generic; no surrounding whitespace, controls, or backslash.",
       "x-tileflow-normalization": "NFC"
     },
-    "__schema315": {
+    "__schema321": {
       "maxItems": 8,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema314"
+        "$ref": "#/$defs/__schema320"
       },
       "uniqueItems": true,
       "description": "Unique exact fallback face names or CSS generic families."
     },
-    "__schema316": {
-      "$ref": "#/$defs/__schema314"
+    "__schema322": {
+      "$ref": "#/$defs/__schema320"
     },
-    "__schema317": {
+    "__schema323": {
       "$ref": "#/$defs/__schema10"
     },
-    "__schema318": {
+    "__schema324": {
       "type": "string",
       "enum": ["lowercase", "none", "uppercase"]
     },
-    "__schema319": {
+    "__schema325": {
       "type": "object",
       "properties": {
         "fallbacks": {
-          "$ref": "#/$defs/__schema315"
+          "$ref": "#/$defs/__schema321"
         },
         "font": {
-          "$ref": "#/$defs/__schema316"
+          "$ref": "#/$defs/__schema322"
         },
         "letterSpacing": {
-          "$ref": "#/$defs/__schema317"
+          "$ref": "#/$defs/__schema323"
         },
         "transform": {
-          "$ref": "#/$defs/__schema318"
+          "$ref": "#/$defs/__schema324"
         }
       },
       "additionalProperties": false
     },
-    "__schema320": {
+    "__schema326": {
       "type": "object",
       "propertyNames": {
         "$ref": "#/$defs/__schema25"
@@ -9749,12 +10550,12 @@
         "additionalProperties": false
       }
     },
-    "__schema321": {
+    "__schema327": {
       "type": "integer",
       "exclusiveMinimum": 0,
       "maximum": 9007199254740991
     },
-    "__schema322": {
+    "__schema328": {
       "type": "object",
       "properties": {
         "bearing": {
@@ -23433,6 +24234,7 @@
                         "sidewalk",
                         "streetFurniture",
                         "trafficControl",
+                        "transportationOutline",
                         "tree",
                         "water",
                         "waterName",
@@ -23539,6 +24341,7 @@
                         "sidewalk",
                         "streetFurniture",
                         "trafficControl",
+                        "transportationOutline",
                         "tree",
                         "water",
                         "waterName",
@@ -23645,6 +24448,7 @@
                         "sidewalk",
                         "streetFurniture",
                         "trafficControl",
+                        "transportationOutline",
                         "tree",
                         "water",
                         "waterName",
@@ -23751,6 +24555,7 @@
                         "sidewalk",
                         "streetFurniture",
                         "trafficControl",
+                        "transportationOutline",
                         "tree",
                         "water",
                         "waterName",
@@ -23857,6 +24662,7 @@
                         "sidewalk",
                         "streetFurniture",
                         "trafficControl",
+                        "transportationOutline",
                         "tree",
                         "water",
                         "waterName",
@@ -27284,8 +28090,181 @@
                 }
               ]
             },
+            "floodLight": {
+              "type": "object",
+              "properties": {
+                "intensity": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "brightnessScale": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 16
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 16
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "color": {
+                  "$ref": "#/$defs/__schema8"
+                },
+                "groundRadius": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/__schema219"
+                    },
+                    {
+                      "$ref": "#/$defs/__schema220"
+                    }
+                  ],
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": false
+                },
+                "minGroundHeight": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 6000
+                },
+                "minWallHeight": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 6000
+                },
+                "wallHeightRatio": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "modelLighting": {
+              "type": "object",
+              "properties": {
+                "unclassified": {
+                  "$ref": "#/$defs/__schema221"
+                },
+                "wall": {
+                  "$ref": "#/$defs/__schema221"
+                },
+                "door": {
+                  "$ref": "#/$defs/__schema221"
+                },
+                "roof": {
+                  "$ref": "#/$defs/__schema221"
+                },
+                "window": {
+                  "$ref": "#/$defs/__schema221"
+                },
+                "lamp": {
+                  "$ref": "#/$defs/__schema221"
+                },
+                "logo": {
+                  "$ref": "#/$defs/__schema221"
+                }
+              },
+              "additionalProperties": false
+            },
+            "entrance": {
+              "type": "object",
+              "properties": {
+                "buildings": {
+                  "$ref": "#/$defs/__schema222"
+                },
+                "models": {
+                  "$ref": "#/$defs/__schema222"
+                }
+              },
+              "additionalProperties": false
+            },
             "occlusion": {
               "type": "boolean"
+            },
+            "modelOcclusion": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/__schema13"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "theme-fixed"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": ["kind", "reason", "value"],
+                  "additionalProperties": false
+                }
+              ]
             },
             "shadows": {
               "type": "boolean"
@@ -27297,7 +28276,7 @@
               "maxItems": 256,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema219"
+                "$ref": "#/$defs/__schema225"
               }
             },
             "modelColors": {
@@ -27507,8 +28486,181 @@
                 }
               ]
             },
+            "floodLight": {
+              "type": "object",
+              "properties": {
+                "intensity": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "brightnessScale": {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 16
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 16
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "color": {
+                  "$ref": "#/$defs/__schema8"
+                },
+                "groundRadius": {
+                  "type": "array",
+                  "prefixItems": [
+                    {
+                      "$ref": "#/$defs/__schema219"
+                    },
+                    {
+                      "$ref": "#/$defs/__schema220"
+                    }
+                  ],
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "items": false
+                },
+                "minGroundHeight": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 6000
+                },
+                "minWallHeight": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 6000
+                },
+                "wallHeightRatio": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                }
+              },
+              "additionalProperties": false
+            },
+            "modelLighting": {
+              "type": "object",
+              "properties": {
+                "unclassified": {
+                  "$ref": "#/$defs/__schema221"
+                },
+                "wall": {
+                  "$ref": "#/$defs/__schema221"
+                },
+                "door": {
+                  "$ref": "#/$defs/__schema221"
+                },
+                "roof": {
+                  "$ref": "#/$defs/__schema221"
+                },
+                "window": {
+                  "$ref": "#/$defs/__schema221"
+                },
+                "lamp": {
+                  "$ref": "#/$defs/__schema221"
+                },
+                "logo": {
+                  "$ref": "#/$defs/__schema221"
+                }
+              },
+              "additionalProperties": false
+            },
+            "entrance": {
+              "type": "object",
+              "properties": {
+                "buildings": {
+                  "$ref": "#/$defs/__schema222"
+                },
+                "models": {
+                  "$ref": "#/$defs/__schema222"
+                }
+              },
+              "additionalProperties": false
+            },
             "occlusion": {
               "type": "boolean"
+            },
+            "modelOcclusion": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/__schema13"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "const": "theme-fixed"
+                    },
+                    "reason": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "value": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    }
+                  },
+                  "required": ["kind", "reason", "value"],
+                  "additionalProperties": false
+                }
+              ]
             },
             "shadows": {
               "type": "boolean"
@@ -27520,7 +28672,7 @@
               "maxItems": 256,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema219"
+                "$ref": "#/$defs/__schema225"
               }
             },
             "modelColors": {
@@ -27936,6 +29088,320 @@
                     }
                   ]
                 },
+                "floodLight": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "intensity": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                },
+                                {
+                                  "$ref": "#/$defs/TileflowModulePatchRef17"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "oneOf": [
+                                        {
+                                          "$ref": "#/$defs/TileflowReset"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "const": "theme-fixed"
+                                        }
+                                      ]
+                                    },
+                                    "reason": {
+                                      "oneOf": [
+                                        {
+                                          "$ref": "#/$defs/TileflowReset"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "minLength": 1
+                                        }
+                                      ]
+                                    },
+                                    "value": {
+                                      "oneOf": [
+                                        {
+                                          "$ref": "#/$defs/TileflowReset"
+                                        },
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 1
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "brightnessScale": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "anyOf": [
+                                {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 16
+                                },
+                                {
+                                  "$ref": "#/$defs/TileflowModulePatchRef17"
+                                },
+                                {
+                                  "type": "object",
+                                  "properties": {
+                                    "kind": {
+                                      "oneOf": [
+                                        {
+                                          "$ref": "#/$defs/TileflowReset"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "const": "theme-fixed"
+                                        }
+                                      ]
+                                    },
+                                    "reason": {
+                                      "oneOf": [
+                                        {
+                                          "$ref": "#/$defs/TileflowReset"
+                                        },
+                                        {
+                                          "type": "string",
+                                          "minLength": 1
+                                        }
+                                      ]
+                                    },
+                                    "value": {
+                                      "oneOf": [
+                                        {
+                                          "$ref": "#/$defs/TileflowReset"
+                                        },
+                                        {
+                                          "type": "number",
+                                          "minimum": 0,
+                                          "maximum": 16
+                                        }
+                                      ]
+                                    }
+                                  },
+                                  "additionalProperties": false
+                                }
+                              ]
+                            }
+                          ]
+                        },
+                        "color": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "$ref": "#/$defs/TileflowModulePatchRef28"
+                            }
+                          ]
+                        },
+                        "groundRadius": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "type": "array",
+                              "prefixItems": [
+                                {
+                                  "$ref": "#/$defs/__schema219"
+                                },
+                                {
+                                  "$ref": "#/$defs/__schema220"
+                                }
+                              ],
+                              "minItems": 2,
+                              "maxItems": 2,
+                              "items": false
+                            }
+                          ]
+                        },
+                        "minGroundHeight": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 6000
+                            }
+                          ]
+                        },
+                        "minWallHeight": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 6000
+                            }
+                          ]
+                        },
+                        "wallHeightRatio": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 1
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "modelLighting": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "unclassified": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "$ref": "#/$defs/TileflowModulePatchRef134"
+                            }
+                          ]
+                        },
+                        "wall": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "$ref": "#/$defs/TileflowModulePatchRef134"
+                            }
+                          ]
+                        },
+                        "door": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "$ref": "#/$defs/TileflowModulePatchRef134"
+                            }
+                          ]
+                        },
+                        "roof": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "$ref": "#/$defs/TileflowModulePatchRef134"
+                            }
+                          ]
+                        },
+                        "window": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "$ref": "#/$defs/TileflowModulePatchRef134"
+                            }
+                          ]
+                        },
+                        "lamp": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "$ref": "#/$defs/TileflowModulePatchRef134"
+                            }
+                          ]
+                        },
+                        "logo": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "$ref": "#/$defs/TileflowModulePatchRef134"
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                "entrance": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "buildings": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "$ref": "#/$defs/TileflowModulePatchRef135"
+                            }
+                          ]
+                        },
+                        "models": {
+                          "oneOf": [
+                            {
+                              "$ref": "#/$defs/TileflowReset"
+                            },
+                            {
+                              "$ref": "#/$defs/TileflowModulePatchRef135"
+                            }
+                          ]
+                        }
+                      },
+                      "additionalProperties": false
+                    }
+                  ]
+                },
                 "occlusion": {
                   "oneOf": [
                     {
@@ -27943,6 +29409,65 @@
                     },
                     {
                       "type": "boolean"
+                    }
+                  ]
+                },
+                "modelOcclusion": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "anyOf": [
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        },
+                        {
+                          "$ref": "#/$defs/TileflowModulePatchRef17"
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/TileflowReset"
+                                },
+                                {
+                                  "type": "string",
+                                  "const": "theme-fixed"
+                                }
+                              ]
+                            },
+                            "reason": {
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/TileflowReset"
+                                },
+                                {
+                                  "type": "string",
+                                  "minLength": 1
+                                }
+                              ]
+                            },
+                            "value": {
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/TileflowReset"
+                                },
+                                {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 1
+                                }
+                              ]
+                            }
+                          },
+                          "additionalProperties": false
+                        }
+                      ]
                     }
                   ]
                 },
@@ -27975,7 +29500,7 @@
                       "maxItems": 256,
                       "type": "array",
                       "items": {
-                        "$ref": "#/$defs/__schema219"
+                        "$ref": "#/$defs/__schema225"
                       }
                     }
                   ]
@@ -28083,6 +29608,777 @@
       },
       "additionalProperties": false
     },
+    "TileflowModulePatchRef134": {
+      "type": "object",
+      "properties": {
+        "emissiveStrength": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 5
+                },
+                {
+                  "$ref": "#/$defs/TileflowModulePatchRef17"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        }
+                      ]
+                    },
+                    "reason": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      ]
+                    },
+                    "value": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 5
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            }
+          ]
+        },
+        "emissiveVariation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/TileflowModulePatchRef17"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        }
+                      ]
+                    },
+                    "reason": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      ]
+                    },
+                    "value": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            }
+          ]
+        },
+        "emissiveColor": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef28"
+            }
+          ]
+        },
+        "color": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef28"
+            }
+          ]
+        },
+        "colorMix": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/TileflowModulePatchRef17"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        }
+                      ]
+                    },
+                    "reason": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      ]
+                    },
+                    "value": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            }
+          ]
+        },
+        "metallic": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/TileflowModulePatchRef17"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        }
+                      ]
+                    },
+                    "reason": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      ]
+                    },
+                    "value": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            }
+          ]
+        },
+        "roughness": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                {
+                  "$ref": "#/$defs/TileflowModulePatchRef17"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        }
+                      ]
+                    },
+                    "reason": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "string",
+                          "minLength": 1
+                        }
+                      ]
+                    },
+                    "value": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/$defs/TileflowReset"
+                        },
+                        {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              ]
+            }
+          ]
+        },
+        "colorVariation": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "hue": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 360
+                            },
+                            {
+                              "$ref": "#/$defs/__schema13"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "theme-fixed"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 360
+                                }
+                              },
+                              "required": ["kind", "reason", "value"],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 360
+                            },
+                            {
+                              "$ref": "#/$defs/__schema13"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "theme-fixed"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 360
+                                }
+                              },
+                              "required": ["kind", "reason", "value"],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      ],
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "items": false
+                    }
+                  ]
+                },
+                "saturation": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "$ref": "#/$defs/__schema13"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "theme-fixed"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": ["kind", "reason", "value"],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "$ref": "#/$defs/__schema13"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "theme-fixed"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": ["kind", "reason", "value"],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      ],
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "items": false
+                    }
+                  ]
+                },
+                "lightness": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "type": "array",
+                      "prefixItems": [
+                        {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "$ref": "#/$defs/__schema13"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "theme-fixed"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": ["kind", "reason", "value"],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        {
+                          "anyOf": [
+                            {
+                              "type": "number",
+                              "minimum": 0,
+                              "maximum": 100
+                            },
+                            {
+                              "$ref": "#/$defs/__schema13"
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "type": "string",
+                                  "const": "theme-fixed"
+                                },
+                                "reason": {
+                                  "type": "string",
+                                  "minLength": 1
+                                },
+                                "value": {
+                                  "type": "number",
+                                  "minimum": 0,
+                                  "maximum": 100
+                                }
+                              },
+                              "required": ["kind", "reason", "value"],
+                              "additionalProperties": false
+                            }
+                          ]
+                        }
+                      ],
+                      "minItems": 2,
+                      "maxItems": 2,
+                      "items": false
+                    }
+                  ]
+                },
+                "space": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/TileflowReset"
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["srgb", "linear"]
+                    }
+                  ]
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "emissiveHeight": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": 0,
+                          "maximum": 1
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                },
+                {
+                  "anyOf": [
+                    {
+                      "type": "number",
+                      "minimum": -1,
+                      "maximum": 1
+                    },
+                    {
+                      "$ref": "#/$defs/__schema13"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "theme-fixed"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "value": {
+                          "type": "number",
+                          "minimum": -1,
+                          "maximum": 1
+                        }
+                      },
+                      "required": ["kind", "reason", "value"],
+                      "additionalProperties": false
+                    }
+                  ]
+                }
+              ],
+              "minItems": 5,
+              "maxItems": 5,
+              "items": false
+            }
+          ]
+        }
+      },
+      "additionalProperties": false
+    },
+    "TileflowModulePatchRef135": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "$ref": "#/$defs/__schema223"
+        },
+        {
+          "$ref": "#/$defs/__schema224"
+        }
+      ],
+      "minItems": 2,
+      "maxItems": 2,
+      "items": false
+    },
     "TileflowLabelsModuleResolved": {
       "$ref": "#/$defs/__schema167/properties/labels",
       "description": "Resolved labels semantic-domain request accepted by the compiler."
@@ -28117,7 +30413,7 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema220"
+            "$ref": "#/$defs/__schema226"
           }
         },
         "roadPlacement": {
@@ -28174,7 +30470,7 @@
             "roads": {
               "type": "object",
               "propertyNames": {
-                "$ref": "#/$defs/__schema220"
+                "$ref": "#/$defs/__schema226"
               },
               "additionalProperties": {
                 "$ref": "#/$defs/__schema104"
@@ -28286,7 +30582,7 @@
           "minItems": 1,
           "type": "array",
           "items": {
-            "$ref": "#/$defs/__schema220"
+            "$ref": "#/$defs/__schema226"
           }
         },
         "roadPlacement": {
@@ -28343,7 +30639,7 @@
             "roads": {
               "type": "object",
               "propertyNames": {
-                "$ref": "#/$defs/__schema220"
+                "$ref": "#/$defs/__schema226"
               },
               "additionalProperties": {
                 "$ref": "#/$defs/__schema104"
@@ -28496,7 +30792,7 @@
               "minItems": 1,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema220"
+                "$ref": "#/$defs/__schema226"
               }
             }
           ]
@@ -28663,7 +30959,7 @@
                     {
                       "type": "object",
                       "propertyNames": {
-                        "$ref": "#/$defs/__schema220"
+                        "$ref": "#/$defs/__schema226"
                       },
                       "additionalProperties": {
                         "oneOf": [
@@ -28915,13 +31211,13 @@
           "type": "object",
           "properties": {
             "fence": {
-              "$ref": "#/$defs/__schema221"
+              "$ref": "#/$defs/__schema227"
             },
             "hedge": {
-              "$ref": "#/$defs/__schema221"
+              "$ref": "#/$defs/__schema227"
             },
             "wall": {
-              "$ref": "#/$defs/__schema221"
+              "$ref": "#/$defs/__schema227"
             }
           },
           "additionalProperties": false
@@ -29057,13 +31353,13 @@
           "type": "object",
           "properties": {
             "fence": {
-              "$ref": "#/$defs/__schema221"
+              "$ref": "#/$defs/__schema227"
             },
             "hedge": {
-              "$ref": "#/$defs/__schema221"
+              "$ref": "#/$defs/__schema227"
             },
             "wall": {
-              "$ref": "#/$defs/__schema221"
+              "$ref": "#/$defs/__schema227"
             }
           },
           "additionalProperties": false
@@ -29259,7 +31555,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef134"
+                      "$ref": "#/$defs/TileflowModulePatchRef136"
                     }
                   ]
                 },
@@ -29269,7 +31565,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef134"
+                      "$ref": "#/$defs/TileflowModulePatchRef136"
                     }
                   ]
                 },
@@ -29279,7 +31575,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef134"
+                      "$ref": "#/$defs/TileflowModulePatchRef136"
                     }
                   ]
                 }
@@ -29597,7 +31893,7 @@
       },
       "additionalProperties": false
     },
-    "TileflowModulePatchRef134": {
+    "TileflowModulePatchRef136": {
       "type": "object",
       "properties": {
         "area": {
@@ -29750,16 +32046,28 @@
           "const": "nautical"
         },
         "aids": {
-          "$ref": "#/$defs/__schema222"
+          "$ref": "#/$defs/__schema228"
+        },
+        "beacons": {
+          "$ref": "#/$defs/__schema228"
+        },
+        "buoys": {
+          "$ref": "#/$defs/__schema228"
+        },
+        "cables": {
+          "$ref": "#/$defs/__schema76"
         },
         "coverage": {
           "$ref": "#/$defs/__schema214"
+        },
+        "harbours": {
+          "$ref": "#/$defs/__schema228"
         },
         "hazardAreas": {
           "$ref": "#/$defs/__schema214"
         },
         "hazards": {
-          "$ref": "#/$defs/__schema222"
+          "$ref": "#/$defs/__schema228"
         },
         "labels": {
           "type": "object",
@@ -29783,13 +32091,16 @@
           "additionalProperties": false
         },
         "lighthouses": {
-          "$ref": "#/$defs/__schema222"
+          "$ref": "#/$defs/__schema228"
         },
         "lights": {
-          "$ref": "#/$defs/__schema222"
+          "$ref": "#/$defs/__schema228"
         },
         "navigationAreas": {
           "$ref": "#/$defs/__schema214"
+        },
+        "ports": {
+          "$ref": "#/$defs/__schema228"
         },
         "reefs": {
           "$ref": "#/$defs/__schema214"
@@ -29797,14 +32108,17 @@
         "renderStack": {
           "$ref": "#/$defs/__schema168"
         },
+        "routes": {
+          "$ref": "#/$defs/__schema76"
+        },
         "soundings": {
-          "$ref": "#/$defs/__schema222"
+          "$ref": "#/$defs/__schema228"
         },
         "wreckAreas": {
           "$ref": "#/$defs/__schema214"
         },
         "wrecks": {
-          "$ref": "#/$defs/__schema222"
+          "$ref": "#/$defs/__schema228"
         }
       },
       "required": ["type"],
@@ -29814,16 +32128,28 @@
       "type": "object",
       "properties": {
         "aids": {
-          "$ref": "#/$defs/__schema222"
+          "$ref": "#/$defs/__schema228"
+        },
+        "beacons": {
+          "$ref": "#/$defs/__schema228"
+        },
+        "buoys": {
+          "$ref": "#/$defs/__schema228"
+        },
+        "cables": {
+          "$ref": "#/$defs/__schema76"
         },
         "coverage": {
           "$ref": "#/$defs/__schema214"
+        },
+        "harbours": {
+          "$ref": "#/$defs/__schema228"
         },
         "hazardAreas": {
           "$ref": "#/$defs/__schema214"
         },
         "hazards": {
-          "$ref": "#/$defs/__schema222"
+          "$ref": "#/$defs/__schema228"
         },
         "labels": {
           "type": "object",
@@ -29847,13 +32173,16 @@
           "additionalProperties": false
         },
         "lighthouses": {
-          "$ref": "#/$defs/__schema222"
+          "$ref": "#/$defs/__schema228"
         },
         "lights": {
-          "$ref": "#/$defs/__schema222"
+          "$ref": "#/$defs/__schema228"
         },
         "navigationAreas": {
           "$ref": "#/$defs/__schema214"
+        },
+        "ports": {
+          "$ref": "#/$defs/__schema228"
         },
         "reefs": {
           "$ref": "#/$defs/__schema214"
@@ -29861,14 +32190,17 @@
         "renderStack": {
           "$ref": "#/$defs/__schema168"
         },
+        "routes": {
+          "$ref": "#/$defs/__schema76"
+        },
         "soundings": {
-          "$ref": "#/$defs/__schema222"
+          "$ref": "#/$defs/__schema228"
         },
         "wreckAreas": {
           "$ref": "#/$defs/__schema214"
         },
         "wrecks": {
-          "$ref": "#/$defs/__schema222"
+          "$ref": "#/$defs/__schema228"
         }
       },
       "required": [],
@@ -29884,7 +32216,37 @@
               "$ref": "#/$defs/TileflowReset"
             },
             {
-              "$ref": "#/$defs/TileflowModulePatchRef135"
+              "$ref": "#/$defs/TileflowModulePatchRef137"
+            }
+          ]
+        },
+        "beacons": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef137"
+            }
+          ]
+        },
+        "buoys": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef137"
+            }
+          ]
+        },
+        "cables": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef129"
             }
           ]
         },
@@ -29895,6 +32257,16 @@
             },
             {
               "$ref": "#/$defs/TileflowModulePatchRef127"
+            }
+          ]
+        },
+        "harbours": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef137"
             }
           ]
         },
@@ -29914,7 +32286,7 @@
               "$ref": "#/$defs/TileflowReset"
             },
             {
-              "$ref": "#/$defs/TileflowModulePatchRef135"
+              "$ref": "#/$defs/TileflowModulePatchRef137"
             }
           ]
         },
@@ -29987,7 +32359,7 @@
               "$ref": "#/$defs/TileflowReset"
             },
             {
-              "$ref": "#/$defs/TileflowModulePatchRef135"
+              "$ref": "#/$defs/TileflowModulePatchRef137"
             }
           ]
         },
@@ -29997,7 +32369,7 @@
               "$ref": "#/$defs/TileflowReset"
             },
             {
-              "$ref": "#/$defs/TileflowModulePatchRef135"
+              "$ref": "#/$defs/TileflowModulePatchRef137"
             }
           ]
         },
@@ -30008,6 +32380,16 @@
             },
             {
               "$ref": "#/$defs/TileflowModulePatchRef127"
+            }
+          ]
+        },
+        "ports": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef137"
             }
           ]
         },
@@ -30031,13 +32413,23 @@
             }
           ]
         },
+        "routes": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef129"
+            }
+          ]
+        },
         "soundings": {
           "oneOf": [
             {
               "$ref": "#/$defs/TileflowReset"
             },
             {
-              "$ref": "#/$defs/TileflowModulePatchRef135"
+              "$ref": "#/$defs/TileflowModulePatchRef137"
             }
           ]
         },
@@ -30057,14 +32449,14 @@
               "$ref": "#/$defs/TileflowReset"
             },
             {
-              "$ref": "#/$defs/TileflowModulePatchRef135"
+              "$ref": "#/$defs/TileflowModulePatchRef137"
             }
           ]
         }
       },
       "additionalProperties": false
     },
-    "TileflowModulePatchRef135": {
+    "TileflowModulePatchRef137": {
       "type": "object",
       "properties": {
         "maxZoom": {
@@ -30173,17 +32565,17 @@
               "$ref": "#/$defs/TileflowReset"
             },
             {
-              "$ref": "#/$defs/TileflowModulePatchRef136"
+              "$ref": "#/$defs/TileflowModulePatchRef138"
             }
           ]
         }
       },
       "additionalProperties": false
     },
-    "TileflowModulePatchRef136": {
-      "$ref": "#/$defs/TileflowModulePatchRef137"
+    "TileflowModulePatchRef138": {
+      "$ref": "#/$defs/TileflowModulePatchRef139"
     },
-    "TileflowModulePatchRef137": {
+    "TileflowModulePatchRef139": {
       "type": "object",
       "properties": {
         "maxZoom": {
@@ -30428,7 +32820,7 @@
               "maxItems": 64,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema225"
+                "$ref": "#/$defs/__schema231"
               }
             },
             "iconPadding": {
@@ -30502,7 +32894,7 @@
                 "$ref": "#/$defs/__schema136"
               },
               "marker": {
-                "$ref": "#/$defs/__schema223"
+                "$ref": "#/$defs/__schema229"
               }
             },
             "additionalProperties": false
@@ -30583,7 +32975,7 @@
               "maxItems": 64,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema225"
+                "$ref": "#/$defs/__schema231"
               }
             },
             "iconPadding": {
@@ -30657,7 +33049,7 @@
                 "$ref": "#/$defs/__schema136"
               },
               "marker": {
-                "$ref": "#/$defs/__schema223"
+                "$ref": "#/$defs/__schema229"
               }
             },
             "additionalProperties": false
@@ -30798,7 +33190,7 @@
                       "maxItems": 64,
                       "type": "array",
                       "items": {
-                        "$ref": "#/$defs/__schema225"
+                        "$ref": "#/$defs/__schema231"
                       }
                     }
                   ]
@@ -30982,7 +33374,7 @@
                             "$ref": "#/$defs/TileflowReset"
                           },
                           {
-                            "$ref": "#/$defs/TileflowModulePatchRef136"
+                            "$ref": "#/$defs/TileflowModulePatchRef138"
                           }
                         ]
                       }
@@ -31026,7 +33418,7 @@
         "classes": {
           "type": "object",
           "propertyNames": {
-            "$ref": "#/$defs/__schema220"
+            "$ref": "#/$defs/__schema226"
           },
           "additionalProperties": {
             "type": "object",
@@ -31035,13 +33427,13 @@
                 "type": "boolean"
               },
               "bridge": {
-                "$ref": "#/$defs/__schema226"
+                "$ref": "#/$defs/__schema232"
               },
               "surface": {
-                "$ref": "#/$defs/__schema226"
+                "$ref": "#/$defs/__schema232"
               },
               "tunnel": {
-                "$ref": "#/$defs/__schema226"
+                "$ref": "#/$defs/__schema232"
               }
             },
             "additionalProperties": false
@@ -31144,22 +33536,22 @@
           "type": "object",
           "properties": {
             "construction": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "expressway": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "indoor": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "official": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "ramp": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "unpaved": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             }
           },
           "additionalProperties": false
@@ -31168,37 +33560,37 @@
           "type": "object",
           "properties": {
             "0": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "1": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "2": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "3": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "4": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "5": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "6": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "0+": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "1+": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "2+": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "3+": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             }
           },
           "additionalProperties": false
@@ -31219,19 +33611,19 @@
           "type": "object",
           "properties": {
             "access": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "bicycle": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "foot": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "horse": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "toll": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             }
           },
           "additionalProperties": false
@@ -31244,17 +33636,17 @@
           "properties": {
             "borderWidth": {
               "description": "Extra casing width in pixels, split across both edges. Defaults to the effective road border width.",
-              "$ref": "#/$defs/__schema241"
+              "$ref": "#/$defs/__schema247"
             },
             "casing": {
-              "$ref": "#/$defs/__schema224"
+              "$ref": "#/$defs/__schema230"
             },
             "fallbackWidth": {
               "description": "Road width in pixels used only when metric radii are absent. Defaults to the effective surface fill width.",
-              "$ref": "#/$defs/__schema241"
+              "$ref": "#/$defs/__schema247"
             },
             "fill": {
-              "$ref": "#/$defs/__schema224"
+              "$ref": "#/$defs/__schema230"
             }
           },
           "additionalProperties": false
@@ -31263,19 +33655,19 @@
           "type": "object",
           "properties": {
             "alley": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "crossover": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "driveway": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "parkingAisle": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "yard": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             }
           },
           "additionalProperties": false
@@ -31347,13 +33739,13 @@
           "type": "object",
           "properties": {
             "bridge": {
-              "$ref": "#/$defs/__schema226"
+              "$ref": "#/$defs/__schema232"
             },
             "surface": {
-              "$ref": "#/$defs/__schema226"
+              "$ref": "#/$defs/__schema232"
             },
             "tunnel": {
-              "$ref": "#/$defs/__schema226"
+              "$ref": "#/$defs/__schema232"
             }
           },
           "additionalProperties": false
@@ -31365,7 +33757,7 @@
         "widthScale": {
           "type": "object",
           "propertyNames": {
-            "$ref": "#/$defs/__schema220"
+            "$ref": "#/$defs/__schema226"
           },
           "additionalProperties": {
             "$ref": "#/$defs/__schema10"
@@ -31396,7 +33788,7 @@
         "classes": {
           "type": "object",
           "propertyNames": {
-            "$ref": "#/$defs/__schema220"
+            "$ref": "#/$defs/__schema226"
           },
           "additionalProperties": {
             "type": "object",
@@ -31405,13 +33797,13 @@
                 "type": "boolean"
               },
               "bridge": {
-                "$ref": "#/$defs/__schema226"
+                "$ref": "#/$defs/__schema232"
               },
               "surface": {
-                "$ref": "#/$defs/__schema226"
+                "$ref": "#/$defs/__schema232"
               },
               "tunnel": {
-                "$ref": "#/$defs/__schema226"
+                "$ref": "#/$defs/__schema232"
               }
             },
             "additionalProperties": false
@@ -31514,22 +33906,22 @@
           "type": "object",
           "properties": {
             "construction": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "expressway": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "indoor": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "official": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "ramp": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "unpaved": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             }
           },
           "additionalProperties": false
@@ -31538,37 +33930,37 @@
           "type": "object",
           "properties": {
             "0": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "1": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "2": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "3": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "4": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "5": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "6": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "0+": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "1+": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "2+": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "3+": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             }
           },
           "additionalProperties": false
@@ -31589,19 +33981,19 @@
           "type": "object",
           "properties": {
             "access": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "bicycle": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "foot": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "horse": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "toll": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             }
           },
           "additionalProperties": false
@@ -31614,17 +34006,17 @@
           "properties": {
             "borderWidth": {
               "description": "Extra casing width in pixels, split across both edges. Defaults to the effective road border width.",
-              "$ref": "#/$defs/__schema241"
+              "$ref": "#/$defs/__schema247"
             },
             "casing": {
-              "$ref": "#/$defs/__schema224"
+              "$ref": "#/$defs/__schema230"
             },
             "fallbackWidth": {
               "description": "Road width in pixels used only when metric radii are absent. Defaults to the effective surface fill width.",
-              "$ref": "#/$defs/__schema241"
+              "$ref": "#/$defs/__schema247"
             },
             "fill": {
-              "$ref": "#/$defs/__schema224"
+              "$ref": "#/$defs/__schema230"
             }
           },
           "additionalProperties": false
@@ -31633,19 +34025,19 @@
           "type": "object",
           "properties": {
             "alley": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "crossover": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "driveway": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "parkingAisle": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             },
             "yard": {
-              "$ref": "#/$defs/__schema234"
+              "$ref": "#/$defs/__schema240"
             }
           },
           "additionalProperties": false
@@ -31717,13 +34109,13 @@
           "type": "object",
           "properties": {
             "bridge": {
-              "$ref": "#/$defs/__schema226"
+              "$ref": "#/$defs/__schema232"
             },
             "surface": {
-              "$ref": "#/$defs/__schema226"
+              "$ref": "#/$defs/__schema232"
             },
             "tunnel": {
-              "$ref": "#/$defs/__schema226"
+              "$ref": "#/$defs/__schema232"
             }
           },
           "additionalProperties": false
@@ -31735,7 +34127,7 @@
         "widthScale": {
           "type": "object",
           "propertyNames": {
-            "$ref": "#/$defs/__schema220"
+            "$ref": "#/$defs/__schema226"
           },
           "additionalProperties": {
             "$ref": "#/$defs/__schema10"
@@ -31800,7 +34192,7 @@
             {
               "type": "object",
               "propertyNames": {
-                "$ref": "#/$defs/__schema220"
+                "$ref": "#/$defs/__schema226"
               },
               "additionalProperties": {
                 "oneOf": [
@@ -31826,7 +34218,7 @@
                             "$ref": "#/$defs/TileflowReset"
                           },
                           {
-                            "$ref": "#/$defs/TileflowModulePatchRef138"
+                            "$ref": "#/$defs/TileflowModulePatchRef140"
                           }
                         ]
                       },
@@ -31836,7 +34228,7 @@
                             "$ref": "#/$defs/TileflowReset"
                           },
                           {
-                            "$ref": "#/$defs/TileflowModulePatchRef138"
+                            "$ref": "#/$defs/TileflowModulePatchRef140"
                           }
                         ]
                       },
@@ -31846,7 +34238,7 @@
                             "$ref": "#/$defs/TileflowReset"
                           },
                           {
-                            "$ref": "#/$defs/TileflowModulePatchRef138"
+                            "$ref": "#/$defs/TileflowModulePatchRef140"
                           }
                         ]
                       }
@@ -32160,7 +34552,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32170,7 +34562,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32180,7 +34572,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32190,7 +34582,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32200,7 +34592,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32210,7 +34602,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 }
@@ -32233,7 +34625,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32243,7 +34635,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32253,7 +34645,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32263,7 +34655,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32273,7 +34665,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32283,7 +34675,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32293,7 +34685,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32303,7 +34695,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32313,7 +34705,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32323,7 +34715,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32333,7 +34725,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 }
@@ -32389,7 +34781,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32399,7 +34791,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32409,7 +34801,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32419,7 +34811,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32429,7 +34821,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 }
@@ -32462,7 +34854,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef148"
+                      "$ref": "#/$defs/TileflowModulePatchRef150"
                     }
                   ]
                 },
@@ -32472,7 +34864,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef137"
+                      "$ref": "#/$defs/TileflowModulePatchRef139"
                     }
                   ]
                 },
@@ -32482,7 +34874,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef148"
+                      "$ref": "#/$defs/TileflowModulePatchRef150"
                     }
                   ]
                 },
@@ -32492,7 +34884,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef137"
+                      "$ref": "#/$defs/TileflowModulePatchRef139"
                     }
                   ]
                 }
@@ -32515,7 +34907,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32525,7 +34917,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32535,7 +34927,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32545,7 +34937,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 },
@@ -32555,7 +34947,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef146"
+                      "$ref": "#/$defs/TileflowModulePatchRef148"
                     }
                   ]
                 }
@@ -32724,7 +35116,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef138"
+                      "$ref": "#/$defs/TileflowModulePatchRef140"
                     }
                   ]
                 },
@@ -32734,7 +35126,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef138"
+                      "$ref": "#/$defs/TileflowModulePatchRef140"
                     }
                   ]
                 },
@@ -32744,7 +35136,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef138"
+                      "$ref": "#/$defs/TileflowModulePatchRef140"
                     }
                   ]
                 }
@@ -32772,7 +35164,7 @@
             {
               "type": "object",
               "propertyNames": {
-                "$ref": "#/$defs/__schema220"
+                "$ref": "#/$defs/__schema226"
               },
               "additionalProperties": {
                 "oneOf": [
@@ -32790,7 +35182,7 @@
       },
       "additionalProperties": false
     },
-    "TileflowModulePatchRef138": {
+    "TileflowModulePatchRef140": {
       "type": "object",
       "properties": {
         "casing": {
@@ -32867,7 +35259,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef139"
+                      "$ref": "#/$defs/TileflowModulePatchRef141"
                     }
                   ]
                 },
@@ -32877,7 +35269,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef140"
+                      "$ref": "#/$defs/TileflowModulePatchRef142"
                     }
                   ]
                 },
@@ -32887,7 +35279,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef141"
+                      "$ref": "#/$defs/TileflowModulePatchRef143"
                     }
                   ]
                 },
@@ -32897,7 +35289,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef142"
+                      "$ref": "#/$defs/TileflowModulePatchRef144"
                     }
                   ]
                 },
@@ -32907,7 +35299,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef143"
+                      "$ref": "#/$defs/TileflowModulePatchRef145"
                     }
                   ]
                 },
@@ -32917,7 +35309,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef144"
+                      "$ref": "#/$defs/TileflowModulePatchRef146"
                     }
                   ]
                 },
@@ -32927,7 +35319,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef145"
+                      "$ref": "#/$defs/TileflowModulePatchRef147"
                     }
                   ]
                 }
@@ -32967,28 +35359,28 @@
       },
       "additionalProperties": false
     },
-    "TileflowModulePatchRef139": {
-      "$ref": "#/$defs/TileflowModulePatchRef13"
-    },
-    "TileflowModulePatchRef140": {
-      "$ref": "#/$defs/TileflowModulePatchRef27"
-    },
     "TileflowModulePatchRef141": {
       "$ref": "#/$defs/TileflowModulePatchRef13"
     },
     "TileflowModulePatchRef142": {
-      "$ref": "#/$defs/TileflowModulePatchRef38"
+      "$ref": "#/$defs/TileflowModulePatchRef27"
     },
     "TileflowModulePatchRef143": {
-      "$ref": "#/$defs/TileflowModulePatchRef112"
+      "$ref": "#/$defs/TileflowModulePatchRef13"
     },
     "TileflowModulePatchRef144": {
-      "$ref": "#/$defs/TileflowModulePatchRef13"
+      "$ref": "#/$defs/TileflowModulePatchRef38"
     },
     "TileflowModulePatchRef145": {
-      "$ref": "#/$defs/TileflowModulePatchRef13"
+      "$ref": "#/$defs/TileflowModulePatchRef112"
     },
     "TileflowModulePatchRef146": {
+      "$ref": "#/$defs/TileflowModulePatchRef13"
+    },
+    "TileflowModulePatchRef147": {
+      "$ref": "#/$defs/TileflowModulePatchRef13"
+    },
+    "TileflowModulePatchRef148": {
       "type": "object",
       "properties": {
         "bridge": {
@@ -32997,7 +35389,7 @@
               "$ref": "#/$defs/TileflowReset"
             },
             {
-              "$ref": "#/$defs/TileflowModulePatchRef147"
+              "$ref": "#/$defs/TileflowModulePatchRef149"
             }
           ]
         },
@@ -33017,7 +35409,7 @@
               "$ref": "#/$defs/TileflowReset"
             },
             {
-              "$ref": "#/$defs/TileflowModulePatchRef147"
+              "$ref": "#/$defs/TileflowModulePatchRef149"
             }
           ]
         },
@@ -33027,7 +35419,7 @@
               "$ref": "#/$defs/TileflowReset"
             },
             {
-              "$ref": "#/$defs/TileflowModulePatchRef147"
+              "$ref": "#/$defs/TileflowModulePatchRef149"
             }
           ]
         },
@@ -33044,7 +35436,7 @@
       },
       "additionalProperties": false
     },
-    "TileflowModulePatchRef147": {
+    "TileflowModulePatchRef149": {
       "type": "object",
       "properties": {
         "casing": {
@@ -33299,23 +35691,23 @@
       },
       "additionalProperties": false
     },
-    "TileflowModulePatchRef148": {
+    "TileflowModulePatchRef150": {
       "anyOf": [
         {
-          "$ref": "#/$defs/TileflowModulePatchRef149"
+          "$ref": "#/$defs/TileflowModulePatchRef151"
         },
         {
           "$ref": "#/$defs/TileflowModulePatchRef20"
         },
         {
-          "$ref": "#/$defs/TileflowModulePatchRef151"
+          "$ref": "#/$defs/TileflowModulePatchRef153"
         }
       ]
     },
-    "TileflowModulePatchRef149": {
+    "TileflowModulePatchRef151": {
       "anyOf": [
         {
-          "$ref": "#/$defs/TileflowModulePatchRef150"
+          "$ref": "#/$defs/TileflowModulePatchRef152"
         },
         {
           "type": "object",
@@ -33346,7 +35738,7 @@
                   "$ref": "#/$defs/TileflowReset"
                 },
                 {
-                  "$ref": "#/$defs/TileflowModulePatchRef150"
+                  "$ref": "#/$defs/TileflowModulePatchRef152"
                 }
               ]
             }
@@ -33358,11 +35750,11 @@
         }
       ]
     },
-    "TileflowModulePatchRef150": {
+    "TileflowModulePatchRef152": {
       "type": "number",
       "minimum": 0
     },
-    "TileflowModulePatchRef151": {
+    "TileflowModulePatchRef153": {
       "oneOf": [
         {
           "type": "object",
@@ -33406,7 +35798,7 @@
                   "$ref": "#/$defs/TileflowReset"
                 },
                 {
-                  "$ref": "#/$defs/TileflowModulePatchRef152"
+                  "$ref": "#/$defs/TileflowModulePatchRef154"
                 }
               ]
             }
@@ -33444,7 +35836,7 @@
                   "$ref": "#/$defs/TileflowReset"
                 },
                 {
-                  "$ref": "#/$defs/TileflowModulePatchRef152"
+                  "$ref": "#/$defs/TileflowModulePatchRef154"
                 }
               ]
             }
@@ -33482,7 +35874,7 @@
                   "$ref": "#/$defs/TileflowReset"
                 },
                 {
-                  "$ref": "#/$defs/TileflowModulePatchRef152"
+                  "$ref": "#/$defs/TileflowModulePatchRef154"
                 }
               ]
             }
@@ -33497,11 +35889,11 @@
         }
       ]
     },
-    "TileflowModulePatchRef152": {
+    "TileflowModulePatchRef154": {
       "minItems": 1,
       "type": "array",
       "items": {
-        "$ref": "#/$defs/__schema240"
+        "$ref": "#/$defs/__schema246"
       }
     },
     "TileflowTransitModuleResolved": {
@@ -33812,7 +36204,7 @@
           "const": "vegetation"
         },
         "flat": {
-          "$ref": "#/$defs/__schema224"
+          "$ref": "#/$defs/__schema230"
         },
         "mode": {
           "type": "string",
@@ -33986,7 +36378,7 @@
                     "maxItems": 4,
                     "type": "array",
                     "items": {
-                      "$ref": "#/$defs/__schema242"
+                      "$ref": "#/$defs/__schema248"
                     }
                   }
                 },
@@ -33994,13 +36386,13 @@
               }
             },
             "unknownForms": {
-              "$ref": "#/$defs/__schema243"
+              "$ref": "#/$defs/__schema249"
             },
             "regions": {
               "maxItems": 16,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema250"
+                "$ref": "#/$defs/__schema256"
               }
             },
             "crownScale": {
@@ -34078,7 +36470,7 @@
       "type": "object",
       "properties": {
         "flat": {
-          "$ref": "#/$defs/__schema224"
+          "$ref": "#/$defs/__schema230"
         },
         "mode": {
           "type": "string",
@@ -34252,7 +36644,7 @@
                     "maxItems": 4,
                     "type": "array",
                     "items": {
-                      "$ref": "#/$defs/__schema242"
+                      "$ref": "#/$defs/__schema248"
                     }
                   }
                 },
@@ -34260,13 +36652,13 @@
               }
             },
             "unknownForms": {
-              "$ref": "#/$defs/__schema243"
+              "$ref": "#/$defs/__schema249"
             },
             "regions": {
               "maxItems": 16,
               "type": "array",
               "items": {
-                "$ref": "#/$defs/__schema250"
+                "$ref": "#/$defs/__schema256"
               }
             },
             "crownScale": {
@@ -34350,7 +36742,7 @@
               "$ref": "#/$defs/TileflowReset"
             },
             {
-              "$ref": "#/$defs/TileflowModulePatchRef137"
+              "$ref": "#/$defs/TileflowModulePatchRef139"
             }
           ]
         },
@@ -34711,7 +37103,7 @@
                                     "maxItems": 4,
                                     "type": "array",
                                     "items": {
-                                      "$ref": "#/$defs/__schema242"
+                                      "$ref": "#/$defs/__schema248"
                                     }
                                   }
                                 ]
@@ -34730,7 +37122,7 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "$ref": "#/$defs/TileflowModulePatchRef153"
+                      "$ref": "#/$defs/TileflowModulePatchRef155"
                     }
                   ]
                 },
@@ -34743,7 +37135,7 @@
                       "maxItems": 16,
                       "type": "array",
                       "items": {
-                        "$ref": "#/$defs/__schema250"
+                        "$ref": "#/$defs/__schema256"
                       }
                     }
                   ]
@@ -34874,30 +37266,10 @@
       },
       "additionalProperties": false
     },
-    "TileflowModulePatchRef153": {
+    "TileflowModulePatchRef155": {
       "type": "object",
       "properties": {
         "round": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/TileflowReset"
-            },
-            {
-              "$ref": "#/$defs/TileflowModulePatchRef154"
-            }
-          ]
-        },
-        "open": {
-          "oneOf": [
-            {
-              "$ref": "#/$defs/TileflowReset"
-            },
-            {
-              "$ref": "#/$defs/TileflowModulePatchRef155"
-            }
-          ]
-        },
-        "tall": {
           "oneOf": [
             {
               "$ref": "#/$defs/TileflowReset"
@@ -34907,7 +37279,7 @@
             }
           ]
         },
-        "conifer": {
+        "open": {
           "oneOf": [
             {
               "$ref": "#/$defs/TileflowReset"
@@ -34917,7 +37289,7 @@
             }
           ]
         },
-        "columnar": {
+        "tall": {
           "oneOf": [
             {
               "$ref": "#/$defs/TileflowReset"
@@ -34927,7 +37299,7 @@
             }
           ]
         },
-        "palm": {
+        "conifer": {
           "oneOf": [
             {
               "$ref": "#/$defs/TileflowReset"
@@ -34936,17 +37308,29 @@
               "$ref": "#/$defs/TileflowModulePatchRef159"
             }
           ]
+        },
+        "columnar": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef160"
+            }
+          ]
+        },
+        "palm": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/TileflowReset"
+            },
+            {
+              "$ref": "#/$defs/TileflowModulePatchRef161"
+            }
+          ]
         }
       },
       "additionalProperties": false
-    },
-    "TileflowModulePatchRef154": {
-      "type": "number",
-      "minimum": 0
-    },
-    "TileflowModulePatchRef155": {
-      "type": "number",
-      "minimum": 0
     },
     "TileflowModulePatchRef156": {
       "type": "number",
@@ -34961,6 +37345,14 @@
       "minimum": 0
     },
     "TileflowModulePatchRef159": {
+      "type": "number",
+      "minimum": 0
+    },
+    "TileflowModulePatchRef160": {
+      "type": "number",
+      "minimum": 0
+    },
+    "TileflowModulePatchRef161": {
       "type": "number",
       "minimum": 0
     },
@@ -34985,10 +37377,10 @@
           "$ref": "#/$defs/__schema104"
         },
         "bathymetryLandforms": {
-          "$ref": "#/$defs/__schema255"
+          "$ref": "#/$defs/__schema261"
         },
         "bathymetryWaterNames": {
-          "$ref": "#/$defs/__schema255"
+          "$ref": "#/$defs/__schema261"
         },
         "bodies": {
           "$ref": "#/$defs/__schema214"
@@ -35043,10 +37435,10 @@
           "$ref": "#/$defs/__schema104"
         },
         "bathymetryLandforms": {
-          "$ref": "#/$defs/__schema255"
+          "$ref": "#/$defs/__schema261"
         },
         "bathymetryWaterNames": {
-          "$ref": "#/$defs/__schema255"
+          "$ref": "#/$defs/__schema261"
         },
         "bodies": {
           "$ref": "#/$defs/__schema214"
@@ -35128,7 +37520,7 @@
               "$ref": "#/$defs/TileflowReset"
             },
             {
-              "$ref": "#/$defs/TileflowModulePatchRef160"
+              "$ref": "#/$defs/TileflowModulePatchRef162"
             }
           ]
         },
@@ -35138,7 +37530,7 @@
               "$ref": "#/$defs/TileflowReset"
             },
             {
-              "$ref": "#/$defs/TileflowModulePatchRef160"
+              "$ref": "#/$defs/TileflowModulePatchRef162"
             }
           ]
         },
@@ -35251,7 +37643,7 @@
       },
       "additionalProperties": false
     },
-    "TileflowModulePatchRef160": {
+    "TileflowModulePatchRef162": {
       "type": "object",
       "properties": {
         "maxZoom": {
@@ -35421,7 +37813,7 @@
                 "minItems": 1,
                 "type": "array",
                 "items": {
-                  "$ref": "#/$defs/__schema258"
+                  "$ref": "#/$defs/__schema264"
                 }
               },
               "placement": {
@@ -35456,7 +37848,7 @@
       "additionalProperties": {
         "oneOf": [
           {
-            "$ref": "#/$defs/__schema263"
+            "$ref": "#/$defs/__schema269"
           },
           {
             "$ref": "#/$defs/TileflowRemove"

@@ -9,6 +9,7 @@ import {
   labels,
   land,
   landforms,
+  nautical,
   renderPass,
   transit,
   water,
@@ -128,6 +129,19 @@ export const soundingsTheme = defineOfficialTheme({
       rail: soundingsPalette.inkMuted,
     },
   },
+  // Nautical marks use the chart symbols of this directory. They are single-colour silhouettes:
+  // buoys and light flares take each mark's own colour from the data, the others print in ink.
+  images: {
+    'nautical.buoy': 'soundings-buoy-pillar',
+    'nautical.buoy.cardinal': 'soundings-buoy-cardinal',
+    'nautical.buoy.port': 'soundings-buoy-port',
+    'nautical.buoy.starboard': 'soundings-buoy-starboard',
+    'nautical.harbour': 'soundings-harbor',
+    'nautical.light': 'soundings-light-flare',
+    'nautical.lighthouse': 'soundings-lighthouse',
+    'nautical.port': 'soundings-harbor',
+    'nautical.wreck': 'soundings-wreck',
+  },
   typography: {
     font: 'Noto Sans Regular',
     letterSpacing: 0.025,
@@ -144,13 +158,16 @@ export const soundingsTheme = defineOfficialTheme({
   },
 });
 
+const chartInk = {color: soundingsPalette.ink, haloColor: soundingsPalette.water} as const;
+
 /**
  * A self-contained bathymetric-chart map. It shares only Tileflow's public
  * compiler contract; it neither imports nor extends the Streets map.
  *
  * GEBCO supplies broad bathymetric bands and a continuous seabed model rather
  * than navigation-grade survey soundings. Dashed band edges and depth labels
- * are contextual, and this map must not be used for navigation.
+ * are contextual. Nautical marks are reference cartography, and this map must
+ * not be used for navigation.
  */
 export const soundings = bindOfficialMapTheme(
   defineMap({
@@ -184,7 +201,7 @@ export const soundings = bindOfficialMapTheme(
           }),
         },
       }),
-      nautical: false,
+      nautical: {},
     },
     terrain: 'none',
     modules: {
@@ -456,9 +473,21 @@ export const soundings = bindOfficialMapTheme(
           },
         },
       }),
+      // Marks keep the module's data-driven colours and placement; Soundings only sets its
+      // printed ink. Technical magenta stays on operational areas, traffic separation and cables.
+      nautical: nautical({
+        beacons: {marker: {strokeColor: soundingsPalette.ink}},
+        buoys: {icon: {haloColor: soundingsPalette.ink}, text: chartInk},
+        harbours: {icon: chartInk, text: {...chartInk, color: soundingsPalette.inkMuted}},
+        hazards: {marker: {strokeColor: soundingsPalette.ink}, text: chartInk},
+        lighthouses: {icon: chartInk, text: chartInk},
+        lights: {text: {...chartInk, color: soundingsPalette.inkMuted}},
+        ports: {icon: chartInk, text: chartInk},
+        wrecks: {icon: chartInk, text: chartInk},
+      }),
       // A broad transport category also contains airports, bus terminals and rail stations.
-      // Painting all of them with a harbor glyph would be semantically false; Soundings waits
-      // for its dedicated nautical harbor layer instead of reinterpreting the World POI contract.
+      // Painting all of them with a harbor glyph would be semantically false; harbours and ports
+      // come from the dedicated Nautical layer instead of reinterpreting the World POI contract.
       poi: disable(),
       roads: disable(),
       transit: withRenderStack(

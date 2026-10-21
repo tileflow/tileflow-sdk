@@ -4,7 +4,14 @@
 // whether shadows and contact shadow fall, the building models the map places in its city with the
 // colours of their parts, and the tileset of Tileflow's landmarks it shows. The compiler publishes it, resolved for one theme, in the style's
 // metadata; the renderer reads it for every theme on screen. It has no DOM dependency.
+import {
+  readBuildingFloodLight,
+  readModelRoleLighting,
+  type TileflowBuildingFloodLight,
+  type TileflowModelRoleLighting,
+} from './building-illumination';
 import {type TileflowModelPart, tileflowModelParts} from './models-3d-model';
+import type {TileflowModelLightingRole} from './models-3d-model';
 
 /** The style metadata key under which a compiled map describes its 3D buildings. */
 export const tileflowBuildingsMetadataKey = 'tileflow:buildings';
@@ -33,11 +40,23 @@ export type TileflowBuildings3DDesign = Readonly<{
   edgeColor?: string;
   /** How bright the buildings light the street at night, from 0 to 2. */
   nightLight: number;
+  /** Height-selected light on ordinary buildings and the ground, independent of shop windows. */
+  floodLight?: TileflowBuildingFloodLight;
+  /** Emission by architectural role, independent of model palette slots. */
+  modelLighting?: Readonly<Partial<Record<TileflowModelLightingRole, TileflowModelRoleLighting>>>;
   /** Invented night windows, lit by rooms: decoration, not data. */
   windows: boolean;
+  /**
+   * The zoom bands, `[from, to]`, the buildings and the placed models and landmarks come in over:
+   * across its band each fades in and rises from the ground. The renderer's defaults stand for a
+   * band left out.
+   */
+  entrance?: Readonly<{buildings?: readonly [number, number]; models?: readonly [number, number]}>;
   /** Shadows from the sun, and contact shadow at the foot of the walls. */
   shadows: boolean;
   occlusion: boolean;
+  /** Strength of prepared model ambient visibility; zero leaves the sky contribution unchanged. */
+  modelOcclusion?: number;
   /** Building models the map places in its city, each replacing the buildings under it. */
   models?: readonly TileflowBuildingModelPlacement[];
   /** The colours of the models' parts; a part without one takes it from the building colour. */
@@ -75,6 +94,7 @@ export const tileflowDefaultBuildings3DDesign = Object.freeze({
   windows: false,
   shadows: true,
   occlusion: true,
+  modelOcclusion: 0.75,
 } satisfies TileflowBuildings3DDesign);
 
 /** The metadata a compiled style publishes for its 3D buildings. */
@@ -99,6 +119,9 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
   const within = (number: unknown, high: number, fallback: number) =>
     typeof number === 'number' && number >= 0 && number <= high ? number : fallback;
   const defaults = tileflowDefaultBuildings3DDesign;
+  const floodLight = readBuildingFloodLight(value.floodLight);
+  const modelLighting = readModelRoleLighting(value.modelLighting);
+
   return {
     source,
     layers: {
@@ -113,18 +136,60 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
     verticalGradient: value.verticalGradient !== false,
     ...(typeof value.edgeColor === 'string' ? {edgeColor: value.edgeColor} : {}),
     nightLight: within(value.nightLight, 2, 0),
+    ...(floodLight ? {floodLight} : {}),
+    ...(modelLighting ? {modelLighting} : {}),
     windows: value.windows === true,
+    ...readTileflowBuildingsEntrance(value.entrance),
     shadows: typeof value.shadows === 'boolean' ? value.shadows : defaults.shadows,
     occlusion: typeof value.occlusion === 'boolean' ? value.occlusion : defaults.occlusion,
+    modelOcclusion: within(value.modelOcclusion, 1, defaults.modelOcclusion),
     ...modelsOf(value.models),
     ...modelColorsOf(value.modelColors),
     ...landmarksOf(value.landmarks),
   };
 }
 
+/** The entrance bands a design gives, skipping any that is not a rising band of zooms. */
+export function readTileflowBuildingsEntrance(
+  value: unknown,
+): Pick<TileflowBuildings3DDesign, 'entrance'> {
+  if (!isRecord(value)) return {};
+  const band = (entry: unknown): readonly [number, number] | undefined =>
+    Array.isArray(entry) &&
+    entry.length === 2 &&
+    entry.every((zoom) => typeof zoom === 'number' && zoom >= 0 && zoom <= 24) &&
+    entry[0] < entry[1]
+      ? [entry[0], entry[1]]
+      : undefined;
+  const buildings = band(value.buildings);
+  const models = band(value.models);
+  return buildings || models
+    ? {entrance: {...(buildings ? {buildings} : {}), ...(models ? {models} : {})}}
+    : {};
+}
+
 const modelId = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 /** The most models one map places. */
 export const tileflowBuildingModelPlacementLimit = 256;
+
+const teamModelPrefix = 'tileflow://team-models/';
+
+/**
+ * The address a hosted build gives a placement of one of the map's own models: a placeholder that
+ * Tileflow replaces, when the map is deployed, with that model's address in the map's Team.
+ */
+export function tileflowTeamModelUrl(model: string): string {
+  if (!modelId.test(model) || model.length > 64)
+    throw new RangeError(`"${model}" is not a 3D model name.`);
+  return `${teamModelPrefix}${model}`;
+}
+
+/** The Team model a placement's address is the placeholder of, if it is one. */
+export function readTileflowTeamModelName(url: string): string | undefined {
+  if (!url.startsWith(teamModelPrefix)) return undefined;
+  const model = url.slice(teamModelPrefix.length);
+  return modelId.test(model) && model.length <= 64 ? model : undefined;
+}
 
 /** The placements a design names, skipping any it cannot read. */
 function modelsOf(value: unknown): {models?: readonly TileflowBuildingModelPlacement[]} {

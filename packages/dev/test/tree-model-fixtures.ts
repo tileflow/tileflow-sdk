@@ -2,6 +2,12 @@
 
 export type GlbPart = {
   material?: string;
+  lightingRole?: string;
+  materialData?: Record<string, unknown>;
+  texcoords?: number[];
+  texcoords1?: number[];
+  vertexColors?: number[];
+  nodeExtras?: Record<string, unknown>;
   /** x, y, z per vertex, Y up. */
   positions: number[];
   indices: number[];
@@ -9,7 +15,11 @@ export type GlbPart = {
   translation?: [number, number, number];
 };
 
-export function writeGlb(parts: GlbPart[], extra: Record<string, unknown> = {}): Uint8Array {
+export function writeGlb(
+  parts: GlbPart[],
+  extra: Record<string, unknown> = {},
+  images: readonly {bytes: Uint8Array; mimeType: string}[] = [],
+): Uint8Array {
   const chunks: Uint8Array[] = [];
   let offset = 0;
   const bufferViews: unknown[] = [];
@@ -17,10 +27,15 @@ export function writeGlb(parts: GlbPart[], extra: Record<string, unknown> = {}):
   const meshes: unknown[] = [];
   const materials: unknown[] = [];
   const nodes: unknown[] = [];
-  const push = (bytes: Uint8Array, target: number) => {
+  const push = (bytes: Uint8Array, target?: number) => {
     const padded = new Uint8Array(Math.ceil(bytes.byteLength / 4) * 4);
     padded.set(bytes);
-    bufferViews.push({buffer: 0, byteOffset: offset, byteLength: bytes.byteLength, target});
+    bufferViews.push({
+      buffer: 0,
+      byteOffset: offset,
+      byteLength: bytes.byteLength,
+      ...(target ? {target} : {}),
+    });
     chunks.push(padded);
     offset += padded.byteLength;
     return bufferViews.length - 1;
@@ -49,22 +64,41 @@ export function writeGlb(parts: GlbPart[], extra: Record<string, unknown> = {}):
       type: 'SCALAR',
     });
     const indices = accessors.length - 1;
+    const attributes: Record<string, number> = {POSITION: position};
+    for (const [name, values, size] of [
+      ['TEXCOORD_0', part.texcoords, 2],
+      ['TEXCOORD_1', part.texcoords1, 2],
+      ['COLOR_0', part.vertexColors, 4],
+    ] as const) {
+      if (!values) continue;
+      const data = new Float32Array(values);
+      attributes[name] = accessors.length;
+      accessors.push({
+        bufferView: push(new Uint8Array(data.buffer), 34962),
+        componentType: 5126,
+        count: data.length / size,
+        type: size === 2 ? 'VEC2' : 'VEC4',
+      });
+    }
     let material: number | undefined;
     if (part.material !== undefined) {
       materials.push({
         name: part.material,
+        ...(part.lightingRole === undefined
+          ? {}
+          : {extras: {tileflow: {lightingRole: part.lightingRole}}}),
         pbrMetallicRoughness: {baseColorFactor: [...(part.colour ?? [1, 1, 1]), 1]},
+        ...part.materialData,
       });
       material = materials.length - 1;
     }
     meshes.push({
-      primitives: [
-        {attributes: {POSITION: position}, indices, ...(material === undefined ? {} : {material})},
-      ],
+      primitives: [{attributes, indices, ...(material === undefined ? {} : {material})}],
     });
     nodes.push({
       mesh: meshes.length - 1,
       ...(part.translation ? {translation: part.translation} : {}),
+      ...(part.nodeExtras ? {extras: part.nodeExtras} : {}),
     });
   }
   const json = {
@@ -74,6 +108,14 @@ export function writeGlb(parts: GlbPart[], extra: Record<string, unknown> = {}):
     nodes,
     meshes,
     materials,
+    ...(images.length
+      ? {
+          images: images.map((image) => ({
+            bufferView: push(image.bytes),
+            mimeType: image.mimeType,
+          })),
+        }
+      : {}),
     accessors,
     bufferViews,
     buffers: [{byteLength: offset}],

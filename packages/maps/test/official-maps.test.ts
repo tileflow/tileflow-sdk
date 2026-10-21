@@ -16,6 +16,8 @@ import {
   readTileflowBuildings3D,
   readTileflowStreetLights,
   readTileflowVegetation3D,
+  refine,
+  reset,
   resolveMap,
   vectorTiles,
 } from '@tileflow/core';
@@ -146,6 +148,7 @@ const officialIconIds = [
   'siegfried-water-lines',
   'siegfried-wetland',
   'soundings-buoy-cardinal',
+  'soundings-buoy-pillar',
   'soundings-buoy-port',
   'soundings-buoy-starboard',
   'soundings-harbor',
@@ -182,6 +185,7 @@ const map1777PatternIds = [
 ] as const;
 const soundingsIconIds = [
   'soundings-buoy-cardinal',
+  'soundings-buoy-pillar',
   'soundings-buoy-port',
   'soundings-buoy-starboard',
   'soundings-harbor',
@@ -531,20 +535,20 @@ test('Soundings is self-contained and references only its bathymetric-map artwor
   }
 
   const serialized = JSON.stringify(style);
-  for (const id of ['soundings-paper-grain', 'soundings-water-dots']) {
-    assert.match(serialized, new RegExp(`"${id}"`, 'u'), `Soundings does not reference ${id}`);
-  }
-  assert.doesNotMatch(serialized, /"soundings-harbor"/u);
+  // Chart patterns and the Nautical point symbols come only from the Soundings directory.
   for (const id of [
     'soundings-buoy-cardinal',
+    'soundings-buoy-pillar',
     'soundings-buoy-port',
     'soundings-buoy-starboard',
+    'soundings-harbor',
     'soundings-light-flare',
     'soundings-lighthouse',
-    'soundings-rock-awash',
+    'soundings-paper-grain',
+    'soundings-water-dots',
     'soundings-wreck',
   ]) {
-    assert.doesNotMatch(serialized, new RegExp(`"${id}"`, 'u'), `${id} leaked into Soundings`);
+    assert.match(serialized, new RegExp(`"${id}"`, 'u'), `Soundings does not reference ${id}`);
   }
 });
 
@@ -1381,4 +1385,24 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
     assert.equal(pictogram(properties), expected, JSON.stringify(properties));
   }
   assert.deepEqual(validateStyleMin(style as never), []);
+});
+
+test('Streets buildings switch to native extrusions only without the flat render stack', () => {
+  const extend = (buildings: Parameters<typeof refine>[0]) =>
+    defineMap({
+      id: 'streets-extrusions',
+      version: 1,
+      extends: streets,
+      modules: {buildings: refine(buildings)},
+    });
+  assert.throws(() => compileOfficialMap(extend({mode: '3d'}), 'light'), {
+    code: 'unknown-or-circular-anchor',
+    message:
+      /beside buildings\.flat\.fill, which buildings draws only in mode 'flat'.*refine\(\{mode: '3d', renderStack: reset\(\)\}\)/u,
+  });
+
+  const layerIds = compileOfficialMap(extend({mode: '3d', renderStack: reset()}), 'light')
+    .layers.map(({id}) => id)
+    .filter((id) => id.startsWith('tileflow-buildings'));
+  assert.deepEqual(layerIds, ['tileflow-buildings-3d']);
 });

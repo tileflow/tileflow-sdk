@@ -180,8 +180,8 @@ layer is a protection tint, while urban parks and gardens come from
 `landcover.class=grass/subclass=park|garden`. The ambiguous legacy `park` class is therefore not
 a public land-cover target.
 
-Tileflow World V1 makes `bathymetry`, `globallandcover`, `circular_feature`, `sidewalk`, and
-`street_furniture` mandatory. Use `tileflowWorldV1Schema()` for that product instead of making raw
+Tileflow World V1 makes `bathymetry`, `globallandcover`, `circular_feature`, `sidewalk`,
+`street_furniture`, and `transportation_outline` mandatory. Use `tileflowWorldV1Schema()` for that product instead of making raw
 layer names part of a style. Publication tooling calls `validateTileflowWorldV1Tilejson(...)` and
 fails closed unless each layer occurs exactly once, declares its contracted native zooms, and
 advertises the typed fields consumed by the maps. This includes bathymetry z0–z9, global land cover
@@ -212,48 +212,29 @@ export default defineMap({
   marine: 'chart', // 'none' | 'bathymetry' | 'nautical' | 'chart'
   modules: {
     nautical: nautical({
-      soundings: {minZoom: 13},
-      aids: {minZoom: 11},
-      lights: {minZoom: 12},
-      hazards: {minZoom: 12},
-      hazardAreas: {
-        fill: {opacity: fixed(0.1, {reason: 'Chart hazard wash is invariant'})},
-      },
-      wrecks: {minZoom: 12},
-      wreckAreas: {
-        outline: {opacity: fixed(0.6, {reason: 'Chart wreck outline is invariant'})},
-      },
-      reefs: {fill: {opacity: fixed(0.3, {reason: 'Chart reef wash is invariant'})}},
+      buoys: {minZoom: 12},
+      lights: {minZoom: 9},
       navigationAreas: {
         fill: {opacity: fixed(0.05, {reason: 'Chart navigation-area wash is invariant'})},
       },
-      coverage: {outline: {visible: false}},
-      labels: {
-        navigationAreas: {minZoom: 11},
-        reefs: {minZoom: 13},
-      },
+      reefs: {fill: {opacity: fixed(0.3, {reason: 'Chart reef wash is invariant'})}},
+      labels: {navigationAreas: {minZoom: 12}},
     }),
   },
 });
 ```
 
 `bathymetry` resolves to vector source `tileflow-bathymetry` and supplies the 13-stop
-`bathymetry-v1` band contract to `water(...)`. `nautical` resolves to `tileflow-nautical`; the
-`nautical(...)` module
-styles its `sounding`, `aid`, `light`, `hazard`, `wreck`, `reef`, `navigation_area`, and `coverage`
-layers. The schema also names the product's provider-neutral provenance fields (`provenance`,
-`provider`, `cell`, `edition`, `update`, `scale`, `coverage`, and `licence`). `chart` enables both.
-Point features label depth, name, or light character as applicable. The `lighthouses` symbol style
-targets `aid` points whose canonical `class` is `lighthouse`, leaving other aids under `aids`.
-Polygon reefs, navigation
-areas, hazards, wrecks, and named/provider coverage have separate collision-aware labels under
-`nautical({labels: {...}})`; unnamed coverage does not emit empty text.
+`bathymetry-v1` band contract to `water(...)`. `nautical` resolves to `tileflow-nautical` at
+`/tiles/nautical/tiles.json`; the `nautical(...)` module draws its `nautical-v1` buoys, beacons,
+lighthouses, lights, hazards, wrecks, reefs, navigation areas, routes, cables, harbours, ports, and
+a restrained coverage indication. `chart` enables both. Every map that draws Nautical declares a
+"Not for navigation" notice, which the browser runtimes render on the map. The
+[Nautical marks guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/nautical-marks.md)
+describes the schema, the semantic groups, the theme image tokens, and the notice.
 Core does not hard-code a nautical provider or attribution: the selected TileJSON owns its actual
 coverage and attribution, and derived vector tiles are not represented as a certified ENC for
-navigation. The V1 geometry contract preserves `sounding`, `aid`, and `light` as points;
-`reef`, `navigation_area`, and `coverage` as polygons; and both point and polygon geometries for
-`hazard` and `wreck`. Point symbols and polygon areas compile separately, without fabricated
-centroids.
+navigation. Point symbols and polygon areas compile separately, without fabricated centroids.
 Advanced callers can override either TileJSON URL, attribution, or source ID and can set the other
 member to `false`:
 
@@ -483,7 +464,10 @@ add `tileflow:sources` plus `tileflow:sourceRequirements` for independent produc
 Detailed city datasets can bind `sidewalk`, `streetFurniture`, and `circularFeature` source layers
 through `openMapTiles({layers, fields})`. When present, `roads.sidewalks` owns source-backed
 pedestrian polygons, `roads.crossings` owns oriented crossing icons, and `roads.roundabouts` owns
-metric circular road rings. These bindings are optional: a generic OpenMapTiles source remains
+metric circular road rings. A `transportationOutline` binding names lines that trace the outer
+boundary of each road area; when bound, `roads.areas` outlines stroke those lines instead of the
+area polygons, so the holes of a plaza (tree pits, planting beds) are not stroked. These bindings
+are optional: a generic OpenMapTiles source remains
 valid and the compiler omits unsupported detail instead of inventing geometry. Crossing icons are
 explicit because the data contract cannot assume a sprite name. They require positive physical
 `markings` evidence and reject `crossing=no`; both fields are semantic bindings, so custom schemas

@@ -162,6 +162,7 @@ const preparedOfficialAssets = {
         'siegfried-water-lines',
         'siegfried-wetland',
         'soundings-buoy-cardinal',
+        'soundings-buoy-pillar',
         'soundings-buoy-port',
         'soundings-buoy-starboard',
         'soundings-harbor',
@@ -324,6 +325,25 @@ for (const [mapName, parent] of Object.entries(officialMaps)) {
 }
 
 for (const [mapName, parent] of Object.entries(officialMaps)) {
+  test(`${mapName}: opt-in Nautical compiles with its not-for-navigation notice`, () => {
+    const child = defineMap({
+      id: `${mapName}-nautical`,
+      version: 1,
+      extends: parent,
+      marine: 'nautical',
+    });
+    const style = createStyle(child, preparedOfficialAssets);
+    assert.deepEqual(validateStyleMin(style as never), []);
+    assert.ok(
+      style.layers.some((layer) => layer.source === publicCore.tileflowNauticalSourceId),
+      `${mapName} drew no Nautical layer`,
+    );
+    assert.deepEqual(
+      publicCore.readTileflowNotices(style.metadata).map(({id}) => id),
+      [publicCore.tileflowNauticalNotice.id],
+    );
+  });
+
   test(`${mapName}: all official contributions bind through a complete data schema remap`, () => {
     const canonical = tileflowWorldV1Schema();
     const fields = Object.fromEntries(

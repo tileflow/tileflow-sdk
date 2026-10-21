@@ -15,18 +15,14 @@ import {
   compareCodeUnits,
   encodeTileflowModels,
   encodeTileflowTreeModel,
-  hashTileflowModelBundleManifest,
   readTileflowLandmarkTileFootprints,
   serializeTileflowLandmarkRegion,
   type TileflowLandmarkFootprint,
   type TileflowLandmarkRegion,
   tileflowLandmarkTileOf,
-  tileflowModelBundleFileName,
-  tileflowModelBundleLimits,
-  type TileflowModelBundleManifest,
-  tileflowModelContentType,
   type TileflowModelDirectory,
   type TileflowModelEntry,
+  tileflowModelFileName,
   type TileflowModelMesh,
   type TileflowTreeModel,
   tileflowTreeModelLimits,
@@ -67,6 +63,8 @@ export type PreparedTileflowBuildingModel = {
   fileName: string;
   bytes: Uint8Array;
   sha256: string;
+  /** The glTF binaries it was prepared from, nearest level first. */
+  sources: readonly Readonly<{level: 'near' | 'mid' | 'far'; sha256: string; byteLength: number}>[];
 };
 
 /** A building model's glTF binaries, nearest level first. */
@@ -170,7 +168,7 @@ export function encodeTileflowLandmarkRegion(region: TileflowLandmarkRegion): {
 
 /** A building model, read from its glTF binaries, with its footprint. */
 function buildingModelEntry(id: string, levels: TileflowBuildingModelLevels): TileflowModelEntry {
-  const primitives = readTileflowGltfTriangles(levels.near);
+  const primitives = readTileflowGltfTriangles(levels.near, {materials: true});
   if (!isTileflowBuildingModel(primitives))
     throw new TileflowGltfError(
       'is not a building model; name each material surface, secondary, glass, accent or roof',
@@ -184,50 +182,6 @@ function buildingModelEntry(id: string, levels: TileflowBuildingModelLevels): Ti
     footprint: tileflowBuildingModelFootprint(
       tileflowBuildingModelDeclaredFootprint(primitives) ?? meshes[0]!,
     ),
-  };
-}
-
-/** A map's building models as the model bundle a hosted deploy uploads before its styles. */
-export type TileflowModelBundle = {
-  /** The SHA-256 of the manifest's canonical JSON. */
-  contentHash: string;
-  manifest: TileflowModelBundleManifest;
-  /** Each model's prepared file, named as the manifest names it. */
-  files: {contentType: string; fileName: string; source: Uint8Array}[];
-};
-
-/**
- * Bundles a map's prepared building models, or returns undefined when it has none. Throws a
- * `RangeError` an author can act on when the models together are too large to host.
- */
-export async function createTileflowModelBundle(
-  buildings: Readonly<Record<string, PreparedTileflowBuildingModel>>,
-): Promise<TileflowModelBundle | undefined> {
-  const entries = Object.entries(buildings).sort(([a], [b]) => compareCodeUnits(a, b));
-  if (entries.length === 0) return undefined;
-  const totalBytes = entries.reduce((total, [, model]) => total + model.bytes.byteLength, 0);
-  if (totalBytes > tileflowModelBundleLimits.maxPackageBytes)
-    throw new RangeError(
-      `The map's building models together are ${totalBytes} bytes once prepared; a hosted map takes at most ${tileflowModelBundleLimits.maxPackageBytes}. Simplify or remove models.`,
-    );
-  const manifest: TileflowModelBundleManifest = {
-    format: 'tileflow-model-bundle-v1',
-    models: entries.map(([id, model]) => ({
-      byteLength: model.bytes.byteLength,
-      contentType: tileflowModelContentType,
-      file: model.fileName,
-      id,
-      sha256: model.sha256,
-    })),
-  };
-  return {
-    contentHash: await hashTileflowModelBundleManifest(manifest),
-    manifest,
-    files: entries.map(([, model]) => ({
-      contentType: tileflowModelContentType,
-      fileName: model.fileName,
-      source: model.bytes,
-    })),
   };
 }
 
@@ -331,6 +285,7 @@ export async function prepareTileflowMapTreeModels(
     }
     if (isTileflowBuildingModel(primitives)) {
       const files: {near: Uint8Array; mid?: Uint8Array; far?: Uint8Array} = {near: nearBytes};
+      const sources: PreparedTileflowBuildingModel['sources'][number][] = [];
       let failing = entry.near;
       try {
         for (const level of ['near', 'mid', 'far'] as const) {
@@ -340,15 +295,18 @@ export async function prepareTileflowMapTreeModels(
           const bytes = level === 'near' ? nearBytes : new Uint8Array(await readFile(file.path));
           files[level] = bytes;
           // Each level is read on its own first, so a problem names its file.
-          if (level !== 'near') prepareTileflowBuildingModelMesh(bytes);
-          identities.push({id, level, sha256: createHash('sha256').update(bytes).digest('hex')});
+          if (level !== 'near') prepareTileflowBuildingModelMesh(bytes, {ambientOcclusion: false});
+          const sha256 = createHash('sha256').update(bytes).digest('hex');
+          identities.push({id, level, sha256});
+          sources.push({level, sha256, byteLength: bytes.byteLength});
         }
         failing = entry.near;
         const prepared = await prepareTileflowBuildingModel(id, files);
         buildings[id] = {
-          fileName: tileflowModelBundleFileName(id, prepared.sha256),
+          fileName: tileflowModelFileName(id, prepared.sha256),
           bytes: prepared.bytes,
           sha256: prepared.sha256,
+          sources,
         };
       } catch (error) {
         issues.push({

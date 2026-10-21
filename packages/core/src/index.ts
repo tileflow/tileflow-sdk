@@ -415,6 +415,12 @@ export {
   tileflowNauticalSourceId,
   tileflowNauticalV1Schema,
 } from './marine';
+export {
+  readTileflowNotices,
+  tileflowNoticeLimits,
+  tileflowNoticesMetadataKey,
+  type TileflowMapNotice,
+} from './notices';
 export type {
   ResolvedBathymetry,
   ResolvedBathymetryRelief,
@@ -446,6 +452,8 @@ export {
   poi,
   roads,
   tileflowLandformClasses,
+  tileflowNauticalImageRoles,
+  tileflowNauticalNotice,
   tileflowPoiIconOnlyTypes,
   tileflowPoiImageRoles,
   tileflowRoadClasses,
@@ -583,15 +591,6 @@ export type {
   TileflowFontBundleFontFace,
   TileflowFontBundleManifest,
 } from './font-bundle';
-export {
-  hashTileflowModelBundleManifest,
-  serializeTileflowModelBundleManifest,
-  tileflowModelBundleContentHashSchema,
-  tileflowModelBundleFileName,
-  tileflowModelBundleLimits,
-  tileflowModelBundleManifestSchema,
-} from './model-bundle';
-export type {TileflowModelBundleManifest, TileflowModelBundleModel} from './model-bundle';
 export {diffTileflowIconPackageManifests} from './icon-diff';
 export type {TileflowIconManifestDiff} from './icon-diff';
 export {
@@ -682,32 +681,53 @@ export {
 } from './trees-3d-model';
 export {
   readTileflowBuildings3D,
-  tileflowBuildingModelPlacementLimit,
-  tileflowBuildingsMetadataKey,
+  readTileflowTeamModelName,
   type TileflowBuildingModelPlacement,
+  tileflowBuildingModelPlacementLimit,
   type TileflowBuildings3DDesign,
+  tileflowBuildingsMetadataKey,
+  tileflowTeamModelUrl,
 } from './buildings-3d-design';
 export {
   tileflowInsideRings,
   tileflowModelLimits,
+  tileflowModelLightingRoles,
+  tileflowModelDefaultLightingRoles,
   tileflowModelParts,
   tileflowModelVertexBytes,
   tileflowRingsOverlap,
   type TileflowModel,
   type TileflowModelBytes,
   type TileflowModelLevelBytes,
+  type TileflowModelLightingRole,
   type TileflowModelMesh,
   type TileflowModelPart,
 } from './models-3d-model';
+export type {TileflowModelEmissionGradient} from './building-illumination';
+export {
+  checkTileflowModelSurface,
+  tileflowModelImageSize,
+  tileflowModelSurfaceLimits,
+  tileflowModelTextureChannels,
+  type TileflowModelEmitter,
+  type TileflowModelMaterial,
+  type TileflowModelMaterialRange,
+  type TileflowModelSurface,
+  type TileflowModelTexture,
+  type TileflowModelTextureReference,
+} from './models-3d-materials';
 export {
   decodeTileflowModels,
   encodeTileflowModels,
   readTileflowLandmarkTileFootprints,
   readTileflowModelFileIds,
+  readTileflowModelFileSummary,
   tileflowModelContentType,
+  tileflowModelFileName,
   type TileflowModelCompressor,
   type TileflowModelDecompressor,
   type TileflowModelEntry,
+  type TileflowModelFileSummary,
 } from './models-3d-file';
 export {
   readTileflowLandmarkRegion,

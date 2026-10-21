@@ -226,6 +226,11 @@ annotation or POI targets but no popup, callout, tooltip, sheet, panel or modal 
 The mounted component does not add location, selection-presentation UI, offline product APIs, an
 Expo config plugin, CLI behavior, deployment or publication. The package remains pre-release.
 
+Native maps do not draw a map's 3D scene. Core's 3D buildings, Tileflow landmarks, Team building
+models, 3D trees and street lights are WebGL layers for MapLibre GL JS, which the web `Map`
+components mount by default; a native map shows the style's 2D layers and the vegetation fallback
+the map declares.
+
 Source and tests describe contracts; they do not establish that a native build, simulator/device run, Hosted service, app-store submission or package publication succeeded. Qualify the exact source revision in the intended host before relying on it.
 
 ## Foreground location is application-owned

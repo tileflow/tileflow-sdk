@@ -6,7 +6,10 @@ import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
 import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../boundary-areas/compile';
-import {resolveMarine} from '../marine';
+import {type ResolvedMarine, resolveMarine} from '../marine';
+import {buildingTargetsOfOtherModes} from '../modules/buildings/compiler';
+import {tileflowNauticalNotice} from '../modules/nautical';
+import {type TileflowMapNotice, tileflowNoticesMetadataKey} from '../notices';
 import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
 import {
   insertTileflowOverlays,
@@ -371,7 +374,11 @@ function compileSemanticStyleInternal(
   );
   const requestedRenderOperations = domainIR.renderOperations;
   const stackedFamilies = runCompilationPhase('render-stack', () =>
-    applyCompiledRenderStacks(assembledFamilies, requestedRenderOperations),
+    applyCompiledRenderStacks(
+      assembledFamilies,
+      requestedRenderOperations,
+      buildingTargetsOfOtherModes(modules.buildings),
+    ),
   );
   const plannedFamilies = runCompilationPhase('physical-planner', () =>
     planTileflowLayerFamilies(stackedFamilies),
@@ -605,6 +612,7 @@ function compileSemanticStyleInternal(
   }
 
   const atmosphere = resolveTileflowAtmosphere(config.atmosphere);
+  const notices = compiledNotices(layers, marine);
   const style: MapLibreStyle = {
     ...(atmosphere ? {sky: compileTileflowSky(atmosphere)} : {}),
     version: 8,
@@ -676,6 +684,7 @@ function compileSemanticStyleInternal(
         .map(([name]) => name)
         .sort(),
       ...(config.view ? {'tileflow:view': config.view} : {}),
+      ...(notices.length > 0 ? {[tileflowNoticesMetadataKey]: notices} : {}),
     },
   };
   const report: TileflowCompilationReport = {
@@ -785,6 +794,16 @@ function assertMapLibreStyle(style: MapLibreStyle, mapId: string): void {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+/** A map that draws Nautical objects always carries the fixed "Not for navigation" notice. */
+function compiledNotices(
+  layers: MapLibreStyle['layers'],
+  marine: ResolvedMarine | undefined,
+): TileflowMapNotice[] {
+  const nautical = marine?.nautical?.sourceId;
+  if (!nautical || !layers.some((layer) => layer.source === nautical)) return [];
+  return [{...tileflowNauticalNotice, sources: [nautical]}];
 }
 
 function resolveGlyphs(config: ResolvedTileflowMap): string | undefined {

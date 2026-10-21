@@ -71,7 +71,7 @@ test('the preview globe rim follows the rendered silhouette and map atmosphere',
   const html = renderTileflowPreviewHtml(undefined, '/tileflow', {}, false);
 
   assert.match(html, /background-color: var\(--tileflow-space, #2F5070\)/u);
-  assert.match(html, /metadata\?\.\["tileflow:atmosphere"\]/u);
+  assert.match(html, /styleReads\(map\)\.metadata\(\)\?\.\["tileflow:atmosphere"\]/u);
   assert.match(html, /#map\.tileflow-globe \.maplibregl-canvas\s*\{\s*filter:/u);
   assert.match(html, /rgba\(atmosphere\?\.horizonColor \?\? "#B0DCF6", opacity \* 0\.4\)/u);
   assert.match(html, /map\.on\("style\.load", \(\) => updateGlobeBackdrop\(map\)\)/u);

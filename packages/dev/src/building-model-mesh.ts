@@ -4,7 +4,16 @@
 // its parts' theme colours. The footprint, the outline on the ground the model stands in for, is a
 // mesh whose material is named `footprint`, which is never drawn, or else the nearest level's own
 // outline on the ground. It has no filesystem access.
-import {tileflowModelLimits, type TileflowModelMesh, tileflowModelParts} from '@tileflow/core';
+import {
+  tileflowModelDefaultLightingRoles,
+  type TileflowModelLightingRole,
+  tileflowModelLightingRoles,
+  tileflowModelLimits,
+  type TileflowModelMesh,
+  tileflowModelParts,
+} from '@tileflow/core';
+import {buildingModelSurface} from './building-model-materials';
+import {buildingModelAmbientVisibility} from './building-model-occlusion';
 import {
   readTileflowGltfTriangles,
   TileflowGltfError,
@@ -42,15 +51,19 @@ export function tileflowBuildingModelDeclaredFootprint(
 /** A level of a building model, as Core encodes it. Throws `TileflowGltfError`. */
 export function prepareTileflowBuildingModelMesh(
   bytes: Uint8Array | readonly TileflowGltfPrimitive[],
+  {ambientOcclusion = true}: {ambientOcclusion?: boolean} = {},
 ): TileflowModelMesh {
-  const primitives = bytes instanceof Uint8Array ? readTileflowGltfTriangles(bytes) : bytes;
+  const primitives =
+    bytes instanceof Uint8Array ? readTileflowGltfTriangles(bytes, {materials: true}) : bytes;
+  const drawn = primitives.filter((primitive) => !isFootprint(primitive));
+  const surface = buildingModelSurface(drawn);
   const positions: number[] = [];
   const normals: (number[] | undefined)[] = [];
   const parts: number[] = [];
+  const lightingRoles: number[] = [];
   const luminance: number[] = [];
   const indices: number[] = [];
-  for (const primitive of primitives) {
-    if (isFootprint(primitive)) continue;
+  for (const primitive of drawn) {
     const part = partOf(primitive.material);
     if (part === undefined)
       throw new TileflowGltfError(
@@ -59,10 +72,22 @@ export function prepareTileflowBuildingModelMesh(
           : `has a material "${primitive.material}" that names no part of a building; name each material surface, secondary, glass, accent or roof`,
       );
     const offset = positions.length / 3;
+    const role =
+      primitive.lightingRole === undefined
+        ? tileflowModelDefaultLightingRoles[part]!
+        : typeof primitive.lightingRole === 'string' &&
+            Object.hasOwn(tileflowModelLightingRoles, primitive.lightingRole)
+          ? tileflowModelLightingRoles[primitive.lightingRole as TileflowModelLightingRole]
+          : undefined;
+    if (role === undefined)
+      throw new TileflowGltfError(
+        'has an unknown lighting role; use unclassified, wall, door, roof, window, lamp or logo',
+      );
     const count = primitive.positions.length / 3;
     positions.push(...primitive.positions);
     for (let vertex = 0; vertex < count; vertex += 1) {
       parts.push(part);
+      lightingRoles.push(role);
       normals.push(primitive.normals?.slice(vertex * 3, vertex * 3 + 3));
       const [r, g, b] = primitive.colours.slice(vertex * 3, vertex * 3 + 3) as [
         number,
@@ -126,8 +151,12 @@ export function prepareTileflowBuildingModelMesh(
     positions,
     normals: outNormals,
     parts,
+    lightingRoles,
     shades,
-    occlusion: new Array<number>(count).fill(1),
+    ...(surface ? {surface} : {}),
+    occlusion: ambientOcclusion
+      ? buildingModelAmbientVisibility({positions, normals: outNormals, indices})
+      : new Array<number>(count).fill(1),
     indices,
   };
 }

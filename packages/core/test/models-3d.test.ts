@@ -10,6 +10,7 @@ import {
   encodeTileflowModels,
   readTileflowLandmarkTileFootprints,
   readTileflowModelFileIds,
+  readTileflowModelFileSummary,
   type TileflowModelEntry,
 } from '../src/models-3d-file';
 import {
@@ -173,6 +174,43 @@ test('meshoptimizer compresses a model file into the same triangles', async () =
   assert.deepEqual(b!.bounds, a!.bounds);
 });
 
+test('model lighting roles survive compression independently of colours and ambient visibility', async () => {
+  const mesh = box();
+  const roles = mesh.parts.map((_, i) => i % 7);
+  const entry = tower({levels: [{...mesh, lightingRoles: roles}]});
+  await MeshoptEncoder.ready;
+  for (const compressor of [undefined, MeshoptEncoder]) {
+    const [model] = (await decodeTileflowModels(encodeTileflowModels([entry], compressor)))!;
+    const vertices = model!.levels[0]!.vertices;
+    const observed = new Set<number>();
+    for (let at = 0; at < vertices.length; at += 16) {
+      observed.add(vertices[at + 15]!);
+      assert.equal(vertices[at + 14], 255);
+      assert.equal(vertices[at + 13], 128);
+    }
+    assert.deepEqual(observed, new Set(roles));
+  }
+  assert.throws(
+    () => encodeTileflowModels([tower({levels: [{...mesh, lightingRoles: [1]}]})]),
+    /lighting role/,
+  );
+});
+
+test('legacy prepared models infer lighting roles without changing the caller bytes', async () => {
+  const bytes = encodeTileflowModels([tower()]);
+  const length = new DataView(bytes.buffer).getUint32(12, true);
+  const json = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + length)));
+  for (const node of json.nodes)
+    if (node.extras?.tileflow) delete node.extras.tileflow.lightingRoles;
+  bytes.set(new TextEncoder().encode(JSON.stringify(json).padEnd(length, ' ')), 20);
+  const before = bytes.slice();
+  const [model] = (await decodeTileflowModels(bytes))!;
+  const vertices = model!.levels[0]!.vertices;
+  for (let at = 0; at < vertices.length; at += 16)
+    assert.equal(vertices[at + 15], [1, 1, 4, 1, 3][vertices[at + 12]!]);
+  assert.deepEqual(bytes, before);
+});
+
 test('a model file names its models without decoding a mesh', async () => {
   await MeshoptEncoder.ready;
   const packed = encodeTileflowModels(
@@ -193,6 +231,26 @@ test('a model file names its models without decoding a mesh', async () => {
   plain.set(json, 20);
   assert.equal(readTileflowModelFileIds(plain), undefined);
   assert.equal(readTileflowModelFileIds(packed.subarray(0, packed.byteLength - 4)), undefined);
+});
+
+test('a model file summarises its levels, size and footprint without decoding a mesh', async () => {
+  await MeshoptEncoder.ready;
+  const packed = encodeTileflowModels([tower()], MeshoptEncoder);
+  assert.deepEqual(readTileflowModelFileSummary(packed), {
+    model: 'tower',
+    levels: [
+      {level: 'near', vertices: 12, triangles: 7},
+      {level: 'mid', vertices: 12, triangles: 7},
+    ],
+    width: 20,
+    depth: 20,
+    height: 10,
+    footprint: {rings: 1, points: 4, area: 400},
+  });
+  // Only a file of exactly one model has a summary.
+  const two = encodeTileflowModels([tower(), tower({id: 'annex'})], MeshoptEncoder);
+  assert.equal(readTileflowModelFileSummary(two), undefined);
+  assert.equal(readTileflowModelFileSummary(packed.subarray(0, packed.byteLength - 4)), undefined);
 });
 
 test('a landmark tile holds several models, each where it stands', async () => {

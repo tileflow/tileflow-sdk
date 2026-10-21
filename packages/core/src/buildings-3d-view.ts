@@ -1,4 +1,4 @@
-import type {BuildingMeshGroup, TileflowBuildingMesh} from './buildings-3d-mesh';
+import type {BuildingMeshGroup} from './buildings-3d-mesh';
 
 /** Conservative homogeneous clip test: reject only when all eight corners miss the same plane. */
 export function buildingBoxVisible(
@@ -22,7 +22,7 @@ export function buildingBoxVisible(
 
 /** Adjacent visible batches merge back into a single draw when the whole tile is visible. */
 export function buildingDrawRanges(
-  mesh: TileflowBuildingMesh,
+  mesh: Readonly<{groups?: readonly BuildingMeshGroup[]; wallsFrom: number; indexCount: number}>,
   visible: (group: BuildingMeshGroup) => boolean,
   wallsOnly = false,
 ): {from: number; count: number}[] {
@@ -30,7 +30,7 @@ export function buildingDrawRanges(
     return [
       {
         from: wallsOnly ? mesh.wallsFrom : 0,
-        count: mesh.indices.length - (wallsOnly ? mesh.wallsFrom : 0),
+        count: mesh.indexCount - (wallsOnly ? mesh.wallsFrom : 0),
       },
     ];
   const groups = mesh.groups.filter(visible);

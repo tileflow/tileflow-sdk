@@ -13,7 +13,10 @@
 // is built once the indexes round it, and the map's own models near it, have arrived (or a moment
 // has passed). A model or tile that fails to load, or does not arrive in a few seconds, leaves the
 // map's own buildings standing.
-import type {TileflowBuildingModelPlacement} from './buildings-3d-design';
+import {
+  readTileflowTeamModelName,
+  type TileflowBuildingModelPlacement,
+} from './buildings-3d-design';
 import {cameraTileAt} from './camera-tiles-browser';
 import {decodeTileflowModels} from './models-3d-file';
 import {
@@ -23,6 +26,13 @@ import {
   tileflowLandmarkRegionOf,
   type TileflowLandmarksTileJson,
 } from './models-3d-landmarks';
+import {
+  closeModelImages,
+  readModelImages,
+  type TileflowModelImages,
+  type TileflowModelSurfaceBuffers,
+  uploadModelSurface,
+} from './models-3d-materials-browser';
 import {
   type TileflowModelBytes,
   tileflowModelFootprintInTile,
@@ -59,7 +69,14 @@ export type TileflowPlacedModel = {
   readonly model: TileflowModelBytes;
   /** Whether it is one of Tileflow's landmarks rather than one the map places. */
   readonly landmark: boolean;
-  gl?: {vao: WebGLVertexArrayObject; vbo: WebGLBuffer; ibo: WebGLBuffer; type: number}[];
+  gl?: {
+    vao: WebGLVertexArrayObject;
+    vbo: WebGLBuffer;
+    ibo: WebGLBuffer;
+    type: number;
+    surface?: TileflowModelSurfaceBuffers;
+  }[];
+  images?: TileflowModelImages;
   used: number;
   /** When it last began to stand, from `performance.now()`, for its fade. */
   standingSince?: number;
@@ -222,12 +239,17 @@ export function createTileflowPlacedModels(
     loading.set(key, controller);
     download(placement.url, controller.signal)
       .then(async (response) => decodeTileflowModels(await response.arrayBuffer()))
-      .then((models) => {
-        loading.delete(key);
+      .then(async (models) => {
         if (disposed) return;
         const model = models?.find((entry) => entry.id === placement.model) ?? models?.[0];
         if (!model) throw new Error('not a Tileflow model');
-        loaded.set(key, {placement, key, model, landmark: false, used: performance.now()});
+        const images = await readModelImages(model, controller.signal);
+        loading.delete(key);
+        if (disposed || controller.signal.aborted) {
+          closeModelImages(images);
+          return;
+        }
+        loaded.set(key, {placement, key, model, images, landmark: false, used: performance.now()});
         arrived();
       })
       .catch(() => {
@@ -302,17 +324,32 @@ export function createTileflowPlacedModels(
     tileLoading.set(hash, controller);
     download(url, controller.signal)
       .then(async (response) => decodeTileflowModels(await response.arrayBuffer()))
-      .then((models) => {
-        tileLoading.delete(hash);
+      .then(async (models) => {
         if (disposed || tileset !== source) return;
         if (!models) throw new Error('not a Tileflow landmarks tile');
         const now = performance.now();
         const entries: TileflowPlacedModel[] = [];
-        for (const model of models) {
-          if (!model.at) continue;
-          const placement = {model: model.id, url, at: model.at, heading: model.heading ?? 0};
-          entries.push({placement, key: `landmark:${model.id}`, model, landmark: true, used: now});
+        try {
+          for (const model of models) {
+            if (!model.at) continue;
+            const images = await readModelImages(model, controller.signal);
+            const placement = {model: model.id, url, at: model.at, heading: model.heading ?? 0};
+            entries.push({
+              placement,
+              key: `landmark:${model.id}`,
+              model,
+              images,
+              landmark: true,
+              used: now,
+            });
+          }
+          controller.signal.throwIfAborted();
+          if (disposed || tileset !== source) throw new Error('The landmark tile was replaced.');
+        } catch (error) {
+          for (const entry of entries) closeModelImages(entry.images);
+          throw error;
         }
+        tileLoading.delete(hash);
         landmarkTiles.set(hash, {entries, used: now});
         arrived();
       })
@@ -472,6 +509,8 @@ export function createTileflowPlacedModels(
           bottom = Math.max(bottom, tile.y);
         }
         for (const placement of placements) {
+          // A hosted build's placeholder names a Team model before deployment gives it an address.
+          if (readTileflowTeamModelName(placement.url)) continue;
           const [x, y] = cameraTileAt(placement.at[0], placement.at[1], zoom);
           if (
             x < left - reachTiles ||
@@ -682,10 +721,13 @@ export function createTileflowPlacedModels(
     },
     shown: () => active,
     upload(context) {
-      for (const entry of released.splice(0)) releaseBuffers(context, entry);
+      for (const entry of released.splice(0)) {
+        releaseBuffers(context, entry);
+        closeModelImages(entry.images);
+      }
       for (const entry of active) {
         if (entry.gl) continue;
-        entry.gl = entry.model.levels.map((level) => {
+        entry.gl = entry.model.levels.map((level, levelIndex) => {
           const vao = context.createVertexArray()!;
           context.bindVertexArray(vao);
           const vbo = context.createBuffer()!;
@@ -708,11 +750,13 @@ export function createTileflowPlacedModels(
           const ibo = context.createBuffer()!;
           context.bindBuffer(context.ELEMENT_ARRAY_BUFFER, ibo);
           context.bufferData(context.ELEMENT_ARRAY_BUFFER, level.indices, context.STATIC_DRAW);
+          const surface = uploadModelSurface(context, level, entry.images?.[levelIndex] ?? []);
           context.bindVertexArray(null);
           return {
             vao,
             vbo,
             ibo,
+            ...(surface ? {surface} : {}),
             type:
               level.indices instanceof Uint32Array ? context.UNSIGNED_INT : context.UNSIGNED_SHORT,
           };
@@ -730,9 +774,11 @@ export function createTileflowPlacedModels(
     },
     key: () => String(version),
     release(context) {
-      const all = [...loaded.values(), ...released.splice(0)];
+      const retired = released.splice(0);
+      const all = [...loaded.values(), ...retired];
       for (const tile of landmarkTiles.values()) all.push(...tile.entries);
       for (const entry of all) releaseBuffers(context, entry);
+      for (const entry of retired) closeModelImages(entry.images);
     },
     dispose() {
       disposed = true;
@@ -744,6 +790,9 @@ export function createTileflowPlacedModels(
       for (const controller of [...tileLoading.values(), ...regionLoading.values()])
         controller.abort();
       tilesetLoad?.controller.abort();
+      for (const entry of [...loaded.values(), ...released]) closeModelImages(entry.images);
+      for (const tile of landmarkTiles.values())
+        for (const entry of tile.entries) closeModelImages(entry.images);
       loading.clear();
       tileLoading.clear();
       regionLoading.clear();
@@ -789,6 +838,10 @@ function releaseBuffers(context: WebGL2RenderingContext, entry: TileflowPlacedMo
     context.deleteVertexArray(level.vao);
     context.deleteBuffer(level.vbo);
     context.deleteBuffer(level.ibo);
+    if (level.surface) {
+      context.deleteBuffer(level.surface.vbo);
+      for (const texture of level.surface.textures) context.deleteTexture(texture);
+    }
   }
   entry.gl = undefined;
 }

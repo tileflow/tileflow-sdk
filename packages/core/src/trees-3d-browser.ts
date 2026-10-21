@@ -4,6 +4,7 @@
 // map's shared 3D scene; nearer buildings hide them. Showing, hiding and growing them lays out no
 // source.
 import {tileflowBuildingGroundFragment, tileflowBuildingGroundVertex} from './buildings-3d-shaders';
+import {acquireCameraTileBuilder} from './camera-tile-builder';
 import {cameraFrame, type CameraTiles, createCameraTiles} from './camera-tiles-browser';
 import {inspectModelTriangles, type TileflowModelInspection} from './model-inspection';
 import {
@@ -18,7 +19,6 @@ import {resolveTileflowSun, tileflowStyleSunPreset, type TileflowSun} from './su
 import {tileflowColourChannels} from './theme-blend';
 import type {TileflowTileRequestTransform} from './tile-reader';
 import {
-  placeTileflowTrees,
   readTileflowVegetation3D,
   tileflowTreeBytes,
   type TileflowTreeForm,
@@ -54,11 +54,15 @@ export type TileflowTrees3DMap = {
   getCenter(): {lat: number; lng: number};
   getLayer(id: string): unknown;
   getLayoutProperty?(layer: string, name: string): unknown;
+  /** The style's layer ids in order, read without serializing the style. */
+  getLayersOrder?(): string[];
   getPitch(): number;
   getSource(id: string): unknown;
   getStyle(): unknown;
   getZoom(): number;
   isStyleLoaded(): boolean | void;
+  /** Whether the camera is moving; trees then redraw their shadows less often. */
+  isMoving?(): boolean;
   off(event: string, listener: () => void): unknown;
   on(event: string, listener: () => void): unknown;
   removeLayer(id: string): unknown;
@@ -164,6 +168,8 @@ type ProjectionArgs = {
  */
 export function createTileflowTrees3D(options: TileflowTrees3DOptions): TileflowTrees3D {
   const {map} = options;
+  // Places the tiles' trees off the page, in a worker the map's 3D layers share.
+  const builder = acquireCameraTileBuilder();
   const minzoom = options.minzoom ?? tileflowSceneMinzoom;
   const maxTiles = Math.round(options.maxTiles ?? 25);
   if (!Number.isFinite(minzoom) || minzoom < 0 || minzoom > 24)
@@ -265,36 +271,38 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       createCameraTiles<TreeTile>({
         map,
         source,
-        layers: [layers.tree, layers.canopy, layers.hedge].filter((name): name is string => !!name),
         zoom: preferredZoom,
         minzoom,
         maxTiles,
         ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
         active: () => target > 0 || scale > 0,
-        build(tile, tileMetres) {
-          const trees = layers.tree ? tile.layers[layers.tree] : undefined;
-          const canopy = layers.canopy ? tile.layers[layers.canopy] : undefined;
-          const hedges = layers.hedge ? tile.layers[layers.hedge] : undefined;
-          if (!trees && !canopy && !hedges) return emptyTile;
-          const placement = placeTileflowTrees(
-            {...(trees ? {trees} : {}), ...(canopy ? {canopy} : {}), ...(hedges ? {hedges} : {})},
+        async build(tile, tileMetres, signal, priority) {
+          const placement = await builder.build(
             {
-              tile,
-              tileMetres,
-              fields: described.fields,
-              unknownForms: described.unknownForms,
-              regions: described.regions,
-              variants: Object.fromEntries(
-                Object.entries(described.forms).map(([form, own]) => [
-                  form,
-                  own?.models?.length ?? 1,
-                ]),
-              ),
+              url: tile.url,
+              bytes: tile.bytes,
+              priority,
+              task: {
+                kind: 'trees',
+                layers,
+                options: {
+                  tile: {x: tile.x, y: tile.y, z: tile.z},
+                  tileMetres,
+                  fields: described.fields,
+                  unknownForms: described.unknownForms,
+                  regions: described.regions,
+                  variants: Object.fromEntries(
+                    Object.entries(described.forms).map(([form, own]) => [
+                      form,
+                      own?.models?.length ?? 1,
+                    ]),
+                  ),
+                },
+              },
             },
+            signal,
           );
-          return placement.trees.length > 0 || placement.hedges.length > 0
-            ? {placement}
-            : emptyTile;
+          return placement ? {placement} : emptyTile;
         },
         empty: emptyTile,
         release(value) {
@@ -595,7 +603,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     },
     // Camera-dependent density, detail and fading also change the trees casting shadows.
     key: () =>
-      `trees:${view().key}:${fadeIn().toFixed(4)}:${visibleScale().toFixed(4)}:${generation}:${programs.depth ? 1 : 0}:${Object.values(
+      `trees:${map.isMoving?.() ? view().movingKey : view().key}:${fadeIn().toFixed(4)}:${visibleScale().toFixed(4)}:${generation}:${programs.depth ? 1 : 0}:${Object.values(
         colours().sizes,
       )
         .flat()
@@ -1062,8 +1070,10 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     }
     const flat = new Set(vegetation()?.flatLayers ?? []);
     if (flat.size === 0) return;
-    const layers = (map.getStyle() as {layers?: {id: string}[]} | undefined)?.layers ?? [];
-    for (const {id} of layers) {
+    const layers =
+      map.getLayersOrder?.() ??
+      ((map.getStyle() as {layers?: {id: string}[]} | undefined)?.layers ?? []).map(({id}) => id);
+    for (const id of layers) {
       if (!flat.has(id.split('::')[0]!)) continue;
       const visibility = map.getLayoutProperty(id, 'visibility');
       if (!flatVisibility.has(id)) flatVisibility.set(id, visibility);
@@ -1261,6 +1271,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       }
       for (const set of tiles) set.dispose();
       tiles = [];
+      builder.dispose();
     },
   };
 }

@@ -1,13 +1,12 @@
-// The tiles round the camera that Tileflow's custom WebGL layers draw from (3D buildings, street
-// lights): the nearest round a point ahead of the centre, as far as the view reaches, read with the
-// map's own tile address and request rules and built a few milliseconds per frame. Layers reading
-// the same source share each tile's download.
+// The tiles round the camera that Tileflow's custom WebGL layers draw from (3D buildings, trees,
+// street lights): the nearest round a point ahead of the centre, as far as the view reaches, read
+// with the map's own tile address and request rules, nearest first, and built from their bytes off
+// the page. Layers reading the same source share each tile's download.
 import {fetchTileflowPmtilesTile, isTileflowPmtilesUrl} from './pmtiles-browser';
 import {
-  createTileflowTileReader,
+  createTileLoader,
   readTileflowMapTileSource,
-  type TileflowTile,
-  type TileflowTileReader,
+  type TileflowTileBytes,
   type TileflowTileRequestTransform,
 } from './tile-reader';
 
@@ -27,6 +26,8 @@ export type CameraTile<T> = {
   readonly x: number;
   readonly y: number;
   value?: T;
+  /** From the point the camera reads round, in tiles. */
+  distance?: number;
   retryAt?: number;
   loading?: AbortController;
   used: number;
@@ -35,7 +36,6 @@ export type CameraTile<T> = {
 export type CameraTilesOptions<T> = Readonly<{
   map: CameraTilesMap;
   source: string;
-  layers: readonly string[];
   /** The deepest zoom to read; a source that stops earlier is read at its own maximum. */
   zoom: number;
   /** Tiles are read from a zoom below this one. */
@@ -44,8 +44,16 @@ export type CameraTilesOptions<T> = Readonly<{
   transformRequest?: TileflowTileRequestTransform;
   /** Whether the layer wants tiles now. */
   active(): boolean;
-  /** Builds a tile's value; a tile without the layers it needs gets `empty`. */
-  build(tile: TileflowTile, tileMetres: number, signal: AbortSignal): T | Promise<T>;
+  /**
+   * Builds a tile's value from its bytes; a tile without the layers it needs gets `empty`. Nearer
+   * tiles have a lower `priority`.
+   */
+  build(
+    tile: TileflowTileBytes,
+    tileMetres: number,
+    signal: AbortSignal,
+    priority: number,
+  ): T | Promise<T>;
   empty: T;
   /** Lets go of a tile's value when it is forgotten. */
   release(value: T): void;
@@ -58,8 +66,11 @@ export type CameraTiles<T> = {
   update(): void;
   /** The wanted tiles built so far, nearest first. */
   ready(): (CameraTile<T> & {value: T})[];
-  /** Every tile wanted round the camera, built or not, nearest first. */
-  wanted(): readonly Readonly<{x: number; y: number}>[];
+  /**
+   * Every tile wanted round the camera, nearest first, whether it has been read, holds nothing for
+   * the layer, or the style has no source to read it from.
+   */
+  coverage(): readonly Readonly<{x: number; y: number}>[];
   /** Every tile held, wanted or not. */
   all(): Iterable<CameraTile<T>>;
   /** The zoom tiles are read at. */
@@ -89,29 +100,34 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
     key: string;
     entry: CameraTile<T>;
     controller: AbortController;
-    tile: TileflowTile;
+    tile: TileflowTileBytes;
     metres: number;
   }[] = [];
   let wanted: string[] = [];
-  let reader: TileflowTileReader | undefined;
+  let covered: Readonly<{x: number; y: number}>[] = [];
+  type Loader = ReturnType<typeof createTileLoader<TileflowTileBytes>>;
+  let reader: Loader | undefined;
   let zoom = options.zoom;
   let origin: [number, number] = [0, 0];
   let metres = 1;
   let building = false;
   let disposed = false;
 
-  function ensureReader(): TileflowTileReader | undefined {
+  function ensureReader(): Loader | undefined {
     if (reader) return reader;
     const source = readTileflowMapTileSource(map, options.source);
     if (!source) return undefined;
     zoom = Math.min(options.zoom, source.maxzoom);
-    reader = createTileflowTileReader({
-      ...source,
-      layers: options.layers,
-      cacheSize: 0,
-      fetch: sharedTileFetch,
-      ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
-    });
+    // The bytes are decoded where the tile is built.
+    reader = createTileLoader(
+      {
+        ...source,
+        cacheSize: 0,
+        fetch: sharedTileFetch,
+        ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
+      },
+      (bytes, address, url) => ({...address, url, bytes}),
+    );
     return reader;
   }
 
@@ -119,8 +135,9 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
     if (disposed) return;
     const currentZoom = map.getZoom();
     if (currentZoom < options.minzoom - 1 || !options.active()) return;
+    // Without a source to read, the tiles round the camera are still chosen: what stands on them
+    // without the source's data, such as a placed model, needs to know them.
     const source = ensureReader();
-    if (!source) return;
     const centre = map.getCenter();
     const pitch = map.getPitch();
     const reach = Math.min(5000, Math.max(800, 1600 * 2 ** (16 - currentZoom) * (1 + pitch / 60)));
@@ -146,10 +163,15 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
     candidates.sort((a, b) => a.distance - b.distance);
     const chosen = candidates.slice(0, options.maxTiles);
     wanted = chosen.map(({x, y}) => `${x}/${y}`);
+    covered = chosen.map(({x, y}) => ({x, y}));
     origin = cameraTileAt(centre.lng, centre.lat, zoom);
     metres = (earth * Math.cos((centre.lat * Math.PI) / 180)) / 2 ** zoom / extent;
+    if (!source) {
+      map.triggerRepaint();
+      return;
+    }
     const now = performance.now();
-    for (const {x, y} of chosen) {
+    for (const {x, y, distance} of chosen) {
       const key = `${x}/${y}`;
       let entry = tiles.get(key);
       if (!entry) {
@@ -157,6 +179,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
         tiles.set(key, entry);
       }
       entry.used = now;
+      entry.distance = distance;
       if (
         (!entry.value || entry.retryAt !== undefined) &&
         !entry.loading &&
@@ -168,17 +191,15 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
     map.triggerRepaint();
   }
 
-  function load(
-    source: TileflowTileReader,
-    key: string,
-    entry: CameraTile<T>,
-    tileMetres: number,
-  ): void {
+  function load(source: Loader, key: string, entry: CameraTile<T>, tileMetres: number): void {
     const controller = new AbortController();
     entry.loading = controller;
     entry.retryAt = undefined;
     source
-      .readTile({z: zoom, x: entry.x, y: entry.y}, {signal: controller.signal})
+      .read(
+        {z: zoom, x: entry.x, y: entry.y},
+        {signal: controller.signal, priority: entry.distance ?? 0},
+      )
       .then((tile) => {
         if (disposed || tiles.get(key) !== entry || entry.loading !== controller) return;
         // An absent tile stays empty; it is not read again.
@@ -215,7 +236,12 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       const started = performance.now();
       let built = false;
       while (!disposed && queue.length && performance.now() - started < buildBudgetMs) {
-        const {key, entry, controller, tile, metres: tileMetres} = queue.shift()!;
+        // The nearest tile goes first.
+        let nearest = 0;
+        for (let at = 1; at < queue.length; at += 1)
+          if ((queue[at]!.entry.distance ?? 0) < (queue[nearest]!.entry.distance ?? 0))
+            nearest = at;
+        const {key, entry, controller, tile, metres: tileMetres} = queue.splice(nearest, 1)[0]!;
         const current = () =>
           !disposed &&
           tiles.get(key) === entry &&
@@ -224,7 +250,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
         if (!current()) continue;
         let value: T;
         try {
-          value = await options.build(tile, tileMetres, controller.signal);
+          value = await options.build(tile, tileMetres, controller.signal, entry.distance ?? 0);
         } catch {
           if (current()) {
             entry.loading = undefined;
@@ -298,14 +324,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       }
       return list;
     },
-    wanted() {
-      const list: {x: number; y: number}[] = [];
-      for (const key of wanted) {
-        const entry = tiles.get(key);
-        if (entry) list.push(entry);
-      }
-      return list;
-    },
+    coverage: () => covered,
     all: () => tiles.values(),
     get zoom() {
       return zoom;
@@ -350,8 +369,16 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
 // --- Shared downloads ---
 
 // Recent tile downloads, by request, so layers reading the same tiles fetch each once. A tile is
-// kept for a minute, and only the latest few dozen.
-const shared = new Map<string, {bytes: Promise<{status: number; body: ArrayBuffer}>; at: number}>();
+// kept for a minute, and only the latest few dozen. A download stops once every layer waiting for
+// it has stopped waiting.
+type SharedDownload = {
+  bytes: Promise<{status: number; body: ArrayBuffer}>;
+  at: number;
+  readers: number;
+  settled: boolean;
+  controller: AbortController;
+};
+const shared = new Map<string, SharedDownload>();
 const sharedLimit = 48;
 const sharedFor = 60_000;
 
@@ -360,37 +387,57 @@ async function sharedTileFetch(url: string, init: RequestInit): Promise<Response
   const now = Date.now();
   let entry = shared.get(key);
   if (!entry || now - entry.at > sharedFor) {
-    // The download itself is never cancelled: another layer may be waiting for it. A source served
-    // from a Tileflow PMTiles archive is read through Core's own PMTiles protocol.
+    // A source served from a Tileflow PMTiles archive is read through Core's own PMTiles protocol.
+    const controller = new AbortController();
     const bytes = (
       isTileflowPmtilesUrl(url)
-        ? fetchTileflowPmtilesTile(url)
+        ? fetchTileflowPmtilesTile(url, controller.signal)
         : fetch(url, {
             ...(init.headers ? {headers: init.headers} : {}),
             ...(init.credentials ? {credentials: init.credentials} : {}),
+            signal: controller.signal,
           })
     ).then(async (response) => ({
       status: response.status,
       body: response.ok ? await response.arrayBuffer() : new ArrayBuffer(0),
     }));
-    entry = {bytes, at: now};
+    const download: SharedDownload = {bytes, at: now, readers: 0, settled: false, controller};
+    entry = download;
     shared.delete(key);
-    shared.set(key, entry);
+    shared.set(key, download);
     while (shared.size > sharedLimit) shared.delete(shared.keys().next().value!);
-    bytes.catch(() => shared.delete(key));
+    bytes.then(
+      () => {
+        download.settled = true;
+      },
+      () => {
+        download.settled = true;
+        if (shared.get(key) === download) shared.delete(key);
+      },
+    );
   }
+  const download = entry;
   const signal = init.signal;
-  const {status, body} = await (signal
-    ? Promise.race([
-        entry.bytes,
-        new Promise<never>((_, reject) => {
-          if (signal.aborted) reject(signal.reason);
-          signal.addEventListener('abort', () => reject(signal.reason), {once: true});
-        }),
-      ])
-    : entry.bytes);
-  if (status < 200 || status >= 300) shared.delete(key);
-  return new Response(status === 204 || status === 304 ? null : body.slice(0), {status});
+  download.readers += 1;
+  try {
+    const {status, body} = await (signal
+      ? Promise.race([
+          download.bytes,
+          new Promise<never>((_, reject) => {
+            if (signal.aborted) reject(signal.reason);
+            signal.addEventListener('abort', () => reject(signal.reason), {once: true});
+          }),
+        ])
+      : download.bytes);
+    if (status < 200 || status >= 300) shared.delete(key);
+    return new Response(status === 204 || status === 304 ? null : body.slice(0), {status});
+  } finally {
+    download.readers -= 1;
+    if (signal?.aborted && download.readers === 0 && !download.settled) {
+      download.controller.abort(signal.reason);
+      if (shared.get(key) === download) shared.delete(key);
+    }
+  }
 }
 
 export function cameraFrame(callback: () => void): void {

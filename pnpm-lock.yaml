@@ -273,9 +273,6 @@ importers:
       chokidar:
         specifier: 4.0.3
         version: 4.0.3
-      fflate:
-        specifier: 0.8.3
-        version: 0.8.3
       fontkit:
         specifier: 2.0.4
         version: 2.0.4

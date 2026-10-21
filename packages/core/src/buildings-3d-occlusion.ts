@@ -28,12 +28,11 @@ export function buildingContactSegments(mesh: TileflowBuildingMesh): Uint8Array 
 }
 
 // Distance to each segment gives round joins without relying on smoothed facade normals.
-export function createBuildingContactVao(gl: WebGL2RenderingContext, mesh: TileflowBuildingMesh) {
+export function createBuildingContactVao(gl: WebGL2RenderingContext, segments: Uint8Array) {
   const vao = gl.createVertexArray()!;
   const vbo = gl.createBuffer()!;
   gl.bindVertexArray(vao);
   gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-  const segments = buildingContactSegments(mesh);
   gl.bufferData(gl.ARRAY_BUFFER, segments, gl.STATIC_DRAW);
   const offset = (first: number) => {
     gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
@@ -110,7 +109,11 @@ void main() {
   fragColor = vec4(vec3(shade), 1.0);
 }`;
 
-/** A single-channel screen mask: overlapping walls keep the strongest shade, never multiply it. */
+/**
+ * A single-channel screen mask: overlapping walls keep the strongest shade, never multiply it.
+ * Drawn from a custom layer's prerender, before MapLibre binds the map's framebuffer for its main
+ * pass: switching framebuffers within that pass forces tiled GPUs to store and reload the frame.
+ */
 export function createBuildingContactMask() {
   let target:
     | {texture: WebGLTexture; framebuffer: WebGLFramebuffer; width: number; height: number}
@@ -125,60 +128,46 @@ export function createBuildingContactMask() {
 
   return {
     release,
+    /**
+     * Draws the mask at the drawing buffer's size and returns its texture. Sets every state it
+     * relies on and leaves the map's framebuffer bound with the default blend equation; MapLibre
+     * restores the rest of its own state after a prerender.
+     */
     render(gl: WebGL2RenderingContext, draw: () => void): WebGLTexture {
-      const framebuffer = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING) as WebGLFramebuffer | null;
-      const depth = gl.isEnabled(gl.DEPTH_TEST);
-      const stencil = gl.isEnabled(gl.STENCIL_TEST);
-      const cull = gl.isEnabled(gl.CULL_FACE);
-      const scissor = gl.isEnabled(gl.SCISSOR_TEST);
-      const equation = gl.getParameter(gl.BLEND_EQUATION_RGB) as number;
-      const alphaEquation = gl.getParameter(gl.BLEND_EQUATION_ALPHA) as number;
-      const clear = gl.getParameter(gl.COLOR_CLEAR_VALUE) as Float32Array;
+      const width = gl.drawingBufferWidth;
+      const height = gl.drawingBufferHeight;
+      if (!target || target.width !== width || target.height !== height) {
+        release(gl);
+        const texture = gl.createTexture()!;
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R8, width, height);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        const framebuffer = gl.createFramebuffer()!;
+        gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+        target = {texture, framebuffer, width, height};
+      }
+      gl.bindFramebuffer(gl.FRAMEBUFFER, target.framebuffer);
+      gl.viewport(0, 0, width, height);
+      gl.disable(gl.DEPTH_TEST);
+      gl.disable(gl.STENCIL_TEST);
+      gl.disable(gl.CULL_FACE);
+      gl.disable(gl.SCISSOR_TEST);
+      gl.colorMask(true, true, true, true);
+      gl.clearColor(1, 1, 1, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      gl.enable(gl.BLEND);
+      gl.blendEquation(gl.MIN);
       try {
-        const width = gl.drawingBufferWidth;
-        const height = gl.drawingBufferHeight;
-        if (!target || target.width !== width || target.height !== height) {
-          release(gl);
-          const texture = gl.createTexture()!;
-          gl.activeTexture(gl.TEXTURE2);
-          gl.bindTexture(gl.TEXTURE_2D, texture);
-          gl.texStorage2D(gl.TEXTURE_2D, 1, gl.R8, width, height);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
-          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-          const next = gl.createFramebuffer()!;
-          gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, next);
-          gl.framebufferTexture2D(
-            gl.DRAW_FRAMEBUFFER,
-            gl.COLOR_ATTACHMENT0,
-            gl.TEXTURE_2D,
-            texture,
-            0,
-          );
-          target = {texture, framebuffer: next, width, height};
-        }
-        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, target.framebuffer);
-        gl.disable(gl.DEPTH_TEST);
-        gl.disable(gl.STENCIL_TEST);
-        gl.disable(gl.CULL_FACE);
-        gl.disable(gl.SCISSOR_TEST);
-        gl.clearColor(1, 1, 1, 1);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        gl.blendEquation(gl.MIN);
         draw();
         return target.texture;
       } finally {
-        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, framebuffer);
-        gl.blendEquationSeparate(equation, alphaEquation);
-        gl.clearColor(clear[0]!, clear[1]!, clear[2]!, clear[3]!);
-        for (const [capability, enabled] of [
-          [gl.DEPTH_TEST, depth],
-          [gl.STENCIL_TEST, stencil],
-          [gl.CULL_FACE, cull],
-          [gl.SCISSOR_TEST, scissor],
-        ] as const) {
-          if (enabled) gl.enable(capability);
-          else gl.disable(capability);
-        }
+        gl.bindVertexArray(null);
+        gl.blendEquation(gl.FUNC_ADD);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.viewport(0, 0, width, height);
       }
     },
   };

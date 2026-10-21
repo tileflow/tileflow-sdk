@@ -1,20 +1,25 @@
-import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
+import {expression, featureFilter, validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   bathymetry,
   createStyle,
+  defineTheme,
+  disable,
   fixed,
   inferTileflowSourceRequirements,
   parseTileflowMap,
+  readTileflowNotices,
   resolveMarine,
   tileflowBathymetryDemSourceId,
   tileflowBathymetrySourceId,
   tileflowBathymetryV1Schema,
+  tileflowNauticalNotice,
   tileflowNauticalSourceId,
   tileflowNauticalV1Schema,
+  tileflowNoticesMetadataKey,
 } from '../src';
-import {extendStreets} from './map-fixture';
+import {extendStreets, testLightTheme} from './map-fixture';
 
 const preparedAssets = {
   icons: {
@@ -104,12 +109,16 @@ test('resolves marine shorthands to stable independent TileJSON sources', () => 
   ] as const) {
     assert.equal(tileflowNauticalV1Schema.fields[field], field);
   }
+  assert.equal(tileflowNauticalV1Schema.fields.minZoom, 'min_zoom');
+  assert.equal(tileflowNauticalV1Schema.fields.rank, 'rank');
+  assert.equal(tileflowNauticalV1Schema.fields.waterLevel, 'water_level');
+  assert.equal(tileflowNauticalV1Schema.fields.label, 'label');
   assert.deepEqual(tileflowNauticalV1Schema.geometryTypes, {
     aids: ['Point'],
     coverage: ['Polygon'],
-    hazards: ['Point', 'Polygon'],
+    hazards: ['Point', 'LineString', 'Polygon'],
     lights: ['Point'],
-    navigationAreas: ['Polygon'],
+    navigationAreas: ['Point', 'LineString', 'Polygon'],
     reefs: ['Polygon'],
     soundings: ['Point'],
     wrecks: ['Point', 'Polygon'],
@@ -290,98 +299,288 @@ test('prefers bathymetry sidecar, preserves the implicit World fallback, and hon
   );
 });
 
-test('chart composes all nautical semantics and publishes per-source metadata', () => {
-  const style = createStyle(extendStreets({marine: 'chart'}), {preparedAssets});
+const nauticalLayers = [
+  ['tileflow-nautical-coverage', 'coverage', 'fill'],
+  ['tileflow-nautical-navigation-areas', 'navigation_area', 'fill'],
+  ['tileflow-nautical-navigation-areas-outline', 'navigation_area', 'line'],
+  ['tileflow-nautical-reefs', 'reef', 'fill'],
+  ['tileflow-nautical-reefs-outline', 'reef', 'line'],
+  ['tileflow-nautical-cables', 'navigation_area', 'line'],
+  ['tileflow-nautical-routes', 'navigation_area', 'line'],
+  ['tileflow-nautical-hazard-areas', 'hazard', 'fill'],
+  ['tileflow-nautical-hazard-areas-outline', 'hazard', 'line'],
+  ['tileflow-nautical-wreck-areas', 'wreck', 'fill'],
+  ['tileflow-nautical-wreck-areas-outline', 'wreck', 'line'],
+  ['tileflow-nautical-navigation-area-labels', 'navigation_area', 'symbol'],
+  ['tileflow-nautical-reef-labels', 'reef', 'symbol'],
+  ['tileflow-nautical-hazard-area-labels', 'hazard', 'symbol'],
+  ['tileflow-nautical-wreck-area-labels', 'wreck', 'symbol'],
+  ['tileflow-nautical-soundings', 'sounding', 'symbol'],
+  ['tileflow-nautical-hazards-marker', 'hazard', 'circle'],
+  ['tileflow-nautical-hazards', 'hazard', 'symbol'],
+  ['tileflow-nautical-wrecks', 'wreck', 'symbol'],
+  ['tileflow-nautical-harbours-marker', 'navigation_area', 'circle'],
+  ['tileflow-nautical-harbours', 'navigation_area', 'symbol'],
+  ['tileflow-nautical-aids-marker', 'aid', 'circle'],
+  ['tileflow-nautical-aids', 'aid', 'symbol'],
+  ['tileflow-nautical-beacons-marker', 'aid', 'circle'],
+  ['tileflow-nautical-beacons', 'aid', 'symbol'],
+  ['tileflow-nautical-lights-marker', 'light', 'circle'],
+  ['tileflow-nautical-lights', 'light', 'symbol'],
+  ['tileflow-nautical-buoys-marker', 'aid', 'circle'],
+  ['tileflow-nautical-buoys', 'aid', 'symbol'],
+  ['tileflow-nautical-lighthouses-marker', 'aid', 'circle'],
+  ['tileflow-nautical-lighthouses', 'aid', 'symbol'],
+  ['tileflow-nautical-ports-marker', 'navigation_area', 'circle'],
+  ['tileflow-nautical-ports', 'navigation_area', 'symbol'],
+] as const;
+
+type FilterFeature = {
+  geometry: 'LineString' | 'Point' | 'Polygon';
+  properties: Record<string, boolean | number | string>;
+};
+
+const geometryTypes = {LineString: 2, Point: 1, Polygon: 3} as const;
+
+/** Evaluate a compiled layer filter exactly as MapLibre does for one tile feature. */
+function admits(
+  layer: {filter?: unknown} | undefined,
+  feature: FilterFeature,
+  tileZoom: number,
+): boolean {
+  assert.ok(layer?.filter, 'layer has a filter');
+  const filter = featureFilter(layer.filter as never);
+  return filter.filter({zoom: tileZoom}, {
+    geometry: [],
+    properties: feature.properties,
+    type: geometryTypes[feature.geometry],
+  } as never);
+}
+
+function compiledNautical(marine: 'chart' | 'nautical' = 'nautical') {
+  return createStyle(extendStreets({marine}), {preparedAssets});
+}
+
+test('nautical compiles every semantic group from the nautical-v1 source layers', () => {
+  const style = compiledNautical();
   const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
 
-  for (const [id, sourceLayer] of [
-    ['tileflow-nautical-soundings', 'sounding'],
-    ['tileflow-nautical-aids-marker', 'aid'],
-    ['tileflow-nautical-aids', 'aid'],
-    ['tileflow-nautical-lighthouses-marker', 'aid'],
-    ['tileflow-nautical-lighthouses', 'aid'],
-    ['tileflow-nautical-lights-marker', 'light'],
-    ['tileflow-nautical-lights', 'light'],
-    ['tileflow-nautical-hazards', 'hazard'],
-    ['tileflow-nautical-wrecks', 'wreck'],
-    ['tileflow-nautical-hazard-areas', 'hazard'],
-    ['tileflow-nautical-hazard-areas-outline', 'hazard'],
-    ['tileflow-nautical-wreck-areas', 'wreck'],
-    ['tileflow-nautical-wreck-areas-outline', 'wreck'],
-    ['tileflow-nautical-coverage-labels', 'coverage'],
-    ['tileflow-nautical-navigation-area-labels', 'navigation_area'],
-    ['tileflow-nautical-reef-labels', 'reef'],
-    ['tileflow-nautical-hazard-area-labels', 'hazard'],
-    ['tileflow-nautical-wreck-area-labels', 'wreck'],
-    ['tileflow-nautical-coverage-outline', 'coverage'],
-    ['tileflow-nautical-navigation-areas', 'navigation_area'],
-    ['tileflow-nautical-navigation-areas-outline', 'navigation_area'],
-    ['tileflow-nautical-reefs', 'reef'],
-    ['tileflow-nautical-reefs-outline', 'reef'],
-  ] as const) {
-    assert.equal(byId.get(id)?.source, tileflowNauticalSourceId, `${id} source`);
-    assert.equal(byId.get(id)?.['source-layer'], sourceLayer, `${id} source-layer`);
+  for (const [id, sourceLayer, type] of nauticalLayers) {
+    const layer = byId.get(id);
+    assert.equal(layer?.source, tileflowNauticalSourceId, `${id} source`);
+    assert.equal(layer?.['source-layer'], sourceLayer, `${id} source-layer`);
+    assert.equal(layer?.type, type, `${id} type`);
   }
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-soundings')?.layout), /depth/u);
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-aids')?.layout), /subclass/u);
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-aids')?.layout), /class/u);
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-aids')?.filter), /lighthouse/u);
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-lighthouses')?.filter), /lighthouse/u);
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-lights')?.layout), /character/u);
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-lights')?.layout), /range_nm/u);
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-lights')?.layout), /direction/u);
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-lights')?.layout), /name/u);
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-hazards')?.layout), /name/u);
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-hazards')?.layout), /depth/u);
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-wrecks')?.layout), /name/u);
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-wrecks')?.layout), /depth/u);
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-coverage-labels')?.layout), /provider/u);
-  assert.match(JSON.stringify(byId.get('tileflow-nautical-coverage-labels')?.filter), /provider/u);
-  assert.match(
-    JSON.stringify(byId.get('tileflow-nautical-navigation-area-labels')?.layout),
-    /name/u,
+  assert.equal(
+    style.layers.filter(({source}) => source === tileflowNauticalSourceId).length,
+    nauticalLayers.length,
   );
-  assert.match(
-    JSON.stringify(byId.get('tileflow-nautical-navigation-area-labels')?.filter),
-    /class/u,
-  );
-  for (const id of ['tileflow-nautical-hazards', 'tileflow-nautical-wrecks']) {
-    assert.match(JSON.stringify(byId.get(id)?.filter), /Point/u, `${id} point geometry`);
-  }
-  for (const id of ['tileflow-nautical-hazard-areas', 'tileflow-nautical-wreck-areas']) {
-    assert.match(JSON.stringify(byId.get(id)?.filter), /Polygon/u, `${id} polygon geometry`);
-  }
+  // Coverage labels are an explicit opt-in.
+  assert.equal(byId.has('tileflow-nautical-coverage-labels'), false);
   assert.deepEqual(validateStyleMin(style as never), []);
 
   const identities = style.metadata?.['tileflow:sources'] as Record<
     string,
     Record<string, unknown>
   >;
-  assert.equal(identities.tileflow?.kind, 'tileflow-world');
-  assert.equal(identities[tileflowBathymetrySourceId]?.product, 'bathymetry-v1');
   assert.equal(identities[tileflowNauticalSourceId]?.product, 'nautical-v1');
-
   const requirements = inferTileflowSourceRequirements(style);
-  assert.deepEqual(Object.keys(requirements.sources), [
-    'tileflow',
-    tileflowBathymetrySourceId,
-    tileflowNauticalSourceId,
-  ]);
-  const bathymetry = requirements.sources[tileflowBathymetrySourceId]!;
-  assert.deepEqual(
-    bathymetry.sourceLayers.map(({id}) => id),
-    ['bathymetry'],
-  );
-  assert.deepEqual(
-    bathymetry.sourceLayers[0]?.fields.map(({name}) => name),
-    ['min_depth', 'sort_key'],
-  );
   const nautical = requirements.sources[tileflowNauticalSourceId]!;
   assert.deepEqual(
     nautical.sourceLayers.map(({id}) => id),
     ['aid', 'coverage', 'hazard', 'light', 'navigation_area', 'reef', 'sounding', 'wreck'],
   );
+  for (const layer of nautical.sourceLayers) {
+    assert.ok(
+      layer.fields.some(({name}) => name === 'min_zoom'),
+      `${layer.id} respects min_zoom`,
+    );
+  }
   assert.deepEqual(style.metadata?.['tileflow:sourceRequirements'], requirements);
+});
+
+test('nautical layers respect each feature min_zoom and select their schema classes', () => {
+  const byId = new Map(compiledNautical().layers.map((layer) => [layer.id, layer]));
+  const point = (properties: FilterFeature['properties']): FilterFeature => ({
+    geometry: 'Point',
+    properties: {min_zoom: 11, ...properties},
+  });
+
+  for (const [id] of nauticalLayers) {
+    assert.match(JSON.stringify(byId.get(id)?.filter), /min_zoom/u, `${id} filters on min_zoom`);
+  }
+
+  const buoys = byId.get('tileflow-nautical-buoys-marker');
+  assert.equal(admits(buoys, point({class: 'buoy'}), 10), false);
+  assert.equal(admits(buoys, point({class: 'buoy'}), 11), true);
+  assert.equal(admits(buoys, point({class: 'light-vessel'}), 11), true);
+  assert.equal(admits(buoys, point({class: 'beacon'}), 11), false);
+  const beacons = byId.get('tileflow-nautical-beacons-marker');
+  assert.equal(admits(beacons, point({class: 'beacon'}), 11), true);
+  assert.equal(admits(beacons, point({class: 'daymark'}), 11), true);
+  assert.equal(admits(beacons, point({class: 'buoy'}), 11), false);
+  const lighthouses = byId.get('tileflow-nautical-lighthouses');
+  assert.equal(admits(lighthouses, point({class: 'lighthouse', min_zoom: 8}), 8), true);
+  assert.equal(admits(lighthouses, point({class: 'buoy'}), 11), false);
+  const aids = byId.get('tileflow-nautical-aids');
+  assert.equal(admits(aids, point({class: 'mooring', min_zoom: 13}), 13), true);
+  assert.equal(admits(aids, point({class: 'mooring', min_zoom: 13}), 12), false);
+  for (const drawnElsewhere of ['buoy', 'beacon', 'lighthouse', 'light-float']) {
+    assert.equal(admits(aids, point({class: drawnElsewhere}), 14), false, drawnElsewhere);
+  }
+
+  const ports = byId.get('tileflow-nautical-ports');
+  assert.equal(admits(ports, point({class: 'port', min_zoom: 3}), 3), true);
+  assert.equal(admits(ports, point({class: 'harbour', min_zoom: 3}), 3), false);
+  const harbours = byId.get('tileflow-nautical-harbours');
+  assert.equal(admits(harbours, point({class: 'harbour'}), 11), true);
+  assert.equal(
+    admits(harbours, {geometry: 'Polygon', properties: {class: 'harbour', min_zoom: 7}}, 11),
+    false,
+  );
+
+  const line = (properties: FilterFeature['properties']): FilterFeature => ({
+    geometry: 'LineString',
+    properties: {min_zoom: 8, ...properties},
+  });
+  const routes = byId.get('tileflow-nautical-routes');
+  const cables = byId.get('tileflow-nautical-cables');
+  assert.equal(admits(routes, line({class: 'route'}), 8), true);
+  assert.equal(admits(routes, line({class: 'traffic-separation'}), 8), true);
+  assert.equal(admits(routes, line({class: 'cable'}), 8), false);
+  assert.equal(admits(cables, line({class: 'cable'}), 8), true);
+  assert.equal(admits(cables, line({class: 'pipeline'}), 8), true);
+  assert.equal(admits(cables, line({class: 'route'}), 8), false);
+
+  // Rocks are glyphs; obstructions and platforms have a circle marker.
+  const hazardMarker = byId.get('tileflow-nautical-hazards-marker');
+  const hazardSymbol = byId.get('tileflow-nautical-hazards');
+  const rock = point({class: 'rock', min_zoom: 12, water_level: 'awash'});
+  assert.equal(admits(hazardSymbol, rock, 12), true);
+  assert.equal(admits(hazardMarker, rock, 12), false);
+  assert.equal(admits(hazardMarker, point({class: 'obstruction', min_zoom: 12}), 12), true);
+  assert.match(JSON.stringify(hazardSymbol?.layout?.['text-field']), /water_level/u);
+  const hazardOutline = byId.get('tileflow-nautical-hazard-areas-outline');
+  assert.equal(admits(hazardOutline, line({class: 'obstruction', min_zoom: 10}), 10), true);
+  assert.equal(
+    admits(byId.get('tileflow-nautical-hazard-areas'), line({class: 'obstruction'}), 10),
+    false,
+  );
+
+  // Coverage tints only coverage that speaks for every family.
+  const coverage = byId.get('tileflow-nautical-coverage');
+  const cell = (families: string): FilterFeature => ({
+    geometry: 'Polygon',
+    properties: {families, min_zoom: 0},
+  });
+  assert.equal(admits(coverage, cell('aid,light,hazard,wreck,reef,navigation_area'), 4), true);
+  assert.equal(admits(coverage, cell('light'), 4), false);
+});
+
+test('nautical marks take their schema colour, rank, label, and size', () => {
+  const byId = new Map(compiledNautical().layers.map((layer) => [layer.id, layer]));
+
+  for (const id of ['tileflow-nautical-buoys-marker', 'tileflow-nautical-beacons-marker']) {
+    assert.match(JSON.stringify(byId.get(id)?.paint?.['circle-color']), /"color"/u, id);
+    assert.match(JSON.stringify(byId.get(id)?.paint?.['circle-stroke-color']), /"color"/u, id);
+  }
+  assert.match(
+    JSON.stringify(byId.get('tileflow-nautical-lights-marker')?.paint?.['circle-color']),
+    /"color"/u,
+  );
+  for (const id of [
+    'tileflow-nautical-buoys',
+    'tileflow-nautical-beacons',
+    'tileflow-nautical-lighthouses',
+    'tileflow-nautical-lights',
+    'tileflow-nautical-ports',
+  ]) {
+    assert.match(JSON.stringify(byId.get(id)?.layout?.['symbol-sort-key']), /"rank"/u, id);
+  }
+  const lightLabel = JSON.stringify(byId.get('tileflow-nautical-lights')?.layout?.['text-field']);
+  assert.match(lightLabel, /"label"/u);
+  assert.match(lightLabel, /"zoom"/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-ports')?.layout), /"size"/u);
+  assert.match(JSON.stringify(byId.get('tileflow-nautical-ports')?.layout), /"name"/u);
+  assert.match(
+    JSON.stringify(byId.get('tileflow-nautical-navigation-areas-outline')?.paint),
+    /restricted/u,
+  );
+});
+
+test('a map that draws Nautical declares the not-for-navigation notice', () => {
+  for (const marine of ['nautical', 'chart'] as const) {
+    assert.deepEqual(readTileflowNotices(compiledNautical(marine).metadata), [
+      {
+        id: tileflowNauticalNotice.id,
+        sources: [tileflowNauticalSourceId],
+        text: tileflowNauticalNotice.text,
+      },
+    ]);
+  }
+  for (const map of [
+    extendStreets({marine: 'bathymetry'}),
+    extendStreets({marine: 'none'}),
+    extendStreets(),
+    extendStreets({marine: 'nautical', modules: {nautical: disable()}}),
+  ]) {
+    const style = createStyle(map, {preparedAssets});
+    assert.equal(style.metadata?.[tileflowNoticesMetadataKey], undefined);
+  }
+  const custom = createStyle(
+    extendStreets({marine: {bathymetry: false, nautical: {sourceId: 'charts'}}}),
+    {preparedAssets},
+  );
+  assert.deepEqual(readTileflowNotices(custom.metadata)[0]?.sources, ['charts']);
+});
+
+test('theme image tokens replace nautical circle markers with icons', () => {
+  const images = {
+    'nautical.buoy': 'buoy',
+    'nautical.buoy.cardinal': 'buoy-cardinal',
+    'nautical.buoy.port': 'buoy-port',
+    'nautical.light': 'light',
+    'nautical.lighthouse': 'lighthouse',
+  } as const;
+  const theme = defineTheme(testLightTheme, {
+    id: 'nautical-icons',
+    version: 1,
+    colorScheme: 'light',
+    tokens: {image: images},
+  });
+  const style = createStyle(extendStreets({marine: 'nautical', themes: {light: theme}}), {
+    preparedAssets: {
+      icons: {
+        ids: [...preparedAssets.icons.ids, ...Object.values(images)],
+        sprite: preparedAssets.icons.sprite,
+      },
+    },
+  });
+  const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
+  for (const group of ['buoys', 'lights', 'lighthouses']) {
+    assert.equal(byId.has(`tileflow-nautical-${group}-marker`), false, group);
+    assert.ok(byId.get(`tileflow-nautical-${group}`)?.layout?.['icon-image'], group);
+  }
+  // Groups without a token keep their circle marker.
+  assert.equal(byId.get('tileflow-nautical-beacons-marker')?.type, 'circle');
+
+  const buoyImage = byId.get('tileflow-nautical-buoys')?.layout?.['icon-image'];
+  const parsed = expression.createExpression(buoyImage, {type: 'resolvedImage'} as never);
+  assert.equal(parsed.result, 'success');
+  const icon = (properties: Record<string, string>) =>
+    (
+      parsed.value as {evaluate(globals: unknown, feature: unknown): {name?: string} | undefined}
+    ).evaluate({zoom: 12}, {properties})?.name;
+  assert.equal(icon({category: 'port', subclass: 'lateral'}), 'buoy-port');
+  // A variant without its own token falls back to the group token.
+  assert.equal(icon({category: 'starboard', subclass: 'lateral'}), 'buoy');
+  assert.equal(icon({category: 'north', subclass: 'cardinal'}), 'buoy-cardinal');
+  assert.equal(icon({category: 'yachting', subclass: 'special-purpose'}), 'buoy');
+  assert.match(
+    JSON.stringify(byId.get('tileflow-nautical-buoys')?.paint?.['icon-color']),
+    /"color"/u,
+  );
+  assert.deepEqual(validateStyleMin(style as never), []);
 });
 
 test('rejects auxiliary source ID collisions', () => {

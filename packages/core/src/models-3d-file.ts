@@ -10,10 +10,13 @@
 // renderer. It has no DOM dependency, and loads meshoptimizer's decoder only to read a compressed
 // file.
 import type {TileflowLandmarkFootprint} from './models-3d-landmarks';
+import {checkTileflowModelSurface, type TileflowModelSurface} from './models-3d-materials';
 import {
   type TileflowModel,
   type TileflowModelBytes,
+  tileflowModelDefaultLightingRoles,
   type TileflowModelLevelBytes,
+  tileflowModelLightingRoles,
   tileflowModelLimits,
   tileflowModelParts,
   tileflowModelVertexBytes,
@@ -55,6 +58,7 @@ const meshopt = 'EXT_meshopt_compression';
 const quantisation = 'KHR_mesh_quantization';
 const steps = 32767;
 const partCount = Object.keys(tileflowModelParts).length;
+const roleCount = Object.keys(tileflowModelLightingRoles).length;
 const modelId = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const [glbMagic, jsonChunk, binChunk] = [0x46546c67, 0x4e4f534a, 0x004e4942];
 const [short, byte, unsignedByte, unsignedShort, unsignedInt] = [5122, 5120, 5121, 5123, 5125];
@@ -78,15 +82,33 @@ export function encodeTileflowModels(
   const bufferViews: Record<string, unknown>[] = [];
   const roots: number[] = [];
   const blobs: Uint8Array[] = [];
+  const images = new Map<number, {bytes: Uint8Array; view: number}[]>();
   let binLength = 0;
   let fallbackLength = 0;
   const addBlob = (bytes: Uint8Array) => {
     const padding = (4 - (binLength % 4)) % 4;
+    if (binLength + padding + bytes.byteLength > tileflowModelLimits.bytes)
+      throw new RangeError('A prepared model exceeds its byte budget.');
     if (padding) blobs.push(new Uint8Array(padding));
     const offset = binLength + padding;
     blobs.push(bytes);
     binLength = offset + bytes.byteLength;
     return offset;
+  };
+  const addImage = (bytes: Uint8Array) => {
+    let hash = 2166136261;
+    for (const byte of bytes) hash = Math.imul(hash ^ byte, 16777619) >>> 0;
+    const candidates = images.get(hash) ?? [];
+    const same = candidates.find(
+      (entry) =>
+        entry.bytes.length === bytes.length && entry.bytes.every((value, i) => value === bytes[i]),
+    );
+    if (same) return same.view;
+    const view = bufferViews.length;
+    bufferViews.push({buffer: 0, byteOffset: addBlob(bytes), byteLength: bytes.byteLength});
+    candidates.push({bytes, view});
+    images.set(hash, candidates);
+    return view;
   };
   const addView = (bytes: Uint8Array, count: number, stride: number, vertices: boolean) => {
     const target = vertices ? 34962 : 34963;
@@ -181,12 +203,40 @@ export function encodeTileflowModels(
           },
         ],
       });
+      let surface: Record<string, unknown> | undefined;
+      if (mesh.surface && level.attributes) {
+        const attributes = level.attributes;
+        const data = new Uint8Array(
+          attributes.buffer,
+          attributes.byteOffset,
+          attributes.byteLength,
+        );
+        const view = addView(data, level.count, 32, true);
+        const uv = accessors.length;
+        accessors.push(
+          {bufferView: view, byteOffset: 0, componentType: 5126, count: level.count, type: 'VEC4'},
+          {bufferView: view, byteOffset: 16, componentType: 5126, count: level.count, type: 'VEC4'},
+        );
+        surface = {
+          version: 1,
+          attributes: [uv, uv + 1],
+          materials: mesh.surface.materials,
+          textures: mesh.surface.textures.map(({bytes, ...texture}) => ({
+            ...texture,
+            bufferView: addImage(bytes),
+            byteLength: bytes.byteLength,
+          })),
+          ranges: mesh.surface.ranges,
+          ...(mesh.surface.emitters ? {emitters: mesh.surface.emitters} : {}),
+        };
+      }
       children.push(nodes.length);
       nodes.push({
         name: levelNames[index],
         mesh: meshes.length - 1,
         translation: [...level.centre],
         scale: [level.step, level.step, level.step],
+        ...(surface ? {extras: {tileflow: {surface}}} : {}),
       });
     }
     roots.push(nodes.length);
@@ -196,6 +246,7 @@ export function encodeTileflowModels(
       extras: {
         tileflow: {
           model: model.id,
+          lightingRoles: 1,
           footprint: model.footprint.map((ring) => ring.map((value) => round(value, 100))),
           ...(model.at ? {at: [model.at[0], model.at[1]]} : {}),
           ...(model.heading !== undefined ? {heading: model.heading} : {}),
@@ -271,8 +322,7 @@ export async function decodeTileflowModels(
         if (source !== 0 || byteStride !== stride || count * byteStride !== length)
           throw new Error();
         if (filter !== undefined && filter !== 'NONE') throw new Error();
-        if (mode !== (stride === tileflowModelVertexBytes ? 'ATTRIBUTES' : 'TRIANGLES'))
-          throw new Error();
+        if (mode !== (stride > 4 ? 'ATTRIBUTES' : 'TRIANGLES')) throw new Error();
         out = new Uint8Array(length);
         decoder!.decodeGltfBuffer(out, count, byteStride, slice(bin, byteOffset, byteLength), mode);
       } else {
@@ -288,6 +338,8 @@ export async function decodeTileflowModels(
     for (const root of roots) {
       const node = json.nodes?.[root as number];
       const model = readModelNode(node);
+      const roles = node.extras.tileflow.lightingRoles;
+      if (roles !== undefined && roles !== 1) return undefined;
       const children: unknown[] = Array.isArray(node.children) ? node.children : [];
       if (children.length < 1 || children.length > tileflowModelLimits.levels) return undefined;
       const levels: TileflowModelLevelBytes[] = [];
@@ -298,6 +350,7 @@ export async function decodeTileflowModels(
           json.nodes?.[child as number],
           levelNames[at]!,
           viewBytes,
+          roles === 1,
         );
         // Bounds in glTF's axes (x east, y up, z south), then east, north and up.
         const low = level.min.map((value, axis) => level.centre[axis]! + value * level.step);
@@ -312,6 +365,7 @@ export async function decodeTileflowModels(
           indices: level.indices,
           centre: level.centre,
           step: level.step,
+          ...(level.surface ? {surface: level.surface} : {}),
         });
       }
       models.push({
@@ -355,6 +409,109 @@ export function readTileflowModelFileIds(
       ids.push(readModelNode(node).id);
     }
     return new Set(ids).size === ids.length ? ids : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** A prepared model file's name: its id and the start of its SHA-256, so a change is a new name. */
+export function tileflowModelFileName(id: string, sha256: string): string {
+  return `${id}-${sha256.slice(0, 16)}.glb`;
+}
+
+/** What a file holding one model is, in metres, read without decompressing its meshes. */
+export type TileflowModelFileSummary = Readonly<{
+  /** The model's id, as maps name it. */
+  model: string;
+  /** Its levels of detail, nearest first. */
+  levels: readonly Readonly<{
+    level: (typeof levelNames)[number];
+    vertices: number;
+    triangles: number;
+  }>[];
+  /** The nearest level's extent along east, north and up, from the ground. */
+  width: number;
+  depth: number;
+  height: number;
+  /** The base the model stands in for: its rings, their points and their area in square metres. */
+  footprint: Readonly<{rings: number; points: number; area: number}>;
+}>;
+
+/**
+ * Summarises a prepared file of one model from its glTF JSON alone: its id, the vertices and
+ * triangles of each level, its size and its footprint. It decompresses nothing, so it suits a
+ * server that checks an upload; `undefined` means the file is not a Tileflow model file of exactly
+ * one model.
+ */
+export function readTileflowModelFileSummary(
+  buffer: ArrayBuffer | Uint8Array,
+): TileflowModelFileSummary | undefined {
+  try {
+    const ids = readTileflowModelFileIds(buffer);
+    if (ids?.length !== 1) return undefined;
+    const {json} = readGlb(buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer));
+    const node = json.nodes[json.scenes[json.scene ?? 0].nodes[0]];
+    const {id, footprint} = readModelNode(node);
+    const levels = (node.children as unknown[]).map((child, at) => {
+      const level = json.nodes?.[child as number];
+      const name = levelNames[at]!;
+      if (level?.name !== name) throw new Error();
+      const primitive = json.meshes?.[level.mesh]?.primitives?.[0];
+      const position = json.accessors?.[primitive?.attributes?.POSITION];
+      const index = json.accessors?.[primitive?.indices];
+      const vertices = position?.count;
+      const indices = index?.count;
+      const centre = level.translation;
+      const step = level.scale?.[0];
+      if (
+        !Number.isInteger(vertices) ||
+        vertices < 3 ||
+        vertices > tileflowModelLimits.vertices ||
+        !Number.isInteger(indices) ||
+        indices < 3 ||
+        indices % 3 !== 0 ||
+        indices / 3 > tileflowModelLimits.triangles ||
+        !Array.isArray(centre) ||
+        centre.length !== 3 ||
+        !centre.every(Number.isFinite) ||
+        !(step > 0) ||
+        ![position.min, position.max].every(
+          (list) => Array.isArray(list) && list.length === 3 && list.every(Number.isFinite),
+        )
+      )
+        throw new Error();
+      // In glTF's axes: x east, y up, z south.
+      const low = (axis: number) => centre[axis] + position.min[axis] * step;
+      const high = (axis: number) => centre[axis] + position.max[axis] * step;
+      return {
+        level: name,
+        vertices: vertices as number,
+        triangles: (indices as number) / 3,
+        extent: [high(0) - low(0), high(2) - low(2), high(1)] as const,
+      };
+    });
+    const [width, depth, height] = levels[0]!.extent;
+    let area = 0;
+    for (const ring of footprint) {
+      let twice = 0;
+      for (let at = 0; at < ring.length; at += 2) {
+        const next = (at + 2) % ring.length;
+        twice += ring[at]! * ring[next + 1]! - ring[next]! * ring[at + 1]!;
+      }
+      area += twice / 2;
+    }
+    return {
+      model: id,
+      levels: levels.map(({level, vertices, triangles}) => ({level, vertices, triangles})),
+      width: round(width, 100),
+      depth: round(depth, 100),
+      height: round(height, 100),
+      footprint: {
+        rings: footprint.length,
+        points: footprint.reduce((sum, ring) => sum + ring.length / 2, 0),
+        area: round(Math.abs(area), 10),
+      },
+    };
   } catch {
     return undefined;
   }
@@ -461,6 +618,10 @@ function quantise(mesh: TileflowModel['levels'][number], compressor?: TileflowMo
     raw[at + 12] = part;
     raw[at + 13] = Math.round(((clamp(mesh.shades[vertex]!, -1, 1) + 1) / 2) * 255);
     raw[at + 14] = Math.round(clamp(mesh.occlusion[vertex]!, 0, 1) * 255);
+    const role = mesh.lightingRoles?.[vertex] ?? tileflowModelDefaultLightingRoles[part]!;
+    if (!Number.isInteger(role) || role < 0 || role >= roleCount)
+      throw new RangeError(`Vertex ${vertex} has no lighting role.`);
+    raw[at + 15] = role;
   }
 
   // Vertices alike in every byte become one.
@@ -470,7 +631,8 @@ function quantise(mesh: TileflowModel['levels'][number], compressor?: TileflowMo
   const kept: number[] = [];
   for (let vertex = 0; vertex < count; vertex += 1) {
     const w = vertex * 4;
-    const key = `${words[w]},${words[w + 1]},${words[w + 2]},${words[w + 3]}`;
+    const extra = mesh.surface?.attributes.slice(vertex * 8, vertex * 8 + 8);
+    const key = `${words[w]},${words[w + 1]},${words[w + 2]},${words[w + 3]}${extra ? ',' + extra.join(',') : ''}`;
     let index = seen.get(key);
     if (index === undefined) {
       index = kept.length;
@@ -486,7 +648,7 @@ function quantise(mesh: TileflowModel['levels'][number], compressor?: TileflowMo
     indices[position] = weld[vertex]!;
   }
   let order = kept;
-  if (compressor) {
+  if (compressor && !mesh.surface) {
     // In place: the triangles reordered for the vertex cache, and the vertices for fetching.
     const [remap, unique] = compressor.reorderMesh(indices, true, true);
     order = new Array<number>(unique);
@@ -494,9 +656,12 @@ function quantise(mesh: TileflowModel['levels'][number], compressor?: TileflowMo
       if (remap[index] !== 0xffffffff) order[remap[index]!] = vertex;
   }
   const vertices = new Uint8Array(order.length * tileflowModelVertexBytes);
+  const attributes = mesh.surface ? new Float32Array(order.length * 8) : undefined;
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];
   for (const [index, vertex] of order.entries()) {
+    if (attributes && mesh.surface)
+      attributes.set(mesh.surface.attributes.slice(vertex * 8, vertex * 8 + 8), index * 8);
     vertices.set(
       raw.subarray(vertex * tileflowModelVertexBytes, (vertex + 1) * tileflowModelVertexBytes),
       index * tileflowModelVertexBytes,
@@ -515,6 +680,7 @@ function quantise(mesh: TileflowModel['levels'][number], compressor?: TileflowMo
     step,
     min,
     max,
+    attributes,
   };
 }
 
@@ -538,6 +704,9 @@ function checkModel(model: TileflowModelEntry): void {
     for (const list of [level.parts, level.shades, level.occlusion])
       if (list.length !== count)
         throw new RangeError(`Every vertex of level ${at} needs a part, a shade and a light.`);
+    if (level.lightingRoles && level.lightingRoles.length !== count)
+      throw new RangeError(`Every vertex of level ${at} needs a lighting role.`);
+    if (level.surface) checkTileflowModelSurface(level.surface, count, level.indices.length);
     for (let index = 0; index < count; index += 1)
       for (let axis = 0; axis < 3; axis += 1) {
         const value = level.positions[index * 3 + axis]!;
@@ -604,6 +773,7 @@ function readLevelNode(
   node: any,
   name: string,
   viewBytes: (index: unknown, stride: number, length: number) => Uint8Array,
+  hasLightingRoles: boolean,
 ) {
   if (node?.name !== name || node.matrix !== undefined || node.rotation !== undefined)
     throw new Error();
@@ -670,14 +840,65 @@ function readLevelNode(
     tileflowModelVertexBytes,
     count * tileflowModelVertexBytes,
   );
-  for (let vertex = 0; vertex < count; vertex += 1)
-    if (vertices[vertex * tileflowModelVertexBytes + 12]! >= partCount) throw new Error();
+  for (let vertex = 0; vertex < count; vertex += 1) {
+    const at = vertex * tileflowModelVertexBytes;
+    const part = vertices[at + 12]!;
+    if (part >= partCount) throw new Error();
+    if (!hasLightingRoles) vertices[at + 15] = tileflowModelDefaultLightingRoles[part]!;
+    else if (vertices[at + 15]! >= roleCount) throw new Error();
+  }
   const indexBytes = viewBytes(index.bufferView, width, indexCount * width);
   const indices =
     width === 4
       ? new Uint32Array(indexBytes.buffer, indexBytes.byteOffset, indexCount)
       : new Uint16Array(indexBytes.buffer, indexBytes.byteOffset, indexCount);
   for (const vertex of indices) if (vertex >= count) throw new Error();
+  const physical = node.extras?.tileflow?.surface;
+  let surface: (TileflowModelSurface & {attributes: Float32Array}) | undefined;
+  if (physical !== undefined) {
+    if (
+      physical?.version !== 1 ||
+      !Array.isArray(physical.attributes) ||
+      physical.attributes.length !== 2
+    )
+      throw new Error();
+    const uv = accessor(physical.attributes[0]);
+    const colour = accessor(physical.attributes[1]);
+    if (
+      !uv ||
+      !colour ||
+      (uv.byteOffset ?? 0) !== 0 ||
+      colour.byteOffset !== 16 ||
+      uv.bufferView !== colour.bufferView ||
+      [uv, colour].some(
+        (value) =>
+          value.componentType !== 5126 ||
+          value.type !== 'VEC4' ||
+          value.count !== count ||
+          value.normalized === true,
+      )
+    )
+      throw new Error();
+    const attributeBytes = viewBytes(uv.bufferView, 32, count * 32);
+    if (!Array.isArray(physical.textures) || physical.textures.length > 32) throw new Error();
+    surface = {
+      attributes: new Float32Array(attributeBytes.buffer, attributeBytes.byteOffset, count * 8),
+      materials: physical.materials,
+      ranges: physical.ranges,
+      textures: physical.textures.map((texture: any) => {
+        const {bufferView, byteLength, ...properties} = texture;
+        if (
+          !Number.isInteger(byteLength) ||
+          byteLength <= 0 ||
+          byteLength > tileflowModelLimits.bytes
+        )
+          throw new Error();
+        return {...properties, bytes: viewBytes(bufferView, 1, byteLength)};
+      }),
+      ...(physical.emitters === undefined ? {} : {emitters: physical.emitters}),
+    };
+    checkTileflowModelSurface(surface, count, indexCount);
+  }
   return {
     vertices,
     indices,
@@ -685,6 +906,7 @@ function readLevelNode(
     step: scale[0] as number,
     min: min as number[],
     max: max as number[],
+    surface,
   };
 }
 

@@ -31,6 +31,8 @@ export type TileflowMapLibrePoiPointerEvent = Readonly<{
 }>;
 
 export type TileflowMapLibrePoiMap = Readonly<{
+  /** A style layer's source; lets the controller keep its manifest while the style only restyles. */
+  getLayer?: (id: string) => Readonly<{source?: unknown; sourceLayer?: unknown}> | undefined;
   getStyle: () => unknown;
   off?: (event: string, listener: (event: unknown) => void) => unknown;
   on: (
@@ -272,6 +274,19 @@ export function createTileflowMapLibrePoiController(
     options.onActivate?.(match, modality);
   };
 
+  // Reading the style serializes all of it. Its metadata changes only when a style loads; in
+  // between, a valid manifest stays valid while the layers it names keep their sources.
+  let loaded: {manifest: PoiManifest; sources: string} | undefined;
+  const sourcesOf = (layers: readonly PoiManifestLayer[]) =>
+    options.map.getLayer
+      ? layers
+          .map(({layerId}) => {
+            const layer = options.map.getLayer!(layerId);
+            return layer ? `${String(layer.source)}/${String(layer.sourceLayer)}` : '';
+          })
+          .join('\n')
+      : undefined;
+
   const refreshManifest = () => {
     if (disposed) return;
     setHovered(null, 'programmatic');
@@ -280,6 +295,12 @@ export function createTileflowMapLibrePoiController(
       options.onManifestChange?.(true);
       return;
     }
+    if (loaded && sourcesOf(loaded.manifest.layers) === loaded.sources) {
+      manifest = loaded.manifest;
+      options.onManifestChange?.(true);
+      return;
+    }
+    loaded = undefined;
     const style = options.map.getStyle();
     if (style === undefined) {
       manifest = null;
@@ -287,6 +308,8 @@ export function createTileflowMapLibrePoiController(
       return;
     }
     manifest = parsePoiManifest(style, options.onDiagnostic);
+    const sources = manifest ? sourcesOf(manifest.layers) : undefined;
+    if (manifest && sources !== undefined) loaded = {manifest, sources};
     options.onManifestChange?.(manifest !== null);
   };
 
@@ -302,6 +325,7 @@ export function createTileflowMapLibrePoiController(
   };
   const handleStyleLoad = () => {
     manifestRefreshScheduled = false;
+    loaded = undefined;
     refreshManifest();
   };
 

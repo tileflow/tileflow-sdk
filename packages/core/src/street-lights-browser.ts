@@ -486,7 +486,8 @@ export function createTileflowStreetLights(
     attach();
   };
   map.on('styledata', onStyle);
-  map.on('idle', onStyle);
+  // A settled map has the same style: it only retries attaching the layer.
+  map.on('idle', attach);
   attach();
   cameraFrame(() => camera.update());
 
@@ -512,7 +513,7 @@ export function createTileflowStreetLights(
       if (disposed) return;
       disposed = true;
       map.off('styledata', onStyle);
-      map.off('idle', onStyle);
+      map.off('idle', attach);
       try {
         if (map.getLayer(tileflowStreetLightsLayerId)) map.removeLayer(tileflowStreetLightsLayerId);
       } catch {

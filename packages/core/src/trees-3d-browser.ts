@@ -54,6 +54,8 @@ export type TileflowTrees3DMap = {
   getCenter(): {lat: number; lng: number};
   getLayer(id: string): unknown;
   getLayoutProperty?(layer: string, name: string): unknown;
+  /** The style's layer ids in order, read without serializing the style. */
+  getLayersOrder?(): string[];
   getPitch(): number;
   getSource(id: string): unknown;
   getStyle(): unknown;
@@ -1064,8 +1066,10 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     }
     const flat = new Set(vegetation()?.flatLayers ?? []);
     if (flat.size === 0) return;
-    const layers = (map.getStyle() as {layers?: {id: string}[]} | undefined)?.layers ?? [];
-    for (const {id} of layers) {
+    const layers =
+      map.getLayersOrder?.() ??
+      ((map.getStyle() as {layers?: {id: string}[]} | undefined)?.layers ?? []).map(({id}) => id);
+    for (const id of layers) {
       if (!flat.has(id.split('::')[0]!)) continue;
       const visibility = map.getLayoutProperty(id, 'visibility');
       if (!flatVisibility.has(id)) flatVisibility.set(id, visibility);

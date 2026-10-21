@@ -77,38 +77,42 @@ export function compileRoundabouts(
         )
       : atZoom(borderWidth, level);
   const geometry = (casing: boolean, width: boolean) =>
-    expression<number>([
-      'interpolate',
-      ['exponential', 2],
-      ['zoom'],
-      ...geometryLevels.flatMap((level) => {
-        const centerline = ['*', radiusAt15, 2 ** (level - 15)];
-        const fallback =
-          fallbackWidth === undefined
-            ? select(
-                widths.map(({condition, value}) => ({condition, value: atZoom(value, level)})),
-                0,
-              )
-            : atZoom(fallbackWidth, level);
-        const inner = [
-          'case',
-          physical,
-          ['*', centerline, ['/', innerMeters, radiusMeters]],
-          ['-', centerline, ['/', fallback, 2]],
-        ];
-        const fillWidth = [
-          'case',
-          physical,
-          ['*', centerline, ['/', ['-', outerMeters, innerMeters], radiusMeters]],
-          fallback,
-        ];
-        const border = casing ? borderAt(level) : 0;
-        return [
-          level,
-          width ? ['max', 0, ['+', fillWidth, border]] : ['max', 0, ['-', inner, ['/', border, 2]]],
-        ];
-      }),
-    ]);
+    expression<number>(
+      bindRepeated([
+        'interpolate',
+        ['exponential', 2],
+        ['zoom'],
+        ...geometryLevels.flatMap((level) => {
+          const centerline = ['*', radiusAt15, 2 ** (level - 15)];
+          const fallback =
+            fallbackWidth === undefined
+              ? select(
+                  widths.map(({condition, value}) => ({condition, value: atZoom(value, level)})),
+                  0,
+                )
+              : atZoom(fallbackWidth, level);
+          const inner = [
+            'case',
+            physical,
+            ['*', centerline, ['/', innerMeters, radiusMeters]],
+            ['-', centerline, ['/', fallback, 2]],
+          ];
+          const fillWidth = [
+            'case',
+            physical,
+            ['*', centerline, ['/', ['-', outerMeters, innerMeters], radiusMeters]],
+            fallback,
+          ];
+          const border = casing ? borderAt(level) : 0;
+          return [
+            level,
+            width
+              ? ['max', 0, ['+', fillWidth, border]]
+              : ['max', 0, ['-', inner, ['/', border, 2]]],
+          ];
+        }),
+      ]),
+    );
   const phaseStyle = (phase: 'casing' | 'fill'): TileflowCircleStyle => ({
     color: 'rgba(0, 0, 0, 0)',
     minZoom: 15,
@@ -168,6 +172,72 @@ export function compileRoundabouts(
       target: `roads.roundabouts.${phase}`,
     });
   }
+}
+
+// Expressions a binding may stand for: never a match label or an interpolation's curve.
+const bindable = new Set([
+  'case',
+  'match',
+  'all',
+  'any',
+  '!',
+  '==',
+  '!=',
+  '<',
+  '<=',
+  '>',
+  '>=',
+  'has',
+  'get',
+  'to-number',
+  'coalesce',
+  '+',
+  '-',
+  '*',
+  '/',
+  'max',
+  'min',
+]);
+
+/**
+ * States once, with `let`, the feature expressions a zoom curve repeats most at its stops. A `var`
+ * evaluates as the expression it names, so features draw as before; the style is smaller and quicker
+ * to parse. Bindings wrap the curve, as MapLibre allows; each one costs MapLibre's validation a walk of
+ * what it names wherever it is used, so only the two largest savings are bound.
+ */
+function bindRepeated(curve: unknown[]): unknown[] {
+  let tree: unknown[] = curve;
+  for (let index = 0; index < 2; index += 1) {
+    const json = new Map<unknown[], string>();
+    const found = new Map<string, number>();
+    const visit = (value: unknown): {text: string; free: boolean} => {
+      if (!Array.isArray(value) || value[0] === 'literal')
+        return {text: JSON.stringify(value), free: true};
+      const parts = value.map(visit);
+      const text = `[${parts.map((part) => part.text).join(',')}]`;
+      json.set(value, text);
+      const free = value[0] !== 'zoom' && value[0] !== 'var' && parts.every((part) => part.free);
+      if (free && typeof value[0] === 'string' && bindable.has(value[0]))
+        found.set(text, (found.get(text) ?? 0) + 1);
+      return {text, free};
+    };
+    visit(tree);
+    let best: string | undefined;
+    let saving = 256;
+    for (const [text, count] of found) {
+      const saved = (count - 1) * text.length;
+      if (count > 1 && saved > saving) [best, saving] = [text, saved];
+    }
+    if (best === undefined) break;
+    const name = `tileflow_${index}`;
+    const replace = (value: unknown): unknown => {
+      if (!Array.isArray(value) || value[0] === 'literal') return value;
+      if (json.get(value) === best) return ['var', name];
+      return value.map(replace);
+    };
+    tree = ['let', name, JSON.parse(best), replace(tree)];
+  }
+  return tree;
 }
 
 function select(values: readonly Value[], fallback: unknown): unknown {
@@ -308,11 +378,82 @@ function atZoom(value: unknown, level: number): unknown {
     stops.push({level: value[index] as number, value: value[index + 1]});
   }
   const exact = stops.find((stop) => stop.level === level);
-  if (exact) return exact.value;
+  if (exact) return foldConstants(exact.value);
   const lower = [...stops].reverse().find((stop) => stop.level < level);
   const upper = stops.find((stop) => stop.level > level);
-  if (value[0] === 'step') return lower?.value ?? value[2];
-  if (!lower) return upper?.value ?? 0;
-  if (!upper) return lower.value;
-  return ['interpolate', value[1], level, lower.level, lower.value, upper.level, upper.value];
+  if (value[0] === 'step') return foldConstants(lower?.value ?? value[2]);
+  if (!lower) return foldConstants(upper?.value ?? 0);
+  if (!upper) return foldConstants(lower.value);
+  // At a known zoom the curve's position between its stops is known too.
+  const at = interpolationFactor(
+    value[1] as unknown[],
+    level - lower.level,
+    upper.level - lower.level,
+  );
+  const folded = Number.isFinite(at)
+    ? interpolated(foldConstants(lower.value), foldConstants(upper.value), at)
+    : undefined;
+  return (
+    folded ?? ['interpolate', value[1], level, lower.level, lower.value, upper.level, upper.value]
+  );
+}
+
+/** Arithmetic on constants, evaluated as MapLibre would. */
+function foldConstants(value: unknown): unknown {
+  if (!Array.isArray(value) || value[0] === 'literal') return value;
+  const folded = value.map(foldConstants);
+  const [operator, ...operands] = folded;
+  if (!operands.length || !operands.every((operand) => typeof operand === 'number')) return folded;
+  const numbers = operands as number[];
+  const result =
+    operator === '*'
+      ? numbers.reduce((product, number) => product * number, 1)
+      : operator === '+'
+        ? numbers.reduce((sum, number) => sum + number, 0)
+        : operator === '-'
+          ? numbers.length === 1
+            ? -numbers[0]!
+            : numbers[0]! - numbers[1]!
+          : operator === '/' && numbers.length === 2
+            ? numbers[0]! / numbers[1]!
+            : operator === 'max'
+              ? Math.max(...numbers)
+              : operator === 'min'
+                ? Math.min(...numbers)
+                : undefined;
+  return result !== undefined && Number.isFinite(result) ? result : folded;
+}
+
+/**
+ * The value a fraction `at` of the way between two numeric outputs: numbers, or `case` and `match`
+ * expressions that choose between them by the same conditions, so every feature takes the same
+ * branch of both. Undefined when the two cannot be combined that way.
+ */
+function interpolated(lower: unknown, upper: unknown, at: number): unknown {
+  if (typeof lower === 'number' && typeof upper === 'number') return lower + (upper - lower) * at;
+  if (JSON.stringify(lower) === JSON.stringify(upper)) return lower;
+  if (
+    !Array.isArray(lower) ||
+    !Array.isArray(upper) ||
+    lower.length !== upper.length ||
+    (lower[0] !== 'case' && lower[0] !== 'match') ||
+    lower[0] !== upper[0]
+  )
+    return undefined;
+  // `case`: conditions then outputs from 1; `match`: an input, then labels and outputs from 2.
+  const first = lower[0] === 'case' ? 1 : 2;
+  const result: unknown[] = lower.slice(0, first);
+  if (JSON.stringify(result) !== JSON.stringify(upper.slice(0, first))) return undefined;
+  for (let index = first; index < lower.length; index += 1) {
+    const output = (index - first) % 2 === 1 || index === lower.length - 1;
+    if (!output) {
+      if (JSON.stringify(lower[index]) !== JSON.stringify(upper[index])) return undefined;
+      result.push(lower[index]);
+      continue;
+    }
+    const value = interpolated(lower[index], upper[index], at);
+    if (value === undefined) return undefined;
+    result.push(value);
+  }
+  return result;
 }

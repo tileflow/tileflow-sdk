@@ -33,6 +33,7 @@ import {
   isTileflowPathRoadClass,
   tileflowPathRoadClasses,
   tileflowRoadClassFilter,
+  tileflowRoadClassValues,
   tileflowRoadConstructionClasses,
 } from './semantics';
 
@@ -129,6 +130,10 @@ export function compileRoads(
       request?.classes?.[roadClass],
     );
     const treatments = resolveRoadTreatments(request, schema.fields, roadClass);
+    const drawn = {
+      field: schema.fields.class,
+      classes: new Set(tileflowRoadClassValues(roadClass)),
+    };
     const roundaboutSurface: RoundaboutSurface = {roadClass};
     roundaboutSurfaces.push(roundaboutSurface);
 
@@ -155,6 +160,7 @@ export function compileRoads(
           structure,
           phase,
           phaseDefaults.color as string,
+          drawn,
         );
         const contribution: TileflowLayerContribution = {
           family: roadLinePhysicalFamily(roadClass, structure, phase),
@@ -230,6 +236,7 @@ export function compileRoads(
           structure,
           'fill',
           roadColor(context, roadClass),
+          drawn,
         );
         const size =
           hatch.size === undefined
@@ -767,6 +774,8 @@ function applyRoadTreatments(
   structure: TileflowRoadStructure,
   phase: 'casing' | 'fill' | 'shadow',
   fallbackColor: string,
+  /** The road class's `class` field and values, to settle conditions on them. */
+  drawn: Readonly<{field: string; classes: ReadonlySet<string>}>,
 ): typeof base {
   const result = {...base} as Record<string, unknown>;
   const paintProperties = [
@@ -787,7 +796,7 @@ function applyRoadTreatments(
         : [
             {
               condition,
-              resolve: () => expressionOutput(toMapLibreStyleValue(value)),
+              resolve: () => expressionOutput(withinClasses(toMapLibreStyleValue(value), drawn)),
             } satisfies ConditionalBranch,
           ];
     });
@@ -796,7 +805,7 @@ function applyRoadTreatments(
       // runs through the SDF dash atlas, which stipples thin hollow casings.
       if (
         property === 'dash' &&
-        isSolidRoadDash(result[property] ?? treatmentPaintDefaults.dash) &&
+        isSolidRoadDash(withinClasses(result[property] ?? treatmentPaintDefaults.dash, drawn)) &&
         branches.every(({resolve}) => isSolidRoadDash(resolve()))
       ) {
         delete result[property];
@@ -833,6 +842,73 @@ function applyRoadTreatments(
   }
 
   return result as typeof base;
+}
+
+/**
+ * A value as a road class's features see it: conditions on the `class` field that hold, or fail,
+ * for every class value it draws are settled. In a motorway's layers a dash for construction paths
+ * never applies, and the motorway keeps the solid-line shader.
+ */
+function withinClasses(
+  value: unknown,
+  drawn: Readonly<{field: string; classes: ReadonlySet<string>}>,
+): unknown {
+  const decided = (condition: unknown): boolean | undefined => {
+    if (!Array.isArray(condition)) return typeof condition === 'boolean' ? condition : undefined;
+    const [operator, ...operands] = condition;
+    // The class field by the data's name, or by the semantic name bound to it later.
+    const isClass = (operand: unknown) =>
+      Array.isArray(operand) &&
+      operand.length === 2 &&
+      operand[0] === 'get' &&
+      (operand[1] === drawn.field ||
+        (typeof operand[1] === 'object' &&
+          operand[1] !== null &&
+          (operand[1] as {kind?: unknown}).kind === 'tileflow-data-field' &&
+          (operand[1] as {name?: unknown}).name === 'class'));
+    const among = (labels: readonly unknown[]) => {
+      const hits = [...drawn.classes].filter((value) => labels.includes(value)).length;
+      return hits === 0 ? false : hits === drawn.classes.size ? true : undefined;
+    };
+    if ((operator === '==' || operator === '!=') && operands.length === 2) {
+      const label = isClass(operands[0]) ? operands[1] : isClass(operands[1]) ? operands[0] : null;
+      if (typeof label !== 'string') return undefined;
+      const equal = among([label]);
+      return equal === undefined ? undefined : operator === '==' ? equal : !equal;
+    }
+    if (
+      operator === 'match' &&
+      operands.length === 4 &&
+      isClass(operands[0]) &&
+      typeof operands[2] === 'boolean' &&
+      typeof operands[3] === 'boolean'
+    ) {
+      const labels = Array.isArray(operands[1]) ? operands[1] : [operands[1]];
+      const matched = among(labels);
+      return matched === undefined ? undefined : matched ? operands[2] : operands[3];
+    }
+    if (operator === '!' && operands.length === 1) {
+      const inner = decided(operands[0]);
+      return inner === undefined ? undefined : !inner;
+    }
+    if (operator === 'all' || operator === 'any') {
+      const results = operands.map(decided);
+      if (results.includes(operator === 'all' ? false : true)) return operator !== 'all';
+      return results.every((result) => result !== undefined) ? operator === 'all' : undefined;
+    }
+    return undefined;
+  };
+  if (!Array.isArray(value) || value[0] !== 'case') return value;
+  const branches: unknown[] = [];
+  for (let index = 1; index < value.length - 1; index += 2) {
+    const holds = decided(value[index]);
+    if (holds === false) continue;
+    const output = withinClasses(value[index + 1], drawn);
+    if (holds === true) return branches.length ? ['case', ...branches, output] : output;
+    branches.push(value[index], output);
+  }
+  const fallback = withinClasses(value.at(-1), drawn);
+  return branches.length ? ['case', ...branches, fallback] : fallback;
 }
 
 function isSolidRoadDash(value: unknown): boolean {

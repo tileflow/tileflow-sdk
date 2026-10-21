@@ -115,7 +115,8 @@ test('Streets construction roads have square transverse marks over a faint conti
           assert.deepEqual(paint(base, 'line-dasharray', zoom, feature), [1, 0]);
           assert.equal(paint(base, 'line-opacity', zoom, feature), 0);
           assert.equal(paint(underlay, 'line-opacity', zoom, feature), 0.16);
-          assert.deepEqual(paint(underlay, 'line-dasharray', zoom, feature), [1, 0]);
+          // A solid underlay keeps MapLibre's solid-line shader: it has no dash at all.
+          assert.equal(underlay.paint?.['line-dasharray'], undefined);
           assert.equal(
             marks.filter((layer) =>
               featureFilter(layer.filter).filter({zoom}, {type: 2, properties: feature}),

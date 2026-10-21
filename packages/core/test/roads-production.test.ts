@@ -153,6 +153,13 @@ test('solid road treatments avoid the dash shader while preserving real dash pat
   }
 });
 
+/** A zoom curve inside the `let` bindings that name what it repeats. */
+function curveOf(value: unknown): unknown[] {
+  let curve = value as unknown[];
+  while (curve[0] === 'let') curve = curve.at(-1) as unknown[];
+  return curve;
+}
+
 function styleErrors(layers: readonly Record<string, unknown>[]): string[] {
   return validateStyleMin({
     version: 8,
@@ -592,6 +599,91 @@ test('roundabout fallbacks follow resolved road widths and hollow borders', () =
   }
 });
 
+test('a dash for other road classes, or a solid one, leaves a road on the solid-line shader', () => {
+  const layers = compileRoads(
+    roads({
+      detail: 'all',
+      extras: {paths: true},
+      classes: {motorway: {tunnel: {fill: {dash: [1, 0]}}}},
+      modifiers: {
+        construction: {
+          surface: {
+            fill: {
+              dash: expression<readonly number[]>([
+                'case',
+                ['==', ['get', 'class'], 'path_construction'],
+                ['literal', [1.5, 1]],
+                ['literal', [1, 0]],
+              ]),
+            },
+          },
+        },
+      },
+    }),
+    context,
+  ).map(({layer}) => layer);
+  const paintOf = (id: string) =>
+    layers.find((layer) => layer.id === id)!.paint as Record<string, unknown>;
+  assert.equal(paintOf('tileflow-road-surface-motorway-fill')['line-dasharray'], undefined);
+  assert.equal(paintOf('tileflow-road-tunnel-motorway-fill')['line-dasharray'], undefined);
+  // Construction paths are footways' own class: their layer keeps the dash.
+  const footway = paintOf('tileflow-road-surface-footway-fill')['line-dasharray'];
+  assert.deepEqual(
+    evaluateProperty(footway, mapLibreStyleSpec.paint_line['line-dasharray'], {
+      class: 'path_construction',
+      subclass: 'footway',
+    }),
+    [1.5, 1],
+  );
+});
+
+test('roundabout widths between authored stops are stated per zoom as MapLibre evaluates them', () => {
+  // A width that changes between its stops and with the feature, as a road's ramps and access do.
+  const width = expression<number>([
+    'interpolate',
+    ['exponential', 1.5],
+    ['zoom'],
+    12,
+    ['case', ['==', ['get', 'ramp'], 1], ['*', 1, 0.72], ['*', 1, 1]],
+    18,
+    ['case', ['==', ['get', 'ramp'], 1], ['*', 9, 0.72], ['*', 9, 1]],
+  ]);
+  const layers = compileRoads(
+    roads({detail: 'none', classes: {minor: {surface: {fill: {width}, casing: {width: 1}}}}}),
+    context,
+  ).map(({layer}) => layer);
+  const fill = layers.find(({id}) => id === 'tileflow-road-circular-fill')!;
+  const radius = (fill.paint as Record<string, unknown>)['circle-radius'];
+  const text = JSON.stringify(radius);
+  assert.doesNotMatch(
+    text,
+    /\["interpolate",\["exponential",1\.5\],\d/,
+    'no curve at a known zoom',
+  );
+  assert.equal((radius as unknown[])[0], 'let', 'repeated feature expressions are stated once');
+  for (const ramp of [0, 1])
+    for (const level of [15, 16, 17, 18]) {
+      const properties = {class: 'minor', radius_px_z15: 20, ramp};
+      const expected =
+        20 * 2 ** (level - 15) -
+        (evaluateProperty(
+          (width as unknown as {value: unknown}).value,
+          mapLibreStyleSpec.paint_line['line-width'],
+          properties,
+          level,
+        ) as number) /
+          2;
+      const actual = evaluateProperty(
+        radius,
+        mapLibreStyleSpec.paint_circle['circle-radius'],
+        properties,
+        level,
+      ) as number;
+      assert.ok(Math.abs(actual - expected) < 1e-9, `ramp ${ramp} at z${level}`);
+    }
+  assert.deepEqual(styleErrors(layers), []);
+});
+
 test('roundabouts follow enabled classes, phase visibility, zoom ranges and data capabilities', () => {
   assert.equal(
     compileRoads(roads({detail: 'none'}), context).some(({target}) =>
@@ -979,7 +1071,7 @@ test('roundabout sampling limits non-base-two width error with bounded default g
     const ring = compileRoads(request, context).find(
       ({target}) => target === 'roads.roundabouts.fill',
     )!.layer;
-    const radius = (ring.paint as Record<string, unknown>)['circle-radius'] as unknown[];
+    const radius = curveOf((ring.paint as Record<string, unknown>)['circle-radius']);
     assert.equal((radius.length - 3) / 2, expectedStops);
   }
 });
@@ -1033,7 +1125,7 @@ test('feature-dependent ring widths preserve data and authored stops without den
     'geometry must not duplicate large expression trees densely',
   );
   for (const ring of rings) {
-    const radius = (ring.paint as Record<string, unknown>)['circle-radius'] as unknown[];
+    const radius = curveOf((ring.paint as Record<string, unknown>)['circle-radius']);
     assert.equal((radius.length - 3) / 2, 15);
     assert.equal(ring['source-layer'], 'road_circles');
   }

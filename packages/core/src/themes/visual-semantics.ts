@@ -132,6 +132,14 @@ const visualNumberProperties = new Set([
   'symbol-spacing',
 ]);
 
+/**
+ * Whether a property names a collection of colours, such as `broadleafColors` or `modelColors`.
+ * Every value in the collection, by index or by key, is a colour.
+ */
+export function isTileflowVisualColorCollection(property: string): boolean {
+  return property === 'colors' || property.endsWith('Colors') || property.endsWith('-colors');
+}
+
 /** Return the semantic theme category for one visual property, or undefined for structure/data. */
 export function classifyTileflowVisualProperty(
   property: string,
@@ -139,11 +147,9 @@ export function classifyTileflowVisualProperty(
 ): TileflowVisualValueCategory | undefined {
   if (
     property === 'color' ||
-    property === 'colors' ||
     property.endsWith('Color') ||
-    property.endsWith('Colors') ||
     property.endsWith('-color') ||
-    property.endsWith('-colors')
+    isTileflowVisualColorCollection(property)
   ) {
     return 'color';
   }

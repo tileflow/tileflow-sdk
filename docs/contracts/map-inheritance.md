@@ -31,7 +31,9 @@ Each public field has one explicit merge rule:
   Enabled atmosphere requires globe projection; `false` disables an inherited atmosphere.
 - `modules` merges by domain name. Declaring `roads(...)`, for example, replaces that inherited
   module request and every compiler-owned contribution belonging to roads. Omitted domains remain
-  inherited; `disable()` removes a domain and its complete owner-local render stack.
+  inherited; `disable()` removes a domain and its complete owner-local render stack. `refine()`
+  keeps an inherited render stack and merges its operations by name; `renderStack: reset()` removes
+  the stack, and resetting every operation has the same result.
 - `icons`, `fonts`, and `glyphs` follow the asset rules below.
 
 Arrays inside ordinary design objects replace; MapLibre expressions and Tileflow zoom values are

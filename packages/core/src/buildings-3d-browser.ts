@@ -245,6 +245,8 @@ export function createTileflowBuildings3D(
   let ground: {vao: WebGLVertexArrayObject; vbo: WebGLBuffer} | undefined;
   const contactMask = createBuildingContactMask();
   const floodMask = createBuildingContactMask();
+  // The ground masks drawn by this frame's prerender, read back by its render.
+  let masks: {contact?: WebGLTexture; flood?: WebGLTexture} = {};
   let disposed = false;
   // Shadows are drawn in the map's shared 3D scene, with any other 3D layer on the map.
   const scene = tileflowScene3D(map);
@@ -314,7 +316,7 @@ export function createTileflowBuildings3D(
       ground = undefined;
       gl = undefined;
     },
-    prerender(context: WebGLRenderingContext | WebGL2RenderingContext) {
+    prerender(context: WebGLRenderingContext | WebGL2RenderingContext, args: ProjectionArgs) {
       if (!isWebGL2(context)) return;
       ensureCamera();
       // Models and landmarks are read for every tile the camera wants, from a zoom before the
@@ -327,6 +329,7 @@ export function createTileflowBuildings3D(
           camera.zoom,
           visibleScale() > 0,
         );
+      drawMasks(context, args);
       if (!programs.depth) return;
       // A disabled building shadow pass must not claim the ground pass from the trees.
       if (!design().shadows || visibleScale() <= 0) {
@@ -356,11 +359,7 @@ export function createTileflowBuildings3D(
       // Prepare resident tiles before the zoom entrance, so the fade starts with ready geometry.
       // Uploads are bounded and request frames only while work remains.
       if (target > 0 || scale > 0) upload(context);
-      if (visibleScale() <= 0) {
-        contactMask.release(context);
-        floodMask.release(context);
-        return;
-      }
+      if (visibleScale() <= 0) return;
       draw(context, args);
     },
   };
@@ -1141,6 +1140,83 @@ export function createTileflowBuildings3D(
     return width ? Math.min(4, Math.max(1, context.drawingBufferWidth / width)) : 1;
   }
 
+  /** Draws the walls of the given tiles in a band reaching `reach` metres from their feet. */
+  function drawWalls(
+    context: WebGL2RenderingContext,
+    program: Program,
+    args: ProjectionArgs,
+    entries: readonly TileEntry[],
+    reach: number,
+  ): void {
+    for (const tile of entries) {
+      const {x, y, value} = tile;
+      const mesh = value.mesh;
+      if (mesh.indices.length <= mesh.wallsFrom) continue;
+      project(context, program, args, x, y);
+      context.uniform2f(program.uniforms.u_offset!, ...camera.offsetOf({x, y}));
+      context.bindVertexArray(value.gl!.vao);
+      for (const range of viewRanges(args, tile, reach, true))
+        context.drawElements(context.TRIANGLES, range.count, context.UNSIGNED_INT, range.from * 4);
+    }
+  }
+
+  /**
+   * Draws the frame's ground masks from the prerender, before the map's main pass: the contact
+   * band at the foot of the walls and the architectural flood light. Drawing them between the
+   * map's layers would switch framebuffers within its pass, which tiled GPUs pay for in full.
+   */
+  function drawMasks(context: WebGL2RenderingContext, args: ProjectionArgs): void {
+    masks = {};
+    const shown = visibleScale();
+    const entries = variant === args.shaderData.variantName && shown > 0 && ground ? drawn() : [];
+    if (design().occlusion && entries.length > 0) {
+      const program = programs.contact!;
+      masks.contact = contactMask.render(context, () => {
+        context.useProgram(program.program);
+        context.uniform1f(program.uniforms.u_scale!, shown);
+        context.uniform1f(program.uniforms.u_metres!, camera.metres);
+        context.uniform1f(program.uniforms.u_band!, occlusion.ground);
+        context.uniform1f(
+          program.uniforms.u_band_strength!,
+          occlusion.groundStrength * visibleOpacity(),
+        );
+        for (const tile of entries) {
+          const {x, y, value} = tile;
+          const ranges = viewRanges(args, tile, occlusion.ground, true);
+          if (!ranges.length) continue;
+          const buffers = value.gl!;
+          buffers.contact ??= createBuildingContactVao(context, value.mesh);
+          project(context, program, args, x, y);
+          context.bindVertexArray(buffers.contact.vao);
+          for (const range of ranges) {
+            buffers.contact.offset((range.from - value.mesh.wallsFrom) / 6);
+            context.drawArraysInstanced(context.TRIANGLE_STRIP, 0, 4, range.count / 6);
+          }
+        }
+      });
+    } else contactMask.release(context);
+    const architectural = floodLightNow();
+    if (architectural.intensity > 0 && entries.length > 0) {
+      const program = programs.architecturalFlood!;
+      masks.flood = floodMask.render(context, () => {
+        context.useProgram(program.program);
+        context.uniform1f(program.uniforms.u_scale!, shown);
+        context.uniform1f(program.uniforms.u_metres!, camera.metres);
+        context.uniform2f(
+          program.uniforms.u_radius!,
+          architectural.radius[0]!,
+          architectural.radius[1]!,
+        );
+        context.uniform1f(program.uniforms.u_min_height!, architectural.minGroundHeight);
+        context.uniform1f(
+          program.uniforms.u_intensity!,
+          architectural.intensity * visibleOpacity(),
+        );
+        drawWalls(context, program, args, entries, architectural.radius[1]!);
+      });
+    } else floodMask.release(context);
+  }
+
   function draw(context: WebGL2RenderingContext, args: ProjectionArgs): void {
     const entries = drawn();
     const standing = modelsDrawn();
@@ -1348,54 +1424,21 @@ export function createTileflowBuildings3D(
           context.drawArrays(context.TRIANGLE_STRIP, 0, 4);
         }
     }
-    const walls = (program: Program, reach = flood.reach) => {
-      for (const tile of entries) {
-        const {x, y, value} = tile;
-        const mesh = value.mesh;
-        if (mesh.indices.length <= mesh.wallsFrom) continue;
-        project(context, program, args, x, y);
-        context.uniform2f(program.uniforms.u_offset!, ...camera.offsetOf({x, y}));
-        context.bindVertexArray(value.gl!.vao);
-        for (const range of viewRanges(args, tile, reach, true))
-          context.drawElements(
-            context.TRIANGLES,
-            range.count,
-            context.UNSIGNED_INT,
-            range.from * 4,
-          );
-      }
-    };
-    if (occlusionOn && entries.length > 0 && ground) {
-      const program = programs.contact!;
-      const texture = contactMask.render(context, () => {
-        context.useProgram(program.program);
-        context.uniform1f(program.uniforms.u_scale!, shown);
-        context.uniform1f(program.uniforms.u_metres!, camera.metres);
-        context.uniform1f(program.uniforms.u_band!, occlusion.ground);
-        context.uniform1f(
-          program.uniforms.u_band_strength!,
-          occlusion.groundStrength * visibleOpacity(),
-        );
-        for (const tile of entries) {
-          const {x, y, value} = tile;
-          const ranges = viewRanges(args, tile, occlusion.ground, true);
-          if (!ranges.length) continue;
-          const buffers = value.gl!;
-          buffers.contact ??= createBuildingContactVao(context, value.mesh);
-          project(context, program, args, x, y);
-          context.bindVertexArray(buffers.contact.vao);
-          for (const range of ranges) {
-            buffers.contact.offset((range.from - value.mesh.wallsFrom) / 6);
-            context.drawArraysInstanced(context.TRIANGLE_STRIP, 0, 4, range.count / 6);
-          }
-        }
-      });
+    // The prerender draws no mask before the programs for this projection have linked, nor for
+    // tiles uploaded since; the next frame has them.
+    if (
+      ((occlusionOn && !masks.contact) || (architectural.intensity > 0 && !masks.flood)) &&
+      entries.length > 0 &&
+      ground
+    )
+      map.triggerRepaint();
+    if (masks.contact && entries.length > 0 && ground) {
       // Composite once per ground pixel, depth-tested against the buildings just drawn. This
       // preserves roofs and facades and avoids dark seams where bands or neighbouring tiles meet.
       const composite = programs.contactComposite!;
       context.useProgram(composite.program);
       context.activeTexture(context.TEXTURE2);
-      context.bindTexture(context.TEXTURE_2D, texture);
+      context.bindTexture(context.TEXTURE_2D, masks.contact);
       context.uniform1i(composite.uniforms.u_contact!, 2);
       context.bindVertexArray(ground.vao);
       const xs = entries.map(({x}) => x);
@@ -1407,8 +1450,6 @@ export function createTileflowBuildings3D(
           context.drawArrays(context.TRIANGLE_STRIP, 0, 4);
         }
       context.bindTexture(context.TEXTURE_2D, null);
-    } else {
-      contactMask.release(context);
     }
     if (nightLight > 0 && light.night > 0.01) {
       const program = programs.flood!;
@@ -1419,30 +1460,13 @@ export function createTileflowBuildings3D(
       context.uniform1f(program.uniforms.u_band!, flood.reach);
       context.uniform1f(program.uniforms.u_flood!, light.night * nightLight * visibleOpacity());
       context.uniform3fv(program.uniforms.u_flood_colour!, flood.colour);
-      walls(program);
+      drawWalls(context, program, args, entries, flood.reach);
     }
-    if (architectural.intensity > 0 && entries.length > 0 && ground) {
-      const program = programs.architecturalFlood!;
-      const texture = floodMask.render(context, () => {
-        context.useProgram(program.program);
-        context.uniform1f(program.uniforms.u_scale!, shown);
-        context.uniform1f(program.uniforms.u_metres!, camera.metres);
-        context.uniform2f(
-          program.uniforms.u_radius!,
-          architectural.radius[0]!,
-          architectural.radius[1]!,
-        );
-        context.uniform1f(program.uniforms.u_min_height!, architectural.minGroundHeight);
-        context.uniform1f(
-          program.uniforms.u_intensity!,
-          architectural.intensity * visibleOpacity(),
-        );
-        walls(program, architectural.radius[1]);
-      });
+    if (masks.flood && entries.length > 0 && ground) {
       const composite = programs.architecturalFloodComposite!;
       context.useProgram(composite.program);
       context.activeTexture(context.TEXTURE2);
-      context.bindTexture(context.TEXTURE_2D, texture);
+      context.bindTexture(context.TEXTURE_2D, masks.flood);
       context.uniform1i(composite.uniforms.u_mask!, 2);
       context.uniform3fv(composite.uniforms.u_colour!, architectural.colour);
       context.blendFuncSeparate(
@@ -1461,8 +1485,6 @@ export function createTileflowBuildings3D(
           context.drawArrays(context.TRIANGLE_STRIP, 0, 4);
         }
       context.bindTexture(context.TEXTURE_2D, null);
-    } else {
-      floodMask.release(context);
     }
     const emitterProgram = programs.modelEmitter;
     if (emitterProgram) {

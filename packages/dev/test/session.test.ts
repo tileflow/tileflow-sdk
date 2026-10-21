@@ -619,7 +619,7 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.match(preview, /map\.setProjection\(\{type: "mercator"\}\)/);
   assert.match(
     preview,
-    /const projection = map\.getProjection\?\.\(\)\?\.type \?\? map\.getStyle\?\.\(\)\?\.projection\?\.type/,
+    /const projection = map\.getProjection\s*\? map\.getProjection\(\)\?\.type\s*: map\.getStyle\?\.\(\)\?\.projection\?\.type/,
   );
   assert.doesNotMatch(preview, /const projection = map\.getStyle/);
   assert.match(preview, /class ThreeDimensionalControl/);
@@ -1589,6 +1589,21 @@ function runPreviewScript(
     }
   }
 
+  const styleLayers: Array<{
+    id: string;
+    metadata: Record<string, string>;
+    sourceLayer?: string;
+    type: string;
+  }> = [
+    {id: 'tileflow-landuse-business-area', metadata: {}, sourceLayer: 'landuse', type: 'fill'},
+    {
+      id: 'tileflow-buildings-3d',
+      metadata: {'tileflow:3d-toggle': 'building'},
+      type: 'fill-extrusion',
+    },
+    {id: 'tileflow-vegetation-trees', metadata: {}, type: 'circle'},
+  ];
+
   class FakeMap {
     readonly camera: {bearing: number; center: [number, number]; pitch: number; zoom: number};
 
@@ -1650,35 +1665,24 @@ function runPreviewScript(
       return this.camera.pitch;
     }
 
-    getStyle(): {
-      layers?: Array<{
-        id: string;
-        metadata: Record<string, string>;
-        'source-layer'?: string;
-        type: string;
-      }>;
-      metadata?: Record<string, unknown>;
-    } {
-      if (!styleReady) return {};
+    // As in MapLibre, a style that has not loaded yet has no definition.
+    getStyle():
+      | {
+          layers: Array<{
+            id: string;
+            metadata: Record<string, string>;
+            'source-layer'?: string;
+            type: string;
+          }>;
+          metadata: Record<string, unknown>;
+        }
+      | undefined {
+      if (!styleReady) return undefined;
       return {
-        layers: [
-          {
-            id: 'tileflow-landuse-business-area',
-            metadata: {},
-            'source-layer': 'landuse',
-            type: 'fill',
-          },
-          {
-            id: 'tileflow-buildings-3d',
-            metadata: {'tileflow:3d-toggle': 'building'},
-            type: 'fill-extrusion',
-          },
-          {
-            id: 'tileflow-vegetation-trees',
-            metadata: {},
-            type: 'circle',
-          },
-        ],
+        layers: styleLayers.map(({sourceLayer, ...layer}) => ({
+          ...layer,
+          ...(sourceLayer ? {'source-layer': sourceLayer} : {}),
+        })),
         metadata: {
           'tileflow:compiler': 'tileflow-semantic',
           ...coreMetadata,
@@ -1709,8 +1713,12 @@ function runPreviewScript(
       return styleReady;
     }
 
-    getLayer(): undefined {
-      return undefined;
+    getLayersOrder(): string[] {
+      return styleReady ? styleLayers.map((layer) => layer.id) : [];
+    }
+
+    getLayer(id: string): (typeof styleLayers)[number] | undefined {
+      return styleReady ? styleLayers.find((layer) => layer.id === id) : undefined;
     }
 
     getProjection(): {type: string} {

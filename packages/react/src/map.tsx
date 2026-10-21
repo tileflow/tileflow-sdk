@@ -26,6 +26,7 @@ import {
   attachTileflowFairUseNotice,
   attachTileflowMap3D,
   attachTileflowMapLifecycle,
+  attachTileflowNauticalLights,
   attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowThemeController,
@@ -847,6 +848,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         registerCleanup(() => map.remove());
         registerCleanup(attachTileflowAtmosphere(map));
         registerCleanup(attachTileflowNotices(map));
+        registerCleanup(attachTileflowNauticalLights(map));
         const themeController =
           initialRuntimeStyle.theme === undefined
             ? undefined

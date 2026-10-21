@@ -105,7 +105,7 @@ attribution.
 
 ## Nautical-chart references
 
-The `soundings` map and its eleven SVG symbols and patterns are original Tileflow code and artwork.
+The `soundings` map and its twenty-seven SVG symbols and patterns are original Tileflow code and artwork.
 Its visual grammar was informed by NOAA's
 [Historical Map & Chart Collection](https://historicalcharts.noaa.gov/) and the IHO
 [S-4 and INT 1 standards index](https://iho.int/standards-and-specifications) as cartographic

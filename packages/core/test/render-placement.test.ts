@@ -1,6 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {labels, land, poi, refineRenderTarget, renderPass, water, withRenderStack} from '../src';
+import {
+  buildings,
+  labels,
+  land,
+  poi,
+  refineRenderTarget,
+  renderPass,
+  water,
+  withRenderStack,
+} from '../src';
 import {type TileflowLayerSlot, tileflowLayerSlots} from '../src/cartography/contributions';
 import {compileRenderStack} from '../src/cartography/render-stack';
 import {createSemanticDataView} from '../src/cartography/semantic-bindings';
@@ -185,5 +194,51 @@ test('placements are validated where they are declared and compiled', () => {
         }),
       }),
     /unknown semantic target water\.missing/u,
+  );
+});
+
+test('operations beside a target of another buildings mode name the mode instead of failing as unknown', () => {
+  const shadow = renderPass({
+    placement: {below: 'buildings.flat.fill'},
+    renderer: 'line',
+    style: {width: 2},
+  });
+  assert.throws(() => compile({buildings: withRenderStack(buildings({mode: '3d'}), {shadow})}), {
+    code: 'unknown-or-circular-anchor',
+    message:
+      'buildings.render.shadow is placed beside buildings.flat.fill, which buildings draws only ' +
+      "in mode 'flat'; this map draws buildings in mode '3d'. Place the operation beside a " +
+      "target drawn in mode '3d' or at a band edge, or remove it; refine({mode: '3d', " +
+      'renderStack: reset()}) removes an inherited buildings render stack.',
+  });
+  assert.throws(
+    () =>
+      compile({
+        buildings: withRenderStack(buildings(), {
+          walls: refineRenderTarget({
+            target: 'buildings.extrusion',
+            renderer: 'extrusion',
+            style: {opacity: 0.5},
+          }),
+        }),
+      }),
+    {
+      code: 'unknown-refinement-target',
+      message:
+        /^Render refinement targets buildings\.extrusion, which buildings draws only in mode '3d'; this map draws buildings in mode 'flat'\./u,
+    },
+  );
+  const {ids} = compile({
+    buildings: withRenderStack(buildings({mode: '3d'}), {
+      shadow: renderPass({
+        placement: {below: 'buildings.extrusion'},
+        renderer: 'line',
+        style: {width: 2},
+      }),
+    }),
+  });
+  assert.equal(
+    ids.indexOf('tileflow-buildings-3d') - ids.indexOf('tileflow-buildings-render-shadow'),
+    1,
   );
 });

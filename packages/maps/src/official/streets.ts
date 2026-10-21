@@ -2175,7 +2175,9 @@ export const streets = bindOfficialMapTheme(
       }),
       buildings: withRenderStack(
         buildings({
-          mode: 'flat', // 'flat' | '3d'.
+          // Footprints; the render stack's extrusion pass raises them from z15, and its shadows
+          // stand beside the flat fill, so they require this mode.
+          mode: 'flat',
           threeDimensional: {
             floodLight: {
               intensity: token.number('buildings.floodLight.intensity'),

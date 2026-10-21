@@ -259,3 +259,11 @@ data; passes placed beside a moved target follow it. Operations sharing a placem
 declaration order, the first lowest. For symbols, a higher layer is also placed first in MapLibre
 collisions, so placement decides both drawing and precedence. An owner whose layers are all
 render passes still satisfies other operations' `requirements`.
+
+A target exists only in the mode that draws it: buildings draw `buildings.flat.fill` and
+`buildings.flat.outline` in mode `'flat'`, and `buildings.extrusion` in mode `'3d'`. `refine()`
+keeps the inherited render stack, so refining an inherited module's `mode` fails when a pass is
+placed beside, or a refinement targets, the other mode's target; the error names both modes.
+Streets' shadows and its extrusion pass stand beside its flat buildings. To draw native extrusions
+in a map that extends Streets, remove that stack with `refine({mode: '3d', renderStack: reset()})`,
+or declare `buildings({mode: '3d'})` to replace the module.

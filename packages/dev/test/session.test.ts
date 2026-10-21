@@ -1723,6 +1723,7 @@ function runPreviewScript(
         },
       };
     },
+    attachTileflowNauticalLights: () => () => {},
     attachTileflowNotices: () => () => {},
     readTileflowSunPreset: () => undefined,
     resolveTileflowSun: (preset: unknown) => preset,

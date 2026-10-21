@@ -468,20 +468,29 @@ const exactPhysicalLayerIds: Readonly<Record<string, string>> = Object.freeze({
 const nauticalPhysicalBases: Readonly<Record<string, string>> = Object.freeze({
   'nautical.aids': 'tileflow-nautical-aids',
   'nautical.beacons': 'tileflow-nautical-beacons',
+  'nautical.berths': 'tileflow-nautical-berths',
+  'nautical.bridges': 'tileflow-nautical-bridges',
   'nautical.buoys': 'tileflow-nautical-buoys',
   'nautical.cables': 'tileflow-nautical-cables',
   'nautical.coverage': 'tileflow-nautical-coverage',
+  'nautical.distanceMarks': 'tileflow-nautical-distance-marks',
+  'nautical.facilities': 'tileflow-nautical-facilities',
+  'nautical.harbourAreas': 'tileflow-nautical-harbour-areas',
   'nautical.harbours': 'tileflow-nautical-harbours',
   'nautical.hazardAreas': 'tileflow-nautical-hazard-areas',
   'nautical.hazards': 'tileflow-nautical-hazards',
+  'nautical.labels.bridges': 'tileflow-nautical-bridge-labels',
   'nautical.labels.coverage': 'tileflow-nautical-coverage-labels',
   'nautical.labels.hazards': 'tileflow-nautical-hazard-area-labels',
   'nautical.labels.navigationAreas': 'tileflow-nautical-navigation-area-labels',
+  'nautical.labels.overheadCables': 'tileflow-nautical-overhead-cable-labels',
   'nautical.labels.reefs': 'tileflow-nautical-reef-labels',
   'nautical.labels.wrecks': 'tileflow-nautical-wreck-area-labels',
   'nautical.lighthouses': 'tileflow-nautical-lighthouses',
   'nautical.lights': 'tileflow-nautical-lights',
   'nautical.navigationAreas': 'tileflow-nautical-navigation-areas',
+  'nautical.notices': 'tileflow-nautical-notices',
+  'nautical.overheadCables': 'tileflow-nautical-overhead-cables',
   'nautical.ports': 'tileflow-nautical-ports',
   'nautical.reefs': 'tileflow-nautical-reefs',
   'nautical.routes': 'tileflow-nautical-routes',
@@ -493,7 +502,9 @@ const nauticalPhysicalBases: Readonly<Record<string, string>> = Object.freeze({
 function nauticalPhysicalLayerId(semanticKey: string): string | undefined {
   const direct = nauticalPhysicalBases[semanticKey];
   if (direct) return direct;
-  const match = /^(nautical\.[A-Za-z0-9_.-]+)\.(fill|outline|marker|symbol)$/u.exec(semanticKey);
+  const match = /^(nautical\.[A-Za-z0-9_.-]+)\.(fill|outline|marker|symbol|lines)$/u.exec(
+    semanticKey,
+  );
   if (!match) return undefined;
   const base = nauticalPhysicalBases[match[1]!];
   if (!base) return undefined;

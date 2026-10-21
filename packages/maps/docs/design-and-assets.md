@@ -109,11 +109,14 @@ fallback traced from broad GEBCO band polygons until native contour geometry is 
 show the absolute `min_depth` value, not an inferred range or vessel-specific safety contour.
 Ferries are ordinary World context. Navigation marks come from `tileflow-nautical`: the theme's
 `nautical.*` image tokens select the Soundings chart symbols for buoys (port can, starboard cone,
-cardinal double cone, and a pillar for other buoys), lights, lighthouses, wrecks, harbours, and
-ports. Buoys and light flares take each mark's own colour from the data; beacons stay small coloured
-dots, rocks are chart crosses and stars, and lighthouse, wreck, harbour, and port symbols are
-printed in the chart ink. Technical magenta remains reserved for operational overlays: restricted,
-military, anchorage, and traffic-separation areas, traffic-separation lines, and cables. Coverage is
+cardinal double cone, and a pillar for other buoys), lights, lighthouses, wrecks, harbours, marinas,
+ports, inland notice boards by function, distance marks, and small-craft facilities. Buoys, light
+flares, and notice boards take each mark's own colour from the data; beacons stay small coloured
+dots, rocks are chart crosses and stars, and the other symbols are printed in the chart ink. Light
+flares flash in their rhythm in browser maps. Bridges and berths are drawn as ink structures with
+their clearances, and marinas and harbours as light outlines. Technical magenta remains reserved for
+operational overlays: restricted, military, anchorage, and traffic-separation areas,
+traffic-separation lines, and submarine and overhead cables. Coverage is
 a faint tint before marks appear. The map shows a "Not for navigation" notice wherever it is
 displayed. Soundings is reference cartography and is not a navigation product.
 

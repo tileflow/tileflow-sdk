@@ -239,8 +239,8 @@ Tileflow World is the hosted primary source. `vectorTiles()` with `openMapTiles(
 external local/self-hosted data; hosted eligibility is separate. `hostedTileset()`, `boundaryAreas`
 and semantic overlays add named sources. Local PMTiles inputs are tooling-only.
 
-`bathymetry({vectorLayers: {...}})` declares compatible contour/name layers. `marine: 'nautical'`
-adds navigation marks and a "Not for navigation" notice.
+`bathymetry({vectorLayers: {...}})` declares contour/name layers. `marine: 'nautical'` adds
+navigation marks, flashing lights, and a "Not for navigation" notice.
 
 World attribution links to Tileflow's source notice, OpenMapTiles, and OpenStreetMap. External
 vector data retains the attribution supplied by its owner.

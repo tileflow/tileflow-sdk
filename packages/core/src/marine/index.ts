@@ -49,7 +49,9 @@ export const tileflowBathymetryV1Schema = Object.freeze({
  * provenance fields (`provider`, `provenance`, `edition`, `coverage`, `licence`) and `min_zoom`,
  * the first zoom at which it appears; `rank` (1 is most important within its layer) and `name`
  * are optional. Colours are S-57 colour names, and multi-valued colours and categories are
- * comma-separated in source order, for example `black,yellow`.
+ * comma-separated in source order, for example `black,yellow`. A light's `sequence` lists its
+ * phases in seconds, eclipses in parentheses, for example `0.5+(1.5)+0.5+(4.5)`. Clearances,
+ * depths, and heights are in metres.
  */
 export const tileflowNauticalV1Schema = Object.freeze({
   fields: Object.freeze({
@@ -62,10 +64,15 @@ export const tileflowNauticalV1Schema = Object.freeze({
     country: 'country',
     coverage: 'coverage',
     depth: 'depth',
+    distance: 'distance',
+    distanceUnit: 'distance_unit',
     edition: 'edition',
     families: 'families',
     group: 'group',
     heightM: 'height_m',
+    horizontalClearance: 'horizontal_clearance',
+    impact: 'impact',
+    information: 'information',
     label: 'label',
     licence: 'licence',
     lit: 'lit',
@@ -83,6 +90,7 @@ export const tileflowNauticalV1Schema = Object.freeze({
     scale: 'scale',
     sectorEnd: 'sector_end',
     sectorStart: 'sector_start',
+    sequence: 'sequence',
     shape: 'shape',
     size: 'size',
     subclass: 'subclass',
@@ -90,6 +98,10 @@ export const tileflowNauticalV1Schema = Object.freeze({
     topmark: 'topmark',
     unlocode: 'unlocode',
     update: 'update',
+    verticalClearance: 'vertical_clearance',
+    verticalClearanceClosed: 'vertical_clearance_closed',
+    verticalClearanceOpen: 'vertical_clearance_open',
+    verticalClearanceSafe: 'vertical_clearance_safe',
     waterLevel: 'water_level',
   }),
   geometryTypes: Object.freeze({
@@ -113,6 +125,16 @@ export const tileflowNauticalV1Schema = Object.freeze({
     wrecks: 'wreck',
   }),
   product: 'nautical-v1',
+  /**
+   * Known `provider` values and the `class` of their `coverage` cells. The source's TileJSON owns
+   * each provider's credit; the module never adds attribution.
+   */
+  providers: Object.freeze({
+    'nga-list-of-lights': 'list',
+    'noaa-office-of-coast-survey': 'chart',
+    openstreetmap: 'community',
+    'usace-ienc': 'chart',
+  }),
   schemaVersion: 1,
 });
 
@@ -353,11 +375,19 @@ function resolveBathymetryRelief(
   };
 }
 
+/**
+ * Feature IDs the Nautical source promotes for MapLibre feature state: each light's unique
+ * `provenance`, which is what animated lights are keyed by.
+ */
+export const tileflowNauticalPromoteId = Object.freeze({
+  [tileflowNauticalV1Schema.layers.lights]: tileflowNauticalV1Schema.fields.provenance,
+});
+
 function resolveNauticalSource(
   config: TileflowMarineSourceConfig,
   apiBaseUrl: string,
 ): ResolvedMarineSource {
-  return resolveMarineSource({
+  const resolved = resolveMarineSource({
     config,
     defaultPath: '/tiles/nautical/tiles.json',
     defaultSourceId: tileflowNauticalSourceId,
@@ -365,6 +395,7 @@ function resolveNauticalSource(
     product: tileflowNauticalV1Schema.product,
     apiBaseUrl,
   });
+  return {...resolved, source: {...resolved.source, promoteId: {...tileflowNauticalPromoteId}}};
 }
 
 function resolveMarineSource(options: {

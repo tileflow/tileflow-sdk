@@ -412,6 +412,7 @@ export {
   tileflowBathymetryNameLayerLimits,
   tileflowBathymetrySourceId,
   tileflowBathymetryV1Schema,
+  tileflowNauticalPromoteId,
   tileflowNauticalSourceId,
   tileflowNauticalV1Schema,
 } from './marine';
@@ -421,6 +422,26 @@ export {
   tileflowNoticesMetadataKey,
   type TileflowMapNotice,
 } from './notices';
+export {
+  declareTileflowNauticalLights,
+  readTileflowNauticalLights,
+  steadyTileflowNauticalLights,
+  tileflowNauticalLightEclipseOpacity,
+  tileflowNauticalLightStates,
+  tileflowNauticalLightsLimits,
+  tileflowNauticalLightsMetadataKey,
+  type TileflowNauticalLights,
+} from './nautical-lights';
+export {
+  tileflowLightRhythm,
+  tileflowLightRhythmConventions,
+  tileflowLightRhythmLimits,
+  tileflowLightStateAt,
+  type TileflowLightCharacteristic,
+  type TileflowLightPhase,
+  type TileflowLightRhythm,
+  type TileflowLightState,
+} from './nautical-light-rhythm';
 export type {
   ResolvedBathymetry,
   ResolvedBathymetryRelief,
@@ -452,6 +473,7 @@ export {
   poi,
   roads,
   tileflowLandformClasses,
+  tileflowNauticalFacilityIcons,
   tileflowNauticalImageRoles,
   tileflowNauticalNotice,
   tileflowPoiIconOnlyTypes,

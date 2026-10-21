@@ -33,6 +33,7 @@
     attachTileflowFairUseNotice,
     attachTileflowMap3D,
     attachTileflowMapLifecycle,
+    attachTileflowNauticalLights,
     attachTileflowNotices,
     createTileflowSessionStarter,
     createTileflowThemeController,
@@ -608,6 +609,7 @@
     mapInstance = maplibreMap;
     attachTileflowAtmosphere(maplibreMap);
     attachTileflowNotices(maplibreMap);
+    attachTileflowNauticalLights(maplibreMap);
     themeController =
       runtime.theme === undefined
         ? null

@@ -244,6 +244,25 @@ export {
   tileflowNoticesMetadataKey,
   type TileflowMapNotice,
 } from './notices';
+export {
+  attachTileflowNauticalLights,
+  type TileflowNauticalLightsMap,
+} from './nautical-lights-browser';
+export {
+  readTileflowNauticalLights,
+  tileflowNauticalLightStates,
+  tileflowNauticalLightsMetadataKey,
+  type TileflowNauticalLights,
+} from './nautical-lights';
+export {
+  tileflowLightRhythm,
+  tileflowLightRhythmConventions,
+  tileflowLightStateAt,
+  type TileflowLightCharacteristic,
+  type TileflowLightPhase,
+  type TileflowLightRhythm,
+  type TileflowLightState,
+} from './nautical-light-rhythm';
 
 export * from './fair-use-browser';
 export {

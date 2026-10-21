@@ -84,6 +84,7 @@ const tileflowBrowserModule = `${readFileSync(
 globalThis.__tileflowRegisterPmtilesProtocol = registerTileflowPmtilesProtocol;
 globalThis.__tileflowAttachAtmosphere = attachTileflowAtmosphere;
 globalThis.__tileflowAttachNotices = attachTileflowNotices;
+globalThis.__tileflowAttachNauticalLights = attachTileflowNauticalLights;
 globalThis.__tileflowCreateThemeController = createTileflowThemeController;`;
 
 type PagePhaseResult =
@@ -895,6 +896,8 @@ window.__tileflowCaptureLoad = async function(input) {
     window.__tileflowAttachAtmosphere(map);
     // Notices such as "Not for navigation" are part of the map, so captured images keep them.
     window.__tileflowAttachNotices(map);
+    // Capture prefers reduced motion, so Nautical lights stay steady and every image is stable.
+    window.__tileflowAttachNauticalLights(map);
     return await waitForMapEvent(map, "load", input.mapEventTimeoutMs);
   } catch (error) {
     return {status: "failed", reason: "error", message: String(error?.message || error || "")};

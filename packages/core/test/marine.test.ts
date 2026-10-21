@@ -8,16 +8,24 @@ import {
   disable,
   fixed,
   inferTileflowSourceRequirements,
+  nautical,
   parseTileflowMap,
+  readTileflowNauticalLights,
   readTileflowNotices,
   resolveMarine,
   tileflowBathymetryDemSourceId,
   tileflowBathymetrySourceId,
   tileflowBathymetryV1Schema,
+  steadyTileflowNauticalLights,
+  tileflowNauticalLightEclipseOpacity,
+  tileflowNauticalLightStates,
+  tileflowNauticalLightsMetadataKey,
   tileflowNauticalNotice,
+  tileflowNauticalPromoteId,
   tileflowNauticalSourceId,
   tileflowNauticalV1Schema,
   tileflowNoticesMetadataKey,
+  zoom,
 } from '../src';
 import {extendStreets, testLightTheme} from './map-fixture';
 
@@ -303,14 +311,25 @@ const nauticalLayers = [
   ['tileflow-nautical-coverage', 'coverage', 'fill'],
   ['tileflow-nautical-navigation-areas', 'navigation_area', 'fill'],
   ['tileflow-nautical-navigation-areas-outline', 'navigation_area', 'line'],
+  ['tileflow-nautical-harbour-areas', 'navigation_area', 'fill'],
+  ['tileflow-nautical-harbour-areas-outline', 'navigation_area', 'line'],
+  ['tileflow-nautical-berths', 'navigation_area', 'fill'],
+  ['tileflow-nautical-berths-outline', 'navigation_area', 'line'],
   ['tileflow-nautical-reefs', 'reef', 'fill'],
   ['tileflow-nautical-reefs-outline', 'reef', 'line'],
   ['tileflow-nautical-cables', 'navigation_area', 'line'],
   ['tileflow-nautical-routes', 'navigation_area', 'line'],
+  ['tileflow-nautical-overhead-cables', 'navigation_area', 'line'],
   ['tileflow-nautical-hazard-areas', 'hazard', 'fill'],
   ['tileflow-nautical-hazard-areas-outline', 'hazard', 'line'],
   ['tileflow-nautical-wreck-areas', 'wreck', 'fill'],
   ['tileflow-nautical-wreck-areas-outline', 'wreck', 'line'],
+  ['tileflow-nautical-bridges', 'navigation_area', 'fill'],
+  ['tileflow-nautical-bridges-outline', 'navigation_area', 'line'],
+  ['tileflow-nautical-bridge-labels', 'navigation_area', 'symbol'],
+  ['tileflow-nautical-bridge-labels-lines', 'navigation_area', 'symbol'],
+  ['tileflow-nautical-overhead-cable-labels', 'navigation_area', 'symbol'],
+  ['tileflow-nautical-overhead-cable-labels-lines', 'navigation_area', 'symbol'],
   ['tileflow-nautical-navigation-area-labels', 'navigation_area', 'symbol'],
   ['tileflow-nautical-reef-labels', 'reef', 'symbol'],
   ['tileflow-nautical-hazard-area-labels', 'hazard', 'symbol'],
@@ -318,11 +337,18 @@ const nauticalLayers = [
   ['tileflow-nautical-soundings', 'sounding', 'symbol'],
   ['tileflow-nautical-hazards-marker', 'hazard', 'circle'],
   ['tileflow-nautical-hazards', 'hazard', 'symbol'],
+  ['tileflow-nautical-facilities-marker', 'navigation_area', 'circle'],
+  ['tileflow-nautical-facilities', 'navigation_area', 'symbol'],
   ['tileflow-nautical-wrecks', 'wreck', 'symbol'],
+  ['tileflow-nautical-facilities-lines', 'navigation_area', 'symbol'],
   ['tileflow-nautical-harbours-marker', 'navigation_area', 'circle'],
   ['tileflow-nautical-harbours', 'navigation_area', 'symbol'],
+  ['tileflow-nautical-distance-marks-marker', 'aid', 'circle'],
+  ['tileflow-nautical-distance-marks', 'aid', 'symbol'],
   ['tileflow-nautical-aids-marker', 'aid', 'circle'],
   ['tileflow-nautical-aids', 'aid', 'symbol'],
+  ['tileflow-nautical-notices-marker', 'aid', 'circle'],
+  ['tileflow-nautical-notices', 'aid', 'symbol'],
   ['tileflow-nautical-beacons-marker', 'aid', 'circle'],
   ['tileflow-nautical-beacons', 'aid', 'symbol'],
   ['tileflow-nautical-lights-marker', 'light', 'circle'],
@@ -433,11 +459,16 @@ test('nautical layers respect each feature min_zoom and select their schema clas
   assert.equal(admits(ports, point({class: 'port', min_zoom: 3}), 3), true);
   assert.equal(admits(ports, point({class: 'harbour', min_zoom: 3}), 3), false);
   const harbours = byId.get('tileflow-nautical-harbours');
+  const harbourArea: FilterFeature = {
+    geometry: 'Polygon',
+    properties: {class: 'harbour', min_zoom: 7, subclass: 'marina'},
+  };
   assert.equal(admits(harbours, point({class: 'harbour'}), 11), true);
-  assert.equal(
-    admits(harbours, {geometry: 'Polygon', properties: {class: 'harbour', min_zoom: 7}}, 11),
-    false,
-  );
+  // Harbour polygons carry the harbour symbol and name, but no circle.
+  assert.equal(admits(harbours, harbourArea, 11), true);
+  assert.equal(admits(byId.get('tileflow-nautical-harbours-marker'), harbourArea, 11), false);
+  assert.equal(admits(byId.get('tileflow-nautical-harbour-areas'), harbourArea, 11), true);
+  assert.equal(admits(byId.get('tileflow-nautical-navigation-areas'), harbourArea, 11), false);
 
   const line = (properties: FilterFeature['properties']): FilterFeature => ({
     geometry: 'LineString',
@@ -581,6 +612,370 @@ test('theme image tokens replace nautical circle markers with icons', () => {
     /"color"/u,
   );
   assert.deepEqual(validateStyleMin(style as never), []);
+});
+
+type Evaluated = {
+  evaluate(
+    globals: {zoom: number},
+    feature?: {properties: Record<string, unknown>; type?: number},
+    featureState?: Record<string, unknown>,
+  ): unknown;
+};
+
+/** Parse a compiled paint or layout value exactly as MapLibre does. */
+function parsed(value: unknown, type: string): Evaluated {
+  const result = expression.createExpression(value, {type} as never);
+  assert.equal(result.result, 'success', JSON.stringify(result.value));
+  return result.value as unknown as Evaluated;
+}
+
+test('the Nautical source keys light feature state by provenance', () => {
+  for (const marine of [
+    'nautical',
+    'chart',
+    {bathymetry: false, nautical: {sourceId: 'charts'}},
+  ] as const) {
+    const style = createStyle(extendStreets({marine}), {preparedAssets});
+    const nauticalId = typeof marine === 'string' ? tileflowNauticalSourceId : 'charts';
+    assert.deepEqual(style.sources[nauticalId]?.promoteId, {light: 'provenance'});
+    assert.equal(readTileflowNauticalLights(style.metadata)?.source, nauticalId);
+    assert.equal(style.sources[tileflowBathymetrySourceId]?.promoteId, undefined);
+  }
+  assert.deepEqual(tileflowNauticalPromoteId, {
+    [tileflowNauticalV1Schema.layers.lights]: tileflowNauticalV1Schema.fields.provenance,
+  });
+});
+
+test('Nautical lights flash by feature state and keep their style without it', () => {
+  const style = compiledNautical();
+  const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
+  const marker = byId.get('tileflow-nautical-lights-marker')!;
+  assert.deepEqual(readTileflowNauticalLights(style.metadata), {
+    layers: ['tileflow-nautical-lights-marker'],
+    source: tileflowNauticalSourceId,
+    sourceLayer: 'light',
+    version: 1,
+  });
+
+  const light = {properties: {class: 'major', color: 'white,red'}, type: 1};
+  const opacity = parsed(marker.paint?.['circle-opacity'], 'number');
+  assert.equal(opacity.evaluate({zoom: 10}, light, {}), 0.55);
+  assert.equal(
+    opacity.evaluate({zoom: 10}, light, {[tileflowNauticalLightStates.intensity]: 1}),
+    0.55,
+  );
+  assert.equal(
+    opacity.evaluate({zoom: 10}, light, {[tileflowNauticalLightStates.intensity]: 0}),
+    0.55 * tileflowNauticalLightEclipseOpacity,
+  );
+  // An alternating light shows the colour its state selects; the first colour by default.
+  const colour = parsed(marker.paint?.['circle-color'], 'color');
+  const css = (state: Record<string, unknown>) => String(colour.evaluate({zoom: 10}, light, state));
+  assert.equal(css({}), css({[tileflowNauticalLightStates.colour]: 0}));
+  assert.notEqual(css({}), css({[tileflowNauticalLightStates.colour]: 1}));
+  assert.equal(css({[tileflowNauticalLightStates.colour]: 2}), css({}));
+
+  // Light labels never flash.
+  assert.doesNotMatch(JSON.stringify(byId.get('tileflow-nautical-lights')), /feature-state/u);
+  for (const layer of style.layers) {
+    if (layer['source-layer'] !== 'light') {
+      assert.doesNotMatch(JSON.stringify(layer), /feature-state/u, layer.id);
+    }
+  }
+});
+
+test('light opacity overrides keep their zoom curve and still flash', () => {
+  const theme = defineTheme(testLightTheme, {
+    id: 'nautical-flare',
+    version: 1,
+    colorScheme: 'light',
+    tokens: {image: {'nautical.light': 'light'}},
+  });
+  const style = createStyle(
+    extendStreets({
+      marine: 'nautical',
+      modules: {
+        nautical: nautical({
+          lights: {
+            icon: {
+              opacity: zoom.linear([
+                [6, 0.5],
+                [12, 1],
+              ]),
+            },
+          },
+        }),
+      },
+      themes: {light: theme},
+    }),
+    {
+      preparedAssets: {
+        icons: {ids: [...preparedAssets.icons.ids, 'light'], sprite: preparedAssets.icons.sprite},
+      },
+    },
+  );
+  assert.deepEqual(validateStyleMin(style as never), []);
+  const symbol = style.layers.find(({id}) => id === 'tileflow-nautical-lights')!;
+  assert.deepEqual(readTileflowNauticalLights(style.metadata)?.layers, [symbol.id]);
+  const opacity = parsed(symbol.paint?.['icon-opacity'], 'number');
+  const light = {properties: {class: 'minor'}, type: 1};
+  assert.equal(opacity.evaluate({zoom: 12}, light, {}), 1);
+  assert.equal(
+    opacity.evaluate({zoom: 6}, light, {[tileflowNauticalLightStates.intensity]: 0}),
+    0.5 * tileflowNauticalLightEclipseOpacity,
+  );
+  // Text stays steady while the flare flashes.
+  assert.doesNotMatch(JSON.stringify(symbol.paint?.['text-opacity'] ?? null), /feature-state/u);
+});
+
+test('animateLights false keeps lights steady and declares no light layers', () => {
+  const style = createStyle(
+    extendStreets({marine: 'nautical', modules: {nautical: nautical({animateLights: false})}}),
+    {preparedAssets},
+  );
+  assert.equal(style.metadata?.[tileflowNauticalLightsMetadataKey], undefined);
+  assert.doesNotMatch(JSON.stringify(style.layers), /feature-state/u);
+});
+
+test('the steady copy of a style draws lights exactly as without state', () => {
+  const style = compiledNautical();
+  const steady = steadyTileflowNauticalLights(style);
+  assert.notEqual(steady, style);
+  assert.equal(steady.metadata?.[tileflowNauticalLightsMetadataKey], undefined);
+  assert.doesNotMatch(JSON.stringify(steady.layers), /feature-state/u);
+  assert.deepEqual(validateStyleMin(steady as never), []);
+  const marker = (from: typeof style) =>
+    from.layers.find(({id}) => id === 'tileflow-nautical-lights-marker')!;
+  const light = {properties: {class: 'major', color: 'green'}, type: 1};
+  for (const property of ['circle-opacity', 'circle-color'] as const) {
+    const type = property === 'circle-color' ? 'color' : 'number';
+    assert.deepEqual(
+      parsed(marker(steady).paint?.[property], type).evaluate({zoom: 9}, light, {}),
+      parsed(marker(style).paint?.[property], type).evaluate({zoom: 9}, light, {}),
+    );
+  }
+  // Every other layer is unchanged, and a style without lights is returned as it is.
+  assert.deepEqual(
+    steady.layers.filter(({id}) => id !== 'tileflow-nautical-lights-marker'),
+    style.layers.filter(({id}) => id !== 'tileflow-nautical-lights-marker'),
+  );
+  const plain = createStyle(extendStreets({marine: 'none'}), {preparedAssets});
+  assert.equal(steadyTileflowNauticalLights(plain), plain);
+});
+
+test('inland marks, structures and facilities have their own groups', () => {
+  const byId = new Map(compiledNautical().layers.map((layer) => [layer.id, layer]));
+  const feature = (
+    geometry: FilterFeature['geometry'],
+    properties: FilterFeature['properties'],
+  ): FilterFeature => ({geometry, properties: {min_zoom: 13, ...properties}});
+
+  // Notices and distance marks are no longer generic aids.
+  const aids = byId.get('tileflow-nautical-aids');
+  for (const kind of ['notice', 'distance-mark']) {
+    assert.equal(admits(aids, feature('Point', {class: kind}), 14), false, kind);
+  }
+  assert.equal(
+    admits(
+      byId.get('tileflow-nautical-notices'),
+      feature('Point', {class: 'notice', min_zoom: 12}),
+      12,
+    ),
+    true,
+  );
+  assert.equal(
+    admits(
+      byId.get('tileflow-nautical-distance-marks'),
+      feature('Point', {class: 'distance-mark', min_zoom: 11}),
+      11,
+    ),
+    true,
+  );
+
+  // Bridges, berths, facilities and harbours leave the generic navigation areas.
+  const areas = byId.get('tileflow-nautical-navigation-areas');
+  for (const kind of ['bridge', 'berth', 'facility', 'harbour']) {
+    assert.equal(admits(areas, feature('Polygon', {class: kind}), 14), false, kind);
+  }
+  assert.equal(admits(areas, feature('Polygon', {class: 'restricted'}), 14), true);
+  const labels = byId.get('tileflow-nautical-navigation-area-labels');
+  assert.equal(admits(labels, feature('Polygon', {class: 'berth', name: 'Quay'}), 14), true);
+  assert.equal(admits(labels, feature('Polygon', {class: 'bridge', name: 'Bridge'}), 14), false);
+
+  // Lines stroke the bridge and berth outlines; only polygons are filled.
+  for (const id of ['bridges', 'berths']) {
+    const kind = id === 'bridges' ? 'bridge' : 'berth';
+    assert.equal(
+      admits(byId.get(`tileflow-nautical-${id}-outline`), feature('LineString', {class: kind}), 14),
+      true,
+    );
+    assert.equal(
+      admits(byId.get(`tileflow-nautical-${id}`), feature('LineString', {class: kind}), 14),
+      false,
+    );
+  }
+  assert.equal(
+    admits(
+      byId.get('tileflow-nautical-overhead-cables'),
+      feature('LineString', {class: 'overhead-cable'}),
+      14,
+    ),
+    true,
+  );
+
+  // Facility lines carry their symbol at their centre; circles only mark points.
+  const slipway = feature('LineString', {class: 'facility', subclass: 'slipway'});
+  assert.equal(admits(byId.get('tileflow-nautical-facilities'), slipway, 14), false);
+  assert.equal(admits(byId.get('tileflow-nautical-facilities-lines'), slipway, 14), true);
+  assert.equal(
+    byId.get('tileflow-nautical-facilities-lines')?.layout?.['symbol-placement'],
+    'line-center',
+  );
+  assert.equal(
+    admits(
+      byId.get('tileflow-nautical-facilities-marker'),
+      feature('Polygon', {class: 'facility'}),
+      14,
+    ),
+    false,
+  );
+
+  // Clearance labels need a clearance; overhead cables are labelled along their lines.
+  const bridgeLabels = byId.get('tileflow-nautical-bridge-labels');
+  assert.equal(admits(bridgeLabels, feature('Point', {class: 'bridge'}), 14), false);
+  assert.equal(
+    admits(bridgeLabels, feature('Point', {class: 'bridge', vertical_clearance: 4}), 14),
+    true,
+  );
+  assert.equal(
+    admits(bridgeLabels, feature('LineString', {class: 'bridge', vertical_clearance: 4}), 14),
+    false,
+  );
+  assert.equal(
+    admits(
+      byId.get('tileflow-nautical-bridge-labels-lines'),
+      feature('LineString', {class: 'bridge', vertical_clearance_open: 9}),
+      14,
+    ),
+    true,
+  );
+  assert.equal(
+    byId.get('tileflow-nautical-overhead-cable-labels-lines')?.layout?.['symbol-placement'],
+    'line',
+  );
+});
+
+test('inland labels show clearances, distances and notice information', () => {
+  const byId = new Map(compiledNautical().layers.map((layer) => [layer.id, layer]));
+  const text = (id: string, properties: Record<string, unknown>, zoomLevel = 16) =>
+    parsed(byId.get(id)?.layout?.['text-field'], 'string').evaluate(
+      {zoom: zoomLevel},
+      {properties, type: 1},
+    );
+
+  const bridge = 'tileflow-nautical-bridge-labels';
+  assert.equal(text(bridge, {vertical_clearance: 4.59}), 'clearance 4.59 m');
+  assert.equal(
+    text(bridge, {
+      vertical_clearance: 3.6,
+      vertical_clearance_closed: 3.6,
+      vertical_clearance_open: 12,
+    }),
+    'closed 3.6 m · open 12 m',
+  );
+  assert.equal(text(bridge, {vertical_clearance_closed: 2.1}), 'closed 2.1 m');
+  assert.equal(text(bridge, {vertical_clearance_open: 30}), 'open 30 m');
+
+  const cable = 'tileflow-nautical-overhead-cable-labels';
+  assert.equal(
+    text(cable, {vertical_clearance: 30, vertical_clearance_safe: 28.5}),
+    'safe clearance 28.5 m',
+  );
+  assert.equal(text(cable, {vertical_clearance: 30}), 'clearance 30 m');
+
+  const distance = 'tileflow-nautical-distance-marks';
+  for (const [unit, label] of [
+    ['kilometres', '12 km'],
+    ['hectometres', '12 hm'],
+    ['metres', '12 m'],
+    ['statute-miles', '12 mi'],
+    ['nautical-miles', '12 NM'],
+    [undefined, '12'],
+  ] as const) {
+    assert.equal(
+      text(distance, {distance: 12, distance_unit: unit as string}),
+      label,
+      String(unit),
+    );
+  }
+  assert.equal(text(distance, {distance: 12.5, distance_unit: 'kilometres'}, 12), '');
+
+  assert.equal(text('tileflow-nautical-notices', {information: '9'}), '9');
+  assert.equal(text('tileflow-nautical-notices', {information: '9'}, 13), '');
+});
+
+test('theme tokens choose notice, facility and marina icons from statically known images', () => {
+  const images = {
+    'nautical.facility': 'facility',
+    'nautical.facility.fuel-station': 'fuel',
+    'nautical.facility.slipway': 'slipway',
+    'nautical.facility.visitor-berth': 'visitor',
+    'nautical.harbour': 'harbour',
+    'nautical.marina': 'marina',
+    'nautical.notice': 'notice',
+    'nautical.notice.prohibition': 'notice-prohibition',
+  } as const;
+  const theme = defineTheme(testLightTheme, {
+    id: 'nautical-inland',
+    version: 1,
+    colorScheme: 'light',
+    tokens: {image: images},
+  });
+  const style = createStyle(extendStreets({marine: 'nautical', themes: {light: theme}}), {
+    preparedAssets: {
+      icons: {
+        ids: [...preparedAssets.icons.ids, ...Object.values(images)],
+        sprite: preparedAssets.icons.sprite,
+      },
+    },
+  });
+  assert.deepEqual(validateStyleMin(style as never), []);
+  const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
+  const icon = (id: string, properties: Record<string, unknown>) =>
+    (
+      parsed(byId.get(id)?.layout?.['icon-image'], 'resolvedImage').evaluate(
+        {zoom: 14},
+        {properties, type: 1},
+      ) as {name?: string}
+    )?.name;
+
+  const facility = 'tileflow-nautical-facilities';
+  assert.equal(icon(facility, {subclass: 'fuel-station,pump-out'}), 'fuel');
+  // The priority list decides, not the order in the data.
+  assert.equal(icon(facility, {subclass: 'boat-hoist,slipway'}), 'slipway');
+  assert.equal(icon(facility, {subclass: 'visitors-mooring'}), 'visitor');
+  // Variants without their own token, and partial names, fall back to the facility icon.
+  assert.equal(icon(facility, {subclass: 'pump-out'}), 'facility');
+  assert.equal(icon(facility, {subclass: 'toilets,showers'}), 'facility');
+  assert.equal(icon(facility, {subclass: 'slipways'}), 'facility');
+  assert.equal(icon(facility, {}), 'facility');
+  assert.equal(byId.get('tileflow-nautical-facilities-marker'), undefined);
+
+  const harbour = 'tileflow-nautical-harbours';
+  assert.equal(icon(harbour, {subclass: 'marina'}), 'marina');
+  assert.equal(icon(harbour, {subclass: 'harbour,marina'}), 'marina');
+  assert.equal(icon(harbour, {subclass: 'marina-no-facilities'}), 'marina');
+  assert.equal(icon(harbour, {subclass: 'cargo'}), 'harbour');
+
+  const notices = 'tileflow-nautical-notices';
+  assert.equal(icon(notices, {subclass: 'prohibition'}), 'notice-prohibition');
+  assert.equal(icon(notices, {subclass: 'information'}), 'notice');
+  assert.equal(icon(notices, {}), 'notice');
+  const colour = parsed(byId.get(notices)?.paint?.['icon-color'], 'color');
+  assert.notEqual(
+    String(colour.evaluate({zoom: 14}, {properties: {subclass: 'prohibition'}, type: 1})),
+    String(colour.evaluate({zoom: 14}, {properties: {subclass: 'information'}, type: 1})),
+  );
 });
 
 test('rejects auxiliary source ID collisions', () => {

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="-16 -16 64 64">
+  <title>Marina</title>
+  <desc>Original Tileflow marina pictogram: a sailing yacht.</desc>
+  <g fill="#000000">
+    <path d="M14.6 2.6v17.2H5.8L14.6 2.6Z"/>
+    <path d="M17 5.8 25.6 19.8H17V5.8Z"/>
+    <path d="M3.8 22h24.4l-3.6 5.8H7.4L3.8 22Z"/>
+  </g>
+</svg>

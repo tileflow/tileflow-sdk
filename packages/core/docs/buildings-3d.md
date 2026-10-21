@@ -451,12 +451,14 @@ During partial opacity, a depth-only geometry pass resolves the nearest surfaces
 blending, preventing rear walls from bleeding through. At full opacity only the normal geometry
 pass runs; zoom fading schedules no extra animation frames or per-zoom mesh rebuilds.
 
-The browser bundle prepares building meshes in one worker per renderer: it meshes each tile, keeps
-its indices to 16 bits when its vertices allow, lays out the walls' contact-band segments and
-transfers the finished arrays. The renderer uploads them to the GPU and keeps no copy; a style
-reloaded in full keeps the uploaded buffers. No worker URL or extra asset hosting is needed. A Content Security Policy
-must allow `worker-src blob:` to use this path; if workers are unavailable or blocked, the renderer
-falls back to local meshing. The worker is terminated on `dispose()`. Pending tile updates retain
+The browser bundle builds from the tiles' bytes in one worker that the page's 3D buildings, trees
+and street lights share, nearest tiles first: it decodes each tile once for all of them, meshes its
+buildings, keeps their indices to 16 bits when the vertices allow, lays out the walls' contact-band
+segments and transfers the finished arrays. The renderer uploads them to the GPU and keeps no copy;
+a style reloaded in full keeps the uploaded buffers. No worker URL or extra asset hosting is needed.
+A Content Security Policy must allow `worker-src blob:` to use this path; if workers are
+unavailable or blocked, the layers build in the page instead. The worker is terminated when the
+last of those layers is disposed. Tiles the camera has left are not downloaded or built. Pending tile updates retain
 the previous mesh until their replacement is ready; cancelled and obsolete results are discarded.
 
 Mercator rendering batches buildings spatially and skips batches outside the camera. Shadow

@@ -1,4 +1,5 @@
-import {spawn} from 'node:child_process';
+import {type ChildProcessByStdio, spawn} from 'node:child_process';
+import type {Readable} from 'node:stream';
 
 /** Own the whole subprocess tree so a failed test cannot keep its worker alive. */
 export function startFixtureProcess(
@@ -12,7 +13,7 @@ export function startFixtureProcess(
     detached: process.platform !== 'win32',
     stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
     windowsHide: true,
-  });
+  }) as ChildProcessByStdio<null, Readable, Readable>;
   let stdout = '';
   let stderr = '';
   let closed = false;

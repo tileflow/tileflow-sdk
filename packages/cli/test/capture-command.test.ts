@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import {once} from 'node:events';
 import {mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
-import {createServer, type Server} from 'node:http';
+import {createServer} from 'node:http';
 import {connect} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join, win32} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {fileURLToPath} from 'node:url';
 import {
   createTileflowCaptureReceipt,
   createTileflowCaptureRendererIdentity,
@@ -16,7 +15,12 @@ import {
   TileflowCaptureError,
   type TileflowShotCapture,
 } from '@tileflow/capture';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {startFixtureProcess} from '../../../test-support/fixture-process';
+import {
+  closeFixtureServer,
+  fixtureResources as resourcesFor,
+} from '../../../test-support/fixture-resources';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   createExploratoryScene,
@@ -39,9 +43,6 @@ import {
   writeCapturePair,
 } from '../src/capture-output';
 import {tileflowMapFixture} from './map-fixture';
-
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 
 test('capture fixture cleanup closes unfinished HTTP connections', async () => {
   let cleanup: (() => Promise<void>) | undefined;
@@ -1394,35 +1395,6 @@ async function createVectorFixtureServer(
   return {origin, requests};
 }
 
-const resources = new WeakMap<TestContext, Array<() => Promise<unknown>>>();
-
-function resourcesFor(t: TestContext): Array<() => Promise<unknown>> {
-  let owned = resources.get(t);
-  if (!owned) {
-    owned = [];
-    resources.set(t, owned);
-    t.after(async () => {
-      const failures: unknown[] = [];
-      for (const close of owned!.reverse()) {
-        try {
-          await close();
-        } catch (error) {
-          failures.push(error);
-        }
-      }
-      if (failures.length) throw new AggregateError(failures, 'Capture fixture cleanup failed');
-    });
-  }
-  return owned;
-}
-
-function closeFixtureServer(server: Server): Promise<void> {
-  return new Promise((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()));
-    server.closeAllConnections();
-  });
-}
-
 function runCli(
   t: TestContext,
   cwd: string,
@@ -1446,7 +1418,7 @@ function runCli(
   );
 
   t.signal.throwIfAborted();
-  const running = startFixtureProcess(['--import', tsxLoader, cliEntry, ...arguments_], {
+  const running = startFixtureProcess(cliFixtureArguments(arguments_), {
     cwd,
     env: environment,
     signal: t.signal,

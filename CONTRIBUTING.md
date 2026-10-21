@@ -27,6 +27,10 @@ types, lint and formatting checks.
 
 Capture and CLI browser suites run independently on each Linux, macOS and Windows / Node 22 and 24
 combination. This repeats runner preparation to reduce elapsed time while retaining every test.
+CLI subprocess tests use the freshly built executable in CI (`TILEFLOW_TEST_CLI_MODE=built`),
+avoiding a TypeScript loader in each child process. Local tests default to source mode. To exercise
+the CI path locally, build first, then run `TILEFLOW_TEST_CLI_MODE=built pnpm --filter tileflow test`.
+The built mode never falls back to source when its executable is missing.
 
 CI shares a temporary Node compile cache between subprocesses in each job. It caches bytecode,
 not test results, and is discarded with the runner. For a local comparison, set `NODE_COMPILE_CACHE`
@@ -35,6 +39,9 @@ to a temporary directory or use `NODE_DISABLE_COMPILE_CACHE=1` to disable it.
 Tests own their subprocesses and loopback servers. Stop consumers before closing their servers and
 removing fixtures. Capture tests request shutdown over IPC, then terminate the process tree if the
 consumer does not stop. A timeout must fail the test without leaving its worker running.
+JSON process fixtures propagate test cancellation, reject pending event waits when the child exits,
+and dispose consumers before servers and directories. HTTP fixture shutdown closes unfinished
+connections; cleanup continues through remaining resources if one disposer fails.
 Restore the working directory before removing a temporary fixture; Windows keeps the current
 directory locked. CLI tests assert structured output and preserve the test runner's binary events.
 Next, Vue and Svelte capture failures include bounded browser console, page and network diagnostics.

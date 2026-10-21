@@ -3,15 +3,13 @@ import {spawn} from 'node:child_process';
 import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {fileURLToPath} from 'node:url';
 import test from 'node:test';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 
-const entry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const loader = import.meta.resolve('tsx');
 function command(cwd: string, args: string[]) {
   return new Promise<{code: number | null; output: string}>((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', loader, entry, ...args], {
+    const child = spawn(process.execPath, cliFixtureArguments(args), {
       cwd,
       env: {...process.env, TILEFLOW_API_KEY: '', TILEFLOW_API_URL: 'https://unused.invalid'},
       stdio: ['ignore', 'pipe', 'pipe'],

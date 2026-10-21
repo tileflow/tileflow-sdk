@@ -7,11 +7,10 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {fileURLToPath, pathToFileURL} from 'node:url';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
 
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 const comparison = ['--map', 'main', '--against-map', 'main'];
 
 for (const [label, args] of [
@@ -111,13 +110,7 @@ syncBuiltinESMExports();
     [
       '--import',
       pathToFileURL(preloadPath).href,
-      '--import',
-      tsxLoader,
-      cliEntry,
-      'preview',
-      '--port',
-      String(port),
-      ...args,
+      ...cliFixtureArguments(['preview', '--port', String(port), ...args]),
     ],
     {
       cwd,

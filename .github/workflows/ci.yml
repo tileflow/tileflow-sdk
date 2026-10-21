@@ -90,6 +90,7 @@ jobs:
       - name: Verify package
         env:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
+          TILEFLOW_TEST_CLI_MODE: ${{ matrix.package == 'tileflow' && 'built' || 'source' }}
         run: pnpm --filter '${{ matrix.package }}' run verify
 
   peer-compatibility:
@@ -194,6 +195,7 @@ jobs:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
           TILEFLOW_RUN_BROWSER_TESTS: '1'
           TILEFLOW_TEST_PROGRESS: '1'
+          TILEFLOW_TEST_CLI_MODE: built
           NODE_OPTIONS: ${{ format('--test-reporter=tap --require={0}/test-support/test-progress.cjs', github.workspace) }}
 
   capture-public-tarball:

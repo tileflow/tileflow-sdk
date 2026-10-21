@@ -5,7 +5,6 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {monitorEventLoopDelay} from 'node:perf_hooks';
 import test from 'node:test';
-import {fileURLToPath} from 'node:url';
 import {
   createTileflowArtifactSession,
   createTileflowBuildArtifacts,
@@ -13,11 +12,10 @@ import {
   type TileflowArtifactSession,
   type TileflowBuildArtifacts,
 } from '@tileflow/dev/artifacts';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {startFixtureProcess} from '../../../test-support/fixture-process';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
-
-const cli = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 
 test('fixture commands keep the parent event loop available to watched builds', async (t) => {
   const server = createServer((_request, response) => response.end('watcher-ready'));
@@ -190,13 +188,7 @@ test('validate, build and development reject the same mixed composition and reco
   for (const command of ['validate', 'build']) {
     observed.record(`${command}:start`);
     const result = await runFixtureCommand(
-      [
-        '--import',
-        import.meta.resolve('tsx'),
-        cli,
-        command,
-        ...(command === 'validate' ? ['--json'] : []),
-      ],
+      cliFixtureArguments([command, ...(command === 'validate' ? ['--json'] : [])]),
       {
         cwd,
         env: {...process.env, TILEFLOW_API_KEY: '', TILEFLOW_API_URL: '', NO_COLOR: '1'},

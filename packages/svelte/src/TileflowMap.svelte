@@ -587,6 +587,8 @@
     const maplibreMap = new maplibregl.Map({
       ...mapOptions,
       attributionControl: mapOptions?.attributionControl ?? {compact: true},
+      // Tileflow's compiled styles are validated when they are built.
+      validateStyle: mapOptions?.validateStyle ?? false,
       bearing: resolvedBearing,
       center: resolvedCenter as LngLatLike,
       container: targetContainer,

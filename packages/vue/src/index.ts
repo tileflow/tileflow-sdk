@@ -894,6 +894,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         attributionControl: props.mapOptions?.attributionControl ?? {
           compact: true,
         },
+        // Tileflow's compiled styles are validated when they are built.
+        validateStyle: props.mapOptions?.validateStyle ?? false,
         bearing: resolvedBearing.value,
         center: resolvedCenter.value,
         container,

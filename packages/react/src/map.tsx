@@ -837,6 +837,8 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           attributionControl: stableMapOptions?.attributionControl ?? {
             compact: true,
           },
+          // Tileflow's compiled styles are validated when they are built.
+          validateStyle: stableMapOptions?.validateStyle ?? false,
           transformRequest,
         });
 

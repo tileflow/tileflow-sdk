@@ -39,6 +39,12 @@ Restore the working directory before removing a temporary fixture; Windows keeps
 directory locked. CLI tests assert structured output and preserve the test runner's binary events.
 Next, Vue and Svelte capture failures include bounded browser console, page and network diagnostics.
 
+Browser CI uses TAP so failure details appear before the final summary. With
+`TILEFLOW_TEST_PROGRESS=1` and `NODE_OPTIONS=--require=/absolute/path/to/test-support/test-progress.cjs`,
+both suites report active test files every 30 seconds. Workers report CPU time, memory and active
+resource counts; these timers cannot keep a worker alive. Capture framework tests also stream bounded
+browser launch, context, close, crash and network events. Ordinary local tests remain quiet.
+
 Do not edit package versions, add changesets, create release tags, or run `npm publish`. Every
 source package keeps `0.0.0-development`. Merging to `main` creates a candidate; it does not
 publish to npm. Publication requires an explicit workflow dispatch from `main`, verification of the

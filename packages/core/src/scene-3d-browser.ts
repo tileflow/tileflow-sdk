@@ -143,6 +143,8 @@ function createScene(map: object): TileflowScene3D {
   let target: ShadowTarget | undefined;
   let key: string | undefined;
   let frame: TileflowSceneFrame | undefined;
+  // The light's view fitted last and the frame it is in, kept by a moving camera.
+  let fitted: {frame: string; fit: ShadowFit} | undefined;
 
   function ensureTarget(context: WebGL2RenderingContext): ShadowTarget {
     if (target && target.context === context) return target;
@@ -216,6 +218,11 @@ function createScene(map: object): TileflowScene3D {
     const origin = [left, top] as const;
     const scale = metres;
     const unit = tileflowSceneExtent * scale;
+    // While the camera moves, the light's view takes a margin round the visible area and is kept
+    // while it still covers it, so the depth pass is not drawn again on every frame. MapLibre draws
+    // a frame once the camera stops, which fits the light's view to the visible area again.
+    const moving = (map as {isMoving?(): boolean}).isMoving?.() === true;
+    const fitFrame = [...light.shadowDirection, zoom, left, top, scale, shadow.size].join();
     const lightView = tileflowSunLightMatrix(
       light.shadowDirection,
       {
@@ -227,8 +234,15 @@ function createScene(map: object): TileflowScene3D {
         resolution: shadow.size,
         origin: [origin[0] * unit, -origin[1] * unit, 0],
         gridScale: unit * 2 ** zoom,
+        ...(moving
+          ? {
+              margin: movingShadowMargin,
+              ...(fitted?.frame === fitFrame ? {previous: fitted.fit} : {}),
+            }
+          : {}),
       },
     );
+    fitted = {frame: fitFrame, fit: lightView.fit};
     const next = [
       ...light.shadowDirection.map((value) => value.toFixed(5)),
       zoom,
@@ -330,12 +344,19 @@ function createScene(map: object): TileflowScene3D {
       target = undefined;
       frame = undefined;
       key = undefined;
+      fitted = undefined;
     },
   };
 }
 
+// The share of the visible span a moving camera's light view adds on each side.
+const movingShadowMargin = 0.25;
+
 type ShadowPoint = readonly number[];
 type ShadowBox = Readonly<{min: ShadowPoint; max: ShadowPoint}>;
+type ShadowRange = readonly [number, number];
+/** The light-space ranges a light view covers: across and up the shadow map, and along the light. */
+type ShadowFit = Readonly<{right: ShadowRange; up: ShadowRange; depth: ShadowRange}>;
 type ShadowView = Readonly<{
   /** Visible receiver points, in the caster box's metre frame. All casters still draw. */
   receivers?: readonly ShadowPoint[];
@@ -344,6 +365,13 @@ type ShadowView = Readonly<{
   origin?: ShadowPoint;
   /** Metres per fixed world unit; keeps texel quantization independent of latitude scale. */
   gridScale?: number;
+  /** A share of the focused span added on each side, so a moving view stays inside the fit. */
+  margin?: number;
+  /**
+   * A fit in the same frame and light, kept on each axis while it covers the view and is at most
+   * half again as wide as a new fit would be.
+   */
+  previous?: ShadowFit;
 }>;
 
 /**
@@ -474,7 +502,7 @@ export function tileflowSunLightMatrix(
   direction: readonly number[],
   box: ShadowBox,
   view: ShadowView = {},
-): {matrix: Float32Array; depth: number; extent: number} {
+): {matrix: Float32Array; depth: number; extent: number; fit: ShadowFit} {
   const length = Math.hypot(direction[0]!, direction[1]!, direction[2]!) || 1;
   const towards = direction.map((value) => value / length);
   const forward = towards.map((value) => -value);
@@ -509,11 +537,19 @@ export function tileflowSunLightMatrix(
   const pad = ([low, high]: readonly [number, number], extra: number) =>
     [low - extra, high + extra] as const;
   const receivers = view.receivers?.length ? view.receivers : corners;
-  const fit = (axis: ShadowPoint) => {
+  const margin = Math.max(0, view.margin ?? 0);
+  const keeps = (previous: ShadowRange | undefined, [low, high]: ShadowRange) =>
+    previous !== undefined &&
+    previous[0] <= low &&
+    previous[1] >= high &&
+    previous[1] - previous[0] <= (high - low) * (1 + 2 * margin) * 1.5;
+  const fit = (axis: ShadowPoint, previous: ShadowRange | undefined): ShadowRange => {
     const [low, high] = range(axis, receivers);
     const extra = (high - low) * 0.01 + 2;
-    if (!(view.resolution && view.resolution >= 1)) return pad([low, high], extra);
-    const span = high - low + extra * 2;
+    if (keeps(previous, [low - extra, high + extra])) return previous!;
+    if (!(view.resolution && view.resolution >= 1))
+      return pad([low, high], extra + (high - low + extra * 2) * margin);
+    const span = (high - low + extra * 2) * (1 + 2 * margin);
     // Quantize in a stable Mercator frame. Quantizing metre extents while the absolute
     // world origin changes with cos(latitude) shifts texels even on centimetre pans.
     // Convert back for drawing: meshes retain their current physical metre scale.
@@ -526,8 +562,8 @@ export function tileflowSunLightMatrix(
     const centre = Math.round(((low + high) / 2 + offset) / texel) * texel - offset;
     return [centre - extent / 2, centre + extent / 2] as const;
   };
-  const [a0, a1] = fit(right);
-  const [b0, b1] = fit(up);
+  const [a0, a1] = fit(right, view.previous?.right);
+  const [b0, b1] = fit(up, view.previous?.up);
   // A ground endpoint has the same light-space XY as its roof, but is farther from the
   // sun. Extend depth only: widening the XY box would waste the newly focused resolution.
   const endpoints =
@@ -538,7 +574,10 @@ export function tileflowSunLightMatrix(
           0,
         ])
       : [];
-  const [c0, c1] = pad(range(forward, [...corners, ...endpoints, ...receivers]), 10);
+  const reach = range(forward, [...corners, ...endpoints, ...receivers]);
+  const [c0, c1] = keeps(view.previous?.depth, pad(reach, 10))
+    ? view.previous!.depth
+    : pad(reach, 10 + (reach[1] - reach[0]) * margin);
   const hu = (a1 - a0) / 2;
   const hv = (b1 - b0) / 2;
   const hd = (c1 - c0) / 2;
@@ -551,5 +590,10 @@ export function tileflowSunLightMatrix(
   const matrix = new Float32Array(16);
   for (let row = 0; row < 4; row += 1)
     for (let column = 0; column < 4; column += 1) matrix[column * 4 + row] = rows[row]![column]!;
-  return {matrix, depth: hd * 2, extent: Math.max(hu, hv) * 2};
+  return {
+    matrix,
+    depth: hd * 2,
+    extent: Math.max(hu, hv) * 2,
+    fit: {right: [a0, a1], up: [b0, b1], depth: [c0, c1]},
+  };
 }

@@ -59,6 +59,8 @@ export type TileflowTrees3DMap = {
   getStyle(): unknown;
   getZoom(): number;
   isStyleLoaded(): boolean | void;
+  /** Whether the camera is moving; trees then redraw their shadows less often. */
+  isMoving?(): boolean;
   off(event: string, listener: () => void): unknown;
   on(event: string, listener: () => void): unknown;
   removeLayer(id: string): unknown;
@@ -595,7 +597,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     },
     // Camera-dependent density, detail and fading also change the trees casting shadows.
     key: () =>
-      `trees:${view().key}:${fadeIn().toFixed(4)}:${visibleScale().toFixed(4)}:${generation}:${programs.depth ? 1 : 0}:${Object.values(
+      `trees:${map.isMoving?.() ? view().movingKey : view().key}:${fadeIn().toFixed(4)}:${visibleScale().toFixed(4)}:${generation}:${programs.depth ? 1 : 0}:${Object.values(
         colours().sizes,
       )
         .flat()

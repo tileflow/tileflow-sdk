@@ -519,7 +519,9 @@ Mercator texel grid stays stable during small pans, including changes of latitud
 the meshes' physical metre scale. One filtered depth comparison keeps edges sharp.
 Missing camera capabilities, terrain or a view near the horizon use the full loaded area instead.
 The depth pass runs again when its focused area, light or casting geometry changes and is reused
-when they stay unchanged.
+when they stay unchanged. While the camera moves, the focused area takes a quarter of its span as a
+margin on each side and is kept while it still covers the view at a similar resolution, so the
+depth pass is not drawn on every frame; once the camera stops, it is fitted to the view again.
 
 Model ambient visibility and lighting roles retain the existing 16-byte vertex stride. They add
 no geometry pass or texture. Architectural ground lighting uses a separate one-byte-per-pixel

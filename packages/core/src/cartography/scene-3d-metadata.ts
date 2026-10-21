@@ -6,6 +6,7 @@ import {readBuildingFloodLight, readModelRoleLighting} from '../building-illumin
 import {
   type TileflowBuildingModelPlacement,
   type TileflowBuildings3DDesign,
+  readTileflowBuildingsEntrance,
   tileflowDefaultBuildings3DDesign,
 } from '../buildings-3d-design';
 import type {TileflowModelPart} from '../models-3d-model';
@@ -143,6 +144,7 @@ export function tileflowBuildings3DDesignOf(
         }
       : {}),
     windows: style.windows === true,
+    ...readTileflowBuildingsEntrance(style.entrance),
     shadows: typeof style.shadows === 'boolean' ? style.shadows : defaults.shadows,
     occlusion: typeof style.occlusion === 'boolean' ? style.occlusion : defaults.occlusion,
     modelOcclusion: number(style.modelOcclusion, defaults.modelOcclusion),

@@ -16,10 +16,21 @@ the buildings under their footprints.
 
 It is a custom WebGL2 layer for MapLibre GL JS, drawn above the map's buildings and below its
 labels. It needs WebGL2 and the Mercator projection, which MapLibre's globe turns into from about
-zoom 12. On every map, buildings and placed models appear automatically from zoom 15,
-with opacity rising linearly from 0 at 15 to 1 at 15.25. Zooming back out reverses the fade.
-Their height stays unchanged throughout; shadows and contact shading fade with them.
+zoom 12. On every map the city comes in as the camera zooms in: placed models and landmarks first,
+fading in and rising from the ground between zooms 14.2 and 14.6, then the buildings between 15 and
+15.3. Their shadows and contact shading follow their height. Zooming back out lowers and fades them
+again. With reduced motion (`prefers-reduced-motion`) they keep their height and only fade.
 `hide()` keeps them hidden at every zoom until `show()` is called.
+
+A map sets these bands with the buildings module's `threeDimensional.entrance`, each a
+`[from, to]` pair of zooms; a band left out keeps its default:
+
+```ts
+buildings({threeDimensional: {entrance: {buildings: [15.5, 16], models: [14.5, 15]}}});
+```
+
+The renderer reads its tiles from a zoom below its `minzoom`, so a band that starts earlier than
+that comes in from there.
 
 ## Show the buildings
 
@@ -441,7 +452,8 @@ download.
 
 ## Options
 
-The renderer's own options say only how it is delivered: `minzoom` (15 by default, with a 0.25-zoom opacity ramp), `maxTiles`,
+The renderer's own options say only how it is delivered: `minzoom` (15 by default; the default
+entrance bands start from it), `maxTiles`,
 `beforeId` to place the layer before another one, and `transformRequest` to apply the map's request
 rules to the tiles it reads.
 

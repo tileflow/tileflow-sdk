@@ -272,7 +272,9 @@ tile's download.
 A near tree has 60 to 120 triangles and a far one about 20, and each form is one instanced draw per
 tile. The shared shadow map concentrates resolution on the view when its public camera methods
 provide a safe planar fit. It is drawn again when that focused area, the light, visible tree
-selection, fading or geometry changes. Unchanged views reuse it. Over the Champ de Mars in Paris,
+selection, fading or geometry changes. Unchanged views reuse it. While the camera moves, the trees'
+shadows follow their selection and fading in steps of a sixteenth of a tile, and exactly again once
+it stops. Over the Champ de Mars in Paris,
 where OpenStreetMap maps every tree, about 13,000 trees stand in a pitched view at zoom 16.6.
 
 ## Limits

@@ -1,6 +1,12 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import {tileflowAtmosphereMetadataKey} from '../atmosphere';
-import {tileflowSkyMetadataKey} from '../sky';
+import {
+  type TileflowResolvedSky,
+  type TileflowSkyColours,
+  type TileflowSkyMetadata,
+  type TileflowSkyTimesOfDay,
+  tileflowSkyMetadataKey,
+} from '../sky';
 import {
   compileTileflowSky,
   compileTileflowStreetSky,
@@ -651,9 +657,7 @@ function compileSemanticStyleInternal(
           }
         : {}),
       ...(atmosphere ? {[tileflowAtmosphereMetadataKey]: {version: 1, ...atmosphere}} : {}),
-      ...(sky && sky.starIntensity > 0
-        ? {[tileflowSkyMetadataKey]: {version: 1, starIntensity: sky.starIntensity}}
-        : {}),
+      ...(sky ? {[tileflowSkyMetadataKey]: skyMetadata(input, selected.name, sky)} : {}),
       'tileflow:theme': selected.name,
       'tileflow:colorScheme': resolvedTheme.colorScheme,
       [tileflowRouteMetadataKey]: tileflowRouteMetadata(resolveTileflowRouteInks(resolvedTheme)),
@@ -1082,4 +1086,49 @@ function compareCodeUnits(left: string, right: string): number {
 
 function semanticReportKey(...parts: readonly string[]): string {
   return parts.join('\u0000');
+}
+
+/**
+ * The sky's runtime payload. A theme in a time-of-day family also carries the family's skies,
+ * each resolved against its own theme's tokens, so a sun an application places brings the sky of
+ * its hour in the family's own palette.
+ */
+function skyMetadata(
+  input: ResolvedTileflowMap,
+  themeName: string,
+  sky: TileflowResolvedSky,
+): TileflowSkyMetadata {
+  const family = Object.values(input.timeOfDay ?? {}).find((moments) =>
+    Object.values(moments).includes(themeName),
+  );
+  const colours = (name: string | undefined): TileflowSkyColours | undefined => {
+    const theme = name === undefined ? undefined : input.themes[name];
+    if (!theme) return undefined;
+    const resolved = resolveTileflowSky(
+      resolveThemeValues({sky: input.sky}, theme, `map.${input.id}.themes.${name}`).sky,
+    );
+    return resolved
+      ? {
+          color: resolved.color,
+          horizonColor: resolved.horizonColor,
+          horizonBlend: resolved.horizonBlend,
+          glowColor: resolved.glowColor,
+        }
+      : undefined;
+  };
+  const day = colours(family?.day);
+  const night = colours(family?.night);
+  const dawn = colours(family?.dawn);
+  const dusk = colours(family?.dusk);
+  // A family with one twilight lends it to both ends of the day.
+  const timesOfDay: TileflowSkyTimesOfDay | undefined =
+    day && night && (dawn ?? dusk)
+      ? {day, night, dawn: (dawn ?? dusk)!, dusk: (dusk ?? dawn)!}
+      : undefined;
+  return {
+    version: 1,
+    starIntensity: sky.starIntensity,
+    glowColor: sky.glowColor,
+    ...(timesOfDay ? {timesOfDay} : {}),
+  };
 }

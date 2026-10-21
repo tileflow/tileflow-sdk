@@ -55,6 +55,7 @@ const skyDefaults = {
   color: '#5c9ce6',
   horizonColor: '#dcebf7',
   horizonBlend: 0.6,
+  glowColor: '#ffc68a',
   starIntensity: 0.6,
 } as const;
 
@@ -73,6 +74,7 @@ export function resolveTileflowSky(
     color: opaqueHex(options.color, 'Sky colors'),
     horizonColor: opaqueHex(options.horizonColor, 'Sky colors'),
     horizonBlend: unit(options.horizonBlend, 'horizonBlend'),
+    glowColor: opaqueHex(options.glowColor, 'Sky colors'),
     starIntensity: unit(options.starIntensity, 'starIntensity'),
   };
 }

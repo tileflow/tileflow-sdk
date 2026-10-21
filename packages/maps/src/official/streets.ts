@@ -1423,6 +1423,7 @@ export const streets = bindOfficialMapTheme(
       color: token.color('sky.color'),
       horizonColor: token.color('sky.horizon'),
       horizonBlend: token.number('sky.horizonBlend'),
+      glowColor: token.color('sky.glow'),
       starIntensity: 0.6,
     },
     data: {

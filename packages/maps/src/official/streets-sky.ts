@@ -1,14 +1,18 @@
 import type {StreetsColorTheme, StreetsLightPreset} from './streets-theme-colors';
 
 // The sky over a street-level view: a clear blue by day with a pale horizon, a peach dawn, a
-// violet dusk over a pink horizon, and a navy night dark enough for stars. Faded and monochrome
-// skies follow their families: softened towards grey, and grey.
+// violet dusk over a pink horizon, and a navy night dark enough for stars. The glow is the light
+// round a low sun: pale gold by day, apricot at dawn, amber at dusk; a night sun sits too low to
+// glow. Faded and monochrome skies follow their families: softened towards grey, and grey.
 const skies = {
-  day: {color: '#5C9CE6', horizon: '#DCEBF7', blend: 0.6},
-  dawn: {color: '#7F9FD6', horizon: '#F6D4BC', blend: 0.75},
-  dusk: {color: '#4A4784', horizon: '#E7A3A4', blend: 0.8},
-  night: {color: '#0B1630', horizon: '#26365A', blend: 0.6},
-} as const satisfies Record<StreetsLightPreset, {color: string; horizon: string; blend: number}>;
+  day: {color: '#5C9CE6', horizon: '#DCEBF7', blend: 0.6, glow: '#FFE7B8'},
+  dawn: {color: '#7F9FD6', horizon: '#F6D4BC', blend: 0.75, glow: '#FFC77A'},
+  dusk: {color: '#4A4784', horizon: '#E7A3A4', blend: 0.8, glow: '#FFA552'},
+  night: {color: '#0B1630', horizon: '#26365A', blend: 0.6, glow: '#B4645A'},
+} as const satisfies Record<
+  StreetsLightPreset,
+  {color: string; horizon: string; blend: number; glow: string}
+>;
 
 function channels(hex: string): [number, number, number] {
   const value = Number.parseInt(hex.slice(1), 16);
@@ -41,6 +45,7 @@ export function streetsSkyTokens(preset: StreetsLightPreset, family: StreetsColo
     colors: {
       'sky.color': inFamily(sky.color, family),
       'sky.horizon': inFamily(sky.horizon, family),
+      'sky.glow': inFamily(sky.glow, family),
     },
     numbers: {'sky.horizonBlend': sky.blend},
   };

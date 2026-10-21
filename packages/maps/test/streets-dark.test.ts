@@ -68,6 +68,20 @@ const preparedAssets = {
 
 // Approved physical-output snapshot after the 2026-10-18 reference and framebuffer audit.
 const approvedLightStyleColors = new Set([
+  // Street-level skies of the Default family (day, dawn, dusk, night: sky, horizon, glow). Each
+  // theme carries them all, so a sun an application places can mix the sky of its hour.
+  '#5C9CE6',
+  '#DCEBF7',
+  '#FFE7B8',
+  '#7F9FD6',
+  '#F6D4BC',
+  '#FFC77A',
+  '#4A4784',
+  '#E7A3A4',
+  '#FFA552',
+  '#0B1630',
+  '#26365A',
+  '#B4645A',
   // Hedges, their shade, fences and walls: Mapbox Standard's gate-fence-hedge colours.
   '#9AC38F',
   '#799D6E',
@@ -86,8 +100,6 @@ const approvedLightStyleColors = new Set([
   '#404040',
   '#479CEA',
   '#586E84',
-  // The day sky over street-level views and its pale horizon.
-  '#5C9CE6',
   '#626060',
   '#664CE6',
   '#66CC6E',
@@ -131,7 +143,6 @@ const approvedLightStyleColors = new Set([
   '#D6F0D4',
   '#D8C49A',
   '#DBEAFE',
-  '#DCEBF7',
   '#DDF1D8',
   '#E2E5EC',
   '#E2F3D1',
@@ -174,14 +185,25 @@ const approvedLightStyleColors = new Set([
 // includes Core-derived blends and the unreachable #000000 expression fallback so any
 // new physical color requires an explicit dark-map review.
 const approvedDarkStyleColors = new Set([
+  // Street-level skies of the Default family (day, dawn, dusk, night: sky, horizon, glow). Each
+  // theme carries them all, so a sun an application places can mix the sky of its hour.
+  '#5C9CE6',
+  '#DCEBF7',
+  '#FFE7B8',
+  '#7F9FD6',
+  '#F6D4BC',
+  '#FFC77A',
+  '#4A4784',
+  '#E7A3A4',
+  '#FFA552',
+  '#0B1630',
+  '#26365A',
+  '#B4645A',
   // Hedges, their shade, fences and walls.
   '#31403D',
   '#263532',
   '#54585B',
   '#5D6063',
-  // The night sky over street-level views and its horizon.
-  '#0B1630',
-  '#26365A',
   '#000000',
   '#001638',
   '#05131A',

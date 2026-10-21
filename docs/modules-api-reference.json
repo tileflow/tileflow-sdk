@@ -9651,6 +9651,9 @@
             "horizonBlend": {
               "$ref": "#/$defs/__schema269"
             },
+            "glowColor": {
+              "$ref": "#/$defs/__schema1"
+            },
             "starIntensity": {
               "$ref": "#/$defs/__schema269"
             }

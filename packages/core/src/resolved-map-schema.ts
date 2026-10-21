@@ -2518,6 +2518,7 @@ const skySchema = z.union([
       color: atmosphereColorSchema.optional(),
       horizonColor: atmosphereColorSchema.optional(),
       horizonBlend: skyNumberSchema.optional(),
+      glowColor: atmosphereColorSchema.optional(),
       starIntensity: skyNumberSchema.optional(),
     })
     .strict(),

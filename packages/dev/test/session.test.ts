@@ -1725,7 +1725,7 @@ function runPreviewScript(
       };
     },
     attachTileflowNotices: () => () => {},
-    attachTileflowSkyStars: () => () => {},
+    attachTileflowSky: () => () => {},
     tileflowMaxPitch: 85,
     readTileflowSunPreset: () => undefined,
     resolveTileflowSun: (preset: unknown) => preset,

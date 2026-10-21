@@ -7,7 +7,7 @@ import {
   type TileflowResolvedAtmosphere,
   wrapAtmosphereStar,
 } from './atmosphere';
-import {attachTileflowSkyStars, type TileflowSkyStarsMap} from './sky-stars-browser';
+import {attachTileflowSky, type TileflowSkyMap} from './sky-browser';
 
 /** Structural MapLibre capabilities; importing this module never loads a renderer. */
 export type TileflowAtmosphereMap = {
@@ -20,7 +20,7 @@ export type TileflowAtmosphereMap = {
   getStyle(): {metadata?: unknown; projection?: {type?: unknown}} | undefined;
   on(event: 'move' | 'resize' | 'style.load' | 'remove', listener: () => void): unknown;
   off(event: 'move' | 'resize' | 'style.load' | 'remove', listener: () => void): unknown;
-} & Partial<TileflowSkyStarsMap>;
+} & Partial<TileflowSkyMap>;
 
 /**
  * Render compiled globe atmosphere metadata, and the stars of a declared sky. Call after
@@ -32,10 +32,8 @@ export function attachTileflowAtmosphere(map: TileflowAtmosphereMap): () => void
   const document = container.ownerDocument;
   const browser = document.defaultView;
   if (!browser) return () => {};
-  const detachStars =
-    typeof map.addLayer === 'function'
-      ? attachTileflowSkyStars(map as TileflowSkyStarsMap)
-      : () => {};
+  const detachSky =
+    typeof map.addLayer === 'function' ? attachTileflowSky(map as TileflowSkyMap) : () => {};
   const mapCanvas = map.getCanvas();
   const previousFilter = mapCanvas.style.filter;
   const reducedMotion = browser.matchMedia('(prefers-reduced-motion: reduce)');
@@ -171,7 +169,7 @@ export function attachTileflowAtmosphere(map: TileflowAtmosphereMap): () => void
   function dispose() {
     if (disposed) return;
     disposed = true;
-    detachStars();
+    detachSky();
     if (frame !== undefined) browser!.cancelAnimationFrame(frame);
     map.off('move', schedule);
     map.off('resize', schedule);

@@ -53,15 +53,20 @@ import {
   type TileflowThemeMotionMap,
   tileflowThemeMotionView,
 } from './theme-motion-browser';
+import {readTileflowSky, tileflowSkyAtSun, tileflowSkyMetadataKey, tileflowSkySunKey} from './sky';
 import type {MapLibreStyle} from './types';
 
 export {attachTileflowAtmosphere, type TileflowAtmosphereMap} from './atmosphere-browser';
 export {tileflowMaxPitch} from './camera-limits';
+export {attachTileflowSky, tileflowSkyLayerId, type TileflowSkyMap} from './sky-browser';
 export {
-  attachTileflowSkyStars,
-  tileflowSkyStarsLayerId,
-  type TileflowSkyStarsMap,
-} from './sky-stars-browser';
+  readTileflowSky,
+  tileflowSkyAtSun,
+  tileflowSkyMetadataKey,
+  type TileflowSkyColours,
+  type TileflowSkyMetadata,
+  type TileflowSkyTimesOfDay,
+} from './sky';
 export {
   createBoundaryFeatureState,
   type CreateBoundaryFeatureStateOptions,
@@ -648,6 +653,9 @@ export function createTileflowThemeController(options: {
   let sunStop: (() => void) | undefined;
   let sunSettle: ((result: TileflowThemeTransitionResult) => void) | undefined;
   let sunLightWritten: string | undefined;
+  // The sky a placed sun wrote, and the sky of the style a theme given by URL compiled.
+  let sunSkyWritten: string | undefined;
+  let urlStyleSky: unknown;
 
   function imageContext() {
     return {
@@ -1020,8 +1028,9 @@ export function createTileflowThemeController(options: {
       // The ground colour moves with the blend, and colours that recede follow it.
       onPosition: () => {
         if (emphasisShown) writeEmphasis(false);
-        // The blend wrote its own light; the sun's takes its place.
+        // The blend wrote its own light and sky; the sun's take their place.
         sunLightWritten = undefined;
+        sunSkyWritten = undefined;
         writeSunLight();
       },
       position,
@@ -1080,8 +1089,62 @@ export function createTileflowThemeController(options: {
     return resolveTileflowSun(preset, sunShown, sunShown.source);
   }
 
+  /** The sky the themes on screen compiled, mixed at the blend's position. */
+  function themeSky(): unknown {
+    if (activeBlend?.plan.sky !== undefined)
+      return fillTileflowThemeBlendTemplate(activeBlend.plan.sky, activeBlend.blender.position);
+    return typeof shown.style === 'string' ? urlStyleSky : shown.style.sky;
+  }
+
+  /**
+   * Publishes the sun on screen for the map's sky layer, and while an application places the sun,
+   * gives the sky the colours of its hour from the time-of-day skies the themes carry.
+   */
+  function writeSunSky(): void {
+    const sun = sunNow();
+    try {
+      (options.map as unknown as Record<symbol, unknown>)[tileflowSkySunKey] = {
+        altitude: sun.altitude,
+        azimuth: sun.azimuth,
+        direction: sun.direction,
+        source: sun.source,
+      };
+    } catch {
+      // A frozen map object keeps the themes' sun for its sky.
+    }
+    const setSky = options.map.setSky as ((sky: unknown, options?: object) => unknown) | undefined;
+    if (typeof setSky !== 'function') return;
+    const style = typeof shown.style === 'string' ? shownStyleDocument() : shown.style;
+    const times = readTileflowSky(
+      (style?.metadata as Record<string, unknown> | undefined)?.[tileflowSkyMetadataKey],
+    )?.timesOfDay;
+    const base = themeSky();
+    try {
+      if (sunShown && times && isPlainObject(base)) {
+        const at = tileflowSkyAtSun(times, sun);
+        const sky = {
+          ...base,
+          'sky-color': at.color,
+          'horizon-color': at.horizonColor,
+          'fog-color': at.horizonColor,
+          'sky-horizon-blend': at.horizonBlend,
+        };
+        const key = JSON.stringify(sky);
+        if (key === sunSkyWritten) return;
+        setSky.call(options.map, sky, {validate: false});
+        sunSkyWritten = key;
+      } else if (sunSkyWritten !== undefined) {
+        setSky.call(options.map, base, {validate: false});
+        sunSkyWritten = undefined;
+      }
+    } catch {
+      // MapLibre refuses while a style loads; resetSun() writes the sky after it.
+    }
+  }
+
   /** The map's light points from the sun when the themes describe one or an application placed it. */
   function writeSunLight(): void {
+    writeSunSky();
     const {published} = themeSunPreset();
     if (!published && !sunShown) return;
     const setLight = options.map.setLight as
@@ -1111,6 +1174,11 @@ export function createTileflowThemeController(options: {
 
   /** After a new style: the themes' sun is read again and the light follows the sun on screen. */
   function resetSun(style: MapLibreStyle | string | undefined): void {
+    sunSkyWritten = undefined;
+    urlStyleSky =
+      typeof style === 'string'
+        ? (shownStyleDocument() as {sky?: unknown} | undefined)?.sky
+        : undefined;
     themeSun =
       style === undefined || typeof style === 'string'
         ? undefined

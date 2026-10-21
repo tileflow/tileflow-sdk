@@ -137,7 +137,7 @@ export function renderTileflowPreviewHtml(
       import {registerTileflowContourProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowPmtilesProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {attachTileflowNotices} from "${basePath}/__runtime/tileflow-browser.js";
-      import {attachTileflowSkyStars, tileflowMaxPitch} from "${basePath}/__runtime/tileflow-browser.js";
+      import {attachTileflowSky, tileflowMaxPitch} from "${basePath}/__runtime/tileflow-browser.js";
       import {createTileflowMap3D} from "${basePath}/__runtime/tileflow-browser.js";
       import {readTileflowSunPreset, resolveTileflowSun, tileflowDefaultSunPreset} from "${basePath}/__runtime/tileflow-browser.js";
 
@@ -1586,7 +1586,7 @@ export function renderTileflowPreviewHtml(
         });
         globalThis.__tileflowPreviewMap = map;
         attachTileflowNotices(map);
-        attachTileflowSkyStars(map);
+        attachTileflowSky(map);
         devtoolsObserver?.attach(map);
         installMapBenchmark(map);
         if (window.parent === window) map.addControl(new maplibregl.NavigationControl(), "top-right");

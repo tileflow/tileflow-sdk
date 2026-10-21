@@ -120,6 +120,13 @@ import {registerIconLockCommands} from './icon-lock-command';
 import {registerIconSetCommands} from './icon-set-command';
 import {registerLanguageCommand} from './language-command';
 import {
+  addMapSetupOptions,
+  createMapForDeploy,
+  hasMapSetupOptions,
+  registerMapCommands,
+} from './map-commands';
+import {checkMapSetupOptions, type MapSetupOptions} from './map-setup';
+import {
   hostedModelSourceIdentities,
   mapAssetsWithBuildingModels,
   prepareModelAssets,
@@ -920,14 +927,18 @@ program
     },
   );
 
-program
-  .command('deploy')
-  .description('Deploy maps to Tileflow and write the frontend manifest')
+addMapSetupOptions(
+  program
+    .command('deploy')
+    .description(
+      'Deploy maps to Tileflow and write the frontend manifest; without --map-id, create the Map first',
+    ),
+)
   .option('-c, --config <path>', 'config path', defaultConfigPath)
   .option('--manifest <path>', 'manifest path written for frontend bundlers', defaultManifestPath)
   .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
   .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
-  .option('--map-id <id>', 'managed Map destination')
+  .option('--map-id <id>', 'managed Map destination; omit it to create a new Map')
   .option('--with-native', 'publish web and native-v1 together for the selected managed Map')
   .option('--map <name>', 'configured map to connect when the repository contains multiple maps')
   .option(
@@ -937,19 +948,22 @@ program
   .option('--cache-dir <path>', 'verified Icon Set artifact cache root')
   .option('--offline', 'fail a locked Icon Set cache miss instead of hydrating it')
   .action(
-    async (options: {
-      cacheDir?: string;
-      config: string;
-      manifest: string;
-      apiUrl?: string;
-      apiKey?: string;
-      mapId?: string;
-      map?: string;
-      offline?: boolean;
-      overwriteSelfHostedManifest?: boolean;
-      withNative?: boolean;
-    }) => {
+    async (
+      options: MapSetupOptions & {
+        cacheDir?: string;
+        config: string;
+        manifest: string;
+        apiUrl?: string;
+        apiKey?: string;
+        mapId?: string;
+        map?: string;
+        offline?: boolean;
+        overwriteSelfHostedManifest?: boolean;
+        withNative?: boolean;
+      },
+    ) => {
       const source = resolveDeploySource(process.env);
+      if (!validateMapSetupTarget(options, source)) return;
       const resolveApi = () =>
         requireApiOptions(options, {
           allowStoredCredential: allowsStoredDeployCredential(source),
@@ -1089,6 +1103,21 @@ program
       // requests. Keep them after every deterministic config, asset, style,
       // font, compatibility, and existing-manifest check so invalid local
       // input always fails without network access.
+      let createdMapId: string | null = null;
+      if (!options.mapId) {
+        const deployedMapId = existingManifest?.maps[mapNames[0]!]?.mapId;
+        if (deployedMapId) {
+          logError(`${pc.bold(mapNames[0]!)} is already deployed to ${deployedMapId}.`);
+          printNextSteps([
+            `Deploy it again with ${command(`tileflow deploy --map-id ${deployedMapId}`)}.`,
+          ]);
+          process.exitCode = 1;
+          return;
+        }
+        createdMapId = await createMapForDeploy(options, {defaultApiUrl, loadAuthConfig});
+        if (!createdMapId) return;
+        options.mapId = createdMapId;
+      }
       const api = await resolveApi();
       if (!api) return;
 
@@ -1409,6 +1438,9 @@ program
       const deployedMapId = Object.values(deployedMaps)[0]?.mapId;
       if (deployedMapId) {
         printNextSteps([
+          ...(createdMapId
+            ? [`Deploy later changes with ${command(`tileflow deploy --map-id ${createdMapId}`)}.`]
+            : []),
           `Check hosted state with ${command(`tileflow status --map-id ${deployedMapId}`)}.`,
         ]);
       }
@@ -1522,6 +1554,7 @@ registerProjectCommands(program, {
   defaultApiUrl,
   loadAuthConfig,
 });
+registerMapCommands(program, {defaultApiUrl, loadAuthConfig});
 
 if (isRootCliVersionRequest(process.argv.slice(2))) {
   process.stdout.write(`${packageJson.version}\n`);
@@ -2003,11 +2036,6 @@ function selectManagedDeployMaps(
   mapNames: string[],
   options: {map?: string; mapId?: string},
 ): string[] | null {
-  if (options.map && !options.mapId) {
-    logError('--map requires --map-id.');
-    process.exitCode = 1;
-    return null;
-  }
   if (options.map) {
     if (!mapNames.includes(options.map)) {
       logError(`Unknown Tileflow map: ${options.map}.`);
@@ -2017,25 +2045,51 @@ function selectManagedDeployMaps(
     }
     return [options.map];
   }
-  if (!options.mapId) return mapNames;
   if (mapNames.length === 1) return [mapNames[0]!];
   logError(
     'This managed target requires an explicit map because the config contains multiple maps.',
   );
   printKeyValue('Maps', mapNames.join(', '));
   printNextSteps([
-    `Retry with ${command(`tileflow deploy --map-id ${options.mapId} --map ${mapNames[0]}`)}.`,
+    `Retry with ${command(`tileflow deploy ${options.mapId ? `--map-id ${options.mapId} ` : ''}--map ${mapNames[0]}`)}.`,
   ]);
   process.exitCode = 1;
   return null;
 }
 
-function validateDeployTarget(options: {mapId?: string}) {
-  if (!options.mapId) {
-    logError('Managed deploy requires --map-id.');
+/**
+ * Without --map-id, deploy creates the Map with the personal account session. CI, an explicit
+ * credential, and native publication keep requiring an existing Map.
+ */
+function validateMapSetupTarget(
+  options: MapSetupOptions & {apiKey?: string; mapId?: string; withNative?: boolean},
+  source: ReturnType<typeof resolveDeploySource>,
+) {
+  const fail = (message: string, steps: string[] = []) => {
+    logError(message);
+    printNextSteps(steps);
     process.exitCode = 1;
     return false;
+  };
+  if (options.mapId) {
+    return hasMapSetupOptions(options)
+      ? fail(
+          '--team, --origin, --any-website and --setup-key apply only when deploy creates a Map.',
+        )
+      : true;
   }
+  const createFirst = `Create the Map with ${command('tileflow maps create')} after ${command('tileflow login')}, then pass --map-id.`;
+  if (options.withNative) return fail('--with-native requires one valid --map-id.', [createFirst]);
+  if (options.apiKey || !allowsStoredDeployCredential(source)) {
+    return fail('Managed deploy with a Tileflow credential or in CI requires --map-id.', [
+      createFirst,
+    ]);
+  }
+  const checked = checkMapSetupOptions(options);
+  return checked.ok ? true : fail(checked.error);
+}
+
+function validateDeployTarget(options: {mapId?: string}) {
   if (options.mapId && !/^map_[A-Za-z0-9_-]{16}$/u.test(options.mapId)) {
     logError('Managed Map ID is invalid.');
     process.exitCode = 1;

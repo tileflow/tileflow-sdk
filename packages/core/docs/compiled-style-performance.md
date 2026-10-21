@@ -166,7 +166,7 @@ Road treatments refine a class without creating another class or exposing source
 `construction`, `expressway`, `indoor`, `official`, `ramp`, and `unpaved` live under `modifiers`;
 general, bicycle, foot, horse, and toll restrictions live under `restrictions`; `alley`,
 `crossover`, `driveway`, `parkingAisle`, and `yard` live under `serviceTypes`; and exact
-mountain-bike difficulty values live under `mountainBike`. Treatments reuse
+mountain-bike difficulty values, which apply to paths and tracks, live under `mountainBike`. Treatments reuse
 surface/tunnel/bridge and casing/fill/shadow paint controls, plus a relative `widthScale`. The
 compiler emits feature-driven paint expressions inside the existing stable class layers rather
 than multiplying every possible combination.

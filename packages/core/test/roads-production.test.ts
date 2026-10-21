@@ -637,6 +637,34 @@ test('a dash for other road classes, or a solid one, leaves a road on the solid-
   );
 });
 
+test('mountain-bike difficulty dashes trails and tracks, and leaves other roads solid', () => {
+  const layers = compileRoads(
+    roads({
+      detail: 'all',
+      extras: {paths: true},
+      mountainBike: {'5': {surface: {fill: {dash: [1.5, 1]}}}},
+    }),
+    context,
+  ).map(({layer}) => layer);
+  const dash = (id: string) =>
+    (layers.find((layer) => layer.id === id)!.paint as Record<string, unknown>)['line-dasharray'];
+  for (const roadClass of ['motorway', 'primary', 'minor', 'service'])
+    assert.equal(dash(`tileflow-road-surface-${roadClass}-fill`), undefined, roadClass);
+  for (const [roadClass, properties] of [
+    ['footway', {class: 'path', subclass: 'footway', mtb_scale: 5}],
+    ['track', {class: 'track', mtb_scale: 5}],
+  ] as const)
+    assert.deepEqual(
+      evaluateProperty(
+        dash(`tileflow-road-surface-${roadClass}-fill`),
+        mapLibreStyleSpec.paint_line['line-dasharray'],
+        properties,
+      ),
+      [1.5, 1],
+      roadClass,
+    );
+});
+
 test('roundabout widths between authored stops are stated per zoom as MapLibre evaluates them', () => {
   // A width that changes between its stops and with the feature, as a road's ramps and access do.
   const width = expression<number>([

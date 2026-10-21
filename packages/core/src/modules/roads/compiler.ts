@@ -751,9 +751,12 @@ function resolveRoadTreatments(
   add(request?.modifiers?.indoor, flagFilter(fields.indoor));
   add(request?.modifiers?.official, flagFilter(fields.official));
 
-  for (const [scale, style] of Object.entries(request?.mountainBike ?? {})) {
-    add(style, ['==', ['to-string', ['get', fields.mtbScale]], scale]);
-  }
+  // Mountain-bike difficulty describes trails: paths and tracks. Leaving it off the other classes
+  // keeps their layers solid, and so on MapLibre's solid-line shader.
+  if (isTileflowPathRoadClass(roadClass) || roadClass === 'track')
+    for (const [scale, style] of Object.entries(request?.mountainBike ?? {})) {
+      add(style, ['==', ['to-string', ['get', fields.mtbScale]], scale]);
+    }
 
   if (roadClass === 'service') {
     for (const [serviceType, value] of Object.entries(serviceTypeValues)) {

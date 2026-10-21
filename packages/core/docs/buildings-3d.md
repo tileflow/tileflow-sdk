@@ -194,7 +194,7 @@ longer raised while it stands. Put glTF binaries (`.glb`) in a directory, declar
 <!-- docs:check -->
 
 ```ts
-import {defineMap, refine} from '@tileflow/core';
+import {defineMap, fixed, refine} from '@tileflow/core';
 import {streets, streetsModels} from '@tileflow/maps';
 
 export default defineMap({
@@ -210,7 +210,10 @@ export default defineMap({
     buildings: refine({
       threeDimensional: {
         models: [{model: 'eiffel-tower', at: [2.294481, 48.858258], heading: 0}],
-        modelColors: {surface: '#7a5c45', accent: '#5b4332'},
+        modelColors: {
+          surface: fixed('#7a5c45', {reason: "The tower's bronze paint"}),
+          accent: fixed('#5b4332', {reason: "The tower's bronze paint, in shadow"}),
+        },
       },
     }),
   },
@@ -228,7 +231,9 @@ How to prepare a model:
   `roof` (an exporter's `.001` suffix is ignored); a model whose materials name a tree's parts is a
   [tree model](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md)
   instead. Each part takes its colour from `modelColors`, or from the buildings' colour when the
-  design gives it none, so the model follows the theme from day to night; vertex colours lighter or
+  design gives it none, so the model follows the theme from day to night. Like every visual
+  colour, a `modelColors` entry is a theme token such as `token.color('buildings.modelRoof')`, or
+  a literal wrapped in `fixed(value, {reason})`; vertex colours lighter or
   darker than the rest of their part shade it within that colour.
 - **Architectural roles control lighting.** A material may set
   `extras.tileflow.lightingRole` to `wall`, `door`, `roof`, `window`, `lamp`, `logo` or

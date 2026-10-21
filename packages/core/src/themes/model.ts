@@ -29,7 +29,11 @@ import {
   type TileflowTimeOfDayVariants,
 } from '../time-of-day';
 import type {ResolvedTileflowTypography, TileflowLight, TileflowTypographyStyle} from '../types';
-import {classifyTileflowVisualProperty, type TileflowVisualValueCategory} from './visual-semantics';
+import {
+  classifyTileflowVisualProperty,
+  isTileflowVisualColorCollection,
+  type TileflowVisualValueCategory,
+} from './visual-semantics';
 
 export type TileflowThemeColorScheme = 'dark' | 'light';
 export type TileflowThemeName = string;
@@ -532,14 +536,23 @@ function visitAuditableValue(
     }
     return;
   }
+  // A keyed colour collection, such as `modelColors`, holds colours under keys of its own.
+  const collectionCategory = isTileflowVisualColorCollection(lastPathKey(path))
+    ? category
+    : undefined;
   for (const key of Object.keys(value).sort(compareCodeUnits)) {
     visitAuditableValue(
       value[key],
       `${path}.${key}`,
-      classifyTileflowVisualProperty(key, value[key]),
+      classifyTileflowVisualProperty(key, value[key]) ?? collectionCategory,
       state,
     );
   }
+}
+
+/** The key a path ends in, or an empty string when it ends in an array index. */
+function lastPathKey(path: string): string {
+  return path.endsWith(']') ? '' : path.slice(path.lastIndexOf('.') + 1);
 }
 
 function visitAuditableArray(

@@ -1693,7 +1693,8 @@ export function createTileflowBuildings3D(
     attach();
   };
   map.on('styledata', onStyle);
-  map.on('idle', onStyle);
+  // A settled map has the same style: it only retries attaching the layer.
+  map.on('idle', attach);
   onStyle();
   camera.update();
 
@@ -1818,7 +1819,7 @@ export function createTileflowBuildings3D(
       disposed = true;
       motion?.done();
       map.off('styledata', onStyle);
-      map.off('idle', onStyle);
+      map.off('idle', attach);
       unregister();
       models.dispose();
       try {

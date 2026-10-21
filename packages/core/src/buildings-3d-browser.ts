@@ -13,11 +13,7 @@ import {
   tileflowDefaultBuildings3DDesign,
 } from './buildings-3d-design';
 import {tileflowBuildingStyleLight} from './buildings-3d-light';
-import {
-  tileflowBuildingExtent,
-  type TileflowBuildingMesh,
-  tileflowBuildingVertexBytes,
-} from './buildings-3d-mesh';
+import {tileflowBuildingExtent, tileflowBuildingVertexBytes} from './buildings-3d-mesh';
 import {createBuildingMesher} from './buildings-3d-mesher';
 import {
   buildingContactCompositeFragment,
@@ -42,6 +38,7 @@ import {
   tileflowBuildingGroundVertex,
   tileflowBuildingVertex,
 } from './buildings-3d-shaders';
+import {type BuildingTileData, type BuildingTileMesh} from './buildings-3d-tile';
 import {buildingBoxVisible, buildingCornerDetail, buildingDrawRanges} from './buildings-3d-view';
 import {cameraFrame, cameraTileAt, createCameraTiles} from './camera-tiles-browser';
 import {tileflowFeatureColour} from './feature-colour-browser';
@@ -177,12 +174,17 @@ type Linking = {
   variant: string;
 };
 type BuildingTile = {
-  mesh: TileflowBuildingMesh;
+  mesh: BuildingTileMesh;
+  /** The arrays to upload, let go of once they are on the GPU. */
+  data?: BuildingTileData;
   gl?: {
     vao: WebGLVertexArrayObject;
     vbo: WebGLBuffer;
     ibo: WebGLBuffer;
-    contact?: ReturnType<typeof createBuildingContactVao>;
+    /** UNSIGNED_SHORT or UNSIGNED_INT, and its bytes. */
+    indexType: number;
+    indexBytes: number;
+    contact: ReturnType<typeof createBuildingContactVao>;
   };
   palette?: {texture: WebGLTexture; key: string; rows: number};
 };
@@ -273,6 +275,11 @@ export function createTileflowBuildings3D(
     renderingMode: '3d',
     onAdd(_: unknown, context: WebGLRenderingContext | WebGL2RenderingContext) {
       if (!isWebGL2(context)) return;
+      if (gl && gl !== context) {
+        // Tiles uploaded to another context keep no data to upload again: mesh them anew.
+        for (const {value} of camera.all()) if (value?.gl) value.gl = undefined;
+        camera.refresh(() => true);
+      }
       gl = context;
       createGround(context);
       // A sampler always has a colour texture to read, palette or not.
@@ -294,7 +301,8 @@ export function createTileflowBuildings3D(
     },
     onRemove(_: unknown, context: WebGLRenderingContext | WebGL2RenderingContext) {
       if (!isWebGL2(context)) return;
-      for (const entry of camera.all()) if (entry.value) release(context, entry.value);
+      // A style loaded in full removes the layer and adds it again: its tiles keep their buffers,
+      // as they no longer keep their arrays to upload again. Disposing releases them.
       models.release(context);
       for (const program of Object.values(programs))
         if (program) context.deleteProgram(program.program);
@@ -314,7 +322,6 @@ export function createTileflowBuildings3D(
       linking = undefined;
       variant = undefined;
       ground = undefined;
-      gl = undefined;
     },
     prerender(context: WebGLRenderingContext | WebGL2RenderingContext, args: ProjectionArgs) {
       if (!isWebGL2(context)) return;
@@ -392,7 +399,7 @@ export function createTileflowBuildings3D(
         await models.settle(tile, signal);
         signal.throwIfAborted();
         const masks = models.masksIn(tile, tileflowBuildingExtent);
-        const mesh = await mesher.build(
+        const prepared = await mesher.build(
           decoded,
           {
             tileMetres,
@@ -403,7 +410,7 @@ export function createTileflowBuildings3D(
           },
           signal,
         );
-        return mesh ? {mesh} : emptyTile;
+        return prepared ? {mesh: prepared.mesh, data: prepared.data} : emptyTile;
       },
       empty: emptyTile,
       release(value) {
@@ -453,10 +460,8 @@ export function createTileflowBuildings3D(
   function release(context: WebGL2RenderingContext, tile: BuildingTile): void {
     if (tile.gl) {
       context.deleteVertexArray(tile.gl.vao);
-      if (tile.gl.contact) {
-        context.deleteVertexArray(tile.gl.contact.vao);
-        context.deleteBuffer(tile.gl.contact.vbo);
-      }
+      context.deleteVertexArray(tile.gl.contact.vao);
+      context.deleteBuffer(tile.gl.contact.vbo);
       context.deleteBuffer(tile.gl.vbo);
       context.deleteBuffer(tile.gl.ibo);
       tile.gl = undefined;
@@ -474,16 +479,17 @@ export function createTileflowBuildings3D(
     if (modelKey !== models.key()) map.triggerRepaint();
     let budget = 2;
     for (const {value: entry} of camera.ready()) {
-      if (entry.gl) continue;
+      if (entry.gl || !entry.data) continue;
       if (budget-- <= 0) {
         map.triggerRepaint();
         break;
       }
+      const {vertices, indices, contact} = entry.data;
       const vao = context.createVertexArray()!;
       context.bindVertexArray(vao);
       const vbo = context.createBuffer()!;
       context.bindBuffer(context.ARRAY_BUFFER, vbo);
-      context.bufferData(context.ARRAY_BUFFER, entry.mesh.vertices, context.STATIC_DRAW);
+      context.bufferData(context.ARRAY_BUFFER, vertices, context.STATIC_DRAW);
       for (const [
         index,
         [, size, type, normalised, offset],
@@ -500,9 +506,18 @@ export function createTileflowBuildings3D(
       }
       const ibo = context.createBuffer()!;
       context.bindBuffer(context.ELEMENT_ARRAY_BUFFER, ibo);
-      context.bufferData(context.ELEMENT_ARRAY_BUFFER, entry.mesh.indices, context.STATIC_DRAW);
+      context.bufferData(context.ELEMENT_ARRAY_BUFFER, indices, context.STATIC_DRAW);
       context.bindVertexArray(null);
-      entry.gl = {vao, vbo, ibo};
+      entry.gl = {
+        vao,
+        vbo,
+        ibo,
+        indexType: indices.BYTES_PER_ELEMENT === 2 ? context.UNSIGNED_SHORT : context.UNSIGNED_INT,
+        indexBytes: indices.BYTES_PER_ELEMENT,
+        contact: createBuildingContactVao(context, contact),
+      };
+      // The GPU holds the arrays now; the tile keeps only what drawing needs.
+      entry.data = undefined;
       generation += 1;
       // prerender ran before this upload; refresh its shadow once, then allow the map to idle.
       map.triggerRepaint();
@@ -790,13 +805,14 @@ export function createTileflowBuildings3D(
         );
         if (!ranges.length) continue;
         context.uniform2f(program.uniforms.u_offset!, ...offset);
-        context.bindVertexArray(value.gl!.vao);
+        const buffers = value.gl!;
+        context.bindVertexArray(buffers.vao);
         for (const range of ranges)
           context.drawElements(
             context.TRIANGLES,
             range.count,
-            context.UNSIGNED_INT,
-            range.from * 4,
+            buffers.indexType,
+            range.from * buffers.indexBytes,
           );
       }
       const modelDepth = programs.modelDepth;
@@ -1150,13 +1166,18 @@ export function createTileflowBuildings3D(
   ): void {
     for (const tile of entries) {
       const {x, y, value} = tile;
-      const mesh = value.mesh;
-      if (mesh.indices.length <= mesh.wallsFrom) continue;
+      if (value.mesh.indexCount <= value.mesh.wallsFrom) continue;
       project(context, program, args, x, y);
       context.uniform2f(program.uniforms.u_offset!, ...camera.offsetOf({x, y}));
-      context.bindVertexArray(value.gl!.vao);
+      const buffers = value.gl!;
+      context.bindVertexArray(buffers.vao);
       for (const range of viewRanges(args, tile, reach, true))
-        context.drawElements(context.TRIANGLES, range.count, context.UNSIGNED_INT, range.from * 4);
+        context.drawElements(
+          context.TRIANGLES,
+          range.count,
+          buffers.indexType,
+          range.from * buffers.indexBytes,
+        );
     }
   }
 
@@ -1184,12 +1205,11 @@ export function createTileflowBuildings3D(
           const {x, y, value} = tile;
           const ranges = viewRanges(args, tile, occlusion.ground, true);
           if (!ranges.length) continue;
-          const buffers = value.gl!;
-          buffers.contact ??= createBuildingContactVao(context, value.mesh);
+          const {contact} = value.gl!;
           project(context, program, args, x, y);
-          context.bindVertexArray(buffers.contact.vao);
+          context.bindVertexArray(contact.vao);
           for (const range of ranges) {
-            buffers.contact.offset((range.from - value.mesh.wallsFrom) / 6);
+            contact.offset((range.from - value.mesh.wallsFrom) / 6);
             context.drawArraysInstanced(context.TRIANGLE_STRIP, 0, 4, range.count / 6);
           }
         }
@@ -1304,13 +1324,14 @@ export function createTileflowBuildings3D(
           context.uniform2f(u.u_palette_themes!, themes.lower, themes.upper);
           context.uniform1f(u.u_palette_mix!, themes.mix);
         }
-        context.bindVertexArray(entry.gl!.vao);
+        const buffers = entry.gl!;
+        context.bindVertexArray(buffers.vao);
         for (const range of ranges)
           context.drawElements(
             context.TRIANGLES,
             range.count,
-            context.UNSIGNED_INT,
-            range.from * 4,
+            buffers.indexType,
+            range.from * buffers.indexBytes,
           );
       }
 
@@ -1803,7 +1824,7 @@ export function createTileflowBuildings3D(
       for (const {value} of drawn()) {
         raised += 1;
         buildings += value.mesh.features.length;
-        vertices += value.mesh.vertices.length / tileflowBuildingVertexBytes;
+        vertices += value.mesh.vertexCount;
       }
       designsOnScreen();
       return {
@@ -1827,6 +1848,8 @@ export function createTileflowBuildings3D(
       } catch {
         // A map already removed has no layers left to remove.
       }
+      if (gl) for (const {value} of camera.all()) if (value) release(gl, value);
+      gl = undefined;
       camera.dispose();
       mesher.dispose();
     },
@@ -1834,13 +1857,7 @@ export function createTileflowBuildings3D(
 }
 
 const emptyTile: BuildingTile = Object.freeze({
-  mesh: Object.freeze({
-    vertices: new Uint8Array(0),
-    indices: new Uint32Array(0),
-    wallsFrom: 0,
-    top: 0,
-    features: [],
-  }),
+  mesh: Object.freeze({wallsFrom: 0, top: 0, features: [], vertexCount: 0, indexCount: 0}),
 });
 
 function isWebGL2(context: unknown): context is WebGL2RenderingContext {

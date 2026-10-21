@@ -451,8 +451,10 @@ During partial opacity, a depth-only geometry pass resolves the nearest surfaces
 blending, preventing rear walls from bleeding through. At full opacity only the normal geometry
 pass runs; zoom fading schedules no extra animation frames or per-zoom mesh rebuilds.
 
-The browser bundle prepares building meshes in one worker per renderer and transfers the finished
-vertex and index buffers. No worker URL or extra asset hosting is needed. A Content Security Policy
+The browser bundle prepares building meshes in one worker per renderer: it meshes each tile, keeps
+its indices to 16 bits when its vertices allow, lays out the walls' contact-band segments and
+transfers the finished arrays. The renderer uploads them to the GPU and keeps no copy; a style
+reloaded in full keeps the uploaded buffers. No worker URL or extra asset hosting is needed. A Content Security Policy
 must allow `worker-src blob:` to use this path; if workers are unavailable or blocked, the renderer
 falls back to local meshing. The worker is terminated on `dispose()`. Pending tile updates retain
 the previous mesh until their replacement is ready; cancelled and obsolete results are discarded.

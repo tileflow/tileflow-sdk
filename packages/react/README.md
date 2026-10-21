@@ -125,6 +125,8 @@ and [vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/pac
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct camera props
 take priority over `mapOptions`, then the manifest view, then shared defaults. `Map` always selects
 a Tileflow map through its manifest; it has no renderer discriminator or direct-style mode.
+Tileflow's styles are validated when they are compiled, so `validateStyle` defaults to `false`; pass
+`true` to validate them again in the browser.
 The obsolete source fields `kind` and `style` are rejected. For a completely unmanaged map, use
 `maplibre-gl` directly rather than a Tileflow component.
 

@@ -171,6 +171,13 @@ surface/tunnel/bridge and casing/fill/shadow paint controls, plus a relative `wi
 compiler emits feature-driven paint expressions inside the existing stable class layers rather
 than multiplying every possible combination.
 
+A solid dash, `[1, 0]`, is emitted as no `line-dasharray` at all, so MapLibre draws the line with
+its solid-line shader rather than its dash shader. A treatment's dash that depends on the road
+class is settled for each class layer: a dash for construction paths leaves a motorway's layers
+solid. Roundabout rings state their road widths at each zoom as numbers where the widths allow,
+and name the feature conditions they repeat once with `let`, which keeps their style compact and
+quick to validate.
+
 Road names, shields, and motorway junctions remain label concerns:
 
 ```ts

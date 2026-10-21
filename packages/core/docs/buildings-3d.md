@@ -16,10 +16,64 @@ the buildings under their footprints.
 
 It is a custom WebGL2 layer for MapLibre GL JS, drawn above the map's buildings and below its
 labels. It needs WebGL2 and the Mercator projection, which MapLibre's globe turns into from about
-zoom 12. On every map, buildings and placed models appear automatically from zoom 15,
-with opacity rising linearly from 0 at 15 to 1 at 15.25. Zooming back out reverses the fade.
-Their height stays unchanged throughout; shadows and contact shading fade with them.
+zoom 12. On every map the city comes in as the camera zooms in: placed models and landmarks first,
+fading in and rising from the ground between zooms 14.2 and 14.6, then the buildings between 15 and
+15.3. Their shadows and contact shading follow their height. Zooming back out lowers and fades them
+again. With reduced motion (`prefers-reduced-motion`) they keep their height and only fade.
 `hide()` keeps them hidden at every zoom until `show()` is called.
+
+A map sets these bands with the buildings module's `threeDimensional.entrance`, each a
+`[from, to]` pair of zooms; a band left out keeps its default:
+
+```ts
+buildings({threeDimensional: {entrance: {buildings: [15.5, 16], models: [14.5, 15]}}});
+```
+
+The renderer reads its tiles from a zoom below its `minzoom`, so a band that starts earlier than
+that comes in from there.
+
+## The map's 3D scene
+
+React, Vue and Svelte `Map` components show the 3D scene of every map whose style declares one, by
+default: buildings with Tileflow landmarks and the map's Team building models, 3D trees, and street
+lights where the map enables them. They load the 3D renderers from `@tileflow/core/3d` only when
+the style declares a scene, so a 2D map does not download them. Set `viewMode="2d"` (Vue:
+`view-mode="2d"`) to opt out: no 3D buildings or street lights are mounted, and vegetation follows
+its [display policy](trees-3d.md#visibility-and-representation) for the 2D view. Changing it back to
+`3d` shows the scene on the same map. React Native, image mode, Capture and Static Maps do not draw
+the scene.
+
+Applications that build their own MapLibre map mount the same scene with `createTileflowMap3D`.
+It mounts each renderer the style declares, follows theme and style changes, and releases a
+renderer when the style no longer declares it:
+
+<!-- docs:check -->
+
+```ts
+import {
+  createTileflowMap3D,
+  type TileflowMap3DMap,
+  type TileflowThemeController,
+} from '@tileflow/core/browser';
+
+export function showTheScene(map: TileflowMap3DMap, controller: TileflowThemeController) {
+  const scene = createTileflowMap3D({map, controller});
+  // Shown on creation; hide() and show() switch the whole scene, dispose() removes it.
+  return scene;
+}
+```
+
+`hide()` takes the buildings down and releases the street lights; `show()` brings them back. Both
+take the same transition as the buildings' `show()` and `hide()`. `setVegetation(false)` hides
+every tree and `setVegetation(undefined)` restores the map's default. To load the renderers only
+for maps that need them, call `attachTileflowMap3D({map, controller, load: () =>
+import('@tileflow/core/3d')})` from `@tileflow/core/browser`, as the framework components do; its
+`setViewMode()` and `setVegetation()` apply once the scene mounts.
+
+A MapLibre application that loads a compiled `style.json` directly gets no 3D scene: buildings,
+landmarks, models, trees and lights are custom WebGL layers added only by this runtime. Where a map
+draws a plain `fill-extrusion` building pass, the style ships it hidden and grouped under
+`metadata['tileflow:3d-toggle'] = 'building'`; showing those layers gives extruded footprints only.
 
 ## Show the buildings
 
@@ -194,7 +248,7 @@ longer raised while it stands. Put glTF binaries (`.glb`) in a directory, declar
 <!-- docs:check -->
 
 ```ts
-import {defineMap, refine} from '@tileflow/core';
+import {defineMap, fixed, refine} from '@tileflow/core';
 import {streets, streetsModels} from '@tileflow/maps';
 
 export default defineMap({
@@ -210,7 +264,10 @@ export default defineMap({
     buildings: refine({
       threeDimensional: {
         models: [{model: 'eiffel-tower', at: [2.294481, 48.858258], heading: 0}],
-        modelColors: {surface: '#7a5c45', accent: '#5b4332'},
+        modelColors: {
+          surface: fixed('#7a5c45', {reason: "The tower's bronze paint"}),
+          accent: fixed('#5b4332', {reason: "The tower's bronze paint, in shadow"}),
+        },
       },
     }),
   },
@@ -228,7 +285,9 @@ How to prepare a model:
   `roof` (an exporter's `.001` suffix is ignored); a model whose materials name a tree's parts is a
   [tree model](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md)
   instead. Each part takes its colour from `modelColors`, or from the buildings' colour when the
-  design gives it none, so the model follows the theme from day to night; vertex colours lighter or
+  design gives it none, so the model follows the theme from day to night. Like every visual
+  colour, a `modelColors` entry is a theme token such as `token.color('buildings.modelRoof')`, or
+  a literal wrapped in `fixed(value, {reason})`; vertex colours lighter or
   darker than the rest of their part shade it within that colour.
 - **Architectural roles control lighting.** A material may set
   `extras.tileflow.lightingRole` to `wall`, `door`, `roof`, `window`, `lamp`, `logo` or
@@ -441,7 +500,8 @@ download.
 
 ## Options
 
-The renderer's own options say only how it is delivered: `minzoom` (15 by default, with a 0.25-zoom opacity ramp), `maxTiles`,
+The renderer's own options say only how it is delivered: `minzoom` (15 by default; the default
+entrance bands start from it), `maxTiles`,
 `beforeId` to place the layer before another one, and `transformRequest` to apply the map's request
 rules to the tiles it reads.
 
@@ -451,10 +511,14 @@ During partial opacity, a depth-only geometry pass resolves the nearest surfaces
 blending, preventing rear walls from bleeding through. At full opacity only the normal geometry
 pass runs; zoom fading schedules no extra animation frames or per-zoom mesh rebuilds.
 
-The browser bundle prepares building meshes in one worker per renderer and transfers the finished
-vertex and index buffers. No worker URL or extra asset hosting is needed. A Content Security Policy
-must allow `worker-src blob:` to use this path; if workers are unavailable or blocked, the renderer
-falls back to local meshing. The worker is terminated on `dispose()`. Pending tile updates retain
+The browser bundle builds from the tiles' bytes in one worker that the page's 3D buildings, trees
+and street lights share, nearest tiles first: it decodes each tile once for all of them, meshes its
+buildings, keeps their indices to 16 bits when the vertices allow, lays out the walls' contact-band
+segments and transfers the finished arrays. The renderer uploads them to the GPU and keeps no copy;
+a style reloaded in full keeps the uploaded buffers. No worker URL or extra asset hosting is needed.
+A Content Security Policy must allow `worker-src blob:` to use this path; if workers are
+unavailable or blocked, the layers build in the page instead. The worker is terminated when the
+last of those layers is disposed. Tiles the camera has left are not downloaded or built. Pending tile updates retain
 the previous mesh until their replacement is ready; cancelled and obsolete results are discarded.
 
 Mercator rendering batches buildings spatially and skips batches outside the camera. Shadow
@@ -471,11 +535,15 @@ Mercator texel grid stays stable during small pans, including changes of latitud
 the meshes' physical metre scale. One filtered depth comparison keeps edges sharp.
 Missing camera capabilities, terrain or a view near the horizon use the full loaded area instead.
 The depth pass runs again when its focused area, light or casting geometry changes and is reused
-when they stay unchanged.
+when they stay unchanged. While the camera moves, the focused area takes a quarter of its span as a
+margin on each side and is kept while it still covers the view at a similar resolution, so the
+depth pass is not drawn on every frame; once the camera stops, it is fitted to the view again.
 
 Model ambient visibility and lighting roles retain the existing 16-byte vertex stride. They add
 no geometry pass or texture. Architectural ground lighting uses a separate one-byte-per-pixel
 mask and one geometry/composite pair of passes while active; its mask is released when inactive.
+The contact band and the architectural light draw their masks in the layer's prerender, before
+the map's main pass, so the map's framebuffer is never switched while its layers draw.
 At 1280 × 720 and DPR 1, the mask occupies 921,600 bytes, excluding driver overhead.
 
 ## Limits

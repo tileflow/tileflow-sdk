@@ -13,12 +13,7 @@ import {
   tileflowDefaultBuildings3DDesign,
 } from './buildings-3d-design';
 import {tileflowBuildingStyleLight} from './buildings-3d-light';
-import {
-  tileflowBuildingExtent,
-  type TileflowBuildingMesh,
-  tileflowBuildingVertexBytes,
-} from './buildings-3d-mesh';
-import {createBuildingMesher} from './buildings-3d-mesher';
+import {tileflowBuildingExtent, tileflowBuildingVertexBytes} from './buildings-3d-mesh';
 import {
   buildingContactCompositeFragment,
   buildingContactFragment,
@@ -42,7 +37,9 @@ import {
   tileflowBuildingGroundVertex,
   tileflowBuildingVertex,
 } from './buildings-3d-shaders';
+import {type BuildingTileData, type BuildingTileMesh} from './buildings-3d-tile';
 import {buildingBoxVisible, buildingCornerDetail, buildingDrawRanges} from './buildings-3d-view';
+import {acquireCameraTileBuilder} from './camera-tile-builder';
 import {cameraFrame, cameraTileAt, createCameraTiles} from './camera-tiles-browser';
 import {tileflowFeatureColour} from './feature-colour-browser';
 import {inspectModelTriangles, type TileflowModelInspection} from './model-inspection';
@@ -70,7 +67,7 @@ import {
   tileflowSceneLight,
   tileflowSceneShadowFloor,
 } from './scene-3d-browser';
-import {tileflowSceneMinzoom, tileflowSceneOpacity} from './scene-3d-visibility';
+import {tileflowSceneMinzoom} from './scene-3d-visibility';
 import {resolveTileflowSun, tileflowStyleSunPreset, type TileflowSun} from './sun';
 import {tileflowColourChannels} from './theme-blend';
 import type {TileflowTileRequestTransform} from './tile-reader';
@@ -177,12 +174,17 @@ type Linking = {
   variant: string;
 };
 type BuildingTile = {
-  mesh: TileflowBuildingMesh;
+  mesh: BuildingTileMesh;
+  /** The arrays to upload, let go of once they are on the GPU. */
+  data?: BuildingTileData;
   gl?: {
     vao: WebGLVertexArrayObject;
     vbo: WebGLBuffer;
     ibo: WebGLBuffer;
-    contact?: ReturnType<typeof createBuildingContactVao>;
+    /** UNSIGNED_SHORT or UNSIGNED_INT, and its bytes. */
+    indexType: number;
+    indexBytes: number;
+    contact: ReturnType<typeof createBuildingContactVao>;
   };
   palette?: {texture: WebGLTexture; key: string; rows: number};
 };
@@ -215,7 +217,8 @@ export function createTileflowBuildings3D(
   if (!(maxTiles >= 1 && maxTiles <= 64))
     throw new RangeError('Tileflow 3D buildings maxTiles must be from 1 to 64.');
 
-  const mesher = createBuildingMesher();
+  // Meshes the tiles off the page, in a worker the map's 3D layers share.
+  const builder = acquireCameraTileBuilder();
   let detail = buildingCornerDetail(map.getZoom());
   let scale = 1;
   let opacity = 1;
@@ -245,6 +248,8 @@ export function createTileflowBuildings3D(
   let ground: {vao: WebGLVertexArrayObject; vbo: WebGLBuffer} | undefined;
   const contactMask = createBuildingContactMask();
   const floodMask = createBuildingContactMask();
+  // The ground masks drawn by this frame's prerender, read back by its render.
+  let masks: {contact?: WebGLTexture; flood?: WebGLTexture} = {};
   let disposed = false;
   // Shadows are drawn in the map's shared 3D scene, with any other 3D layer on the map.
   const scene = tileflowScene3D(map);
@@ -271,6 +276,11 @@ export function createTileflowBuildings3D(
     renderingMode: '3d',
     onAdd(_: unknown, context: WebGLRenderingContext | WebGL2RenderingContext) {
       if (!isWebGL2(context)) return;
+      if (gl && gl !== context) {
+        // Tiles uploaded to another context keep no data to upload again: mesh them anew.
+        for (const {value} of camera.all()) if (value?.gl) value.gl = undefined;
+        camera.refresh(() => true);
+      }
       gl = context;
       createGround(context);
       // A sampler always has a colour texture to read, palette or not.
@@ -292,7 +302,8 @@ export function createTileflowBuildings3D(
     },
     onRemove(_: unknown, context: WebGLRenderingContext | WebGL2RenderingContext) {
       if (!isWebGL2(context)) return;
-      for (const entry of camera.all()) if (entry.value) release(context, entry.value);
+      // A style loaded in full removes the layer and adds it again: its tiles keep their buffers,
+      // as they no longer keep their arrays to upload again. Disposing releases them.
       models.release(context);
       for (const program of Object.values(programs))
         if (program) context.deleteProgram(program.program);
@@ -312,9 +323,8 @@ export function createTileflowBuildings3D(
       linking = undefined;
       variant = undefined;
       ground = undefined;
-      gl = undefined;
     },
-    prerender(context: WebGLRenderingContext | WebGL2RenderingContext) {
+    prerender(context: WebGLRenderingContext | WebGL2RenderingContext, args: ProjectionArgs) {
       if (!isWebGL2(context)) return;
       ensureCamera();
       // Models and landmarks are read for every tile the camera wants, from a zoom before the
@@ -327,9 +337,10 @@ export function createTileflowBuildings3D(
           camera.zoom,
           visibleScale() > 0,
         );
+      drawMasks(context, args);
       if (!programs.depth) return;
       // A disabled building shadow pass must not claim the ground pass from the trees.
-      if (!design().shadows || visibleScale() <= 0) {
+      if (!design().shadows || (visibleScale() <= 0 && modelScale() <= 0)) {
         if (registered) unregister();
         registered = false;
         return;
@@ -356,11 +367,7 @@ export function createTileflowBuildings3D(
       // Prepare resident tiles before the zoom entrance, so the fade starts with ready geometry.
       // Uploads are bounded and request frames only while work remains.
       if (target > 0 || scale > 0) upload(context);
-      if (visibleScale() <= 0) {
-        contactMask.release(context);
-        floodMask.release(context);
-        return;
-      }
+      if (visibleScale() <= 0 && modelScale() <= 0) return;
       draw(context, args);
     },
   };
@@ -377,34 +384,40 @@ export function createTileflowBuildings3D(
     createCameraTiles<BuildingTile>({
       map,
       source,
-      layers: [layers.building, ...(layers.places ? [layers.places] : [])],
       zoom: preferredZoom,
       minzoom,
       maxTiles,
       ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
       active: () => target > 0 || scale > 0,
-      async build(tile, tileMetres, signal) {
-        const decoded = tile.layers[layers.building];
-        // A tile without buildings stays flat.
-        if (!decoded) return emptyTile;
-        const places = layers.places ? tile.layers[layers.places] : undefined;
+      async build(tile, tileMetres, signal, priority) {
         // Nothing a model will stand on is raised: wait for the landmarks' indexes and the map's
         // models round the tile, briefly.
         await models.settle(tile, signal);
         signal.throwIfAborted();
         const masks = models.masksIn(tile, tileflowBuildingExtent);
-        const mesh = await mesher.build(
-          decoded,
+        const prepared = await builder.build(
           {
-            tileMetres,
-            edgeRadius: detail === 0 ? 0 : edgeRadius,
-            cornerAngle: detail === 1 ? Math.PI / 3 : Math.PI / 6,
-            ...(places ? {places} : {}),
-            ...(masks ? {masks} : {}),
+            url: tile.url,
+            bytes: tile.bytes,
+            priority,
+            task: {
+              kind: 'buildings',
+              layers: {
+                building: layers.building,
+                ...(layers.places ? {places: layers.places} : {}),
+              },
+              options: {
+                tileMetres,
+                edgeRadius: detail === 0 ? 0 : edgeRadius,
+                cornerAngle: detail === 1 ? Math.PI / 3 : Math.PI / 6,
+                ...(masks ? {masks} : {}),
+              },
+            },
           },
           signal,
         );
-        return mesh ? {mesh} : emptyTile;
+        // A tile without buildings stays flat.
+        return prepared ? {mesh: prepared.mesh, data: prepared.data} : emptyTile;
       },
       empty: emptyTile,
       release(value) {
@@ -454,10 +467,8 @@ export function createTileflowBuildings3D(
   function release(context: WebGL2RenderingContext, tile: BuildingTile): void {
     if (tile.gl) {
       context.deleteVertexArray(tile.gl.vao);
-      if (tile.gl.contact) {
-        context.deleteVertexArray(tile.gl.contact.vao);
-        context.deleteBuffer(tile.gl.contact.vbo);
-      }
+      context.deleteVertexArray(tile.gl.contact.vao);
+      context.deleteBuffer(tile.gl.contact.vbo);
       context.deleteBuffer(tile.gl.vbo);
       context.deleteBuffer(tile.gl.ibo);
       tile.gl = undefined;
@@ -475,16 +486,17 @@ export function createTileflowBuildings3D(
     if (modelKey !== models.key()) map.triggerRepaint();
     let budget = 2;
     for (const {value: entry} of camera.ready()) {
-      if (entry.gl) continue;
+      if (entry.gl || !entry.data) continue;
       if (budget-- <= 0) {
         map.triggerRepaint();
         break;
       }
+      const {vertices, indices, contact} = entry.data;
       const vao = context.createVertexArray()!;
       context.bindVertexArray(vao);
       const vbo = context.createBuffer()!;
       context.bindBuffer(context.ARRAY_BUFFER, vbo);
-      context.bufferData(context.ARRAY_BUFFER, entry.mesh.vertices, context.STATIC_DRAW);
+      context.bufferData(context.ARRAY_BUFFER, vertices, context.STATIC_DRAW);
       for (const [
         index,
         [, size, type, normalised, offset],
@@ -501,9 +513,18 @@ export function createTileflowBuildings3D(
       }
       const ibo = context.createBuffer()!;
       context.bindBuffer(context.ELEMENT_ARRAY_BUFFER, ibo);
-      context.bufferData(context.ELEMENT_ARRAY_BUFFER, entry.mesh.indices, context.STATIC_DRAW);
+      context.bufferData(context.ELEMENT_ARRAY_BUFFER, indices, context.STATIC_DRAW);
       context.bindVertexArray(null);
-      entry.gl = {vao, vbo, ibo};
+      entry.gl = {
+        vao,
+        vbo,
+        ibo,
+        indexType: indices.BYTES_PER_ELEMENT === 2 ? context.UNSIGNED_SHORT : context.UNSIGNED_INT,
+        indexBytes: indices.BYTES_PER_ELEMENT,
+        contact: createBuildingContactVao(context, contact),
+      };
+      // The GPU holds the arrays now; the tile keeps only what drawing needs.
+      entry.data = undefined;
       generation += 1;
       // prerender ran before this upload; refresh its shadow once, then allow the map to idle.
       map.triggerRepaint();
@@ -709,18 +730,43 @@ export function createTileflowBuildings3D(
 
   function lighting() {
     const light = tileflowSceneLight(sunNow(), design().shadows);
-    return {...light, strength: light.strength * visibleOpacity()};
+    return {...light, strength: light.strength * Math.max(visibleOpacity(), modelOpacity())};
   }
 
   // --- Drawing ---
 
-  /** Zoom controls opacity; explicit grow() calls alone change building height. */
+  // Zooming in, the placed models and landmarks come in first, then the buildings: each fades in
+  // and rises from the ground across its zoom band, and sinks and fades again zooming out. With
+  // reduced motion they only fade. show() and hide() scale both on top of that.
+  const reducedMotion =
+    typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : undefined;
+  const defaultEntrance = {
+    buildings: [minzoom, minzoom + 0.3],
+    models: [minzoom - 0.8, minzoom - 0.4],
+  } as const;
+
+  /** How far one part of the city has come in at the map's zoom, from 0 to 1. */
+  function entering(part: keyof typeof defaultEntrance): number {
+    const [from, to] = design().entrance?.[part] ?? defaultEntrance[part];
+    return Math.min(1, Math.max(0, (map.getZoom() - from) / (to - from)));
+  }
+
+  /** The buildings' height scale shown now. */
   function visibleScale(): number {
-    return visibleOpacity() > 0 ? scale : 0;
+    return visibleOpacity() > 0 ? scale * (reducedMotion?.matches ? 1 : entering('buildings')) : 0;
   }
 
   function visibleOpacity(): number {
-    return opacity * tileflowSceneOpacity(map.getZoom(), minzoom);
+    return opacity * entering('buildings');
+  }
+
+  /** The placed models' and landmarks' height scale shown now. */
+  function modelScale(): number {
+    return modelOpacity() > 0 ? scale * (reducedMotion?.matches ? 1 : entering('models')) : 0;
+  }
+
+  function modelOpacity(): number {
+    return opacity * entering('models');
   }
 
   function drawn(): TileEntry[] {
@@ -733,17 +779,17 @@ export function createTileflowBuildings3D(
     groundOrder: 0,
     bounds() {
       const shown = visibleScale();
-      const entries = drawn();
-      const standing = modelsDrawn();
-      if (!design().shadows || shown <= 0 || (entries.length === 0 && standing.length === 0))
-        return undefined;
+      const modelsShown = modelScale();
+      const entries = shown > 0 ? drawn() : [];
+      const standing = modelsShown > 0 ? modelsDrawn() : [];
+      if (!design().shadows || (entries.length === 0 && standing.length === 0)) return undefined;
       let [left, top, right, bottom, tallest] = [Infinity, Infinity, -Infinity, -Infinity, 0];
       for (const entry of entries) {
         left = Math.min(left, entry.x);
         top = Math.min(top, entry.y);
         right = Math.max(right, entry.x);
         bottom = Math.max(bottom, entry.y);
-        tallest = Math.max(tallest, entry.value.mesh.top);
+        tallest = Math.max(tallest, entry.value.mesh.top * shown);
       }
       for (const model of standing) {
         const {x, y, reach} = standOf(model);
@@ -751,20 +797,21 @@ export function createTileflowBuildings3D(
         top = Math.min(top, Math.floor(y - reach));
         right = Math.max(right, Math.floor(x + reach));
         bottom = Math.max(bottom, Math.floor(y + reach));
-        tallest = Math.max(tallest, model.model.bounds[5]);
+        tallest = Math.max(tallest, model.model.bounds[5] * modelsShown);
       }
-      return {zoom: camera.zoom, tiles: [left, top, right, bottom], tallest: tallest * shown};
+      return {zoom: camera.zoom, tiles: [left, top, right, bottom], tallest};
     },
     key: () =>
-      `buildings:${visibleScale().toFixed(4)}:${generation}:${models.key()}:${programs.depth ? 1 : 0}`,
+      `buildings:${visibleScale().toFixed(4)}:${modelScale().toFixed(4)}:${generation}:${models.key()}:${programs.depth ? 1 : 0}`,
     drawDepth(context, frame) {
       const program = programs.depth;
       if (!program) return;
+      const shown = visibleScale();
       context.useProgram(program.program);
-      context.uniform1f(program.uniforms.u_scale!, visibleScale());
+      context.uniform1f(program.uniforms.u_scale!, shown);
       context.uniform1f(program.uniforms.u_metres!, frame.metres);
       context.uniformMatrix4fv(program.uniforms.u_light_matrix!, false, frame.light.matrix);
-      for (const {x, y, value} of drawn()) {
+      for (const {x, y, value} of shown > 0 ? drawn() : []) {
         const offset = frame.offsetOf({x, y}, camera.zoom);
         if (
           !buildingBoxVisible(frame.light.matrix, [
@@ -791,23 +838,25 @@ export function createTileflowBuildings3D(
         );
         if (!ranges.length) continue;
         context.uniform2f(program.uniforms.u_offset!, ...offset);
-        context.bindVertexArray(value.gl!.vao);
+        const buffers = value.gl!;
+        context.bindVertexArray(buffers.vao);
         for (const range of ranges)
           context.drawElements(
             context.TRIANGLES,
             range.count,
-            context.UNSIGNED_INT,
-            range.from * 4,
+            buffers.indexType,
+            range.from * buffers.indexBytes,
           );
       }
       const modelDepth = programs.modelDepth;
       if (!modelDepth) return;
       context.useProgram(modelDepth.program);
       context.uniformMatrix4fv(modelDepth.uniforms.u_light_matrix!, false, frame.light.matrix);
-      context.uniform1f(modelDepth.uniforms.u_scale!, visibleScale());
+      const modelsShown = modelScale();
+      context.uniform1f(modelDepth.uniforms.u_scale!, modelsShown);
       context.uniform1f(modelDepth.uniforms.u_metres!, frame.metres);
       const centre = map.getCenter();
-      for (const model of modelsDrawn()) {
+      for (const model of modelsShown > 0 ? modelsDrawn() : []) {
         const stand = standOf(model);
         setPlacement(context, modelDepth, model, stand);
         context.uniform2f(
@@ -1141,12 +1190,94 @@ export function createTileflowBuildings3D(
     return width ? Math.min(4, Math.max(1, context.drawingBufferWidth / width)) : 1;
   }
 
+  /** Draws the walls of the given tiles in a band reaching `reach` metres from their feet. */
+  function drawWalls(
+    context: WebGL2RenderingContext,
+    program: Program,
+    args: ProjectionArgs,
+    entries: readonly TileEntry[],
+    reach: number,
+  ): void {
+    for (const tile of entries) {
+      const {x, y, value} = tile;
+      if (value.mesh.indexCount <= value.mesh.wallsFrom) continue;
+      project(context, program, args, x, y);
+      context.uniform2f(program.uniforms.u_offset!, ...camera.offsetOf({x, y}));
+      const buffers = value.gl!;
+      context.bindVertexArray(buffers.vao);
+      for (const range of viewRanges(args, tile, reach, true))
+        context.drawElements(
+          context.TRIANGLES,
+          range.count,
+          buffers.indexType,
+          range.from * buffers.indexBytes,
+        );
+    }
+  }
+
+  /**
+   * Draws the frame's ground masks from the prerender, before the map's main pass: the contact
+   * band at the foot of the walls and the architectural flood light. Drawing them between the
+   * map's layers would switch framebuffers within its pass, which tiled GPUs pay for in full.
+   */
+  function drawMasks(context: WebGL2RenderingContext, args: ProjectionArgs): void {
+    masks = {};
+    const shown = visibleScale();
+    const entries = variant === args.shaderData.variantName && shown > 0 && ground ? drawn() : [];
+    if (design().occlusion && entries.length > 0) {
+      const program = programs.contact!;
+      masks.contact = contactMask.render(context, () => {
+        context.useProgram(program.program);
+        context.uniform1f(program.uniforms.u_scale!, shown);
+        context.uniform1f(program.uniforms.u_metres!, camera.metres);
+        context.uniform1f(program.uniforms.u_band!, occlusion.ground);
+        context.uniform1f(
+          program.uniforms.u_band_strength!,
+          occlusion.groundStrength * visibleOpacity(),
+        );
+        for (const tile of entries) {
+          const {x, y, value} = tile;
+          const ranges = viewRanges(args, tile, occlusion.ground, true);
+          if (!ranges.length) continue;
+          const {contact} = value.gl!;
+          project(context, program, args, x, y);
+          context.bindVertexArray(contact.vao);
+          for (const range of ranges) {
+            contact.offset((range.from - value.mesh.wallsFrom) / 6);
+            context.drawArraysInstanced(context.TRIANGLE_STRIP, 0, 4, range.count / 6);
+          }
+        }
+      });
+    } else contactMask.release(context);
+    const architectural = floodLightNow();
+    if (architectural.intensity > 0 && entries.length > 0) {
+      const program = programs.architecturalFlood!;
+      masks.flood = floodMask.render(context, () => {
+        context.useProgram(program.program);
+        context.uniform1f(program.uniforms.u_scale!, shown);
+        context.uniform1f(program.uniforms.u_metres!, camera.metres);
+        context.uniform2f(
+          program.uniforms.u_radius!,
+          architectural.radius[0]!,
+          architectural.radius[1]!,
+        );
+        context.uniform1f(program.uniforms.u_min_height!, architectural.minGroundHeight);
+        context.uniform1f(
+          program.uniforms.u_intensity!,
+          architectural.intensity * visibleOpacity(),
+        );
+        drawWalls(context, program, args, entries, architectural.radius[1]!);
+      });
+    } else floodMask.release(context);
+  }
+
   function draw(context: WebGL2RenderingContext, args: ProjectionArgs): void {
-    const entries = drawn();
-    const standing = modelsDrawn();
+    const shown = visibleScale();
+    const modelsShown = modelScale();
+    const entries = shown > 0 ? drawn() : [];
+    const standing = modelsShown > 0 ? modelsDrawn() : [];
     if (entries.length === 0 && standing.length === 0) return;
     const light = lighting();
-    const shown = visibleScale();
     const themes = colouredByData() ? designsOnScreen() : undefined;
     const nightLight = mixed((entry) => entry.nightLight);
     const architectural = floodLightNow();
@@ -1160,7 +1291,7 @@ export function createTileflowBuildings3D(
     context.depthFunc(context.LEQUAL);
     context.depthMask(true);
     context.disable(context.BLEND);
-    drawBuildingOpacity(context, visibleOpacity(), () => {
+    const drawBuildings = () => {
       const buildings = programs.buildings!;
       const u = buildings.uniforms;
       context.useProgram(buildings.program);
@@ -1228,21 +1359,36 @@ export function createTileflowBuildings3D(
           context.uniform2f(u.u_palette_themes!, themes.lower, themes.upper);
           context.uniform1f(u.u_palette_mix!, themes.mix);
         }
-        context.bindVertexArray(entry.gl!.vao);
+        const buffers = entry.gl!;
+        context.bindVertexArray(buffers.vao);
         for (const range of ranges)
           context.drawElements(
             context.TRIANGLES,
             range.count,
-            context.UNSIGNED_INT,
-            range.from * 4,
+            buffers.indexType,
+            range.from * buffers.indexBytes,
           );
       }
-
-      drawModels(steady);
-    });
+    };
+    const buildingsOpacity = visibleOpacity();
+    const modelsOpacity = modelOpacity();
+    if (buildingsOpacity === modelsOpacity)
+      drawBuildingOpacity(context, buildingsOpacity, () => {
+        drawBuildings();
+        drawModels(steady);
+      });
+    else {
+      // Each fades in over its own zoom band: the more opaque goes first, the other blends over it.
+      const buildingsPass = [buildingsOpacity, drawBuildings] as const;
+      const modelsPass = [modelsOpacity, () => drawModels(steady)] as const;
+      for (const [alpha, drawGroup] of buildingsOpacity >= modelsOpacity
+        ? [buildingsPass, modelsPass]
+        : [modelsPass, buildingsPass])
+        drawBuildingOpacity(context, alpha, drawGroup);
+    }
     // A model that has just come to stand fades in over the flat ground left for it.
     for (const entry of appearing)
-      drawBuildingOpacity(context, visibleOpacity() * appearanceOf(entry, now), () =>
+      drawBuildingOpacity(context, modelsOpacity * appearanceOf(entry, now), () =>
         drawModels([entry]),
       );
     if (appearing.length > 0) map.triggerRepaint();
@@ -1274,7 +1420,7 @@ export function createTileflowBuildings3D(
         const m = model.uniforms;
         context.useProgram(model.program);
         context.disable(context.CULL_FACE);
-        context.uniform1f(m.u_scale!, shown);
+        context.uniform1f(m.u_scale!, modelsShown);
         context.uniform3fv(m.u_sun_dir!, [...light.direction]);
         context.uniform3fv(m.u_shadow_dir!, light.shadowDirection);
         context.uniform3fv(m.u_sun_light!, light.sunLight);
@@ -1305,7 +1451,7 @@ export function createTileflowBuildings3D(
           context.uniform3fv(m.u_view_position!, modelCamera(entry));
           context.uniform1f(
             m.u_opacity!,
-            pass === 'blend' ? visibleOpacity() * appearanceOf(entry, now) : 1,
+            pass === 'blend' ? modelsOpacity * appearanceOf(entry, now) : 1,
           );
           drawModel(context, model, entry, models.levelOf(entry, centre), pass);
         }
@@ -1348,54 +1494,21 @@ export function createTileflowBuildings3D(
           context.drawArrays(context.TRIANGLE_STRIP, 0, 4);
         }
     }
-    const walls = (program: Program, reach = flood.reach) => {
-      for (const tile of entries) {
-        const {x, y, value} = tile;
-        const mesh = value.mesh;
-        if (mesh.indices.length <= mesh.wallsFrom) continue;
-        project(context, program, args, x, y);
-        context.uniform2f(program.uniforms.u_offset!, ...camera.offsetOf({x, y}));
-        context.bindVertexArray(value.gl!.vao);
-        for (const range of viewRanges(args, tile, reach, true))
-          context.drawElements(
-            context.TRIANGLES,
-            range.count,
-            context.UNSIGNED_INT,
-            range.from * 4,
-          );
-      }
-    };
-    if (occlusionOn && entries.length > 0 && ground) {
-      const program = programs.contact!;
-      const texture = contactMask.render(context, () => {
-        context.useProgram(program.program);
-        context.uniform1f(program.uniforms.u_scale!, shown);
-        context.uniform1f(program.uniforms.u_metres!, camera.metres);
-        context.uniform1f(program.uniforms.u_band!, occlusion.ground);
-        context.uniform1f(
-          program.uniforms.u_band_strength!,
-          occlusion.groundStrength * visibleOpacity(),
-        );
-        for (const tile of entries) {
-          const {x, y, value} = tile;
-          const ranges = viewRanges(args, tile, occlusion.ground, true);
-          if (!ranges.length) continue;
-          const buffers = value.gl!;
-          buffers.contact ??= createBuildingContactVao(context, value.mesh);
-          project(context, program, args, x, y);
-          context.bindVertexArray(buffers.contact.vao);
-          for (const range of ranges) {
-            buffers.contact.offset((range.from - value.mesh.wallsFrom) / 6);
-            context.drawArraysInstanced(context.TRIANGLE_STRIP, 0, 4, range.count / 6);
-          }
-        }
-      });
+    // The prerender draws no mask before the programs for this projection have linked, nor for
+    // tiles uploaded since; the next frame has them.
+    if (
+      ((occlusionOn && !masks.contact) || (architectural.intensity > 0 && !masks.flood)) &&
+      entries.length > 0 &&
+      ground
+    )
+      map.triggerRepaint();
+    if (masks.contact && entries.length > 0 && ground) {
       // Composite once per ground pixel, depth-tested against the buildings just drawn. This
       // preserves roofs and facades and avoids dark seams where bands or neighbouring tiles meet.
       const composite = programs.contactComposite!;
       context.useProgram(composite.program);
       context.activeTexture(context.TEXTURE2);
-      context.bindTexture(context.TEXTURE_2D, texture);
+      context.bindTexture(context.TEXTURE_2D, masks.contact);
       context.uniform1i(composite.uniforms.u_contact!, 2);
       context.bindVertexArray(ground.vao);
       const xs = entries.map(({x}) => x);
@@ -1407,8 +1520,6 @@ export function createTileflowBuildings3D(
           context.drawArrays(context.TRIANGLE_STRIP, 0, 4);
         }
       context.bindTexture(context.TEXTURE_2D, null);
-    } else {
-      contactMask.release(context);
     }
     if (nightLight > 0 && light.night > 0.01) {
       const program = programs.flood!;
@@ -1419,30 +1530,13 @@ export function createTileflowBuildings3D(
       context.uniform1f(program.uniforms.u_band!, flood.reach);
       context.uniform1f(program.uniforms.u_flood!, light.night * nightLight * visibleOpacity());
       context.uniform3fv(program.uniforms.u_flood_colour!, flood.colour);
-      walls(program);
+      drawWalls(context, program, args, entries, flood.reach);
     }
-    if (architectural.intensity > 0 && entries.length > 0 && ground) {
-      const program = programs.architecturalFlood!;
-      const texture = floodMask.render(context, () => {
-        context.useProgram(program.program);
-        context.uniform1f(program.uniforms.u_scale!, shown);
-        context.uniform1f(program.uniforms.u_metres!, camera.metres);
-        context.uniform2f(
-          program.uniforms.u_radius!,
-          architectural.radius[0]!,
-          architectural.radius[1]!,
-        );
-        context.uniform1f(program.uniforms.u_min_height!, architectural.minGroundHeight);
-        context.uniform1f(
-          program.uniforms.u_intensity!,
-          architectural.intensity * visibleOpacity(),
-        );
-        walls(program, architectural.radius[1]);
-      });
+    if (masks.flood && entries.length > 0 && ground) {
       const composite = programs.architecturalFloodComposite!;
       context.useProgram(composite.program);
       context.activeTexture(context.TEXTURE2);
-      context.bindTexture(context.TEXTURE_2D, texture);
+      context.bindTexture(context.TEXTURE_2D, masks.flood);
       context.uniform1i(composite.uniforms.u_mask!, 2);
       context.uniform3fv(composite.uniforms.u_colour!, architectural.colour);
       context.blendFuncSeparate(
@@ -1461,8 +1555,6 @@ export function createTileflowBuildings3D(
           context.drawArrays(context.TRIANGLE_STRIP, 0, 4);
         }
       context.bindTexture(context.TEXTURE_2D, null);
-    } else {
-      floodMask.release(context);
     }
     const emitterProgram = programs.modelEmitter;
     if (emitterProgram) {
@@ -1476,7 +1568,7 @@ export function createTileflowBuildings3D(
         context.ONE,
       );
       context.bindVertexArray(null);
-      context.uniform1f(u.u_scale!, shown);
+      context.uniform1f(u.u_scale!, modelsShown);
       const palette = partColoursNow();
       const paletteMix = partMixNow();
       for (const entry of standing) {
@@ -1487,7 +1579,7 @@ export function createTileflowBuildings3D(
           lighting = modelLightingNow(entry.model.id);
         project(context, emitterProgram, args, stand.tileX, stand.tileY);
         setPlacement(context, emitterProgram, entry, stand);
-        context.uniform1f(u.u_opacity!, visibleOpacity() * appearanceOf(entry, now));
+        context.uniform1f(u.u_opacity!, modelsOpacity * appearanceOf(entry, now));
         for (const [index, emitter] of surface.emitters.entries()) {
           const role = tileflowModelLightingRoles[emitter.role],
             part = tileflowModelParts[emitter.part];
@@ -1671,7 +1763,8 @@ export function createTileflowBuildings3D(
     attach();
   };
   map.on('styledata', onStyle);
-  map.on('idle', onStyle);
+  // A settled map has the same style: it only retries attaching the layer.
+  map.on('idle', attach);
   onStyle();
   camera.update();
 
@@ -1780,7 +1873,7 @@ export function createTileflowBuildings3D(
       for (const {value} of drawn()) {
         raised += 1;
         buildings += value.mesh.features.length;
-        vertices += value.mesh.vertices.length / tileflowBuildingVertexBytes;
+        vertices += value.mesh.vertexCount;
       }
       designsOnScreen();
       return {
@@ -1796,7 +1889,7 @@ export function createTileflowBuildings3D(
       disposed = true;
       motion?.done();
       map.off('styledata', onStyle);
-      map.off('idle', onStyle);
+      map.off('idle', attach);
       unregister();
       models.dispose();
       try {
@@ -1804,20 +1897,16 @@ export function createTileflowBuildings3D(
       } catch {
         // A map already removed has no layers left to remove.
       }
+      if (gl) for (const {value} of camera.all()) if (value) release(gl, value);
+      gl = undefined;
       camera.dispose();
-      mesher.dispose();
+      builder.dispose();
     },
   };
 }
 
 const emptyTile: BuildingTile = Object.freeze({
-  mesh: Object.freeze({
-    vertices: new Uint8Array(0),
-    indices: new Uint32Array(0),
-    wallsFrom: 0,
-    top: 0,
-    features: [],
-  }),
+  mesh: Object.freeze({wallsFrom: 0, top: 0, features: [], vertexCount: 0, indexCount: 0}),
 });
 
 function isWebGL2(context: unknown): context is WebGL2RenderingContext {

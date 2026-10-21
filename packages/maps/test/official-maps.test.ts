@@ -16,6 +16,8 @@ import {
   readTileflowBuildings3D,
   readTileflowStreetLights,
   readTileflowVegetation3D,
+  refine,
+  reset,
   resolveMap,
   vectorTiles,
 } from '@tileflow/core';
@@ -1383,4 +1385,24 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
     assert.equal(pictogram(properties), expected, JSON.stringify(properties));
   }
   assert.deepEqual(validateStyleMin(style as never), []);
+});
+
+test('Streets buildings switch to native extrusions only without the flat render stack', () => {
+  const extend = (buildings: Parameters<typeof refine>[0]) =>
+    defineMap({
+      id: 'streets-extrusions',
+      version: 1,
+      extends: streets,
+      modules: {buildings: refine(buildings)},
+    });
+  assert.throws(() => compileOfficialMap(extend({mode: '3d'}), 'light'), {
+    code: 'unknown-or-circular-anchor',
+    message:
+      /beside buildings\.flat\.fill, which buildings draws only in mode 'flat'.*refine\(\{mode: '3d', renderStack: reset\(\)\}\)/u,
+  });
+
+  const layerIds = compileOfficialMap(extend({mode: '3d', renderStack: reset()}), 'light')
+    .layers.map(({id}) => id)
+    .filter((id) => id.startsWith('tileflow-buildings'));
+  assert.deepEqual(layerIds, ['tileflow-buildings-3d']);
 });

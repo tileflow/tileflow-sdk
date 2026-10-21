@@ -1,5 +1,6 @@
 import type {TileflowLayerFamilyIR} from './domain-ir';
 import {isMapLibreExpressionOperator} from './expression-operators';
+import {isSolidDash} from './layer-style';
 
 type LayerFamily = TileflowLayerFamilyIR;
 
@@ -123,6 +124,12 @@ function mergeRoadLineGroup(key: string, layers: LayerFamily[]): LayerFamily | u
   const paintKeys = new Set(layers.flatMap((layer) => Object.keys(layer.style.appearance ?? {})));
   for (const key of paintKeys) {
     const values = layers.map((layer) => layer.style.appearance?.[key]);
+    // Roads that are all solid keep the solid-line shader.
+    if (
+      key === 'line-dasharray' &&
+      values.every((value) => isSolidDash(value ?? linePaintDefaults[key]))
+    )
+      continue;
     const combined = combineConditionalValues(
       values.map((value, index) => ({
         condition: conditions[index]!,

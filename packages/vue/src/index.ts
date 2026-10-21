@@ -30,12 +30,12 @@ import {
 import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
+  attachTileflowMap3D,
   attachTileflowMapLifecycle,
   attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowThemeController,
-  createTileflowVegetation,
-  type TileflowVegetationController,
+  type TileflowMap3DAttachment,
   type TileflowViewMode,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
@@ -239,7 +239,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       type: Object as PropType<TileflowRuntimeSource>,
     },
     vegetation: {type: Boolean as PropType<boolean | undefined>, default: undefined},
-    viewMode: {type: String as PropType<TileflowViewMode>, default: '2d'},
+    viewMode: {type: String as PropType<TileflowViewMode>, default: '3d'},
     theme: String,
     timeOfDay: String as PropType<TileflowTimeOfDay>,
     themeBlend: Object as PropType<TileflowBrowserThemeBlendSelection>,
@@ -293,7 +293,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     let mapLifecycle: TileflowMapLifecycleAttachment | null = null;
     let mapResizeObserver: ResizeObserver | null = null;
     let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
-    let vegetationController: TileflowVegetationController | null = null;
+    let sceneAttachment: TileflowMap3DAttachment | null = null;
     let themeController: TileflowThemeController | null = null;
     let unsubscribeSystemColorScheme: (() => void) | null = null;
     let mapLoadId = 0;
@@ -712,8 +712,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     watch(
       () => [props.vegetation, props.viewMode] as const,
       ([visible, viewMode]) => {
-        vegetationController?.setVisible(visible);
-        vegetationController?.setViewMode(viewMode ?? '2d');
+        sceneAttachment?.setVegetation(visible);
+        sceneAttachment?.setViewMode(viewMode ?? '3d');
       },
     );
 
@@ -726,8 +726,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       const resizeObserver = mapResizeObserver;
       const map = mapRef.value;
       const controller = themeController;
-      const vegetation = vegetationController;
-      vegetationController = null;
+      const scene = sceneAttachment;
+      sceneAttachment = null;
       const annotationInteractionsForMap = annotationRuntime;
       const semanticInteractionsForMap = semanticRuntime;
       const worldRequestBridge = mapWorldRequestBridge;
@@ -745,7 +745,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         () => worldRequestBridge?.dispose(),
         () => fairUseNotice?.dispose(),
         () => lifecycle?.dispose(),
-        () => vegetation?.dispose(),
+        () => scene?.dispose(),
         () => controller?.dispose(),
         () => resizeObserver?.disconnect(),
         () => map?.remove(),
@@ -894,6 +894,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         attributionControl: props.mapOptions?.attributionControl ?? {
           compact: true,
         },
+        // Tileflow's compiled styles are validated when they are built.
+        validateStyle: props.mapOptions?.validateStyle ?? false,
         bearing: resolvedBearing.value,
         center: resolvedCenter.value,
         container,
@@ -934,11 +936,14 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
               },
             });
 
-      vegetationController = createTileflowVegetation({
+      // The map's 3D scene loads only once its style declares one, so 2D maps do not pay for it.
+      sceneAttachment = attachTileflowMap3D({
         map,
         ...(themeController ? {controller: themeController} : {}),
-        visible: props.vegetation,
-        viewMode: props.viewMode ?? '2d',
+        vegetation: props.vegetation,
+        viewMode: props.viewMode ?? '3d',
+        load: () => import('@tileflow/core/3d'),
+        onError: (error) => console.error('Failed to load the Tileflow 3D scene', error),
         transformRequest: createTileflowTransformRequest({
           getAnalytics: () => resolvedAnalytics.value,
           sessionController: session,

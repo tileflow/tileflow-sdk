@@ -1739,9 +1739,10 @@ function applyMapStyle(
       }
       const setStyle = map.setStyle as (
         style: MapLibreStyle | string,
-        options?: {diff?: boolean},
+        options?: {diff?: boolean; validate?: boolean},
       ) => unknown;
-      setStyle.call(map, style, {diff: true});
+      // A theme's style is compiled, and validated, when its map is built.
+      setStyle.call(map, style, {diff: true, validate: false});
     } catch (error) {
       settle(normalizeThemeTransitionError(error, 'MapLibre rejected the Tileflow theme.'));
     }
@@ -2300,3 +2301,21 @@ export {
   type TileflowVegetationOptions,
   type TileflowVegetationController,
 } from './vegetation-browser';
+
+export {
+  createTileflowMap3D,
+  type TileflowMap3D,
+  type TileflowMap3DMap,
+  type TileflowMap3DOptions,
+} from './map-3d-browser';
+
+export {
+  attachTileflowMap3D,
+  tileflowMap3DDeclarations,
+  tileflowMap3DMetadataKeys,
+  tileflowMapDeclares3D,
+  type AttachTileflowMap3DOptions,
+  type TileflowMap3DAttachment,
+  type TileflowMap3DLoader,
+  type TileflowMap3DSource,
+} from './map-3d-attach-browser';

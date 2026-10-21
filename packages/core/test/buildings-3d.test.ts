@@ -657,6 +657,25 @@ test('buildings have a sunlit finish by default and preserve explicit design cho
   );
 });
 
+test('a design gives the zoom bands the city comes in over, or leaves them to the renderer', () => {
+  const metadata = {
+    version: 1,
+    source: 'tileflow',
+    layers: {building: 'building'},
+    color: '#d8d0c0',
+  };
+  const read = (entrance: unknown) =>
+    readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: {...metadata, entrance}})?.entrance;
+  assert.deepEqual(read({buildings: [15.5, 16], models: [14, 14.5]}), {
+    buildings: [15.5, 16],
+    models: [14, 14.5],
+  });
+  // A band must rise across zooms the map has.
+  assert.deepEqual(read({buildings: [16, 15], models: [14, 14.5]}), {models: [14, 14.5]});
+  assert.equal(read({buildings: [15, 30]}), undefined);
+  assert.equal(read([15, 16]), undefined);
+});
+
 test('show, hide and grow are immediate unless animation is requested', async () => {
   const buildings = createTileflowBuildings3D({map: fakeMap()});
   try {

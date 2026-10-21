@@ -265,6 +265,10 @@ function applyModuleOperation(
         assertNoReset(patch, mapId, `${path}/patches/${index}`, true);
         next = applyModulePatch(next, patch, mapId, `${path}/patches/${index}`);
       }
+      // Resetting every inherited render operation leaves no stack, as resetting the stack does.
+      if (isPlainRecord(next.renderStack) && Object.keys(next.renderStack).length === 0) {
+        delete next.renderStack;
+      }
       assertModuleOwner(next, moduleName, mapId, path);
       resolved[moduleName] = next;
       return;

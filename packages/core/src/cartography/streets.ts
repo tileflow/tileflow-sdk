@@ -7,6 +7,7 @@ import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
 import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../boundary-areas/compile';
 import {type ResolvedMarine, resolveMarine} from '../marine';
+import {buildingTargetsOfOtherModes} from '../modules/buildings/compiler';
 import {tileflowNauticalNotice} from '../modules/nautical';
 import {type TileflowMapNotice, tileflowNoticesMetadataKey} from '../notices';
 import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
@@ -373,7 +374,11 @@ function compileSemanticStyleInternal(
   );
   const requestedRenderOperations = domainIR.renderOperations;
   const stackedFamilies = runCompilationPhase('render-stack', () =>
-    applyCompiledRenderStacks(assembledFamilies, requestedRenderOperations),
+    applyCompiledRenderStacks(
+      assembledFamilies,
+      requestedRenderOperations,
+      buildingTargetsOfOtherModes(modules.buildings),
+    ),
   );
   const plannedFamilies = runCompilationPhase('physical-planner', () =>
     planTileflowLayerFamilies(stackedFamilies),

@@ -4,7 +4,8 @@ import {applyExtrusionStyle, createAreaLayers} from '../../cartography/layer-sty
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {expression} from '../../cartography/values';
 import type {TileflowResolvedModuleConfig} from '../resolved';
-import type {TileflowBuildingsModuleConfig} from './index';
+import type {TileflowModeSpecificTarget} from '../../cartography/render-stack';
+import type {TileflowBuildingMode, TileflowBuildingsModuleConfig} from './index';
 
 export function compileBuildings(
   request: TileflowResolvedModuleConfig<TileflowBuildingsModuleConfig> | undefined,
@@ -132,6 +133,27 @@ export function compileBuildings(
     });
   }
   return contributions;
+}
+
+/** The semantic targets each mode draws; the businessCorridor targets belong to every mode. */
+const buildingTargetsByMode = {
+  flat: ['buildings.flat.fill', 'buildings.flat.outline'],
+  '3d': ['buildings.extrusion'],
+} as const satisfies Record<TileflowBuildingMode, readonly string[]>;
+
+/** The targets a map's buildings do not draw because it selects another mode. */
+export function buildingTargetsOfOtherModes(
+  request: TileflowResolvedModuleConfig<TileflowBuildingsModuleConfig> | undefined,
+): ReadonlyMap<string, TileflowModeSpecificTarget> {
+  const activeMode = request?.mode ?? 'flat';
+  const targets = new Map<string, TileflowModeSpecificTarget>();
+  for (const [mode, modeTargets] of Object.entries(buildingTargetsByMode)) {
+    if (mode === activeMode) continue;
+    for (const target of modeTargets) {
+      targets.set(target, {activeMode, mode, owner: 'buildings'});
+    }
+  }
+  return targets;
 }
 
 function buildingColorExpression(context: TileflowDomainCompileContext): unknown[] {

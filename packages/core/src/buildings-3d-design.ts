@@ -46,6 +46,12 @@ export type TileflowBuildings3DDesign = Readonly<{
   modelLighting?: Readonly<Partial<Record<TileflowModelLightingRole, TileflowModelRoleLighting>>>;
   /** Invented night windows, lit by rooms: decoration, not data. */
   windows: boolean;
+  /**
+   * The zoom bands, `[from, to]`, the buildings and the placed models and landmarks come in over:
+   * across its band each fades in and rises from the ground. The renderer's defaults stand for a
+   * band left out.
+   */
+  entrance?: Readonly<{buildings?: readonly [number, number]; models?: readonly [number, number]}>;
   /** Shadows from the sun, and contact shadow at the foot of the walls. */
   shadows: boolean;
   occlusion: boolean;
@@ -133,6 +139,7 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
     ...(floodLight ? {floodLight} : {}),
     ...(modelLighting ? {modelLighting} : {}),
     windows: value.windows === true,
+    ...readTileflowBuildingsEntrance(value.entrance),
     shadows: typeof value.shadows === 'boolean' ? value.shadows : defaults.shadows,
     occlusion: typeof value.occlusion === 'boolean' ? value.occlusion : defaults.occlusion,
     modelOcclusion: within(value.modelOcclusion, 1, defaults.modelOcclusion),
@@ -140,6 +147,25 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
     ...modelColorsOf(value.modelColors),
     ...landmarksOf(value.landmarks),
   };
+}
+
+/** The entrance bands a design gives, skipping any that is not a rising band of zooms. */
+export function readTileflowBuildingsEntrance(
+  value: unknown,
+): Pick<TileflowBuildings3DDesign, 'entrance'> {
+  if (!isRecord(value)) return {};
+  const band = (entry: unknown): readonly [number, number] | undefined =>
+    Array.isArray(entry) &&
+    entry.length === 2 &&
+    entry.every((zoom) => typeof zoom === 'number' && zoom >= 0 && zoom <= 24) &&
+    entry[0] < entry[1]
+      ? [entry[0], entry[1]]
+      : undefined;
+  const buildings = band(value.buildings);
+  const models = band(value.models);
+  return buildings || models
+    ? {entrance: {...(buildings ? {buildings} : {}), ...(models ? {models} : {})}}
+    : {};
 }
 
 const modelId = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;

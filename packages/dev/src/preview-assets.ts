@@ -8,8 +8,6 @@ const localMapLibreAssets = new Map<string, string>();
 let localTileflowBrowserJavaScript: string | undefined;
 let localThreeCoreJavaScript: string | undefined;
 let localThreeModuleJavaScript: string | undefined;
-let localPmtilesJavaScript: string | undefined;
-let localFflateJavaScript: string | undefined;
 
 export function getTileflowPreviewRuntimeResponse(path: string): Response | undefined {
   if (path === '/__runtime/devtools-observer.js') {
@@ -41,18 +39,6 @@ export function getTileflowPreviewRuntimeResponse(path: string): Response | unde
   }
   if (path === '/__runtime/three.core.min.js') {
     return textAssetResponse(getLocalThreeAsset('core'), 'text/javascript; charset=utf-8');
-  }
-  if (path === '/__runtime/pmtiles.js') {
-    return textAssetResponse(getLocalPmtilesAsset(), 'text/javascript; charset=utf-8');
-  }
-  if (path === '/__runtime/fflate.js') {
-    return textAssetResponse(getLocalFflateAsset(), 'text/javascript; charset=utf-8');
-  }
-  if (path === '/__runtime/three-addons/libs/draco/gltf/draco_decoder.wasm') {
-    return binaryAssetResponse(
-      getLocalThreeAddonBinaryAsset('libs/draco/gltf/draco_decoder.wasm'),
-      'application/wasm',
-    );
   }
   if (path.startsWith('/__runtime/three-addons/')) {
     return textAssetResponse(
@@ -109,49 +95,8 @@ function getLocalThreeAddonAsset(relativePath: string): string {
   return readFileSync(assetPath, 'utf8');
 }
 
-function getLocalThreeAddonBinaryAsset(relativePath: string): Buffer {
-  if (!/^[A-Za-z0-9_./-]+\.wasm$/.test(relativePath) || relativePath.includes('..')) {
-    throw new Error('Invalid Three.js binary addon path.');
-  }
-  const commonJsPath = localRequire.resolve('three');
-  const addonRoot = join(dirname(dirname(commonJsPath)), 'examples', 'jsm');
-  const assetPath = join(addonRoot, relativePath);
-  if (!isPathWithin(addonRoot, assetPath)) throw new Error('Invalid Three.js binary addon path.');
-  return readFileSync(assetPath);
-}
-
-function getLocalPmtilesAsset(): string {
-  if (localPmtilesJavaScript !== undefined) return localPmtilesJavaScript;
-  const packagePath = localRequire.resolve('pmtiles/package.json');
-  localPmtilesJavaScript = readFileSync(
-    join(dirname(packagePath), 'dist', 'esm', 'index.js'),
-    'utf8',
-  );
-  return localPmtilesJavaScript;
-}
-
-function getLocalFflateAsset(): string {
-  if (localFflateJavaScript !== undefined) return localFflateJavaScript;
-  const commonJsPath = localRequire.resolve('fflate');
-  localFflateJavaScript = readFileSync(
-    join(dirname(dirname(commonJsPath)), 'esm', 'browser.js'),
-    'utf8',
-  );
-  return localFflateJavaScript;
-}
-
 function textAssetResponse(body: string, contentType: string): Response {
   return new Response(body, {
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Cache-Control': 'no-store',
-      'Content-Type': contentType,
-    },
-  });
-}
-
-function binaryAssetResponse(body: Buffer, contentType: string): Response {
-  return new Response(new Uint8Array(body), {
     headers: {
       'Access-Control-Allow-Origin': '*',
       'Cache-Control': 'no-store',

@@ -68,6 +68,13 @@ export type TileflowBuildingsThreeDimensionalStyle = {
       }
     >
   >;
+  /**
+   * The zoom bands the city comes in over: zooming in, across each band its part fades in and rises
+   * from the ground, and zooming out it sinks and fades again. Defaults to the 0.3 zooms from the
+   * renderer's `minzoom` (15) for the buildings, and to the 0.4 zooms from 0.8 before it for the
+   * placed models and landmarks, which stand first. With reduced motion they only fade.
+   */
+  entrance?: {buildings?: readonly [number, number]; models?: readonly [number, number]};
   /** Contact shadow at the foot of the walls and in tight corners; defaults to true. */
   occlusion?: boolean;
   /** Prepared model ambient occlusion strength, from 0 to 1; defaults to 0.75. */

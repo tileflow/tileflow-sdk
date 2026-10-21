@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {createTileflowVegetation} from '../src/vegetation-browser';
 import {tileflowTrees3DLayerId} from '../src/trees-3d-browser';
+import {createTileflowVegetation} from '../src/vegetation-browser';
 import {
   readTileflowVegetationDisplay,
   resolveTileflowVegetationRepresentation,
-  tileflowVegetationDisplayMetadataKey,
   type TileflowVegetationDisplay,
+  tileflowVegetationDisplayMetadataKey,
 } from '../src/vegetation-display';
 
 const policy = (
@@ -104,6 +104,7 @@ function fixture(initial = policy(), supported = true) {
   let display: TileflowVegetationDisplay | undefined = initial;
   let pitch = 0;
   let disposedLayers = 0;
+  let styleReads = 0;
   const listeners = new Map<string, Set<() => void>>();
   const layers = new Map<string, {id: string}>(
     ['trees', 'trees::night', 'crowns', 'hidden', 'labels'].map((id) => [id, {id}]),
@@ -123,17 +124,21 @@ function fixture(initial = policy(), supported = true) {
     getCenter: () => ({lat: 40, lng: -3}),
     getLayer: (id: string) => layers.get(id),
     getLayoutProperty: (id: string) => visibility.get(id),
+    getLayersOrder: () => [...layers.keys()],
     getPitch: () => pitch,
     getSource: () => undefined,
-    getStyle: () => ({
-      layers: [...layers.values()],
-      metadata: display
-        ? {
-            [tileflowVegetationDisplayMetadataKey]: display,
-            'tileflow:vegetation': models,
-          }
-        : {},
-    }),
+    getStyle() {
+      styleReads++;
+      return {
+        layers: [...layers.values()],
+        metadata: display
+          ? {
+              [tileflowVegetationDisplayMetadataKey]: display,
+              'tileflow:vegetation': models,
+            }
+          : {},
+      };
+    },
     getZoom: () => 16,
     isStyleLoaded: () => true,
     off(event: string, listener: () => void) {
@@ -164,14 +169,19 @@ function fixture(initial = policy(), supported = true) {
       pitch = value;
       fire('moveend');
     },
+    // A new style: MapLibre reports its data, then that it has loaded.
     style(value: TileflowVegetationDisplay | undefined) {
       display = value;
       layers.delete(tileflowTrees3DLayerId);
       fire('styledata');
+      fire('style.load');
       fire('idle');
     },
     get disposedLayers() {
       return disposedLayers;
+    },
+    get styleReads() {
+      return styleReads;
     },
   };
 }
@@ -204,6 +214,23 @@ test('model-only trees stay 3D overhead, tilt, toggle, reload styles and leave n
   vegetation.dispose();
   vegetation.dispose();
   for (const set of f.listeners.values()) assert.equal(set.size, 0);
+});
+
+test('a settling map reads the style once per style load', () => {
+  const f = fixture(policy('flat'));
+  const vegetation = createTileflowVegetation({map: f.map});
+  assert.equal(vegetation.representation, 'flat');
+  const reads = f.styleReads;
+  for (let index = 0; index < 20; index++) {
+    f.fire('styledata');
+    f.fire('idle');
+  }
+  assert.equal(f.styleReads, reads, 'restyling and settling keep the style metadata');
+  assert.equal(f.visibility.get('crowns'), 'visible');
+  f.style({...policy('flat'), flatLayers: [{id: 'crowns', visible: false}]});
+  assert.equal(f.visibility.get('crowns'), 'none');
+  assert.equal(f.styleReads, reads + 1, 'a new style is read once');
+  vegetation.dispose();
 });
 
 test('auto switches only with viewMode, preserves hidden passes and respects authored visibility', () => {

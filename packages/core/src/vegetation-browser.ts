@@ -43,12 +43,21 @@ export function createTileflowVegetation(
   let disposed = false;
   let refreshing = false;
   const instant = {transition: {duration: 0}};
+  // Reading the style's metadata serializes the whole style, and the map settles many times while
+  // it loads. Its metadata changes only when a style loads, in full or as a diff.
+  let metadata: {value: unknown} | undefined;
+  function styleMetadata(): unknown {
+    metadata ??= {value: (map.getStyle() as {metadata?: unknown} | undefined)?.metadata};
+    return metadata.value;
+  }
 
   function flatVisibility(policy: TileflowVegetationDisplay | undefined, shown: boolean): void {
     if (!map.setLayoutProperty || !map.getLayoutProperty || !policy) return;
     const authored = new Map(policy.flatLayers.map((layer) => [layer.id, layer.visible]));
-    const layers = (map.getStyle() as {layers?: {id: string}[]} | undefined)?.layers ?? [];
-    for (const {id} of layers) {
+    const layers =
+      map.getLayersOrder?.() ??
+      ((map.getStyle() as {layers?: {id: string}[]} | undefined)?.layers ?? []).map(({id}) => id);
+    for (const id of layers) {
       const layerVisible = authored.get(id.split('::')[0]!);
       if (layerVisible === undefined) continue;
       const value = shown && layerVisible ? 'visible' : 'none';
@@ -61,11 +70,10 @@ export function createTileflowVegetation(
     if (disposed || refreshing || !map.isStyleLoaded()) return;
     refreshing = true;
     try {
-      const metadata = (map.getStyle() as {metadata?: unknown} | undefined)?.metadata;
-      const policy = readTileflowVegetationDisplay(metadata);
+      const policy = readTileflowVegetationDisplay(styleMetadata());
       // Use the existing MapLibre context; never allocate another canvas or renderer.
       const supports3D = Boolean(
-        readTileflowVegetation3D(metadata) && map.getCanvas?.().getContext('webgl2'),
+        readTileflowVegetation3D(styleMetadata()) && map.getCanvas?.().getContext('webgl2'),
       );
       const next = resolveTileflowVegetationRepresentation(policy, {visible, viewMode, supports3D});
       flatVisibility(policy, next === 'flat');
@@ -87,21 +95,26 @@ export function createTileflowVegetation(
     if (disposed) return;
     disposed = true;
     map.off('styledata', refresh);
+    map.off('style.load', onStyleLoad);
     map.off('idle', refresh);
     map.off('remove', dispose);
     trees?.dispose();
     trees = undefined;
     representation = 'none';
-    const policy = readTileflowVegetationDisplay(
-      (map.getStyle() as {metadata?: unknown} | undefined)?.metadata,
-    );
+    const policy = readTileflowVegetationDisplay(styleMetadata());
     flatVisibility(
       policy,
       resolveTileflowVegetationRepresentation(policy, {supports3D: false}) === 'flat',
     );
   }
 
+  function onStyleLoad(): void {
+    metadata = undefined;
+    refresh();
+  }
+
   map.on('styledata', refresh);
+  map.on('style.load', onStyleLoad);
   map.on('idle', refresh);
   map.on('remove', dispose);
   refresh();

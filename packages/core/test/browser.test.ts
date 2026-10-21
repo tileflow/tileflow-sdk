@@ -271,6 +271,8 @@ test('theme controller preloads in parallel and applies only the latest request'
   releaseDark();
   assert.deepEqual(await dark, {status: 'superseded', theme: 'dark'});
   assert.deepEqual(map.styles, ['/contrast.json']);
+  // Compiled styles are validated when built; MapLibre need not validate them again.
+  assert.deepEqual(map.styleOptions, [{diff: true, validate: false}]);
   assert.equal(controller.getCurrent().theme, 'contrast');
 });
 
@@ -433,6 +435,7 @@ function setPmtilesUint64(view: DataView, offset: number, value: number): void {
 }
 
 class FakeStyleSwitchMap {
+  readonly styleOptions: unknown[] = [];
   readonly styles: string[] = [];
   readonly #listeners = new Map<string, Set<(event?: unknown) => void>>();
 
@@ -448,8 +451,9 @@ class FakeStyleSwitchMap {
     this.#listeners.get(event)?.delete(listener);
   }
 
-  setStyle(style: string) {
+  setStyle(style: string, options?: unknown) {
     this.styles.push(style);
+    this.styleOptions.push(options);
     queueMicrotask(() => {
       const event = style === this.rejectedStyle ? 'error' : 'style.load';
       for (const listener of this.#listeners.get(event) ?? []) {

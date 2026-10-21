@@ -238,6 +238,27 @@ listeners, and pending read on disposal or map `remove`. Malformed entries are i
 rendered. Native maps and images rendered outside these runtimes do not show the control and must
 present the notice themselves.
 
+## 3D scene
+
+A compiled style declares its 3D scene in metadata: `tileflow:buildings` (3D buildings, Tileflow
+landmarks and the map's Team building models), `tileflow:vegetation` and
+`tileflow:vegetation-display` (trees), and `tileflow:street-lights`. React, Vue and Svelte attach
+`attachTileflowMap3D` from `@tileflow/core/browser` once per interactive map. It loads
+`@tileflow/core/3d` with a dynamic import only when the style on screen declares one of these keys,
+so a 2D map does not load or evaluate the 3D renderers. Once loaded, `createTileflowMap3D` mounts
+the renderers the style declares on the map's shared 3D scene, follows style and theme changes, and
+releases a renderer when a later style no longer declares it.
+
+The scene is shown by default: `viewMode` is `3d` unless the application sets `2d`. In the 2D view
+no 3D buildings or street lights are mounted, and vegetation follows its own display policy for the
+2D view. `vegetation` overrides vegetation visibility independently. Both props update the existing
+map. A load failure is reported to the console and leaves the 2D map working. Image mode, React
+Native, standalone capture and Static Maps do not mount the scene. A direct MapLibre consumer of
+the style JSON gets no 3D scene: Core's buildings, landmarks, models, trees and lights are custom
+WebGL layers that only these runtimes add. Where a map draws a plain `fill-extrusion` pass, the
+style keeps it hidden and grouped under `metadata['tileflow:3d-toggle'] = 'building'`; such a
+consumer may show those layers itself, and gets extruded footprints only.
+
 ## Session starts
 
 `createTileflowSessionStarter` deduplicates the exact key `sessionId:mapId:styleId`, with an empty

@@ -1,7 +1,7 @@
 import {Color} from '@maplibre/maplibre-gl-style-spec';
 import type {StyleSpecification} from 'maplibre-gl';
 import {PbfReader} from 'pbf';
-import {readBoundedTileflowResponse} from '../landmarks';
+import {readBoundedTileflowResponse} from '../bounded-response';
 import type {Side} from './types';
 
 export const fontPreviewLines = ['Aa Bb Cc 0123456789', 'Streets, parks and cafés.'];

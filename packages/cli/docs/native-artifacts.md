@@ -82,8 +82,8 @@ Browser-only selections fail before config execution in native mode. In particul
 compiler-inspection sidecars, or the dev handler's status/event control routes. Use ordinary/default
 web preview for those workflows.
 
-The `native-lowering-v1` preparation policy records fixed globe-to-Mercator normalization and
-finite cap/dash layer partitioning in `native-build.json`; it does not change web artifacts.
+The `native-lowering-v1` preparation policy records fixed globe-to-Mercator normalization, removal
+of a browser sky and finite cap/dash layer partitioning in `native-build.json`; it does not change web artifacts.
 Native preparation rejects adaptive/unknown projections, terrain, browser PMTiles/contour protocols,
 missing text providers and unsupported style values rather than degrading them silently. It preserves
 shared icon inheritance and independent sprite densities, and maps verified licensed TTF/OTF faces

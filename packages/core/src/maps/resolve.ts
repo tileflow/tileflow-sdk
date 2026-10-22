@@ -59,6 +59,7 @@ export const tileflowMapMergeStrategies = {
   projection: 'atomic',
   scenes: 'leaf',
   shots: 'leaf',
+  sky: 'atomic',
   sources: 'keyed-resources',
   systemThemes: 'atomic',
   terrain: 'atomic',

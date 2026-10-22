@@ -1,4 +1,15 @@
 export type {TileflowAtmosphere, TileflowAtmosphereOptions} from './atmosphere';
+export {
+  readTileflowSky,
+  tileflowSkyAtSun,
+  tileflowSkyMetadataKey,
+  type TileflowSky,
+  type TileflowSkyColours,
+  type TileflowSkyMetadata,
+  type TileflowSkyOptions,
+  type TileflowSkyTimesOfDay,
+} from './sky';
+export {tileflowMaxPitch} from './camera-limits';
 export {createStyle, createStyleResult, parseTileflowMap, validateTileflowMap} from './map';
 export {
   validateTileflowCompiledIconCapabilities,

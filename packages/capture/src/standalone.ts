@@ -85,6 +85,7 @@ globalThis.__tileflowRegisterPmtilesProtocol = registerTileflowPmtilesProtocol;
 globalThis.__tileflowAttachAtmosphere = attachTileflowAtmosphere;
 globalThis.__tileflowAttachNotices = attachTileflowNotices;
 globalThis.__tileflowAttachNauticalLights = attachTileflowNauticalLights;
+globalThis.__tileflowMaxPitch = tileflowMaxPitch;
 globalThis.__tileflowCreateThemeController = createTileflowThemeController;`;
 
 type PagePhaseResult =
@@ -886,9 +887,12 @@ window.__tileflowCaptureLoad = async function(input) {
       .map(([sourceId]) => sourceId);
     const map = new window.maplibregl.Map({
       attributionControl: false,
+      // Multisampled like the interactive map, so thin 3D model edges capture without stipple.
+      canvasContextAttributes: {antialias: true},
       container: "map",
       fadeDuration: 0,
       interactive: false,
+      maxPitch: window.__tileflowMaxPitch,
       style: input.style
     });
     window.__tileflowMap = map;

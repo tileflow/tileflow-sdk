@@ -931,7 +931,8 @@ test('selects map and scene previews with their configured cameras and viewport'
   );
   assert.equal(JSON.stringify(persisted.mapOptions?.center), '[-3.7038,40.4168]');
   assert.equal(persisted.mapOptions?.zoom, 15.25);
-  assert.equal('maxPitch' in (persisted.mapOptions ?? {}), false);
+  // The map raises MapLibre's default pitch limit; the URL camera adds no limit of its own.
+  assert.equal(persisted.mapOptions?.maxPitch, 85);
   assert.equal(persisted.mapOptions?.pitch, 0);
   assert.equal('bounds' in (persisted.mapOptions ?? {}), false);
   assert.equal('fitBoundsOptions' in (persisted.mapOptions ?? {}), false);
@@ -1725,6 +1726,10 @@ function runPreviewScript(
     },
     attachTileflowNauticalLights: () => () => {},
     attachTileflowNotices: () => () => {},
+    attachTileflowSky: () => () => {},
+    attachTileflowSkyHaze: () => () => {},
+    tileflowMaxPitch: 85,
+    tileflowCanvasContextAttributes: (attributes: object) => ({antialias: true, ...attributes}),
     readTileflowSunPreset: () => undefined,
     resolveTileflowSun: (preset: unknown) => preset,
     tileflowDefaultSunPreset: {},

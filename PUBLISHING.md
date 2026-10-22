@@ -25,6 +25,8 @@ publication order and the independent first version for every package:
 - `@tileflow/coordinates`
 - `@tileflow/coordinates-runtime`
 - `@tileflow/search`
+- `@tileflow/routing`
+- `@tileflow/elevation`
 - `@tileflow/static`
 - `@tileflow/dev`
 - `@tileflow/capture`
@@ -304,6 +306,13 @@ npm cannot configure Trusted Publishing before a package exists. For each new ca
    bundle before publishing it.
 
 The normal OIDC job is not authority to invent or bootstrap a package.
+
+### Elevation first alpha
+
+Remove `elevation-initial-publisher` only after the maintainer bootstrap and independent Trusted
+Publisher verification for `@tileflow/elevation` are complete. Reserve `0.1.0-alpha.0` for the
+protected first alpha; never use that version for bootstrap or move `alpha` manually. Do not release
+the other changed packages separately to bypass this interlock.
 
 ### Routing first alpha
 

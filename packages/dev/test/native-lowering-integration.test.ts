@@ -295,6 +295,8 @@ test('Streets themes retain identity and audited native transformation spans', a
   assert.equal(Object.hasOwn(native.manifest, 'transformations'), false);
   for (const item of record.transformations) {
     assert.equal(item.projection, 'globe-to-mercator');
+    assert.equal(item.sky, 'removed');
+    assert.equal(Object.hasOwn(native.styles.streets![item.theme]!, 'sky'), false);
     assert.ok(item.layers.length > 0);
     const original = web.styles.streets![item.theme]!;
     const output = native.styles.streets![item.theme]!;

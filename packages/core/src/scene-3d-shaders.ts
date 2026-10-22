@@ -13,3 +13,21 @@ float visibility(vec3 c, float bias) {
   // spread distant texels into metres of soft shadow.
   return texture(u_shadow_map, vec3(c.xy, z));
 }`;
+
+// Every 3D layer fades into the sky's horizon colour with distance, as the flat map under it does
+// (sky-haze-browser.ts): the vertex passes its view depth, clip space's w, to the fragment.
+export const tileflowHazeVertex = `
+out float v_haze_depth;`;
+
+export const tileflowHazeFragment = `
+in float v_haze_depth;
+uniform vec3 u_haze_colour;
+uniform vec3 u_haze; // strength; the view depths where the haze starts and is complete
+
+float hazeOf() {
+  return u_haze.x > 0.0 ? u_haze.x * smoothstep(u_haze.y, u_haze.z, v_haze_depth) : 0.0;
+}
+
+vec3 hazed(vec3 colour) {
+  return mix(colour, u_haze_colour, hazeOf());
+}`;

@@ -168,8 +168,8 @@ Streets selects Core's `labels.roadPlacement: 'ground'`: street names follow the
 buildings; POIs, transit names and shields remain above. Disabling roads omits their names.
 Road rings, ramp and surface ordering use [Core's replaceable defaults](../core/docs/cartographic-defaults.md).
 Streets owns its colors, widths, typography and optional time-of-day themes.
-Browser atmosphere is separately enabled with `atmosphere: true` on a globe map; the base definition
-also remains usable with Mercator and native targets.
+Each theme paints a [street sky](../core/docs/street-sky.md) with night stars; `atmosphere: true`
+on a globe map adds space around it. Mercator and native targets remain supported.
 
 Streets enables model trees by default (`mode: '3d'`, `fallback: 'none'`). They stay three-dimensional
 in overhead and tilted interactive browser views. Disabling vegetation removes all trees. Renderers

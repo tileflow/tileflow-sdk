@@ -1,5 +1,6 @@
 import type {ManifestSchema, ManifestSchemaOperations} from './manifest-schema-operations';
 import type {TileflowViewConfig} from './types';
+import {tileflowMaxPitch} from './camera-limits';
 
 /** The view grammar shared by manifest validation and renderer-neutral initial-view inputs. */
 export function createTileflowRuntimeViewSchema(
@@ -10,7 +11,7 @@ export function createTileflowRuntimeViewSchema(
     center: operations.optional(
       operations.tuplePair(operations.number(-180, 180), operations.number(-90, 90)),
     ),
-    pitch: operations.optional(operations.number(0, 85)),
+    pitch: operations.optional(operations.number(0, tileflowMaxPitch)),
     zoom: operations.optional(operations.number(0, 24)),
   });
 }

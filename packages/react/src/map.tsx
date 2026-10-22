@@ -39,7 +39,9 @@ import {
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   subscribeTileflowSystemColorScheme,
+  tileflowCanvasContextAttributes,
   type TileflowThemeController,
+  tileflowMaxPitch,
   type TileflowThemeTransition,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
@@ -828,6 +830,9 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
 
         const map = new maplibregl.Map({
           ...stableMapOptions,
+          canvasContextAttributes: tileflowCanvasContextAttributes(
+            stableMapOptions?.canvasContextAttributes,
+          ),
           container,
           style: initialRuntimeStyle.style as StyleSpecification | string,
           bearing: bearingRef.current,
@@ -840,6 +845,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           },
           // Tileflow's compiled styles are validated when they are built.
           validateStyle: stableMapOptions?.validateStyle ?? false,
+          maxPitch: stableMapOptions?.maxPitch ?? tileflowMaxPitch,
           transformRequest,
         });
 

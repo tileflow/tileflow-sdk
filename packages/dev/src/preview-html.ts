@@ -137,6 +137,8 @@ export function renderTileflowPreviewHtml(
       import {registerTileflowContourProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowPmtilesProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {attachTileflowNauticalLights, attachTileflowNotices} from "${basePath}/__runtime/tileflow-browser.js";
+      import {attachTileflowSky, attachTileflowSkyHaze, tileflowMaxPitch} from "${basePath}/__runtime/tileflow-browser.js";
+      import {tileflowCanvasContextAttributes} from "${basePath}/__runtime/tileflow-browser.js";
       import {createTileflowMap3D} from "${basePath}/__runtime/tileflow-browser.js";
       import {readTileflowSunPreset, resolveTileflowSun, tileflowDefaultSunPreset} from "${basePath}/__runtime/tileflow-browser.js";
 
@@ -178,6 +180,8 @@ export function renderTileflowPreviewHtml(
         requestedMapWorkerCount <= 3
           ? requestedMapWorkerCount
           : undefined;
+      // Benchmarks compare the multisampled canvas with a single-sampled one through this override.
+      const mapAntialias = readToggleFromUrl("mapAntialias", true);
       const mapBenchmarkLongitude = Number(previewSearchParameters.get("lng"));
       const mapBenchmarkLatitude = Number(previewSearchParameters.get("lat"));
       const mapBenchmarkCenter =
@@ -1576,8 +1580,10 @@ export function renderTileflowPreviewHtml(
         registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
         registerTileflowPmtilesProtocol({addProtocol: maplibregl.addProtocol});
         const map = new maplibregl.Map({
+          canvasContextAttributes: tileflowCanvasContextAttributes({antialias: mapAntialias}),
           collectResourceTiming: mapBenchmarkEnabled || Boolean(devtoolsObserver),
           container: "map",
+          maxPitch: tileflowMaxPitch,
           style: styleUrl,
           transformRequest: previewTransformRequest,
           ...resolveInitialMapOptions(previewMapOptions)
@@ -1585,6 +1591,8 @@ export function renderTileflowPreviewHtml(
         globalThis.__tileflowPreviewMap = map;
         attachTileflowNotices(map);
         attachTileflowNauticalLights(map);
+        attachTileflowSky(map);
+        attachTileflowSkyHaze(map);
         devtoolsObserver?.attach(map);
         installMapBenchmark(map);
         if (window.parent === window) map.addControl(new maplibregl.NavigationControl(), "top-right");

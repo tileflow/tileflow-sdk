@@ -94,6 +94,9 @@ availability, attribution, and retry requirements before making requests.
 - [`@tileflow/routing`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/routing/README.md):
   routes, isochrones, travel-time matrices, map matching, and nearest-road lookups for driving,
   walking, cycling, and trucks.
+- [`@tileflow/elevation`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/elevation/README.md):
+  point heights, elevation profiles with climbs and grades, GPX tracks, and a MapLibre profile
+  control.
 - [`@tileflow/geoip`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/geoip/README.md):
   approximate location of the calling network connection; no private API key.
 - [`@tileflow/coordinates`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/coordinates/README.md):

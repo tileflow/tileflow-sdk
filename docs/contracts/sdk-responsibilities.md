@@ -190,6 +190,19 @@ matches its request, accepts an injected Fetch implementation and AbortSignal, a
 automatic retry. It does not compute routes, select a routing engine, render a map, provide live
 navigation or traffic-aware travel times, or infer speed limits that OpenStreetMap does not record.
 
+### `@tileflow/elevation`
+
+Owns strict point and profile request and answer schemas, one bounded headless HTTP client with
+batch and GeoJSON helpers, pure profile functions (distances, summaries with the API's climb and
+grade rules, interpolation, stretches, grades), a DOM-free GPX reader, and the `./maplibre`
+elevation profile control. `./profile` exposes the profile functions, the GPX reader and the
+limits without the client or its validation library. It authenticates to Tileflow, validates that each answer matches its
+request, accepts an injected Fetch implementation and AbortSignal, and performs no automatic retry.
+The control imports no MapLibre code: it works with any map object that has the methods it
+declares, reaches the document only through the map's container or a given one, and owns only the
+map source and layers it adds. It does not sample elevation data itself, select a terrain source,
+plan routes or render terrain.
+
 ### Build integrations
 
 `@tileflow/vite`, `@tileflow/next`, and `@tileflow/webpack` translate host build/watch hooks into

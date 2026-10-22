@@ -50,7 +50,8 @@ import {tileflowFeatureColour} from './feature-colour-browser';
 import {inspectModelTriangles, type TileflowModelInspection} from './model-inspection';
 import {createTileflowPlacedModels, type TileflowPlacedModel} from './models-3d-browser';
 import {modelEmitterFragment, modelEmitterVertex} from './models-3d-emitters';
-import {bindModelMaterial} from './models-3d-materials-browser';
+import {type TileflowModelLevelView, tileflowModelShadowLevel} from './models-3d-levels';
+import {bindModelMaterial, bindModelSurfaceShared} from './models-3d-materials-browser';
 import {
   type TileflowModelLightingRole,
   tileflowModelLightingRoles,
@@ -818,7 +819,7 @@ export function createTileflowBuildings3D(
       return {zoom: camera.zoom, tiles: [left, top, right, bottom], tallest};
     },
     key: () =>
-      `buildings:${visibleScale().toFixed(4)}:${modelScale().toFixed(4)}:${generation}:${models.key()}:${programs.depth ? 1 : 0}`,
+      `buildings:${visibleScale().toFixed(4)}:${modelScale().toFixed(4)}:${generation}:${models.key()}:${programs.depth ? 1 : 0}:${(modelScale() > 0 ? modelsDrawn() : []).map(shadowLevelOf).join('')}`,
     drawDepth(context, frame) {
       const program = programs.depth;
       if (!program) return;
@@ -876,15 +877,25 @@ export function createTileflowBuildings3D(
       const modelsShown = modelScale();
       context.uniform1f(modelDepth.uniforms.u_scale!, modelsShown);
       context.uniform1f(modelDepth.uniforms.u_metres!, frame.metres);
-      const centre = map.getCenter();
       for (const model of modelsShown > 0 ? modelsDrawn() : []) {
         const stand = standOf(model);
+        const offset = frame.offsetOf({x: stand.tileX, y: stand.tileY}, camera.zoom);
+        // A model wholly outside the light's view casts nothing into it.
+        const [left, top, low, right, bottom, high] = modelBox(model, stand);
+        if (
+          !buildingBoxVisible(frame.light.matrix, [
+            (left + offset[0]) * frame.metres,
+            -(bottom + offset[1]) * frame.metres,
+            low,
+            (right + offset[0]) * frame.metres,
+            -(top + offset[1]) * frame.metres,
+            high,
+          ])
+        )
+          continue;
         setPlacement(context, modelDepth, model, stand);
-        context.uniform2f(
-          modelDepth.uniforms.u_offset!,
-          ...frame.offsetOf({x: stand.tileX, y: stand.tileY}, camera.zoom),
-        );
-        drawModel(context, modelDepth, model, models.levelOf(model, centre), 'depth');
+        context.uniform2f(modelDepth.uniforms.u_offset!, ...offset);
+        drawModel(context, modelDepth, model, shadowLevelOf(model), 'depth');
       }
     },
   };
@@ -922,6 +933,33 @@ export function createTileflowBuildings3D(
     };
   }
 
+  /**
+   * A box round a model in its tile, as a tile's buildings are tested: its reach either side of its
+   * origin in tile units, then its height in metres, whole however far the city has grown.
+   */
+  function modelBox(
+    model: TileflowPlacedModel,
+    stand: ReturnType<typeof standOf>,
+  ): [number, number, number, number, number, number] {
+    const reach = stand.reach * tileflowBuildingExtent;
+    const [ax, ay] = stand.anchor;
+    const [, , low, , , high] = model.model.bounds;
+    return [ax - reach, ay - reach, Math.min(0, low), ax + reach, ay + reach, high + 0.1];
+  }
+
+  /** The view a model's level of detail is chosen for: the camera round it. */
+  function modelView(model: TileflowPlacedModel): TileflowModelLevelView {
+    return {camera: modelCamera(model)};
+  }
+
+  function levelOf(model: TileflowPlacedModel): number {
+    return models.levelOf(model, modelView(model));
+  }
+
+  function shadowLevelOf(model: TileflowPlacedModel): number {
+    return tileflowModelShadowLevel(levelOf(model), model.model.levels.length);
+  }
+
   function setPlacement(
     context: WebGL2RenderingContext,
     program: Program,
@@ -952,6 +990,7 @@ export function createTileflowBuildings3D(
       model.model.bounds[5] - model.model.bounds[2],
     );
     context.bindVertexArray(buffers.vao);
+    if (buffers.surface) bindModelSurfaceShared(context, buffers.surface);
     if (!mesh.surface) {
       if (pass === 'blend') return;
       bindModelMaterial(context, program.uniforms, undefined, undefined, blank!);
@@ -1154,6 +1193,24 @@ export function createTileflowBuildings3D(
     context.uniform4fv(uniforms.u_projection_clipping_plane!, data.clippingPlane);
     context.uniform1f(uniforms.u_projection_transition!, data.projectionTransition);
     context.uniformMatrix4fv(uniforms.u_projection_fallback_matrix!, false, data.fallbackMatrix);
+    return data;
+  }
+
+  /**
+   * Whether a box in a tile (see `modelBox`), projected by the tile's projection data, may show:
+   * inside the view and not wholly past the full haze. Globe projection is nonlinear: everything
+   * shows through its transition.
+   */
+  function modelInView(
+    args: ProjectionArgs,
+    data: ReturnType<typeof project>,
+    box: readonly [number, number, number, number, number, number],
+  ): boolean {
+    if (args.shaderData.variantName !== 'mercator') return true;
+    return (
+      buildingBoxVisible(data.mainMatrix, box) &&
+      (hazeDepth === Infinity || buildingBoxDepth(data.mainMatrix, box) < hazeDepth)
+    );
   }
 
   /** The disc the city's tiles cover whole, in metres round a point, for the distance haze. */
@@ -1511,8 +1568,10 @@ export function createTileflowBuildings3D(
         context.uniform3fv(m.u_part_colours!, partColoursNow());
         context.uniform1fv(m.u_part_mix!, partMixNow());
         scene.bindShadow(context, m, light.strength);
-        const centre = map.getCenter();
         for (const entry of list) {
+          const stand = standOf(entry);
+          const data = project(context, model, args, stand.tileX, stand.tileY);
+          if (!modelInView(args, data, modelBox(entry, stand))) continue;
           const emission = modelLightingNow(entry.model.id);
           context.uniform1fv(m.u_role_emission!, emission.strengths);
           context.uniform4fv(m.u_role_emission_colour!, emission.colours);
@@ -1520,8 +1579,6 @@ export function createTileflowBuildings3D(
           context.uniform1fv(m.u_role_emission_power!, emission.powers);
           context.uniform4fv(m.u_role_colour!, emission.materialColours);
           context.uniform4fv(m.u_role_material!, emission.materials);
-          const stand = standOf(entry);
-          project(context, model, args, stand.tileX, stand.tileY);
           const at = placed(stand.tileX, stand.tileY);
           context.uniform2f(m.u_offset!, ...at.offset);
           context.uniform1f(m.u_metres!, at.metres);
@@ -1531,7 +1588,7 @@ export function createTileflowBuildings3D(
             m.u_opacity!,
             pass === 'blend' ? modelsOpacity * appearanceOf(entry, now) : 1,
           );
-          drawModel(context, model, entry, models.levelOf(entry, centre), pass);
+          drawModel(context, model, entry, levelOf(entry), pass);
         }
       }
     }
@@ -1655,7 +1712,7 @@ export function createTileflowBuildings3D(
       const palette = partColoursNow();
       const paletteMix = partMixNow();
       for (const entry of standing) {
-        const level = models.levelOf(entry, map.getCenter());
+        const level = levelOf(entry);
         const surface = entry.model.levels[level]!.surface;
         if (!surface?.emitters?.length) continue;
         const stand = standOf(entry),
@@ -1740,9 +1797,12 @@ export function createTileflowBuildings3D(
       context.attachShader(program, fragment);
       const bound =
         name === 'model' || name === 'modelDepth'
-          ? [...tileflowModelAttributes, ...tileflowModelSurfaceAttributes]
-          : tileflowBuildingAttributes;
-      for (const [index, [attribute]] of bound.entries())
+          ? [
+              ...tileflowModelAttributes.map(([attribute]) => attribute),
+              ...tileflowModelSurfaceAttributes,
+            ]
+          : tileflowBuildingAttributes.map(([attribute]) => attribute);
+      for (const [index, attribute] of bound.entries())
         context.bindAttribLocation(program, index, attribute);
       context.linkProgram(program);
       return {name, program, vertex, fragment, variant: shaderData.variantName};

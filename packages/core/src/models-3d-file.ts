@@ -10,7 +10,7 @@
 // renderer. It has no DOM dependency, and loads meshoptimizer's decoder only to read a compressed
 // file.
 import type {TileflowLandmarkFootprint} from './models-3d-landmarks';
-import {checkTileflowModelSurface, type TileflowModelSurface} from './models-3d-materials';
+import {checkTileflowModelSurface} from './models-3d-materials';
 import {
   type TileflowModel,
   type TileflowModelBytes,
@@ -19,6 +19,7 @@ import {
   tileflowModelLightingRoles,
   tileflowModelLimits,
   tileflowModelParts,
+  type TileflowModelSurfaceBytes,
   tileflowModelVertexBytes,
 } from './models-3d-model';
 
@@ -854,7 +855,7 @@ function readLevelNode(
       : new Uint16Array(indexBytes.buffer, indexBytes.byteOffset, indexCount);
   for (const vertex of indices) if (vertex >= count) throw new Error();
   const physical = node.extras?.tileflow?.surface;
-  let surface: (TileflowModelSurface & {attributes: Float32Array}) | undefined;
+  let surface: TileflowModelSurfaceBytes | undefined;
   if (physical !== undefined) {
     if (
       physical?.version !== 1 ||
@@ -881,8 +882,12 @@ function readLevelNode(
       throw new Error();
     const attributeBytes = viewBytes(uv.bufferView, 32, count * 32);
     if (!Array.isArray(physical.textures) || physical.textures.length > 32) throw new Error();
-    surface = {
-      attributes: new Float32Array(attributeBytes.buffer, attributeBytes.byteOffset, count * 8),
+    const attributes = new Float32Array(
+      attributeBytes.buffer,
+      attributeBytes.byteOffset,
+      count * 8,
+    );
+    const read = {
       materials: physical.materials,
       ranges: physical.ranges,
       textures: physical.textures.map((texture: any) => {
@@ -897,7 +902,8 @@ function readLevelNode(
       }),
       ...(physical.emitters === undefined ? {} : {emitters: physical.emitters}),
     };
-    checkTileflowModelSurface(surface, count, indexCount);
+    checkTileflowModelSurface({...read, attributes}, count, indexCount);
+    surface = {...read, uv: column(attributes, 0), rgba: column(attributes, 4)};
   }
   return {
     vertices,
@@ -908,6 +914,23 @@ function readLevelNode(
     max: max as number[],
     surface,
   };
+}
+
+/**
+ * Four of the eight floats each vertex of a surface holds, from `first`: four a vertex, or just four
+ * when every vertex holds the same, as a model without textures or vertex colours does.
+ */
+function column(attributes: Float32Array, first: number): Float32Array {
+  const out = attributes.slice(first, first + 4);
+  for (let at = 8 + first; at < attributes.length; at += 8)
+    for (let component = 0; component < 4; component += 1)
+      if (attributes[at + component] !== out[component]) {
+        const all = new Float32Array(attributes.length / 2);
+        for (let vertex = 0; vertex < all.length / 4; vertex += 1)
+          all.set(attributes.subarray(vertex * 8 + first, vertex * 8 + first + 4), vertex * 4);
+        return all;
+      }
+  return out;
 }
 
 /** A glTF binary's JSON and binary chunks. */

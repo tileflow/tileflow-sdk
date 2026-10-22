@@ -16,11 +16,11 @@ export const tileflowModelAttributes = [
   ['a_lighting_role', 1, 'UNSIGNED_BYTE', false, 15],
 ] as const;
 
-/** Optional 32-byte surface stream, following the legacy vertex attributes. */
-export const tileflowModelSurfaceAttributes = [
-  ['a_uv', 4, 'FLOAT', false, 0],
-  ['a_rgba', 4, 'FLOAT', false, 16],
-] as const;
+/**
+ * The optional surface attributes, following the legacy vertex attributes: each its own stream of
+ * four floats a vertex, or one value every vertex shares, set before drawing instead of uploaded.
+ */
+export const tileflowModelSurfaceAttributes = ['a_uv', 'a_rgba'] as const;
 
 const attributes = `
 in vec3 a_position; // whole steps from the level's centre, in glTF's axes

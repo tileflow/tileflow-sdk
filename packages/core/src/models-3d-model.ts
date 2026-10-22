@@ -99,8 +99,20 @@ export type TileflowModelLevelBytes = Readonly<{
   /** Metres in one step of a position. */
   step: number;
   /** Optional physical data; absent data retains the legacy palette lighting. */
-  surface?: TileflowModelSurface & {attributes: Float32Array};
+  surface?: TileflowModelSurfaceBytes;
 }>;
+
+/**
+ * A decoded level's physical data. Its vertex attributes are split in two, each four floats a vertex
+ * or, when every vertex shares them, just four, so a value that never changes is not uploaded.
+ */
+export type TileflowModelSurfaceBytes = Omit<TileflowModelSurface, 'attributes'> &
+  Readonly<{
+    /** UV0 and UV1. */
+    uv: Float32Array;
+    /** Linear vertex RGBA. */
+    rgba: Float32Array;
+  }>;
 
 /** A decoded model, as the renderer draws it. */
 export type TileflowModelBytes = Readonly<{

@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {createStyleResult} from '@tileflow/core';
 import {cliFixtureArguments} from '../../../test-support/cli-fixture';
+import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {registerAiCommands} from '../src/ai-commands';
 
 type ProjectedDiagnostic = {
@@ -482,6 +483,7 @@ test('semantic-diff requires explicit from/to selections', async (t) => {
 async function createFixture(t: TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-semantic-commands-'));
   t.after(() => rm(directory, {force: true, recursive: true}));
+  await linkWorkspacePackages(directory);
   return directory;
 }
 

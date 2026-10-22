@@ -213,7 +213,7 @@ function placedModels(
         .map((id) => `${id}.glb`)
         .join(
           ', ',
-        )} to a map.models directory, with materials named surface, secondary, glass, accent or roof, and run the Node build so the directories are prepared.`,
+        )} to a map.models directory, with materials named surface, secondary, glass, accent, roof, water, vegetation or wood, and run the Node build so the directories are prepared.`,
     );
   return {
     models: placements.map((entry) => ({

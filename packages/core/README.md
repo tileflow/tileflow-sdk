@@ -159,6 +159,8 @@ layers, and `setSun()` places it by direction or by the real sun of a date and p
 `createTileflowBuildings3D` enables worker-meshed buildings rising in at zoom 15–15.3, with scene
 sun, cast/contact shadows and 0.8 m rounded corners. Each effect is independently overridable. See
 [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md).
+Building models distinguish `water`, `vegetation` and `wood` through `modelColors`, independently
+of facade, glazing and roof colours. These parts default to non-emitting `unclassified` lighting.
 Street lights default to off, including in Streets. Set `roads.streetLights.enabled: true` and mount
 `createTileflowStreetLights` to enable them; see
 [street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md).

@@ -313,8 +313,8 @@ address; the map then needs no `.glb` of its own for it.
 
 How to prepare a model:
 
-- **Materials name the parts.** Name each material `surface`, `secondary`, `glass`, `accent` or
-  `roof` (an exporter's `.001` suffix is ignored); a model whose materials name a tree's parts is a
+- **Materials name the parts.** Name each material `surface`, `secondary`, `glass`, `accent`,
+  `roof`, `water`, `vegetation` or `wood` (an exporter's `.001` suffix is ignored); a model whose materials name a tree's parts is a
   [tree model](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md)
   instead. Each part takes its colour from `modelColors`, or from the buildings' colour when the
   design gives it none, so the model follows the theme from day to night. Like every visual
@@ -324,7 +324,9 @@ How to prepare a model:
 - **Architectural roles control lighting.** A material may set
   `extras.tileflow.lightingRole` to `wall`, `door`, `roof`, `window`, `lamp`, `logo` or
   `unclassified`. This preserves its palette slot. Without a role, `surface`, `secondary` and
-  `accent` are walls, `glass` is a window, and `roof` is a roof.
+  `accent` are walls, `glass` is a window, and `roof` is a roof. `water`, `vegetation` and `wood`
+  default to `unclassified`, so a pool or palm never inherits window emission. The new slots
+  require a matching Core consumer; earlier model indices and vertex layout remain unchanged.
 - **Metres round an origin on the ground.** The origin is where the model stands, with the model
   above it and its own north along +y once read Z up; nothing may lie more than half a metre below
   it.

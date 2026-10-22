@@ -435,13 +435,25 @@ test('the design reads the models a map places, the colours of their parts and i
       {model: 'far-away', url: '/y.glb', at: [0, 89]},
       {model: 'no-file', at: [0, 0]},
     ],
-    modelColors: {accent: '#806040', surface: 7, stone: '#ffffff'},
+    modelColors: {
+      accent: '#806040',
+      water: '#227799',
+      vegetation: '#527346',
+      wood: '#80705a',
+      surface: 7,
+      stone: '#ffffff',
+    },
     landmarks: {url: 'https://api.tileflow.dev/landmarks/tiles.json'},
   });
   assert.deepEqual(design?.models, [
     {model: 'eiffel-tower', url: '/models/eiffel-tower.glb', at: [2.2945, 48.8583], heading: 315},
   ]);
-  assert.deepEqual(design?.modelColors, {accent: '#806040'});
+  assert.deepEqual(design?.modelColors, {
+    accent: '#806040',
+    water: '#227799',
+    vegetation: '#527346',
+    wood: '#80705a',
+  });
   assert.equal(design?.lighting, 'sun');
   assert.equal(design?.shadows, true);
   assert.equal(design?.occlusion, true);
@@ -824,4 +836,35 @@ test("a landmark's tile and region follow from where it stands, and a region's i
     undefined,
     'footprints travel in whole decimetres',
   );
+});
+
+test('natural model surfaces preserve palette indices and non-emitting roles through encoding', async () => {
+  assert.deepEqual(tileflowModelParts, {
+    surface: 0,
+    secondary: 1,
+    glass: 2,
+    accent: 3,
+    roof: 4,
+    water: 5,
+    vegetation: 6,
+    wood: 7,
+  });
+
+  for (const part of [
+    tileflowModelParts.water,
+    tileflowModelParts.vegetation,
+    tileflowModelParts.wood,
+  ]) {
+    const mesh = box();
+    const natural = {...mesh, parts: mesh.parts.map(() => part)};
+    const bytes = encodeTileflowModels([tower({levels: [natural]})]);
+    const [decoded] = await decodeTileflowModels(bytes);
+    assert.ok(decoded);
+
+    const vertices = decoded.levels[0]!.vertices;
+    for (let at = 0; at < vertices.length; at += 16) {
+      assert.equal(vertices[at + 12], part);
+      assert.equal(vertices[at + 15], 0);
+    }
+  }
 });

@@ -222,6 +222,11 @@ The map uses Tileflow data and assets, including packaged DINish and Noto Sans f
 reference uses DIN Pro Medium, so font shapes and stroke weight
 remain an approximation. Available POIs, abbreviated names,
 proprietary landmark models, transit branding, and building detail can differ from the reference.
+
+Building-model materials named `water`, `vegetation` and `wood` inherit Streets’ water, foliage
+and trunk colours across its lighting presets and colour families. Their colours can be overridden
+through `buildings.threeDimensional.modelColors`, independently of windows and roof surfaces.
+They require a Core consumer supporting these material categories.
 See [map design and asset provenance](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/docs/design-and-assets.md).
 
 ### Blueprint naming

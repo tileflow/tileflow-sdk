@@ -73,7 +73,7 @@ export function registerModelCommands(
       return emitFailure(
         options.json,
         'no_building_models',
-        'No building models were found. A building model is a .glb whose materials name its parts: surface, secondary, glass, accent and roof.',
+        'No building models were found. A building model is a .glb whose materials name its parts: surface, secondary, glass, accent, roof, water, vegetation and wood.',
       );
     }
     const authority = await resolveTeamAuthority(options, ['models:write'], dependencies);
@@ -368,7 +368,7 @@ async function prepareFromPaths(paths: readonly string[]) {
       for (const name of selected)
         if (!prepared.buildings[name])
           throw new Error(
-            `${display}/${name}.glb is not a building model: its materials must name its parts (surface, secondary, glass, accent, roof).`,
+            `${display}/${name}.glb is not a building model: its materials must name its parts (surface, secondary, glass, accent, roof, water, vegetation, wood).`,
           );
   }
   return models;

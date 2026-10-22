@@ -1,3 +1,5 @@
+import {tileflowModelPartCount} from './models-3d-model';
+
 /** Shared glTF texture and alpha evaluation for colour and solar-depth passes. */
 export const modelMaterialSampling = `
 in vec4 v_uv;
@@ -53,8 +55,8 @@ uniform vec3 u_emissive;
 uniform float u_normal_strength;
 uniform float u_occlusion_strength;
 uniform bool u_unlit;
-uniform vec3 u_part_colours[5];
-uniform float u_part_mix[5];
+uniform vec3 u_part_colours[${tileflowModelPartCount}];
+uniform float u_part_mix[${tileflowModelPartCount}];
 uniform vec4 u_role_colour[7];
 uniform vec4 u_role_material[7]; // metallic, roughness, their respective override weights
 

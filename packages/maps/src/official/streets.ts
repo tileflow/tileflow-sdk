@@ -2212,6 +2212,11 @@ export const streets = bindOfficialMapTheme(
           // stand beside the flat fill, so they require this mode.
           mode: 'flat',
           threeDimensional: {
+            modelColors: {
+              water: token.color('hydro.water'),
+              vegetation: token.color('vegetation.tree.broadleaf.b'),
+              wood: token.color('vegetation.tree.bark'),
+            },
             floodLight: {
               intensity: token.number('buildings.floodLight.intensity'),
               brightnessScale: token.number('buildings.floodLight.brightnessScale'),

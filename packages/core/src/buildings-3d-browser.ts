@@ -172,6 +172,9 @@ const derivedParts: Record<TileflowModelPart, (rgb: readonly number[]) => number
   glass: (rgb) => rgb.map((channel, index) => channel * 0.42 + [0.56, 0.64, 0.72][index]! * 0.42),
   accent: (rgb) => rgb.map((channel) => channel * 0.62),
   roof: (rgb) => rgb.map((channel) => channel * 0.9),
+  water: (rgb) => [...rgb],
+  vegetation: (rgb) => [...rgb],
+  wood: (rgb) => [...rgb],
 };
 
 type Program = {program: WebGLProgram; uniforms: Record<string, WebGLUniformLocation | null>};
@@ -1000,7 +1003,7 @@ export function createTileflowBuildings3D(
   function partColoursNow(): Float32Array {
     const {themes, lower, upper, mix} = designsOnScreen();
     const base = themeColour();
-    const out = new Float32Array(15);
+    const out = new Float32Array(Object.keys(tileflowModelParts).length * 3);
     for (const [part, index] of Object.entries(tileflowModelParts) as [
       TileflowModelPart,
       number,

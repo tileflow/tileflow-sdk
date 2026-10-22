@@ -1,5 +1,5 @@
 // Turns a glTF binary into a level of Core's building model: each material names its part of the
-// building (surface, secondary, glass, accent or roof), the model keeps its size in metres round its
+// building (surface, secondary, glass, accent, roof, water, vegetation or wood), the model keeps its size in metres round its
 // origin (where it stands on the ground, x east and y north), and its colours become shades within
 // its parts' theme colours. The footprint, the outline on the ground the model stands in for, is a
 // mesh whose material is named `footprint`, which is never drawn, or else the nearest level's own
@@ -10,6 +10,7 @@ import {
   tileflowModelLightingRoles,
   tileflowModelLimits,
   type TileflowModelMesh,
+  type TileflowModelPart,
   tileflowModelParts,
 } from '@tileflow/core';
 import {buildingModelSurface} from './building-model-materials';
@@ -20,9 +21,9 @@ import {
   type TileflowGltfPrimitive,
 } from './gltf-reader';
 
-export const tileflowBuildingModelPartNames = Object.keys(tileflowModelParts) as readonly (
-  'surface' | 'secondary' | 'glass' | 'accent' | 'roof'
-)[];
+export const tileflowBuildingModelPartNames = Object.keys(
+  tileflowModelParts,
+) as readonly TileflowModelPart[];
 
 /** Whether every material of a glTF binary names a part of a building, so it is a building model. */
 export function isTileflowBuildingModel(primitives: readonly TileflowGltfPrimitive[]): boolean {
@@ -68,8 +69,8 @@ export function prepareTileflowBuildingModelMesh(
     if (part === undefined)
       throw new TileflowGltfError(
         primitive.material === undefined
-          ? 'has a mesh without a material; name each material surface, secondary, glass, accent or roof'
-          : `has a material "${primitive.material}" that names no part of a building; name each material surface, secondary, glass, accent or roof`,
+          ? 'has a mesh without a material; name each material surface, secondary, glass, accent, roof, water, vegetation or wood'
+          : `has a material "${primitive.material}" that names no part of a building; name each material surface, secondary, glass, accent, roof, water, vegetation or wood`,
       );
     const offset = positions.length / 3;
     const role =

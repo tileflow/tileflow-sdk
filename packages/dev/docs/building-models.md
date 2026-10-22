@@ -7,7 +7,9 @@ textures. Animations, skins and morph targets are not evaluated; export their st
 
 ## Separate colour from architectural role
 
-Material names select a palette slot: `surface`, `secondary`, `glass`, `accent` or `roof`.
+Material names select a palette slot: `surface`, `secondary`, `glass`, `accent`, `roof`,
+`water`, `vegetation` or `wood`. The last three classify water surfaces, foliage and timber/trunks
+inside a building model. They remain building geometry; they do not create standalone trees.
 The optional `material.extras.tileflow.lightingRole` selects lighting independently:
 
 ```json
@@ -31,11 +33,18 @@ geometry; it does not turn on light by itself. The map supplies emission through
 
 Legacy models without an explicit role use these defaults:
 
-| Palette slot                     | Lighting role |
-| -------------------------------- | ------------- |
-| `surface`, `secondary`, `accent` | `wall`        |
-| `glass`                          | `window`      |
-| `roof`                           | `roof`        |
+| Palette slot                     | Lighting role  |
+| -------------------------------- | -------------- |
+| `surface`, `secondary`, `accent` | `wall`         |
+| `glass`                          | `window`       |
+| `roof`                           | `roof`         |
+| `water`, `vegetation`, `wood`    | `unclassified` |
+
+`water`, `vegetation` and `wood` require a Core consumer that supports these palette slots.
+Their indices append to the original five; existing models retain their indices and behaviour.
+Streets colours them from its water and tree palette in every theme. Other maps may set the
+corresponding `modelColors` keys. These are colour categories; physical properties and emission
+remain controlled by the authored material and its independent lighting role.
 
 Doors, lamps and logos require an explicit role. Use `unclassified` for a part that must not inherit
 a role. Invalid role names fail preparation. An exporter's numeric material suffix, such as

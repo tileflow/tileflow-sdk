@@ -1344,6 +1344,9 @@ const buildingsModuleSchema = z
             glass: themeColorValueSchema.optional(),
             accent: themeColorValueSchema.optional(),
             roof: themeColorValueSchema.optional(),
+            water: themeColorValueSchema.optional(),
+            vegetation: themeColorValueSchema.optional(),
+            wood: themeColorValueSchema.optional(),
           })
           .strict()
           .optional(),

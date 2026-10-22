@@ -5,7 +5,7 @@ import type {
   TileflowThemeNumberValue,
   TileflowThemeValue,
 } from '../../cartography/values';
-import type {TileflowModelLightingRole} from '../../models-3d-model';
+import type {TileflowModelLightingRole, TileflowModelPart} from '../../models-3d-model';
 
 export type TileflowBuildingMode = '3d' | 'flat';
 
@@ -113,7 +113,7 @@ export type TileflowBuildingsThreeDimensionalStyle = {
 };
 
 /** The parts of a building model, as its materials name them. */
-export type TileflowBuildingModelPart = 'surface' | 'secondary' | 'glass' | 'accent' | 'roof';
+export type TileflowBuildingModelPart = TileflowModelPart;
 
 /** Where a building model stands. */
 export type TileflowBuildingModelPlacementConfig = {

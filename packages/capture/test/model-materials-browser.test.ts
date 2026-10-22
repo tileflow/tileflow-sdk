@@ -21,6 +21,8 @@ test(
           const vertex = `#version 300 es
 precision highp float;
 uniform float u_test_visibility;
+uniform int u_test_part;
+uniform int u_test_role;
 out vec3 v_colour;
 out vec3 v_normal;
 out vec3 v_shadow;
@@ -41,8 +43,8 @@ void main() {
   v_normal = vec3(0.0, 0.0, 1.0);
   v_shadow = vec3(0.5);
   v_light = u_test_visibility;
-  v_lighting_role = 1;
-  v_part = 0;
+  v_lighting_role = u_test_role;
+  v_part = u_test_part;
   v_height = 0.0;
   v_uv = vec4(uv, uv);
   v_rgba = vec4(0.5, 1.0, 1.0, 0.5);
@@ -118,6 +120,8 @@ void main() {
             integer(`u_material_texture${channel}`, 2 + channel);
             gl.uniform4f(loc(`u_texture_transform[${channel}]`), 0, 0, 1, 1);
           }
+          integer('u_test_part', 0);
+          integer('u_test_role', 1);
           integer('u_physical', 1);
           integer('u_unlit', 1);
           scalar('u_test_visibility', 1);
@@ -164,6 +168,17 @@ void main() {
           scalar('u_part_mix[0]', 1);
           const recoloured = read();
           scalar('u_part_mix[0]', 0);
+          integer('u_test_role', 0);
+          const naturalParts = [5, 6, 7].map((part, channel) => {
+            integer('u_test_part', part);
+            vector(`u_part_colours[${part}]`, ...[0, 1, 2].map((c) => Number(c === channel)));
+            scalar(`u_part_mix[${part}]`, 1);
+            const pixel = read();
+            scalar(`u_part_mix[${part}]`, 0);
+            return pixel;
+          });
+          integer('u_test_part', 0);
+          integer('u_test_role', 1);
           gl.uniform4f(loc('u_role_colour[1]'), 0, 0, 0, 0);
           integer('u_unlit', 0);
           scalar('u_texture_enabled[0]', 0);
@@ -255,6 +270,7 @@ void main() {
             blended,
             tinted,
             recoloured,
+            naturalParts,
             ambient,
             ambientOccluded,
             direct,
@@ -298,6 +314,11 @@ void main() {
         [0, 0, 255, 255],
         'palette overrides retain recolouring of physical materials',
       );
+      for (const [channel, pixel] of result.naturalParts.entries()) {
+        assert.ok(pixel[channel]! > 180, 'new palette slots reach the physical shader');
+        for (const other of [0, 1, 2].filter((value) => value !== channel))
+          assert.equal(pixel[other], 0, 'natural material categories recolour independently');
+      }
       assert.ok(result.ambientOccluded[0]! < result.ambient[0]! * 0.7);
       assert.deepEqual(
         result.direct,

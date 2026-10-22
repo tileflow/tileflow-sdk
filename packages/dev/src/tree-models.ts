@@ -2,7 +2,7 @@
 // checked and turned into Core's models. A model's materials say what it is: one whose materials
 // name the parts of a tree (bark, leaves, fronds, stem) becomes a compact tree model the compiler
 // carries in the style; one whose materials name the parts of a building (surface, secondary, glass,
-// accent, roof) becomes a prepared model file the build writes beside the style. A file's name is
+// accent, roof, water, vegetation, wood) becomes a prepared model file the build writes beside the style. A file's name is
 // its model's id; `<id>.far.glb` is the same model for far trees, and `<id>.mid.glb` and
 // `<id>.far.glb` a building's farther levels of detail. A later directory's model replaces an
 // earlier one of the same id, as icons do. Tileflow's landmarks are packaged from the same building
@@ -171,7 +171,7 @@ function buildingModelEntry(id: string, levels: TileflowBuildingModelLevels): Ti
   const primitives = readTileflowGltfTriangles(levels.near, {materials: true});
   if (!isTileflowBuildingModel(primitives))
     throw new TileflowGltfError(
-      'is not a building model; name each material surface, secondary, glass, accent or roof',
+      'is not a building model; name each material surface, secondary, glass, accent, roof, water, vegetation or wood',
     );
   const meshes: TileflowModelMesh[] = [prepareTileflowBuildingModelMesh(primitives)];
   for (const level of [levels.mid, levels.far])

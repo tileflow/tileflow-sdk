@@ -14,9 +14,14 @@ export const tileflowModelParts = Object.freeze({
   glass: 2,
   accent: 3,
   roof: 4,
+  water: 5,
+  vegetation: 6,
+  wood: 7,
 });
 
 export type TileflowModelPart = keyof typeof tileflowModelParts;
+
+export const tileflowModelPartCount = Object.keys(tileflowModelParts).length;
 
 /** Architectural roles control lighting independently of the model's palette slots. */
 export const tileflowModelLightingRoles = Object.freeze({
@@ -31,8 +36,8 @@ export const tileflowModelLightingRoles = Object.freeze({
 
 export type TileflowModelLightingRole = keyof typeof tileflowModelLightingRoles;
 
-/** Legacy palette slots map to wall, wall, window, wall and roof; doors and logos are explicit. */
-export const tileflowModelDefaultLightingRoles = Object.freeze([1, 1, 4, 1, 3] as const);
+/** Natural surfaces are unclassified; architectural parts retain their original role mapping. */
+export const tileflowModelDefaultLightingRoles = Object.freeze([1, 1, 4, 1, 3, 0, 0, 0] as const);
 
 /** What a model may hold. */
 export const tileflowModelLimits = Object.freeze({

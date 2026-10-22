@@ -273,7 +273,7 @@ test('one building model prepares from its levels into the file a build writes',
   assert.equal(model?.levels.length, 2);
   await assert.rejects(
     prepareTileflowBuildingModel('tree', {near: smallTree()}),
-    /is not a building model; name each material surface, secondary, glass, accent or roof/,
+    /is not a building model; name each material surface, secondary, glass, accent, roof, water, vegetation or wood/,
   );
 });
 
@@ -356,4 +356,24 @@ test('a map places a model served elsewhere by its address, with no file of its 
     /^generations\/[a-f0-9]{64}\/styles\/paris\//u.test(file.fileName),
   );
   assert.ok(generation && String(generation.source).includes(url));
+});
+
+test('water, vegetation and wood remain building parts without becoming lit windows or tree models', async () => {
+  for (const part of ['water', 'vegetation', 'wood'] as const) {
+    const bytes = writeGlb(block(12, 10, 5, {wall: part, roof: part}));
+    assert.ok(isTileflowBuildingModel(readTileflowGltfTriangles(bytes)));
+    const mesh = prepareTileflowBuildingModelMesh(bytes, {ambientOcclusion: false});
+    assert.ok(mesh.parts.every((value) => value === tileflowModelParts[part]));
+    assert.ok(mesh.lightingRoles?.every((value) => value === 0));
+
+    const prepared = await prepareTileflowBuildingModel('natural-surface', {near: bytes});
+    const [decoded] = await decodeTileflowModels(prepared.bytes);
+    assert.ok(decoded);
+    for (let at = 0; at < decoded.levels[0]!.vertices.length; at += 16) {
+      assert.equal(decoded.levels[0]!.vertices[at + 12], tileflowModelParts[part]);
+      assert.equal(decoded.levels[0]!.vertices[at + 15], 0);
+    }
+  }
+
+  assert.equal(isTileflowBuildingModel(readTileflowGltfTriangles(smallTree())), false);
 });

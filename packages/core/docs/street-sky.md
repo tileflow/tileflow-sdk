@@ -114,6 +114,14 @@ the same color. It comes in between 45 and 60 degrees, follows the current sky (
 and a sky that follows the sun included), and leaves the globe alone. Place and POI labels above the
 3D layers stay clear.
 
+Tileflow's 3D buildings stand on the tiles round the camera, up to a limit of 25 by default, which
+end well before the horizon. Where that ring ends nearer than the horizon, the haze fits itself to
+it: it is nine-tenths complete at the nearest point where the ring's far side shows across the view,
+and complete soon after, never nearer than three camera distances for the nine-tenths, so a renderer
+held to few tiles does not pull the haze in. Buildings on the ring's far side sink into the ground
+over its last fifth, and nothing past the ring or past the complete haze is drawn. Buildings on the
+near side of a ring held short by the tile limit keep standing.
+
 The haze is drawn twice, from one model: Tileflow's 3D buildings, trees, and placed models haze
 each pixel by its depth, and a band over the flat map, just under the first 3D layer, hazes the
 flat ground by the depth its screen row has. Road names and one-way arrows that a style draws on the

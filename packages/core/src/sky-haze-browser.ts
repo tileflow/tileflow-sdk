@@ -1,14 +1,23 @@
+import {tileflowSceneReach} from './scene-3d-browser';
 import {tileflowSkyLayerId} from './sky-browser';
-import {tileflowSkyHaze, type TileflowSkyHaze} from './sky-haze';
+import {
+  tileflowSkyGroundDepth,
+  tileflowSkyHaze,
+  type TileflowSkyHaze,
+  type TileflowSkyHazeReach,
+} from './sky-haze';
 
 export const tileflowSkyHazeLayerId = 'tileflow-sky-haze';
 
 /** The MapLibre GL JS map capabilities the haze reads; importing this module loads no renderer. */
 export type TileflowSkyHazeView = {
+  getBearing?(): number;
   getCanvas?(): {clientHeight: number};
+  getCenter?(): {lat: number; lng: number};
   getPitch(): number;
   getSky?(): unknown;
   getVerticalFieldOfView?(): number;
+  getZoom?(): number;
 };
 
 /** What MapLibre passes a custom layer's render that the haze reads. */
@@ -28,13 +37,39 @@ export function tileflowSkyHazeOf(
   const pixelRatio = globalThis.devicePixelRatio || 1;
   const height =
     map.getCanvas?.().clientHeight || (context ? context.drawingBufferHeight / pixelRatio : 0);
+  const fov = fovOf(map, args);
+  const aspect = context ? context.drawingBufferWidth / context.drawingBufferHeight : undefined;
+  const reach = reachOf(map, height / 2 / Math.tan(fov / 2));
   return tileflowSkyHaze({
     horizonColor: sky['horizon-color'],
     pitch: map.getPitch(),
-    fov: fovOf(map, args),
+    fov,
     height,
     globe: args?.defaultProjectionData?.projectionTransition ?? 0,
+    ...(reach && aspect ? {reach, aspect} : {}),
   });
+}
+
+/**
+ * The disc Tileflow's 3D buildings cover on this map, in camera distances along and across the
+ * view, so the haze can hide where the 3D city ends.
+ */
+function reachOf(map: TileflowSkyHazeView, distance: number): TileflowSkyHazeReach | undefined {
+  const reach = tileflowSceneReach(map);
+  const centre = map.getCenter?.();
+  const zoom = map.getZoom?.();
+  if (!reach || !centre || zoom === undefined || !(distance > 0)) return undefined;
+  const cos = Math.cos((centre.lat * Math.PI) / 180);
+  // MapLibre's camera distance in metres: CSS pixels times metres per pixel at the centre.
+  const metres = (distance * 40_075_016.686 * cos) / (512 * 2 ** zoom);
+  const east = (reach.lng - centre.lng) * 111_320 * cos;
+  const north = (reach.lat - centre.lat) * 111_320;
+  const bearing = ((map.getBearing?.() ?? 0) * Math.PI) / 180;
+  return {
+    ahead: (east * Math.sin(bearing) + north * Math.cos(bearing)) / metres,
+    across: (east * Math.cos(bearing) - north * Math.sin(bearing)) / metres,
+    radius: reach.radius / metres,
+  };
 }
 
 /** The vertical field of view, in radians. */
@@ -149,7 +184,9 @@ export function attachTileflowSkyHaze(map: TileflowSkyHazeMap): () => void {
       // ends a little beyond it.
       const riseAt = (depth: number) => (cos * (1 - 1 / depth)) / sin;
       const bottom = Math.max(-1, riseAt(haze.start) / tangent);
-      const top = Math.min(1, riseAt(haze.end * 1.02) / tangent);
+      // The band reaches the horizon line even when the haze is complete nearer.
+      const ground = tileflowSkyGroundDepth(map.getPitch(), haze.horizon);
+      const top = Math.min(1, riseAt(ground * 1.02) / tangent);
       if (!(top > bottom)) return;
       gl.useProgram(program.program);
       gl.uniform2f(program.uniforms.rows, bottom, top);

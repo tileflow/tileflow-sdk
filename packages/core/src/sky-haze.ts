@@ -59,6 +59,52 @@ export function tileflowSkyGroundDepth(pitch: number, rise: number): number {
   return below > 0 ? cos / below : Number.POSITIVE_INFINITY;
 }
 
+/**
+ * Where the haze is nine-tenths complete when it fits itself to the 3D city's reach, never nearer
+ * than this many camera distances: a renderer held to few tiles does not pull the haze in.
+ */
+export const tileflowSkyHazeReachFloor = 3;
+
+// Where smoothstep reaches 0.9: 3x² - 2x³ = 0.9.
+const nineTenths = 0.804_2;
+
+/**
+ * A disc the 3D city covers whole, relative to the map's centre and in camera distances: how far
+ * its centre lies ahead along the view and across it to the right, and its radius.
+ */
+export type TileflowSkyHazeReach = Readonly<{ahead: number; across: number; radius: number}>;
+
+/**
+ * The nearest view depth, in camera distances, at which the 3D city's edge shows: where rays across
+ * the view's width, along the ground from the camera, leave the disc. Undefined when no ray crosses
+ * it.
+ */
+export function tileflowSkyReachDepth(
+  view: Readonly<{pitch: number; fov: number; aspect: number}>,
+  reach: TileflowSkyHazeReach,
+): number | undefined {
+  const sin = Math.sin(radians(view.pitch));
+  const cos = Math.cos(radians(view.pitch));
+  // The camera stands a camera distance from the centre: back along the view and up.
+  const back = -sin;
+  const across = Math.atan(view.aspect * Math.tan(view.fov / 2));
+  let nearest: number | undefined;
+  for (let step = -4; step <= 4; step += 1) {
+    const angle = (across * step) / 4;
+    const [x, y] = [Math.sin(angle), Math.cos(angle)];
+    const [dx, dy] = [-reach.across, back - reach.ahead];
+    const b = x * dx + y * dy;
+    const c = dx * dx + dy * dy - reach.radius * reach.radius;
+    const disc = b * b - c;
+    if (disc < 0) continue;
+    const along = -b + Math.sqrt(disc);
+    if (along <= 0) continue;
+    const depth = along * y * sin + cos * cos;
+    nearest = nearest === undefined ? depth : Math.min(nearest, depth);
+  }
+  return nearest;
+}
+
 /** How much haze lies over something at this view depth, from 0 to 1. */
 export function tileflowSkyHazeAt(haze: TileflowSkyHaze | undefined, depth: number): number {
   if (!haze || haze.strength <= 0) return 0;
@@ -80,6 +126,10 @@ export function tileflowSkyHaze(view: {
   height: number;
   /** MapLibre's projection transition: 0 on a flat map, 1 on the globe. */
   globe?: number;
+  /** The view's width over its height; needed with `reach`. */
+  aspect?: number;
+  /** The disc the 3D city covers whole: the haze is nine-tenths complete where it ends. */
+  reach?: TileflowSkyHazeReach;
 }): TileflowSkyHaze | undefined {
   if (typeof view.horizonColor !== 'string') return undefined;
   const channels = tileflowColourChannels(view.horizonColor);
@@ -89,9 +139,20 @@ export function tileflowSkyHaze(view: {
     (1 - Math.min(1, Math.max(0, view.globe ?? 0)));
   if (!(strength > 0) || !(view.fov > 0) || !(view.height > 0)) return undefined;
   const horizon = tileflowSkyHorizon(view.pitch);
-  // Complete where the ground meets the sky, which starts in the same horizon colour.
-  const end = tileflowSkyGroundDepth(view.pitch, horizon);
-  if (!Number.isFinite(end) || end <= tileflowSkyHazeStart) return undefined;
+  // Complete where the ground meets the sky, which starts in the same horizon colour, or sooner
+  // where the 3D city ends nearer: there the haze has all but hidden its edge.
+  const ground = tileflowSkyGroundDepth(view.pitch, horizon);
+  if (!Number.isFinite(ground) || ground <= tileflowSkyHazeStart) return undefined;
+  const edge =
+    view.reach && view.aspect
+      ? tileflowSkyReachDepth({...view, aspect: view.aspect}, view.reach)
+      : undefined;
+  const fitted =
+    edge === undefined
+      ? Infinity
+      : tileflowSkyHazeStart +
+        (Math.max(tileflowSkyHazeReachFloor, edge) - tileflowSkyHazeStart) / nineTenths;
+  const end = Math.min(ground, fitted);
   return {
     colour: [channels[0], channels[1], channels[2]],
     strength,

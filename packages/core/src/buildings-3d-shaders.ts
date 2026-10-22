@@ -39,6 +39,11 @@ const growth = `
 uniform float u_scale;
 uniform vec2 u_offset; // this tile's corner from the scene's origin, in tile units
 uniform float u_metres; // metres per tile unit
+// The disc the city's tiles cover whole, in this tile's units: its centre, where heights start to
+// ease down and where they are gone; none while its radius is 0. And the view's direction along the
+// ground, in this tile's axes.
+uniform vec4 u_ring;
+uniform vec2 u_ring_ahead;
 
 float progressOf() {
   return clamp(u_scale * 1.25 - a_wave.x * 0.25, 0.0, 1.0);
@@ -47,6 +52,16 @@ float progressOf() {
 float elevationOf(float own, float top, float p) {
   float eased = p * p * (3.0 - 2.0 * p);
   return max(0.0, own - (1.0 - eased) * top);
+}
+
+// Buildings sink into the ground over the last stretch of the city's reach, so it ends without an
+// edge of cut-off blocks. Only its far side does: where the tile limit holds the ring short, the
+// buildings round the camera, nearer than its centre, keep standing.
+float reachOf(vec2 position) {
+  if (u_ring.w <= 0.0) return 1.0;
+  vec2 from = position - u_ring.xy;
+  float far = smoothstep(0.0, u_ring.w - u_ring.z, dot(from, u_ring_ahead));
+  return 1.0 - smoothstep(u_ring.z, u_ring.w, length(from)) * far;
 }
 
 vec3 localOf(vec2 position, float elevation) {
@@ -98,7 +113,7 @@ void main() {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     return;
   }
-  float elevation = elevationOf(a_flags.x > 0.5 ? top : base, top, p);
+  float elevation = elevationOf(a_flags.x > 0.5 ? top : base, top, p) * reachOf(a_pos);
   gl_Position = u_light_matrix * vec4(localOf(a_pos, elevation), 1.0);
 }`;
 
@@ -146,7 +161,7 @@ void main() {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     return;
   }
-  float elevation = elevationOf(own, top, p);
+  float elevation = elevationOf(own, top, p) * reachOf(a_pos);
   gl_Position = projectTileFor3D(a_pos, elevation);
   v_haze_depth = gl_Position.w;
   float wall = a_flags.y;

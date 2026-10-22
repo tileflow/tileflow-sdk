@@ -184,8 +184,11 @@ test('native preview serves locally built sprites from its exact development ori
     const sprite = new URL(String(style.sprite));
     assert.equal(sprite.origin, origin);
     assert.match(sprite.pathname, /^\/native\/generations\/[a-f0-9]{64}\/icons\/main\/sprite$/u);
-    for (const suffix of ['.json', '.png', '@2x.json', '@2x.png'])
-      assert.equal((await fetch(`${sprite.href}${suffix}`)).status, 200, suffix);
+    for (const suffix of ['.json', '.png', '@2x.json', '@2x.png']) {
+      const response = await fetch(`${sprite.href}${suffix}`);
+      assert.equal(response.status, 200, suffix);
+      assert.ok((await response.arrayBuffer()).byteLength > 0, suffix);
+    }
     assert.deepEqual(
       validateTileflowNativePreparedStyle(style, {
         documentUrl: styleUrl,

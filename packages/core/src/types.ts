@@ -204,8 +204,11 @@ export type TileflowTerrainContourLabelStyle = TileflowTerrainLayerRange & {
 export type TileflowTerrainContoursConfig = {
   /** Maximum native zoom exposed by the DEM tile template. */
   demMaxZoom: number;
-  /** Explicit HTTP(S) DEM template containing {z}, {x}, and {y}. */
-  demUrl: string;
+  /**
+   * HTTP(S) DEM template containing {z}, {x}, and {y}. Defaults to the hosted Tileflow Terrain
+   * tiles, `{apiBaseUrl}/tiles/terrain/{z}/{x}/{y}.webp`, which follow the current release.
+   */
+  demUrl?: string;
   index?: TileflowTerrainContourLineStyle;
   labels?: TileflowTerrainContourLabelStyle;
   maxZoom?: number;

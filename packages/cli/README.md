@@ -222,13 +222,17 @@ browser bundle, copied prompt, or command-line argument.
 ```sh
 npx tileflow login
 npx tileflow whoami --json
+npx tileflow deploy --origin https://www.example.com
 npx tileflow deploy --map-id map_AbCdEfGhIjKlMnOp
 npx tileflow status --map-id map_AbCdEfGhIjKlMnOp
 ```
 
-Replace the example Map ID with the destination created in Tileflow. It is a public identifier,
-not a credential or the portable `id` in your config. A CI deploy key must authorize that destination.
-`logout` removes the saved personal session.
+Without `--map-id`, a logged-in `deploy` first creates the Map in the Team you administer (it asks,
+or takes `--team @team`, when several qualify) with the browser access you choose: exact origins
+with `--origin`, or `--any-website`. It prints the Map ID to use for later deploys;
+`tileflow maps create` creates the Map without deploying. The Map ID is a public identifier, not a
+credential or the portable `id` in your config. CI always deploys an existing Map with a deploy key
+for that destination. `logout` removes the saved personal session.
 
 Deploy publishes the compiled concrete-theme family and managed icon assets; it does not ask the
 server to compile TypeScript. Repeating an unchanged deployment reuses its version. Build writers

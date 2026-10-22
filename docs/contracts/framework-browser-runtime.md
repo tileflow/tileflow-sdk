@@ -338,12 +338,19 @@ always appears. Unknown or failed responses cannot clear a prior owner notice. C
 apply notice state in request order; successful `open` clears any notice, while silent `GRACE` clears
 only an existing `GRACE` notice.
 
+A `503` World response carrying `Tileflow-Protection: protected | cached-only` means Tileflow is
+temporarily limiting anonymous delivery for every site: cached areas keep loading and some uncached
+areas fail. The bridge then shows a `LIMITED` owner notice with the validated help link. Because
+cached tiles keep succeeding meanwhile, it stays visible for at least 60 seconds after the last such
+response before a successful response may clear it. It never replaces `MANAGED_REQUIRED`, and an
+ordinary `503` is not announced. The tile request still fails, as before.
+
 `attachTileflowFairUseNotice` owns one DOM status inside the map container. It uses `role="status"`,
 `aria-live="polite"`, `aria-atomic="true"`, a visible HTTPS owner-action link, and no viewer or site
 identity. `GRACE` renders as a compact bottom pill with a subtle yellow surface;
-`MANAGED_REQUIRED` renders as a high-contrast top banner. The status sentence remains plain text and
-only the owner action is the underlined link. `MANAGED_REQUIRED` cannot regress to `GRACE` within the
-same controller. Disposal removes the protocol registration and notice; ordinary MapLibre errors and
+`MANAGED_REQUIRED` renders as a high-contrast top banner; `LIMITED` uses the compact pill. The status sentence remains plain text and
+only the owner action is the underlined link. `MANAGED_REQUIRED` cannot regress to `GRACE` or
+`LIMITED` within the same controller. Disposal removes the protocol registration and notice; ordinary MapLibre errors and
 shaped empty tiles do not.
 
 The helper always returns a transform; React, Vue, and Svelte install it on every interactive map.

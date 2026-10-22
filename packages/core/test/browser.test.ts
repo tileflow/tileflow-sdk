@@ -869,6 +869,58 @@ test('World bridge follows signed notice activation and shapes an empty tile', a
   bridge.dispose();
 });
 
+test('World bridge announces anonymous degradation without flicker and never over MANAGED_REQUIRED', async () => {
+  const notices: Array<TileflowFairUseNotice | null> = [];
+  let now = 0;
+  let response = new Response(null);
+  const {bridge, protocolHandler} = registerTestWorldBridge({
+    fetch: async () => response,
+    now: () => now,
+    onNotice: (notice) => notices.push(notice),
+  });
+  const request = {type: 'tile', url: bridge.rewriteUrl(exactBrowserWorldUrl)};
+  const degraded = () =>
+    new Response(null, {
+      status: 503,
+      headers: {
+        Link: '<https://tileflow.dev/world/connect>; rel="help"',
+        'Retry-After': '30',
+        'Tileflow-Fair-Use': 'open',
+        'Tileflow-Protection': 'cached-only',
+      },
+    });
+  const open = () => new Response(new Uint8Array([1]), {headers: {'Tileflow-Fair-Use': 'open'}});
+
+  response = degraded();
+  await assert.rejects(protocolHandler(request, new AbortController()), /failed: 503/u);
+  assert.equal(notices.at(-1)?.state, 'LIMITED');
+  assert.equal(notices.at(-1)?.helpUrl, 'https://tileflow.dev/world/connect');
+
+  now = 30_000;
+  response = open();
+  await protocolHandler(request, new AbortController());
+  assert.equal(notices.at(-1)?.state, 'LIMITED', 'cached tiles do not hide the notice at once');
+
+  now = 61_000;
+  response = open();
+  await protocolHandler(request, new AbortController());
+  assert.equal(notices.at(-1), null, 'the notice clears once degradation stops');
+
+  response = new Response(null, {status: 503});
+  await assert.rejects(protocolHandler(request, new AbortController()), /failed: 503/u);
+  assert.equal(notices.at(-1), null, 'an ordinary failure is not announced as degradation');
+
+  response = new Response(null, {
+    status: 429,
+    headers: {'Tileflow-Fair-Use': 'managed-required', 'Tileflow-Fair-Use-Notice': 'owner'},
+  });
+  await protocolHandler(request, new AbortController());
+  response = degraded();
+  await assert.rejects(protocolHandler(request, new AbortController()));
+  assert.equal(notices.at(-1)?.state, 'MANAGED_REQUIRED');
+  bridge.dispose();
+});
+
 test('World bridge bounds declared and chunked bodies and cancels oversized streams', async () => {
   const maximumWorldTileBytes = 16 * 1024 * 1024;
   const oversizedMessage = 'Tileflow World tile exceeds the maximum response size';
@@ -1382,6 +1434,7 @@ test('transform request is always installed, a no-op without work, and propagate
 
 function registerTestWorldBridge(input: {
   fetch: typeof fetch;
+  now?: () => number;
   onNotice?: (notice: TileflowFairUseNotice | null) => void;
 }): {
   bridge: ReturnType<typeof registerTileflowWorldRequestBridge>;
@@ -1393,6 +1446,7 @@ function registerTestWorldBridge(input: {
       installedWorldProtocolHandler = handler;
     },
     fetch: input.fetch,
+    ...(input.now ? {now: input.now} : {}),
     onNotice: input.onNotice ?? (() => {}),
   });
   const protocolHandler = installedWorldProtocolHandler;

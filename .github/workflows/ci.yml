@@ -90,6 +90,7 @@ jobs:
       - name: Verify package
         env:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
+          TILEFLOW_TEST_CLI_MODE: ${{ matrix.package == 'tileflow' && 'built' || 'source' }}
         run: pnpm --filter '${{ matrix.package }}' run verify
 
   peer-compatibility:
@@ -184,6 +185,8 @@ jobs:
         env:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
           TILEFLOW_RUN_BROWSER_TESTS: '1'
+          TILEFLOW_TEST_PROGRESS: '1'
+          NODE_OPTIONS: ${{ format('--test-reporter=tap --require={0}/test-support/test-progress.cjs', github.workspace) }}
 
       - name: Run cross-platform CLI browser suite
         if: matrix.suite == 'cli'
@@ -191,8 +194,9 @@ jobs:
         env:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
           TILEFLOW_RUN_BROWSER_TESTS: '1'
-          TILEFLOW_CLI_TEST_PROGRESS: ${{ runner.os == 'Windows' && '1' || '' }}
-          NODE_OPTIONS: ${{ runner.os == 'Windows' && format('--require={0}/test-support/cli-test-progress.cjs', github.workspace) || '' }}
+          TILEFLOW_TEST_PROGRESS: '1'
+          TILEFLOW_TEST_CLI_MODE: built
+          NODE_OPTIONS: ${{ format('--test-reporter=tap --require={0}/test-support/test-progress.cjs', github.workspace) }}
 
   capture-public-tarball:
     name: Clean packed capture consumer

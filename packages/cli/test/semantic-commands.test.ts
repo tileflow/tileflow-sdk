@@ -5,12 +5,9 @@ import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {fileURLToPath} from 'node:url';
 import {createStyleResult} from '@tileflow/core';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {registerAiCommands} from '../src/ai-commands';
-
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 
 type ProjectedDiagnostic = {
   code: string;
@@ -497,7 +494,7 @@ function runCli(
   Object.assign(environment, {NO_COLOR: '1', USERPROFILE: cwd});
 
   return new Promise((resolveResult, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
+    const child = spawn(process.execPath, cliFixtureArguments(arguments_), {
       cwd,
       env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],

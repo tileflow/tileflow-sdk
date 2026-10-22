@@ -6,8 +6,8 @@ import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {build as buildVite, createServer as createViteServer} from 'vite';
 import {tileflow} from '@tileflow/vite';
-import {TileflowCaptureBrowserManager} from '../src/browser';
 import {createTileflowCaptureSession} from '../src/index';
+import {observeBrowserFailures} from './browser-failures';
 import {assertPngContainsProbeColor} from './framework-vite-harness';
 import {writeFrameworkMapFixture} from './tileflow-source-fixture';
 
@@ -15,37 +15,7 @@ test(
   'captures React wrapper readiness at narrow and desktop sizes through one Vite server',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
   async (t) => {
-    const browserFailures: string[] = [];
-    const observedBrowsers = new WeakSet();
-    const recordFailure = (message: string) => {
-      if (browserFailures.length < 12) browserFailures.push(message.slice(0, 800));
-    };
-    const getBrowser = TileflowCaptureBrowserManager.prototype.getBrowser;
-    t.mock.method(
-      TileflowCaptureBrowserManager.prototype,
-      'getBrowser',
-      async function (this: TileflowCaptureBrowserManager, signal?: AbortSignal) {
-        const browser = await getBrowser.call(this, signal);
-        if (observedBrowsers.has(browser)) return browser;
-        observedBrowsers.add(browser);
-        const newContext = browser.newContext.bind(browser);
-        t.mock.method(browser, 'newContext', async (...options: Parameters<typeof newContext>) => {
-          const context = await newContext(...options);
-          context.on('page', (page) => {
-            page.on('pageerror', (error) => recordFailure(`pageerror: ${error.message}`));
-            page.on('console', (message) => {
-              if (message.type() === 'error') recordFailure(`console: ${message.text()}`);
-            });
-            page.on('response', (response) => {
-              if (response.status() >= 400)
-                recordFailure(`response: ${response.status()} ${new URL(response.url()).pathname}`);
-            });
-          });
-          return context;
-        });
-        return browser;
-      },
-    );
+    const browserFailures = observeBrowserFailures(t);
     const capturePackageRoot = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
     const cwd = await mkdtemp(join(capturePackageRoot, '.tileflow-test-react-vite-capture-'));
     const reactSource = fileURLToPath(new URL('../../react/src/index.ts', import.meta.url));
@@ -66,7 +36,7 @@ test(
     const vite = await createViteServer({
       cacheDir: join(cwd, '.vite-cache'),
       configFile: false,
-      logLevel: 'silent',
+      logLevel: 'error',
       plugins: [tileflow()],
       resolve: {alias: {'@tileflow/react': reactSource}},
       root: cwd,
@@ -148,7 +118,8 @@ test(
 test(
   'captures an interactive React wrapper from a built Vite app under its configured base path',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
-  async () => {
+  async (t) => {
+    const browserFailures = observeBrowserFailures(t);
     const capturePackageRoot = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
     const cwd = await mkdtemp(join(capturePackageRoot, '.tileflow-test-react-vite-build-'));
     const reactSource = fileURLToPath(new URL('../../react/src/index.ts', import.meta.url));
@@ -170,7 +141,7 @@ test(
       base: '/app/',
       build: {outDir: 'dist'},
       configFile: false,
-      logLevel: 'silent',
+      logLevel: 'error',
       plugins: [tileflow()],
       resolve: {alias: {'@tileflow/react': reactSource}},
       root: cwd,
@@ -216,6 +187,9 @@ test(
       assert.equal(result.captures[0]?.target, 'application');
       assert.equal(result.captures[0]?.width, 222);
       assert.equal(result.captures[0]?.height, 240);
+    } catch (error) {
+      t.diagnostic(JSON.stringify(browserFailures));
+      throw error;
     } finally {
       await session.close();
       await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
@@ -227,7 +201,8 @@ test(
 test(
   'captures an interactive React wrapper with the MapLibre 6.4.1 peer floor',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
-  async () => {
+  async (t) => {
+    const browserFailures = observeBrowserFailures(t);
     const capturePackageRoot = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));
     const cwd = await mkdtemp(join(capturePackageRoot, '.tileflow-test-react-vite-maplibre-min-'));
     const reactSource = fileURLToPath(new URL('../../react/src/index.ts', import.meta.url));
@@ -251,7 +226,7 @@ test(
     const vite = await createViteServer({
       cacheDir: join(cwd, '.vite-cache'),
       configFile: false,
-      logLevel: 'silent',
+      logLevel: 'error',
       plugins: [tileflow()],
       resolve: {alias: {'@tileflow/react': reactSource, 'maplibre-gl': maplibreMinimumSource}},
       root: cwd,
@@ -272,6 +247,9 @@ test(
       assert.equal(result.captures[0]?.target, 'application');
       assert.equal(result.captures[0]?.width, 222);
       assert.equal(result.captures[0]?.height, 240);
+    } catch (error) {
+      t.diagnostic(JSON.stringify(browserFailures));
+      throw error;
     } finally {
       await session.close();
       await vite.close();

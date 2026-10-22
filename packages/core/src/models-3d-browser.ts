@@ -153,7 +153,7 @@ export function createTileflowPlacedModels(
   const regions = new Map<
     string,
     {
-      tiles: Map<string, {hash: string; landmarks?: readonly TileflowLandmarkFootprint[]}>;
+      tiles: Map<string, {hash: string; landmarks: readonly TileflowLandmarkFootprint[]}>;
       used: number;
     }
   >();
@@ -304,7 +304,7 @@ export function createTileflowPlacedModels(
         const tiles = new Map(
           region.tiles.map((tile) => [
             `${tile[0]}/${tile[1]}`,
-            {hash: tile[2], ...(tile[3] ? {landmarks: tile[3]} : {})},
+            {hash: tile[2], landmarks: tile[3]},
           ]),
         );
         regions.set(regionKey, {tiles, used: performance.now()});
@@ -596,7 +596,7 @@ export function createTileflowPlacedModels(
         else {
           const failing = (tileFailed.get(hash) ?? 0) > now;
           if (!tileLoading.has(hash) && !failing) loadTile(hash);
-          if (named.landmarks && !failing) onTheirWay.set(hash, named.landmarks);
+          if (!failing) onTheirWay.set(hash, named.landmarks);
         }
       }
       if (

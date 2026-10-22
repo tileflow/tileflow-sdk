@@ -1,13 +1,18 @@
 import {Color, type SkySpecification} from '@maplibre/maplibre-gl-style-spec';
-import type {TileflowAtmosphere, TileflowResolvedAtmosphere} from './atmosphere';
+import {
+  defaultAtmosphereStars,
+  type TileflowAtmosphere,
+  type TileflowResolvedAtmosphere,
+} from './atmosphere';
 import type {TileflowThemeColorValue} from './cartography/values';
 import type {TileflowResolvedSky, TileflowSky} from './sky';
 
 const defaults: TileflowResolvedAtmosphere = {
-  skyColor: '#07152b',
-  horizonColor: '#83b9f4',
-  fogColor: '#bad2eb',
-  spaceColor: '#030916',
+  ...defaultAtmosphereStars,
+  skyColor: '#263b50',
+  horizonColor: '#b6cfe2',
+  fogColor: '#d4e1ec',
+  spaceColor: '#142233',
   starIntensity: 0.6,
   starParallax: 0.4,
 };
@@ -16,14 +21,18 @@ export function resolveTileflowAtmosphere(
   value: TileflowAtmosphere | undefined,
 ): TileflowResolvedAtmosphere | undefined {
   if (!value) return undefined;
-  const options = {...defaults, ...(value === true ? {} : value)};
+  const options = value === true ? {} : value;
   const normalize = (input: TileflowThemeColorValue) => opaqueHex(input, 'Atmosphere colors');
   return {
-    ...options,
-    skyColor: normalize(options.skyColor),
-    horizonColor: normalize(options.horizonColor),
-    fogColor: normalize(options.fogColor),
-    spaceColor: normalize(options.spaceColor),
+    skyColor: normalize(options.skyColor ?? defaults.skyColor),
+    horizonColor: normalize(options.horizonColor ?? defaults.horizonColor),
+    fogColor: normalize(options.fogColor ?? defaults.fogColor),
+    spaceColor: normalize(options.spaceColor ?? defaults.spaceColor),
+    starColor: normalize(options.starColor ?? defaults.starColor),
+    starCount: options.starCount ?? defaults.starCount,
+    starSize: options.starSize ?? defaults.starSize,
+    starIntensity: options.starIntensity ?? defaults.starIntensity,
+    starParallax: options.starParallax ?? defaults.starParallax,
   };
 }
 
@@ -47,7 +56,8 @@ export function compileTileflowSky(options: TileflowResolvedAtmosphere): SkySpec
     'sky-horizon-blend': 0.12,
     'horizon-fog-blend': 0.5,
     'fog-ground-blend': 0.1,
-    'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 0.55, 3, 0.45, 5, 0.2, 7, 0],
+    // The browser draws a contour halo. Native sun scattering washes out the globe's surface.
+    'atmosphere-blend': 0,
   };
 }
 
@@ -83,7 +93,10 @@ export function resolveTileflowSky(
  * The street-level sky. MapLibre paints it in every projection when the camera tilts towards the
  * horizon; on a globe it also blends into the atmosphere at world zooms, as the globe atmosphere does.
  */
-export function compileTileflowStreetSky(options: TileflowResolvedSky): SkySpecification {
+export function compileTileflowStreetSky(
+  options: TileflowResolvedSky,
+  globeAtmosphere = false,
+): SkySpecification {
   return {
     'sky-color': options.color,
     'horizon-color': options.horizonColor,
@@ -92,6 +105,8 @@ export function compileTileflowStreetSky(options: TileflowResolvedSky): SkySpeci
     'sky-horizon-blend': options.horizonBlend,
     'horizon-fog-blend': 0.6,
     'fog-ground-blend': 0.75,
-    'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 0.55, 3, 0.45, 5, 0.2, 7, 0],
+    'atmosphere-blend': globeAtmosphere
+      ? 0
+      : ['interpolate', ['linear'], ['zoom'], 0, 0.55, 3, 0.45, 5, 0.2, 7, 0],
   };
 }

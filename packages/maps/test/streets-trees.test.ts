@@ -46,7 +46,7 @@ test('Streets tree artwork is reproducible and bounded for near and far renderin
     for (const level of ['near', 'far'] as const) {
       const mesh = decodeTileflowTreeModel(model[level]!, level);
       assert.ok(mesh, `${id}:${level}`);
-      assert.ok(mesh.indices.length / 3 <= (level === 'near' ? 700 : 100));
+      assert.ok(mesh.indices.length / 3 <= (level === 'near' ? 700 : 120));
       assert.ok(mesh.positions.every(Number.isFinite));
       for (let i = 0; i < mesh.normals.length; i += 3) {
         const length = Math.hypot(...mesh.normals.slice(i, i + 3));
@@ -63,6 +63,9 @@ test('Streets owns both tree representations and an extension can disable both',
     const style = compile(theme);
     const description = readTileflowVegetation3D(style.metadata);
     assert.ok(description);
+    assert.equal(description.minimumHeight, 8);
+    assert.equal(description.materialVariation, 1);
+    assert.equal(description.finish, 'smooth');
     assert.equal(Object.keys(description.models ?? {}).length, 7);
     assert.deepEqual(description.flatLayers, [
       'tileflow-vegetation-trees',

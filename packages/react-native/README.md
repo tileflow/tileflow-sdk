@@ -93,15 +93,10 @@ Maps without this capability ignore the option; omitting it keeps the selected t
 Changing it uses the existing theme transition. `themeBlend` takes precedence. See the
 [authoring contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md#style-with-themes-and-semantic-modules).
 
-`themeTransition={{duration: 450}}` cross-fades theme changes: a snapshot of the drawn map covers it, follows the camera and fades out once the new theme is drawn. `themeBlend={{themes: ['night', 'dusk', 'day'], position}}` shows a continuous blend of the map's themes instead of `theme`; position 0 is the first theme and 1.5 is halfway from the second to the third:
+Theme and `timeOfDay` changes cross-fade over 450 ms by default: a snapshot of the drawn map covers it, follows the camera and fades out once the new theme is drawn. Use `themeTransition={{duration: 700}}` to customize the duration, or `duration: 0` for an immediate change. `themeBlend={{themes: ['night', 'dusk', 'day'], position}}` shows a continuous blend of the map's themes instead of `theme`; position 0 is the first theme and 1.5 is halfway from the second to the third:
 
 ```tsx
-<Map
-  source={source}
-  themeTransition={{duration: 450}}
-  themeBlend={{themes: ['night', 'dusk', 'day'], position}}
-  style={{flex: 1}}
-/>
+<Map source={source} themeBlend={{themes: ['night', 'dusk', 'day'], position}} style={{flex: 1}} />
 ```
 
 The first blend of a set of themes prepares every theme's style and replaces the native style once; moving `position` later changes the map without loading. Removing `themeBlend` returns to `theme`. Both keep the same native Map, context and session, and `ready` events wait for the fade. The device's reduce-motion setting changes at once. See [theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md#react-native) for what follows the position on native maps.

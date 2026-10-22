@@ -1,6 +1,6 @@
 # @tileflow/capture
 
-For the complete CLI workflow, use `describe`, `inspect`, `capture`, `compare`, and Map DevTools (`preview`)
+For the complete CLI workflow, use `describe`, `inspect`, `capture`, `compare`, and Inspector (`preview`)
 as described in the [CLI guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/README.md).
 New still captures include their normalized `definition` for later review. The CLI stores immutable
 capture IDs so `compare --before <id> --after <id>` can reuse evidence without rendering again.

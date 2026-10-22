@@ -6,8 +6,8 @@ import {
   type DiagnosticLabelSample,
   type DiagnosticsOptions,
   sampleDiagnosticLabels,
-} from '../src/devtools/diagnostics/checks';
-import {diagnosticFingerprint} from '../src/devtools/diagnostics/model';
+} from '../src/inspector/diagnostics/checks';
+import {diagnosticFingerprint} from '../src/inspector/diagnostics/model';
 
 const style = (layers: unknown[] = []): StyleSpecification =>
   ({
@@ -42,7 +42,7 @@ test('valid custom runtime layers, observer flags and internal overlays are excl
     ...style([
       line('roads'),
       {id: 'trees', type: 'custom', renderingMode: '3d'},
-      {id: '__tileflow-devtools-outline', type: 'invalid'},
+      {id: '__tileflow-inspector-outline', type: 'invalid'},
     ]),
     collectResourceTiming: true,
     sources: {
@@ -253,7 +253,7 @@ test('label query excludes unrelated geometry, hidden layers, out-of-zoom layers
     {...labels('hidden'), layout: {'text-field': ['get', 'name'], visibility: 'none'}},
     {...labels('too-close'), minzoom: 15},
     {...labels('too-far'), maxzoom: 14},
-    labels('__tileflow-devtools-label'),
+    labels('__tileflow-inspector-label'),
     symbol('icons-only'),
   ]);
   map.getStyle = () => configured;

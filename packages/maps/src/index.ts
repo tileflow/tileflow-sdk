@@ -20,6 +20,7 @@ export {
   siegfriedIcons,
   soundingsIcons,
   streetsIcons,
+  streetsFonts,
   streetsModels,
 } from './assets';
 

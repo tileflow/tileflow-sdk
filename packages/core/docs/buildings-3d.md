@@ -75,6 +75,38 @@ landmarks, models, trees and lights are custom WebGL layers added only by this r
 draws a plain `fill-extrusion` building pass, the style ships it hidden and grouped under
 `metadata['tileflow:3d-toggle'] = 'building'`; showing those layers gives extruded footprints only.
 
+## Decorative building surfaces
+
+`threeDimensional.surfaces` adds optional brick joints, roof tiles and a painted cornice to
+ordinary extruded buildings. These are artistic decoration, not surveyed materials. They keep
+the building's authored colour and use its existing lighting, shadows and footprint. Custom GLB
+models and landmarks retain their own materials. Leaving `surfaces` out preserves a smooth finish.
+
+```ts
+buildings({
+  threeDimensional: {
+    surfaces: {
+      walls: {kind: 'brick', size: [6, 3], jointWidth: 0.16, contrast: 0.28},
+      roof: {kind: 'tiles', size: 10, jointWidth: 0.12, contrast: 0.12},
+      cornice: {height: 0.7, contrast: 0.3},
+    },
+  },
+});
+```
+
+Wall `size` is `[width, courseHeight]` in metres. Roof size is a square in projected Mercator
+metres: its ground size shrinks with latitude, while its grid remains fixed through camera moves
+and tile boundaries. Sizes accept 0.5–100; joints accept 0.01–2 and are limited to a quarter of the
+smallest cell dimension. `contrast` accepts 0–1, including theme number tokens; zero hides that
+finish. The defaults are `[6, 3]`, 0.12 and 0.2 for walls, and 8, 0.12 and 0.1 for roofs.
+
+The cornice is a light band with a subtle seam, not an overhanging mesh. Its `height` accepts
+0.05–5 metres, defaults to 0.6 and is limited to one fifth of a wall's height; its contrast defaults
+to 0.2. The roof border uses projected metres and follows exterior and courtyard edges without
+drawing internal triangle edges. The shader filters joints and fades details smaller than a few
+pixels. No texture downloads, extra draw calls or per-brick geometry are required. These finishes
+belong to the WebGL 3D scene; portable 2D styles retain their ordinary building fill.
+
 ## Show the buildings
 
 This example assumes an existing MapLibre map showing a Tileflow map whose vector source is called
@@ -394,7 +426,7 @@ export default defineMap({
 
 Select `timeOfDay` through your map adapter to change the authored direction, colour and strength
 of direct and ambient light. Streets includes moonlight and shadows in its night presets. These
-presets are independent of the user's clock and location. In DevTools, use the 3D view and
+presets are independent of the user's clock and location. In Inspector, use the 3D view and
 **Map → Buildings → Building light / Cast shadows**. The theme's `lighting.sun.shadowIntensity`
 controls shadow strength; `lighting.ambient` fills the shade. Use `controller.setSun({date,
 location})` for an astronomical direction instead, as described in

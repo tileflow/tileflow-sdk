@@ -146,6 +146,9 @@ custom layer `tileflow-sky` at the bottom of the layer stack, and the haze the c
 layers haze themselves. A sky that follows the sun needs the theme controller, which writes the
 sky's colours; raw MapLibre consumers see each theme's own sky.
 
+These helpers can attach before the first style is set. They wait for style events, follow style
+replacements, and tolerate a cleared style. Dispose them when the integration releases the map.
+
 MapLibre applies its own fog only to 3D terrain; with 3D terrain enabled, the flat haze band is not
 drawn and the terrain's fog takes its place. Other layers drawn by an application, such as
 `fill-extrusion` layers, stay sharp. Native artifacts remove the sky during preparation and record

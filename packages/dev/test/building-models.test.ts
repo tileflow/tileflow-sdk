@@ -198,7 +198,7 @@ test('a map places its building models: the style names their files, which the b
   await mkdir(join(cwd, 'models'));
   await writeFile(join(cwd, 'models', 'tower.glb'), writeGlb(block(20, 20, 120)));
   const config = (model: string) =>
-    `import {buildings, defineMap, fixed} from '@tileflow/core'; import {streets, streetsModels} from '@tileflow/maps'; export default defineMap({id:'city',version:1,extends:streets,models:[streetsModels,'./models'],modules:{buildings:buildings({mode:'3d',threeDimensional:{models:[{model:'${model}',at:[2.2945,48.8583],heading:45}],modelColors:{accent:fixed('#806040',{reason:'Bronze trim'})}}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}});\n`;
+    `import {buildings, defineMap, fixed} from '@tileflow/core'; import {streets, streetsModels} from '@tileflow/maps'; export default defineMap({id:'city',version:1,extends:streets,models:[streetsModels,'./models'],modules:{buildings:buildings({mode:'3d',threeDimensional:{models:[{model:'${model}',at:[2.2945,48.8583],heading:45}],modelColors:{accent:fixed('#806040',{reason:'Bronze trim'})}}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic','DINish Medium,Noto Sans Regular','DINish Bold,Noto Sans Regular']}});\n`;
   await writeFile(join(cwd, 'tileflow.config.ts'), config('tower'));
 
   const plan = await createTileflowBuildArtifacts({cwd, assetBaseUrl: 'http://localhost:3333'});
@@ -341,7 +341,7 @@ test('a map places a model served elsewhere by its address, with no file of its 
   const url = 'https://models.example.test/eiffel-tower.glb';
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `import {buildings, defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'paris',version:1,extends:streets,modules:{buildings:buildings({mode:'3d',threeDimensional:{models:[{model:'eiffel-tower',at:[2.2945,48.8583],url:'${url}'}]}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}});\n`,
+    `import {buildings, defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'paris',version:1,extends:streets,modules:{buildings:buildings({mode:'3d',threeDimensional:{models:[{model:'eiffel-tower',at:[2.2945,48.8583],url:'${url}'}]}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic','DINish Medium,Noto Sans Regular','DINish Bold,Noto Sans Regular']}});\n`,
   );
   const plan = await createTileflowBuildArtifacts({cwd, assetBaseUrl: 'http://localhost:3333'});
   t.after(() => plan.dispose?.());

@@ -246,7 +246,7 @@ const before = defineMap({
   glyphs: {
     kind: 'url',
     url: ${JSON.stringify(`https://fonts.example.test/{fontstack}/{range}.pbf?token=${secret}`)},
-    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic', 'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']
   },
   view: {center: [-3.7, 40.4], zoom: 12}
 });
@@ -255,7 +255,7 @@ const after = defineMap({
   glyphs: {
     kind: 'url',
     url: ${JSON.stringify(`https://fonts.example.test/{fontstack}/{range}.pbf?token=${secret}-after`)},
-    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic', 'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']
   },
   modules: {water: disable()},
   projection: 'mercator',

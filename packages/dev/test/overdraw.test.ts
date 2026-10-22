@@ -1,7 +1,7 @@
 import type {Map as MapLibreMap} from 'maplibre-gl';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {OverdrawHeatmap} from '../src/devtools/overdraw';
+import {OverdrawHeatmap} from '../src/inspector/overdraw';
 
 class SvgElement {
   id = '';

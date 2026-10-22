@@ -2,7 +2,7 @@
 
 Start with the [@tileflow/core guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md) for installation and a complete first example.
 
-A Tileflow map can change theme with a cross-fade, or show any point between two or more of its
+A Tileflow map can animate a theme change, or show any point between two or more of its
 themes. Use a transition when people switch between appearances, such as light and dark. Use a
 blend when the application controls the appearance continuously, such as a slider or a day that
 passes from night to day.
@@ -12,9 +12,10 @@ map views, and request the same tiles as a map that does not change theme. The R
 Svelte maps offer them with MapLibre GL JS, and the React Native map with MapLibre Native on iOS
 and Android; see [React Native](#react-native) for what differs there.
 
-## Cross-fade a theme change
+## Animate a theme change
 
-Pass `themeTransition` to the React, Vue, or Svelte map. This React example assumes a map named
+Theme and `timeOfDay` changes animate over 450 ms by default in React, Vue, and Svelte.
+Pass `themeTransition` to customize the duration. This React example assumes a map named
 `city` with `light` and `dark` themes in the published manifest:
 
 ```tsx
@@ -26,19 +27,23 @@ export function CityMap() {
   return (
     <>
       <button onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>Switch theme</button>
-      <Map source={{map: 'city'}} theme={theme} themeTransition={{duration: 450}} />
+      <Map source={{map: 'city'}} theme={theme} />
     </>
   );
 }
 ```
 
-When the theme changes, a snapshot of the current frame covers the map. The snapshot follows the
-camera while people pan, zoom, rotate, or tilt, and fades out once the new theme is drawn. The map
-stays interactive throughout. `onThemeChange` reports `preloading`, `applying`, and finally `ready`
-after the fade. A `theme="system"` change, entering a blend, and leaving one use the same
-transition.
+Compatible themes interpolate on the live map, including sky, lighting, buildings and vegetation.
+The globe and 3D camera can keep moving throughout the change. Temporary blend layers are removed
+when the destination theme is reached. No image of the previous map is projected over the scene.
+`onThemeChange` reports `preloading`, `applying`, and finally `ready` after the transition.
 
-`duration` is in milliseconds, from 0 to 5000. It defaults to 0, which changes the theme at once.
+Structurally different styles, entering a blend, or leaving one use a stationary snapshot while
+the new style loads, then fade it out. Moving the camera removes that cover immediately. A
+`theme="system"` change follows the same rules as an explicit theme selection.
+
+`duration` is in milliseconds, from 0 to 5000. It defaults to 450, including when `themeTransition`
+is omitted or empty. Set `themeTransition={{duration: 0}}` to change the theme at once.
 When the browser asks for reduced motion, every change happens at once.
 
 ## Blend themes
@@ -70,8 +75,8 @@ export function DayMap() {
 ```
 
 The first blend of a set of themes loads each theme's style and fonts, prepares one style that
-holds every theme, and replaces the map's style once, with `themeTransition` if set. Until then the
-map shows the theme nearest to the position. After that, changing `position` updates the map at
+holds every theme, and replaces the map's style once, using the default or configured transition.
+Until then the map shows the theme nearest to the position. After that, changing `position` updates the map at
 once without loading anything, so it can follow a slider, a clock, or an animation frame by frame.
 Changing `themes` prepares a new blend. Removing `themeBlend` returns to `theme`.
 
@@ -89,15 +94,15 @@ While a blend is shown, `data-tileflow-theme` names the theme nearest to the pos
   Light lettering on a dark plate and dark lettering on a light plate would meet in the same grey
   halfway, so symbols do not follow the position.
 - A value that depends on feature state, such as a caption that changes colour when highlighted,
-  changes with the nearest theme. MapLibre lays its source out again for that change; a cross-fade
-  covers it.
+  changes with the nearest theme. MapLibre lays its source out again for that change; a stationary
+  cross-fade covers it until the camera moves.
 
 ### Which themes can be blended
 
 Blend themes of the same map. Every theme of a map exposes the same token keys, so its compiled
 styles share sources, layers, filters, and expressions, and differ only in colours, numbers, and
 image names. Up to eight themes can be blended. A blend fails, and the map keeps its current
-appearance, when the styles differ in structure, sources, sprite, or glyphs.
+appearance, when the styles differ in structure, sources, sprite, glyphs, projection, or terrain.
 
 Icon and pattern artwork is mixed in place of the first theme's image when every theme's version
 has the same size. Otherwise that image changes with the nearest theme instead.
@@ -121,7 +126,8 @@ between changes.
 
 ## React Native
 
-The `Map` of `@tileflow/react-native` accepts the same `themeTransition` and `themeBlend` props:
+The `Map` of `@tileflow/react-native` accepts the same `themeTransition` and `themeBlend` props.
+Theme and `timeOfDay` changes also cross-fade over 450 ms by default:
 
 ```tsx
 import {Map} from '@tileflow/react-native';
@@ -130,7 +136,6 @@ export function DayMap({position}: {position: number}) {
   return (
     <Map
       source={{map: 'city', manifestUrl: 'https://maps.example.com/tileflow/manifest.json'}}
-      themeTransition={{duration: 450}}
       themeBlend={{position, themes: ['night', 'dusk', 'day']}}
       style={{flex: 1}}
     />
@@ -186,7 +191,7 @@ export async function moveThroughTheDay(map: MapLibreMap, manifestMap: TileflowR
   // `initial` is the runtime style the map was created with.
   const controller = createTileflowThemeController({initial: styleOf('day'), map});
 
-  await controller.setTheme(styleOf('night'), {transition: {duration: 450}});
+  await controller.setTheme(styleOf('night'));
 
   const themes = resolveTileflowRuntimeThemeBlend({
     blend: {position: 0, themes: ['night', 'dusk', 'day']},
@@ -202,8 +207,10 @@ export async function moveThroughTheDay(map: MapLibreMap, manifestMap: TileflowR
 ```
 
 `setTheme` and `setBlend` accept `{transition: {duration}}`;
-`createTileflowThemeController({transition})` sets a default. Requests are serialized and the
-latest wins. A failed change restores the previous appearance and reports `failed` with its error.
+`createTileflowThemeController({transition})` overrides the 450 ms default for themes and blends.
+Sun, emphasis, and style-state changes remain immediate unless a transition is configured.
+Requests are serialized and the latest wins. A failed change restores the previous appearance
+and reports `failed` with its error.
 
 The controller loads blended themes' style documents with the same request policy it uses for
 style font metadata: same-origin credentials, no redirects, and a bounded size. Pass `loadStyle`

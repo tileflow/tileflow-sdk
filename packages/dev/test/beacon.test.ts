@@ -8,9 +8,9 @@ import {
   compositeColor,
   contrastRatio,
   metricScore,
-} from '../src/devtools/beacon/audit';
-import {runAudit, styleIssues} from '../src/devtools/beacon/runner';
-import type {ResourceRecord, Side} from '../src/devtools/types';
+} from '../src/inspector/beacon/audit';
+import {runAudit, styleIssues} from '../src/inspector/beacon/runner';
+import type {ResourceRecord, Side} from '../src/inspector/types';
 
 const input = (): AuditInput => ({
   frames: Array(60).fill(16.7),
@@ -103,14 +103,14 @@ test('network excludes unknown status and archive ranges from tile payload scori
   assert.equal(check(data, 'requests').findings?.[0].message, '404 · Tile · https://host/file');
 });
 
-test('style integrity skips DevTools overlays and locates broken source and zoom references', () => {
+test('style integrity skips Inspector overlays and locates broken source and zoom references', () => {
   const style = {
     version: 8,
     sources: {},
     layers: [
       {id: 'roads', type: 'line', source: 'missing', minzoom: 12, maxzoom: 10},
       {id: 'roads', type: 'background'},
-      {id: '__tileflow-devtools-tile', type: 'line', source: 'temporary'},
+      {id: '__tileflow-inspector-tile', type: 'line', source: 'temporary'},
     ],
   } as StyleSpecification;
   const issues = styleIssues(style);
@@ -217,7 +217,7 @@ function fixture() {
         devicePixelRatio: 2,
         performance: {getEntriesByType: () => []},
         matchMedia: () => ({matches: false}),
-        __tileflowDevtoolsObserver: observer,
+        __tileflowInspectorObserver: observer,
         requestAnimationFrame: (callback: (time: number) => void) =>
           setTimeout(() => callback(performance.now()), 16),
         cancelAnimationFrame: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
@@ -259,7 +259,9 @@ test('navigation audit restores the camera and observer and removes all listener
   assert.deepEqual([f.canvas.clientWidth, f.canvas.clientHeight], [800, 600]);
   assert.equal(f.side.frame.style.getPropertyValue('transform'), '');
   assert.ok(
-    f.jumps.every((item) => (item as {event: {tileflowDevtools: boolean}}).event.tileflowDevtools),
+    f.jumps.every(
+      (item) => (item as {event: {tileflowInspector: boolean}}).event.tileflowInspector,
+    ),
   );
 });
 
@@ -344,7 +346,7 @@ test('deep profile covers desktop, mobile and tablet and restores dimensions', a
 });
 
 test('inspector cancellation restores viewport, DPR and overlays even when scene restoration fails', async (t) => {
-  const {runInspectorAudit} = await import('../src/devtools/beacon/inspector-audit');
+  const {runInspectorAudit} = await import('../src/inspector/beacon/inspector-audit');
   const prior = Object.getOwnPropertyDescriptor(globalThis, 'window');
   t.after(() => {
     if (prior) Object.defineProperty(globalThis, 'window', prior);
@@ -405,7 +407,7 @@ test('inspector cancellation restores viewport, DPR and overlays even when scene
 });
 
 test('active tour measures motion and settled windows across countries within its budget', async (t) => {
-  const {runInspectorAudit} = await import('../src/devtools/beacon/inspector-audit');
+  const {runInspectorAudit} = await import('../src/inspector/beacon/inspector-audit');
   t.mock.timers.enable({apis: ['setTimeout', 'Date'], now: 0});
   t.mock.method(performance, 'now', () => Date.now());
   const prior = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -455,7 +457,7 @@ test('active tour measures motion and settled windows across countries within it
       'scripted motion is excluded, incomplete loading still fails',
     );
     assert.ok((f.jumps[0] as any).camera.duration > 0);
-    assert.deepEqual((f.jumps[0] as any).event, {tileflowDevtools: true});
+    assert.deepEqual((f.jumps[0] as any).event, {tileflowInspector: true});
     assert.deepEqual(f.camera().center, f.original.center);
     assert.equal(f.camera().zoom, f.original.zoom);
     assert.equal(f.observer.recording, false);
@@ -465,7 +467,7 @@ test('active tour measures motion and settled windows across countries within it
 });
 
 test('inspector scores current errors, preserves diagnostic evidence and excludes earlier session failures', async (t) => {
-  const {runInspectorAudit} = await import('../src/devtools/beacon/inspector-audit');
+  const {runInspectorAudit} = await import('../src/inspector/beacon/inspector-audit');
   t.mock.timers.enable({apis: ['setTimeout', 'Date'], now: 0});
   t.mock.method(performance, 'now', () => Date.now());
   const prior = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -530,7 +532,7 @@ test('inspector scores current errors, preserves diagnostic evidence and exclude
 });
 
 test('inspector scores legibility and cartography from ready samples and exports their coverage', async (t) => {
-  const {runInspectorAudit} = await import('../src/devtools/beacon/inspector-audit');
+  const {runInspectorAudit} = await import('../src/inspector/beacon/inspector-audit');
   t.mock.timers.enable({apis: ['setTimeout', 'Date'], now: 0});
   t.mock.method(performance, 'now', () => Date.now());
   const prior = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -626,7 +628,7 @@ test('inspector scores legibility and cartography from ready samples and exports
 });
 
 test('cancelling an active tour restores the camera and stops renderer sampling', async (t) => {
-  const {runInspectorAudit} = await import('../src/devtools/beacon/inspector-audit');
+  const {runInspectorAudit} = await import('../src/inspector/beacon/inspector-audit');
   t.mock.timers.enable({apis: ['setTimeout', 'Date'], now: 0});
   t.mock.method(performance, 'now', () => Date.now());
   const prior = Object.getOwnPropertyDescriptor(globalThis, 'window');
@@ -661,7 +663,7 @@ test('cancelling an active tour restores the camera and stops renderer sampling'
 });
 
 test('camera input interrupts an active tour and preserves the user camera', async (t) => {
-  const {runInspectorAudit} = await import('../src/devtools/beacon/inspector-audit');
+  const {runInspectorAudit} = await import('../src/inspector/beacon/inspector-audit');
   t.mock.timers.enable({apis: ['setTimeout', 'Date'], now: 0});
   t.mock.method(performance, 'now', () => Date.now());
   const prior = Object.getOwnPropertyDescriptor(globalThis, 'window');

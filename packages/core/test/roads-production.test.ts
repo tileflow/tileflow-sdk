@@ -398,6 +398,7 @@ test('detailed road extensions compile through remappable semantic contracts', (
     matchesFilter(
       crossing.layer.filter,
       {
+        bearing: 134.3,
         crossing_markings: 'zebra',
         crossing_status: 'uncontrolled',
         detail: 'crossing',
@@ -409,7 +410,7 @@ test('detailed road extensions compile through remappable semantic contracts', (
   assert.equal(
     matchesFilter(
       crossing.layer.filter,
-      {crossing_markings: 'no', crossing_status: 'no', detail: 'crossing'},
+      {bearing: 134.3, crossing_markings: 'no', crossing_status: 'no', detail: 'crossing'},
       'Point',
     ),
     false,
@@ -417,7 +418,7 @@ test('detailed road extensions compile through remappable semantic contracts', (
   assert.equal(
     matchesFilter(
       crossing.layer.filter,
-      {crossing_status: 'uncontrolled', detail: 'crossing'},
+      {bearing: 134.3, crossing_status: 'uncontrolled', detail: 'crossing'},
       'Point',
     ),
     false,
@@ -447,6 +448,61 @@ test('detailed road extensions compile through remappable semantic contracts', (
   assert.equal(portableIds.includes('tileflow-sidewalk-surface'), false);
   assert.equal(portableIds.includes('tileflow-road-circular-fill'), false);
   assert.equal(portableIds.includes('tileflow-road-crossing'), false);
+});
+
+test('crossings hide unresolved footway points and preserve valid road bearings across schemas', () => {
+  const remapped = resolveTileflowData({
+    type: 'vector-tiles',
+    attribution: 'Test',
+    schema: openMapTiles({
+      fields: {crossing: 'control', direction: 'bearing', markings: 'paint', subclass: 'kind'},
+      layers: {streetFurniture: 'furniture'},
+    }),
+    url: '/tiles.json',
+  });
+  for (const data of [context.data, remapped]) {
+    const {fields} = data.schema;
+    const contributions = compileRoads(roads({crossings: {image: 'crosswalk'}}), {
+      ...context,
+      data,
+    });
+    const layer = contributions.find(({layer}) => layer.id === 'tileflow-road-crossing')!.layer;
+    // Avenue Joseph Bouvard: adjoining footway nodes carry these markings but
+    // no direction; the actual minor-road crossing also carries direction=134.3.
+    const footway = {
+      [fields.subclass]: 'crossing',
+      [fields.crossing]: 'uncontrolled',
+      [fields.markings]: 'zebra',
+    };
+    assert.equal(matchesFilter(layer.filter, footway, 'Point'), false);
+    for (const direction of [null, '', 'unknown', 'north', true, false, -1, 361, '-1', '361']) {
+      assert.equal(
+        matchesFilter(layer.filter, {...footway, [fields.direction]: direction}, 'Point'),
+        false,
+        `invalid direction ${JSON.stringify(direction)}`,
+      );
+    }
+    for (const direction of [0, 90, 134.3, 360, '0', '134.3', '360']) {
+      const road = {...footway, [fields.direction]: direction};
+      assert.equal(matchesFilter(layer.filter, road, 'Point'), true);
+      assert.equal(
+        evaluateProperty(
+          (layer.layout as Record<string, unknown>)['icon-rotate'],
+          mapLibreStyleSpec.layout_symbol['icon-rotate'],
+          road,
+        ),
+        Number(direction) + 90,
+      );
+      assert.equal(matchesFilter(layer.filter, {...road, [fields.crossing]: 'no'}, 'Point'), false);
+      for (const markings of ['no', 'none', 'unmarked']) {
+        assert.equal(
+          matchesFilter(layer.filter, {...road, [fields.markings]: markings}, 'Point'),
+          false,
+        );
+      }
+    }
+    assert.deepEqual(styleErrors(assembleTileflowLayers(contributions)), []);
+  }
 });
 
 test('metric roundabouts stay anchored to geographic distances at fractional and maximum zooms', () => {

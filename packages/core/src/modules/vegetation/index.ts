@@ -26,6 +26,10 @@ export type TileflowVegetationThreeDimensionalStyle = {
   hedgeColors?: readonly TileflowThemeColorValue[];
   crownScale?: TileflowThemeNumberValue;
   heightScale?: TileflowThemeNumberValue;
+  /** Visual minimum height in metres (0–20); smaller trees grow proportionally, including crowns. Default 0 preserves measured sizes. */
+  minimumHeight?: TileflowThemeNumberValue;
+  /** Variation within the authored foliage palette and between trunks, from 0 (default) to 1. */
+  materialVariation?: TileflowThemeNumberValue;
   /**
    * How trees take the light: `faceted` (the default), low-poly facets softened towards a round
    * crown; `smooth`, round crowns; or `toon`, three bands of light and a crisp shadow, as a drawn

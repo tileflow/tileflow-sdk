@@ -40,7 +40,7 @@ type NormalizedSide = Omit<TileflowComparisonSide, 'basePath'> & {
 };
 
 /**
- * Compose one or two existing Tileflow dev handlers behind the same-origin Map DevTools.
+ * Compose one or two existing Tileflow dev handlers behind the same-origin Inspector.
  *
  * The side handlers retain ownership of styles, sprites, fonts, generations, live
  * events, and last-known-good behavior. This router owns only the shell document and
@@ -59,25 +59,25 @@ export function createTileflowComparisonRequestHandler(options: TileflowComparis
   if (workbenchUrl !== undefined) {
     if (!workbenchUrl || (comparisonBasePath && !matchesBasePath(workbenchUrl, comparisonBasePath)))
       throw new TypeError(
-        'Map DevTools API must own a non-root route inside the comparison base path.',
+        'Inspector API must own a non-root route inside the comparison base path.',
       );
     assertDisjointSideRoutes(workbenchUrl, left.basePath);
     if (right) assertDisjointSideRoutes(workbenchUrl, right.basePath);
     assertDisjointSideRoutes(workbenchUrl, `${comparisonBasePath}/__workbench-fonts`);
     assertDisjointSideRoutes(workbenchUrl, `${comparisonBasePath}/__workbench-runtime`);
   }
-  const title = normalizeLabel(options.title ?? 'Tileflow Map DevTools', 'title');
+  const title = normalizeLabel(options.title ?? 'Tileflow Inspector', 'title');
   const initialMode = right ? (options.initialMode ?? 'side-by-side') : 'single';
 
   return async function handleTileflowComparisonRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const pathname = url.pathname;
 
-    if (pathname === `${comparisonBasePath}/__workbench-runtime/devtools.js`) {
+    if (pathname === `${comparisonBasePath}/__workbench-runtime/inspector.js`) {
       if (request.method !== 'GET' && request.method !== 'HEAD')
         return jsonResponse({error: 'Method not allowed'}, 405);
       const source = await readFile(
-        new URL('../dist/devtools-browser.js', import.meta.url),
+        new URL('../dist/inspector-browser.js', import.meta.url),
         'utf8',
       );
       return new Response(request.method === 'HEAD' ? null : source, {

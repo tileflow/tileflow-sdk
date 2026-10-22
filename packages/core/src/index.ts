@@ -721,6 +721,10 @@ export {
   tileflowBuildingsMetadataKey,
   tileflowTeamModelUrl,
 } from './buildings-3d-design';
+export type {
+  TileflowBuildingSurfaces,
+  TileflowBuildingSurfaceDesign,
+} from './buildings-3d-surfaces';
 export {
   tileflowInsideRings,
   tileflowModelLimits,

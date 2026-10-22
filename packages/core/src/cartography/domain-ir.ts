@@ -405,6 +405,9 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
   match = /^labels\.cohorts\.roads\.cohort(\d+)$/u.exec(semanticKey);
   if (match) return `tileflow-label-road-cohort-${match[1]}`;
 
+  match = /^labels\.cohorts\.roads\.network(\d+)$/u.exec(semanticKey);
+  if (match) return `tileflow-label-road-network-${match[1]}`;
+
   match = /^landforms\.classes\.([^.]+)$/u.exec(semanticKey);
   if (match) return `tileflow-landform-${match[1]}`;
 

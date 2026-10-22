@@ -122,9 +122,9 @@ for (const [referenceName, theme] of Object.entries(themes)) {
         Object.entries(vegetation.forms).map(([form, definition]) => [form, definition.models]),
       ),
       {
-        round: ['streets-tree-round'],
+        round: ['streets-tree-round', 'streets-tree-open'],
         open: ['streets-tree-open'],
-        tall: ['streets-tree-tall'],
+        tall: ['streets-tree-tall', 'streets-tree-open'],
         conifer: ['streets-tree-conifer'],
         columnar: ['streets-tree-columnar'],
         palm: ['streets-tree-palm-feather', 'streets-tree-palm-fan'],

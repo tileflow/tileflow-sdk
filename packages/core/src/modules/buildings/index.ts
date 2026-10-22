@@ -1,5 +1,10 @@
+import type {TileflowBuildingSurfaces} from '../../buildings-3d-surfaces';
 import type {TileflowAreaStyle, TileflowExtrusionStyle} from '../../cartography/styles';
-import type {TileflowThemeColorValue, TileflowThemeNumberValue} from '../../cartography/values';
+import type {
+  TileflowThemeColorValue,
+  TileflowThemeNumberValue,
+  TileflowThemeValue,
+} from '../../cartography/values';
 import type {TileflowModelLightingRole} from '../../models-3d-model';
 
 export type TileflowBuildingMode = '3d' | 'flat';
@@ -86,6 +91,11 @@ export type TileflowBuildingsThreeDimensionalStyle = {
    * barns, factories and churches, and homes lit apart from offices. Defaults to false.
    */
   windows?: boolean;
+  /** Decorative wall joints, roof tiles and painted cornices. Off by default; ordinary buildings only. */
+  surfaces?: TileflowBuildingSurfaces<
+    TileflowThemeNumberValue,
+    TileflowThemeValue<readonly [number, number]>
+  >;
   /**
    * Building models the map places in its city, from the glTF binaries in its `models`
    * directories. Each stands in for the buildings under its footprint.

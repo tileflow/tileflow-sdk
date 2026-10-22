@@ -221,10 +221,11 @@ export function attachTileflowSkyHaze(map: TileflowSkyHazeMap): () => void {
 
   function sync(): void {
     if (disposed) return;
-    const sky = map.getSky?.() as Record<string, unknown> | undefined;
-    const wanted = typeof sky?.['horizon-color'] === 'string';
-    const present = Boolean(map.getLayer(tileflowSkyHazeLayerId));
     try {
+      // MapLibre's getSky() throws before the first style or after setStyle(null).
+      const sky = map.getSky?.() as Record<string, unknown> | undefined;
+      const wanted = typeof sky?.['horizon-color'] === 'string';
+      const present = Boolean(map.getLayer(tileflowSkyHazeLayerId));
       if (!wanted) {
         if (present) map.removeLayer(tileflowSkyHazeLayerId);
         return;
@@ -244,7 +245,7 @@ export function attachTileflowSkyHaze(map: TileflowSkyHazeMap): () => void {
       const next = order[order.indexOf(tileflowSkyHazeLayerId) + 1];
       if (next !== beforeId) map.moveLayer?.(tileflowSkyHazeLayerId, beforeId);
     } catch {
-      // The style is mid-update; the next style event retries.
+      // The style is absent or mid-update; the next style event retries.
     }
   }
 

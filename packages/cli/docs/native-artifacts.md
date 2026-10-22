@@ -39,7 +39,7 @@ npx tileflow preview --renderer native --map stores --theme light
 Native mode creates the existing watched artifact session with renderer `native`. It keeps the
 last-known-good native artifact family when a watched generation becomes invalid and replaces it
 only after a later valid generation is prepared. The endpoint is an **assets-only** development
-endpoint: it does not render a browser map, open Map DevTools, start Metro, launch a device,
+endpoint: it does not render a browser map, open Inspector, start Metro, launch a device,
 or establish visual/native acceptance.
 
 With the default host and port, the canonical runtime manifest is:

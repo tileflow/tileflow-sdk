@@ -5,8 +5,8 @@ import {
   labelSizeSample,
   sampledTextSize,
   scaleContinuitySample,
-} from '../src/devtools/beacon/quality';
-import {sampleLabels} from '../src/devtools/beacon/runner';
+} from '../src/inspector/beacon/quality';
+import {sampleLabels} from '../src/inspector/beacon/runner';
 
 const camera = {center: [0, 0] as [number, number], zoom: 14, bearing: 0, pitch: 0};
 

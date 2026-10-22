@@ -1729,6 +1729,7 @@ function runPreviewScript(
     attachTileflowSky: () => () => {},
     attachTileflowSkyHaze: () => () => {},
     tileflowMaxPitch: 85,
+    tileflowCanvasContextAttributes: (attributes: object) => ({antialias: true, ...attributes}),
     readTileflowSunPreset: () => undefined,
     resolveTileflowSun: (preset: unknown) => preset,
     tileflowDefaultSunPreset: {},

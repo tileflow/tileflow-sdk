@@ -127,6 +127,9 @@ take priority over `mapOptions`, then the manifest view, then shared defaults. `
 a Tileflow map through its manifest; it has no renderer discriminator or direct-style mode.
 Tileflow's styles are validated when they are compiled, so `validateStyle` defaults to `false`; pass
 `true` to validate them again in the browser.
+The map canvas is multisampled by default (`canvasContextAttributes.antialias` is `true`) so the
+thin edges of 3D models stay continuous; other context attributes you pass are kept, and
+`canvasContextAttributes: {antialias: false}` trades that smoothing for lower GPU cost.
 The obsolete source fields `kind` and `style` are rejected. For a completely unmanaged map, use
 `maplibre-gl` directly rather than a Tileflow component.
 

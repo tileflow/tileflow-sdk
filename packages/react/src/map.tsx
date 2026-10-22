@@ -39,6 +39,7 @@ import {
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   subscribeTileflowSystemColorScheme,
+  tileflowCanvasContextAttributes,
   type TileflowThemeController,
   tileflowMaxPitch,
   type TileflowThemeTransition,
@@ -829,6 +830,9 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
 
         const map = new maplibregl.Map({
           ...stableMapOptions,
+          canvasContextAttributes: tileflowCanvasContextAttributes(
+            stableMapOptions?.canvasContextAttributes,
+          ),
           container,
           style: initialRuntimeStyle.style as StyleSpecification | string,
           bearing: bearingRef.current,

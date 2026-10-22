@@ -72,6 +72,7 @@ export {
   tileflowSkyHazeLayerId,
   type TileflowSkyHazeMap,
 } from './sky-haze-browser';
+export {tileflowCanvasContextAttributes} from './canvas-context-browser';
 export {
   createBoundaryFeatureState,
   type CreateBoundaryFeatureStateOptions,

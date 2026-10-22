@@ -46,6 +46,7 @@
     registerTileflowWorldRequestBridge,
     subscribeTileflowSystemColorScheme,
     tileflowMaxPitch,
+    tileflowCanvasContextAttributes,
     type TileflowFairUseNoticeController,
     type TileflowMapLifecycleAttachment,
     type TileflowThemeController,
@@ -588,6 +589,7 @@
     });
     const maplibreMap = new maplibregl.Map({
       ...mapOptions,
+      canvasContextAttributes: tileflowCanvasContextAttributes(mapOptions?.canvasContextAttributes),
       attributionControl: mapOptions?.attributionControl ?? {compact: true},
       // Tileflow's compiled styles are validated when they are built.
       validateStyle: mapOptions?.validateStyle ?? false,

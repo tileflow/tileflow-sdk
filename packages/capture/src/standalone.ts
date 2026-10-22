@@ -887,6 +887,8 @@ window.__tileflowCaptureLoad = async function(input) {
       .map(([sourceId]) => sourceId);
     const map = new window.maplibregl.Map({
       attributionControl: false,
+      // Multisampled like the interactive map, so thin 3D model edges capture without stipple.
+      canvasContextAttributes: {antialias: true},
       container: "map",
       fadeDuration: 0,
       interactive: false,

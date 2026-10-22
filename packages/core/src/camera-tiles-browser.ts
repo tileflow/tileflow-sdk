@@ -79,6 +79,8 @@ export type CameraTiles<T> = {
   readonly origin: readonly [number, number];
   /** Metres per tile unit (of 8192) at the camera's latitude. */
   readonly metres: number;
+  /** The disc the wanted tiles cover whole, at the zoom tiles are read at; see `cameraTileRing`. */
+  ring(): CameraTileRing | undefined;
   /** A tile's corner from the origin, in tile units of 8192. */
   offsetOf(tile: {x: number; y: number}): [number, number];
   /**
@@ -105,6 +107,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
   }[] = [];
   let wanted: string[] = [];
   let covered: Readonly<{x: number; y: number}>[] = [];
+  let ring: CameraTileRing | undefined;
   type Loader = ReturnType<typeof createTileLoader<TileflowTileBytes>>;
   let reader: Loader | undefined;
   let zoom = options.zoom;
@@ -139,31 +142,14 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
     // without the source's data, such as a placed model, needs to know them.
     const source = ensureReader();
     const centre = map.getCenter();
-    const pitch = map.getPitch();
-    const reach = Math.min(5000, Math.max(800, 1600 * 2 ** (16 - currentZoom) * (1 + pitch / 60)));
-    const bearing = (map.getBearing() * Math.PI) / 180;
-    const ahead = reach * 0.35 * Math.min(1, pitch / 60);
-    const latitude = centre.lat + (Math.cos(bearing) * ahead) / 111_320;
-    const longitude =
-      centre.lng + (Math.sin(bearing) * ahead) / (111_320 * Math.cos((centre.lat * Math.PI) / 180));
-    const [cx, cy] = cameraTileAt(longitude, latitude, zoom);
-    const tileMetres = (earth * Math.cos((latitude * Math.PI) / 180)) / 2 ** zoom;
-    const span = Math.ceil(reach / tileMetres);
-    const candidates: {x: number; y: number; distance: number}[] = [];
-    for (let dx = -span; dx <= span; dx += 1)
-      for (let dy = -span; dy <= span; dy += 1) {
-        const x = Math.floor(cx) + dx;
-        const y = Math.floor(cy) + dy;
-        const distance = Math.hypot(
-          Math.max(x, Math.min(cx, x + 1)) - cx,
-          Math.max(y, Math.min(cy, y + 1)) - cy,
-        );
-        if (distance * tileMetres <= reach) candidates.push({x, y, distance});
-      }
-    candidates.sort((a, b) => a.distance - b.distance);
-    const chosen = candidates.slice(0, options.maxTiles);
-    wanted = chosen.map(({x, y}) => `${x}/${y}`);
-    covered = chosen.map(({x, y}) => ({x, y}));
+    const chosen = cameraTileRing(
+      {...centre, zoom: currentZoom, pitch: map.getPitch(), bearing: map.getBearing()},
+      zoom,
+      options.maxTiles,
+    );
+    ring = chosen;
+    wanted = chosen.tiles.map(({x, y}) => `${x}/${y}`);
+    covered = chosen.tiles.map(({x, y}) => ({x, y}));
     origin = cameraTileAt(centre.lng, centre.lat, zoom);
     metres = (earth * Math.cos((centre.lat * Math.PI) / 180)) / 2 ** zoom / extent;
     if (!source) {
@@ -171,7 +157,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       return;
     }
     const now = performance.now();
-    for (const {x, y, distance} of chosen) {
+    for (const {x, y, distance} of chosen.tiles) {
       const key = `${x}/${y}`;
       let entry = tiles.get(key);
       if (!entry) {
@@ -185,7 +171,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
         !entry.loading &&
         (entry.retryAt ?? 0) <= now
       )
-        load(source, key, entry, tileMetres);
+        load(source, key, entry, chosen.tileMetres);
     }
     evict();
     map.triggerRepaint();
@@ -325,6 +311,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       return list;
     },
     coverage: () => covered,
+    ring: () => ring,
     all: () => tiles.values(),
     get zoom() {
       return zoom;
@@ -443,6 +430,59 @@ async function sharedTileFetch(url: string, init: RequestInit): Promise<Response
 export function cameraFrame(callback: () => void): void {
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(callback);
   else setTimeout(callback, 16);
+}
+
+/** The tiles a camera reads round itself, and the disc they cover whole. */
+export type CameraTileRing = Readonly<{
+  tiles: readonly Readonly<{x: number; y: number; distance: number}>[];
+  /** The point ahead of the map's centre that the tiles are chosen round, in tile coordinates. */
+  centre: readonly [number, number];
+  /**
+   * The radius, in tiles, of the disc round `centre` that the tiles cover whole: as far as the view
+   * reaches, or less where the tile limit stops the ring short.
+   */
+  radius: number;
+  /** Metres across a tile at the ring's latitude. */
+  tileMetres: number;
+}>;
+
+/**
+ * The nearest tiles round a point ahead of the camera's centre, at most `maxTiles`, as far as the
+ * view reaches: farther with a lower zoom and a higher pitch.
+ */
+export function cameraTileRing(
+  camera: Readonly<{lng: number; lat: number; zoom: number; pitch: number; bearing: number}>,
+  tileZoom: number,
+  maxTiles: number,
+): CameraTileRing {
+  const reach = Math.min(
+    5000,
+    Math.max(800, 1600 * 2 ** (16 - camera.zoom) * (1 + camera.pitch / 60)),
+  );
+  const bearing = (camera.bearing * Math.PI) / 180;
+  const ahead = reach * 0.35 * Math.min(1, camera.pitch / 60);
+  const latitude = camera.lat + (Math.cos(bearing) * ahead) / 111_320;
+  const longitude =
+    camera.lng + (Math.sin(bearing) * ahead) / (111_320 * Math.cos((camera.lat * Math.PI) / 180));
+  const [cx, cy] = cameraTileAt(longitude, latitude, tileZoom);
+  const tileMetres = (earth * Math.cos((latitude * Math.PI) / 180)) / 2 ** tileZoom;
+  const span = Math.ceil(reach / tileMetres);
+  const candidates: {x: number; y: number; distance: number}[] = [];
+  for (let dx = -span; dx <= span; dx += 1)
+    for (let dy = -span; dy <= span; dy += 1) {
+      const x = Math.floor(cx) + dx;
+      const y = Math.floor(cy) + dy;
+      const distance = Math.hypot(
+        Math.max(x, Math.min(cx, x + 1)) - cx,
+        Math.max(y, Math.min(cy, y + 1)) - cy,
+      );
+      if (distance * tileMetres <= reach) candidates.push({x, y, distance});
+    }
+  candidates.sort((a, b) => a.distance - b.distance);
+  const tiles = candidates.slice(0, maxTiles);
+  // Every tile that reaches nearer than the first one left out is in, so that far is covered whole.
+  const radius = Math.min(reach / tileMetres, candidates[tiles.length]?.distance ?? Infinity);
+  return {tiles, centre: [cx, cy], radius, tileMetres};
 }
 
 /** A point as fractional tile coordinates at a zoom. */

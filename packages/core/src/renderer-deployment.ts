@@ -15,6 +15,7 @@ import {tileflowNativeBuildRecordSchema} from './native-build-record';
 import {validateTileflowNativePreparedStyle} from './native-profile';
 import {tileflowNativeProfileLimits} from './native-profile-helpers';
 import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
+import {tileflowMaxPitch} from './camera-limits';
 
 /** These are transport/validation bounds, not renderer or commercial quotas. */
 export const tileflowRendererDeploymentLimits = Object.freeze({
@@ -150,7 +151,7 @@ const viewSchema = z
     center: z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]).optional(),
     zoom: z.number().min(0).max(24).optional(),
     bearing: z.number().finite().optional(),
-    pitch: z.number().min(0).max(85).optional(),
+    pitch: z.number().min(0).max(tileflowMaxPitch).optional(),
   })
   .strict();
 

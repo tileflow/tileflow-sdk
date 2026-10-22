@@ -300,6 +300,7 @@ test('publishes AI-reference constraints that match exact assets and capture aut
     projection: 'atomic',
     scenes: 'leaf',
     shots: 'leaf',
+    sky: 'atomic',
     sources: 'keyed-resources',
     systemThemes: 'atomic',
     terrain: 'atomic',

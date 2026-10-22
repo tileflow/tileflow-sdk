@@ -1,4 +1,4 @@
-import {tileflowShadowLookup} from './scene-3d-shaders';
+import {tileflowHazeFragment, tileflowHazeVertex, tileflowShadowLookup} from './scene-3d-shaders';
 
 // Shaders of Tileflow's 3D trees (trees-3d-browser.ts). A unit tree mesh is stretched to each tree's
 // height and crown, turned, and stood on its point in the tile, projected with MapLibre's
@@ -119,6 +119,7 @@ out vec3 v_shadow;
 out vec3 v_look; // part, lobe shade, occlusion
 out float v_shade; // the tree's shade among the theme's colours
 out float v_fade;
+${tileflowHazeVertex}
 void main() {
   float growth = growthOf();
   if (growth <= 0.0) {
@@ -127,6 +128,7 @@ void main() {
   }
   vec3 local = standing(growth);
   gl_Position = projectTileFor3D(a_tree_pos + local.xy / u_metres * vec2(1.0, -1.0), local.z);
+  v_haze_depth = gl_Position.w;
   vec3 normal = normalOf();
   float facing = clamp(dot(normal, u_shadow_dir), 0.0, 1.0);
   vec4 shadow = u_light_matrix *
@@ -157,6 +159,7 @@ uniform vec3 u_leaves[4]; // the form's colours, sunlit
 uniform float u_leaf_count;
 out vec4 fragColor;
 ${tileflowShadowLookup}
+${tileflowHazeFragment}
 
 ${treeDither}
 
@@ -206,7 +209,7 @@ void main() {
   // and scene illumination, so a grey tree in neutral light stays grey.
   float crownTop = bark ? 0.0 : smoothstep(0.1, 0.9, normal.z);
   colour = mix(colour, base * 0.95 + vec3(0.03), u_night * 0.45 * crownTop);
-  fragColor = vec4(colour, 1.0);
+  fragColor = vec4(hazed(colour), 1.0);
 }`;
 
 // The outline of a tree: its back faces pushed out along their normals by a constant width on
@@ -220,6 +223,7 @@ uniform vec2 u_viewport; // the drawing buffer's size, in pixels
 uniform float u_edge_width; // the outline's width, in the drawing buffer's pixels
 ${placement}
 out float v_fade;
+${tileflowHazeVertex}
 void main() {
   float growth = growthOf();
   // Fronds are seen from both sides: they keep no outline.
@@ -237,6 +241,7 @@ void main() {
   vec2 push = length(screen) > 1e-6 ? normalize(screen) : vec2(0.0);
   at.xy += push * u_edge_width * 2.0 / u_viewport * at.w;
   gl_Position = at;
+  v_haze_depth = at.w;
   float distance = length((a_tree_pos - u_centre) * u_metres);
   v_fade = 1.0 - smoothstep(u_reach.x, u_reach.y, distance);
 }`;
@@ -246,6 +251,7 @@ precision highp float;
 in float v_fade;
 uniform float u_fade;
 uniform vec3 u_edge_colour;
+${tileflowHazeFragment}
 out vec4 fragColor;
 
 float dither(vec2 p) {
@@ -257,5 +263,5 @@ float dither(vec2 p) {
 
 void main() {
   if (v_fade * u_fade < dither(gl_FragCoord.xy)) discard;
-  fragColor = vec4(u_edge_colour, 1.0);
+  fragColor = vec4(hazed(u_edge_colour), 1.0);
 }`;

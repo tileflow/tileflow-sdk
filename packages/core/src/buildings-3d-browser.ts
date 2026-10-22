@@ -38,7 +38,12 @@ import {
   tileflowBuildingVertex,
 } from './buildings-3d-shaders';
 import {type BuildingTileData, type BuildingTileMesh} from './buildings-3d-tile';
-import {buildingBoxVisible, buildingCornerDetail, buildingDrawRanges} from './buildings-3d-view';
+import {
+  buildingBoxDepth,
+  buildingBoxVisible,
+  buildingCornerDetail,
+  buildingDrawRanges,
+} from './buildings-3d-view';
 import {acquireCameraTileBuilder} from './camera-tile-builder';
 import {cameraFrame, cameraTileAt, createCameraTiles} from './camera-tiles-browser';
 import {tileflowFeatureColour} from './feature-colour-browser';
@@ -65,9 +70,11 @@ import {
   tileflowScene3D,
   type TileflowSceneCaster,
   tileflowSceneLight,
+  type TileflowSceneReach,
   tileflowSceneShadowFloor,
 } from './scene-3d-browser';
 import {tileflowSceneMinzoom} from './scene-3d-visibility';
+import {bindTileflowSkyHaze, type TileflowSkyHazeArgs, tileflowSkyHazeOf} from './sky-haze-browser';
 import {resolveTileflowSun, tileflowStyleSunPreset, type TileflowSun} from './sun';
 import {tileflowColourChannels} from './theme-blend';
 import type {TileflowTileRequestTransform} from './tile-reader';
@@ -83,6 +90,7 @@ export type TileflowBuildings3DMap = {
   getLayer(id: string): unknown;
   getPaintProperty(layer: string, name: string): unknown;
   getPitch(): number;
+  getSky?(): unknown;
   getSource(id: string): unknown;
   getStyle(): unknown;
   getZoom(): number;
@@ -189,7 +197,7 @@ type BuildingTile = {
   palette?: {texture: WebGLTexture; key: string; rows: number};
 };
 type TileEntry = {x: number; y: number; value: BuildingTile};
-type ProjectionArgs = {
+type ProjectionArgs = TileflowSkyHazeArgs & {
   getProjectionData(params: {
     tileID: {canonical: {x: number; y: number; z: number}; wrap: number};
   }): {
@@ -251,6 +259,10 @@ export function createTileflowBuildings3D(
   // The ground masks drawn by this frame's prerender, read back by its render.
   let masks: {contact?: WebGLTexture; flood?: WebGLTexture} = {};
   let disposed = false;
+  /** The view depth past which the distance haze hides everything, as drawn last. */
+  let hazeDepth = Infinity;
+  /** The view's direction along the ground, in tile axes, as drawn last. */
+  let ahead: [number, number] = [0, -1];
   // Shadows are drawn in the map's shared 3D scene, with any other 3D layer on the map.
   const scene = tileflowScene3D(map);
   let generation = 0;
@@ -310,6 +322,7 @@ export function createTileflowBuildings3D(
       for (const entry of linking ?? []) context.deleteProgram(entry.program);
       unregister();
       registered = false;
+      scene.setReach(undefined);
       scene.release(context);
       if (ground) {
         context.deleteVertexArray(ground.vao);
@@ -326,6 +339,7 @@ export function createTileflowBuildings3D(
     },
     prerender(context: WebGLRenderingContext | WebGL2RenderingContext, args: ProjectionArgs) {
       if (!isWebGL2(context)) return;
+      ahead = aheadNow();
       ensureCamera();
       // Models and landmarks are read for every tile the camera wants, from a zoom before the
       // buildings show, so they stand when the buildings fade in.
@@ -367,6 +381,8 @@ export function createTileflowBuildings3D(
       // Prepare resident tiles before the zoom entrance, so the fade starts with ready geometry.
       // Uploads are bounded and request frames only while work remains.
       if (target > 0 || scale > 0) upload(context);
+      // The distance haze fits itself to where the city's tiles end.
+      scene.setReach(visibleScale() > 0 ? reachNow() : undefined);
       if (visibleScale() <= 0 && modelScale() <= 0) return;
       draw(context, args);
     },
@@ -813,6 +829,8 @@ export function createTileflowBuildings3D(
       context.uniformMatrix4fv(program.uniforms.u_light_matrix!, false, frame.light.matrix);
       for (const {x, y, value} of shown > 0 ? drawn() : []) {
         const offset = frame.offsetOf({x, y}, camera.zoom);
+        const ring = ringIn(x, y);
+        if (!insideRing(ring, 0, 0, tileflowBuildingExtent, tileflowBuildingExtent)) continue;
         if (
           !buildingBoxVisible(frame.light.matrix, [
             (offset[0] - 1) * frame.metres,
@@ -827,6 +845,7 @@ export function createTileflowBuildings3D(
         const ranges = buildingDrawRanges(
           value.mesh,
           ({bounds: [left, top, right, bottom, height]}) =>
+            insideRing(ring, left, top, right, bottom) &&
             buildingBoxVisible(frame.light.matrix, [
               (left + offset[0]) * frame.metres,
               -(bottom + offset[1]) * frame.metres,
@@ -838,6 +857,8 @@ export function createTileflowBuildings3D(
         );
         if (!ranges.length) continue;
         context.uniform2f(program.uniforms.u_offset!, ...offset);
+        context.uniform4f(program.uniforms.u_ring ?? null, ...ring);
+        context.uniform2f(program.uniforms.u_ring_ahead ?? null, ...ahead);
         const buffers = value.gl!;
         context.bindVertexArray(buffers.vao);
         for (const range of ranges)
@@ -1135,6 +1156,66 @@ export function createTileflowBuildings3D(
     context.uniformMatrix4fv(uniforms.u_projection_fallback_matrix!, false, data.fallbackMatrix);
   }
 
+  /** The disc the city's tiles cover whole, in metres round a point, for the distance haze. */
+  function reachNow(): TileflowSceneReach | undefined {
+    const ring = camera.ring();
+    if (!ring) return undefined;
+    const n = 2 ** camera.zoom;
+    return {
+      lng: (ring.centre[0] / n) * 360 - 180,
+      lat: (Math.atan(Math.sinh(Math.PI * (1 - (2 * ring.centre[1]) / n))) * 180) / Math.PI,
+      radius: ring.radius * ring.tileMetres,
+    };
+  }
+
+  /**
+   * The ring of the city's tiles in a tile's own units: its centre, and the radii where buildings
+   * start to sink and where they are gone (the last fifth of the way).
+   */
+  function ringIn(x: number, y: number): [number, number, number, number] {
+    const ring = camera.ring();
+    if (!ring) return [0, 0, 0, 0];
+    const extent = tileflowBuildingExtent;
+    const cx = (ring.centre[0] - x) * extent;
+    const cy = (ring.centre[1] - y) * extent;
+    const inner = ring.radius * extent * 0.8;
+    // A tile wholly inside where buildings start to sink needs no ring: its shaders skip the work.
+    const dx = Math.max(Math.abs(cx), Math.abs(extent - cx));
+    const dy = Math.max(Math.abs(cy), Math.abs(extent - cy));
+    if (dx * dx + dy * dy <= inner * inner) return [0, 0, 0, 0];
+    return [cx, cy, inner, ring.radius * extent];
+  }
+
+  /** The view's direction along the ground, in tile axes (y south), read once a frame. */
+  function aheadNow(): [number, number] {
+    const bearing = (map.getBearing() * Math.PI) / 180;
+    return [Math.sin(bearing), -Math.cos(bearing)];
+  }
+
+  /**
+   * Whether a box, in a tile's units, keeps any height: inside the city's ring, or on its near side,
+   * which never sinks (see `reachOf` in the shaders).
+   */
+  function insideRing(
+    ring: readonly number[],
+    left: number,
+    top: number,
+    right: number,
+    bottom: number,
+  ): boolean {
+    const radius = ring[3]!;
+    if (!(radius > 0)) return true;
+    const cx = ring[0]!;
+    const cy = ring[1]!;
+    const dx = Math.max(left - cx, 0, cx - right);
+    const dy = Math.max(top - cy, 0, cy - bottom);
+    if (dx * dx + dy * dy < radius * radius) return true;
+    const along =
+      Math.min(ahead[0] * (left - cx), ahead[0] * (right - cx)) +
+      Math.min(ahead[1] * (top - cy), ahead[1] * (bottom - cy));
+    return along < radius - ring[2]!;
+  }
+
   function viewRanges(args: ProjectionArgs, tile: TileEntry, margin = 0, wallsOnly = false) {
     const data = args.getProjectionData({
       tileID: {canonical: {x: tile.x, y: tile.y, z: camera.zoom}, wrap: 0},
@@ -1142,30 +1223,19 @@ export function createTileflowBuildings3D(
     // Globe projection is nonlinear; retain all geometry through its transition.
     const mercator = args.shaderData.variantName === 'mercator';
     const reach = margin / camera.metres + 1;
-    if (
-      mercator &&
-      !buildingBoxVisible(data.mainMatrix, [
-        -reach,
-        -reach,
-        0,
-        tileflowBuildingExtent + reach,
-        tileflowBuildingExtent + reach,
-        tile.value.mesh.top + 0.1,
-      ])
-    )
-      return [];
+    const ring = ringIn(tile.x, tile.y);
+    const hazed = mercator && hazeDepth < Infinity;
+    // Nothing past the city's ring stands up, and nothing wholly past the full haze shows.
+    const shows = (box: readonly [number, number, number, number, number, number]) =>
+      (!mercator || buildingBoxVisible(data.mainMatrix, box)) &&
+      insideRing(ring, box[0], box[1], box[3], box[4]) &&
+      (!hazed || buildingBoxDepth(data.mainMatrix, box) < hazeDepth);
+    const extent = tileflowBuildingExtent + reach;
+    if (!shows([-reach, -reach, 0, extent, extent, tile.value.mesh.top + 0.1])) return [];
     return buildingDrawRanges(
       tile.value.mesh,
       ({bounds: [left, top, right, bottom, height]}) =>
-        !mercator ||
-        buildingBoxVisible(data.mainMatrix, [
-          left - reach,
-          top - reach,
-          0,
-          right + reach,
-          bottom + reach,
-          height,
-        ]),
+        shows([left - reach, top - reach, 0, right + reach, bottom + reach, height]),
       wallsOnly,
     );
   }
@@ -1272,6 +1342,10 @@ export function createTileflowBuildings3D(
   }
 
   function draw(context: WebGL2RenderingContext, args: ProjectionArgs): void {
+    const haze = tileflowSkyHazeOf(map, args, context);
+    // Past the full haze a building is the sky's horizon colour on the horizon's colour: it is not
+    // drawn. A haze that is not yet complete (below 60° of pitch) hides nothing.
+    hazeDepth = haze && haze.strength >= 0.999 ? haze.end * haze.distance : Infinity;
     const shown = visibleScale();
     const modelsShown = modelScale();
     const entries = shown > 0 ? drawn() : [];
@@ -1295,6 +1369,7 @@ export function createTileflowBuildings3D(
       const buildings = programs.buildings!;
       const u = buildings.uniforms;
       context.useProgram(buildings.program);
+      bindTileflowSkyHaze(context, buildings.uniforms, haze);
       context.uniform1f(u.u_scale!, shown);
       context.uniform1f(u.u_metres!, placed(0, 0).metres);
       context.uniform3fv(u.u_colour!, themeColour());
@@ -1349,6 +1424,8 @@ export function createTileflowBuildings3D(
         if (!ranges.length) continue;
         project(context, buildings, args, x, y);
         context.uniform2f(u.u_offset!, ...placed(x, y).offset);
+        context.uniform4f(u.u_ring ?? null, ...ringIn(x, y));
+        context.uniform2f(u.u_ring_ahead ?? null, ...ahead);
         const palette = themes ? paletteOf(context, entry, themes.themes) : undefined;
         context.uniform1f(u.u_palette_on!, palette ? 1 : 0);
         context.activeTexture(context.TEXTURE1);
@@ -1419,6 +1496,7 @@ export function createTileflowBuildings3D(
       if (model && list.length > 0) {
         const m = model.uniforms;
         context.useProgram(model.program);
+        bindTileflowSkyHaze(context, model.uniforms, haze);
         context.disable(context.CULL_FACE);
         context.uniform1f(m.u_scale!, modelsShown);
         context.uniform3fv(m.u_sun_dir!, [...light.direction]);
@@ -1472,6 +1550,7 @@ export function createTileflowBuildings3D(
     ) {
       const program = programs.ground!;
       context.useProgram(program.program);
+      bindTileflowSkyHaze(context, program.uniforms, haze);
       context.uniform1f(program.uniforms.u_metres!, frame.metres);
       context.uniform3fv(program.uniforms.u_ground_shadow!, light.groundShadow);
       scene.bindShadow(context, program.uniforms, light.strength);
@@ -1507,6 +1586,7 @@ export function createTileflowBuildings3D(
       // preserves roofs and facades and avoids dark seams where bands or neighbouring tiles meet.
       const composite = programs.contactComposite!;
       context.useProgram(composite.program);
+      bindTileflowSkyHaze(context, composite.uniforms, haze);
       context.activeTexture(context.TEXTURE2);
       context.bindTexture(context.TEXTURE_2D, masks.contact);
       context.uniform1i(composite.uniforms.u_contact!, 2);
@@ -1524,6 +1604,7 @@ export function createTileflowBuildings3D(
     if (nightLight > 0 && light.night > 0.01) {
       const program = programs.flood!;
       context.useProgram(program.program);
+      bindTileflowSkyHaze(context, program.uniforms, haze);
       context.blendFuncSeparate(context.ONE, context.ONE, context.ZERO, context.ONE);
       context.uniform1f(program.uniforms.u_scale!, shown);
       context.uniform1f(program.uniforms.u_metres!, camera.metres);
@@ -1535,6 +1616,7 @@ export function createTileflowBuildings3D(
     if (masks.flood && entries.length > 0 && ground) {
       const composite = programs.architecturalFloodComposite!;
       context.useProgram(composite.program);
+      bindTileflowSkyHaze(context, composite.uniforms, haze);
       context.activeTexture(context.TEXTURE2);
       context.bindTexture(context.TEXTURE_2D, masks.flood);
       context.uniform1i(composite.uniforms.u_mask!, 2);
@@ -1560,6 +1642,7 @@ export function createTileflowBuildings3D(
     if (emitterProgram) {
       const u = emitterProgram.uniforms;
       context.useProgram(emitterProgram.program);
+      bindTileflowSkyHaze(context, emitterProgram.uniforms, haze);
       context.disable(context.CULL_FACE);
       context.blendFuncSeparate(
         context.SRC_ALPHA,
@@ -1891,6 +1974,7 @@ export function createTileflowBuildings3D(
       map.off('styledata', onStyle);
       map.off('idle', attach);
       unregister();
+      scene.setReach(undefined);
       models.dispose();
       try {
         if (map.getLayer(tileflowBuildings3DLayerId)) map.removeLayer(tileflowBuildings3DLayerId);

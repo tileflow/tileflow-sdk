@@ -15,6 +15,7 @@ import {
   tileflowSceneShadowFloor,
 } from './scene-3d-browser';
 import {tileflowSceneMinzoom, tileflowSceneOpacity} from './scene-3d-visibility';
+import {bindTileflowSkyHaze, type TileflowSkyHazeArgs, tileflowSkyHazeOf} from './sky-haze-browser';
 import {resolveTileflowSun, tileflowStyleSunPreset, type TileflowSun} from './sun';
 import {tileflowColourChannels} from './theme-blend';
 import type {TileflowTileRequestTransform} from './tile-reader';
@@ -57,6 +58,8 @@ export type TileflowTrees3DMap = {
   /** The style's layer ids in order, read without serializing the style. */
   getLayersOrder?(): string[];
   getPitch(): number;
+  getSky?(): unknown;
+  getVerticalFieldOfView?(): number;
   getSource(id: string): unknown;
   getStyle(): unknown;
   getZoom(): number;
@@ -149,7 +152,7 @@ type TreeTile = {
   /** A vertex array per form, model and level (`round:0:near`), and one for the hedges. */
   gl?: {vbo: WebGLBuffer; vaos: Map<string, Drawing>; hedge?: Drawing & {vbo: WebGLBuffer}};
 };
-type ProjectionArgs = {
+type ProjectionArgs = TileflowSkyHazeArgs & {
   getProjectionData(params: {
     tileID: {canonical: {x: number; y: number; z: number}; wrap: number};
   }): {
@@ -673,6 +676,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   }
 
   function draw(context: WebGL2RenderingContext, args: ProjectionArgs): void {
+    const haze = tileflowSkyHazeOf(map, args, context);
     const entries = drawn();
     drawnLast = 0;
     if (entries.length === 0 || !meshes || !programs.trees) return;
@@ -688,6 +692,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     const program = programs.trees;
     const u = program.uniforms;
     context.useProgram(program.program);
+    bindTileflowSkyHaze(context, program.uniforms, haze);
     context.enable(context.DEPTH_TEST);
     context.depthFunc(context.LEQUAL);
     context.depthMask(true);
@@ -773,6 +778,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       const edgeProgram = programs.edges;
       const e = edgeProgram.uniforms;
       context.useProgram(edgeProgram.program);
+      bindTileflowSkyHaze(context, edgeProgram.uniforms, haze);
       context.enable(context.CULL_FACE);
       context.cullFace(context.FRONT);
       context.uniform1f(e.u_scale!, visibleScale());
@@ -817,6 +823,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       context.enable(context.BLEND);
       context.blendFuncSeparate(context.DST_COLOR, context.ZERO, context.ZERO, context.ONE);
       context.useProgram(shadowProgram.program);
+      bindTileflowSkyHaze(context, shadowProgram.uniforms, haze);
       context.uniform1f(shadowProgram.uniforms.u_metres!, frame.metres);
       context.uniform3fv(shadowProgram.uniforms.u_ground_shadow!, light.groundShadow);
       scene.bindShadow(context, shadowProgram.uniforms, light.strength);

@@ -31,9 +31,12 @@ out float v_height;
 out vec4 v_uv;
 out vec4 v_rgba;
 out vec3 v_position;
+out float v_haze_depth;
 void main() {
   vec2 uv = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
   gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
+  // No sky: the haze stays off.
+  v_haze_depth = 0.0;
   v_colour = vec3(0.4, 0.5, 0.6);
   v_normal = vec3(0.0, 0.0, 1.0);
   v_shadow = vec3(0.5);

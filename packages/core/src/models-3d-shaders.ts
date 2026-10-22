@@ -1,5 +1,5 @@
 import {modelMaterialSampling, modelPhysicalLighting} from './models-3d-material-shaders';
-import {tileflowShadowLookup} from './scene-3d-shaders';
+import {tileflowHazeFragment, tileflowHazeVertex, tileflowShadowLookup} from './scene-3d-shaders';
 
 // Shaders of the building models a map places in its 3D city, drawn by Tileflow's 3D buildings
 // renderer (buildings-3d-browser.ts) in the same light as its buildings. A model's vertices are whole
@@ -111,12 +111,14 @@ out vec4 v_uv;
 out vec4 v_rgba;
 out vec3 v_position;
 flat out int v_part;
+${tileflowHazeVertex}
 
 void main() {
   vec3 m = turned(metresOf());
   vec2 tile = tileOf(m);
   float z = grown(m.z);
   gl_Position = projectTileFor3D(tile, z);
+  v_haze_depth = gl_Position.w;
   vec3 normal = normalize(turned(upright(a_normal)) + vec3(0.0, 0.0, 1e-5));
   float facing = clamp(dot(normal, u_shadow_dir), 0.0, 1.0);
   vec4 shadow = u_light_matrix * vec4(sceneOf(tile, z) + normal * u_normal_offset * mix(1.0, 0.5, facing), 1.0);
@@ -155,6 +157,7 @@ uniform float u_role_emission_power[7];
 uniform float u_opacity;
 out vec4 fragColor;
 ${tileflowShadowLookup}
+${tileflowHazeFragment}
 ${modelMaterialSampling}
 ${modelPhysicalLighting}
 
@@ -188,7 +191,7 @@ void main() {
     radiance += u_emissive * fromSRGB(materialTexture(4).rgb);
     vec4 own = u_role_emission_colour[role];
     radiance = mix(radiance, mix(base, fromSRGB(own.rgb), own.a), emission);
-    fragColor = vec4(toSRGB(radiance), alpha * u_opacity);
+    fragColor = vec4(hazed(toSRGB(radiance)), alpha * u_opacity);
     return;
   }
   vec3 colour = v_colour * shade(normal, lit);
@@ -198,5 +201,5 @@ void main() {
     colour = pow(mix(pow(max(colour, vec3(0.0)), vec3(2.2)),
       pow(max(target, vec3(0.0)), vec3(2.2)), emission), vec3(1.0 / 2.2));
   }
-  fragColor = vec4(colour, 1.0);
+  fragColor = vec4(hazed(colour), 1.0);
 }`;

@@ -1,4 +1,4 @@
-import {tileflowShadowLookup} from './scene-3d-shaders';
+import {tileflowHazeFragment, tileflowHazeVertex, tileflowShadowLookup} from './scene-3d-shaders';
 
 // Shaders of Tileflow's 3D buildings renderer (buildings-3d-browser.ts). Positions are in tile
 // units and projected with MapLibre's custom-layer projection; the shadow pass works in metres from
@@ -39,6 +39,11 @@ const growth = `
 uniform float u_scale;
 uniform vec2 u_offset; // this tile's corner from the scene's origin, in tile units
 uniform float u_metres; // metres per tile unit
+// The disc the city's tiles cover whole, in this tile's units: its centre, where heights start to
+// ease down and where they are gone; none while its radius is 0. And the view's direction along the
+// ground, in this tile's axes.
+uniform vec4 u_ring;
+uniform vec2 u_ring_ahead;
 
 float progressOf() {
   return clamp(u_scale * 1.25 - a_wave.x * 0.25, 0.0, 1.0);
@@ -47,6 +52,16 @@ float progressOf() {
 float elevationOf(float own, float top, float p) {
   float eased = p * p * (3.0 - 2.0 * p);
   return max(0.0, own - (1.0 - eased) * top);
+}
+
+// Buildings sink into the ground over the last stretch of the city's reach, so it ends without an
+// edge of cut-off blocks. Only its far side does: where the tile limit holds the ring short, the
+// buildings round the camera, nearer than its centre, keep standing.
+float reachOf(vec2 position) {
+  if (u_ring.w <= 0.0) return 1.0;
+  vec2 from = position - u_ring.xy;
+  float far = smoothstep(0.0, u_ring.w - u_ring.z, dot(from, u_ring_ahead));
+  return 1.0 - smoothstep(u_ring.z, u_ring.w, length(from)) * far;
 }
 
 vec3 localOf(vec2 position, float elevation) {
@@ -98,7 +113,7 @@ void main() {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     return;
   }
-  float elevation = elevationOf(a_flags.x > 0.5 ? top : base, top, p);
+  float elevation = elevationOf(a_flags.x > 0.5 ? top : base, top, p) * reachOf(a_pos);
   gl_Position = u_light_matrix * vec4(localOf(a_pos, elevation), 1.0);
 }`;
 
@@ -129,6 +144,7 @@ out vec3 v_shadow;
 flat out vec3 v_wall; // where the wall starts along its ring, its tight corners, its length
 out vec3 v_edge; // a roof triangle's corner weights; on a wall, from 0 at its start to 1 at its end
 flat out float v_outline; // a roof triangle's sides on the outline; a wall's ends on the tile's edge
+${tileflowHazeVertex}
 
 vec3 paletteColour(float theme) {
   float row = theme * u_palette_rows.x + floor(a_feature / u_palette_rows.y);
@@ -145,8 +161,9 @@ void main() {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     return;
   }
-  float elevation = elevationOf(own, top, p);
+  float elevation = elevationOf(own, top, p) * reachOf(a_pos);
   gl_Position = projectTileFor3D(a_pos, elevation);
+  v_haze_depth = gl_Position.w;
   float wall = a_flags.y;
   // A wall faces out level; a roof faces up, tilted by its slope.
   vec3 normal = wall > 0.5 ? vec3(a_normal.x, -a_normal.y, 0.0)
@@ -204,6 +221,7 @@ uniform vec3 u_edge_colour; // the application's colour for them
 uniform float u_edge_own; // how much of them takes the application's colour, from 0 to 1
 ${nightLight}
 ${tileflowShadowLookup}
+${tileflowHazeFragment}
 out vec4 fragColor;
 
 float hash(vec2 p) {
@@ -367,7 +385,7 @@ void main() {
       colour = mix(colour, shopOf(v_building.w, seed) * u_flood + colour * 0.15, across * rows * 0.6 * min(u_flood, 1.0));
     }
   }
-  fragColor = vec4(colour, 1.0);
+  fragColor = vec4(hazed(colour), 1.0);
 }`;
 
 export const tileflowBuildingGroundVertex = (projected: string): string => `#version 300 es
@@ -377,8 +395,10 @@ uniform mat4 u_light_matrix;
 uniform vec2 u_offset;
 uniform float u_metres;
 out vec3 v_shadow;
+${tileflowHazeVertex}
 void main() {
   gl_Position = projectTileFor3D(a_pos, 0.0);
+  v_haze_depth = gl_Position.w;
   vec4 shadow = u_light_matrix * vec4((a_pos + u_offset) * u_metres * vec2(1.0, -1.0), 0.0, 1.0);
   v_shadow = shadow.xyz * 0.5 + 0.5;
 }`;
@@ -388,9 +408,11 @@ precision highp float;
 in vec3 v_shadow;
 uniform vec3 u_ground_shadow;
 ${tileflowShadowLookup}
+${tileflowHazeFragment}
 out vec4 fragColor;
 void main() {
-  float shaded = u_shadow * (1.0 - visibility(v_shadow, 0.15));
+  // Far shadows fade into the haze the flat map has already taken.
+  float shaded = u_shadow * (1.0 - visibility(v_shadow, 0.15)) * (1.0 - hazeOf());
   fragColor = vec4(mix(vec3(1.0), u_ground_shadow, shaded), 1.0);
 }`;
 
@@ -406,6 +428,7 @@ out float v_out;
 out float v_strength;
 out vec3 v_flood;
 out vec3 v_shop;
+${tileflowHazeVertex}
 void main() {
   float base = a_height.x * 0.1;
   float top = a_height.y * 0.1;
@@ -419,6 +442,7 @@ void main() {
     return;
   }
   gl_Position = projectTileFor3D(a_pos + a_normal * (u_band / u_metres) * a_flags.x, 0.0);
+  v_haze_depth = gl_Position.w;
   v_out = a_flags.x;
   v_strength = p;
 }`;
@@ -430,11 +454,13 @@ in float v_strength;
 in vec3 v_flood;
 in vec3 v_shop;
 uniform float u_flood;
+${tileflowHazeFragment}
 out vec4 fragColor;
 void main() {
   float near = 1.0 - v_out;
   float close = near * near * near * near * near * near;
-  fragColor = vec4((v_flood * 0.35 * near * near + v_shop * 0.12 * close) * u_flood * v_strength, 0.0);
+  fragColor = vec4((v_flood * 0.35 * near * near + v_shop * 0.12 * close) * u_flood * v_strength *
+    (1.0 - hazeOf()), 0.0);
 }`;
 
 export const buildingArchitecturalFloodVertex = (projected: string): string => `#version 300 es
@@ -469,8 +495,9 @@ export const buildingArchitecturalFloodComposite = `#version 300 es
 precision highp float;
 uniform sampler2D u_mask;
 uniform vec3 u_colour;
+${tileflowHazeFragment}
 out vec4 fragColor;
 void main() {
   float light = 1.0 - texelFetch(u_mask, ivec2(gl_FragCoord.xy), 0).r;
-  fragColor = vec4(u_colour, light);
+  fragColor = vec4(u_colour, light * (1.0 - hazeOf()));
 }`;

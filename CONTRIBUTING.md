@@ -51,6 +51,7 @@ Browser CI uses TAP so failure details appear before the final summary. With
 both suites report active test files every 30 seconds. Workers report CPU time, memory and active
 resource counts; these timers cannot keep a worker alive. Capture framework tests also stream bounded
 browser launch, context, close, crash and network events. Ordinary local tests remain quiet.
+The observer retains its stderr writer so command-level JSON captures exclude progress messages.
 
 Do not edit package versions, add changesets, create release tags, or run `npm publish`. Every
 source package keeps `0.0.0-development`. Merging to `main` creates a candidate; it does not

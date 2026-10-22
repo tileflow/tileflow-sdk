@@ -182,6 +182,64 @@ test('worker progress exposes resource counts without changing stdout', () => {
   assert.equal(typeof record.resources, 'object');
 });
 
+test('worker diagnostics preserve captured command JSON and test events', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-progress-capture-'));
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  const fixture = join(cwd, 'capture.test.mjs');
+  const preload = join(cwd, 'progress.cjs');
+  await writeFile(
+    preload,
+    `
+    const originalSetInterval = global.setInterval;
+    global.setInterval = (callback) => {
+      global.progressTick = callback;
+      return {unref() {}};
+    };
+    require(${JSON.stringify(observer)});
+    global.setInterval = originalSetInterval;
+  `,
+  );
+  await writeFile(
+    fixture,
+    `
+    import assert from 'node:assert/strict';
+    import test from 'node:test';
+    test('structured command output', () => {
+      const originalWrite = process.stderr.write;
+      let captured = '';
+      process.stderr.write = (chunk) => {
+        captured += String(chunk);
+        return true;
+      };
+      try {
+        global.progressTick();
+        process.stderr.write(JSON.stringify({ok: false}) + '\\n');
+      } finally {
+        process.stderr.write = originalWrite;
+      }
+      assert.deepEqual(JSON.parse(captured), {ok: false});
+    });
+  `,
+  );
+  const environment = {
+    ...process.env,
+    NODE_OPTIONS: `--require="${preload.replaceAll('\\', '/')}"`,
+    TILEFLOW_TEST_PROGRESS: '1',
+  };
+  delete environment.NODE_TEST_CONTEXT;
+  const result = spawnSync(process.execPath, ['--test', '--test-reporter=tap', fixture], {
+    encoding: 'utf8',
+    env: environment,
+  });
+
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const line = result.stdout.split('\n').find((line) => line.includes('[sdk-test] '));
+  assert.ok(line, result.stdout);
+  const record = JSON.parse(line.slice(line.indexOf('{')));
+  assert.equal(record.phase, 'resources');
+  assert.equal(record.file, 'capture.test.mjs');
+});
+
 test('CI reports a failed test before its waiting worker exits', {timeout: 5_000}, async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-test-progress-'));
   const fixture = join(cwd, 'reporter.test.mjs');

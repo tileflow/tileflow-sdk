@@ -253,8 +253,9 @@ before loading a style. See the
 [browser runtime contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/framework-browser-runtime.md).
 
 Set `projection: 'globe'` and `atmosphere: true` for a globe rim, space, and stars, and `sky` for a
-themed street-level sky with night stars (pitch up to 85). Frameworks and capture apply both; direct MapLibre integrations call `attachTileflowAtmosphere(map)` from
-`@tileflow/core/browser`. See
+themed street-level sky that follows the sun. Frameworks and capture apply
+both; direct MapLibre integrations call `attachTileflowAtmosphere(map)` from `@tileflow/core/browser`.
+See
 [globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md)
 and [street sky](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-sky.md).
 

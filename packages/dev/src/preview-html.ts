@@ -45,29 +45,7 @@ export function renderTileflowPreviewHtml(
     <style>
       ${viewportCss}
       body { font-family: ui-sans-serif, system-ui, sans-serif; }
-      #map {
-        background-color: var(--tileflow-space, #2F5070);
-        background-image:
-          radial-gradient(circle at 18% 24%, rgba(225, 240, 250, 0.34) 0 1px, transparent 1.4px),
-          radial-gradient(circle at 72% 62%, rgba(225, 240, 250, 0.22) 0 1px, transparent 1.3px),
-          radial-gradient(circle at 42% 78%, rgba(225, 240, 250, 0.18) 0 0.8px, transparent 1.2px);
-        background-position: 0 0, 37px 71px, 113px 29px;
-        background-size: 173px 149px, 257px 211px, 337px 283px;
-      }
-      #map.tileflow-globe {
-        position: relative;
-        background-image:
-          radial-gradient(circle at 18% 24%, rgba(225, 240, 250, 0.34) 0 1px, transparent 1.4px),
-          radial-gradient(circle at 72% 62%, rgba(225, 240, 250, 0.22) 0 1px, transparent 1.3px),
-          radial-gradient(circle at 42% 78%, rgba(225, 240, 250, 0.18) 0 0.8px, transparent 1.2px);
-      }
-      #map.tileflow-globe .maplibregl-canvas {
-        filter: var(--tileflow-globe-rim, none);
-      }
-      #map.tileflow-globe > .maplibregl-canvas-container {
-        position: relative;
-        z-index: 1;
-      }
+      #map { position: relative; }
       .badge {
         display: none;
         position: fixed;
@@ -96,7 +74,7 @@ export function renderTileflowPreviewHtml(
         padding: 12px;
         white-space: pre-wrap;
       }
-      html[data-devtools-embedded=true] .status { display:none !important; }
+      html[data-inspector-embedded=true] .status { display:none !important; }
       .maplibregl-ctrl-group .tileflow-3d-toggle,
       .maplibregl-ctrl-group .tileflow-tree-toggle,
       .maplibregl-ctrl-group .tileflow-theme-toggle {
@@ -132,21 +110,22 @@ export function renderTileflowPreviewHtml(
     <script type="importmap">{"imports":{"three":"${basePath}/__runtime/three.module.js"}}</script>
     <script type="module">
       import * as maplibregl from "${basePath}/__runtime/maplibre-gl.mjs";
-      import {createPreviewObserver} from "${basePath}/__runtime/devtools-observer.js";
+      import {createPreviewObserver} from "${basePath}/__runtime/inspector-observer.js";
       import {loadTileflowStyleFonts} from "${basePath}/__runtime/tileflow-browser.js";
+      import {attachTileflowLabelPlacement} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowContourProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowPmtilesProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {attachTileflowNauticalLights, attachTileflowNotices} from "${basePath}/__runtime/tileflow-browser.js";
-      import {attachTileflowSky, attachTileflowSkyHaze, tileflowMaxPitch} from "${basePath}/__runtime/tileflow-browser.js";
+      import {attachTileflowAtmosphere, tileflowMaxPitch} from "${basePath}/__runtime/tileflow-browser.js";
       import {tileflowCanvasContextAttributes} from "${basePath}/__runtime/tileflow-browser.js";
       import {createTileflowMap3D} from "${basePath}/__runtime/tileflow-browser.js";
       import {readTileflowSunPreset, resolveTileflowSun, tileflowDefaultSunPreset} from "${basePath}/__runtime/tileflow-browser.js";
 
       maplibregl.setWorkerUrl("${basePath}/__runtime/maplibre-gl-worker.mjs");
 
-      const devtoolsObserver = window.parent !== window ? createPreviewObserver() : undefined;
-      globalThis.__tileflowDevtoolsObserver = devtoolsObserver;
-      if (window.parent !== window) document.documentElement.dataset.devtoolsEmbedded = "true";
+      const inspectorObserver = window.parent !== window ? createPreviewObserver() : undefined;
+      globalThis.__tileflowInspectorObserver = inspectorObserver;
+      if (window.parent !== window) document.documentElement.dataset.inspectorEmbedded = "true";
 
       const initialStatus = ${JSON.stringify(initialStatus)};
       const readBoundedTileflowResponse = ${readBoundedTileflowResponse.toString()};
@@ -705,49 +684,6 @@ export function renderTileflowPreviewHtml(
         url.searchParams.set("buildings3d", threeDimensionalEnabled ? "on" : "off");
         url.searchParams.set("trees3d", treesEnabled ? "on" : "off");
         history.replaceState(history.state, "", url.href);
-      }
-
-      function updateGlobeBackdrop(map) {
-        // getProjection reads the style's projection without serializing the style.
-        const projection = map.getProjection
-          ? map.getProjection()?.type
-          : map.getStyle?.()?.projection?.type;
-        const container = map.getContainer?.();
-        if (!container || !projection) return;
-        if (projection !== "globe") {
-          container.classList.remove("tileflow-globe");
-          return;
-        }
-
-        container.classList.add("tileflow-globe");
-        applyAtmosphereBackdrop(map, container);
-      }
-
-      // Uses the map's declared atmosphere for the preview's space and rim, so a themed globe shows
-      // its own colours; maps without one keep the default backdrop.
-      function applyAtmosphereBackdrop(map, container) {
-        const atmosphere = styleReads(map).metadata()?.["tileflow:atmosphere"];
-        const rgba = (hex, alpha) => {
-          const match = /^#([0-9a-f]{6})$/i.exec(String(hex ?? ""));
-          if (!match) return undefined;
-          const value = Number.parseInt(match[1], 16);
-          return "rgba(" + (value >> 16) + ", " + ((value >> 8) & 255) + ", " + (value & 255) + ", " + alpha + ")";
-        };
-        // Use the rendered canvas alpha, as the shared browser atmosphere does.
-        // A zoom-only circle cannot track the globe's latitude, viewport or pitch.
-        const opacity = Math.max(0, Math.min(1, (6 - map.getZoom()) / 3));
-        const core = rgba(atmosphere?.horizonColor ?? "#F8FCFF", opacity * 0.65);
-        const glow = rgba(atmosphere?.horizonColor ?? "#B0DCF6", opacity * 0.4);
-        const properties = {
-          "--tileflow-space": rgba(atmosphere?.spaceColor, 1),
-          "--tileflow-globe-rim": opacity > 0
-            ? "drop-shadow(0 0 2px " + core + ") drop-shadow(0 0 12px " + glow + ")"
-            : "none",
-        };
-        for (const [name, value] of Object.entries(properties)) {
-          if (value) container.style.setProperty(name, value);
-          else container.style.removeProperty(name);
-        }
       }
 
       function createBuildingWireframeLayer(map, styleLayer) {
@@ -1528,7 +1464,7 @@ export function renderTileflowPreviewHtml(
           const groups = previewLayerGroups(layer);
           const hideLayer = groups.some((group) => !visibleLayerGroups.has(group));
           // Group controls only own the properties they mask. Ordinary style events must
-          // preserve temporary DevTools edits, including visibility and label text.
+          // preserve temporary Inspector edits, including visibility and label text.
           if (hideLayer && !defaultLayerVisibility.has(layer.id)) {
             defaultLayerVisibility.set(layer.id, map.getLayoutProperty(layer.id, "visibility") || "visible");
           }
@@ -1581,7 +1517,7 @@ export function renderTileflowPreviewHtml(
         registerTileflowPmtilesProtocol({addProtocol: maplibregl.addProtocol});
         const map = new maplibregl.Map({
           canvasContextAttributes: tileflowCanvasContextAttributes({antialias: mapAntialias}),
-          collectResourceTiming: mapBenchmarkEnabled || Boolean(devtoolsObserver),
+          collectResourceTiming: mapBenchmarkEnabled || Boolean(inspectorObserver),
           container: "map",
           maxPitch: tileflowMaxPitch,
           style: styleUrl,
@@ -1591,9 +1527,9 @@ export function renderTileflowPreviewHtml(
         globalThis.__tileflowPreviewMap = map;
         attachTileflowNotices(map);
         attachTileflowNauticalLights(map);
-        attachTileflowSky(map);
-        attachTileflowSkyHaze(map);
-        devtoolsObserver?.attach(map);
+        attachTileflowAtmosphere(map);
+        attachTileflowLabelPlacement(map);
+        inspectorObserver?.attach(map);
         installMapBenchmark(map);
         if (window.parent === window) map.addControl(new maplibregl.NavigationControl(), "top-right");
         let threeDimensionalControl;
@@ -1603,14 +1539,14 @@ export function renderTileflowPreviewHtml(
           treeControl = new TreeControl();
           map.addControl(threeDimensionalControl, "top-right");
           map.addControl(treeControl, "top-right");
-          // Embedded Map DevTools owns the common Controls sidebar. Keep the controls mounted
+          // Embedded Inspector owns the common Controls sidebar. Keep the controls mounted
           // for their renderer lifecycle and message bridge, but remove duplicate buttons.
           if (window.parent !== window) {
             threeDimensionalControl.container.hidden = true;
             treeControl.container.hidden = true;
           }
         }
-        // Map DevTools has a shared theme selector in its Controls panel; keep the map-level
+        // Inspector has a shared theme selector in its Controls panel; keep the map-level
         // cycling button for standalone previews only.
         if (previewThemes.length > 1 && window.parent === window) map.addControl(new ThemeControl(), "top-right");
         let ensuringThreeDimensionalLayers;
@@ -1654,11 +1590,8 @@ export function renderTileflowPreviewHtml(
           mountCoreScene(map);
           treeControl?.update();
           writeCameraToUrl(map);
-          updateGlobeBackdrop(map);
           ensureThreeDimensionalLayers();
         });
-        map.on("move", () => updateGlobeBackdrop(map));
-        map.on("style.load", () => updateGlobeBackdrop(map));
         map.on("moveend", () => writeCameraToUrl(map));
         ${previewSceneClient}
         addEventListener("message", (event) => {
@@ -1735,7 +1668,7 @@ export function renderTileflowPreviewHtml(
       // six HTTP/1 connections and leave even local module/font requests waiting indefinitely.
       let unsubscribePreviewStatus;
       try {
-        if (window.parent !== window) unsubscribePreviewStatus = window.parent.__tileflowDevtoolsHost?.subscribePreviewStatus?.(window, applyStatus);
+        if (window.parent !== window) unsubscribePreviewStatus = window.parent.__tileflowInspectorHost?.subscribePreviewStatus?.(window, applyStatus);
       } catch { /* Other embedders keep the standalone stream. */ }
       if (unsubscribePreviewStatus) {
         addEventListener("beforeunload", unsubscribePreviewStatus);

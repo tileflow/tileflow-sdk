@@ -35,6 +35,7 @@ const placement = `
 uniform float u_scale;
 uniform float u_metres; // metres per tile unit
 uniform vec2 u_offset; // this tile's corner from the scene's origin, in tile units
+uniform float u_minimum_height; // optional visual height floor, in metres
 uniform vec2 u_size_scale; // the map's height and crown scales, for this form
 uniform float u_round; // how far normals turn from the facets to the round shape, by finish
 
@@ -50,17 +51,20 @@ vec2 turned(vec2 v) {
   return vec2(v.x * c - v.y * s, v.x * s + v.y * c);
 }
 
+vec2 displaySize() {
+  vec2 size = a_tree_size * 0.1 * u_size_scale;
+  return size * max(1.0, u_minimum_height / max(size.x, 0.001));
+}
+
 vec3 standing(float growth) {
-  float height = a_tree_size.x * 0.1 * u_size_scale.x;
-  float crown = a_tree_size.y * 0.1 * u_size_scale.y;
-  return vec3(turned(a_vertex.xy * crown), a_vertex.z * height) * growth;
+  vec2 size = displaySize();
+  return vec3(turned(a_vertex.xy * size.y), a_vertex.z * size.x) * growth;
 }
 
 vec3 normalOf() {
-  float height = max(a_tree_size.x * 0.1 * u_size_scale.x, 0.1);
-  float crown = max(a_tree_size.y * 0.1 * u_size_scale.y, 0.1);
+  vec2 size = max(displaySize(), vec2(0.1));
   vec3 blended = normalize(mix(a_normal, a_round, u_round));
-  vec3 n = normalize(vec3(blended.xy / crown, blended.z / height));
+  vec3 n = normalize(vec3(blended.xy / size.y, blended.z / size.x));
   return vec3(turned(n.xy), n.z);
 }
 
@@ -155,6 +159,7 @@ uniform float u_night;
 uniform float u_fade; // how far the layer has faded in, from 0 to 1
 uniform float u_toon; // 1 for light in bands, as a drawing has it
 uniform vec3 u_bark;
+uniform float u_material_variation;
 uniform vec3 u_leaves[4]; // the form's colours, sunlit
 uniform float u_leaf_count;
 out vec4 fragColor;
@@ -165,7 +170,7 @@ ${treeDither}
 
 vec3 leafColour() {
   float count = max(u_leaf_count, 1.0);
-  float at = v_shade * (count - 1.0);
+  float at = clamp(v_shade + v_look.y * 0.45 * u_material_variation, 0.0, 1.0) * (count - 1.0);
   int low = int(floor(at));
   int high = min(low + 1, int(count) - 1);
   vec3 a = u_leaves[0];
@@ -187,7 +192,7 @@ void main() {
   // A palm's stem is paler than bark, ringed light and dark by its leaf scars.
   vec3 base = stem
     ? min(u_bark * 1.45 + 0.06, vec3(1.0)) * (1.0 + v_look.y * 0.12)
-    : bark ? u_bark : leafColour() * (1.0 + v_look.y * 0.09);
+    : bark ? u_bark * (1.0 + ((v_shade - 0.5) * 0.32 + v_look.y * 0.08) * u_material_variation) : leafColour() * (1.0 + v_look.y * 0.09);
   float facing = dot(normal, u_sun_dir);
   // Leaves let light round and through them: wrapped light on the lit side, a glow against a low sun.
   float direct = bark ? max(facing, 0.0) : fronds ? abs(facing) * 0.85 : max((facing + 0.35) / 1.35, 0.0);

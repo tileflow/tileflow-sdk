@@ -96,7 +96,8 @@ Maps without this capability ignore the option; omitting it keeps the selected t
 Changing it uses the existing theme transition. `themeBlend` takes precedence. See the
 [authoring contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md#style-with-themes-and-semantic-modules).
 
-`themeTransition={{duration: 450}}` cross-fades theme changes over that many milliseconds.
+Theme and `timeOfDay` changes cross-fade over 450 ms by default, respecting reduced motion.
+`themeTransition={{duration: 700}}` customizes the duration; use `duration: 0` for an immediate change.
 `themeBlend={{themes: ['night', 'dusk', 'day'], position}}` shows a continuous blend of the map's
 themes instead of `theme`: position 0 is the first theme and 1.5 is halfway from the second to the
 third. Moving the position updates the map at once. See

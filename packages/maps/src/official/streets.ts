@@ -29,7 +29,7 @@ import {
   withRenderStack,
   zoom,
 } from '@tileflow/core';
-import {streetsIcons, streetsModels} from '../assets';
+import {streetsFonts, streetsIcons, streetsModels} from '../assets';
 import {mapboxRailTransitStyle} from './mapbox-rail';
 import {withStreetsConstruction} from './streets-construction';
 import {streetsPoiImage} from './streets-poi';
@@ -200,7 +200,8 @@ function streetsPoiStyle(category: TileflowPoiCategory): TileflowPoiCategoryStyl
       size: 1,
     },
     text: {
-      font: streetsVisual.font.default,
+      font: streetsVisual.font.navigation,
+      fallbacks: [streetsVisual.font.regular],
       haloWidth: 1,
       haloBlur: 0,
       letterSpacing: 0.01,
@@ -845,7 +846,8 @@ function streetsBuildingRenderStack() {
       },
     }),
     extrusion: renderPass({
-      placement: {above: 'buildings.flat.outline'},
+      // Keep raised geometry after the ground names, which already cover flat footprints.
+      placement: 'above-buildings',
       feature: 'building',
       renderer: 'extrusion',
       selector: visibleBuilding3dSelector,
@@ -1373,17 +1375,44 @@ function roadLabelStyle(kind: RoadLabelKind, minZoom: number): TileflowSymbolSty
   return {
     placement: 'line',
     minZoom,
-    priority: major ? 90 : 50,
-    spacing: 250,
+    // Resolve dense parallel streets by road hierarchy, not incidental tile order.
+    // All classes share this expression so the compiler retains one collision network.
+    priority: expr.match<string, number>(
+      expr.coalesce(expr.get(field('class')), 'minor'),
+      [
+        {labels: ['motorway', 'motorway_construction'], value: 6},
+        {labels: ['trunk', 'trunk_construction'], value: 5},
+        {labels: ['primary', 'primary_construction'], value: 4},
+        {labels: ['secondary', 'secondary_construction'], value: 3},
+        {labels: ['tertiary', 'tertiary_construction'], value: 2},
+        {labels: ['minor', 'minor_construction'], value: 1},
+      ],
+      0,
+    ),
+    // World name geometry is split into more short segments at street detail.
+    // Increase repeat distance gently without thinning the overview network.
+    spacing: zoom.linear([
+      [13, 250],
+      [15, 300],
+      [17, 400],
+      [19, 450],
+    ]),
     text: {
       color: streetsVisual.label.road,
-      font: streetsVisual.font.default,
+      font: streetsVisual.font.navigation,
+      fallbacks: [streetsVisual.font.regular],
       haloColor: streetsVisual.label.roadHalo,
       haloWidth: 1,
       letterSpacing: path || pedestrian ? 0.01 : 0.15,
       maxAngle: 30,
-      padding: 1,
-      pitchAlignment: 'map',
+      // Screen-space breathing room at city overview. Restore normal padding by z14
+      // so the same policy does not suppress useful names on the neighbourhood view.
+      padding: zoom.linear([
+        [13, 5],
+        [14, 1],
+      ]),
+      // Follow the road's bearing while retaining readable glyph height in perspective.
+      pitchAlignment: 'viewport',
       rotationAlignment: 'map',
       size: zoom.linear([
         [10, startSize],
@@ -1399,11 +1428,7 @@ export const streets = bindOfficialMapTheme(
     id: 'streets',
     version: 1,
     name: 'Streets',
-    glyphs: {
-      kind: 'url',
-      url: 'https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf',
-      fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic'],
-    },
+    fonts: [streetsFonts],
     themes: streetsThemes,
     timeOfDay: {
       light: {day: 'light', dawn: 'dawn', dusk: 'dusk', night: 'dark'},
@@ -1458,14 +1483,14 @@ export const streets = bindOfficialMapTheme(
       // Optional keys: addresses, aeroways, boundaries, buildings, labels, land,
       // landforms, poi, roads, transit, vegetation, water. Object order never
       // controls layer order.
-      // Streets deliberately omits parcel-level house numbers. POI and road/place
-      // labels carry the useful navigation hierarchy without close-zoom numeric noise.
+      // House numbers arrive at close zooms and yield in the distance when tilted.
       addresses: addresses({
         labels: {
           minZoom: 17,
           text: {
-            font: streetsVisual.font.default,
-            color: streetsVisual.label.muted,
+            font: streetsVisual.font.navigation,
+            fallbacks: [streetsVisual.font.regular],
+            color: streetsVisual.label.address,
             haloColor: streetsVisual.label.placeHalo,
             haloWidth: 1,
             maxWidth: 10,
@@ -2304,10 +2329,14 @@ export const streets = bindOfficialMapTheme(
           collisionPriority: 'navigation',
           language: 'local', // 'auto' | 'local' | 'en' | another language field suffix.
           places: 'all', // 'none' | 'major' | 'all'.
+          // Street names yield to foreground destinations and are hidden by 3D buildings.
+          // Their viewport-aligned lettering stays readable at an oblique camera angle.
           roadPlacement: 'ground',
+          roadNameFormat: 'compact',
+          roadGrouping: 'network',
           roads: 'all',
           // Preserve Streets' selection while Core owns class aliases, language
-          // fallback, ground placement and collision ordering.
+          // fallback and collision ordering.
           roadClasses: [
             'motorway',
             'trunk',
@@ -2316,6 +2345,7 @@ export const streets = bindOfficialMapTheme(
             'tertiary',
             'minor',
             'service',
+            'track',
             'pathway',
             'footway',
             'cycleway',
@@ -2334,6 +2364,7 @@ export const streets = bindOfficialMapTheme(
               tertiary: roadLabelStyle('major', 13),
               minor: roadLabelStyle('street', 13),
               service: roadLabelStyle('service', 15),
+              track: roadLabelStyle('service', 15),
               pathway: roadLabelStyle('path', 15),
               footway: roadLabelStyle('path', 15),
               cycleway: roadLabelStyle('path', 15),
@@ -2677,10 +2708,11 @@ export const streets = bindOfficialMapTheme(
               placement: 'point',
               text: {
                 color: streetsVisual.label.road,
-                font: streetsVisual.font.places,
+                font: streetsVisual.font.shield,
+                fallbacks: [streetsVisual.font.regular],
                 haloColor: streetsDetailPalette.halo,
                 haloWidth: 1,
-                size: 10,
+                size: 9,
               },
             },
             shields: {
@@ -2698,7 +2730,8 @@ export const streets = bindOfficialMapTheme(
                 },
                 text: {
                   color: streetsVisual.label.shieldDark,
-                  font: streetsVisual.font.places,
+                  font: streetsVisual.font.shield,
+                  fallbacks: [streetsVisual.font.regular],
                   haloWidth: 0,
                   letterSpacing: 0.05,
                   maxAngle: 38,
@@ -2706,7 +2739,7 @@ export const streets = bindOfficialMapTheme(
                   padding: 2,
                   pitchAlignment: 'viewport',
                   rotationAlignment: 'viewport',
-                  size: 10,
+                  size: 9,
                 },
               },
               overview: {
@@ -2714,10 +2747,12 @@ export const streets = bindOfficialMapTheme(
                 minZoom: 6,
               },
               detail: {
-                // Core switches to line placement at street scale while retaining viewport
-                // alignment, so each route reference remains horizontal during navigation.
+                // World splits route lines more often than the reference source. A shorter
+                // interval keeps route references available in regional views; collision
+                // still suppresses adjacent shields, and street-scale repetition stays sparse.
                 spacing: zoom.linear([
-                  [11, 400],
+                  [11, 220],
+                  [13, 300],
                   [14, 600],
                 ]),
               },
@@ -2833,9 +2868,8 @@ export const streets = bindOfficialMapTheme(
         streetsLabelRenderStack(),
       ),
       poi: poi({
-        // World owns taxonomy, zoom eligibility, density ranks and importance. Streets
-        // shows every category at one density and places them all in World's importance
-        // order, so collision keeps the most relevant places whatever their category.
+        // Keep World's importance order while reserving room for navigation and landmarks.
+        // Everyday businesses enter progressively; tilted views also limit distant labels.
         categories: [
           'transport',
           'food-drink',
@@ -2855,7 +2889,14 @@ export const streets = bindOfficialMapTheme(
         // A uniform grey treatment suppresses a meaningful amount of chroma
         // and makes the whole light map read as if a pale overlay sat above it.
         color: 'category',
-        density: 3,
+        density: 2,
+        detailZoom: 18,
+        densityByCategory: {
+          lodging: 1,
+          'park-nature': 3,
+          religion: 1,
+          transport: 3,
+        },
         icons: true,
         labels: true,
         placement: {
@@ -2864,8 +2905,8 @@ export const streets = bindOfficialMapTheme(
           coupleIconAndLabel: true,
           iconPadding: 3,
           order: 'importance',
-          // Street and place names outrank everyday destinations ('navigation' labels), but
-          // not the places that make a city recognisable: World's two most important ranks.
+          // Landmarks retain their priority. Ground street names yield to destinations;
+          // the navigation policy keeps the city and district hierarchy above them.
           prominentRank: 1,
           textPadding: 3,
         },

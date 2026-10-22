@@ -23,7 +23,7 @@ executable. With another package manager, use its local-execution command and th
 do not add a second lockfile or rely on a globally installed CLI.
 
 `init` creates a singular `tileflow.config.ts` extending the official Streets map. `preview` opens
-Map DevTools with that map, live reload, rendered-feature inspection, compiler attribution, zoom
+Inspector with that map, live reload, rendered-feature inspection, compiler attribution, zoom
 curves, a sprite atlas, scene selection, saved captures, and before/after review.
 
 Local validation, compilation, and asset preparation require no account or API key. Preview and
@@ -56,7 +56,7 @@ workspaces are advanced repository orchestration, not a second application autho
 Use `describe` for bounded language discovery (`describe themes --json` lists palette requirements
 and optional time-of-day composition), `inspect` for configuration and data, `capture`
 for reproducible evidence, and `compare` for saved captures, semantic edits, styles, references or
-baselines. `preview` opens Map DevTools. These tools work in independent projects with
+baselines. `preview` opens Inspector. These tools work in independent projects with
 custom maps and data; official maps are optional.
 
 See the [map authoring workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md)
@@ -69,31 +69,31 @@ it does not implicitly expose a public listener. `--theme <name>` selects a conc
 `--scene <name>` selects a committed standalone scene.
 
 Run `npx tileflow preview` from your project directory to load `tileflow.config.ts`, start the
-watched server, and automatically open Map DevTools in your default browser once the server is
+watched server, and automatically open Inspector in your default browser once the server is
 listening. Use `--config <path>` for another config or `--no-open` to start without opening a tab.
 `--json` and `--renderer native` also keep the browser closed. The CLI always prints the local URL
 in ordinary web preview output, so you can open it manually if browser launch is unavailable.
 
-Opening Map DevTools through another loopback name, such as `localhost` instead of `127.0.0.1`,
+Opening Inspector through another loopback name, such as `localhost` instead of `127.0.0.1`,
 redirects to the **Local** origin printed by the CLI, preserving camera and theme query parameters.
 This keeps the map, palette controls, and workbench API on the same origin.
 
 Run from the project directory and keep selected configs inside it, so capture commands copied from
-Map DevTools resolve the same files. The project itself can live anywhere, independently of this SDK.
+Inspector resolve the same files. The project itself can live anywhere, independently of this SDK.
 
-The default is one Map DevTools pane, one watched artifact session, and one map renderer. Choose a
+The default is one Inspector pane, one watched artifact session, and one map renderer. Choose a
 map, theme or configured scene in **Controls**. Map and theme pickers appear when there are multiple choices. **Compare → Compare live maps** adds a reference from the current
 project; `--against-*` also supports a reference from another config. The native renderer retains its assets-only
 preview endpoint.
 
-Compare two configs live in Map DevTools:
+Compare two configs live in Inspector:
 
 ```sh
 npx tileflow preview --config candidate/tileflow.config.ts --against-config reference/tileflow.config.ts
 ```
 
-Map DevTools shares a camera across side-by-side, split, overlay, or blink views. Its inspector
-shows bounded feature and compiler information; invalid edits keep the last valid generation.
+Inspector shares a camera across side-by-side, split, overlay, or blink views. Its inspection panels
+show bounded feature and compiler information; invalid edits keep the last valid generation.
 **Capture as reference** saves a starting point. After editing, **Capture & compare** reuses its
 camera and frame to review the change. The selected reference lasts for this browser session.
 
@@ -112,7 +112,7 @@ npx tileflow inspect session --url http://127.0.0.1:3333 --json
 
 Use the origin printed by your running preview. This reads browser observations, including their
 age and stale flag; exact source lines and token ownership are not inferred. See the
-[Map DevTools workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md#work-with-a-person-and-an-agent)
+[Inspector workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md#work-with-a-person-and-an-agent)
 for storage and context bounds.
 
 `--api-base-url` or `TILEFLOW_API_URL` changes the API origin used by the official preview sources.

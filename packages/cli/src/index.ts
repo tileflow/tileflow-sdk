@@ -566,9 +566,9 @@ program
 
 program
   .command('preview')
-  .description('Open Map DevTools with inspection and optional comparison')
+  .description('Open Inspector with inspection and optional comparison')
   .option('-c, --config <path>', 'config path', defaultConfigPath)
-  .option('--against-config <path>', 'second config for live comparison in Map DevTools')
+  .option('--against-config <path>', 'second config for live comparison in Inspector')
   .option('--against-map <name>', 'map on the right; defaults to --map')
   .option('--against-scene <name>', 'committed standalone scene on the right')
   .option('--against-theme <name>', 'concrete theme on the right; defaults to --theme')
@@ -577,7 +577,7 @@ program
   .option('--theme <name>', 'preview one concrete theme; defaults to the map default')
   .option('--renderer <renderer>', 'artifact renderer: web or native', 'web')
   .option('-p, --port <port>', 'preview port', '3333')
-  .option('--no-open', 'start Map DevTools without opening the browser')
+  .option('--no-open', 'start Inspector without opening the browser')
   .option('--scene <name>', 'preview one committed standalone map scene')
   .option(
     '--api-base-url <url>',
@@ -815,7 +815,7 @@ program
                   previewUrl: workbenchPreviewUrl(previewBasePath, options),
                   sidecarUrl: `${previewBasePath}/__inspection/${selectedPreview?.mapName ?? 'pending'}/${selectedPreview?.themeName ?? 'pending'}.json`,
                 },
-                title: 'Tileflow Map DevTools',
+                title: 'Tileflow Inspector',
                 workbench,
               });
         let invalidSinceLastReady = false;
@@ -894,7 +894,7 @@ program
               }
               logMuted('Metro remains the JavaScript development server. Press Ctrl+C to stop.');
             } else {
-              logSuccess('Tileflow Map DevTools is running and watching for changes.');
+              logSuccess('Tileflow Inspector is running and watching for changes.');
               printKeyValue('Local', link(origin));
               printKeyValue('Config', pathLabel(options.config));
               if (options.map) printKeyValue('Map', options.map);
@@ -1788,7 +1788,7 @@ async function runTileflowComparisonPreview(
           }),
           sidecarUrl: `${rightBasePath}/__inspection/${rightPreview.mapName}/${rightPreview.themeName}.json`,
         },
-        title: 'Tileflow Map DevTools',
+        title: 'Tileflow Inspector',
       });
 
       await new Promise<void>((resolveListening, rejectListening) => {
@@ -1805,7 +1805,7 @@ async function runTileflowComparisonPreview(
       });
       serverStarted = true;
       if (!options.json) {
-        logSuccess('Tileflow Map DevTools is running and watching both configs.');
+        logSuccess('Tileflow Inspector is running and watching both configs.');
         printKeyValue('Local', link(origin));
         printKeyValue('Left', `${leftPreview.label} · ${pathLabel(options.config)}`);
         printKeyValue('Right', `${rightPreview.label} · ${pathLabel(rightConfig)}`);

@@ -37,6 +37,7 @@ import {
   tileflowBuildingGroundVertex,
   tileflowBuildingVertex,
 } from './buildings-3d-shaders';
+import {tileflowBuildingSurfaceTile} from './buildings-3d-surfaces';
 import {type BuildingTileData, type BuildingTileMesh} from './buildings-3d-tile';
 import {
   buildingBoxDepth,
@@ -1356,6 +1357,7 @@ export function createTileflowBuildings3D(
     const nightLight = mixed((entry) => entry.nightLight);
     const architectural = floodLightNow();
     const edges = mixed((entry) => entry.edges);
+    const surfaces = design().surfaces;
     const {occlusion: occlusionOn, windows: windowsOn} = design();
     const now = performance.now();
     const appearing = standing.filter((entry) => appearanceOf(entry, now) < 1);
@@ -1382,6 +1384,24 @@ export function createTileflowBuildings3D(
       context.uniform1f(u.u_corner!, occlusion.corner);
       context.uniform1f(u.u_night!, light.night);
       context.uniform1f(u.u_windows!, windowsOn ? 1 : 0);
+      context.uniform4f(
+        u.u_surface_walls!,
+        surfaces?.walls?.size[0] ?? 6,
+        surfaces?.walls?.size[1] ?? 3,
+        surfaces?.walls?.jointWidth ?? 0.12,
+        mixed((entry) => entry.surfaces?.walls?.contrast ?? 0),
+      );
+      context.uniform3f(
+        u.u_surface_roof!,
+        surfaces?.roof?.size ?? 8,
+        surfaces?.roof?.jointWidth ?? 0.12,
+        mixed((entry) => entry.surfaces?.roof?.contrast ?? 0),
+      );
+      context.uniform2f(
+        u.u_surface_cornice!,
+        surfaces?.cornice?.height ?? 0.6,
+        mixed((entry) => entry.surfaces?.cornice?.contrast ?? 0),
+      );
       context.uniform1f(u.u_flood!, light.night * nightLight);
       context.uniform3fv(u.u_flood_colour!, flood.colour);
       context.uniform1f(u.u_architectural_intensity!, architectural.intensity);
@@ -1424,6 +1444,10 @@ export function createTileflowBuildings3D(
         if (!ranges.length) continue;
         project(context, buildings, args, x, y);
         context.uniform2f(u.u_offset!, ...placed(x, y).offset);
+        context.uniform3f(
+          u.u_surface_tile!,
+          ...tileflowBuildingSurfaceTile(x, y, camera.zoom, surfaces?.roof?.size ?? 8),
+        );
         context.uniform4f(u.u_ring ?? null, ...ringIn(x, y));
         context.uniform2f(u.u_ring_ahead ?? null, ...ahead);
         const palette = themes ? paletteOf(context, entry, themes.themes) : undefined;

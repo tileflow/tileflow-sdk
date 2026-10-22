@@ -363,6 +363,7 @@ test('the prominent tier places the most important ranks before road and place l
   const contributions = compilePoi(
     poi({
       categories: ['landmark', 'retail'],
+      density: 3,
       placement: {coupleIconAndLabel: true, prominentRank: 1},
     }),
     context,
@@ -393,6 +394,7 @@ test('the prominent tier places the most important ranks before road and place l
         labels: labels({collisionPriority: 'navigation', places: 'all', roads: 'all'}),
         poi: poi({
           categories: ['landmark', 'retail'],
+          density: 3,
           placement: {coupleIconAndLabel: true, prominentRank: 1},
         }),
       },
@@ -445,4 +447,53 @@ test('the feature-varying property table matches the MapLibre style specificatio
     assert.notEqual(specification[property]!['property-type'], 'data-driven', property);
     assert.deepEqual(fallback, specification[property]!.default, property);
   }
+});
+
+test('category density changes eligibility without replacing cross-category importance order', () => {
+  const build = (overrides = {}) =>
+    compilePoi(
+      poi({
+        categories: ['food-drink', 'landmark', 'lodging'],
+        density: 2,
+        ...overrides,
+      }),
+      context,
+    )[0]!.layer;
+  const uniform = build();
+  const varied = build({densityByCategory: {landmark: 3, lodging: 1}});
+  const accepts = (layer: Layer, category: string, rank: number, zoom: number) =>
+    featureFilter(layer.filter as never).filter(
+      {zoom},
+      {type: 1, properties: {category, filter_rank: rank, size_rank: 16, name: 'Place'}},
+    );
+  for (const zoom of [15, 16, 17, 20]) {
+    const increment = zoom >= 17 ? 2 : zoom >= 16 ? 1 : 0;
+    for (const [category, density] of [
+      ['food-drink', 2],
+      ['landmark', 3],
+      ['lodging', 1],
+    ] as const) {
+      for (const rank of [0, 1, 2, 3, 4, 5]) {
+        assert.equal(accepts(uniform, category, rank, zoom), rank <= 2 + increment);
+        assert.equal(accepts(varied, category, rank, zoom), rank <= density + increment);
+      }
+    }
+  }
+  assert.deepEqual(varied.layout?.['symbol-sort-key'], uniform.layout?.['symbol-sort-key']);
+  assert.equal(uniform.metadata?.['tileflow:label-perspective'], undefined);
+  assert.equal(varied.metadata?.['tileflow:label-perspective'], undefined);
+});
+
+test('detail zoom can defer the last rank expansion without changing the default', () => {
+  const build = (detailZoom?: number) =>
+    compilePoi(poi({categories: ['food-drink'], density: 2, detailZoom}), context)[0]!.layer;
+  const feature = {
+    type: 1,
+    properties: {category: 'food-drink', filter_rank: 4, size_rank: 16, name: 'Cafe'},
+  };
+  const regular = featureFilter(build().filter as never).filter;
+  const delayed = featureFilter(build(18).filter as never).filter;
+  assert.equal(regular({zoom: 17}, feature), true);
+  assert.equal(delayed({zoom: 17.99}, feature), false);
+  assert.equal(delayed({zoom: 18}, feature), true);
 });

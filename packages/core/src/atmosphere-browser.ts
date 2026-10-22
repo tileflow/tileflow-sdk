@@ -7,6 +7,7 @@ import {
   type TileflowResolvedAtmosphere,
   wrapAtmosphereStar,
 } from './atmosphere';
+import {attachTileflowAtmosphereRim} from './atmosphere-rim-browser';
 import {attachTileflowSky, type TileflowSkyMap} from './sky-browser';
 import {attachTileflowSkyHaze, type TileflowSkyHazeMap} from './sky-haze-browser';
 
@@ -24,12 +25,23 @@ export type TileflowAtmosphereMap = {
 } & Partial<TileflowSkyMap> &
   Partial<TileflowSkyHazeMap>;
 
+export type TileflowAtmosphereRuntimeOptions = {
+  /** Camera-relative star speed multiplier. Negative values reverse direction. Default: 1. */
+  starParallaxScale?: number;
+};
+
 /**
  * Render compiled globe atmosphere metadata, and the stars and distance haze of a sky. Call after
  * constructing a browser map. Follows style replacements and releases its canvas, layer,
  * listeners, and pending frame on disposal.
  */
-export function attachTileflowAtmosphere(map: TileflowAtmosphereMap): () => void {
+export function attachTileflowAtmosphere(
+  map: TileflowAtmosphereMap,
+  runtimeOptions: TileflowAtmosphereRuntimeOptions = {},
+): () => void {
+  const starParallaxScale = runtimeOptions.starParallaxScale ?? 1;
+  if (!Number.isFinite(starParallaxScale))
+    throw new RangeError('starParallaxScale must be a finite number.');
   const container = map.getContainer();
   const document = container.ownerDocument;
   const browser = document.defaultView;
@@ -37,16 +49,16 @@ export function attachTileflowAtmosphere(map: TileflowAtmosphereMap): () => void
   const layered = typeof map.addLayer === 'function';
   const detachSky = layered ? attachTileflowSky(map as TileflowSkyMap) : () => {};
   const detachHaze = layered ? attachTileflowSkyHaze(map as TileflowSkyHazeMap) : () => {};
-  const mapCanvas = map.getCanvas();
-  const previousFilter = mapCanvas.style.filter;
+  const detachRim = layered
+    ? attachTileflowAtmosphereRim(map as TileflowSkyMap & TileflowAtmosphereMap)
+    : () => {};
   const reducedMotion = browser.matchMedia('(prefers-reduced-motion: reduce)');
-  const stars = createAtmosphereStars();
+  let stars: ReturnType<typeof createAtmosphereStars> = [];
   let options: TileflowResolvedAtmosphere | undefined;
   let canvas: HTMLCanvasElement | undefined;
   let context: CanvasRenderingContext2D | null = null;
   let frame: number | undefined;
   let disposed = false;
-  let appliedFilter: string | undefined;
   let width = 0;
   let height = 0;
   let pixelRatio = 0;
@@ -55,18 +67,11 @@ export function attachTileflowAtmosphere(map: TileflowAtmosphereMap): () => void
   let longitude = previousLongitude;
   let bearing = previousBearing;
 
-  function restoreFilter() {
-    if (appliedFilter !== undefined && mapCanvas.style.filter === appliedFilter)
-      mapCanvas.style.filter = previousFilter;
-    appliedFilter = undefined;
-  }
-
   function removeCanvas() {
     canvas?.remove();
     canvas = undefined;
     context = null;
     width = height = pixelRatio = 0;
-    restoreFilter();
   }
 
   function syncStyle() {
@@ -85,6 +90,7 @@ export function attachTileflowAtmosphere(map: TileflowAtmosphereMap): () => void
       removeCanvas();
       return;
     }
+    if (stars.length !== options.starCount) stars = createAtmosphereStars(options.starCount);
     if (!canvas) {
       canvas = document.createElement('canvas');
       canvas.setAttribute('aria-hidden', 'true');
@@ -114,13 +120,7 @@ export function attachTileflowAtmosphere(map: TileflowAtmosphereMap): () => void
     previousBearing = map.getBearing();
     const opacity = atmosphereSpaceOpacity(map.getZoom());
     canvas.style.opacity = String(opacity);
-    if (opacity === 0) {
-      restoreFilter();
-      return;
-    }
-    const baseFilter = previousFilter && previousFilter !== 'none' ? `${previousFilter} ` : '';
-    mapCanvas.style.filter = `${baseFilter}drop-shadow(0 0 2px ${withAlpha(options.horizonColor, opacity * 0.65)}) drop-shadow(0 0 12px ${withAlpha(options.horizonColor, opacity * 0.4)})`;
-    appliedFilter = mapCanvas.style.filter;
+    if (opacity === 0) return;
     if (!context) return;
     const nextWidth = container.clientWidth;
     const nextHeight = container.clientHeight;
@@ -135,30 +135,39 @@ export function attachTileflowAtmosphere(map: TileflowAtmosphereMap): () => void
       context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
     }
     context.clearRect(0, 0, width, height);
-    if (options.starIntensity === 0) return;
-    const motion = reducedMotion.matches ? 0 : options.starParallax / 0.4;
+    if (options.starIntensity === 0 || options.starSize === 0) return;
+    const motion = reducedMotion.matches ? 0 : (options.starParallax / 0.4) * starParallaxScale;
     const xOffset = motion * (-longitude * 0.8 - bearing * 0.35);
     const yOffset = motion * (center.lat * 0.6 + map.getPitch() * 0.4);
     const intensity = options.starIntensity / 0.6;
     const fieldWidth = 1600;
     const fieldHeight = 1000;
     for (const star of stars) {
+      const radius = (star.radius + 0.25) * options.starSize;
+      const margin = star.radius > 0.95 ? radius * 2.5 : radius;
+      const alpha = Math.min(1, star.alpha * 1.35 * intensity);
       const x = wrapAtmosphereStar(star.x * fieldWidth + xOffset, fieldWidth);
       const y = wrapAtmosphereStar(star.y * fieldHeight + yOffset, fieldHeight);
       for (let tileX = -1; tileX * fieldWidth < width; tileX++) {
         for (let tileY = -1; tileY * fieldHeight < height; tileY++) {
           const screenX = x + tileX * fieldWidth;
           const screenY = y + tileY * fieldHeight;
-          if (screenX < -3 || screenX > width + 3 || screenY < -3 || screenY > height + 3) continue;
+          if (
+            screenX < -margin ||
+            screenX > width + margin ||
+            screenY < -margin ||
+            screenY > height + margin
+          )
+            continue;
           if (star.radius > 0.95) {
-            context.fillStyle = withAlpha(options.horizonColor, star.alpha * intensity * 0.12);
+            context.fillStyle = withAlpha(options.horizonColor, alpha * 0.1);
             context.beginPath();
-            context.arc(screenX, screenY, star.radius * 2.5, 0, Math.PI * 2);
+            context.arc(screenX, screenY, radius * 2.5, 0, Math.PI * 2);
             context.fill();
           }
-          context.fillStyle = `rgba(208, 227, 255, ${Math.min(1, star.alpha * intensity)})`;
+          context.fillStyle = withAlpha(options.starColor, alpha);
           context.beginPath();
-          context.arc(screenX, screenY, star.radius, 0, Math.PI * 2);
+          context.arc(screenX, screenY, radius, 0, Math.PI * 2);
           context.fill();
         }
       }
@@ -174,6 +183,7 @@ export function attachTileflowAtmosphere(map: TileflowAtmosphereMap): () => void
     disposed = true;
     detachSky();
     detachHaze();
+    detachRim();
     if (frame !== undefined) browser!.cancelAnimationFrame(frame);
     map.off('move', schedule);
     map.off('resize', schedule);

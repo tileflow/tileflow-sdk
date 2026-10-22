@@ -10,6 +10,10 @@ import {
   type TileflowBuildingFloodLight,
   type TileflowModelRoleLighting,
 } from './building-illumination';
+import {
+  readTileflowBuildingSurfaces,
+  type TileflowBuildingSurfaceDesign,
+} from './buildings-3d-surfaces';
 import {type TileflowModelPart, tileflowModelParts} from './models-3d-model';
 import type {TileflowModelLightingRole} from './models-3d-model';
 
@@ -46,6 +50,8 @@ export type TileflowBuildings3DDesign = Readonly<{
   modelLighting?: Readonly<Partial<Record<TileflowModelLightingRole, TileflowModelRoleLighting>>>;
   /** Invented night windows, lit by rooms: decoration, not data. */
   windows: boolean;
+  /** Optional decoration on ordinary walls and roofs, independent of model materials. */
+  surfaces?: TileflowBuildingSurfaceDesign;
   /**
    * The zoom bands, `[from, to]`, the buildings and the placed models and landmarks come in over:
    * across its band each fades in and rises from the ground. The renderer's defaults stand for a
@@ -119,6 +125,7 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
   const within = (number: unknown, high: number, fallback: number) =>
     typeof number === 'number' && number >= 0 && number <= high ? number : fallback;
   const defaults = tileflowDefaultBuildings3DDesign;
+  const surfaces = readTileflowBuildingSurfaces(value.surfaces);
   const floodLight = readBuildingFloodLight(value.floodLight);
   const modelLighting = readModelRoleLighting(value.modelLighting);
 
@@ -139,6 +146,7 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
     ...(floodLight ? {floodLight} : {}),
     ...(modelLighting ? {modelLighting} : {}),
     windows: value.windows === true,
+    ...(surfaces ? {surfaces} : {}),
     ...readTileflowBuildingsEntrance(value.entrance),
     shadows: typeof value.shadows === 'boolean' ? value.shadows : defaults.shadows,
     occlusion: typeof value.occlusion === 'boolean' ? value.occlusion : defaults.occlusion,

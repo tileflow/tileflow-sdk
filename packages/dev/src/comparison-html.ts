@@ -1,4 +1,4 @@
-import {devtoolsStyles} from './devtools/styles';
+import {inspectorStyles} from './inspector/styles';
 import {workbenchClient} from './workbench-client';
 import {controlsClient, controlsPanel, controlsStyles} from './workbench-controls';
 import {workbenchIcon, workbenchPanels, workbenchStyles} from './workbench-ui';
@@ -24,7 +24,7 @@ export type TileflowComparisonHtmlOptions = {
   workbenchUrl?: string;
 };
 
-/** Render the local Map DevTools around one or two same-origin previews. */
+/** Render the local Inspector around one or two same-origin previews. */
 export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOptions): string {
   const documentOptions = serializeInlineJson(options);
   const fontBasePath = options.basePath
@@ -133,7 +133,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       }
       ${workbenchStyles}
       ${controlsStyles}
-      ${devtoolsStyles}
+      ${inspectorStyles}
     </style>
   </head>
   <body>
@@ -270,11 +270,11 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
 
       function setInspectionEnabled(enabled, manageFocus = false) {
         inspectionEnabled = enabled;
-        if (globalThis.__tileflowDevtoolsUI) {
+        if (globalThis.__tileflowInspectorUI) {
           inspectButton.setAttribute("aria-pressed", String(enabled));
           document.getElementById("wb-inspect-hint").hidden = !enabled;
           for (const side of Object.values(states)) sendInspectionState(side);
-          globalThis.__tileflowDevtoolsUI.inspectionChanged(enabled);
+          globalThis.__tileflowInspectorUI.inspectionChanged(enabled);
           return;
         }
         if (enabled) toggleMapControls(false);
@@ -375,7 +375,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
             const map = childWindow?.__tileflowPreviewMap;
             if (map) {
               side.map = map;
-              // DevTools can edit a connected map while its tiles are still loading.
+              // Inspector can edit a connected map while its tiles are still loading.
               // bridgeReady remains the separate renderer-readiness signal.
               side.bridgeConnected = true;
               side.camera = readMapCamera(map);
@@ -414,7 +414,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         let highlight;
         const drawHighlight = () => {
           const geometry = hoveredFeature?.geometry || inspectedFeatures[highlightedIndex]?.geometry;
-          if ((!inspectionActive && !globalThis.__tileflowDevtoolsUI) || !geometry || !map.getContainer || !map.project) { if (highlight) highlight.style.display = "none"; return; }
+          if ((!inspectionActive && !globalThis.__tileflowInspectorUI) || !geometry || !map.getContainer || !map.project) { if (highlight) highlight.style.display = "none"; return; }
           if (!highlight) {
             highlight = document.createElementNS("http://www.w3.org/2000/svg", "svg");
             highlight.setAttribute("aria-hidden", "true");
@@ -491,11 +491,11 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           });
         };
         const handleMoveStart = (event) => {
-          if (applyingRequestId === undefined && (event?.originalEvent || event?.tileflowDevtools === true)) userMovementActive = true;
+          if (applyingRequestId === undefined && (event?.originalEvent || event?.tileflowInspector === true)) userMovementActive = true;
         };
         const handleMove = (event) => {
           if (applyingRequestId !== undefined) return;
-          if (event?.originalEvent || event?.tileflowDevtools === true) userMovementActive = true;
+          if (event?.originalEvent || event?.tileflowInspector === true) userMovementActive = true;
           queuedUserMovement = queuedUserMovement || userMovementActive;
           if (movementFrame !== undefined) return;
           movementFrame = childWindow.requestAnimationFrame(() => {
@@ -511,7 +511,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
             scheduleApplyingRelease(applyingRequestId);
             return;
           }
-          if (event?.originalEvent || event?.tileflowDevtools === true) userMovementActive = true;
+          if (event?.originalEvent || event?.tileflowInspector === true) userMovementActive = true;
           if (movementFrame !== undefined) {
             childWindow.cancelAnimationFrame(movementFrame);
             movementFrame = undefined;
@@ -534,10 +534,10 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           drawHighlight();
         };
         const handleHover = (event) => {
-          if (!inspectionActive || !globalThis.__tileflowDevtoolsUI || hoverFrame !== undefined) return;
+          if (!inspectionActive || !globalThis.__tileflowInspectorUI || hoverFrame !== undefined) return;
           hoverFrame = childWindow.requestAnimationFrame(() => {
             hoverFrame = undefined;
-            hoveredFeature = map.queryRenderedFeatures(event.point).find((feature) => !feature.layer.id.startsWith("__tileflow-devtools-"));
+            hoveredFeature = map.queryRenderedFeatures(event.point).find((feature) => !feature.layer.id.startsWith("__tileflow-inspector-"));
             hoveredCoordinate = [event.lngLat.lng, event.lngLat.lat];
             if (!hoverHint) {
               hoverHint = document.createElement("div");
@@ -557,7 +557,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           if (!inspectionActive) return;
           clearHover();
           inspectedCoordinate = [event.lngLat.lng, event.lngLat.lat];
-          inspectedFeatures = map.queryRenderedFeatures(event.point).filter((feature) => !feature.layer.id.startsWith("__tileflow-devtools-")).slice(0, 16);
+          inspectedFeatures = map.queryRenderedFeatures(event.point).filter((feature) => !feature.layer.id.startsWith("__tileflow-inspector-")).slice(0, 16);
           const features = inspectedFeatures.map(projectFeature);
           postToParent({
             type: bridgeInspectionType,
@@ -922,7 +922,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           curveOutput.className = "empty";
           curveOutput.textContent = "Paint and layout values appear here.";
           sidecarOutput.textContent = "No layer selected.";
-          if (reveal) globalThis.__tileflowDevtoolsUI?.selectionChanged();
+          if (reveal) globalThis.__tileflowInspectorUI?.selectionChanged();
           return;
         }
         inspectionOutput.className = "";
@@ -969,7 +969,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           ? boundedJson(sidecarLayerWithSemanticAttribution(sidecarLayer))
           : "No compiler sidecar entry for this layer.";
         if (side.sidecar === undefined && !side.sidecarPromise) void loadSidecar(side);
-        if (reveal) globalThis.__tileflowDevtoolsUI?.selectionChanged();
+        if (reveal) globalThis.__tileflowInspectorUI?.selectionChanged();
       }
 
       function populateCurveProperties(layer) {
@@ -1440,10 +1440,10 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       function roundNumber(value) { return Number(value.toFixed(6)); }
       function formatNumber(value) { return String(roundNumber(value)); }
       function wrapLongitude(value) { return ((value + 180) % 360 + 360) % 360 - 180; }
-      function setFeedback(value) { globalThis.__tileflowDevtoolsUI?.feedback(value); }
+      function setFeedback(value) { globalThis.__tileflowInspectorUI?.feedback(value); }
       ${controlsClient}
       ${workbenchClient}
-      globalThis.__tileflowDevtoolsHost = {
+      globalThis.__tileflowInspectorHost = {
         schemaVersion: 1,
         subscribePreviewStatus: (child, receive) => {
           const side = Object.values(states).find((entry) => entry.frame.contentWindow === child);
@@ -1465,7 +1465,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         sprites: () => loadSprites(states[activeSideId])
       };
     </script>
-    <script type="module"${nonceAttribute} src="${fontBasePath}/__workbench-runtime/devtools.js"></script>
+    <script type="module"${nonceAttribute} src="${fontBasePath}/__workbench-runtime/inspector.js"></script>
   </body>
 </html>`;
 }

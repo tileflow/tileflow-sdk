@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {tileflowAtmosphereMetadataKey} from '../src/atmosphere';
+import {createTileflowThemeController} from '../src/browser';
 import {fixed, token} from '../src/cartography/values';
 import {createStyle, parseTileflowMap} from '../src/map';
 import {defineMap, disable, resolveMap} from '../src/maps';
-import {createTileflowThemeController} from '../src/browser';
 import {
   readTileflowSky,
   tileflowSkyAtSun,
@@ -14,10 +14,10 @@ import {
   tileflowSkySunKey,
   type TileflowSkyTimesOfDay,
 } from '../src/sky';
-import {defineTheme} from '../src/themes';
-import type {MapLibreStyle} from '../src/types';
 import {tileflowSkyStarField} from '../src/sky-browser';
 import {planTileflowThemeBlend, tileflowColourChannels} from '../src/theme-blend';
+import {defineTheme} from '../src/themes';
+import type {MapLibreStyle} from '../src/types';
 import {extendStreets, testLightTheme} from './map-fixture';
 
 const plain = extendStreets({modules: {poi: disable()}});
@@ -81,6 +81,11 @@ test('a declared sky replaces the globe atmosphere sky but keeps its runtime met
     }),
   );
   assert.equal(style.sky?.['sky-color'], '#123456');
+  assert.equal(
+    style.sky?.['atmosphere-blend'],
+    0,
+    'a street sky must not restore globe scattering',
+  );
   assert.ok(style.metadata?.[tileflowAtmosphereMetadataKey]);
   assert.ok(style.metadata?.[tileflowSkyMetadataKey]);
 });

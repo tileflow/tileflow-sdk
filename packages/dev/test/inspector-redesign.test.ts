@@ -2,11 +2,11 @@ import type {Map as MapLibreMap} from 'maplibre-gl';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {inspectModelTriangles} from '../../core/src/model-inspection';
-import {auditCategories} from '../src/devtools/beacon/catalog';
-import {type InspectorCheck, summarizeChecks} from '../src/devtools/beacon/inspector-audit';
-import {rendererProbe} from '../src/devtools/beacon/probes';
-import {inspectionSample, inspectorAssessment} from '../src/devtools/beacon/scoring';
-import {StyleEdits} from '../src/devtools/style-edits';
+import {auditCategories} from '../src/inspector/beacon/catalog';
+import {type InspectorCheck, summarizeChecks} from '../src/inspector/beacon/inspector-audit';
+import {rendererProbe} from '../src/inspector/beacon/probes';
+import {inspectionSample, inspectorAssessment} from '../src/inspector/beacon/scoring';
+import {StyleEdits} from '../src/inspector/style-edits';
 
 test('inspector reports all 48 checks and excludes unknown observations from scores', () => {
   assert.deepEqual(
@@ -151,7 +151,7 @@ test('model previews bound work and retain only actual triangles', () => {
 });
 
 test('tour protocol is deterministic, respects bounds and zoom limits, and preserves long stalls', async () => {
-  const {activeTour, frameSample} = await import('../src/devtools/beacon/tour');
+  const {activeTour, frameSample} = await import('../src/inspector/beacon/tour');
   const initial = {center: [-3, 40] as [number, number], zoom: 16, bearing: 0, pitch: 0};
   const limits = {minZoom: 6, maxZoom: 17, maxPitch: 30};
   const route = activeTour(initial, limits);

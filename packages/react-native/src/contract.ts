@@ -20,12 +20,12 @@ export type MapView = TileflowNativeInitialView;
 export type MapInitialViewInputs = TileflowNativeInitialViewOptions;
 
 /**
- * How a theme change appears. With a `duration`, a snapshot of the current frame covers the map,
+ * How a theme change appears. By default, a snapshot of the current frame covers the map,
  * follows the camera, and fades out once the new theme is drawn. The device's reduce-motion
  * setting changes at once.
  */
 export type MapThemeTransition = Readonly<{
-  /** Cross-fade length in milliseconds, from 0 (the default, an immediate change) to 5000. */
+  /** Cross-fade length in milliseconds, from 0 (immediate) to 5000. Defaults to 450. */
   duration?: number;
 }>;
 

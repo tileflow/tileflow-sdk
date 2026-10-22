@@ -382,10 +382,10 @@ shot receipts contain no time, user, repository, absolute path, environment, URL
 ## Visual comparison and baselines
 
 Two deliberate Tileflow renders can be compared without pretending either one is an approved
-baseline. The live authoring surface is `tileflow preview`, opening Map DevTools with
+baseline. The live authoring surface is `tileflow preview`, opening Inspector with
 one watched session and one preview handler by default. Any `--against-*` selection adds a second
 same-origin preview handler with its own watched session, synchronizes their
-camera, persists Map DevTools state in the URL, and provides side-by-side, split, opacity-overlay, and
+camera, persists Inspector state in the URL, and provides side-by-side, split, opacity-overlay, and
 blink views. An invalid edit retains that side's last valid artifacts and exposes only bounded
 diagnostics until it recovers. The opt-in compiler sidecar, rendered-feature inspector, zoom-curve
 samples and compiled sprite atlas are local diagnostics; the
@@ -399,7 +399,7 @@ The adapter stores the same immutable records as `tileflow capture`. Invalid or 
 cannot begin capture. Saved comparison retains the ordinary frame, renderer and data compatibility
 gates before exposing exact pixel metrics; the result is never baseline approval.
 
-The local Map DevTools adapter exposes version-1 catalog, history, capture, compare and context JSON.
+The local Inspector adapter exposes version-1 catalog, history, capture, compare and context JSON.
 `tileflow inspect session --url <local-preview-origin> --json` reads browser observations with their
 generation, displayed generation, update time and stale flag. Bounded feature/style/provenance
 context is separate from deterministic receipts and does not assert exact source-file ownership.

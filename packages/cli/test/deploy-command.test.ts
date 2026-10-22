@@ -801,7 +801,8 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
         style.sprite,
         `${api.url}/sprites/icp_12345678-1234-1234-1234-123456789abc/sprite`,
       );
-      const foodPoiLayer = style.layers?.find((layer) => layer.id === 'tileflow-poi-icon');
+      const foodPoiLayer = style.layers?.find((layer) => layer.id === 'tileflow-poi');
+      assert.ok(foodPoiLayer?.layout?.['text-field'], 'default POIs include their name');
       const iconImage = JSON.stringify(foodPoiLayer?.layout?.['icon-image']);
       assert.match(iconImage, /"get","icon"/u);
       const paletteSuffix = theme.includes('monochrome') ? '-monochrome' : '';

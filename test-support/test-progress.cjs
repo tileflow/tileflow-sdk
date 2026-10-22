@@ -3,6 +3,8 @@ const {freemem} = require('node:os');
 const {basename} = require('node:path');
 
 if (process.env.TILEFLOW_TEST_PROGRESS === '1' || process.env.TILEFLOW_CLI_TEST_PROGRESS === '1') {
+  // Command tests may temporarily replace stderr to capture structured output.
+  const writeDiagnostic = process.stderr.write.bind(process.stderr);
   let remaining = 128;
   let snapshots = 64;
   const active = new Map();
@@ -12,7 +14,7 @@ if (process.env.TILEFLOW_TEST_PROGRESS === '1' || process.env.TILEFLOW_CLI_TEST_
     if (record.phase === 'waiting' || record.phase === 'resources') {
       if (snapshots-- <= 0) return;
     } else if (remaining-- <= 0) return;
-    process.stderr.write(`[sdk-test] ${JSON.stringify(record)}\n`);
+    writeDiagnostic(`[sdk-test] ${JSON.stringify(record)}\n`);
   };
 
   const testFiles = (args) =>

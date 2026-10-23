@@ -22,6 +22,9 @@ is the enforcement mode and fails if the matching shell is absent. Normal captur
 shell automatically. Tileflow neither embeds the shell in its npm tarball nor deletes Playwright's
 shared cache.
 
+On Windows, Capture disables Chromium's TCP port randomization to avoid intermittent loopback
+connection failures. Playwright's other launch defaults, sandboxing, and capture deadlines are preserved.
+
 Chromium receives a bounded non-secret environment allowlist. Browser installation additionally
 accepts upper- or lower-case proxy settings, certificate settings, and Playwright's explicit
 browser-cache/download settings. Tileflow removes an ambient `TILEFLOW_API_KEY` before importing

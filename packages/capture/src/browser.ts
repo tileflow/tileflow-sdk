@@ -200,9 +200,37 @@ export class TileflowCaptureBrowserManager {
   }
 }
 
+// A custom --disable-features replaces Playwright's list. browser-launch.test.ts checks these
+// Playwright 1.62.1 defaults against the installed browser's command line.
+const windowsChromiumDisabledFeatures = [
+  'AvoidUnnecessaryBeforeUnloadCheckSync',
+  'BoundaryEventDispatchTracksNodeRemoval',
+  'DestroyProfileOnBrowserClose',
+  'DialMediaRouteProvider',
+  'GlobalMediaControls',
+  'HttpsUpgrades',
+  'LensOverlay',
+  'MediaRouter',
+  'PaintHolding',
+  'ThirdPartyStoragePartitioning',
+  'BlockOriginHeaderModificationOnRedirect',
+  'Translate',
+  'AutoDeElevate',
+  'OptimizationHints',
+  'msForceBrowserSignIn',
+  'msEdgeUpdateLaunchServicesPreferredVersion',
+  // Avoid intermittent Windows loopback failures: https://issues.chromium.org/issues/572515601.
+  'TcpPortRandomizationWin',
+];
+
 function launchPinnedBrowser(): Promise<Browser> {
   return chromium.launch({
-    args: ['--disable-dev-shm-usage'],
+    args: [
+      '--disable-dev-shm-usage',
+      ...(process.platform === 'win32'
+        ? [`--disable-features=${windowsChromiumDisabledFeatures.join(',')}`]
+        : []),
+    ],
     chromiumSandbox: true,
     env: createTileflowCaptureBrowserEnvironment(),
     handleSIGHUP: false,

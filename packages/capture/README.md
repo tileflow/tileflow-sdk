@@ -25,6 +25,9 @@ and a system Chrome installation is not a substitute. `allowBrowserInstall: true
 first-use download. Provision the matching shell and system libraries ahead of time in restricted
 CI environments; never assume that installing the npm package installed the browser.
 
+On Windows, Capture disables Chromium's TCP port randomization to avoid intermittent loopback
+connection failures, preserving Playwright's other launch defaults and sandboxing.
+
 Local capture needs no Tileflow API key. Configs are executable trusted code; remote tiles, fonts,
 and sprites may still require network access and their own permissions.
 

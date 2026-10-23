@@ -46,6 +46,7 @@ import {
   tileflowMapIdSchema,
 } from './maps/types';
 import {tileflowBathymetryNameLayerLimits} from './marine';
+import {isTileflowModelPartName} from './models-3d-model';
 import {tileflowLandformClasses} from './modules/landforms';
 import {tileflowRoadClasses} from './modules/roads/semantics';
 import {
@@ -1338,14 +1339,16 @@ const buildingsModuleSchema = z
           .max(256)
           .optional(),
         modelColors: z
-          .object({
-            surface: themeColorValueSchema.optional(),
-            secondary: themeColorValueSchema.optional(),
-            glass: themeColorValueSchema.optional(),
-            accent: themeColorValueSchema.optional(),
-            roof: themeColorValueSchema.optional(),
+          .record(
+            z.string().refine(isTileflowModelPartName, {
+              message:
+                'A model part is named in lower-case words joined by hyphens or underscores, at most 32 characters.',
+            }),
+            themeColorValueSchema,
+          )
+          .refine((colors) => Object.keys(colors).length <= 64, {
+            message: 'A map colours at most 64 model parts.',
           })
-          .strict()
           .optional(),
         landmarks: z
           .union([

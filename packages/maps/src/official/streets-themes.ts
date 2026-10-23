@@ -536,9 +536,16 @@ function calibratedStreetsColors(
 }
 
 function streetsPaletteColors(preset: StreetsLightPreset, colorTheme: StreetsColorTheme) {
-  return {
+  const palette = {
     ...calibratedStreetsColors(preset, colorTheme),
     ...streetsCartographyColors(colorTheme, preset),
+  };
+  return {
+    ...palette,
+    // The parts building models name water, vegetation and wood take the map's water and trees.
+    'buildings.modelWater': palette['hydro.water']!,
+    'buildings.modelVegetation': palette['vegetation.tree.broadleaf.b']!,
+    'buildings.modelWood': palette['vegetation.tree.bark']!,
     'buildings.floodLight': !isDarkStreetsPreset(preset)
       ? '#FFFFFF'
       : colorTheme === 'monochrome'

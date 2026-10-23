@@ -1501,3 +1501,23 @@ test('Streets buildings switch to native extrusions only without the flat render
     .filter((id) => id.startsWith('tileflow-buildings'));
   assert.deepEqual(layerIds, ['tileflow-buildings-3d']);
 });
+
+test('Streets colours the water, vegetation and wood parts of models in every theme', () => {
+  for (const theme of Object.keys(streetsThemes)) {
+    const style = compileOfficialMap(streets, theme);
+    const buildings = readTileflowBuildings3D(style.metadata);
+    const trees = readTileflowVegetation3D(style.metadata);
+    assert.ok(buildings?.modelColors);
+    assert.ok(trees);
+
+    assert.equal(buildings.modelColors.wood, trees.colors.bark);
+    assert.equal(buildings.modelColors.vegetation, trees.colors.broadleaf[1]);
+    assert.ok(Color.parse(buildings.modelColors.water!));
+    assert.equal(
+      buildings.modelColors.water,
+      resolveMap(streets).themes[theme]!.tokens.color['hydro.water'],
+    );
+    assert.equal(buildings.modelLighting?.unclassified?.emissiveStrength, 0);
+    assert.equal(buildings.modelColors.glass, undefined);
+  }
+});

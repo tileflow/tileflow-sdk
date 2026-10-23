@@ -14,7 +14,7 @@ import {
   readTileflowBuildingSurfaces,
   type TileflowBuildingSurfaceDesign,
 } from './buildings-3d-surfaces';
-import {type TileflowModelPart, tileflowModelParts} from './models-3d-model';
+import {isTileflowModelPartName} from './models-3d-model';
 import type {TileflowModelLightingRole} from './models-3d-model';
 
 /** The style metadata key under which a compiled map describes its 3D buildings. */
@@ -46,7 +46,7 @@ export type TileflowBuildings3DDesign = Readonly<{
   nightLight: number;
   /** Height-selected light on ordinary buildings and the ground, independent of shop windows. */
   floodLight?: TileflowBuildingFloodLight;
-  /** Emission by architectural role, independent of model palette slots. */
+  /** Emission by architectural role, independent of the models' parts. */
   modelLighting?: Readonly<Partial<Record<TileflowModelLightingRole, TileflowModelRoleLighting>>>;
   /** Invented night windows, lit by rooms: decoration, not data. */
   windows: boolean;
@@ -65,8 +65,8 @@ export type TileflowBuildings3DDesign = Readonly<{
   modelOcclusion?: number;
   /** Building models the map places in its city, each replacing the buildings under it. */
   models?: readonly TileflowBuildingModelPlacement[];
-  /** The colours of the models' parts; a part without one takes it from the building colour. */
-  modelColors?: Readonly<Partial<Record<TileflowModelPart, string>>>;
+  /** The colours of the models' parts by name; a part without one keeps its material's colour. */
+  modelColors?: Readonly<Record<string, string>>;
   /**
    * Tileflow's landmarks, drawn as models in place of the buildings under them: the TileJSON of
    * their tileset. Without it, the map shows none.
@@ -223,13 +223,11 @@ function modelsOf(value: unknown): {models?: readonly TileflowBuildingModelPlace
   return models.length > 0 ? {models} : {};
 }
 
-function modelColorsOf(value: unknown): {
-  modelColors?: Readonly<Partial<Record<TileflowModelPart, string>>>;
-} {
+function modelColorsOf(value: unknown): {modelColors?: Readonly<Record<string, string>>} {
   if (!isRecord(value)) return {};
-  const colors: Partial<Record<TileflowModelPart, string>> = {};
-  for (const part of Object.keys(tileflowModelParts) as TileflowModelPart[])
-    if (typeof value[part] === 'string') colors[part] = value[part];
+  const colors: Record<string, string> = {};
+  for (const [part, color] of Object.entries(value))
+    if (isTileflowModelPartName(part) && typeof color === 'string') colors[part] = color;
   return Object.keys(colors).length > 0 ? {modelColors: colors} : {};
 }
 

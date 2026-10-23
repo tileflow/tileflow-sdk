@@ -41,7 +41,7 @@ export type TileflowBuildingsThreeDimensionalStyle = {
     /** Wall radius as a fraction of building height; defaults to 1/3. */
     wallHeightRatio?: number;
   };
-  /** Per-role physical materials and emission, separate from palette slots and occlusion. */
+  /** Per-role physical materials and emission, separate from model parts and occlusion. */
   modelLighting?: Partial<
     Record<
       TileflowModelLightingRole,
@@ -101,7 +101,10 @@ export type TileflowBuildingsThreeDimensionalStyle = {
    * directories. Each stands in for the buildings under its footprint.
    */
   models?: readonly TileflowBuildingModelPlacementConfig[];
-  /** The colours of the models' parts; a part without one takes it from the building colour. */
+  /**
+   * The colours of the models' parts, by the names their materials give them, such as `glass` or
+   * `water`. A part the map gives no colour keeps its material's own.
+   */
   modelColors?: Partial<Record<TileflowBuildingModelPart, TileflowThemeColorValue>>;
   /**
    * Tileflow's landmarks, such as the Eiffel Tower, drawn as models in place of the buildings
@@ -112,8 +115,11 @@ export type TileflowBuildingsThreeDimensionalStyle = {
   landmarks?: boolean | {url: string};
 };
 
-/** The parts of a building model, as its materials name them. */
-export type TileflowBuildingModelPart = 'surface' | 'secondary' | 'glass' | 'accent' | 'roof';
+/**
+ * A part of a building model, as its materials name it: lower-case words joined by hyphens or
+ * underscores, such as `surface`, `glass`, `roof` or `water`.
+ */
+export type TileflowBuildingModelPart = string;
 
 /** Where a building model stands. */
 export type TileflowBuildingModelPlacementConfig = {

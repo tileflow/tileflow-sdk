@@ -124,6 +124,60 @@ test('fixture cleanup releases every resource in dependency order after a failur
 });
 
 test(
+  'JSON stop requests preserve the stopped event while consumer cleanup is pending',
+  {timeout: 10_000},
+  async (t) => {
+    const running = startJsonFixtureProcess(
+      t,
+      [
+        '--eval',
+        `process.on('message', message => {
+          if (message.type !== 'tileflow:stop') return;
+          process.stdout.write(JSON.stringify({event: 'stopping'}) + '\\n');
+          setTimeout(() => {
+            process.stdout.write(JSON.stringify({event: 'stopped'}) + '\\n');
+            process.disconnect();
+          }, 400);
+        });
+        process.stdout.write(JSON.stringify({event: 'ready'}) + '\\n');`,
+      ],
+      {shutdownMs: 100},
+    );
+
+    await running.waitFor((event) => event.event === 'ready');
+    running.requestStop();
+    running.requestStop();
+    await running.waitFor((event) => event.event === 'stopped');
+
+    assert.equal((await running.completion).code, 0);
+    assert.equal(running.events.filter((event) => event.event === 'stopping').length, 1);
+    assert.equal(running.events.filter((event) => event.event === 'stopped').length, 1);
+  },
+);
+
+test(
+  'JSON fixture cleanup still terminates an unresponsive consumer after a stop request',
+  {timeout: 10_000},
+  async (t) => {
+    const running = startJsonFixtureProcess(
+      t,
+      [
+        '--eval',
+        `process.on('message', () => {});
+        process.stdout.write(JSON.stringify({event: 'ready'}) + '\\n');`,
+      ],
+      {shutdownMs: 100},
+    );
+
+    await running.waitFor((event) => event.event === 'ready');
+    running.requestStop();
+    await running.stop();
+
+    assert.notEqual((await running.completion).code, 0);
+  },
+);
+
+test(
   'JSON fixture cancellation rejects pending event waits and releases its worker',
   {timeout: 10_000},
   async (t) => {

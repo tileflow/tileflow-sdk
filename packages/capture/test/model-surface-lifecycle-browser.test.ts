@@ -26,7 +26,7 @@ test(
       join(directory, 'fixture.ts'),
       `
 export {createTileflowPlacedModels} from ${source('models-3d-browser')};
-export {bindModelMaterial} from ${source('models-3d-materials-browser')};
+export {bindModelMaterial, bindModelSurfaceShared} from ${source('models-3d-materials-browser')};
 export * from ${source('models-3d-emitters')};
 export * from ${source('models-3d-shaders')};`,
     );
@@ -130,8 +130,8 @@ export * from ${source('models-3d-shaders')};`,
               throw new Error(gl.getShaderInfoLog(shader)!);
             gl.attachShader(program, shader);
           }
-          for (const [index, [name]] of [
-            ...api.tileflowModelAttributes,
+          for (const [index, name] of [
+            ...api.tileflowModelAttributes.map(([attribute]) => attribute),
             ...api.tileflowModelSurfaceAttributes,
           ].entries())
             gl.bindAttribLocation(program, index, name);
@@ -174,6 +174,7 @@ export * from ${source('models-3d-shaders')};`,
             new Float32Array([1]),
           );
           gl.bindVertexArray(buffers.vao);
+          api.bindModelSurfaceShared(gl, surface);
           gl.drawElements(gl.TRIANGLES, 3, buffers.type, 0);
           const pixel = new Uint8Array(4);
           gl.readPixels(8, 8, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel);

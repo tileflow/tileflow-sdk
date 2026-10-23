@@ -741,6 +741,7 @@ export {
   type TileflowModelLightingRole,
   type TileflowModelMesh,
   type TileflowModelPart,
+  type TileflowModelSurfaceBytes,
 } from './models-3d-model';
 export type {TileflowModelEmissionGradient} from './building-illumination';
 export {

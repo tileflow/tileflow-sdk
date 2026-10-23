@@ -342,7 +342,11 @@ How to prepare a model:
   out on the ground what the model stands in for, such as a landmark's whole base. Without one, the
   model's own outline on the ground stands in, courtyards included.
 - **Levels of detail.** `<id>.mid.glb` and `<id>.far.glb`, when present, are drawn farther from the
-  camera's centre, from about 900 m and 2.6 km.
+  camera, measured to the centre of the model's bounds: a model 30 m or taller from 2 km and 5 km,
+  one 80 m or more across from 1.5 km and 3.5 km, and any other from 1 km and 2.5 km. A model beside
+  a low camera at a steep pitch keeps its near level however far the map's centre is, and a model
+  near a threshold keeps its level until it is about 10% past it. A model casts its shadow with its
+  next lighter level, and a model outside the view or the light's reach is not drawn.
 - **Budgets.** A level has at most 200,000 triangles and 200,000 vertices, and a map at most 64
   building models. Triangles of the default scene are read with their node transforms; textures,
   animations and compressed geometry (Draco or meshopt) are not.

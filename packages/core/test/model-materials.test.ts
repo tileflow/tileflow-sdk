@@ -86,7 +86,8 @@ test('physical material data survives prepared model compression independently o
     assert.deepEqual(decoded.surface.textures, mesh().surface!.textures);
     assert.deepEqual(decoded.surface.emitters, mesh().surface!.emitters);
     assert.deepEqual(decoded.surface.ranges, [{from: 0, count: 6, material: 0}]);
-    assert.equal(decoded.surface.attributes.length, (decoded.vertices.length / 16) * 8);
+    assert.equal(decoded.surface.uv.length, (decoded.vertices.length / 16) * 4);
+    assert.deepEqual([...decoded.surface.rgba], [1, 1, 1, 1]);
     for (let at = 0; at < decoded.vertices.length; at += 16) {
       assert.equal(decoded.vertices[at + 12], 0);
       assert.equal(decoded.vertices[at + 14], 102);
@@ -104,8 +105,44 @@ test('physical UV seams survive welding and triangle reordering', async () => {
     6,
     'coincident vertices with different UVs must stay separate',
   );
-  const uv = [...decoded.indices].map((index) => decoded.surface!.attributes[index * 8]);
+  const uv = [...decoded.indices].map((index) => decoded.surface!.uv[index * 4]);
   assert.deepEqual([...uv].sort(), [0, 0, 0.25, 0.25, 0.75, 1].sort());
+});
+
+test('surface attributes every vertex shares decode to one value, the others to one a vertex', async () => {
+  await MeshoptEncoder.ready;
+  const base = mesh();
+  const vertices = base.positions.length / 3;
+  // As a library model's file holds them: no texture coordinates, and white or tinted vertices.
+  const tinted = Array.from({length: vertices}, (_, vertex) => [0, 0, 0, 0, 1, 0.5, vertex / 8, 1]);
+  const white = Array.from({length: vertices}, () => [0, 0, 0, 0, 1, 1, 1, 1]);
+  for (const compressor of [undefined, MeshoptEncoder]) {
+    for (const [attributes, rgbaShared] of [
+      [white, true],
+      [tinted, false],
+    ] as const) {
+      const surface = {...base.surface!, attributes: attributes.flat(), textures: []};
+      const materials = surface.materials.map(
+        ({baseColorTexture, occlusionTexture, ...rest}) => rest,
+      );
+      const bytes = encodeTileflowModels(
+        [model({...base, surface: {...surface, materials}})],
+        compressor,
+      );
+      const decoded = (await decodeTileflowModels(bytes))![0]!.levels[0]!;
+      const count = decoded.vertices.length / 16;
+      assert.deepEqual([...decoded.surface!.uv], [0, 0, 0, 0]);
+      if (rgbaShared) assert.deepEqual([...decoded.surface!.rgba], [1, 1, 1, 1]);
+      else {
+        assert.equal(decoded.surface!.rgba.length, count * 4);
+        const blue = [...decoded.indices].map((index) => decoded.surface!.rgba[index * 4 + 2]);
+        assert.deepEqual(
+          blue,
+          [0, 1, 2, 3, 4, 5].map((vertex) => Math.fround(vertex / 8)),
+        );
+      }
+    }
+  }
 });
 
 test('material references, image budgets and draw ranges fail before encoding invalid models', () => {

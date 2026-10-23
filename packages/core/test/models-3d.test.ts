@@ -770,15 +770,15 @@ test("a landmark's tile and region follow from where it stands, and a region's i
     ...tower,
     footprint: [[-62.5, -62.5, 62.5, -62.5, 62.5, 62.5, -62.5, 62.5]],
   });
-  // An index of the first format, which named no landmarks, is still read.
-  assert.deepEqual(
+  // The first format, which named no landmarks, is no longer read.
+  assert.equal(
     readTileflowLandmarkRegion({
       format: 'tileflow-landmark-region-v1',
       zoom: 14,
       region: [6, 32, 22],
       tiles: [[8296, 5636, hash('a')]],
-    })?.tiles,
-    [[8296, 5636, hash('a')]],
+    }),
+    undefined,
   );
   assert.throws(
     () => serializeTileflowLandmarkRegion({region: [32, 22], tiles: [[0, 0, hash('a'), [tower]]]}),
@@ -800,7 +800,7 @@ test("a landmark's tile and region follow from where it stands, and a region's i
     /no SHA-256/u,
   );
   assert.throws(
-    () => serializeTileflowLandmarkRegion({region: [32, 22], tiles: [[8296, 5636, hash('a')]]}),
+    () => serializeTileflowLandmarkRegion({region: [32, 22], tiles: [[8296, 5636, hash('a'), []]]}),
     /names no landmark/u,
   );
   assert.throws(
@@ -827,7 +827,7 @@ test("a landmark's tile and region follow from where it stands, and a region's i
   assert.equal(
     readTileflowLandmarkRegion({...written, tiles: [[8296, 5636, hash('a')]]}),
     undefined,
-    'a tile of the second format names its landmarks',
+    'a tile names its landmarks',
   );
   assert.equal(
     readTileflowLandmarkRegion({

@@ -236,6 +236,8 @@ Maps on Tileflow World show Tileflow's landmarks, such as the Eiffel Tower, as 3
 the buildings under them. They come from a landmarks tileset kept apart from the map's data: each of
 its tiles carries the models standing in it, with their levels of detail and footprints, and each
 region's index names its tiles by their hash, with where each landmark stands and its footprint.
+Core reads only indexes in the `tileflow-landmark-region-v2` format; an index that names no
+footprints is not read, and its region shows no landmarks.
 The renderer reads the tileset's TileJSON, then only the indexes of the regions round the camera
 and the landmark tiles near it, from a zoom before the buildings show, so a landmark in Paris costs
 nothing in Madrid. New and improved landmarks reach every map without a new build of the map.

@@ -134,7 +134,9 @@ uniform vec2 u_palette_rows; // rows per theme; texels per row
 uniform vec2 u_palette_themes; // the themes either side of the blend position
 uniform float u_palette_mix;
 uniform float u_variation; // how far buildings' brightness strays from their colour, either way
+uniform vec3 u_surface_tile; // repeating projected-metre phase and metres per tile unit
 ${growth}
+out vec2 v_surface;
 out vec3 v_colour;
 out float v_base;
 out vec3 v_facade; // metres along the wall, metres up as built, the building's top
@@ -179,6 +181,7 @@ void main() {
   // Neighbours of one colour stay apart: each building a little lighter or darker than its colour.
   v_colour *= 1.0 + (a_wave.x - 0.5) * 2.0 * u_variation;
   v_base = base;
+  v_surface = a_pos * u_surface_tile.z + u_surface_tile.xy;
   v_edge = wall > 0.5 ? vec3(a_edge.x, 0.0, 0.0) : vec3(equal(vec3(a_edge.x), vec3(0.0, 1.0, 2.0)));
   v_outline = a_edge.y;
   v_facade = vec3(a_along * 0.1, own, top);
@@ -190,6 +193,10 @@ export const tileflowBuildingFragment = `#version 300 es
 precision highp float;
 in vec3 v_colour;
 in float v_base;
+in vec2 v_surface;
+uniform vec4 u_surface_walls; // width, course height, joint width, contrast
+uniform vec3 u_surface_roof; // square size, joint width, contrast
+uniform vec2 u_surface_cornice; // band height, contrast
 uniform vec3 u_style_light_position;
 uniform vec3 u_style_light_colour;
 uniform float u_style_light_intensity;
@@ -294,6 +301,62 @@ float edgeOf() {
   return 1.0 - smoothstep(u_edge_width - 0.75, u_edge_width + 0.25, near);
 }
 
+// A filtered joint between large, softly shaded blocks. Derivatives are taken before the
+// stagger/periodic wrap, so row boundaries do not create false level-of-detail transitions.
+float surfaceBlocks(vec2 position, vec2 size, float joint, float contrast, float stagger) {
+  vec2 footprint = max(fwidth(position), vec2(0.0001));
+  float visible = smoothstep(2.0, 7.0, min(size.x / footprint.x, size.y / footprint.y));
+  vec2 uv = position / size;
+  uv.x += mod(floor(uv.y), 2.0) * stagger;
+  vec2 cell = fract(uv) * size;
+  vec2 distance = min(cell, size - cell);
+  vec2 aa = footprint * 0.65;
+  vec2 seam = 1.0 - smoothstep(vec2(joint * 0.5) - aa, vec2(joint * 0.5) + aa, distance);
+  float groove = max(seam.x, seam.y);
+  // A quiet bevel on the upper and left edges makes the painted blocks catch light.
+  vec2 bevel = (1.0 - smoothstep(vec2(joint), vec2(joint + 0.35) + aa, cell)) * (1.0 - seam);
+  return 1.0 + contrast * visible * (max(bevel.x, bevel.y) * 0.3 - groove * 0.65);
+}
+
+// Distance to the actual roof outline in the roof's projected-metre plane. The triangle's
+// barycentric gradient ignores internal triangulation and tile cuts, including around patios.
+float roofOutlineDistance() {
+  vec2 dx = dFdx(v_surface), dy = dFdy(v_surface);
+  float determinant = dx.x * dy.y - dx.y * dy.x;
+  if (abs(determinant) < 1e-10) return 1e6;
+  vec3 bx = dFdx(v_edge), by = dFdy(v_edge);
+  vec3 gx = (bx * dy.y - by * dx.y) / determinant;
+  vec3 gy = (by * dx.x - bx * dy.x) / determinant;
+  vec3 distance = v_edge / max(sqrt(gx * gx + gy * gy), vec3(1e-7));
+  int sides = int(v_outline + 0.5);
+  float nearest = 1e6;
+  if ((sides & 1) != 0) nearest = min(nearest, distance.x);
+  if ((sides & 2) != 0) nearest = min(nearest, distance.y);
+  if ((sides & 4) != 0) nearest = min(nearest, distance.z);
+  return nearest;
+}
+
+vec3 surfaceColour() {
+  vec3 colour = v_colour;
+  bool wall = v_building.z > 0.5;
+  float pattern = 1.0;
+  if (wall && u_surface_walls.w > 0.0)
+    pattern = surfaceBlocks(v_facade.xy, u_surface_walls.xy, u_surface_walls.z, u_surface_walls.w, 0.5);
+  if (!wall && u_surface_roof.z > 0.0)
+    pattern = surfaceBlocks(v_surface, vec2(u_surface_roof.x), u_surface_roof.y, u_surface_roof.z, 0.0);
+  float band = 0.0, seam = 0.0;
+  if (u_surface_cornice.y > 0.0) {
+    float distance = wall ? v_facade.z - v_facade.y : roofOutlineDistance();
+    float width = wall ? min(u_surface_cornice.x, (v_facade.z - v_base) * 0.2) : u_surface_cornice.x;
+    float pixel = max(fwidth(distance), 0.001);
+    float visible = smoothstep(0.4, 1.5, width / pixel);
+    band = (1.0 - smoothstep(width - pixel * 0.5, width + pixel * 0.5, distance)) * visible;
+    seam = (1.0 - smoothstep(0.0, pixel + width * 0.15, abs(distance - width))) * visible;
+  }
+  colour *= mix(pattern, 1.0, band) * (1.0 - seam * u_surface_cornice.y * 0.25);
+  return mix(colour, mix(colour, vec3(1.0), u_surface_cornice.y * 0.45), band);
+}
+
 void main() {
   vec3 normal = normalize(v_normal);
   // A narrow lighting transition softens the roof/wall junction without moving the roof
@@ -304,8 +367,9 @@ void main() {
     normal = normalize(mix(normal, vec3(0.0, 0.0, 1.0), rim));
   }
   float lit = dot(normal, u_sun_dir) > 0.0 ? visibility(v_shadow, 0.3) : 0.0;
-  vec3 colour = mix(styleColour(v_colour, normal) * (1.0 - u_shadow * (1.0 - lit)),
-    v_colour * shade(normal, lit), u_sun_lighting);
+  vec3 surface = surfaceColour();
+  vec3 colour = mix(styleColour(surface, normal) * (1.0 - u_shadow * (1.0 - lit)),
+    surface * shade(normal, lit), u_sun_lighting);
   colour *= facadeShade();
   // Roof outlines and outer corners catch the light, so where one building ends and the next starts
   // stays legible, at night most of all.

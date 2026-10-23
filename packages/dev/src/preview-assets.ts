@@ -10,9 +10,9 @@ let localThreeCoreJavaScript: string | undefined;
 let localThreeModuleJavaScript: string | undefined;
 
 export function getTileflowPreviewRuntimeResponse(path: string): Response | undefined {
-  if (path === '/__runtime/devtools-observer.js') {
+  if (path === '/__runtime/inspector-observer.js') {
     return textAssetResponse(
-      readFileSync(new URL('../dist/devtools-observer.js', import.meta.url), 'utf8'),
+      readFileSync(new URL('../dist/inspector-observer.js', import.meta.url), 'utf8'),
       'text/javascript; charset=utf-8',
     );
   }

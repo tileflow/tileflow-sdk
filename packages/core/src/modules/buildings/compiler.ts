@@ -105,7 +105,8 @@ export function compileBuildings(
         },
         style,
       ),
-      localOrder: 0,
+      // Ground street names belong above flat footprints but below raised geometry.
+      localOrder: 1000,
       owner: 'buildings',
       slot: 'buildings',
       target: 'buildings.extrusion',

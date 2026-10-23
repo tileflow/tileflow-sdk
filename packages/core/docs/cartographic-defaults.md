@@ -77,7 +77,8 @@ surfaces are hidden.
 ## Street names on the ground or in the foreground
 
 `labels({roadPlacement: 'foreground'})` is the default. Names draw above buildings and vegetation.
-Use `roadPlacement: 'ground'` to draw them below buildings, with text aligned to the map surface.
+Use `roadPlacement: 'ground'` to draw them above flat building footprints and below raised
+buildings, with text aligned to the map surface. Flat footprints must not clip the glyphs.
 Shields and junction numbers remain in the foreground. Ground placement does not require the
 buildings module: street names still draw when buildings are disabled.
 
@@ -108,9 +109,76 @@ priority still orders the ground road classes relative to one another; it does n
 collision priority independent of drawing order. Foreground placement retains the existing
 navigation priority over ordinary POIs. Neither mode turns collision detection off.
 
+When compatible road-name layers share a physical bucket, their top-to-bottom collision priority
+and each class's authored feature priority are retained. Overlap-enabled names retain drawing order.
+
+`labels({roadGrouping: 'network'})` instead shares placement and repeated-name suppression across
+compatible classes, in source feature order (or their common authored priority). It retains each
+class's zoom thresholds and size curve. Different fonts, spacing, colors or priorities stay separate,
+as do explicit ordered passes and fractional zoom thresholds. Streets uses this for its ordinary
+roads and a separate pedestrian/path group. The default `'class'` retains road-class priority.
+
 Use a refinement on `labels.roads.<class>` to move an individual class after this default has been
 applied. Symbol size, zoom range, spacing, priority, fonts and halos remain available in
 `styles.roads`. The same names, language fallbacks and class selectors are used in both modes.
+
+## Compact road names
+
+`labels({roadNameFormat: 'compact'})` abbreviates recognized Spanish and French road-type
+prefixes and English suffixes after language selection: `Calle de Alcalá` becomes `C. de Alcalá`,
+`Avenue Paul Doumer` becomes `Av. Paul Doumer`, and `West 34th Street` becomes `W 34th St`.
+The default, `full`, preserves source names. Proper names, unknown types and route shields stay
+unchanged. An explicit `styles.roads.<class>.text.field` takes precedence over this formatting.
+
+## Label density and perspective
+
+The SDK starts with local street names (`labels.roads: 'streets'`), POI density 2 and a
+3-pixel text collision margin. Street names follow enabled road geometry and their zoom thresholds;
+set `roads: 'major'` to retain a map with only arterial names, and `density: 3` for more POIs.
+
+`poi({density: 2, densityByCategory: {landmark: 3, lodging: 1}})` changes category eligibility
+while retaining one importance order across categories. Unspecified categories inherit `density`.
+Each value is 1–5; eligible rank increases by one at z16 and two at `detailZoom` (default 17;
+Streets uses 18). `detailZoom` must exceed 16 and cannot exceed 24. Source rank meanings
+and category coverage differ between datasets, so equal settings need not produce equal counts.
+
+MapLibre owns perspective scaling, distant-symbol rejection, collision placement and fading.
+These native behaviors apply without a module switch. The SDK does not change feature filters
+when panning, rotating, tilting or ending a gesture. Category and zoom eligibility remain compiled
+into the style; explicit application filter edits remain application-owned. The experimental
+`perspective` module option and `attachTileflowLabelPerspective` helper have been removed.
+
+Default POIs place their pictogram and name together, with four alternative text anchors and
+native collision detection. Parking and public toilets retain their icon-only representation.
+Set `placement.coupleIconAndLabel: false` to place pictograms and names independently. Maps refining
+separate `poi.icon` or `poi.label` targets should set this explicitly; coupled POIs use `poi`.
+Explicit anchors, offsets and variable anchors replace the SDK's automatic text clearance.
+
+Balanced foreground priority offers place names and route references first, followed by major
+road names, ordinary POIs, minor road names and house numbers. `collisionPriority: 'navigation'`
+also promotes minor road names above ordinary POIs. `placement.prominentRank` can promote selected
+POI ranks above the orientation labels. Eligibility still depends on zoom, enabled classes and
+source data. Feature priority sorts within a layer; it does not override the order between layers.
+Explicit render-stack placements take precedence over these defaults.
+
+With `roadPlacement: 'ground'`, the browser keeps road names above the 3D scene below 30° pitch,
+so roofs cannot cut letters in narrow streets viewed from above. At 30° and above, names return
+below solid raised geometry. Tileflow trees mount below these names so foliage cannot cut
+individual letters. This policy follows `roadPlacement` alone and does not affect camera tilt.
+Explicit render-stack moves opt a target out of automatic ordering; explicit tree `beforeId`
+placement remains application-owned.
+
+React, Vue, Svelte, preview and standalone capture attach the shared placement controller.
+Applications constructing MapLibre maps directly call `attachTileflowLabelPlacement(map)` from
+`@tileflow/core/browser` once after map construction. The returned function detaches its listeners
+and restores ground ordering; map removal detaches without further map writes. Replacement styles
+and late-mounted 3D layers are discovered automatically. Static style JSON and native renderers
+retain compiled eligibility and hierarchy, but do not execute this browser scene-order controller.
+
+Native perspective rejection is not a configurable per-category distance curve. The SDK does not
+emulate Mapbox's `pitch` or `distance-from-center` symbol filters, which the supported MapLibre
+style specification does not provide. Runtime fade duration and cross-source collisions continue
+to use MapLibre defaults unless overridden through the adapter's `mapOptions`.
 
 ## Discover and override decisions
 

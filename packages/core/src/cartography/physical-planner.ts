@@ -41,6 +41,7 @@ export function planTileflowLayerFamilies(
   let layers = input.map(cloneJson);
   layers = consolidateRoadLines(layers);
   layers = consolidateRoadHatches(layers);
+  layers = consolidateRoadNameNetworks(layers);
   layers = consolidateRoadLabels(layers);
   layers = consolidateFillFamily(layers, 'land.landcover', 'land.cohorts.landcover');
   layers = consolidateFillFamily(layers, 'land.landuse', 'land.cohorts.landuse');
@@ -352,6 +353,7 @@ function consolidateRoadLabels(layers: LayerFamily[]): LayerFamily[] {
     .filter(
       ({layer, roadClass}) =>
         layer.renderer === 'symbol' &&
+        layer.family?.variant !== 'network' &&
         roadClass !== undefined &&
         layer.feature?.dataLayer !== undefined,
     );
@@ -384,11 +386,33 @@ function consolidateRoadLabels(layers: LayerFamily[]): LayerFamily[] {
         : `labels.cohorts.roads.cohort${groupNumber++}`;
     if (hasGeneratedKeyCollision(layers, key, group)) continue;
     const layout = {...(first.style.placement ?? {})};
+    // Separate symbol layers are offered to collision placement from top to
+    // bottom; within one bucket lower sort keys are offered first. Preserve
+    // that priority when folding layers, rather than reversing their winners.
+    // Overlapping symbols instead need the original bottom-to-top draw order.
+    // A camera expression can switch between those two orders. Keep its layers separate.
+    if (
+      ['text', 'icon'].some((kind) =>
+        ['overlap', 'allow-overlap', 'ignore-placement'].some((property) =>
+          Array.isArray(layout[`${kind}-${property}`]),
+        ),
+      )
+    )
+      continue;
+    const overlap = ['text', 'icon'].some((kind) => {
+      const mode = layout[`${kind}-overlap`];
+      return (
+        layout[`${kind}-ignore-placement`] === true ||
+        (mode === undefined
+          ? layout[`${kind}-allow-overlap`] === true
+          : mode === 'always' || mode === 'cooperative')
+      );
+    });
     const sortKeyValues = group.map(({layer}, index) => {
       const original = layer.style.placement?.['symbol-sort-key'] ?? 0;
       return {
         condition: conditions[index]!,
-        value: rankedSortKey(original, index),
+        value: rankedSortKey(original, overlap ? index : group.length - 1 - index),
       };
     });
     if (sortKeyValues.some(({value}) => containsZoom(value))) continue;
@@ -406,6 +430,91 @@ function consolidateRoadLabels(layers: LayerFamily[]): LayerFamily[] {
     );
     for (const {index} of group) replacements.set(index, []);
     replacements.set(group.at(-1)!.index, [merged]);
+  }
+  return applyReplacements(layers, replacements);
+}
+
+/** Opt-in shared placement: size and visibility vary by class, collision order does not. */
+function consolidateRoadNameNetworks(layers: LayerFamily[]): LayerFamily[] {
+  const groups = new Map<string, Array<{index: number; layer: LayerFamily}>>();
+  for (const [index, layer] of layers.entries()) {
+    if (
+      layer.renderer !== 'symbol' ||
+      layer.family?.kind !== 'road-label' ||
+      layer.family.variant !== 'network' ||
+      layer.feature?.dataLayer === undefined
+    )
+      continue;
+    const {'text-size': _size, ...layout} = layer.style.placement ?? {};
+    const key = JSON.stringify({
+      annotations: layer.annotations,
+      feature: layer.feature,
+      layout,
+      owner: layer.owner,
+      paint: layer.style.appearance,
+      properties: layer.properties,
+      slot: layer.slot,
+    });
+    const group = groups.get(key) ?? [];
+    group.push({index, layer});
+    groups.set(key, group);
+  }
+  const replacements = new Map<number, LayerFamily[]>();
+  let number = 0;
+  for (const entries of groups.values()) {
+    for (const group of contiguousRuns(entries)) {
+      if (group.length < 2) continue;
+      const members = group.map(({layer}) => layer);
+      // Filters evaluate zoom at integer levels. Keep fractional boundaries and
+      // explicit ordered passes separate, instead of silently changing them.
+      if (
+        members.some(
+          (layer) =>
+            isOrderedRenderPass(layer) ||
+            containsZoom(layer.selector) ||
+            !Number.isInteger(minimumZoom(layer)) ||
+            (layer.range?.maxZoom !== undefined && !Number.isInteger(layer.range.maxZoom)),
+        )
+      )
+        continue;
+      const first = members[0]!;
+      const minZoom = Math.min(...members.map(minimumZoom));
+      const maxZoom = Math.max(...members.map(maximumZoom));
+      const conditions = members.map((layer) => asFilter(layer.selector));
+      const size = combineConditionalValues(
+        members.map((layer, index) => ({
+          condition: conditions[index]!,
+          value: layer.style.placement?.['text-size'] ?? 16,
+        })),
+        first.style.placement?.['text-size'] ?? 16,
+        minZoom,
+      );
+      if (!size.ok) continue;
+      const key = `labels.cohorts.roads.network${number++}`;
+      if (hasGeneratedKeyCollision(layers, key, group)) continue;
+      const merged = withMergedOrigins(
+        {
+          ...first,
+          key,
+          range: {minZoom, ...(Number.isFinite(maxZoom) ? {maxZoom} : {})},
+          selector: unionFilters(
+            members.map((layer, index) => [
+              'all',
+              conditions[index]!,
+              ['>=', ['zoom'], minimumZoom(layer)],
+              ...(layer.range?.maxZoom === undefined ? [] : [['<', ['zoom'], layer.range.maxZoom]]),
+            ]),
+          ),
+          style: {
+            ...first.style,
+            placement: {...first.style.placement, 'text-size': size.value},
+          },
+        },
+        members,
+      );
+      for (const {index} of group) replacements.set(index, []);
+      replacements.set(group.at(-1)!.index, [merged]);
+    }
   }
   return applyReplacements(layers, replacements);
 }

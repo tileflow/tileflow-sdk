@@ -1,5 +1,10 @@
+import type {TileflowBuildingSurfaces} from '../../buildings-3d-surfaces';
 import type {TileflowAreaStyle, TileflowExtrusionStyle} from '../../cartography/styles';
-import type {TileflowThemeColorValue, TileflowThemeNumberValue} from '../../cartography/values';
+import type {
+  TileflowThemeColorValue,
+  TileflowThemeNumberValue,
+  TileflowThemeValue,
+} from '../../cartography/values';
 import type {TileflowModelLightingRole} from '../../models-3d-model';
 
 export type TileflowBuildingMode = '3d' | 'flat';
@@ -36,7 +41,7 @@ export type TileflowBuildingsThreeDimensionalStyle = {
     /** Wall radius as a fraction of building height; defaults to 1/3. */
     wallHeightRatio?: number;
   };
-  /** Per-role physical materials and emission, separate from palette slots and occlusion. */
+  /** Per-role physical materials and emission, separate from model parts and occlusion. */
   modelLighting?: Partial<
     Record<
       TileflowModelLightingRole,
@@ -86,12 +91,20 @@ export type TileflowBuildingsThreeDimensionalStyle = {
    * barns, factories and churches, and homes lit apart from offices. Defaults to false.
    */
   windows?: boolean;
+  /** Decorative wall joints, roof tiles and painted cornices. Off by default; ordinary buildings only. */
+  surfaces?: TileflowBuildingSurfaces<
+    TileflowThemeNumberValue,
+    TileflowThemeValue<readonly [number, number]>
+  >;
   /**
    * Building models the map places in its city, from the glTF binaries in its `models`
    * directories. Each stands in for the buildings under its footprint.
    */
   models?: readonly TileflowBuildingModelPlacementConfig[];
-  /** The colours of the models' parts; a part without one takes it from the building colour. */
+  /**
+   * The colours of the models' parts, by the names their materials give them, such as `glass` or
+   * `water`. A part the map gives no colour keeps its material's own.
+   */
   modelColors?: Partial<Record<TileflowBuildingModelPart, TileflowThemeColorValue>>;
   /**
    * Tileflow's landmarks, such as the Eiffel Tower, drawn as models in place of the buildings
@@ -102,8 +115,11 @@ export type TileflowBuildingsThreeDimensionalStyle = {
   landmarks?: boolean | {url: string};
 };
 
-/** The parts of a building model, as its materials name them. */
-export type TileflowBuildingModelPart = 'surface' | 'secondary' | 'glass' | 'accent' | 'roof';
+/**
+ * A part of a building model, as its materials name it: lower-case words joined by hyphens or
+ * underscores, such as `surface`, `glass`, `roof` or `water`.
+ */
+export type TileflowBuildingModelPart = string;
 
 /** Where a building model stands. */
 export type TileflowBuildingModelPlacementConfig = {

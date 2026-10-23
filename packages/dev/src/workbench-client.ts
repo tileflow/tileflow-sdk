@@ -1,4 +1,4 @@
-import {defaultPaletteMapIds, themeLabels} from './devtools/theme-labels';
+import {defaultPaletteMapIds, themeLabels} from './inspector/theme-labels';
 
 /** Runs in the comparison document's scope and uses its existing map bridge. */
 export const workbenchClient = String.raw`
@@ -52,7 +52,7 @@ export const workbenchClient = String.raw`
           ? {cache:"no-store"}
           : {method:"POST", headers:{"Content-Type":"application/json", "X-Tileflow-Workbench":"1"}, body:JSON.stringify(body)});
         const result = await response.json();
-        if (!response.ok) throw new Error(result.message || "Map DevTools request failed.");
+        if (!response.ok) throw new Error(result.message || "Inspector request failed.");
         return result;
       }
 
@@ -155,7 +155,7 @@ export const workbenchClient = String.raw`
         wb("theme").disabled = themes.length < 2;
         wb("palettes").replaceChildren(...themes.map(theme => {
           const button=document.createElement("button");button.type="button";button.setAttribute("role","radio");button.setAttribute("aria-checked",String(theme===(family||selectedTheme)));
-          const swatches=document.createElement("span");swatches.className="dt-palette-swatches";
+          const swatches=document.createElement("span");swatches.className="inspector-palette-swatches";
           const label=document.createElement("span");label.textContent=wbThemeLabel(theme,themeMetadata);button.append(swatches,label);
           button.onclick=()=>{wb("theme").value=theme;selectWorkbenchAppearance();};
           const concrete=variants[theme]?.[wbTimeOfDay] || variants[theme]?.day || theme;
@@ -201,7 +201,7 @@ export const workbenchClient = String.raw`
 
       function workbenchContext() {
         const side = states[activeSideId];
-        const layerObservation = globalThis.__tileflowDevtoolsUI?.layerContext?.();
+        const layerObservation = globalThis.__tileflowInspectorUI?.layerContext?.();
         const selected = !layerObservation && selectedInspection?.side === side ? selectedInspection : undefined;
         const feature = selected?.features[selected.featureIndex];
         const style = side.map?.getStyle?.();

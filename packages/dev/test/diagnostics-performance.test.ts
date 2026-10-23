@@ -5,7 +5,7 @@ import {
   performanceFindings,
   type PerformanceObservation,
   samplePerformance,
-} from '../src/devtools/diagnostics/performance';
+} from '../src/inspector/diagnostics/performance';
 
 function fixture(
   options: {

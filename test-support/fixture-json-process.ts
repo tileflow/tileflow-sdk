@@ -60,7 +60,18 @@ export function startJsonFixtureProcess(
   void running.completion.then(
     ({code}) => {
       settled = true;
-      ended ??= new Error(`CLI exited before the expected event (${code}): ${stderr}`);
+      const recentEvents = events.slice(-8).map(({event, side, generation, sourceGeneration}) => ({
+        event,
+        side,
+        generation,
+        sourceGeneration,
+      }));
+      ended ??= new Error(
+        `CLI exited before the expected event (${code}): ${stderr}\n${JSON.stringify({
+          forceStopped: running.forceStopped,
+          events: recentEvents,
+        })}`,
+      );
       rejectWaiters(ended);
     },
     (error) => {
@@ -74,9 +85,7 @@ export function startJsonFixtureProcess(
     child: running.child,
     completion: running.completion,
     events,
-    requestStop: () => {
-      void running.stop();
-    },
+    requestStop: running.requestStop,
     stop: running.stop,
     waitFor(predicate: (event: Record<string, unknown>) => boolean, timeoutMs = 10_000) {
       const existing = events.find(predicate);

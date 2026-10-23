@@ -86,6 +86,7 @@ globalThis.__tileflowAttachAtmosphere = attachTileflowAtmosphere;
 globalThis.__tileflowAttachNotices = attachTileflowNotices;
 globalThis.__tileflowAttachNauticalLights = attachTileflowNauticalLights;
 globalThis.__tileflowMaxPitch = tileflowMaxPitch;
+globalThis.__tileflowAttachLabelPlacement = attachTileflowLabelPlacement;
 globalThis.__tileflowCreateThemeController = createTileflowThemeController;`;
 
 type PagePhaseResult =
@@ -902,6 +903,7 @@ window.__tileflowCaptureLoad = async function(input) {
     window.__tileflowAttachNotices(map);
     // Capture prefers reduced motion, so Nautical lights stay steady and every image is stable.
     window.__tileflowAttachNauticalLights(map);
+    window.__tileflowAttachLabelPlacement(map);
     return await waitForMapEvent(map, "load", input.mapEventTimeoutMs);
   } catch (error) {
     return {status: "failed", reason: "error", message: String(error?.message || error || "")};

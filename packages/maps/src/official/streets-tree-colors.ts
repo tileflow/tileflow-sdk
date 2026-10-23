@@ -5,7 +5,7 @@ import type {StreetsColorTheme, StreetsLightPreset} from './streets-theme-colors
 // screenshot RGB: vertical trunks lose more light than upward-facing crown facets.
 // Crown is the broadleaf B shade; the theme retains its species and per-tree variation.
 export const streetsTreeProfiles = {
-  'default-day': {bark: '#C3D3B1', crown: '#96C498'},
+  'default-day': {bark: '#C3D3B1', crown: '#A4CFA5'},
   'default-dawn': {bark: '#BCBC94', crown: '#97B37F'},
   'default-dusk': {bark: '#564B43', crown: '#3D4538'},
   'default-night': {bark: '#0E1D28', crown: '#0E1D24'},

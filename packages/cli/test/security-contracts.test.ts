@@ -87,7 +87,7 @@ test('dev host defaults to IPv4 loopback and accepts only explicit host literals
   assert.equal(tileflowDevOrigin('::1', 3333), 'http://[::1]:3333');
 });
 
-test('DevTools navigation canonicalizes loopback aliases and preserves view parameters', () => {
+test('Inspector navigation canonicalizes loopback aliases and preserves view parameters', () => {
   const query = '?lng=-3.70345&lat=40.417134&zoom=16.27&theme=faded';
   for (const host of ['127.0.0.1', 'localhost', '::1']) {
     const origin = tileflowDevOrigin(host, 3333);
@@ -106,7 +106,7 @@ test('DevTools navigation canonicalizes loopback aliases and preserves view para
   }
 });
 
-test('DevTools alias redirects do not rewrite API requests or unrelated origins', () => {
+test('Inspector alias redirects do not rewrite API requests or unrelated origins', () => {
   const origin = 'http://127.0.0.1:3333';
   for (const url of [
     'http://localhost:3333/__workbench',

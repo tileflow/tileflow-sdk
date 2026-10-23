@@ -24,14 +24,13 @@ import type {
 import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
+  attachTileflowLabelPlacement,
   attachTileflowMap3D,
   attachTileflowMapLifecycle,
   attachTileflowNauticalLights,
   attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowThemeController,
-  type TileflowMap3DAttachment,
-  type TileflowViewMode,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
   loadTileflowStyleFonts,
@@ -40,9 +39,11 @@ import {
   registerTileflowWorldRequestBridge,
   subscribeTileflowSystemColorScheme,
   tileflowCanvasContextAttributes,
-  type TileflowThemeController,
+  type TileflowMap3DAttachment,
   tileflowMaxPitch,
+  type TileflowThemeController,
   type TileflowThemeTransition,
+  type TileflowViewMode,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
 import {
@@ -855,6 +856,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         registerCleanup(attachTileflowAtmosphere(map));
         registerCleanup(attachTileflowNotices(map));
         registerCleanup(attachTileflowNauticalLights(map));
+        registerCleanup(attachTileflowLabelPlacement(map));
         const themeController =
           initialRuntimeStyle.theme === undefined
             ? undefined

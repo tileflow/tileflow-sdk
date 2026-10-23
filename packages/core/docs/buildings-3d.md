@@ -75,6 +75,38 @@ landmarks, models, trees and lights are custom WebGL layers added only by this r
 draws a plain `fill-extrusion` building pass, the style ships it hidden and grouped under
 `metadata['tileflow:3d-toggle'] = 'building'`; showing those layers gives extruded footprints only.
 
+## Decorative building surfaces
+
+`threeDimensional.surfaces` adds optional brick joints, roof tiles and a painted cornice to
+ordinary extruded buildings. These are artistic decoration, not surveyed materials. They keep
+the building's authored colour and use its existing lighting, shadows and footprint. Custom GLB
+models and landmarks retain their own materials. Leaving `surfaces` out preserves a smooth finish.
+
+```ts
+buildings({
+  threeDimensional: {
+    surfaces: {
+      walls: {kind: 'brick', size: [6, 3], jointWidth: 0.16, contrast: 0.28},
+      roof: {kind: 'tiles', size: 10, jointWidth: 0.12, contrast: 0.12},
+      cornice: {height: 0.7, contrast: 0.3},
+    },
+  },
+});
+```
+
+Wall `size` is `[width, courseHeight]` in metres. Roof size is a square in projected Mercator
+metres: its ground size shrinks with latitude, while its grid remains fixed through camera moves
+and tile boundaries. Sizes accept 0.5–100; joints accept 0.01–2 and are limited to a quarter of the
+smallest cell dimension. `contrast` accepts 0–1, including theme number tokens; zero hides that
+finish. The defaults are `[6, 3]`, 0.12 and 0.2 for walls, and 8, 0.12 and 0.1 for roofs.
+
+The cornice is a light band with a subtle seam, not an overhanging mesh. Its `height` accepts
+0.05–5 metres, defaults to 0.6 and is limited to one fifth of a wall's height; its contrast defaults
+to 0.2. The roof border uses projected metres and follows exterior and courtyard edges without
+drawing internal triangle edges. The shader filters joints and fades details smaller than a few
+pixels. No texture downloads, extra draw calls or per-brick geometry are required. These finishes
+belong to the WebGL 3D scene; portable 2D styles retain their ordinary building fill.
+
 ## Show the buildings
 
 This example assumes an existing MapLibre map showing a Tileflow map whose vector source is called
@@ -204,6 +236,8 @@ Maps on Tileflow World show Tileflow's landmarks, such as the Eiffel Tower, as 3
 the buildings under them. They come from a landmarks tileset kept apart from the map's data: each of
 its tiles carries the models standing in it, with their levels of detail and footprints, and each
 region's index names its tiles by their hash, with where each landmark stands and its footprint.
+Core reads only indexes in the `tileflow-landmark-region-v2` format; an index that names no
+footprints is not read, and its region shows no landmarks.
 The renderer reads the tileset's TileJSON, then only the indexes of the regions round the camera
 and the landmark tiles near it, from a zoom before the buildings show, so a landmark in Paris costs
 nothing in Madrid. New and improved landmarks reach every map without a new build of the map.
@@ -281,18 +315,26 @@ address; the map then needs no `.glb` of its own for it.
 
 How to prepare a model:
 
-- **Materials name the parts.** Name each material `surface`, `secondary`, `glass`, `accent` or
-  `roof` (an exporter's `.001` suffix is ignored); a model whose materials name a tree's parts is a
+- **Materials name the parts.** Name each material after the part it is: an architectural part,
+  `surface`, `secondary`, `glass`, `accent` or `roof`, or a part of the model's own, such as
+  `water`, `vegetation`, `wood` or `stone`. A name is lower-case words joined by hyphens or
+  underscores, at most 32 characters; an exporter's `.001` suffix is ignored, and a level names at
+  most 16 parts. A model whose materials name only a tree's parts (`bark`, `leaves`, `fronds`,
+  `stem`) is a
   [tree model](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md)
-  instead. Each part takes its colour from `modelColors`, or from the buildings' colour when the
-  design gives it none, so the model follows the theme from day to night. Like every visual
-  colour, a `modelColors` entry is a theme token such as `token.color('buildings.modelRoof')`, or
-  a literal wrapped in `fixed(value, {reason})`; vertex colours lighter or
-  darker than the rest of their part shade it within that colour.
+  instead.
+- **The map colours parts by name.** A part takes the colour `modelColors` gives its name, so the
+  model follows the theme from day to night; a part the map does not colour keeps its material's
+  own colour. Like every visual colour, a `modelColors` entry is a theme token such as
+  `token.color('buildings.modelRoof')`, or a literal wrapped in `fixed(value, {reason})`; vertex
+  colours lighter or darker than the rest of their part shade it within that colour. Name pools
+  `water`, planting `vegetation` and timber `wood` where they fit: Streets colours these from its
+  water and tree colours, so a model that uses them follows the map without a colour of its own.
 - **Architectural roles control lighting.** A material may set
   `extras.tileflow.lightingRole` to `wall`, `door`, `roof`, `window`, `lamp`, `logo` or
-  `unclassified`. This preserves its palette slot. Without a role, `surface`, `secondary` and
-  `accent` are walls, `glass` is a window, and `roof` is a roof.
+  `unclassified`, whatever part it names. Without a role, `surface`, `secondary` and `accent` are
+  walls, `glass` is a window, and `roof` is a roof; every other part is `unclassified`, so a pool
+  or a planted bed never takes a window's light.
 - **Metres round an origin on the ground.** The origin is where the model stands, with the model
   above it and its own north along +y once read Z up; nothing may lie more than half a metre below
   it.
@@ -398,7 +440,7 @@ export default defineMap({
 
 Select `timeOfDay` through your map adapter to change the authored direction, colour and strength
 of direct and ambient light. Streets includes moonlight and shadows in its night presets. These
-presets are independent of the user's clock and location. In DevTools, use the 3D view and
+presets are independent of the user's clock and location. In Inspector, use the 3D view and
 **Map → Buildings → Building light / Cast shadows**. The theme's `lighting.sun.shadowIntensity`
 controls shadow strength; `lighting.ambient` fills the shade. Use `controller.setSun({date,
 location})` for an astronomical direction instead, as described in
@@ -472,7 +514,7 @@ The same model identity keeps its samples across LODs and theme changes.
 Streets leaves ordinary flood lighting off in its light presets. Its dusk/night wall profile uses a strength
 of `0.1` and `[0.5, 0, 0, 1, 0.8]`, concentrating a warm wash near the foot. Monochrome uses a
 weaker neutral wall profile and no architectural ground flood. Prepared models without role
-metadata use their documented palette mapping. Windows use metallic reflection and varied emission;
+metadata take each part's default role. Windows use metallic reflection and varied emission;
 doors and logos have separate profiles, and roofs remain non-emissive. Day/dawn profiles follow
 the scene's brighter material response. A role does not generate missing windows or ground emitters.
 See [building-model preparation](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/building-models.md)

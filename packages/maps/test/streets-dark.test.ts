@@ -66,7 +66,8 @@ const preparedAssets = {
   },
 } as const;
 
-// Approved physical-output snapshot after the 2026-10-18 reference and framebuffer audit.
+// Physical-output snapshot from the reference audit, with the seven foliage colors
+// updated after the 2026-10-19 tree geometry/material browser review.
 const approvedLightStyleColors = new Set([
   // Street-level skies of the Default family (day, dawn, dusk, night: sky, horizon, glow). Each
   // theme carries them all, so a sun an application places can mix the sky of its hour.
@@ -102,19 +103,20 @@ const approvedLightStyleColors = new Set([
   '#586E84',
   '#626060',
   '#664CE6',
+  '#808080',
   '#66CC6E',
   '#727B64',
-  '#77A583',
+  '#85B090',
   '#8195AF',
   '#8387AD',
-  '#86B28B',
-  '#88B78E',
+  '#94BD98',
+  '#8ABFA0',
   '#8B8179',
   '#916130',
   '#93A3B7',
   '#94A3B8',
-  '#96C096',
-  '#96C498',
+  '#A4CBA3',
+  '#A4CFA5',
   '#98DCFE',
   '#99DDFF',
   '#9BE494',
@@ -123,10 +125,10 @@ const approvedLightStyleColors = new Set([
   '#A3A6C2',
   '#A5A5A5',
   '#A6AB91',
-  '#A6D3A6',
+  '#B9DB9A',
   '#ADE6A7',
   '#B2EAAD',
-  '#B4DEB2',
+  '#C1E4BA',
   '#BCB7B2',
   '#BEC5D8',
   '#C1EEBD',
@@ -278,6 +280,7 @@ const approvedDarkStyleColors = new Set([
   '#6D718A',
   '#7AC0D0',
   '#7AC66D',
+  '#808080',
   '#82ABFF',
   '#87B0DB',
   '#964D66',
@@ -461,7 +464,9 @@ test('Streets exposes complete palette variants on one map identity', () => {
     ['linear'],
     ['zoom'],
     11,
-    400,
+    220,
+    13,
+    300,
     14,
     600,
   ]);
@@ -498,7 +503,7 @@ test('Streets exposes complete palette variants on one map identity', () => {
     assert.deepEqual(shield.layout?.['text-field'], ['to-string', ['get', 'shield_text']]);
     assert.equal(shield.layout?.['icon-optional'], false);
     assert.equal(shield.layout?.['text-optional'], false);
-    assert.equal(shield.layout?.['text-size'], 10);
+    assert.equal(shield.layout?.['text-size'], 9);
     assert.equal(shield.layout?.['text-letter-spacing'], 0.05);
     assert.deepEqual(shield.paint?.['text-color'], [
       'match',
@@ -1332,7 +1337,7 @@ test('Streets Dark keeps canonical POI category colors with themed sprites and i
       ['to-number', ['get', 'size_rank'], 17],
     ]);
     assert.equal(lightLayer.layout?.['icon-size'], 1);
-    assert.deepEqual(lightLayer.layout?.['text-font'], ['Noto Sans Regular']);
+    assert.deepEqual(lightLayer.layout?.['text-font'], ['DINish Medium', 'Noto Sans Regular']);
     assert.deepEqual(darkLayer.layout?.['text-font'], lightLayer.layout?.['text-font']);
     assert.deepEqual(darkLayer.layout?.['icon-size'], lightLayer.layout?.['icon-size']);
     const textColor = createPropertyExpression(
@@ -1502,7 +1507,7 @@ test('Streets label scales follow the reference hierarchy across overview and st
   }
 });
 
-test('Streets street names stay on the ground below buildings while destinations stay above', () => {
+test('Streets street names yield to destinations and buildings without flattening their lettering', () => {
   for (const theme of ['light', 'dark'] as const) {
     const compiled = compileInspected(theme);
     const {style, inspection} = compiled;
@@ -1525,6 +1530,7 @@ test('Streets street names stay on the ground below buildings while destinations
         'tertiary',
         'minor',
         'service',
+        'track',
         'pathway',
         'footway',
         'cycleway',
@@ -1533,20 +1539,41 @@ test('Streets street names stay on the ground below buildings while destinations
       ].sort(),
     );
     const buildingIndex = style.layers.indexOf(buildings);
+    const footprintIndex = inspection.layers.find(({contributions}) =>
+      contributions.some(({target}) => target === 'buildings.flat.outline'),
+    )!.index;
+    const ordinaryPoiIndex = style.layers.indexOf(requireLayer(style, 'tileflow-poi'));
+    const prominentPoiIndex = style.layers.indexOf(requireLayer(style, 'tileflow-poi-prominent'));
     const roadSurfaceIndex = style.layers.findLastIndex(
       (layer) => layer.metadata?.['tileflow:domain'] === 'roads',
     );
     for (const layer of names) {
+      assert.ok(
+        style.layers.indexOf(layer) > footprintIndex,
+        `${layer.id} must not be clipped by flat building footprints`,
+      );
       assert.ok(
         style.layers.indexOf(layer) > roadSurfaceIndex,
         `${layer.id} must cover road markings`,
       );
       assert.ok(
         style.layers.indexOf(layer) < buildingIndex,
-        `${layer.id} must be occluded by buildings`,
+        `${layer.id} must be hidden by buildings`,
       );
+      assert.ok(
+        style.layers.indexOf(layer) < ordinaryPoiIndex,
+        `${layer.id} yields to ordinary destinations`,
+      );
+      assert.ok(
+        style.layers.indexOf(layer) < prominentPoiIndex,
+        `${layer.id} yields to important destinations`,
+      );
+      assert.deepEqual(layer.metadata?.['tileflow:road-label-placement'], {
+        version: 1,
+        mode: 'ground',
+      });
       assert.equal(layer.layout?.['symbol-placement'], 'line');
-      assert.equal(layer.layout?.['text-pitch-alignment'], 'map');
+      assert.equal(layer.layout?.['text-pitch-alignment'], 'viewport');
       assert.equal(layer.layout?.['text-rotation-alignment'], 'map');
       assert.notEqual(layer.layout?.visibility, 'none');
       assert.equal(layer.layout?.['text-allow-overlap'] ?? false, false);
@@ -1578,6 +1605,7 @@ test('Streets street names stay on the ground below buildings while destinations
       'residential',
       'unclassified',
       'service',
+      'track',
       'busway',
       'bus_guideway',
       'minor_construction',
@@ -1600,11 +1628,7 @@ test('Streets street names stay on the ground below buildings while destinations
         subclass,
       );
     }
-    for (const properties of [
-      {class: 'minor'},
-      {name: 'Ferry', class: 'ferry'},
-      {name: 'Track', class: 'track'},
-    ]) {
+    for (const properties of [{class: 'minor'}, {name: 'Ferry', class: 'ferry'}]) {
       assert.equal(accepts(properties).length, 0);
     }
     assert.equal(
@@ -1632,12 +1656,20 @@ test('Streets places every POI category by World rank and density without anonym
   assert.equal(accepts(ordinary, 15, unnamedPark), false);
   assert.equal(accepts(ordinary, 15, unrankedPark), false);
   assert.equal(accepts(ordinary, 15, {...park, size_rank: 17}), false);
-  // One density for every category: rank 3 from World's last POI zoom, every rank from z17.
+  // Parks/transport retain rank 3; other categories enter more selectively.
   const ordinaryLandmark = {category: 'landmark', name: 'Building', filter_rank: 3, size_rank: 16};
-  assert.equal(accepts(ordinary, 15, ordinaryLandmark), true);
+  assert.equal(accepts(ordinary, 15, ordinaryLandmark), false);
+  assert.equal(accepts(ordinary, 15, {...ordinaryLandmark, filter_rank: 2}), true);
   const smallBusiness = {category: 'food-drink', name: 'Cafe', filter_rank: 5, size_rank: 16};
   assert.equal(accepts(ordinary, 16, smallBusiness), false);
-  assert.equal(accepts(ordinary, 17, smallBusiness), true);
+  assert.equal(accepts(ordinary, 17, smallBusiness), false);
+  assert.equal(accepts(ordinary, 17, {...smallBusiness, filter_rank: 4}), false);
+  assert.equal(accepts(ordinary, 18, {...smallBusiness, filter_rank: 4}), true);
+  assert.equal(
+    accepts(ordinary, 17, {...smallBusiness, category: 'lodging', filter_rank: 4}),
+    false,
+  );
+  assert.equal(accepts(ordinary, 18, {...smallBusiness, category: 'park-nature'}), true);
   // World's two most important ranks are placed before street and place names.
   const louvre = {category: 'arts-entertainment', name: 'Musée', filter_rank: 0, size_rank: 0};
   assert.equal(accepts(prominent, 14, louvre), true);
@@ -1645,7 +1677,7 @@ test('Streets places every POI category by World rank and density without anonym
   assert.equal(accepts(prominent, 14, park), false);
   // Parking and toilets explain themselves and need no name.
   assert.equal(
-    accepts(ordinary, 17, {
+    accepts(ordinary, 18, {
       category: 'visitor-amenity',
       type: 'parking',
       filter_rank: 4,
@@ -1668,14 +1700,14 @@ test('Streets places every POI category by World rank and density without anonym
   assert.equal(labelNumber(ordinary, 'text-padding', 17), 4);
 });
 
-test('Streets water uses a declared hosted italic face without a heavy halo', () => {
+test('Streets water retains its italic face without a heavy halo', () => {
   const style = compile('light');
   for (const layer of style.layers.filter((l) => l.id.startsWith('tileflow-label-water-'))) {
     assert.deepEqual(layer.layout?.['text-font'], ['Noto Sans Italic']);
     assert.equal(layer.paint?.['text-halo-width'], 0);
   }
   const resolved = resolveMap(streets);
-  assert.ok(resolved.glyphs?.fontStacks?.includes('Noto Sans Italic'));
+  assert.ok(resolved.fonts?.length);
 });
 
 test('Streets retains twelve time presets and the legacy light key for its Default theme', () => {

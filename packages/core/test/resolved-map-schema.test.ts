@@ -424,6 +424,12 @@ test('accepts detailed cartographic module styles and their optional data bindin
     trees({finish: 'toon', edges: 1, edgeColor: '#102010', forms: {palm: {heightScale: 1.2}}}),
   );
   assert.throws(() => trees({finish: 'glossy'}), /finish/);
+  assert.doesNotThrow(() => trees({minimumHeight: 0, materialVariation: 0}));
+  assert.doesNotThrow(() => trees({minimumHeight: 6, materialVariation: 1}));
+  for (const minimumHeight of [-1, 21, NaN])
+    assert.throws(() => trees({minimumHeight}), /minimumHeight/);
+  for (const materialVariation of [-1, 1.1, Infinity])
+    assert.throws(() => trees({materialVariation}), /materialVariation/);
   // A form draws one to four of the map's own models, by the id of their .glb file.
   assert.doesNotThrow(() => trees({forms: {palm: {models: ['royal-palm', 'coconut-palm']}}}));
   assert.throws(() => trees({forms: {palm: {models: ['Royal Palm']}}}), /model id/);

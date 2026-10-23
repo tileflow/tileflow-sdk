@@ -154,7 +154,7 @@ test('native preview human output names the exact assets-only manifest and profi
   assert.match(stdout, /Endpoint:\s+assets-only/u);
   assert.match(stdout, /Metro remains the JavaScript development server/u);
   assert.doesNotMatch(stdout, /\bLocal:\s/u);
-  assert.doesNotMatch(stdout, /Map DevTools/u);
+  assert.doesNotMatch(stdout, /Inspector/u);
 
   requestStop();
   assert.equal(await completion, 0, stderr);

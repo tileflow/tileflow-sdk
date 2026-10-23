@@ -38,18 +38,18 @@ export type TileflowLandmarkFootprint = Readonly<{
   footprint: readonly (readonly number[])[];
 }>;
 
-/** A tile in a region's index: `[x, y, sha256]`, and the landmarks it holds. */
-export type TileflowLandmarkRegionTile =
-  | readonly [number, number, string]
-  | readonly [number, number, string, readonly TileflowLandmarkFootprint[]];
+/** A tile in a region's index: `[x, y, sha256, landmarks]`. */
+export type TileflowLandmarkRegionTile = readonly [
+  number,
+  number,
+  string,
+  readonly TileflowLandmarkFootprint[],
+];
 
 /** A region's index: the tiles inside it that hold landmarks, by their hash. */
 export type TileflowLandmarkRegion = Readonly<{
   region: readonly [number, number];
-  /**
-   * Each tile, sorted by x, then y. A written index names every tile's landmarks; an index of the
-   * first format, which did not, is still read.
-   */
+  /** Each tile, sorted by x, then y, with the landmarks it holds. */
   tiles: readonly TileflowLandmarkRegionTile[];
 }>;
 
@@ -151,14 +151,10 @@ function validFootprint(footprint: unknown): footprint is number[][] {
   return points <= tileflowModelLimits.footprintPoints;
 }
 
-/**
- * Reads a region's index, or undefined when it is not one. An index of the first format names no
- * landmarks; its tiles come back as `[x, y, sha256]`.
- */
+/** Reads a region's index, or undefined when it is not one. */
 export function readTileflowLandmarkRegion(json: unknown): TileflowLandmarkRegion | undefined {
   if (!isRecord(json)) return undefined;
-  const named = json.format === 'tileflow-landmark-region-v2';
-  if (!named && json.format !== 'tileflow-landmark-region-v1') return undefined;
+  if (json.format !== 'tileflow-landmark-region-v2') return undefined;
   const region = json.region;
   if (
     json.zoom !== tileflowLandmarkTileZoom ||
@@ -172,17 +168,13 @@ export function readTileflowLandmarkRegion(json: unknown): TileflowLandmarkRegio
   if (!Number.isInteger(x) || !Number.isInteger(y)) return undefined;
   const tiles: TileflowLandmarkRegionTile[] = [];
   for (const tile of json.tiles) {
-    if (!Array.isArray(tile) || tile.length !== (named ? 4 : 3)) return undefined;
+    if (!Array.isArray(tile) || tile.length !== 4) return undefined;
     const [tx, ty, hash, listed] = tile as unknown[];
     if (!Number.isInteger(tx) || !Number.isInteger(ty) || typeof hash !== 'string')
       return undefined;
     if (!sha256.test(hash)) return undefined;
     const [rx, ry] = tileflowLandmarkRegionOf([tx as number, ty as number]);
     if (rx !== x || ry !== y) return undefined;
-    if (!named) {
-      tiles.push([tx as number, ty as number, hash]);
-      continue;
-    }
     const landmarks = readLandmarks(listed, tx as number, ty as number);
     if (!landmarks) return undefined;
     tiles.push([tx as number, ty as number, hash, landmarks]);

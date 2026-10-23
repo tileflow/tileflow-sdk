@@ -9,6 +9,7 @@ import {
   defineTheme,
   disable,
   labels,
+  poi,
   roads,
   tileflowAuthoringManifest,
   tileflowRequiredThemeColorRoles,
@@ -110,4 +111,34 @@ test('omits policies for disabled modules and publishes the exact minimal palett
   assert.equal(tileflowRequiredThemeColorRoles.length, 12);
   for (const role of tileflowRequiredThemeColorRoles)
     assert.ok(role in testLightTheme.tokens.color);
+});
+
+test('POI decisions describe compiled defaults and explicit independent placement', () => {
+  for (const independent of [false, true]) {
+    const map = extendStreets({
+      modules: {
+        poi: poi({
+          categories: ['food-drink'],
+          ...(independent ? {density: 4, placement: {coupleIconAndLabel: false}} : {}),
+        }),
+      },
+    });
+    const result = createStyleResult(map, {
+      preparedAssets: {icons: {ids: ['food'], sprite: '/tileflow/test/sprite'}},
+    });
+    assert.ok(result.ok, JSON.stringify(result.diagnostics));
+    if (!result.ok) continue;
+    const coupling = result.report.decisions!.find(
+      ({path}) => path === 'modules.poi.placement.coupleIconAndLabel',
+    )!;
+    assert.equal(coupling.source, independent ? 'map' : 'default');
+    assert.equal(coupling.value, !independent);
+    const layer = result.style.layers.find(
+      ({id}) => id === (independent ? 'tileflow-poi-label' : 'tileflow-poi'),
+    )!;
+    assert.ok(layer);
+    assert.equal(layer.layout?.['text-optional'], independent);
+    const density = result.report.decisions!.find(({path}) => path === 'modules.poi.density')!;
+    assert.equal(density.value, independent ? 4 : 2);
+  }
 });

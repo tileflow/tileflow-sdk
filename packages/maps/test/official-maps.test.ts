@@ -41,6 +41,7 @@ import {
   soundings,
   soundingsIcons,
   streets,
+  streetsFonts,
   streetsIcons,
   streetsThemes,
 } from '../src';
@@ -423,11 +424,8 @@ test('official maps declare their expected icon and typography providers', () =>
   assert.deepEqual(resolvedSiegfried.fonts, [siegfriedFonts]);
   assert.equal(resolvedBaedeker.glyphs, undefined);
   assert.equal(resolvedSiegfried.glyphs, undefined);
-  assert.deepEqual(resolvedStreets.glyphs, {
-    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic'],
-    kind: 'url',
-    url: officialGlyphsUrl,
-  });
+  assert.deepEqual(resolvedStreets.fonts, [streetsFonts]);
+  assert.equal(resolvedStreets.glyphs, undefined);
   assert.deepEqual(resolvedCivica.fonts, [civicaFonts]);
   assert.equal(resolvedCivica.glyphs, undefined);
   for (const map of [resolvedSoundings, resolvedBlueprint]) {
@@ -639,7 +637,9 @@ test('all official maps compile directly after their packaged sprite is prepared
     assert.equal(style.sprite, `/tileflow/icons/${id}/sprite`);
     assert.equal(
       style.glyphs,
-      ['baedeker', 'civica', 'map-1777', 'siegfried'].includes(id) ? undefined : officialGlyphsUrl,
+      ['baedeker', 'civica', 'map-1777', 'siegfried', 'streets'].includes(id)
+        ? undefined
+        : officialGlyphsUrl,
     );
     assert.ok(
       style.layers.length > (id === 'soundings' ? 50 : 100),
@@ -945,6 +945,8 @@ test('official maps emit only exact declared font-face stacks', () => {
     ]),
     soundings: new Set([JSON.stringify(['Noto Sans Regular']), JSON.stringify(['Noto Sans Bold'])]),
     streets: new Set([
+      JSON.stringify(['DINish Medium', 'Noto Sans Regular']),
+      JSON.stringify(['DINish Bold', 'Noto Sans Regular']),
       JSON.stringify(['Noto Sans Regular']),
       JSON.stringify(['Noto Sans Bold']),
       JSON.stringify(['Noto Sans Italic']),
@@ -1051,7 +1053,7 @@ test('Streets green surfaces are typed and contain no legacy raw detail layers',
   ]);
 });
 
-test('Streets native road labels retain their class selection, ground placement and typography', () => {
+test('Streets road labels retain class thresholds and readable text below buildings and POIs', () => {
   const expectations = [
     ['motorway', 'motorway', undefined, 10, 9, 16, 0.15],
     ['trunk', 'trunk', undefined, 10, 9, 16, 0.15],
@@ -1060,6 +1062,7 @@ test('Streets native road labels retain their class selection, ground placement 
     ['tertiary', 'tertiary', undefined, 13, 9, 16, 0.15],
     ['minor', 'minor', undefined, 13, 8, 14, 0.15],
     ['service', 'service', undefined, 15, 6.5, 13, 0.15],
+    ['track', 'track', undefined, 15, 6.5, 13, 0.15],
     ['pathway', 'path', 'path', 15, 6.5, 13, 0.01],
     ['footway', 'path', 'footway', 15, 6.5, 13, 0.01],
     ['cycleway', 'path', 'cycleway', 15, 6.5, 13, 0.01],
@@ -1068,6 +1071,7 @@ test('Streets native road labels retain their class selection, ground placement 
   ] as const;
   const resolved = resolveMap(streets);
   assert.equal(resolved.modules.labels?.roadPlacement, 'ground');
+  assert.equal(resolved.modules.labels?.roadGrouping, 'network');
   assert.equal(resolved.modules.labels?.roads, 'all');
   assert.deepEqual(
     [...resolved.modules.labels!.roadClasses!].sort(),
@@ -1086,6 +1090,7 @@ test('Streets native road labels retain their class selection, ground placement 
     const roadLayers = inspection.layers.filter(({contributions}) =>
       contributions.some(({target}) => target.startsWith('labels.roads.')),
     );
+    assert.equal(roadLayers.length, 2, 'roads and pedestrian paths each share placement');
     const nativeTargets = new Set(
       roadLayers.flatMap(({contributions}) =>
         contributions
@@ -1102,11 +1107,22 @@ test('Streets native road labels retain their class selection, ground placement 
         contributions.some(({target}) => target.startsWith('labels.render.street')),
       ),
     );
-    const buildingIndex = inspection.layers.find(({contributions}) =>
+    const footprintIndex = inspection.layers.find(({contributions}) =>
       contributions.some(({target}) => target === 'buildings.flat.fill'),
     )!.index;
-    for (const layer of roadLayers)
-      assert.ok(layer.index < buildingIndex, `${theme}: ground street names precede buildings`);
+    const buildingIndex = style.layers.findIndex(
+      ({id}) => id === 'tileflow-buildings-render-extrusion',
+    );
+    const destinationIndex = style.layers.findIndex(({id}) => id === 'tileflow-poi');
+    assert.ok(destinationIndex > buildingIndex);
+    for (const layer of roadLayers) {
+      assert.ok(layer.index > footprintIndex, `${theme}: flat footprints cannot clip street names`);
+      assert.ok(layer.index < buildingIndex, `${theme}: buildings hide street names`);
+      assert.ok(
+        layer.index < destinationIndex,
+        `${theme}: destinations win street-name collisions`,
+      );
+    }
     const physical = roadLayers.map(({index}) => style.layers[index]!);
     const active = (properties: Record<string, unknown>, zoom: number) =>
       physical.filter(
@@ -1115,6 +1131,32 @@ test('Streets native road labels retain their class selection, ground placement 
           (layer.maxzoom ?? 24) > zoom &&
           featureFilter(layer.filter as never).filter({zoom}, {type: 2, properties} as never),
       );
+    // Dense overview grids retain the main thoroughfare before parallel local streets;
+    // the extra screen padding must be gone by neighbourhood zoom.
+    for (const zoom of [13, 14, 17]) {
+      const properties = {name: 'A road', class: 'primary'};
+      const network = active(properties, zoom)[0]!;
+      const evaluateLayout = (key: 'text-padding' | 'symbol-sort-key', roadClass: string) => {
+        const parsed = createPropertyExpression(
+          network.layout?.[key],
+          latest.layout_symbol[key] as never,
+        );
+        assert.equal(parsed.result, 'success');
+        if (parsed.result !== 'success') throw new Error(`Invalid ${key}`);
+        return parsed.value.evaluate({zoom}, {
+          type: 2,
+          properties: {...properties, class: roadClass},
+        } as never);
+      };
+      assert.ok(
+        evaluateLayout('symbol-sort-key', 'primary') < evaluateLayout('symbol-sort-key', 'minor'),
+      );
+      assert.equal(
+        evaluateLayout('symbol-sort-key', 'primary'),
+        evaluateLayout('symbol-sort-key', 'primary_construction'),
+      );
+      assert.equal(evaluateLayout('text-padding', 'primary'), zoom === 13 ? 5 : 1);
+    }
     for (const [
       roadClass,
       sourceClass,
@@ -1157,9 +1199,12 @@ test('Streets native road labels retain their class selection, ground placement 
         const expectedSize = startSize + (endSize - startSize) * ((zoom - 10) / 8);
         assert.ok(Math.abs(Number(evaluate('text-size', 'layout')) - expectedSize) < 1e-6);
         assert.equal(evaluate('text-letter-spacing', 'layout'), letterSpacing);
-        assert.equal(evaluate('symbol-spacing', 'layout'), 250);
+        assert.equal(
+          evaluate('symbol-spacing', 'layout'),
+          zoom < 17 ? 300 + (zoom - 15) * 50 : 400 + (zoom - 17) * 25,
+        );
         assert.equal(evaluate('text-transform', 'layout'), 'uppercase');
-        assert.equal(evaluate('text-pitch-alignment', 'layout'), 'map');
+        assert.equal(evaluate('text-pitch-alignment', 'layout'), 'viewport');
         assert.equal(evaluate('text-rotation-alignment', 'layout'), 'map');
         assert.equal(evaluate('text-halo-width', 'paint'), 1);
         assert.equal(
@@ -1193,7 +1238,6 @@ test('Streets native road labels retain their class selection, ground placement 
         `${theme}: path classes stay disjoint`,
       );
     }
-    assert.equal(active({name: 'Track', class: 'track'}, 18).length, 0);
   }
 });
 
@@ -1292,7 +1336,8 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
   assert.notEqual(resolved.modules?.poi?.enabled, false);
   assert.equal(resolved.modules?.poi?.color, 'category');
   assert.equal(resolved.modules?.poi?.placement?.coupleIconAndLabel, true);
-  assert.equal(resolved.modules?.poi?.density, 3);
+  assert.equal(resolved.modules?.poi?.density, 2);
+  assert.equal(resolved.modules?.poi?.detailZoom, 18);
   assert.deepEqual(resolved.modules?.poi?.categories, [
     'transport',
     'food-drink',
@@ -1312,8 +1357,7 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
   assert.equal(resolved.modules?.poi?.placement?.textPadding, 3);
   assert.equal(resolved.modules?.poi?.placement?.order, 'importance');
   assert.equal(resolved.modules?.poi?.placement?.prominentRank, 1);
-  // One density for every category, and no category waits for a later zoom: World's ranks
-  // decide what each category shows.
+  // Category thresholds use World ranks; styles do not impose category-wide zoom gates.
   for (const style of Object.values(resolved.modules?.poi?.styles ?? {})) {
     assert.equal('density' in (style ?? {}), false);
     assert.equal(style?.minZoom, undefined);
@@ -1322,6 +1366,12 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
   const style = compileOfficialMap(streets);
   const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
   assert.equal(byId.get('tileflow-addresses-labels')?.minzoom, 17);
+  for (const id of ['tileflow-addresses-labels', 'tileflow-poi']) {
+    assert.equal(
+      (byId.get(id)?.metadata as Record<string, unknown>)?.['tileflow:label-perspective'],
+      undefined,
+    );
+  }
   assert.equal(byId.has('tileflow-parking-symbol-disc'), false);
   assert.equal(byId.has('tileflow-parking-symbol-label'), false);
 
@@ -1371,11 +1421,8 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
       false,
     ]);
     assert.doesNotMatch(JSON.stringify(filter), /"class"|"subclass"|"rank"/u);
-    assert.deepEqual(filter[4], [
-      '<=',
-      ['to-number', ['get', 'filter_rank'], 6],
-      ['+', ['step', ['zoom'], 0, 16, 1, 17, 2], 3],
-    ]);
+    // Category/zoom eligibility is evaluated in streets-dark.test.ts; this check covers
+    // the shared rank contract and placement tier without fixing the expression shape.
     assert.deepEqual(filter.at(-1), [ranks, ['to-number', ['get', 'filter_rank'], 6], 1]);
     assert.equal(layer.paint?.['text-halo-color'], '#FFFFFF');
     const textColor = createPropertyExpression(
@@ -1453,4 +1500,24 @@ test('Streets buildings switch to native extrusions only without the flat render
     .layers.map(({id}) => id)
     .filter((id) => id.startsWith('tileflow-buildings'));
   assert.deepEqual(layerIds, ['tileflow-buildings-3d']);
+});
+
+test('Streets colours the water, vegetation and wood parts of models in every theme', () => {
+  for (const theme of Object.keys(streetsThemes)) {
+    const style = compileOfficialMap(streets, theme);
+    const buildings = readTileflowBuildings3D(style.metadata);
+    const trees = readTileflowVegetation3D(style.metadata);
+    assert.ok(buildings?.modelColors);
+    assert.ok(trees);
+
+    assert.equal(buildings.modelColors.wood, trees.colors.bark);
+    assert.equal(buildings.modelColors.vegetation, trees.colors.broadleaf[1]);
+    assert.ok(Color.parse(buildings.modelColors.water!));
+    assert.equal(
+      buildings.modelColors.water,
+      resolveMap(streets).themes[theme]!.tokens.color['hydro.water'],
+    );
+    assert.equal(buildings.modelLighting?.unclassified?.emissiveStrength, 0);
+    assert.equal(buildings.modelColors.glass, undefined);
+  }
 });

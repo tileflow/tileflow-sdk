@@ -30,6 +30,7 @@
   } from '@tileflow/core/runtime';
   import {
     attachTileflowAtmosphere,
+    attachTileflowLabelPlacement,
     attachTileflowFairUseNotice,
     attachTileflowMap3D,
     attachTileflowMapLifecycle,
@@ -614,6 +615,7 @@
     attachTileflowAtmosphere(maplibreMap);
     attachTileflowNotices(maplibreMap);
     attachTileflowNauticalLights(maplibreMap);
+    attachTileflowLabelPlacement(maplibreMap);
     themeController =
       runtime.theme === undefined
         ? null

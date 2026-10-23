@@ -1,5 +1,6 @@
 import {Color} from '@maplibre/maplibre-gl-style-spec';
 import {z} from 'zod';
+import {tileflowMaxPitch} from './camera-limits';
 import {
   type TileflowBandPlacement,
   tileflowBandPlacements,
@@ -45,6 +46,7 @@ import {
   tileflowMapIdSchema,
 } from './maps/types';
 import {tileflowBathymetryNameLayerLimits} from './marine';
+import {isTileflowModelPartName} from './models-3d-model';
 import {tileflowLandformClasses} from './modules/landforms';
 import {tileflowRoadClasses} from './modules/roads/semantics';
 import {
@@ -62,7 +64,6 @@ import {type TileflowTimeOfDayVariants, validateTileflowTimeOfDayVariants} from 
 import {createTileflowTimeOfDaySchema} from './time-of-day-schema';
 import {tileflowTreeModelIdPattern} from './trees-3d';
 import {tileflowPoiCategories, type ValidationMessage} from './types';
-import {tileflowMaxPitch} from './camera-limits';
 
 /** Structured schema failure preserved for CLI/editor diagnostics. */
 export class TileflowResolvedMapValidationError extends Error {
@@ -1278,6 +1279,43 @@ const buildingsModuleSchema = z
         modelOcclusion: boundedThemeNumberSchema(0, 1).optional(),
         shadows: z.boolean().optional(),
         windows: z.boolean().optional(),
+        surfaces: z
+          .object({
+            walls: z
+              .object({
+                kind: z.literal('brick'),
+                size: z
+                  .union([
+                    z.tuple([z.number().min(0.5).max(100), z.number().min(0.5).max(100)]),
+                    fixedNumberOffsetSchema.extend({
+                      value: z.tuple([z.number().min(0.5).max(100), z.number().min(0.5).max(100)]),
+                    }),
+                  ])
+                  .optional(),
+                jointWidth: boundedThemeNumberSchema(0.01, 2).optional(),
+                contrast: boundedThemeNumberSchema(0, 1).optional(),
+              })
+              .strict()
+              .optional(),
+            roof: z
+              .object({
+                kind: z.literal('tiles'),
+                size: boundedThemeNumberSchema(0.5, 100).optional(),
+                jointWidth: boundedThemeNumberSchema(0.01, 2).optional(),
+                contrast: boundedThemeNumberSchema(0, 1).optional(),
+              })
+              .strict()
+              .optional(),
+            cornice: z
+              .object({
+                height: boundedThemeNumberSchema(0.05, 5).optional(),
+                contrast: boundedThemeNumberSchema(0, 1).optional(),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict()
+          .optional(),
         models: z
           .array(
             z
@@ -1301,14 +1339,16 @@ const buildingsModuleSchema = z
           .max(256)
           .optional(),
         modelColors: z
-          .object({
-            surface: themeColorValueSchema.optional(),
-            secondary: themeColorValueSchema.optional(),
-            glass: themeColorValueSchema.optional(),
-            accent: themeColorValueSchema.optional(),
-            roof: themeColorValueSchema.optional(),
+          .record(
+            z.string().refine(isTileflowModelPartName, {
+              message:
+                'A model part is named in lower-case words joined by hyphens or underscores, at most 32 characters.',
+            }),
+            themeColorValueSchema,
+          )
+          .refine((colors) => Object.keys(colors).length <= 64, {
+            message: 'A map colours at most 64 model parts.',
           })
-          .strict()
           .optional(),
         landmarks: z
           .union([
@@ -1554,6 +1594,18 @@ const labelsModuleSchema = z
     language: z.string().trim().min(1).optional(),
     places: z.enum(['none', 'major', 'all']).optional(),
     roadClasses: z.array(roadClassSchema).min(1).optional(),
+    roadGrouping: z
+      .enum(['class', 'network'])
+      .describe(
+        'Network shares placement and repeated-name suppression across compatible road classes, preserving class zoom thresholds and text sizes. Class retains independent class priority. Defaults to class.',
+      )
+      .optional(),
+    roadNameFormat: z
+      .enum(['full', 'compact'])
+      .describe(
+        'Compact abbreviates recognized road-type words in the selected language; full preserves source names. Route references are unchanged.',
+      )
+      .optional(),
     roadPlacement: z
       .enum(['ground', 'foreground'])
       .describe(
@@ -1593,10 +1645,20 @@ const labelsModuleSchema = z
 const poiModuleSchema = z
   .object({
     type: z.literal('poi'),
+    detailZoom: z.number().finite().gt(16).max(24).optional(),
     categories: z.array(z.enum(tileflowPoiCategories)).optional(),
     color: z.enum(['uniform', 'category']).optional(),
     density: z
       .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
+      .describe(
+        'POI density from 1 to 5. Defaults to 2; native collisions determine which eligible names fit.',
+      )
+      .optional(),
+    densityByCategory: z
+      .partialRecord(
+        z.enum(tileflowPoiCategories),
+        z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
+      )
       .optional(),
     enabled: z.boolean().optional(),
     icons: z.boolean().optional(),
@@ -1604,7 +1666,12 @@ const poiModuleSchema = z
     minZoom: zoomNumberSchema.optional(),
     placement: z
       .object({
-        coupleIconAndLabel: z.boolean().optional(),
+        coupleIconAndLabel: z
+          .boolean()
+          .describe(
+            'Place pictogram and name together. Defaults to true; false places them independently.',
+          )
+          .optional(),
         iconOnlyTypes: z
           .array(z.string().regex(/^[a-z0-9]+(?:_[a-z0-9]+)*$/u, 'Expected a World POI type'))
           .max(64)
@@ -1710,6 +1777,8 @@ const modulesSchema = z
             palmColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
             hedges: z.boolean().optional(),
             hedgeColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
+            minimumHeight: boundedThemeNumberSchema(0, 20).optional(),
+            materialVariation: boundedThemeNumberSchema(0, 1).optional(),
             finish: z.enum(['faceted', 'smooth', 'toon']).optional(),
             edges: boundedThemeNumberSchema(0, 1).optional(),
             edgeColor: themeColorValueSchema.optional(),
@@ -2512,6 +2581,9 @@ const atmosphereSchema = z.union([
       horizonColor: atmosphereColorSchema.optional(),
       fogColor: atmosphereColorSchema.optional(),
       spaceColor: atmosphereColorSchema.optional(),
+      starColor: atmosphereColorSchema.optional(),
+      starCount: z.number().int().min(0).max(4096).optional(),
+      starSize: z.number().finite().min(0).max(4).optional(),
       starIntensity: z.number().finite().min(0).max(1).optional(),
       starParallax: z.number().finite().min(0).max(1).optional(),
     })

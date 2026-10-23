@@ -37,8 +37,9 @@ not test results, and is discarded with the runner. For a local comparison, set 
 to a temporary directory or use `NODE_DISABLE_COMPILE_CACHE=1` to disable it.
 
 Tests own their subprocesses and loopback servers. Stop consumers before closing their servers and
-removing fixtures. Capture tests request shutdown over IPC, then terminate the process tree if the
-consumer does not stop. A timeout must fail the test without leaving its worker running.
+removing fixtures. Use `requestStop()` to request shutdown over IPC and await the command's `stopped`
+event within its existing test deadline. Use `stop()` for cleanup; it terminates the process tree
+if the consumer does not stop. A timeout must fail the test without leaving its worker running.
 JSON process fixtures propagate test cancellation, reject pending event waits when the child exits,
 and dispose consumers before servers and directories. HTTP fixture shutdown closes unfinished
 connections; cleanup continues through remaining resources if one disposer fails.

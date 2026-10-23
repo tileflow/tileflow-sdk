@@ -1,3 +1,4 @@
+import {labelOrder} from '../../cartography/label-placement';
 import {type TileflowDomainCompileContext, typographyTextStyle} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applyCircleStyle, applySymbolStyle} from '../../cartography/layer-style';
@@ -100,11 +101,15 @@ export function compilePoi(
         ...layer,
         filter: [...filter, ['>', filterRank, prominentRank]],
       }),
-      poiContribution(`prominent${suffix}`, 400 + representationOrder[representation], {
-        ...layer,
-        id: `tileflow-poi-prominent${suffix.replace('.', '-')}`,
-        filter: [...filter, ['<=', filterRank, prominentRank]],
-      }),
+      poiContribution(
+        `prominent${suffix}`,
+        labelOrder.prominentPoi - labelOrder.poi + representationOrder[representation],
+        {
+          ...layer,
+          id: `tileflow-poi-prominent${suffix.replace('.', '-')}`,
+          filter: [...filter, ['<=', filterRank, prominentRank]],
+        },
+      ),
     ];
   });
 }
@@ -304,7 +309,7 @@ function createPoiSelection(
         inCategories(categories),
         ['has', fields.poiFilterRank],
         ['>=', filterRank, 0],
-        ['<=', filterRank, poiRankThreshold(semantics.density)],
+        ['<=', filterRank, poiRankThreshold(semantics, fields.poiCategory)],
         ['has', fields.poiSizeRank],
         ['>=', sizeRank, 0],
         ['<=', sizeRank, 16],
@@ -371,11 +376,22 @@ function resolveMarkerStyle(style: TileflowMarkerSymbolStyle): TileflowCircleSty
 /**
  * The highest `filter_rank` a density shows at each zoom. Tileflow World's last zoom with POI data
  * is z15 and its ranks are spaced for that zoom; higher zooms overzoom the same tiles with more
- * room, so the threshold rises one rank at z16 and two from z17, as in Mapbox's Streets style. At
- * the default density every rank is eligible from z17 and MapLibre collision keeps what fits.
+ * room, so the threshold rises one rank at z16 and two at detailZoom (z17 by default).
+ * MapLibre collision keeps the eligible features that fit.
  */
-function poiRankThreshold(density: ResolvedPoiModuleOptions['density']): unknown[] {
-  return ['+', ['step', ['zoom'], 0, 16, 1, 17, 2], density];
+function poiRankThreshold(semantics: ResolvedPoiModuleOptions, categoryField: string): unknown[] {
+  const overrides = Object.entries(semantics.densityByCategory).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
+  const density = overrides.length
+    ? [
+        'match',
+        ['get', categoryField],
+        ...overrides.flatMap(([category, value]) => [category, value]),
+        semantics.density,
+      ]
+    : semantics.density;
+  return ['+', ['step', ['zoom'], 0, 16, 1, semantics.detailZoom, 2], density];
 }
 
 function numericPoiField(field: string, fallback: number): unknown[] {
@@ -394,7 +410,7 @@ function poiContribution(
   return {
     kind: 'layer',
     layer,
-    localOrder: 1000 + localOrder,
+    localOrder: labelOrder.poi + localOrder,
     owner: 'poi',
     slot: 'symbols',
     target: target ? `poi.${target}` : 'poi',

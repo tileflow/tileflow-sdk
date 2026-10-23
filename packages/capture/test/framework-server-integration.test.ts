@@ -357,7 +357,7 @@ export default defineMap({
   glyphs: {
     kind: 'url',
     url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
-    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic', 'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']
   }
 });
 `;

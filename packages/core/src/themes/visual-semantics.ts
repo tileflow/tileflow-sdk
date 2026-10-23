@@ -11,6 +11,7 @@ const visualNumberProperties = new Set([
   'blur',
   'brightnessScale',
   'crownScale',
+  'contrast',
   'dash',
   'exaggeration',
   'emissiveStrength',

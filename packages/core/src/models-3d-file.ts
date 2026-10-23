@@ -4,21 +4,24 @@
 // (EXT_meshopt_compression), as other web maps' landmark models are, and any glTF viewer opens them.
 // Each model is a root node whose `extras.tileflow` names it and carries its footprint; its children
 // are its levels, `near`, `mid` and `far`, each one mesh of one indexed triangle primitive whose node
-// translation and uniform scale turn its whole-step positions into metres. A vertex is 16 bytes in
-// glTF's axes (x east, y up, z south): position, normal, and part, shade and light (`_PAINT`). Node
+// translation and uniform scale turn its whole-step positions into metres, and whose
+// `extras.tileflow.parts` names the parts its vertices count through (a file without them counts
+// through the architectural parts). A vertex is 16 bytes in glTF's axes (x east, y up, z south):
+// position, normal, and part, shade and light (`_PAINT`), then its lighting role. Node
 // tooling encodes files with meshoptimizer's encoder; Core decodes them for its 3D buildings
 // renderer. It has no DOM dependency, and loads meshoptimizer's decoder only to read a compressed
 // file.
 import type {TileflowLandmarkFootprint} from './models-3d-landmarks';
 import {checkTileflowModelSurface} from './models-3d-materials';
 import {
+  isTileflowModelPartName,
   type TileflowModel,
+  tileflowModelArchitecturalPartNames,
   type TileflowModelBytes,
-  tileflowModelDefaultLightingRoles,
+  tileflowModelDefaultLightingRole,
   type TileflowModelLevelBytes,
   tileflowModelLightingRoles,
   tileflowModelLimits,
-  tileflowModelParts,
   type TileflowModelSurfaceBytes,
   tileflowModelVertexBytes,
 } from './models-3d-model';
@@ -58,7 +61,6 @@ const levelNames = ['near', 'mid', 'far'] as const;
 const meshopt = 'EXT_meshopt_compression';
 const quantisation = 'KHR_mesh_quantization';
 const steps = 32767;
-const partCount = Object.keys(tileflowModelParts).length;
 const roleCount = Object.keys(tileflowModelLightingRoles).length;
 const modelId = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const [glbMagic, jsonChunk, binChunk] = [0x46546c67, 0x4e4f534a, 0x004e4942];
@@ -237,7 +239,7 @@ export function encodeTileflowModels(
         mesh: meshes.length - 1,
         translation: [...level.centre],
         scale: [level.step, level.step, level.step],
-        ...(surface ? {extras: {tileflow: {surface}}} : {}),
+        extras: {tileflow: {parts: [...partNamesOf(mesh)], ...(surface ? {surface} : {})}},
       });
     }
     roots.push(nodes.length);
@@ -363,6 +365,7 @@ export async function decodeTileflowModels(
         }
         levels.push({
           vertices: level.vertices,
+          partNames: level.partNames,
           indices: level.indices,
           centre: level.centre,
           step: level.step,
@@ -593,6 +596,7 @@ function quantise(mesh: TileflowModel['levels'][number], compressor?: TileflowMo
     ...low.map((value, axis) => Math.max(centre[axis]! - value, high[axis]! - centre[axis]!)),
   );
   const step = Math.max(reach, 1e-3) / steps;
+  const names = partNamesOf(mesh);
   const raw = new Uint8Array(count * tileflowModelVertexBytes);
   const view = new DataView(raw.buffer);
   for (let vertex = 0; vertex < count; vertex += 1) {
@@ -614,12 +618,12 @@ function quantise(mesh: TileflowModel['levels'][number], compressor?: TileflowMo
     for (let axis = 0; axis < 3; axis += 1)
       view.setInt8(at + 8 + axis, clamp(Math.round(normal[axis]! * 127), -127, 127));
     const part = mesh.parts[vertex]!;
-    if (!Number.isInteger(part) || part < 0 || part >= partCount)
+    if (!Number.isInteger(part) || part < 0 || part >= names.length)
       throw new RangeError(`Vertex ${vertex} has no part.`);
     raw[at + 12] = part;
     raw[at + 13] = Math.round(((clamp(mesh.shades[vertex]!, -1, 1) + 1) / 2) * 255);
     raw[at + 14] = Math.round(clamp(mesh.occlusion[vertex]!, 0, 1) * 255);
-    const role = mesh.lightingRoles?.[vertex] ?? tileflowModelDefaultLightingRoles[part]!;
+    const role = mesh.lightingRoles?.[vertex] ?? tileflowModelDefaultLightingRole(names[part]!);
     if (!Number.isInteger(role) || role < 0 || role >= roleCount)
       throw new RangeError(`Vertex ${vertex} has no lighting role.`);
     raw[at + 15] = role;
@@ -707,6 +711,10 @@ function checkModel(model: TileflowModelEntry): void {
         throw new RangeError(`Every vertex of level ${at} needs a part, a shade and a light.`);
     if (level.lightingRoles && level.lightingRoles.length !== count)
       throw new RangeError(`Every vertex of level ${at} needs a lighting role.`);
+    if (!isPartNames(partNamesOf(level)))
+      throw new RangeError(
+        `Level ${at} names 1 to ${tileflowModelLimits.parts} different parts, each in lower-case words joined by hyphens or underscores.`,
+      );
     if (level.surface) checkTileflowModelSurface(level.surface, count, level.indices.length);
     for (let index = 0; index < count; index += 1)
       for (let axis = 0; axis < 3; axis += 1) {
@@ -836,6 +844,10 @@ function readLevelNode(
     indexCount / 3 > tileflowModelLimits.triangles
   )
     throw new Error();
+  const own = node.extras?.tileflow?.parts;
+  const partNames: readonly string[] =
+    own === undefined ? tileflowModelArchitecturalPartNames : own;
+  if (!isPartNames(partNames)) throw new Error();
   const vertices = viewBytes(
     position.bufferView,
     tileflowModelVertexBytes,
@@ -844,8 +856,8 @@ function readLevelNode(
   for (let vertex = 0; vertex < count; vertex += 1) {
     const at = vertex * tileflowModelVertexBytes;
     const part = vertices[at + 12]!;
-    if (part >= partCount) throw new Error();
-    if (!hasLightingRoles) vertices[at + 15] = tileflowModelDefaultLightingRoles[part]!;
+    if (part >= partNames.length) throw new Error();
+    if (!hasLightingRoles) vertices[at + 15] = tileflowModelDefaultLightingRole(partNames[part]!);
     else if (vertices[at + 15]! >= roleCount) throw new Error();
   }
   const indexBytes = viewBytes(index.bufferView, width, indexCount * width);
@@ -907,6 +919,7 @@ function readLevelNode(
   }
   return {
     vertices,
+    partNames: [...partNames],
     indices,
     centre: [centre[0], centre[1], centre[2]] as const,
     step: scale[0] as number,
@@ -931,6 +944,22 @@ function column(attributes: Float32Array, first: number): Float32Array {
         return all;
       }
   return out;
+}
+
+/** The names of a level's parts: its own, or the architectural parts. */
+function partNamesOf(mesh: TileflowModel['levels'][number]): readonly string[] {
+  return mesh.partNames ?? tileflowModelArchitecturalPartNames;
+}
+
+/** Whether a list names a level's parts: 1 to the limit, each a part name, none twice. */
+function isPartNames(names: unknown): names is readonly string[] {
+  return (
+    Array.isArray(names) &&
+    names.length >= 1 &&
+    names.length <= tileflowModelLimits.parts &&
+    names.every(isTileflowModelPartName) &&
+    new Set(names).size === names.length
+  );
 }
 
 /** A glTF binary's JSON and binary chunks. */

@@ -4,6 +4,7 @@ import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
+import {fileURLToPath} from 'node:url';
 import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 
@@ -76,7 +77,11 @@ test('Native incompatibility is detected before credential discovery or manifest
     join(cwd, 'tileflow.config.ts'),
     `import {defineMap} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
-export default defineMap({id:'main', version:1, extends:streets, terrain:'3d'});
+export default defineMap({id:'main', version:1, extends:streets, terrain:'3d',
+  glyphs: {kind:'url', url:'https://fonts.example.test/{fontstack}/{range}.pbf',
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic',
+      'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']}
+});
 `,
   );
   const result = await command(cwd, [

@@ -184,7 +184,7 @@ test('a map draws its own models: the style carries them and the revision counts
   await writeFile(join(cwd, 'models', 'royal-palm.glb'), smallTree());
   await writeFile(join(cwd, 'models', 'spare.glb'), smallTree());
   const config = (models: string) =>
-    `import {defineMap, vegetation} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'palms',version:1,extends:streets,models:['./models'],modules:{vegetation:vegetation({mode:'3d',threeDimensional:{forms:{palm:{models:${models}}}}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}});\n`;
+    `import {defineMap, vegetation} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'palms',version:1,extends:streets,models:['./models'],modules:{vegetation:vegetation({mode:'3d',threeDimensional:{forms:{palm:{models:${models}}}}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic','DINish Medium,Noto Sans Regular','DINish Bold,Noto Sans Regular']}});\n`;
   await writeFile(join(cwd, 'tileflow.config.ts'), config("['royal-palm']"));
 
   const plan = await createTileflowBuildArtifacts({cwd});

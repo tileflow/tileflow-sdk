@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createTileflowThemeController} from '../src/browser';
 import type {TileflowRuntimeStyle} from '../src/runtime';
-import {homography} from '../src/theme-motion-browser';
 import type {MapLibreStyle} from '../src/types';
 
 type Listener = (event?: unknown) => void;
@@ -373,7 +372,7 @@ class CameraMap extends FakeMap {
   }
 }
 
-test('a theme transition covers the change with a snapshot that follows the camera', async () => {
+test('a theme change draws intermediate values on the live map and removes temporary layers', async () => {
   const {canvas, inserted} = browser();
   const map = new CameraMap(canvas);
   const controller = createTileflowThemeController({
@@ -381,23 +380,148 @@ test('a theme transition covers the change with a snapshot that follows the came
     loadFonts: () => Promise.resolve(),
     map,
   });
-
-  const changed = controller.setTheme(theme('night', night), {transition: {duration: 30}});
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  assert.equal(inserted.length, 1);
-  const [snapshot] = inserted;
-  assert.equal(snapshot!.drawn, 1);
-  assert.equal(map.redraws, 1);
-  assert.equal(snapshot!.width, 400);
-  assert.equal(snapshot!.style.width, '200px');
-  // Panning moves the snapshot with the map.
+  const changed = controller.setTheme(theme('night', night));
   map.offset = {x: 12, y: -4};
   map.fire('move');
-  assert.match(snapshot!.style.transform!, /^matrix3d\(1,0,0,0,0,1,0,0,0,0,1,0,12,-4,0,1\)$/u);
-
   assert.deepEqual(await changed, {status: 'applied', theme: 'night'});
-  assert.equal(snapshot!.removed, true);
-  assert.equal(snapshot!.style.opacity, '0');
+  assert.equal(inserted.length, 0);
+  assert.ok(
+    map.paints.some(
+      ([layer, property, value]) =>
+        layer === 'land' &&
+        property === 'fill-opacity' &&
+        typeof value === 'number' &&
+        value > 0.2 &&
+        value < 0.8,
+    ),
+  );
+  assert.equal(map.styles.at(-1), night);
+  assert.equal(controller.getBlend(), undefined);
+  controller.dispose();
+});
+
+test('an incompatible style cover is removed when the camera moves', async () => {
+  const {canvas, inserted} = browser();
+  const map = new CameraMap(canvas);
+  const controller = createTileflowThemeController({
+    initial: theme('day', day),
+    loadFonts: () => Promise.resolve(),
+    map,
+  });
+  const other = {
+    ...night,
+    sources: {world: {type: 'vector', url: 'https://fixtures.tileflow.test/other.json'}},
+  } as MapLibreStyle;
+  const changed = controller.setTheme(theme('other', other));
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(inserted.length, 1);
+  map.fire('move');
+  assert.equal(inserted[0]!.removed, true);
+  assert.equal(inserted[0]!.style.transform, undefined);
+  assert.equal((await changed).status, 'applied');
+  controller.dispose();
+});
+
+test('an already loaded style diff can complete without a style.load event', async () => {
+  const {canvas} = browser();
+  const map = new CameraMap(canvas);
+  map.setStyle = (style) => {
+    map.styles.push(style);
+  };
+  const controller = createTileflowThemeController({
+    initial: theme('day', day),
+    loadFonts: () => Promise.resolve(),
+    map,
+  });
+  assert.deepEqual(await controller.setTheme(theme('night', night), {transition: {duration: 10}}), {
+    status: 'applied',
+    theme: 'night',
+  });
+  assert.equal(map.styles.at(-1), night);
+  controller.dispose();
+});
+
+test('superseding a live transition cancels its frames and commits only the latest destination', async () => {
+  const {canvas, inserted} = browser();
+  const map = new CameraMap(canvas);
+  const controller = createTileflowThemeController({
+    initial: theme('day', day),
+    loadFonts: () => Promise.resolve(),
+    map,
+  });
+  const first = controller.setTheme(theme('night', night), {transition: {duration: 5000}});
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const last = controller.setTheme(theme('dusk', dusk), {transition: {duration: 10}});
+  assert.equal((await first).status, 'superseded');
+  assert.deepEqual(await last, {status: 'applied', theme: 'dusk'});
+  assert.equal(map.styles.at(-1), dusk);
+  assert.equal(controller.getBlend(), undefined);
+  assert.equal(inserted.length, 0);
+  controller.dispose();
+});
+
+test('disposing a live transition settles the request and stops further style writes', async () => {
+  const {canvas} = browser();
+  const map = new CameraMap(canvas);
+  const controller = createTileflowThemeController({
+    initial: theme('day', day),
+    loadFonts: () => Promise.resolve(),
+    map,
+  });
+  const changed = controller.setTheme(theme('night', night), {transition: {duration: 5000}});
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  const count = map.styles.length;
+  controller.dispose();
+  assert.equal((await changed).status, 'superseded');
+  assert.equal(map.styles.length, count);
+});
+
+test('theme transitions inherit defaults and allow custom durations or immediate changes', async () => {
+  for (const {configured, requested, duration} of [
+    {configured: {}, requested: {}, duration: 450},
+    {configured: {duration: 30}, requested: undefined, duration: 30},
+    {configured: {duration: 0}, requested: undefined, duration: 0},
+    {configured: undefined, requested: {duration: 0}, duration: 0},
+    {configured: {duration: 0}, requested: {duration: 30}, duration: 30},
+  ]) {
+    const {canvas, inserted} = browser();
+    const map = new CameraMap(canvas);
+    const controller = createTileflowThemeController({
+      initial: theme('day', day),
+      loadFonts: () => Promise.resolve(),
+      map,
+      transition: configured,
+    });
+    assert.deepEqual(await controller.setTheme(theme('night', night), {transition: requested}), {
+      status: 'applied',
+      theme: 'night',
+    });
+    assert.equal(inserted.length, 0);
+    assert.equal(map.styles.length, duration === 0 ? 1 : 2);
+    assert.equal(map.styles.at(-1), night);
+    controller.dispose();
+  }
+});
+
+test('entering and leaving a blend cross-fades by default', async () => {
+  const {canvas, inserted} = browser();
+  const {controller} = controllerFor(new CameraMap(canvas));
+  assert.equal(
+    (
+      await controller.setBlend({
+        position: 0.25,
+        themes: [theme('night', night), theme('day', day)],
+      })
+    ).status,
+    'applied',
+  );
+  assert.equal((await controller.setTheme(theme('day', day))).status, 'applied');
+  assert.equal(inserted.length, 2);
+  for (const snapshot of inserted) {
+    assert.equal(snapshot.style.transition, 'opacity 450ms ease');
+    assert.equal(snapshot.removed, true);
+  }
+  controller.dispose();
 });
 
 test('a theme transition changes at once when the viewer prefers reduced motion', async () => {
@@ -407,7 +531,6 @@ test('a theme transition changes at once when the viewer prefers reduced motion'
     initial: theme('day', day),
     loadFonts: () => Promise.resolve(),
     map,
-    transition: {duration: 400},
   });
 
   assert.deepEqual(await controller.setTheme(theme('night', night)), {
@@ -415,34 +538,5 @@ test('a theme transition changes at once when the viewer prefers reduced motion'
     theme: 'night',
   });
   assert.equal(inserted.length, 0);
-});
-
-test('maps four points exactly with a projective transform', () => {
-  const from = [
-    [0, 0],
-    [100, 0],
-    [100, 50],
-    [0, 50],
-  ] as const;
-  const to = [
-    [10, 5],
-    [130, 0],
-    [120, 70],
-    [0, 60],
-  ] as const;
-  const [a, b, c, d, e, f, g, h, i] = homography(from, to)!;
-  for (const [index, [x, y]] of from.entries()) {
-    const w = g! * x + h! * y + i!;
-    assert.ok(Math.abs((a! * x + b! * y + c!) / w - to[index]![0]) < 1e-9);
-    assert.ok(Math.abs((d! * x + e! * y + f!) / w - to[index]![1]) < 1e-9);
-  }
-  assert.equal(
-    homography(from, [
-      [0, 0],
-      [0, 0],
-      [0, 0],
-      [0, 0],
-    ]),
-    undefined,
-  );
+  controller.dispose();
 });

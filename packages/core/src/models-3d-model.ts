@@ -7,7 +7,11 @@
 // tileset and are downloaded only near the camera. It has no DOM dependency.
 import type {TileflowModelSurface} from './models-3d-materials';
 
-/** The parts of a model, each coloured by the theme: the model's materials name them. */
+/**
+ * The architectural parts of a model. A map that gives one no colour of its own colours it from the
+ * buildings' colour, and a mesh that names no parts of its own numbers its vertices' parts in this
+ * order.
+ */
 export const tileflowModelParts = Object.freeze({
   surface: 0,
   secondary: 1,
@@ -18,7 +22,24 @@ export const tileflowModelParts = Object.freeze({
 
 export type TileflowModelPart = keyof typeof tileflowModelParts;
 
-/** Architectural roles control lighting independently of the model's palette slots. */
+/** The names of a mesh's parts when it names none of its own. */
+export const tileflowModelArchitecturalPartNames = Object.freeze(
+  Object.keys(tileflowModelParts) as TileflowModelPart[],
+);
+
+/**
+ * Whether a value names a part of a model, as its material does: lower-case letters and digits,
+ * words joined by hyphens or underscores, at most 32 characters, such as `glass` or `water`.
+ */
+export function isTileflowModelPartName(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length <= 32 &&
+    /^[a-z][a-z0-9]*(?:[-_][a-z0-9]+)*$/u.test(value)
+  );
+}
+
+/** Architectural roles control lighting independently of the model's parts. */
 export const tileflowModelLightingRoles = Object.freeze({
   unclassified: 0,
   wall: 1,
@@ -31,8 +52,23 @@ export const tileflowModelLightingRoles = Object.freeze({
 
 export type TileflowModelLightingRole = keyof typeof tileflowModelLightingRoles;
 
-/** Legacy palette slots map to wall, wall, window, wall and roof; doors and logos are explicit. */
-export const tileflowModelDefaultLightingRoles = Object.freeze([1, 1, 4, 1, 3] as const);
+const architecturalRoles: Readonly<Record<TileflowModelPart, number>> = {
+  surface: 1,
+  secondary: 1,
+  glass: 4,
+  accent: 1,
+  roof: 3,
+};
+
+/**
+ * The lighting role of a part whose material sets none: architectural parts are walls, a window
+ * and a roof; every other part is unclassified, so it never takes a window's light.
+ */
+export function tileflowModelDefaultLightingRole(part: string): number {
+  return Object.hasOwn(architecturalRoles, part)
+    ? architecturalRoles[part as TileflowModelPart]
+    : tileflowModelLightingRoles.unclassified;
+}
 
 /** What a model may hold. */
 export const tileflowModelLimits = Object.freeze({
@@ -52,6 +88,8 @@ export const tileflowModelLimits = Object.freeze({
   models: 512,
   /** Bytes of one prepared file. */
   bytes: 16 * 1024 * 1024,
+  /** Differently named parts of one level. */
+  parts: 16,
 });
 
 /** One level of detail, as indexed triangles. */
@@ -60,9 +98,14 @@ export type TileflowModelMesh = Readonly<{
   positions: readonly number[];
   /** The vertex normals, x, y and z. */
   normals: readonly number[];
-  /** Each vertex's part, a value of `tileflowModelParts`. */
+  /** Each vertex's part, an index into `partNames`. */
   parts: readonly number[];
-  /** Optional architectural role per vertex; absent roles use the palette slot's legacy mapping. */
+  /**
+   * The names of the level's parts, as its materials name them, such as `surface`, `glass` or
+   * `water`; without them, `tileflowModelArchitecturalPartNames`.
+   */
+  partNames?: readonly string[];
+  /** Optional architectural role per vertex; absent roles follow `tileflowModelDefaultLightingRole`. */
   lightingRoles?: readonly number[];
   /** Each vertex's shade within its part's colour, from -1 (darkest) to 1 (lightest). */
   shades: readonly number[];
@@ -90,9 +133,11 @@ export type TileflowModelLevelBytes = Readonly<{
   /**
    * 16 bytes a vertex, in glTF's axes (x east, y up, z south): its position as whole steps from
    * `centre` (int16 ×3, then two bytes of padding), its normal (int8 ×3, then one), and its part,
-   * shade and light (uint8 ×3, then one).
+   * shade and light (uint8 ×3), then its lighting role (uint8).
    */
   vertices: Uint8Array;
+  /** The names of the parts the vertices' part indices count through. */
+  partNames: readonly string[];
   indices: Uint16Array | Uint32Array;
   /** The point the positions count from, in glTF's axes, in metres. */
   centre: readonly [number, number, number];

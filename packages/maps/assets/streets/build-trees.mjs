@@ -76,6 +76,101 @@ function crown(m, centre, radii, seed, far, farSides = 6) {
   }
 }
 
+// Open foliage is a curved, two-sided blade with a raised midrib and drooping
+// flanks. An ovate outline tapers to its tips, without a vertical, coin-like bevel.
+function leafBlade(m, centre, radii, seed, far, tilt, shade) {
+  const yaw = Math.atan2(centre[0], centre[2]) + Math.sin(seed * golden) * 0.22;
+  const turn = ([x, y, z]) => {
+    const yy = y * Math.cos(tilt) - z * Math.sin(tilt);
+    const zz = y * Math.sin(tilt) + z * Math.cos(tilt);
+    return [x * Math.cos(yaw) + zz * Math.sin(yaw), yy, -x * Math.sin(yaw) + zz * Math.cos(yaw)];
+  };
+  const stations = far ? [-1, 0, 1] : [-1, -0.8, -0.45, 0, 0.45, 0.8, 1];
+  const width = radii[2],
+    length = radii[0];
+  const rows = stations.map((t) => {
+    const reach = Math.sqrt(1 - t * t) * (1 - t * 0.18);
+    return (Math.abs(t) === 1 ? [0] : [-1, 0, 1]).map((s) => {
+      const x = width * (s * reach + 0.08 * (1 - t * t));
+      const z = length * t;
+      const y =
+        radii[1] * (1 - t * t) -
+        length * (0.28 * t * t - 0.08 * t) -
+        width * (0.28 * s * s * reach - 0.1 * s * t);
+      return vertex(
+        m,
+        add(centre, turn([x, y, z])),
+        turn([0.56 * s - 0.1 * t, 1, 0.65 * t - 0.08 - 0.1 * s]),
+        shade * (1.02 - Math.abs(s) * 0.025),
+      );
+    });
+  });
+  const outward = turn([0, 1, 0]);
+  for (let row = 0; row + 1 < rows.length; row++) {
+    const a = rows[row],
+      b = rows[row + 1];
+    for (let flank = 0; flank < 2; flank++) {
+      if (a.length === 1) face(m, a[0], b[flank], b[flank + 1], outward);
+      else if (b.length === 1) face(m, a[flank], b[0], a[flank + 1], outward);
+      else {
+        face(m, a[flank], b[flank], b[flank + 1], outward);
+        face(m, a[flank], b[flank + 1], a[flank + 1], outward);
+      }
+    }
+  }
+}
+
+// Rounded ovoid crowns have smooth normals and an irregular low-poly silhouette.
+function foliage(m, centre, radii, seed, far, {thin = false, tilt = 0, shade = 1} = {}) {
+  if (thin) return leafBlade(m, centre, radii, seed, far, tilt, shade);
+  const sides = far ? 8 : 10;
+  const rings = far ? 2 : 6;
+  const yaw = seed * golden;
+  const turn = ([x, y, z]) => {
+    const yy = y * Math.cos(tilt) - z * Math.sin(tilt);
+    const zz = y * Math.sin(tilt) + z * Math.cos(tilt);
+    return [x * Math.cos(yaw) + zz * Math.sin(yaw), yy, -x * Math.sin(yaw) + zz * Math.cos(yaw)];
+  };
+  const point = (n) => add(centre, turn(n.map((v, axis) => v * radii[axis])));
+  const top = vertex(m, point([0.08, 1, 0]), turn([0, 1, 0]), shade * 1.04);
+  const bottom = vertex(m, point([-0.06, -1, 0.04]), turn([0, -1, 0]), shade * 0.94);
+  const rows = [];
+  for (let row = 1; row < rings; row++) {
+    const latitude = (row * Math.PI) / rings;
+    const y = Math.cos(latitude);
+    const reach = Math.pow(Math.sin(latitude), 0.78);
+    rows.push(
+      Array.from({length: sides}, (_, side) => {
+        const angle = (side * tau) / sides + seed * 0.32;
+        const ripple = 1 + 0.07 * Math.sin(angle * 3 + seed) + 0.035 * Math.cos(angle * 5 - seed);
+        const width = reach * ripple * (1 - y * 0.08);
+        const x = Math.cos(angle) * width + y * 0.08;
+        const z = Math.sin(angle) * width;
+        const n = [
+          (Math.cos(angle) * reach) / radii[0],
+          y / radii[1],
+          (Math.sin(angle) * reach) / radii[2],
+        ];
+        return vertex(m, point([x, y, z]), turn(n), shade * (0.98 + y * 0.04));
+      }),
+    );
+  }
+  for (let side = 0; side < sides; side++) {
+    const next = (side + 1) % sides;
+    face(m, top, rows[0][side], rows[0][next], turn([0, 1, 0]));
+    for (let row = 0; row + 1 < rows.length; row++) {
+      const outward = turn([
+        Math.cos((side * tau) / sides + seed * 0.32),
+        0,
+        Math.sin((side * tau) / sides + seed * 0.32),
+      ]);
+      face(m, rows[row][side], rows[row + 1][side], rows[row + 1][next], outward);
+      face(m, rows[row][side], rows[row + 1][next], rows[row][next], outward);
+    }
+    face(m, bottom, rows.at(-1)[next], rows.at(-1)[side], turn([0, -1, 0]));
+  }
+}
+
 function branch(m, from, to, base, tip, sides) {
   const axis = unit(sub(to, from));
   const u = unit(cross(axis, Math.abs(axis[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0]));
@@ -99,54 +194,87 @@ function branch(m, from, to, base, tip, sides) {
   }
 }
 
+// Compact, upright and open trees have different branching architectures, not the
+// same set of spheres stretched along an axis. Lobes carry a stable material shade.
 const broadleaf = {
   round: [
-    [-1.95, 7.4, 0.75, 1.85, 1.8, 1.8],
-    [1.75, 7.7, 1.1, 1.8, 1.85, 1.75],
-    [0.35, 7.05, -2, 1.9, 1.6, 1.7],
-    [-0.65, 8.65, -0.65, 1.65, 1.65, 1.7],
-    [0.1, 6.85, 2.35, 1.5, 1.35, 1.4],
-  ],
-  open: [
-    [-2.65, 6.6, 0.8, 1.95, 1.15, 1.8],
-    [2.55, 7.05, 0.95, 1.9, 1.25, 1.8],
-    [0.45, 6.5, -2.5, 2, 1.1, 1.65],
-    [-0.9, 7.85, -0.8, 1.8, 1.25, 1.6],
-    [-0.15, 6.8, 2.65, 1.75, 1.05, 1.55],
+    [-1.5, 6.9, 0.45, 2.25, 2.5, 2.0, -0.22, 1.05],
+    [1.8, 6.15, 0.45, 2.05, 2.15, 1.8, 0.25, 0.82],
+    [0.1, 7.7, -1.0, 2.0, 2.55, 1.85, 0.12, 1.13],
   ],
   tall: [
-    [-1.55, 9, 0.55, 1.45, 2, 1.35],
-    [1.5, 9.5, 0.8, 1.4, 1.95, 1.4],
-    [0.25, 8.75, -1.6, 1.45, 1.8, 1.35],
-    [-0.45, 11.15, -0.35, 1.45, 2.05, 1.45],
-    [0, 9.35, 1.85, 1.2, 1.6, 1.1],
+    [-0.55, 9.15, -0.25, 2.15, 3.3, 2.0, -0.1, 1.14],
+    [1.8, 6.05, 0.5, 1.6, 1.75, 1.45, 0.32, 0.78],
+    [-1.7, 5.45, 0.8, 1.45, 1.65, 1.4, -0.32, 0.91],
+  ],
+  open: [
+    [-0.7, 8.1, -0.4, 1.3, 0.23, 1.05, 0.12, 1.13],
+    [0.95, 7.9, -0.65, 1.45, 0.22, 1.15, 0.25, 1.08],
+    [-2.0, 7.0, 0.65, 1.5, 0.22, 1.1, 0.55, 0.95],
+    [0.1, 7.7, 1.15, 1.5, 0.24, 1.2, 0.38, 1.18],
+    [2.0, 7.1, 0.3, 1.45, 0.2, 1.05, 0.6, 1.04],
+    [-0.35, 7.3, -1.65, 1.35, 0.23, 1.15, 0.42, 1.0],
+    [-1.85, 6.0, -0.65, 1.25, 0.24, 1.0, 0.85, 0.79],
+    [1.65, 6.1, 1.0, 1.35, 0.22, 1.1, 0.9, 0.86],
+    [-0.4, 6.6, 1.8, 1.2, 0.2, 1.0, 0.75, 0.93],
+    [0.6, 6.2, -1.5, 1.3, 0.24, 1.0, 0.8, 0.75],
+  ],
+  conifer: [
+    [-0.25, 10.1, 0.05, 1.05, 0.4, 0.95, 0.2, 1.14],
+    [1.1, 8.8, -0.4, 1.5, 0.35, 1.15, -0.35, 1.06],
+    [-1.35, 8.4, 0.25, 1.55, 0.35, 1.2, 0.45, 1.1],
+    [0.1, 7.75, 1.4, 1.5, 0.3, 1.25, -0.3, 1.0],
+    [-0.55, 7.35, -1.4, 1.55, 0.35, 1.25, 0.35, 0.98],
+    [1.75, 6.4, 0.25, 1.65, 0.35, 1.25, -0.5, 0.88],
+    [-1.85, 5.9, -0.25, 1.65, 0.35, 1.3, 0.45, 0.91],
+    [0.35, 5.2, 1.65, 1.75, 0.3, 1.3, -0.6, 0.82],
+    [-0.25, 4.8, -1.4, 1.65, 0.35, 1.2, 0.5, 0.8],
+    [0, 6.7, 0.05, 1.25, 0.35, 1.1, -0.2, 0.95],
   ],
 };
 
 function deciduous(form, far) {
   const bark = mesh('bark');
-  const leaves = mesh('leaves');
-  const tall = form === 'tall';
+  const thin = form === 'open' || form === 'conifer';
+  const leaves = mesh(thin ? 'fronds' : 'leaves');
+  const upright = form === 'tall' || form === 'conifer';
   const foot = [0, 0, 0];
-  const waist = [0.04, 0.85, -0.02];
-  const fork = [0.12, tall ? 5.1 : 3.65, -0.08];
-  // A flared foot and a substantial fork read at street scale. Branches enter the
-  // individual leaf clusters, leaving the space between them open to the sky.
-  branch(bark, foot, waist, tall ? 0.43 : 0.46, 0.29, far ? 4 : 7);
-  branch(bark, waist, fork, 0.29, 0.24, far ? 4 : 7);
+  const waist = [0.08, 0.9, -0.02];
+  const fork = [upright ? -0.18 : 0.16, upright ? 3.5 : 3.2, -0.08];
+  const trunkSides = far ? 3 : 6;
+  branch(bark, foot, waist, upright ? 0.47 : 0.55, 0.33, trunkSides);
+  branch(bark, waist, fork, 0.33, 0.26, trunkSides);
+  const limbs = thin
+    ? [
+        [-1.0, 7.3, 0.15],
+        [1.1, 6.65, -0.25],
+        [0.25, 5.0, 0.7],
+      ]
+    : broadleaf[form].map((lobe) => lobe.slice(0, 3));
+  for (const [i, end] of limbs.entries()) {
+    const elbow = add(fork, mul(sub(end, fork), 0.52));
+    elbow[0] += i === 1 ? 0.18 : -0.15;
+    if (far) branch(bark, fork, end, 0.21, 0.055, 3);
+    else {
+      branch(bark, fork, elbow, 0.24 - i * 0.035, 0.14, 4);
+      branch(bark, elbow, end, 0.14, 0.045, 4);
+    }
+  }
   for (const [i, lobe] of broadleaf[form].entries()) {
     const centre = lobe.slice(0, 3);
-    if (far) {
-      branch(bark, fork, centre, 0.19, 0.055, 3);
-    } else {
-      const elbow = add(fork, mul(sub(centre, fork), 0.52));
-      elbow[1] -= 0.25;
-      branch(bark, fork, elbow, i < 3 ? 0.22 : 0.16, 0.14, 5);
-      branch(bark, elbow, centre, 0.14, 0.045, 4);
+    if (thin && !far) {
+      const limb = limbs[i % limbs.length];
+      const start = add(
+        fork,
+        mul(sub(limb, fork), Math.min(1, (centre[1] - fork[1]) / (limb[1] - fork[1]))),
+      );
+      branch(bark, start, centre, 0.1, 0.025, 3);
     }
-    // Both LODs retain every cluster and branch. Only tessellation changes, so
-    // switching to the distant mesh does not close holes or remove crown limbs.
-    crown(leaves, centre, lobe.slice(3), i + form.length, far, 5);
+    foliage(leaves, centre, lobe.slice(3, 6), i + form.length, far, {
+      thin,
+      tilt: lobe[6],
+      shade: lobe[7],
+    });
   }
   return [bark, leaves];
 }
@@ -396,7 +524,7 @@ export function buildStreetsTrees() {
       ['far', far],
     ]) {
       const triangles = parts.reduce((n, m) => n + m.indices.length / 3, 0);
-      if (triangles > (level === 'near' ? 700 : 100))
+      if (triangles > (level === 'near' ? 700 : 120))
         throw new Error(`${id} ${level}: ${triangles} triangles exceeds the Streets budget`);
       files.set(`models/${id}${level === 'far' ? '.far' : ''}.glb`, glb(parts, id));
       catalogue.push({id, level, triangles});

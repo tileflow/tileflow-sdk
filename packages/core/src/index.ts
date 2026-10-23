@@ -721,11 +721,17 @@ export {
   tileflowBuildingsMetadataKey,
   tileflowTeamModelUrl,
 } from './buildings-3d-design';
+export type {
+  TileflowBuildingSurfaces,
+  TileflowBuildingSurfaceDesign,
+} from './buildings-3d-surfaces';
 export {
+  isTileflowModelPartName,
   tileflowInsideRings,
+  tileflowModelArchitecturalPartNames,
+  tileflowModelDefaultLightingRole,
   tileflowModelLimits,
   tileflowModelLightingRoles,
-  tileflowModelDefaultLightingRoles,
   tileflowModelParts,
   tileflowModelVertexBytes,
   tileflowRingsOverlap,

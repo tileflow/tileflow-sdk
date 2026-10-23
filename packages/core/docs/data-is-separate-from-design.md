@@ -470,8 +470,11 @@ area polygons, so the holes of a plaza (tree pits, planting beds) are not stroke
 are optional: a generic OpenMapTiles source remains
 valid and the compiler omits unsupported detail instead of inventing geometry. Crossing icons are
 explicit because the data contract cannot assume a sprite name. They require positive physical
-`markings` evidence and reject `crossing=no`; both fields are semantic bindings, so custom schemas
-can remap them without weakening that rule.
+`markings` evidence, reject `crossing=no`, and require a numeric `direction` from 0 to 360 degrees
+(numbers and numeric strings are accepted). World derives missing directions only when the
+crossing has an unambiguous road axis; unresolved points on adjoining footways therefore remain
+hidden instead of receiving a default rotation. All three fields are semantic bindings, so custom
+schemas can remap them without weakening that rule.
 
 Metric road rings scale continuously with the map from zoom 15 through 24, including fractional
 zooms. Their casing is below surface road fills so approaching streets cover the outline at each

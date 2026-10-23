@@ -429,6 +429,8 @@ test('the 3D tree description is read only in a known version and shape', () => 
   );
   assert.equal(read.heightScale, 1.2);
   assert.equal(read.crownScale, 1);
+  assert.equal(read.minimumHeight, 0);
+  assert.equal(read.materialVariation, 0);
   // An unknown form falls back to the default mix, and a region with south above north is dropped.
   assert.deepEqual(read.unknownForms, {round: 1, open: 1, tall: 1});
   // Without a finish, edges or form scales, trees are faceted, unoutlined and as the map scales them.
@@ -439,12 +441,26 @@ test('the 3D tree description is read only in a known version and shape', () => 
     [tileflowVegetationMetadataKey]: {
       ...described,
       finish: 'toon',
+      minimumHeight: 6,
+      materialVariation: 0.7,
       edges: 0.8,
       edgeColor: '#102010',
       forms: {palm: {heightScale: 1.3}, oak: {heightScale: 2}},
     },
   })!;
   assert.equal(styled.finish, 'toon');
+  assert.equal(styled.minimumHeight, 6);
+  assert.equal(styled.materialVariation, 0.7);
+  for (const [minimumHeight, materialVariation, expected] of [
+    [-2, -1, [0, 0]],
+    [100, 10, [20, 1]],
+    [NaN, Infinity, [0, 0]],
+  ] as const) {
+    const bounded = readTileflowVegetation3D({
+      [tileflowVegetationMetadataKey]: {...described, minimumHeight, materialVariation},
+    })!;
+    assert.deepEqual([bounded.minimumHeight, bounded.materialVariation], expected);
+  }
   assert.equal(styled.edges, 0.8);
   assert.equal(styled.edgeColor, '#102010');
   assert.deepEqual(styled.forms, {palm: {heightScale: 1.3, crownScale: 1}});
@@ -799,4 +815,61 @@ test('idle only retries tree attachment and does not schedule another frame', as
     trees.dispose();
   }
   for (const set of listeners.values()) assert.equal(set.size, 0);
+});
+
+test('trees mount below ground names and solid buildings regardless of camera ordering', () => {
+  const ground = {
+    id: 'roads',
+    type: 'symbol',
+    metadata: {'tileflow:road-label-placement': {version: 1, mode: 'ground'}},
+  };
+  const solid = {id: 'buildings', type: 'fill-extrusion'};
+  for (const [scene, expected] of [
+    [[ground, solid], 'roads'],
+    [[solid, ground], 'buildings'],
+    [[ground], 'roads'],
+    [[{id: 'roads', type: 'symbol'}, solid], 'above-buildings'],
+  ] as const) {
+    let before: string | undefined;
+    const layers = new Set<string>();
+    const map = {
+      addLayer(layer: {id: string}, beforeId?: string) {
+        layers.add(layer.id);
+        before = beforeId;
+      },
+      getBearing: () => 0,
+      getCenter: () => ({lat: 0, lng: 0}),
+      getLayer: (id: string) => (layers.has(id) || id === 'above-buildings' ? {} : undefined),
+      getPitch: () => 55,
+      getSource: () => undefined,
+      getStyle: () => ({
+        layers: [...scene],
+        metadata: {
+          'tileflow:overlay-placement-manifest': {anchors: {'above-buildings': 'above-buildings'}},
+        },
+      }),
+      getZoom: () => 16,
+      isStyleLoaded: () => true,
+      off() {},
+      on() {},
+      triggerRepaint() {},
+      removeLayer(id: string) {
+        layers.delete(id);
+      },
+    };
+    const trees = createTileflowTrees3D({map});
+    assert.equal(before, expected);
+    trees.dispose();
+    layers.add('tileflow-street-lights');
+    const litTrees = createTileflowTrees3D({map});
+    assert.equal(
+      before,
+      expected === 'above-buildings' ? 'tileflow-street-lights' : expected,
+      'street lights do not make foliage cover ground names',
+    );
+    litTrees.dispose();
+    const explicit = createTileflowTrees3D({map, beforeId: 'above-buildings'});
+    assert.equal(before, 'above-buildings', 'explicit application placement takes precedence');
+    explicit.dispose();
+  }
 });

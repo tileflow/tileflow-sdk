@@ -30,14 +30,13 @@ import {
 import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
+  attachTileflowLabelPlacement,
   attachTileflowMap3D,
   attachTileflowMapLifecycle,
   attachTileflowNauticalLights,
   attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowThemeController,
-  type TileflowMap3DAttachment,
-  type TileflowViewMode,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
   loadTileflowStyleFonts,
@@ -45,14 +44,16 @@ import {
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   subscribeTileflowSystemColorScheme,
-  tileflowMaxPitch,
+  type TileflowBrowserThemeBlendSelection,
   tileflowCanvasContextAttributes,
   type TileflowFairUseNoticeController,
+  type TileflowMap3DAttachment,
   type TileflowMapLifecycleAttachment,
+  tileflowMaxPitch,
   type TileflowThemeController,
   type TileflowThemeTransition,
-  type TileflowBrowserThemeBlendSelection,
   type TileflowThemeTransitionOptions,
+  type TileflowViewMode,
   type TileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
@@ -68,7 +69,6 @@ import {
   resolveTileflowManifestMap,
   resolveTileflowMapMode,
   resolveTileflowRuntimeStyle,
-  type TileflowTimeOfDay,
   resolveTileflowRuntimeTheme,
   resolveTileflowRuntimeThemeBlend,
   resolveTileflowRuntimeView,
@@ -77,6 +77,7 @@ import {
   type TileflowRuntimeManifestMap,
   type TileflowRuntimeSource,
   type TileflowRuntimeStyle,
+  type TileflowTimeOfDay,
 } from '@tileflow/core/runtime';
 import {
   initialTileflowInteractionState,
@@ -926,6 +927,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       attachTileflowAtmosphere(map);
       attachTileflowNotices(map);
       attachTileflowNauticalLights(map);
+      attachTileflowLabelPlacement(map);
       themeController =
         runtime.theme === undefined
           ? null

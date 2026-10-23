@@ -17,13 +17,13 @@ for (const [label, args] of [
   ['single map', []],
   ['comparison', comparison],
 ] as const) {
-  test(`preview opens ${label} DevTools once, after the server is listening`, async (t) => {
+  test(`preview opens ${label} Inspector once, after the server is listening`, async (t) => {
     const preview = await startPreview(t, [...args]);
     await waitUntil(async () => (await preview.opened()).length === 1);
     assert.deepEqual(await preview.opened(), [preview.origin]);
     const response = await fetch(preview.origin);
     assert.equal(response.status, 200);
-    assert.match(await response.text(), /Tileflow Map DevTools/u);
+    assert.match(await response.text(), /Tileflow Inspector/u);
 
     await writeFile(preview.configPath, tileflowMapFixture({id: 'main', version: 2}));
     const basePath = args.length ? '/left' : '/map';

@@ -164,17 +164,20 @@ void main() {
           scalar('u_texture_enabled[0]', 0);
           gl.uniform4f(loc('u_role_colour[1]'), 1, 0, 0, 1);
           const tinted = read();
-          vector('u_part_colours[0]', 0, 0, 1);
-          scalar('u_part_mix[0]', 1);
+          gl.uniform4f(loc('u_parts[0]'), 0, 0, 1, 1);
           const recoloured = read();
-          scalar('u_part_mix[0]', 0);
+          gl.uniform4f(loc('u_parts[0]'), 0, 0, 1, 0);
           integer('u_test_role', 0);
-          const naturalParts = [5, 6, 7].map((part, channel) => {
+          // A level's parts beyond the architectural ones, up to the last, recolour on their own.
+          const namedParts = [5, 10, 15].map((part, channel) => {
             integer('u_test_part', part);
-            vector(`u_part_colours[${part}]`, ...[0, 1, 2].map((c) => Number(c === channel)));
-            scalar(`u_part_mix[${part}]`, 1);
+            gl.uniform4f(
+              loc(`u_parts[${part}]`),
+              ...([0, 1, 2].map((c) => Number(c === channel)) as [number, number, number]),
+              1,
+            );
             const pixel = read();
-            scalar(`u_part_mix[${part}]`, 0);
+            gl.uniform4f(loc(`u_parts[${part}]`), 0, 0, 0, 0);
             return pixel;
           });
           integer('u_test_part', 0);
@@ -270,7 +273,7 @@ void main() {
             blended,
             tinted,
             recoloured,
-            naturalParts,
+            namedParts,
             ambient,
             ambientOccluded,
             direct,
@@ -312,12 +315,12 @@ void main() {
       assert.deepEqual(
         result.recoloured,
         [0, 0, 255, 255],
-        'palette overrides retain recolouring of physical materials',
+        'part colours retain recolouring of physical materials',
       );
-      for (const [channel, pixel] of result.naturalParts.entries()) {
-        assert.ok(pixel[channel]! > 180, 'new palette slots reach the physical shader');
+      for (const [channel, pixel] of result.namedParts.entries()) {
+        assert.ok(pixel[channel]! > 180, 'every part of a level reaches the physical shader');
         for (const other of [0, 1, 2].filter((value) => value !== channel))
-          assert.equal(pixel[other], 0, 'natural material categories recolour independently');
+          assert.equal(pixel[other], 0, 'named parts recolour independently');
       }
       assert.ok(result.ambientOccluded[0]! < result.ambient[0]! * 0.7);
       assert.deepEqual(

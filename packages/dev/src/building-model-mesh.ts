@@ -1,17 +1,16 @@
 // Turns a glTF binary into a level of Core's building model: each material names its part of the
-// building (surface, secondary, glass, accent, roof, water, vegetation or wood), the model keeps its size in metres round its
-// origin (where it stands on the ground, x east and y north), and its colours become shades within
-// its parts' theme colours. The footprint, the outline on the ground the model stands in for, is a
+// building, such as surface, glass, roof or water, so the map can colour it; the model keeps its
+// size in metres round its origin (where it stands on the ground, x east and y north), and its
+// colours become shades within its parts' colours. The footprint, the outline on the ground the model stands in for, is a
 // mesh whose material is named `footprint`, which is never drawn, or else the nearest level's own
 // outline on the ground. It has no filesystem access.
 import {
-  tileflowModelDefaultLightingRoles,
+  isTileflowModelPartName,
+  tileflowModelDefaultLightingRole,
   type TileflowModelLightingRole,
   tileflowModelLightingRoles,
   tileflowModelLimits,
   type TileflowModelMesh,
-  type TileflowModelPart,
-  tileflowModelParts,
 } from '@tileflow/core';
 import {buildingModelSurface} from './building-model-materials';
 import {buildingModelAmbientVisibility} from './building-model-occlusion';
@@ -20,15 +19,32 @@ import {
   TileflowGltfError,
   type TileflowGltfPrimitive,
 } from './gltf-reader';
+import {tileflowTreeModelPartNames} from './tree-model-mesh';
 
-export const tileflowBuildingModelPartNames = Object.keys(
-  tileflowModelParts,
-) as readonly TileflowModelPart[];
-
-/** Whether every material of a glTF binary names a part of a building, so it is a building model. */
+/**
+ * Whether a glTF binary is a building model: every material it draws names a part, and not only the
+ * parts of a tree (bark, leaves, fronds and stem), which make it a tree model.
+ */
 export function isTileflowBuildingModel(primitives: readonly TileflowGltfPrimitive[]): boolean {
   const drawn = primitives.filter((primitive) => !isFootprint(primitive));
-  return drawn.length > 0 && drawn.every((primitive) => partOf(primitive.material) !== undefined);
+  return (
+    drawn.length > 0 &&
+    drawn.every((primitive) => partOf(primitive.material) !== undefined) &&
+    !isTileflowTreeModel(primitives)
+  );
+}
+
+/** Whether every material a glTF binary draws names a part of a tree, so it is a tree model. */
+export function isTileflowTreeModel(primitives: readonly TileflowGltfPrimitive[]): boolean {
+  const drawn = primitives.filter((primitive) => !isFootprint(primitive));
+  return (
+    drawn.length > 0 &&
+    drawn.every((primitive) =>
+      (tileflowTreeModelPartNames as readonly (string | undefined)[]).includes(
+        partOf(primitive.material),
+      ),
+    )
+  );
 }
 
 /**
@@ -60,22 +76,29 @@ export function prepareTileflowBuildingModelMesh(
   const surface = buildingModelSurface(drawn);
   const positions: number[] = [];
   const normals: (number[] | undefined)[] = [];
+  const partNames: string[] = [];
   const parts: number[] = [];
   const lightingRoles: number[] = [];
   const luminance: number[] = [];
   const indices: number[] = [];
   for (const primitive of drawn) {
-    const part = partOf(primitive.material);
-    if (part === undefined)
+    const name = partOf(primitive.material);
+    if (name === undefined)
       throw new TileflowGltfError(
         primitive.material === undefined
-          ? 'has a mesh without a material; name each material surface, secondary, glass, accent, roof, water, vegetation or wood'
-          : `has a material "${primitive.material}" that names no part of a building; name each material surface, secondary, glass, accent, roof, water, vegetation or wood`,
+          ? 'has a mesh without a material; name each material after its part, such as surface, glass, roof or water'
+          : `has a material "${primitive.material}" that names no part; name each material after its part in lower-case words joined by hyphens, such as surface, glass, roof or water`,
       );
+    if (!partNames.includes(name)) partNames.push(name);
+    if (partNames.length > tileflowModelLimits.parts)
+      throw new TileflowGltfError(
+        `names ${partNames.length} parts in its materials; a building model takes at most ${tileflowModelLimits.parts} a level. Give materials of the same part the same name`,
+      );
+    const part = partNames.indexOf(name);
     const offset = positions.length / 3;
     const role =
       primitive.lightingRole === undefined
-        ? tileflowModelDefaultLightingRoles[part]!
+        ? tileflowModelDefaultLightingRole(name)
         : typeof primitive.lightingRole === 'string' &&
             Object.hasOwn(tileflowModelLightingRoles, primitive.lightingRole)
           ? tileflowModelLightingRoles[primitive.lightingRole as TileflowModelLightingRole]
@@ -152,6 +175,7 @@ export function prepareTileflowBuildingModelMesh(
     positions,
     normals: outNormals,
     parts,
+    partNames,
     lightingRoles,
     shades,
     ...(surface ? {surface} : {}),
@@ -300,13 +324,13 @@ function isFootprint(primitive: TileflowGltfPrimitive): boolean {
   );
 }
 
-function partOf(material: string | undefined): number | undefined {
+/** The part a material names: its name in lower case, without an exporter's `.001` suffix. */
+function partOf(material: string | undefined): string | undefined {
   const name = material
     ?.trim()
     .toLowerCase()
     .replace(/\.\d+$/u, '');
-  const part = tileflowBuildingModelPartNames.find((candidate) => candidate === name);
-  return part === undefined ? undefined : tileflowModelParts[part];
+  return isTileflowModelPartName(name) ? name : undefined;
 }
 
 /** Douglas–Peucker on a closed ring, to within `tolerance` cells. */

@@ -1,4 +1,4 @@
-import {tileflowModelPartCount} from './models-3d-model';
+import {tileflowModelLimits} from './models-3d-model';
 
 /** Shared glTF texture and alpha evaluation for colour and solar-depth passes. */
 export const modelMaterialSampling = `
@@ -55,8 +55,8 @@ uniform vec3 u_emissive;
 uniform float u_normal_strength;
 uniform float u_occlusion_strength;
 uniform bool u_unlit;
-uniform vec3 u_part_colours[${tileflowModelPartCount}];
-uniform float u_part_mix[${tileflowModelPartCount}];
+// Each part's colour, and how far the map's colour replaces the material's own.
+uniform vec4 u_parts[${tileflowModelLimits.parts}];
 uniform vec4 u_role_colour[7];
 uniform vec4 u_role_material[7]; // metallic, roughness, their respective override weights
 
@@ -88,7 +88,8 @@ vec3 materialNormal(vec3 normal) {
 vec3 materialBase(int role) {
   vec4 own = u_role_colour[role];
   vec3 factor = mix(u_base_colour.rgb, fromSRGB(own.rgb), own.a);
-  factor = mix(factor, fromSRGB(u_part_colours[v_part]), u_part_mix[v_part]);
+  vec4 part = u_parts[v_part];
+  factor = mix(factor, fromSRGB(part.rgb), part.a);
   return factor * v_rgba.rgb * fromSRGB(materialTexture(0).rgb);
 }
 

@@ -313,20 +313,26 @@ address; the map then needs no `.glb` of its own for it.
 
 How to prepare a model:
 
-- **Materials name the parts.** Name each material `surface`, `secondary`, `glass`, `accent`,
-  `roof`, `water`, `vegetation` or `wood` (an exporter's `.001` suffix is ignored); a model whose materials name a tree's parts is a
+- **Materials name the parts.** Name each material after the part it is: an architectural part,
+  `surface`, `secondary`, `glass`, `accent` or `roof`, or a part of the model's own, such as
+  `water`, `vegetation`, `wood` or `stone`. A name is lower-case words joined by hyphens or
+  underscores, at most 32 characters; an exporter's `.001` suffix is ignored, and a level names at
+  most 16 parts. A model whose materials name only a tree's parts (`bark`, `leaves`, `fronds`,
+  `stem`) is a
   [tree model](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md)
-  instead. Each part takes its colour from `modelColors`, or from the buildings' colour when the
-  design gives it none, so the model follows the theme from day to night. Like every visual
-  colour, a `modelColors` entry is a theme token such as `token.color('buildings.modelRoof')`, or
-  a literal wrapped in `fixed(value, {reason})`; vertex colours lighter or
-  darker than the rest of their part shade it within that colour.
+  instead.
+- **The map colours parts by name.** A part takes the colour `modelColors` gives its name, so the
+  model follows the theme from day to night; a part the map does not colour keeps its material's
+  own colour. Like every visual colour, a `modelColors` entry is a theme token such as
+  `token.color('buildings.modelRoof')`, or a literal wrapped in `fixed(value, {reason})`; vertex
+  colours lighter or darker than the rest of their part shade it within that colour. Name pools
+  `water`, planting `vegetation` and timber `wood` where they fit: Streets colours these from its
+  water and tree colours, so a model that uses them follows the map without a colour of its own.
 - **Architectural roles control lighting.** A material may set
   `extras.tileflow.lightingRole` to `wall`, `door`, `roof`, `window`, `lamp`, `logo` or
-  `unclassified`. This preserves its palette slot. Without a role, `surface`, `secondary` and
-  `accent` are walls, `glass` is a window, and `roof` is a roof. `water`, `vegetation` and `wood`
-  default to `unclassified`, so a pool or palm never inherits window emission. The new slots
-  require a matching Core consumer; earlier model indices and vertex layout remain unchanged.
+  `unclassified`, whatever part it names. Without a role, `surface`, `secondary` and `accent` are
+  walls, `glass` is a window, and `roof` is a roof; every other part is `unclassified`, so a pool
+  or a planted bed never takes a window's light.
 - **Metres round an origin on the ground.** The origin is where the model stands, with the model
   above it and its own north along +y once read Z up; nothing may lie more than half a metre below
   it.
@@ -502,7 +508,7 @@ The same model identity keeps its samples across LODs and theme changes.
 Streets leaves ordinary flood lighting off in its light presets. Its dusk/night wall profile uses a strength
 of `0.1` and `[0.5, 0, 0, 1, 0.8]`, concentrating a warm wash near the foot. Monochrome uses a
 weaker neutral wall profile and no architectural ground flood. Prepared models without role
-metadata use their documented palette mapping. Windows use metallic reflection and varied emission;
+metadata take each part's default role. Windows use metallic reflection and varied emission;
 doors and logos have separate profiles, and roofs remain non-emissive. Day/dawn profiles follow
 the scene's brighter material response. A role does not generate missing windows or ground emitters.
 See [building-model preparation](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/building-models.md)

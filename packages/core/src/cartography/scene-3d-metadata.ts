@@ -10,7 +10,6 @@ import {
   tileflowDefaultBuildings3DDesign,
 } from '../buildings-3d-design';
 import {readTileflowBuildingSurfaces} from '../buildings-3d-surfaces';
-import type {TileflowModelPart} from '../models-3d-model';
 import type {TileflowStreetLightsDesign} from '../street-lights';
 import {tileflowDefaultStreetLightsDesign} from '../street-lights';
 import type {TileflowDomainCompileContext} from './context';
@@ -213,7 +212,7 @@ function placedModels(
         .map((id) => `${id}.glb`)
         .join(
           ', ',
-        )} to a map.models directory, with materials named surface, secondary, glass, accent, roof, water, vegetation or wood, and run the Node build so the directories are prepared.`,
+        )} to a map.models directory, with each material named after its part, such as surface, glass, roof or water, and run the Node build so the directories are prepared.`,
     );
   return {
     models: placements.map((entry) => ({
@@ -226,14 +225,12 @@ function placedModels(
 }
 
 /** The colours of the models' parts, resolved for the theme. */
-function modelColours(value: unknown): {
-  modelColors?: Partial<Record<TileflowModelPart, string>>;
-} {
+function modelColours(value: unknown): {modelColors?: Record<string, string>} {
   if (!isRecord(value)) return {};
-  const colours: Partial<Record<TileflowModelPart, string>> = {};
+  const colours: Record<string, string> = {};
   for (const [part, colour] of Object.entries(value)) {
     const resolved = colour === undefined ? undefined : toMapLibreStyleValue(colour as never);
-    if (typeof resolved === 'string') colours[part as TileflowModelPart] = resolved;
+    if (typeof resolved === 'string') colours[part] = resolved;
   }
   return Object.keys(colours).length > 0 ? {modelColors: colours} : {};
 }

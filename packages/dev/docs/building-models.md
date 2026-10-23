@@ -7,9 +7,15 @@ textures. Animations, skins and morph targets are not evaluated; export their st
 
 ## Separate colour from architectural role
 
-Material names select a palette slot: `surface`, `secondary`, `glass`, `accent`, `roof`,
-`water`, `vegetation` or `wood`. The last three classify water surfaces, foliage and timber/trunks
-inside a building model. They remain building geometry; they do not create standalone trees.
+A material's name is the part it belongs to: an architectural part, `surface`, `secondary`,
+`glass`, `accent` or `roof`, or a part of the model's own, such as `water`, `vegetation`, `wood` or
+`stone`. Names are lower-case words joined by hyphens or underscores, at most 32 characters, and a
+level names at most 16 parts; materials of the same part share its name. The map colours a part
+through `buildings.threeDimensional.modelColors` under its name; a part it does not colour keeps
+its material's colour. Name pools `water`, planting `vegetation` and timber `wood` where they fit:
+Streets colours these from its water and tree colours in every theme. A GLB whose materials name
+only `bark`, `leaves`, `fronds` or `stem` is a tree model, not a building model.
+
 The optional `material.extras.tileflow.lightingRole` selects lighting independently:
 
 ```json
@@ -31,32 +37,29 @@ roles are `unclassified`, `wall`, `door`, `roof`, `window`, `lamp` and `logo`. A
 geometry; it does not turn on light by itself. The map supplies emission through
 `buildings.threeDimensional.modelLighting`.
 
-Legacy models without an explicit role use these defaults:
+A material without an explicit role takes its part's default:
 
-| Palette slot                     | Lighting role  |
+| Part                             | Lighting role  |
 | -------------------------------- | -------------- |
 | `surface`, `secondary`, `accent` | `wall`         |
 | `glass`                          | `window`       |
 | `roof`                           | `roof`         |
-| `water`, `vegetation`, `wood`    | `unclassified` |
+| Any other part                   | `unclassified` |
 
-`water`, `vegetation` and `wood` require a Core consumer that supports these palette slots.
-Their indices append to the original five; existing models retain their indices and behaviour.
-Streets colours them from its water and tree palette in every theme. Other maps may set the
-corresponding `modelColors` keys. These are colour categories; physical properties and emission
-remain controlled by the authored material and its independent lighting role.
+A part names a colour, not a material: physical properties and emission remain controlled by the
+authored material and its independent lighting role.
 
 Doors, lamps and logos require an explicit role. Use `unclassified` for a part that must not inherit
 a role. Invalid role names fail preparation. An exporter's numeric material suffix, such as
 `surface.001`, is ignored.
 
-Keep a stone relief in a wall role when it should receive the wall's lighting. A separate colour
-slot can distinguish its stone without creating a separate light source. Mark roof geometry as
+Keep a stone relief in a wall role when it should receive the wall's lighting. A part of its own,
+such as `stone`, can distinguish its colour without creating a separate light source. Mark roof geometry as
 roof even when it shares a colour with a facade.
 
 ## Physical materials
 
-The importer retains these glTF 2.0 channels independently of palette and role:
+The importer retains these glTF 2.0 channels independently of part and role:
 
 | Channel            | Inputs                                                                            |
 | ------------------ | --------------------------------------------------------------------------------- |
@@ -116,8 +119,8 @@ A `door` role lights the surface. To project its spill, declare a rectangle in
 
 `start` and `end` form the horizontal lower edge. The spill faces the right of that edge when
 viewed from above. `height` sets the rectangle's height; optional `depth` narrows the spill around
-recessed jambs. Node transforms apply to the emitter. Its role supplies emission and its part
-supplies the fallback palette colour. No emitter is inferred from material colour or geometry.
+recessed jambs. Node transforms apply to the emitter. Its role supplies emission and its part, by name,
+supplies the fallback colour. No emitter is inferred from material colour or geometry.
 
 Each level accepts 128 emitters. Each projects a four-triangle, depth-tested spill with reach
 `clamp(1.3 * height, 4, 10)` metres. This authored effect does not cast a new light or shadow onto
@@ -153,21 +156,23 @@ for placement and limits.
 
 Prepared files retain a 16-byte vertex:
 
-| Bytes | Content                          |
-| ----- | -------------------------------- |
-| 0–5   | Quantized position               |
-| 6–7   | Padding                          |
-| 8–10  | Normal                           |
-| 11    | Padding                          |
-| 12    | Palette slot                     |
-| 13    | Shade within that slot           |
-| 14    | Ambient visibility, 0–255        |
-| 15    | Architectural lighting role, 0–6 |
+| Bytes | Content                               |
+| ----- | ------------------------------------- |
+| 0–5   | Quantized position                    |
+| 6–7   | Padding                               |
+| 8–10  | Normal                                |
+| 11    | Padding                               |
+| 12    | Part, an index into the level's parts |
+| 13    | Shade within that part                |
+| 14    | Ambient visibility, 0–255             |
+| 15    | Architectural lighting role, 0–6      |
 
-The model root's `extras.tileflow.lightingRoles: 1` declares the last byte. Older files without
-that marker use the legacy palette mapping. Existing fully exposed visibility values stay fully
-exposed; reprepare the original GLBs to obtain geometric occlusion. Geometry, normals and palette
-slots are not modified by the visibility calculation.
+Each level node's `extras.tileflow.parts` lists the names its part indices count through. Older
+files without that list count through `surface`, `secondary`, `glass`, `accent` and `roof`. The
+model root's `extras.tileflow.lightingRoles: 1` declares the last byte; older files without that
+marker take each part's default role. Existing fully exposed visibility values stay fully exposed;
+reprepare the original GLBs to obtain geometric occlusion. Geometry, normals and parts are not
+modified by the visibility calculation.
 
 Roles and visibility survive meshoptimizer compression. The existing `_PAINT` accessor and vertex
 stride are retained; the role occupies previously unused padding. Prepared files are an SDK
@@ -177,8 +182,8 @@ Physical data is optional `extras.tileflow.surface` metadata on each level, with
 Two VEC4 accessors address a separate 32-byte stream: UV0/UV1 followed by linear vertex RGBA.
 The metadata also holds material draw ranges, channel references, embedded images and emitters.
 Ranges preserve each source mesh's vertical emission bounds independently of its material.
-The original primitive layout remains unchanged. Older readers draw its legacy geometry and
-palette; they ignore the optional physical data. New readers preserve the legacy shading path
+The original primitive layout remains unchanged. Older readers draw its geometry and part
+colours; they ignore the optional physical data. New readers preserve the legacy shading path
 when physical data is absent. Reprepare source GLBs to obtain the new channels.
 
 The auxiliary stream costs 32 bytes per retained vertex on the GPU. Each resident texture uses

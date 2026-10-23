@@ -1,5 +1,5 @@
 import {modelMaterialSampling, modelPhysicalLighting} from './models-3d-material-shaders';
-import {tileflowModelPartCount} from './models-3d-model';
+import {tileflowModelLimits} from './models-3d-model';
 import {tileflowHazeFragment, tileflowHazeVertex, tileflowShadowLookup} from './scene-3d-shaders';
 
 // Shaders of the building models a map places in its 3D city, drawn by Tileflow's 3D buildings
@@ -99,7 +99,7 @@ ${attributes}
 uniform mat4 u_light_matrix;
 uniform vec3 u_shadow_dir;
 uniform float u_normal_offset;
-uniform vec3 u_part_colours[${tileflowModelPartCount}];
+uniform vec4 u_parts[${tileflowModelLimits.parts}];
 uniform vec2 u_model_height;
 ${placement}
 out vec3 v_colour;
@@ -126,11 +126,11 @@ void main() {
   v_shadow = shadow.xyz * 0.5 + 0.5;
   v_normal = normal;
   int part = int(a_paint.x + 0.5);
-  v_part = clamp(part, 0, ${tileflowModelPartCount - 1});
+  v_part = clamp(part, 0, ${tileflowModelLimits.parts - 1});
   v_uv = a_uv;
   v_rgba = a_rgba;
   v_position = vec3(m.xy, z);
-  vec3 colour = u_part_colours[clamp(part, 0, ${tileflowModelPartCount - 1})];
+  vec3 colour = u_parts[v_part].rgb;
   // A material lighter or darker than mid-grey makes its part lighter or darker.
   v_colour = colour * (0.55 + 0.45 * (a_paint.y / 255.0) * 2.0);
   v_light = a_paint.z / 255.0;

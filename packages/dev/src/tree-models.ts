@@ -1,9 +1,9 @@
 // Prepares the 3D models a map declares: the glTF binaries (.glb) in its `models` directories, read,
 // checked and turned into Core's models. A model's materials say what it is: one whose materials
-// name the parts of a tree (bark, leaves, fronds, stem) becomes a compact tree model the compiler
-// carries in the style; one whose materials name the parts of a building (surface, secondary, glass,
-// accent, roof, water, vegetation, wood) becomes a prepared model file the build writes beside the style. A file's name is
-// its model's id; `<id>.far.glb` is the same model for far trees, and `<id>.mid.glb` and
+// name only the parts of a tree (bark, leaves, fronds, stem) becomes a compact tree model the
+// compiler carries in the style; any other, whose materials name its parts (such as surface, glass,
+// roof or water), is a building model and becomes a prepared model file the build writes beside the
+// style. A file's name is its model's id; `<id>.far.glb` is the same model for far trees, and `<id>.mid.glb` and
 // `<id>.far.glb` a building's farther levels of detail. A later directory's model replaces an
 // earlier one of the same id, as icons do. Tileflow's landmarks are packaged from the same building
 // models into the tiles of a landmarks tileset.
@@ -30,7 +30,7 @@ import {
 import type {TileflowEffectiveModelSourceIdentity} from '@tileflow/core/build';
 import {resolveTileflowAssetDirectories} from './asset-directories';
 import {
-  isTileflowBuildingModel,
+  isTileflowTreeModel,
   prepareTileflowBuildingModelMesh,
   tileflowBuildingModelDeclaredFootprint,
   tileflowBuildingModelFootprint,
@@ -169,9 +169,9 @@ export function encodeTileflowLandmarkRegion(region: TileflowLandmarkRegion): {
 /** A building model, read from its glTF binaries, with its footprint. */
 function buildingModelEntry(id: string, levels: TileflowBuildingModelLevels): TileflowModelEntry {
   const primitives = readTileflowGltfTriangles(levels.near, {materials: true});
-  if (!isTileflowBuildingModel(primitives))
+  if (isTileflowTreeModel(primitives))
     throw new TileflowGltfError(
-      'is not a building model; name each material surface, secondary, glass, accent, roof, water, vegetation or wood',
+      'is not a building model; its materials name only the parts of a tree (bark, leaves, fronds and stem)',
     );
   const meshes: TileflowModelMesh[] = [prepareTileflowBuildingModelMesh(primitives)];
   for (const level of [levels.mid, levels.far])
@@ -270,7 +270,8 @@ export async function prepareTileflowMapTreeModels(
       issues.push({message: `has no ${id}.glb beside it`, path: (entry.mid ?? entry.far)!.display});
       continue;
     }
-    // A model whose materials name the parts of a building is a building model.
+    // A model whose materials name only the parts of a tree is a tree model; any other is a
+    // building model, whose preparation names a material it cannot use.
     let nearBytes: Uint8Array;
     let primitives: ReturnType<typeof readTileflowGltfTriangles>;
     try {
@@ -283,7 +284,7 @@ export async function prepareTileflowMapTreeModels(
       });
       continue;
     }
-    if (isTileflowBuildingModel(primitives)) {
+    if (!isTileflowTreeModel(primitives)) {
       const files: {near: Uint8Array; mid?: Uint8Array; far?: Uint8Array} = {near: nearBytes};
       const sources: PreparedTileflowBuildingModel['sources'][number][] = [];
       let failing = entry.near;

@@ -66,8 +66,8 @@ compile icons separately can use `prepareTileflowMapTreeModels` from `@tileflow/
 the map's model directories, base directory, working directory, target and diagnostic path. Pass
 its `models` result as `preparedAssets.models` when compiling the style; retain its source
 identities and watch paths when managing revisions. The artifact pipeline does this automatically.
-Building GLBs also accept `water`, `vegetation` and `wood` materials; these remain building parts,
-separate from the standalone tree-model vocabulary.
+A GLB whose materials name only `bark`, `leaves`, `fronds` or `stem` is a tree model; any other
+is a building model, whose materials name its parts.
 
 To write production output rather than manage it in memory:
 

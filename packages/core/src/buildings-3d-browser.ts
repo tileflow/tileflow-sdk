@@ -55,8 +55,8 @@ import {bindModelMaterial} from './models-3d-materials-browser';
 import {
   type TileflowModelLightingRole,
   tileflowModelLightingRoles,
+  tileflowModelLimits,
   type TileflowModelPart,
-  tileflowModelParts,
 } from './models-3d-model';
 import {sampleModelRole} from './models-3d-role-lighting';
 import {
@@ -165,16 +165,14 @@ const paletteWidth = 256;
 const modelFade = 500;
 // Street lights draw over the buildings, so their lamps can hide behind them.
 const streetLightsLayerId = 'tileflow-street-lights';
-// The colours a model's parts take from the buildings' colour when the design gives them none.
+// The colours a model without materials takes from the buildings' colour for its architectural
+// parts when the design gives them none; any other part takes the buildings' colour itself.
 const derivedParts: Record<TileflowModelPart, (rgb: readonly number[]) => number[]> = {
   surface: (rgb) => [...rgb],
   secondary: (rgb) => rgb.map((channel) => channel * 0.82),
   glass: (rgb) => rgb.map((channel, index) => channel * 0.42 + [0.56, 0.64, 0.72][index]! * 0.42),
   accent: (rgb) => rgb.map((channel) => channel * 0.62),
   roof: (rgb) => rgb.map((channel) => channel * 0.9),
-  water: (rgb) => [...rgb],
-  vegetation: (rgb) => [...rgb],
-  wood: (rgb) => [...rgb],
 };
 
 type Program = {program: WebGLProgram; uniforms: Record<string, WebGLUniformLocation | null>};
@@ -999,33 +997,41 @@ export function createTileflowBuildings3D(
     context.disable(context.CULL_FACE);
   }
 
-  /** The colours of the models' parts, mixed between the themes either side of a blend. */
-  function partColoursNow(): Float32Array {
+  /**
+   * The colour of a model's part by its name, mixed between the themes either side of a blend, then
+   * how far the map's colour replaces the material's own: none where no theme names the part.
+   */
+  function partColoursNow(): (part: string) => readonly [number, number, number, number] {
     const {themes, lower, upper, mix} = designsOnScreen();
     const base = themeColour();
-    const out = new Float32Array(Object.keys(tileflowModelParts).length * 3);
-    for (const [part, index] of Object.entries(tileflowModelParts) as [
-      TileflowModelPart,
-      number,
-    ][]) {
-      const derived = derivedParts[part](base);
-      const below = rgbOf(themes[lower]!.modelColors?.[part]) ?? derived;
-      const above = rgbOf(themes[upper]!.modelColors?.[part]) ?? derived;
-      for (let channel = 0; channel < 3; channel += 1)
-        out[index * 3 + channel] = below[channel]! + (above[channel]! - below[channel]!) * mix;
-    }
-    return out;
+    const named = (index: number, part: string) => {
+      const colours = themes[index]!.modelColors;
+      return colours && Object.hasOwn(colours, part) ? rgbOf(colours[part]) : undefined;
+    };
+    return (part) => {
+      const derived = Object.hasOwn(derivedParts, part)
+        ? derivedParts[part as TileflowModelPart](base)
+        : base;
+      const below = named(lower, part);
+      const above = named(upper, part);
+      const [from, to] = [below ?? derived, above ?? derived];
+      return [
+        from[0]! + (to[0]! - from[0]!) * mix,
+        from[1]! + (to[1]! - from[1]!) * mix,
+        from[2]! + (to[2]! - from[2]!) * mix,
+        (below ? 1 - mix : 0) + (above ? mix : 0),
+      ];
+    };
   }
 
-  function partMixNow(): Float32Array {
-    const {themes, lower, upper, mix} = designsOnScreen();
-    return Float32Array.from(
-      Object.keys(tileflowModelParts).map(
-        (part) =>
-          (themes[lower]!.modelColors?.[part as TileflowModelPart] ? 1 - mix : 0) +
-          (themes[upper]!.modelColors?.[part as TileflowModelPart] ? mix : 0),
-      ),
-    );
+  /** A level's parts as the model shaders take them, in the order its vertices count them. */
+  function partPalette(
+    names: readonly string[],
+    colourOf: ReturnType<typeof partColoursNow>,
+  ): Float32Array {
+    const out = new Float32Array(tileflowModelLimits.parts * 4);
+    for (const [index, name] of names.entries()) out.set(colourOf(name), index * 4);
+    return out;
   }
 
   /** Camera in metres from the model, using MapLibre's public camera and field of view. */
@@ -1535,8 +1541,7 @@ export function createTileflowBuildings3D(
           m.u_ambient_occlusion!,
           occlusionOn ? mixed((entry) => entry.modelOcclusion ?? 0.75) : 0,
         );
-        context.uniform3fv(m.u_part_colours!, partColoursNow());
-        context.uniform1fv(m.u_part_mix!, partMixNow());
+        const colourOf = partColoursNow();
         scene.bindShadow(context, m, light.strength);
         const centre = map.getCenter();
         for (const entry of list) {
@@ -1558,7 +1563,12 @@ export function createTileflowBuildings3D(
             m.u_opacity!,
             pass === 'blend' ? modelsOpacity * appearanceOf(entry, now) : 1,
           );
-          drawModel(context, model, entry, models.levelOf(entry, centre), pass);
+          const level = models.levelOf(entry, centre);
+          context.uniform4fv(
+            m.u_parts!,
+            partPalette(entry.model.levels[level]!.partNames, colourOf),
+          );
+          drawModel(context, model, entry, level, pass);
         }
       }
     }
@@ -1679,8 +1689,7 @@ export function createTileflowBuildings3D(
       );
       context.bindVertexArray(null);
       context.uniform1f(u.u_scale!, modelsShown);
-      const palette = partColoursNow();
-      const paletteMix = partMixNow();
+      const colourOf = partColoursNow();
       for (const entry of standing) {
         const level = models.levelOf(entry, map.getCenter());
         const surface = entry.model.levels[level]!.surface;
@@ -1692,7 +1701,7 @@ export function createTileflowBuildings3D(
         context.uniform1f(u.u_opacity!, modelsOpacity * appearanceOf(entry, now));
         for (const [index, emitter] of surface.emitters.entries()) {
           const role = tileflowModelLightingRoles[emitter.role],
-            part = tileflowModelParts[emitter.part];
+            part = colourOf(emitter.part);
           const geometry = entry.gl![level]!.surface!.emitters[index]!;
           const gradient = lighting.gradients.subarray(role * 4, role * 4 + 4);
           const bounds = entry.model.bounds;
@@ -1709,11 +1718,11 @@ export function createTileflowBuildings3D(
           if (strength <= 0) continue;
           const own = lighting.colours.subarray(role * 4, role * 4 + 4);
           const tint = lighting.materialColours.subarray(role * 4, role * 4 + 4);
-          const tintWeight = tint[3]! * (1 - paletteMix[part]!);
+          const tintWeight = tint[3]! * (1 - part[3]);
           const colour = [0, 1, 2].map((channel) =>
             own[3]! > 0
               ? own[channel]!
-              : palette[part * 3 + channel]! * (1 - tintWeight) + tint[channel]! * tintWeight,
+              : part[channel]! * (1 - tintWeight) + tint[channel]! * tintWeight,
           );
           context.uniform3fv(u.u_emitter_positions!, geometry.positions);
           context.uniform4fv(u.u_emitter_coordinates!, geometry.coordinates);

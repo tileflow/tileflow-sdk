@@ -1502,7 +1502,7 @@ test('Streets buildings switch to native extrusions only without the flat render
   assert.deepEqual(layerIds, ['tileflow-buildings-3d']);
 });
 
-test('Streets binds natural model surfaces to water and tree colours in every theme', () => {
+test('Streets colours the water, vegetation and wood parts of models in every theme', () => {
   for (const theme of Object.keys(streetsThemes)) {
     const style = compileOfficialMap(streets, theme);
     const buildings = readTileflowBuildings3D(style.metadata);

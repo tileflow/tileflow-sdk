@@ -17,6 +17,8 @@ export function startFixtureProcess(
   let stdout = '';
   let stderr = '';
   let closed = false;
+  let stopRequested = false;
+  let forceStopped = false;
   let stopping: Promise<void> | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -40,6 +42,7 @@ export function startFixtureProcess(
 
   function forceStop() {
     if (closed || !child.pid) return;
+    forceStopped = true;
     if (process.platform === 'win32') {
       const killer = spawn('taskkill', ['/PID', String(child.pid), '/T', '/F'], {
         stdio: 'ignore',
@@ -59,6 +62,19 @@ export function startFixtureProcess(
     }
   }
 
+  function requestStop(): void {
+    if (closed || stopRequested) return;
+    stopRequested = true;
+
+    if (child.connected) {
+      child.send({type: 'tileflow:stop'}, (error) => {
+        if (error && !closed) child.kill('SIGTERM');
+      });
+    } else {
+      child.kill('SIGTERM');
+    }
+  }
+
   function stop(): Promise<void> {
     if (stopping) return stopping;
     stopping = completion.then(
@@ -68,13 +84,7 @@ export function startFixtureProcess(
     if (closed) return stopping;
 
     timer = setTimeout(forceStop, options.shutdownMs ?? 2_000);
-    if (child.connected) {
-      child.send({type: 'tileflow:stop'}, (error) => {
-        if (error && !closed) child.kill('SIGTERM');
-      });
-    } else {
-      child.kill('SIGTERM');
-    }
+    requestStop();
     return stopping;
   }
 
@@ -84,5 +94,13 @@ export function startFixtureProcess(
 
   options.signal?.addEventListener('abort', onAbort, {once: true});
   if (options.signal?.aborted) onAbort();
-  return {child, completion, stop};
+  return {
+    child,
+    completion,
+    get forceStopped() {
+      return forceStopped;
+    },
+    requestStop,
+    stop,
+  };
 }

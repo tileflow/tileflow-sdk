@@ -159,3 +159,91 @@ test('material references, image budgets and draw ranges fail before encoding in
     assert.throws(() => encodeTileflowModels([model({...base, surface: broken})]), RangeError);
   }
 });
+
+test('an occlusion-only texture uploads one channel; a texture shared with colour keeps four', async () => {
+  const {uploadModelSurface} = await import('../src/models-3d-materials-browser');
+  const uploads: {texture: unknown; internal: unknown; format: unknown}[] = [];
+  let bound: unknown;
+  let created = 0;
+  // A WebGL context that records texture uploads; constants are their own names.
+  const gl = new Proxy(
+    {
+      createBuffer: () => ({}),
+      createTexture: () => ({id: created++}),
+      bindTexture: (_: unknown, texture: unknown) => (bound = texture),
+      getParameter: () => false,
+      texImage2D: (...args: unknown[]) =>
+        uploads.push({texture: bound, internal: args[2], format: args[3]}),
+    } as Record<string, unknown>,
+    {
+      get: (target, name) =>
+        name in target
+          ? target[name as string]
+          : typeof name === 'string' && /^[A-Z0-9_]+$/.test(name)
+            ? name
+            : () => {},
+    },
+  ) as unknown as WebGL2RenderingContext;
+  const texture = {mimeType: 'image/png' as const, bytes: pixel, width: 1, height: 1};
+  uploadModelSurface(
+    gl,
+    {
+      vertices: new Uint8Array(48),
+      indices: new Uint16Array([0, 1, 2]),
+      centre: [0, 0, 0],
+      step: 1,
+      surface: {
+        uv: new Float32Array(4),
+        rgba: Float32Array.of(1, 1, 1, 1),
+        materials: [
+          {occlusionTexture: {texture: 0, texCoord: 1}},
+          {baseColorTexture: {texture: 1}, occlusionTexture: {texture: 1}},
+        ],
+        textures: [texture, texture],
+        ranges: [{from: 0, count: 3, material: 0}],
+      },
+    },
+    [{} as ImageBitmap, {} as ImageBitmap],
+  );
+  assert.deepEqual(
+    uploads.map(({internal, format}) => [internal, format]),
+    [
+      ['R8', 'RED'],
+      ['RGBA8', 'RGBA'],
+    ],
+  );
+});
+
+test('UV1 travels as sixteen-bit coordinates inside the unit square', async () => {
+  await MeshoptEncoder.ready;
+  const base = mesh();
+  const source = base.surface!.attributes.map((value, i) =>
+    i % 8 === 2 ? (i / 8) * 0.137 : i % 8 === 3 ? 1 - (i / 8) * 0.071 : value,
+  );
+  const lightmapped: TileflowModelMesh = {...base, surface: {...base.surface!, attributes: source}};
+  for (const compressor of [undefined, MeshoptEncoder]) {
+    const decoded = (await decodeTileflowModels(
+      encodeTileflowModels([model(lightmapped)], compressor),
+    ))![0]!.levels[0]!;
+    const {uv} = decoded.surface!;
+    // Each decoded vertex matches a source vertex: UV0 exactly, UV1 within a sixteen-bit step.
+    for (let vertex = 0; vertex < uv.length / 4; vertex++) {
+      const got = uv.slice(vertex * 4, vertex * 4 + 4);
+      assert.ok(
+        Array.from({length: source.length / 8}, (_, s) => s).some((s) =>
+          got.every((value, k) =>
+            k >= 2
+              ? Math.abs(value - source[s * 8 + k]!) <= 0.5 / 65_535 + 1e-7
+              : value === Math.fround(source[s * 8 + k]!),
+          ),
+        ),
+        `vertex ${vertex}`,
+      );
+    }
+  }
+  const outside = {
+    ...base,
+    surface: {...base.surface!, attributes: source.map((v, i) => (i === 2 ? 1.5 : v))},
+  };
+  assert.throws(() => encodeTileflowModels([model(outside)]), RangeError);
+});

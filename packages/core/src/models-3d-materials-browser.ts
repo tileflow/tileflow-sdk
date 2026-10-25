@@ -93,6 +93,12 @@ export function uploadModelSurface(
   const premultiply = gl.getParameter(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL) as boolean;
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  // Occlusion reads only red: a texture no other channel uses takes one byte a texel.
+  const coloured = new Set<number>();
+  for (const material of level.surface.materials)
+    for (const channel of tileflowModelTextureChannels)
+      if (channel !== 'occlusionTexture' && material[channel])
+        coloured.add(material[channel].texture);
   try {
     const textures = level.surface.textures.map((source, index) => {
       const texture = gl.createTexture()!;
@@ -102,7 +108,9 @@ export function uploadModelSurface(
       const min = source.minFilter ?? gl.LINEAR_MIPMAP_LINEAR;
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, min);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, source.magFilter ?? gl.LINEAR);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, images[index]!);
+      if (coloured.has(index))
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, images[index]!);
+      else gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, gl.RED, gl.UNSIGNED_BYTE, images[index]!);
       if (min >= gl.NEAREST_MIPMAP_NEAREST) gl.generateMipmap(gl.TEXTURE_2D);
       return texture;
     });

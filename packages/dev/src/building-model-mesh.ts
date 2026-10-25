@@ -11,7 +11,10 @@ import {
   tileflowModelLightingRoles,
   tileflowModelLimits,
   type TileflowModelMesh,
+  tileflowModelSurfaceLimits,
+  tileflowModelTextureChannels,
 } from '@tileflow/core';
+import {bakeBuildingModelLightmap} from './building-model-lightmap';
 import {buildingModelSurface} from './building-model-materials';
 import {buildingModelAmbientVisibility} from './building-model-occlusion';
 import {
@@ -19,6 +22,7 @@ import {
   TileflowGltfError,
   type TileflowGltfPrimitive,
 } from './gltf-reader';
+import {encodeGreyJpeg} from './grey-jpeg';
 import {tileflowTreeModelPartNames} from './tree-model-mesh';
 
 /**
@@ -68,7 +72,14 @@ export function tileflowBuildingModelDeclaredFootprint(
 /** A level of a building model, as Core encodes it. Throws `TileflowGltfError`. */
 export function prepareTileflowBuildingModelMesh(
   bytes: Uint8Array | readonly TileflowGltfPrimitive[],
-  {ambientOcclusion = true}: {ambientOcclusion?: boolean} = {},
+  {
+    ambientOcclusion = true,
+    lightmapTexels = 0,
+  }: {
+    ambientOcclusion?: boolean;
+    /** Texels of the baked occlusion texture; zero keeps visibility on the vertices. */
+    lightmapTexels?: number | ((area: number) => number);
+  } = {},
 ): TileflowModelMesh {
   const primitives =
     bytes instanceof Uint8Array ? readTileflowGltfTriangles(bytes, {materials: true}) : bytes;
@@ -171,19 +182,102 @@ export function prepareTileflowBuildingModelMesh(
     for (const vertex of members)
       shades[vertex] = clamp((luminance[vertex]! - mean) / spread, -1, 1);
   }
+  const texels =
+    typeof lightmapTexels === 'function'
+      ? lightmapTexels(surfaceArea(positions, indices))
+      : lightmapTexels;
+  const lightmap =
+    ambientOcclusion && texels > 0 && surface && lightmapFits(surface)
+      ? bakeBuildingModelLightmap({positions, normals: outNormals, indices}, {texels})
+      : undefined;
+  if (!lightmap)
+    return {
+      positions,
+      normals: outNormals,
+      parts,
+      partNames,
+      lightingRoles,
+      shades,
+      ...(surface ? {surface} : {}),
+      occlusion: ambientOcclusion
+        ? buildingModelAmbientVisibility({positions, normals: outNormals, indices})
+        : new Array<number>(count).fill(1),
+      indices,
+    };
+
+  // The lightmap replaces vertex visibility: vertices split along its charts, the second UV set
+  // addresses it, and every material reads it as its occlusion texture.
+  const {sources} = lightmap;
+  const from = <T>(values: readonly T[], width = 1): T[] =>
+    sources.flatMap((source) => values.slice(source * width, source * width + width));
+  const attributes = from([...surface!.attributes], 8);
+  for (let vertex = 0; vertex < sources.length; vertex++) {
+    attributes[vertex * 8 + 2] = lightmap.uvs[vertex * 2]!;
+    attributes[vertex * 8 + 3] = lightmap.uvs[vertex * 2 + 1]!;
+  }
+  const texture = surface!.textures.length;
   return {
-    positions,
-    normals: outNormals,
-    parts,
+    positions: from(positions, 3),
+    normals: from(outNormals, 3),
+    parts: from(parts),
     partNames,
-    lightingRoles,
-    shades,
-    ...(surface ? {surface} : {}),
-    occlusion: ambientOcclusion
-      ? buildingModelAmbientVisibility({positions, normals: outNormals, indices})
-      : new Array<number>(count).fill(1),
-    indices,
+    lightingRoles: from(lightingRoles),
+    shades: from(shades),
+    surface: {
+      ...surface!,
+      attributes,
+      materials: surface!.materials.map((material) => ({
+        ...material,
+        occlusionTexture: {texture, texCoord: 1},
+      })),
+      textures: [
+        ...surface!.textures,
+        {
+          mimeType: 'image/jpeg',
+          bytes: encodeGreyJpeg(lightmap.texels, lightmap.width, lightmap.height, lightmapQuality),
+          width: lightmap.width,
+          height: lightmap.height,
+          wrapS: 33071,
+          wrapT: 33071,
+          minFilter: 9987,
+          magFilter: 9729,
+        },
+      ],
+    },
+    occlusion: new Array<number>(sources.length).fill(1),
+    indices: lightmap.indices,
   };
+}
+
+// Shade is smooth: quality 35 keeps it within a few grey levels at about a tenth of a byte a texel.
+const lightmapQuality = 35;
+
+function surfaceArea(positions: readonly number[], indices: readonly number[]): number {
+  let area = 0;
+  for (let at = 0; at + 2 < indices.length; at += 3) {
+    const a = point(positions, indices[at]!);
+    area +=
+      Math.hypot(
+        ...cross(
+          sub(point(positions, indices[at + 1]!), a),
+          sub(point(positions, indices[at + 2]!), a),
+        ),
+      ) / 2;
+  }
+  return area;
+}
+
+// A lightmap takes the second UV set and the occlusion slot, so a surface already using either,
+// or with every texture slot taken, keeps vertex visibility.
+function lightmapFits(surface: NonNullable<TileflowModelMesh['surface']>): boolean {
+  return (
+    surface.textures.length < tileflowModelSurfaceLimits.textures &&
+    surface.materials.every(
+      (material) =>
+        !material.occlusionTexture &&
+        tileflowModelTextureChannels.every((channel) => material[channel]?.texCoord !== 1),
+    )
+  );
 }
 
 /**

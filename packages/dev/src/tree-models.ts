@@ -166,6 +166,22 @@ export function encodeTileflowLandmarkRegion(region: TileflowLandmarkRegion): {
   return {bytes, sha256: sha256Of(bytes)};
 }
 
+// Occlusion detail grows with the square root of a level's surface: about 89·A^0.54 texels of
+// visible shade for A square metres. The atlas packs at about three fifths, so its budget is
+// larger. Two floors keep detail the square-root rule would lose: no level takes fewer than
+// 65,536 texels, so small detailed buildings keep their mouldings distinct, and none less than
+// 1.3 texels a metre, so towers keep each storey's mullions and slabs apart. The mid level takes a
+// quarter; the far level keeps visibility on its vertices.
+const nearLightmapTexels = (area: number) =>
+  Math.min(
+    524_288,
+    Math.max(65_536, Math.round((89 / 0.6) * area ** 0.54), Math.round((1.3 ** 2 * area) / 0.6)),
+  );
+const buildingModelLightmapTexels = {
+  near: nearLightmapTexels,
+  mid: (area: number) => nearLightmapTexels(area) / 4,
+} as const;
+
 /** A building model, read from its glTF binaries, with its footprint. */
 function buildingModelEntry(id: string, levels: TileflowBuildingModelLevels): TileflowModelEntry {
   const primitives = readTileflowGltfTriangles(levels.near, {materials: true});
@@ -173,9 +189,18 @@ function buildingModelEntry(id: string, levels: TileflowBuildingModelLevels): Ti
     throw new TileflowGltfError(
       'is not a building model; its materials name only the parts of a tree (bark, leaves, fronds and stem)',
     );
-  const meshes: TileflowModelMesh[] = [prepareTileflowBuildingModelMesh(primitives)];
-  for (const level of [levels.mid, levels.far])
-    if (level) meshes.push(prepareTileflowBuildingModelMesh(level));
+  const meshes: TileflowModelMesh[] = [
+    prepareTileflowBuildingModelMesh(primitives, {
+      lightmapTexels: buildingModelLightmapTexels.near,
+    }),
+  ];
+  if (levels.mid)
+    meshes.push(
+      prepareTileflowBuildingModelMesh(levels.mid, {
+        lightmapTexels: buildingModelLightmapTexels.mid,
+      }),
+    );
+  if (levels.far) meshes.push(prepareTileflowBuildingModelMesh(levels.far));
   return {
     id,
     levels: meshes,

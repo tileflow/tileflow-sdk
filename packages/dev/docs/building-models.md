@@ -72,6 +72,7 @@ The importer retains these glTF 2.0 channels independently of part and role:
 | Unlit              | `KHR_materials_unlit`                                                             |
 
 `TEXCOORD_0`, `TEXCOORD_1`, glTF sampler wrapping/filtering and `KHR_texture_transform` are retained.
+`TEXCOORD_1` must lie between zero and one, since prepared files store it with sixteen bits.
 Every referenced channel must have its declared UV set. UV and colour seams survive welding.
 Colour textures and lit output use the scene's gamma-2.2 transfer approximation.
 Role emission mixes the complete material radiance toward its target, including authored emission.
@@ -128,11 +129,30 @@ other meshes. It follows the model's visibility and theme; zero emission removes
 
 ## Ambient visibility
 
-Preparation estimates each vertex's local ambient visibility using 48 deterministic,
-cosine-weighted hemisphere samples, a two-metre reach and a two-millimetre origin bias. A spatial
-hierarchy limits intersection work; repeated positions and normals share samples. Nearby
-occluders contribute more than distant ones. Each level is prepared independently, including
-occlusion between its distinct primitives. Footprint meshes do not occlude.
+Preparation estimates local ambient visibility with deterministic, cosine-weighted hemisphere
+samples, a two-metre reach and a two-millimetre origin bias. A spatial hierarchy limits
+intersection work. Nearby occluders contribute more than distant ones. Each level is prepared
+independently, including occlusion between its distinct primitives. Footprint meshes do not
+occlude.
+
+The near and mid levels carry visibility in an occlusion texture. Preparation lays the level's
+triangles flat in one atlas: connected triangles facing within 20 degrees of each other share a
+chart, curved strips are cut where they would waste their rectangle, and charts under two texels
+share a palette of uniform grey texels. Shade detail grows with the square root of the level's
+surface: about 89·A^0.54 texels of visible shade for A square metres, so a large building takes
+coarser shade per metre than a small one. The near level's atlas budget allows for packing and
+has two floors: 65,536 texels, so small detailed buildings keep their mouldings distinct, and
+1.3 texels a metre, so towers keep each storey's mullions and slabs apart. It takes at most
+524,288 texels; the mid level takes a quarter of it. The density is the highest at which
+the atlas fits its budget. Each texel averages four points inside it, 12 rays each with turned
+patterns; points hidden just behind other surfaces are skipped. The atlas is a greyscale JPEG of
+quality 35, about a tenth of a byte a texel, on the second UV set, and becomes
+every material's occlusion texture. Vertices are split where charts meet; triangles keep their
+order.
+
+Contact shade therefore follows the surface instead of spreading between distant vertices. A
+level whose materials already use an occlusion texture or the second UV set, or whose charts
+cannot fit the budget, and the far level keep 48-sample visibility on their vertices.
 
 The result travels independently of colour. Do not bake ambient occlusion into `COLOR_0`: colour
 also affects direct sunlight and emission. The runtime applies prepared visibility only to the
@@ -142,10 +162,11 @@ ambient contribution; solar visibility still comes from the dynamic shadow map.
 `threeDimensional.occlusion: false` also disables model ambient occlusion. Changing these
 runtime controls does not prepare the geometry again.
 
-Preparation cost grows with unique vertices, samples and nearby geometry. It is paid when a raw
-model is prepared, never per frame. Runtime occlusion adds no draw pass or texture and uses the
-existing visibility byte. It describes opaque geometry at rest; it does not follow moving parts,
-other models, the ground or surrounding buildings.
+Preparation cost grows with texels, rays and nearby geometry; a large landmark's near level takes
+seconds to tens of seconds. It is paid when a raw model is prepared, never per frame. A texture
+used only for occlusion is uploaded with one channel, at most 0.7 MB with mipmaps for a near level.
+Visibility describes opaque geometry at rest; it does not follow moving parts, other models, the
+ground or surrounding buildings.
 
 ## Files and compatibility
 
@@ -171,15 +192,18 @@ Each level node's `extras.tileflow.parts` lists the names its part indices count
 files without that list count through `surface`, `secondary`, `glass`, `accent` and `roof`. The
 model root's `extras.tileflow.lightingRoles: 1` declares the last byte; older files without that
 marker take each part's default role. Existing fully exposed visibility values stay fully exposed;
-reprepare the original GLBs to obtain geometric occlusion. Geometry, normals and parts are not
-modified by the visibility calculation.
+reprepare the original GLBs to obtain geometric occlusion. The occlusion texture splits vertices
+along its charts without moving them or changing their normals or parts.
 
 Roles and visibility survive meshoptimizer compression. The existing `_PAINT` accessor and vertex
 stride are retained; the role occupies previously unused padding. Prepared files are an SDK
 transport format, while material extras are the authoring interface.
 
-Physical data is optional `extras.tileflow.surface` metadata on each level, with `version: 1`.
-Two VEC4 accessors address a separate 32-byte stream: UV0/UV1 followed by linear vertex RGBA.
+Physical data is optional `extras.tileflow.surface` metadata on each level, with `version: 2`.
+Three accessors address two streams: a 24-byte float stream holding UV0 and linear vertex RGBA,
+and a 4-byte stream holding UV1 as normalised sixteen-bit values, so UV1 lies between zero and
+one. Runtimes that read the earlier `version: 1` layout cannot read it, and current runtimes no
+longer read `version: 1`: prepare models again with the matching Dev release.
 The metadata also holds material draw ranges, channel references, embedded images and emitters.
 Ranges preserve each source mesh's vertical emission bounds independently of its material.
 The original primitive layout remains unchanged. Older readers draw its geometry and part
@@ -187,7 +211,8 @@ colours; they ignore the optional physical data. New readers preserve the legacy
 when physical data is absent. Reprepare source GLBs to obtain the new channels.
 
 The auxiliary stream costs 32 bytes per retained vertex on the GPU. Each resident texture uses
-four bytes per pixel, plus about one third for mipmaps when enabled. Decoded images stay available
+four bytes per pixel, or one when only occlusion reads it, plus about one third for mipmaps when
+enabled. Decoded images stay available
 for context restoration until the model is evicted. Physical materials add one draw per material
 range per colour/shadow pass; explicit emitters add one four-triangle draw each. No environment
 cube map or screen-space effect is required.

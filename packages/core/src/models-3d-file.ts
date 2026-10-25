@@ -12,7 +12,7 @@
 // renderer. It has no DOM dependency, and loads meshoptimizer's decoder only to read a compressed
 // file.
 import type {TileflowLandmarkFootprint} from './models-3d-landmarks';
-import {checkTileflowModelSurface, type TileflowModelSurface} from './models-3d-materials';
+import {checkTileflowModelSurface} from './models-3d-materials';
 import {
   isTileflowModelPartName,
   type TileflowModel,
@@ -65,20 +65,6 @@ const roleCount = Object.keys(tileflowModelLightingRoles).length;
 const modelId = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const [glbMagic, jsonChunk, binChunk] = [0x46546c67, 0x4e4f534a, 0x004e4942];
 const [short, byte, unsignedByte, unsignedShort, unsignedInt] = [5122, 5120, 5121, 5123, 5125];
-
-// A level whose materials read their occlusion from the second UV set, all inside the unit square,
-// carries a lightmap: that set is stored with sixteen bits.
-function lightmapped(
-  surface: TileflowModelSurface,
-  attributes: Float32Array | readonly number[],
-): boolean {
-  if (!surface.materials.some((material) => material.occlusionTexture?.texCoord === 1))
-    return false;
-  for (let at = 2; at < attributes.length; at += 8)
-    for (const value of [attributes[at]!, attributes[at + 1]!])
-      if (!(value >= 0 && value <= 1)) return false;
-  return true;
-}
 
 /**
  * Encodes models as a prepared model file: compressed when given meshoptimizer's encoder, else with
@@ -223,74 +209,20 @@ export function encodeTileflowModels(
       let surface: Record<string, unknown> | undefined;
       if (mesh.surface && level.attributes) {
         const attributes = level.attributes;
+        const data = new Uint8Array(
+          attributes.buffer,
+          attributes.byteOffset,
+          attributes.byteLength,
+        );
+        const view = addView(data, level.count, 32, true);
         const uv = accessors.length;
-        let layout: {version: number; attributes: number[]};
-        if (lightmapped(mesh.surface, attributes)) {
-          // A lightmap's coordinates lie in the unit square: sixteen bits each keep a sixteenth of
-          // a texel in the widest atlas and compress far better than floats.
-          const rest = new Float32Array(level.count * 6);
-          const lightmap = new Uint16Array(level.count * 2);
-          for (let vertex = 0; vertex < level.count; vertex++) {
-            const at = vertex * 8;
-            rest.set([attributes[at]!, attributes[at + 1]!], vertex * 6);
-            rest.set(attributes.subarray(at + 4, at + 8), vertex * 6 + 2);
-            lightmap[vertex * 2] = Math.round(attributes[at + 2]! * 65_535);
-            lightmap[vertex * 2 + 1] = Math.round(attributes[at + 3]! * 65_535);
-          }
-          const view = addView(new Uint8Array(rest.buffer), level.count, 24, true);
-          const second = addView(new Uint8Array(lightmap.buffer), level.count, 4, true);
-          accessors.push(
-            {
-              bufferView: view,
-              byteOffset: 0,
-              componentType: 5126,
-              count: level.count,
-              type: 'VEC2',
-            },
-            {
-              bufferView: second,
-              byteOffset: 0,
-              componentType: 5123,
-              normalized: true,
-              count: level.count,
-              type: 'VEC2',
-            },
-            {
-              bufferView: view,
-              byteOffset: 8,
-              componentType: 5126,
-              count: level.count,
-              type: 'VEC4',
-            },
-          );
-          layout = {version: 2, attributes: [uv, uv + 1, uv + 2]};
-        } else {
-          const data = new Uint8Array(
-            attributes.buffer,
-            attributes.byteOffset,
-            attributes.byteLength,
-          );
-          const view = addView(data, level.count, 32, true);
-          accessors.push(
-            {
-              bufferView: view,
-              byteOffset: 0,
-              componentType: 5126,
-              count: level.count,
-              type: 'VEC4',
-            },
-            {
-              bufferView: view,
-              byteOffset: 16,
-              componentType: 5126,
-              count: level.count,
-              type: 'VEC4',
-            },
-          );
-          layout = {version: 1, attributes: [uv, uv + 1]};
-        }
+        accessors.push(
+          {bufferView: view, byteOffset: 0, componentType: 5126, count: level.count, type: 'VEC4'},
+          {bufferView: view, byteOffset: 16, componentType: 5126, count: level.count, type: 'VEC4'},
+        );
         surface = {
-          ...layout,
+          version: 1,
+          attributes: [uv, uv + 1],
           materials: mesh.surface.materials,
           textures: mesh.surface.textures.map(({bytes, ...texture}) => ({
             ...texture,
@@ -393,7 +325,7 @@ export async function decodeTileflowModels(
         if (source !== 0 || byteStride !== stride || count * byteStride !== length)
           throw new Error();
         if (filter !== undefined && filter !== 'NONE') throw new Error();
-        if (mode !== (view.target === 34963 ? 'TRIANGLES' : 'ATTRIBUTES')) throw new Error();
+        if (mode !== (stride > 4 ? 'ATTRIBUTES' : 'TRIANGLES')) throw new Error();
         out = new Uint8Array(length);
         decoder!.decodeGltfBuffer(out, count, byteStride, slice(bin, byteOffset, byteLength), mode);
       } else {
@@ -938,73 +870,35 @@ function readLevelNode(
   let surface: TileflowModelSurfaceBytes | undefined;
   if (physical !== undefined) {
     if (
-      ![1, 2].includes(physical?.version) ||
+      physical?.version !== 1 ||
       !Array.isArray(physical.attributes) ||
-      physical.attributes.length !== physical.version + 1
+      physical.attributes.length !== 2
     )
       throw new Error();
-    let attributes: Float32Array;
-    if (physical.version === 1) {
-      const uv = accessor(physical.attributes[0]);
-      const colour = accessor(physical.attributes[1]);
-      if (
-        !uv ||
-        !colour ||
-        (uv.byteOffset ?? 0) !== 0 ||
-        colour.byteOffset !== 16 ||
-        uv.bufferView !== colour.bufferView ||
-        [uv, colour].some(
-          (value) =>
-            value.componentType !== 5126 ||
-            value.type !== 'VEC4' ||
-            value.count !== count ||
-            value.normalized === true,
-        )
+    const uv = accessor(physical.attributes[0]);
+    const colour = accessor(physical.attributes[1]);
+    if (
+      !uv ||
+      !colour ||
+      (uv.byteOffset ?? 0) !== 0 ||
+      colour.byteOffset !== 16 ||
+      uv.bufferView !== colour.bufferView ||
+      [uv, colour].some(
+        (value) =>
+          value.componentType !== 5126 ||
+          value.type !== 'VEC4' ||
+          value.count !== count ||
+          value.normalized === true,
       )
-        throw new Error();
-      const attributeBytes = viewBytes(uv.bufferView, 32, count * 32);
-      attributes = new Float32Array(attributeBytes.buffer, attributeBytes.byteOffset, count * 8);
-    } else {
-      // Version 2: UV0 and colour as floats, the lightmap's UV1 as normalised sixteen-bit values.
-      const [uv, lightmap, colour] = physical.attributes.map(accessor);
-      if (
-        !uv ||
-        !lightmap ||
-        !colour ||
-        (uv.byteOffset ?? 0) !== 0 ||
-        colour.byteOffset !== 8 ||
-        (lightmap.byteOffset ?? 0) !== 0 ||
-        uv.bufferView !== colour.bufferView ||
-        uv.bufferView === lightmap.bufferView ||
-        uv.componentType !== 5126 ||
-        uv.type !== 'VEC2' ||
-        colour.componentType !== 5126 ||
-        colour.type !== 'VEC4' ||
-        lightmap.componentType !== 5123 ||
-        lightmap.type !== 'VEC2' ||
-        lightmap.normalized !== true ||
-        [uv, lightmap, colour].some((value) => value.count !== count)
-      )
-        throw new Error();
-      const restBytes = viewBytes(uv.bufferView, 24, count * 24);
-      const lightmapBytes = viewBytes(lightmap.bufferView, 4, count * 4);
-      const rest = new Float32Array(
-        restBytes.buffer.slice(restBytes.byteOffset, restBytes.byteOffset + count * 24),
-      );
-      const second = new Uint16Array(
-        lightmapBytes.buffer.slice(lightmapBytes.byteOffset, lightmapBytes.byteOffset + count * 4),
-      );
-      attributes = new Float32Array(count * 8);
-      for (let vertex = 0; vertex < count; vertex++) {
-        const at = vertex * 8;
-        attributes[at] = rest[vertex * 6]!;
-        attributes[at + 1] = rest[vertex * 6 + 1]!;
-        attributes[at + 2] = second[vertex * 2]! / 65_535;
-        attributes[at + 3] = second[vertex * 2 + 1]! / 65_535;
-        attributes.set(rest.subarray(vertex * 6 + 2, vertex * 6 + 6), at + 4);
-      }
-    }
+    )
+      throw new Error();
+    const attributeBytes = viewBytes(uv.bufferView, 32, count * 32);
     if (!Array.isArray(physical.textures) || physical.textures.length > 32) throw new Error();
+    const attributes = new Float32Array(
+      attributeBytes.buffer,
+      attributeBytes.byteOffset,
+      count * 8,
+    );
     const read = {
       materials: physical.materials,
       ranges: physical.ranges,

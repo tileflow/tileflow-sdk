@@ -145,9 +145,9 @@ has two floors: 65,536 texels, so small detailed buildings keep their mouldings 
 524,288 texels; the mid level takes a quarter of it. The density is the highest at which
 the atlas fits its budget. Each texel averages four points inside it, 12 rays each with turned
 patterns; points hidden just behind other surfaces are skipped. The atlas is a greyscale JPEG of
-quality 35, about a tenth of a byte a texel, on the second UV set, stored with sixteen bits, and
-becomes every material's occlusion texture. Vertices are split where charts meet; triangles keep
-their order.
+quality 35, about a tenth of a byte a texel, on the second UV set, and becomes
+every material's occlusion texture. Vertices are split where charts meet; triangles keep their
+order.
 
 Contact shade therefore follows the surface instead of spreading between distant vertices. A
 level whose materials already use an occlusion texture or the second UV set, or whose charts
@@ -198,12 +198,8 @@ Roles and visibility survive meshoptimizer compression. The existing `_PAINT` ac
 stride are retained; the role occupies previously unused padding. Prepared files are an SDK
 transport format, while material extras are the authoring interface.
 
-Physical data is optional `extras.tileflow.surface` metadata on each level. With `version: 1`,
-two VEC4 accessors address a separate 32-byte stream: UV0/UV1 followed by linear vertex RGBA. A
-level whose occlusion texture reads the second UV set, inside the unit square, uses `version: 2`:
-one 24-byte float stream for UV0 and RGBA, and a second stream holding UV1 as normalised
-sixteen-bit values. Readers that only know version 1 reject such a level, so a runtime that reads
-version 2 must be in place before files prepared with occlusion textures are served.
+Physical data is optional `extras.tileflow.surface` metadata on each level, with `version: 1`.
+Two VEC4 accessors address a separate 32-byte stream: UV0/UV1 followed by linear vertex RGBA.
 The metadata also holds material draw ranges, channel references, embedded images and emitters.
 Ranges preserve each source mesh's vertical emission bounds independently of its material.
 The original primitive layout remains unchanged. Older readers draw its geometry and part

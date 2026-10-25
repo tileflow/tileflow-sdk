@@ -213,3 +213,37 @@ test('an occlusion-only texture uploads one channel; a texture shared with colou
     ],
   );
 });
+
+test('UV1 travels as sixteen-bit coordinates inside the unit square', async () => {
+  await MeshoptEncoder.ready;
+  const base = mesh();
+  const source = base.surface!.attributes.map((value, i) =>
+    i % 8 === 2 ? (i / 8) * 0.137 : i % 8 === 3 ? 1 - (i / 8) * 0.071 : value,
+  );
+  const lightmapped: TileflowModelMesh = {...base, surface: {...base.surface!, attributes: source}};
+  for (const compressor of [undefined, MeshoptEncoder]) {
+    const decoded = (await decodeTileflowModels(
+      encodeTileflowModels([model(lightmapped)], compressor),
+    ))![0]!.levels[0]!;
+    const {uv} = decoded.surface!;
+    // Each decoded vertex matches a source vertex: UV0 exactly, UV1 within a sixteen-bit step.
+    for (let vertex = 0; vertex < uv.length / 4; vertex++) {
+      const got = uv.slice(vertex * 4, vertex * 4 + 4);
+      assert.ok(
+        Array.from({length: source.length / 8}, (_, s) => s).some((s) =>
+          got.every((value, k) =>
+            k >= 2
+              ? Math.abs(value - source[s * 8 + k]!) <= 0.5 / 65_535 + 1e-7
+              : value === Math.fround(source[s * 8 + k]!),
+          ),
+        ),
+        `vertex ${vertex}`,
+      );
+    }
+  }
+  const outside = {
+    ...base,
+    surface: {...base.surface!, attributes: source.map((v, i) => (i === 2 ? 1.5 : v))},
+  };
+  assert.throws(() => encodeTileflowModels([model(outside)]), RangeError);
+});

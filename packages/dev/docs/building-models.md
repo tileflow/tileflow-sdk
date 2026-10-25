@@ -72,6 +72,7 @@ The importer retains these glTF 2.0 channels independently of part and role:
 | Unlit              | `KHR_materials_unlit`                                                             |
 
 `TEXCOORD_0`, `TEXCOORD_1`, glTF sampler wrapping/filtering and `KHR_texture_transform` are retained.
+`TEXCOORD_1` must lie between zero and one, since prepared files store it with sixteen bits.
 Every referenced channel must have its declared UV set. UV and colour seams survive welding.
 Colour textures and lit output use the scene's gamma-2.2 transfer approximation.
 Role emission mixes the complete material radiance toward its target, including authored emission.
@@ -198,8 +199,11 @@ Roles and visibility survive meshoptimizer compression. The existing `_PAINT` ac
 stride are retained; the role occupies previously unused padding. Prepared files are an SDK
 transport format, while material extras are the authoring interface.
 
-Physical data is optional `extras.tileflow.surface` metadata on each level, with `version: 1`.
-Two VEC4 accessors address a separate 32-byte stream: UV0/UV1 followed by linear vertex RGBA.
+Physical data is optional `extras.tileflow.surface` metadata on each level, with `version: 2`.
+Three accessors address two streams: a 24-byte float stream holding UV0 and linear vertex RGBA,
+and a 4-byte stream holding UV1 as normalised sixteen-bit values, so UV1 lies between zero and
+one. Runtimes that read the earlier `version: 1` layout cannot read it, and current runtimes no
+longer read `version: 1`: prepare models again with the matching Dev release.
 The metadata also holds material draw ranges, channel references, embedded images and emitters.
 Ranges preserve each source mesh's vertical emission bounds independently of its material.
 The original primitive layout remains unchanged. Older readers draw its geometry and part

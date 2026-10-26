@@ -142,6 +142,10 @@ Each value is 1–5; eligible rank increases by one at z16 and two at `detailZoo
 Streets uses 18). `detailZoom` must exceed 16 and cannot exceed 24. Source rank meanings
 and category coverage differ between datasets, so equal settings need not produce equal counts.
 
+`poi({maxRankByType: {garden: 1}})` adds a fixed rank ceiling for selected World POI types.
+Values are 0–5; unspecified types retain their usual eligibility. The ceiling applies to markers,
+icons and labels in both placement orders and does not increase with zoom or category density.
+
 MapLibre owns perspective scaling, distant-symbol rejection, collision placement and fading.
 These native behaviors apply without a module switch. The SDK does not change feature filters
 when panning, rotating, tilting or ending a gesture. Category and zoom eligibility remain compiled

@@ -7,3 +7,11 @@ pnpm-lock.yaml
 package-lock.json
 
 packages/*/dist
+platforms/ios/Sources/Tileflow/EmbeddedRuntime/
+platforms/android/tileflow/src/main/assets/tileflow/
+platforms/android/**/build/
+platforms/android/.gradle/
+platforms/android/.kotlin/
+.build/
+.swiftpm/
+output/

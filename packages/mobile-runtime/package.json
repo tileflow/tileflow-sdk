@@ -1,0 +1,21 @@
+{
+  "name": "@tileflow/mobile-runtime",
+  "version": "0.0.0-development",
+  "private": true,
+  "type": "module",
+  "description": "Embedded Tileflow renderer and protocol for the Swift and Kotlin SDKs.",
+  "scripts": {
+    "build": "node ../../scripts/mobile-runtime-build.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify": "tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@tileflow/core": "workspace:*",
+    "@tileflow/interactions": "workspace:*",
+    "maplibre-gl": "6.13.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.1"
+  }
+}

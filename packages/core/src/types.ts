@@ -449,6 +449,8 @@ export type TileflowPoiModuleConfig = {
   density?: TileflowPoiDensity;
   /** Category overrides of density, with the same zoom-dependent detail allowance. */
   densityByCategory?: Partial<Record<TileflowPoiCategory, TileflowPoiDensity>>;
+  /** Fixed maximum World filter rank per POI type (0–5), independent of zoom detail. */
+  maxRankByType?: Readonly<Record<string, 0 | 1 | 2 | 3 | 4 | 5>>;
   /** Zoom for the second extra rank of POI detail. Must exceed 16; defaults to 17. */
   detailZoom?: number;
   icons?: boolean;

@@ -24,6 +24,8 @@ export type TileflowContourProtocolRegistry = {
 export type TileflowContourProtocolRegistrationOptions = {
   /** Test/integration override; the default lazily initializes the pinned, bundled module. */
   loadMaplibreContour?: () => Promise<unknown>;
+  /** Route the nested DEM template through an application-owned transport, preserving XYZ slots. */
+  transformDemUrl?: (url: string) => string;
 };
 
 type MaplibreContourSource = {
@@ -60,6 +62,7 @@ export function registerTileflowContourProtocol(
   if (registeredContourProtocols.has(registry.addProtocol)) return;
   const handler = createTileflowContourProtocolHandler(
     options.loadMaplibreContour ?? loadPinnedMaplibreContour,
+    options.transformDemUrl,
   );
   registry.addProtocol(tileflowContourProtocol, handler);
   registeredContourProtocols.add(registry.addProtocol);
@@ -67,6 +70,7 @@ export function registerTileflowContourProtocol(
 
 function createTileflowContourProtocolHandler(
   loadModule: () => Promise<unknown>,
+  transformDemUrl: (url: string) => string = (url) => url,
 ): TileflowContourProtocolHandler {
   let library: Promise<MaplibreContourLibrary> | undefined;
   const sources = new Map<string, Promise<MaplibreContourSource>>();
@@ -84,7 +88,7 @@ function createTileflowContourProtocolHandler(
           new module.DemSource({
             encoding: config.encoding,
             maxzoom: config.demMaxzoom,
-            url: config.demUrl,
+            url: transformDemUrl(config.demUrl),
             // Upstream workers use a generated `blob:` URL. The main-thread manager keeps the
             // protocol usable in strict-CSP applications and deterministic local captures.
             worker: false,

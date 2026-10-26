@@ -232,9 +232,8 @@ const mapboxBuildingPalette = {
   outline: streetsVisual.building.outline,
 } as const;
 
-// Keep city and detailed road roles independent so each theme can tune the
-// z14-z15 transition without coupling to physical compiler layer IDs. Day uses
-// the same slate-blue family across this handoff; widths carry the hierarchy.
+// Keep city and detailed road roles independent. Day overviews soften each
+// urban class separately, then recover the detailed palette from z13 to z15.
 const streetsCityRoadPalette = {
   primary: streetsVisual.road.cityPrimary,
   secondary: streetsVisual.road.citySecondary,
@@ -254,7 +253,7 @@ type WidthStops = readonly [WidthStop, ...WidthStop[]];
 type ColorValue = TileflowThemeColorValue;
 type ColorStops = readonly (readonly [number, ColorValue])[];
 
-const detailedRoadTransitionStartZoom = 14;
+const detailedRoadTransitionStartZoom = 13;
 const detailedRoadZoom = 15;
 
 function cityRoadColorStops(
@@ -263,7 +262,15 @@ function cityRoadColorStops(
   detailedColor: ColorValue,
 ): ColorStops {
   return [
-    [minZoom, cityColor],
+    // At regional scales the same classes connect towns. Do not wash them out
+    // against vegetation; the source has no reliable urban/rural discriminator.
+    ...(minZoom < 12
+      ? ([
+          [minZoom, detailedColor],
+          [10, detailedColor],
+        ] as const)
+      : []),
+    [12, cityColor],
     [detailedRoadTransitionStartZoom, cityColor],
     [detailedRoadZoom, detailedColor],
     [22, detailedColor],
@@ -285,7 +292,7 @@ const roadBorderTotalWidth = 1;
 const roadWidthInterpolationBase = 1.5;
 const roadSurfaceColor = mapboxRoadPalette.road;
 const roadCasingColor = mapboxRoadPalette.detailCasing;
-const primaryRoadSurfaceColor = mapboxRoadPalette.road;
+const primaryRoadSurfaceColor = streetsVisual.road.primary;
 const secondaryRoadSurfaceColor = mapboxRoadPalette.road;
 const tertiaryRoadSurfaceColor = mapboxRoadPalette.road;
 const buildingFillColor = mapboxBuildingPalette.fill;
@@ -400,7 +407,7 @@ function roadWidth(widths: WidthStops, oneWayScale: number, rampWidths?: WidthSt
             [{labels: [1, -1], value: width * oneWayScale}],
             width,
           );
-    const rampWidth = rampWidths?.find(([rampLevel]) => rampLevel === level)?.[1];
+    const rampWidth = rampWidths ? sampleRoadWidth(rampWidths, level) : undefined;
     const surfaceWidth =
       rampWidth === undefined
         ? ordinaryWidth
@@ -419,6 +426,34 @@ function roadWidth(widths: WidthStops, oneWayScale: number, rampWidths?: WidthSt
     firstWidthStop,
     ...widthStops.slice(1),
   ]);
+}
+
+function sampleRoadWidth(widths: WidthStops, level: number): number {
+  if (level <= widths[0][0]) return widths[0][1];
+  for (let i = 1; i < widths.length; i++) {
+    const [end, endWidth] = widths[i]!;
+    if (level > end) continue;
+    const [start, startWidth] = widths[i - 1]!;
+    const t =
+      (roadWidthInterpolationBase ** (level - start) - 1) /
+      (roadWidthInterpolationBase ** (end - start) - 1);
+    return startWidth + t * (endWidth - startWidth);
+  }
+  return widths.at(-1)![1];
+}
+
+// Keep the original regional curve through z10 and its exact detailed curve
+// from z15. Intermediate stops separate avenues from highways without losing
+// the local street texture. Ramps retain their independently sampled widths.
+function cityRoadWidths(widths: WidthStops, at12: number, at14: number): WidthStops {
+  return [
+    widths[0],
+    [10, sampleRoadWidth(widths, 10)],
+    [12, at12],
+    [14, at14],
+    [15, sampleRoadWidth(widths, 15)],
+    ...widths.filter(([level]) => level > 15),
+  ];
 }
 
 function roadCasingWidth(major: boolean) {
@@ -1048,8 +1083,45 @@ function streetsLabelRenderStack() {
   };
 }
 
-// Links are part of their parent class in World tiles. Keep them out of the
-// overview until z12, matching the separate link classes in the reference.
+// Apply after domain modifiers so unpaved carriageways share the city hierarchy.
+// Each stop owns its feature conditions: a zoom-dependent modifier nested in a
+// road's own zoom interpolation would produce an invalid MapLibre expression.
+function cityRoadSurfaceColor(roadClass: keyof typeof streetsCityRoadPalette) {
+  const detailedColor = roadClass === 'primary' ? primaryRoadSurfaceColor : roadSurfaceColor;
+  const stops = cityRoadColorStops(
+    roadClass === 'minor' ? 12 : roadClass === 'primary' ? 5 : 8,
+    streetsCityRoadPalette[roadClass],
+    detailedColor,
+  );
+  const outputs = stops.map(
+    ([level, color]) =>
+      [
+        level,
+        expr.case<ColorValue>(
+          [
+            {
+              when: expr.eq(expr.get(field('class')), `${roadClass}_construction`),
+              value: roadSurfaceColor,
+            },
+            {
+              when: expr.eq(expr.get(field('surface')), 'unpaved'),
+              value:
+                level >= 12 && level < 15 ? streetsCityRoadPalette[roadClass] : roadSurfaceColor,
+            },
+          ],
+          color,
+        ),
+      ] as const,
+  );
+  return expr.interpolate<ColorValue>({kind: 'linear'}, expr.zoom(), [
+    outputs[0]!,
+    ...outputs.slice(1),
+  ]);
+}
+
+// Overview roads include structural segments until their dedicated layers
+// start at z13. Switching both filters at the same zoom avoids gaps and doubles.
+// Links are part of their parent class in World tiles and join at z12.
 function streetsRoadEligibility() {
   return Object.fromEntries(
     (['motorway', 'trunk', 'primary', 'secondary', 'tertiary'] as const).flatMap((roadClass) =>
@@ -1061,7 +1133,11 @@ function streetsRoadEligibility() {
             kind: 'all',
             selectors: [
               {kind: 'geometry', geometry: 'line'},
-              {kind: 'in', field: 'class', values: [roadClass, `${roadClass}_construction`]},
+              {
+                kind: 'in',
+                field: 'class',
+                values: [roadClass, `${roadClass}_construction`],
+              },
               {
                 kind: 'compare',
                 field: 'ramp',
@@ -1073,7 +1149,7 @@ function streetsRoadEligibility() {
                 fallback: {kind: 'literal', value: true},
                 stops: [
                   {
-                    zoom: 5,
+                    zoom: 13,
                     selector: {
                       kind: 'all',
                       selectors: [
@@ -1088,7 +1164,12 @@ function streetsRoadEligibility() {
           },
           // Core places links before receiving carriageways. Streets owns only
           // their reference-specific visibility threshold and palette/widths.
-          style: phase === 'rampFill' ? {minZoom: 12} : {},
+          style: {
+            ...(phase === 'rampFill' ? {minZoom: 12} : {}),
+            ...(['primary', 'secondary', 'tertiary', 'minor'].includes(roadClass)
+              ? {color: cityRoadSurfaceColor(roadClass as keyof typeof streetsCityRoadPalette)}
+              : {}),
+          },
           target: `roads.classes.${roadClass}.surface.${phase}`,
         }),
       ]),
@@ -1109,6 +1190,16 @@ function streetsRoadRenderStack() {
     }),
     ...parkPathRefinements(),
     ...streetsRoadEligibility(),
+    minorSurfaceColor: refineRenderTarget({
+      renderer: 'line',
+      style: {color: cityRoadSurfaceColor('minor')},
+      target: 'roads.classes.minor.surface.fill',
+    }),
+    minorLinkColor: refineRenderTarget({
+      renderer: 'line',
+      style: {color: cityRoadSurfaceColor('minor')},
+      target: 'roads.classes.minor.surface.rampFill',
+    }),
     oneWayMarkers: refineRenderTarget({
       renderer: 'symbol',
       style: {
@@ -1251,7 +1342,14 @@ function cityRoadStyle(
     surface: {casing, fill},
     bridge: {
       casing: {...casing, cap: 'butt', join: 'miter', width: roadCasingWidth((minZoom ?? 0) < 12)},
-      fill: {...fill, cap: 'round', join: 'miter', minZoom: Math.max(minZoom ?? 0, 13)},
+      // Local structures join their streets at z12; major structures take over
+      // the continuous overview strokes at z13.
+      fill: {
+        ...fill,
+        cap: 'round',
+        join: 'miter',
+        minZoom: Math.max(minZoom ?? 0, minZoom === 12 ? 12 : 13),
+      },
     },
     tunnel: tunnelVisible
       ? {
@@ -1273,7 +1371,7 @@ function cityRoadStyle(
             ...fill,
             cap: 'butt',
             join: 'miter',
-            minZoom: Math.max(minZoom ?? 0, 13),
+            minZoom: Math.max(minZoom ?? 0, minZoom === 12 ? 12 : 13),
             color: tunnelColor,
             opacity: zoom.linear([
               [3, 0],
@@ -2010,12 +2108,16 @@ export const streets = bindOfficialMapTheme(
             ),
             primary: cityRoadStyle(
               primaryRoadSurfaceColor,
-              [
-                [3, 0.8],
-                [12, 3],
-                [18, 28],
-                [22, 280],
-              ],
+              cityRoadWidths(
+                [
+                  [3, 0.8],
+                  [12, 3],
+                  [18, 28],
+                  [22, 280],
+                ],
+                2,
+                3.6,
+              ),
               {
                 casingColorStops: cityRoadCasingColorStops(5),
                 colorStops: cityRoadColorStops(
@@ -2032,12 +2134,16 @@ export const streets = bindOfficialMapTheme(
             ),
             secondary: cityRoadStyle(
               secondaryRoadSurfaceColor,
-              [
-                [3, 0],
-                [12, 2.2],
-                [18, 26],
-                [22, 260],
-              ],
+              cityRoadWidths(
+                [
+                  [3, 0],
+                  [12, 2.2],
+                  [18, 26],
+                  [22, 260],
+                ],
+                1.4,
+                3,
+              ),
               {
                 casingColorStops: cityRoadCasingColorStops(8),
                 colorStops: cityRoadColorStops(
@@ -2053,12 +2159,16 @@ export const streets = bindOfficialMapTheme(
             ),
             tertiary: cityRoadStyle(
               tertiaryRoadSurfaceColor,
-              [
-                [3, 0],
-                [12, 2.2],
-                [18, 26],
-                [22, 260],
-              ],
+              cityRoadWidths(
+                [
+                  [3, 0],
+                  [12, 2.2],
+                  [18, 26],
+                  [22, 260],
+                ],
+                1.1,
+                2.5,
+              ),
               {
                 casingColorStops: cityRoadCasingColorStops(8),
                 colorStops: cityRoadColorStops(
@@ -2074,12 +2184,16 @@ export const streets = bindOfficialMapTheme(
             ),
             minor: cityRoadStyle(
               roadSurfaceColor,
-              [
-                [3, 0],
-                [12, 0.5],
-                [18, 20],
-                [22, 200],
-              ],
+              cityRoadWidths(
+                [
+                  [3, 0],
+                  [12, 0.5],
+                  [18, 20],
+                  [22, 200],
+                ],
+                0.8,
+                2.1,
+              ),
               {
                 casingColorStops: cityRoadCasingColorStops(12),
                 colorStops: cityRoadColorStops(12, streetsCityRoadPalette.minor, roadSurfaceColor),
@@ -2212,8 +2326,14 @@ export const streets = bindOfficialMapTheme(
           // stand beside the flat fill, so they require this mode.
           mode: 'flat',
           threeDimensional: {
+            edgeRadius: 1.5,
+            groundOcclusion: 0.12,
             // Models name pools, planting and timber with these parts to follow the map's colours.
             modelColors: {
+              surface: token.color('buildings.modelSurface'),
+              secondary: token.color('buildings.modelSecondary'),
+              roof: token.color('buildings.modelRoof'),
+              accent: token.color('buildings.modelAccent'),
               water: token.color('buildings.modelWater'),
               vegetation: token.color('buildings.modelVegetation'),
               wood: token.color('buildings.modelWood'),
@@ -2225,21 +2345,22 @@ export const streets = bindOfficialMapTheme(
             },
             modelLighting: {
               wall: {
-                emissiveStrength: token.number('buildings.modelEmission.strength'),
-                emissiveColor: token.color('buildings.modelEmission'),
-                emissiveHeight: [
-                  token.number('buildings.modelEmission.start'),
-                  token.number('buildings.modelEmission.end'),
-                  0,
-                  1,
-                  token.number('buildings.modelEmission.curve'),
-                ],
-                color: token.color('buildings.modelEmission'),
+                shading: 'map',
+                ambientOcclusion: 0.32,
+                color: token.color('buildings.modelSurface'),
                 roughness: 1,
                 metallic: 0,
               },
-              roof: {color: token.color('buildings.modelRoof'), roughness: 1, metallic: 0},
+              roof: {
+                shading: 'map',
+                ambientOcclusion: 0.32,
+                color: token.color('buildings.modelRoof'),
+                roughness: 1,
+                metallic: 0,
+              },
               window: {
+                // Glass keeps its original role colour even on a shared stone part.
+                partColorMix: 0,
                 roughness: 0,
                 metallic: 1,
                 emissiveStrength: token.number('buildings.modelWindow.strength'),
@@ -2265,27 +2386,11 @@ export const streets = bindOfficialMapTheme(
                 (['unclassified', 'door', 'lamp', 'logo'] as const).map((role) => [
                   role,
                   {
+                    shading: 'map',
+                    ambientOcclusion: 0.32,
+                    color: token.color('buildings.modelSurface'),
                     roughness: 1,
                     metallic: 0,
-                    emissiveStrength:
-                      role === 'door'
-                        ? token.number('buildings.modelDoor.strength')
-                        : role === 'logo'
-                          ? 0.6
-                          : 0,
-                    colorMix: role === 'logo' ? token.number('buildings.modelLogo.mix') : 1,
-                    colorVariation: {
-                      hue: [10, 70],
-                      saturation: [
-                        token.number('buildings.modelOther.saturation'),
-                        token.number('buildings.modelOther.saturation'),
-                      ],
-                      lightness: [
-                        token.number('buildings.modelOther.lightnessLow'),
-                        token.number('buildings.modelOther.lightnessHigh'),
-                      ],
-                      space: 'linear',
-                    },
                   },
                 ]),
               ),
@@ -2897,6 +3002,9 @@ export const streets = bindOfficialMapTheme(
         color: 'category',
         density: 2,
         detailZoom: 18,
+        // World also calls botanical collections gardens. Keep only the main destinations;
+        // zooming in must not turn individual planting sections into named POIs.
+        maxRankByType: {garden: 1},
         densityByCategory: {
           lodging: 1,
           'park-nature': 3,

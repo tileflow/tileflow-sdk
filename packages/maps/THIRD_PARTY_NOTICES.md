@@ -33,6 +33,29 @@ upstream license is included at `assets/streets/LICENSE-MAKI.txt`.
 POI discs occupy 20px inside a 24px cell. The 15px Maki source geometry is scaled to a centered
 12px box before rasterization, keeping space between the pictograms and the circular border.
 
+## Streets transit network symbols
+
+The three `assets/streets/icons/transit-madrid-*.svg` files identify transport networks on map
+points. Each source is centered, proportionally scaled, and given accessible metadata inside a
+24px SVG cell. Geometry and identity colors are retained; all themes share the same asset.
+
+- `transit-madrid-metro.svg`: [MetroMadridLogoSimplified.svg](https://commons.wikimedia.org/wiki/File:MetroMadridLogoSimplified.svg),
+  by Przemysław Sakrajda, simplified by Kizar, with the current vector revision by Teo.raff.
+  Licensed under [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
+  This adapted SVG is distributed under the same license; the full text is in
+  `assets/streets/LICENSE-CC-BY-SA-3.0.txt`.
+- `transit-madrid-cercanias.svg`: [Cercanias Logo.svg](https://commons.wikimedia.org/wiki/File:Cercanias_Logo.svg),
+  by WikiNight2, with revisions by Alkari and Borjaguado. The source is dedicated to the public
+  domain by its author and marked PD-textlogo on Wikimedia Commons.
+- `transit-madrid-emt.svg`: [Símbolo de EMT Madrid.svg](https://commons.wikimedia.org/wiki/File:S%C3%ADmbolo_de_EMT_Madrid.svg),
+  by Andreuvv, with a vector revision by Teo.raff. Licensed under
+  [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). This adapted SVG is distributed
+  under the same license; the full text is in `assets/streets/LICENSE-CC-BY-SA-4.0.txt`.
+
+The transport identities remain the marks of their respective owners. Their inclusion identifies
+the mapped services and does not imply affiliation or endorsement. These asset-specific terms
+are separate from the package's source-code license.
+
 ## 1777 cabinet atlas reference
 
 The `map1777` map and its eleven SVG material patterns (each in four palettes) are

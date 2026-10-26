@@ -165,6 +165,7 @@ export function tileflowBuildings3DDesignOf(
     ...readTileflowBuildingsEntrance(style.entrance),
     shadows: typeof style.shadows === 'boolean' ? style.shadows : defaults.shadows,
     occlusion: typeof style.occlusion === 'boolean' ? style.occlusion : defaults.occlusion,
+    groundOcclusion: number(style.groundOcclusion, defaults.groundOcclusion),
     modelOcclusion: number(style.modelOcclusion, defaults.modelOcclusion),
     ...placedModels(style.models, buildingModels),
     ...modelColours(style.modelColors),

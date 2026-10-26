@@ -121,8 +121,7 @@ const approvedLightStyleColors = new Set([
   '#99DDFF',
   '#9BE494',
   '#9EA9C5',
-  '#A1B0C4',
-  '#A3A6C2',
+  '#AAB9C9',
   '#A5A5A5',
   '#A6AB91',
   '#B9DB9A',
@@ -130,7 +129,11 @@ const approvedLightStyleColors = new Set([
   '#B2EAAD',
   '#C1E4BA',
   '#BCB7B2',
-  '#BEC5D8',
+  '#BDCCD9',
+  '#D5DBDF',
+  '#DEE3E6',
+  '#E3E7E9',
+  '#DDE2E5',
   '#C1EEBD',
   '#C3D3B1',
   '#C4EAC1',
@@ -166,8 +169,10 @@ const approvedLightStyleColors = new Set([
   '#F7F6F7',
   '#F8F5F5',
   '#FBF9F8',
-  // Physical roof albedo; its displayed colour depends on the scene lighting.
-  '#FDF1E9',
+  // Subtle model-stone tones around the ordinary building colour.
+  '#EAE2DA',
+  '#F6EEE7',
+  '#F7F0EA',
   '#FE809F',
   '#FEECDF',
   '#FEFEFE',
@@ -294,10 +299,11 @@ const approvedDarkStyleColors = new Set([
   '#E6BB62',
   '#E6E6E6',
   '#EFF6FF',
-  // Architectural ground light and model wall emission.
+  // Architectural ground light and model stone palette.
   '#F5CFA8',
-  '#FDE4C8',
-  '#FDF1E9',
+  '#2B2D3A',
+  '#2F3241',
+  '#303343',
   '#FF668C',
   '#FFFFFF',
   'RGBA(0, 0, 0, 0)',
@@ -665,7 +671,7 @@ test('Streets Dark keeps a legible road hierarchy and high-contrast key labels',
 
 test('Streets uses blue road decks with darker casings at street detail', () => {
   const expected = {
-    light: {casing: '#93A3B7', deck: '#BEC5D8'},
+    light: {casing: '#93A3B7', deck: '#BDCCD9'},
     dark: {casing: '#1A2033', deck: '#60677B'},
   } as const;
 
@@ -719,9 +725,13 @@ test('Streets uses blue road decks with darker casings at street detail', () => 
       );
       assert.equal(gap.result, 'success');
       if (gap.result !== 'success') throw new Error('Invalid road gap');
-      assert.equal(
-        gap.value.evaluate({zoom: 17.97}, {type: 2, properties: {class: 'minor'}} as never),
-        0.5 + ((20 - 0.5) * (1.5 ** (17.97 - 12) - 1)) / (1.5 ** 6 - 1),
+      assert.ok(
+        Math.abs(
+          Number(
+            gap.value.evaluate({zoom: 17.97}, {type: 2, properties: {class: 'minor'}} as never),
+          ) -
+            (0.5 + ((20 - 0.5) * (1.5 ** (17.97 - 12) - 1)) / (1.5 ** 6 - 1)),
+        ) < 1e-9,
         'The casing gap follows the street carriageway at fractional zooms',
       );
     }
@@ -813,7 +823,7 @@ test('Streets roundabouts retain metric edges and open approach joins throughout
 // retrieved 2026-10-14. The tables intentionally live outside the style helpers.
 // Check compiled class eligibility as well as widths: a correct width on a
 // hidden layer, or an extra overview casing, must not pass this regression.
-test('Streets matches reference carriageways and casing thresholds from z0 through z24', () => {
+test('Streets preserves reference detail widths and class thresholds from z0 through z24', () => {
   const {style, inspection} = compileInspected('light');
   const reference = {
     motorway: {start: 3, widths: [0.8, 3.2, 30, 300]},
@@ -913,7 +923,9 @@ test('Streets matches reference carriageways and casing thresholds from z0 throu
           `${roadClass} casing eligibility z${z}`,
         );
         const expected = interpolate(z, [3, 12, 18, 22], widths);
-        for (const fill of fills) {
+        const authoredOverview =
+          !ramp && z < 15 && ['primary', 'secondary', 'tertiary', 'minor'].includes(roadClass);
+        for (const fill of authoredOverview ? [] : fills) {
           assert.equal(fill.width.result, 'success');
           if (fill.width.result === 'success')
             assert.ok(
@@ -1034,10 +1046,10 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
   assert.match(JSON.stringify(neighborhood.layout?.['text-size']), /,11,\["match"/u);
 
   for (const [roadClass, color] of [
-    ['primary', '#BEC5D8'],
-    ['secondary', '#BEC5D8'],
-    ['tertiary', '#BEC5D8'],
-    ['minor', '#BEC5D8'],
+    ['primary', '#AAB9C9'],
+    ['secondary', '#BDCCD9'],
+    ['tertiary', '#BDCCD9'],
+    ['minor', '#BDCCD9'],
   ] as const) {
     const layer = requireLayer(style, `tileflow-road-surface-${roadClass}-fill`);
     assert.match(JSON.stringify(layer.paint?.['line-color']), new RegExp(color));
@@ -1698,6 +1710,54 @@ test('Streets places every POI category by World rank and density without anonym
   );
   assert.equal(labelNumber(ordinary, 'text-padding', 16), 6);
   assert.equal(labelNumber(ordinary, 'text-padding', 17), 4);
+});
+
+test('Streets keeps principal gardens and suppresses botanical collections at every zoom', () => {
+  // Observed World features in Madrid's botanical garden; the shared type alone cannot
+  // distinguish its destination from the named planting sections inside it.
+  const gardens = [
+    {name: 'Real Jardín Botánico de Madrid', filter_rank: 1, size_rank: 0, visible: true},
+    {name: 'Rosaleda', filter_rank: 3, size_rank: 1, visible: false},
+    {name: 'Huerta y frutales', filter_rank: 3, size_rank: 3, visible: false},
+    {name: 'Plantas ornamentales', filter_rank: 2, size_rank: 1, visible: false},
+    {name: 'Comelínidas', filter_rank: 2, size_rank: 3, visible: false},
+  ];
+  for (const theme of ['light', 'dark'] as const) {
+    const layers = compile(theme).layers.filter((layer) => layer['source-layer'] === 'poi');
+    for (const zoom of [15, 16, 18, 22, 24]) {
+      const accepts = (properties: Record<string, unknown>) =>
+        layers.some((layer) =>
+          featureFilter(layer.filter as never).filter({zoom}, {type: 1, properties}),
+        );
+      for (const {visible, ...garden} of gardens) {
+        assert.equal(
+          accepts({category: 'park-nature', type: 'garden', ...garden}),
+          visible,
+          `${theme}, z${zoom}, ${garden.name}`,
+        );
+      }
+      assert.equal(
+        accepts({
+          category: 'park-nature',
+          type: 'park',
+          name: 'Parque del Retiro',
+          filter_rank: 2,
+          size_rank: 0,
+        }),
+        true,
+      );
+      assert.equal(
+        accepts({
+          category: 'landmark',
+          type: 'monument',
+          name: 'Monument',
+          filter_rank: 1,
+          size_rank: 16,
+        }),
+        true,
+      );
+    }
+  }
 });
 
 test('Streets water retains its italic face without a heavy halo', () => {

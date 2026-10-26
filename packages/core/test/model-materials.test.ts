@@ -247,3 +247,80 @@ test('UV1 travels as sixteen-bit coordinates inside the unit square', async () =
   };
   assert.throws(() => encodeTileflowModels([model(outside)]), RangeError);
 });
+
+test('compression reorders triangles only within their material ranges', async () => {
+  await MeshoptEncoder.ready;
+  // A 6 × 6 grid of quads, split between two materials; each vertex carries its own UV1.
+  const side = 7;
+  const positions: number[] = [];
+  const attributes: number[] = [];
+  for (let y = 0; y < side; y++)
+    for (let x = 0; x < side; x++) {
+      positions.push(x, y, 0);
+      attributes.push(0, 0, x / side, y / side, 1, 1, 1, 1);
+    }
+  const indices: number[] = [];
+  for (let y = 0; y < side - 1; y++)
+    for (let x = 0; x < side - 1; x++) {
+      const at = y * side + x;
+      indices.push(at, at + 1, at + side, at + 1, at + side + 1, at + side);
+    }
+  const half = (indices.length / 6) * 3;
+  const base = mesh();
+  const count = positions.length / 3;
+  const grid: TileflowModelMesh = {
+    positions,
+    normals: Array.from({length: count}, () => [0, 0, 1]).flat(),
+    parts: new Array(count).fill(0),
+    lightingRoles: new Array(count).fill(1),
+    shades: new Array(count).fill(0),
+    occlusion: new Array(count).fill(1),
+    indices,
+    surface: {
+      ...base.surface!,
+      attributes,
+      materials: [{}, {}],
+      ranges: [
+        {from: 0, count: half, material: 0},
+        {from: half, count: indices.length - half, material: 1},
+      ],
+      emitters: undefined,
+    },
+  };
+  // A triangle as its corners' UV1, in a canonical order.
+  const key = (uv: ArrayLike<number>, corners: number[]) =>
+    corners
+      .map(
+        (vertex) =>
+          `${Math.round(uv[vertex * 4 + 2]! * 1000)},${Math.round(uv[vertex * 4 + 3]! * 1000)}`,
+      )
+      .sort()
+      .join(';');
+  const source = new Float32Array(count * 4);
+  for (let vertex = 0; vertex < count; vertex++)
+    source.set(attributes.slice(vertex * 8, vertex * 8 + 4), vertex * 4);
+  const triangles = (
+    uv: ArrayLike<number>,
+    list: ArrayLike<number>,
+    from: number,
+    length: number,
+  ) =>
+    Array.from({length: length / 3}, (_, t) =>
+      key(uv, [list[from + t * 3]!, list[from + t * 3 + 1]!, list[from + t * 3 + 2]!]),
+    ).sort();
+  const decoded = (await decodeTileflowModels(
+    encodeTileflowModels([model(grid)], MeshoptEncoder),
+  ))![0]!.levels[0]!;
+  assert.deepEqual(
+    decoded.surface!.ranges.map(({from, count}) => [from, count]),
+    [
+      [0, half],
+      [half, indices.length - half],
+    ],
+  );
+  for (const {from, count: length} of grid.surface!.ranges)
+    assert.deepEqual(
+      triangles(decoded.surface!.uv, decoded.indices, from, length),
+      triangles(source, indices, from, length),
+    );
+});

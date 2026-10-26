@@ -39,7 +39,13 @@ export type TileflowModelEntry = TileflowModel &
 /** What compresses a file's buffers: meshoptimizer's encoder, once ready. */
 export type TileflowModelCompressor = Readonly<{
   reorderMesh(indices: Uint32Array, triangles: boolean, optsize: boolean): [Uint32Array, number];
-  encodeGltfBuffer(source: Uint8Array, count: number, size: number, mode: string): Uint8Array;
+  encodeGltfBuffer(
+    source: Uint8Array,
+    count: number,
+    size: number,
+    mode: string,
+    version?: number,
+  ): Uint8Array;
 }>;
 
 /** What decompresses them: meshoptimizer's decoder, once ready. */
@@ -127,7 +133,14 @@ export function encodeTileflowModels(
       return bufferViews.length - 1;
     }
     const mode = vertices ? 'ATTRIBUTES' : 'TRIANGLES';
-    const packed = compressor.encodeGltfBuffer(bytes, count, stride, mode);
+    // Vertex codec version 1 packs attribute bytes more tightly; indices have one codec.
+    const packed = compressor.encodeGltfBuffer(
+      bytes,
+      count,
+      stride,
+      mode,
+      vertices ? 1 : undefined,
+    );
     const byteOffset = addBlob(packed);
     const fallbackOffset = fallbackLength;
     fallbackLength += bytes.byteLength + ((4 - (bytes.byteLength % 4)) % 4);
@@ -674,6 +687,26 @@ function quantise(mesh: TileflowModel['levels'][number], compressor?: TileflowMo
     order = new Array<number>(unique);
     for (const [index, vertex] of kept.entries())
       if (remap[index] !== 0xffffffff) order[remap[index]!] = vertex;
+  } else if (compressor) {
+    // Material ranges keep their triangles: each range is reordered for the vertex cache on its
+    // own, then vertices are numbered in the order the triangles first use them.
+    for (const {from, count: length} of mesh.surface!.ranges) {
+      const range = indices.slice(from, from + length);
+      const [remap, unique] = compressor.reorderMesh(range, true, false);
+      const global = new Uint32Array(unique);
+      for (const [vertex, local] of remap.entries())
+        if (local !== 0xffffffff) global[local] = vertex;
+      for (const [at, local] of range.entries()) indices[from + at] = global[local]!;
+    }
+    const renumber = new Uint32Array(kept.length).fill(0xffffffff);
+    order = [];
+    for (const [at, vertex] of indices.entries()) {
+      if (renumber[vertex] === 0xffffffff) {
+        renumber[vertex] = order.length;
+        order.push(kept[vertex]!);
+      }
+      indices[at] = renumber[vertex]!;
+    }
   }
   const vertices = new Uint8Array(order.length * tileflowModelVertexBytes);
   const attributes = mesh.surface ? new Float32Array(order.length * 8) : undefined;

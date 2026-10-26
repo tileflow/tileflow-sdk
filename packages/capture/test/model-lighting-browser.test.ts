@@ -65,6 +65,8 @@ void main() {
         gl.useProgram(program);
         const scalar = (name: string, value: number) =>
           gl.uniform1f(gl.getUniformLocation(program, name), value);
+        for (let role = 0; role < 7; role++)
+          gl.uniform3f(gl.getUniformLocation(program, `u_role_appearance[${role}]`), 0, 1, 1);
         scalar('u_ambient_occlusion', 1);
         for (let channel = 0; channel < 5; channel++)
           gl.uniform1i(gl.getUniformLocation(program, `u_material_texture${channel}`), 1);

@@ -354,7 +354,8 @@ How to prepare a model:
 The build reads each model, reports a problem with the file and what to change, works out its
 footprint and writes it beside the style as a prepared model file: a glTF binary whose meshes are
 quantised (`KHR_mesh_quantization`) and compressed by meshoptimizer (`EXT_meshopt_compression`),
-which any glTF viewer opens. The renderer downloads a model only when it stands near the tiles round
+which glTF viewers open with a current meshoptimizer decoder: vertex streams use its version 1
+codec. Triangles are ordered for the GPU's vertex cache within each material range. The renderer downloads a model only when it stands near the tiles round
 the camera, whether or not those tiles hold buildings, keeps the nearest dozen, and builds the tiles
 under it again without the buildings that
 reach more than half a metre into its footprint; a neighbour that only touches it stays. A tile of

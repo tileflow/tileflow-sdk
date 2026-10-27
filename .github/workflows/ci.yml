@@ -248,11 +248,11 @@ jobs:
 
   swift:
     name: Swift SDK integration
-    # ARM runners crash in SimMetalHost during WebGL draws, including the larger tier.
+    # iOS 26 simulators crash their GPU process during WebGL draws on hosted runners.
     runs-on: macos-15-intel
     timeout-minutes: 30
     env:
-      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

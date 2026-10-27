@@ -116,3 +116,46 @@ test("preparation can size the occlusion texture by the level's surface", () => 
   assert.ok(Math.abs(areas[0]! - (4 * 9.9 + 144)) < 1e-6);
   assert.ok(mesh.surface!.materials.every((material) => material.occlusionTexture));
 });
+
+test('rectangular planes use complete texel rows independently of their triangulation', () => {
+  // A narrow cornice and a taller wall, rotated away from the world axes. Duplicated glTF
+  // vertices at the diagonal must still describe one rectangle, with no diagonal UV seam.
+  for (const height of [0.4, 4])
+    for (const diagonal of [
+      [0, 1, 2, 0, 2, 3],
+      [0, 1, 3, 1, 2, 3],
+    ])
+      for (const duplicate of [false, true]) {
+        const corners = [
+          [0, 0, 0],
+          [30, 0, 0],
+          [30, 0, height],
+          [0, 0, height],
+        ];
+        const turn = ([x, y, z]: number[]) => [x! * 0.8 - y! * 0.6, x! * 0.6 + y! * 0.8, z!];
+        const sources = duplicate ? diagonal : [0, 1, 2, 3];
+        const mesh = {
+          positions: sources.flatMap((i) => turn(corners[i]!)),
+          normals: sources.flatMap(() => [0.6, -0.8, 0]),
+          indices: duplicate ? [0, 1, 2, 3, 4, 5] : diagonal,
+        };
+        const lightmap = bakeBuildingModelLightmap(mesh, {texels: 4096})!;
+        assert.ok(lightmap);
+        const uvByCorner = new Map<number, number[]>();
+        for (let i = 0; i < lightmap.sources.length; i++) {
+          const corner = sources[lightmap.sources[i]!]!;
+          const uv = lightmap.uvs.slice(i * 2, i * 2 + 2);
+          if (uvByCorner.has(corner))
+            assert.deepEqual(uv, uvByCorner.get(corner), 'no seam at a shared position');
+          uvByCorner.set(corner, uv);
+        }
+        const uv = [0, 1, 2, 3].map((i) => uvByCorner.get(i)!);
+        for (let edge = 0; edge < 4; edge++) {
+          const a = uv[edge]!,
+            b = uv[(edge + 1) % 4]!;
+          const delta = a.map((value, k) => Math.abs(value - b[k]!));
+          assert.ok(Math.min(...delta) < 1e-10, 'a straight boundary fills a texel row or column');
+          assert.ok(Math.max(...delta) > 1e-4, 'the plane retains spatial shading resolution');
+        }
+      }
+});

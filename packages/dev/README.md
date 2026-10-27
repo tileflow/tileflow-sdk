@@ -69,6 +69,11 @@ identities and watch paths when managing revisions. The artifact pipeline does t
 A GLB whose materials name only `bark`, `leaves`, `fronds` or `stem` is a tree model; any other
 is a building model, whose materials name its parts.
 
+Building preparation bakes ambient occlusion into a texture for the detailed distance levels.
+Rectangular architectural planes align their lightmap to boundary edges rather than internal
+triangulation diagonals, keeping straight courses and flat facades free of diagonal sampling seams.
+This preserves source triangles and normals; it does not paint directional sunlight into materials.
+
 To write production output rather than manage it in memory:
 
 <!-- docs:check -->

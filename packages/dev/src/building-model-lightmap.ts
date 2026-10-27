@@ -331,8 +331,9 @@ function chartsOf(indices: readonly number[], point: (vertex: number) => number[
   return charts;
 }
 
-// A chart laid along its longest edge; one its triangles fill less than half of, such as a curved
-// strip lying in one plane, is halved across its length until its pieces fill their rectangles.
+// Align a chart to its boundary, never an internal triangulation diagonal. Long narrow planes
+// then fill their texel rows instead of sampling an oblique sliver across them. Sparse shapes,
+// such as a curved strip in one plane, split until their pieces fill their rectangles.
 function flatCharts(
   group: number[],
   normal: number[],
@@ -340,6 +341,19 @@ function flatCharts(
   point: (vertex: number) => number[],
   depth = 0,
 ): Chart[] {
+  const edgeKey = (a: number[], b: number[]) => {
+    const [u, v] = [a, b].map((p) => p.map((value) => Math.round(value * 10_000)).join(','));
+    return u! < v! ? `${u}|${v}` : `${v}|${u}`;
+  };
+  const edgeCounts = new Map<string, number>();
+  for (const triangle of group)
+    for (let k = 0; k < 3; k++) {
+      const key = edgeKey(
+        point(indices[triangle * 3 + k]!),
+        point(indices[triangle * 3 + ((k + 1) % 3)]!),
+      );
+      edgeCounts.set(key, (edgeCounts.get(key) ?? 0) + 1);
+    }
   let longest = 0;
   let u = Math.abs(normal[2]!) < 0.9 ? [-normal[1]!, normal[0]!, 0] : [normal[2]!, 0, -normal[0]!];
   let area = 0;
@@ -355,6 +369,7 @@ function flatCharts(
       [b, c],
       [c, a],
     ] as const) {
+      if (edgeCounts.get(edgeKey(from, to)) !== 1) continue;
       const d = sub(to, from);
       const along = d.map((value, axis) => value - normal[axis]! * dot(d, normal));
       const length = Math.hypot(...along);

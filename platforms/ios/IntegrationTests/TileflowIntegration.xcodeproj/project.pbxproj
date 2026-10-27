@@ -1,0 +1,448 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		1858449358C2857350926ACB /* TestBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D9BCD4B594AC77133EC596 /* TestBundle.swift */; };
+		4ED773D788ABA9DF08882047 /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = 31CC6D94C1045B22AD7833C0 /* Fixtures */; };
+		65BCBE913C4CF3F58425C21D /* HostedSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F49D434E75F4048A9225B213 /* HostedSessionTests.swift */; };
+		6635850031DE4A7A64EF79D7 /* ResourcePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 781558E72B328421145D89FD /* ResourcePolicyTests.swift */; };
+		6DEE0C81397D5A1AB84818E1 /* Tileflow in Frameworks */ = {isa = PBXBuildFile; productRef = 3043EB9EEA97885BF60FEC54 /* Tileflow */; };
+		74D3A913BF84726CBE62A8D4 /* MapIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7718876CC6A93CE6A5EA82C /* MapIntegrationTests.swift */; };
+		B3843A4DCF09AD45FF0F3C8E /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD3905513AF87C616C6FD063 /* AppDelegate.swift */; };
+		C56EE8B0371906128C58EDD8 /* ResourceWebKitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B941584A7CF714018BB0F5F /* ResourceWebKitTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		65714857AB45701D3C2B1B87 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 85E3A3A561AAEFE93C0AABF0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 5220345B3F34894336397AFC;
+			remoteInfo = TileflowTestHost;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		279E2C397B88A6E4E6B1AD71 /* TileflowTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = TileflowTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		2B941584A7CF714018BB0F5F /* ResourceWebKitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceWebKitTests.swift; sourceTree = "<group>"; };
+		31CC6D94C1045B22AD7833C0 /* Fixtures */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fixtures; path = ../Tests/TileflowTests/Fixtures; sourceTree = SOURCE_ROOT; };
+		524A19CCE59FD8CA0E776B3A /* TileflowTestHost.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TileflowTestHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		781558E72B328421145D89FD /* ResourcePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourcePolicyTests.swift; sourceTree = "<group>"; };
+		B7718876CC6A93CE6A5EA82C /* MapIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapIntegrationTests.swift; sourceTree = "<group>"; };
+		D2D9BCD4B594AC77133EC596 /* TestBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestBundle.swift; sourceTree = "<group>"; };
+		F49D434E75F4048A9225B213 /* HostedSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedSessionTests.swift; sourceTree = "<group>"; };
+		FBBE6118066EECFB54F6C5F5 /* ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ios; path = ..; sourceTree = SOURCE_ROOT; };
+		FD3905513AF87C616C6FD063 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		4A2E9C1EAF06960D6AED1A02 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				6DEE0C81397D5A1AB84818E1 /* Tileflow in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		59917ED7642427EED0225F91 /* TileflowTests */ = {
+			isa = PBXGroup;
+			children = (
+				F49D434E75F4048A9225B213 /* HostedSessionTests.swift */,
+				B7718876CC6A93CE6A5EA82C /* MapIntegrationTests.swift */,
+				781558E72B328421145D89FD /* ResourcePolicyTests.swift */,
+				2B941584A7CF714018BB0F5F /* ResourceWebKitTests.swift */,
+			);
+			name = TileflowTests;
+			path = ../Tests/TileflowTests;
+			sourceTree = "<group>";
+		};
+		8F29925EB4E16B66356A3F58 = {
+			isa = PBXGroup;
+			children = (
+				FD3905513AF87C616C6FD063 /* AppDelegate.swift */,
+				31CC6D94C1045B22AD7833C0 /* Fixtures */,
+				D2D9BCD4B594AC77133EC596 /* TestBundle.swift */,
+				B3650C6D511E71A91DBF1A03 /* Packages */,
+				59917ED7642427EED0225F91 /* TileflowTests */,
+				F15A3D074D818EBC8C48FE7E /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		B3650C6D511E71A91DBF1A03 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				FBBE6118066EECFB54F6C5F5 /* ios */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		F15A3D074D818EBC8C48FE7E /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				524A19CCE59FD8CA0E776B3A /* TileflowTestHost.app */,
+				279E2C397B88A6E4E6B1AD71 /* TileflowTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		5036809BC04AD492E970F930 /* TileflowTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A8285FA04F8E89291CD231CC /* Build configuration list for PBXNativeTarget "TileflowTests" */;
+			buildPhases = (
+				FC42E4C6AF6664EE6B738917 /* Sources */,
+				AA46C25705B48435BE19EB88 /* Resources */,
+				4A2E9C1EAF06960D6AED1A02 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D2111B21AA96C01030312688 /* PBXTargetDependency */,
+			);
+			name = TileflowTests;
+			packageProductDependencies = (
+				3043EB9EEA97885BF60FEC54 /* Tileflow */,
+			);
+			productName = TileflowTests;
+			productReference = 279E2C397B88A6E4E6B1AD71 /* TileflowTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		5220345B3F34894336397AFC /* TileflowTestHost */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D07D85FEF829420359BD31F4 /* Build configuration list for PBXNativeTarget "TileflowTestHost" */;
+			buildPhases = (
+				25775EF87AE051C631690224 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = TileflowTestHost;
+			packageProductDependencies = (
+			);
+			productName = TileflowTestHost;
+			productReference = 524A19CCE59FD8CA0E776B3A /* TileflowTestHost.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		85E3A3A561AAEFE93C0AABF0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = 4566F765A03789EBB4A1AFAC /* Build configuration list for PBXProject "TileflowIntegration" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 8F29925EB4E16B66356A3F58;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				C8C41D0428B4C4AE69FAB35E /* XCLocalSwiftPackageReference ".." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = F15A3D074D818EBC8C48FE7E /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				5220345B3F34894336397AFC /* TileflowTestHost */,
+				5036809BC04AD492E970F930 /* TileflowTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA46C25705B48435BE19EB88 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				4ED773D788ABA9DF08882047 /* Fixtures in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		25775EF87AE051C631690224 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				B3843A4DCF09AD45FF0F3C8E /* AppDelegate.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		FC42E4C6AF6664EE6B738917 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				65BCBE913C4CF3F58425C21D /* HostedSessionTests.swift in Sources */,
+				74D3A913BF84726CBE62A8D4 /* MapIntegrationTests.swift in Sources */,
+				6635850031DE4A7A64EF79D7 /* ResourcePolicyTests.swift in Sources */,
+				C56EE8B0371906128C58EDD8 /* ResourceWebKitTests.swift in Sources */,
+				1858449358C2857350926ACB /* TestBundle.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D2111B21AA96C01030312688 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 5220345B3F34894336397AFC /* TileflowTestHost */;
+			targetProxy = 65714857AB45701D3C2B1B87 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		1081FC5A24B088078249FB0E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.tileflow.tests.TileflowTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TileflowTestHost.app/TileflowTestHost";
+			};
+			name = Release;
+		};
+		42715A9EECC9CF0D376487BA /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.tileflow.tests.TileflowTestHost;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		62FA50F32B43BF47BA187425 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		7D10B13D30C281BA1617BEDE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGNING_ALLOWED = NO;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		AA1158ECF88D09BD73EBD451 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.tileflow.tests.TileflowTests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TileflowTestHost.app/TileflowTestHost";
+			};
+			name = Debug;
+		};
+		F963E5E58209F770E9E1DF49 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = dev.tileflow.tests.TileflowTestHost;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4566F765A03789EBB4A1AFAC /* Build configuration list for PBXProject "TileflowIntegration" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				62FA50F32B43BF47BA187425 /* Debug */,
+				7D10B13D30C281BA1617BEDE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A8285FA04F8E89291CD231CC /* Build configuration list for PBXNativeTarget "TileflowTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA1158ECF88D09BD73EBD451 /* Debug */,
+				1081FC5A24B088078249FB0E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D07D85FEF829420359BD31F4 /* Build configuration list for PBXNativeTarget "TileflowTestHost" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				42715A9EECC9CF0D376487BA /* Debug */,
+				F963E5E58209F770E9E1DF49 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		C8C41D0428B4C4AE69FAB35E /* XCLocalSwiftPackageReference ".." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		3043EB9EEA97885BF60FEC54 /* Tileflow */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = Tileflow;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = 85E3A3A561AAEFE93C0AABF0 /* Project object */;
+}

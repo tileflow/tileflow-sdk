@@ -734,11 +734,16 @@ test('Streets highway links retain class colors below receiving carriageways', (
         for (const roadClass of ['motorway', 'trunk']) {
           const ramp = fillFor(roadClass, 1);
           assert.equal(ramp.color, fillFor(roadClass, 0).color, 'Links keep their class color');
-          assert.notEqual(
-            ramp.color,
-            receiving.color,
-            'Highway links remain distinct from streets',
-          );
+          if (theme === 'light' && structure !== 'tunnel') {
+            assert.equal(ramp.color, receiving.color, 'Day main roads share the darker swatch');
+            assert.notEqual(ramp.color, fillFor('secondary', 0).color);
+          } else {
+            assert.notEqual(
+              ramp.color,
+              receiving.color,
+              'Highway links remain distinct from streets',
+            );
+          }
           if (structure !== 'tunnel') {
             assert.ok(
               style.layers.indexOf(ramp.layer) < style.layers.indexOf(receiving.layer),
@@ -1315,7 +1320,7 @@ test('Streets keeps its runtime-toggle geometry and business surface in the comp
   assert.equal(buildings3D.layers.building, extrusion?.['source-layer']);
   assert.equal(buildings3D.windows, false);
   assert.equal(buildings3D.verticalGradient, true);
-  assert.equal(buildings3D.edgeRadius, 0.8);
+  assert.equal(buildings3D.edgeRadius, 1.5);
   assert.equal(buildings3D.lighting, 'sun');
   assert.equal(buildings3D.shadows, true);
   assert.equal(buildings3D.occlusion, true);

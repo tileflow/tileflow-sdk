@@ -1,5 +1,28 @@
 # Map designs and assets
 
+## Streets POIs
+
+Transport POIs with a recognized `network` use that network's symbol. The initial catalog covers
+`Metro de Madrid`, `Cercanías Madrid`, and `EMT Madrid`. Each network has one packaged SVG in a
+24px cell, shared across all themes without recoloring the identity. Matching uses the source's
+exact network value, including on older World tiles without `mode`; it never guesses from a
+station name or applies a city logo to every station. Unknown or missing networks retain the
+existing mode/type/category pictogram. Other railway services and intercity buses keep their
+generic symbols. Sources and asset licenses are recorded in `THIRD_PARTY_NOTICES.md`.
+
+POIs use World ranks with category density: parks and transport retain more detail than
+businesses, hotels and religious sites. Gardens are limited to World filter ranks 0–1 at every
+zoom, keeping principal destinations while suppressing botanical collections and other minor
+garden POIs. World currently classifies both as `garden`, so some small independent gardens are
+also omitted. Other park and landmark types keep their usual eligibility.
+
+All categories share importance order; the two most important ranks precede streets. Discs need
+names except parking and toilets. Native perspective and collisions select labels. See
+[label placement](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/cartographic-defaults.md#label-density-and-perspective).
+Ordinary POI/transit names use 13 px, major destinations 18 px. World size rank zero alone does
+not enlarge small parks. Text padding falls from 6 px to 4 px between z16 and z17; collision
+determines which names fit.
+
 ## civica
 
 `civica` is a self-contained civic print design named “Cívica”. Pale paper, warm stone blocks,

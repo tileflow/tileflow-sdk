@@ -123,16 +123,25 @@ test('runs the standalone published native file with no installed dependencies o
       'fillTileflowThemeBlendTemplate',
       'loadTileflowNativeManifest',
       'nearestTileflowBlendTheme',
+    'parseTileflowMobileDiscovery',
       'planTileflowThemeBlend',
       'resolveTileflowNativeInitialView',
       'resolveTileflowNativeManifestUrl',
       'resolveTileflowNativeResourceUrl',
       'tileflowBoundaryFamilies',
+      'tileflowMobileDiscoveryMaximumBytes',
       'tileflowNativeManifestLimits',
       'tileflowNativeUrlLimits',
       'tileflowThemeBlendLimits',
       'validateTileflowThemeBlendSelection',
     ]);
+    const mapId = 'map_0123456789abcdef';
+    const origin = 'https://api.tileflow.test';
+    const discovery = native.parseTileflowMobileDiscovery({version: 1, mapId, deploymentVersion: 1,
+      representations: {'webview-v1': {manifestUrl: origin + '/maps/' + mapId + '/mobile/webview-v1/manifest.json'}}},
+      origin + '/maps/' + mapId + '/mobile/manifest.json');
+    assert.equal(discovery.mapId, mapId);
+    assert.equal(native.tileflowMobileDiscoveryMaximumBytes, 4096);
     for (const origin of ['http://127.0.0.1:8765', 'http://10.0.2.2:8765']) {
       const results = checkNativeUrlContract(native, origin);
       assert.equal(results.length, 22);

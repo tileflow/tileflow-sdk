@@ -1,0 +1,132 @@
+{
+  "version": 1,
+  "scenarios": [
+    {
+      "name": "cache-renewal-and-age-rotation",
+      "status": 201,
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "identity": "first"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 1000
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "identity": "first"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 880000
+        },
+        {
+          "op": "admit",
+          "requests": 2,
+          "identity": "first"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 21600000
+        },
+        {
+          "op": "admit",
+          "requests": 3,
+          "identity": "second"
+        }
+      ]
+    },
+    {
+      "name": "terminal-credentialRejected-does-not-retry",
+      "status": 401,
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "credentialRejected"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "credentialRejected"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 21600000
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "credentialRejected"
+        }
+      ]
+    },
+    {
+      "name": "terminal-accessDenied-does-not-retry",
+      "status": 403,
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "accessDenied"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "accessDenied"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 21600000
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "accessDenied"
+        }
+      ]
+    },
+    {
+      "name": "terminal-quotaExceeded-does-not-retry",
+      "status": 429,
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "quotaExceeded"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "quotaExceeded"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 21600000
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "quotaExceeded"
+        }
+      ]
+    }
+  ],
+  "resourceRejections": [
+    {
+      "status": 401,
+      "error": "credentialRejected"
+    },
+    {
+      "status": 403,
+      "error": "accessDenied"
+    },
+    {
+      "status": 429,
+      "error": "quotaExceeded"
+    }
+  ]
+}

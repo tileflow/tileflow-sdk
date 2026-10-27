@@ -1,6 +1,6 @@
-import {labelOrder} from '../../cartography/label-placement';
 import {type TileflowDomainCompileContext, typographyTextStyle} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
+import {labelOrder} from '../../cartography/label-placement';
 import {applyCircleStyle, applySymbolStyle} from '../../cartography/layer-style';
 import {labelField, labelNameFields} from '../../cartography/localization';
 import {mergeTileflowDesign} from '../../cartography/merge';
@@ -272,6 +272,9 @@ function createPoiSelection(
   language: TileflowLabelLanguage,
 ): PoiSelection {
   const {fields} = context.data.schema;
+  const typeRankCaps = Object.entries(semantics.maxRankByType).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
   const shown = new Map<TileflowPoiCategory, {icon: boolean; text: boolean}>();
   const iconOnlyTypes = [...new Set(semantics.placement.iconOnlyTypes)];
   const iconOnly = (): unknown[] =>
@@ -314,6 +317,14 @@ function createPoiSelection(
         ['>=', sizeRank, 0],
         ['<=', sizeRank, 16],
       ];
+      if (typeRankCaps.length) {
+        result.push([
+          'match',
+          ['get', fields.poiType],
+          ...typeRankCaps.flatMap(([type, rank]) => [type, ['<=', filterRank, rank]]),
+          true,
+        ]);
+      }
       if (!semantics.icons || !semantics.labels) return result;
       const textless = categories.filter((category) => !shown.get(category)?.text);
       const iconless = categories.filter((category) => !shown.get(category)?.icon);

@@ -11,6 +11,8 @@ export type TileflowPmtilesProtocolRegistry = Readonly<{
 
 export type TileflowPmtilesProtocolRegistrationOptions = Readonly<{
   maximumDirectoryDepth?: number;
+  /** Route archive byte requests through an application-owned resource transport. */
+  transformArchiveUrl?: (url: string) => string;
 }>;
 
 type ProtocolRequest = Readonly<{type?: string; url: string}>;
@@ -38,7 +40,7 @@ export function registerTileflowPmtilesProtocol(
 ): void {
   if (registeredPmtilesProtocols.has(registry.addProtocol)) return;
   const maximumDirectoryDepth = normalizeMaximumDirectoryDepth(options.maximumDirectoryDepth);
-  const protocol = new TileflowPmtilesProtocol(maximumDirectoryDepth);
+  const protocol = new TileflowPmtilesProtocol(maximumDirectoryDepth, options.transformArchiveUrl);
   sharedProtocol ??= protocol;
   registry.addProtocol(tileflowPmtilesProtocol, protocol.tile);
   registeredPmtilesProtocols.add(registry.addProtocol);
@@ -77,7 +79,10 @@ export function isTileflowPmtilesUrl(url: string): boolean {
 class TileflowPmtilesProtocol {
   readonly #archives = new Map<string, TileflowPmtilesArchive>();
 
-  constructor(private readonly maximumDirectoryDepth: number) {}
+  constructor(
+    private readonly maximumDirectoryDepth: number,
+    private readonly transformArchiveUrl: (url: string) => string = (url) => url,
+  ) {}
 
   readonly tilev4 = async (
     request: ProtocolRequest,
@@ -119,7 +124,10 @@ class TileflowPmtilesProtocol {
   #archive(target: string): TileflowPmtilesArchive {
     let archive = this.#archives.get(target);
     if (!archive) {
-      archive = new TileflowPmtilesArchive(target, this.maximumDirectoryDepth);
+      archive = new TileflowPmtilesArchive(
+        this.transformArchiveUrl(target),
+        this.maximumDirectoryDepth,
+      );
       this.#archives.set(target, archive);
     }
     return archive;

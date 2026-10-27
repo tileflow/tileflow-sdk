@@ -59,6 +59,7 @@ uniform bool u_unlit;
 uniform vec4 u_parts[${tileflowModelLimits.parts}];
 uniform vec4 u_role_colour[7];
 uniform vec4 u_role_material[7]; // metallic, roughness, their respective override weights
+uniform vec3 u_role_appearance[7]; // map shading share, ambient occlusion multiplier, part colour share
 
 vec3 fromSRGB(vec3 colour) {
   return pow(max(colour, vec3(0.0)), vec3(2.2));
@@ -89,7 +90,7 @@ vec3 materialBase(int role) {
   vec4 own = u_role_colour[role];
   vec3 factor = mix(u_base_colour.rgb, fromSRGB(own.rgb), own.a);
   vec4 part = u_parts[v_part];
-  factor = mix(factor, fromSRGB(part.rgb), part.a);
+  factor = mix(factor, fromSRGB(part.rgb), part.a * u_role_appearance[role].z);
   return factor * v_rgba.rgb * fromSRGB(materialTexture(0).rgb);
 }
 
@@ -126,7 +127,7 @@ vec3 physicalLight(vec3 base, vec3 normal, float lit, int role) {
   float exposure = (0.96 + 0.04 * clamp(normal.z, -1.0, 1.0)) *
     (1.0 - 0.3 * min(directional, 1.0) * max(-dot(normal, u_sun_dir), 0.0));
   float ao = mix(1.0, v_light * mix(1.0, materialTexture(3).r, u_occlusion_strength),
-    u_ambient_occlusion);
+    u_ambient_occlusion * u_role_appearance[role].y);
   vec3 ambient = (diffuse + reflectedSky) * u_sky_light * exposure * ao;
   return ambient + min(direct, vec3(1.0));
 }

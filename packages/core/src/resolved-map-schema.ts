@@ -1206,6 +1206,9 @@ const modelRoleLightingSchema = z
     colorMix: boundedThemeNumberSchema(0, 1).optional(),
     metallic: boundedThemeNumberSchema(0, 1).optional(),
     roughness: boundedThemeNumberSchema(0, 1).optional(),
+    shading: z.enum(['physical', 'map']).optional(),
+    ambientOcclusion: boundedThemeNumberSchema(0, 1).optional(),
+    partColorMix: boundedThemeNumberSchema(0, 1).optional(),
     colorVariation: z
       .object({
         hue: z.tuple([boundedThemeNumberSchema(0, 360), boundedThemeNumberSchema(0, 360)]),
@@ -1241,7 +1244,7 @@ const buildingsModuleSchema = z
         lighting: z.enum(['style', 'sun']).optional(),
         colorVariation: boundedThemeNumberSchema(0, 1).optional(),
         edges: boundedThemeNumberSchema(0, 1).optional(),
-        edgeRadius: z.number().min(0).max(1).optional(),
+        edgeRadius: z.number().min(0).max(1.5).optional(),
         edgeColor: themeColorValueSchema.optional(),
         nightLight: boundedThemeNumberSchema(0, 2).optional(),
         floodLight: z
@@ -1276,6 +1279,7 @@ const buildingsModuleSchema = z
           .strict()
           .optional(),
         occlusion: z.boolean().optional(),
+        groundOcclusion: boundedThemeNumberSchema(0, 1).optional(),
         modelOcclusion: boundedThemeNumberSchema(0, 1).optional(),
         shadows: z.boolean().optional(),
         windows: z.boolean().optional(),
@@ -1647,6 +1651,20 @@ const poiModuleSchema = z
     type: z.literal('poi'),
     detailZoom: z.number().finite().gt(16).max(24).optional(),
     categories: z.array(z.enum(tileflowPoiCategories)).optional(),
+    maxRankByType: z
+      .record(
+        z.string().regex(/^[a-z0-9]+(?:_[a-z0-9]+)*$/u, 'Expected a World POI type'),
+        z.union([
+          z.literal(0),
+          z.literal(1),
+          z.literal(2),
+          z.literal(3),
+          z.literal(4),
+          z.literal(5),
+        ]),
+      )
+      .describe('Fixed maximum World filter rank per POI type, independent of zoom detail.')
+      .optional(),
     color: z.enum(['uniform', 'category']).optional(),
     density: z
       .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])

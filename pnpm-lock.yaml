@@ -344,6 +344,25 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/mobile-runtime:
+    dependencies:
+      '@tileflow/core':
+        specifier: workspace:*
+        version: link:../core
+      '@tileflow/interactions':
+        specifier: workspace:*
+        version: link:../interactions
+      maplibre-gl:
+        specifier: 6.13.0
+        version: 6.13.0
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
+    devDependencies:
+      esbuild:
+        specifier: 0.28.1
+        version: 0.28.1
+
   packages/next:
     dependencies:
       '@tileflow/dev':

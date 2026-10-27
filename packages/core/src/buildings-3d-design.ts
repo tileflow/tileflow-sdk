@@ -61,6 +61,8 @@ export type TileflowBuildings3DDesign = Readonly<{
   /** Shadows from the sun, and contact shadow at the foot of the walls. */
   shadows: boolean;
   occlusion: boolean;
+  /** Ground contact shadow strength; facade shading is independent. */
+  groundOcclusion?: number;
   /** Strength of prepared model ambient visibility; zero leaves the sky contribution unchanged. */
   modelOcclusion?: number;
   /** Building models the map places in its city, each replacing the buildings under it. */
@@ -100,6 +102,7 @@ export const tileflowDefaultBuildings3DDesign = Object.freeze({
   windows: false,
   shadows: true,
   occlusion: true,
+  groundOcclusion: 0.16,
   modelOcclusion: 0.75,
 } satisfies TileflowBuildings3DDesign);
 
@@ -137,7 +140,7 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
     },
     color: color as string | readonly unknown[],
     edges: within(value.edges, 1, 0),
-    edgeRadius: within(value.edgeRadius, 1, defaults.edgeRadius),
+    edgeRadius: within(value.edgeRadius, 1.5, defaults.edgeRadius),
     lighting: value.lighting === 'style' ? 'style' : defaults.lighting,
     colorVariation: within(value.colorVariation, 1, 0),
     verticalGradient: value.verticalGradient !== false,
@@ -150,6 +153,7 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
     ...readTileflowBuildingsEntrance(value.entrance),
     shadows: typeof value.shadows === 'boolean' ? value.shadows : defaults.shadows,
     occlusion: typeof value.occlusion === 'boolean' ? value.occlusion : defaults.occlusion,
+    groundOcclusion: within(value.groundOcclusion, 1, defaults.groundOcclusion),
     modelOcclusion: within(value.modelOcclusion, 1, defaults.modelOcclusion),
     ...modelsOf(value.models),
     ...modelColorsOf(value.modelColors),

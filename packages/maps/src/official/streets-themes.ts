@@ -1,9 +1,10 @@
 import {defineTheme, token} from '@tileflow/core';
+import {streetsBuildingColors} from './streets-building-colors';
 import {streetsCartographyColors} from './streets-cartography-colors';
 import {streetsLighting} from './streets-lighting';
 import {streetsModelLighting} from './streets-model-lighting';
 import {streetsPoiImageTokens} from './streets-poi';
-import {streetsRoadCasingProfiles} from './streets-road-colors';
+import {streetsDayRoadFillColors, streetsRoadCasingProfiles} from './streets-road-colors';
 import {streetsSkyTokens} from './streets-sky';
 import {
   type StreetsColorTheme,
@@ -536,9 +537,10 @@ function calibratedStreetsColors(
 }
 
 function streetsPaletteColors(preset: StreetsLightPreset, colorTheme: StreetsColorTheme) {
-  const palette = {
+  const palette: Record<string, string> = {
     ...calibratedStreetsColors(preset, colorTheme),
     ...streetsCartographyColors(colorTheme, preset),
+    ...(colorTheme === 'default' && preset === 'day' ? streetsDayRoadFillColors : {}),
   };
   return {
     ...palette,
@@ -554,6 +556,7 @@ function streetsPaletteColors(preset: StreetsLightPreset, colorTheme: StreetsCol
           ? '#F8E4C4'
           : '#F5CFA8',
     ...streetsModelLighting(preset, colorTheme).colors,
+    ...streetsBuildingColors(palette['buildings.extrusion']!, isDarkStreetsPreset(preset)),
     ...streetsSkyTokens(preset, colorTheme).colors,
   };
 }
@@ -846,6 +849,7 @@ export const streetsVisual = {
     pathTransition: token.color('roads.path.transition'),
     pathTunnel: token.color('roads.path.tunnel'),
     pedestrianSurface: token.color('roads.pedestrian.surface'),
+    primary: token.color('roads.primary'),
     rail: token.color('roads.rail'),
     railTransit: token.color('roads.railTransit'),
     sidewalkSurface: token.color('roads.sidewalk.surface'),

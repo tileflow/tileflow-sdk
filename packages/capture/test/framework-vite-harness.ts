@@ -54,76 +54,81 @@ export async function verifyFrameworkViteCapture(
     root: cwd,
     server: {host: '127.0.0.1', port: 0},
   });
-  await vite.listen();
-  const address = vite.httpServer?.address();
-  assert.ok(address && typeof address === 'object');
-  const appOrigin = `http://127.0.0.1:${address.port}`;
-  const manifestResponse = await fetch(`${appOrigin}/tileflow/manifest.json`);
-  const manifestBody = await manifestResponse.text();
-  assert.equal(manifestResponse.status, 200, manifestBody);
-  assert.equal((JSON.parse(manifestBody) as {version?: unknown}).version, 2);
-
-  const originalListen = Server.prototype.listen;
-  let additionalListeners = 0;
-  Server.prototype.listen = function forbiddenAdditionalListener() {
-    additionalListeners += 1;
-    throw new Error('Application capture opened a second Node listener.');
-  };
-  const session = createTileflowCaptureSession({
-    allowBrowserInstall: false,
-    appOrigin,
-    config: 'tileflow.config.ts',
-    cwd,
-  });
-
   try {
-    const result = await session.capture(['cleanup', 'image', 'interactive', 'popup']);
-    assert.deepEqual(
-      result.captures.map((capture) => ({
-        height: capture.height,
-        scene: capture.scene,
-        target: capture.target,
-        width: capture.width,
-      })),
-      [
-        {height: 16, scene: 'cleanup', target: 'application', width: 16},
-        {height: 240, scene: 'image', target: 'application', width: 150},
-        {height: 240, scene: 'interactive', target: 'application', width: 260},
-        {height: 40, scene: 'popup', target: 'application', width: 168},
-      ],
-    );
-    const interactiveCapture = result.captures.find(({scene}) => scene === 'interactive');
-    const popupCapture = result.captures.find(({scene}) => scene === 'popup');
-    assert.ok(interactiveCapture);
-    assert.ok(popupCapture);
-    assertPngContainsProbeColor(
-      interactiveCapture.png,
-      options.popupProbeRgb,
-      `${options.framework} interactive map`,
-    );
-    assertPngContainsProbeColor(
-      popupCapture.png,
-      options.popupProbeRgb,
-      `${options.framework} popup selector`,
-    );
-    assert.ok(result.captures.every((capture) => capture.networkDependent === false));
-    assert.equal(additionalListeners, 0);
-    for (const scene of ['missing-map', 'unresolved-image']) {
-      await assert.rejects(
-        () => session.capture([scene]),
-        (error: unknown) =>
-          error instanceof Error && 'code' in error && error.code === 'APPLICATION_ERROR',
-        `${options.framework} ${scene} must become APPLICATION_ERROR`,
+    await vite.listen();
+    const address = vite.httpServer?.address();
+    assert.ok(address && typeof address === 'object');
+    const appOrigin = `http://127.0.0.1:${address.port}`;
+    const manifestResponse = await fetch(`${appOrigin}/tileflow/manifest.json`);
+    const manifestBody = await manifestResponse.text();
+    assert.equal(manifestResponse.status, 200, manifestBody);
+    assert.equal((JSON.parse(manifestBody) as {version?: unknown}).version, 2);
+
+    let additionalListeners = 0;
+    t.mock.method(Server.prototype, 'listen', function forbiddenAdditionalListener() {
+      additionalListeners += 1;
+      throw new Error('Application capture opened a second Node listener.');
+    });
+    const session = createTileflowCaptureSession({
+      allowBrowserInstall: false,
+      appOrigin,
+      config: 'tileflow.config.ts',
+      cwd,
+      signal: t.signal,
+    });
+
+    try {
+      const result = await session.capture(['cleanup', 'image', 'interactive', 'popup']);
+      assert.deepEqual(
+        result.captures.map((capture) => ({
+          height: capture.height,
+          scene: capture.scene,
+          target: capture.target,
+          width: capture.width,
+        })),
+        [
+          {height: 16, scene: 'cleanup', target: 'application', width: 16},
+          {height: 240, scene: 'image', target: 'application', width: 150},
+          {height: 240, scene: 'interactive', target: 'application', width: 260},
+          {height: 40, scene: 'popup', target: 'application', width: 168},
+        ],
       );
+      const interactiveCapture = result.captures.find(({scene}) => scene === 'interactive');
+      const popupCapture = result.captures.find(({scene}) => scene === 'popup');
+      assert.ok(interactiveCapture);
+      assert.ok(popupCapture);
+      assertPngContainsProbeColor(
+        interactiveCapture.png,
+        options.popupProbeRgb,
+        `${options.framework} interactive map`,
+      );
+      assertPngContainsProbeColor(
+        popupCapture.png,
+        options.popupProbeRgb,
+        `${options.framework} popup selector`,
+      );
+      assert.ok(result.captures.every((capture) => capture.networkDependent === false));
+      assert.equal(additionalListeners, 0);
+      for (const scene of ['missing-map', 'unresolved-image']) {
+        await assert.rejects(
+          () => session.capture([scene]),
+          (error: unknown) =>
+            error instanceof Error && 'code' in error && error.code === 'APPLICATION_ERROR',
+          `${options.framework} ${scene} must become APPLICATION_ERROR`,
+        );
+      }
+    } catch (error) {
+      t.diagnostic(JSON.stringify({framework: options.framework, browserFailures}));
+      throw error;
+    } finally {
+      await session.close();
     }
-  } catch (error) {
-    t.diagnostic(JSON.stringify({framework: options.framework, browserFailures}));
-    throw error;
   } finally {
-    Server.prototype.listen = originalListen;
-    await session.close();
-    await vite.close();
-    await rm(cwd, {force: true, recursive: true});
+    try {
+      await vite.close();
+    } finally {
+      await rm(cwd, {force: true, recursive: true});
+    }
   }
 }
 

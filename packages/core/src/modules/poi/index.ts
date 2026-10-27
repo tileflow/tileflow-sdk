@@ -34,6 +34,7 @@ export type ResolvedPoiModuleOptions = {
   density: TileflowPoiDensity;
   detailZoom: number;
   densityByCategory: Partial<Record<TileflowPoiCategory, TileflowPoiDensity>>;
+  maxRankByType: NonNullable<TileflowPoiModuleConfig['maxRankByType']>;
   icons: boolean;
   labels: boolean;
   minZoom: number;
@@ -69,6 +70,7 @@ export function resolvePoi(request: TileflowPoiModuleConfig | undefined): Resolv
     density: request?.density ?? 2,
     detailZoom: request?.detailZoom ?? 17,
     densityByCategory: {...request?.densityByCategory},
+    maxRankByType: {...request?.maxRankByType},
     icons: request?.icons ?? true,
     labels: request?.labels ?? true,
     minZoom: request?.minZoom ?? 0,

@@ -63,3 +63,9 @@ export {
 export {tileflowBoundaryFamilies} from './boundary-areas/schema';
 export type {TileflowBoundaryFamily} from './boundary-areas/schema';
 export type {TileflowBoundaryRow, TileflowBoundaryValues} from './boundary-areas/join';
+
+export {
+  parseTileflowMobileDiscovery,
+  tileflowMobileDiscoveryMaximumBytes,
+} from './mobile-discovery';
+export type {TileflowMobileDiscovery} from './mobile-discovery';

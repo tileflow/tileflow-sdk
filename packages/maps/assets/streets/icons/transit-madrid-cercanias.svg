@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>Cercanías Madrid</title>
+  <desc>WikiNight2; vector revisions by Alkari and Borjaguado. Public domain (PD-self, PD-textlogo). Normalized to a 24px map icon; see THIRD_PARTY_NOTICES.md.</desc>
+  <svg x="2" y="2" width="20" height="20" viewBox="0 0 300 300">
+<circle cx="150" cy="150" r="150" style="fill:rgb(239,44,48);"/>
+    <path d="M150,100C177.429,100 200,122.571 200,150C200,177.429 177.429,200 150,200C122.571,200 100,177.429 100,150L50,150C50,204.858 95.142,250 150,250C204.858,250 250,204.858 250,150C250,95.142 204.858,50 150,50L150,100Z" style="fill:white;"/>
+  </svg>
+</svg>

@@ -207,7 +207,7 @@ export default defineMap({
 - `threeDimensional.edges` and `edgeColor` set the [edges](#edges), and `nightLight` the
   [night light](#night-light). Numbers and colours may be theme tokens.
 - `threeDimensional.edgeRadius` rounds convex exterior corners in the mesh and softens the
-  roof/wall lighting transition. It accepts 0–1 metres and defaults to 0.8; use 0 for sharp corners.
+  roof/wall lighting transition. It accepts 0–1.5 metres and defaults to 0.8; use 0 for sharp corners.
   Courtyard corners and tile cuts stay unchanged. The authored roof shape is preserved; the top
   edge is softened through lighting, not a geometric roof bevel. Rounding adds a bounded number
   of vertices at convex corners, with no extra render pass. Changes to this radius rebuild the
@@ -218,7 +218,8 @@ at most three metres (half the height for low buildings). It is evaluated per fr
 building does not acquire a full-height dark ramp. Disabling the authored extrusion's
 `verticalGradient` disables this shading. Ground contact shadow is controlled by `occlusion`, enabled by default. It extends three metres
 from grounded walls, darkening the ground by at most 16%, with a smooth distance falloff and round
-corners. Every map uses these defaults when it enables `occlusion`. The reach is measured in world
+corners. `threeDimensional.groundOcclusion` adjusts this strength from zero to one (default `0.16`)
+without changing facade shading or model ambient occlusion. Streets uses `0.12`. The reach is measured in world
 metres, so its screen width scales continuously with zoom and becomes subtle at distant views.
 Overlaps use the strongest
 shade once, so shared walls, courtyards and tile joins do not accumulate dark bands. Raised building
@@ -506,18 +507,32 @@ Architectural illumination has two independent controls:
   they also control the falloff of explicitly authored area emitters.
 
 Physical profiles also accept `color`, `colorMix` (zero to one, default one when a tint exists),
-`roughness` and `metallic` (zero to one). Explicit `modelColors` override role tints. Missing
+`roughness` and `metallic` (zero to one). Explicit `modelColors` override role tints, weighted by
+`partColorMix` (zero to one, default one). Set it to zero to retain a role's colour on shared parts.
+Missing
 physical overrides retain the glTF material. `emissiveVariation` adds a stable, model-seeded amount
 from zero to its value. Optional `colorVariation` supplies independent `[min, max]` ranges for
 `hue` (0–360), `saturation` and `lightness` (0–100), with `space: 'srgb'` (default) or `'linear'`.
 The same model identity keeps its samples across LODs and theme changes.
+A valid explicit `color` takes precedence over `colorVariation`.
 
-Streets leaves ordinary flood lighting off in its light presets. Its dusk/night wall profile uses a strength
-of `0.1` and `[0.5, 0, 0, 1, 0.8]`, concentrating a warm wash near the foot. Monochrome uses a
-weaker neutral wall profile and no architectural ground flood. Prepared models without role
-metadata take each part's default role. Windows use metallic reflection and varied emission;
-doors and logos have separate profiles, and roofs remain non-emissive. Day/dawn profiles follow
-the scene's brighter material response. A role does not generate missing windows or ground emitters.
+For glTF surfaces, `shading: 'map'` uses the surrounding buildings' normalized sunlight and matte
+response. The default, `physical`, retains metallic/roughness lighting. `ambientOcclusion` is a
+zero-to-one multiplier for that role's scene occlusion, defaulting to one. Shading, occlusion and
+part colour weights blend through theme transitions. Textures, alpha, normal maps and emission
+remain independent of the shading choice.
+
+Streets leaves ordinary flood lighting off in its light presets and in Monochrome. Authored stone
+uses the ordinary building palette with subtle secondary, roof and accent tones, map shading and
+reduced occlusion. Windows retain their original metallic reflection, stable colour variation and
+emission, including on shared stone parts. Prepared models without role metadata take each part's
+default role. A role does not generate missing windows or ground emitters.
+
+Streets' stone theme tokens are `buildings.modelSurface`, `buildings.modelSecondary`,
+`buildings.modelRoof`, and `buildings.modelAccent`. Their defaults are derived from each preset's
+`buildings.extrusion` colour. Set `modelLighting.window.color` to choose one glass colour while
+retaining its reflection and emission. Windows use `partColorMix: 0`; set it to one to opt into
+named `modelColors` overrides. These controls preserve geometry and detail.
 See [building-model preparation](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/building-models.md)
 for glTF channels, explicit area emitters, compatibility and resource costs.
 

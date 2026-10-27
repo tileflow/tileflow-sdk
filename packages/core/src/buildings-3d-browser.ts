@@ -1093,7 +1093,13 @@ export function createTileflowBuildings3D(
   }
 
   type ModelLightingUniforms = Record<
-    'strengths' | 'colours' | 'gradients' | 'powers' | 'materialColours' | 'materials',
+    | 'strengths'
+    | 'colours'
+    | 'gradients'
+    | 'powers'
+    | 'materialColours'
+    | 'materials'
+    | 'appearance',
     Float32Array
   >;
   const modelLightingCache = new Map<string, ModelLightingUniforms>();
@@ -1116,6 +1122,7 @@ export function createTileflowBuildings3D(
     const powers = new Float32Array(7);
     const materialColours = new Float32Array(28);
     const materials = new Float32Array(28);
+    const appearance = new Float32Array(21);
     for (const [role, id] of Object.entries(tileflowModelLightingRoles) as [
       TileflowModelLightingRole,
       number,
@@ -1124,6 +1131,12 @@ export function createTileflowBuildings3D(
         to = themes[upper]!.modelLighting?.[role];
       const sampledFrom = sampleModelRole(from, `${identity}:${role}`);
       const sampledTo = sampleModelRole(to, `${identity}:${role}`);
+      appearance[id * 3] =
+        (from?.shading === 'map' ? 1 - mix : 0) + (to?.shading === 'map' ? mix : 0);
+      appearance[id * 3 + 1] =
+        (from?.ambientOcclusion ?? 1) * (1 - mix) + (to?.ambientOcclusion ?? 1) * mix;
+      appearance[id * 3 + 2] =
+        (from?.partColorMix ?? 1) * (1 - mix) + (to?.partColorMix ?? 1) * mix;
       strengths[id] = sampledFrom.strength * (1 - mix) + sampledTo.strength * mix;
       const ca = sampledFrom.color,
         cb = sampledTo.color;
@@ -1152,7 +1165,7 @@ export function createTileflowBuildings3D(
         gradients[id * 4 + component] = first[component]! * (1 - mix) + second[component]! * mix;
       powers[id] = first[4] * (1 - mix) + second[4] * mix;
     }
-    const result = {strengths, colours, gradients, powers, materialColours, materials};
+    const result = {strengths, colours, gradients, powers, materialColours, materials, appearance};
     if (modelLightingCache.size >= 1024)
       modelLightingCache.delete(modelLightingCache.keys().next().value!);
     modelLightingCache.set(identity, result);
@@ -1370,7 +1383,7 @@ export function createTileflowBuildings3D(
         context.uniform1f(program.uniforms.u_band!, occlusion.ground);
         context.uniform1f(
           program.uniforms.u_band_strength!,
-          occlusion.groundStrength * visibleOpacity(),
+          mixed((entry) => entry.groundOcclusion ?? occlusion.groundStrength) * visibleOpacity(),
         );
         for (const tile of entries) {
           const {x, y, value} = tile;
@@ -1611,6 +1624,7 @@ export function createTileflowBuildings3D(
           context.uniform1fv(m.u_role_emission_power!, emission.powers);
           context.uniform4fv(m.u_role_colour!, emission.materialColours);
           context.uniform4fv(m.u_role_material!, emission.materials);
+          context.uniform3fv(m.u_role_appearance!, emission.appearance);
           const at = placed(stand.tileX, stand.tileY);
           context.uniform2f(m.u_offset!, ...at.offset);
           context.uniform1f(m.u_metres!, at.metres);
@@ -1775,7 +1789,7 @@ export function createTileflowBuildings3D(
           if (strength <= 0) continue;
           const own = lighting.colours.subarray(role * 4, role * 4 + 4);
           const tint = lighting.materialColours.subarray(role * 4, role * 4 + 4);
-          const tintWeight = tint[3]! * (1 - part[3]);
+          const tintWeight = tint[3]! * (1 - part[3] * lighting.appearance[role * 3 + 2]!);
           const colour = [0, 1, 2].map((channel) =>
             own[3]! > 0
               ? own[channel]!

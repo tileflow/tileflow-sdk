@@ -20,7 +20,7 @@ export type TileflowBuildingsThreeDimensionalStyle = {
   colorVariation?: TileflowThemeNumberValue;
   /** How strongly roof outlines and outer corners catch the light, from 0 (default) to 1. */
   edges?: TileflowThemeNumberValue;
-  /** Radius in metres for softened exterior corners and roof lighting, from 0 to 1; defaults to 0.8. */
+  /** Radius in metres for softened exterior corners and roof lighting, from 0 to 1.5; defaults to 0.8. */
   edgeRadius?: number;
   /** Their own colour, drawn unlit; without it they take the building's colour, lightened. */
   edgeColor?: TileflowThemeColorValue;
@@ -63,6 +63,12 @@ export type TileflowBuildingsThreeDimensionalStyle = {
         colorMix?: TileflowThemeNumberValue;
         metallic?: TileflowThemeNumberValue;
         roughness?: TileflowThemeNumberValue;
+        /** Normalize matte light to ordinary buildings, or retain physical glTF lighting (default). */
+        shading?: 'physical' | 'map';
+        /** Role multiplier for model ambient occlusion, from zero to one; defaults to one. */
+        ambientOcclusion?: TileflowThemeNumberValue;
+        /** Named-part colour contribution after the role tint, from zero to one; defaults to one. */
+        partColorMix?: TileflowThemeNumberValue;
         /** Independent HSL ranges, seeded by model identity; no window geometry is invented. */
         colorVariation?: {
           hue: readonly [TileflowThemeNumberValue, TileflowThemeNumberValue];
@@ -82,6 +88,8 @@ export type TileflowBuildingsThreeDimensionalStyle = {
   entrance?: {buildings?: readonly [number, number]; models?: readonly [number, number]};
   /** Contact shadow at the foot of the walls and in tight corners; defaults to true. */
   occlusion?: boolean;
+  /** Ground contact shadow strength, from 0 to 1; defaults to 0.16. Facade shading is independent. */
+  groundOcclusion?: TileflowThemeNumberValue;
   /** Prepared model ambient occlusion strength, from 0 to 1; defaults to 0.75. */
   modelOcclusion?: TileflowThemeNumberValue;
   /** Shadows from the sun, on the buildings and the flat map; defaults to true. */

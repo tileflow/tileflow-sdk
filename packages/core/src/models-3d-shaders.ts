@@ -164,10 +164,10 @@ ${modelPhysicalLighting}
 
 // The buildings' light: a sunlit roof keeps its colour, a face turned to a low sun glows, and shade
 // takes the sky's colour; a face that looks down sees little sky.
-vec3 shade(vec3 normal, float lit) {
+vec3 shade(vec3 normal, float lit, float occlusion) {
   float facing = dot(normal, u_sun_dir);
   vec3 sky = u_sky_light * mix(mix(0.8, 0.5, u_night), 1.0, max(normal.z, -0.4));
-  sky *= mix(1.0, v_light, u_ambient_occlusion);
+  sky *= mix(1.0, v_light, u_ambient_occlusion * occlusion);
   vec3 light = sky + u_sun_light * max(facing, 0.0) * (1.0 - u_shadow * (1.0 - lit));
   vec3 roof = u_sky_light + u_sun_light * max(u_sun_dir.z, 0.0);
   return min(pow(light / max(roof, vec3(1e-4)), vec3(1.0 / 2.2)), vec3(1.7));
@@ -188,14 +188,22 @@ void main() {
   if (u_physical) {
     float alpha = materialAlpha();
     vec3 base = materialBase(role);
-    vec3 radiance = physicalLight(base, normal, lit, role);
+    float mapShare = u_role_appearance[role].x;
+    vec3 radiance;
+    if (mapShare >= 1.0) {
+      radiance = base * fromSRGB(shade(normal, lit, u_role_appearance[role].y));
+    } else {
+      radiance = physicalLight(base, normal, lit, role);
+      if (mapShare > 0.0)
+        radiance = mix(radiance, base * fromSRGB(shade(normal, lit, u_role_appearance[role].y)), mapShare);
+    }
     radiance += u_emissive * fromSRGB(materialTexture(4).rgb);
     vec4 own = u_role_emission_colour[role];
     radiance = mix(radiance, mix(base, fromSRGB(own.rgb), own.a), emission);
     fragColor = vec4(hazed(toSRGB(radiance)), alpha * u_opacity);
     return;
   }
-  vec3 colour = v_colour * shade(normal, lit);
+  vec3 colour = v_colour * shade(normal, lit, u_role_appearance[role].y);
   if (emission > 0.0) {
     vec4 own = u_role_emission_colour[role];
     vec3 target = mix(v_colour, own.rgb, own.a);

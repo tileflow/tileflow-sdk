@@ -61,7 +61,7 @@ The CLI owns the interface; compiler and runtime changes require rebuilding thos
 ## Choose a map
 
 - `streets`: contemporary street cartography with Mapbox-inspired time-of-day and color themes,
-  ranked POIs, generic road-reference shields, and regional hillshade.
+  ranked POIs, Madrid transit network symbols, generic road-reference shields, and regional hillshade.
 - `baedeker`: warm travel-atlas styling, serif labels, original engraved patterns, and contours.
 - `civica`: illustrated civic-print styling with warm paper, olive parks, blue annotations, and
   vermilion landmarks.
@@ -112,25 +112,24 @@ each complete icon at native scale instead of rescaling the bitmap as the zoom c
 
 The light surface palette is compared with lossless captures of Standard with 3D buildings and
 trees disabled. Parks use a stronger green with lighter lawns and meadows drawn above them;
-flat buildings use a neutral cream. City roads keep the same slate-blue family through the
-z14–z15 transition, with blue borders and translucent tunnels. Road widths retain their hierarchy.
-Road carriageways follow the reference's exponential zoom curves (base 1.5), including
-fractional zooms. Motorways and trunks start at z3, primary roads at z6, secondary and tertiary
+flat buildings use a neutral cream. Day keeps regional connections clear through z10, softens avenues at z12–14 and retains a
+readable local grid. Colors and widths recover their original detail at z15. Widths interpolate
+exponentially (base 1.5), including fractional zooms. Motorways and trunks start at z3, primary roads at z6, secondary and tertiary
 roads at z8, streets and links at z12, and service roads at z15. Surface casings begin at z15
-(z16 for service roads and tracks); they grow from a fine edge independently of the matching
-carriageway gap. This keeps regional views light while preserving detail at street zooms.
-Motorway and trunk links retain their class colors and narrower widths. On the surface and on
-bridges, their fills draw before the receiving carriageways so overlapping round endpoints do
-not leave a contrasting patch over a junction. Tunnels keep their separate treatment.
+(z16 for service roads and tracks), growing independently of the carriageway gap.
+Major overview strokes include bridges and tunnels until structural layers take over at z13.
+Local structures join streets at z12. Links retain narrower widths and draw before receiving roads.
 Surface and bridge casings are continuous; tunnel casings are dashed. Construction carriageway
 fills and marks draw below roads in service, including motorway ramps.
 Borders use Standard's 2026-10-08 style, theme LUTs and unshadowed ground lighting, without
 carriageway emissive lift. HD-road borders match across classes, bridges, tunnels and roundabouts
 from z15; lower-zoom tunnels retain class colors. Paths keep separate emission. Streets uses the reference border colors without an additional darkening multiplier. These baked
 2D colors exclude fog and Standard's full lighting pipeline.
-Surface caps become round at z14; tunnels retain butt caps and bridges use round fills.
-The road regression checks every quarter zoom from 0 through 24 and both sides of the handoffs.
-Crosswalks and one-way arrows fade in from z16.5 so city-scale roads retain their surface color.
+Surface caps round at z14; tunnels retain butt caps and bridges use round fills.
+Crosswalks and compact blue-gray arrows with filled triangular heads fade in from z16.5.
+Day overview colors, from motorway/trunk to primary, secondary, tertiary and local:
+`#AAB9C9`, `#D5DBDF`, `#DEE3E6`, `#E3E7E9`, `#DDE2E5`. Unpaved roads follow the same city hierarchy. From z15: `#AAB9C9`
+for motorway/trunk/primary; `#BDCCD9` for secondary/local.
 From z13, pedestrian plazas use an opaque pale surface above commercial zoning and below
 explicit grass, gardens and parks. The `roads.pedestrian.surface` token follows the ground's
 theme and time of day. From z17, mapped sidewalks add a translucent tint and dot pattern through
@@ -149,6 +148,8 @@ closer views reuse that resolution, avoiding requests for coverage-dependent hig
 it, set `terrain: 'none'` in a map extending `streets`. Hillshade does not change road geometry or
 raise the terrain. Buildings appear automatically from zoom 15 with an opacity fade through 15.25;
 the preview's **3D** control can hide them, and its **Trees** control enables vegetation.
+Streets rounds exterior building corners with a 1.5-metre radius and softens the roof-to-wall
+lighting transition (`threeDimensional.edgeRadius: 1.5`). Courtyards and tile cuts retain their shape.
 Shields use 9 px DINish Bold and closer spacing at z11–13. Street names yield to destinations
 and draw above flat footprints but below 3D buildings, with viewport-aligned letters.
 3D lights use Standard's effective theme presets, retrieved on 2026-10-18: southern sun by day,
@@ -160,8 +161,9 @@ Landmark material profiles and subtle dusk/night illumination are covered in
 The buildings' `threeDimensional.lighting` and `shadows` options control the effect, and each
 theme's `lighting.sun.shadowIntensity` and `lighting.ambient` control its strength.
 Street lights are opt-in: set `roads.streetLights.enabled: true`.
-Core adds contact shade and rounded exterior corners. `buildings.threeDimensional.occlusion: false`
-disables contact shade and model ambient occlusion; `buildings.contactShadow` styles the flat fallback.
+Core rounds corners and shades facades; Streets uses `groundOcclusion: 0.12` for ground contact.
+`buildings.threeDimensional.occlusion: false` disables contact and model occlusion.
+`buildings.contactShadow` styles the flat fallback.
 Streets selects Core's `labels.roadPlacement: 'ground'`: street names follow the road plane below
 buildings; POIs, transit names and shields remain above.
 Road names retain class zoom/size curves, favor major roads and add padding through z13.
@@ -204,13 +206,10 @@ export default defineMap({
 });
 ```
 
-POIs use World ranks with category density: parks and transport retain more detail than
-businesses, hotels and religious sites. All categories share importance order; the two most
-important ranks precede streets. Discs need names except parking and toilets. Native perspective and collisions select labels. See
-[label placement](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/cartographic-defaults.md#label-density-and-perspective).
-Ordinary POI/transit names use 13 px, major destinations 18 px. World size rank zero alone does
-not enlarge small parks. Text padding falls from 6 px to 4 px between z16 and z17; collision
-determines which names fit.
+POIs follow World ranks and category density, with extra detail for parks and transport.
+Gardens stay at ranks 0–1 at every zoom, keeping principal destinations while omitting botanical
+collections and some small independent gardens. Other park and landmark types retain their usual
+eligibility. See [Streets POI selection and placement](docs/design-and-assets.md#streets-pois).
 
 Cities and districts hand over at z15, smaller settlements at z13. Co-located cities share one
 anchor. Districts use rank gates below z12, then source availability and collisions. Street names use 0.15 em letter spacing and

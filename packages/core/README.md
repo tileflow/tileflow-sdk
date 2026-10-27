@@ -165,8 +165,8 @@ Street lights default to off, including in Streets. Set `roads.streetLights.enab
 `createTileflowVegetation` controls all trees using the map's `3d`, `flat` or `auto` policy; see
 [vegetation controls and 3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md).
 
-Labels use native placement. POI icons and names place together by default;
-`placement.coupleIconAndLabel: false` separates them.
+POI icons and names place together; `placement.coupleIconAndLabel: false` separates them.
+See [rank limits](docs/cartographic-defaults.md).
 
 The semantic domains are `land`, `water`, `nautical`, `roads`, `buildings`, `boundaries`, `labels`,
 `poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`. Style stable geographic

@@ -77,6 +77,7 @@ void main() {
           const scalar = (name: string, value: number) => gl.uniform1f(loc(name), value);
           const integer = (name: string, value: number) => gl.uniform1i(loc(name), value);
           const vector = (name: string, ...value: number[]) => gl.uniform3fv(loc(name), value);
+          for (let role = 0; role < 7; role++) vector(`u_role_appearance[${role}]`, 0, 1, 1);
           function texture(unit: number, values: number[], width = 1) {
             gl.activeTexture(gl.TEXTURE0 + unit);
             const t = gl.createTexture()!;

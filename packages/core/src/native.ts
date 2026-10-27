@@ -53,3 +53,9 @@ export type {
   TileflowNativeSourceOptions,
   TileflowNativeSourceState,
 } from './native-source-types';
+
+export {
+  parseTileflowMobileDiscovery,
+  tileflowMobileDiscoveryMaximumBytes,
+} from './mobile-discovery';
+export type {TileflowMobileDiscovery} from './mobile-discovery';

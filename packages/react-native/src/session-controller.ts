@@ -378,7 +378,10 @@ export function createHostedNativeSessionController(input: {
     );
   }
 
+  let terminal: SafeError | null = null;
+
   function rotateIfRequired(at: number) {
+    if (terminal) throw new HostedNativeSessionError(terminal.code);
     if (!activeSession || binding.kind !== 'hosted') return;
     if (
       at - activeSession.startedAt < ROTATION_AGE_MS &&
@@ -419,6 +422,7 @@ export function createHostedNativeSessionController(input: {
   }
 
   async function ensureAuthority(session: SessionRecord, at: number) {
+    if (terminal) throw new HostedNativeSessionError(terminal.code);
     if (
       session.authority &&
       session.authority.clockEpoch === clock.epoch &&
@@ -437,10 +441,11 @@ export function createHostedNativeSessionController(input: {
     const operation: SessionOperation = {
       abort,
       promise: Promise.resolve().then(async () => {
-        session.error = null;
-        publishSession(session, 'loading');
-        if (abort.signal.aborted) throw abort.error();
         try {
+          if (abort.signal.aborted) throw abort.error();
+          session.error = null;
+          publishSession(session, 'loading');
+          if (abort.signal.aborted) throw abort.error();
           const result = await bootstrap(session, operationBinding, abort, true, true);
           if (abort.signal.aborted) throw abort.error();
           result.session.authority = result.authority;
@@ -453,6 +458,21 @@ export function createHostedNativeSessionController(input: {
         } catch (error) {
           const normalized = abort.signal.aborted ? abort.error() : normalizeError(error);
           const target = latestSession(session);
+          if (normalized.kind === 'terminal' && binding === operationBinding && !terminal) {
+            const failure = Object.freeze({code: normalized.code, kind: normalized.kind});
+            terminal = failure;
+            const rejectedSession = activeSession;
+            if (rejectedSession) {
+              rejectedSession.authority = null;
+              rejectedSession.error = failure;
+            }
+            // A rejection applies to the binding, including bootstraps across age rotation.
+            // Snapshot before callbacks: cancellation observers may replace the binding.
+            for (const pending of [...operations]) pending.abort(failure.code);
+            if (binding === operationBinding && rejectedSession) {
+              publishSession(rejectedSession, 'error', failure);
+            }
+          }
           if (
             normalized.code !== 'NATIVE_SESSION_REPLACED' &&
             normalized.code !== 'NATIVE_SESSION_DISPOSED'
@@ -596,6 +616,16 @@ export function createHostedNativeSessionController(input: {
     if (binding.kind === 'direct' || !activeSession) {
       return Object.freeze({status: 'idle', source: 'direct', lifecycle});
     }
+    if (terminal) {
+      return Object.freeze({
+        status: 'error',
+        source: 'hosted',
+        lifecycle,
+        mapId: binding.mapId,
+        sessionId: activeSession.sessionId,
+        error: terminal,
+      });
+    }
     if (activeSession.operation) {
       return Object.freeze({
         status: 'loading',
@@ -648,6 +678,7 @@ export function createHostedNativeSessionController(input: {
       if (bindingGeneration !== expectedGeneration) {
         throw new HostedNativeSessionError('NATIVE_SESSION_REPLACED');
       }
+      if (terminal) throw new HostedNativeSessionError(terminal.code);
       checkedAt = readClock();
       if (
         resolved.authority.clockEpoch === clock.epoch &&
@@ -707,7 +738,7 @@ export function createHostedNativeSessionController(input: {
       }
     },
     transportBudget(authority) {
-      if (disposed || lifecycle !== 'foreground') return 0;
+      if (disposed || terminal || lifecycle !== 'foreground') return 0;
       const stored = admittedAuthorities.get(authority);
       if (!stored || stored.bindingGeneration !== bindingGeneration) return 0;
       try {
@@ -728,6 +759,11 @@ export function createHostedNativeSessionController(input: {
     async resume() {
       if (disposed) throw new HostedNativeSessionError('NATIVE_SESSION_DISPOSED');
       lifecycle = 'foreground';
+      if (terminal) {
+        const error = new HostedNativeSessionError(terminal.code);
+        publish(currentSnapshot());
+        throw error;
+      }
       if (binding.kind === 'direct' || !activeSession) {
         publish(currentSnapshot());
         return;
@@ -755,6 +791,7 @@ export function createHostedNativeSessionController(input: {
       bindingGeneration += 1;
       for (const operation of operations) operation.abort('NATIVE_SESSION_REPLACED');
       binding = next;
+      terminal = null;
       activeSession = next.kind === 'hosted' ? createSession(next.surfaceId, readClock()) : null;
       publish(snapshotIdle(binding, activeSession, lifecycle));
     },
@@ -1192,7 +1229,7 @@ async function cancelResponse(response: HostedNativeSessionFetchResponse) {
 class SessionAbortController {
   readonly signal: HostedNativeSessionAbortSignal;
   #aborted = false;
-  #code: 'NATIVE_SESSION_REPLACED' | 'NATIVE_SESSION_DISPOSED' = 'NATIVE_SESSION_REPLACED';
+  #code: HostedNativeSessionErrorCode = 'NATIVE_SESSION_REPLACED';
   readonly #listeners = new Set<() => void>();
 
   constructor() {
@@ -1210,7 +1247,7 @@ class SessionAbortController {
     });
   }
 
-  abort(code: 'NATIVE_SESSION_REPLACED' | 'NATIVE_SESSION_DISPOSED') {
+  abort(code: HostedNativeSessionErrorCode) {
     if (this.#aborted) return;
     this.#code = code;
     this.#aborted = true;

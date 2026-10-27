@@ -26,6 +26,7 @@ const visualNumberProperties = new Set([
   'lightness',
   'fadeDuration',
   'gapWidth',
+  'groundOcclusion',
   'haloBlur',
   'haloWidth',
   'height',

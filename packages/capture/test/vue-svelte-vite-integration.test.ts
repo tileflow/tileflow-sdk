@@ -5,7 +5,8 @@ import {verifyFrameworkViteCapture} from './framework-vite-harness';
 
 test(
   'captures the public Vue adapter in interactive and image modes and proves cleanup',
-  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
+  // Four captures and two failure cases also pay for cold Vite/config compilation on CI.
+  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 120_000},
   async (t) =>
     verifyFrameworkViteCapture(t, {
       entry: 'main.ts',
@@ -21,7 +22,8 @@ test(
 
 test(
   'captures the public Svelte adapter in interactive and image modes and proves cleanup',
-  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
+  // Four captures and two failure cases also pay for cold Vite/config compilation on CI.
+  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 120_000},
   async (t) =>
     verifyFrameworkViteCapture(t, {
       entry: 'main.js',

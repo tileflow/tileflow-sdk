@@ -19,11 +19,12 @@ The fixture server must stay running throughout the tests. CI rejects skipped te
 The test bundle copies the same fixtures as SwiftPM and supplies its own `Bundle.module`
 accessor; the SDK and its embedded resources still build through SwiftPM.
 
-CI pins macOS 15 and Xcode 26.2, selecting the matching iOS 26.2 simulator. On the macOS
-26.6.2 runner with Xcode 26.6 and iOS 26.5, WebGL draws crash `SimMetalHost` inside
-`AppleParavirtGPUMetalIOGPUFamily`, including on the larger runner. Keep the pinned
-environment until a replacement passes the complete rendering and reload test. Xcode
-results and simulator diagnostics are retained in the `swift-integration-results` artifact.
+CI pins the Intel macOS 15 runner and Xcode 26.2, selecting the matching iOS 26.2 simulator.
+The ARM macOS 15 and 26 runners crash during WebGL draws, including the larger tier. The
+macOS 26 crash report identifies `SimMetalHost` inside `AppleParavirtGPUMetalIOGPUFamily`.
+Keep the pinned environment until a replacement passes the complete rendering and reload
+test. Xcode results and simulator diagnostics are retained in the
+`swift-integration-results` artifact.
 
 The generated project and shared scheme are committed so CI only needs Xcode. After adding
 test files or changing `project.yml`, regenerate them with XcodeGen 2.46.0:

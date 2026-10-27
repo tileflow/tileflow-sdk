@@ -2,6 +2,8 @@ import type {MapProps as NativeMapProps} from '@maplibre/maplibre-react-native';
 import type {ReactNode, Ref} from 'react';
 import type {ViewProps} from 'react-native';
 import type {
+  TileflowBoundaryFamily,
+  TileflowBoundaryValues,
   TileflowNativeInitialView,
   TileflowNativeInitialViewOptions,
   TileflowNativeSource,
@@ -53,6 +55,23 @@ export type MapSourceProps = Readonly<{
   themeBlend?: MapThemeBlend;
 }>;
 
+/**
+ * Application values on the map's Boundaries areas, for a choropleth that reads them with
+ * `feature-state`. The same rows and options as `useBoundaryFeatureState` on the web: rows keyed by
+ * the source's feature ID (`id`, or `ref` when the map promotes it), joined with
+ * `joinBoundaryRows` when the data carries other codes. Values survive theme changes; `null`
+ * removes them.
+ */
+export type MapBoundaryFeatureState = Readonly<{
+  values: TileflowBoundaryValues | null;
+  /** Defaults to `boundaries`. */
+  family?: TileflowBoundaryFamily;
+  /** Also set the values on `boundary_label` points, for labels styled by value. */
+  labels?: boolean;
+  /** Feature-state key; it must match the choropleth's `state`. Defaults to `value`. */
+  state?: string;
+}>;
+
 type AllowedMapOptions =
   | 'dragPan'
   | 'touchZoom'
@@ -83,6 +102,7 @@ export type MapPresentationProps = Readonly<{
   style?: ViewProps['style'];
   testID?: ViewProps['testID'];
   mapOptions?: MapOptions;
+  boundaryFeatureState?: MapBoundaryFeatureState;
 }>;
 
 type TileflowReady = Extract<TileflowNativeSourceState, {status: 'ready'}>;

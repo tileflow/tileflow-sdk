@@ -101,6 +101,40 @@ Theme and `timeOfDay` changes cross-fade over 450 ms by default: a snapshot of t
 
 The first blend of a set of themes prepares every theme's style and replaces the native style once; moving `position` later changes the map without loading. Removing `themeBlend` returns to `theme`. Both keep the same native Map, context and session, and `ready` events wait for the fade. The device's reduce-motion setting changes at once. See [theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md#react-native) for what follows the position on native maps.
 
+## Boundary choropleths
+
+A map that declares `boundaryAreas` and a `boundaryChoropleth()` without compiled `values` reads
+its colors from feature-state. `boundaryFeatureState` sets that state from the application, with
+the same rows and options as `useBoundaryFeatureState` on the web: rows keyed by the source's
+feature ID (`id`, or `ref` when the map promotes it), `labels` and `state`:
+
+<!-- docs:check -->
+
+```tsx
+import {Map, type MapSource} from '@tileflow/react-native';
+import {useMemo} from 'react';
+
+export function UnemploymentMap({
+  source,
+  rates,
+}: {
+  source: MapSource;
+  rates: ReadonlyMap<number, number>;
+}) {
+  // Memoize the values: each new object replaces the previous ones.
+  const values = useMemo(
+    () => ({joinBy: 'id' as const, rows: [...rates].map(([key, value]) => ({key, value}))}),
+    [rates],
+  );
+  return <Map source={source} boundaryFeatureState={{values}} style={{flex: 1}} />;
+}
+```
+
+Values survive theme changes: they are set again once the new style has loaded. `values: null`
+removes them. Rows keyed by codes the polygons do not carry are joined before they reach the app,
+on a server or at build time; see
+[boundary areas and choropleths](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/boundary-areas-and-choropleths.md#join-by-codes-the-polygons-do-not-carry).
+
 ## Camera
 
 The existing mount-stable camera contract is preserved. Use either an initial camera seed or complete controlled camera ownership for the lifetime of one mounted Map:

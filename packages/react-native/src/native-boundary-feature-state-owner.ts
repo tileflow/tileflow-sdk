@@ -4,14 +4,26 @@ import type {TileflowFeatureStateMap} from '@tileflow/core/native';
 type FeatureState = Parameters<VectorSourceRef['setFeatureState']>[1];
 export type NativeBoundaryStyle = Readonly<{sources?: Readonly<Record<string, unknown>>}>;
 export type NativeBoundarySource = Pick<VectorSourceRef, 'setFeatureState' | 'removeFeatureState'>;
+type Schedule = (run: () => void, delayMs: number) => () => void;
+
+// MapLibre adopts the style's source shortly after the VectorSource mounts, on the native side.
+const retryDelaysMs = [16, 50, 150, 400, 1000] as const;
+const timer: Schedule = (run, delayMs) => {
+  const handle = setTimeout(run, delayMs);
+  return () => clearTimeout(handle);
+};
 
 /**
  * Adapts one style's Boundaries source to the renderer-neutral feature-state controller. The
  * source counts as present only while its style has loaded and the adopting VectorSource is
  * mounted; each change of readiness is a `styledata` event, so the controller sets every value
- * again after a style reload.
+ * again after a style reload. A write rejected while the source counts as present reached it
+ * before MapLibre adopted it, so every value is set again after a bounded backoff.
  */
-export function createNativeBoundaryFeatureStateOwner(sourceId: string) {
+export function createNativeBoundaryFeatureStateOwner(
+  sourceId: string,
+  schedule: Schedule = timer,
+) {
   const listeners = new Set<() => void>();
   let source: NativeBoundarySource | null = null;
   let style: NativeBoundaryStyle = {};
@@ -26,6 +38,36 @@ export function createNativeBoundaryFeatureStateOwner(sourceId: string) {
     notified = next;
     for (const listener of [...listeners]) listener();
   };
+  const absentThenNotify = () => {
+    replacing = true;
+    notify();
+    replacing = false;
+    notify();
+  };
+  let attempt = 0;
+  let cancelRetry: (() => void) | undefined;
+  const reset = () => {
+    cancelRetry?.();
+    cancelRetry = undefined;
+    attempt = 0;
+  };
+  const rejected = (target: NativeBoundarySource) => {
+    if (cancelRetry || target !== source || !present() || attempt >= retryDelaysMs.length) return;
+    cancelRetry = schedule(() => {
+      cancelRetry = undefined;
+      if (target === source && present()) absentThenNotify();
+    }, retryDelaysMs[attempt++]!);
+  };
+  const write = (operation: (target: NativeBoundarySource) => Promise<void>) => {
+    const target = source;
+    if (!target) return;
+    void operation(target).then(
+      () => {
+        if (target === source && !cancelRetry) attempt = 0;
+      },
+      () => rejected(target),
+    );
+  };
 
   const map: TileflowFeatureStateMap = {
     getSource: (id) => (id === sourceId && present() ? {} : undefined),
@@ -34,12 +76,11 @@ export function createNativeBoundaryFeatureStateOwner(sourceId: string) {
     off: (_type, listener) => listeners.delete(listener),
     setFeatureState({id, sourceLayer}, state) {
       if (!sourceLayer) return;
-      // A write that races a style reload is repeated once the style has loaded.
-      void source?.setFeatureState({id, sourceLayer}, state as FeatureState).catch(() => undefined);
+      write((target) => target.setFeatureState({id, sourceLayer}, state as FeatureState));
     },
     removeFeatureState({id, sourceLayer}, key) {
       if (!sourceLayer || id === undefined) return;
-      void source?.removeFeatureState({id, sourceLayer}, key).catch(() => undefined);
+      write((target) => target.removeFeatureState({id, sourceLayer}, key));
     },
   };
 
@@ -49,6 +90,7 @@ export function createNativeBoundaryFeatureStateOwner(sourceId: string) {
     setStyle(next: NativeBoundaryStyle, nextLoaded: boolean) {
       // Another style drops feature-state even when it loads at once: report it absent first.
       if (next !== style) {
+        reset();
         replacing = true;
         notify();
         replacing = false;
@@ -58,6 +100,7 @@ export function createNativeBoundaryFeatureStateOwner(sourceId: string) {
       notify();
     },
     setSource(next: NativeBoundarySource | null) {
+      if (next !== source) reset();
       source = next;
       notify();
     },

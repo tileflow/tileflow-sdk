@@ -351,10 +351,16 @@ class HostedSessionTest {
                 // Each bootstrap takes the next reply; the last one repeats.
                 val reply = replies.getJSONObject(minOf(count, replies.length() - 1))
                 val status = reply.getInt("status")
+                // A `"$request"` session ID stands for the ID of the request the reply answers.
+                val body =
+                    reply.optJSONObject("body")?.let { JSONObject(it.toString()) }?.apply {
+                        if (optString("sessionId") == "\$request")
+                            put("sessionId", body(request).getString("sessionId"))
+                    }
                 if (status == 201 && !reply.has("body")) response(request)
                 else
                     ResourcePayload(
-                        reply.opt("body")?.toString()?.toByteArray() ?: byteArrayOf(),
+                        body?.toString()?.toByteArray() ?: byteArrayOf(),
                         status,
                         reply.optJSONObject("headers")?.let { headers ->
                             headers.keys().asSequence().associateWith { headers.getString(it) }
@@ -377,7 +383,11 @@ class HostedSessionTest {
                         }
                     }
                     if (step.has("error"))
-                        assertCode(fixtureErrors.getValue(step.getString("error")), name) {
+                        assertCode(
+                            fixtureErrors.getValue(step.getString("error")),
+                            name,
+                            reason = step.optString("reason").ifEmpty { null },
+                        ) {
                             session.authorize(style, policy)
                         }
                     else assertNotNull(name, session.authorize(style, policy).grant)
@@ -393,6 +403,74 @@ class HostedSessionTest {
                     }
                 }
             }
+        }
+    }
+
+    @Test
+    fun loopbackHttpApiGrantsLoopbackResourcesAndNoOtherApiDoes() {
+        val local =
+            fixture()
+                .getJSONObject("response")
+                .put("resourceOrigins", JSONArray(listOf("http://127.0.0.1:8787")))
+        val transport = FakeTransport { request, _ ->
+            ResourcePayload(
+                JSONObject(local.toString())
+                    .put("sessionId", body(request).getString("sessionId"))
+                    .toString()
+                    .toByteArray(),
+                201,
+                emptyMap(),
+            )
+        }
+        val endpoint =
+            HostedEndpoint(
+                TileflowConfiguration(
+                    apiOrigin = URI("http://127.0.0.1:8787"),
+                    mapCredential = TileflowCredential(mapCredential),
+                )
+            )
+        assertTrue(endpoint.isLoopbackHttp)
+        assertEquals(
+            "http://127.0.0.1:8787/v1/sessions/start",
+            endpoint.sessionRequest(mapId, "s", "mobile-map").url.toString(),
+        )
+        HostedSession(endpoint, mapId, "mobile-map", transport = transport).use { session ->
+            val admission =
+                session.authorize(
+                    URI("http://127.0.0.1:8787/maps/$mapId/mobile/webview-v1/v1/day.json"),
+                    ResourcePolicy(setOf("http://127.0.0.1:8787"), allowsLoopbackHttp = true),
+                )
+            assertNotNull(admission.grant)
+        }
+        // An HTTPS API never grants an HTTP origin.
+        HostedSession(endpoint(), mapId, "mobile-map", transport = transport).use { session ->
+            assertCode(TileflowErrorCode.INVALID_SESSION_RESPONSE) {
+                session.authorize(style, policy)
+            }
+        }
+        // A local API grants only loopback HTTP origins in the configuration's canonical form.
+        val response = fixture().getJSONObject("response")
+        for ((origin, accepted) in
+            listOf(
+                "http://localhost:8787" to true,
+                "http://[::1]:8787" to true,
+                "http://api.example.test" to false,
+                "http://10.0.2.2:8787" to false,
+                "http://127.0.0.1:8787/" to false,
+                "http://127.0.0.1:80" to false,
+                "HTTP://127.0.0.1:8787" to false,
+            )) {
+            response.put("resourceOrigins", JSONArray(listOf(origin)))
+            val parsed = runCatching {
+                HostedContract.parse(
+                    response.toString().toByteArray(),
+                    mapId,
+                    "fixture-session",
+                    "mobile-map",
+                    allowsLoopbackHttp = true,
+                )
+            }
+            assertEquals(origin, accepted, parsed.isSuccess)
         }
     }
 
@@ -602,6 +680,8 @@ class HostedSessionTest {
     fun failureClassificationAndRetryAfter() {
         val quota = """{"code":"COMMERCIAL_MAP_LIMIT_REACHED","error":"Limit reached"}"""
         val limiter = """{"error":"Too many requests","requestId":"req_1"}"""
+        val mode = """{"code":"MOBILE_SESSION_MODE_REQUIRED","error":"Session mode"}"""
+        val large = """{"code":"MOBILE_SESSION_BODY_TOO_LARGE","error":"Too large"}"""
         for ((status, body, expected) in
             listOf(
                 Triple(401, "", TileflowErrorCode.CREDENTIAL_REJECTED),
@@ -612,10 +692,39 @@ class HostedSessionTest {
                 Triple(429, "<html>", TileflowErrorCode.RATE_LIMITED),
                 Triple(408, "", TileflowErrorCode.SESSION_UNAVAILABLE),
                 Triple(502, "", TileflowErrorCode.SESSION_UNAVAILABLE),
-                Triple(400, "", TileflowErrorCode.INVALID_SESSION_RESPONSE),
-                Triple(409, "", TileflowErrorCode.INVALID_SESSION_RESPONSE),
+                Triple(400, mode, TileflowErrorCode.SESSION_REJECTED),
+                Triple(413, large, TileflowErrorCode.SESSION_REJECTED),
+                Triple(400, "", TileflowErrorCode.SESSION_REJECTED),
+                Triple(409, "", TileflowErrorCode.SESSION_REJECTED),
+                Triple(451, "<html>", TileflowErrorCode.SESSION_REJECTED),
+                Triple(302, "", TileflowErrorCode.INVALID_SESSION_RESPONSE),
+                Triple(200, "", TileflowErrorCode.INVALID_SESSION_RESPONSE),
             )) {
             assertEquals("$status", expected, HostedContract.failure(status, body.toByteArray()))
+            val rejection = HostedContract.rejection(status, body.toByteArray())
+            assertEquals("$status", expected, rejection.code)
+            assertEquals(
+                "$status",
+                if (body == mode) "MOBILE_SESSION_MODE_REQUIRED"
+                else if (body == large) "MOBILE_SESSION_BODY_TOO_LARGE" else null,
+                rejection.context.reason,
+            )
+            assertEquals(
+                "$status",
+                status.takeIf { expected == TileflowErrorCode.SESSION_REJECTED },
+                rejection.context.status,
+            )
+            assertEquals(
+                "$status",
+                !expected.isRecoverable,
+                expected in HostedContract.terminalCodes,
+            )
+            assertEquals(
+                "$status",
+                status in setOf(401, 403, 404, 400, 409, 413, 451) ||
+                    expected == TileflowErrorCode.QUOTA_EXCEEDED,
+                expected in HostedContract.terminalCodes,
+            )
         }
         // Wed, 21 Oct 2015 07:28:00 GMT
         val now = 1_445_412_480_000L
@@ -700,6 +809,7 @@ class HostedSessionTest {
             "rateLimited" to TileflowErrorCode.RATE_LIMITED,
             "sessionUnavailable" to TileflowErrorCode.SESSION_UNAVAILABLE,
             "invalidSessionResponse" to TileflowErrorCode.INVALID_SESSION_RESPONSE,
+            "sessionRejected" to TileflowErrorCode.SESSION_REJECTED,
         )
 
     private fun sequences() =
@@ -732,12 +842,18 @@ class HostedSessionTest {
             emptyMap(),
         )
 
-    private fun assertCode(code: TileflowErrorCode, message: String? = null, block: () -> Unit) {
+    private fun assertCode(
+        code: TileflowErrorCode,
+        message: String? = null,
+        reason: String? = null,
+        block: () -> Unit,
+    ) {
         try {
             block()
             fail("Expected $code ${message.orEmpty()}")
         } catch (error: TileflowMapException) {
             assertEquals(message, code, error.code)
+            assertEquals(message, reason, error.context.reason)
         }
     }
 

@@ -266,8 +266,8 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   }
 
   /// Retry the current source after a load or renderer failure. A Hosted session stopped by
-  /// `credentialRejected`, `accessDenied` or `quotaExceeded` bootstraps again. Reloading also
-  /// skips the delay that follows a temporary session failure (`rateLimited`,
+  /// `credentialRejected`, `accessDenied`, `quotaExceeded` or `sessionRejected` bootstraps again.
+  /// Reloading also skips the delay that follows a temporary session failure (`rateLimited`,
   /// `sessionUnavailable` or `invalidSessionResponse`), so call it in response to a user action
   /// rather than from every failure event.
   public func reload() throws {

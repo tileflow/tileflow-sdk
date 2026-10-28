@@ -66,6 +66,11 @@ export {
   type TileflowAtmosphereRuntimeOptions,
 } from './atmosphere-browser';
 export {tileflowMaxPitch} from './camera-limits';
+export {
+  attachTileflowHorizonQueries,
+  tileflowHorizonScaleFactor,
+  type TileflowHorizonQueryMap,
+} from './horizon-queries-browser';
 export {attachTileflowSky, tileflowSkyLayerId, type TileflowSkyMap} from './sky-browser';
 export {
   readTileflowSky,

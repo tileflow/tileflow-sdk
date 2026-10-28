@@ -1,3 +1,4 @@
+import {createHash} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {createRequire} from 'node:module';
@@ -8,8 +9,10 @@ const fontRoot = dirname(require.resolve('@fontsource/noto-sans/package.json'));
 const font = await readFile(resolve(fontRoot, 'files/noto-sans-latin-400-normal.woff2'));
 const port = Number(process.env.TILEFLOW_FIXTURE_PORT ?? 18645);
 const base = `http://127.0.0.1:${port}`;
-const fontFaces = [
-  {family: 'Noto Sans', source: `${base}/font.woff2`, style: 'normal', weight: '400'},
+// Resources under /cached/ may be stored and revalidated; every other response is no-store.
+const cachedPrefix = '/cached';
+const fontFaces = (root) => [
+  {family: 'Noto Sans', source: `${root}/font.woff2`, style: 'normal', weight: '400'},
 ];
 const features = {
   type: 'FeatureCollection',
@@ -57,10 +60,10 @@ const features = {
     },
   ],
 };
-const style = (dark) => ({
+const style = (dark, root) => ({
   version: 8,
   metadata: {
-    'tileflow:fontFaces': fontFaces,
+    'tileflow:fontFaces': fontFaces(root),
     'tileflow:notices': [{id: 'fixture-notice', sources: ['places'], text: 'Not for navigation'}],
     'tileflow:interaction-manifest': {
       version: 3,
@@ -136,9 +139,25 @@ const style = (dark) => ({
     },
   ],
 });
+/** Answers with a validator and honours If-None-Match on cacheable routes. */
+const send = (request, response, cached, body) => {
+  if (cached) {
+    const etag = `"${createHash('sha256').update(body).digest('hex').slice(0, 16)}"`;
+    response.setHeader('ETag', etag);
+    if (request.headers['if-none-match'] === etag) {
+      response.statusCode = 304;
+      response.end();
+      return;
+    }
+  }
+  response.end(body);
+};
 const server = createServer((request, response) => {
   response.setHeader('Access-Control-Allow-Origin', '*');
-  response.setHeader('Cache-Control', 'no-store');
+  const cached = request.url.startsWith(`${cachedPrefix}/`);
+  const path = cached ? request.url.slice(cachedPrefix.length) : request.url;
+  const root = cached ? `${base}${cachedPrefix}` : base;
+  response.setHeader('Cache-Control', cached ? 'public, max-age=0' : 'no-store');
   if (request.url === '/archive.bin') {
     const length = 9 * 1024 * 1024;
     response.setHeader('Content-Type', 'application/octet-stream');
@@ -160,14 +179,14 @@ const server = createServer((request, response) => {
     response.end();
     return;
   }
-  if (request.url === '/font.woff2') {
+  if (path === '/font.woff2') {
     response.setHeader('Content-Type', 'font/woff2');
-    response.end(font);
+    send(request, response, cached, font);
     return;
   }
   response.setHeader('Content-Type', 'application/json');
   const value =
-    request.url === '/manifest.json'
+    path === '/manifest.json'
       ? {
           version: 1,
           maps: {
@@ -176,21 +195,34 @@ const server = createServer((request, response) => {
               systemThemes: {light: 'light', dark: 'dark'},
               view: {center: [-3.7, 40.42], zoom: 13, bearing: 0, pitch: 0},
               themes: {
-                light: {styleUrl: `${base}/light.json`, colorScheme: 'light', fontFaces},
-                dark: {styleUrl: `${base}/dark.json`, colorScheme: 'dark', fontFaces},
+                light: {
+                  styleUrl: `${root}/light.json`,
+                  colorScheme: 'light',
+                  fontFaces: fontFaces(root),
+                },
+                dark: {
+                  styleUrl: `${root}/dark.json`,
+                  colorScheme: 'dark',
+                  fontFaces: fontFaces(root),
+                },
               },
             },
           },
         }
-      : request.url === '/light.json'
-        ? style(false)
-        : request.url === '/dark.json'
-          ? style(true)
-          : request.url === '/data.json'
+      : path === '/light.json'
+        ? style(false, root)
+        : path === '/dark.json'
+          ? style(true, root)
+          : path === '/data.json'
             ? features
             : null;
-  if (!value) response.statusCode = 404;
-  response.end(JSON.stringify(value));
+  if (!value) {
+    response.statusCode = 404;
+    response.setHeader('Cache-Control', 'no-store');
+    response.end(JSON.stringify(value));
+    return;
+  }
+  send(request, response, cached, Buffer.from(JSON.stringify(value)));
 });
 server.listen(port, '127.0.0.1', () => console.log(`Mobile test map: ${base}/manifest.json`));
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close());

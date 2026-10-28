@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import UIKit
 import WebKit
@@ -339,29 +338,10 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     // A failed read is not kept, so `reload()` reads a corrected configuration.
     let loadable = try self.loadable ?? source.loadable()
     self.loadable = loadable
-    guard let root = Bundle.module.resourceURL?.appendingPathComponent("EmbeddedRuntime") else {
-      throw TileflowMapError.missingRuntime
-    }
-    struct Receipt: Decodable {
-      let runtimeHash: String
-      let protocolVersion: Int
-      let files: [String: String]
-    }
-    guard let bytes = try? Data(contentsOf: root.appendingPathComponent("receipt.json")),
-      let receipt = try? JSONDecoder().decode(Receipt.self, from: bytes),
-      Set(receipt.files.keys) == [
-        "index.html", "runtime.js", "maplibre.css", "notices.txt", "dependencies.json",
-      ]
-    else { throw TileflowMapError.missingRuntime }
-    guard
-      (ProtocolContract.minimumVersion...ProtocolContract.version)
-        .contains(receipt.protocolVersion)
-    else { throw TileflowMapError(.incompatibleRuntime, reason: .protocolVersion) }
-    for (name, expected) in receipt.files {
-      let data = try Data(contentsOf: root.appendingPathComponent(name))
-      let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-      guard actual == expected else { throw TileflowMapError.incompatibleRuntime }
-    }
+    // The receipt is read once per process; the files are verified once, off the main thread.
+    let (root, receipt) = try EmbeddedRuntime.receipt()
+    if case .failure(let error) = EmbeddedRuntime.verified { throw error }
+    _ = EmbeddedRuntime.verification
     generation += 1
     let current = generation
     pendingRemount = false
@@ -376,6 +356,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     let loader = ResourceLoader(
       policy: loadable.policy, hosted: hostedSession, apiOrigin: loadable.hosted?.apiOrigin,
       publicMetadataURLs: loadable.publicMetadataURLs,
+      cache: .shared, grantScope: loadable.grantScope,
       onDeploymentSuperseded: { [weak self] in
         await self?.deploymentSuperseded(generation: current) ?? false
       })
@@ -467,8 +448,34 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     resources = handler
     webView = view
     addSubview(view)
-    view.load(URLRequest(url: ResourceURL.runtimeURL))
+    loadRuntime(in: view, generation: current)
     updateVisibility()
+  }
+
+  /// Loads the renderer once the embedded runtime is verified. The WebView's processes start
+  /// meanwhile, so verification overlaps their launch.
+  private func loadRuntime(in view: WKWebView, generation current: Int) {
+    if case .success = EmbeddedRuntime.verified {
+      view.load(URLRequest(url: ResourceURL.runtimeURL))
+      return
+    }
+    Task { [weak self, weak view] in
+      let failure: TileflowMapError?
+      do {
+        try await EmbeddedRuntime.verification.value
+        failure = nil
+      } catch {
+        failure = error as? TileflowMapError ?? .incompatibleRuntime
+      }
+      guard let self, let view, !self.destroyed, self.generation == current, self.webView === view
+      else { return }
+      if let failure {
+        self.retireGeneration()
+        self.onEvent?(.failed(failure))
+      } else {
+        view.load(URLRequest(url: ResourceURL.runtimeURL))
+      }
+    }
   }
 
   private func contentReady() {

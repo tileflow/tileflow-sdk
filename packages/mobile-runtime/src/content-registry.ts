@@ -78,8 +78,9 @@ export function createMapContentRegistry(
         map.queryRenderedFeatures(point as PointLike, {layers: [...options.layers]}),
     },
     bindings: [{id: 'mobile-poi', target: {kind: 'semantic-feature', domain: 'poi'}}],
-    requestFrame: requestAnimationFrame,
-    cancelFrame: cancelAnimationFrame,
+    // Window methods throw when called on another object, as the controller calls them.
+    requestFrame: (callback) => requestAnimationFrame(callback),
+    cancelFrame: (handle) => cancelAnimationFrame(handle),
     onActivate: ({target}) => {
       if (!disposed)
         emit('poiActivated', () => ({

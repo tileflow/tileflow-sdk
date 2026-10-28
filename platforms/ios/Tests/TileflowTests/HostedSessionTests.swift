@@ -75,10 +75,12 @@ final class HostedSessionTests: XCTestCase {
       try await Task.sleep(for: .milliseconds(25))
       return try sessionResponse(fixture, request: request)
     }
-    let client = try makeClient()
-    XCTAssertFalse(client.description.contains("tf_public_"))
+    let endpoint = try makeEndpoint()
+    for text in [String(reflecting: endpoint), dumped(endpoint)] {
+      XCTAssertFalse(text.contains(mapCredential.dropFirst(10)), text)
+    }
     let session = HostedSession(
-      client: client, mapID: mapID, surfaceID: "mobile-map", transport: transport)
+      endpoint: endpoint, mapID: mapID, surfaceID: "mobile-map", transport: transport)
     let target = style
     let policy = policy
     try await withThrowingTaskGroup(of: String?.self) { group in
@@ -91,7 +93,7 @@ final class HostedSessionTests: XCTestCase {
     let request = try XCTUnwrap(transport.requests.first)
     XCTAssertEqual(request.httpMethod, "POST")
     XCTAssertEqual(request.url?.path, "/v1/sessions/start")
-    XCTAssertNotNil(request.value(forHTTPHeaderField: "X-Tileflow-Mobile-Client"))
+    XCTAssertEqual(request.value(forHTTPHeaderField: "X-Tileflow-Mobile-Client"), mapCredential)
     for header in ["Origin", "Referer", "Cookie", "Authorization", "X-Tileflow-Native-Grant"] {
       XCTAssertNil(request.value(forHTTPHeaderField: header))
     }
@@ -112,7 +114,7 @@ final class HostedSessionTests: XCTestCase {
       try sessionResponse(fixture, request: request)
     }
     let session = HostedSession(
-      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map",
+      endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map",
       transport: transport, now: { time.now })
     defer { session.close() }
     _ = try await session.authorize(style, publicPolicy: policy)
@@ -135,7 +137,7 @@ final class HostedSessionTests: XCTestCase {
       try sessionResponse(fixture, request: request)
     }
     let session = HostedSession(
-      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map",
+      endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map",
       transport: transport, now: { time.now })
     defer { session.close() }
     let first = try await session.authorize(style, publicPolicy: policy)
@@ -167,7 +169,7 @@ final class HostedSessionTests: XCTestCase {
       try sessionResponse(fixture, request: request)
     }
     let session = HostedSession(
-      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map",
+      endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map",
       transport: transport, now: { time.now })
     defer { session.close() }
     // Quick toggles keep the latest visibility.
@@ -191,7 +193,7 @@ final class HostedSessionTests: XCTestCase {
     XCTAssertEqual(transport.requests.count, 1)
 
     let brief = HostedSession(
-      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map",
+      endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map",
       transport: transport, now: { time.now }, waitBudget: .milliseconds(100))
     defer { brief.close() }
     brief.setBackgrounded(true)
@@ -218,7 +220,7 @@ final class HostedSessionTests: XCTestCase {
       return try sessionResponse(fixture, request: request)
     }
     let session = HostedSession(
-      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: transport)
+      endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map", transport: transport)
     _ = try await session.authorize(style, publicPolicy: policy)
     XCTAssertEqual(transport.requests.count, 2)
     XCTAssertNotEqual(transport.requests[0].httpBody, transport.requests[1].httpBody)
@@ -228,7 +230,7 @@ final class HostedSessionTests: XCTestCase {
       ResourcePayload(bytes: Data(), status: 401, headers: [:])
     }
     let terminal = HostedSession(
-      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: rejected)
+      endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map", transport: rejected)
     defer { terminal.close() }
     for _ in 0..<2 {
       do {
@@ -247,7 +249,7 @@ final class HostedSessionTests: XCTestCase {
       return try sessionResponse(fixture, request: request)
     }
     let session = HostedSession(
-      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map",
+      endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map",
       transport: slow, now: { time.now })
     do {
       _ = try await session.authorize(style, publicPolicy: policy)
@@ -260,7 +262,7 @@ final class HostedSessionTests: XCTestCase {
       return try sessionResponse(fixture, request: request)
     }
     let late = HostedSession(
-      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: delayed)
+      endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map", transport: delayed)
     let pending = Task { try await late.authorize(style, publicPolicy: policy) }
     try await Task.sleep(for: .milliseconds(20))
     late.close()
@@ -285,7 +287,7 @@ final class HostedSessionTests: XCTestCase {
           status: reply.status, headers: reply.headers ?? [:])
       }
       let session = HostedSession(
-        client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: transport,
+        endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map", transport: transport,
         now: { time.now })
       var identities: [String: String] = [:]
       for step in scenario.steps {
@@ -332,7 +334,7 @@ final class HostedSessionTests: XCTestCase {
         return try sessionResponse(fixture, request: request)
       }
       let session = HostedSession(
-        client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: transport)
+        endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map", transport: transport)
       let pending = Task { try await session.authorize(style, publicPolicy: policy) }
       await gate.waitUntilEntered()
       await session.reject(expected)
@@ -383,7 +385,7 @@ final class HostedSessionTests: XCTestCase {
         status: statuses.next(), headers: [:])
     }
     let session = HostedSession(
-      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: sessions)
+      endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map", transport: sessions)
     let loader = ResourceLoader(
       policy: ResourcePolicy(origins: ["https://api.tileflow.test", "https://tiles.tileflow.test"]),
       hosted: session, transport: resources)
@@ -421,7 +423,7 @@ final class HostedSessionTests: XCTestCase {
         status: statuses.next(), headers: ["Retry-After": "4"])
     }
     let session = HostedSession(
-      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: sessions)
+      endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map", transport: sessions)
     let loader = ResourceLoader(
       policy: policy, hosted: session, transport: resources, now: { time.now },
       pause: { time.advance(Double($0.components.seconds)) })
@@ -470,7 +472,7 @@ final class HostedSessionTests: XCTestCase {
         status: 409, headers: [:])
     }
     let session = HostedSession(
-      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: sessions)
+      endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map", transport: sessions)
     let reloads = StatusSequence([])
     let loader = ResourceLoader(
       policy: policy, hosted: session, transport: resources,
@@ -500,7 +502,7 @@ final class HostedSessionTests: XCTestCase {
         : ResourcePayload(bytes: Data(), status: 302, headers: ["Location": version])
     }
     let session = HostedSession(
-      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: sessions)
+      endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map", transport: sessions)
     let loader = ResourceLoader(
       policy: policy, hosted: session, apiOrigin: URL(string: "https://api.tileflow.test")!,
       transport: resources)
@@ -550,10 +552,11 @@ final class HostedSessionTests: XCTestCase {
 
   func testPublicMetadataAndThirdPartyBytesUseTheProviderWithoutGrantLeakage() async throws {
     let fixture = try sessionFixture()
-    let client = try makeClient()
-    let source = try client.map(
-      mapID, surfaceID: "mobile-map",
-      publicResourceOrigins: [URL(string: "https://public.example")!])
+    let source = try TileflowMapSource.hosted(
+      mapID: mapID, publicResourceOrigins: [URL(string: "https://public.example")!],
+      configuration: configuration()
+    ).loadable { throw TileflowMapError.invalidRequest }
+    let endpoint = try XCTUnwrap(source.hosted)
     let sessionTransport = SessionTestTransport { request, _ in
       try sessionResponse(fixture, request: request)
     }
@@ -561,9 +564,9 @@ final class HostedSessionTests: XCTestCase {
       ResourcePayload(bytes: Data([1, 2]), status: 200, headers: [:])
     }
     let session = HostedSession(
-      client: client, mapID: mapID, surfaceID: "mobile-map", transport: sessionTransport)
+      endpoint: endpoint, mapID: mapID, surfaceID: "mobile-map", transport: sessionTransport)
     let loader = ResourceLoader(
-      policy: try source.policy(), hosted: session, publicMetadataURLs: source.publicMetadataURLs,
+      policy: source.policy, hosted: session, publicMetadataURLs: source.publicMetadataURLs,
       transport: resourceTransport)
     defer {
       loader.close()
@@ -597,10 +600,18 @@ final class HostedSessionTests: XCTestCase {
     XCTAssertEqual(resourceTransport.requests.count, 4)
   }
 
-  private func makeClient() throws -> TileflowClient {
-    try TileflowClient(
+  private let mapCredential = "tf_public_" + String(repeating: "a", count: 48)
+
+  /// The map credential and a different services credential, which must never reach the map.
+  private func configuration() throws -> TileflowConfiguration {
+    try TileflowConfiguration(
       apiOrigin: URL(string: "https://api.tileflow.test")!,
-      mobileCredential: "tf_public_" + String(repeating: "a", count: 48))
+      servicesCredential: TileflowCredential("tf_public_" + String(repeating: "b", count: 48)),
+      mapCredential: TileflowCredential(mapCredential))
+  }
+
+  private func makeEndpoint() throws -> HostedEndpoint {
+    try HostedEndpoint(configuration())
   }
 }
 

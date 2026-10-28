@@ -29,6 +29,8 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   /// A renderer to replace once the view is visible again.
   private var pendingRemount = false
   private var initialCamera: TileflowCamera?
+  /// The current source with its configuration read, kept with its Hosted session.
+  private var loadable: LoadableMapSource?
   private var hostedSession: HostedSession?
   private var appearance: (method: ProtocolContract.Method, payload: JSONValue)?
   private var content = MapContent()
@@ -52,6 +54,17 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
       name: UIApplication.willEnterForegroundNotification, object: nil)
   }
 
+  /// Shows a Hosted map. Its credential and API origin come from ``Tileflow/configuration()``;
+  /// use ``TileflowMapSource/hosted(mapID:surfaceID:publicResourceOrigins:configuration:)`` to
+  /// pass a configuration for this map only.
+  public convenience init(
+    mapID: String, theme: String? = nil, initialCamera: TileflowCamera? = nil,
+    options: TileflowMapOptions = .init()
+  ) {
+    self.init(
+      source: .hosted(mapID: mapID), theme: theme, initialCamera: initialCamera, options: options)
+  }
+
   @available(*, unavailable)
   required init?(coder: NSCoder) { fatalError("Use init(source:theme:initialCamera:).") }
 
@@ -71,9 +84,10 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   public func setSource(_ source: TileflowMapSource) throws {
     guard !destroyed else { throw TileflowMapError.disposed }
     guard source != self.source else { return }
-    _ = try source.policy()
+    try source.validate()
     hostedSession?.close()
     hostedSession = nil
+    loadable = nil
     self.source = source
     resetRecovery()
     retireGeneration()
@@ -232,6 +246,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     destroyed = true
     hostedSession?.close()
     hostedSession = nil
+    loadable = nil
     NotificationCenter.default.removeObserver(self)
     retireGeneration()
     onEvent = nil
@@ -308,7 +323,9 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   private var colorScheme: String { traitCollection.userInterfaceStyle == .dark ? "dark" : "light" }
 
   private func mount() throws {
-    let policy = try source.policy()
+    // A failed read is not kept, so `reload()` reads a corrected configuration.
+    let loadable = try self.loadable ?? source.loadable()
+    self.loadable = loadable
     guard let root = Bundle.module.resourceURL?.appendingPathComponent("EmbeddedRuntime") else {
       throw TileflowMapError.missingRuntime
     }
@@ -334,15 +351,15 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     pendingRemount = false
     // A new document starts shown; it is hidden after initialization if the view is not.
     rendererVisible = true
-    if hostedSession == nil, let client = source.client, let mapID = source.mapID,
-      let surfaceID = source.surfaceID
+    if hostedSession == nil, let endpoint = loadable.hosted, let mapID = loadable.mapID,
+      let surfaceID = loadable.surfaceID
     {
-      hostedSession = HostedSession(client: client, mapID: mapID, surfaceID: surfaceID)
+      hostedSession = HostedSession(endpoint: endpoint, mapID: mapID, surfaceID: surfaceID)
     }
     hostedSession?.setBackgrounded(!isVisible)
     let loader = ResourceLoader(
-      policy: policy, hosted: hostedSession, apiOrigin: source.client?.apiOrigin,
-      publicMetadataURLs: source.publicMetadataURLs,
+      policy: loadable.policy, hosted: hostedSession, apiOrigin: loadable.hosted?.apiOrigin,
+      publicMetadataURLs: loadable.publicMetadataURLs,
       onDeploymentSuperseded: { [weak self] in
         await self?.deploymentSuperseded(generation: current) ?? false
       })
@@ -383,10 +400,10 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
           let startingCamera = self.initialCamera
           let startingOptions = self.options
           var wireSource: [String: JSONValue] = [
-            "map": .string(self.source.map),
-            "manifestUrl": .string(self.source.manifestURL.absoluteString),
+            "map": .string(loadable.map),
+            "manifestUrl": .string(loadable.manifestURL.absoluteString),
           ]
-          if let mapID = self.source.mapID { wireSource["discoveryMapId"] = .string(mapID) }
+          if let mapID = loadable.mapID { wireSource["discoveryMapId"] = .string(mapID) }
           var options: [String: JSONValue] = [
             "source": .object(wireSource),
             "theme": self.theme.map(JSONValue.string) ?? .null,

@@ -458,7 +458,10 @@ constructor(
         try {
             if (
                 !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) ||
-                    !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
+                    !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT) ||
+                    !WebViewRequirement.isSupported(
+                        WebViewCompat.getCurrentWebViewPackage(context)?.versionName
+                    )
             ) {
                 throw TileflowMapException(TileflowErrorCode.INCOMPATIBLE_RUNTIME)
             }

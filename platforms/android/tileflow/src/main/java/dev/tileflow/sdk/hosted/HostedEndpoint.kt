@@ -1,0 +1,57 @@
+@file:OptIn(TileflowInternalApi::class)
+
+package dev.tileflow.sdk.hosted
+
+import dev.tileflow.configuration.TileflowConfiguration
+import dev.tileflow.configuration.TileflowCredential
+import dev.tileflow.configuration.internal.TileflowInternalApi
+import dev.tileflow.configuration.internal.credentialHeader
+import dev.tileflow.sdk.TileflowErrorCode
+import dev.tileflow.sdk.TileflowMapException
+import java.net.URI
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+
+/**
+ * Where a Hosted map starts its sessions, and the map credential it presents there. Only the map
+ * credential authorizes a map; services credentials never do.
+ *
+ * The credential stays in native memory. It is sent only in the session-start request, never to
+ * the renderer, a resource request or a URL, and [toString] never includes it.
+ *
+ * @throws TileflowMapException with [TileflowErrorCode.MISSING_CREDENTIAL] when [configuration]
+ *   has no map credential, or [TileflowErrorCode.INVALID_CONFIGURATION] when its API origin is not
+ *   an HTTPS origin.
+ */
+internal class HostedEndpoint(configuration: TileflowConfiguration) {
+    private val credential: TileflowCredential =
+        configuration.mapCredential
+            ?: throw TileflowMapException(TileflowErrorCode.MISSING_CREDENTIAL)
+
+    val apiOrigin: URI =
+        configuration.apiOrigin.takeIf { HostedContract.canonicalOrigin(it.toString()) }
+            ?: throw TileflowMapException(TileflowErrorCode.INVALID_CONFIGURATION)
+
+    fun manifestUrl(mapId: String): URI = apiOrigin.resolve("/maps/$mapId/mobile/manifest.json")
+
+    fun discoveryUrl(mapId: String): URI =
+        apiOrigin.resolve("/maps/$mapId/mobile/webview-v1/manifest.json")
+
+    fun sessionRequest(mapId: String, sessionId: String, surfaceId: String): Request {
+        val body =
+            JSONObject()
+                .put("mapId", mapId)
+                .put("sessionId", sessionId)
+                .put("surfaceId", surfaceId)
+                .toString()
+        return Request.Builder()
+            .url(apiOrigin.resolve("/v1/sessions/start").toASCIIString())
+            .credentialHeader("X-Tileflow-Mobile-Client", credential)
+            .post(body.toRequestBody("application/json".toMediaType()))
+            .build()
+    }
+
+    override fun toString(): String = "HostedEndpoint(apiOrigin=$apiOrigin)"
+}

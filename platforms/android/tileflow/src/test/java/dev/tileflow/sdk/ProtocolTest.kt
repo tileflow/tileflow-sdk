@@ -111,8 +111,9 @@ public class ProtocolTest {
 
     @Test
     public fun eventLevelsAreCumulativeAndOnlyChosenEventsAreRequested() {
+        // What the application asks for; the SDK's own owners are checked below.
         fun requested(options: TileflowEventOptions) =
-            EventSubscriptions(options).events.mapKeys { it.key.wireName }
+            EventSubscriptions.demand(options).mapKeys { it.key.wireName }
         val essential = requested(TileflowEventOptions())
         assertEquals(0L, essential["cameraMoveEnded"])
         assertNull(essential["cameraMoveStarted"])
@@ -133,6 +134,15 @@ public class ProtocolTest {
                 .getJSONObject("cameraMoved")
                 .toString(),
         )
+        // The SDK follows every movement at any level, and every frame while controls follow it.
+        val sdk = EventSubscriptions(TileflowEventOptions()).events
+        assertEquals(0L, sdk[ProtocolContract.Event.CAMERA_MOVE_STARTED])
+        assertNull(sdk[ProtocolContract.Event.CAMERA_MOVED])
+        val following =
+            EventSubscriptions(TileflowEventOptions(TileflowEventLevel.CONTINUOUS, 250), true)
+        assertEquals(0L, following.events[ProtocolContract.Event.CAMERA_MOVED])
+        assertNotEquals(EventSubscriptions(), following)
+        assertEquals(EventSubscriptions(), EventSubscriptions())
         // Several owners share an event at the shortest interval any of them asks for.
         val shared = EventSubscriptions(TileflowEventOptions(TileflowEventLevel.CONTINUOUS, 1000))
         shared.set(

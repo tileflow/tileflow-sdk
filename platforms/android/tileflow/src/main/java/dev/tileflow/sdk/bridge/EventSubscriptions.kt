@@ -8,16 +8,34 @@ import org.json.JSONObject
  * owners takes the shortest interval any of them asks for. Events nobody asks for never leave the
  * renderer.
  */
-internal class EventSubscriptions(application: TileflowEventOptions = TileflowEventOptions()) {
+internal class EventSubscriptions(
+    application: TileflowEventOptions = TileflowEventOptions(),
+    followCamera: Boolean = false,
+) {
     /** Parts of the SDK that ask for events. The application's choice is one owner among them. */
     enum class Owner {
-        APPLICATION
+        APPLICATION,
+        /** The camera state follows every movement, so `isMoving` is current at any level. */
+        CAMERA,
+        /** The compass and scale bar follow the camera while it moves. */
+        CONTROLS,
     }
 
     private val demands = mutableMapOf<Owner, Map<ProtocolContract.Event, Long>>()
 
     init {
         set(Owner.APPLICATION, demand(application))
+        set(
+            Owner.CAMERA,
+            mapOf(
+                ProtocolContract.Event.CAMERA_MOVE_STARTED to 0L,
+                ProtocolContract.Event.CAMERA_MOVE_ENDED to 0L,
+            ),
+        )
+        set(
+            Owner.CONTROLS,
+            if (followCamera) mapOf(ProtocolContract.Event.CAMERA_MOVED to 0L) else emptyMap(),
+        )
     }
 
     fun set(owner: Owner, demand: Map<ProtocolContract.Event, Long>) {
@@ -32,6 +50,11 @@ internal class EventSubscriptions(application: TileflowEventOptions = TileflowEv
                 }
                 union
             }
+
+    override fun equals(other: Any?): Boolean =
+        other is EventSubscriptions && other.events == events
+
+    override fun hashCode(): Int = events.hashCode()
 
     fun json(): JSONObject =
         JSONObject().apply {

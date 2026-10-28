@@ -131,7 +131,9 @@ Every error, whether the renderer or the host raises it, has a code from the tax
 `protocol.json`. Each code states whether it is **recoverable** (the same work can succeed later
 without the application changing anything) or **terminal** (the application must change its
 request or configuration, or the account must change), and which side may raise it. A code that
-the renderer is not allowed to send is treated as a renderer fault.
+the renderer is not allowed to send is treated as a renderer fault. A code whose guidance differs by
+platform, such as where its configuration lives, carries `documentation.swift` and
+`documentation.kotlin` for the generated public enumerations.
 
 Errors carry an optional context: a stable `reason`, the `resource` kind, the resource's `origin`
 (scheme, host and port only), the HTTP `status`, the exceeded `limit`, and a developer-facing

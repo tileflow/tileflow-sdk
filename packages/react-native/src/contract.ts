@@ -118,9 +118,29 @@ export type MapSourceState =
   | (Readonly<{status: 'ready'; generation: number}> & MapSelection)
   | Readonly<{status: 'error'; generation: number; error: MapSourceError}>;
 
-/** A synchronous read of the last source snapshot. Does not trigger loading or native commands. */
+/**
+ * The Hosted session stopped: its credential, Map or quota was rejected. The map keeps what it has
+ * drawn and loads nothing new until `ref.retry()` or another source. Service outages and rate
+ * limits retry on their own and are not reported.
+ */
+export type MapSessionError = Readonly<{
+  code:
+    | 'NATIVE_SESSION_CREDENTIAL_REJECTED'
+    | 'NATIVE_SESSION_MAP_MISMATCH'
+    | 'NATIVE_SESSION_MAP_NOT_FOUND'
+    | 'NATIVE_SESSION_QUOTA_EXCEEDED'
+    | 'NATIVE_SESSION_INPUT_INVALID';
+  kind: 'terminal';
+}>;
+
 export type MapRef = Readonly<{
+  /** A synchronous read of the last source snapshot. Does not trigger loading or native commands. */
   getSourceState(): MapSourceState | undefined;
+  /**
+   * Loads again a map that stopped: after a `session-error` once its cause is resolved, for
+   * example a raised quota, or after a source or renderer error. A shown map is unaffected.
+   */
+  retry(): void;
 }>;
 
 /** The current style was accepted by the renderer; this alone does not establish a rendered frame. */
@@ -133,7 +153,8 @@ export type MapLoadEvent = Readonly<{
 /** Renderer failures expose no native event, message or remote cause. */
 export type MapErrorEvent =
   | Readonly<{type: 'source-error'; generation: number; error: MapSourceError}>
-  | Readonly<{type: 'renderer-error'; generation: number}>;
+  | Readonly<{type: 'renderer-error'; generation: number}>
+  | Readonly<{type: 'session-error'; generation: number; error: MapSessionError}>;
 
 /** The renderer owner must confirm readiness; a ready manifest alone is insufficient. */
 export type MapReadinessChangeEvent = Readonly<{

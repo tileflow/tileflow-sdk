@@ -24,7 +24,7 @@ type Step = {
 };
 const scenarios = JSON.parse(
   readFileSync(new URL('./fixtures/native-session-sequences.json', import.meta.url), 'utf8'),
-).scenarios as Array<{name: string; status: number; steps: Step[]}>;
+).scenarios as Array<{name: string; status: number; body?: unknown; steps: Step[]}>;
 
 for (const scenario of scenarios) {
   test(`shared session sequence: ${scenario.name}`, async () => {
@@ -37,6 +37,7 @@ for (const scenario of scenarios) {
       fetch: async (_url, init) => {
         const body = JSON.parse(init.body) as {sessionId: string};
         requests.push(body);
+        if (scenario.status !== 201) return response(scenario.status, scenario.body ?? null);
         return response(
           scenario.status,
           success({

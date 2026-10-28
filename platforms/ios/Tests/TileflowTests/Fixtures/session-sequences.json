@@ -92,6 +92,10 @@
     {
       "name": "terminal-quotaExceeded-does-not-retry",
       "status": 429,
+      "body": {
+        "code": "COMMERCIAL_MAP_LIMIT_REACHED",
+        "error": "Map view limit reached"
+      },
       "steps": [
         {
           "op": "admit",

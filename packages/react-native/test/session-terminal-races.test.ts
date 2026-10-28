@@ -16,10 +16,10 @@ import {
   success,
 } from './session-fixture';
 
-for (const [status, errorCode] of [
-  [401, 'NATIVE_SESSION_CREDENTIAL_REJECTED'],
-  [403, 'NATIVE_SESSION_MAP_MISMATCH'],
-  [429, 'NATIVE_SESSION_QUOTA_EXCEEDED'],
+for (const [status, errorCode, body] of [
+  [401, 'NATIVE_SESSION_CREDENTIAL_REJECTED', null],
+  [403, 'NATIVE_SESSION_MAP_MISMATCH', null],
+  [429, 'NATIVE_SESSION_QUOTA_EXCEEDED', {code: 'COMMERCIAL_MAP_LIMIT_REACHED', error: 'quota'}],
 ] as const) {
   for (const rejectionFirst of [true, false]) {
     test(`${status} terminates the entire binding across rotation; rejection first: ${rejectionFirst}`, async () => {
@@ -74,7 +74,7 @@ for (const [status, errorCode] of [
         const admitted = rejectionFirst ? null : await rotated;
         if (admitted) assert.ok(controller.transportBudget(admitted) > 0);
 
-        oldReply.resolve(response(status, null));
+        oldReply.resolve(response(status, body));
         await oldRejected;
         assert.equal(controller.state.status, 'error');
         if (rejectionFirst) {

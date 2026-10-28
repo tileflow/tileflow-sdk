@@ -152,6 +152,32 @@
 	}
 	XCTAssertFalse([self.events.description containsString:self.grant]);
 }
+- (void)testTicketOutlivedBySlowRenewalFailsAloneWithoutRetiringContext {
+	NSString *context = [self registerDirect:NO];
+	for (NSUInteger index = 0; index < 9; index++) [self request:context];
+	[self.scheduler flush];
+	[self.scheduler advance:1000];
+	NSDictionary *first = [self batch:context];
+	NSMutableArray *rejects = [NSMutableArray array];
+	for (NSDictionary *ticket in first[@"tickets"]) [rejects addObject:@{@"ticket": ticket[@"ticket"], @"kind": @"reject", @"code": @"NATIVE_ADMISSION_DENIED"}];
+	[self.engine completeContext:context generation:1 batch:first[@"batch"] results:rejects];
+	[self.scheduler flush];
+	NSDictionary *second = [self batch:context];
+	XCTAssertNotEqualObjects(second[@"batch"], first[@"batch"]);
+	NSString *waiting = [(NSArray *)second[@"tickets"] firstObject][@"ticket"];
+	// JavaScript is still renewing the session when the ticket's own deadline passes.
+	[self.scheduler advance:29000];
+	XCTAssertEqual(self.failures, 9u);
+	NSDictionary *cancel = @{@"kind": @"cancel", @"installation": @"installation_1", @"context": context, @"generation": @1, @"tickets": @[waiting]};
+	XCTAssertTrue([self.events containsObject:cancel]);
+	XCTAssertFalse([[self.events valueForKey:@"kind"] containsObject:@"retired"]);
+	[self.engine completeContext:context generation:1 batch:second[@"batch"] results:@[@{@"ticket": waiting, @"kind": @"reject", @"code": @"NATIVE_ADMISSION_CANCELLED"}]];
+	[self.scheduler flush];
+	[self request:context]; [self.scheduler flush];
+	[self admit:context budget:900000 tileset:@"world"];
+	XCTAssertEqual(self.network.requests.count, 1u);
+	XCTAssertFalse([[self.events valueForKey:@"kind"] containsObject:@"retired"]);
+}
 - (void)testBoundedQueueAndBatchRetireWhenJavaScriptNeverResponds {
 	NSString *context = [self registerDirect:NO];
 	for (NSUInteger index = 0; index < 129; index++) [self request:context];

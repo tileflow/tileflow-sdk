@@ -16,6 +16,7 @@ let package = Package(
   targets: [
     .target(
       name: "Tileflow",
+      dependencies: ["TileflowConfiguration"],
       path: "Sources/Tileflow",
       resources: [.copy("EmbeddedRuntime")]
     ),

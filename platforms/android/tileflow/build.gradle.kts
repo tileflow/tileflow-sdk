@@ -29,6 +29,7 @@ android {
 kotlin { jvmToolchain(17) }
 
 dependencies {
+    api(project(":tileflow-configuration"))
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")

@@ -1,7 +1,6 @@
 package dev.tileflow.sdk.hosted
 
 import android.os.SystemClock
-import dev.tileflow.sdk.TileflowClient
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.transport.NativeHTTPTransport
@@ -25,7 +24,7 @@ internal class HostedAdmission(val grant: String?, val timeoutMillis: Long)
  * No request waits longer than its budget, and lifecycle changes never take the lock.
  */
 internal class HostedSession(
-    private val client: TileflowClient,
+    private val endpoint: HostedEndpoint,
     private val mapId: String,
     private val surfaceId: String,
     private val now: () -> Long = SystemClock::elapsedRealtime,
@@ -81,7 +80,7 @@ internal class HostedSession(
                         return HostedAdmission(current.grant, minOf(30_000, remaining))
                     }
                     publicPolicy.validate(url)
-                    if (ResourcePolicy.origin(url) == ResourcePolicy.origin(client.apiOrigin)) {
+                    if (ResourcePolicy.origin(url) == ResourcePolicy.origin(endpoint.apiOrigin)) {
                         throw TileflowMapException(TileflowErrorCode.ACCESS_DENIED)
                     }
                     return HostedAdmission(null, 30_000)
@@ -236,7 +235,7 @@ internal class HostedSession(
             val response =
                 try {
                     // A stalled bootstrap ends within the budget of requests waiting for it.
-                    transport.send(client.sessionRequest(mapId, sessionId, surfaceId), 10_000)
+                    transport.send(endpoint.sessionRequest(mapId, sessionId, surfaceId), 10_000)
                 } catch (_: Exception) {
                     checkActive()
                     // Hiding the map cancels the bootstrap; its requests wait to be visible again.

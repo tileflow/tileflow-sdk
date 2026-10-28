@@ -7,7 +7,7 @@ struct HostedAdmission: Sendable {
 
 /// One logical map instance owns this actor across renderer generations.
 actor HostedSession {
-  private let client: TileflowClient
+  private let endpoint: HostedEndpoint
   private let mapID: String
   private let surfaceID: String
   private let lifetime: SessionLifetime
@@ -28,12 +28,12 @@ actor HostedSession {
   private var visibilityWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
   init(
-    client: TileflowClient, mapID: String, surfaceID: String,
+    endpoint: HostedEndpoint, mapID: String, surfaceID: String,
     transport: any NativeHTTPTransporting = NativeHTTPTransport(maximumBytes: 65_536),
     now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
     waitBudget: Duration = .seconds(30)
   ) {
-    self.client = client
+    self.endpoint = endpoint
     self.mapID = mapID
     self.surfaceID = surfaceID
     self.lifetime = SessionLifetime(transport: transport)
@@ -99,7 +99,7 @@ actor HostedSession {
     }
     try publicPolicy.validate(url)
     // An API endpoint can never silently become anonymous when its signed origin is missing.
-    guard ResourcePolicy.origin(url) != ResourcePolicy.origin(client.apiOrigin) else {
+    guard ResourcePolicy.origin(url) != ResourcePolicy.origin(endpoint.apiOrigin) else {
       throw TileflowMapError.accessDenied
     }
     return HostedAdmission(grant: nil, timeout: 30)
@@ -215,7 +215,7 @@ actor HostedSession {
       try Task.checkCancellation()
       let expectedSession = sessionID
       let requestStarted = now()
-      var request = try client.sessionRequest(
+      var request = try endpoint.sessionRequest(
         mapID: mapID, sessionID: expectedSession, surfaceID: surfaceID)
       // A stalled bootstrap ends well within the budget of the requests waiting for it.
       request.timeoutInterval = 10

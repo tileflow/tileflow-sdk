@@ -11,7 +11,8 @@ repository; no native release of these modules has been published yet.
 
 ## Modules
 
-Every service module works without the map, and the map works without them.
+Every service module works without the map, and the map works without them: it shares only
+`TileflowConfiguration`, from which it reads its own credential.
 
 | Swift product (`platforms/ios`) | Android artifact (`platforms/android`)  | Contents                                                       |
 | ------------------------------- | --------------------------------------- | -------------------------------------------------------------- |
@@ -34,8 +35,9 @@ hexadecimal digits) with the permission for each service. Create it in Team → 
 the Android package name with the SHA-256 fingerprint of its signing certificate. Never put a server
 credential in an application; the clients refuse any value that is not publishable.
 
-The Hosted map uses its own mobile credential. It never authorizes a service, and a services
-credential never authorizes the map.
+The Hosted map uses its own mobile credential, read from the same configuration (see
+[Show a Hosted map](#show-a-hosted-map)). It never authorizes a service, and a services credential
+never authorizes the map.
 
 On iOS, add String keys to the application target's Info.plist:
 
@@ -60,15 +62,15 @@ On Android, add string resources to the application module, for example in
 | Search only, replacing the shared one             | `TileflowSearchCredential`    | `tileflow_search_credential`    |
 | Routing only, replacing the shared one            | `TileflowRoutingCredential`   | `tileflow_routing_credential`   |
 | Elevation only, replacing the shared one          | `TileflowElevationCredential` | `tileflow_elevation_credential` |
-| Hosted map credential (read for the map)          | `TileflowMapCredential`       | `tileflow_map_credential`       |
+| Hosted map credential                             | `TileflowMapCredential`       | `tileflow_map_credential`       |
 
 The configuration is read once, on first use. A present but invalid value fails every call with a
 configuration error rather than falling back. Applications that receive their configuration at
 runtime set it explicitly before the first call; it then replaces the native configuration for the
-rest of the process:
+rest of the process, so it includes the map credential too when the application shows a Hosted map:
 
 ```swift
-import TileflowSearch
+import Tileflow
 
 Tileflow.configure(
   try TileflowConfiguration(servicesCredential: try TileflowCredential(credentialFromYourBackend)))
@@ -97,6 +99,43 @@ an explicit `app` identity in its configuration.
 
 These headers limit casual reuse of a copied credential; they are not authentication. The
 credential's quotas and the Team's spending limit bound what a copied value can consume.
+
+## Show a Hosted map
+
+A Hosted map is selected by its ID. When it loads, it reads its credential and API origin from the
+configuration above: the one set with `Tileflow.configure`, or else the `TileflowMapCredential`
+Info.plist key or the `tileflow_map_credential` string resource.
+
+```swift
+import Tileflow
+
+TileflowMap(mapID: "map_0123456789abcdef")  // SwiftUI
+let map = TileflowMapView(mapID: "map_0123456789abcdef")  // UIKit
+```
+
+```kotlin
+TileflowMap(mapId = "map_0123456789abcdef") // Compose
+val map = TileflowMapView(context, "map_0123456789abcdef") // Android View
+```
+
+A `TileflowMapView` declared in an Android layout selects its map with
+`map.setSource(TileflowMapSource.hosted("map_0123456789abcdef"))`. To give one map a configuration
+of its own, pass it with the source; it replaces the process configuration for that map only:
+
+```swift
+TileflowMap(source: .hosted(mapID: "map_0123456789abcdef", configuration: configuration))
+```
+
+```kotlin
+TileflowMap(TileflowMapSource.hosted("map_0123456789abcdef", configuration = configuration))
+```
+
+The map credential stays in native memory: the map sends it only to start its session, never to
+the renderer or in a resource URL. Without a map credential the map fails with `missingCredential`
+(`MISSING_CREDENTIAL` on Android). A configuration that cannot be read, or whose API origin is not
+HTTPS, fails with `invalidConfiguration` (`INVALID_CONFIGURATION`); `Tileflow.configuration()`
+(`Tileflow.configuration(context)` on Android) throws the detailed error. After correcting the
+configuration, call `reload()` on the map.
 
 ## Search, route and draw
 

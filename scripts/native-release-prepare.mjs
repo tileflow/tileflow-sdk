@@ -97,10 +97,22 @@ await cp(resolve(root, 'LICENSE'), join(swift, 'LICENSE'));
 await writeFile(join(swift, '.gitignore'), '.build/\n.swiftpm/\nxcuserdata/\n');
 
 const maven = join(destination, 'maven');
+// Gradle module → Maven artifact. The map is `tileflow-sdk`; service clients ship separately.
+const androidArtifacts = {
+  tileflow: 'tileflow-sdk',
+  'tileflow-configuration': 'tileflow-configuration',
+  'tileflow-search': 'tileflow-search',
+  'tileflow-routing': 'tileflow-routing',
+  'tileflow-elevation': 'tileflow-elevation',
+  'tileflow-geoip': 'tileflow-geoip',
+  'tileflow-service-content': 'tileflow-service-content',
+};
 const gradleOutput = await command(
   './gradlew',
   [
-    ':tileflow:publishReleasePublicationToCandidateRepository',
+    ...Object.keys(androidArtifacts).map(
+      (module) => `:${module}:publishReleasePublicationToCandidateRepository`,
+    ),
     `-PtileflowVersion=${version}`,
     `-PtileflowRepository=${maven}`,
     '--console=plain',
@@ -145,6 +157,12 @@ const manifest = {
   swift: {path: 'swift', files: await inventory(swift)},
   android: {
     coordinate: `dev.tileflow:tileflow-sdk:${version}`,
+    modules: Object.fromEntries(
+      Object.entries(androidArtifacts).map(([module, artifact]) => [
+        module,
+        `dev.tileflow:${artifact}:${version}`,
+      ]),
+    ),
     path: 'maven',
     files: await inventory(maven),
   },

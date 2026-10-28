@@ -27,7 +27,7 @@ import dev.tileflow.sdk.TileflowMapView
 import java.net.URI
 import kotlinx.coroutines.launch
 
-private fun Intent.mapSource(): TileflowMapSource {
+internal fun Intent.mapSource(): TileflowMapSource {
     val url = URI(getStringExtra("manifest") ?: "http://127.0.0.1:18645/manifest.json")
     return TileflowMapSource(
         map = getStringExtra("map") ?: "fixture",

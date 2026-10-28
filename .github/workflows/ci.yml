@@ -347,6 +347,13 @@ jobs:
           set -euo pipefail
           xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination 'platform=macOS,variant=Mac Catalyst' CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO -resultBundlePath "$RUNNER_TEMP/TileflowCatalyst.xcresult" | tee "$RUNNER_TEMP/swift-catalyst-tests.log"
           ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-catalyst-tests.log"
+      - name: Test the service clients with Mac Catalyst
+        working-directory: platforms/ios
+        run: |
+          set -euo pipefail
+          # Contract tests against the shared recorded answers; they make no network requests.
+          xcodebuild test -scheme Tileflow-Package -only-testing:TileflowServiceTests -destination 'platform=macOS,variant=Mac Catalyst' CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO | tee "$RUNNER_TEMP/swift-service-tests.log"
+          ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-service-tests.log"
       - name: Upload Swift test results
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -389,7 +396,12 @@ jobs:
         working-directory: platforms/android
         run: |
           export JAVA_HOME="$JAVA_HOME_17_X64"
-          ./gradlew :tileflow:testDebugUnitTest :tileflow:lintRelease :tileflow:publishReleasePublicationToCandidateRepository :example:assembleDebug --console=plain
+          modules="tileflow tileflow-configuration tileflow-search tileflow-routing tileflow-elevation tileflow-geoip tileflow-service-content"
+          tasks=()
+          for module in $modules; do
+            tasks+=(":$module:testDebugUnitTest" ":$module:lintRelease" ":$module:publishReleasePublicationToCandidateRepository")
+          done
+          ./gradlew "${tasks[@]}" :example:assembleDebug --console=plain
 
   android-emulator:
     name: Kotlin SDK on Android emulator (${{ matrix.name }})

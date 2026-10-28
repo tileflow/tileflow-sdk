@@ -20,6 +20,8 @@ targets:
       - Shared
     dependencies:
       - package: Tileflow
+      - package: Tileflow
+        product: TileflowServiceContent
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.tileflow.examples.uikit
@@ -31,6 +33,8 @@ targets:
       - Shared
     dependencies:
       - package: Tileflow
+      - package: Tileflow
+        product: TileflowServiceContent
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.tileflow.examples.swiftui

@@ -37,13 +37,16 @@ await cp(resolve(root, 'platforms/android/example/src'), join(android, 'example/
   recursive: true,
 });
 const build = await readFile(resolve(root, 'platforms/android/example/build.gradle.kts'), 'utf8');
-await writeFile(
-  join(android, 'example/build.gradle.kts'),
-  build.replace(
-    'implementation(project(":tileflow"))',
-    `implementation(${kotlinString(receipt.android.coordinate)})`,
-  ),
+const modules = receipt.android.modules ?? {tileflow: receipt.android.coordinate};
+const consumerBuild = build.replaceAll(
+  /implementation\(project\(":([a-z-]+)"\)\)/gu,
+  (line, module) => {
+    if (!modules[module]) throw new Error(`The candidate has no artifact for :${module}.`);
+    return `implementation(${kotlinString(modules[module])})`;
+  },
 );
+if (consumerBuild.includes('project(')) throw new Error('The example still uses a project.');
+await writeFile(join(android, 'example/build.gradle.kts'), consumerBuild);
 const plugins = await readFile(resolve(root, 'platforms/android/build.gradle.kts'), 'utf8');
 await writeFile(
   join(android, 'build.gradle.kts'),

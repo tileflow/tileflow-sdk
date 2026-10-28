@@ -96,17 +96,16 @@ enum HostedContract {
     case 408, 500...599: return .sessionUnavailable
     // Any other refusal, such as a Map without session delivery or a conflicting header, repeats
     // until something outside the device changes.
-    case 400...499: return .sessionRejected(serviceCode: errorCode(body))
+    case 400...499:
+      return TileflowMapError(
+        .sessionRejected, context: .init(reason: errorCode(body), status: status))
     default: return .invalidSessionResponse
     }
   }
 
   /// These will not succeed again without a change outside the device.
   static func isTerminal(_ error: TileflowMapError) -> Bool {
-    switch error {
-    case .credentialRejected, .accessDenied, .quotaExceeded, .sessionRejected: true
-    default: false
-    }
+    [.credentialRejected, .accessDenied, .quotaExceeded, .sessionRejected].contains(error)
   }
 
   /// Delta-seconds or an HTTP date, bounded so a hostile value cannot park the session.

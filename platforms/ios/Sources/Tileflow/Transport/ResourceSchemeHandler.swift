@@ -6,13 +6,15 @@ import WebKit
 final class ResourceSchemeHandler: NSObject, WKURLSchemeHandler {
   private let loader: any ResourceLoading
   private let runtimeRoot: URL
+  private let data: DataChannel?
   private var operations: [ObjectIdentifier: Task<Void, Never>] = [:]
   private var retired = false
   var onFailure: ((TileflowMapError) -> Void)?
 
-  init(loader: any ResourceLoading, runtimeRoot: URL) {
+  init(loader: any ResourceLoading, runtimeRoot: URL, data: DataChannel? = nil) {
     self.loader = loader
     self.runtimeRoot = runtimeRoot
+    self.data = data
   }
 
   func webView(_ webView: WKWebView, start urlSchemeTask: any WKURLSchemeTask) {
@@ -29,6 +31,8 @@ final class ResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         switch url.host {
         case ResourceURL.runtimeHost:
           payload = try runtimeResource(url)
+        case ResourceURL.dataHost:
+          payload = try dataResource(urlSchemeTask.request)
         case ResourceURL.resourceHost:
           var request = urlSchemeTask.request
           request.url = try ResourceURL.decode(url)
@@ -71,6 +75,27 @@ final class ResourceSchemeHandler: NSObject, WKURLSchemeHandler {
     operations.removeAll()
     for task in tasks { task.cancel() }
     loader.close()
+  }
+
+  /// A registered payload, or 404 once its request has settled and released it.
+  private func dataResource(_ request: URLRequest) throws -> ResourcePayload {
+    guard let url = request.url, url.scheme == ResourceURL.scheme, url.user == nil,
+      url.password == nil, url.port == nil, url.query == nil, url.fragment == nil,
+      request.httpMethod ?? "GET" == "GET"
+    else { throw ResourceError.invalidAddress }
+    let id = String(url.path.dropFirst())
+    guard (22...64).contains(id.count),
+      id.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") })
+    else { throw ResourceError.invalidAddress }
+    guard let entry = data?.payload(id) else {
+      return ResourcePayload(bytes: Data(), status: 404, headers: ["Cache-Control": "no-store"])
+    }
+    return ResourcePayload(
+      bytes: entry.bytes, status: 200,
+      headers: [
+        "Content-Type": entry.contentType, "Content-Length": String(entry.bytes.count),
+        "Cache-Control": "no-store",
+      ])
   }
 
   private func runtimeResource(_ url: URL) throws -> ResourcePayload {

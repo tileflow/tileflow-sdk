@@ -47,46 +47,35 @@ public struct TileflowRouteInks: Sendable, Hashable {
     glowOpacity: 0.4, coreOpacity: 0.7)
 }
 
-/// The largest GeoJSON a single map layer accepts.
-let layerByteLimit = 49_152
-
 extension TileflowGeoJSONLayer {
   /// Layers that draw a Routing answer, bottom to top: alternatives, glow, casing, line and core.
   ///
-  /// Lines are simplified until the layers together fit `maximumBytes`, so that other content
-  /// fits beside them in one ``TileflowMapController/setContent(annotations:layers:)`` call.
+  /// Each layer keeps the full geometry, with coordinates rounded to six decimals (about 0.1 m).
+  /// The glow, casing, line and core share one GeoJSON, which the map receives once.
   /// - Parameters:
   ///   - selected: The index of the chosen route; the others are drawn as alternatives.
   ///   - idPrefix: The layers are `<prefix>-alternatives`, `-glow`, `-casing`, `-line`, `-core`.
   public static func route(
     _ response: TileflowRouteResponse, selected: Int = 0, inks: TileflowRouteInks = .light,
-    idPrefix: String = "route", maximumBytes: Int = 40_000
+    idPrefix: String = "route"
   ) throws -> [TileflowGeoJSONLayer] {
     guard response.routes.indices.contains(selected) else { throw TileflowMapError.invalidRequest }
-    let chosen = response.routes[selected].geometry
     // Each line feature's id is its route's index, so a tap on the map can tell routes apart.
-    let others = response.routes.indices.filter { $0 != selected }.map {
-      ($0, response.routes[$0].geometry)
+    let line = GeoJSONText.lines([(selected, response.routes[selected].geometry)])
+    let others = response.routes.indices.filter { $0 != selected }
+    var layers: [(String, String, String, Double, Double)] = []
+    if !others.isEmpty {
+      let alternatives = GeoJSONText.lines(others.map { ($0, response.routes[$0].geometry) })
+      layers.append(("alternatives", alternatives, inks.alternative, 5, 1))
     }
-    var tolerance = 0.0
-    while true {
-      let line = GeoJSONText.lines([(selected, Simplify.line(chosen, tolerance: tolerance))])
-      let alternatives = GeoJSONText.lines(
-        others.map { ($0.0, Simplify.line($0.1, tolerance: tolerance)) })
-      var layers: [(String, String, String, Double, Double)] = []
-      if !others.isEmpty { layers.append(("alternatives", alternatives, inks.alternative, 5, 1)) }
-      if inks.glowOpacity > 0 { layers.append(("glow", line, inks.glow, 16, inks.glowOpacity)) }
-      layers.append(("casing", line, inks.casing, 9, 1))
-      layers.append(("line", line, inks.line, 6, 1))
-      if inks.coreOpacity > 0 { layers.append(("core", line, inks.core, 2, inks.coreOpacity)) }
-      if Simplify.fits(layers.map(\.1), maximumBytes: maximumBytes) {
-        return try layers.map { suffix, data, color, size, opacity in
-          try TileflowGeoJSONLayer(
-            id: "\(idPrefix)-\(suffix)", geoJSON: Data(data.utf8), kind: .line, color: color,
-            size: size, opacity: opacity)
-        }
-      }
-      tolerance = try Simplify.next(tolerance)
+    if inks.glowOpacity > 0 { layers.append(("glow", line, inks.glow, 16, inks.glowOpacity)) }
+    layers.append(("casing", line, inks.casing, 9, 1))
+    layers.append(("line", line, inks.line, 6, 1))
+    if inks.coreOpacity > 0 { layers.append(("core", line, inks.core, 2, inks.coreOpacity)) }
+    return try layers.map { suffix, data, color, size, opacity in
+      try TileflowGeoJSONLayer(
+        id: "\(idPrefix)-\(suffix)", geoJSON: Data(data.utf8), kind: .line, color: color,
+        size: size, opacity: opacity)
     }
   }
 
@@ -95,27 +84,13 @@ extension TileflowGeoJSONLayer {
   /// - Parameter idPrefix: The layers are `<prefix>-<minutes>`.
   public static func isochrones(
     _ response: TileflowIsochroneResponse, inks: TileflowRouteInks = .light,
-    opacity: Double = 0.18, idPrefix: String = "isochrone", maximumBytes: Int = 40_000
+    opacity: Double = 0.18, idPrefix: String = "isochrone"
   ) throws -> [TileflowGeoJSONLayer] {
-    let isochrones = response.isochrones.sorted { $0.minutes > $1.minutes }
-    var tolerance = 0.0
-    while true {
-      let data = isochrones.map { isochrone in
-        GeoJSONText.polygons(
-          isochrone.polygons.compactMap { polygon -> [[TileflowPosition]]? in
-            let rings = polygon.map { Simplify.ring($0, tolerance: tolerance) }
-            guard let outer = rings.first, let kept = outer else { return nil }
-            return [kept] + rings.dropFirst().compactMap { $0 }
-          })
-      }
-      if Simplify.fits(data, maximumBytes: maximumBytes) {
-        return try zip(isochrones, data).map { isochrone, geoJSON in
-          try TileflowGeoJSONLayer(
-            id: "\(idPrefix)-\(isochrone.minutes)", geoJSON: Data(geoJSON.utf8), kind: .fill,
-            color: inks.line, opacity: opacity)
-        }
-      }
-      tolerance = try Simplify.next(tolerance)
+    try response.isochrones.sorted { $0.minutes > $1.minutes }.map { isochrone in
+      try TileflowGeoJSONLayer(
+        id: "\(idPrefix)-\(isochrone.minutes)",
+        geoJSON: Data(GeoJSONText.polygons(isochrone.polygons).utf8), kind: .fill,
+        color: inks.line, opacity: opacity)
     }
   }
 }
@@ -179,79 +154,6 @@ extension TileflowPosition {
 extension TileflowBounds {
   public init(_ box: TileflowBoundingBox) {
     self.init(west: box.west, south: box.south, east: box.east, north: box.north)
-  }
-}
-
-/// Douglas–Peucker simplification in degrees, raising the tolerance until content fits.
-enum Simplify {
-  /// The next tolerance to try. A budget too small for even the simplest shapes is invalid.
-  static func next(_ tolerance: Double) throws -> Double {
-    guard tolerance < 360 else { throw TileflowMapError.invalidRequest }
-    return tolerance == 0 ? 1e-6 : tolerance * 2
-  }
-
-  static func fits(_ layers: [String], maximumBytes: Int) -> Bool {
-    let sizes = layers.map(\.utf8.count)
-    return sizes.allSatisfy { $0 <= layerByteLimit } && sizes.reduce(0, +) <= maximumBytes
-  }
-
-  static func line(_ positions: [TileflowPosition], tolerance: Double) -> [TileflowPosition] {
-    guard tolerance > 0, positions.count > 2 else { return positions }
-    var keep = [Bool](repeating: false, count: positions.count)
-    keep[0] = true
-    keep[positions.count - 1] = true
-    var stack = [(0, positions.count - 1)]
-    while let (first, last) = stack.popLast() {
-      guard last - first > 1 else { continue }
-      var farthest = first
-      var distance = 0.0
-      for index in (first + 1)..<last {
-        let value = offset(positions[index], positions[first], positions[last])
-        if value > distance {
-          distance = value
-          farthest = index
-        }
-      }
-      if distance > tolerance {
-        keep[farthest] = true
-        stack.append((first, farthest))
-        stack.append((farthest, last))
-      }
-    }
-    return positions.indices.filter { keep[$0] }.map { positions[$0] }
-  }
-
-  /// A closed ring simplified, or nil when it would no longer enclose an area.
-  static func ring(_ positions: [TileflowPosition], tolerance: Double) -> [TileflowPosition]? {
-    guard tolerance > 0 else { return positions }
-    // Split the ring at its farthest point from the start so neither half is degenerate.
-    let start = positions[0]
-    let far =
-      positions.indices.max {
-        offset(positions[$0], start, start) < offset(positions[$1], start, start)
-      } ?? 0
-    guard far > 0, far < positions.count - 1 else { return nil }
-    let first = line(Array(positions[0...far]), tolerance: tolerance)
-    let second = line(Array(positions[far...]), tolerance: tolerance)
-    let ring = first + second.dropFirst()
-    return ring.count >= 4 ? ring : nil
-  }
-
-  /// The distance in degrees from a point to the segment between two others.
-  static func offset(_ point: TileflowPosition, _ a: TileflowPosition, _ b: TileflowPosition)
-    -> Double
-  {
-    let dx = b.longitude - a.longitude
-    let dy = b.latitude - a.latitude
-    let length = dx * dx + dy * dy
-    var t = 0.0
-    if length > 0 {
-      t = ((point.longitude - a.longitude) * dx + (point.latitude - a.latitude) * dy) / length
-      t = min(1, max(0, t))
-    }
-    let x = a.longitude + t * dx - point.longitude
-    let y = a.latitude + t * dy - point.latitude
-    return (x * x + y * y).squareRoot()
   }
 }
 

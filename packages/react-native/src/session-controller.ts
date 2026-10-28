@@ -150,20 +150,20 @@ const ERROR_MESSAGES: Record<HostedNativeSessionErrorCode, string> = {
 export class HostedNativeSessionError extends Error {
   readonly code: HostedNativeSessionErrorCode;
   readonly kind: HostedNativeSessionErrorKind;
-  /** For `NATIVE_SESSION_REJECTED`, the service's reason code when its answer carried one. */
-  declare readonly serviceCode?: string;
+  /** For `NATIVE_SESSION_REJECTED`, the service's code when its answer carried one. */
+  declare readonly reason?: string;
 
-  constructor(code: HostedNativeSessionErrorCode, serviceCode?: string) {
+  constructor(code: HostedNativeSessionErrorCode, reason?: string) {
     super(ERROR_MESSAGES[code]);
     this.name = 'HostedNativeSessionError';
     this.code = code;
     this.kind = errorKind(code);
     if (
       code === 'NATIVE_SESSION_REJECTED' &&
-      typeof serviceCode === 'string' &&
-      SERVICE_CODE.test(serviceCode)
+      typeof reason === 'string' &&
+      SERVICE_CODE.test(reason)
     ) {
-      this.serviceCode = serviceCode;
+      this.reason = reason;
     }
   }
 }
@@ -194,7 +194,7 @@ export type HostedNativeResourcePolicy = Readonly<
 type SafeError = Readonly<{
   code: HostedNativeSessionErrorCode;
   kind: HostedNativeSessionErrorKind;
-  serviceCode?: string;
+  reason?: string;
 }>;
 type Lifecycle = 'foreground' | 'background';
 
@@ -542,7 +542,7 @@ export function createHostedNativeSessionController(input: {
             // A rejection applies to the binding, including bootstraps across age rotation.
             // Snapshot before callbacks: cancellation observers may replace the binding.
             for (const pending of [...operations]) {
-              pending.abort(failure.code, failure.serviceCode);
+              pending.abort(failure.code, failure.reason);
             }
             if (binding === operationBinding && rejectedSession) {
               publishSession(rejectedSession, 'error', failure);
@@ -1320,14 +1320,14 @@ function statusError(status: number, body: unknown, size: number) {
 /** The safe, frozen projection of an error that state and observers carry. */
 function safeError(error: HostedNativeSessionError): SafeError {
   return Object.freeze(
-    error.serviceCode === undefined
+    error.reason === undefined
       ? {code: error.code, kind: error.kind}
-      : {code: error.code, kind: error.kind, serviceCode: error.serviceCode},
+      : {code: error.code, kind: error.kind, reason: error.reason},
   );
 }
 
 function errorFrom(error: SafeError) {
-  return new HostedNativeSessionError(error.code, error.serviceCode);
+  return new HostedNativeSessionError(error.code, error.reason);
 }
 
 const retryAfterDelays = new WeakMap<HostedNativeSessionError, number>();
@@ -1394,7 +1394,7 @@ class SessionAbortController {
   readonly signal: HostedNativeSessionAbortSignal;
   #aborted = false;
   #code: HostedNativeSessionErrorCode = 'NATIVE_SESSION_REPLACED';
-  #serviceCode: string | undefined;
+  #reason: string | undefined;
   readonly #listeners = new Set<() => void>();
 
   constructor() {
@@ -1412,10 +1412,10 @@ class SessionAbortController {
     });
   }
 
-  abort(code: HostedNativeSessionErrorCode, serviceCode?: string) {
+  abort(code: HostedNativeSessionErrorCode, reason?: string) {
     if (this.#aborted) return;
     this.#code = code;
-    this.#serviceCode = serviceCode;
+    this.#reason = reason;
     this.#aborted = true;
     for (const listener of [...this.#listeners]) {
       try {
@@ -1428,7 +1428,7 @@ class SessionAbortController {
   }
 
   error() {
-    return new HostedNativeSessionError(this.#code, this.#serviceCode);
+    return new HostedNativeSessionError(this.#code, this.#reason);
   }
 }
 

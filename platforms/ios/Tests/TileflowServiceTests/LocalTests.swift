@@ -1,8 +1,8 @@
 import Foundation
-import Tileflow
 import TileflowConfiguration
 import XCTest
 
+@testable import Tileflow
 @testable import TileflowElevation
 @testable import TileflowRouting
 @testable import TileflowSearch
@@ -428,7 +428,7 @@ final class LocalTests: XCTestCase {
 
   // MARK: Map content
 
-  func testRouteLayersFitTheMapContentBudget() async throws {
+  func testRouteLayersKeepTheFullGeometryAndShareTheirData() async throws {
     ServiceStub.serve(json: contract.response("routing.route"))
     let answer = try await TileflowRouting(
       configuration: contract.configuration(), session: session
@@ -443,25 +443,24 @@ final class LocalTests: XCTestCase {
     XCTAssertEqual(
       light.map(\.id), ["route-alternatives", "route-glow", "route-casing", "route-line"])
     XCTAssertEqual(light.map(\.color), ["#94a3b8", "#2563eb", "#1e3a8a", "#2563eb"])
-    let dark = try TileflowGeoJSONLayer.route(
-      answer, selected: 1, inks: .dark, idPrefix: "trip", maximumBytes: 20_000)
+    // Every position reaches the map; the route's layers share one payload.
+    func positions(_ layer: TileflowGeoJSONLayer) throws -> [Int] {
+      let value = try JSONSerialization.jsonObject(with: layer.geoJSON) as? [String: Any]
+      let features = value?["features"] as? [[String: Any]] ?? []
+      return features.map {
+        (($0["geometry"] as? [String: Any])?["coordinates"] as? [Any])?.count ?? 0
+      }
+    }
+    XCTAssertEqual(try positions(light[3]), [answer.routes[0].geometry.count])
+    XCTAssertEqual(try positions(light[0]), [answer.routes[1].geometry.count])
+    XCTAssertEqual(Set(light.dropFirst().map(\.digest)).count, 1)
+    let dark = try TileflowGeoJSONLayer.route(answer, selected: 1, inks: .dark, idPrefix: "trip")
     XCTAssertEqual(
       dark.map(\.id), ["trip-alternatives", "trip-glow", "trip-casing", "trip-line", "trip-core"])
     XCTAssertEqual(dark.last?.opacity, 0.7)
     XCTAssertThrowsError(try TileflowGeoJSONLayer.route(answer, selected: 2))
-    XCTAssertThrowsError(try TileflowGeoJSONLayer.route(answer, maximumBytes: 10))
-  }
-
-  func testSimplifiedLinesKeepTheirEndsAndShape() {
-    let line = (0...1000).map {
-      TileflowPosition(longitude: Double($0) / 1000, latitude: sin(Double($0) / 100) / 100)
-    }
-    let simplified = Simplify.line(line, tolerance: 1e-4)
-    XCTAssertEqual(simplified.first, line.first)
-    XCTAssertEqual(simplified.last, line.last)
-    XCTAssertLessThan(simplified.count, line.count / 4)
     XCTAssertTrue(
-      GeoJSONText.lines([(2, [line[0], line[1]])]).hasPrefix(
+      GeoJSONText.lines([(2, answer.routes[0].geometry)]).hasPrefix(
         #"{"type":"FeatureCollection","features":[{"type":"Feature","id":2,"#))
     XCTAssertEqual(GeoJSONText.number(-80.2195004), "-80.2195")
     XCTAssertEqual(GeoJSONText.number(25), "25")
@@ -478,7 +477,7 @@ final class LocalTests: XCTestCase {
       TileflowIsochroneRequest(
         location: TileflowPosition(longitude: -80.1312, latitude: 25.7795), mode: .walking,
         minutes: [5, 10]))
-    let layers = try TileflowGeoJSONLayer.isochrones(answer, maximumBytes: 1_000)
+    let layers = try TileflowGeoJSONLayer.isochrones(answer)
     XCTAssertEqual(layers.map(\.id), ["isochrone-10", "isochrone-5"])
     XCTAssertTrue(layers.allSatisfy { $0.kind == .fill && $0.color == "#2563eb" })
   }

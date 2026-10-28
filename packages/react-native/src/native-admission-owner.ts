@@ -35,7 +35,7 @@ export type NativeMapAdmissionInput = Omit<SessionInput, 'fetch' | 'sessionIdFac
       error: Readonly<{
         code: HostedNativeSessionErrorCode;
         kind: HostedNativeSessionErrorKind;
-        serviceCode?: string;
+        reason?: string;
       }>,
     ) => void;
   }>;

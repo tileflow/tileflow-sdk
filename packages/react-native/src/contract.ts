@@ -134,10 +134,10 @@ export type MapSessionError = Readonly<{
     | 'NATIVE_SESSION_INPUT_INVALID';
   kind: 'terminal';
   /**
-   * For `NATIVE_SESSION_REJECTED`, the service's reason code when its answer carried one, such as
+   * For `NATIVE_SESSION_REJECTED`, the service's code when its answer carried one, such as
    * `MOBILE_SESSION_MODE_REQUIRED`. A bounded identifier, never a message or response body.
    */
-  serviceCode?: string;
+  reason?: string;
 }>;
 
 export type MapRef = Readonly<{

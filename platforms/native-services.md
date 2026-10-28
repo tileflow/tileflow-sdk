@@ -157,18 +157,18 @@ A Hosted map starts a session before it loads protected resources and renews it 
 When Tileflow refuses the session for a reason that trying again cannot change, the map reports a
 failure event, keeps what it has drawn and loads nothing new until `reload()`:
 
-| Response                                           | Swift error                     | Android `TileflowErrorCode` |
-| -------------------------------------------------- | ------------------------------- | --------------------------- |
-| 401: the map credential is invalid or expired      | `credentialRejected`            | `CREDENTIAL_REJECTED`       |
-| 403 or 404: the credential does not reach this Map | `accessDenied`                  | `ACCESS_DENIED`             |
-| 429 with the Map's view or Team's spending limit   | `quotaExceeded`                 | `QUOTA_EXCEEDED`            |
-| Any other 4xx                                      | `sessionRejected(serviceCode:)` | `SESSION_REJECTED`          |
+| Response                                           | Swift `code`         | Android `TileflowErrorCode` |
+| -------------------------------------------------- | -------------------- | --------------------------- |
+| 401: the map credential is invalid or expired      | `credentialRejected` | `CREDENTIAL_REJECTED`       |
+| 403 or 404: the credential does not reach this Map | `accessDenied`       | `ACCESS_DENIED`             |
+| 429 with the Map's view or Team's spending limit   | `quotaExceeded`      | `QUOTA_EXCEEDED`            |
+| Any other 4xx                                      | `sessionRejected`    | `SESSION_REJECTED`          |
 
-`sessionRejected` carries the service's reason when its answer had one, for example
-`MOBILE_SESSION_MODE_REQUIRED` for a Map that does not use session delivery, or
-`MOBILE_AUTHORITY_CONFLICT` for a session request that also carries browser or account
-credentials. On Android it is `serviceCode` on `TileflowMapEvent.Failed` and on
-`TileflowMapException`. Show your own message for the codes you expect and log the others.
+The error's context names the cause: for `sessionRejected`, `context.reason` is the service's code
+when its answer had one, for example `MOBILE_SESSION_MODE_REQUIRED` for a Map that does not use
+session delivery, or `MOBILE_AUTHORITY_CONFLICT` for a session request that also carries browser or
+account credentials, and `context.status` is the HTTP status. Show your own message for the codes
+you expect and log the others.
 
 Rate limits (`rateLimited`), timeouts, 408 and 5xx answers (`sessionUnavailable`) and answers
 outside the session contract (`invalidSessionResponse`) are temporary: the map keeps using its
@@ -295,8 +295,9 @@ The map helpers build ordinary map content:
 - `searchProximity` turns the camera into a Search proximity at city scale or closer, and a GeoIP
   location can choose an initial camera.
 
-Lines and rings are simplified until the layers fit the map's content limits, so a long route and a
-marker fit in one `setContent` call.
+Layers keep every position of a route or isochrone, rounded to six decimals (about 0.1 m). The map
+receives their GeoJSON over its data channel, so a long route needs no simplification, and the
+glow, casing, line and core of a route share one copy of it.
 
 ## Errors
 

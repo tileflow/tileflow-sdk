@@ -42,7 +42,7 @@ function admission() {
     bridge,
     createController: createHostedNativeSessionController,
   });
-  const errors: Array<{code: string; kind: string; serviceCode?: string}> = [];
+  const errors: Array<{code: string; kind: string; reason?: string}> = [];
   const open = (replies: Parameters<typeof createFetchQueue>[0]) => {
     const queue = createFetchQueue(replies);
     const map = owner.openMap({
@@ -106,7 +106,7 @@ test('a refused first session reaches the opener with the service reason and sta
       {
         code: 'NATIVE_SESSION_REJECTED',
         kind: 'terminal',
-        serviceCode: 'MOBILE_SESSION_MODE_REQUIRED',
+        reason: 'MOBILE_SESSION_MODE_REQUIRED',
       },
     ]);
     assert.equal(map.retryDelay(), null);
@@ -297,12 +297,12 @@ test('a refused session reaches onError with only a well-formed service reason',
     f.inputs[0].onSessionError?.({
       code: 'NATIVE_SESSION_REJECTED',
       kind: 'terminal',
-      serviceCode: 'MOBILE_AUTHORITY_CONFLICT',
+      reason: 'MOBILE_AUTHORITY_CONFLICT',
     });
     f.inputs[0].onSessionError?.({
       code: 'NATIVE_SESSION_REJECTED',
       kind: 'terminal',
-      serviceCode: 'Use mobile credentials without browser authority',
+      reason: 'Use mobile credentials without browser authority',
     });
     await f.owner.whenIdle();
     assert.deepEqual(f.events, [
@@ -312,7 +312,7 @@ test('a refused session reaches onError with only a well-formed service reason',
         error: {
           code: 'NATIVE_SESSION_REJECTED',
           kind: 'terminal',
-          serviceCode: 'MOBILE_AUTHORITY_CONFLICT',
+          reason: 'MOBILE_AUTHORITY_CONFLICT',
         },
       },
       {

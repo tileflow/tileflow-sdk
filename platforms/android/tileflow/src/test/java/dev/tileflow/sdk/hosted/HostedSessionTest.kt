@@ -386,7 +386,7 @@ class HostedSessionTest {
                         assertCode(
                             fixtureErrors.getValue(step.getString("error")),
                             name,
-                            serviceCode = step.optString("serviceCode").ifEmpty { null },
+                            reason = step.optString("reason").ifEmpty { null },
                         ) {
                             session.authorize(style, policy)
                         }
@@ -707,7 +707,17 @@ class HostedSessionTest {
                 "$status",
                 if (body == mode) "MOBILE_SESSION_MODE_REQUIRED"
                 else if (body == large) "MOBILE_SESSION_BODY_TOO_LARGE" else null,
-                rejection.serviceCode,
+                rejection.context.reason,
+            )
+            assertEquals(
+                "$status",
+                status.takeIf { expected == TileflowErrorCode.SESSION_REJECTED },
+                rejection.context.status,
+            )
+            assertEquals(
+                "$status",
+                !expected.isRecoverable,
+                expected in HostedContract.terminalCodes,
             )
             assertEquals(
                 "$status",
@@ -835,7 +845,7 @@ class HostedSessionTest {
     private fun assertCode(
         code: TileflowErrorCode,
         message: String? = null,
-        serviceCode: String? = null,
+        reason: String? = null,
         block: () -> Unit,
     ) {
         try {
@@ -843,7 +853,7 @@ class HostedSessionTest {
             fail("Expected $code ${message.orEmpty()}")
         } catch (error: TileflowMapException) {
             assertEquals(message, code, error.code)
-            assertEquals(message, serviceCode, error.serviceCode)
+            assertEquals(message, reason, error.context.reason)
         }
     }
 

@@ -1,5 +1,6 @@
 package dev.tileflow.sdk
 
+import dev.tileflow.sdk.bridge.ProtocolContract
 import org.json.JSONObject
 
 public enum class TileflowTimeOfDay(internal val wireName: String) {
@@ -31,12 +32,36 @@ public data class TileflowGestures(
         JSONObject().put("pan", pan).put("zoom", zoom).put("rotate", rotate).put("pitch", pitch)
 }
 
+/**
+ * Which events the map reports. Events beyond the chosen level are never sent by the renderer, so
+ * a map that does not need camera updates does not pay for them.
+ *
+ * @property level [TileflowEventLevel.ESSENTIAL] reports the camera when it settles,
+ *   [TileflowEventLevel.CAMERA] also when it starts to move, and [TileflowEventLevel.CONTINUOUS]
+ *   also while it moves.
+ * @property cameraUpdateIntervalMillis At [TileflowEventLevel.CONTINUOUS], the shortest time
+ *   between camera updates while the camera moves, from 0 (once per rendered frame) to 60 000. The
+ *   latest camera is always delivered.
+ */
+public data class TileflowEventOptions(
+    val level: TileflowEventLevel = TileflowEventLevel.ESSENTIAL,
+    val cameraUpdateIntervalMillis: Long = 0,
+) {
+    internal fun validate() {
+        if (cameraUpdateIntervalMillis !in 0..ProtocolContract.MAXIMUM_THROTTLE_MILLIS)
+            throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
+    }
+}
+
+/** @property events Which events the map reports. */
 public data class TileflowMapOptions(
     val viewMode: TileflowViewMode = TileflowViewMode.FLAT,
     val quality: TileflowQuality = TileflowQuality.BALANCED,
     val gestures: TileflowGestures = TileflowGestures(),
     val controls: Boolean = true,
+    val events: TileflowEventOptions = TileflowEventOptions(),
 ) {
+    /** The renderer's options. Event delivery is set up separately by the SDK. */
     internal fun json(): JSONObject =
         JSONObject()
             .put("viewMode", viewMode.wireName)

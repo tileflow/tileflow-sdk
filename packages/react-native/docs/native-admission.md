@@ -75,7 +75,7 @@ The controller classifies each bootstrap or renewal failure:
 | A second exact 409 restart within one bootstrap                                | Unavailable: retries after a delay                      |
 | Another status, or a response that breaks the session contract                 | Retries after a delay                                   |
 
-The first exact `COMMERCIAL_SESSION_RESTART_REQUIRED` response starts a new session at once. Any other 4xx stops the session as `NATIVE_SESSION_REJECTED`, with the service's `code` as `serviceCode` when the body is at most 4,096 bytes and the code is 1 to 64 uppercase letters, digits or underscores starting with a letter.
+The first exact `COMMERCIAL_SESSION_RESTART_REQUIRED` response starts a new session at once. Any other 4xx stops the session as `NATIVE_SESSION_REJECTED`, with the service's `code` as `reason` when the body is at most 4,096 bytes and the code is 1 to 64 uppercase letters, digits or underscores starting with a letter.
 
 A stopped session reports `session-error` through `onError`, including when a renewal is refused after the first load. A delay starts at one second and doubles up to one minute; a `Retry-After` in seconds or as an HTTP date lengthens it, up to 15 minutes. During the delay no bootstrap leaves the device, and a grant that is still valid keeps admitting protected requests. A successful bootstrap or `ref.retry()` clears the delay.
 

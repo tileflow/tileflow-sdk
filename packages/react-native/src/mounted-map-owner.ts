@@ -427,18 +427,16 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
     reopenings += 1;
     restart(epoch);
   }
-  function sessionError(epoch: Epoch, code: string, serviceCode?: string) {
+  function sessionError(epoch: Epoch, code: string, reason?: string) {
     if (disposed || current !== epoch || !epoch.live || !sessionErrorCodes.has(code)) return;
-    const reason =
-      code === 'NATIVE_SESSION_REJECTED' &&
-      typeof serviceCode === 'string' &&
-      SERVICE_CODE.test(serviceCode)
-        ? {serviceCode}
+    const detail =
+      code === 'NATIVE_SESSION_REJECTED' && typeof reason === 'string' && SERVICE_CODE.test(reason)
+        ? {reason}
         : {};
     const error: MapSessionError = Object.freeze({
       code: code as MapSessionError['code'],
       kind: 'terminal' as const,
-      ...reason,
+      ...detail,
     });
     emit({type: 'session-error', generation: generation(), error});
   }
@@ -478,7 +476,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
           onRetired: () => void Promise.resolve().then(() => reopen(epoch)),
           onSessionError: (error) => {
             if (error.kind !== 'terminal') return;
-            void Promise.resolve().then(() => sessionError(epoch, error.code, error.serviceCode));
+            void Promise.resolve().then(() => sessionError(epoch, error.code, error.reason));
           },
         });
         const map = await epoch.lease.ready;

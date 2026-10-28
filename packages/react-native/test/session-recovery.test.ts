@@ -118,7 +118,7 @@ for (const probe of [
   });
 }
 
-for (const [status, body, code, serviceCode] of [
+for (const [status, body, code, reason] of [
   [401, {code: 'MOBILE_CREDENTIAL_INVALID'}, 'NATIVE_SESSION_CREDENTIAL_REJECTED', undefined],
   [403, {code: 'MOBILE_MAP_MISMATCH'}, 'NATIVE_SESSION_MAP_MISMATCH', undefined],
   [404, {code: 'MOBILE_MAP_NOT_FOUND'}, 'NATIVE_SESSION_MAP_NOT_FOUND', undefined],
@@ -168,13 +168,13 @@ for (const [status, body, code, serviceCode] of [
     try {
       await assert.rejects(controller.acquire(), {code, kind: 'terminal'});
       const stopped = controller.state;
-      assert.equal(stopped.status === 'error' ? stopped.error.serviceCode : null, serviceCode);
+      assert.equal(stopped.status === 'error' ? stopped.error.reason : null, reason);
       // Neither time nor Retry-After lifts the stop.
       clock.advance(60 * 60 * 1000);
       await assert.rejects(controller.acquire(), (error: unknown) => {
         assert.deepEqual(
-          [(error as {code?: string}).code, (error as {serviceCode?: string}).serviceCode],
-          [code, serviceCode],
+          [(error as {code?: string}).code, (error as {reason?: string}).reason],
+          [code, reason],
         );
         return true;
       });

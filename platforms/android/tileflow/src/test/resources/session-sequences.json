@@ -179,13 +179,13 @@
           "op": "admit",
           "requests": 1,
           "error": "sessionRejected",
-          "serviceCode": "MOBILE_SESSION_MODE_REQUIRED"
+          "reason": "MOBILE_SESSION_MODE_REQUIRED"
         },
         {
           "op": "admit",
           "requests": 1,
           "error": "sessionRejected",
-          "serviceCode": "MOBILE_SESSION_MODE_REQUIRED"
+          "reason": "MOBILE_SESSION_MODE_REQUIRED"
         },
         {
           "op": "advance",
@@ -195,7 +195,7 @@
           "op": "admit",
           "requests": 1,
           "error": "sessionRejected",
-          "serviceCode": "MOBILE_SESSION_MODE_REQUIRED"
+          "reason": "MOBILE_SESSION_MODE_REQUIRED"
         },
         {
           "op": "retry"
@@ -222,13 +222,13 @@
           "op": "admit",
           "requests": 1,
           "error": "sessionRejected",
-          "serviceCode": "MOBILE_AUTHORITY_CONFLICT"
+          "reason": "MOBILE_AUTHORITY_CONFLICT"
         },
         {
           "op": "admit",
           "requests": 1,
           "error": "sessionRejected",
-          "serviceCode": "MOBILE_AUTHORITY_CONFLICT"
+          "reason": "MOBILE_AUTHORITY_CONFLICT"
         }
       ]
     },
@@ -248,13 +248,13 @@
           "op": "admit",
           "requests": 1,
           "error": "sessionRejected",
-          "serviceCode": "MOBILE_SESSION_INVALID_INPUT"
+          "reason": "MOBILE_SESSION_INVALID_INPUT"
         },
         {
           "op": "admit",
           "requests": 1,
           "error": "sessionRejected",
-          "serviceCode": "MOBILE_SESSION_INVALID_INPUT"
+          "reason": "MOBILE_SESSION_INVALID_INPUT"
         }
       ]
     },
@@ -274,13 +274,13 @@
           "op": "admit",
           "requests": 1,
           "error": "sessionRejected",
-          "serviceCode": "MOBILE_SESSION_BODY_TOO_LARGE"
+          "reason": "MOBILE_SESSION_BODY_TOO_LARGE"
         },
         {
           "op": "admit",
           "requests": 1,
           "error": "sessionRejected",
-          "serviceCode": "MOBILE_SESSION_BODY_TOO_LARGE"
+          "reason": "MOBILE_SESSION_BODY_TOO_LARGE"
         }
       ]
     },
@@ -394,13 +394,13 @@
           "op": "admit",
           "requests": 1,
           "error": "sessionRejected",
-          "serviceCode": "COMMERCIAL_SESSION_RESTART_REQUIRED"
+          "reason": "COMMERCIAL_SESSION_RESTART_REQUIRED"
         },
         {
           "op": "admit",
           "requests": 1,
           "error": "sessionRejected",
-          "serviceCode": "COMMERCIAL_SESSION_RESTART_REQUIRED"
+          "reason": "COMMERCIAL_SESSION_RESTART_REQUIRED"
         }
       ]
     },

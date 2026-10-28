@@ -2,13 +2,24 @@
 
 package dev.tileflow.sdk.bridge
 
+import dev.tileflow.sdk.TileflowEventLevel
+
 internal object ProtocolContract {
-    const val VERSION = 1
+    const val VERSION = 2
+    const val MINIMUM_VERSION = 2
     const val MAXIMUM_MESSAGE_BYTES = 65536
     const val MAXIMUM_PENDING_REQUESTS = 64
     const val REQUEST_TIMEOUT_MILLIS = 30000L
+    const val MAXIMUM_DATA_BYTES = 33_554_432
+    const val MAXIMUM_DATA_TOTAL_BYTES = 67_108_864
+    const val MAXIMUM_DATA_REFERENCES = 64
+    const val MAXIMUM_THROTTLE_MILLIS = 60000L
+    const val WARNING_WINDOW_MILLIS = 1000L
+
     enum class Method(val wireName: String) {
         INITIALIZE("initialize"),
+        CANCEL("cancel"),
+        SET_EVENTS("setEvents"),
         SET_CAMERA("setCamera"),
         GET_CAMERA("getCamera"),
         SET_THEME("setTheme"),
@@ -22,4 +33,51 @@ internal object ProtocolContract {
         QUERY_AT_POINT("queryAtPoint"),
         DISPOSE("dispose"),
     }
+
+    /**
+     * [level] is the least detailed level that includes the event, or null when it needs no
+     * subscription.
+     */
+    enum class Event(val wireName: String, val level: TileflowEventLevel?) {
+        HELLO("hello", null),
+        ERROR("error", null),
+        LOADING("loading", TileflowEventLevel.ESSENTIAL),
+        CONTENT_READY("contentReady", TileflowEventLevel.ESSENTIAL),
+        THEME_CHANGED("themeChanged", TileflowEventLevel.ESSENTIAL),
+        WARNING("warning", TileflowEventLevel.ESSENTIAL),
+        TAP("tap", TileflowEventLevel.ESSENTIAL),
+        ANNOTATION_ACTIVATED("annotationActivated", TileflowEventLevel.ESSENTIAL),
+        POI_ACTIVATED("poiActivated", TileflowEventLevel.ESSENTIAL),
+        CAMERA_MOVE_ENDED("cameraMoveEnded", TileflowEventLevel.ESSENTIAL),
+        CAMERA_MOVE_STARTED("cameraMoveStarted", TileflowEventLevel.CAMERA),
+        CAMERA_MOVED("cameraMoved", TileflowEventLevel.CONTINUOUS),
+    }
+
+    enum class ErrorReason(val wireName: String) {
+        PROTOCOL_VERSION("protocolVersion"),
+        RUNTIME_HASH("runtimeHash"),
+        WEB_VIEW_VERSION("webViewVersion"),
+        HANDSHAKE("handshake"),
+        DATA_TOO_LARGE("dataTooLarge"),
+        DATA_INTEGRITY("dataIntegrity"),
+        DATA_UNAVAILABLE("dataUnavailable"),
+        INVALID_GEO_JSON("invalidGeoJSON"),
+        GRAPHICS_CONTEXT_LOST("graphicsContextLost"),
+        PROCESS_TERMINATED("processTerminated"),
+        CONTENT_RESTORE("contentRestore"),
+        SCENE("scene"),
+    }
+
+    /** Error codes the renderer may send. Any other code from the renderer is a protocol fault. */
+    val RUNTIME_ERRORS: Set<String> =
+        setOf(
+            "incompatibleRuntime",
+            "invalidRequest",
+            "notReady",
+            "cancelled",
+            "disposed",
+            "timeout",
+            "resourceFailed",
+            "rendererFailed",
+        )
 }

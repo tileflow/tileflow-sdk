@@ -5,6 +5,7 @@ package dev.tileflow.sdk.hosted
 import dev.tileflow.configuration.internal.TileflowInternalApi
 import dev.tileflow.configuration.internal.tileflowApiOrigin
 import dev.tileflow.sdk.TileflowErrorCode
+import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.transport.ResourcePolicy
 import java.net.URI
@@ -153,15 +154,17 @@ internal object HostedContract {
         )
 
     /**
-     * Classifies a failed bootstrap, with the service's reason code for
-     * [TileflowErrorCode.SESSION_REJECTED].
+     * Classifies a failed bootstrap. [TileflowErrorCode.SESSION_REJECTED] carries the service's
+     * code as its context's reason, when well formed, and the HTTP status.
      */
     fun rejection(status: Int, bytes: ByteArray): TileflowMapException =
         failure(status, bytes).let {
-            TileflowMapException(
-                it,
-                if (it == TileflowErrorCode.SESSION_REJECTED) errorCode(bytes) else null,
-            )
+            if (it != TileflowErrorCode.SESSION_REJECTED) TileflowMapException(it)
+            else
+                TileflowMapException(
+                    it,
+                    TileflowErrorContext(reason = errorCode(bytes), status = status),
+                )
         }
 
     /** Classifies a failed bootstrap or granted resource response. */

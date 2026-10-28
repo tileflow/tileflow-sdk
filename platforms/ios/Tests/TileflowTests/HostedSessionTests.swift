@@ -306,17 +306,16 @@ final class HostedSessionTests: XCTestCase {
           session.retry()
           continue
         }
-        if let name = step.error {
-          XCTAssertNotNil(fixtureError(name, serviceCode: step.serviceCode), name)
-        }
+        // Fixture error names are the codes of the shared error taxonomy.
+        if let name = step.error { XCTAssertNotNil(TileflowMapError.Code(rawValue: name), name) }
         do {
           let admission = try await session.authorize(style, publicPolicy: policy)
           XCTAssertNil(step.error, scenario.name)
           XCTAssertNotNil(admission.grant)
         } catch {
-          XCTAssertEqual(
-            error as? TileflowMapError,
-            step.error.flatMap { fixtureError($0, serviceCode: step.serviceCode) }, scenario.name)
+          let failure = error as? TileflowMapError
+          XCTAssertEqual(failure?.code.rawValue, step.error, scenario.name)
+          XCTAssertEqual(failure?.context.reason, step.reason, scenario.name)
         }
         XCTAssertEqual(transport.requests.count, step.requests, scenario.name)
         if let identity = step.identity {
@@ -601,18 +600,28 @@ final class HostedSessionTests: XCTestCase {
       (404, Data(), .accessDenied), (429, quota, .quotaExceeded), (429, limiter, .rateLimited),
       (429, Data("<html>".utf8), .rateLimited), (408, Data(), .sessionUnavailable),
       (502, Data(), .sessionUnavailable),
-      (400, mode, .sessionRejected(serviceCode: "MOBILE_SESSION_MODE_REQUIRED")),
-      (413, large, .sessionRejected(serviceCode: "MOBILE_SESSION_BODY_TOO_LARGE")),
-      (400, Data(), .sessionRejected(serviceCode: nil)),
-      (409, Data(), .sessionRejected(serviceCode: nil)),
-      (451, Data("<html>".utf8), .sessionRejected(serviceCode: nil)),
+      (400, mode, .sessionRejected), (413, large, .sessionRejected),
+      (400, Data(), .sessionRejected), (409, Data(), .sessionRejected),
+      (451, Data("<html>".utf8), .sessionRejected),
       (302, Data(), .invalidSessionResponse), (200, Data(), .invalidSessionResponse),
     ] {
-      XCTAssertEqual(HostedContract.failure(status: status, body: body), expected, "\(status)")
+      let failure = HostedContract.failure(status: status, body: body)
+      XCTAssertEqual(failure, expected, "\(status)")
       XCTAssertEqual(
-        HostedContract.isTerminal(expected),
+        HostedContract.isTerminal(failure),
         [401, 403, 404, 400, 409, 413, 451].contains(status) || expected == .quotaExceeded,
         "\(status)")
+      XCTAssertEqual(HostedContract.isTerminal(failure), !failure.isRecoverable, "\(status)")
+    }
+    // A refusal carries the service's code, when well formed, and the HTTP status.
+    for (status, body, reason) in [
+      (400, mode, "MOBILE_SESSION_MODE_REQUIRED"), (413, large, "MOBILE_SESSION_BODY_TOO_LARGE"),
+      (400, Data(), nil), (400, Data(#"{"code":"lowercase code"}"#.utf8), nil),
+      (451, Data("<html>".utf8), nil),
+    ] as [(Int, Data, String?)] {
+      let failure = HostedContract.failure(status: status, body: body)
+      XCTAssertEqual(failure.context.reason, reason, "\(status)")
+      XCTAssertEqual(failure.context.status, status, "\(status)")
     }
     // Wed, 21 Oct 2015 07:28:00 GMT
     let now = Date(timeIntervalSince1970: 1_445_412_480)
@@ -691,20 +700,6 @@ final class HostedSessionTests: XCTestCase {
   }
 }
 
-/// The error a shared sequence step names, with the service code it expects.
-private func fixtureError(_ name: String, serviceCode: String?) -> TileflowMapError? {
-  switch name {
-  case "credentialRejected": .credentialRejected
-  case "accessDenied": .accessDenied
-  case "quotaExceeded": .quotaExceeded
-  case "rateLimited": .rateLimited
-  case "sessionUnavailable": .sessionUnavailable
-  case "invalidSessionResponse": .invalidSessionResponse
-  case "sessionRejected": .sessionRejected(serviceCode: serviceCode)
-  default: nil
-  }
-}
-
 private func sessionSequences() throws -> SessionSequences {
   let url = Bundle.module.url(
     forResource: "session-sequences", withExtension: "json", subdirectory: "Fixtures")!
@@ -766,7 +761,7 @@ private struct SessionSequences: Decodable {
       let requests: Int?
       let identity: String?
       let error: String?
-      let serviceCode: String?
+      let reason: String?
     }
     struct Reply: Decodable, Sendable {
       let status: Int

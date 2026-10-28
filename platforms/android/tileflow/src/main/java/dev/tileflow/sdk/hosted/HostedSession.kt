@@ -308,7 +308,7 @@ internal class HostedSession(
             failures = 0
             retryAt = null
         }
-        terminal.get()?.let { throw TileflowMapException(it.code, it.serviceCode) }
+        terminal.get()?.let { throw TileflowMapException(it.code, it.context) }
     }
 }
 

@@ -1,6 +1,5 @@
 package dev.tileflow.sdk
 
-import dev.tileflow.sdk.bridge.MapBridge
 import org.json.JSONObject
 
 /**
@@ -30,7 +29,9 @@ internal fun parseMapEvent(event: String, result: JSONObject): TileflowMapEvent?
             )
         "loading" -> TileflowMapEvent.Loading
         "contentReady" -> TileflowMapEvent.ContentReady
-        "cameraChanged" -> {
+        "cameraMoveStarted",
+        "cameraMoved",
+        "cameraMoveEnded" -> {
             val camera = TileflowCamera.from(result.getJSONObject("camera"))
             require(
                 camera.longitude in -180.0..180.0 &&
@@ -39,11 +40,28 @@ internal fun parseMapEvent(event: String, result: JSONObject): TileflowMapEvent?
                     camera.bearing in -360.0..360.0 &&
                     camera.pitch in 0.0..85.0
             )
-            TileflowMapEvent.CameraChanged(camera, result.getBoolean("final"))
+            val reason =
+                requireNotNull(TileflowCameraChangeReason.fromWire(result.getString("reason")))
+            val phase =
+                when (event) {
+                    "cameraMoveStarted" -> TileflowCameraChangePhase.STARTED
+                    "cameraMoved" -> TileflowCameraChangePhase.MOVING
+                    else -> TileflowCameraChangePhase.ENDED
+                }
+            TileflowMapEvent.CameraChanged(TileflowCameraChange(camera, reason, phase))
         }
-        "interaction" -> coordinate().let { TileflowMapEvent.Tap(it.longitude, it.latitude) }
+        "tap" -> coordinate().let { TileflowMapEvent.Tap(it.longitude, it.latitude) }
         "themeChanged" -> optionalString("theme")?.let(TileflowMapEvent::ThemeChanged)
-        "error" -> TileflowMapEvent.Failed(MapBridge.error(result.optString("code")))
+        "warning" -> {
+            val error = TileflowMapException.fromWire(result)
+            val count = result.getInt("count")
+            require(count > 0)
+            TileflowMapEvent.Warning(error.code, error.context, count)
+        }
+        "error" ->
+            TileflowMapException.fromWire(result).let {
+                TileflowMapEvent.Failed(it.code, it.context)
+            }
         else -> null
     }
 }

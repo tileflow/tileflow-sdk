@@ -21,7 +21,7 @@ type Step = {
   requests?: number;
   identity?: string;
   error?: string;
-  serviceCode?: string;
+  reason?: string;
 };
 type Reply = {status: number; body?: unknown; headers?: Record<string, string>};
 const scenarios = JSON.parse(
@@ -91,7 +91,7 @@ for (const scenario of scenarios) {
             (error: unknown) =>
               error instanceof HostedNativeSessionError &&
               error.code === errorCodes[step.error!] &&
-              (error.serviceCode ?? null) === (step.serviceCode ?? null),
+              (error.reason ?? null) === (step.reason ?? null),
           );
         } else {
           const authority = await controller.acquire();

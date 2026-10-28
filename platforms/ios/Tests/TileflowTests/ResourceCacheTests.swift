@@ -370,7 +370,9 @@ final class ResourceCacheTests: XCTestCase {
         write(
           first, ResourceCacheKey(url: url("/tiles/7/\(index)/1.pbf"), scope: .shared), bytes: 100))
     }
-    let leftover = root.appendingPathComponent("ambient/staging/partial")
+    let leftover = root.appendingPathComponent("ambient/staging/earlier/partial")
+    try FileManager.default.createDirectory(
+      at: leftover.deletingLastPathComponent(), withIntermediateDirectories: true)
     try Data([1, 2, 3]).write(to: leftover)
     first.settle()
     let expected = first.usage()

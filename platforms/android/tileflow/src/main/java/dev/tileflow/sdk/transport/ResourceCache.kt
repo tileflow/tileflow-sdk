@@ -240,7 +240,7 @@ internal object ResourceCacheEntryFormat {
  * ```
  * shared/<class>/<aa>/<sha256(url)>         public resources
  * grant-<scope>/<class>/<aa>/<sha256(url)>  protected resources of one grant scope
- * staging/<uuid>                            partial writes, emptied when the store opens
+ * staging/<store>/<uuid>                    partial writes; others' are removed on open
  * ```
  *
  * Entries are written to `staging/` and renamed into place, so a reader sees a whole entry or none.
@@ -287,11 +287,15 @@ internal class ResourceCacheStore(
     private var evictionScheduled = false
     private var dropped = 0
     private val directories = HashSet<String>()
+    private val stagingName = UUID.randomUUID().toString()
 
     init {
         maintenance.execute {
+            // Earlier processes' partial writes; this store's own staging directory stays.
             for (root in listOf(ambientRoot, File(durableRoot, "pinned")))
-                File(root, "staging").deleteRecursively()
+                File(root, "staging").listFiles().orEmpty().forEach {
+                    if (it.name != stagingName) it.deleteRecursively()
+                }
             File(ambientRoot, "trash").deleteRecursively()
             val scanned = scan()
             synchronized(lock) {
@@ -348,7 +352,7 @@ internal class ResourceCacheStore(
         val limit =
             if (retention == ResourceCacheRetention.PINNED) 16L * 1024 * 1024 else maximumEntryBytes
         if (limit <= 0) return null
-        val staging = File(root(retention), "staging")
+        val staging = File(root(retention), "staging/$stagingName")
         val file = File(staging, UUID.randomUUID().toString())
         return try {
             staging.mkdirs()

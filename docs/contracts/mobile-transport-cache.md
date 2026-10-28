@@ -51,9 +51,9 @@ what a store placed: `style` (manifests, style JSON, TileJSON), `tiles` (paths e
 ```
 <ambient root>/shared/<class>/<aa>/<sha256(url)>
 <ambient root>/grant-<id>/<class>/<aa>/<sha256(url)>
-<ambient root>/staging/<uuid>
+<ambient root>/staging/<store>/<uuid>
 <durable root>/pinned/<same relative paths as above>
-<durable root>/pinned/staging/<uuid>
+<durable root>/pinned/staging/<store>/<uuid>
 ```
 
 `<aa>` is the first two characters of the digest. Ambient root: iOS
@@ -67,11 +67,11 @@ iOS `<Application Support>/dev.tileflow/resources-v1` (excluded from backups), A
 body ‖ metadata JSON ‖ metadata length (UInt32 BE) ‖ format version (UInt32 BE, 1) ‖ "TFC1"
 ```
 
-Metadata fields: `url`, `status`, `headers`, `responseTime`, `expires`, `staleLimit` (seconds since
-1970 on iOS, milliseconds on Android), `bodyLength` and `bodySHA256`. Writers stream the body into
-`staging/` and rename the finished file into place, so readers see a whole entry or none. Every read
-checks the trailer, lengths, URL and body digest; a mismatch deletes the entry and counts it as
-dropped. Staging directories are emptied when the store opens.
+Metadata fields: `url`, `status`, `headers`, `responseTime`, `expires`, `staleLimit` (integer
+milliseconds since 1970), `bodyLength` and `bodySHA256`. Writers stream the body into their own
+`staging/<store>/` directory and rename the finished file into place, so readers see a whole entry
+or none. Every read checks the trailer, lengths, URL and body digest; a mismatch deletes the entry
+and counts it as dropped. Opening a store removes other stores' staging directories.
 
 ## Retention and eviction
 

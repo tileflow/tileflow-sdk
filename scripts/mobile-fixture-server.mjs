@@ -8,7 +8,9 @@ const require = createRequire(import.meta.url);
 const fontRoot = dirname(require.resolve('@fontsource/noto-sans/package.json'));
 const font = await readFile(resolve(fontRoot, 'files/noto-sans-latin-400-normal.woff2'));
 const port = Number(process.env.TILEFLOW_FIXTURE_PORT ?? 18645);
-const base = `http://127.0.0.1:${port}`;
+// The origin the manifests advertise. Override it when a device reaches this server through a
+// forwarded port, for example `adb reverse tcp:18645 tcp:<port>`.
+const base = process.env.TILEFLOW_FIXTURE_ORIGIN ?? `http://127.0.0.1:${port}`;
 // Resources under /cached/ may be stored and revalidated; every other response is no-store.
 const cachedPrefix = '/cached';
 const fontFaces = (root) => [

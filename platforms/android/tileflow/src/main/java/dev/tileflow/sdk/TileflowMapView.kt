@@ -22,10 +22,12 @@ import dev.tileflow.sdk.bridge.EventSubscriptions
 import dev.tileflow.sdk.bridge.MapBridge
 import dev.tileflow.sdk.bridge.ProtocolContract
 import dev.tileflow.sdk.hosted.HostedSession
+import dev.tileflow.sdk.transport.EmbeddedRuntime
+import dev.tileflow.sdk.transport.MapPrewarmer
 import dev.tileflow.sdk.transport.ResourceAddress
 import dev.tileflow.sdk.transport.ResourceClient
 import dev.tileflow.sdk.transport.ResourceLoader
-import java.security.MessageDigest
+import dev.tileflow.sdk.transport.grantScope
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
@@ -508,39 +510,12 @@ constructor(
             ) {
                 throw TileflowMapException(TileflowErrorCode.INCOMPATIBLE_RUNTIME)
             }
-            val receipt =
-                JSONObject(
-                    context.assets.open("tileflow/receipt.json").bufferedReader().use {
-                        it.readText()
-                    }
-                )
-            if (
-                receipt.getInt("protocolVersion") !in
-                    ProtocolContract.MINIMUM_VERSION..ProtocolContract.VERSION
-            )
-                throw TileflowMapException(
-                    TileflowErrorCode.INCOMPATIBLE_RUNTIME,
-                    TileflowErrorContext.of(ProtocolContract.ErrorReason.PROTOCOL_VERSION),
-                )
-            val files = receipt.getJSONObject("files")
-            require(
-                files.keys().asSequence().toSet() ==
-                    setOf(
-                        "index.html",
-                        "runtime.js",
-                        "maplibre.css",
-                        "notices.txt",
-                        "dependencies.json",
-                    )
-            )
-            for (name in files.keys()) {
-                val bytes = context.assets.open("tileflow/$name").use { it.readBytes() }
-                val actual =
-                    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") {
-                        "%02x".format(it)
-                    }
-                require(actual == files.getString(name))
-            }
+            // The receipt is read once per process; the files are verified once, off the main
+            // thread, while the WebView starts.
+            val receipt = EmbeddedRuntime.receipt(context.assets)
+            EmbeddedRuntime.failure?.let { throw it }
+            EmbeddedRuntime.verification(context.assets)
+            TileflowDeviceProfile.current(context)
             generation += 1
             val current = generation
             pendingRemount = false
@@ -562,6 +537,8 @@ constructor(
                     hosted = hostedSession,
                     apiOrigin = endpoint?.apiOrigin,
                     publicMetadataUrls = loadable.publicMetadataUrls,
+                    cache = TileflowMapCache.get(context).store,
+                    grantScope = loadable.grantScope,
                     onDeploymentSuperseded = {
                         // A protected style belongs to a superseded deployment: reload once.
                         automaticReloadAvailable.compareAndSet(true, false).also { reload ->
@@ -583,7 +560,7 @@ constructor(
                 MapBridge(
                     instanceId,
                     current,
-                    receipt.getString("runtimeHash"),
+                    receipt.runtimeHash,
                     view,
                     DataChannel(),
                     onHello = { readyBridge ->
@@ -713,7 +690,7 @@ constructor(
             bridge = mapBridge
             webView = view
             addView(view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-            view.loadUrl(ResourceAddress.RUNTIME_URL)
+            loadRuntime(view, current)
             updateVisibility()
         } catch (error: Exception) {
             retireGeneration()
@@ -723,6 +700,28 @@ constructor(
                     (error as? TileflowMapException)?.context ?: TileflowErrorContext.NONE,
                 )
             )
+        }
+    }
+
+    /**
+     * Loads the renderer once the embedded runtime is verified. The WebView's provider and renderer
+     * start meanwhile, so verification overlaps their launch.
+     */
+    private fun loadRuntime(view: WebView, current: Int) {
+        if (EmbeddedRuntime.isVerified) {
+            view.loadUrl(ResourceAddress.RUNTIME_URL)
+            return
+        }
+        EmbeddedRuntime.verification(context.assets).whenComplete { _, error ->
+            post {
+                if (destroyed || generation != current || webView !== view) return@post
+                if (error == null) view.loadUrl(ResourceAddress.RUNTIME_URL)
+                else {
+                    val failure = EmbeddedRuntime.mapException(error)
+                    retireGeneration()
+                    onEvent(TileflowMapEvent.Failed(failure.code, failure.context))
+                }
+            }
         }
     }
 
@@ -770,4 +769,21 @@ constructor(
         bootstrap = null
         webView = null
     }
+
+    public companion object {
+        /**
+         * Prepares what every map needs before the first one is shown: verifies the embedded
+         * renderer, reads the device profile, opens the shared HTTP client and resource cache, and
+         * loads the WebView provider. Call it on the main thread early, for example in
+         * `Application.onCreate` or before navigating to a screen with a map; calling it again only
+         * repeats the cheap checks. Maps work without it, but the first one then pays these costs
+         * while it loads.
+         */
+        @JvmStatic
+        @MainThread
+        public fun prewarm(context: Context) {
+            MapPrewarmer.start(context)
+        }
+    }
+
 }

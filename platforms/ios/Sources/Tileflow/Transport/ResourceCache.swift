@@ -98,14 +98,14 @@ struct ResourceCacheKey: Hashable, Sendable {
   }
 }
 
-/// What is kept with a stored body. Times are seconds since 1970.
+/// What is kept with a stored body. Times are milliseconds since 1970.
 struct ResourceCacheMetadata: Codable, Equatable, Sendable {
   var url: String
   var status: Int
   var headers: [String: String]
-  var responseTime: Double
-  var expires: Double
-  var staleLimit: Double
+  var responseTime: Int64
+  var expires: Int64
+  var staleLimit: Int64
   var bodyLength: Int
   var bodySHA256: String
 
@@ -116,20 +116,23 @@ struct ResourceCacheMetadata: Codable, Equatable, Sendable {
     self.url = url.absoluteString
     self.status = status
     self.headers = ResourceCachePolicy.storable(headers)
-    self.responseTime = responseTime.timeIntervalSince1970
+    self.responseTime = Self.milliseconds(responseTime)
     let expiry = ResourceCachePolicy.expiry(
       headers: self.headers, responseTime: responseTime, protected: protected)
-    expires = expiry.timeIntervalSince1970
-    staleLimit =
-      ResourceCachePolicy.staleLimit(headers: self.headers, expiry: expiry, protected: protected)
-      .timeIntervalSince1970
+    expires = Self.milliseconds(expiry)
+    staleLimit = Self.milliseconds(
+      ResourceCachePolicy.staleLimit(headers: self.headers, expiry: expiry, protected: protected))
     bodyLength = body.length
     bodySHA256 = body.sha256
   }
 
-  func isFresh(at date: Date) -> Bool { date.timeIntervalSince1970 < expires }
+  func isFresh(at date: Date) -> Bool { Self.milliseconds(date) < expires }
   func isUsableAfterNetworkFailure(at date: Date) -> Bool {
-    date.timeIntervalSince1970 < staleLimit
+    Self.milliseconds(date) < staleLimit
+  }
+
+  static func milliseconds(_ date: Date) -> Int64 {
+    Int64((date.timeIntervalSince1970 * 1000).rounded(.down))
   }
 }
 
@@ -214,7 +217,7 @@ enum ResourceCacheError: Error, Equatable {
 ///
 ///     shared/<class>/<aa>/<sha256(url)>         public resources
 ///     grant-<scope>/<class>/<aa>/<sha256(url)>  protected resources of one grant scope
-///     staging/<uuid>                            partial writes, emptied when the store opens
+///     staging/<store>/<uuid>                    partial writes; others' are removed on open
 ///
 /// Entries are written to `staging/` and renamed into place, so a reader sees a whole entry or
 /// none. Each file is self-describing (``ResourceCacheEntryFormat``); there is no separate journal
@@ -254,6 +257,7 @@ final class ResourceCacheStore: @unchecked Sendable {
   private var evictionScheduled = false
   private var dropped = 0
   private var directories: Set<String> = []
+  private let stagingName = UUID().uuidString
 
   init(
     ambientRoot: URL, durableRoot: URL, maximumBytes: Int64,
@@ -265,8 +269,13 @@ final class ResourceCacheStore: @unchecked Sendable {
     self.now = now
     indexed.enter()
     maintenance.async { [self] in
+      // Earlier processes' partial writes; this store's own staging directory stays.
       for root in [ambientRoot, durableRoot.appendingPathComponent("pinned")] {
-        try? FileManager.default.removeItem(at: root.appendingPathComponent("staging"))
+        let staging = root.appendingPathComponent("staging")
+        for name in (try? FileManager.default.contentsOfDirectory(atPath: staging.path)) ?? []
+        where name != stagingName {
+          try? FileManager.default.removeItem(at: staging.appendingPathComponent(name))
+        }
       }
       try? FileManager.default.removeItem(at: ambientRoot.appendingPathComponent("trash"))
       let scanned = scan()
@@ -335,7 +344,7 @@ final class ResourceCacheStore: @unchecked Sendable {
   {
     let limit = retention == .pinned ? 16 * 1024 * 1024 : maximumEntryBytes
     guard limit > 0 else { return nil }
-    let staging = root(retention).appendingPathComponent("staging", isDirectory: true)
+    let staging = root(retention).appendingPathComponent("staging/\(stagingName)", isDirectory: true)
     let file = staging.appendingPathComponent(UUID().uuidString)
     do {
       try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)

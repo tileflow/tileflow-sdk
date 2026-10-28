@@ -19,7 +19,8 @@ const runtimeInputs = [
 const areaInputs = {
   runtime: runtimeInputs,
   ios: [...runtimeInputs, 'platforms/ios/'],
-  android: [...runtimeInputs, 'platforms/android/'],
+  // The Maven publication reads its coordinates and POM metadata from the native release catalog.
+  android: [...runtimeInputs, 'platforms/android/', 'platforms/native-release.json'],
   reactNative: [
     '.github/workflows/ci.yml',
     'packages/react-native/android/',

@@ -12,6 +12,11 @@ There is no changeset, release PR, source-version commit, release tag, manual np
 on merge. Hosted platform, API, dashboard, database, and renderer workspaces are never published
 from this repository.
 
+The Swift and Android SDKs under `platforms/` follow the same principles through a separate workflow,
+`.github/workflows/native-publish.yml`, and a separate approval; see
+[Native Swift and Android releases](#native-swift-and-android-releases). Their only tags live in the
+generated Swift distribution repository, never in this one.
+
 ## Public catalog and alpha versions
 
 `scripts/release-config.mjs` is the single ordered public catalog. It owns the dependency-safe
@@ -373,3 +378,163 @@ After the first React Native alpha exists, use the exact host versions in its
 [package README](packages/react-native/README.md), then install:
 
     pnpm add --save-exact @tileflow/react-native@alpha @tileflow/core@alpha @tileflow/interactions@alpha @maplibre/maplibre-react-native@11.5.0
+
+## Native Swift and Android releases
+
+The native SDKs ship as one release with one version:
+
+- the Swift package, from the generated distribution repository
+  [`tileflow/tileflow-swift`](https://github.com/tileflow/tileflow-swift), with the products
+  `Tileflow`, `TileflowConfiguration`, `TileflowSearch`, `TileflowRouting`, `TileflowElevation`,
+  `TileflowGeoIP` and `TileflowServiceContent`; and
+- the Android artifacts on Maven Central under `dev.tileflow`: `tileflow-sdk` (the map),
+  `tileflow-configuration`, `tileflow-search`, `tileflow-routing`, `tileflow-elevation`,
+  `tileflow-geoip` and `tileflow-service-content`.
+
+`platforms/native-release.json` is the single catalog: the first version, the Swift distribution
+repository, and every Maven artifact with its Gradle module, name and description. The shared Gradle
+script `platforms/android/gradle/publishing.gradle.kts` reads it to write each POM, so a new
+published module needs one catalog entry and one `apply(from = ...)` line. The release scripts read
+the same file.
+
+### Native versions
+
+Native releases use the alpha channel, `X.Y.Z-alpha.N`, like npm packages. No source file carries a
+release version: Gradle builds `0.0.0-local.1` unless a version is supplied, and the Swift manifest
+has none. The release workflow reads what is already public, the tags of the Swift distribution
+repository and the Maven Central metadata of every catalog artifact, and selects the next alpha after
+the highest version found on either side. The first release uses the catalog's `initialVersion`,
+`0.1.0-alpha.0`. Any public native version that is not an alpha stops planning. Every artifact and
+the Swift tag of a release share that version, and a version that reached only one side is never
+reused. As with npm, stable SemVer intent is not automated.
+
+### Swift distribution repository
+
+SwiftPM resolves packages from a git repository with `Package.swift` at its root and SemVer tags,
+and it must find every resource in the tagged tree. The embedded runtime is a build output that this
+repository does not track, so tags on this monorepo would make every consumer clone the pnpm
+workspace and still miss the runtime. The release therefore generates a separate repository whose
+root holds exactly:
+
+- `Package.swift`, `Sources/` and `Tests/` from `platforms/ios`, with the embedded runtime under
+  `Sources/Tileflow/EmbeddedRuntime/`;
+- `README.md` from `platforms/ios/distribution/README.md`, and `LICENSE`; and
+- `provenance.json`: source repository and revision, clean-source state, the digest of every source
+  input, the version and the runtime digest.
+
+Each release is one commit on the distribution's `main`, whose tree is exactly that generated
+package, and a tag named after the version. Nobody edits the distribution repository by hand: issues
+and changes belong here. The package is distributed as source. A binary XCFramework would add
+platform slices, compiler compatibility, resource bundles and binary checksums without a present
+requirement, and would hide source that is already public.
+
+### What the native workflow does
+
+Start a release with **Actions → Native publish → Run workflow** on `main`, or:
+
+    gh workflow run native-publish.yml --ref main
+
+The workflow has no inputs and runs only for the current head of `main`.
+
+1. **Readiness** (Linux, read-only): enforces `NATIVE_RELEASE_BLOCKERS.json`, requires one
+   successful push run of `ci.yml` with a successful `Required` job for the exact SHA, requires the
+   SHA to still be the head of `main`, requires the protected `native-publish` environment described
+   below, and plans the version.
+2. **Build and verify** (macOS, read-only): rebuilds the embedded runtime and stages it for both
+   platforms; builds the Swift tree and the Maven repository with
+   `scripts/native-release-prepare.mjs`; validates every POM, Gradle module metadata file, sources
+   jar and documentation jar against Maven Central's requirements; and prepares the Swift release
+   commit and tag on top of the distribution's current `main` as a git bundle. It pushes that commit
+   to a local mirror with the same code the publish job uses. Independent consumers then build from
+   the release only: the UIKit and SwiftUI examples resolve the package from the mirror at the
+   release tag for the iOS Simulator, the Swift integration tests, including map rendering, run with
+   Mac Catalyst against that same tag, and the Android example resolves `dev.tileflow` only from the
+   Maven candidate. Each consumer must carry the candidate's exact runtime bytes. The job uploads
+   one bundle, retained for 30 days, and shows its SHA-256, the version, the source SHA, the runtime
+   digest, the Swift commit and tree, and the Maven coordinates.
+3. **Approve and publish** (Linux, `native-publish` environment): after approval, the job checks that
+   every credential exists before it does anything else, verifies the bundle digest, the source SHA
+   and the head of `main`, imports the signing key and requires its fingerprint, and checks that the
+   public key is on `keyserver.ubuntu.com`. It signs every Maven file with the primary key, writes MD5,
+   SHA-1, SHA-256 and SHA-512 checksums, and uploads one zip to the Central Publisher Portal as a
+   user-managed deployment that stops at `VALIDATED`. Only then does it push the Swift commit and tag,
+   without force, and publish the validated deployment. It waits until Maven Central serves every
+   file, compares the bytes with the approved bundle, and keeps a release receipt for 90 days.
+
+Approval publishes exactly the bundle that was verified; the publish job runs no build tool. The
+reviewer checks the job summary before approving: version, source SHA, runtime digest, Swift commit,
+Maven coordinates and bundle digest.
+
+### Native GitHub configuration contract
+
+The `NATIVE_RELEASE_BLOCKERS.json` interlock stops every native release until all of the following
+exist. Remove it, like `PUBLIC_RELEASE_BLOCKERS.json`, in a reviewed change once they do.
+
+- Environment `native-publish` in this repository: deployment branches limited to `main`, at least
+  one required reviewer, and administrator bypass disabled. The readiness job refuses to continue
+  otherwise, because GitHub would create a missing environment without protection.
+- Environment secrets of `native-publish`, readable only by the publish job:
+
+  | Secret                          | Contents                                                                  |
+  | ------------------------------- | ------------------------------------------------------------------------- |
+  | `MAVEN_CENTRAL_TOKEN_USERNAME`  | Username half of a Central Publisher Portal user token                    |
+  | `MAVEN_CENTRAL_TOKEN_PASSWORD`  | Password half of that token                                               |
+  | `NATIVE_SIGNING_KEY`            | ASCII-armored secret key of the release signing key                       |
+  | `NATIVE_SIGNING_KEY_PASSPHRASE` | Passphrase of that key                                                    |
+  | `SWIFT_DISTRIBUTION_DEPLOY_KEY` | Private SSH key whose public half is a write deploy key of the Swift repo |
+
+- Environment variable `NATIVE_SIGNING_KEY_FINGERPRINT`: the 40-character fingerprint of the signing
+  key. The publish job refuses any other key.
+- The release signing key signs with its primary key (Maven Central does not verify subkey
+  signatures), and its public key is published on `keyserver.ubuntu.com` and `keys.openpgp.org`.
+- The `dev.tileflow` namespace is verified in the Central Publisher Portal for the account that owns
+  the user token.
+- The public repository `tileflow/tileflow-swift`, with `main` as its default branch, issues disabled
+  in favor of this repository, and rules that let only the deploy key create tags or update `main`;
+  nobody may force-push or delete `main`, or update or delete a tag.
+
+No other workflow, job or repository reads these credentials.
+
+### Native retries and recovery
+
+Maven Central and SwiftPM tags are immutable. A published version is never overwritten, deleted or
+moved: a defective release is replaced by the next alpha. For a transient failure, use **Re-run failed
+jobs** on the same run while its source is still the head of `main` and its bundle is retained. The
+publish job is idempotent:
+
+- a Swift tag at the prepared commit counts as published, and a tag elsewhere stops the release;
+- a distribution `main` that moved since preparation stops the release; prepare a new run;
+- Maven artifacts already published for the version are not uploaded again, only verified byte for
+  byte, and a version published for some artifacts but not others stops for investigation; and
+- a deployment that validated but was not published is dropped when the job fails, so a rerun uploads
+  it again.
+
+If Maven Central needs longer than the wait to serve the files, rerun the failed job later; it
+verifies the published bytes without publishing again.
+
+### Native local validation
+
+These commands publish nothing. The candidate directory must not exist; the candidate is marked
+`sourceDirty` unless it was built from a clean commit.
+
+    pnpm install --frozen-lockfile
+    node scripts/native-release-prepare.mjs --output /absolute/new/candidate
+    node scripts/native-maven-bundle.mjs validate --repository /absolute/new/candidate/maven --version 0.0.0-local.1
+    node scripts/native-consumers-prepare.mjs /absolute/new/candidate /absolute/new/consumers
+
+To exercise signing, create a throwaway key in a temporary `GNUPGHOME`, export it into the
+`NATIVE_SIGNING_KEY`, `NATIVE_SIGNING_KEY_PASSPHRASE` and `NATIVE_SIGNING_KEY_FINGERPRINT`
+environment variables, then run `native-maven-bundle.mjs import-key` and `bundle` as the workflow
+does. Never sign with, or store, the release key on a development machine. For a clean candidate,
+`native-swift-release.mjs prepare` and `publish` accept `--remote` with a local bare repository, and
+`native-consumers-prepare.mjs --swift-url` builds the consumers from that repository's tag.
+
+### Native consumer installation
+
+After the first native release, Swift applications add the package and pin an exact alpha:
+
+    .package(url: "https://github.com/tileflow/tileflow-swift", exact: "0.1.0-alpha.0")
+
+Android applications use Maven Central:
+
+    implementation("dev.tileflow:tileflow-sdk:0.1.0-alpha.0")

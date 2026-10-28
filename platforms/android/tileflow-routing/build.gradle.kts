@@ -5,10 +5,6 @@ plugins {
     id("maven-publish")
 }
 
-group = "dev.tileflow"
-
-version = providers.gradleProperty("tileflowVersion").orElse("0.0.0-local.1").get()
-
 android {
     namespace = "dev.tileflow.routing"
     compileSdk = 36
@@ -38,56 +34,5 @@ dependencies {
     testImplementation("com.squareup.okhttp3:mockwebserver:4.12.0")
 }
 
-val documentationJar by
-    tasks.registering(Jar::class) {
-        from(tasks.dokkaGeneratePublicationHtml.flatMap { it.outputDirectory })
-        archiveClassifier.set("javadoc")
-    }
-
-tasks.withType<AbstractArchiveTask>().configureEach {
-    isPreserveFileTimestamps = false
-    isReproducibleFileOrder = true
-}
-
-afterEvaluate {
-    publishing {
-        publications {
-            create<MavenPublication>("release") {
-                from(components["release"])
-                artifactId = "tileflow-routing"
-                artifact(documentationJar)
-                pom {
-                    name.set("Tileflow Routing for Android")
-                    description.set(
-                        "Routes, isochrones, matrices, map matching and nearest roads with Tileflow for Android."
-                    )
-                    url.set("https://github.com/tileflow/tileflow-sdk")
-                    licenses {
-                        license {
-                            name.set("Apache License, Version 2.0")
-                            url.set("https://www.apache.org/licenses/LICENSE-2.0.txt")
-                        }
-                    }
-                    scm { url.set("https://github.com/tileflow/tileflow-sdk") }
-                }
-            }
-        }
-        repositories {
-            maven {
-                name = "candidate"
-                url =
-                    uri(
-                        providers
-                            .gradleProperty("tileflowRepository")
-                            .orElse(
-                                layout.buildDirectory.dir("repository").get().asFile.absolutePath
-                            )
-                            .get()
-                    )
-                require(url.scheme == "file") {
-                    "Candidate packaging only writes to a local repository."
-                }
-            }
-        }
-    }
-}
+// Coordinates, POM and the local candidate repository: platforms/native-release.json.
+apply(from = rootProject.file("gradle/publishing.gradle.kts"))

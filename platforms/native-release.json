@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "initialVersion": "0.1.0-alpha.0",
+  "sourceRepository": "tileflow/tileflow-sdk",
+  "project": {
+    "name": "Tileflow",
+    "url": "https://github.com/tileflow/tileflow-sdk",
+    "organizationUrl": "https://tileflow.dev",
+    "license": {
+      "name": "Apache License, Version 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0.txt"
+    }
+  },
+  "swift": {
+    "repository": "tileflow/tileflow-swift",
+    "branch": "main"
+  },
+  "maven": {
+    "group": "dev.tileflow",
+    "publications": [
+      {
+        "module": "tileflow",
+        "artifactId": "tileflow-sdk",
+        "name": "Tileflow Android SDK",
+        "description": "Tileflow maps for Android Views and Compose with an embedded renderer."
+      },
+      {
+        "module": "tileflow-configuration",
+        "artifactId": "tileflow-configuration",
+        "name": "Tileflow Android service configuration",
+        "description": "Configuration, publishable credentials and app identity shared by the Tileflow Android service clients."
+      },
+      {
+        "module": "tileflow-search",
+        "artifactId": "tileflow-search",
+        "name": "Tileflow Search for Android",
+        "description": "Geocoding, autocomplete and nearby place search with Tileflow for Android."
+      },
+      {
+        "module": "tileflow-routing",
+        "artifactId": "tileflow-routing",
+        "name": "Tileflow Routing for Android",
+        "description": "Routes, isochrones, matrices, map matching and nearest roads with Tileflow for Android."
+      },
+      {
+        "module": "tileflow-elevation",
+        "artifactId": "tileflow-elevation",
+        "name": "Tileflow Elevation for Android",
+        "description": "Elevation points, batches, profiles and GPX reading with Tileflow for Android."
+      },
+      {
+        "module": "tileflow-geoip",
+        "artifactId": "tileflow-geoip",
+        "name": "Tileflow GeoIP for Android",
+        "description": "Approximate location of a device's network connection with Tileflow for Android."
+      },
+      {
+        "module": "tileflow-service-content",
+        "artifactId": "tileflow-service-content",
+        "name": "Tileflow service content for Android",
+        "description": "Draws Tileflow Search, Routing, Elevation and GeoIP answers on Tileflow Android maps."
+      }
+    ]
+  }
+}

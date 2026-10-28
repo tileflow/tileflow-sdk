@@ -13,6 +13,7 @@ test('selects mobile jobs from the paths that reach the runtime or a native host
     ...none,
     android: true,
   });
+  assert.deepEqual(mobileAreas(['platforms/native-release.json']), {...none, android: true});
   assert.deepEqual(mobileAreas(['platforms/android/gradlew']), {
     ...none,
     android: true,

@@ -342,6 +342,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     let (root, receipt) = try EmbeddedRuntime.receipt()
     if case .failure(let error) = EmbeddedRuntime.verified { throw error }
     _ = EmbeddedRuntime.verification
+    TileflowDeviceProfile.prepare()
     generation += 1
     let current = generation
     pendingRemount = false

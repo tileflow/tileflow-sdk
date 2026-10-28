@@ -68,7 +68,7 @@ final class TileflowHTTPClient: @unchecked Sendable {
 
   /// `protocolClasses` replaces the system's URL loading, for tests.
   init(protocolClasses: [AnyClass]? = nil) {
-    func configuration(connections: Int) -> URLSessionConfiguration {
+    func configuration(connections: Int, total: TimeInterval) -> URLSessionConfiguration {
       let configuration = URLSessionConfiguration.ephemeral
       configuration.httpCookieStorage = nil
       configuration.urlCredentialStorage = nil
@@ -77,7 +77,7 @@ final class TileflowHTTPClient: @unchecked Sendable {
       configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
       configuration.httpMaximumConnectionsPerHost = connections
       configuration.timeoutIntervalForRequest = 30
-      configuration.timeoutIntervalForResource = 120
+      configuration.timeoutIntervalForResource = total
       if let protocolClasses { configuration.protocolClasses = protocolClasses }
       return configuration
     }
@@ -85,9 +85,11 @@ final class TileflowHTTPClient: @unchecked Sendable {
     queue.maxConcurrentOperationCount = 1
     queue.name = "dev.tileflow.http"
     resourceSession = URLSession(
-      configuration: configuration(connections: 6), delegate: delegate, delegateQueue: queue)
+      configuration: configuration(connections: 6, total: 120), delegate: delegate,
+      delegateQueue: queue)
     controlSession = URLSession(
-      configuration: configuration(connections: 2), delegate: delegate, delegateQueue: queue)
+      configuration: configuration(connections: 2, total: 30), delegate: delegate,
+      delegateQueue: queue)
   }
 
   /// When false, every request fails as if the device were offline. Lets tests and a strict

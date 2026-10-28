@@ -145,6 +145,9 @@ internal class NativeHTTPTransport(
         val released = AtomicBoolean()
         val release = { if (released.compareAndSet(false, true)) slots?.release() }
         val call = TileflowHttpClient.client(lane, timeoutMillis).newCall(request)
+        // Session requests keep a total deadline; resource bodies may stream for longer.
+        if (lane == TileflowHttpClient.Lane.SESSIONS)
+            call.timeout().timeout(timeoutMillis.coerceIn(1, 30_000), TimeUnit.MILLISECONDS)
         calls.add(call)
         if (retired.get()) call.cancel()
         val finish = {

@@ -2,9 +2,24 @@
 
 The Swift and Kotlin SDKs load every map resource through their native transport: the WebView
 never fetches a remote URL itself, and there is no local HTTP server. This document describes the
-transport's disk cache, which both platforms implement identically. Source of truth:
-`platforms/ios/Sources/Tileflow/Transport/` and
+transport, its disk cache and how the embedded runtime starts, which both platforms implement
+identically. Source of truth: `platforms/ios/Sources/Tileflow/Transport/` and
 `platforms/android/tileflow/src/main/java/dev/tileflow/sdk/transport/`.
+
+## Transport
+
+- One HTTP client per process serves every map, in two lanes that share no connections: map
+  resources, with at most 16 requests in flight in the process (first come, first served), and
+  session requests, which never wait behind resources. Neither lane follows redirects or stores
+  cookies, credentials or responses.
+- A successful `GET` body streams to the WebView as it downloads, and is written to the cache at the
+  same time when it may be stored. The byte limit (16 MiB per resource) is enforced while streaming.
+  Other responses, which Hosted maps may need to react to, are read whole first.
+- Stopping a WebView request (WKURLSchemeTask stop, or the WebView closing an intercepted stream)
+  cancels the download and frees its slot. Replacing or destroying a renderer cancels only that
+  renderer's requests.
+- Timeouts: 30 s without progress (or less, when a Hosted grant is about to expire), 120 s for a
+  whole resource, and 30 s for a whole session request.
 
 ## What is stored
 
@@ -88,6 +103,37 @@ and counts it as dropped. Opening a store removes other stores' staging director
   and removes them explicitly. A pinned entry is served while fresh, revalidated when stale and
   served stale when the network fails; its owner is responsible for retiring expired content.
 
+## Runtime start-up
+
+The embedded runtime's receipt is read once per process. Its files' SHA-256 digests are verified
+once per process on a background thread; the first map creates its WebView meanwhile and loads the
+runtime when verification succeeds, or fails with `incompatibleRuntime`. The runtime build reads
+Core's `native` entry from source and uses the WebView's standards-conforming `URL` parser instead
+of Core's bundled one; `packages/mobile-runtime/size-budget.json` bounds `runtime.js` in CI.
+
+`TileflowMapView.prewarm()` (Kotlin: `prewarm(context)`, on the main thread) starts that
+verification, reads the device profile, opens the HTTP client and the cache index, and starts the
+WebView's helper processes (Kotlin: loads the WebView provider), so the first map does not pay for
+them. Calling it again is cheap.
+
+## Device profiles
+
+`TileflowDeviceProfile` describes the device's memory, low-memory status (Android
+`isLowRamDevice`) and a coarse GPU class (iOS: Apple GPU family; Android: media performance class
+and memory). It sets the default rendering quality, which caps the pixel ratio at 1.5, 2 or 3, and
+the cache budget. Applications replace it before creating maps; `TileflowMapOptions.quality` set
+explicitly wins for its map, and nil (the default) follows the profile.
+
+## Extending the store
+
+Code that keeps resources beyond the ambient cache, such as downloaded regions, builds on these
+internal types: `ResourceCacheKey(url:scope:)` for the exact key the transport looks up,
+`TileflowResourceClass.classify` for the partition, `ResourceCacheStore.writer(for:retention:)` with
+`.pinned` to stream an entry in, `ResourceCacheMetadata` for its headers and freshness, and
+`removePinned` to retire entries. The process-wide switch `TileflowHTTPClient.isNetworkEnabled`
+(Kotlin `TileflowHttpClient.networkEnabled`) makes every request fail as if offline, so only stored
+resources answer. Range requests are not cached today.
+
 ## Public API
 
 | Swift                            | Kotlin                                                                  |
@@ -96,3 +142,4 @@ and counts it as dropped. Opening a store removes other stores' staging director
 | `await TileflowMapCache.usage()` | `TileflowMapCache.get(context).usage()`                                 |
 | `await TileflowMapCache.clear()` | `TileflowMapCache.get(context).clear()`                                 |
 | `TileflowDeviceProfile.current`  | `TileflowDeviceProfile.current(context)` / `override(context, profile)` |
+| `TileflowMapView.prewarm()`      | `TileflowMapView.prewarm(context)`                                      |

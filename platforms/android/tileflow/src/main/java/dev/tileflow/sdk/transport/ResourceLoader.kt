@@ -123,7 +123,8 @@ internal class ResourceLoader(
                 try {
                     transport.open(request.build(), admission?.timeoutMillis ?: 30_000)
                 } catch (error: IOException) {
-                    if (isNetworkFailure(error))
+                    // A closed loader's cancelled requests never fall back to stored responses.
+                    if (closed.count > 0 && isNetworkFailure(error))
                         stored?.afterFailure(date())?.let {
                             return response(it.resource)
                         }

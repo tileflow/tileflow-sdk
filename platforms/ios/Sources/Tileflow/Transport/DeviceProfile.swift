@@ -47,14 +47,35 @@ public struct TileflowDeviceProfile: Equatable, Sendable {
 
   /// The profile new maps and the resource cache use. Starts as ``detected()``.
   public static var current: TileflowDeviceProfile {
-    get { storage.withLock { $0 } }
+    get {
+      if let profile = storage.withLock({ $0 }) { return profile }
+      // Detection creates a Metal device; maps start it off the main thread with `prepare()`.
+      let profile = detected()
+      return storage.withLock { stored in
+        if stored == nil { stored = profile }
+        return stored!
+      }
+    }
     set {
       storage.withLock { $0 = newValue }
       ResourceCacheStore.shared.maximumBytes = newValue.cacheBytes
     }
   }
 
-  private static let storage = LockedValue(detected())
+  private static let storage = LockedValue<TileflowDeviceProfile?>(nil)
+
+  /// Detects the profile in the background, so a map reads it without waiting.
+  static func prepare() {
+    guard storage.withLock({ $0 == nil }) else { return }
+    Task.detached(priority: .userInitiated) { _ = current }
+  }
+
+  /// The cache budget, which depends only on memory, without detecting the graphics hardware.
+  static var cacheBytes: Int64 {
+    storage.withLock { $0?.cacheBytes }
+      ?? recommended(physicalMemory: ProcessInfo.processInfo.physicalMemory, gpuClass: .standard)
+      .cacheBytes
+  }
 
   static func recommended(physicalMemory: UInt64, gpuClass: TileflowGPUClass)
     -> TileflowDeviceProfile

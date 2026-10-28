@@ -299,7 +299,7 @@ final class ResourceCacheStore: @unchecked Sendable {
     return ResourceCacheStore(
       ambientRoot: caches.appendingPathComponent("dev.tileflow/resources-v1", isDirectory: true),
       durableRoot: support.appendingPathComponent("dev.tileflow/resources-v1", isDirectory: true),
-      maximumBytes: TileflowDeviceProfile.current.cacheBytes)
+      maximumBytes: TileflowDeviceProfile.cacheBytes)
   }()
 
   var maximumBytes: Int64 {
@@ -344,7 +344,8 @@ final class ResourceCacheStore: @unchecked Sendable {
   {
     let limit = retention == .pinned ? 16 * 1024 * 1024 : maximumEntryBytes
     guard limit > 0 else { return nil }
-    let staging = root(retention).appendingPathComponent("staging/\(stagingName)", isDirectory: true)
+    let staging = root(retention).appendingPathComponent(
+      "staging/\(stagingName)", isDirectory: true)
     let file = staging.appendingPathComponent(UUID().uuidString)
     do {
       try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)

@@ -80,7 +80,8 @@ final class ProtocolTests: XCTestCase {
       Set(TileflowMapError.Code.allCases.filter { !$0.isRecoverable }),
       [
         .invalidSource, .missingRuntime, .incompatibleRuntime, .invalidRequest, .disposed,
-        .credentialRejected, .accessDenied, .quotaExceeded,
+        .credentialRejected, .accessDenied, .quotaExceeded, .missingCredential,
+        .invalidConfiguration,
       ])
     for code in ProtocolContract.runtimeErrors {
       XCTAssertNotNil(TileflowMapError.Code(rawValue: code), code)

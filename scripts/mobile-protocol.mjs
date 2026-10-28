@@ -83,6 +83,13 @@ export function validateProtocol(contract) {
       fail(`errors.${code}.sources must name host, runtime or both.`);
     if (typeof error.description !== 'string' || !error.description.endsWith('.'))
       fail(`errors.${code} needs a sentence of description.`);
+    for (const [platform, text] of Object.entries(error.documentation ?? {}))
+      if (
+        !['swift', 'kotlin'].includes(platform) ||
+        typeof text !== 'string' ||
+        !text.endsWith('.')
+      )
+        fail(`errors.${code}.documentation.${platform} must be a sentence for swift or kotlin.`);
   }
   for (const required of ['invalidRequest', 'incompatibleRuntime', 'cancelled', 'disposed'])
     if (!contract.errors?.[required]?.sources?.includes('runtime'))
@@ -127,6 +134,8 @@ const lines = (values, render) => values.map(render).join('\n');
 /** `33554432` → `33_554_432`, as swift-format groups literals of seven digits or more. */
 const grouped = (value) =>
   String(value).length < 7 ? String(value) : String(value).replaceAll(/\B(?=(\d{3})+$)/gu, '_');
+/** An error's public documentation, specialized for a platform where its guidance differs. */
+const describe = (error, platform) => error.documentation?.[platform] ?? error.description;
 const runtimeErrors = (contract) =>
   Object.keys(contract.errors).filter((code) => contract.errors[code].sources.includes('runtime'));
 
@@ -177,7 +186,7 @@ function swiftPublic(contract) {
 extension TileflowMapError {
   /// The error taxonomy the SDK shares with its renderer.
   public enum Code: String, CaseIterable, Sendable {
-${lines(errors, ([code, error]) => `${documentation(error.description, '    ', 'swift')}\n    case ${code}`)}
+${lines(errors, ([code, error]) => `${documentation(describe(error, 'swift'), '    ', 'swift')}\n    case ${code}`)}
 
     /// Whether the same work can succeed later without the application changing anything: the
     /// condition passes, the SDK retries, or a reload starts again. Terminal codes need the
@@ -189,7 +198,7 @@ ${lines(errors, ([code, error]) => `      case .${code}: ${error.recoverable}`)}
     }
   }
 
-${lines(errors, ([code, error]) => `${documentation(error.description, '  ', 'swift')}\n  public static let ${code} = TileflowMapError(.${code})`)}
+${lines(errors, ([code, error]) => `${documentation(describe(error, 'swift'), '  ', 'swift')}\n  public static let ${code} = TileflowMapError(.${code})`)}
 }
 
 /// How much the map reports. Each level includes the events of the levels before it; events beyond
@@ -278,7 +287,7 @@ public enum class TileflowErrorCode(
     internal val wireName: String,
     public val isRecoverable: Boolean,
 ) {
-${lines(Object.entries(contract.errors), ([code, error]) => `${documentation(error.description, '    ', 'kotlin')}\n    ${constantName(code)}("${code}", ${error.recoverable}),`)}
+${lines(Object.entries(contract.errors), ([code, error]) => `${documentation(describe(error, 'kotlin'), '    ', 'kotlin')}\n    ${constantName(code)}("${code}", ${error.recoverable}),`)}
     ;
 
     internal companion object {

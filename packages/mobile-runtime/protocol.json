@@ -184,6 +184,24 @@
       "recoverable": true,
       "sources": ["host"],
       "description": "The Hosted service answered outside its contract. The session retries on its own."
+    },
+    "missingCredential": {
+      "recoverable": false,
+      "sources": ["host"],
+      "description": "A Hosted map has no map credential in the application's configuration or its source. A services credential never authorizes a map.",
+      "documentation": {
+        "swift": "A Hosted map has no map credential: set `TileflowMapCredential` in the Info.plist, or pass one to ``Tileflow/configure(_:)`` or in the configuration of the map's source. A services credential never authorizes a map.",
+        "kotlin": "A Hosted map has no map credential: add the `tileflow_map_credential` string resource, or pass one to `Tileflow.configure` or [TileflowMapSource.hosted]. A services credential never authorizes a map."
+      }
+    },
+    "invalidConfiguration": {
+      "recoverable": false,
+      "sources": ["host"],
+      "description": "A Hosted map's configuration cannot be read: a configured value is invalid, or the API origin is not HTTPS.",
+      "documentation": {
+        "swift": "A Hosted map's configuration cannot be read: an Info.plist value is invalid, or the API origin is not HTTPS. ``Tileflow/configuration()`` throws the detailed error.",
+        "kotlin": "A Hosted map's configuration cannot be read: a resource value is invalid, or the API origin is not HTTPS. `Tileflow.configuration(context)` throws the detailed error."
+      }
     }
   }
 }

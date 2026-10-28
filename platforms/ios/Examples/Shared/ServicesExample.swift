@@ -2,26 +2,8 @@ import Foundation
 import Tileflow
 import TileflowServiceContent
 
-/// Applications usually set `TileflowServicesCredential` in their Info.plist. The examples also
-/// accept `--services-credential tf_public_…` and `--api-origin https://…` launch arguments.
-/// Returns whether Search and Routing have a credential.
-func configureExampleServices() -> Bool {
-  let arguments = ProcessInfo.processInfo.arguments
-  func value(after flag: String) -> String? {
-    guard let index = arguments.firstIndex(of: flag), index + 1 < arguments.count else {
-      return nil
-    }
-    return arguments[index + 1]
-  }
-  if let credential = value(after: "--services-credential") {
-    guard let credential = try? TileflowCredential(credential),
-      let configuration = try? TileflowConfiguration(
-        apiOrigin: value(after: "--api-origin").flatMap(URL.init(string:))
-          ?? TileflowConfiguration.defaultAPIOrigin,
-        servicesCredential: credential)
-    else { return false }
-    Tileflow.configure(configuration)
-  }
+/// Whether Search and Routing have a credential, from the Info.plist or ``configureExample()``.
+func servicesConfigured() -> Bool {
   let configuration = try? Tileflow.configuration()
   return configuration?.credential(for: .search) != nil
     && configuration?.credential(for: .routing) != nil

@@ -10,6 +10,7 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
     _ application: UIApplication,
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
+    configureExample()
     let window = UIWindow(frame: UIScreen.main.bounds)
     window.rootViewController = MapViewController()
     window.makeKeyAndVisible()

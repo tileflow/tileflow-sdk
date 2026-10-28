@@ -1,6 +1,6 @@
 package dev.tileflow.example
 
-import android.content.Intent
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -23,8 +23,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.tileflow.configuration.Tileflow
-import dev.tileflow.configuration.TileflowConfiguration
-import dev.tileflow.configuration.TileflowCredential
+import dev.tileflow.configuration.TileflowConfigurationException
+import dev.tileflow.configuration.TileflowService
 import dev.tileflow.configuration.TileflowServiceException
 import dev.tileflow.routing.TileflowRouteRequest
 import dev.tileflow.routing.TileflowRouting
@@ -40,40 +40,33 @@ import dev.tileflow.servicecontent.TileflowBounds
 import dev.tileflow.servicecontent.TileflowCoordinate
 import dev.tileflow.servicecontent.TileflowRouteLayers
 import dev.tileflow.servicecontent.searchProximity
-import java.net.URI
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 
 /**
  * Geocodes two places, routes between them and draws the route. Pass a publishable credential as
- * the `servicesCredential` extra and, optionally, an API origin as `apiOrigin`.
+ * the `servicesCredential` extra, or add the `tileflow_services_credential` string resource, and,
+ * optionally, an API origin as `apiOrigin`.
  */
 class ServicesExample : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        intent.configureTileflow()
         val source = intent.mapSource()
-        val configured = configureServices(intent)
+        val configured = servicesConfigured(this)
         setContent { MaterialTheme { ServicesScreen(source, configured) } }
     }
 }
 
-/** Configures Tileflow services from the launch extras; false without a valid credential. */
-private fun configureServices(intent: Intent): Boolean {
-    val credential = intent.getStringExtra("servicesCredential") ?: return false
-    return try {
-        Tileflow.configure(
-            TileflowConfiguration(
-                apiOrigin =
-                    intent.getStringExtra("apiOrigin")?.let(::URI)
-                        ?: TileflowConfiguration.DEFAULT_API_ORIGIN,
-                servicesCredential = TileflowCredential(credential),
-            )
-        )
-        true
-    } catch (_: Exception) {
+/** Whether Search and Routing have a credential. */
+private fun servicesConfigured(context: Context): Boolean =
+    try {
+        val configuration = Tileflow.configuration(context)
+        configuration.credential(TileflowService.SEARCH) != null &&
+            configuration.credential(TileflowService.ROUTING) != null
+    } catch (_: TileflowConfigurationException) {
         false
     }
-}
 
 @Composable
 private fun ServicesScreen(source: TileflowMapSource, configured: Boolean) {
@@ -89,7 +82,7 @@ private fun ServicesScreen(source: TileflowMapSource, configured: Boolean) {
             if (configured) "Enter two places to route between them."
             else
                 "A publishable Tileflow credential is needed: pass it as the " +
-                    "servicesCredential extra."
+                    "servicesCredential extra or add the tileflow_services_credential resource."
         )
     }
     var attribution by remember { mutableStateOf("") }

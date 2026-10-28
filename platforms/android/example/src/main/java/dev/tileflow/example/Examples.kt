@@ -20,6 +20,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.lifecycleScope
+import dev.tileflow.configuration.Tileflow
+import dev.tileflow.configuration.TileflowConfiguration
+import dev.tileflow.configuration.TileflowCredential
 import dev.tileflow.sdk.TileflowMap
 import dev.tileflow.sdk.TileflowMapEvent
 import dev.tileflow.sdk.TileflowMapSource
@@ -27,7 +30,40 @@ import dev.tileflow.sdk.TileflowMapView
 import java.net.URI
 import kotlinx.coroutines.launch
 
+/**
+ * Applications usually add the `tileflow_map_credential` and `tileflow_services_credential` string
+ * resources. The examples also accept `mapCredential`, `servicesCredential` and `apiOrigin` launch
+ * extras, which replace the resource configuration. Call it before showing a map or calling a
+ * service.
+ */
+internal fun Intent.configureTileflow() {
+    val mapCredential = getStringExtra("mapCredential")
+    val servicesCredential = getStringExtra("servicesCredential")
+    if (mapCredential == null && servicesCredential == null) return
+    try {
+        Tileflow.configure(
+            TileflowConfiguration(
+                apiOrigin =
+                    getStringExtra("apiOrigin")?.let(::URI)
+                        ?: TileflowConfiguration.DEFAULT_API_ORIGIN,
+                servicesCredential = servicesCredential?.let(::TileflowCredential),
+                mapCredential = mapCredential?.let(::TileflowCredential),
+            )
+        )
+    } catch (_: Exception) {
+        // An invalid value leaves the resource configuration; the map then reports what is missing.
+    }
+}
+
+/**
+ * With the `mapId` extra, a Hosted map that reads its credential from the configuration. Otherwise
+ * the map in the `manifest` extra, by default the fixture that `scripts/mobile-fixture-server.mjs`
+ * serves.
+ */
 internal fun Intent.mapSource(): TileflowMapSource {
+    getStringExtra("mapId")?.let {
+        return TileflowMapSource.hosted(it)
+    }
     val url = URI(getStringExtra("manifest") ?: "http://127.0.0.1:18645/manifest.json")
     return TileflowMapSource(
         map = getStringExtra("map") ?: "fixture",
@@ -42,6 +78,7 @@ class ViewExample : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        intent.configureTileflow()
         setContentView(R.layout.map_screen)
         map = findViewById(R.id.map)
         val status = findViewById<TextView>(R.id.status)
@@ -72,6 +109,7 @@ class ViewExample : ComponentActivity() {
 class ComposeExample : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        intent.configureTileflow()
         val source = intent.mapSource()
         setContent {
             var dark by remember { mutableStateOf(false) }

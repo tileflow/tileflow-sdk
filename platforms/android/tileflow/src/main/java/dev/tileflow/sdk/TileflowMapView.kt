@@ -16,6 +16,7 @@ import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import dev.tileflow.configuration.Tileflow
 import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.EventSubscriptions
 import dev.tileflow.sdk.bridge.MapBridge
@@ -79,6 +80,8 @@ constructor(
     private var pendingRemount = false
     // View.isAttachedToWindow stays true until onDetachedFromWindow returns.
     private var attached = false
+    /** The current source with its configuration read, kept with its Hosted session. */
+    private var loadable: LoadableMapSource? = null
     private var hostedSession: HostedSession? = null
     private var lifecycleOwner: LifecycleOwner? = null
     private var rendererVisible = true
@@ -97,12 +100,22 @@ constructor(
             }
         }
 
+    /**
+     * Shows a Hosted map. Its credential and API origin come from
+     * `Tileflow.configuration(context)`; use [TileflowMapSource.hosted] with [setSource] to pass a
+     * configuration for this map only.
+     */
+    public constructor(context: Context, mapId: String) : this(context) {
+        setSource(TileflowMapSource.hosted(mapId))
+    }
+
     public fun setSource(source: TileflowMapSource, initialCamera: TileflowCamera? = null) {
         check(!destroyed) { "The map is destroyed." }
         if (source == this.source) return
-        source.policy()
+        source.validate()
         hostedSession?.close()
         hostedSession = null
+        loadable = null
         retireGeneration()
         this.source = source
         if (initialCamera != null) camera = initialCamera
@@ -411,6 +424,7 @@ constructor(
         lifecycleOwner = null
         hostedSession?.close()
         hostedSession = null
+        loadable = null
         retireGeneration(TileflowErrorCode.DISPOSED)
         scope.cancel()
         onEvent = {}
@@ -479,6 +493,12 @@ constructor(
     private fun mount() {
         val source = source ?: return
         try {
+            // A failed read is not kept, so reload() reads a corrected configuration.
+            val loadable =
+                this.loadable
+                    ?: source
+                        .loadable { Tileflow.configuration(context) }
+                        .also { this.loadable = it }
             if (
                 !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) ||
                     !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT) ||
@@ -526,21 +546,22 @@ constructor(
             pendingRemount = false
             // A new document starts shown; it is hidden after initialization if the view is not.
             rendererVisible = true
+            val endpoint = loadable.hosted
             if (
                 hostedSession == null &&
-                    source.client != null &&
-                    source.mapId != null &&
-                    source.surfaceId != null
+                    endpoint != null &&
+                    loadable.mapId != null &&
+                    loadable.surfaceId != null
             ) {
-                hostedSession = HostedSession(source.client, source.mapId, source.surfaceId)
+                hostedSession = HostedSession(endpoint, loadable.mapId, loadable.surfaceId)
             }
             hostedSession?.setBackgrounded(!isVisibleToUser())
             val resourceLoader =
                 ResourceLoader(
-                    source.policy(),
+                    loadable.policy,
                     hosted = hostedSession,
-                    apiOrigin = source.client?.apiOrigin,
-                    publicMetadataUrls = source.publicMetadataUrls,
+                    apiOrigin = endpoint?.apiOrigin,
+                    publicMetadataUrls = loadable.publicMetadataUrls,
                     onDeploymentSuperseded = {
                         // A protected style belongs to a superseded deployment: reload once.
                         automaticReloadAvailable.compareAndSet(true, false).also { reload ->
@@ -577,13 +598,15 @@ constructor(
                                         .put(
                                             "source",
                                             JSONObject()
-                                                .put("map", source.map)
+                                                .put("map", loadable.map)
                                                 .put(
                                                     "manifestUrl",
-                                                    source.manifestUrl.toASCIIString(),
+                                                    loadable.manifestUrl.toASCIIString(),
                                                 )
                                                 .apply {
-                                                    source.mapId?.let { put("discoveryMapId", it) }
+                                                    loadable.mapId?.let {
+                                                        put("discoveryMapId", it)
+                                                    }
                                                 },
                                         )
                                         .put("theme", theme ?: JSONObject.NULL)

@@ -100,6 +100,8 @@ public class ProtocolTest {
                 TileflowErrorCode.CREDENTIAL_REJECTED,
                 TileflowErrorCode.ACCESS_DENIED,
                 TileflowErrorCode.QUOTA_EXCEEDED,
+                TileflowErrorCode.MISSING_CREDENTIAL,
+                TileflowErrorCode.INVALID_CONFIGURATION,
             ),
             TileflowErrorCode.entries.filterNot { it.isRecoverable }.toSet(),
         )

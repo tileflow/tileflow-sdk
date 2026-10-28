@@ -26,6 +26,22 @@ public struct TileflowMap: UIViewRepresentable {
     self.onEvent = onEvent
   }
 
+  /// Shows a Hosted map. Its credential and API origin come from ``Tileflow/configuration()``;
+  /// use ``TileflowMapSource/hosted(mapID:surfaceID:publicResourceOrigins:configuration:)`` to
+  /// pass a configuration for this map only.
+  public init(
+    mapID: String,
+    theme: String? = nil,
+    initialCamera: TileflowCamera? = nil,
+    options: TileflowMapOptions = .init(),
+    controller: TileflowMapController? = nil,
+    onEvent: @escaping (TileflowMapEvent) -> Void = { _ in }
+  ) {
+    self.init(
+      source: .hosted(mapID: mapID), theme: theme, initialCamera: initialCamera,
+      options: options, controller: controller, onEvent: onEvent)
+  }
+
   public func makeUIView(context: Context) -> TileflowMapView {
     let view = TileflowMapView(
       source: source, theme: theme, initialCamera: initialCamera, options: options)

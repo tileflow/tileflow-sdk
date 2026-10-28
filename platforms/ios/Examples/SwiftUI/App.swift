@@ -4,12 +4,14 @@ import TileflowServiceContent
 
 @main
 struct TileflowExampleApp: App {
+  init() { configureExample() }
+
   var body: some Scene { WindowGroup { MapScreen() } }
 }
 
 struct MapScreen: View {
   private let source = exampleSource()
-  private let servicesConfigured = configureExampleServices()
+  private let servicesAvailable = servicesConfigured()
   @State private var controller = TileflowMapController()
   @State private var dark = false
   @State private var status = "Loading Tileflow…"
@@ -19,7 +21,7 @@ struct MapScreen: View {
       HStack {
         Text(status)
         Spacer()
-        if servicesConfigured {
+        if servicesAvailable {
           Button("Walk to a café") {
             Task {
               do {
@@ -37,7 +39,7 @@ struct MapScreen: View {
       TileflowMap(source: source, theme: dark ? "dark" : "light", controller: controller) { event in
         switch event {
         case .contentReady: status = "Tileflow · SwiftUI"
-        case .failed: status = "Map unavailable"
+        case .failed(let error): status = "Map unavailable: \(error)"
         case .tap: status = "Map selected"
         default: break
         }

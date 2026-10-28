@@ -162,5 +162,13 @@ export const protocol = {
       recoverable: true,
       sources: ['host'],
     },
+    missingCredential: {
+      recoverable: false,
+      sources: ['host'],
+    },
+    invalidConfiguration: {
+      recoverable: false,
+      sources: ['host'],
+    },
   },
 } as const;

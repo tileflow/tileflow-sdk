@@ -65,3 +65,28 @@ public fun TileflowMap(
         },
     )
 }
+
+/**
+ * Shows a Hosted map. Its credential and API origin come from `Tileflow.configuration(context)`;
+ * use [TileflowMapSource.hosted] to pass a configuration for this map only.
+ */
+@Composable
+public fun TileflowMap(
+    mapId: String,
+    modifier: Modifier = Modifier,
+    theme: String? = null,
+    initialCamera: TileflowCamera? = null,
+    options: TileflowMapOptions = TileflowMapOptions(),
+    controller: TileflowMapController? = null,
+    onEvent: (TileflowMapEvent) -> Unit = {},
+) {
+    TileflowMap(
+        TileflowMapSource.hosted(mapId),
+        modifier,
+        theme,
+        initialCamera,
+        options,
+        controller,
+        onEvent,
+    )
+}

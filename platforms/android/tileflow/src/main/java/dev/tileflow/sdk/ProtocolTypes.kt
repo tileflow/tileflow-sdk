@@ -51,6 +51,17 @@ public enum class TileflowErrorCode(
     SESSION_UNAVAILABLE("sessionUnavailable", true),
     /** The Hosted service answered outside its contract. The session retries on its own. */
     INVALID_SESSION_RESPONSE("invalidSessionResponse", true),
+    /**
+     * A Hosted map has no map credential: add the `tileflow_map_credential` string resource, or
+     * pass one to `Tileflow.configure` or [TileflowMapSource.hosted]. A services credential never
+     * authorizes a map.
+     */
+    MISSING_CREDENTIAL("missingCredential", false),
+    /**
+     * A Hosted map's configuration cannot be read: a resource value is invalid, or the API origin
+     * is not HTTPS. `Tileflow.configuration(context)` throws the detailed error.
+     */
+    INVALID_CONFIGURATION("invalidConfiguration", false),
     ;
 
     internal companion object {

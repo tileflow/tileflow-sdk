@@ -37,6 +37,13 @@ extension TileflowMapError {
     case sessionUnavailable
     /// The Hosted service answered outside its contract. The session retries on its own.
     case invalidSessionResponse
+    /// A Hosted map has no map credential: set `TileflowMapCredential` in the Info.plist, or pass
+    /// one to ``Tileflow/configure(_:)`` or in the configuration of the map's source. A services
+    /// credential never authorizes a map.
+    case missingCredential
+    /// A Hosted map's configuration cannot be read: an Info.plist value is invalid, or the API
+    /// origin is not HTTPS. ``Tileflow/configuration()`` throws the detailed error.
+    case invalidConfiguration
 
     /// Whether the same work can succeed later without the application changing anything: the
     /// condition passes, the SDK retries, or a reload starts again. Terminal codes need the
@@ -59,6 +66,8 @@ extension TileflowMapError {
       case .rateLimited: true
       case .sessionUnavailable: true
       case .invalidSessionResponse: true
+      case .missingCredential: false
+      case .invalidConfiguration: false
       }
     }
   }
@@ -97,6 +106,13 @@ extension TileflowMapError {
   public static let sessionUnavailable = TileflowMapError(.sessionUnavailable)
   /// The Hosted service answered outside its contract. The session retries on its own.
   public static let invalidSessionResponse = TileflowMapError(.invalidSessionResponse)
+  /// A Hosted map has no map credential: set `TileflowMapCredential` in the Info.plist, or pass one
+  /// to ``Tileflow/configure(_:)`` or in the configuration of the map's source. A services
+  /// credential never authorizes a map.
+  public static let missingCredential = TileflowMapError(.missingCredential)
+  /// A Hosted map's configuration cannot be read: an Info.plist value is invalid, or the API origin
+  /// is not HTTPS. ``Tileflow/configuration()`` throws the detailed error.
+  public static let invalidConfiguration = TileflowMapError(.invalidConfiguration)
 }
 
 /// How much the map reports. Each level includes the events of the levels before it; events beyond

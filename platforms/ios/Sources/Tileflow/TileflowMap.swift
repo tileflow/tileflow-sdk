@@ -47,7 +47,7 @@ public struct TileflowMap: UIViewRepresentable {
       context.coordinator.theme = theme
       Task { @MainActor [weak view] in
         do { try await view?.setTheme(theme) } catch {
-          view?.onEvent?(.failed(error as? TileflowMapError ?? .rendererFailed))
+          view?.report(propertyError: error)
         }
       }
     }
@@ -55,7 +55,7 @@ public struct TileflowMap: UIViewRepresentable {
       context.coordinator.options = options
       Task { @MainActor [weak view] in
         do { try await view?.setOptions(options) } catch {
-          view?.onEvent?(.failed(error as? TileflowMapError ?? .rendererFailed))
+          view?.report(propertyError: error)
         }
       }
     }
@@ -80,5 +80,15 @@ public struct TileflowMap: UIViewRepresentable {
   public static func dismantleUIView(_ view: TileflowMapView, coordinator: Coordinator) {
     coordinator.bind(nil, to: view)
     view.destroy()
+  }
+}
+
+extension TileflowMapView {
+  /// A property the view applies again to its next renderer is not lost when the call that
+  /// carried it is cancelled by a renderer replacement.
+  func report(propertyError error: any Error) {
+    let error = error as? TileflowMapError ?? .rendererFailed
+    guard error != .cancelled else { return }
+    onEvent?(.failed(error))
   }
 }

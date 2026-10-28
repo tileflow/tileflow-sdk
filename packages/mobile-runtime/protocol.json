@@ -1,10 +1,20 @@
 {
-  "version": 1,
-  "maximumMessageBytes": 65536,
-  "maximumPendingRequests": 64,
-  "requestTimeoutMs": 30000,
+  "version": 2,
+  "minimumVersion": 2,
+  "limits": {
+    "maximumMessageBytes": 65536,
+    "maximumPendingRequests": 64,
+    "requestTimeoutMs": 30000,
+    "maximumDataBytes": 33554432,
+    "maximumDataTotalBytes": 67108864,
+    "maximumDataReferences": 64,
+    "maximumThrottleMs": 60000,
+    "warningWindowMs": 1000
+  },
   "methods": [
     "initialize",
+    "cancel",
+    "setEvents",
     "setCamera",
     "getCamera",
     "setTheme",
@@ -18,26 +28,162 @@
     "queryAtPoint",
     "dispose"
   ],
-  "events": [
-    "hello",
-    "loading",
-    "contentReady",
-    "cameraChanged",
-    "interaction",
-    "annotationActivated",
-    "poiActivated",
-    "themeChanged",
-    "error"
-  ],
-  "errors": [
-    "invalidRequest",
-    "versionMismatch",
-    "staleGeneration",
-    "notReady",
-    "resourceFailed",
-    "rendererFailed",
-    "timeout",
-    "cancelled",
-    "disposed"
-  ]
+  "eventLevels": {
+    "essential": "Lifecycle, failures, warnings, taps and activations, and the camera each time it settles.",
+    "camera": "Also the start of every camera movement, with its reason.",
+    "continuous": "Also the camera while it moves, at most once per rendered frame or per the requested interval."
+  },
+  "events": {
+    "hello": {
+      "delivery": "always"
+    },
+    "error": {
+      "delivery": "always"
+    },
+    "loading": {
+      "level": "essential"
+    },
+    "contentReady": {
+      "level": "essential"
+    },
+    "themeChanged": {
+      "level": "essential"
+    },
+    "warning": {
+      "level": "essential"
+    },
+    "tap": {
+      "level": "essential"
+    },
+    "annotationActivated": {
+      "level": "essential"
+    },
+    "poiActivated": {
+      "level": "essential"
+    },
+    "cameraMoveEnded": {
+      "level": "essential"
+    },
+    "cameraMoveStarted": {
+      "level": "camera"
+    },
+    "cameraMoved": {
+      "level": "continuous"
+    }
+  },
+  "cameraReasons": {
+    "gesture": "A person moved the map: a touch, mouse or keyboard gesture, a map control, or the motion that continues after a gesture.",
+    "api": "The application moved the camera through the SDK, with or without an animation.",
+    "system": "The SDK moved the camera itself, for example after a layout change or during a view mode transition."
+  },
+  "resourceKinds": {
+    "manifest": "The map manifest.",
+    "style": "A map style.",
+    "source": "A source description, such as TileJSON.",
+    "tile": "A vector, raster or elevation tile.",
+    "glyphs": "Label glyphs.",
+    "sprite": "Map icons.",
+    "image": "An image the style requests.",
+    "font": "A font file.",
+    "model": "A 3D model or scene resource.",
+    "data": "Data the application passed to the map.",
+    "session": "The Hosted session.",
+    "other": "Any other resource."
+  },
+  "errorReasons": {
+    "protocolVersion": "The SDK and the renderer share no protocol version.",
+    "runtimeHash": "The renderer is not the one the SDK was built with.",
+    "webViewVersion": "The system WebView is older than the supported minimum.",
+    "handshake": "The renderer did not complete its handshake in time.",
+    "dataTooLarge": "Data exceeds the size limit for one item or for all items in flight.",
+    "dataIntegrity": "Data arrived with a different length or digest than was sent.",
+    "dataUnavailable": "Data was released before the renderer read it.",
+    "invalidGeoJSON": "GeoJSON breaks the renderer's contract.",
+    "graphicsContextLost": "The renderer lost its graphics context.",
+    "processTerminated": "The system ended the renderer process again before it loaded.",
+    "contentRestore": "Application content could not be restored after the style changed.",
+    "scene": "The map's 3D scene could not be loaded; the map continues without it."
+  },
+  "errors": {
+    "invalidSource": {
+      "recoverable": false,
+      "sources": ["host"],
+      "description": "The map source or its configuration is invalid."
+    },
+    "missingRuntime": {
+      "recoverable": false,
+      "sources": ["host"],
+      "description": "The embedded renderer is missing from the application or does not match its receipt."
+    },
+    "incompatibleRuntime": {
+      "recoverable": false,
+      "sources": ["host", "runtime"],
+      "description": "The SDK and its renderer share no protocol version or identity, or the system WebView is older than the supported minimum."
+    },
+    "invalidRequest": {
+      "recoverable": false,
+      "sources": ["host", "runtime"],
+      "description": "A call broke its documented contract or limits. Nothing changed."
+    },
+    "notReady": {
+      "recoverable": true,
+      "sources": ["host", "runtime"],
+      "description": "The map has not finished loading. Retry after it reports that its content is ready."
+    },
+    "cancelled": {
+      "recoverable": true,
+      "sources": ["host", "runtime"],
+      "description": "The operation stopped before it finished because the renderer was replaced or the work was cancelled."
+    },
+    "disposed": {
+      "recoverable": false,
+      "sources": ["host", "runtime"],
+      "description": "The map was destroyed."
+    },
+    "timeout": {
+      "recoverable": true,
+      "sources": ["host", "runtime"],
+      "description": "The renderer did not answer in time."
+    },
+    "resourceFailed": {
+      "recoverable": true,
+      "sources": ["host", "runtime"],
+      "description": "A map resource or application data could not be loaded or verified."
+    },
+    "rendererFailed": {
+      "recoverable": true,
+      "sources": ["host", "runtime"],
+      "description": "The renderer stopped or could not complete an operation. Reloading starts a new renderer."
+    },
+    "credentialRejected": {
+      "recoverable": false,
+      "sources": ["host"],
+      "description": "The Hosted credential was rejected."
+    },
+    "accessDenied": {
+      "recoverable": false,
+      "sources": ["host"],
+      "description": "The Hosted map is not available to this credential or application."
+    },
+    "quotaExceeded": {
+      "recoverable": false,
+      "sources": ["host"],
+      "description": "The Hosted map reached a usage or spending limit."
+    },
+    "rateLimited": {
+      "recoverable": true,
+      "sources": ["host"],
+      "description": "The Hosted service asked the application to slow down. The session retries on its own."
+    },
+    "sessionUnavailable": {
+      "recoverable": true,
+      "sources": ["host"],
+      "description": "The Hosted service could not be reached. The session retries on its own."
+    },
+    "invalidSessionResponse": {
+      "recoverable": true,
+      "sources": ["host"],
+      "description": "The Hosted service answered outside its contract. The session retries on its own."
+    }
+  }
 }

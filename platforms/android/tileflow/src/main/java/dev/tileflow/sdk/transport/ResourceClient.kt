@@ -8,6 +8,7 @@ import android.webkit.WebView
 import android.webkit.WebViewClient
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowMapException
+import dev.tileflow.sdk.bridge.DataChannel
 import java.io.ByteArrayInputStream
 import java.net.URI
 
@@ -16,6 +17,8 @@ internal class ResourceClient(
     private val loader: ResourceLoader,
     private val onExternalLink: (URI) -> Unit,
     private val onFailure: (TileflowErrorCode) -> Unit,
+    /** The generation's data channel, served at `/data/<id>`. */
+    private val data: DataChannel? = null,
     private val onProcessGone: () -> Unit,
 ) : WebViewClient() {
     override fun shouldInterceptRequest(
@@ -26,7 +29,20 @@ internal class ResourceClient(
             val url = URI(request.url.toString())
             require(url.scheme == "https" && url.host == "tileflow.invalid" && url.port == -1)
             require(url.userInfo == null && url.rawQuery == null && url.rawFragment == null)
-            if (url.rawPath.startsWith("/runtime/")) {
+            if (url.rawPath.startsWith("/data/")) {
+                val id = url.rawPath.removePrefix("/data/")
+                require(request.method == "GET" && DATA_ID.matches(id))
+                // A released payload answers 404, so the renderer reports it as unavailable.
+                val payload = data?.payload(id)
+                WebResourceResponse(
+                    payload?.contentType ?: "text/plain",
+                    null,
+                    if (payload == null) 404 else 200,
+                    if (payload == null) "Not found" else "OK",
+                    mapOf("Cache-Control" to "no-store"),
+                    ByteArrayInputStream(payload?.bytes ?: ByteArray(0)),
+                )
+            } else if (url.rawPath.startsWith("/runtime/")) {
                 val name = url.rawPath.removePrefix("/runtime/")
                 require(Regex("^[a-zA-Z0-9_-]+\\.(html|js|css|json)$").matches(name))
                 val type =
@@ -92,5 +108,9 @@ internal class ResourceClient(
     override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
         onProcessGone()
         return true
+    }
+
+    private companion object {
+        val DATA_ID = Regex("^[A-Za-z0-9_-]{22,64}$")
     }
 }

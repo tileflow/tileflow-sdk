@@ -16,6 +16,8 @@ import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import dev.tileflow.sdk.bridge.DataChannel
+import dev.tileflow.sdk.bridge.EventSubscriptions
 import dev.tileflow.sdk.bridge.MapBridge
 import dev.tileflow.sdk.bridge.ProtocolContract
 import dev.tileflow.sdk.hosted.HostedSession
@@ -55,6 +57,7 @@ constructor(
     private var appearance: Pair<ProtocolContract.Method, JSONObject>? = null
     private var content = MapContent()
     private var contentRevision = 0
+    private var subscriptions = EventSubscriptions(options.events)
     private var camera: TileflowCamera? = null
     private var webView: WebView? = null
     private var bridge: MapBridge? = null
@@ -158,8 +161,17 @@ constructor(
 
     public suspend fun setOptions(options: TileflowMapOptions) {
         if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+        options.events.validate()
+        val previous = this.options
         this.options = options
-        if (initialized) bridge?.call(ProtocolContract.Method.SET_OPTIONS, options.json())
+        subscriptions = EventSubscriptions(options.events)
+        val bridge = bridge?.takeIf { initialized } ?: return
+        bridge.call(ProtocolContract.Method.SET_OPTIONS, options.json())
+        if (options.events != previous.events)
+            bridge.call(
+                ProtocolContract.Method.SET_EVENTS,
+                JSONObject().put("events", subscriptions.json()),
+            )
     }
 
     private suspend fun applyAppearance() {
@@ -174,16 +186,21 @@ constructor(
     ) {
         if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
         val next = MapContent(annotations.toList(), layers.toList())
-        val payload = next.json()
+        next.validate()
         val previous = content
         val revision = ++contentRevision
         content = next
         try {
-            if (initialized) bridge?.call(ProtocolContract.Method.SET_CONTENT, payload)
+            if (initialized) bridge?.let { send(next, it) }
         } catch (error: Exception) {
             if (contentRevision == revision) content = previous
             throw error
         }
+    }
+
+    private suspend fun send(content: MapContent, bridge: MapBridge) {
+        val (payload, references) = content.json(bridge.data)
+        bridge.call(ProtocolContract.Method.SET_CONTENT, payload, references)
     }
 
     public suspend fun setCamera(camera: TileflowCamera, durationMillis: Long = 0) {
@@ -380,7 +397,9 @@ constructor(
                     applyAppearance()
                 }
             } catch (error: TileflowMapException) {
-                if (!destroyed) onEvent(TileflowMapEvent.Failed(error.code))
+                // The theme is applied again to the next renderer if this one was replaced.
+                if (!destroyed && error.code != TileflowErrorCode.CANCELLED)
+                    onEvent(TileflowMapEvent.Failed(error.code, error.context))
             }
         }
     }
@@ -392,7 +411,7 @@ constructor(
         lifecycleOwner = null
         hostedSession?.close()
         hostedSession = null
-        retireGeneration()
+        retireGeneration(TileflowErrorCode.DISPOSED)
         scope.cancel()
         onEvent = {}
     }
@@ -429,13 +448,17 @@ constructor(
      * A load that fails while hidden, for example because the system suspended its networking,
      * reloads once visible instead of reporting a failure nobody saw.
      */
-    private fun report(code: TileflowErrorCode, current: Int) {
+    private fun report(
+        code: TileflowErrorCode,
+        current: Int,
+        context: TileflowErrorContext = TileflowErrorContext.NONE,
+    ) {
         if (destroyed || generation != current) return
         if (!generationReady && !isVisibleToUser()) {
             pendingRemount = true
             return
         }
-        onEvent(TileflowMapEvent.Failed(code))
+        onEvent(TileflowMapEvent.Failed(code, context))
     }
 
     private fun contentReady() {
@@ -471,7 +494,14 @@ constructor(
                         it.readText()
                     }
                 )
-            require(receipt.getInt("protocolVersion") == ProtocolContract.VERSION)
+            if (
+                receipt.getInt("protocolVersion") !in
+                    ProtocolContract.MINIMUM_VERSION..ProtocolContract.VERSION
+            )
+                throw TileflowMapException(
+                    TileflowErrorCode.INCOMPATIBLE_RUNTIME,
+                    TileflowErrorContext.of(ProtocolContract.ErrorReason.PROTOCOL_VERSION),
+                )
             val files = receipt.getJSONObject("files")
             require(
                 files.keys().asSequence().toSet() ==
@@ -534,6 +564,7 @@ constructor(
                     current,
                     receipt.getString("runtimeHash"),
                     view,
+                    DataChannel(),
                     onHello = { readyBridge ->
                         scope.launch {
                             if (destroyed || generation != current) return@launch
@@ -559,14 +590,12 @@ constructor(
                                         .put("colorScheme", colorScheme())
                                         .put("interactive", true)
                                         .put("options", options.json())
+                                        .put("events", subscriptions.json())
                                 camera?.let { configuration.put("camera", it.json()) }
                                 readyBridge.call(ProtocolContract.Method.INITIALIZE, configuration)
                                 if (destroyed || generation != current) return@launch
                                 initialized = true
-                                readyBridge.call(
-                                    ProtocolContract.Method.SET_CONTENT,
-                                    content.json(),
-                                )
+                                send(content, readyBridge)
                                 if (appearance != null) applyAppearance()
                                 else if (theme != startingTheme) setTheme(theme)
                                 if (options != startingOptions) setOptions(options)
@@ -587,6 +616,8 @@ constructor(
                                     (error as? TileflowMapException)?.code
                                         ?: TileflowErrorCode.RENDERER_FAILED,
                                     current,
+                                    (error as? TileflowMapException)?.context
+                                        ?: TileflowErrorContext.NONE,
                                 )
                             }
                         }
@@ -594,6 +625,7 @@ constructor(
                     onEvent = { event, result ->
                         if (!destroyed && generation == current) receive(event, result, current)
                     },
+                    onFailure = { error -> report(error.code, current, error.context) },
                 )
             WebViewCompat.addWebMessageListener(
                 view,
@@ -614,6 +646,12 @@ constructor(
                     .put("instanceId", instanceId)
                     .put("generation", current)
                     .put("platform", "android")
+                    .put(
+                        "protocol",
+                        JSONObject()
+                            .put("minimum", ProtocolContract.MINIMUM_VERSION)
+                            .put("maximum", ProtocolContract.VERSION),
+                    )
             bootstrap =
                 WebViewCompat.addDocumentStartJavaScript(
                     view,
@@ -629,6 +667,7 @@ constructor(
                             onEvent(TileflowMapEvent.ExternalLinkRequested(it))
                     },
                     onFailure = { report(it, current) },
+                    data = mapBridge.data,
                 ) {
                     // The system may end a hidden renderer to reclaim memory. Replace it once
                     // visible; a renderer that ends again before its content loads is reported.
@@ -636,7 +675,14 @@ constructor(
                         if (recoveries++ < 1) remount()
                         else {
                             retireGeneration()
-                            onEvent(TileflowMapEvent.Failed(TileflowErrorCode.RENDERER_FAILED))
+                            onEvent(
+                                TileflowMapEvent.Failed(
+                                    TileflowErrorCode.RENDERER_FAILED,
+                                    TileflowErrorContext.of(
+                                        ProtocolContract.ErrorReason.PROCESS_TERMINATED
+                                    ),
+                                )
+                            )
                         }
                     }
                 }
@@ -650,7 +696,8 @@ constructor(
             retireGeneration()
             onEvent(
                 TileflowMapEvent.Failed(
-                    (error as? TileflowMapException)?.code ?: TileflowErrorCode.MISSING_RUNTIME
+                    (error as? TileflowMapException)?.code ?: TileflowErrorCode.MISSING_RUNTIME,
+                    (error as? TileflowMapException)?.context ?: TileflowErrorContext.NONE,
                 )
             )
         }
@@ -669,23 +716,24 @@ constructor(
             } catch (_: IllegalArgumentException) {
                 TileflowMapEvent.Failed(TileflowErrorCode.RENDERER_FAILED)
             }
-        if (parsed is TileflowMapEvent.CameraChanged) camera = parsed.camera
+        if (parsed is TileflowMapEvent.CameraChanged) camera = parsed.change.camera
         // Consumer callbacks execute outside parsing guards: never mask application exceptions.
         when (parsed) {
             null -> Unit
             TileflowMapEvent.ContentReady -> contentReady()
-            is TileflowMapEvent.Failed -> report(parsed.code, current)
+            is TileflowMapEvent.Failed -> report(parsed.code, current, parsed.context)
             else -> onEvent(parsed)
         }
     }
 
-    private fun retireGeneration() {
+    /** Pending calls fail with `cancelled` when replaced and with `disposed` when destroyed. */
+    private fun retireGeneration(code: TileflowErrorCode = TileflowErrorCode.CANCELLED) {
         initialized = false
         readyForEvents = false
         pendingReadyEvent = false
         generationReady = false
         rendererVisible = false
-        bridge?.retire()
+        bridge?.retire(code)
         loader?.close()
         bootstrap?.remove()
         webView?.let {

@@ -83,35 +83,3 @@ public struct TileflowCamera: Codable, Equatable, Sendable {
     self.pitch = pitch
   }
 }
-
-public enum TileflowMapError: Error, Equatable, Sendable {
-  case invalidSource
-  case missingRuntime
-  case incompatibleRuntime
-  case notReady
-  case disposed
-  case timeout
-  case resourceFailed
-  case rendererFailed
-  case invalidRequest
-  case credentialRejected
-  case accessDenied
-  case quotaExceeded
-  case rateLimited
-  case sessionUnavailable
-  case invalidSessionResponse
-}
-
-public enum TileflowMapEvent: Sendable {
-  /// A user activated an attribution link. The application decides how to present it.
-  case externalLinkRequested(URL)
-  case annotationActivated(id: String, coordinate: TileflowCoordinate)
-  case poiActivated(TileflowPoiSelection)
-  case loading
-  /// The renderer emitted its initial load event; this is not a native compositor frame receipt.
-  case contentReady
-  case cameraChanged(TileflowCamera, isFinal: Bool)
-  case tap(longitude: Double, latitude: Double)
-  case themeChanged(String)
-  case failed(TileflowMapError)
-}

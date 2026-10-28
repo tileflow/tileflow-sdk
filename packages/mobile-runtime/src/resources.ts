@@ -21,6 +21,26 @@ export function resourceAddress(url: string, platform: ResourcePlatform): string
     : `https://tileflow.invalid/resource/${token}`;
 }
 
+/**
+ * The origin of the remote resource behind a transport address, for diagnostics. Paths, queries
+ * and tile coordinates are left out so a report can never carry a signed or private URL.
+ */
+export function resourceOrigin(address: string): string | undefined {
+  const match =
+    /^(?:tileflow:\/\/resource|https:\/\/tileflow\.invalid\/resource)\/([A-Za-z0-9_-]+)/u.exec(
+      address,
+    );
+  if (!match) return undefined;
+  try {
+    const base64 = match[1].replaceAll('-', '+').replaceAll('_', '/');
+    const bytes = Uint8Array.from(atob(base64), (character) => character.charCodeAt(0));
+    const origin = new URL(new TextDecoder().decode(bytes)).origin;
+    return origin === 'null' ? undefined : origin;
+  } catch {
+    return undefined;
+  }
+}
+
 /** Keep XYZ substitutions outside the opaque address for loaders that expand their own template. */
 export function resourceTemplateAddress(url: string, platform: ResourcePlatform): string {
   const normalized = new URL(url).href;

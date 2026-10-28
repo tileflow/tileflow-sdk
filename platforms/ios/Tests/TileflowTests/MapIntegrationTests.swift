@@ -176,6 +176,88 @@ final class MapIntegrationTests: XCTestCase {
     XCTAssertTrue(failures.isEmpty, "\(failures)")
   }
 
+  func testEventLevelsCameraReasonsAndLargeContentOverTheDataChannel() async throws {
+    let manifest = URL(string: "http://127.0.0.1:18645/manifest.json")!
+    do {
+      _ = try await URLSession.shared.data(from: manifest)
+    } catch {
+      throw XCTSkip("Start scripts/mobile-fixture-server.mjs to run online map integration.")
+    }
+    let loaded = expectation(description: "Loaded")
+    var changes: [TileflowCameraChange] = []
+    var failures: [TileflowMapError] = []
+    let view = TileflowMapView(
+      source: TileflowMapSource(map: "fixture", manifestURL: manifest, allowsLoopbackHTTP: true))
+    view.onEvent = { event in
+      switch event {
+      case .contentReady: loaded.fulfill()
+      case .cameraChanged(let change): changes.append(change)
+      case .failed(let error): failures.append(error)
+      default: break
+      }
+    }
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    view.frame = window.bounds
+    controller.view.addSubview(view)
+    window.makeKeyAndVisible()
+    defer {
+      view.destroy()
+      window.isHidden = true
+    }
+    await fulfillment(of: [loaded], timeout: 30)
+
+    // At the default level only the settled camera arrives, tagged with who moved it.
+    changes.removeAll()
+    try await view.setCamera(.init(longitude: -3.69, latitude: 40.42, zoom: 13), duration: 0.6)
+    try await waitUntil { changes.contains(where: \.isFinal) }
+    XCTAssertEqual(changes.map(\.phase), [.ended])
+    XCTAssertEqual(changes.last?.reason, .api)
+    // The continuous level adds the start and throttled updates.
+    try await view.setOptions(.init(events: .init(level: .continuous, cameraUpdateInterval: 0.1)))
+    changes.removeAll()
+    try await view.setCamera(.init(longitude: -3.70, latitude: 40.42, zoom: 14), duration: 0.8)
+    try await waitUntil { changes.contains(where: \.isFinal) }
+    XCTAssertEqual(changes.first?.phase, .started)
+    XCTAssertTrue(changes.allSatisfy { $0.reason == .api }, "\(changes.map(\.reason))")
+    let moving = changes.filter { $0.phase == .moving }.count
+    XCTAssertTrue((1...11).contains(moving), "\(moving) throttled updates in 0.8 s")
+    XCTAssertEqual(changes.last?.camera.zoom ?? 0, 14, accuracy: 0.01)
+
+    // A 5 MiB layer travels over the data channel and renders.
+    let geoJSON = BridgeWebKitTests.geoJSON(bytes: 5 * 1024 * 1024)
+    let started = ContinuousClock.now
+    try await view.setContent(
+      layers: [try .init(id: "selection", geoJSON: geoJSON.data, kind: .circle, size: 3)])
+    let elapsed = started.duration(to: .now)
+    print(
+      "Tileflow setContent with \(geoJSON.data.count) bytes of GeoJSON (\(geoJSON.features) points): \(elapsed)"
+    )
+    try await view.setCamera(.init(longitude: -3.70, latitude: 40.42, zoom: 14))
+    try await assertApplicationLayer(view)
+    // Invalid GeoJSON is a typed rejection that leaves the content as it was.
+    do {
+      try await view.setContent(
+        layers: [try .init(id: "broken", geoJSON: Data(#"{"type":"Feature"}"#.utf8), kind: .fill)])
+      XCTFail("The renderer accepted invalid GeoJSON.")
+    } catch let error as TileflowMapError {
+      XCTAssertEqual(error, .invalidRequest)
+      XCTAssertEqual(error.context.reason, "invalidGeoJSON")
+      XCTAssertEqual(error.context.resource, .data)
+    }
+    try await assertApplicationLayer(view)
+    XCTAssertTrue(failures.isEmpty, "\(failures)")
+  }
+
+  private func waitUntil(_ condition: () -> Bool) async throws {
+    for _ in 0..<100 {
+      if condition() { return }
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    XCTFail("Timed out.")
+  }
+
   private func renderer(_ view: TileflowMapView) throws -> WKWebView {
     try XCTUnwrap(view.subviews.compactMap { $0 as? WKWebView }.first)
   }

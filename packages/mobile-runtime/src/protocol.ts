@@ -1,4 +1,13 @@
 import {z} from 'zod';
+import {
+  cameraForBoundsSchema,
+  cornerSchema,
+  gesturesSchema,
+  insetsSchema,
+  limitsSchema,
+  maximumPitch,
+  moveCameraSchema,
+} from './camera-contract';
 import {contentSchema} from './content-contract';
 import {protocol} from './contract';
 import {ProtocolError, type WireError} from './errors';
@@ -52,7 +61,7 @@ export const cameraSchema = z.strictObject({
   latitude: finite.min(-90).max(90),
   zoom: finite.min(0).max(24),
   bearing: finite.min(-360).max(360).default(0),
-  pitch: finite.min(0).max(85).default(0),
+  pitch: finite.min(0).max(maximumPitch).default(0),
 });
 export type Camera = z.infer<typeof cameraSchema>;
 
@@ -78,15 +87,10 @@ const coordinate = z.strictObject({
 export const mapOptionsSchema = z.strictObject({
   viewMode: z.enum(['2d', '3d']).default('2d'),
   quality: z.enum(['low', 'balanced', 'high']).default('balanced'),
-  gestures: z
-    .strictObject({
-      pan: z.boolean().default(true),
-      zoom: z.boolean().default(true),
-      rotate: z.boolean().default(true),
-      pitch: z.boolean().default(true),
-    })
-    .default({pan: true, zoom: true, rotate: true, pitch: true}),
-  controls: z.boolean().default(true),
+  gestures: gesturesSchema.prefault({}),
+  limits: limitsSchema.prefault({}),
+  /** The attribution is always shown; the host chooses its corner. */
+  attribution: cornerSchema.default('bottom-right'),
 });
 export type MapOptions = z.infer<typeof mapOptionsSchema>;
 const initializeSchema = z.strictObject({
@@ -95,12 +99,8 @@ const initializeSchema = z.strictObject({
   camera: cameraSchema.optional(),
   interactive: z.boolean().default(true),
   colorScheme: z.enum(['light', 'dark']).default('light'),
-  options: mapOptionsSchema.default({
-    viewMode: '2d',
-    quality: 'balanced',
-    gestures: {pan: true, zoom: true, rotate: true, pitch: true},
-    controls: true,
-  }),
+  options: mapOptionsSchema.prefault({}),
+  insets: insetsSchema.optional(),
   events: subscriptionsSchema.default(essentialSubscriptions),
 });
 export type InitializeOptions = z.infer<typeof initializeSchema>;
@@ -112,14 +112,12 @@ const commandSchema = z.discriminatedUnion('method', [
     method: z.literal('setEvents'),
     payload: z.strictObject({events: subscriptionsSchema}),
   }),
-  z.strictObject({
-    method: z.literal('setCamera'),
-    payload: z.strictObject({
-      camera: cameraSchema,
-      duration: finite.min(0).max(60_000).default(0),
-    }),
-  }),
+  z.strictObject({method: z.literal('moveCamera'), payload: moveCameraSchema}),
+  z.strictObject({method: z.literal('stopCamera'), payload: z.null()}),
   z.strictObject({method: z.literal('getCamera'), payload: z.null()}),
+  z.strictObject({method: z.literal('cameraForBounds'), payload: cameraForBoundsSchema}),
+  z.strictObject({method: z.literal('visibleBounds'), payload: z.null()}),
+  z.strictObject({method: z.literal('setInsets'), payload: insetsSchema}),
   z.strictObject({
     method: z.literal('setTheme'),
     payload: z.strictObject({
@@ -146,20 +144,6 @@ const commandSchema = z.discriminatedUnion('method', [
   }),
   z.strictObject({method: z.literal('setOptions'), payload: mapOptionsSchema}),
   z.strictObject({method: z.literal('setContent'), payload: contentSchema}),
-  z.strictObject({
-    method: z.literal('fitBounds'),
-    payload: z
-      .strictObject({
-        west: finite.min(-180).max(180),
-        south: finite.min(-90).max(90),
-        east: finite.min(-180).max(180),
-        north: finite.min(-90).max(90),
-        padding: finite.min(0).max(1000).default(0),
-        duration,
-        maxZoom: finite.min(0).max(24).default(20),
-      })
-      .refine((value) => value.south <= value.north),
-  }),
   z.strictObject({method: z.literal('project'), payload: coordinate}),
   z.strictObject({method: z.literal('unproject'), payload: point}),
   z.strictObject({

@@ -16,13 +16,16 @@ export const protocol = {
     'initialize',
     'cancel',
     'setEvents',
-    'setCamera',
+    'moveCamera',
+    'stopCamera',
     'getCamera',
+    'cameraForBounds',
+    'visibleBounds',
+    'setInsets',
     'setTheme',
     'setBlend',
     'setOptions',
     'setContent',
-    'fitBounds',
     'project',
     'unproject',
     'setVisibility',
@@ -52,6 +55,9 @@ export const protocol = {
     tap: {
       level: 'essential',
     },
+    longPress: {
+      level: 'essential',
+    },
     annotationActivated: {
       level: 'essential',
     },
@@ -62,6 +68,12 @@ export const protocol = {
       level: 'essential',
     },
     cameraMoveStarted: {
+      level: 'camera',
+    },
+    gestureStarted: {
+      level: 'camera',
+    },
+    gestureEnded: {
       level: 'camera',
     },
     cameraMoved: {

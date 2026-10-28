@@ -180,12 +180,15 @@ async function runEngine(name) {
       });
     const envelope = {protocolVersion: protocol.version, instanceId, generation: 1};
     let requestId = 0;
-    const request = async (method, payload, label = method) => {
+    /** Sends a request and returns its identifier and its answer, without waiting for it. */
+    const send = async (method, payload, label = method) => {
       const id = String(++requestId);
       const message = JSON.stringify({...envelope, requestId: id, command: {method, payload}});
       await page.evaluate((value) => globalThis.tileflow.receive(value), message);
-      return waitFor(label, (candidate) => candidate.requestId === id);
+      return {id, done: waitFor(label, (candidate) => candidate.requestId === id)};
     };
+    const request = async (method, payload, label = method) =>
+      (await send(method, payload, label)).done;
     const call = async (method, payload, label) => {
       const output = await request(method, payload, label);
       assert.equal(output.error, undefined, `${name}: ${method} failed: ${output.error?.message}`);
@@ -236,10 +239,11 @@ async function runEngine(name) {
         cameraMoveEnded: {throttleMs: 0},
       },
     });
-    await call('setCamera', {
-      camera: {longitude: -3.69, latitude: 40.42, zoom: 13},
-      duration: 800,
+    const eased = await call('moveCamera', {
+      target: {center: {longitude: -3.69, latitude: 40.42}, zoom: 13},
+      animation: {type: 'ease', duration: 800},
     });
+    assert.equal(eased.completion, 'finished', `${name}: eased movement`);
     const ended = await event('cameraMoveEnded', (output) => output.event === 'cameraMoveEnded');
     const movement = cameraEvents();
     assert.equal(movement[0].event, 'cameraMoveStarted', `${name}: movement start`);
@@ -254,7 +258,10 @@ async function runEngine(name) {
     // An unsubscribed event never crosses the bridge.
     await call('setEvents', {events: {cameraMoveEnded: {throttleMs: 0}}});
     const before = cameraEvents().length;
-    await call('setCamera', {camera: {longitude: -3.7, latitude: 40.42, zoom: 14}, duration: 300});
+    await call('moveCamera', {
+      target: {center: {longitude: -3.7, latitude: 40.42}, zoom: 14},
+      animation: {type: 'ease', duration: 300},
+    });
     await waitFor(
       'second settled camera',
       (output) =>
@@ -266,6 +273,72 @@ async function runEngine(name) {
         .map((output) => output.event),
       ['cameraMoveEnded'],
       `${name}: unsubscribed camera events`,
+    );
+
+    // Each movement answers with how it ended: replaced, stopped or taken over by a gesture.
+    const slow = (zoom) => ({
+      target: {center: {longitude: -3.7, latitude: 40.42}, zoom},
+      animation: {type: 'ease', duration: 5000},
+    });
+    const replaced = await send('moveCamera', slow(16), 'replaced movement');
+    const flight = await send(
+      'moveCamera',
+      {...slow(13), animation: {type: 'fly', speed: 4}},
+      'flight',
+    );
+    assert.equal((await replaced.done).result.completion, 'cancelled', `${name}: replaced`);
+    assert.equal((await flight.done).result.completion, 'finished', `${name}: flight`);
+    const stopped = await send('moveCamera', slow(16), 'stopped movement');
+    await call('stopCamera', null);
+    assert.equal((await stopped.done).result.completion, 'cancelled', `${name}: stopped`);
+    await call('setEvents', {
+      events: {gestureStarted: {throttleMs: 0}, longPress: {throttleMs: 0}, tap: {throttleMs: 0}},
+    });
+    const grabbed = await send('moveCamera', slow(16), 'grabbed movement');
+    await page.mouse.move(195, 420);
+    await page.mouse.down();
+    await page.mouse.move(240, 470, {steps: 5});
+    await page.mouse.up();
+    assert.equal((await grabbed.done).result.completion, 'interrupted', `${name}: gesture`);
+    await event('pan gesture', (output) => output.event === 'gestureStarted');
+    // A press that holds still is a long press, not a tap.
+    await page.mouse.down();
+    await event('long press', (output) => output.event === 'longPress');
+    await page.mouse.up();
+    // Insets centre the camera on the uncovered view and keep the attribution inside it.
+    await call('setInsets', {top: 0, left: 0, bottom: 300, right: 0});
+    assert.equal(
+      await page.evaluate(
+        () => globalThis.document.querySelector('.maplibregl-ctrl-bottom-right')?.style.bottom,
+      ),
+      '300px',
+      `${name}: attribution inset`,
+    );
+    await call('moveCamera', {
+      target: {center: {longitude: -3.7, latitude: 40.42}, zoom: 16, pitch: 80},
+      animation: {type: 'jump'},
+    });
+    const centre = await call('project', {longitude: -3.7, latitude: 40.42});
+    assert.ok(Math.abs(centre.y - (844 - 300) / 2) < 1, `${name}: inset centre ${centre.y}`);
+    // Feature queries keep working once a steep pitch shows the horizon.
+    let steep = [];
+    for (
+      let attempt = 0;
+      attempt < 50 && !steep.some((feature) => feature.layer === 'poi');
+      attempt++
+    ) {
+      if (attempt) await new Promise((wait) => setTimeout(wait, 100));
+      steep = await call('queryAtPoint', centre);
+    }
+    assert.ok(
+      steep.some((feature) => feature.layer === 'poi'),
+      `${name}: features at pitch 80: ${JSON.stringify(steep)}`,
+    );
+    await call('setInsets', {top: 0, left: 0, bottom: 0, right: 0});
+    assert.equal(
+      outputs.filter((output) => output.event === 'tap').length,
+      0,
+      `${name}: taps after a drag and a long press`,
     );
 
     // Large application data travels over the data channel, verified and read once.

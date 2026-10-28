@@ -3,6 +3,7 @@ import type {Map as MapLibreMap, StyleSpecification} from 'maplibre-gl';
 import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
+  attachTileflowHorizonQueries,
   attachTileflowLabelPlacement,
   attachTileflowMap3D,
   attachTileflowNauticalLights,
@@ -25,12 +26,12 @@ import {
   type TileflowRuntimeManifestMap,
   type TileflowRuntimeStyle,
 } from '@tileflow/core/runtime';
+import {type CameraController, createCameraController} from './camera';
+import {createGestureController} from './camera-gestures';
 import type {Overlay} from './content-contract';
 import {createMapContentRegistry, type ResolvedOverlay} from './content-registry';
 import {createDataReader} from './data';
 import {
-  apiCameraChange as api,
-  cameraReason,
   type Clock,
   createEventHub,
   createWarningAggregator,
@@ -41,7 +42,6 @@ import {type FeatureCollection, geoJSONProblem} from './geojson';
 import {loadMobileManifest} from './manifest';
 import {
   type Camera,
-  type CameraReason,
   type Command,
   type EventName,
   type InitializeOptions,
@@ -93,20 +93,18 @@ export function createMobileMapRuntime(input: {
   let map: MapLibreMap | undefined;
   let themes: TileflowThemeController | undefined;
   let scene: TileflowMap3DAttachment | undefined;
-  let controls: maplibregl.NavigationControl | undefined;
+  let cameras: CameraController | undefined;
+  let gestures: ReturnType<typeof createGestureController> | undefined;
   let activeOptions: MapOptions | undefined;
   let content: ReturnType<typeof createMapContentRegistry> | undefined;
   let appearanceRevision = 0;
   let manifestMap: TileflowRuntimeManifestMap | undefined;
   let configuration: InitializeOptions | undefined;
   const cleanups: (() => void)[] = [];
-  let cameraFrame: number | undefined;
   let disposed = false;
   let initializing = false;
-  let cameraRevision = 0;
   let contentRevision = 0;
   let appliedContent = 0;
-  let movement: CameraReason = 'system';
   // The World request bridge reads fair-use headers from World tiles, as the web adapters do.
   const fairUseNotice = attachTileflowFairUseNotice(input.container);
   cleanups.push(() => fairUseNotice.dispose());
@@ -138,23 +136,13 @@ export function createMobileMapRuntime(input: {
     if (!map) throw new ProtocolError('notReady', 'The map is not initialized.');
     return map;
   };
-  const camera = (): Camera => {
-    const current = requireMap();
-    const center = current.getCenter().wrap();
-    return {
-      longitude: center.lng,
-      latitude: center.lat,
-      zoom: current.getZoom(),
-      bearing: current.getBearing(),
-      pitch: current.getPitch(),
-    };
+  const requireCamera = () => {
+    requireMap();
+    return cameras!;
   };
+  const camera = (): Camera => requireCamera().camera();
   const loadFonts = (style: TileflowRuntimeStyle) =>
     loadTileflowStyleFonts(style.style, {fontFaces: style.fontFaces, fetch: fetchResource});
-  const emitCamera = (event: 'cameraMoveStarted' | 'cameraMoved' | 'cameraMoveEnded') => {
-    const reason = movement;
-    emit(event, () => ({camera: camera(), reason, revision: ++cameraRevision}));
-  };
   const dispose = () => {
     if (disposed) return;
     disposed = true;
@@ -162,7 +150,7 @@ export function createMobileMapRuntime(input: {
     events.dispose();
     warnings.dispose();
     content?.dispose();
-    if (cameraFrame !== undefined) cancelAnimationFrame(cameraFrame);
+    cameras?.dispose();
     scene?.dispose();
     themes?.dispose();
     for (const cleanup of cleanups.splice(0).reverse()) cleanup();
@@ -174,30 +162,13 @@ export function createMobileMapRuntime(input: {
     const current = requireMap();
     const previous = activeOptions;
     activeOptions = options;
-    const {pan, zoom, rotate, pitch} = options.gestures;
-    if (pan) current.dragPan.enable();
-    else current.dragPan.disable();
-    if (zoom) current.scrollZoom.enable();
-    else current.scrollZoom.disable();
-    if (zoom) current.doubleClickZoom.enable();
-    else current.doubleClickZoom.disable();
-    if (zoom) {
-      current.touchZoomRotate.enable();
-      if (rotate) current.touchZoomRotate.enableRotation();
-      else current.touchZoomRotate.disableRotation();
-    } else current.touchZoomRotate.disable();
-    if (rotate) current.dragRotate.enable();
-    else current.dragRotate.disable();
-    if (pitch) current.touchPitch.enable();
-    else current.touchPitch.disable();
+    gestures?.apply(options.gestures);
+    cameras?.setLimits(options.limits);
+    cameras?.setAttribution(
+      options.attribution,
+      () => new maplibregl.AttributionControl({compact: true}),
+    );
     if (current.getPixelRatio() !== pixelRatio(options)) current.setPixelRatio(pixelRatio(options));
-    if (options.controls && !controls) {
-      controls = new maplibregl.NavigationControl({visualizePitch: true});
-      current.addControl(controls, 'top-right');
-    } else if (!options.controls && controls) {
-      current.removeControl(controls);
-      controls = undefined;
-    }
     if (previous?.viewMode !== options.viewMode) scene?.setViewMode(options.viewMode);
   }
 
@@ -254,7 +225,8 @@ export function createMobileMapRuntime(input: {
         pitch: options.camera?.pitch ?? view.pitch,
         interactive: options.interactive,
         pixelRatio: pixelRatio(options.options),
-        attributionControl: {compact: true},
+        // The camera places the attribution, which is always shown, in the host's chosen corner.
+        attributionControl: false,
         canvasContextAttributes: tileflowCanvasContextAttributes(),
         // Tileflow's compiled styles are validated when they are built.
         validateStyle: false,
@@ -266,6 +238,8 @@ export function createMobileMapRuntime(input: {
         attachTileflowNotices(map),
         attachTileflowNauticalLights(map),
         attachTileflowLabelPlacement(map),
+        // Feature queries and taps keep working once a steep pitch shows the horizon.
+        attachTileflowHorizonQueries(map),
       );
       themes = createTileflowThemeController({
         map,
@@ -296,31 +270,16 @@ export function createMobileMapRuntime(input: {
         },
         transformRequest: (url) => ({url: address(url)}),
       });
+      cameras = createCameraController(map, {emit, wants: events.wants});
+      gestures = createGestureController(map, {emit, signal: lifetime.signal});
       applyOptions(options.options);
+      if (options.insets) cameras.setInsets(options.insets);
       content = createMapContentRegistry(map, {emit, warn: warnings.warn});
       map.on('load', () => {
         if (!disposed) emit('contentReady', () => ({camera: camera(), theme: style.theme}));
       });
-      map.on('movestart', (event) => {
-        movement = cameraReason(event);
-        emitCamera('cameraMoveStarted');
-      });
-      map.on('move', (event) => {
-        // A gesture can take over a movement that an animation started.
-        if (cameraReason(event) === 'gesture') movement = 'gesture';
-        if (cameraFrame !== undefined || !events.wants('cameraMoved')) return;
-        cameraFrame = requestAnimationFrame(() => {
-          cameraFrame = undefined;
-          emitCamera('cameraMoved');
-        });
-      });
-      map.on('moveend', () => {
-        if (cameraFrame !== undefined) cancelAnimationFrame(cameraFrame);
-        cameraFrame = undefined;
-        // The settled camera supersedes any update still waiting for its interval.
-        events.discard('cameraMoved');
-        emitCamera('cameraMoveEnded');
-      });
+      // The settled camera supersedes any update still waiting for its interval.
+      map.on('moveend', () => events.discard('cameraMoved'));
       map.on('click', (event) => {
         const coordinate = {longitude: event.lngLat.lng, latitude: event.lngLat.lat};
         const point = {x: event.point.x, y: event.point.y};
@@ -461,21 +420,18 @@ export function createMobileMapRuntime(input: {
           return null;
         case 'getCamera':
           return camera();
-        case 'setCamera': {
-          const current = requireMap();
-          const next = command.payload.camera;
-          current.easeTo(
-            {
-              center: [next.longitude, next.latitude],
-              zoom: next.zoom,
-              bearing: next.bearing,
-              pitch: next.pitch,
-              duration: command.payload.duration,
-            },
-            api,
-          );
+        case 'moveCamera':
+          return requireCamera().move(command.payload, signal);
+        case 'stopCamera':
+          requireCamera().stop();
           return null;
-        }
+        case 'cameraForBounds':
+          return requireCamera().cameraForBounds(command.payload);
+        case 'visibleBounds':
+          return requireCamera().visibleBounds();
+        case 'setInsets':
+          requireCamera().setInsets(command.payload);
+          return null;
         case 'setTheme': {
           const revision = ++appearanceRevision;
           requireMap();
@@ -536,18 +492,6 @@ export function createMobileMapRuntime(input: {
           appliedContent = revision;
           return null;
         }
-        case 'fitBounds': {
-          const {west, south, east, north, ...options} = command.payload;
-          requireMap().fitBounds(
-            [
-              [west, south],
-              [east < west ? east + 360 : east, north],
-            ],
-            options,
-            api,
-          );
-          return null;
-        }
         case 'project': {
           const point = requireMap().project([command.payload.longitude, command.payload.latitude]);
           return {x: point.x, y: point.y};
@@ -560,7 +504,7 @@ export function createMobileMapRuntime(input: {
           const current = requireMap();
           input.container.style.visibility = command.payload.visible ? 'visible' : 'hidden';
           if (command.payload.visible) current.resize();
-          else current.stop();
+          else requireCamera().stop();
           return null;
         }
         case 'queryAtPoint':

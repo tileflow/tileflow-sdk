@@ -321,12 +321,20 @@ export function createMapScene(input: SceneInput) {
         held?.handle.dispose();
         images.delete(image.name);
         const byTheme = new Map(variants.map(([theme, , variant]) => [theme, variant]));
-        const handle = input.themes.registerImage(image.name, {
-          width: base.width,
-          height: base.height,
-          pixelRatio: image.pixelRatio,
-          render: ({theme}) => (byTheme.get(theme) ?? base).pixels,
-        });
+        let handle: TileflowDynamicImageHandle;
+        try {
+          handle = input.themes.registerImage(image.name, {
+            width: base.width,
+            height: base.height,
+            pixelRatio: image.pixelRatio,
+            render: ({theme}) => (byTheme.get(theme) ?? base).pixels,
+          });
+        } catch (error) {
+          // For example a name the map's own icons already use.
+          throw invalid(
+            error instanceof Error ? error.message : `Image ${image.name} could not be added.`,
+          );
+        }
         images.set(image.name, {
           digest,
           source: image.data.sha256,

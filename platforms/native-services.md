@@ -157,8 +157,12 @@ func walk(to query: String, on controller: TileflowMapController) async throws {
       mode: .walking))
   try await controller.setContent(
     annotations: [TileflowAnnotation(place: place, id: "destination")],
-    layers: try TileflowGeoJSONLayer.route(answer, inks: .light))
+    layers: try TileflowGeoJSONLayer.route(answer, progress: TileflowLineProgress(end: 0)))
   try await controller.fit(TileflowBounds(answer.routes[0].bounds), padding: 48)
+  // The route draws on in the theme's route inks.
+  try await controller.animateLineProgress(
+    layers: TileflowGeoJSONLayer.routeProgressLayers(), to: TileflowLineProgress(end: 1),
+    duration: 2)
 }
 ```
 
@@ -170,11 +174,12 @@ import dev.tileflow.configuration.TileflowPosition
 import dev.tileflow.routing.TileflowRouteRequest
 import dev.tileflow.routing.TileflowRouting
 import dev.tileflow.routing.TileflowRoutingMode
+import dev.tileflow.sdk.TileflowLineProgress
 import dev.tileflow.sdk.TileflowMapController
+import dev.tileflow.sdk.animateLineProgress
 import dev.tileflow.search.TileflowGeocodeRequest
 import dev.tileflow.search.TileflowSearch
 import dev.tileflow.servicecontent.TileflowBounds
-import dev.tileflow.servicecontent.TileflowRouteInks
 import dev.tileflow.servicecontent.TileflowRouteLayers
 import dev.tileflow.servicecontent.searchProximity
 
@@ -195,16 +200,30 @@ suspend fun walk(context: Context, query: String, controller: TileflowMapControl
                     mode = TileflowRoutingMode.WALKING,
                 )
             )
-    controller.setContent(layers = TileflowRouteLayers.build(answer, inks = TileflowRouteInks.LIGHT))
+    controller.setContent(
+        layers = TileflowRouteLayers.build(answer, progress = TileflowLineProgress(end = 0.0))
+    )
     controller.fit(TileflowBounds(answer.routes[0].bounds), padding = 48f)
+    // The route draws on in the theme's route inks.
+    controller.animateLineProgress(
+        TileflowRouteLayers.progressLayers(),
+        TileflowLineProgress(end = 1.0),
+        durationMillis = 2000,
+    )
 }
 ```
 
 The map helpers build ordinary map content:
 
-- Route layers draw alternatives, glow, casing, line and core in a theme's route inks. Until the map
-  publishes the inks of the theme on screen, pass `light`, `dark` or your own colours.
-- Isochrone layers draw one translucent fill per time, the longest first.
+- Route layers draw alternatives, glow, casing, line and core in the route inks of the theme on
+  screen, which the map serves: they follow theme changes and blends without application code, and
+  a theme without a glow or a core hides that layer. Pass `inks` (for example `.light` or
+  `TileflowRouteInks.DARK`, or your own colours) to draw fixed colours instead. The layers lie on
+  the ground, under the map's labels and 3D buildings, and the line shows faintly where a building
+  hides it. With `progress`, the chosen route draws only a stretch, which `animateLineProgress`
+  moves; `routeProgressLayers` / `TileflowRouteLayers.progressLayers` name its layers.
+- Isochrone layers draw one translucent fill per time, the longest first, in the theme's route line
+  ink.
 - An elevation-profile annotation marks a distance along a profile, for example the point a person
   touches on its chart.
 - `searchProximity` turns the camera into a Search proximity at city scale or closer, and a GeoIP

@@ -34,6 +34,7 @@ function fixture(payloads: Record<string, unknown> = {}) {
     themes: {
       getRouteInks: () => inks,
       registerImage: (name, image) => {
+        if (name === 'sprite-icon') throw new Error('Dynamic image "sprite-icon" already exists.');
         calls.push(['registerImage', name, image.width, image.height, image.pixelRatio]);
         images.set(name, image as never);
         return {refresh() {}, dispose: () => void images.delete(name)};
@@ -331,6 +332,10 @@ test('application images register once, follow the theme and refuse mismatched v
     'invalidImage',
   );
   assert.ok(images.has('pin'), 'a refused request leaves the images as they were');
+  // A name the map's own icons use is the caller's mistake.
+  await refusal(
+    scene.setImages({images: [{name: 'sprite-icon', data: pin, pixelRatio: 1}]}, never),
+  );
   await scene.setImages({images: []}, never);
   assert.equal(images.size, 0);
   assert.equal(markers.size, 0, 'markers showing a removed image go with it');

@@ -8,6 +8,7 @@
 - [SDK responsibility and delivery contract](contracts/sdk-responsibilities.md)
 - [Mobile host and renderer protocol contract](contracts/mobile-protocol.md)
 - [Native Search, Routing, Elevation and GeoIP clients](../platforms/native-services.md)
+- [Tileflow map features on Swift and Kotlin](../platforms/web-parity.md)
 - [Generated authoring/resolved map and modules JSON Schema](modules-api-reference.json)
 - [Package release procedure](../PUBLISHING.md)
 - [Contributor setup](../CONTRIBUTING.md)

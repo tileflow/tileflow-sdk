@@ -1,6 +1,5 @@
 package dev.tileflow.sdk.transport
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.AssetManager
 import android.os.Handler
@@ -107,10 +106,8 @@ internal object EmbeddedRuntime {
 
 /** Prepares what every map needs before the first one is shown. */
 internal object MapPrewarmer {
-    private var webView: WebView? = null
     private var started = false
 
-    @SuppressLint("SetJavaScriptEnabled")
     fun start(context: Context) {
         check(Looper.myLooper() == Looper.getMainLooper()) { "Call prewarm on the main thread." }
         val application = context.applicationContext ?: context
@@ -128,18 +125,11 @@ internal object MapPrewarmer {
             .start()
         if (started) return
         started = true
-        // Creating a WebView loads the WebView provider; a blank page starts its renderer.
+        // Creating a WebView loads the WebView provider; a blank page starts its renderer. Only
+        // the delayed release holds it, so nothing static keeps it alive.
         val view = runCatching { WebView(application) }.getOrNull() ?: return
         view.settings.javaScriptEnabled = false
         view.loadUrl("about:blank")
-        webView = view
-        Handler(Looper.getMainLooper())
-            .postDelayed(
-                {
-                    webView?.destroy()
-                    webView = null
-                },
-                10_000,
-            )
+        Handler(Looper.getMainLooper()).postDelayed({ view.destroy() }, 10_000)
     }
 }

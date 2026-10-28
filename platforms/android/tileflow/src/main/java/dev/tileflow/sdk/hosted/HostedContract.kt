@@ -1,6 +1,11 @@
+@file:OptIn(TileflowInternalApi::class)
+
 package dev.tileflow.sdk.hosted
 
+import dev.tileflow.configuration.internal.TileflowInternalApi
+import dev.tileflow.configuration.internal.tileflowApiOrigin
 import dev.tileflow.sdk.TileflowErrorCode
+import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.transport.ResourcePolicy
 import java.net.URI
@@ -34,6 +39,8 @@ internal class HostedAuthority(
     val origins: Set<String>,
     val scopes: Set<String>,
     val tilesets: Set<String>,
+    /** The session of a local development API, whose resource origins may be loopback `http`. */
+    val allowsLoopbackHttp: Boolean = false,
 )
 
 /** Native-delivery authority is validated independently of the renderer bridge. */
@@ -64,11 +71,13 @@ internal object HostedContract {
     private val scopes = setOf("style", "tilejson", "tile", "sprite", "glyph", "font")
     private val instantFormat = DateTimeFormatterBuilder().appendInstant(3).toFormatter()
 
+    /** With [allowsLoopbackHttp], a local development API may grant loopback `http` origins. */
     fun parse(
         bytes: ByteArray,
         mapId: String,
         sessionId: String,
         surfaceId: String,
+        allowsLoopbackHttp: Boolean = false,
     ): HostedAuthority {
         try {
             val value = json(bytes)
@@ -108,14 +117,22 @@ internal object HostedContract {
                     expires - issued <= 900_000
             )
             val origins = strings(value.opt("resourceOrigins"), 1..2)
-            require(origins.all(::canonicalOrigin))
+            require(origins.all { canonicalOrigin(it, allowsLoopbackHttp) })
             val resourceScopes = strings(value.opt("resourceScopes"), 1..6)
             require(scopes.containsAll(resourceScopes))
             val tilesets = strings(value.opt("tilesetIds"), 0..18)
             require(
                 tilesets.all { Regex("^[A-Za-z0-9._:-]{1,255}$").matches(it) && !secretShaped(it) }
             )
-            return HostedAuthority(grant, server, expires, origins, resourceScopes, tilesets)
+            return HostedAuthority(
+                grant,
+                server,
+                expires,
+                origins,
+                resourceScopes,
+                tilesets,
+                allowsLoopbackHttp,
+            )
         } catch (_: Exception) {
             throw TileflowMapException(TileflowErrorCode.INVALID_SESSION_RESPONSE)
         }
@@ -133,7 +150,22 @@ internal object HostedContract {
             TileflowErrorCode.CREDENTIAL_REJECTED,
             TileflowErrorCode.ACCESS_DENIED,
             TileflowErrorCode.QUOTA_EXCEEDED,
+            TileflowErrorCode.SESSION_REJECTED,
         )
+
+    /**
+     * Classifies a failed bootstrap. [TileflowErrorCode.SESSION_REJECTED] carries the service's
+     * code as its context's reason, when well formed, and the HTTP status.
+     */
+    fun rejection(status: Int, bytes: ByteArray): TileflowMapException =
+        failure(status, bytes).let {
+            if (it != TileflowErrorCode.SESSION_REJECTED) TileflowMapException(it)
+            else
+                TileflowMapException(
+                    it,
+                    TileflowErrorContext(reason = errorCode(bytes), status = status),
+                )
+        }
 
     /** Classifies a failed bootstrap or granted resource response. */
     fun failure(status: Int, bytes: ByteArray): TileflowErrorCode =
@@ -147,6 +179,9 @@ internal object HostedContract {
                 else TileflowErrorCode.RATE_LIMITED
             408,
             in 500..599 -> TileflowErrorCode.SESSION_UNAVAILABLE
+            // Any other refusal, such as a Map without session delivery or a conflicting header,
+            // repeats until something outside the device changes.
+            in 400..499 -> TileflowErrorCode.SESSION_REJECTED
             else -> TileflowErrorCode.INVALID_SESSION_RESPONSE
         }
 
@@ -177,11 +212,18 @@ internal object HostedContract {
     }
         .getOrDefault(false)
 
-    fun canonicalOrigin(value: String): Boolean = runCatching {
+    /**
+     * An `https` origin in canonical form. With [allowsLoopbackHttp], also an `http` origin that
+     * the configuration accepts, which is one on a loopback host.
+     */
+    fun canonicalOrigin(value: String, allowsLoopbackHttp: Boolean = false): Boolean = runCatching {
         val url = URI(value)
         value.length <= 2048 &&
             value.all { it.code in 33..126 } &&
-            url.scheme == "https" &&
+            (url.scheme == "https" ||
+                (allowsLoopbackHttp &&
+                    url.scheme == "http" &&
+                    tileflowApiOrigin(url)?.toString() == value)) &&
             !url.host.isNullOrEmpty() &&
             url.userInfo == null &&
             url.rawQuery == null &&
@@ -193,7 +235,7 @@ internal object HostedContract {
 
     /** Exact resource classes and signed recipients only; the server revalidates current access. */
     fun permits(url: URI, mapId: String, authority: HostedAuthority): Boolean = runCatching {
-        ResourcePolicy(authority.origins).validate(url)
+        ResourcePolicy(authority.origins, authority.allowsLoopbackHttp).validate(url)
         require(!secretShaped(url.toString()))
         val allowed =
             setOf("map", "mapId", "archiveVersion", "worldReleaseId", "worldDescriptorSha256") +

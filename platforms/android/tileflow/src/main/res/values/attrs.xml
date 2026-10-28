@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Attributes of a TileflowMapView declared in a layout. -->
+    <declare-styleable name="TileflowMapView">
+        <!-- The ID of the Hosted map to show, such as map_0123456789abcdef. -->
+        <attr name="tileflowMapId" format="string" />
+        <!-- With tileflowMapId, where the application shows the map; mobile-map by default. -->
+        <attr name="tileflowSurfaceId" format="string" />
+        <!-- The initial theme; "system" follows the device. The map's default theme otherwise. -->
+        <attr name="tileflowTheme" format="string" />
+    </declare-styleable>
+</resources>

@@ -141,8 +141,9 @@ public struct TileflowConfiguration: Sendable, Equatable, CustomStringConvertibl
   public var description: String { "TileflowConfiguration(apiOrigin: \(apiOrigin.absoluteString))" }
   public var debugDescription: String { description }
 
-  /// An HTTPS origin, or HTTP on `localhost` or `127.0.0.1`, with at most a root path.
-  static func normalizedOrigin(_ value: String) -> URL? {
+  /// An HTTPS origin, or HTTP on `localhost` or `127.0.0.1`, with at most a root path. Hosted
+  /// maps apply the same rule to their API origin.
+  package static func normalizedOrigin(_ value: String) -> URL? {
     guard value.utf8.count <= 2048, let components = URLComponents(string: value),
       let scheme = components.scheme?.lowercased(), let host = components.host?.lowercased(),
       !host.isEmpty, components.user == nil, components.password == nil,

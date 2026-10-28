@@ -37,12 +37,17 @@ extension TileflowMapError {
     case sessionUnavailable
     /// The Hosted service answered outside its contract. The session retries on its own.
     case invalidSessionResponse
+    /// The Hosted service refused the map's session for a reason that trying again cannot change,
+    /// for example because the Map does not use session delivery. The context's `reason` is the
+    /// service's code, such as `MOBILE_SESSION_MODE_REQUIRED`, when its answer carried one, and
+    /// `status` is the HTTP status.
+    case sessionRejected
     /// A Hosted map has no map credential: set `TileflowMapCredential` in the Info.plist, or pass
     /// one to ``Tileflow/configure(_:)`` or in the configuration of the map's source. A services
     /// credential never authorizes a map.
     case missingCredential
-    /// A Hosted map's configuration cannot be read: an Info.plist value is invalid, or the API
-    /// origin is not HTTPS. ``Tileflow/configuration()`` throws the detailed error.
+    /// A Hosted map's configuration cannot be read, for example because an Info.plist value is
+    /// invalid. ``Tileflow/configuration()`` throws the detailed error.
     case invalidConfiguration
 
     /// Whether the same work can succeed later without the application changing anything: the
@@ -66,6 +71,7 @@ extension TileflowMapError {
       case .rateLimited: true
       case .sessionUnavailable: true
       case .invalidSessionResponse: true
+      case .sessionRejected: false
       case .missingCredential: false
       case .invalidConfiguration: false
       }
@@ -106,12 +112,17 @@ extension TileflowMapError {
   public static let sessionUnavailable = TileflowMapError(.sessionUnavailable)
   /// The Hosted service answered outside its contract. The session retries on its own.
   public static let invalidSessionResponse = TileflowMapError(.invalidSessionResponse)
+  /// The Hosted service refused the map's session for a reason that trying again cannot change, for
+  /// example because the Map does not use session delivery. The context's `reason` is the service's
+  /// code, such as `MOBILE_SESSION_MODE_REQUIRED`, when its answer carried one, and `status` is the
+  /// HTTP status.
+  public static let sessionRejected = TileflowMapError(.sessionRejected)
   /// A Hosted map has no map credential: set `TileflowMapCredential` in the Info.plist, or pass one
   /// to ``Tileflow/configure(_:)`` or in the configuration of the map's source. A services
   /// credential never authorizes a map.
   public static let missingCredential = TileflowMapError(.missingCredential)
-  /// A Hosted map's configuration cannot be read: an Info.plist value is invalid, or the API origin
-  /// is not HTTPS. ``Tileflow/configuration()`` throws the detailed error.
+  /// A Hosted map's configuration cannot be read, for example because an Info.plist value is
+  /// invalid. ``Tileflow/configuration()`` throws the detailed error.
   public static let invalidConfiguration = TileflowMapError(.invalidConfiguration)
 }
 

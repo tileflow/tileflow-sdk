@@ -282,8 +282,15 @@ final class HostedSessionTests: XCTestCase {
         if reply.status == 201, reply.body == nil {
           return try sessionResponse(fixture, request: request)
         }
+        // A `"$request"` session ID stands for the ID of the request the reply answers.
+        var body = reply.body
+        if case .object(var object) = body, object["sessionId"]?.string == "$request" {
+          object["sessionId"] =
+            try JSONDecoder().decode(JSONValue.self, from: request.httpBody!)["sessionId"]
+          body = .object(object)
+        }
         return ResourcePayload(
-          bytes: try reply.body.map { try JSONEncoder().encode($0) } ?? Data(),
+          bytes: try body.map { try JSONEncoder().encode($0) } ?? Data(),
           status: reply.status, headers: reply.headers ?? [:])
       }
       let session = HostedSession(
@@ -299,14 +306,16 @@ final class HostedSessionTests: XCTestCase {
           session.retry()
           continue
         }
-        if let name = step.error { XCTAssertNotNil(fixtureErrors[name], name) }
+        // Fixture error names are the codes of the shared error taxonomy.
+        if let name = step.error { XCTAssertNotNil(TileflowMapError.Code(rawValue: name), name) }
         do {
           let admission = try await session.authorize(style, publicPolicy: policy)
           XCTAssertNil(step.error, scenario.name)
           XCTAssertNotNil(admission.grant)
         } catch {
-          XCTAssertEqual(
-            error as? TileflowMapError, step.error.flatMap { fixtureErrors[$0] }, scenario.name)
+          let failure = error as? TileflowMapError
+          XCTAssertEqual(failure?.code.rawValue, step.error, scenario.name)
+          XCTAssertEqual(failure?.context.reason, step.reason, scenario.name)
         }
         XCTAssertEqual(transport.requests.count, step.requests, scenario.name)
         if let identity = step.identity {
@@ -322,6 +331,61 @@ final class HostedSessionTests: XCTestCase {
         }
       }
       session.close()
+    }
+  }
+
+  func testALoopbackHTTPAPIGrantsLoopbackResourcesAndNoOtherAPIDoes() async throws {
+    let fixture = try sessionFixture()
+    guard case .object(var response) = fixture["response"] else {
+      return XCTFail("Missing response")
+    }
+    response["resourceOrigins"] = .array([.string("http://127.0.0.1:8787")])
+    let local = response
+    let transport = SessionTestTransport { request, _ in
+      var body = local
+      body["sessionId"] = try JSONDecoder().decode(JSONValue.self, from: request.httpBody!)[
+        "sessionId"]
+      return ResourcePayload(
+        bytes: try JSONEncoder().encode(JSONValue.object(body)), status: 201, headers: [:])
+    }
+    let endpoint = try HostedEndpoint(
+      TileflowConfiguration(
+        apiOrigin: URL(string: "http://127.0.0.1:8787")!,
+        mapCredential: TileflowCredential(mapCredential)))
+    XCTAssertTrue(endpoint.isLoopbackHTTP)
+    XCTAssertEqual(
+      try endpoint.sessionRequest(mapID: mapID, sessionID: "s", surfaceID: "mobile-map").url?
+        .absoluteString, "http://127.0.0.1:8787/v1/sessions/start")
+    let session = HostedSession(
+      endpoint: endpoint, mapID: mapID, surfaceID: "mobile-map", transport: transport)
+    let localStyle = URL(
+      string: "http://127.0.0.1:8787/maps/\(mapID)/mobile/webview-v1/v1/day.json")!
+    let admission = try await session.authorize(
+      localStyle,
+      publicPolicy: ResourcePolicy(origins: ["http://127.0.0.1:8787"], allowsLoopbackHTTP: true))
+    XCTAssertNotNil(admission.grant)
+    session.close()
+
+    // An HTTPS API never grants an HTTP origin.
+    let remote = HostedSession(
+      endpoint: try makeEndpoint(), mapID: mapID, surfaceID: "mobile-map", transport: transport)
+    defer { remote.close() }
+    do {
+      _ = try await remote.authorize(style, publicPolicy: policy)
+      XCTFail("An HTTPS API granted an HTTP resource origin")
+    } catch { XCTAssertEqual(error as? TileflowMapError, .invalidSessionResponse) }
+
+    // A local API grants only loopback HTTP origins in the configuration's canonical form.
+    response["sessionId"] = .string("fixture-session")
+    for origin in [
+      "http://localhost:8787", "http://api.example.test", "http://10.0.2.2:8787",
+      "http://127.0.0.1:8787/", "http://127.0.0.1:80", "HTTP://127.0.0.1:8787",
+    ] {
+      response["resourceOrigins"] = .array([.string(origin)])
+      let parsed = try? HostedContract.parse(
+        JSONEncoder().encode(JSONValue.object(response)), mapID: mapID,
+        sessionID: "fixture-session", surfaceID: "mobile-map", allowsLoopbackHTTP: true)
+      XCTAssertEqual(parsed != nil, origin == "http://localhost:8787", origin)
     }
   }
 
@@ -529,14 +593,35 @@ final class HostedSessionTests: XCTestCase {
   func testFailureClassificationAndRetryAfter() {
     let quota = Data(#"{"code":"COMMERCIAL_MAP_LIMIT_REACHED","error":"Limit reached"}"#.utf8)
     let limiter = Data(#"{"error":"Too many requests","requestId":"req_1"}"#.utf8)
+    let mode = Data(#"{"code":"MOBILE_SESSION_MODE_REQUIRED","error":"Session mode"}"#.utf8)
+    let large = Data(#"{"code":"MOBILE_SESSION_BODY_TOO_LARGE","error":"Too large"}"#.utf8)
     for (status, body, expected) in [
       (401, Data(), TileflowMapError.credentialRejected), (403, Data(), .accessDenied),
       (404, Data(), .accessDenied), (429, quota, .quotaExceeded), (429, limiter, .rateLimited),
       (429, Data("<html>".utf8), .rateLimited), (408, Data(), .sessionUnavailable),
-      (502, Data(), .sessionUnavailable), (400, Data(), .invalidSessionResponse),
-      (409, Data(), .invalidSessionResponse),
+      (502, Data(), .sessionUnavailable),
+      (400, mode, .sessionRejected), (413, large, .sessionRejected),
+      (400, Data(), .sessionRejected), (409, Data(), .sessionRejected),
+      (451, Data("<html>".utf8), .sessionRejected),
+      (302, Data(), .invalidSessionResponse), (200, Data(), .invalidSessionResponse),
     ] {
-      XCTAssertEqual(HostedContract.failure(status: status, body: body), expected, "\(status)")
+      let failure = HostedContract.failure(status: status, body: body)
+      XCTAssertEqual(failure, expected, "\(status)")
+      XCTAssertEqual(
+        HostedContract.isTerminal(failure),
+        [401, 403, 404, 400, 409, 413, 451].contains(status) || expected == .quotaExceeded,
+        "\(status)")
+      XCTAssertEqual(HostedContract.isTerminal(failure), !failure.isRecoverable, "\(status)")
+    }
+    // A refusal carries the service's code, when well formed, and the HTTP status.
+    for (status, body, reason) in [
+      (400, mode, "MOBILE_SESSION_MODE_REQUIRED"), (413, large, "MOBILE_SESSION_BODY_TOO_LARGE"),
+      (400, Data(), nil), (400, Data(#"{"code":"lowercase code"}"#.utf8), nil),
+      (451, Data("<html>".utf8), nil),
+    ] as [(Int, Data, String?)] {
+      let failure = HostedContract.failure(status: status, body: body)
+      XCTAssertEqual(failure.context.reason, reason, "\(status)")
+      XCTAssertEqual(failure.context.status, status, "\(status)")
     }
     // Wed, 21 Oct 2015 07:28:00 GMT
     let now = Date(timeIntervalSince1970: 1_445_412_480)
@@ -615,12 +700,6 @@ final class HostedSessionTests: XCTestCase {
   }
 }
 
-private let fixtureErrors: [String: TileflowMapError] = [
-  "credentialRejected": .credentialRejected, "accessDenied": .accessDenied,
-  "quotaExceeded": .quotaExceeded, "rateLimited": .rateLimited,
-  "sessionUnavailable": .sessionUnavailable, "invalidSessionResponse": .invalidSessionResponse,
-]
-
 private func sessionSequences() throws -> SessionSequences {
   let url = Bundle.module.url(
     forResource: "session-sequences", withExtension: "json", subdirectory: "Fixtures")!
@@ -682,6 +761,7 @@ private struct SessionSequences: Decodable {
       let requests: Int?
       let identity: String?
       let error: String?
+      let reason: String?
     }
     struct Reply: Decodable, Sendable {
       let status: Int

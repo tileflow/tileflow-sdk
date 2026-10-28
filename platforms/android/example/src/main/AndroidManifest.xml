@@ -9,15 +9,9 @@
         <activity android:name=".ComposeExample" android:exported="true" />
         <activity android:name=".ServicesExample" android:exported="true" />
         <!--
-            Tileflow services read their configuration from these entries unless the application
-            calls Tileflow.configure. Use a publishable credential restricted to this application.
-
-            <meta-data
-                android:name="dev.tileflow.SERVICES_CREDENTIAL"
-                android:value="tf_public_REPLACE_WITH_YOUR_PUBLISHABLE_CREDENTIAL" />
-            <meta-data
-                android:name="dev.tileflow.API_ORIGIN"
-                android:value="https://api.tileflow.dev" />
+            Tileflow services read their configuration from the string resources
+            tileflow_services_credential and tileflow_api_origin unless the application calls
+            Tileflow.configure. Use a publishable credential restricted to this application.
         -->
     </application>
 </manifest>

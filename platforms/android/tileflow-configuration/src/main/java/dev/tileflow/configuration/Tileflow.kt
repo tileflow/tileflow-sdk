@@ -4,54 +4,54 @@ import android.content.Context
 
 /**
  * The process-wide Tileflow configuration. Service clients use the configuration set with
- * [configure], or else the one in the application's manifest, read on first use and cached for the
+ * [configure], or else the one in the application's resources, read on first use and cached for the
  * process, including a failure to read it.
  */
 public object Tileflow {
     private val lock = Any()
     @Volatile private var explicit: TileflowConfiguration? = null
-    @Volatile private var manifest: Result<TileflowConfiguration>? = null
+    @Volatile private var resources: Result<TileflowConfiguration>? = null
 
-    /** Replaces the manifest configuration for the rest of the process. */
+    /** Replaces the resource configuration for the rest of the process. */
     @JvmStatic
     public fun configure(configuration: TileflowConfiguration) {
         explicit = configuration
     }
 
     /**
-     * Reads and caches the application's manifest configuration now, which reports a malformed
+     * Reads and caches the application's resources configuration now, which reports a malformed
      * value at startup instead of at the first service request. Optional.
      *
-     * @throws TileflowConfigurationException when a manifest value is invalid.
+     * @throws TileflowConfigurationException when a resource value is invalid.
      */
     @JvmStatic
     public fun configure(context: Context) {
-        manifestConfiguration(manifest(context))
+        resourceConfigurationOf(readResources(context))
     }
 
     /**
-     * The configuration set with [configure], or else the application's manifest configuration.
+     * The configuration set with [configure], or else the application's resources configuration.
      *
-     * @throws TileflowConfigurationException when the manifest configuration is invalid.
+     * @throws TileflowConfigurationException when the resource configuration is invalid.
      */
     @JvmStatic
     public fun configuration(context: Context): TileflowConfiguration =
-        configuration(manifest(context))
+        configuration(readResources(context))
 
     internal fun configuration(read: () -> TileflowConfiguration): TileflowConfiguration =
-        explicit ?: manifestConfiguration(read)
+        explicit ?: resourceConfigurationOf(read)
 
-    private fun manifest(context: Context): () -> TileflowConfiguration = {
-        TileflowConfiguration.fromManifest(context.applicationContext ?: context)
+    private fun readResources(context: Context): () -> TileflowConfiguration = {
+        TileflowConfiguration.fromResources(context.applicationContext ?: context)
     }
 
-    private fun manifestConfiguration(read: () -> TileflowConfiguration): TileflowConfiguration {
+    private fun resourceConfigurationOf(read: () -> TileflowConfiguration): TileflowConfiguration {
         val result =
-            manifest
-                ?: synchronized(lock) { manifest ?: runCatching(read).also { manifest = it } }
+            resources
+                ?: synchronized(lock) { resources ?: runCatching(read).also { resources = it } }
         return result.getOrElse {
             throw TileflowConfigurationException(
-                it.message ?: "The Tileflow manifest configuration is invalid.",
+                it.message ?: "The Tileflow resource configuration is invalid.",
                 it,
             )
         }
@@ -59,6 +59,6 @@ public object Tileflow {
 
     internal fun resetForTesting() {
         explicit = null
-        manifest = null
+        resources = null
     }
 }

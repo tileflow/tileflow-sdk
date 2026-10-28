@@ -44,22 +44,23 @@ On iOS, add String keys to the application target's Info.plist:
 <string>YOUR_PUBLISHABLE_SERVICES_CREDENTIAL</string>
 ```
 
-On Android, add meta-data to the application element of `AndroidManifest.xml`:
+On Android, add string resources to the application module, for example in
+`res/values/tileflow.xml`. Build variants can override them in their own resource folders:
 
 ```xml
-<meta-data
-    android:name="dev.tileflow.SERVICES_CREDENTIAL"
-    android:value="YOUR_PUBLISHABLE_SERVICES_CREDENTIAL" />
+<resources>
+    <string name="tileflow_services_credential" translatable="false">YOUR_PUBLISHABLE_SERVICES_CREDENTIAL</string>
+</resources>
 ```
 
-| Meaning                                           | Info.plist key                | Android meta-data                   |
-| ------------------------------------------------- | ----------------------------- | ----------------------------------- |
-| API origin (optional, `https://api.tileflow.dev`) | `TileflowAPIOrigin`           | `dev.tileflow.API_ORIGIN`           |
-| Credential for Search, Routing and Elevation      | `TileflowServicesCredential`  | `dev.tileflow.SERVICES_CREDENTIAL`  |
-| Search only, replacing the shared one             | `TileflowSearchCredential`    | `dev.tileflow.SEARCH_CREDENTIAL`    |
-| Routing only, replacing the shared one            | `TileflowRoutingCredential`   | `dev.tileflow.ROUTING_CREDENTIAL`   |
-| Elevation only, replacing the shared one          | `TileflowElevationCredential` | `dev.tileflow.ELEVATION_CREDENTIAL` |
-| Hosted map credential (read for the map)          | `TileflowMapCredential`       | `dev.tileflow.MAP_CREDENTIAL`       |
+| Meaning                                           | Info.plist key                | Android string resource         |
+| ------------------------------------------------- | ----------------------------- | ------------------------------- |
+| API origin (optional, `https://api.tileflow.dev`) | `TileflowAPIOrigin`           | `tileflow_api_origin`           |
+| Credential for Search, Routing and Elevation      | `TileflowServicesCredential`  | `tileflow_services_credential`  |
+| Search only, replacing the shared one             | `TileflowSearchCredential`    | `tileflow_search_credential`    |
+| Routing only, replacing the shared one            | `TileflowRoutingCredential`   | `tileflow_routing_credential`   |
+| Elevation only, replacing the shared one          | `TileflowElevationCredential` | `tileflow_elevation_credential` |
+| Hosted map credential (read for the map)          | `TileflowMapCredential`       | `tileflow_map_credential`       |
 
 The configuration is read once, on first use. A present but invalid value fails every call with a
 configuration error rather than falling back. Applications that receive their configuration at

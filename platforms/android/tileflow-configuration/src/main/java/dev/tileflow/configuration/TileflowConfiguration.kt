@@ -1,8 +1,7 @@
 package dev.tileflow.configuration
 
 import android.content.Context
-import android.content.pm.PackageManager
-import android.os.Build
+import android.content.res.Resources
 import java.net.URI
 import java.util.Locale
 
@@ -115,55 +114,37 @@ constructor(
         /** `https://api.tileflow.dev`. */
         @JvmField public val DEFAULT_API_ORIGIN: URI = URI("https://api.tileflow.dev")
 
-        internal const val API_ORIGIN_KEY = "dev.tileflow.API_ORIGIN"
-        internal const val SERVICES_CREDENTIAL_KEY = "dev.tileflow.SERVICES_CREDENTIAL"
-        internal const val SEARCH_CREDENTIAL_KEY = "dev.tileflow.SEARCH_CREDENTIAL"
-        internal const val ROUTING_CREDENTIAL_KEY = "dev.tileflow.ROUTING_CREDENTIAL"
-        internal const val ELEVATION_CREDENTIAL_KEY = "dev.tileflow.ELEVATION_CREDENTIAL"
-        internal const val MAP_CREDENTIAL_KEY = "dev.tileflow.MAP_CREDENTIAL"
+        internal const val API_ORIGIN_KEY = "tileflow_api_origin"
+        internal const val SERVICES_CREDENTIAL_KEY = "tileflow_services_credential"
+        internal const val SEARCH_CREDENTIAL_KEY = "tileflow_search_credential"
+        internal const val ROUTING_CREDENTIAL_KEY = "tileflow_routing_credential"
+        internal const val ELEVATION_CREDENTIAL_KEY = "tileflow_elevation_credential"
+        internal const val MAP_CREDENTIAL_KEY = "tileflow_map_credential"
 
         /**
-         * The configuration in the application's manifest: `<meta-data>` entries of its
-         * `<application>` named `dev.tileflow.API_ORIGIN`, `dev.tileflow.SERVICES_CREDENTIAL`,
-         * `dev.tileflow.SEARCH_CREDENTIAL`, `dev.tileflow.ROUTING_CREDENTIAL`,
-         * `dev.tileflow.ELEVATION_CREDENTIAL` and `dev.tileflow.MAP_CREDENTIAL`. Missing or empty
-         * entries are unset.
+         * The configuration in the application's string resources, named `tileflow_api_origin`,
+         * `tileflow_services_credential`, `tileflow_search_credential`,
+         * `tileflow_routing_credential`, `tileflow_elevation_credential` and
+         * `tileflow_map_credential`. Missing or empty resources are unset.
          *
-         * @throws TileflowConfigurationException when an entry is present but invalid.
+         * @throws TileflowConfigurationException when a resource is present but invalid.
          */
         @JvmStatic
-        public fun fromManifest(context: Context): TileflowConfiguration {
-            val metaData =
-                try {
-                    val packageManager = context.packageManager
-                    val info =
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                            packageManager.getApplicationInfo(
-                                context.packageName,
-                                PackageManager.ApplicationInfoFlags.of(
-                                    PackageManager.GET_META_DATA.toLong()
-                                ),
-                            )
-                        else
-                            @Suppress("DEPRECATION")
-                            packageManager.getApplicationInfo(
-                                context.packageName,
-                                PackageManager.GET_META_DATA,
-                            )
-                    info.metaData
-                } catch (error: PackageManager.NameNotFoundException) {
-                    throw TileflowConfigurationException(
-                        "The application's manifest could not be read.",
-                        error,
-                    )
-                }
+        public fun fromResources(context: Context): TileflowConfiguration {
+            val resources = context.resources
             return fromValues { key ->
-                if (metaData == null || !metaData.containsKey(key)) null
+                @Suppress("DiscouragedApi")
+                val id = resources.getIdentifier(key, "string", context.packageName)
+                if (id == 0) null
                 else
-                    metaData.getString(key)
-                        ?: throw TileflowConfigurationException(
-                            "The $key manifest value must be a string."
+                    try {
+                        resources.getString(id)
+                    } catch (error: Resources.NotFoundException) {
+                        throw TileflowConfigurationException(
+                            "The $key resource must be a string.",
+                            error,
                         )
+                    }
             }
         }
 

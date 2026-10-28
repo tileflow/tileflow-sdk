@@ -81,14 +81,14 @@ class ConfigurationTest {
     }
 
     @Test
-    fun manifestValuesBuildTheConfiguration() {
+    fun resourceValuesBuildTheConfiguration() {
         val values =
             mapOf(
-                "dev.tileflow.API_ORIGIN" to "https://api.example.com/",
-                "dev.tileflow.SERVICES_CREDENTIAL" to Contract.credential,
-                "dev.tileflow.ELEVATION_CREDENTIAL" to "tf_public_" + "a".repeat(48),
-                "dev.tileflow.MAP_CREDENTIAL" to "tf_public_" + "b".repeat(48),
-                "dev.tileflow.SEARCH_CREDENTIAL" to " ",
+                "tileflow_api_origin" to "https://api.example.com/",
+                "tileflow_services_credential" to Contract.credential,
+                "tileflow_elevation_credential" to "tf_public_" + "a".repeat(48),
+                "tileflow_map_credential" to "tf_public_" + "b".repeat(48),
+                "tileflow_search_credential" to " ",
             )
         val configuration = TileflowConfiguration.fromValues(values::get)
         assertEquals(URI("https://api.example.com"), configuration.apiOrigin)
@@ -100,11 +100,11 @@ class ConfigurationTest {
         assertEquals(TileflowConfiguration(), TileflowConfiguration.fromValues { null })
         for (invalid in
             listOf(
-                "dev.tileflow.API_ORIGIN" to "http://api.example.com",
-                "dev.tileflow.API_ORIGIN" to "not a url",
-                "dev.tileflow.SERVICES_CREDENTIAL" to "tf_secret_" + "0".repeat(48),
-                "dev.tileflow.ROUTING_CREDENTIAL" to "credential",
-                "dev.tileflow.MAP_CREDENTIAL" to "tf_public_short",
+                "tileflow_api_origin" to "http://api.example.com",
+                "tileflow_api_origin" to "not a url",
+                "tileflow_services_credential" to "tf_secret_" + "0".repeat(48),
+                "tileflow_routing_credential" to "credential",
+                "tileflow_map_credential" to "tf_public_short",
             )) {
             failure<TileflowConfigurationException> {
                 TileflowConfiguration.fromValues(mapOf(invalid)::get)
@@ -113,7 +113,7 @@ class ConfigurationTest {
     }
 
     @Test
-    fun theManifestIsReadOnceAndAnExplicitConfigurationReplacesIt() {
+    fun theResourcesAreReadOnceAndAnExplicitConfigurationReplacesIt() {
         Tileflow.resetForTesting()
         try {
             var reads = 0
@@ -122,7 +122,7 @@ class ConfigurationTest {
             assertEquals(1, reads)
             val explicit = TileflowConfiguration(searchCredential = other)
             Tileflow.configure(explicit)
-            assertSame(explicit, Tileflow.configuration { error("The manifest is not read.") })
+            assertSame(explicit, Tileflow.configuration { error("The resources are not read.") })
 
             Tileflow.resetForTesting()
             repeat(2) {

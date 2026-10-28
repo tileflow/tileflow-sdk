@@ -110,6 +110,38 @@ final class HostedSessionTests: XCTestCase {
     XCTAssertNotEqual(ids[1], ids[2])
   }
 
+  func testInvalidatedGrantRenewsOnceWithinThirtySeconds() async throws {
+    let fixture = try sessionFixture()
+    let time = SessionTestClock()
+    let transport = SessionTestTransport { request, _ in
+      try sessionResponse(fixture, request: request)
+    }
+    let session = HostedSession(
+      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map",
+      transport: transport, now: { time.now })
+    defer { session.close() }
+    let first = try await session.authorize(style, publicPolicy: policy)
+    let grant = try XCTUnwrap(first.grant)
+    let replaced = await session.invalidate(grant: "tf_native_v1.b3RoZXI.Z3JhbnQ")
+    XCTAssertTrue(replaced)
+    _ = try await session.authorize(style, publicPolicy: policy)
+    XCTAssertEqual(transport.requests.count, 1)
+    let renewed = await session.invalidate(grant: grant)
+    XCTAssertTrue(renewed)
+    _ = try await session.authorize(style, publicPolicy: policy)
+    XCTAssertEqual(transport.requests.count, 2)
+    // The renewed grant is refused again within 30 s: keep it instead of looping bootstrap.
+    let looping = await session.invalidate(grant: grant)
+    XCTAssertFalse(looping)
+    _ = try await session.authorize(style, publicPolicy: policy)
+    XCTAssertEqual(transport.requests.count, 2)
+    time.advance(30)
+    let later = await session.invalidate(grant: grant)
+    XCTAssertTrue(later)
+    _ = try await session.authorize(style, publicPolicy: policy)
+    XCTAssertEqual(transport.requests.count, 3)
+  }
+
   func testOnlyExactRestartRotatesOnceAndTerminalFailureDoesNotRetry() async throws {
     let fixture = try sessionFixture()
     let transport = SessionTestTransport { request, index in

@@ -33,13 +33,17 @@ internal class HostedSession(
     private val retired = AtomicBoolean()
     private val background = AtomicBoolean()
     private val retryRequested = AtomicBoolean()
+    private val refreshing = AtomicBoolean()
+    private val staleGrant = AtomicReference<String?>()
+    private val forcedRenewalAt = AtomicReference<Long?>()
     private val lock = ReentrantLock()
     private var sessionId = UUID.randomUUID().toString()
     private var startedAt = now()
     private var serverStartedAt: Long? = null
     private var lastServerTime: Long? = null
     private var requests = 0
-    private var authority: HostedAuthority? = null
+    // Written under the lock; read without it only to compare grants.
+    @Volatile private var authority: HostedAuthority? = null
     private var validUntil = 0L
     private val terminal = AtomicReference<TileflowErrorCode?>()
     // Recoverable bootstrap failures delay the next bootstrap; a still-valid grant keeps admitting.
@@ -58,6 +62,12 @@ internal class HostedSession(
         if (!acquired) throw TileflowMapException(TileflowErrorCode.SESSION_UNAVAILABLE)
         try {
             checkActive()
+            staleGrant.getAndSet(null)?.let {
+                if (authority?.grant == it) {
+                    authority = null
+                    validUntil = 0
+                }
+            }
             if (requests >= 10_000 || now() - startedAt >= 21_600_000) rotate()
             val current =
                 authority?.takeIf { validUntil - now() > 30_000 } ?: delayed() ?: refresh()
@@ -91,6 +101,22 @@ internal class HostedSession(
         transport.cancelActive()
     }
 
+    /**
+     * The service no longer accepts [grant], for example after a credential or policy change. The
+     * next admission bootstraps again and the caller may retry once. A second forced renewal within
+     * 30 s keeps the grant and returns false, so a resource the service keeps refusing cannot loop
+     * bootstrap. It never stops the session or waits for an in-flight bootstrap.
+     */
+    fun invalidate(grant: String): Boolean {
+        // A newer grant or an in-flight bootstrap has already replaced it.
+        if (refreshing.get() || authority?.grant != grant) return true
+        val at = now()
+        if (forcedRenewalAt.get()?.let { at - it < 30_000 } == true) return false
+        forcedRenewalAt.set(at)
+        staleGrant.set(grant)
+        return true
+    }
+
     /** Clears a terminal stop and any retry delay; the next admission bootstraps again. */
     fun retry() {
         retryRequested.set(true)
@@ -113,9 +139,10 @@ internal class HostedSession(
         return authority?.takeIf { validUntil > now() } ?: throw TileflowMapException(retryError)
     }
 
-    private fun refresh(): HostedAuthority =
+    private fun refresh(): HostedAuthority {
+        refreshing.set(true)
         try {
-            bootstrap().also {
+            return bootstrap().also {
                 failures = 0
                 retryAt = null
             }
@@ -125,7 +152,10 @@ internal class HostedSession(
         } catch (error: TileflowMapException) {
             record(error.code, null)
             throw error
+        } finally {
+            refreshing.set(false)
         }
+    }
 
     /**
      * Credential, access and quota failures stop the session; anything else delays the next

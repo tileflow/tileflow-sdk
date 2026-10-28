@@ -23,6 +23,7 @@ actor HostedSession {
   // Recoverable bootstrap failures delay the next bootstrap; a still-valid grant keeps admitting.
   private var failures = 0
   private var delay: (until: ContinuousClock.Instant, error: TileflowMapError)?
+  private var forcedRenewalAt: ContinuousClock.Instant?
   private var backgrounded = false
 
   init(
@@ -62,6 +63,21 @@ actor HostedSession {
     stored = nil
     operation?.task.cancel()
     operation = nil
+  }
+
+  /// The service no longer accepts `grant`, for example after a credential or policy change. The
+  /// next admission bootstraps again and the caller may retry once. A second forced renewal within
+  /// 30 s keeps the grant and returns false, so a resource the service keeps refusing cannot loop
+  /// bootstrap. It never stops the session.
+  func invalidate(grant: String) -> Bool {
+    // A newer grant or an in-flight bootstrap has already replaced it.
+    guard operation == nil, let current = stored, current.authority.grant == grant else {
+      return true
+    }
+    if let forcedRenewalAt, forcedRenewalAt.duration(to: now()) < .seconds(30) { return false }
+    forcedRenewalAt = now()
+    stored = nil
+    return true
   }
 
   func authorize(_ url: URL, publicPolicy: ResourcePolicy) async throws -> HostedAdmission {

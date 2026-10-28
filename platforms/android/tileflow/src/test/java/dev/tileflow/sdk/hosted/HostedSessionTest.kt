@@ -171,6 +171,50 @@ class HostedSessionTest {
     }
 
     @Test
+    fun invalidatedGrantRenewsOnceWithinThirtySeconds() {
+        val time = AtomicLong(0)
+        val transport = FakeTransport { request, _ -> response(request) }
+        HostedSession(client(), mapId, "mobile-map", time::get, transport).use { session ->
+            val grant = session.authorize(style, policy).grant!!
+            assertTrue(session.invalidate("tf_native_v1.b3RoZXI.Z3JhbnQ"))
+            session.authorize(style, policy)
+            assertEquals(1, transport.requests.size)
+            assertTrue(session.invalidate(grant))
+            session.authorize(style, policy)
+            assertEquals(2, transport.requests.size)
+            // The renewed grant is refused again within 30 s: keep it instead of looping bootstrap.
+            assertFalse(session.invalidate(grant))
+            session.authorize(style, policy)
+            assertEquals(2, transport.requests.size)
+            time.addAndGet(30_000)
+            assertTrue(session.invalidate(grant))
+            session.authorize(style, policy)
+            assertEquals(3, transport.requests.size)
+        }
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val gated = FakeTransport { request, _ ->
+            started.countDown()
+            check(release.await(5, TimeUnit.SECONDS))
+            response(request)
+        }
+        val session = HostedSession(client(), mapId, "mobile-map", time::get, gated)
+        val pool = Executors.newFixedThreadPool(2)
+        try {
+            val pending = pool.submit<String?> { session.authorize(style, policy).grant }
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            // Invalidation never waits for the bootstrap that holds the admission lock.
+            assertTrue(pool.submit<Boolean> { session.invalidate("x") }.get(1, TimeUnit.SECONDS))
+            release.countDown()
+            assertNotNull(pending.get(5, TimeUnit.SECONDS))
+        } finally {
+            release.countDown()
+            session.close()
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
     fun onlyExactRestartRotatesOnceAndTerminalFailureDoesNotRetry() {
         val transport = FakeTransport { request, index ->
             if (index == 0)

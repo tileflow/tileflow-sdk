@@ -11,12 +11,14 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   public private(set) var options: TileflowMapOptions
 
   private var webView: WKWebView?
-  private var bridge: MapBridge?
+  /// The current generation's bridge, while one is loaded.
+  private(set) var bridge: MapBridge?
   private var resources: ResourceSchemeHandler?
   private let instanceID = UUID().uuidString
   private var generation = 0
-  private var destroyed = false
-  private var initialized = false
+  private(set) var destroyed = false
+  /// Whether the current renderer accepted `initialize`; commands before it are not sent.
+  private(set) var initialized = false
   private var readyForEvents = false
   private var pendingReadyEvent = false
   /// Renderer replacements since content last loaded; a crash loop stops after one.
@@ -28,7 +30,10 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   private var rendererVisible = false
   /// A renderer to replace once the view is visible again.
   private var pendingRemount = false
-  private var initialCamera: TileflowCamera?
+  /// The camera the renderer last reported, or the one to start the next renderer at.
+  var initialCamera: TileflowCamera?
+  /// A camera the application asked for while no renderer could move, and how many it asked for.
+  var requestedCamera: (camera: TileflowCamera, count: Int)?
   /// The current source with its configuration read, kept with its Hosted session.
   private var loadable: LoadableMapSource?
   private var hostedSession: HostedSession?
@@ -36,6 +41,26 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   private var content = MapContent()
   private var contentRevision = 0
   private var subscriptions = EventSubscriptions()
+  let cameraEvents = CameraEventGate()
+  private let controlsView = MapControlsView()
+  private let touchClaim = MapTouchClaim()
+  /// Space covered by the application at each edge, in points.
+  public var contentInsets: UIEdgeInsets = .zero {
+    didSet { updateInsets() }
+  }
+  /// Whether the safe area (system bars, the home indicator, the notch) adds to ``contentInsets``.
+  public var automaticallyAdjustsContentInsets = true {
+    didSet { updateInsets() }
+  }
+  /// The insets the camera and controls use: ``contentInsets`` plus the safe area if adjusted.
+  public private(set) var effectiveContentInsets: UIEdgeInsets = .zero
+  /// The insets the current renderer has, or nil before it is initialized.
+  private var rendererInsets: UIEdgeInsets?
+  private var insetsUpdate: Task<Void, Never>?
+  /// Return false to leave a touch that begins at this point, in this view's coordinates, to the
+  /// views behind and around the map; for example over application UI drawn on the map. Native
+  /// controls receive their touches regardless.
+  public var shouldReceiveTouch: ((CGPoint) -> Bool)?
 
   public init(
     source: TileflowMapSource, theme: String? = nil, initialCamera: TileflowCamera? = nil,
@@ -45,9 +70,22 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     self.theme = theme
     self.initialCamera = initialCamera
     self.options = options
-    subscriptions = EventSubscriptions(application: options.events)
+    subscriptions = EventSubscriptions(
+      application: options.events, followCamera: options.controls.followCamera)
     super.init(frame: .zero)
     accessibilityLabel = "Interactive map"
+    controlsView.controls = options.controls
+    controlsView.camera = initialCamera
+    controlsView.isHidden = true
+    controlsView.onCompass = { [weak self] in
+      Task { [weak self] in
+        _ = try? await self?.move(to: .init(bearing: 0), animation: .ease(duration: 0.3), reason: "gesture")
+      }
+    }
+    controlsView.onRecenter = { [weak self] in self?.onEvent?(.recenterRequested) }
+    addSubview(controlsView)
+    touchClaim.gestures = options.gestures
+    addGestureRecognizer(touchClaim)
     NotificationCenter.default.addObserver(
       self, selector: #selector(background),
       name: UIApplication.didEnterBackgroundNotification, object: nil)
@@ -81,6 +119,46 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   public override func layoutSubviews() {
     super.layoutSubviews()
     webView?.frame = bounds
+    controlsView.frame = bounds
+    updateInsets()
+  }
+
+  public override func safeAreaInsetsDidChange() {
+    super.safeAreaInsetsDidChange()
+    updateInsets()
+  }
+
+  public override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    let target = super.hitTest(point, with: event)
+    guard let shouldReceiveTouch, target !== controlsView, target?.isDescendant(of: controlsView) != true
+    else { return target }
+    return shouldReceiveTouch(point) ? target : nil
+  }
+
+  /// Sends the insets to the renderer, one update at a time with the latest value.
+  private func updateInsets() {
+    let safe = automaticallyAdjustsContentInsets ? safeAreaInsets : .zero
+    let insets = UIEdgeInsets(
+      top: contentInsets.top + safe.top, left: contentInsets.left + safe.left,
+      bottom: contentInsets.bottom + safe.bottom, right: contentInsets.right + safe.right)
+    effectiveContentInsets = insets
+    controlsView.insets = insets
+    guard initialized, let bridge, insetsUpdate == nil, rendererInsets != insets else { return }
+    insetsUpdate = Task { [weak self] in
+      let sent = try? await bridge.call(.setInsets, payload: Self.wire(insets))
+      guard let self else { return }
+      self.insetsUpdate = nil
+      if sent != nil, self.bridge === bridge { self.rendererInsets = insets }
+      if self.bridge === bridge { self.updateInsets() }
+    }
+  }
+
+  nonisolated static func wire(_ insets: UIEdgeInsets) -> JSONValue {
+    let value = { (inset: CGFloat) in JSONValue.number(min(max(Double(inset), 0), 8192)) }
+    return .object([
+      "top": value(insets.top), "left": value(insets.left), "bottom": value(insets.bottom),
+      "right": value(insets.right),
+    ])
   }
 
   public func setSource(_ source: TileflowMapSource) throws {
@@ -134,17 +212,26 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
 
   public func setOptions(_ options: TileflowMapOptions) async throws {
     guard !destroyed else { throw TileflowMapError.disposed }
-    try options.events.validate()
-    let previous = self.options
+    try options.validate()
+    let previousSubscriptions = subscriptions
     self.options = options
-    subscriptions = EventSubscriptions(application: options.events)
-    if initialized, let bridge {
-      _ = try await bridge.call(.setOptions, payload: try .encoded(options))
-      if options.events != previous.events {
-        _ = try await bridge.call(.setEvents, payload: .object(["events": subscriptions.wireValue]))
-      }
+    subscriptions = EventSubscriptions(
+      application: options.events, followCamera: options.controls.followCamera)
+    touchClaim.gestures = options.gestures
+    controlsView.controls = options.controls
+    try await sendOptions(events: subscriptions != previousSubscriptions)
+  }
+
+  private func sendOptions(events: Bool) async throws {
+    guard initialized, let bridge else { return }
+    _ = try await bridge.call(.setOptions, payload: try wireOptions)
+    if events {
+      _ = try await bridge.call(.setEvents, payload: .object(["events": subscriptions.wireValue]))
     }
   }
+
+  private var rightToLeft: Bool { effectiveUserInterfaceLayoutDirection == .rightToLeft }
+  private var wireOptions: JSONValue { get throws { try options.wireValue(rightToLeft: rightToLeft) } }
 
   private func applyAppearance() async throws {
     guard initialized, let bridge, let appearance else { return }
@@ -175,24 +262,20 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     _ = try await bridge.call(.setContent, payload: payload, data: references)
   }
 
+  /// Moves the camera, easing over `duration` seconds (at most 20), and waits until it settles.
+  /// Before the map loads, the camera becomes the one it starts at.
   public func setCamera(_ camera: TileflowCamera, duration: TimeInterval = 0) async throws {
-    guard !destroyed else { throw TileflowMapError.disposed }
-    try camera.validate()
-    guard (0...60).contains(duration) else { throw TileflowMapError.invalidRequest }
-    initialCamera = camera
-    guard initialized, let bridge else { return }
-    _ = try await bridge.call(
-      .setCamera,
-      payload: .object([
-        "camera": try .encoded(camera), "duration": .number(duration * 1000),
-      ]))
+    try await move(to: camera, animation: duration > 0 ? .ease(duration: duration) : .none)
   }
 
+  /// Reads the renderer's camera. ``currentCamera`` holds the last one it reported without a call.
   public func camera() async throws -> TileflowCamera {
     guard !destroyed else { throw TileflowMapError.disposed }
     guard initialized, let bridge else { throw TileflowMapError.notReady }
-    return try JSONDecoder().decode(
-      TileflowCamera.self, from: JSONEncoder().encode(try await bridge.call(.getCamera)))
+    guard let camera = TileflowCamera(wire: try await bridge.call(.getCamera)) else {
+      throw TileflowMapError.rendererFailed
+    }
+    return camera
   }
 
   /// Returns rendered feature identities at a point in this view's coordinate system.
@@ -209,24 +292,17 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
       [TileflowRenderedFeature].self, from: JSONEncoder().encode(result))
   }
 
+  /// Frames `bounds` with `padding` points around them, inside the content insets, and waits
+  /// until the camera settles. A `duration` above 0 eases there.
   public func fit(
     _ bounds: TileflowBounds, padding: Double = 24, maxZoom: Double = 20,
     duration: TimeInterval = 0
   ) async throws {
-    guard !destroyed else { throw TileflowMapError.disposed }
-    guard initialized, let bridge else { throw TileflowMapError.notReady }
-    guard (-180...180).contains(bounds.west), (-180...180).contains(bounds.east),
-      (-90...90).contains(bounds.south), (-90...90).contains(bounds.north),
-      bounds.south <= bounds.north,
-      (0...1000).contains(padding), (0...24).contains(maxZoom), (0...5).contains(duration)
-    else { throw TileflowMapError.invalidRequest }
-    _ = try await bridge.call(
-      .fitBounds,
-      payload: .object([
-        "west": .number(bounds.west), "south": .number(bounds.south), "east": .number(bounds.east),
-        "north": .number(bounds.north), "padding": .number(padding), "maxZoom": .number(maxZoom),
-        "duration": .number(duration * 1000),
-      ]))
+    guard (0...1000).contains(padding) else { throw TileflowMapError.invalidRequest }
+    try await fit(
+      bounds,
+      padding: UIEdgeInsets(top: padding, left: padding, bottom: padding, right: padding),
+      maxZoom: maxZoom, animation: duration > 0 ? .ease(duration: duration) : .none)
   }
 
   public func project(_ coordinate: TileflowCoordinate) async throws -> CGPoint {
@@ -414,8 +490,9 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
         guard let self else { return }
         do {
           let startingTheme = self.theme
-          let startingCamera = self.initialCamera
+          let startingRequest = self.requestedCamera?.count
           let startingOptions = self.options
+          let startingSubscriptions = self.subscriptions
           var wireSource: [String: JSONValue] = [
             "map": .string(loadable.map),
             "manifestUrl": .string(loadable.manifestURL.absoluteString),
@@ -425,22 +502,29 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
             "source": .object(wireSource),
             "theme": self.theme.map(JSONValue.string) ?? .null,
             "colorScheme": .string(self.colorScheme), "interactive": .bool(true),
-            "options": try .encoded(self.options),
+            "options": try self.wireOptions,
             "events": self.subscriptions.wireValue,
+            "insets": Self.wire(self.effectiveContentInsets),
           ]
+          let startingInsets = self.effectiveContentInsets
           if let camera = self.initialCamera { options["camera"] = try .encoded(camera) }
           _ = try await bridge.call(.initialize, payload: .object(options))
           guard !self.destroyed, self.generation == current else { return }
           self.initialized = true
+          self.rendererInsets = startingInsets
+          self.updateInsets()
           try await self.send(self.content, through: bridge)
           if self.appearance != nil {
             try await self.applyAppearance()
           } else if self.theme != startingTheme {
             try await self.setTheme(self.theme)
           }
-          if self.options != startingOptions { try await self.setOptions(self.options) }
-          if self.initialCamera != startingCamera, let camera = self.initialCamera {
-            try await self.setCamera(camera)
+          if self.options != startingOptions {
+            try await self.sendOptions(events: self.subscriptions != startingSubscriptions)
+          }
+          // Only a camera the application asked for during initialization moves the map again.
+          if let request = self.requestedCamera, request.count != startingRequest {
+            try await self.move(to: request.camera, animation: .none)
           }
           if !self.rendererVisible {
             _ = try await bridge.call(.setVisibility, payload: .object(["visible": .bool(false)]))
@@ -466,7 +550,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     bridge.start()
     resources = handler
     webView = view
-    addSubview(view)
+    insertSubview(view, belowSubview: controlsView)
     view.load(URLRequest(url: ResourceURL.runtimeURL))
     updateVisibility()
   }
@@ -474,7 +558,14 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   private func contentReady() {
     generationReady = true
     resetRecovery()
+    controlsView.isHidden = false
     onEvent?(.contentReady)
+  }
+
+  /// Keeps the synchronous camera and the controls current.
+  func observe(_ camera: TileflowCamera) {
+    initialCamera = camera
+    controlsView.camera = camera
   }
 
   private func receive(_ event: String, _ value: JSONValue, generation current: Int) {
@@ -497,17 +588,26 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
         onEvent?(.poiActivated(selection))
       }
     case "loading": onEvent?(.loading)
-    case "contentReady": contentReady()
+    case "contentReady":
+      if let camera = TileflowCamera(wire: value["camera"]) { observe(camera) }
+      contentReady()
     case "cameraMoveStarted", "cameraMoved", "cameraMoveEnded":
       if let change = Self.cameraChange(event, value) {
-        initialCamera = change.camera
-        onEvent?(.cameraChanged(change))
+        observe(change.camera)
+        cameraEvents.receive(change, options: options.events) { [weak self] change in
+          guard let self, !self.destroyed, self.generation == current else { return }
+          self.onEvent?(.cameraChanged(change))
+        }
       }
     case "tap":
-      if let longitude = value["coordinate"]?["longitude"]?.number,
-        let latitude = value["coordinate"]?["latitude"]?.number
+      if let touch = TileflowMapTouch(wire: value) { onEvent?(.tap(touch)) }
+    case "longPress":
+      if let touch = TileflowMapTouch(wire: value) { onEvent?(.longPress(touch)) }
+    case "gestureStarted", "gestureEnded":
+      if options.events.level.includes(.camera),
+        let gesture = value["gesture"]?.string.flatMap(TileflowGesture.init(rawValue:))
       {
-        onEvent?(.tap(longitude: longitude, latitude: latitude))
+        onEvent?(event == "gestureStarted" ? .gestureStarted(gesture) : .gestureEnded(gesture))
       }
     case "themeChanged":
       if let name = value["theme"]?.string { onEvent?(.themeChanged(name)) }
@@ -539,6 +639,10 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   /// Pending calls fail with `cancelled` when a renderer is replaced, `disposed` when destroyed.
   private func retireGeneration(_ error: TileflowMapError = .cancelled) {
     initialized = false
+    rendererInsets = nil
+    insetsUpdate?.cancel()
+    insetsUpdate = nil
+    cameraEvents.rendererReplaced()
     readyForEvents = false
     pendingReadyEvent = false
     generationReady = false
@@ -554,6 +658,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     bridge = nil
     resources = nil
     webView = nil
+    controlsView.isHidden = true
   }
 
   public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {

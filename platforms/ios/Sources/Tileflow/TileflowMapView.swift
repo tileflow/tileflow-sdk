@@ -19,7 +19,15 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   private var initialized = false
   private var readyForEvents = false
   private var pendingReadyEvent = false
+  /// Renderer replacements since content last loaded; a crash loop stops after one.
   private var recoveryCount = 0
+  /// Whether this load may still reload itself once for a superseded Map deployment.
+  private var automaticReloadAvailable = true
+  private var generationReady = false
+  private var inForeground = UIApplication.shared.applicationState != .background
+  private var rendererVisible = false
+  /// A renderer to replace once the view is visible again.
+  private var pendingRemount = false
   private var initialCamera: TileflowCamera?
   private var hostedSession: HostedSession?
   private var appearance: (method: ProtocolContract.Method, payload: JSONValue)?
@@ -49,9 +57,10 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
 
   public override func didMoveToWindow() {
     super.didMoveToWindow()
-    if window != nil, webView == nil, !destroyed {
+    if window != nil, webView == nil, !destroyed, !pendingRemount {
       do { try mount() } catch { onEvent?(.failed(error as? TileflowMapError ?? .invalidSource)) }
     }
+    updateVisibility()
   }
 
   public override func layoutSubviews() {
@@ -66,7 +75,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     hostedSession?.close()
     hostedSession = nil
     self.source = source
-    recoveryCount = 0
+    resetRecovery()
     retireGeneration()
     if window != nil { try mount() }
   }
@@ -162,6 +171,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   /// Returns rendered feature identities at a point in this view's coordinate system.
   public func query(at point: CGPoint) async throws -> [TileflowRenderedFeature] {
     guard !destroyed else { throw TileflowMapError.disposed }
+    try Self.validate(point)
     guard initialized, let bridge else { throw TileflowMapError.notReady }
     let result = try await bridge.call(
       .queryAtPoint,
@@ -204,10 +214,17 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
 
   public func unproject(_ point: CGPoint) async throws -> TileflowCoordinate {
     guard !destroyed else { throw TileflowMapError.disposed }
+    try Self.validate(point)
     guard initialized, let bridge else { throw TileflowMapError.notReady }
     let result = try await bridge.call(
       .unproject, payload: .object(["x": .number(point.x), "y": .number(point.y)]))
     return try JSONDecoder().decode(TileflowCoordinate.self, from: JSONEncoder().encode(result))
+  }
+
+  /// Points may lie outside the view, within the renderer's coordinate range.
+  nonisolated static func validate(_ point: CGPoint) throws {
+    guard point.x.isFinite, point.y.isFinite, abs(point.x) <= 32_768, abs(point.y) <= 32_768
+    else { throw TileflowMapError.invalidRequest }
   }
 
   public func destroy() {
@@ -228,9 +245,64 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   public func reload() throws {
     guard !destroyed else { throw TileflowMapError.disposed }
     hostedSession?.retry()
+    resetRecovery()
     retireGeneration()
-    recoveryCount = 0
     if window != nil { try mount() }
+  }
+
+  private var isVisible: Bool { window != nil && inForeground }
+
+  private func resetRecovery() {
+    recoveryCount = 0
+    automaticReloadAvailable = true
+    pendingRemount = false
+  }
+
+  /// Replace the renderer, keeping the Hosted session; a hidden view replaces it once visible.
+  private func remount() {
+    retireGeneration()
+    guard isVisible else {
+      pendingRemount = true
+      return
+    }
+    do { try mount() } catch { onEvent?(.failed(error as? TileflowMapError ?? .rendererFailed)) }
+  }
+
+  /// A load that fails while hidden, for example because the system suspended its networking,
+  /// reloads once visible instead of reporting a failure nobody saw.
+  private func report(_ error: TileflowMapError, generation expected: Int) {
+    guard !destroyed, generation == expected else { return }
+    guard generationReady || isVisible else {
+      pendingRemount = true
+      return
+    }
+    onEvent?(.failed(error))
+  }
+
+  /// A protected style belongs to a superseded Map deployment: reload discovery once per load.
+  private func deploymentSuperseded(generation expected: Int) -> Bool {
+    guard !destroyed, generation == expected, automaticReloadAvailable else { return false }
+    automaticReloadAvailable = false
+    remount()
+    return true
+  }
+
+  private func updateVisibility() {
+    guard !destroyed else { return }
+    let visible = isVisible
+    // While hidden, the session starts no bootstrap; requests that need one wait until visible.
+    hostedSession?.setBackgrounded(!visible)
+    guard visible != rendererVisible else { return }
+    rendererVisible = visible
+    if visible, pendingRemount {
+      retireGeneration()
+      do { try mount() } catch { onEvent?(.failed(error as? TileflowMapError ?? .rendererFailed)) }
+      return
+    }
+    guard initialized, let bridge else { return }
+    Task {
+      _ = try? await bridge.call(.setVisibility, payload: .object(["visible": .bool(visible)]))
+    }
   }
 
   private var colorScheme: String { traitCollection.userInterfaceStyle == .dark ? "dark" : "light" }
@@ -259,17 +331,24 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     }
     generation += 1
     let current = generation
+    pendingRemount = false
+    // A new document starts shown; it is hidden after initialization if the view is not.
+    rendererVisible = true
     if hostedSession == nil, let client = source.client, let mapID = source.mapID,
       let surfaceID = source.surfaceID
     {
       hostedSession = HostedSession(client: client, mapID: mapID, surfaceID: surfaceID)
     }
+    hostedSession?.setBackgrounded(!isVisible)
     let loader = ResourceLoader(
-      policy: policy, hosted: hostedSession, publicMetadataURLs: source.publicMetadataURLs)
+      policy: policy, hosted: hostedSession, apiOrigin: source.client?.apiOrigin,
+      publicMetadataURLs: source.publicMetadataURLs,
+      onDeploymentSuperseded: { [weak self] in
+        await self?.deploymentSuperseded(generation: current) ?? false
+      })
     let handler = ResourceSchemeHandler(loader: loader, runtimeRoot: root)
     handler.onFailure = { [weak self] error in
-      guard let self, !self.destroyed, self.generation == current else { return }
-      self.onEvent?(.failed(error))
+      self?.report(error, generation: current)
     }
     let bridge = MapBridge(
       instanceID: instanceID, generation: current, runtimeHash: receipt.runtimeHash)
@@ -328,21 +407,22 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
           if self.initialCamera != startingCamera, let camera = self.initialCamera {
             try await self.setCamera(camera)
           }
+          if !self.rendererVisible {
+            _ = try await bridge.call(.setVisibility, payload: .object(["visible": .bool(false)]))
+          }
           self.readyForEvents = true
           if self.pendingReadyEvent {
             self.pendingReadyEvent = false
-            self.onEvent?(.contentReady)
+            self.contentReady()
           }
         } catch {
-          if !self.destroyed, self.generation == current {
-            self.onEvent?(.failed(error as? TileflowMapError ?? .rendererFailed))
-          }
+          self.report(error as? TileflowMapError ?? .rendererFailed, generation: current)
         }
       }
     }
     bridge.onEvent = { [weak self] event, value in
       guard let self, !self.destroyed, self.generation == current else { return }
-      self.receive(event, value)
+      self.receive(event, value, generation: current)
     }
     self.bridge = bridge
     bridge.start()
@@ -350,9 +430,16 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     webView = view
     addSubview(view)
     view.load(URLRequest(url: ResourceURL.runtimeURL))
+    updateVisibility()
   }
 
-  private func receive(_ event: String, _ value: JSONValue) {
+  private func contentReady() {
+    generationReady = true
+    resetRecovery()
+    onEvent?(.contentReady)
+  }
+
+  private func receive(_ event: String, _ value: JSONValue, generation current: Int) {
     if event == "contentReady", !readyForEvents {
       pendingReadyEvent = true
       return
@@ -372,7 +459,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
         onEvent?(.poiActivated(selection))
       }
     case "loading": onEvent?(.loading)
-    case "contentReady": onEvent?(.contentReady)
+    case "contentReady": contentReady()
     case "cameraChanged":
       if let raw = value["camera"], let bytes = try? JSONEncoder().encode(raw),
         let camera = try? JSONDecoder().decode(TileflowCamera.self, from: bytes)
@@ -388,7 +475,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
       }
     case "themeChanged":
       if let name = value["theme"]?.string { onEvent?(.themeChanged(name)) }
-    case "error": onEvent?(.failed(MapBridge.error(value["code"]?.string)))
+    case "error": report(MapBridge.error(value["code"]?.string), generation: current)
     default: break
     }
   }
@@ -397,6 +484,8 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     initialized = false
     readyForEvents = false
     pendingReadyEvent = false
+    generationReady = false
+    rendererVisible = false
     bridge?.retire()
     resources?.retire()
     webView?.stopLoading()
@@ -455,27 +544,25 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     onEvent?(.externalLinkRequested(url))
   }
 
+  /// The system may end a hidden renderer to reclaim memory. Replace it when the view is next
+  /// visible; a renderer that ends again before its content loads is reported instead.
   public func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
     guard webView === self.webView, !destroyed else { return }
-    retireGeneration()
     guard recoveryCount < 1 else {
+      retireGeneration()
       onEvent?(.failed(.rendererFailed))
       return
     }
     recoveryCount += 1
-    do { try mount() } catch { onEvent?(.failed(.rendererFailed)) }
+    remount()
   }
 
   @objc private func background() {
-    hostedSession?.setBackgrounded(true)
-    Task { [weak self] in
-      _ = try? await self?.bridge?.call(.setVisibility, payload: .object(["visible": .bool(false)]))
-    }
+    inForeground = false
+    updateVisibility()
   }
   @objc private func foreground() {
-    hostedSession?.setBackgrounded(false)
-    Task { [weak self] in
-      _ = try? await self?.bridge?.call(.setVisibility, payload: .object(["visible": .bool(true)]))
-    }
+    inForeground = true
+    updateVisibility()
   }
 }

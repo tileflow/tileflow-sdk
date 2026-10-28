@@ -10,7 +10,10 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.PixelCopy
+import android.view.ViewGroup
 import android.view.Window
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebView
 import androidx.activity.ComponentActivity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -18,6 +21,7 @@ import java.net.URI
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -173,6 +177,90 @@ public class MapIntegrationTest {
         } finally {
             instrumentation.runOnMainSync { activity.finish() }
         }
+    }
+
+    @Test
+    public fun rendererLossWhileDetachedWaitsForVisibilityAndInvalidRequestsAnswerAtOnce() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val intent =
+            Intent(instrumentation.context, MapHostActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val activity = instrumentation.startActivitySync(intent) as MapHostActivity
+        val loads = AtomicInteger(1)
+        try {
+            assertTrue(
+                "Map did not load. Errors: ${activity.failures}",
+                activity.loaded.await(30, TimeUnit.SECONDS),
+            )
+            runBlocking {
+                withContext(Dispatchers.Main) {
+                    val map = activity.map
+                    map.onEvent = {
+                        when (it) {
+                            TileflowMapEvent.ContentReady -> loads.incrementAndGet()
+                            is TileflowMapEvent.Failed -> activity.failures.add(it.code)
+                            else -> Unit
+                        }
+                    }
+                    // The style's notices are always visible on the map, as on the web.
+                    val notice = suspendCancellableCoroutine { continuation ->
+                        renderer(map).evaluateJavascript(
+                            "document.querySelector('.tileflow-notice')?.textContent ?? ''"
+                        ) {
+                            continuation.resume(it)
+                        }
+                    }
+                    assertEquals("\"Not for navigation\"", notice)
+                    // Off-screen points are valid; invalid requests fail at once, not at timeout.
+                    val started = SystemClock.uptimeMillis()
+                    map.unproject(TileflowPoint(-40f, -40f))
+                    map.query(-40f, map.height * 3f)
+                    map.setContent(
+                        layers =
+                            listOf(
+                                TileflowGeoJSONLayer(
+                                    "selection",
+                                    """{"type":"FeatureCollection","bbox":[-3.71,40.41,-3.69,40.43],"features":[{"type":"Feature","bbox":[-3.7,40.42,-3.7,40.42],"geometry":{"type":"Point","coordinates":[-3.7,40.42]},"properties":{}}]}""",
+                                    TileflowGeoJSONLayerKind.CIRCLE,
+                                )
+                            )
+                    )
+                    assertTrue(SystemClock.uptimeMillis() - started < 5_000)
+                    // The renderer accepts the steep pitch the camera API allows.
+                    map.setCamera(TileflowCamera(-3.7, 40.42, 16.0, pitch = 80.0))
+                    assertEquals(80.0, map.camera().pitch, 0.5)
+                    map.setCamera(TileflowCamera(-3.7, 40.42, 16.0))
+
+                    // A renderer that ends while the map is detached is replaced once visible.
+                    val parent = map.parent as ViewGroup
+                    parent.removeView(map)
+                    renderProcessGone(renderer(map))
+                    assertEquals(0, map.childCount)
+                    parent.addView(map)
+                    withTimeout(30_000) { while (loads.get() < 2) delay(50) }
+                    // Loading resets the recovery budget, so a later loss is recovered too.
+                    renderProcessGone(renderer(map))
+                    withTimeout(30_000) { while (loads.get() < 3) delay(50) }
+                    assertApplicationLayer(map)
+                    assertTrue("Map errors: ${activity.failures}", activity.failures.isEmpty())
+                }
+            }
+        } finally {
+            instrumentation.runOnMainSync { activity.finish() }
+        }
+    }
+
+    private fun renderer(map: TileflowMapView): WebView = map.getChildAt(0) as WebView
+
+    private fun renderProcessGone(view: WebView) {
+        view.webViewClient.onRenderProcessGone(
+            view,
+            object : RenderProcessGoneDetail() {
+                override fun didCrash(): Boolean = false
+
+                override fun rendererPriorityAtExit(): Int = 0
+            },
+        )
     }
 
     private suspend fun assertApplicationLayer(map: TileflowMapView) {

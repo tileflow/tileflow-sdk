@@ -48,6 +48,28 @@ class HostedSessionTest {
                 assertEquals(url, expected, HostedContract.permits(URI(url), mapId, authority))
             }
         }
+        for ((key, expected) in
+            listOf("publicResources" to true, "nonPublicResources" to false)) {
+            val urls = fixture.getJSONArray(key)
+            for (i in 0 until urls.length()) {
+                val url = urls.getString(i)
+                assertEquals(url, expected, HostedContract.isPublicApiResource(URI(url)))
+            }
+        }
+        val redirects = fixture.getJSONArray("redirects")
+        for (i in 0 until redirects.length()) {
+            val redirect = redirects.getJSONObject(i)
+            assertEquals(
+                redirect.optString("location"),
+                redirect.optString("target").ifEmpty { null },
+                HostedContract.redirect(
+                        URI(redirect.getString("from")),
+                        redirect.getString("location"),
+                        URI("https://api.tileflow.test"),
+                    )
+                    ?.toString(),
+            )
+        }
         for ((key, value) in
             listOf(
                 "extra" to true,
@@ -374,11 +396,7 @@ class HostedSessionTest {
 
     @Test
     fun resourceRejectionRetiresAnInFlightRefreshBeforeItCanReturnAuthority() {
-        val rejections = sequences().getJSONArray("resourceRejections")
-        for (index in 0 until rejections.length()) {
-            val rejection = rejections.getJSONObject(index)
-            val expected = fixtureErrors.getValue(rejection.getString("error"))
-            if (expected !in HostedContract.terminalCodes) continue
+        for (expected in HostedContract.terminalCodes) {
             val started = CountDownLatch(1)
             val release = CountDownLatch(1)
             val transport = FakeTransport { request, _ ->
@@ -407,41 +425,174 @@ class HostedSessionTest {
     }
 
     @Test
-    fun grantedResourceFailuresStopTheSessionOnlyWhenTerminal() {
-        val rejections = sequences().getJSONArray("resourceRejections")
-        for (index in 0 until rejections.length()) {
-            val rejection = rejections.getJSONObject(index)
-            val name = rejection.getString("error")
-            val expected = fixtureErrors.getValue(name)
-            val terminal = expected in HostedContract.terminalCodes
-            val sessionTransport = FakeTransport { request, _ -> response(request) }
-            val resourceTransport = FakeTransport { _, count ->
+    fun sharedResourceReactions() {
+        val tile = URI("https://tiles.tileflow.test/tiles/world/release-1/1/0/0.pbf")
+        val reactions = sequences().getJSONArray("resourceReactions")
+        for (index in 0 until reactions.length()) {
+            val reaction = reactions.getJSONObject(index)
+            val body =
+                JSONObject()
+                    .apply { reaction.optString("code").ifEmpty { null }?.let { put("code", it) } }
+                    .toString()
+                    .toByteArray()
+            assertEquals(
+                reaction.toString(),
+                ResourceReaction.valueOf(
+                    reaction.getString("reaction").replace(Regex("([A-Z])"), "_$1").uppercase()
+                ),
+                HostedContract.reaction(
+                    reaction.getInt("status"),
+                    body,
+                    if (reaction.getString("resource") == "style") style else tile,
+                    reaction.optBoolean("refreshed"),
+                ),
+            )
+        }
+        assertEquals(
+            "NATIVE_GRANT_STALE",
+            HostedContract.errorCode("""{"code":"NATIVE_GRANT_STALE"}""".toByteArray()),
+        )
+        assertNull(HostedContract.errorCode("<html>".toByteArray()))
+    }
+
+    @Test
+    fun resourceRejectionsRenewOnceAndNeverEndTheSession() {
+        val sessions = FakeTransport { request, _ -> response(request) }
+        val statuses = ArrayDeque(listOf(401, 200, 403, 200))
+        val resources = FakeTransport { _, _ ->
+            ResourcePayload(
+                """{"code":"UNSPECIFIED"}""".toByteArray(),
+                synchronized(statuses) { statuses.removeFirstOrNull() ?: 200 },
+                emptyMap(),
+            )
+        }
+        val tile = URI("https://tiles.tileflow.test/tiles/world/release-1/1/0/0.pbf")
+        HostedSession(client(), mapId, "mobile-map", transport = sessions).use { session ->
+            ResourceLoader(
+                    ResourcePolicy(
+                        setOf("https://api.tileflow.test", "https://tiles.tileflow.test")
+                    ),
+                    hosted = session,
+                    transport = resources,
+                )
+                .use { loader ->
+                    // A stale grant is renewed once and the request retried with the new grant.
+                    assertEquals(200, loader.load(tile).status)
+                    assertEquals(2, sessions.requests.size)
+                    // A rejection renewal cannot repair reaches the renderer; the session goes on.
+                    assertEquals(403, loader.load(tile).status)
+                    assertEquals("Renewal is not repeated in its window", 2, sessions.requests.size)
+                    assertEquals(200, loader.load(tile).status)
+                    assertEquals(4, resources.requests.size)
+                    resources.requests.forEach {
+                        assertNotNull(it.header("X-Tileflow-Native-Grant"))
+                    }
+                }
+        }
+    }
+
+    @Test
+    fun rateLimitedResourceWaitsForRetryAfterAndOnlyQuotaStopsTheSession() {
+        val time = AtomicLong(0)
+        val sessions = FakeTransport { request, _ -> response(request) }
+        val statuses = ArrayDeque(listOf(429, 200))
+        val resources = FakeTransport { _, _ ->
+            ResourcePayload(
+                """{"code":"RATE_LIMITED"}""".toByteArray(),
+                synchronized(statuses) { statuses.removeFirstOrNull() ?: 200 },
+                mapOf("Retry-After" to "4"),
+            )
+        }
+        HostedSession(client(), mapId, "mobile-map", transport = sessions).use { session ->
+            ResourceLoader(
+                    policy,
+                    hosted = session,
+                    transport = resources,
+                    now = time::get,
+                    pause = { time.addAndGet(it) },
+                )
+                .use { loader ->
+                    assertEquals(200, loader.load(style).status)
+                    assertEquals(4_000L, time.get())
+                    assertEquals(2, resources.requests.size)
+                }
+            val quota = FakeTransport { _, count ->
                 if (count == 0)
                     ResourcePayload(
-                        rejection.opt("body")?.toString()?.toByteArray() ?: byteArrayOf(),
-                        rejection.getInt("status"),
+                        """{"code":"COMMERCIAL_SPENDING_LIMIT_REACHED"}""".toByteArray(),
+                        429,
                         emptyMap(),
                     )
                 else ResourcePayload(byteArrayOf(1), 200, emptyMap())
             }
-            val session = HostedSession(client(), mapId, "mobile-map", transport = sessionTransport)
-            val loader = ResourceLoader(policy, hosted = session, transport = resourceTransport)
-            try {
-                assertCode(expected, name) { loader.load(style) }
-                if (terminal) assertCode(expected, name) { loader.load(style) }
-                else assertEquals(name, 200, loader.load(style).status)
-                assertEquals(name, 1, sessionTransport.requests.size)
-                if (terminal) {
-                    // An explicit retry bootstraps again instead of reusing the refused grant.
-                    session.retry()
-                    assertEquals(name, 200, loader.load(style).status)
-                    assertEquals(name, 2, sessionTransport.requests.size)
-                }
-                assertEquals(name, 2, resourceTransport.requests.size)
-            } finally {
-                loader.close()
-                session.close()
+            ResourceLoader(policy, hosted = session, transport = quota).use { loader ->
+                assertCode(TileflowErrorCode.QUOTA_EXCEEDED) { loader.load(style) }
+                assertCode(TileflowErrorCode.QUOTA_EXCEEDED) { loader.load(style) }
+                // An explicit retry bootstraps again instead of reusing the refused grant.
+                session.retry()
+                assertEquals(200, loader.load(style).status)
+                assertEquals(2, sessions.requests.size)
             }
+        }
+    }
+
+    @Test
+    fun supersededStyleAsksForOneReloadAndOtherwiseReachesTheRenderer() {
+        val sessions = FakeTransport { request, _ -> response(request) }
+        val resources = FakeTransport { _, _ ->
+            ResourcePayload(
+                """{"code":"NATIVE_DEPLOYMENT_SUPERSEDED"}""".toByteArray(),
+                409,
+                emptyMap(),
+            )
+        }
+        val reloads = AtomicLong(0)
+        HostedSession(client(), mapId, "mobile-map", transport = sessions).use { session ->
+            ResourceLoader(
+                    policy,
+                    hosted = session,
+                    transport = resources,
+                    onDeploymentSuperseded = {
+                        reloads.incrementAndGet()
+                        false
+                    },
+                )
+                .use { loader -> assertEquals(409, loader.load(style).status) }
+            assertEquals(1L, reloads.get())
+            assertEquals(1, sessions.requests.size)
+        }
+    }
+
+    @Test
+    fun teamModelRedirectIsFollowedOnceWithoutAGrant() {
+        val sessions = FakeTransport { request, _ -> response(request) }
+        val version = "/team-models/tmd_0123456789abcdef/versions/tmv_0123456789abcdef.glb"
+        val resources = FakeTransport { request, _ ->
+            if (request.url.encodedPath == version) ResourcePayload(byteArrayOf(1), 200, emptyMap())
+            else ResourcePayload(byteArrayOf(), 302, mapOf("Location" to version))
+        }
+        val model = URI("https://api.tileflow.test/team-models/tmd_0123456789abcdef/current.glb")
+        HostedSession(client(), mapId, "mobile-map", transport = sessions).use { session ->
+            ResourceLoader(
+                    policy,
+                    hosted = session,
+                    apiOrigin = URI("https://api.tileflow.test"),
+                    transport = resources,
+                )
+                .use { loader ->
+                    assertArrayEquals(byteArrayOf(1), loader.load(model).bytes)
+                    assertEquals(
+                        listOf(model.path, version),
+                        resources.requests.map { it.url.encodedPath },
+                    )
+                    resources.requests.forEach {
+                        assertNull(it.header("X-Tileflow-Native-Grant"))
+                    }
+                    assertEquals("Public Hosted resources need no session", 0, sessions.requests.size)
+                    assertThrows(java.io.IOException::class.java) {
+                        loader.load(URI("https://api.tileflow.test/landmarks/tiles.json"))
+                    }
+                }
         }
     }
 

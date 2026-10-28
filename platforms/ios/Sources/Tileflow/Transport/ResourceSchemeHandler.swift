@@ -39,6 +39,9 @@ final class ResourceSchemeHandler: NSObject, WKURLSchemeHandler {
         guard !retired, operations[identity] != nil, !Task.isCancelled else { return }
         var headers = payload.headers
         headers["Access-Control-Allow-Origin"] = "*"
+        // The renderer reads World fair-use state from these headers, as the web adapters do.
+        headers["Access-Control-Expose-Headers"] =
+          "Tileflow-Fair-Use, Tileflow-Fair-Use-Notice, Tileflow-Protection"
         guard
           let response = HTTPURLResponse(
             url: url, statusCode: payload.status, httpVersion: "HTTP/1.1", headerFields: headers

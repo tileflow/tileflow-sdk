@@ -56,7 +56,13 @@ internal class ResourceClient(
                     null,
                     payload.status,
                     if (payload.status < 400) "OK" else "Resource error",
-                    payload.headers + ("Access-Control-Allow-Origin" to ResourceAddress.ORIGIN),
+                    payload.headers +
+                        mapOf(
+                            "Access-Control-Allow-Origin" to ResourceAddress.ORIGIN,
+                            // The renderer reads World fair-use state, as the web adapters do.
+                            "Access-Control-Expose-Headers" to
+                                "Tileflow-Fair-Use, Tileflow-Fair-Use-Notice, Tileflow-Protection",
+                        ),
                     ByteArrayInputStream(payload.bytes),
                 )
             }

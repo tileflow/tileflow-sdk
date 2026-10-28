@@ -26,6 +26,24 @@ final class HostedSessionTests: XCTestCase {
           url.absoluteString)
       }
     }
+    for (key, expected) in [("publicResources", true), ("nonPublicResources", false)] {
+      guard case .array(let urls) = fixture[key] else { return XCTFail("Missing public cases") }
+      for value in urls {
+        let url = try XCTUnwrap(value.string.flatMap(URL.init(string:)))
+        XCTAssertEqual(HostedContract.isPublicAPIResource(url), expected, url.absoluteString)
+      }
+    }
+    guard case .array(let redirects) = fixture["redirects"] else {
+      return XCTFail("Missing redirect cases")
+    }
+    for redirect in redirects {
+      let from = try XCTUnwrap(redirect["from"]?.string.flatMap(URL.init(string:)))
+      XCTAssertEqual(
+        HostedContract.redirect(
+          from: from, location: redirect["location"]?.string,
+          apiOrigin: URL(string: "https://api.tileflow.test")!)?.absoluteString,
+        redirect["target"]?.string, redirect["location"]?.string ?? "")
+    }
     guard case .object(let response) = fixture["response"] else {
       return XCTFail("Missing response")
     }
@@ -306,9 +324,7 @@ final class HostedSessionTests: XCTestCase {
   }
 
   func testResourceRejectionRetiresAnInFlightRefreshBeforeItCanReturnAuthority() async throws {
-    for rejection in try sessionSequences().resourceRejections {
-      let expected = try XCTUnwrap(fixtureErrors[rejection.error])
-      guard HostedContract.isTerminal(expected) else { continue }
+    for expected in [TileflowMapError.credentialRejected, .accessDenied, .quotaExceeded] {
       let fixture = try sessionFixture()
       let gate = SessionResponseGate()
       let transport = SessionTestTransport { request, _ in
@@ -334,46 +350,178 @@ final class HostedSessionTests: XCTestCase {
     }
   }
 
-  func testGrantedResourceFailuresStopTheSessionOnlyWhenTerminal() async throws {
-    for rejection in try sessionSequences().resourceRejections {
-      let expected = try XCTUnwrap(fixtureErrors[rejection.error])
-      let terminal = HostedContract.isTerminal(expected)
-      let fixture = try sessionFixture()
-      let sessionTransport = SessionTestTransport { request, _ in
-        try sessionResponse(fixture, request: request)
-      }
-      let body = try rejection.body.map { try JSONEncoder().encode($0) } ?? Data()
-      let resourceTransport = SessionTestTransport { _, index in
-        index == 0
-          ? ResourcePayload(bytes: body, status: rejection.status, headers: [:])
-          : ResourcePayload(bytes: Data([1]), status: 200, headers: [:])
-      }
-      let session = HostedSession(
-        client: try makeClient(), mapID: mapID, surfaceID: "mobile-map",
-        transport: sessionTransport)
-      let loader = ResourceLoader(policy: policy, hosted: session, transport: resourceTransport)
-      do {
-        _ = try await loader.load(URLRequest(url: style))
-        XCTFail("A refused resource was returned")
-      } catch { XCTAssertEqual(error as? TileflowMapError, expected, rejection.error) }
-      do {
-        _ = try await loader.load(URLRequest(url: style))
-        XCTAssertFalse(terminal, rejection.error)
-      } catch {
-        XCTAssertTrue(terminal, rejection.error)
-        XCTAssertEqual(error as? TileflowMapError, expected, rejection.error)
-      }
-      XCTAssertEqual(sessionTransport.requests.count, 1, rejection.error)
-      if terminal {
-        // An explicit retry bootstraps again instead of reusing the refused grant.
-        session.retry()
-        _ = try await loader.load(URLRequest(url: style))
-        XCTAssertEqual(sessionTransport.requests.count, 2, rejection.error)
-      }
-      XCTAssertEqual(resourceTransport.requests.count, 2, rejection.error)
+  func testSharedResourceReactions() throws {
+    let tile = URL(string: "https://tiles.tileflow.test/tiles/world/release-1/1/0/0.pbf")!
+    for reaction in try sessionSequences().resourceReactions {
+      let body = try JSONEncoder().encode(
+        JSONValue.object(reaction.code.map { ["code": .string($0)] } ?? [:]))
+      XCTAssertEqual(
+        HostedContract.reaction(
+          status: reaction.status, body: body,
+          url: reaction.resource == "style" ? style : tile, refreshed: reaction.refreshed ?? false),
+        [
+          "none": ResourceReaction.none, "refresh": .refresh, "superseded": .superseded,
+          "rateLimited": .rateLimited, "quota": .quota,
+        ][reaction.reaction], "\(reaction)")
+    }
+    let body = try JSONEncoder().encode(
+      JSONValue.object(["code": .string("NATIVE_GRANT_STALE"), "error": .string("Stale")]))
+    XCTAssertEqual(HostedContract.errorCode(body), "NATIVE_GRANT_STALE")
+    XCTAssertNil(HostedContract.errorCode(Data("<html>".utf8)))
+  }
+
+  func testResourceRejectionsRenewOnceAndNeverEndTheSession() async throws {
+    let fixture = try sessionFixture()
+    let sessions = SessionTestTransport { request, _ in
+      try sessionResponse(fixture, request: request)
+    }
+    let tile = URL(string: "https://tiles.tileflow.test/tiles/world/release-1/1/0/0.pbf")!
+    let statuses = StatusSequence([401, 200, 403, 200])
+    let resources = SessionTestTransport { _, _ in
+      ResourcePayload(
+        bytes: try JSONEncoder().encode(JSONValue.object(["code": .string("UNSPECIFIED")])),
+        status: statuses.next(), headers: [:])
+    }
+    let session = HostedSession(
+      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: sessions)
+    let loader = ResourceLoader(
+      policy: ResourcePolicy(origins: ["https://api.tileflow.test", "https://tiles.tileflow.test"]),
+      hosted: session, transport: resources)
+    defer {
       loader.close()
       session.close()
     }
+    // A stale grant is renewed once and the request retried with the new grant.
+    let renewed = try await loader.load(URLRequest(url: tile)).status
+    XCTAssertEqual(renewed, 200)
+    XCTAssertEqual(sessions.requests.count, 2)
+    // A rejection that renewal cannot repair reaches the renderer; the session continues.
+    let unrepaired = try await loader.load(URLRequest(url: tile)).status
+    XCTAssertEqual(unrepaired, 403)
+    XCTAssertEqual(sessions.requests.count, 2, "Renewal is not repeated within its window")
+    let later = try await loader.load(URLRequest(url: tile)).status
+    XCTAssertEqual(later, 200)
+    XCTAssertEqual(resources.requests.count, 4)
+    for request in resources.requests {
+      XCTAssertNotNil(request.value(forHTTPHeaderField: "X-Tileflow-Native-Grant"))
+    }
+  }
+
+  func testRateLimitedResourceWaitsForRetryAfterAndOnlyQuotaStopsTheSession() async throws {
+    let fixture = try sessionFixture()
+    let time = SessionTestClock()
+    let start = time.now
+    let sessions = SessionTestTransport { request, _ in
+      try sessionResponse(fixture, request: request)
+    }
+    let statuses = StatusSequence([429, 200])
+    let resources = SessionTestTransport { _, _ in
+      ResourcePayload(
+        bytes: try JSONEncoder().encode(JSONValue.object(["code": .string("RATE_LIMITED")])),
+        status: statuses.next(), headers: ["Retry-After": "4"])
+    }
+    let session = HostedSession(
+      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: sessions)
+    let loader = ResourceLoader(
+      policy: policy, hosted: session, transport: resources, now: { time.now },
+      pause: { time.advance(Double($0.components.seconds)) })
+    defer {
+      loader.close()
+      session.close()
+    }
+    let retried = try await loader.load(URLRequest(url: style)).status
+    XCTAssertEqual(retried, 200)
+    XCTAssertEqual(start.duration(to: time.now), .seconds(4))
+    XCTAssertEqual(resources.requests.count, 2)
+
+    let quota = SessionTestTransport { _, index in
+      index == 0
+        ? ResourcePayload(
+          bytes: try JSONEncoder().encode(
+            JSONValue.object(["code": .string("COMMERCIAL_SPENDING_LIMIT_REACHED")])),
+          status: 429, headers: [:])
+        : ResourcePayload(bytes: Data([1]), status: 200, headers: [:])
+    }
+    let exhausted = ResourceLoader(policy: policy, hosted: session, transport: quota)
+    defer { exhausted.close() }
+    do {
+      _ = try await exhausted.load(URLRequest(url: style))
+      XCTFail("A quota rejection was retried")
+    } catch { XCTAssertEqual(error as? TileflowMapError, .quotaExceeded) }
+    do {
+      _ = try await exhausted.load(URLRequest(url: style))
+      XCTFail("An exhausted session admitted a request")
+    } catch { XCTAssertEqual(error as? TileflowMapError, .quotaExceeded) }
+    // An explicit retry bootstraps again instead of reusing the refused grant.
+    session.retry()
+    _ = try await exhausted.load(URLRequest(url: style))
+    XCTAssertEqual(sessions.requests.count, 2)
+  }
+
+  func testSupersededStyleAsksForOneReloadAndOtherwiseReachesTheRenderer() async throws {
+    let fixture = try sessionFixture()
+    let sessions = SessionTestTransport { request, _ in
+      try sessionResponse(fixture, request: request)
+    }
+    let resources = SessionTestTransport { _, _ in
+      ResourcePayload(
+        bytes: try JSONEncoder().encode(
+          JSONValue.object(["code": .string("NATIVE_DEPLOYMENT_SUPERSEDED")])),
+        status: 409, headers: [:])
+    }
+    let session = HostedSession(
+      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: sessions)
+    let reloads = StatusSequence([])
+    let loader = ResourceLoader(
+      policy: policy, hosted: session, transport: resources,
+      onDeploymentSuperseded: {
+        reloads.record()
+        return false
+      })
+    defer {
+      loader.close()
+      session.close()
+    }
+    let superseded = try await loader.load(URLRequest(url: style)).status
+    XCTAssertEqual(superseded, 409)
+    XCTAssertEqual(reloads.count, 1)
+    XCTAssertEqual(sessions.requests.count, 1)
+  }
+
+  func testTeamModelRedirectIsFollowedOnceWithoutAGrant() async throws {
+    let fixture = try sessionFixture()
+    let sessions = SessionTestTransport { request, _ in
+      try sessionResponse(fixture, request: request)
+    }
+    let version = "/team-models/tmd_0123456789abcdef/versions/tmv_0123456789abcdef.glb"
+    let resources = SessionTestTransport { request, _ in
+      request.url?.path == version
+        ? ResourcePayload(bytes: Data([1]), status: 200, headers: [:])
+        : ResourcePayload(bytes: Data(), status: 302, headers: ["Location": version])
+    }
+    let session = HostedSession(
+      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: sessions)
+    let loader = ResourceLoader(
+      policy: policy, hosted: session, apiOrigin: URL(string: "https://api.tileflow.test")!,
+      transport: resources)
+    defer {
+      loader.close()
+      session.close()
+    }
+    let model = URL(
+      string: "https://api.tileflow.test/team-models/tmd_0123456789abcdef/current.glb")!
+    let modelBytes = try await loader.load(URLRequest(url: model)).bytes
+    XCTAssertEqual(modelBytes, Data([1]))
+    XCTAssertEqual(resources.requests.map(\.url?.path), [model.path, version])
+    for request in resources.requests {
+      XCTAssertNil(request.value(forHTTPHeaderField: "X-Tileflow-Native-Grant"))
+    }
+    XCTAssertEqual(sessions.requests.count, 0, "Public Hosted resources need no session")
+    do {
+      _ = try await loader.load(
+        URLRequest(url: URL(string: "https://api.tileflow.test/landmarks/tiles.json")!))
+      XCTFail("A redirect outside a Team model's address was followed")
+    } catch { XCTAssertEqual(error as? ResourceError, .invalidResponse) }
   }
 
   func testFailureClassificationAndRetryAfter() {
@@ -533,13 +681,25 @@ private struct SessionSequences: Decodable {
     let responses: [Reply]
     let steps: [Step]
   }
-  struct Rejection: Decodable, Sendable {
+  struct Reaction: Decodable, Sendable {
     let status: Int
-    let body: JSONValue?
-    let error: String
+    let code: String?
+    let resource: String
+    let refreshed: Bool?
+    let reaction: String
   }
   let scenarios: [Scenario]
-  let resourceRejections: [Rejection]
+  let resourceReactions: [Reaction]
+}
+
+private final class StatusSequence: @unchecked Sendable {
+  private let lock = NSLock()
+  private var statuses: [Int]
+  private var recorded = 0
+  init(_ statuses: [Int]) { self.statuses = statuses }
+  func next() -> Int { lock.withLock { statuses.isEmpty ? 200 : statuses.removeFirst() } }
+  func record() { lock.withLock { recorded += 1 } }
+  var count: Int { lock.withLock { recorded } }
 }
 
 private actor SessionResponseGate {

@@ -57,3 +57,23 @@ test('malformed geometries fail before touching the renderer', () => {
     );
   }
 });
+
+test('GeoJSON bounding boxes are accepted on every object', () => {
+  const bbox = [-3.71, 40.41, -3.69, 40.43];
+  const data = {
+    type: 'FeatureCollection',
+    bbox,
+    features: [{...feature, bbox, geometry: {...feature.geometry, bbox}}],
+  };
+  assert.equal(
+    contentSchema.safeParse({annotations: [], overlays: [{...overlay, data}]}).success,
+    true,
+  );
+  assert.equal(
+    contentSchema.safeParse({
+      annotations: [],
+      overlays: [{...overlay, data: {...data, bbox: [0, 0, 1]}}],
+    }).success,
+    false,
+  );
+});

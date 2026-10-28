@@ -19,7 +19,15 @@
     "disposition": "ordinary",
     "resourceOrigins": ["https://api.tileflow.test", "https://tiles.tileflow.test"],
     "resourceScopes": ["style", "tilejson", "tile", "sprite", "glyph", "font"],
-    "tilesetIds": ["world", "terrain", "tls_0123456789abcdef"]
+    "tilesetIds": [
+      "world",
+      "terrain",
+      "tls_0123456789abcdef",
+      "bathymetry",
+      "bathymetry-dem",
+      "nautical",
+      "boundaries"
+    ]
   },
   "allowedResources": [
     "https://api.tileflow.test/maps/map_0123456789abcdef/mobile/webview-v1/v1/day.json",
@@ -28,7 +36,12 @@
     "https://tiles.tileflow.test/tiles/terrain/4/5/6.webp",
     "https://api.tileflow.test/sprites/icons/sprite@2x.png",
     "https://api.tileflow.test/fonts/Noto%20Sans/0-255.pbf",
-    "https://api.tileflow.test/font-bundles/fnb_0123456789abcdef/fonts/noto-sans.woff2"
+    "https://api.tileflow.test/font-bundles/fnb_0123456789abcdef/fonts/noto-sans.woff2",
+    "https://api.tileflow.test/tiles/bathymetry/tiles.json?bathymetryReleaseId=2026-10-01&map=map_0123456789abcdef",
+    "https://api.tileflow.test/v1/tiles/bathymetry/dem/tiles.json?bathymetryReleaseId=2026-10-01",
+    "https://tiles.tileflow.test/tiles/bathymetry/dem/2026-10-01/9/10/11.webp",
+    "https://api.tileflow.test/tiles/nautical/tiles.json?nauticalReleaseId=2026-10-01",
+    "https://api.tileflow.test/tiles/boundaries/tiles.json?boundariesReleaseId=2026-10-01"
   ],
   "deniedResources": [
     "https://api.tileflow.test.evil.test/tiles/world/0/0/0.pbf",
@@ -49,6 +62,58 @@
     "https://api.tileflow.test/tiles/world/0/0/0.pbf?key=x",
     "https://api.tileflow.test/font-bundles/fnb_0123456789abcdef/../secret.woff2",
     "https://api.tileflow.test/fonts/Noto%2FSans/0-255.pbf",
-    "https://api.tileflow.test/fonts/Noto%00Sans/0-255.pbf"
+    "https://api.tileflow.test/fonts/Noto%00Sans/0-255.pbf",
+    "https://api.tileflow.test/tiles/world/tiles.json?nauticalReleaseId=2026-10-01",
+    "https://api.tileflow.test/tiles/nautical/release-1/0/0/0.pbf?nauticalReleaseId=2026-10-01",
+    "https://api.tileflow.test/tiles/bathymetry/dem/tiles.json?nauticalReleaseId=2026-10-01",
+    "https://api.tileflow.test/tiles/boundaries/2026-10-01/boundaries-lookup-country.csv.gz",
+    "https://api.tileflow.test/tiles/boundaries/2026-10-01/boundaries-lookup.json",
+    "https://api.tileflow.test/landmarks/tiles.json",
+    "https://api.tileflow.test/team-models/tmd_0123456789abcdef/current.glb"
+  ],
+  "publicResources": [
+    "https://api.tileflow.test/landmarks/tiles.json",
+    "https://api.tileflow.test/landmarks/releases/000000000000000000000000000000000000000000000000000000000000000a/regions/6/31/24.json",
+    "https://api.tileflow.test/landmarks/releases/000000000000000000000000000000000000000000000000000000000000000a/NOTICE.md",
+    "https://api.tileflow.test/landmarks/tiles/000000000000000000000000000000000000000000000000000000000000000a.glb",
+    "https://api.tileflow.test/team-models/tmd_0123456789abcdef/current.glb",
+    "https://api.tileflow.test/team-models/tmd_0123456789abcdef/versions/tmv_0123456789abcdef.glb"
+  ],
+  "nonPublicResources": [
+    "https://api.tileflow.test/landmarks/tiles.json?map=map_0123456789abcdef",
+    "https://api.tileflow.test/landmarks/releases/000000000000000000000000000000000000000000000000000000000000000a/regions/5/31/24.json",
+    "https://api.tileflow.test/landmarks/releases/000000000000000000000000000000000000000000000000000000000000000a/manifest.json",
+    "https://api.tileflow.test/landmarks/tiles/abc.glb",
+    "https://api.tileflow.test/team-models/tmd_short/current.glb",
+    "https://api.tileflow.test/team-models/tmd_0123456789abcdef/versions/tmv_0123456789abcdef.gltf",
+    "https://api.tileflow.test/v1/team-models"
+  ],
+  "redirects": [
+    {
+      "from": "https://api.tileflow.test/team-models/tmd_0123456789abcdef/current.glb",
+      "location": "/team-models/tmd_0123456789abcdef/versions/tmv_0123456789abcdef.glb",
+      "target": "https://api.tileflow.test/team-models/tmd_0123456789abcdef/versions/tmv_0123456789abcdef.glb"
+    },
+    {
+      "from": "https://api.tileflow.test/team-models/tmd_0123456789abcdef/current.glb",
+      "location": "https://api.tileflow.test/team-models/tmd_0123456789abcdef/versions/tmv_0123456789abcdef.glb",
+      "target": "https://api.tileflow.test/team-models/tmd_0123456789abcdef/versions/tmv_0123456789abcdef.glb"
+    },
+    {
+      "from": "https://api.tileflow.test/team-models/tmd_0123456789abcdef/current.glb",
+      "location": "/team-models/tmd_fedcba9876543210/versions/tmv_0123456789abcdef.glb"
+    },
+    {
+      "from": "https://api.tileflow.test/team-models/tmd_0123456789abcdef/current.glb",
+      "location": "https://tiles.tileflow.test/team-models/tmd_0123456789abcdef/versions/tmv_0123456789abcdef.glb"
+    },
+    {
+      "from": "https://api.tileflow.test/team-models/tmd_0123456789abcdef/current.glb",
+      "location": "/team-models/tmd_0123456789abcdef/versions/tmv_0123456789abcdef.glb?map=map_0123456789abcdef"
+    },
+    {
+      "from": "https://api.tileflow.test/landmarks/tiles/000000000000000000000000000000000000000000000000000000000000000a.glb",
+      "location": "/team-models/tmd_0123456789abcdef/versions/tmv_0123456789abcdef.glb"
+    }
   ]
 }

@@ -30,6 +30,8 @@ public struct TileflowMap: UIViewRepresentable {
     let view = TileflowMapView(
       source: source, theme: theme, initialCamera: initialCamera, options: options)
     view.onEvent = onEvent
+    context.coordinator.theme = theme
+    context.coordinator.options = options
     context.coordinator.bind(controller, to: view)
     return view
   }
@@ -40,14 +42,17 @@ public struct TileflowMap: UIViewRepresentable {
     do { try view.setSource(source) } catch {
       onEvent(.failed(error as? TileflowMapError ?? .invalidSource))
     }
-    if view.theme != theme {
+    // Apply a prop only when it changes, so a controller's own changes survive later updates.
+    if context.coordinator.theme != theme {
+      context.coordinator.theme = theme
       Task { @MainActor [weak view] in
         do { try await view?.setTheme(theme) } catch {
           view?.onEvent?(.failed(error as? TileflowMapError ?? .rendererFailed))
         }
       }
     }
-    if view.options != options {
+    if context.coordinator.options != options {
+      context.coordinator.options = options
       Task { @MainActor [weak view] in
         do { try await view?.setOptions(options) } catch {
           view?.onEvent?(.failed(error as? TileflowMapError ?? .rendererFailed))
@@ -61,6 +66,9 @@ public struct TileflowMap: UIViewRepresentable {
   @MainActor
   public final class Coordinator {
     private var controller: TileflowMapController?
+    /// The prop values last applied, not the view's current state.
+    fileprivate var theme: String?
+    fileprivate var options: TileflowMapOptions?
     fileprivate func bind(_ next: TileflowMapController?, to view: TileflowMapView) {
       guard controller !== next else { return }
       controller?.detach(view)

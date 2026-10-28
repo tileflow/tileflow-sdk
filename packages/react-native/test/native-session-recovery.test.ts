@@ -42,7 +42,7 @@ function admission() {
     bridge,
     createController: createHostedNativeSessionController,
   });
-  const errors: Array<{code: string; kind: string}> = [];
+  const errors: Array<{code: string; kind: string; reason?: string}> = [];
   const open = (replies: Parameters<typeof createFetchQueue>[0]) => {
     const queue = createFetchQueue(replies);
     const map = owner.openMap({
@@ -83,6 +83,38 @@ test('a terminal renewal rejection after admission reaches the opener once and l
     assert.equal((await f.admit(map.context))?.kind, 'grant');
     assert.equal(queue.calls.length, 3);
     assert.equal(f.errors.length, 1);
+  } finally {
+    await f.owner.dispose();
+  }
+});
+
+test('a refused first session reaches the opener with the service reason and stays stopped', async () => {
+  const f = admission();
+  const {queue, map: opening} = f.open([
+    response(400, {
+      code: 'MOBILE_SESSION_MODE_REQUIRED',
+      error: 'Mobile delivery requires a session-mode Map',
+    }),
+    async () => f.issue(),
+  ]);
+  const map = await opening;
+  try {
+    assert.equal((await f.admit(map.context))?.kind, 'reject');
+    f.clock.advance(60 * 60 * 1000);
+    assert.equal((await f.admit(map.context))?.kind, 'reject');
+    assert.deepEqual(f.errors, [
+      {
+        code: 'NATIVE_SESSION_REJECTED',
+        kind: 'terminal',
+        reason: 'MOBILE_SESSION_MODE_REQUIRED',
+      },
+    ]);
+    assert.equal(map.retryDelay(), null);
+    assert.equal(queue.calls.length, 1);
+
+    map.retry();
+    assert.equal((await f.admit(map.context))?.kind, 'grant');
+    assert.equal(queue.calls.length, 2);
   } finally {
     await f.owner.dispose();
   }
@@ -251,6 +283,42 @@ test('terminal session errors after the first load reach onError; recoverable on
         type: 'session-error',
         generation: 1,
         error: {code: 'NATIVE_SESSION_QUOTA_EXCEEDED', kind: 'terminal'},
+      },
+    ]);
+  } finally {
+    await f.owner.dispose();
+  }
+});
+
+test('a refused session reaches onError with only a well-formed service reason', async () => {
+  const f = mounted();
+  try {
+    await f.owner.whenIdle();
+    f.inputs[0].onSessionError?.({
+      code: 'NATIVE_SESSION_REJECTED',
+      kind: 'terminal',
+      reason: 'MOBILE_AUTHORITY_CONFLICT',
+    });
+    f.inputs[0].onSessionError?.({
+      code: 'NATIVE_SESSION_REJECTED',
+      kind: 'terminal',
+      reason: 'Use mobile credentials without browser authority',
+    });
+    await f.owner.whenIdle();
+    assert.deepEqual(f.events, [
+      {
+        type: 'session-error',
+        generation: 1,
+        error: {
+          code: 'NATIVE_SESSION_REJECTED',
+          kind: 'terminal',
+          reason: 'MOBILE_AUTHORITY_CONFLICT',
+        },
+      },
+      {
+        type: 'session-error',
+        generation: 1,
+        error: {code: 'NATIVE_SESSION_REJECTED', kind: 'terminal'},
       },
     ]);
   } finally {

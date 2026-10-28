@@ -48,7 +48,7 @@ internal class HostedSession(
     // Written under the lock; read without it only to compare grants.
     @Volatile private var authority: HostedAuthority? = null
     private var validUntil = 0L
-    private val terminal = AtomicReference<TileflowErrorCode?>()
+    private val terminal = AtomicReference<TileflowMapException?>()
     // Recoverable bootstrap failures delay the next bootstrap; a still-valid grant keeps admitting.
     private var failures = 0
     private var retryAt: Long? = null
@@ -100,7 +100,7 @@ internal class HostedSession(
      * wait for an in-flight refresh holding the admission lock.
      */
     fun reject(code: TileflowErrorCode) {
-        terminal.compareAndSet(null, code)
+        terminal.compareAndSet(null, TileflowMapException(code))
         transport.cancelActive()
     }
 
@@ -188,10 +188,10 @@ internal class HostedSession(
                 retryAt = null
             }
         } catch (failure: StatusFailure) {
-            record(failure.code, failure.retryAfterMillis)
-            throw TileflowMapException(failure.code)
+            record(failure.error, failure.retryAfterMillis)
+            throw failure.error
         } catch (error: TileflowMapException) {
-            record(error.code, null)
+            record(error, null)
             throw error
         } finally {
             refreshing.set(false)
@@ -199,13 +199,14 @@ internal class HostedSession(
     }
 
     /**
-     * Credential, access and quota failures stop the session; anything else delays the next
+     * Credential, access, quota and other refusals stop the session; anything else delays the next
      * bootstrap by 1 s doubling to 60 s, or longer when the service sends Retry-After.
      */
-    private fun record(code: TileflowErrorCode, retryAfterMillis: Long?) {
+    private fun record(error: TileflowMapException, retryAfterMillis: Long?) {
         if (retired.get() || background.get() || terminal.get() != null) return
+        val code = error.code
         if (code in HostedContract.terminalCodes) {
-            if (terminal.compareAndSet(null, code)) {
+            if (terminal.compareAndSet(null, error)) {
                 authority = null
                 validUntil = 0
             }
@@ -243,23 +244,28 @@ internal class HostedSession(
                     throw TileflowMapException(TileflowErrorCode.SESSION_UNAVAILABLE)
                 }
             checkActive()
-            if (
-                response.status == 409 &&
-                    attempt == 0 &&
-                    HostedContract.isRestart(response.bytes, sessionId)
-            ) {
+            if (response.status == 409 && HostedContract.isRestart(response.bytes, sessionId)) {
+                // A second restart in one bootstrap waits for the retry delay; it is not a refusal.
+                if (attempt != 0) throw TileflowMapException(TileflowErrorCode.SESSION_UNAVAILABLE)
                 rotate()
                 return@repeat
             }
             if (response.status != 201)
                 throw StatusFailure(
-                    HostedContract.failure(response.status, response.bytes),
+                    HostedContract.rejection(response.status, response.bytes),
                     HostedContract.retryAfterMillis(
                         response.headers["Retry-After"],
                         System.currentTimeMillis(),
                     ),
                 )
-            val next = HostedContract.parse(response.bytes, mapId, sessionId, surfaceId)
+            val next =
+                HostedContract.parse(
+                    response.bytes,
+                    mapId,
+                    sessionId,
+                    surfaceId,
+                    endpoint.isLoopbackHttp,
+                )
             if (lastServerTime?.let { next.serverTime < it } == true) {
                 throw TileflowMapException(TileflowErrorCode.INVALID_SESSION_RESPONSE)
             }
@@ -302,9 +308,10 @@ internal class HostedSession(
             failures = 0
             retryAt = null
         }
-        terminal.get()?.let { throw TileflowMapException(it) }
+        terminal.get()?.let { throw TileflowMapException(it.code, it.context) }
     }
 }
 
 /** A failed bootstrap status and the delay the service asked for. */
-private class StatusFailure(val code: TileflowErrorCode, val retryAfterMillis: Long?) : Exception()
+private class StatusFailure(val error: TileflowMapException, val retryAfterMillis: Long?) :
+    Exception()

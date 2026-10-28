@@ -81,11 +81,6 @@ final class MapConfigurationTests: XCTestCase {
         { throw TileflowConfigurationError.invalidValue(key: "TileflowMapCredential") },
         .invalidConfiguration
       ),
-      (
-        "HTTP API origin",
-        { try self.configuration("http://127.0.0.1:8787", self.credential) },
-        .invalidConfiguration
-      ),
     ]
     for (name, read, expected) in cases {
       XCTAssertThrowsError(try source.loadable(fallback: read), name) {
@@ -101,6 +96,34 @@ final class MapConfigurationTests: XCTestCase {
     ] {
       XCTAssertThrowsError(try invalid.validate()) {
         XCTAssertEqual($0 as? TileflowMapError, .invalidSource)
+      }
+    }
+  }
+
+  func testALoopbackHTTPAPIOriginServesALocalDevelopmentMap() throws {
+    for origin in ["http://127.0.0.1:8787", "http://localhost:8787"] {
+      let loadable = try TileflowMapSource.hosted(
+        mapID: mapID, configuration: try configuration(origin, credential)
+      ).loadable { XCTFail("Read the process configuration"); throw Stop() }
+      XCTAssertEqual(try endpoint(of: loadable), [origin, credential])
+      XCTAssertEqual(loadable.hosted?.isLoopbackHTTP, true)
+      XCTAssertEqual(
+        loadable.manifestURL.absoluteString, "\(origin)/maps/\(mapID)/mobile/manifest.json")
+      for url in loadable.publicMetadataURLs {
+        XCTAssertNoThrow(try loadable.policy.validate(url), url.absoluteString)
+      }
+    }
+    let remote = try TileflowMapSource.hosted(
+      mapID: mapID, configuration: try configuration("https://api.tileflow.test", credential)
+    ).loadable { XCTFail("Read the process configuration"); throw Stop() }
+    XCTAssertEqual(remote.hosted?.isLoopbackHTTP, false)
+    XCTAssertThrowsError(
+      try remote.policy.validate(
+        URL(string: "http://127.0.0.1:8787/maps/\(mapID)/mobile/manifest.json")!))
+    // The configuration accepts no other HTTP origin, for a map or a service.
+    for origin in ["http://api.example.test", "http://10.0.2.2:8787"] {
+      XCTAssertThrowsError(try configuration(origin, credential), origin) {
+        XCTAssertEqual($0 as? TileflowConfigurationError, .invalidAPIOrigin, origin)
       }
     }
   }

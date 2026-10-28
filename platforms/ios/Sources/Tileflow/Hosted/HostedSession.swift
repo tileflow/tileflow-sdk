@@ -20,6 +20,9 @@ actor HostedSession {
   private var stored: (authority: HostedAuthority, until: ContinuousClock.Instant)?
   private var operation: (id: UUID, task: Task<HostedAuthority, any Error>)?
   private var terminal: TileflowMapError?
+  // Recoverable bootstrap failures delay the next bootstrap; a still-valid grant keeps admitting.
+  private var failures = 0
+  private var delay: (until: ContinuousClock.Instant, error: TileflowMapError)?
   private var backgrounded = false
 
   init(
@@ -49,11 +52,13 @@ actor HostedSession {
     }
   }
 
-  func reject(status: Int) {
-    if terminal == nil {
-      terminal =
-        status == 401 ? .credentialRejected : status == 429 ? .quotaExceeded : .accessDenied
-    }
+  /// Clears a terminal stop and any retry delay; the next admission bootstraps again.
+  nonisolated func retry() { lifetime.requestRetry() }
+
+  /// A granted resource was refused for good; the session stops until `retry()`.
+  func reject(_ error: TileflowMapError) {
+    applyRetry()
+    if terminal == nil { terminal = error }
     stored = nil
     operation?.task.cancel()
     operation = nil
@@ -88,6 +93,10 @@ actor HostedSession {
       rotate()
     }
     if let stored, stored.until > now().advanced(by: .seconds(30)) { return stored.authority }
+    if let delay, now() < delay.until {
+      if let stored, stored.until > now() { return stored.authority }
+      throw delay.error
+    }
     let id = UUID()
     let task = Task { try await self.refresh() }
     operation = (id, task)
@@ -97,18 +106,46 @@ actor HostedSession {
       return result
     } catch {
       if operation?.id == id { operation = nil }
-      if let error = error as? TileflowMapError,
-        [.credentialRejected, .accessDenied, .quotaExceeded, .invalidSessionResponse].contains(
-          error)
-      {
-        if terminal == nil { terminal = error }
-      }
       if let terminal { throw terminal }
       throw error
     }
   }
 
   private func refresh() async throws -> HostedAuthority {
+    do {
+      let authority = try await bootstrap()
+      failures = 0
+      delay = nil
+      return authority
+    } catch let failure as StatusFailure {
+      record(failure.error, retryAfter: failure.retryAfter)
+      throw failure.error
+    } catch let error as TileflowMapError {
+      record(error, retryAfter: nil)
+      throw error
+    }
+  }
+
+  /// Credential, access and quota failures stop the session; anything else delays the next
+  /// bootstrap by 1 s doubling to 60 s, or longer when the service sends Retry-After.
+  private func record(_ error: TileflowMapError, retryAfter: TimeInterval?) {
+    guard terminal == nil, !lifetime.isClosed, !Task.isCancelled else { return }
+    if HostedContract.isTerminal(error) {
+      terminal = error
+      stored = nil
+      return
+    }
+    guard [.rateLimited, .sessionUnavailable, .invalidSessionResponse].contains(error) else {
+      return
+    }
+    // Bootstraps are single-flight and none starts during a delay, so each failure counts.
+    failures = min(failures + 1, 16)
+    let backoff = Duration.seconds(min(1 << (failures - 1), 60))
+    let wait = max(backoff, .milliseconds(Int64(((retryAfter ?? 0) * 1000).rounded())))
+    delay = (now().advanced(by: wait), error)
+  }
+
+  private func bootstrap() async throws -> HostedAuthority {
     for attempt in 0...1 {
       try checkActive()
       try Task.checkCancellation()
@@ -130,13 +167,9 @@ actor HostedSession {
         continue
       }
       guard response.status == 201 else {
-        switch response.status {
-        case 401: throw TileflowMapError.credentialRejected
-        case 403, 404: throw TileflowMapError.accessDenied
-        case 429: throw TileflowMapError.quotaExceeded
-        case 500...599: throw TileflowMapError.sessionUnavailable
-        default: throw TileflowMapError.invalidSessionResponse
-        }
+        throw StatusFailure(
+          error: HostedContract.failure(status: response.status, body: response.bytes),
+          retryAfter: HostedContract.retryAfter(response.headers["Retry-After"], now: Date()))
       }
       let authority = try HostedContract.parse(
         response.bytes, mapID: mapID, sessionID: expectedSession, surfaceID: surfaceID)
@@ -171,8 +204,15 @@ actor HostedSession {
   }
   private func checkActive() throws {
     if lifetime.isClosed { throw TileflowMapError.disposed }
+    applyRetry()
     if let terminal { throw terminal }
     if backgrounded { throw TileflowMapError.notReady }
+  }
+  private func applyRetry() {
+    guard lifetime.takeRetryRequest() else { return }
+    terminal = nil
+    failures = 0
+    delay = nil
   }
   private func retire() {
     operation?.task.cancel()
@@ -184,15 +224,36 @@ actor HostedSession {
   }
 }
 
+/// A failed bootstrap status and the delay the service asked for.
+private struct StatusFailure: Error {
+  let error: TileflowMapError
+  let retryAfter: TimeInterval?
+}
+
+/// Lock-protected state that callers change without waiting for the actor.
 private final class SessionLifetime: @unchecked Sendable {
   let transport: any NativeHTTPTransporting
   private let lock = NSLock()
   private var closed = false
+  private var retryRequested = false
   init(transport: any NativeHTTPTransporting) { self.transport = transport }
   var isClosed: Bool {
     lock.lock()
     defer { lock.unlock() }
     return closed
+  }
+  /// Recorded synchronously so a renderer mounted right after `retry()` cannot see the old stop.
+  func requestRetry() {
+    lock.lock()
+    retryRequested = true
+    lock.unlock()
+  }
+  func takeRetryRequest() -> Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    let requested = retryRequested
+    retryRequested = false
+    return requested
   }
   func close() {
     lock.lock()

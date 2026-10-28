@@ -97,6 +97,7 @@ public enum TileflowMapError: Error, Equatable, Sendable {
   case credentialRejected
   case accessDenied
   case quotaExceeded
+  case rateLimited
   case sessionUnavailable
   case invalidSessionResponse
 }

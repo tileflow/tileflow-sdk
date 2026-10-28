@@ -60,12 +60,10 @@ final class ResourceLoader: ResourceLoading, Sendable {
     if native.value(forHTTPHeaderField: "X-Tileflow-Native-Grant") != nil,
       [401, 403, 429].contains(payload.status)
     {
-      await hosted?.reject(status: payload.status)
-      switch payload.status {
-      case 401: throw TileflowMapError.credentialRejected
-      case 429: throw TileflowMapError.quotaExceeded
-      default: throw TileflowMapError.accessDenied
-      }
+      let error = HostedContract.failure(status: payload.status, body: payload.bytes)
+      // A rate-limited resource fails alone; the session and its grant stay usable.
+      if HostedContract.isTerminal(error) { await hosted?.reject(error) }
+      throw error
     }
     return payload
   }
@@ -184,7 +182,9 @@ private final class ResourceTransfer: @unchecked Sendable {
       return
     }
     var headers: [String: String] = [:]
-    for key in ["Content-Type", "Content-Range", "Accept-Ranges", "ETag", "Last-Modified"] {
+    for key in [
+      "Content-Type", "Content-Range", "Accept-Ranges", "ETag", "Last-Modified", "Retry-After",
+    ] {
       if let value = response.value(forHTTPHeaderField: key) { headers[key] = value }
     }
     headers["Cache-Control"] = "no-store"

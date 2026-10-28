@@ -220,9 +220,14 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     onEvent = nil
   }
 
-  /// Retry the current source after a recoverable load or renderer failure.
+  /// Retry the current source after a load or renderer failure. A Hosted session stopped by
+  /// `credentialRejected`, `accessDenied` or `quotaExceeded` bootstraps again. Reloading also
+  /// skips the delay that follows a temporary session failure (`rateLimited`,
+  /// `sessionUnavailable` or `invalidSessionResponse`), so call it in response to a user action
+  /// rather than from every failure event.
   public func reload() throws {
     guard !destroyed else { throw TileflowMapError.disposed }
+    hostedSession?.retry()
     retireGeneration()
     recoveryCount = 0
     if window != nil { try mount() }

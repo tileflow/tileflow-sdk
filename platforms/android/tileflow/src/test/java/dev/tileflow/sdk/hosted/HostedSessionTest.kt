@@ -200,53 +200,53 @@ class HostedSessionTest {
 
     @Test
     fun sharedSessionSequences() {
-        val sequences =
-            JSONObject(
-                    javaClass.classLoader!!
-                        .getResourceAsStream("session-sequences.json")!!
-                        .bufferedReader()
-                        .use { it.readText() }
-                )
-                .getJSONArray("scenarios")
-        for (index in 0 until sequences.length()) {
-            val scenario = sequences.getJSONObject(index)
+        val scenarios = sequences().getJSONArray("scenarios")
+        for (index in 0 until scenarios.length()) {
+            val scenario = scenarios.getJSONObject(index)
+            val name = scenario.getString("name")
+            val replies = scenario.getJSONArray("responses")
             val time = AtomicLong(0)
-            val transport = FakeTransport { request, _ ->
-                if (scenario.getInt("status") == 201) response(request)
-                else ResourcePayload(byteArrayOf(), scenario.getInt("status"), emptyMap())
+            val transport = FakeTransport { request, count ->
+                // Each bootstrap takes the next reply; the last one repeats.
+                val reply = replies.getJSONObject(minOf(count, replies.length() - 1))
+                val status = reply.getInt("status")
+                if (status == 201 && !reply.has("body")) response(request)
+                else
+                    ResourcePayload(
+                        reply.opt("body")?.toString()?.toByteArray() ?: byteArrayOf(),
+                        status,
+                        reply.optJSONObject("headers")?.let { headers ->
+                            headers.keys().asSequence().associateWith { headers.getString(it) }
+                        } ?: emptyMap(),
+                    )
             }
             HostedSession(client(), mapId, "mobile-map", time::get, transport).use { session ->
                 val identities = mutableMapOf<String, String>()
                 val steps = scenario.getJSONArray("steps")
                 for (i in 0 until steps.length()) {
                     val step = steps.getJSONObject(i)
-                    if (step.getString("op") == "advance") {
-                        time.addAndGet(step.getLong("milliseconds"))
-                        continue
+                    when (step.getString("op")) {
+                        "advance" -> {
+                            time.addAndGet(step.getLong("milliseconds"))
+                            continue
+                        }
+                        "retry" -> {
+                            session.retry()
+                            continue
+                        }
                     }
                     if (step.has("error"))
-                        assertCode(
-                            mapOf(
-                                    "credentialRejected" to TileflowErrorCode.CREDENTIAL_REJECTED,
-                                    "accessDenied" to TileflowErrorCode.ACCESS_DENIED,
-                                    "quotaExceeded" to TileflowErrorCode.QUOTA_EXCEEDED,
-                                )
-                                .getValue(step.getString("error"))
-                        ) {
+                        assertCode(fixtureErrors.getValue(step.getString("error")), name) {
                             session.authorize(style, policy)
                         }
-                    else assertNotNull(session.authorize(style, policy).grant)
-                    assertEquals(
-                        scenario.getString("name"),
-                        step.getInt("requests"),
-                        transport.requests.size,
-                    )
+                    else assertNotNull(name, session.authorize(style, policy).grant)
+                    assertEquals(name, step.getInt("requests"), transport.requests.size)
                     if (step.has("identity")) {
                         val key = step.getString("identity")
                         val id = body(transport.requests.last()).getString("sessionId")
-                        if (identities.containsKey(key)) assertEquals(identities[key], id)
+                        if (identities.containsKey(key)) assertEquals(name, identities[key], id)
                         else {
-                            assertFalse(identities.containsValue(id))
+                            assertFalse(name, identities.containsValue(id))
                             identities[key] = id
                         }
                     }
@@ -257,24 +257,11 @@ class HostedSessionTest {
 
     @Test
     fun resourceRejectionRetiresAnInFlightRefreshBeforeItCanReturnAuthority() {
-        val rejections =
-            JSONObject(
-                    javaClass.classLoader!!
-                        .getResourceAsStream("session-sequences.json")!!
-                        .bufferedReader()
-                        .use { it.readText() }
-                )
-                .getJSONArray("resourceRejections")
+        val rejections = sequences().getJSONArray("resourceRejections")
         for (index in 0 until rejections.length()) {
             val rejection = rejections.getJSONObject(index)
-            val status = rejection.getInt("status")
-            val expected =
-                mapOf(
-                        "credentialRejected" to TileflowErrorCode.CREDENTIAL_REJECTED,
-                        "accessDenied" to TileflowErrorCode.ACCESS_DENIED,
-                        "quotaExceeded" to TileflowErrorCode.QUOTA_EXCEEDED,
-                    )
-                    .getValue(rejection.getString("error"))
+            val expected = fixtureErrors.getValue(rejection.getString("error"))
+            if (expected !in HostedContract.terminalCodes) continue
             val started = CountDownLatch(1)
             val release = CountDownLatch(1)
             val transport = FakeTransport { request, _ ->
@@ -289,7 +276,7 @@ class HostedSessionTest {
                     assertCode(expected) { session.authorize(style, policy) }
                 }
                 assertTrue(started.await(5, TimeUnit.SECONDS))
-                pool.submit { session.reject(status) }.get(1, TimeUnit.SECONDS)
+                pool.submit { session.reject(expected) }.get(1, TimeUnit.SECONDS)
                 release.countDown()
                 result.get(5, TimeUnit.SECONDS)
                 assertCode(expected) { session.authorize(style, policy) }
@@ -299,6 +286,79 @@ class HostedSessionTest {
                 session.close()
                 pool.shutdownNow()
             }
+        }
+    }
+
+    @Test
+    fun grantedResourceFailuresStopTheSessionOnlyWhenTerminal() {
+        val rejections = sequences().getJSONArray("resourceRejections")
+        for (index in 0 until rejections.length()) {
+            val rejection = rejections.getJSONObject(index)
+            val name = rejection.getString("error")
+            val expected = fixtureErrors.getValue(name)
+            val terminal = expected in HostedContract.terminalCodes
+            val sessionTransport = FakeTransport { request, _ -> response(request) }
+            val resourceTransport = FakeTransport { _, count ->
+                if (count == 0)
+                    ResourcePayload(
+                        rejection.opt("body")?.toString()?.toByteArray() ?: byteArrayOf(),
+                        rejection.getInt("status"),
+                        emptyMap(),
+                    )
+                else ResourcePayload(byteArrayOf(1), 200, emptyMap())
+            }
+            val session = HostedSession(client(), mapId, "mobile-map", transport = sessionTransport)
+            val loader = ResourceLoader(policy, hosted = session, transport = resourceTransport)
+            try {
+                assertCode(expected, name) { loader.load(style) }
+                if (terminal) assertCode(expected, name) { loader.load(style) }
+                else assertEquals(name, 200, loader.load(style).status)
+                assertEquals(name, 1, sessionTransport.requests.size)
+                if (terminal) {
+                    // An explicit retry bootstraps again instead of reusing the refused grant.
+                    session.retry()
+                    assertEquals(name, 200, loader.load(style).status)
+                    assertEquals(name, 2, sessionTransport.requests.size)
+                }
+                assertEquals(name, 2, resourceTransport.requests.size)
+            } finally {
+                loader.close()
+                session.close()
+            }
+        }
+    }
+
+    @Test
+    fun failureClassificationAndRetryAfter() {
+        val quota = """{"code":"COMMERCIAL_MAP_LIMIT_REACHED","error":"Limit reached"}"""
+        val limiter = """{"error":"Too many requests","requestId":"req_1"}"""
+        for ((status, body, expected) in
+            listOf(
+                Triple(401, "", TileflowErrorCode.CREDENTIAL_REJECTED),
+                Triple(403, "", TileflowErrorCode.ACCESS_DENIED),
+                Triple(404, "", TileflowErrorCode.ACCESS_DENIED),
+                Triple(429, quota, TileflowErrorCode.QUOTA_EXCEEDED),
+                Triple(429, limiter, TileflowErrorCode.RATE_LIMITED),
+                Triple(429, "<html>", TileflowErrorCode.RATE_LIMITED),
+                Triple(408, "", TileflowErrorCode.SESSION_UNAVAILABLE),
+                Triple(502, "", TileflowErrorCode.SESSION_UNAVAILABLE),
+                Triple(400, "", TileflowErrorCode.INVALID_SESSION_RESPONSE),
+                Triple(409, "", TileflowErrorCode.INVALID_SESSION_RESPONSE),
+            )) {
+            assertEquals("$status", expected, HostedContract.failure(status, body.toByteArray()))
+        }
+        // Wed, 21 Oct 2015 07:28:00 GMT
+        val now = 1_445_412_480_000L
+        assertEquals(60_000L, HostedContract.retryAfterMillis("60", now))
+        assertEquals(5_000L, HostedContract.retryAfterMillis(" 5 ", now))
+        assertEquals(
+            120_000L,
+            HostedContract.retryAfterMillis("Wed, 21 Oct 2015 07:30:00 GMT", now),
+        )
+        assertEquals(0L, HostedContract.retryAfterMillis("Wed, 21 Oct 2015 07:00:00 GMT", now))
+        assertEquals(900_000L, HostedContract.retryAfterMillis("86400", now))
+        for (invalid in listOf(null, "", "-1", "1.5", "soon", "1".repeat(65))) {
+            assertNull("$invalid", HostedContract.retryAfterMillis(invalid, now))
         }
     }
 
@@ -352,6 +412,24 @@ class HostedSessionTest {
     private fun client() =
         TileflowClient(URI("https://api.tileflow.test"), "tf_public_" + "a".repeat(48))
 
+    private val fixtureErrors =
+        mapOf(
+            "credentialRejected" to TileflowErrorCode.CREDENTIAL_REJECTED,
+            "accessDenied" to TileflowErrorCode.ACCESS_DENIED,
+            "quotaExceeded" to TileflowErrorCode.QUOTA_EXCEEDED,
+            "rateLimited" to TileflowErrorCode.RATE_LIMITED,
+            "sessionUnavailable" to TileflowErrorCode.SESSION_UNAVAILABLE,
+            "invalidSessionResponse" to TileflowErrorCode.INVALID_SESSION_RESPONSE,
+        )
+
+    private fun sequences() =
+        JSONObject(
+            javaClass.classLoader!!
+                .getResourceAsStream("session-sequences.json")!!
+                .bufferedReader()
+                .use { it.readText() }
+        )
+
     private fun fixture() =
         JSONObject(
             javaClass.classLoader!!
@@ -374,12 +452,12 @@ class HostedSessionTest {
             emptyMap(),
         )
 
-    private fun assertCode(code: TileflowErrorCode, block: () -> Unit) {
+    private fun assertCode(code: TileflowErrorCode, message: String? = null, block: () -> Unit) {
         try {
             block()
-            fail("Expected $code")
+            fail("Expected $code ${message.orEmpty()}")
         } catch (error: TileflowMapException) {
-            assertEquals(code, error.code)
+            assertEquals(message, code, error.code)
         }
     }
 

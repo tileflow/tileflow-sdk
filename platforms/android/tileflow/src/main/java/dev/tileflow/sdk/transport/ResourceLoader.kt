@@ -1,5 +1,6 @@
 package dev.tileflow.sdk.transport
 
+import dev.tileflow.sdk.hosted.HostedContract
 import dev.tileflow.sdk.hosted.HostedSession
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
@@ -43,14 +44,10 @@ internal class ResourceLoader(
         admission?.grant?.let { request.header("X-Tileflow-Native-Grant", it) }
         val response = transport.send(request.build(), admission?.timeoutMillis ?: 30_000)
         if (admission?.grant != null && response.status in setOf(401, 403, 429)) {
-            hosted?.reject(response.status)
-            throw dev.tileflow.sdk.TileflowMapException(
-                when (response.status) {
-                    401 -> dev.tileflow.sdk.TileflowErrorCode.CREDENTIAL_REJECTED
-                    429 -> dev.tileflow.sdk.TileflowErrorCode.QUOTA_EXCEEDED
-                    else -> dev.tileflow.sdk.TileflowErrorCode.ACCESS_DENIED
-                }
-            )
+            val code = HostedContract.failure(response.status, response.bytes)
+            // A rate-limited resource fails alone; the session and its grant stay usable.
+            if (code in HostedContract.terminalCodes) hosted?.reject(code)
+            throw dev.tileflow.sdk.TileflowMapException(code)
         }
         return response
     }
@@ -114,6 +111,7 @@ internal class NativeHTTPTransport(private val maximumBytes: Int) : NativeHTTPTr
                             "Accept-Ranges",
                             "ETag",
                             "Last-Modified",
+                            "Retry-After",
                         )) {
                         response.header(name)?.let { put(name, it) }
                     }

@@ -58,6 +58,50 @@ enum HostedContract {
       origins: origins, scopes: resourceScopes, tilesets: tilesets)
   }
 
+  /// Only these 429 bodies mean the Map or Team is out of quota; any other 429 is rate limiting.
+  private static let quotaCodes: Set<String> = [
+    "COMMERCIAL_MAP_LIMIT_REACHED", "COMMERCIAL_SPENDING_LIMIT_REACHED",
+  ]
+
+  /// Classifies a failed bootstrap or granted resource response.
+  static func failure(status: Int, body: Data) -> TileflowMapError {
+    switch status {
+    case 401: return .credentialRejected
+    case 403, 404: return .accessDenied
+    case 429:
+      guard body.count <= 65_536,
+        let code = (try? JSONDecoder().decode(JSONValue.self, from: body))?["code"]?.string,
+        quotaCodes.contains(code)
+      else { return .rateLimited }
+      return .quotaExceeded
+    case 408, 500...599: return .sessionUnavailable
+    default: return .invalidSessionResponse
+    }
+  }
+
+  /// These will not succeed again without a change outside the device.
+  static func isTerminal(_ error: TileflowMapError) -> Bool {
+    [.credentialRejected, .accessDenied, .quotaExceeded].contains(error)
+  }
+
+  /// Delta-seconds or an HTTP date, bounded so a hostile value cannot park the session.
+  static func retryAfter(_ value: String?, now: Date) -> TimeInterval? {
+    guard let value, value.utf8.count <= 64 else { return nil }
+    let text = value.trimmingCharacters(in: .whitespaces)
+    let delay: TimeInterval
+    if matches(text, #"^[0-9]{1,10}$"#), let seconds = TimeInterval(text) {
+      delay = seconds
+    } else {
+      let formatter = DateFormatter()
+      formatter.locale = Locale(identifier: "en_US_POSIX")
+      formatter.timeZone = TimeZone(identifier: "GMT")
+      formatter.dateFormat = "EEE, dd MMM yyyy HH:mm:ss 'GMT'"
+      guard let date = formatter.date(from: text) else { return nil }
+      delay = date.timeIntervalSince(now)
+    }
+    return min(max(0, delay), 900)
+  }
+
   static func isRestart(_ data: Data, sessionID: String) -> Bool {
     guard let value = try? JSONDecoder().decode(JSONValue.self, from: data),
       case .object(let object) = value,

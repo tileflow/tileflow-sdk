@@ -179,17 +179,18 @@ final class HostedSessionTests: XCTestCase {
   }
 
   func testSharedSessionSequences() async throws {
-    let url = Bundle.module.url(
-      forResource: "session-sequences", withExtension: "json", subdirectory: "Fixtures")!
-    let data = try JSONDecoder().decode(SessionSequences.self, from: Data(contentsOf: url))
-    for scenario in data.scenarios {
+    for scenario in try sessionSequences().scenarios {
       let fixture = try sessionFixture()
       let time = SessionTestClock()
-      let transport = SessionTestTransport { request, _ in
-        if scenario.status != 201 {
-          return ResourcePayload(bytes: Data(), status: scenario.status, headers: [:])
+      let transport = SessionTestTransport { request, index in
+        // Each bootstrap takes the next reply; the last one repeats.
+        let reply = scenario.responses[min(index, scenario.responses.count - 1)]
+        if reply.status == 201, reply.body == nil {
+          return try sessionResponse(fixture, request: request)
         }
-        return try sessionResponse(fixture, request: request)
+        return ResourcePayload(
+          bytes: try reply.body.map { try JSONEncoder().encode($0) } ?? Data(),
+          status: reply.status, headers: reply.headers ?? [:])
       }
       let session = HostedSession(
         client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: transport,
@@ -197,22 +198,21 @@ final class HostedSessionTests: XCTestCase {
       var identities: [String: String] = [:]
       for step in scenario.steps {
         if step.op == "advance" {
-          time.advance(Double(step.milliseconds!) / 1000)
+          time.advance(milliseconds: step.milliseconds!)
           continue
         }
+        if step.op == "retry" {
+          session.retry()
+          continue
+        }
+        if let name = step.error { XCTAssertNotNil(fixtureErrors[name], name) }
         do {
           let admission = try await session.authorize(style, publicPolicy: policy)
           XCTAssertNil(step.error, scenario.name)
           XCTAssertNotNil(admission.grant)
         } catch {
           XCTAssertEqual(
-            error as? TileflowMapError,
-            step.error.flatMap {
-              [
-                "credentialRejected": TileflowMapError.credentialRejected,
-                "accessDenied": .accessDenied, "quotaExceeded": .quotaExceeded,
-              ][$0]
-            }, scenario.name)
+            error as? TileflowMapError, step.error.flatMap { fixtureErrors[$0] }, scenario.name)
         }
         XCTAssertEqual(transport.requests.count, step.requests, scenario.name)
         if let identity = step.identity {
@@ -220,9 +220,9 @@ final class HostedSessionTests: XCTestCase {
             JSONValue.self, from: transport.requests.last!.httpBody!)
           let id = try XCTUnwrap(body["sessionId"]?.string)
           if let expected = identities[identity] {
-            XCTAssertEqual(id, expected)
+            XCTAssertEqual(id, expected, scenario.name)
           } else {
-            XCTAssertFalse(identities.values.contains(id))
+            XCTAssertFalse(identities.values.contains(id), scenario.name)
             identities[identity] = id
           }
         }
@@ -232,16 +232,9 @@ final class HostedSessionTests: XCTestCase {
   }
 
   func testResourceRejectionRetiresAnInFlightRefreshBeforeItCanReturnAuthority() async throws {
-    let url = Bundle.module.url(
-      forResource: "session-sequences", withExtension: "json", subdirectory: "Fixtures")!
-    let sequences = try JSONDecoder().decode(SessionSequences.self, from: Data(contentsOf: url))
-    for rejection in sequences.resourceRejections {
-      let status = rejection.status
-      let expected = try XCTUnwrap(
-        [
-          "credentialRejected": TileflowMapError.credentialRejected, "accessDenied": .accessDenied,
-          "quotaExceeded": .quotaExceeded,
-        ][rejection.error])
+    for rejection in try sessionSequences().resourceRejections {
+      let expected = try XCTUnwrap(fixtureErrors[rejection.error])
+      guard HostedContract.isTerminal(expected) else { continue }
       let fixture = try sessionFixture()
       let gate = SessionResponseGate()
       let transport = SessionTestTransport { request, _ in
@@ -252,7 +245,7 @@ final class HostedSessionTests: XCTestCase {
         client: try makeClient(), mapID: mapID, surfaceID: "mobile-map", transport: transport)
       let pending = Task { try await session.authorize(style, publicPolicy: policy) }
       await gate.waitUntilEntered()
-      await session.reject(status: status)
+      await session.reject(expected)
       await gate.release()
       do {
         _ = try await pending.value
@@ -264,6 +257,72 @@ final class HostedSessionTests: XCTestCase {
       } catch { XCTAssertEqual(error as? TileflowMapError, expected) }
       XCTAssertEqual(transport.requests.count, 1)
       session.close()
+    }
+  }
+
+  func testGrantedResourceFailuresStopTheSessionOnlyWhenTerminal() async throws {
+    for rejection in try sessionSequences().resourceRejections {
+      let expected = try XCTUnwrap(fixtureErrors[rejection.error])
+      let terminal = HostedContract.isTerminal(expected)
+      let fixture = try sessionFixture()
+      let sessionTransport = SessionTestTransport { request, _ in
+        try sessionResponse(fixture, request: request)
+      }
+      let body = try rejection.body.map { try JSONEncoder().encode($0) } ?? Data()
+      let resourceTransport = SessionTestTransport { _, index in
+        index == 0
+          ? ResourcePayload(bytes: body, status: rejection.status, headers: [:])
+          : ResourcePayload(bytes: Data([1]), status: 200, headers: [:])
+      }
+      let session = HostedSession(
+        client: try makeClient(), mapID: mapID, surfaceID: "mobile-map",
+        transport: sessionTransport)
+      let loader = ResourceLoader(policy: policy, hosted: session, transport: resourceTransport)
+      do {
+        _ = try await loader.load(URLRequest(url: style))
+        XCTFail("A refused resource was returned")
+      } catch { XCTAssertEqual(error as? TileflowMapError, expected, rejection.error) }
+      do {
+        _ = try await loader.load(URLRequest(url: style))
+        XCTAssertFalse(terminal, rejection.error)
+      } catch {
+        XCTAssertTrue(terminal, rejection.error)
+        XCTAssertEqual(error as? TileflowMapError, expected, rejection.error)
+      }
+      XCTAssertEqual(sessionTransport.requests.count, 1, rejection.error)
+      if terminal {
+        // An explicit retry bootstraps again instead of reusing the refused grant.
+        session.retry()
+        _ = try await loader.load(URLRequest(url: style))
+        XCTAssertEqual(sessionTransport.requests.count, 2, rejection.error)
+      }
+      XCTAssertEqual(resourceTransport.requests.count, 2, rejection.error)
+      loader.close()
+      session.close()
+    }
+  }
+
+  func testFailureClassificationAndRetryAfter() {
+    let quota = Data(#"{"code":"COMMERCIAL_MAP_LIMIT_REACHED","error":"Limit reached"}"#.utf8)
+    let limiter = Data(#"{"error":"Too many requests","requestId":"req_1"}"#.utf8)
+    for (status, body, expected) in [
+      (401, Data(), TileflowMapError.credentialRejected), (403, Data(), .accessDenied),
+      (404, Data(), .accessDenied), (429, quota, .quotaExceeded), (429, limiter, .rateLimited),
+      (429, Data("<html>".utf8), .rateLimited), (408, Data(), .sessionUnavailable),
+      (502, Data(), .sessionUnavailable), (400, Data(), .invalidSessionResponse),
+      (409, Data(), .invalidSessionResponse),
+    ] {
+      XCTAssertEqual(HostedContract.failure(status: status, body: body), expected, "\(status)")
+    }
+    // Wed, 21 Oct 2015 07:28:00 GMT
+    let now = Date(timeIntervalSince1970: 1_445_412_480)
+    XCTAssertEqual(HostedContract.retryAfter("60", now: now), 60)
+    XCTAssertEqual(HostedContract.retryAfter(" 5 ", now: now), 5)
+    XCTAssertEqual(HostedContract.retryAfter("Wed, 21 Oct 2015 07:30:00 GMT", now: now), 120)
+    XCTAssertEqual(HostedContract.retryAfter("Wed, 21 Oct 2015 07:00:00 GMT", now: now), 0)
+    XCTAssertEqual(HostedContract.retryAfter("86400", now: now), 900)
+    for invalid in [nil, "", "-1", "1.5", "soon", String(repeating: "1", count: 65)] {
+      XCTAssertNil(HostedContract.retryAfter(invalid, now: now), invalid ?? "nil")
     }
   }
 
@@ -323,6 +382,18 @@ final class HostedSessionTests: XCTestCase {
   }
 }
 
+private let fixtureErrors: [String: TileflowMapError] = [
+  "credentialRejected": .credentialRejected, "accessDenied": .accessDenied,
+  "quotaExceeded": .quotaExceeded, "rateLimited": .rateLimited,
+  "sessionUnavailable": .sessionUnavailable, "invalidSessionResponse": .invalidSessionResponse,
+]
+
+private func sessionSequences() throws -> SessionSequences {
+  let url = Bundle.module.url(
+    forResource: "session-sequences", withExtension: "json", subdirectory: "Fixtures")!
+  return try JSONDecoder().decode(SessionSequences.self, from: Data(contentsOf: url))
+}
+
 private func sessionFixture() throws -> JSONValue {
   let url = Bundle.module.url(
     forResource: "native-session", withExtension: "json", subdirectory: "Fixtures")!
@@ -365,6 +436,9 @@ private final class SessionTestClock: @unchecked Sendable {
   func advance(_ seconds: Double) {
     lock.withLock { value = value.advanced(by: .seconds(seconds)) }
   }
+  func advance(milliseconds: Int) {
+    lock.withLock { value = value.advanced(by: .milliseconds(milliseconds)) }
+  }
 }
 
 private struct SessionSequences: Decodable {
@@ -376,12 +450,18 @@ private struct SessionSequences: Decodable {
       let identity: String?
       let error: String?
     }
+    struct Reply: Decodable, Sendable {
+      let status: Int
+      let body: JSONValue?
+      let headers: [String: String]?
+    }
     let name: String
-    let status: Int
+    let responses: [Reply]
     let steps: [Step]
   }
-  struct Rejection: Decodable {
+  struct Rejection: Decodable, Sendable {
     let status: Int
+    let body: JSONValue?
     let error: String
   }
   let scenarios: [Scenario]

@@ -376,9 +376,17 @@ constructor(
         onEvent = {}
     }
 
-    /** Retry the current source after a recoverable load or renderer failure. */
+    /**
+     * Retry the current source after a load or renderer failure. A Hosted session stopped by
+     * [TileflowErrorCode.CREDENTIAL_REJECTED], [TileflowErrorCode.ACCESS_DENIED] or
+     * [TileflowErrorCode.QUOTA_EXCEEDED] bootstraps again. Reloading also skips the delay that
+     * follows a temporary session failure ([TileflowErrorCode.RATE_LIMITED],
+     * [TileflowErrorCode.SESSION_UNAVAILABLE] or [TileflowErrorCode.INVALID_SESSION_RESPONSE]), so
+     * call it in response to a user action rather than from every failure event.
+     */
     public fun reload() {
         if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+        hostedSession?.retry()
         retireGeneration()
         recoveries = 0
         if (isAttachedToWindow && source != null) mount()

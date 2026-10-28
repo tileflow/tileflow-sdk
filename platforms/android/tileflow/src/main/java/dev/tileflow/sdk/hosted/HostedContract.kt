@@ -8,6 +8,8 @@ import java.net.URLDecoder
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.time.Instant
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeFormatterBuilder
 import org.json.JSONArray
 import org.json.JSONObject
@@ -104,6 +106,49 @@ internal object HostedContract {
         } catch (_: Exception) {
             throw TileflowMapException(TileflowErrorCode.INVALID_SESSION_RESPONSE)
         }
+    }
+
+    /** Only these 429 bodies mean the Map or Team is out of quota; any other 429 is rate limiting. */
+    private val quotaCodes =
+        setOf("COMMERCIAL_MAP_LIMIT_REACHED", "COMMERCIAL_SPENDING_LIMIT_REACHED")
+
+    /** These will not succeed again without a change outside the device. */
+    val terminalCodes =
+        setOf(
+            TileflowErrorCode.CREDENTIAL_REJECTED,
+            TileflowErrorCode.ACCESS_DENIED,
+            TileflowErrorCode.QUOTA_EXCEEDED,
+        )
+
+    /** Classifies a failed bootstrap or granted resource response. */
+    fun failure(status: Int, bytes: ByteArray): TileflowErrorCode =
+        when (status) {
+            401 -> TileflowErrorCode.CREDENTIAL_REJECTED
+            403,
+            404 -> TileflowErrorCode.ACCESS_DENIED
+            429 ->
+                if (runCatching { json(bytes).opt("code") as? String }.getOrNull() in quotaCodes)
+                    TileflowErrorCode.QUOTA_EXCEEDED
+                else TileflowErrorCode.RATE_LIMITED
+            408,
+            in 500..599 -> TileflowErrorCode.SESSION_UNAVAILABLE
+            else -> TileflowErrorCode.INVALID_SESSION_RESPONSE
+        }
+
+    /** Delta-seconds or an HTTP date, bounded so a hostile value cannot park the session. */
+    fun retryAfterMillis(value: String?, nowMillis: Long): Long? {
+        if (value == null || value.length > 64) return null
+        val text = value.trim()
+        val delay =
+            if (Regex("^[0-9]{1,10}$").matches(text)) text.toLong() * 1_000
+            else
+                runCatching {
+                        ZonedDateTime.parse(text, DateTimeFormatter.RFC_1123_DATE_TIME)
+                            .toInstant()
+                            .toEpochMilli() - nowMillis
+                    }
+                    .getOrNull() ?: return null
+        return delay.coerceIn(0, 900_000)
     }
 
     fun isRestart(bytes: ByteArray, sessionId: String): Boolean = runCatching {

@@ -1,9 +1,13 @@
 {
-  "version": 1,
+  "version": 2,
   "scenarios": [
     {
       "name": "cache-renewal-and-age-rotation",
-      "status": 201,
+      "responses": [
+        {
+          "status": 201
+        }
+      ],
       "steps": [
         {
           "op": "admit",
@@ -40,8 +44,12 @@
       ]
     },
     {
-      "name": "terminal-credentialRejected-does-not-retry",
-      "status": 401,
+      "name": "terminal-credentialRejected-waits-for-retry",
+      "responses": [
+        {
+          "status": 401
+        }
+      ],
       "steps": [
         {
           "op": "admit",
@@ -60,13 +68,25 @@
         {
           "op": "admit",
           "requests": 1,
+          "error": "credentialRejected"
+        },
+        {
+          "op": "retry"
+        },
+        {
+          "op": "admit",
+          "requests": 2,
           "error": "credentialRejected"
         }
       ]
     },
     {
-      "name": "terminal-accessDenied-does-not-retry",
-      "status": 403,
+      "name": "terminal-accessDenied-waits-for-retry",
+      "responses": [
+        {
+          "status": 403
+        }
+      ],
       "steps": [
         {
           "op": "admit",
@@ -85,17 +105,32 @@
         {
           "op": "admit",
           "requests": 1,
+          "error": "accessDenied"
+        },
+        {
+          "op": "retry"
+        },
+        {
+          "op": "admit",
+          "requests": 2,
           "error": "accessDenied"
         }
       ]
     },
     {
-      "name": "terminal-quotaExceeded-does-not-retry",
-      "status": 429,
-      "body": {
-        "code": "COMMERCIAL_MAP_LIMIT_REACHED",
-        "error": "Map view limit reached"
-      },
+      "name": "terminal-quotaExceeded-waits-for-retry",
+      "responses": [
+        {
+          "status": 429,
+          "body": {
+            "code": "COMMERCIAL_MAP_LIMIT_REACHED",
+            "error": "Map view limit reached"
+          }
+        },
+        {
+          "status": 201
+        }
+      ],
       "steps": [
         {
           "op": "admit",
@@ -115,6 +150,247 @@
           "op": "admit",
           "requests": 1,
           "error": "quotaExceeded"
+        },
+        {
+          "op": "retry"
+        },
+        {
+          "op": "admit",
+          "requests": 2
+        }
+      ]
+    },
+    {
+      "name": "rate-limited-429-waits-for-retry-after",
+      "responses": [
+        {
+          "status": 429,
+          "headers": {
+            "Retry-After": "60"
+          },
+          "body": {
+            "error": "Too many requests",
+            "requestId": "req_fixture"
+          }
+        },
+        {
+          "status": 201
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "identity": "first",
+          "error": "rateLimited"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "rateLimited"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 59000
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "rateLimited"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 1000
+        },
+        {
+          "op": "admit",
+          "requests": 2,
+          "identity": "first"
+        }
+      ]
+    },
+    {
+      "name": "unavailable-5xx-backs-off-while-the-grant-admits",
+      "responses": [
+        {
+          "status": 201
+        },
+        {
+          "status": 503
+        },
+        {
+          "status": 503
+        },
+        {
+          "status": 201
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "identity": "first"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 880000
+        },
+        {
+          "op": "admit",
+          "requests": 2,
+          "error": "sessionUnavailable"
+        },
+        {
+          "op": "admit",
+          "requests": 2
+        },
+        {
+          "op": "advance",
+          "milliseconds": 1000
+        },
+        {
+          "op": "admit",
+          "requests": 3,
+          "error": "sessionUnavailable"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 1000
+        },
+        {
+          "op": "admit",
+          "requests": 3
+        },
+        {
+          "op": "advance",
+          "milliseconds": 1000
+        },
+        {
+          "op": "admit",
+          "requests": 4,
+          "identity": "first"
+        }
+      ]
+    },
+    {
+      "name": "unavailable-5xx-backoff-doubles-to-60-seconds",
+      "responses": [
+        {
+          "status": 503
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionUnavailable"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 1000
+        },
+        {
+          "op": "admit",
+          "requests": 2,
+          "error": "sessionUnavailable"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 2000
+        },
+        {
+          "op": "admit",
+          "requests": 3,
+          "error": "sessionUnavailable"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 4000
+        },
+        {
+          "op": "admit",
+          "requests": 4,
+          "error": "sessionUnavailable"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 8000
+        },
+        {
+          "op": "admit",
+          "requests": 5,
+          "error": "sessionUnavailable"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 16000
+        },
+        {
+          "op": "admit",
+          "requests": 6,
+          "error": "sessionUnavailable"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 32000
+        },
+        {
+          "op": "admit",
+          "requests": 7,
+          "error": "sessionUnavailable"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 59999
+        },
+        {
+          "op": "admit",
+          "requests": 7,
+          "error": "sessionUnavailable"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 1
+        },
+        {
+          "op": "admit",
+          "requests": 8,
+          "error": "sessionUnavailable"
+        }
+      ]
+    },
+    {
+      "name": "invalid-success-is-recoverable-and-retry-skips-the-delay",
+      "responses": [
+        {
+          "status": 201,
+          "body": {
+            "ok": true
+          }
+        },
+        {
+          "status": 201
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "identity": "first",
+          "error": "invalidSessionResponse"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "invalidSessionResponse"
+        },
+        {
+          "op": "retry"
+        },
+        {
+          "op": "admit",
+          "requests": 2,
+          "identity": "first"
         }
       ]
     }
@@ -130,7 +406,28 @@
     },
     {
       "status": 429,
+      "body": {
+        "code": "COMMERCIAL_SPENDING_LIMIT_REACHED",
+        "error": "Spending limit reached"
+      },
       "error": "quotaExceeded"
+    },
+    {
+      "status": 429,
+      "body": {
+        "error": "Too many requests",
+        "requestId": "req_fixture"
+      },
+      "error": "rateLimited"
+    },
+    {
+      "status": 429,
+      "body": {
+        "code": "RATE_LIMITED",
+        "error": "Too many requests",
+        "requestId": "req_fixture"
+      },
+      "error": "rateLimited"
     }
   ]
 }

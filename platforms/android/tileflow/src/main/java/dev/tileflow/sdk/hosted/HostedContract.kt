@@ -108,7 +108,9 @@ internal object HostedContract {
         }
     }
 
-    /** Only these 429 bodies mean the Map or Team is out of quota; any other 429 is rate limiting. */
+    /**
+     * Only these 429 bodies mean the Map or Team is out of quota; any other 429 is rate limiting.
+     */
     private val quotaCodes =
         setOf("COMMERCIAL_MAP_LIMIT_REACHED", "COMMERCIAL_SPENDING_LIMIT_REACHED")
 

@@ -215,6 +215,37 @@ class HostedSessionTest {
     }
 
     @Test
+    fun hiddenSessionHoldsBootstrapsUntilVisibleAndKeepsAValidGrant() {
+        val time = AtomicLong(0)
+        val transport = FakeTransport { request, _ -> response(request) }
+        val session = HostedSession(client(), mapId, "mobile-map", time::get, transport)
+        val pool = Executors.newSingleThreadExecutor()
+        try {
+            session.setBackgrounded(true)
+            val pending = pool.submit<String?> { session.authorize(style, policy).grant }
+            Thread.sleep(100)
+            assertFalse(pending.isDone)
+            assertEquals(0, transport.requests.size)
+            session.setBackgrounded(false)
+            assertNotNull(pending.get(5, TimeUnit.SECONDS))
+            assertEquals(1, transport.requests.size)
+            // While hidden, a still-valid grant keeps admitting even inside its renewal margin.
+            session.setBackgrounded(true)
+            time.addAndGet(880_000)
+            assertNotNull(session.authorize(style, policy).grant)
+            assertEquals(1, transport.requests.size)
+        } finally {
+            session.close()
+            pool.shutdownNow()
+        }
+        HostedSession(client(), mapId, "mobile-map", time::get, transport, waitMillis = 100).use {
+            it.setBackgrounded(true)
+            assertCode(TileflowErrorCode.NOT_READY) { it.authorize(style, policy) }
+        }
+        assertEquals(1, transport.requests.size)
+    }
+
+    @Test
     fun onlyExactRestartRotatesOnceAndTerminalFailureDoesNotRetry() {
         val transport = FakeTransport { request, index ->
             if (index == 0)

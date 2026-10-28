@@ -142,6 +142,45 @@ final class HostedSessionTests: XCTestCase {
     XCTAssertEqual(transport.requests.count, 3)
   }
 
+  func testHiddenSessionHoldsBootstrapsUntilVisibleAndKeepsAValidGrant() async throws {
+    let fixture = try sessionFixture()
+    let time = SessionTestClock()
+    let transport = SessionTestTransport { request, _ in
+      try sessionResponse(fixture, request: request)
+    }
+    let session = HostedSession(
+      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map",
+      transport: transport, now: { time.now })
+    defer { session.close() }
+    await session.setBackgrounded(true)
+    let target = style
+    let policy = policy
+    let pending = Task { try await session.authorize(target, publicPolicy: policy) }
+    try await Task.sleep(for: .milliseconds(100))
+    XCTAssertEqual(transport.requests.count, 0)
+    await session.setBackgrounded(false)
+    let admission = try await pending.value
+    XCTAssertNotNil(admission.grant)
+    XCTAssertEqual(transport.requests.count, 1)
+    // While hidden, a still-valid grant keeps admitting even inside its renewal margin.
+    await session.setBackgrounded(true)
+    time.advance(880)
+    let held = try await session.authorize(style, publicPolicy: policy)
+    XCTAssertNotNil(held.grant)
+    XCTAssertEqual(transport.requests.count, 1)
+
+    let brief = HostedSession(
+      client: try makeClient(), mapID: mapID, surfaceID: "mobile-map",
+      transport: transport, now: { time.now }, waitBudget: .milliseconds(100))
+    defer { brief.close() }
+    await brief.setBackgrounded(true)
+    do {
+      _ = try await brief.authorize(style, publicPolicy: policy)
+      XCTFail("A hidden session bootstrapped")
+    } catch { XCTAssertEqual(error as? TileflowMapError, .notReady) }
+    XCTAssertEqual(transport.requests.count, 1)
+  }
+
   func testOnlyExactRestartRotatesOnceAndTerminalFailureDoesNotRetry() async throws {
     let fixture = try sessionFixture()
     let transport = SessionTestTransport { request, index in

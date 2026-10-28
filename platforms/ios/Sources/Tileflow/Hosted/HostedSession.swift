@@ -12,6 +12,7 @@ actor HostedSession {
   private let surfaceID: String
   private let lifetime: SessionLifetime
   private let now: @Sendable () -> ContinuousClock.Instant
+  private let waitBudget: Duration
   private var sessionID = UUID().uuidString
   private var startedAt = ContinuousClock.now
   private var serverStartedAt: Date?
@@ -25,17 +26,20 @@ actor HostedSession {
   private var delay: (until: ContinuousClock.Instant, error: TileflowMapError)?
   private var forcedRenewalAt: ContinuousClock.Instant?
   private var backgrounded = false
+  private var visibilityWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
   init(
     client: TileflowClient, mapID: String, surfaceID: String,
     transport: any NativeHTTPTransporting = NativeHTTPTransport(maximumBytes: 65_536),
-    now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now }
+    now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
+    waitBudget: Duration = .seconds(30)
   ) {
     self.client = client
     self.mapID = mapID
     self.surfaceID = surfaceID
     self.lifetime = SessionLifetime(transport: transport)
     self.now = now
+    self.waitBudget = waitBudget
     self.startedAt = now()
   }
 
@@ -45,11 +49,14 @@ actor HostedSession {
     Task { await retire() }
   }
 
+  /// While hidden no bootstrap starts; requests that need one wait until the map is visible.
   func setBackgrounded(_ value: Bool) {
     backgrounded = value
     if value {
       operation?.task.cancel()
       operation = nil
+    } else {
+      wakeWaiters()
     }
   }
 
@@ -81,8 +88,9 @@ actor HostedSession {
   }
 
   func authorize(_ url: URL, publicPolicy: ResourcePolicy) async throws -> HostedAdmission {
+    let deadline = ContinuousClock.now.advanced(by: waitBudget)
     try checkActive()
-    let authority = try await acquire()
+    let authority = try await acquire(until: deadline)
     try checkActive()
     if authority.origins.contains(ResourcePolicy.origin(url)) {
       guard HostedContract.permits(url, mapID: mapID, authority: authority),
@@ -102,17 +110,32 @@ actor HostedSession {
     return HostedAdmission(grant: nil, timeout: 30)
   }
 
-  private func acquire() async throws -> HostedAuthority {
-    try checkActive()
-    if let operation { return try await operation.task.value }
-    if requestCount >= 10_000 || durationSeconds(startedAt.duration(to: now())) >= 21_600 {
-      rotate()
+  private func acquire(until deadline: ContinuousClock.Instant) async throws -> HostedAuthority {
+    while true {
+      try checkActive()
+      do {
+        if let operation { return try await operation.task.value }
+        if requestCount >= 10_000 || durationSeconds(startedAt.duration(to: now())) >= 21_600 {
+          rotate()
+        }
+        if let stored, stored.until > now().advanced(by: .seconds(30)) { return stored.authority }
+        // While hidden or during a retry delay, a still-valid grant keeps admitting.
+        let delayed = delay.map { now() < $0.until } ?? false
+        if backgrounded || delayed, let stored, stored.until > now() { return stored.authority }
+        if backgrounded {
+          try await waitUntilVisible(until: deadline)
+          continue
+        }
+        if let delay, delayed { throw delay.error }
+        return try await startRefresh()
+      } catch is CancellationError where !lifetime.isClosed {
+        // Hiding the map or a rejection cancelled the bootstrap; decide again.
+        continue
+      }
     }
-    if let stored, stored.until > now().advanced(by: .seconds(30)) { return stored.authority }
-    if let delay, now() < delay.until {
-      if let stored, stored.until > now() { return stored.authority }
-      throw delay.error
-    }
+  }
+
+  private func startRefresh() async throws -> HostedAuthority {
     let id = UUID()
     let task = Task { try await self.refresh() }
     operation = (id, task)
@@ -125,6 +148,25 @@ actor HostedSession {
       if let terminal { throw terminal }
       throw error
     }
+  }
+
+  private func waitUntilVisible(until deadline: ContinuousClock.Instant) async throws {
+    guard ContinuousClock.now < deadline else { throw TileflowMapError.notReady }
+    let id = UUID()
+    let timer = Task { [weak self] in
+      try? await Task.sleep(until: deadline, clock: .continuous)
+      await self?.wake(id)
+    }
+    await withCheckedContinuation { visibilityWaiters[id] = $0 }
+    timer.cancel()
+  }
+
+  private func wake(_ id: UUID) { visibilityWaiters.removeValue(forKey: id)?.resume() }
+
+  private func wakeWaiters() {
+    let waiters = visibilityWaiters.values
+    visibilityWaiters = [:]
+    for waiter in waiters { waiter.resume() }
   }
 
   private func refresh() async throws -> HostedAuthority {
@@ -167,8 +209,10 @@ actor HostedSession {
       try Task.checkCancellation()
       let expectedSession = sessionID
       let requestStarted = now()
-      let request = try client.sessionRequest(
+      var request = try client.sessionRequest(
         mapID: mapID, sessionID: expectedSession, surfaceID: surfaceID)
+      // A stalled bootstrap ends well within the budget of the requests waiting for it.
+      request.timeoutInterval = 10
       let response: ResourcePayload
       do { response = try await lifetime.transport.send(request) } catch is CancellationError {
         throw CancellationError()
@@ -222,7 +266,6 @@ actor HostedSession {
     if lifetime.isClosed { throw TileflowMapError.disposed }
     applyRetry()
     if let terminal { throw terminal }
-    if backgrounded { throw TileflowMapError.notReady }
   }
   private func applyRetry() {
     guard lifetime.takeRetryRequest() else { return }
@@ -234,6 +277,7 @@ actor HostedSession {
     operation?.task.cancel()
     operation = nil
     stored = nil
+    wakeWaiters()
   }
   private func durationSeconds(_ duration: Duration) -> Double {
     Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18

@@ -14,13 +14,15 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 internal class HostedAdmission(val grant: String?, val timeoutMillis: Long)
 
 /**
  * One logical map owns this session across renderer generations. Access runs on resource threads,
  * never the UI thread. The lock single-flights refresh, so waiters share its result or its retry
- * delay, and none waits longer than its request budget. Lifecycle cancellation never takes it.
+ * delay. While the map is hidden no bootstrap starts and requests that need one wait to be visible.
+ * No request waits longer than its budget, and lifecycle changes never take the lock.
  */
 internal class HostedSession(
     private val client: TileflowClient,
@@ -37,6 +39,8 @@ internal class HostedSession(
     private val staleGrant = AtomicReference<String?>()
     private val forcedRenewalAt = AtomicReference<Long?>()
     private val lock = ReentrantLock()
+    private val visibility = ReentrantLock()
+    private val visible = visibility.newCondition()
     private var sessionId = UUID.randomUUID().toString()
     private var startedAt = now()
     private var serverStartedAt: Long? = null
@@ -52,43 +56,43 @@ internal class HostedSession(
     private var retryError = TileflowErrorCode.SESSION_UNAVAILABLE
 
     fun authorize(url: URI, publicPolicy: ResourcePolicy): HostedAdmission {
-        val acquired =
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(waitMillis)
+        while (true) {
+            lockUntil(deadline)
             try {
-                lock.tryLock(waitMillis, TimeUnit.MILLISECONDS)
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-                false
-            }
-        if (!acquired) throw TileflowMapException(TileflowErrorCode.SESSION_UNAVAILABLE)
-        try {
-            checkActive()
-            staleGrant.getAndSet(null)?.let {
-                if (authority?.grant == it) {
-                    authority = null
-                    validUntil = 0
+                checkActive()
+                staleGrant.getAndSet(null)?.let {
+                    if (authority?.grant == it) {
+                        authority = null
+                        validUntil = 0
+                    }
                 }
-            }
-            if (requests >= 10_000 || now() - startedAt >= 21_600_000) rotate()
-            val current =
-                authority?.takeIf { validUntil - now() > 30_000 } ?: delayed() ?: refresh()
-            checkActive()
-            if (ResourcePolicy.origin(url) in current.origins) {
-                if (!HostedContract.permits(url, mapId, current))
-                    throw TileflowMapException(TileflowErrorCode.ACCESS_DENIED)
-                val remaining = validUntil - now() - 500
-                if (remaining <= 0)
-                    throw TileflowMapException(TileflowErrorCode.SESSION_UNAVAILABLE)
-                requests++
-                return HostedAdmission(current.grant, minOf(30_000, remaining))
-            } else {
-                publicPolicy.validate(url)
-                if (ResourcePolicy.origin(url) == ResourcePolicy.origin(client.apiOrigin)) {
-                    throw TileflowMapException(TileflowErrorCode.ACCESS_DENIED)
+                if (requests >= 10_000 || now() - startedAt >= 21_600_000) rotate()
+                val current = admissible()
+                if (current != null) {
+                    checkActive()
+                    if (ResourcePolicy.origin(url) in current.origins) {
+                        if (!HostedContract.permits(url, mapId, current))
+                            throw TileflowMapException(TileflowErrorCode.ACCESS_DENIED)
+                        val remaining = validUntil - now() - 500
+                        if (remaining <= 0)
+                            throw TileflowMapException(TileflowErrorCode.SESSION_UNAVAILABLE)
+                        requests++
+                        return HostedAdmission(current.grant, minOf(30_000, remaining))
+                    }
+                    publicPolicy.validate(url)
+                    if (ResourcePolicy.origin(url) == ResourcePolicy.origin(client.apiOrigin)) {
+                        throw TileflowMapException(TileflowErrorCode.ACCESS_DENIED)
+                    }
+                    return HostedAdmission(null, 30_000)
                 }
-                return HostedAdmission(null, 30_000)
+            } catch (error: TileflowMapException) {
+                // Hiding the map cancelled the bootstrap; wait for it to be visible again.
+                if (error.code != TileflowErrorCode.NOT_READY) throw error
+            } finally {
+                lock.unlock()
             }
-        } finally {
-            lock.unlock()
+            awaitVisible(deadline)
         }
     }
 
@@ -122,21 +126,59 @@ internal class HostedSession(
         retryRequested.set(true)
     }
 
+    /** While hidden no bootstrap starts; requests that need one wait until the map is visible. */
     fun setBackgrounded(value: Boolean) {
         background.set(value)
-        if (value) transport.cancelActive()
+        if (value) transport.cancelActive() else wakeWaiters()
     }
 
     override fun close() {
         retired.set(true)
+        wakeWaiters()
         transport.close()
     }
 
-    /** During a retry delay a still-valid grant keeps admitting; otherwise the delay fails. */
-    private fun delayed(): HostedAuthority? {
-        val until = retryAt ?: return null
-        if (now() >= until) return null
-        return authority?.takeIf { validUntil > now() } ?: throw TileflowMapException(retryError)
+    /**
+     * The grant to admit with, or null while hidden without one. While hidden or during a retry
+     * delay, a still-valid grant keeps admitting; otherwise the delay fails the request.
+     */
+    private fun admissible(): HostedAuthority? {
+        authority?.takeIf { validUntil - now() > 30_000 }?.let { return it }
+        val delayed = retryAt?.let { now() < it } == true
+        if (background.get() || delayed) authority?.takeIf { validUntil > now() }?.let { return it }
+        if (background.get()) return null
+        if (delayed) throw TileflowMapException(retryError)
+        return refresh()
+    }
+
+    private fun lockUntil(deadline: Long) {
+        val acquired =
+            try {
+                lock.tryLock(maxOf(0, deadline - System.nanoTime()), TimeUnit.NANOSECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                false
+            }
+        if (!acquired) throw TileflowMapException(TileflowErrorCode.SESSION_UNAVAILABLE)
+    }
+
+    private fun awaitVisible(deadline: Long) {
+        visibility.withLock {
+            while (background.get() && !retired.get()) {
+                val remaining = deadline - System.nanoTime()
+                if (remaining <= 0) throw TileflowMapException(TileflowErrorCode.NOT_READY)
+                try {
+                    visible.awaitNanos(remaining)
+                } catch (_: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw TileflowMapException(TileflowErrorCode.NOT_READY)
+                }
+            }
+        }
+    }
+
+    private fun wakeWaiters() {
+        visibility.withLock { visible.signalAll() }
     }
 
     private fun refresh(): HostedAuthority {
@@ -189,12 +231,16 @@ internal class HostedSession(
     private fun bootstrap(): HostedAuthority {
         repeat(2) { attempt ->
             checkActive()
+            if (background.get()) throw TileflowMapException(TileflowErrorCode.NOT_READY)
             val requestStarted = now()
             val response =
                 try {
-                    transport.send(client.sessionRequest(mapId, sessionId, surfaceId))
+                    // A stalled bootstrap ends within the budget of requests waiting for it.
+                    transport.send(client.sessionRequest(mapId, sessionId, surfaceId), 10_000)
                 } catch (_: Exception) {
                     checkActive()
+                    // Hiding the map cancels the bootstrap; its requests wait to be visible again.
+                    if (background.get()) throw TileflowMapException(TileflowErrorCode.NOT_READY)
                     throw TileflowMapException(TileflowErrorCode.SESSION_UNAVAILABLE)
                 }
             checkActive()
@@ -258,7 +304,6 @@ internal class HostedSession(
             retryAt = null
         }
         terminal.get()?.let { throw TileflowMapException(it) }
-        if (background.get()) throw TileflowMapException(TileflowErrorCode.NOT_READY)
     }
 }
 

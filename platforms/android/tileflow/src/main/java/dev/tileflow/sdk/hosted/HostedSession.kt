@@ -10,14 +10,17 @@ import dev.tileflow.sdk.transport.ResourcePolicy
 import java.io.Closeable
 import java.net.URI
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.locks.ReentrantLock
 
 internal class HostedAdmission(val grant: String?, val timeoutMillis: Long)
 
 /**
  * One logical map owns this session across renderer generations. Access runs on resource threads,
- * never the UI thread. The lock single-flights refresh; lifecycle cancellation never takes it.
+ * never the UI thread. The lock single-flights refresh, so waiters share its result or its retry
+ * delay, and none waits longer than its request budget. Lifecycle cancellation never takes it.
  */
 internal class HostedSession(
     private val client: TileflowClient,
@@ -25,11 +28,12 @@ internal class HostedSession(
     private val surfaceId: String,
     private val now: () -> Long = SystemClock::elapsedRealtime,
     private val transport: NativeHTTPTransporting = NativeHTTPTransport(65_536),
+    private val waitMillis: Long = 30_000,
 ) : Closeable {
     private val retired = AtomicBoolean()
     private val background = AtomicBoolean()
     private val retryRequested = AtomicBoolean()
-    private val lock = Any()
+    private val lock = ReentrantLock()
     private var sessionId = UUID.randomUUID().toString()
     private var startedAt = now()
     private var serverStartedAt: Long? = null
@@ -43,8 +47,16 @@ internal class HostedSession(
     private var retryAt: Long? = null
     private var retryError = TileflowErrorCode.SESSION_UNAVAILABLE
 
-    fun authorize(url: URI, publicPolicy: ResourcePolicy): HostedAdmission =
-        synchronized(lock) {
+    fun authorize(url: URI, publicPolicy: ResourcePolicy): HostedAdmission {
+        val acquired =
+            try {
+                lock.tryLock(waitMillis, TimeUnit.MILLISECONDS)
+            } catch (_: InterruptedException) {
+                Thread.currentThread().interrupt()
+                false
+            }
+        if (!acquired) throw TileflowMapException(TileflowErrorCode.SESSION_UNAVAILABLE)
+        try {
             checkActive()
             if (requests >= 10_000 || now() - startedAt >= 21_600_000) rotate()
             val current =
@@ -57,15 +69,18 @@ internal class HostedSession(
                 if (remaining <= 0)
                     throw TileflowMapException(TileflowErrorCode.SESSION_UNAVAILABLE)
                 requests++
-                HostedAdmission(current.grant, minOf(30_000, remaining))
+                return HostedAdmission(current.grant, minOf(30_000, remaining))
             } else {
                 publicPolicy.validate(url)
                 if (ResourcePolicy.origin(url) == ResourcePolicy.origin(client.apiOrigin)) {
                     throw TileflowMapException(TileflowErrorCode.ACCESS_DENIED)
                 }
-                HostedAdmission(null, 30_000)
+                return HostedAdmission(null, 30_000)
             }
+        } finally {
+            lock.unlock()
         }
+    }
 
     /**
      * A granted resource was refused for good; the session stops until [retry]. Rejection must not

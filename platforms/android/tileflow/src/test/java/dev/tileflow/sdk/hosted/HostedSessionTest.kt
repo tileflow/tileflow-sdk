@@ -112,6 +112,48 @@ class HostedSessionTest {
     }
 
     @Test
+    fun waitersShareOneFailedBootstrapAndGiveUpAtTheirBudget() {
+        val time = AtomicLong(0)
+        val started = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val transport = FakeTransport { _, _ ->
+            started.countDown()
+            check(release.await(5, TimeUnit.SECONDS))
+            ResourcePayload(byteArrayOf(), 503, emptyMap())
+        }
+        val session =
+            HostedSession(client(), mapId, "mobile-map", time::get, transport, waitMillis = 200)
+        val pool = Executors.newFixedThreadPool(4)
+        try {
+            val first = pool.submit {
+                assertCode(TileflowErrorCode.SESSION_UNAVAILABLE) {
+                    session.authorize(style, policy)
+                }
+            }
+            assertTrue(started.await(5, TimeUnit.SECONDS))
+            val waitStarted = System.nanoTime()
+            assertCode(TileflowErrorCode.SESSION_UNAVAILABLE) { session.authorize(style, policy) }
+            assertTrue(System.nanoTime() - waitStarted < 3_000_000_000)
+            val waiters =
+                (0 until 3).map {
+                    pool.submit {
+                        assertCode(TileflowErrorCode.SESSION_UNAVAILABLE) {
+                            session.authorize(style, policy)
+                        }
+                    }
+                }
+            release.countDown()
+            first.get(5, TimeUnit.SECONDS)
+            waiters.forEach { it.get(5, TimeUnit.SECONDS) }
+            assertEquals(1, transport.requests.size)
+        } finally {
+            release.countDown()
+            session.close()
+            pool.shutdownNow()
+        }
+    }
+
+    @Test
     fun refreshRetainsIdentityAndAgeRotatesIt() {
         val time = AtomicLong(0)
         val transport = FakeTransport { request, _ -> response(request) }

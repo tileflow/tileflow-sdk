@@ -32,7 +32,11 @@ export type NativeMapAdmissionInput = Omit<SessionInput, 'fetch' | 'sessionIdFac
     onRetired?: () => void;
     /** Each time the session enters an error, including after first preparation. */
     onSessionError?: (
-      error: Readonly<{code: HostedNativeSessionErrorCode; kind: HostedNativeSessionErrorKind}>,
+      error: Readonly<{
+        code: HostedNativeSessionErrorCode;
+        kind: HostedNativeSessionErrorKind;
+        serviceCode?: string;
+      }>,
     ) => void;
   }>;
 export type NativeMapAdmission = Readonly<{
@@ -412,7 +416,7 @@ export function createNativeAdmissionOwner(options: {
         reported = code;
         if (state.status !== 'error') return;
         try {
-          input.onSessionError?.(Object.freeze({code: state.error.code, kind: state.error.kind}));
+          input.onSessionError?.(Object.freeze({...state.error}));
         } catch {
           /* Observers cannot change admission. */
         }

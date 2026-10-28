@@ -208,7 +208,7 @@ The public lifecycle surface remains:
 
 `getSourceState()` returns only the last safe projected source snapshot. Errors use existing bounded codes/fields/kinds. No URL, response body, native event, credential, grant, session object, native handle or raw cause enters public callbacks, refs or serializable state.
 
-`onError` reports `source-error`, `renderer-error` and, for Hosted session delivery, `session-error`. A `session-error` means Tileflow refused the session: the mobile credential was rejected (`NATIVE_SESSION_CREDENTIAL_REJECTED`), it does not authorize the Map (`NATIVE_SESSION_MAP_MISMATCH`), the Map was not found (`NATIVE_SESSION_MAP_NOT_FOUND`) or its view or spending limit was reached (`NATIVE_SESSION_QUOTA_EXCEEDED`). It can arrive after the first load, when a renewal is refused. The map keeps what it has drawn but loads nothing new until you call `ref.retry()` or change the source:
+`onError` reports `source-error`, `renderer-error` and, for Hosted session delivery, `session-error`. A `session-error` means Tileflow refused the session: the mobile credential was rejected (`NATIVE_SESSION_CREDENTIAL_REJECTED`), it does not authorize the Map (`NATIVE_SESSION_MAP_MISMATCH`), the Map was not found (`NATIVE_SESSION_MAP_NOT_FOUND`), its view or spending limit was reached (`NATIVE_SESSION_QUOTA_EXCEEDED`), or the service refused the session for another reason that trying again cannot change (`NATIVE_SESSION_REJECTED`), such as a Map that does not use session delivery. For `NATIVE_SESSION_REJECTED`, `event.error.serviceCode` names the service's reason when it sent one, for example `MOBILE_SESSION_MODE_REQUIRED`; it is a bounded code, never a message or response body. A `session-error` can arrive after the first load, when a renewal is refused. The map keeps what it has drawn but loads nothing new until you call `ref.retry()` or change the source:
 
 ```tsx
 import {Map, type MapRef} from '@tileflow/react-native';
@@ -226,6 +226,11 @@ export function StoreMap() {
           event.error.code === 'NATIVE_SESSION_QUOTA_EXCEEDED'
         ) {
           // Show your own notice; call map.current?.retry() once the limit is raised.
+        } else if (
+          event.type === 'session-error' &&
+          event.error.code === 'NATIVE_SESSION_REJECTED'
+        ) {
+          // event.error.serviceCode, such as 'MOBILE_SESSION_MODE_REQUIRED', names the cause.
         }
       }}
       style={{flex: 1}}

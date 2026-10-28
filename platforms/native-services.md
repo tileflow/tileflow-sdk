@@ -118,9 +118,23 @@ TileflowMap(mapId = "map_0123456789abcdef") // Compose
 val map = TileflowMapView(context, "map_0123456789abcdef") // Android View
 ```
 
-A `TileflowMapView` declared in an Android layout selects its map with
-`map.setSource(TileflowMapSource.hosted("map_0123456789abcdef"))`. To give one map a configuration
-of its own, pass it with the source; it replaces the process configuration for that map only:
+A `TileflowMapView` declared in an Android layout selects its Hosted map with `app:tileflowMapId`.
+`app:tileflowSurfaceId` names where the application shows it (`mobile-map` by default) and
+`app:tileflowTheme` sets its initial theme; an invalid value fails inflation:
+
+```xml
+<dev.tileflow.sdk.TileflowMapView xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/map"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:tileflowMapId="map_0123456789abcdef"
+    app:tileflowSurfaceId="store-locator"
+    app:tileflowTheme="system" />
+```
+
+A layout view without `app:tileflowMapId` shows nothing until `setSource` selects a map. To give one
+map a configuration of its own, pass it with the source; it replaces the process configuration for
+that map only:
 
 ```swift
 TileflowMap(source: .hosted(mapID: "map_0123456789abcdef", configuration: configuration))
@@ -132,10 +146,81 @@ TileflowMap(TileflowMapSource.hosted("map_0123456789abcdef", configuration = con
 
 The map credential stays in native memory: the map sends it only to start its session, never to
 the renderer or in a resource URL. Without a map credential the map fails with `missingCredential`
-(`MISSING_CREDENTIAL` on Android). A configuration that cannot be read, or whose API origin is not
-HTTPS, fails with `invalidConfiguration` (`INVALID_CONFIGURATION`); `Tileflow.configuration()`
+(`MISSING_CREDENTIAL` on Android). A configuration that cannot be read fails with
+`invalidConfiguration` (`INVALID_CONFIGURATION`); `Tileflow.configuration()`
 (`Tileflow.configuration(context)` on Android) throws the detailed error. After correcting the
 configuration, call `reload()` on the map.
+
+### Session failures
+
+A Hosted map starts a session before it loads protected resources and renews it while it is shown.
+When Tileflow refuses the session for a reason that trying again cannot change, the map reports a
+failure event, keeps what it has drawn and loads nothing new until `reload()`:
+
+| Response                                           | Swift error                     | Android `TileflowErrorCode` |
+| -------------------------------------------------- | ------------------------------- | --------------------------- |
+| 401: the map credential is invalid or expired      | `credentialRejected`            | `CREDENTIAL_REJECTED`       |
+| 403 or 404: the credential does not reach this Map | `accessDenied`                  | `ACCESS_DENIED`             |
+| 429 with the Map's view or Team's spending limit   | `quotaExceeded`                 | `QUOTA_EXCEEDED`            |
+| Any other 4xx                                      | `sessionRejected(serviceCode:)` | `SESSION_REJECTED`          |
+
+`sessionRejected` carries the service's reason when its answer had one, for example
+`MOBILE_SESSION_MODE_REQUIRED` for a Map that does not use session delivery, or
+`MOBILE_AUTHORITY_CONFLICT` for a session request that also carries browser or account
+credentials. On Android it is `serviceCode` on `TileflowMapEvent.Failed` and on
+`TileflowMapException`. Show your own message for the codes you expect and log the others.
+
+Rate limits (`rateLimited`), timeouts, 408 and 5xx answers (`sessionUnavailable`) and answers
+outside the session contract (`invalidSessionResponse`) are temporary: the map keeps using its
+current grant while it is valid and starts another session after a delay of one second, doubling up
+to one minute, or after the `Retry-After` the service sends. `reload()` skips that delay.
+
+### Local development API
+
+For development against a Tileflow API running on your computer, the API origin may be HTTP on a
+loopback host, exactly as for the service clients: `http://localhost` or `http://127.0.0.1` with
+any port, and on Android also `http://[::1]`. No other HTTP origin is accepted. The map then also
+accepts loopback HTTP resource origins from that API, and never from an HTTPS one.
+
+```swift
+Tileflow.configure(
+  try TileflowConfiguration(
+    apiOrigin: URL(string: "http://127.0.0.1:8787")!,
+    mapCredential: try TileflowCredential(developmentMapCredential)))
+```
+
+```kotlin
+Tileflow.configure(
+    TileflowConfiguration(
+        apiOrigin = URI("http://127.0.0.1:8787"),
+        mapCredential = TileflowCredential(developmentMapCredential),
+    )
+)
+```
+
+The `TileflowAPIOrigin` Info.plist key and the `tileflow_api_origin` string resource of a
+development build accept the same origins. Keep them in development builds only, and let the
+platform allow the connection there:
+
+- iOS: App Transport Security blocks plain HTTP. In the Info.plist of the development build, set
+  `NSAllowsLocalNetworking` to `YES` inside the `NSAppTransportSecurity` dictionary. The Simulator
+  reaches your computer on `127.0.0.1`; a device does not.
+- Android: cleartext traffic is blocked from API 28. Add a network security configuration to the
+  debug source set that permits it for the loopback hosts only, and reference it with
+  `android:networkSecurityConfig` in the debug manifest:
+
+  ```xml
+  <network-security-config>
+      <domain-config cleartextTrafficPermitted="true">
+          <domain includeSubdomains="false">127.0.0.1</domain>
+          <domain includeSubdomains="false">localhost</domain>
+      </domain-config>
+  </network-security-config>
+  ```
+
+  On the emulator or a device, `127.0.0.1` is the device itself: forward the API's port with
+  `adb reverse tcp:8787 tcp:8787`. The emulator's `10.0.2.2` alias is not a loopback host and is
+  refused.
 
 ## Search, route and draw
 

@@ -52,9 +52,13 @@ internal constructor(
         policy(manifestUrl)
     }
 
-    private fun policy(manifestUrl: URI?): ResourcePolicy {
+    private fun policy(manifestUrl: URI?, loopbackApi: Boolean = false): ResourcePolicy {
         val urls = resourceOrigins + listOfNotNull(manifestUrl)
-        val policy = ResourcePolicy(urls.map(ResourcePolicy::origin).toSet(), allowsLoopbackHttp)
+        val policy =
+            ResourcePolicy(
+                urls.map(ResourcePolicy::origin).toSet(),
+                allowsLoopbackHttp || loopbackApi,
+            )
         urls.forEach(policy::validate)
         return policy
     }
@@ -91,7 +95,8 @@ internal constructor(
             url,
             mapId,
             surfaceId,
-            policy(url),
+            // A Hosted map served by a local development API loads its manifest over loopback HTTP.
+            policy(url, loopbackApi = hosted?.isLoopbackHttp == true),
             publicMetadataUrls,
             hosted,
         )
@@ -194,20 +199,36 @@ public enum class TileflowErrorCode {
     SESSION_UNAVAILABLE,
     INVALID_SESSION_RESPONSE,
     /**
+     * Tileflow refused to start the Hosted map's session for a reason that trying again will not
+     * change, for example because the Map does not use session delivery.
+     * [TileflowMapException.serviceCode] and [TileflowMapEvent.Failed.serviceCode] carry the
+     * service's reason, such as `MOBILE_SESSION_MODE_REQUIRED`, when its answer had one. The map
+     * loads nothing new until it is reloaded.
+     */
+    SESSION_REJECTED,
+    /**
      * A Hosted map has no map credential: add the `tileflow_map_credential` string resource, or
      * pass one to `Tileflow.configure` or [TileflowMapSource.hosted]. A services credential never
      * authorizes a map.
      */
     MISSING_CREDENTIAL,
     /**
-     * A Hosted map's configuration cannot be read: a resource value is invalid, or the API origin
-     * is not HTTPS. `Tileflow.configuration(context)` throws the detailed error.
+     * A Hosted map's configuration cannot be read, for example because a resource value is
+     * invalid. `Tileflow.configuration(context)` throws the detailed error.
      */
     INVALID_CONFIGURATION,
 }
 
-public class TileflowMapException(public val code: TileflowErrorCode) :
-    Exception("Tileflow map operation failed: ${code.name}")
+public class TileflowMapException
+@JvmOverloads
+constructor(
+    public val code: TileflowErrorCode,
+    /**
+     * For [TileflowErrorCode.SESSION_REJECTED], the service's reason code, such as
+     * `MOBILE_SESSION_MODE_REQUIRED`, when its answer carried a valid one. Otherwise null.
+     */
+    public val serviceCode: String? = null,
+) : Exception("Tileflow map operation failed: ${code.name}")
 
 public sealed interface TileflowMapEvent {
     /** A user activated an attribution link. The application chooses how to present it. */
@@ -230,5 +251,11 @@ public sealed interface TileflowMapEvent {
 
     public data class ThemeChanged(val theme: String) : TileflowMapEvent
 
-    public data class Failed(val code: TileflowErrorCode) : TileflowMapEvent
+    /**
+     * The map failed with [code]. [serviceCode] is the service's reason for
+     * [TileflowErrorCode.SESSION_REJECTED], when its answer carried one.
+     */
+    public data class Failed
+    @JvmOverloads
+    constructor(val code: TileflowErrorCode, val serviceCode: String? = null) : TileflowMapEvent
 }

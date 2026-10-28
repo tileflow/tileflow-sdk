@@ -21,6 +21,7 @@ type Step = {
   requests?: number;
   identity?: string;
   error?: string;
+  serviceCode?: string;
 };
 type Reply = {status: number; body?: unknown; headers?: Record<string, string>};
 const scenarios = JSON.parse(
@@ -33,7 +34,15 @@ const errorCodes: Record<string, string> = {
   rateLimited: 'NATIVE_SESSION_RATE_LIMITED',
   sessionUnavailable: 'NATIVE_SESSION_UNAVAILABLE',
   invalidSessionResponse: 'NATIVE_SESSION_RESPONSE_INVALID',
+  sessionRejected: 'NATIVE_SESSION_REJECTED',
 };
+
+/** A reply body's `"$request"` session ID stands for the ID of the request it answers. */
+function replyBody(body: unknown, sessionId: string) {
+  if (!body || typeof body !== 'object' || (body as {sessionId?: unknown}).sessionId !== '$request')
+    return body;
+  return {...body, sessionId};
+}
 
 for (const scenario of scenarios) {
   test(`shared session sequence: ${scenario.name}`, async () => {
@@ -50,7 +59,7 @@ for (const scenario of scenarios) {
         const reply = scenario.responses[Math.min(requests.length, scenario.responses.length) - 1];
         const headers = {'cache-control': 'no-store', ...reply.headers};
         if (reply.status !== 201 || reply.body !== undefined) {
-          return response(reply.status, reply.body ?? null, {headers});
+          return response(reply.status, replyBody(reply.body, body.sessionId) ?? null, {headers});
         }
         return response(
           reply.status,
@@ -80,7 +89,9 @@ for (const scenario of scenarios) {
           await assert.rejects(
             controller.acquire(),
             (error: unknown) =>
-              error instanceof HostedNativeSessionError && error.code === errorCodes[step.error!],
+              error instanceof HostedNativeSessionError &&
+              error.code === errorCodes[step.error!] &&
+              (error.serviceCode ?? null) === (step.serviceCode ?? null),
           );
         } else {
           const authority = await controller.acquire();

@@ -144,7 +144,9 @@ export function handlesEvents(
     void field;
   } else if (error.type === 'session-error') {
     const kind: 'terminal' = error.error.kind;
+    const reason: string | undefined = error.error.serviceCode;
     void kind;
+    void reason;
     // @ts-expect-error Session failures name a bounded code, not a raw response.
     void error.error.status;
   } else {

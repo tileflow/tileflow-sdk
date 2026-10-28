@@ -161,6 +161,332 @@
       ]
     },
     {
+      "name": "terminal-sessionRejected-carries-the-service-code-and-waits-for-retry",
+      "responses": [
+        {
+          "status": 400,
+          "body": {
+            "code": "MOBILE_SESSION_MODE_REQUIRED",
+            "error": "Mobile delivery requires a session-mode Map"
+          }
+        },
+        {
+          "status": 201
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected",
+          "serviceCode": "MOBILE_SESSION_MODE_REQUIRED"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected",
+          "serviceCode": "MOBILE_SESSION_MODE_REQUIRED"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 21600000
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected",
+          "serviceCode": "MOBILE_SESSION_MODE_REQUIRED"
+        },
+        {
+          "op": "retry"
+        },
+        {
+          "op": "admit",
+          "requests": 2
+        }
+      ]
+    },
+    {
+      "name": "terminal-sessionRejected-authority-conflict",
+      "responses": [
+        {
+          "status": 400,
+          "body": {
+            "code": "MOBILE_AUTHORITY_CONFLICT",
+            "error": "Use mobile credentials without browser or control-plane authority"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected",
+          "serviceCode": "MOBILE_AUTHORITY_CONFLICT"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected",
+          "serviceCode": "MOBILE_AUTHORITY_CONFLICT"
+        }
+      ]
+    },
+    {
+      "name": "terminal-sessionRejected-invalid-input",
+      "responses": [
+        {
+          "status": 400,
+          "body": {
+            "code": "MOBILE_SESSION_INVALID_INPUT",
+            "error": "Invalid mobile session request"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected",
+          "serviceCode": "MOBILE_SESSION_INVALID_INPUT"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected",
+          "serviceCode": "MOBILE_SESSION_INVALID_INPUT"
+        }
+      ]
+    },
+    {
+      "name": "terminal-sessionRejected-request-too-large",
+      "responses": [
+        {
+          "status": 413,
+          "body": {
+            "code": "MOBILE_SESSION_BODY_TOO_LARGE",
+            "error": "Mobile session request is too large"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected",
+          "serviceCode": "MOBILE_SESSION_BODY_TOO_LARGE"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected",
+          "serviceCode": "MOBILE_SESSION_BODY_TOO_LARGE"
+        }
+      ]
+    },
+    {
+      "name": "terminal-sessionRejected-without-a-body-has-no-service-code",
+      "responses": [
+        {
+          "status": 413
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected"
+        }
+      ]
+    },
+    {
+      "name": "terminal-sessionRejected-ignores-a-malformed-service-code",
+      "responses": [
+        {
+          "status": 422,
+          "body": {
+            "code": "mobile session rejected",
+            "error": "Rejected"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected"
+        }
+      ]
+    },
+    {
+      "name": "terminal-sessionRejected-ignores-an-overlong-service-code",
+      "responses": [
+        {
+          "status": 400,
+          "body": {
+            "code": "MMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMMM",
+            "error": "Rejected"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected"
+        }
+      ]
+    },
+    {
+      "name": "terminal-sessionRejected-ignores-the-code-of-a-large-body",
+      "responses": [
+        {
+          "status": 400,
+          "body": {
+            "code": "MOBILE_SESSION_MODE_REQUIRED",
+            "error": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected"
+        }
+      ]
+    },
+    {
+      "name": "terminal-sessionRejected-for-an-inexact-restart",
+      "responses": [
+        {
+          "status": 409,
+          "body": {
+            "code": "COMMERCIAL_SESSION_RESTART_REQUIRED",
+            "error": "Restart required",
+            "retryWithNewSession": false,
+            "sessionId": "$request"
+          }
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected",
+          "serviceCode": "COMMERCIAL_SESSION_RESTART_REQUIRED"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "sessionRejected",
+          "serviceCode": "COMMERCIAL_SESSION_RESTART_REQUIRED"
+        }
+      ]
+    },
+    {
+      "name": "second-exact-restart-in-one-bootstrap-backs-off",
+      "responses": [
+        {
+          "status": 409,
+          "body": {
+            "code": "COMMERCIAL_SESSION_RESTART_REQUIRED",
+            "error": "The unused session reservation expired; start a new session",
+            "retryWithNewSession": true,
+            "sessionId": "$request"
+          }
+        },
+        {
+          "status": 409,
+          "body": {
+            "code": "COMMERCIAL_SESSION_RESTART_REQUIRED",
+            "error": "The unused session reservation expired; start a new session",
+            "retryWithNewSession": true,
+            "sessionId": "$request"
+          }
+        },
+        {
+          "status": 201
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 2,
+          "identity": "restarted",
+          "error": "sessionUnavailable"
+        },
+        {
+          "op": "admit",
+          "requests": 2,
+          "error": "sessionUnavailable"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 1000
+        },
+        {
+          "op": "admit",
+          "requests": 3,
+          "identity": "restarted"
+        }
+      ]
+    },
+    {
+      "name": "unexpected-non-error-status-is-recoverable",
+      "responses": [
+        {
+          "status": 302,
+          "headers": {
+            "Location": "https://api.tileflow.test/elsewhere"
+          }
+        },
+        {
+          "status": 201
+        }
+      ],
+      "steps": [
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "invalidSessionResponse"
+        },
+        {
+          "op": "admit",
+          "requests": 1,
+          "error": "invalidSessionResponse"
+        },
+        {
+          "op": "advance",
+          "milliseconds": 1000
+        },
+        {
+          "op": "admit",
+          "requests": 2
+        }
+      ]
+    },
+    {
       "name": "rate-limited-429-waits-for-retry-after",
       "responses": [
         {

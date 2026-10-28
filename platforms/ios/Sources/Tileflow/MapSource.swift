@@ -86,10 +86,11 @@ public struct TileflowMapSource: Equatable, Sendable {
     _ = try policy(for: manifestURL)
   }
 
-  private func policy(for manifestURL: URL?) throws -> ResourcePolicy {
+  private func policy(for manifestURL: URL?, loopbackAPI: Bool = false) throws -> ResourcePolicy {
     let urls = (manifestURL.map { [$0] } ?? []) + Array(resourceOrigins)
     let policy = ResourcePolicy(
-      origins: Set(urls.map(ResourcePolicy.origin)), allowsLoopbackHTTP: allowsLoopbackHTTP)
+      origins: Set(urls.map(ResourcePolicy.origin)),
+      allowsLoopbackHTTP: allowsLoopbackHTTP || loopbackAPI)
     do { for url in urls { try policy.validate(url) } } catch {
       throw TileflowMapError.invalidSource
     }
@@ -119,7 +120,9 @@ public struct TileflowMapSource: Equatable, Sendable {
     publicMetadataURLs.insert(manifestURL)
     return LoadableMapSource(
       map: map, manifestURL: manifestURL, mapID: mapID, surfaceID: surfaceID,
-      policy: try policy(for: manifestURL), publicMetadataURLs: publicMetadataURLs, hosted: hosted)
+      // A Hosted map served by a local development API loads its manifest over loopback HTTP.
+      policy: try policy(for: manifestURL, loopbackAPI: hosted?.isLoopbackHTTP == true),
+      publicMetadataURLs: publicMetadataURLs, hosted: hosted)
   }
 }
 
@@ -169,12 +172,17 @@ public enum TileflowMapError: Error, Equatable, Sendable {
   case rateLimited
   case sessionUnavailable
   case invalidSessionResponse
+  /// Tileflow refused to start the Hosted map's session for a reason that trying again will not
+  /// change, for example because the Map does not use session delivery. `serviceCode` is the
+  /// service's reason, such as `MOBILE_SESSION_MODE_REQUIRED`, when its answer carried one. The map
+  /// loads nothing new until it is reloaded.
+  case sessionRejected(serviceCode: String?)
   /// A Hosted map has no map credential: set `TileflowMapCredential` in the Info.plist, or pass
   /// one to ``Tileflow/configure(_:)`` or in the configuration of the map's source. A services
   /// credential never authorizes a map.
   case missingCredential
-  /// A Hosted map's configuration cannot be read: an Info.plist value is invalid, or the API
-  /// origin is not HTTPS. ``Tileflow/configuration()`` throws the detailed error.
+  /// A Hosted map's configuration cannot be read, for example because an Info.plist value is
+  /// invalid. ``Tileflow/configuration()`` throws the detailed error.
   case invalidConfiguration
 }
 

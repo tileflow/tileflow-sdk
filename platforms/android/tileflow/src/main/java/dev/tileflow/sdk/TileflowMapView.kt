@@ -36,6 +36,11 @@ import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
 
+/**
+ * A Tileflow map in a View hierarchy. Declared in a layout, `app:tileflowMapId` selects a Hosted
+ * map, `app:tileflowSurfaceId` names where the application shows it and `app:tileflowTheme` sets
+ * its initial theme. Otherwise select a map with [setSource].
+ */
 @MainThread
 public class TileflowMapView
 @JvmOverloads
@@ -96,6 +101,29 @@ constructor(
                 destroy()
             }
         }
+
+    init {
+        // A layout selects a Hosted map with `app:tileflowMapId`; an invalid value fails inflation.
+        if (attrs != null) {
+            val values = context.obtainStyledAttributes(attrs, R.styleable.TileflowMapView)
+            try {
+                values.getString(R.styleable.TileflowMapView_tileflowTheme)?.let {
+                    require(it.isNotEmpty() && it.length <= 128) { "Invalid tileflowTheme." }
+                    theme = it
+                }
+                val surfaceId = values.getString(R.styleable.TileflowMapView_tileflowSurfaceId)
+                val mapId = values.getString(R.styleable.TileflowMapView_tileflowMapId)
+                require(surfaceId == null || mapId != null) {
+                    "tileflowSurfaceId needs tileflowMapId."
+                }
+                if (mapId != null) {
+                    setSource(TileflowMapSource.hosted(mapId, surfaceId ?: "mobile-map"))
+                }
+            } finally {
+                values.recycle()
+            }
+        }
+    }
 
     /**
      * Shows a Hosted map. Its credential and API origin come from
@@ -413,11 +441,12 @@ constructor(
 
     /**
      * Retry the current source after a load or renderer failure. A Hosted session stopped by
-     * [TileflowErrorCode.CREDENTIAL_REJECTED], [TileflowErrorCode.ACCESS_DENIED] or
-     * [TileflowErrorCode.QUOTA_EXCEEDED] bootstraps again. Reloading also skips the delay that
-     * follows a temporary session failure ([TileflowErrorCode.RATE_LIMITED],
-     * [TileflowErrorCode.SESSION_UNAVAILABLE] or [TileflowErrorCode.INVALID_SESSION_RESPONSE]), so
-     * call it in response to a user action rather than from every failure event.
+     * [TileflowErrorCode.CREDENTIAL_REJECTED], [TileflowErrorCode.ACCESS_DENIED],
+     * [TileflowErrorCode.QUOTA_EXCEEDED] or [TileflowErrorCode.SESSION_REJECTED] bootstraps again.
+     * Reloading also skips the delay that follows a temporary session failure
+     * ([TileflowErrorCode.RATE_LIMITED], [TileflowErrorCode.SESSION_UNAVAILABLE] or
+     * [TileflowErrorCode.INVALID_SESSION_RESPONSE]), so call it in response to a user action rather
+     * than from every failure event.
      */
     public fun reload() {
         if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
@@ -443,13 +472,13 @@ constructor(
      * A load that fails while hidden, for example because the system suspended its networking,
      * reloads once visible instead of reporting a failure nobody saw.
      */
-    private fun report(code: TileflowErrorCode, current: Int) {
+    private fun report(code: TileflowErrorCode, current: Int, serviceCode: String? = null) {
         if (destroyed || generation != current) return
         if (!generationReady && !isVisibleToUser()) {
             pendingRemount = true
             return
         }
-        onEvent(TileflowMapEvent.Failed(code))
+        onEvent(TileflowMapEvent.Failed(code, serviceCode))
     }
 
     private fun contentReady() {
@@ -651,7 +680,7 @@ constructor(
                         if (!destroyed && generation == current)
                             onEvent(TileflowMapEvent.ExternalLinkRequested(it))
                     },
-                    onFailure = { report(it, current) },
+                    onFailure = { report(it.code, current, it.serviceCode) },
                 ) {
                     // The system may end a hidden renderer to reclaim memory. Replace it once
                     // visible; a renderer that ends again before its content loads is reported.

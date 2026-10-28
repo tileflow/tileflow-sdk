@@ -6,7 +6,6 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowMapException
 import java.io.ByteArrayInputStream
 import java.net.URI
@@ -15,7 +14,7 @@ internal class ResourceClient(
     private val assets: AssetManager,
     private val loader: ResourceLoader,
     private val onExternalLink: (URI) -> Unit,
-    private val onFailure: (TileflowErrorCode) -> Unit,
+    private val onFailure: (TileflowMapException) -> Unit,
     private val onProcessGone: () -> Unit,
 ) : WebViewClient() {
     override fun shouldInterceptRequest(
@@ -67,7 +66,7 @@ internal class ResourceClient(
                 )
             }
         } catch (error: Exception) {
-            if (error is TileflowMapException) view.post { onFailure(error.code) }
+            if (error is TileflowMapException) view.post { onFailure(error) }
             // Fail closed, including unexpected origins. Never allow WebView to fetch them itself.
             WebResourceResponse(
                 "text/plain",

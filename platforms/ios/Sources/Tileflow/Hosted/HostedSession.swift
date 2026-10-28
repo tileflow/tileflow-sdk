@@ -190,7 +190,7 @@ actor HostedSession {
     }
   }
 
-  /// Credential, access and quota failures stop the session; anything else delays the next
+  /// Credential, access, quota and other refusals stop the session; anything else delays the next
   /// bootstrap by 1 s doubling to 60 s, or longer when the service sends Retry-After.
   private func record(_ error: TileflowMapError, retryAfter: TimeInterval?) {
     guard terminal == nil, !lifetime.isClosed, !Task.isCancelled else { return }
@@ -226,9 +226,11 @@ actor HostedSession {
       try checkActive()
       try Task.checkCancellation()
       guard sessionID == expectedSession else { throw TileflowMapError.disposed }
-      if response.status == 409, attempt == 0,
+      if response.status == 409,
         HostedContract.isRestart(response.bytes, sessionID: expectedSession)
       {
+        // A second restart in one bootstrap waits for the retry delay; it is not a refusal.
+        guard attempt == 0 else { throw TileflowMapError.sessionUnavailable }
         rotate()
         continue
       }
@@ -238,7 +240,8 @@ actor HostedSession {
           retryAfter: HostedContract.retryAfter(response.headers["Retry-After"], now: Date()))
       }
       let authority = try HostedContract.parse(
-        response.bytes, mapID: mapID, sessionID: expectedSession, surfaceID: surfaceID)
+        response.bytes, mapID: mapID, sessionID: expectedSession, surfaceID: surfaceID,
+        allowsLoopbackHTTP: endpoint.isLoopbackHTTP)
       if let lastServerTime, authority.serverTime < lastServerTime {
         throw TileflowMapError.invalidSessionResponse
       }

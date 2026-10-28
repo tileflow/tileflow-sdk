@@ -7,6 +7,8 @@ struct HostedAuthority: Sendable {
   let origins: Set<String>
   let scopes: Set<String>
   let tilesets: Set<String>
+  /// The session of a local development API, whose resource origins may be loopback HTTP.
+  var allowsLoopbackHTTP = false
 }
 
 enum ResourceReaction: Equatable, Sendable {
@@ -31,9 +33,11 @@ enum HostedContract {
   ]
   private static let scopes: Set<String> = ["style", "tilejson", "tile", "sprite", "glyph", "font"]
 
-  static func parse(_ data: Data, mapID: String, sessionID: String, surfaceID: String) throws
-    -> HostedAuthority
-  {
+  /// `allowsLoopbackHTTP` admits loopback HTTP resource origins, for a local development API.
+  static func parse(
+    _ data: Data, mapID: String, sessionID: String, surfaceID: String,
+    allowsLoopbackHTTP: Bool = false
+  ) throws -> HostedAuthority {
     guard data.count <= 65_536, String(data: data, encoding: .utf8) != nil,
       let value = try? JSONDecoder().decode(JSONValue.self, from: data),
       case .object(let object) = value, Set(object.keys) == successKeys,
@@ -57,7 +61,9 @@ enum HostedContract {
       expires.timeIntervalSince(issued) <= 900
     else { throw TileflowMapError.invalidSessionResponse }
     let origins = try strings(value["resourceOrigins"], count: 1...2)
-    guard origins.allSatisfy({ canonicalOrigin($0) != nil }) else {
+    guard
+      origins.allSatisfy({ canonicalOrigin($0, allowsLoopbackHTTP: allowsLoopbackHTTP) != nil })
+    else {
       throw TileflowMapError.invalidSessionResponse
     }
     let resourceScopes = try strings(value["resourceScopes"], count: 1...6)
@@ -67,7 +73,8 @@ enum HostedContract {
     else { throw TileflowMapError.invalidSessionResponse }
     return HostedAuthority(
       grant: grant, serverTime: server, expiresAt: expires,
-      origins: origins, scopes: resourceScopes, tilesets: tilesets)
+      origins: origins, scopes: resourceScopes, tilesets: tilesets,
+      allowsLoopbackHTTP: allowsLoopbackHTTP)
   }
 
   /// Only these 429 bodies mean the Map or Team is out of quota; any other 429 is rate limiting.
@@ -87,13 +94,19 @@ enum HostedContract {
       else { return .rateLimited }
       return .quotaExceeded
     case 408, 500...599: return .sessionUnavailable
+    // Any other refusal, such as a Map without session delivery or a conflicting header, repeats
+    // until something outside the device changes.
+    case 400...499: return .sessionRejected(serviceCode: errorCode(body))
     default: return .invalidSessionResponse
     }
   }
 
   /// These will not succeed again without a change outside the device.
   static func isTerminal(_ error: TileflowMapError) -> Bool {
-    [.credentialRejected, .accessDenied, .quotaExceeded].contains(error)
+    switch error {
+    case .credentialRejected, .accessDenied, .quotaExceeded, .sessionRejected: true
+    default: false
+    }
   }
 
   /// Delta-seconds or an HTTP date, bounded so a hostile value cannot park the session.
@@ -125,9 +138,14 @@ enum HostedContract {
     return true
   }
 
-  static func canonicalOrigin(_ text: String) -> URL? {
+  /// An HTTPS origin in canonical form. With `allowsLoopbackHTTP`, also an HTTP origin that the
+  /// configuration accepts, which is one on `localhost` or `127.0.0.1`.
+  static func canonicalOrigin(_ text: String, allowsLoopbackHTTP: Bool = false) -> URL? {
     guard text.utf8.count <= 2048, let url = URL(string: text),
-      url.scheme == "https", url.host != nil, url.user == nil, url.password == nil,
+      url.scheme == "https"
+        || (allowsLoopbackHTTP && url.scheme == "http"
+          && TileflowConfiguration.normalizedOrigin(text)?.absoluteString == text),
+      url.host != nil, url.user == nil, url.password == nil,
       url.query == nil, url.fragment == nil, url.path.isEmpty,
       text == ResourcePolicy.origin(url),
       text.unicodeScalars.allSatisfy({ (33...126).contains($0.value) }),
@@ -140,7 +158,9 @@ enum HostedContract {
   /// independently checks current ownership, deployment, credentials and referenced assets.
   static func permits(_ url: URL, mapID: String, authority: HostedAuthority) -> Bool {
     guard authority.origins.contains(ResourcePolicy.origin(url)),
-      (try? ResourcePolicy(origins: authority.origins).validate(url)) != nil,
+      (try? ResourcePolicy(
+        origins: authority.origins, allowsLoopbackHTTP: authority.allowsLoopbackHTTP
+      ).validate(url)) != nil,
       let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
       !secretShaped(url.absoluteString)
     else { return false }

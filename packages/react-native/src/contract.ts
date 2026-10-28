@@ -119,9 +119,10 @@ export type MapSourceState =
   | Readonly<{status: 'error'; generation: number; error: MapSourceError}>;
 
 /**
- * The Hosted session stopped: its credential, Map or quota was rejected. The map keeps what it has
- * drawn and loads nothing new until `ref.retry()` or another source. Service outages and rate
- * limits retry on their own and are not reported.
+ * The Hosted session stopped: its credential, Map or quota was rejected, or Tileflow refused the
+ * session for another reason that trying again will not change (`NATIVE_SESSION_REJECTED`). The map
+ * keeps what it has drawn and loads nothing new until `ref.retry()` or another source. Service
+ * outages and rate limits retry on their own and are not reported.
  */
 export type MapSessionError = Readonly<{
   code:
@@ -129,8 +130,14 @@ export type MapSessionError = Readonly<{
     | 'NATIVE_SESSION_MAP_MISMATCH'
     | 'NATIVE_SESSION_MAP_NOT_FOUND'
     | 'NATIVE_SESSION_QUOTA_EXCEEDED'
+    | 'NATIVE_SESSION_REJECTED'
     | 'NATIVE_SESSION_INPUT_INVALID';
   kind: 'terminal';
+  /**
+   * For `NATIVE_SESSION_REJECTED`, the service's reason code when its answer carried one, such as
+   * `MOBILE_SESSION_MODE_REQUIRED`. A bounded identifier, never a message or response body.
+   */
+  serviceCode?: string;
 }>;
 
 export type MapRef = Readonly<{

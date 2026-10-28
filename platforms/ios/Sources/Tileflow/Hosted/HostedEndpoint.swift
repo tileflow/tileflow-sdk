@@ -6,16 +6,24 @@ import Foundation
 /// the renderer, a resource request or a URL, and descriptions and reflection never include it.
 struct HostedEndpoint: Sendable, CustomStringConvertible, CustomDebugStringConvertible {
   let apiOrigin: URL
+  /// A local development API: HTTP on `localhost` or `127.0.0.1`. Only then may the session's
+  /// resource origins be loopback HTTP origins too.
+  let isLoopbackHTTP: Bool
   private let credential: TileflowCredential
 
   /// Reads the map credential and the API origin. Services credentials never authorize a map.
+  /// The API origin follows the configuration's own rule, the one the service clients use: HTTPS,
+  /// or HTTP on a loopback host.
   init(_ configuration: TileflowConfiguration) throws {
     guard let credential = configuration.mapCredential else {
       throw TileflowMapError.missingCredential
     }
-    guard let origin = HostedContract.canonicalOrigin(configuration.apiOrigin.absoluteString)
+    guard
+      let origin = TileflowConfiguration.normalizedOrigin(configuration.apiOrigin.absoluteString),
+      origin.scheme == "http" || HostedContract.canonicalOrigin(origin.absoluteString) != nil
     else { throw TileflowMapError.invalidConfiguration }
     apiOrigin = origin
+    isLoopbackHTTP = origin.scheme == "http"
     self.credential = credential
   }
 

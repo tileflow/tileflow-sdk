@@ -60,8 +60,10 @@ const sessionErrorCodes: ReadonlySet<string> = new Set<MapSessionError['code']>(
   'NATIVE_SESSION_MAP_MISMATCH',
   'NATIVE_SESSION_MAP_NOT_FOUND',
   'NATIVE_SESSION_QUOTA_EXCEEDED',
+  'NATIVE_SESSION_REJECTED',
   'NATIVE_SESSION_INPUT_INVALID',
 ]);
+const SERVICE_CODE = /^[A-Z][A-Z0-9_]{0,63}$/u;
 type Epoch = {
   live: boolean;
   developmentOrigin?: string;
@@ -425,9 +427,19 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
     reopenings += 1;
     restart(epoch);
   }
-  function sessionError(epoch: Epoch, code: string) {
+  function sessionError(epoch: Epoch, code: string, serviceCode?: string) {
     if (disposed || current !== epoch || !epoch.live || !sessionErrorCodes.has(code)) return;
-    const error = Object.freeze({code: code as MapSessionError['code'], kind: 'terminal' as const});
+    const reason =
+      code === 'NATIVE_SESSION_REJECTED' &&
+      typeof serviceCode === 'string' &&
+      SERVICE_CODE.test(serviceCode)
+        ? {serviceCode}
+        : {};
+    const error: MapSessionError = Object.freeze({
+      code: code as MapSessionError['code'],
+      kind: 'terminal' as const,
+      ...reason,
+    });
     emit({type: 'session-error', generation: generation(), error});
   }
   function createEpoch(developmentOrigin?: string): Epoch {
@@ -466,7 +478,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
           onRetired: () => void Promise.resolve().then(() => reopen(epoch)),
           onSessionError: (error) => {
             if (error.kind !== 'terminal') return;
-            void Promise.resolve().then(() => sessionError(epoch, error.code));
+            void Promise.resolve().then(() => sessionError(epoch, error.code, error.serviceCode));
           },
         });
         const map = await epoch.lease.ready;

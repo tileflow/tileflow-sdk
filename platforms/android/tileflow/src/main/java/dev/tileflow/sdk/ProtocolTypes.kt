@@ -75,7 +75,10 @@ public enum class TileflowErrorCode(
  * the chosen level never leave the renderer.
  */
 public enum class TileflowEventLevel(internal val wireName: String) {
-    /** Lifecycle, failures, warnings, taps and activations, and the camera each time it settles. */
+    /**
+     * Lifecycle, theme transitions, failures, warnings, taps and activations, the end of animations
+     * and their cues, and the camera each time it settles.
+     */
     ESSENTIAL("essential"),
     /** Also the start of every camera movement, with its reason. */
     CAMERA("camera"),
@@ -131,7 +134,7 @@ public enum class TileflowResourceKind(internal val wireName: String) {
     GLYPHS("glyphs"),
     /** Map icons. */
     SPRITE("sprite"),
-    /** An image the style requests. */
+    /** An image the style requests, or one the application passed to the map. */
     IMAGE("image"),
     /** A font file. */
     FONT("font"),

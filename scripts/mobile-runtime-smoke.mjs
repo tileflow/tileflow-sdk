@@ -7,6 +7,7 @@ import {createServer} from 'node:net';
 import {resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {parseArgs} from 'node:util';
+import {crc32, deflateSync} from 'node:zlib';
 
 // Loads the built embedded runtime in desktop engines with a stub native host. The stub plays the
 // Android role: it injects the document-start host identity, receives runtime output, and serves
@@ -56,6 +57,32 @@ function transportTarget(address) {
     if (tile.length) target = target.replace(`%7B${axis}%7D`, tile[index]);
   }
   return new URL(target).origin === fixtureOrigin ? target : undefined;
+}
+
+/** A PNG of one colour, as an application passes an image to the map. */
+function png(width, height, [red, green, blue, alpha]) {
+  const chunk = (type, body) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(body.length);
+    const typed = Buffer.concat([Buffer.from(type), body]);
+    const checksum = Buffer.alloc(4);
+    checksum.writeUInt32BE(crc32(typed));
+    return Buffer.concat([length, typed, checksum]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header.set([8, 6, 0, 0, 0], 8);
+  const row = Buffer.concat([
+    Buffer.from([0]),
+    Buffer.from(Array(width).fill([red, green, blue, alpha]).flat()),
+  ]);
+  return Buffer.concat([
+    Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(Buffer.concat(Array(height).fill(row)))),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
 }
 
 /** A GeoJSON FeatureCollection of points around the fixture map, of at least `bytes`. */
@@ -223,6 +250,19 @@ async function runEngine(name) {
       'themeChanged',
       (output) => output.event === 'themeChanged' && output.result.theme === 'dark',
     );
+    // Theme transitions report each phase; the settled one carries the theme's route inks.
+    const transition = await event(
+      'themeTransition ready',
+      (output) => output.event === 'themeTransition' && output.result.phase === 'ready',
+    );
+    assert.equal(transition.result.currentTheme, 'dark');
+    assert.equal(transition.result.routeInks.line, '#60a5fa', `${name}: dark route inks`);
+    assert.ok(
+      outputs.some(
+        (output) => output.event === 'themeTransition' && output.result.phase === 'applying',
+      ),
+      `${name}: applying phase`,
+    );
     const camera = await call('getCamera', null);
     assert.ok(Math.abs(camera.latitude - 40.42) < 0.01, `${name}: camera after theme change`);
 
@@ -310,12 +350,197 @@ async function runEngine(name) {
       code: 'resourceFailed',
       reason: 'dataUnavailable',
     });
+
+    // The map's scene beyond its theme, through Core's controllers. Animations report their end
+    // and cues at the essential level.
+    await call('setEvents', {
+      events: Object.fromEntries(
+        Object.entries(protocol.events)
+          .filter(([, value]) => value.level === 'essential')
+          .map(([event]) => [event, {throttleMs: 0}]),
+      ),
+    });
+    assert.equal((await call('getRouteInks', null)).line, '#60a5fa', `${name}: route inks`);
+    const route = register(
+      Buffer.from(
+        JSON.stringify({
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              properties: {},
+              geometry: {
+                type: 'LineString',
+                coordinates: [
+                  [-3.715, 40.415],
+                  [-3.7, 40.42],
+                  [-3.685, 40.425],
+                ],
+              },
+            },
+          ],
+        }),
+      ),
+    );
+    await call('setContent', {
+      annotations: [],
+      overlays: [
+        {
+          id: 'route-casing',
+          kind: 'line',
+          data: route,
+          ink: 'casing',
+          size: 9,
+          placement: 'ground',
+        },
+        {
+          id: 'route-line',
+          kind: 'line',
+          data: route,
+          ink: 'line',
+          placement: 'ground',
+          occludedOpacity: 0.4,
+          progress: {end: 0},
+        },
+      ],
+    });
+    data.delete(route.id);
+    const progress = await call('animateLineProgress', {
+      layers: ['route-line'],
+      to: {end: 1, light: 0.5},
+      duration: 300,
+    });
+    await event(
+      'line progress',
+      (output) =>
+        output.event === 'animationEnded' && output.result.animation === progress.animation,
+    ).then((output) => assert.equal(output.result.finished, true, `${name}: line progress`));
+    const unknownLayer = await request('animateLineProgress', {
+      layers: ['route-casing'],
+      to: {end: 1},
+      duration: 0,
+    });
+    assert.equal(unknownLayer.error?.context?.reason, 'unknownLayer');
+    await call('setTheme', {theme: 'light', duration: 0});
+    await call('setStyleState', {name: 'emphasis-level', value: 0.5, duration: 0});
+    await call('setSun', {sun: {azimuth: 220, altitude: 15}, duration: 0});
+    await call('setSun', {
+      sun: {date: Date.UTC(2026, 5, 21, 18), location: {longitude: -3.7, latitude: 40.42}},
+    });
+    const keep = register(
+      Buffer.from(
+        JSON.stringify({
+          type: 'Polygon',
+          coordinates: [
+            [
+              [-3.71, 40.41],
+              [-3.69, 40.41],
+              [-3.69, 40.43],
+              [-3.71, 40.41],
+            ],
+          ],
+        }),
+      ),
+    );
+    await call('setEmphasis', {emphasis: {labels: 0.3, keep}, duration: 0});
+    data.delete(keep.id);
+    await call('setEmphasis', {emphasis: null});
+    const rows = register(
+      Buffer.from(
+        JSON.stringify([
+          [1, 4.5],
+          [2, null],
+        ]),
+      ),
+    );
+    await call('setBoundaryValues', {values: {joinBy: 'id', rows}});
+    data.delete(rows.id);
+    await call('setBoundaryValues', {values: null});
+    const pin = register(png(24, 32, [233, 87, 63, 255]));
+    const darkPin = register(png(24, 32, [255, 255, 255, 255]));
+    await call('setImages', {
+      images: [{name: 'pin', data: pin, pixelRatio: 2, variants: {dark: darkPin}}],
+    });
+    data.delete(pin.id);
+    data.delete(darkPin.id);
+    await call('setDepthMarkers', {
+      markers: [
+        {
+          id: 'cafe',
+          coordinate: {longitude: -3.7, latitude: 40.42},
+          image: 'pin',
+          size: [24, 32],
+          anchor: 'bottom',
+        },
+      ],
+    });
+    const unknownImage = await request('setDepthMarkers', {
+      markers: [
+        {id: 'b', coordinate: {longitude: -3.7, latitude: 40.42}, image: 'missing', size: [8, 8]},
+      ],
+    });
+    assert.equal(unknownImage.error?.code, 'invalidRequest', `${name}: marker without image`);
+    const brokenImage = register(Buffer.from('not an image'));
+    const decoding = await request('setImages', {images: [{name: 'broken', data: brokenImage}]});
+    data.delete(brokenImage.id);
+    assert.equal(decoding.error?.context?.reason, 'invalidImage', `${name}: undecodable image`);
+    await call('setOptions', {
+      viewMode: '2d',
+      quality: 'balanced',
+      gestures: {pan: true, zoom: true, rotate: true, pitch: true},
+      controls: true,
+      vegetation: false,
+    });
+    await call('setViewMode', {viewMode: '3d', duration: 600});
+
+    // A shot reports its movement once, with its cues, however many frames it moves.
+    const settledBefore = outputs.filter((output) => output.event === 'cameraMoveEnded').length;
+    const shot = await call('playShot', {
+      keyframes: [
+        {at: 0, camera: {longitude: -3.7, latitude: 40.42, zoom: 13}},
+        {at: 600, camera: {longitude: -3.69, latitude: 40.425, zoom: 14, bearing: 30, pitch: 60}},
+      ],
+      cues: [{at: 300, id: 'midway'}],
+    });
+    const shotEnded = await event(
+      'shot',
+      (output) => output.event === 'animationEnded' && output.result.animation === shot.animation,
+    );
+    assert.equal(shotEnded.result.finished, true, `${name}: shot finished`);
+    assert.ok(
+      outputs.some((output) => output.event === 'shotCue' && output.result.cue === 'midway'),
+      `${name}: shot cue`,
+    );
+    const settledShot = outputs.filter((output) => output.event === 'cameraMoveEnded');
+    assert.equal(settledShot.length, settledBefore + 1, `${name}: one settled camera per shot`);
+    assert.equal(settledShot.at(-1).result.reason, 'api');
+    assert.ok(Math.abs(settledShot.at(-1).result.camera.pitch - 60) < 0.01, `${name}: shot end`);
+    const long = await call('playShot', {
+      keyframes: [
+        {at: 0, camera: {longitude: -3.7, latitude: 40.42, zoom: 13}},
+        {at: 60_000, camera: {longitude: -3.6, latitude: 40.42, zoom: 13}},
+      ],
+    });
+    await call('stopAnimation', {animation: long.animation});
+    const stopped = await event(
+      'stopped shot',
+      (output) => output.event === 'animationEnded' && output.result.animation === long.animation,
+    );
+    assert.equal(stopped.result.finished, false, `${name}: stopped shot`);
     await call('dispose', null);
 
     const errors = outputs.filter((output) => output.event === 'error' || output.error);
     assert.deepEqual(
       errors.map((output) => output.error?.code ?? output.result.code),
-      ['invalidRequest', 'resourceFailed', 'invalidRequest', 'resourceFailed'],
+      [
+        'invalidRequest',
+        'resourceFailed',
+        'invalidRequest',
+        'resourceFailed',
+        'invalidRequest',
+        'invalidRequest',
+        'invalidRequest',
+      ],
       `${name}: unexpected runtime errors`,
     );
     assert.deepEqual(failures, [], `${name}: browser failures`);

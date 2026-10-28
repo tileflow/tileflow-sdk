@@ -27,6 +27,17 @@ enum ProtocolContract {
     case unproject
     case setVisibility
     case queryAtPoint
+    case setViewMode
+    case setSun
+    case setEmphasis
+    case setStyleState
+    case getRouteInks
+    case setBoundaryValues
+    case setImages
+    case setDepthMarkers
+    case animateLineProgress
+    case playShot
+    case stopAnimation
     case dispose
   }
 
@@ -36,6 +47,9 @@ enum ProtocolContract {
     case loading
     case contentReady
     case themeChanged
+    case themeTransition
+    case animationEnded
+    case shotCue
     case warning
     case tap
     case annotationActivated
@@ -52,6 +66,9 @@ enum ProtocolContract {
       case .loading: .essential
       case .contentReady: .essential
       case .themeChanged: .essential
+      case .themeTransition: .essential
+      case .animationEnded: .essential
+      case .shotCue: .essential
       case .warning: .essential
       case .tap: .essential
       case .annotationActivated: .essential
@@ -76,6 +93,8 @@ enum ProtocolContract {
     case processTerminated
     case contentRestore
     case scene
+    case invalidImage
+    case unknownLayer
   }
 
   /// Error codes the renderer may send. Any other code from the renderer is a protocol fault.

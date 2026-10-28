@@ -104,3 +104,32 @@ test('a 2D map settling reads its style once per style, and mounts a later 3D st
   assert.ok(map.layers.has(tileflowBuildings3DLayerId));
   scene.dispose();
 });
+
+test('a view mode change passes its transition to the scene, so buildings rise or descend', async () => {
+  const map = fakeMap(buildings);
+  const changes: unknown[] = [];
+  const scene = attachTileflowMap3D({
+    map,
+    viewMode: '2d',
+    load: () =>
+      Promise.resolve({
+        createTileflowMap3D: () =>
+          ({
+            show: (change?: unknown) => (changes.push(['show', change]), Promise.resolve()),
+            hide: (change?: unknown) => (changes.push(['hide', change]), Promise.resolve()),
+            setVegetation() {},
+            dispose() {},
+          }) as never,
+      }),
+  });
+  await mounted();
+  const rise = {transition: {duration: 800, mode: 'grow' as const}};
+  scene.setViewMode('3d', rise);
+  scene.setViewMode('3d', rise);
+  scene.setViewMode('2d');
+  assert.deepEqual(changes, [
+    ['show', rise],
+    ['hide', undefined],
+  ]);
+  scene.dispose();
+});

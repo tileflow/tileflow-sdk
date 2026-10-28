@@ -7,9 +7,12 @@ import {
   attachTileflowMap3D,
   attachTileflowNauticalLights,
   attachTileflowNotices,
+  createBoundaryFeatureState,
+  createTileflowDepthMarkers,
   createTileflowMap3D,
   createTileflowThemeController,
   loadTileflowStyleFonts,
+  playTileflowShot,
   registerTileflowContourProtocol,
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
@@ -17,6 +20,7 @@ import {
   type TileflowMap3DAttachment,
   tileflowMaxPitch,
   type TileflowThemeController,
+  type TileflowThemeTransition,
 } from '@tileflow/core/browser';
 import {
   resolveTileflowManifestMap,
@@ -25,6 +29,7 @@ import {
   type TileflowRuntimeManifestMap,
   type TileflowRuntimeStyle,
 } from '@tileflow/core/runtime';
+import {createAnimations, isShotFrame, shotFrame} from './animations';
 import type {Overlay} from './content-contract';
 import {createMapContentRegistry, type ResolvedOverlay} from './content-registry';
 import {createDataReader} from './data';
@@ -57,6 +62,7 @@ import {
   type ResourcePlatform,
   resourceTemplateAddress,
 } from './resources';
+import {createMapScene, type DecodedImage} from './scene';
 import {createStyleResourceLoader} from './style-resources';
 
 const resourceKinds: Record<string, ResourceKind> = {
@@ -70,6 +76,19 @@ const resourceKinds: Record<string, ResourceKind> = {
 };
 /** Resource kinds remembered per transport address, enough for the requests in flight. */
 const maximumRememberedResources = 1024;
+
+/** Decodes an application image: RGBA pixels for the style and a bitmap for depth markers. */
+async function decodeImage(bytes: Uint8Array<ArrayBuffer>): Promise<DecodedImage> {
+  const bitmap = await createImageBitmap(new Blob([bytes]));
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const context = canvas.getContext('2d', {willReadFrequently: true});
+  if (!context) throw new Error('No 2D canvas.');
+  context.drawImage(bitmap, 0, 0);
+  const {data} = context.getImageData(0, 0, bitmap.width, bitmap.height);
+  return {width: bitmap.width, height: bitmap.height, pixels: data, texture: bitmap};
+}
 
 /** Composes existing Core controllers. This module owns no account, grant or web session. */
 export function createMobileMapRuntime(input: {
@@ -96,6 +115,9 @@ export function createMobileMapRuntime(input: {
   let controls: maplibregl.NavigationControl | undefined;
   let activeOptions: MapOptions | undefined;
   let content: ReturnType<typeof createMapContentRegistry> | undefined;
+  let appearance: ReturnType<typeof createMapScene> | undefined;
+  let animations: ReturnType<typeof createAnimations> | undefined;
+  let shotMoving = false;
   let appearanceRevision = 0;
   let manifestMap: TileflowRuntimeManifestMap | undefined;
   let configuration: InitializeOptions | undefined;
@@ -155,12 +177,30 @@ export function createMobileMapRuntime(input: {
     const reason = movement;
     emit(event, () => ({camera: camera(), reason, revision: ++cameraRevision}));
   };
+  /** The theme's route inks reach the layers drawn in them after a theme or blend change. */
+  const refreshInks = () => {
+    if (themes && content && !disposed) content.setInks(themes.getRouteInks());
+  };
+  const reportTransition = (transition: TileflowThemeTransition) => {
+    if (disposed) return;
+    const {phase, currentTheme, targetTheme} = transition;
+    if (phase === 'ready') refreshInks();
+    emit('themeTransition', () => ({
+      phase,
+      ...(currentTheme === undefined ? {} : {currentTheme}),
+      ...(targetTheme === undefined ? {} : {targetTheme}),
+      ...(phase === 'ready' && themes ? {routeInks: themes.getRouteInks()} : {}),
+    }));
+    if (phase === 'ready') emit('themeChanged', () => ({theme: currentTheme ?? targetTheme}));
+  };
   const dispose = () => {
     if (disposed) return;
     disposed = true;
     lifetime.abort();
     events.dispose();
     warnings.dispose();
+    animations?.dispose();
+    appearance?.dispose();
     content?.dispose();
     if (cameraFrame !== undefined) cancelAnimationFrame(cameraFrame);
     scene?.dispose();
@@ -199,6 +239,7 @@ export function createMobileMapRuntime(input: {
       controls = undefined;
     }
     if (previous?.viewMode !== options.viewMode) scene?.setViewMode(options.viewMode);
+    if (previous?.vegetation !== options.vegetation) appearance?.setVegetation(options.vegetation);
   }
 
   async function initialize(options: InitializeOptions, signal: AbortSignal) {
@@ -255,9 +296,11 @@ export function createMobileMapRuntime(input: {
         interactive: options.interactive,
         pixelRatio: pixelRatio(options.options),
         attributionControl: {compact: true},
-        canvasContextAttributes: tileflowCanvasContextAttributes(),
-        // Tileflow's compiled styles are validated when they are built.
-        validateStyle: false,
+        canvasContextAttributes: tileflowCanvasContextAttributes({
+          antialias: options.renderer.antialias,
+        }),
+        // Tileflow's compiled styles are validated when they are built, so this is opt-in.
+        validateStyle: options.renderer.validateStyle,
         maxPitch: tileflowMaxPitch,
         transformRequest: (url, type) => ({url: address(worldRequests.rewriteUrl(url), type)}),
       });
@@ -272,18 +315,14 @@ export function createMobileMapRuntime(input: {
         initial: style,
         loadFonts,
         loadStyle: styles.load,
-        onTransition: (transition) => {
-          if (!disposed && transition.phase === 'ready') {
-            const theme = transition.currentTheme ?? transition.targetTheme;
-            emit('themeChanged', () => ({theme}));
-          }
-        },
+        onTransition: reportTransition,
       });
       // The map's 3D scene mounts only once its style declares one, so 2D maps do not pay for it.
       scene = attachTileflowMap3D({
         map,
         controller: themes,
         viewMode: options.options.viewMode,
+        ...(options.options.vegetation === null ? {} : {vegetation: options.options.vegetation}),
         load: () => Promise.resolve({createTileflowMap3D}),
         // The map continues in two dimensions; this is a warning, not a failure.
         onError: () => {
@@ -296,13 +335,76 @@ export function createMobileMapRuntime(input: {
         },
         transformRequest: (url) => ({url: address(url)}),
       });
+      const current3D = scene;
+      const themeController = themes;
+      const shown = map;
+      appearance = createMapScene({
+        themes: themeController,
+        attachment: current3D,
+        read: readData,
+        decode: decodeImage,
+        boundaries: (settings) => createBoundaryFeatureState(shown, settings),
+        depthMarkers: () => createTileflowDepthMarkers(shown),
+        inksChanged: refreshInks,
+      });
       applyOptions(options.options);
-      content = createMapContentRegistry(map, {emit, warn: warnings.warn});
+      content = createMapContentRegistry(map, {
+        emit,
+        warn: warnings.warn,
+        inks: () => themeController.getRouteInks(),
+      });
+      const contentRegistry = content;
+      animations = createAnimations({
+        emit,
+        play: (motion, settings) =>
+          playTileflowShot(
+            {
+              getCanvas: () => shown.getCanvas(),
+              jumpTo: (next) => shown.jumpTo(next, shotFrame),
+            },
+            motion,
+            settings,
+          ),
+        prepareBlend: async (names, position, signal) => {
+          const prepared = await Promise.all(
+            names.map((theme) => {
+              const style = resolveTileflowRuntimeStyle({
+                source: configuration!.source,
+                manifestMap,
+                theme,
+              });
+              if (!style)
+                throw new ProtocolError('invalidRequest', 'The shot blends an unavailable theme.');
+              return styles.prepare(style);
+            }),
+          );
+          signal.throwIfAborted();
+          appearanceRevision += 1;
+          const result = await themeController.setBlend({themes: prepared, position});
+          if (result.status === 'failed')
+            throw new ProtocolError('resourceFailed', 'The theme blend could not be applied.');
+          refreshInks();
+          return (next) => {
+            void themeController.setBlend({themes: prepared, position: next}).then(refreshInks);
+          };
+        },
+        animateProgress: (request) => contentRegistry.animateProgress(request),
+        stopProgress: (layers) => contentRegistry.stopProgress(layers),
+        shotMoving: (moving) => {
+          if (moving === shotMoving || disposed) return;
+          shotMoving = moving;
+          movement = 'api';
+          emitCamera(moving ? 'cameraMoveStarted' : 'cameraMoveEnded');
+        },
+      });
       map.on('load', () => {
         if (!disposed) emit('contentReady', () => ({camera: camera(), theme: style.theme}));
       });
       map.on('movestart', (event) => {
+        // A shot reports its movement once, not once per frame.
+        if (isShotFrame(event)) return;
         movement = cameraReason(event);
+        if (movement === 'gesture') animations?.gesture();
         emitCamera('cameraMoveStarted');
       });
       map.on('move', (event) => {
@@ -314,7 +416,8 @@ export function createMobileMapRuntime(input: {
           emitCamera('cameraMoved');
         });
       });
-      map.on('moveend', () => {
+      map.on('moveend', (event) => {
+        if (isShotFrame(event)) return;
         if (cameraFrame !== undefined) cancelAnimationFrame(cameraFrame);
         cameraFrame = undefined;
         // The settled camera supersedes any update still waiting for its interval.
@@ -390,6 +493,12 @@ export function createMobileMapRuntime(input: {
       initializing = false;
     }
   }
+
+  const requireScene = () => {
+    requireMap();
+    if (!appearance) throw new ProtocolError('notReady', 'The map is not initialized.');
+    return appearance;
+  };
 
   const cancelled = (signal: AbortSignal) => {
     assertActive();
@@ -498,6 +607,7 @@ export function createMobileMapRuntime(input: {
           });
           if (result.status === 'failed')
             throw new ProtocolError('resourceFailed', 'The theme could not be applied.');
+          refreshInks();
           return {status: result.status, theme: result.theme};
         }
         case 'setBlend': {
@@ -520,6 +630,7 @@ export function createMobileMapRuntime(input: {
           );
           if (result.status === 'failed')
             throw new ProtocolError('resourceFailed', 'The theme blend could not be applied.');
+          refreshInks();
           return {status: result.status, theme: result.theme};
         }
         case 'setOptions':
@@ -572,6 +683,35 @@ export function createMobileMapRuntime(input: {
               source: feature.source,
               layer: feature.layer.id,
             }));
+        case 'setViewMode':
+          requireMap();
+          // The view mode is part of the options the host replays to a new renderer.
+          if (activeOptions) activeOptions = {...activeOptions, viewMode: command.payload.viewMode};
+          return requireScene().setViewMode(command.payload);
+        case 'setSun':
+          return requireScene().setSun(command.payload);
+        case 'setEmphasis':
+          return requireScene().setEmphasis(command.payload, signal);
+        case 'setStyleState':
+          return requireScene().setStyleState(command.payload);
+        case 'getRouteInks':
+          return requireScene().routeInks();
+        case 'setBoundaryValues':
+          return requireScene().setBoundaryValues(command.payload, signal);
+        case 'setImages':
+          return requireScene().setImages(command.payload, signal);
+        case 'setDepthMarkers':
+          return requireScene().setDepthMarkers(command.payload);
+        case 'animateLineProgress':
+          requireMap();
+          return animations!.animateProgress(command.payload);
+        case 'playShot':
+          requireMap();
+          return animations!.playShot(command.payload, signal);
+        case 'stopAnimation':
+          requireMap();
+          animations!.stop(command.payload.animation);
+          return null;
         case 'dispose':
           return dispose();
       }

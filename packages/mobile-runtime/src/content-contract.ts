@@ -1,22 +1,33 @@
 import {z} from 'zod';
 import {type TileflowAnnotation, tileflowAnnotationsSchema} from '@tileflow/interactions';
 import {dataReferenceSchema} from './data';
+import {overlayStyleSchema} from './scene-contract';
 
 /**
  * An application layer. Its GeoJSON travels over the data channel and is validated by the
  * runtime after the transfer, so its size is bounded by bytes rather than by message limits.
  */
-export const overlaySchema = z.strictObject({
-  id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u),
-  data: dataReferenceSchema,
-  kind: z.enum(['circle', 'line', 'fill']),
-  color: z
-    .string()
-    .regex(/^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/iu)
-    .default('#e9573f'),
-  size: z.number().finite().min(0).max(64).default(6),
-  opacity: z.number().finite().min(0).max(1).default(1),
-});
+export const overlaySchema = z
+  .strictObject({
+    id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u),
+    data: dataReferenceSchema,
+    kind: z.enum(['circle', 'line', 'fill']),
+    color: z
+      .string()
+      .regex(/^#[0-9a-f]{6}(?:[0-9a-f]{2})?$/iu)
+      .default('#e9573f'),
+    size: z.number().finite().min(0).max(64).default(6),
+    opacity: z.number().finite().min(0).max(1).default(1),
+    ...overlayStyleSchema,
+  })
+  // Line progress and showing through 3D content are properties of lines, and only a line on the
+  // ground can be hidden by 3D content.
+  .refine(
+    (overlay) =>
+      (overlay.kind === 'line' || overlay.progress === undefined) &&
+      (overlay.occludedOpacity === 0 ||
+        (overlay.kind === 'line' && overlay.placement === 'ground')),
+  );
 export const contentSchema = z.strictObject({
   annotations: z.custom<TileflowAnnotation[]>(
     (value) =>

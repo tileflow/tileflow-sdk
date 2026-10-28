@@ -2,6 +2,18 @@ import {z} from 'zod';
 import {contentSchema} from './content-contract';
 import {protocol} from './contract';
 import {ProtocolError, type WireError} from './errors';
+import {
+  animationIdentifier,
+  boundaryValuesRequestSchema,
+  depthMarkersRequestSchema,
+  emphasisRequestSchema,
+  imagesRequestSchema,
+  lineProgressAnimationSchema,
+  shotRequestSchema,
+  styleStateRequestSchema,
+  sunRequestSchema,
+  viewModeRequestSchema,
+} from './scene-contract';
 
 export {protocol};
 export {
@@ -87,8 +99,18 @@ export const mapOptionsSchema = z.strictObject({
     })
     .default({pan: true, zoom: true, rotate: true, pitch: true}),
   controls: z.boolean().default(true),
+  /** Shows or hides the map's 3D vegetation; null keeps what the map's design chooses. */
+  vegetation: z.boolean().nullable().default(null),
 });
 export type MapOptions = z.infer<typeof mapOptionsSchema>;
+/** Options fixed for the renderer's lifetime: a change needs a new renderer. */
+const rendererOptionsSchema = z.strictObject({
+  /** Multisampling, which smooths the edges of 3D content; on by default, as on the web. */
+  antialias: z.boolean().default(true),
+  /** Validates styles as MapLibre loads them; off by default, as Tileflow validates them. */
+  validateStyle: z.boolean().default(false),
+});
+export type RendererOptions = z.infer<typeof rendererOptionsSchema>;
 const initializeSchema = z.strictObject({
   source: sourceSchema,
   theme: themeSchema.nullish(),
@@ -100,7 +122,9 @@ const initializeSchema = z.strictObject({
     quality: 'balanced',
     gestures: {pan: true, zoom: true, rotate: true, pitch: true},
     controls: true,
+    vegetation: null,
   }),
+  renderer: rendererOptionsSchema.default({antialias: true, validateStyle: false}),
   events: subscriptionsSchema.default(essentialSubscriptions),
 });
 export type InitializeOptions = z.infer<typeof initializeSchema>;
@@ -169,6 +193,20 @@ const commandSchema = z.discriminatedUnion('method', [
   z.strictObject({
     method: z.literal('queryAtPoint'),
     payload: point,
+  }),
+  z.strictObject({method: z.literal('setViewMode'), payload: viewModeRequestSchema}),
+  z.strictObject({method: z.literal('setSun'), payload: sunRequestSchema}),
+  z.strictObject({method: z.literal('setEmphasis'), payload: emphasisRequestSchema}),
+  z.strictObject({method: z.literal('setStyleState'), payload: styleStateRequestSchema}),
+  z.strictObject({method: z.literal('getRouteInks'), payload: z.null()}),
+  z.strictObject({method: z.literal('setBoundaryValues'), payload: boundaryValuesRequestSchema}),
+  z.strictObject({method: z.literal('setImages'), payload: imagesRequestSchema}),
+  z.strictObject({method: z.literal('setDepthMarkers'), payload: depthMarkersRequestSchema}),
+  z.strictObject({method: z.literal('animateLineProgress'), payload: lineProgressAnimationSchema}),
+  z.strictObject({method: z.literal('playShot'), payload: shotRequestSchema}),
+  z.strictObject({
+    method: z.literal('stopAnimation'),
+    payload: z.strictObject({animation: animationIdentifier}),
   }),
   z.strictObject({method: z.literal('dispose'), payload: z.null()}),
 ]);

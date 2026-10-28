@@ -61,12 +61,16 @@ function responseFromWire(
     reply.status < 100 ||
     reply.status > 599 ||
     typeof reply.cacheControl !== 'string' ||
-    reply.cacheControl.length > 1024
+    reply.cacheControl.length > 1024 ||
+    (reply.retryAfter !== undefined &&
+      (typeof reply.retryAfter !== 'string' ||
+        reply.retryAfter.length > nativeBootstrapLimits.retryAfterCharacters))
   )
     throw invalid();
   // Do not retain the wire object (and its encoded body) in header closures.
   const status = reply.status;
   const cacheControl = reply.cacheControl;
+  const retryAfter = reply.retryAfter || null;
   let bytes = decodeBoundedBase64(reply.bodyBase64);
   let readerTaken = false;
   let done = false;
@@ -80,7 +84,9 @@ function responseFromWire(
     status,
     headers: Object.freeze({
       get(name: string) {
-        return name.toLowerCase() === 'cache-control' ? cacheControl : null;
+        const header = name.toLowerCase();
+        if (header === 'cache-control') return cacheControl;
+        return header === 'retry-after' ? retryAfter : null;
       },
     }),
     body: Object.freeze({

@@ -16,58 +16,133 @@ extension ResourceLoading {
 }
 
 /// A generation owns one ephemeral connection pool. Browser cookies and headers never enter it.
+/// Only a session bootstrap ends a Hosted map: protected resources the service refuses renew the
+/// grant, reload a superseded deployment or wait for a rate limit, as `HostedContract.reaction`
+/// describes.
 final class ResourceLoader: ResourceLoading, Sendable {
   private let policy: ResourcePolicy
   private let hosted: HostedSession?
+  private let apiOrigin: URL?
   private let publicMetadataURLs: Set<URL>
   private let transport: any NativeHTTPTransporting
+  private let onDeploymentSuperseded: (@Sendable () async -> Bool)?
+  private let now: @Sendable () -> ContinuousClock.Instant
+  private let pause: @Sendable (Duration) async throws -> Void
+  private let rateLimit = RateLimitGate()
 
   init(
     policy: ResourcePolicy, maximumBytes: Int = 16 * 1024 * 1024,
-    hosted: HostedSession? = nil, publicMetadataURLs: Set<URL> = [],
-    transport: (any NativeHTTPTransporting)? = nil
+    hosted: HostedSession? = nil, apiOrigin: URL? = nil, publicMetadataURLs: Set<URL> = [],
+    transport: (any NativeHTTPTransporting)? = nil,
+    onDeploymentSuperseded: (@Sendable () async -> Bool)? = nil,
+    now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
+    pause: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
   ) {
     self.policy = policy
     self.hosted = hosted
+    self.apiOrigin = apiOrigin
     self.publicMetadataURLs = publicMetadataURLs
     self.transport = transport ?? NativeHTTPTransport(maximumBytes: maximumBytes)
+    self.onDeploymentSuperseded = onDeploymentSuperseded
+    self.now = now
+    self.pause = pause
   }
 
   func close() { transport.close() }
 
   func load(_ request: URLRequest) async throws -> ResourcePayload {
-    guard let url = request.url else { throw ResourceError.invalidAddress }
+    guard var url = request.url else { throw ResourceError.invalidAddress }
     guard request.httpMethod == nil || request.httpMethod == "GET" || request.httpMethod == "HEAD"
     else { throw ResourceError.unsupportedRequest }
-    var native = URLRequest(
-      url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
-    native.httpMethod = request.httpMethod ?? "GET"
-    if let range = request.value(forHTTPHeaderField: "Range") {
+    let range = request.value(forHTTPHeaderField: "Range")
+    if let range {
       guard range.range(of: #"^bytes=[0-9]+-[0-9]*$"#, options: .regularExpression) != nil
       else { throw ResourceError.unsupportedRequest }
-      native.setValue(range, forHTTPHeaderField: "Range")
     }
-    if let hosted, !publicMetadataURLs.contains(url) {
-      let admission = try await hosted.authorize(url, publicPolicy: policy)
-      if let grant = admission.grant {
-        native.setValue(grant, forHTTPHeaderField: "X-Tileflow-Native-Grant")
-        native.timeoutInterval = admission.timeout
+    let deadline = now().advanced(by: .seconds(30))
+    var redirected = false
+    var retried = false
+    while true {
+      var native = URLRequest(
+        url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 30)
+      native.httpMethod = request.httpMethod ?? "GET"
+      if let range { native.setValue(range, forHTTPHeaderField: "Range") }
+      var grant: String?
+      if let hosted, !publicMetadataURLs.contains(url), !isPublicAPIResource(url) {
+        if let gate = rateLimit.until, gate > now(), gate < deadline {
+          try await pause(now().duration(to: gate))
+        }
+        let admission = try await hosted.authorize(url, publicPolicy: policy)
+        grant = admission.grant
+        if let grant {
+          native.setValue(grant, forHTTPHeaderField: "X-Tileflow-Native-Grant")
+          native.timeoutInterval = admission.timeout
+        }
+      } else {
+        try policy.validate(url)
       }
-    } else {
-      try policy.validate(url)
-    }
-    let payload = try await transport.send(native)
-    if native.value(forHTTPHeaderField: "X-Tileflow-Native-Grant") != nil,
-      [401, 403, 429].contains(payload.status)
-    {
-      await hosted?.reject(status: payload.status)
-      switch payload.status {
-      case 401: throw TileflowMapError.credentialRejected
-      case 429: throw TileflowMapError.quotaExceeded
-      default: throw TileflowMapError.accessDenied
+      let payload = try await transport.send(native)
+      if (300...399).contains(payload.status) {
+        // Only a Team model's stable address may redirect, once, to its current version.
+        guard !redirected, grant == nil, let apiOrigin,
+          let target = HostedContract.redirect(
+            from: url, location: payload.headers["Location"], apiOrigin: apiOrigin)
+        else { throw ResourceError.invalidResponse }
+        redirected = true
+        url = target
+        continue
+      }
+      guard let grant, let hosted else { return payload }
+      var reaction = HostedContract.reaction(
+        status: payload.status, body: payload.bytes, url: url, refreshed: retried)
+      if reaction == .refresh {
+        if !retried, await hosted.invalidate(grant: grant) {
+          retried = true
+          continue
+        }
+        reaction = HostedContract.reaction(
+          status: payload.status, body: payload.bytes, url: url, refreshed: true)
+      }
+      switch reaction {
+      case .none, .refresh:
+        return payload
+      case .superseded:
+        if let onDeploymentSuperseded, await onDeploymentSuperseded() {
+          // The reload retires this generation; its renderer never sees the stale failure.
+          try await Task.sleep(for: .seconds(10))
+          throw ResourceError.disposed
+        }
+        return payload
+      case .rateLimited:
+        let delay = HostedContract.retryAfter(payload.headers["Retry-After"], now: Date()) ?? 1
+        let until = rateLimit.extend(to: now().advanced(by: .seconds(min(delay, 60))))
+        guard !retried, until < deadline else { return payload }
+        retried = true
+      case .quota:
+        await hosted.reject(.quotaExceeded)
+        throw TileflowMapError.quotaExceeded
       }
     }
-    return payload
+  }
+
+  /// Landmarks and Team models are public on the API origin and never carry a grant.
+  private func isPublicAPIResource(_ url: URL) -> Bool {
+    guard let apiOrigin else { return false }
+    return ResourcePolicy.origin(url) == ResourcePolicy.origin(apiOrigin)
+      && HostedContract.isPublicAPIResource(url)
+  }
+}
+
+/// A delivery rate limit applies to every protected request of one renderer generation.
+private final class RateLimitGate: @unchecked Sendable {
+  private let lock = NSLock()
+  private var value: ContinuousClock.Instant?
+  var until: ContinuousClock.Instant? { lock.withLock { value } }
+  func extend(to instant: ContinuousClock.Instant) -> ContinuousClock.Instant {
+    lock.withLock {
+      value = max(value ?? instant, instant)
+      return instant
+    }
   }
 }
 
@@ -147,8 +222,9 @@ private final class ResourceTransfer: @unchecked Sendable {
     lock.lock()
     let isHead = task?.originalRequest?.httpMethod == "HEAD"
     lock.unlock()
+    // Redirects are returned, never followed; the resource owner decides whether one is allowed.
     guard let response = response as? HTTPURLResponse,
-      (200...599).contains(response.statusCode), !(300...399).contains(response.statusCode),
+      (200...599).contains(response.statusCode),
       isHead || response.expectedContentLength <= maximumBytes
     else {
       finish(.failure(ResourceError.invalidResponse))
@@ -184,7 +260,10 @@ private final class ResourceTransfer: @unchecked Sendable {
       return
     }
     var headers: [String: String] = [:]
-    for key in ["Content-Type", "Content-Range", "Accept-Ranges", "ETag", "Last-Modified"] {
+    for key in [
+      "Content-Type", "Content-Range", "Accept-Ranges", "ETag", "Last-Modified", "Location",
+      "Retry-After", "Tileflow-Fair-Use", "Tileflow-Fair-Use-Notice", "Tileflow-Protection",
+    ] {
       if let value = response.value(forHTTPHeaderField: key) { headers[key] = value }
     }
     headers["Cache-Control"] = "no-store"

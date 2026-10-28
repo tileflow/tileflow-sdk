@@ -8,9 +8,24 @@ import java.net.URLDecoder
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 import java.time.Instant
+import java.time.ZonedDateTime
+import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeFormatterBuilder
 import org.json.JSONArray
 import org.json.JSONObject
+
+/** How a protected resource's response changes the session. */
+internal enum class ResourceReaction {
+    NONE,
+    /** Discard the grant, bootstrap once and retry the request. */
+    REFRESH,
+    /** The Map has a newer deployment; reload its discovery and styles. */
+    SUPERSEDED,
+    /** Wait for `Retry-After`, then retry; this is not quota exhaustion. */
+    RATE_LIMITED,
+    /** The Map's quota is exhausted; the session ends. */
+    QUOTA,
+}
 
 internal class HostedAuthority(
     val grant: String,
@@ -106,6 +121,51 @@ internal object HostedContract {
         }
     }
 
+    /**
+     * Only these 429 bodies mean the Map or Team is out of quota; any other 429 is rate limiting.
+     */
+    private val quotaCodes =
+        setOf("COMMERCIAL_MAP_LIMIT_REACHED", "COMMERCIAL_SPENDING_LIMIT_REACHED")
+
+    /** These will not succeed again without a change outside the device. */
+    val terminalCodes =
+        setOf(
+            TileflowErrorCode.CREDENTIAL_REJECTED,
+            TileflowErrorCode.ACCESS_DENIED,
+            TileflowErrorCode.QUOTA_EXCEEDED,
+        )
+
+    /** Classifies a failed bootstrap or granted resource response. */
+    fun failure(status: Int, bytes: ByteArray): TileflowErrorCode =
+        when (status) {
+            401 -> TileflowErrorCode.CREDENTIAL_REJECTED
+            403,
+            404 -> TileflowErrorCode.ACCESS_DENIED
+            429 ->
+                if (runCatching { json(bytes).opt("code") as? String }.getOrNull() in quotaCodes)
+                    TileflowErrorCode.QUOTA_EXCEEDED
+                else TileflowErrorCode.RATE_LIMITED
+            408,
+            in 500..599 -> TileflowErrorCode.SESSION_UNAVAILABLE
+            else -> TileflowErrorCode.INVALID_SESSION_RESPONSE
+        }
+
+    /** Delta-seconds or an HTTP date, bounded so a hostile value cannot park the session. */
+    fun retryAfterMillis(value: String?, nowMillis: Long): Long? {
+        if (value == null || value.length > 64) return null
+        val text = value.trim()
+        val delay =
+            if (Regex("^[0-9]{1,10}$").matches(text)) text.toLong() * 1_000
+            else
+                runCatching {
+                        ZonedDateTime.parse(text, DateTimeFormatter.RFC_1123_DATE_TIME)
+                            .toInstant()
+                            .toEpochMilli() - nowMillis
+                    }
+                    .getOrNull() ?: return null
+        return delay.coerceIn(0, 900_000)
+    }
+
     fun isRestart(bytes: ByteArray, sessionId: String): Boolean = runCatching {
         val value = json(bytes)
         value.keys().asSequence().toSet() ==
@@ -136,7 +196,8 @@ internal object HostedContract {
         ResourcePolicy(authority.origins).validate(url)
         require(!secretShaped(url.toString()))
         val allowed =
-            setOf("map", "mapId", "archiveVersion", "worldReleaseId", "worldDescriptorSha256")
+            setOf("map", "mapId", "archiveVersion", "worldReleaseId", "worldDescriptorSha256") +
+                releaseSelectors.keys
         val keys = mutableSetOf<String>()
         url.rawQuery?.split('&')?.forEach {
             val parts = it.split('=', limit = 2)
@@ -147,6 +208,8 @@ internal object HostedContract {
             require(value.none { char -> char.code <= 32 || char.code == 127 || char == '\\' })
             if (key == "map" || key == "mapId") require(value == mapId)
         }
+        // A pinned data product's release selector belongs only to that product's TileJSON.
+        val pinned = keys.mapNotNull(releaseSelectors::get)
         val raw = url.rawPath
         val path = url.path
         require(!Regex("(?i)%2f|%5c|%00").containsMatchIn(raw))
@@ -163,19 +226,19 @@ internal object HostedContract {
                 style.groupValues[1] == mapId &&
                 (style.groupValues[2].toLongOrNull() ?: Long.MAX_VALUE) <= 9_007_199_254_740_991 &&
                 "style" in authority.scopes
-        val tilejson =
-            Regex("^/(?:v1/)?tiles/([A-Za-z0-9_-]{1,128})/tiles\\.json$").matchEntire(path)
-        if (tilejson != null)
-            return@runCatching "tilejson" in authority.scopes &&
-                tilejson.groupValues[1] in authority.tilesets
-        val tile =
-            Regex(
-                    "^/(?:v1/)?tiles/([A-Za-z0-9_-]{1,128})/(?:[A-Za-z0-9._-]{1,128}/)?[0-9]{1,2}/[0-9]{1,10}/[0-9]{1,10}\\.(?:pbf|mvt|png|jpg|jpeg|webp|avif)$"
-                )
-                .matchEntire(path)
-        if (tile != null)
-            return@runCatching "tile" in authority.scopes &&
-                tile.groupValues[1] in authority.tilesets
+        val tileset =
+            when {
+                demTileJson.matches(path) -> "tilejson" to "bathymetry-dem"
+                demTile.matches(path) -> "tile" to "bathymetry-dem"
+                else ->
+                    tileJson.matchEntire(path)?.let { "tilejson" to it.groupValues[1] }
+                        ?: tile.matchEntire(path)?.let { "tile" to it.groupValues[1] }
+            }
+        if (tileset != null)
+            return@runCatching tileset.first in authority.scopes &&
+                tileset.second in authority.tilesets &&
+                pinned.all { tileset.first == "tilejson" && tileset.second in it }
+        require(pinned.isEmpty())
         if (Regex("^/sprites/[A-Za-z0-9_-]{1,128}/sprite(?:@2x)?\\.(?:json|png)$").matches(path)) {
             return@runCatching "sprite" in authority.scopes
         }
@@ -193,6 +256,109 @@ internal object HostedContract {
             Regex("^/font-bundles/fnb_[A-Za-z0-9_-]{16,64}/[A-Za-z0-9_./-]{1,512}$").matches(path)
     }
         .getOrDefault(false)
+
+    /**
+     * Landmarks and Team models are public web resources on the API origin: a Map's view already
+     * counts its session, so they never carry a grant and are admitted by exact path only.
+     */
+    fun isPublicApiResource(url: URI): Boolean =
+        url.rawQuery == null &&
+            url.rawFragment == null &&
+            url.rawUserInfo == null &&
+            publicApiPaths.any { it.matches(url.rawPath ?: "") }
+
+    /** A Team model's stable address redirects once to its current version's immutable file. */
+    fun redirect(from: URI, location: String?, apiOrigin: URI): URI? = runCatching {
+        val model = currentModel.matchEntire(from.rawPath)
+        if (
+            model == null ||
+                ResourcePolicy.origin(from) != ResourcePolicy.origin(apiOrigin) ||
+                location == null ||
+                location.length > 2048
+        )
+            return@runCatching null
+        val target = from.resolve(location)
+        val version = modelVersion.matchEntire(target.rawPath ?: "")
+        target.takeIf {
+            ResourcePolicy.origin(it) == ResourcePolicy.origin(apiOrigin) &&
+                isPublicApiResource(it) &&
+                version?.groupValues?.get(1) == model.groupValues[1]
+        }
+    }
+        .getOrNull()
+
+    /** A Map deployment's versioned WebView style, which a later deployment supersedes. */
+    fun isVersionedStyle(url: URI): Boolean = versionedStyle.matches(url.rawPath ?: "")
+
+    /** The `code` of a delivery failure body, when it has a well-formed one. */
+    fun errorCode(bytes: ByteArray): String? = runCatching {
+        require(bytes.size <= 4096)
+        (json(bytes).opt("code") as? String)?.takeIf { Regex("^[A-Z][A-Z0-9_]{0,63}$").matches(it) }
+    }
+        .getOrNull()
+
+    /**
+     * Only bootstrap is authoritative: a grant the service no longer accepts is renewed once, and
+     * a superseded deployment reloads.
+     */
+    fun reaction(status: Int, bytes: ByteArray, url: URI, refreshed: Boolean): ResourceReaction {
+        val code = errorCode(bytes)
+        val style = isVersionedStyle(url)
+        return when {
+            status == 401 -> if (refreshed) ResourceReaction.NONE else ResourceReaction.REFRESH
+            // Before the service reported superseded deployments distinctly, it denied them.
+            status == 403 && code == "NATIVE_GRANT_RESOURCE_DENIED" ->
+                if (style) ResourceReaction.SUPERSEDED else ResourceReaction.NONE
+            // A binding mismatch can be a credential or policy revision that a new grant repairs.
+            status == 403 ->
+                when {
+                    !refreshed -> ResourceReaction.REFRESH
+                    style -> ResourceReaction.SUPERSEDED
+                    else -> ResourceReaction.NONE
+                }
+            status == 409 -> if (style) ResourceReaction.SUPERSEDED else ResourceReaction.NONE
+            status == 429 ->
+                if (failure(status, bytes) == TileflowErrorCode.QUOTA_EXCEEDED)
+                    ResourceReaction.QUOTA
+                else ResourceReaction.RATE_LIMITED
+            else -> ResourceReaction.NONE
+        }
+    }
+
+    private val releaseSelectors =
+        mapOf(
+            "boundariesReleaseId" to setOf("boundaries"),
+            "bathymetryReleaseId" to setOf("bathymetry", "bathymetry-dem"),
+            "nauticalReleaseId" to setOf("nautical"),
+        )
+    private val tileJson = Regex("^/(?:v1/)?tiles/([A-Za-z0-9_-]{1,128})/tiles\\.json$")
+    private val tile =
+        Regex(
+            "^/(?:v1/)?tiles/([A-Za-z0-9_-]{1,128})/(?:[A-Za-z0-9._-]{1,128}/)?[0-9]{1,2}/[0-9]{1,10}/[0-9]{1,10}\\.(?:pbf|mvt|png|jpg|jpeg|webp|avif)$"
+        )
+    private val demTileJson = Regex("^/(?:v1/)?tiles/bathymetry/dem/tiles\\.json$")
+    private val demTile =
+        Regex(
+            "^/(?:v1/)?tiles/bathymetry/dem/[A-Za-z0-9._-]{1,128}/[0-9]{1,2}/[0-9]{1,10}/[0-9]{1,10}\\.(?:pbf|mvt|png|jpg|jpeg|webp|avif)$"
+        )
+    private val versionedStyle =
+        Regex(
+            "^/maps/map_[A-Za-z0-9_-]{16}/mobile/webview-v1/v[1-9][0-9]{0,15}/[A-Za-z][A-Za-z0-9_-]{0,63}\\.json$"
+        )
+    private val currentModel = Regex("^/team-models/(tmd_[A-Za-z0-9_-]{16,76})/current\\.glb$")
+    private val modelVersion =
+        Regex("^/team-models/(tmd_[A-Za-z0-9_-]{16,76})/versions/tmv_[A-Za-z0-9_-]{16,76}\\.glb$")
+    private val publicApiPaths =
+        listOf(
+            Regex("^/landmarks/tiles\\.json$"),
+            Regex(
+                "^/landmarks/releases/[0-9a-f]{64}/regions/6/(?:0|[1-9][0-9]{0,4})/(?:0|[1-9][0-9]{0,4})\\.json$"
+            ),
+            Regex("^/landmarks/releases/[0-9a-f]{64}/NOTICE\\.md$"),
+            Regex("^/landmarks/tiles/[0-9a-f]{64}\\.glb$"),
+            currentModel,
+            modelVersion,
+        )
 
     fun secretShaped(value: String): Boolean =
         Regex("tf_native_|tf_public_", RegexOption.IGNORE_CASE).containsMatchIn(value)

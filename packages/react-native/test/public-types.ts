@@ -109,6 +109,7 @@ acceptsOptions(optionsWithOwnedLifecycle);
 export function consumesState(state: MapSourceState | undefined, ref: MapRef): void {
   const observed = ref.getSourceState();
   void observed;
+  ref.retry();
   // @ts-expect-error No renderer or camera mutation escape hatch is exposed.
   ref.setCamera({zoom: 8});
   if (state?.status === 'ready') {
@@ -141,6 +142,11 @@ export function handlesEvents(
   if (error.type === 'source-error') {
     const field: string = error.error.field;
     void field;
+  } else if (error.type === 'session-error') {
+    const kind: 'terminal' = error.error.kind;
+    void kind;
+    // @ts-expect-error Session failures name a bounded code, not a raw response.
+    void error.error.status;
   } else {
     // @ts-expect-error Renderer failures contain no raw exception.
     void error.error;

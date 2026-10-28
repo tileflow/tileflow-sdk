@@ -47,8 +47,7 @@ public struct TileflowGeoJSONLayer: Sendable {
       HostedContract.matches(color, #"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"#),
       (0...64).contains(size), (0...1).contains(opacity),
       let data = try? JSONDecoder().decode(JSONValue.self, from: geoJSON),
-      data["type"]?.string == "FeatureCollection", case .array(let features) = data["features"],
-      features.count <= 2000
+      GeoJSONContract.isFeatureCollection(data)
     else { throw TileflowMapError.invalidRequest }
     self.id = id
     self.kind = kind
@@ -88,5 +87,95 @@ struct MapContent: Sendable {
       throw TileflowMapError.invalidRequest
     }
     return value
+  }
+}
+
+/// The renderer's GeoJSON contract, checked before content crosses the bridge so invalid content
+/// fails at the call instead of in the renderer.
+enum GeoJSONContract {
+  static func isFeatureCollection(_ value: JSONValue) -> Bool {
+    guard case .object(let object) = value, object["type"]?.string == "FeatureCollection",
+      Set(object.keys).isSubset(of: ["type", "features", "bbox"]), isBoundingBox(object["bbox"]),
+      case .array(let features) = object["features"], features.count <= 2000
+    else { return false }
+    return features.allSatisfy(isFeature)
+  }
+
+  private static func isFeature(_ value: JSONValue) -> Bool {
+    guard case .object(let object) = value, object["type"]?.string == "Feature",
+      Set(object.keys).isSubset(of: ["type", "id", "geometry", "properties", "bbox"]),
+      isBoundingBox(object["bbox"]), let geometry = object["geometry"],
+      let properties = object["properties"]
+    else { return false }
+    switch object["id"] {
+    case nil: break
+    case .string(let id)?: guard id.utf16.count <= 128 else { return false }
+    case .number(let id)?:
+      guard id.rounded(.towardZero) == id, abs(id) <= 9_007_199_254_740_991 else { return false }
+    default: return false
+    }
+    switch properties {
+    case .null: break
+    case .object(let values):
+      guard values.allSatisfy({ $0.key.utf16.count <= 128 && depth($0.value) <= 64 }) else {
+        return false
+      }
+    default: return false
+    }
+    if case .null = geometry { return true }
+    return isGeometry(geometry)
+  }
+
+  private static func isGeometry(_ value: JSONValue) -> Bool {
+    guard case .object(let object) = value,
+      Set(object.keys).isSubset(of: ["type", "coordinates", "bbox"]),
+      isBoundingBox(object["bbox"]), let coordinates = object["coordinates"]
+    else { return false }
+    switch object["type"]?.string {
+    case "Point": return isPosition(coordinates)
+    case "MultiPoint": return items(coordinates, 0...2000).map { $0.allSatisfy(isPosition) } == true
+    case "LineString": return isLine(coordinates)
+    case "MultiLineString": return items(coordinates, 0...128).map { $0.allSatisfy(isLine) } == true
+    case "Polygon": return isPolygon(coordinates)
+    case "MultiPolygon":
+      return items(coordinates, 0...128).map { $0.allSatisfy(isPolygon) } == true
+    default: return false
+    }
+  }
+
+  private static func isPosition(_ value: JSONValue) -> Bool {
+    guard let values = items(value, 2...3) else { return false }
+    let numbers = values.compactMap(\.number)
+    return numbers.count == values.count && numbers.allSatisfy(\.isFinite)
+      && (-180...180).contains(numbers[0]) && (-90...90).contains(numbers[1])
+  }
+  private static func isLine(_ value: JSONValue) -> Bool {
+    items(value, 2...4000).map { $0.allSatisfy(isPosition) } == true
+  }
+  private static func isRing(_ value: JSONValue) -> Bool {
+    guard let positions = items(value, 4...4000), positions.allSatisfy(isPosition) else {
+      return false
+    }
+    return positions.first.flatMap { items($0, 2...3) }?.map(\.number)
+      == positions.last.flatMap { items($0, 2...3) }?.map(\.number)
+  }
+  private static func isPolygon(_ value: JSONValue) -> Bool {
+    items(value, 1...128).map { $0.allSatisfy(isRing) } == true
+  }
+  private static func isBoundingBox(_ value: JSONValue?) -> Bool {
+    guard let value else { return true }
+    guard case .array(let values) = value, [4, 6].contains(values.count) else { return false }
+    return values.allSatisfy { $0.number?.isFinite == true }
+  }
+  private static func items(_ value: JSONValue, _ count: ClosedRange<Int>) -> [JSONValue]? {
+    guard case .array(let values) = value, count.contains(values.count) else { return nil }
+    return values
+  }
+  private static func depth(_ value: JSONValue) -> Int {
+    switch value {
+    case .array(let values): 1 + (values.map(depth).max() ?? 0)
+    case .object(let values): 1 + (values.values.map(depth).max() ?? 0)
+    default: 0
+    }
   }
 }

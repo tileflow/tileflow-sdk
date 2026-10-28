@@ -208,9 +208,11 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     lifecycle.getSnapshot,
     lifecycle.getSnapshot,
   );
-  useImperativeHandle(props.ref, () => Object.freeze({getSourceState: lifecycle.getSourceState}), [
-    lifecycle,
-  ]);
+  useImperativeHandle(
+    props.ref,
+    () => Object.freeze({getSourceState: lifecycle.getSourceState, retry: lifecycle.retry}),
+    [lifecycle],
+  );
 
   useLayoutEffect(() => {
     const unmount = lifecycle.mount();

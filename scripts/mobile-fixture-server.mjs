@@ -61,6 +61,7 @@ const style = (dark) => ({
   version: 8,
   metadata: {
     'tileflow:fontFaces': fontFaces,
+    'tileflow:notices': [{id: 'fixture-notice', sources: ['places'], text: 'Not for navigation'}],
     'tileflow:interaction-manifest': {
       version: 3,
       domains: {

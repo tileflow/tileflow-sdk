@@ -8,6 +8,12 @@ const REFRESH_MARGIN_MS = 30_000;
 const ROTATION_AGE_MS = 6 * 60 * 60 * 1000;
 const ROTATION_REQUEST_LIMIT = 10_000;
 const FUTURE_ISSUE_SKEW_MS = 30_000;
+const RETRY_INITIAL_MS = 1_000;
+const RETRY_LIMIT_MS = 60_000;
+const RETRY_AFTER_LIMIT_MS = 15 * 60 * 1000;
+const RETRY_AFTER_SECONDS = /^\d{1,10}$/u;
+// Only these 429 bodies mean the Map or Team is out of quota; any other 429 is rate limiting.
+const QUOTA_CODES = new Set(['COMMERCIAL_MAP_LIMIT_REACHED', 'COMMERCIAL_SPENDING_LIMIT_REACHED']);
 const MOBILE_CREDENTIAL = /^tf_public_[0-9a-f]{48}$/u;
 const MAP_ID = /^map_[A-Za-z0-9_-]{16}$/u;
 const CREDENTIAL_ID = /^key_[A-Za-z0-9_-]{8,80}$/u;
@@ -101,11 +107,21 @@ export type HostedNativeSessionErrorCode =
   | 'NATIVE_SESSION_MAP_NOT_FOUND'
   | 'NATIVE_SESSION_QUOTA_EXCEEDED'
   | 'NATIVE_SESSION_REJECTED'
+  | 'NATIVE_SESSION_RATE_LIMITED'
   | 'NATIVE_SESSION_UNAVAILABLE'
   | 'NATIVE_SESSION_REPLACED'
   | 'NATIVE_SESSION_DISPOSED';
 
 export type HostedNativeSessionErrorKind = 'terminal' | 'recoverable' | 'cancelled';
+
+/** The request, credential or quota will not succeed again without a change outside the device. */
+const TERMINAL_CODES = new Set<HostedNativeSessionErrorCode>([
+  'NATIVE_SESSION_INPUT_INVALID',
+  'NATIVE_SESSION_CREDENTIAL_REJECTED',
+  'NATIVE_SESSION_MAP_MISMATCH',
+  'NATIVE_SESSION_MAP_NOT_FOUND',
+  'NATIVE_SESSION_QUOTA_EXCEEDED',
+]);
 
 const ERROR_MESSAGES: Record<HostedNativeSessionErrorCode, string> = {
   NATIVE_SESSION_INPUT_INVALID: 'Native session configuration is invalid.',
@@ -118,6 +134,7 @@ const ERROR_MESSAGES: Record<HostedNativeSessionErrorCode, string> = {
   NATIVE_SESSION_MAP_NOT_FOUND: 'Native session Map was not found.',
   NATIVE_SESSION_QUOTA_EXCEEDED: 'Native session quota was exceeded.',
   NATIVE_SESSION_REJECTED: 'Native session request was rejected.',
+  NATIVE_SESSION_RATE_LIMITED: 'Native session requests are rate limited.',
   NATIVE_SESSION_UNAVAILABLE: 'Native session service is unavailable.',
   NATIVE_SESSION_REPLACED: 'Native session binding was replaced.',
   NATIVE_SESSION_DISPOSED: 'Native session controller is disposed.',
@@ -202,6 +219,10 @@ export type HostedNativeSessionController = Readonly<{
   background(): void;
   resume(): Promise<void>;
   replaceBinding(binding: HostedNativeSessionBinding): void;
+  /** Clears a terminal stop and any retry delay; the next acquisition bootstraps again. */
+  retry?(): void;
+  /** Milliseconds until a bootstrap may follow a recoverable failure, or null without one. */
+  retryDelay?(): number | null;
   subscribe(listener: (state: HostedNativeSessionState) => void): () => void;
   dispose(): void;
 }>;
@@ -379,6 +400,30 @@ export function createHostedNativeSessionController(input: {
   }
 
   let terminal: SafeError | null = null;
+  // Recoverable failures of the binding delay its next bootstrap; still-valid authority is kept.
+  let failures = 0;
+  let retryAt: number | null = null;
+  let retryError: SafeError | null = null;
+
+  function clearRetry() {
+    failures = 0;
+    retryAt = null;
+    retryError = null;
+  }
+
+  function delayRetry(error: HostedNativeSessionError) {
+    let at: number;
+    try {
+      at = readClock();
+    } catch {
+      return;
+    }
+    // Concurrent bootstraps that fail together count once; a later Retry-After still extends.
+    if (retryAt === null || at >= retryAt) failures = Math.min(failures + 1, 16);
+    const backoff = Math.min(RETRY_INITIAL_MS * 2 ** (failures - 1), RETRY_LIMIT_MS);
+    retryAt = Math.max(retryAt ?? at, at + Math.max(backoff, retryAfterDelays.get(error) ?? 0));
+    retryError = Object.freeze({code: error.code, kind: error.kind});
+  }
 
   function rotateIfRequired(at: number) {
     if (terminal) throw new HostedNativeSessionError(terminal.code);
@@ -434,6 +479,16 @@ export function createHostedNativeSessionController(input: {
     if (binding.kind !== 'hosted') {
       throw new HostedNativeSessionError('NATIVE_SESSION_REPLACED');
     }
+    if (retryAt !== null && retryError && at < retryAt) {
+      if (
+        session.authority &&
+        session.authority.clockEpoch === clock.epoch &&
+        session.authority.validUntil > at
+      ) {
+        return {authority: session.authority, session};
+      }
+      throw new HostedNativeSessionError(retryError.code);
+    }
 
     const operationBinding = binding;
     const abort = new SessionAbortController();
@@ -450,6 +505,7 @@ export function createHostedNativeSessionController(input: {
           if (abort.signal.aborted) throw abort.error();
           result.session.authority = result.authority;
           result.session.error = null;
+          if (binding === operationBinding) clearRetry();
           if (activeSession === result.session) {
             publishSession(result.session, 'ready');
             if (abort.signal.aborted) throw abort.error();
@@ -472,6 +528,9 @@ export function createHostedNativeSessionController(input: {
             if (binding === operationBinding && rejectedSession) {
               publishSession(rejectedSession, 'error', failure);
             }
+          }
+          if (normalized.kind === 'recoverable' && binding === operationBinding && !terminal) {
+            delayRetry(normalized);
           }
           if (
             normalized.code !== 'NATIVE_SESSION_REPLACED' &&
@@ -515,7 +574,11 @@ export function createHostedNativeSessionController(input: {
     try {
       body = source.length ? JSON.parse(source) : null;
     } catch {
-      throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_JSON_INVALID');
+      // Only success and restart bodies are contracts; a failure status classifies a proxy page.
+      if (response.status === 201) {
+        throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_JSON_INVALID');
+      }
+      body = null;
     }
 
     if (response.status === 409 && allowRestart && isExactRestart(body, session.sessionId)) {
@@ -524,7 +587,12 @@ export function createHostedNativeSessionController(input: {
       if (abort.signal.aborted) throw abort.error();
       return bootstrap(replacement, hostedBinding, abort, false, false);
     }
-    if (response.status !== 201) throw statusError(response.status);
+    if (response.status !== 201) {
+      const failure = statusError(response.status, body);
+      const delay = retryAfterMs(response.headers, now);
+      if (delay !== null) retryAfterDelays.set(failure, delay);
+      throw failure;
+    }
     if (!hasNoStore(response.headers.get('cache-control'))) {
       throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_INVALID');
     }
@@ -792,8 +860,26 @@ export function createHostedNativeSessionController(input: {
       for (const operation of operations) operation.abort('NATIVE_SESSION_REPLACED');
       binding = next;
       terminal = null;
+      clearRetry();
       activeSession = next.kind === 'hosted' ? createSession(next.surfaceId, readClock()) : null;
       publish(snapshotIdle(binding, activeSession, lifecycle));
+    },
+    retry() {
+      if (disposed) throw new HostedNativeSessionError('NATIVE_SESSION_DISPOSED');
+      if (!terminal && retryAt === null) return;
+      terminal = null;
+      clearRetry();
+      // The same session identity bootstraps again; a stop never received authority to reuse.
+      if (activeSession && !activeSession.operation) activeSession.error = null;
+      publish(currentSnapshot());
+    },
+    retryDelay() {
+      if (disposed || terminal || retryAt === null) return null;
+      try {
+        return Math.max(0, Math.ceil(retryAt - readClock()));
+      } catch {
+        return null;
+      }
     },
     subscribe(listener) {
       if (typeof listener !== 'function') {
@@ -958,7 +1044,8 @@ function parseSuccess(
     expiresAtMs <= serverTimeMs ||
     expiresAtMs <= issuedAtMs ||
     expiresAtMs - issuedAtMs > MAX_GRANT_LIFETIME_MS ||
-    expiresAtMs - issuedAtMs > MAX_GRANT_LIFETIME_MS
+    // The local deadline is derived from serverTime, so this also bounds the transport budget.
+    expiresAtMs - serverTimeMs > MAX_GRANT_LIFETIME_MS
   ) {
     throw new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_INVALID');
   }
@@ -1182,19 +1269,52 @@ function hasNoStore(value: string | null) {
   );
 }
 
-function statusError(status: number) {
+function statusError(status: number, body: unknown) {
   if (status === 401) return new HostedNativeSessionError('NATIVE_SESSION_CREDENTIAL_REJECTED');
   if (status === 403) return new HostedNativeSessionError('NATIVE_SESSION_MAP_MISMATCH');
   if (status === 404) return new HostedNativeSessionError('NATIVE_SESSION_MAP_NOT_FOUND');
-  if (status === 429) return new HostedNativeSessionError('NATIVE_SESSION_QUOTA_EXCEEDED');
-  if (status === 503) return new HostedNativeSessionError('NATIVE_SESSION_UNAVAILABLE');
+  if (status === 429) {
+    return new HostedNativeSessionError(
+      isRecord(body) && typeof body.code === 'string' && QUOTA_CODES.has(body.code)
+        ? 'NATIVE_SESSION_QUOTA_EXCEEDED'
+        : 'NATIVE_SESSION_RATE_LIMITED',
+    );
+  }
+  if (status === 408 || (status >= 500 && status <= 599)) {
+    return new HostedNativeSessionError('NATIVE_SESSION_UNAVAILABLE');
+  }
   return new HostedNativeSessionError('NATIVE_SESSION_REJECTED');
+}
+
+const retryAfterDelays = new WeakMap<HostedNativeSessionError, number>();
+
+/** Delta-seconds or an HTTP date, bounded so a hostile value cannot park the binding. */
+function retryAfterMs(headers: HostedNativeSessionFetchResponse['headers'], now: () => Date) {
+  let value: string | null;
+  try {
+    value = headers.get('retry-after');
+  } catch {
+    return null;
+  }
+  if (typeof value !== 'string' || value.length > 64) return null;
+  const text = value.trim();
+  let delay: number;
+  if (RETRY_AFTER_SECONDS.test(text)) delay = Number(text) * 1000;
+  else {
+    const date = Date.parse(text);
+    if (!Number.isFinite(date)) return null;
+    try {
+      delay = date - readWallClock(now);
+    } catch {
+      return null;
+    }
+  }
+  return Math.min(Math.max(0, delay), RETRY_AFTER_LIMIT_MS);
 }
 
 function errorKind(code: HostedNativeSessionErrorCode): HostedNativeSessionErrorKind {
   if (code === 'NATIVE_SESSION_DISPOSED' || code === 'NATIVE_SESSION_REPLACED') return 'cancelled';
-  if (code === 'NATIVE_SESSION_UNAVAILABLE') return 'recoverable';
-  return 'terminal';
+  return TERMINAL_CODES.has(code) ? 'terminal' : 'recoverable';
 }
 
 function normalizeError(

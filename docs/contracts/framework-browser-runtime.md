@@ -231,8 +231,8 @@ attribution, so the provider credit from the TileJSON remains intact.
 
 `attachTileflowNotices(map, {position?})` renders the declared notices as one compact MapLibre
 control, `bottom-right` by default, with `role="note"` and text content only. React, Vue, Svelte,
-the development preview, and standalone capture attach it once per map; direct integrations call it
-explicitly. It reads the style on attachment and `style.load`, settles other style changes before
+the development preview, standalone capture, and the embedded runtime of the Swift and Kotlin SDKs
+attach it once per map; direct integrations call it explicitly. It reads the style on attachment and `style.load`, settles other style changes before
 reading again, removes the control when the style declares no notice, and disposes its control,
 listeners, and pending read on disposal or map `remove`. Malformed entries are ignored rather than
 rendered. Native maps and images rendered outside these runtimes do not show the control and must
@@ -252,8 +252,10 @@ releases a renderer when a later style no longer declares it.
 The scene is shown by default: `viewMode` is `3d` unless the application sets `2d`. In the 2D view
 no 3D buildings or street lights are mounted, and vegetation follows its own display policy for the
 2D view. `vegetation` overrides vegetation visibility independently. Both props update the existing
-map. A load failure is reported to the console and leaves the 2D map working. Image mode, React
-Native, standalone capture and Static Maps do not mount the scene. A direct MapLibre consumer of
+map. A load failure is reported to the console and leaves the 2D map working. The embedded runtime
+of the Swift and Kotlin SDKs attaches the scene the same way, with the renderers bundled into its
+single script, follows its `viewMode` option, and reports a load failure as a resource failure
+event. Image mode, React Native, standalone capture and Static Maps do not mount the scene. A direct MapLibre consumer of
 the style JSON gets no 3D scene: Core's buildings, landmarks, models, trees and lights are custom
 WebGL layers that only these runtimes add. Where a map draws a plain `fill-extrusion` pass, the
 style keeps it hidden and grouped under `metadata['tileflow:3d-toggle'] = 'building'`; such a
@@ -271,7 +273,8 @@ Native artifact preparation replaces the reads with their steady values and remo
 declaration; native maps, static images, and capture show steady lights.
 
 `attachTileflowNauticalLights(map)` is the one bounded animation loop of the browser runtimes. React,
-Vue, Svelte, the development preview, and standalone capture attach it once per map; direct
+Vue, Svelte, the development preview, standalone capture, and the embedded runtime of the Swift and
+Kotlin SDKs attach it once per map; direct
 integrations call it explicitly and may dispose it. It reads the declaration on attachment and,
 after `style.load` or other style data, on the next `idle`. After `moveend`, or Nautical
 `sourcedata`, it queries the rendered features of the declared layers that are visible at the
@@ -348,7 +351,10 @@ ordinary `503` is not announced. The tile request still fails, as before.
 `attachTileflowFairUseNotice` owns one DOM status inside the map container. It uses `role="status"`,
 `aria-live="polite"`, `aria-atomic="true"`, a visible HTTPS owner-action link, and no viewer or site
 identity. `GRACE` renders as a compact bottom pill with a subtle yellow surface;
-`MANAGED_REQUIRED` renders as a high-contrast top banner; `LIMITED` uses the compact pill. The status sentence remains plain text and
+`MANAGED_REQUIRED` renders as a high-contrast top banner; `LIMITED` uses the compact pill. The
+embedded runtime of the Swift and Kotlin SDKs registers the bridge with its native transport, which
+returns the fair-use headers to the renderer, and the application receives the owner-action link as
+an external link request. The status sentence remains plain text and
 only the owner action is the underlined link. `MANAGED_REQUIRED` cannot regress to `GRACE` or
 `LIMITED` within the same controller. Disposal removes the protocol registration and notice; ordinary MapLibre errors and
 shaped empty tiles do not.

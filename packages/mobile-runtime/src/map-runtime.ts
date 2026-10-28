@@ -2,17 +2,21 @@ import * as maplibregl from 'maplibre-gl';
 import type {Map as MapLibreMap, StyleSpecification} from 'maplibre-gl';
 import {
   attachTileflowAtmosphere,
-  createTileflowBuildings3D,
-  createTileflowStreetLights,
+  attachTileflowFairUseNotice,
+  attachTileflowLabelPlacement,
+  attachTileflowMap3D,
+  attachTileflowNauticalLights,
+  attachTileflowNotices,
+  createTileflowMap3D,
   createTileflowThemeController,
-  createTileflowVegetation,
   loadTileflowStyleFonts,
   registerTileflowContourProtocol,
   registerTileflowPmtilesProtocol,
-  type TileflowBuildings3D,
-  type TileflowStreetLights,
+  registerTileflowWorldRequestBridge,
+  tileflowCanvasContextAttributes,
+  type TileflowMap3DAttachment,
+  tileflowMaxPitch,
   type TileflowThemeController,
-  type TileflowVegetationController,
 } from '@tileflow/core/browser';
 import {
   resolveTileflowManifestMap,
@@ -50,23 +54,30 @@ export function createMobileMapRuntime(input: {
   const styles = createStyleResourceLoader(fetchResource, lifetime.signal);
   let map: MapLibreMap | undefined;
   let themes: TileflowThemeController | undefined;
-  let vegetation: TileflowVegetationController | undefined;
-  let buildings: TileflowBuildings3D | undefined;
-  let streetLights: TileflowStreetLights | undefined;
+  let scene: TileflowMap3DAttachment | undefined;
   let controls: maplibregl.NavigationControl | undefined;
   let activeOptions: MapOptions | undefined;
   let content: ReturnType<typeof createMapContentRegistry> | undefined;
   let appearanceRevision = 0;
   let manifestMap: TileflowRuntimeManifestMap | undefined;
   let configuration: InitializeOptions | undefined;
-  let detachAtmosphere: (() => void) | undefined;
+  const cleanups: (() => void)[] = [];
   let cameraFrame: number | undefined;
   let disposed = false;
   let initializing = false;
   let cameraRevision = 0;
+  // The World request bridge reads fair-use headers from World tiles, as the web adapters do.
+  const fairUseNotice = attachTileflowFairUseNotice(input.container);
+  cleanups.push(() => fairUseNotice.dispose());
+  const worldRequests = registerTileflowWorldRequestBridge({
+    addProtocol: maplibregl.addProtocol,
+    fetch: fetchResource,
+    onNotice: fairUseNotice.update,
+  });
+  cleanups.push(() => worldRequests.dispose());
   const address = (url: string) => {
-    // These Core protocols route their nested archive/DEM requests through the same transport.
-    if (url.startsWith('tileflow-pmtiles://') || url.startsWith('tileflow-contour://')) return url;
+    // These Core protocols route their nested requests through the same native transport.
+    if (/^tileflow-(?:pmtiles|contour|world):\/\//u.test(url)) return url;
     return resourceAddress(url, input.platform);
   };
   const assertActive = () => {
@@ -103,11 +114,9 @@ export function createMobileMapRuntime(input: {
     lifetime.abort();
     content?.dispose();
     if (cameraFrame !== undefined) cancelAnimationFrame(cameraFrame);
-    vegetation?.dispose();
-    buildings?.dispose();
-    streetLights?.dispose();
+    scene?.dispose();
     themes?.dispose();
-    detachAtmosphere?.();
+    for (const cleanup of cleanups.splice(0).reverse()) cleanup();
     map?.remove();
     map = undefined;
   };
@@ -140,24 +149,7 @@ export function createMobileMapRuntime(input: {
       current.removeControl(controls);
       controls = undefined;
     }
-    if (previous?.viewMode !== options.viewMode || previous?.quality !== options.quality) {
-      vegetation?.dispose();
-      buildings?.dispose();
-      streetLights?.dispose();
-      buildings = undefined;
-      streetLights = undefined;
-      const common = {
-        map: current,
-        controller: themes,
-        maxTiles: {low: 9, balanced: 25, high: 49}[options.quality],
-        transformRequest: (url: string) => ({url: address(url)}),
-      };
-      vegetation = createTileflowVegetation({...common, viewMode: options.viewMode});
-      if (options.viewMode === '3d') {
-        buildings = createTileflowBuildings3D(common);
-        streetLights = createTileflowStreetLights(common);
-      }
-    }
+    if (previous?.viewMode !== options.viewMode) scene?.setViewMode(options.viewMode);
   }
 
   async function initialize(options: InitializeOptions, signal: AbortSignal) {
@@ -213,9 +205,18 @@ export function createMobileMapRuntime(input: {
         interactive: options.interactive,
         pixelRatio: pixelRatio(options.options),
         attributionControl: {compact: true},
-        transformRequest: (url) => ({url: address(url)}),
+        canvasContextAttributes: tileflowCanvasContextAttributes(),
+        // Tileflow's compiled styles are validated when they are built.
+        validateStyle: false,
+        maxPitch: tileflowMaxPitch,
+        transformRequest: (url) => ({url: address(worldRequests.rewriteUrl(url))}),
       });
-      detachAtmosphere = attachTileflowAtmosphere(map);
+      cleanups.push(
+        attachTileflowAtmosphere(map),
+        attachTileflowNotices(map),
+        attachTileflowNauticalLights(map),
+        attachTileflowLabelPlacement(map),
+      );
       themes = createTileflowThemeController({
         map,
         initial: style,
@@ -226,6 +227,18 @@ export function createMobileMapRuntime(input: {
             input.emit('themeChanged', {theme: transition.currentTheme ?? transition.targetTheme});
           }
         },
+      });
+      // The map's 3D scene mounts only once its style declares one, so 2D maps do not pay for it.
+      scene = attachTileflowMap3D({
+        map,
+        controller: themes,
+        viewMode: options.options.viewMode,
+        load: () => Promise.resolve({createTileflowMap3D}),
+        onError: () => {
+          if (!disposed)
+            input.emit('error', {code: 'resourceFailed', message: 'The 3D scene failed to load.'});
+        },
+        transformRequest: (url) => ({url: address(url)}),
       });
       applyOptions(options.options);
       content = createMapContentRegistry(map, input.emit);

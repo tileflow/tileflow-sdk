@@ -14,6 +14,7 @@ export type {
   MapReadinessChangeEvent,
   MapRef,
   MapSelection,
+  MapSessionError,
   MapSource,
   MapSourceError,
   MapSourceProps,

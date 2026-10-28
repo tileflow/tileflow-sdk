@@ -203,9 +203,38 @@ The public lifecycle surface remains:
 - `onReadinessChange`;
 - `onThemeChange`;
 - controlled `onViewChange`;
-- `ref.getSourceState()`.
+- `ref.getSourceState()`;
+- `ref.retry()`.
 
 `getSourceState()` returns only the last safe projected source snapshot. Errors use existing bounded codes/fields/kinds. No URL, response body, native event, credential, grant, session object, native handle or raw cause enters public callbacks, refs or serializable state.
+
+`onError` reports `source-error`, `renderer-error` and, for Hosted session delivery, `session-error`. A `session-error` means Tileflow refused the session: the mobile credential was rejected (`NATIVE_SESSION_CREDENTIAL_REJECTED`), it does not authorize the Map (`NATIVE_SESSION_MAP_MISMATCH`), the Map was not found (`NATIVE_SESSION_MAP_NOT_FOUND`) or its view or spending limit was reached (`NATIVE_SESSION_QUOTA_EXCEEDED`). It can arrive after the first load, when a renewal is refused. The map keeps what it has drawn but loads nothing new until you call `ref.retry()` or change the source:
+
+```tsx
+import {Map, type MapRef} from '@tileflow/react-native';
+import {useRef} from 'react';
+
+export function StoreMap() {
+  const map = useRef<MapRef>(null);
+  return (
+    <Map
+      ref={map}
+      source={{map: 'stores', manifestUrl: 'https://maps.example.com/tileflow/manifest.json'}}
+      onError={(event) => {
+        if (
+          event.type === 'session-error' &&
+          event.error.code === 'NATIVE_SESSION_QUOTA_EXCEEDED'
+        ) {
+          // Show your own notice; call map.current?.retry() once the limit is raised.
+        }
+      }}
+      style={{flex: 1}}
+    />
+  );
+}
+```
+
+Service outages, timeouts and rate limiting are not session errors. The map keeps using its current grant while it is valid and requests another after an increasing delay, from one second up to one minute, or after the `Retry-After` the service sends. A first load that failed this way prepares again on its own. `ref.retry()` also loads again after a source or renderer error, and changes nothing while the map is shown.
 
 ## Native integration
 

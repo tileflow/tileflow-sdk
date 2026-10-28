@@ -7,6 +7,7 @@
 - [Map interactions contract](contracts/map-interactions.md)
 - [SDK responsibility and delivery contract](contracts/sdk-responsibilities.md)
 - [Mobile host and renderer protocol contract](contracts/mobile-protocol.md)
+- [Camera, gestures and controls in the Swift and Kotlin map SDKs](../platforms/native-map-camera.md)
 - [Native Search, Routing, Elevation and GeoIP clients](../platforms/native-services.md)
 - [Generated authoring/resolved map and modules JSON Schema](modules-api-reference.json)
 - [Package release procedure](../PUBLISHING.md)

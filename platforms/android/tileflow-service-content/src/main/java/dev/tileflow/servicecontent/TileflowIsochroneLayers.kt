@@ -3,15 +3,20 @@ package dev.tileflow.servicecontent
 import dev.tileflow.routing.TileflowIsochroneResponse
 import dev.tileflow.sdk.TileflowGeoJSONLayer
 import dev.tileflow.sdk.TileflowGeoJSONLayerKind
+import dev.tileflow.sdk.TileflowRouteInk
+import dev.tileflow.sdk.TileflowRouteInks
 
 /**
  * One fill layer per isochrone, `<idPrefix>-<minutes>`, the longest time first so that shorter
  * times draw over it. Rings keep their full geometry, with coordinates rounded to six decimals.
+ * The fills are drawn in the route line ink of the theme on screen unless inks fix their colour,
+ * and lie on the ground under the map's labels and 3D buildings.
  */
 public object TileflowIsochroneLayers {
     private val ID_PREFIX = Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,59}$")
 
     /**
+     * @param inks Fixed colours, or null for the route inks of the theme on screen.
      * @param opacity The opacity of each fill, from 0 to 1. Overlapping fills add up.
      * @throws IllegalArgumentException when an argument is invalid.
      */
@@ -19,14 +24,14 @@ public object TileflowIsochroneLayers {
     @JvmOverloads
     public fun build(
         response: TileflowIsochroneResponse,
-        inks: TileflowRouteInks = TileflowRouteInks.LIGHT,
+        inks: TileflowRouteInks? = null,
         opacity: Double = 0.18,
         idPrefix: String = "isochrone",
     ): List<TileflowGeoJSONLayer> = specs(response, inks, opacity, idPrefix).map { it.layer() }
 
     internal fun specs(
         response: TileflowIsochroneResponse,
-        inks: TileflowRouteInks,
+        inks: TileflowRouteInks?,
         opacity: Double,
         idPrefix: String,
     ): List<LayerSpec> {
@@ -51,9 +56,10 @@ public object TileflowIsochroneLayers {
                 "$idPrefix-${isochrone.minutes}",
                 GeoJson.area(isochrone.minutes, isochrone.polygons),
                 TileflowGeoJSONLayerKind.FILL,
-                inks.line,
+                (inks ?: TileflowRouteInks.LIGHT).line,
                 6.0,
                 opacity,
+                ink = if (inks == null) TileflowRouteInk.LINE else null,
             )
         }
     }

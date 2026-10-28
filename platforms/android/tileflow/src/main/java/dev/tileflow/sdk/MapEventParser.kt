@@ -52,6 +52,8 @@ internal fun parseMapEvent(event: String, result: JSONObject): TileflowMapEvent?
         }
         "tap" -> coordinate().let { TileflowMapEvent.Tap(it.longitude, it.latitude) }
         "themeChanged" -> optionalString("theme")?.let(TileflowMapEvent::ThemeChanged)
+        "themeTransition" ->
+            TileflowMapEvent.ThemeTransition(TileflowThemeTransition.from(result))
         "warning" -> {
             val error = TileflowMapException.fromWire(result)
             val count = result.getInt("count")

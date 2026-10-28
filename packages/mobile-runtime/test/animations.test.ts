@@ -58,7 +58,8 @@ function fixture() {
   });
   return {animations, events, moving, blends, plays, progress, stopped};
 }
-const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+// Animation events wait for the task after the answer that names the animation.
+const settle = () => new Promise((resolve) => setTimeout(() => setTimeout(resolve, 0), 0));
 
 test('a shot reports its cues, moves the camera once, and ends finished', async () => {
   const {animations, events, moving, plays} = fixture();
@@ -92,6 +93,7 @@ test('a gesture or a new shot stops the playing shot, which ends unfinished', as
   );
   animations.stop('a3');
   animations.stop('a3');
+  await settle();
   assert.deepEqual(events.at(-1), ['animationEnded', {animation: 'a3', finished: false}]);
   assert.equal(events.length, 3, 'an animation ends once');
 });

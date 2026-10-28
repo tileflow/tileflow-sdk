@@ -13,6 +13,8 @@ public enum TileflowMapEvent: Sendable {
   case cameraChanged(TileflowCameraChange)
   case tap(longitude: Double, latitude: Double)
   case themeChanged(String)
+  /// A theme change moved to a new phase; the ready phase carries the theme's route inks.
+  case themeTransition(TileflowThemeTransition)
   /// The map continues, but something it tried did not work, for example tiles that failed to
   /// load. Repeats of one warning within a second arrive together with their count.
   case warning(TileflowMapWarning)

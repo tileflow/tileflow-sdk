@@ -5,92 +5,78 @@ import Tileflow
 @_exported import TileflowRouting
 @_exported import TileflowSearch
 
-/// How a route is drawn, from its outer glow to its bright core. Colours are `#rrggbb`.
-///
-/// ``light`` and ``dark`` are the inks of a Tileflow theme that sets no route tokens. Pass the
-/// inks that suit the theme on screen; themes that set their own route inks will provide them
-/// through the map once it publishes them.
-public struct TileflowRouteInks: Sendable, Hashable {
-  /// The chosen route's line.
-  public var line: String
-  /// The edge on each side of the line, which sets it apart from the roads under it.
-  public var casing: String
-  /// A thin line along the middle of the route.
-  public var core: String
-  /// A soft halo around the route.
-  public var glow: String
-  /// Other routes offered beside the chosen one.
-  public var alternative: String
-  /// 0 (no glow) to 1.
-  public var glowOpacity: Double
-  /// 0 (no core) to 1.
-  public var coreOpacity: Double
-
-  public init(
-    line: String, casing: String, core: String, glow: String, alternative: String,
-    glowOpacity: Double, coreOpacity: Double
-  ) {
-    self.line = line
-    self.casing = casing
-    self.core = core
-    self.glow = glow
-    self.alternative = alternative
-    self.glowOpacity = glowOpacity
-    self.coreOpacity = coreOpacity
-  }
-
-  public static let light = TileflowRouteInks(
-    line: "#2563eb", casing: "#1e3a8a", core: "#dbeafe", glow: "#2563eb", alternative: "#94a3b8",
-    glowOpacity: 0.16, coreOpacity: 0)
-  public static let dark = TileflowRouteInks(
-    line: "#60a5fa", casing: "#0b1220", core: "#eff6ff", glow: "#60a5fa", alternative: "#64748b",
-    glowOpacity: 0.4, coreOpacity: 0.7)
-}
-
 extension TileflowGeoJSONLayer {
   /// Layers that draw a Routing answer, bottom to top: alternatives, glow, casing, line and core.
+  ///
+  /// By default they are drawn in the route inks of the theme on screen and follow theme changes
+  /// and blends; a theme without a glow or a core hides that layer by its opacity. Pass `inks` to
+  /// draw them in fixed colours instead. The layers lie on the ground, under the map's labels and
+  /// 3D buildings, and the line shows faintly where a building hides it.
   ///
   /// Each layer keeps the full geometry, with coordinates rounded to six decimals (about 0.1 m).
   /// The glow, casing, line and core share one GeoJSON, which the map receives once.
   /// - Parameters:
   ///   - selected: The index of the chosen route; the others are drawn as alternatives.
+  ///   - progress: Draws only a stretch of the chosen route, with a white head and light by
+  ///     default. ``routeProgressLayers(idPrefix:)`` names the layers to animate.
   ///   - idPrefix: The layers are `<prefix>-alternatives`, `-glow`, `-casing`, `-line`, `-core`.
   public static func route(
-    _ response: TileflowRouteResponse, selected: Int = 0, inks: TileflowRouteInks = .light,
-    idPrefix: String = "route"
+    _ response: TileflowRouteResponse, selected: Int = 0, inks: TileflowRouteInks? = nil,
+    progress: TileflowLineProgress? = nil, idPrefix: String = "route"
   ) throws -> [TileflowGeoJSONLayer] {
     guard response.routes.indices.contains(selected) else { throw TileflowMapError.invalidRequest }
     // Each line feature's id is its route's index, so a tap on the map can tell routes apart.
-    let line = GeoJSONText.lines([(selected, response.routes[selected].geometry)])
+    let line = Data(GeoJSONText.lines([(selected, response.routes[selected].geometry)]).utf8)
     let others = response.routes.indices.filter { $0 != selected }
-    var layers: [(String, String, String, Double, Double)] = []
+    var drawn = progress
+    if drawn != nil, drawn?.highlight == nil { drawn?.highlight = "#ffffff" }
+    func layer(
+      _ suffix: String, _ data: Data, _ ink: TileflowRouteInk, size: Double,
+      occludedOpacity: Double = 0, progress: TileflowLineProgress? = nil
+    ) throws -> TileflowGeoJSONLayer {
+      let opacity =
+        inks.map { inks in
+          ink == .glow ? inks.glowOpacity : ink == .core ? inks.coreOpacity : 1
+        } ?? 1
+      return try TileflowGeoJSONLayer(
+        id: "\(idPrefix)-\(suffix)", geoJSON: data, kind: .line,
+        color: inks?[ink] ?? TileflowRouteInks.light[ink], size: size, opacity: opacity,
+        ink: inks == nil ? ink : nil, placement: .ground, occludedOpacity: occludedOpacity,
+        progress: progress)
+    }
+    var layers: [TileflowGeoJSONLayer] = []
     if !others.isEmpty {
       let alternatives = GeoJSONText.lines(others.map { ($0, response.routes[$0].geometry) })
-      layers.append(("alternatives", alternatives, inks.alternative, 5, 1))
+      layers.append(try layer("alternatives", Data(alternatives.utf8), .alternative, size: 5))
     }
-    if inks.glowOpacity > 0 { layers.append(("glow", line, inks.glow, 16, inks.glowOpacity)) }
-    layers.append(("casing", line, inks.casing, 9, 1))
-    layers.append(("line", line, inks.line, 6, 1))
-    if inks.coreOpacity > 0 { layers.append(("core", line, inks.core, 2, inks.coreOpacity)) }
-    return try layers.map { suffix, data, color, size, opacity in
-      try TileflowGeoJSONLayer(
-        id: "\(idPrefix)-\(suffix)", geoJSON: Data(data.utf8), kind: .line, color: color,
-        size: size, opacity: opacity)
-    }
+    layers.append(try layer("glow", line, .glow, size: 16, progress: drawn))
+    layers.append(try layer("casing", line, .casing, size: 9, progress: drawn))
+    layers.append(try layer("line", line, .line, size: 6, occludedOpacity: 0.35, progress: drawn))
+    layers.append(try layer("core", line, .core, size: 2, progress: drawn))
+    return layers
+  }
+
+  /// The layers of ``route(_:selected:inks:progress:idPrefix:)`` drawn with progress, to pass to
+  /// ``TileflowMapView/animateLineProgress(layers:to:duration:)``.
+  public static func routeProgressLayers(idPrefix: String = "route") -> [String] {
+    ["glow", "casing", "line", "core"].map { "\(idPrefix)-\($0)" }
   }
 
   /// One fill layer per isochrone, the longest time first so shorter times draw on top. Equal
-  /// translucent fills darken where they overlap, so nearer areas read stronger.
+  /// translucent fills darken where they overlap, so nearer areas read stronger. They are drawn in
+  /// the route line ink of the theme on screen unless `inks` fixes their colour, and lie on the
+  /// ground under the map's labels and 3D buildings.
   /// - Parameter idPrefix: The layers are `<prefix>-<minutes>`.
   public static func isochrones(
-    _ response: TileflowIsochroneResponse, inks: TileflowRouteInks = .light,
+    _ response: TileflowIsochroneResponse, inks: TileflowRouteInks? = nil,
     opacity: Double = 0.18, idPrefix: String = "isochrone"
   ) throws -> [TileflowGeoJSONLayer] {
     try response.isochrones.sorted { $0.minutes > $1.minutes }.map { isochrone in
       try TileflowGeoJSONLayer(
         id: "\(idPrefix)-\(isochrone.minutes)",
         geoJSON: Data(GeoJSONText.polygons(isochrone.polygons).utf8), kind: .fill,
-        color: inks.line, opacity: opacity)
+        color: (inks ?? .light).line, opacity: opacity, ink: inks == nil ? .line : nil,
+        placement: .ground)
     }
   }
 }

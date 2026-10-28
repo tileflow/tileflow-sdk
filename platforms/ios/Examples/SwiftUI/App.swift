@@ -25,8 +25,7 @@ struct MapScreen: View {
           Button("Walk to a café") {
             Task {
               do {
-                status = try await showWalkingRoute(
-                  to: "café", on: controller, inks: dark ? .dark : .light)
+                status = try await showWalkingRoute(to: "café", on: controller)
               } catch {
                 status = "Directions unavailable"
               }

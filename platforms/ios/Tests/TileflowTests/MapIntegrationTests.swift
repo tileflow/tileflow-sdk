@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class MapIntegrationTests: XCTestCase {
   func testOnlineMapLoadsChangesThemeAndRetires() async throws {
-    let manifest = URL(string: "http://127.0.0.1:18645/manifest.json")!
+    let manifest = FixtureServer.manifest
     do {
       let (_, response) = try await URLSession.shared.data(from: manifest)
       guard (response as? HTTPURLResponse)?.statusCode == 200 else {
@@ -108,7 +108,7 @@ final class MapIntegrationTests: XCTestCase {
   }
 
   func testRendererLossWhileHiddenWaitsForVisibilityAndInvalidRequestsAnswerAtOnce() async throws {
-    let manifest = URL(string: "http://127.0.0.1:18645/manifest.json")!
+    let manifest = FixtureServer.manifest
     do {
       _ = try await URLSession.shared.data(from: manifest)
     } catch {
@@ -177,7 +177,7 @@ final class MapIntegrationTests: XCTestCase {
   }
 
   func testEventLevelsCameraReasonsAndLargeContentOverTheDataChannel() async throws {
-    let manifest = URL(string: "http://127.0.0.1:18645/manifest.json")!
+    let manifest = FixtureServer.manifest
     do {
       _ = try await URLSession.shared.data(from: manifest)
     } catch {

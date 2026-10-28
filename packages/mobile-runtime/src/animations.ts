@@ -87,9 +87,15 @@ export function createAnimations(input: AnimationInput) {
     running.set(id, {stop, shot});
     return id;
   }
+  // An animation's events follow the answer that names it: the answer leaves within the current
+  // task, and these wait for the next one.
+  const report = (event: EventName, produce: Producer) =>
+    setTimeout(() => {
+      if (!disposed) input.emit(event, produce);
+    }, 0);
   function end(id: string, finished: boolean) {
     if (!running.delete(id) || disposed) return;
-    input.emit('animationEnded', () => ({animation: id, finished}));
+    report('animationEnded', () => ({animation: id, finished}));
   }
   function stopShots() {
     for (const [id, animation] of running) if (animation.shot) stop(id);
@@ -122,7 +128,7 @@ export function createAnimations(input: AnimationInput) {
         cues: request.cues.map((cue) => ({
           at: cue.at,
           run: () => {
-            if (running.has(id)) input.emit('shotCue', () => ({animation: id, cue: cue.id}));
+            if (running.has(id)) report('shotCue', () => ({animation: id, cue: cue.id}));
           },
         })),
         signal: abort.signal,

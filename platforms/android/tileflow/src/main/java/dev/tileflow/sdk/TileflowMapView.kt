@@ -55,6 +55,11 @@ constructor(
     public var options: TileflowMapOptions = TileflowMapOptions()
         private set
 
+    /** The scene beyond the theme the application asked for, given again to each new renderer. */
+    internal val scene = SceneState()
+    /** Calls waiting for an animation of the current renderer to end. */
+    internal val animations = AnimationWaiters()
+
     private var appearance: Pair<ProtocolContract.Method, JSONObject>? = null
     private var content = MapContent()
     private var contentRevision = 0
@@ -178,6 +183,14 @@ constructor(
         val previous = this.options
         this.options = options
         subscriptions = EventSubscriptions(options.events)
+        // Antialiasing and style validation are fixed when a renderer starts.
+        if (
+            (options.antialias != previous.antialias ||
+                options.validatesStyle != previous.validatesStyle) && webView != null
+        ) {
+            remount()
+            return
+        }
         val bridge = bridge?.takeIf { initialized } ?: return
         bridge.call(ProtocolContract.Method.SET_OPTIONS, options.json())
         if (options.events != previous.events)
@@ -613,6 +626,7 @@ constructor(
                                         .put("colorScheme", colorScheme())
                                         .put("interactive", true)
                                         .put("options", options.json())
+                                        .put("renderer", options.rendererJson())
                                         .put("events", subscriptions.json())
                                 camera?.let { configuration.put("camera", it.json()) }
                                 readyBridge.call(ProtocolContract.Method.INITIALIZE, configuration)
@@ -623,6 +637,7 @@ constructor(
                                 else if (theme != startingTheme) setTheme(theme)
                                 if (options != startingOptions) setOptions(options)
                                 if (camera != startingCamera) camera?.let { setCamera(it) }
+                                replayScene(readyBridge)
                                 if (!rendererVisible)
                                     readyBridge.call(
                                         ProtocolContract.Method.SET_VISIBILITY,
@@ -731,6 +746,10 @@ constructor(
             pendingReadyEvent = true
             return
         }
+        if (event == "animationEnded" || event == "shotCue") {
+            animations.receive(event, result)
+            return
+        }
         val parsed =
             try {
                 parseMapEvent(event, result)
@@ -749,6 +768,35 @@ constructor(
         }
     }
 
+    /** The current renderer once it has initialized. */
+    internal val readyBridge: MapBridge?
+        get() = bridge?.takeIf { initialized }
+
+    internal val isDestroyed: Boolean
+        get() = destroyed
+
+    /** Records options a dedicated call already gave the renderer. */
+    internal fun keepOptions(options: TileflowMapOptions) {
+        this.options = options
+    }
+
+    /** Records where line progress animations lead, so a new renderer draws the lines there. */
+    internal fun keepLineProgress(progress: TileflowLineProgress, layers: Set<String>) {
+        content =
+            content.copy(
+                overlays =
+                    content.overlays.map { layer ->
+                        val current = layer.progress
+                        if (layer.id !in layers || current == null) layer
+                        else layer.withProgress(progress.copy(highlight = current.highlight))
+                    }
+            )
+    }
+
+    internal fun launchOnView(block: suspend CoroutineScope.() -> Unit) {
+        scope.launch(block = block)
+    }
+
     /** Pending calls fail with `cancelled` when replaced and with `disposed` when destroyed. */
     private fun retireGeneration(code: TileflowErrorCode = TileflowErrorCode.CANCELLED) {
         initialized = false
@@ -756,6 +804,7 @@ constructor(
         pendingReadyEvent = false
         generationReady = false
         rendererVisible = false
+        animations.retire(code)
         bridge?.retire(code)
         loader?.close()
         bootstrap?.remove()

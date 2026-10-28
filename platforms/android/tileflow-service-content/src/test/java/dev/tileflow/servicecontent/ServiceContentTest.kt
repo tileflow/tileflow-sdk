@@ -18,6 +18,10 @@ import dev.tileflow.sdk.TileflowBounds
 import dev.tileflow.sdk.TileflowCamera
 import dev.tileflow.sdk.TileflowCoordinate
 import dev.tileflow.sdk.TileflowGeoJSONLayerKind
+import dev.tileflow.sdk.TileflowLayerPlacement
+import dev.tileflow.sdk.TileflowLineProgress
+import dev.tileflow.sdk.TileflowRouteInk
+import dev.tileflow.sdk.TileflowRouteInks
 import dev.tileflow.testing.Contract
 import dev.tileflow.testing.failure
 import org.json.JSONArray
@@ -80,7 +84,7 @@ class ServiceContentTest {
     }
 
     private fun isochroneSpecs(prefix: String) =
-        TileflowIsochroneLayers.specs(isochrones, TileflowRouteInks.LIGHT, 0.18, prefix)
+        TileflowIsochroneLayers.specs(isochrones, null, 0.18, prefix)
 
     private fun lines(geoJson: String): List<List<TileflowPosition>> {
         val features = JSONObject(geoJson).getJSONArray("features")
@@ -98,14 +102,25 @@ class ServiceContentTest {
 
     @Test
     fun routeLayersFollowTheDrawOrderAndKeepTheFullGeometry() {
-        val specs = TileflowRouteLayers.specs(routes, 0, TileflowRouteInks.LIGHT, "route")
+        // By default the map draws the layers in the route inks of the theme on screen.
+        val specs = TileflowRouteLayers.specs(routes, 0, null, null, "route")
         assertEquals(
-            listOf("route-alternatives", "route-glow", "route-casing", "route-line"),
+            listOf("route-alternatives", "route-glow", "route-casing", "route-line", "route-core"),
             specs.map { it.id },
         )
-        assertEquals(listOf(5.0, 16.0, 9.0, 6.0), specs.map { it.size })
-        assertEquals(listOf(1.0, 0.16, 1.0, 1.0), specs.map { it.opacity })
-        assertEquals(listOf("#94a3b8", "#2563eb", "#1e3a8a", "#2563eb"), specs.map { it.color })
+        assertEquals(listOf(5.0, 16.0, 9.0, 6.0, 2.0), specs.map { it.size })
+        assertEquals(
+            listOf(
+                TileflowRouteInk.ALTERNATIVE,
+                TileflowRouteInk.GLOW,
+                TileflowRouteInk.CASING,
+                TileflowRouteInk.LINE,
+                TileflowRouteInk.CORE,
+            ),
+            specs.map { it.ink },
+        )
+        assertTrue(specs.all { it.placement == TileflowLayerPlacement.GROUND })
+        assertEquals(listOf(0.0, 0.0, 0.0, 0.35, 0.0), specs.map { it.occludedOpacity })
         assertTrue(specs.all { it.kind == TileflowGeoJSONLayerKind.LINE })
         // Every position reaches the map, rounded to six decimals.
         val original = routes.routes[0].geometry
@@ -120,19 +135,37 @@ class ServiceContentTest {
     }
 
     @Test
-    fun darkInksDrawTheCoreAndAnySelectedRouteCanBeChosen() {
-        val specs = TileflowRouteLayers.specs(routes, 1, TileflowRouteInks.DARK, "trip")
+    fun fixedInksDrawFixedColoursAndProgressReachesTheChosenRoute() {
+        val specs =
+            TileflowRouteLayers.specs(
+                routes,
+                1,
+                TileflowRouteInks.LIGHT,
+                TileflowLineProgress(end = 0.0),
+                "trip",
+            )
         assertEquals(
             listOf("trip-alternatives", "trip-glow", "trip-casing", "trip-line", "trip-core"),
             specs.map { it.id },
         )
+        assertEquals(
+            listOf("#94a3b8", "#2563eb", "#1e3a8a", "#2563eb", "#dbeafe"),
+            specs.map { it.color },
+        )
+        // A theme's zero opacity keeps the layer, invisible, so its progress can still move.
+        assertEquals(listOf(1.0, 0.16, 1.0, 1.0, 0.0), specs.map { it.opacity })
+        assertTrue(specs.all { it.ink == null })
+        assertEquals(listOf(null, "#ffffff", "#ffffff", "#ffffff", "#ffffff"), specs.map {
+            it.progress?.highlight
+        })
+        assertEquals(TileflowRouteLayers.progressLayers("trip"), specs.drop(1).map { it.id })
         fun firstId(geoJson: String) =
             JSONObject(geoJson).getJSONArray("features").getJSONObject(0).getInt("id")
         assertEquals(0, firstId(specs[0].geoJson))
         assertEquals(1, firstId(specs[4].geoJson))
         val single = routes.copy(routes = routes.routes.take(1))
         assertEquals(
-            listOf("route-glow", "route-casing", "route-line"),
+            listOf("route-glow", "route-casing", "route-line", "route-core"),
             TileflowRouteLayers.build(single).map { it.id },
         )
     }
@@ -145,9 +178,14 @@ class ServiceContentTest {
             TileflowRouteLayers.build(routes, idPrefix = "r".repeat(52))
         }
         failure<IllegalArgumentException> {
-            TileflowRouteInks.LIGHT.copy(line = "blue")
+            TileflowRouteLayers.build(routes, inks = TileflowRouteInks.LIGHT.copy(line = "blue"))
         }
-        failure<IllegalArgumentException> { TileflowRouteInks.LIGHT.copy(glowOpacity = 1.5) }
+        failure<IllegalArgumentException> {
+            TileflowRouteLayers.build(
+                routes,
+                inks = TileflowRouteInks.LIGHT.copy(glowOpacity = 1.5),
+            )
+        }
         failure<IllegalArgumentException> {
             TileflowIsochroneLayers.build(isochrones, opacity = 2.0)
         }
@@ -168,7 +206,12 @@ class ServiceContentTest {
         val specs = isochroneSpecs("isochrone")
         assertEquals(listOf("isochrone-10", "isochrone-5"), specs.map { it.id })
         assertTrue(specs.all { it.kind == TileflowGeoJSONLayerKind.FILL })
-        assertTrue(specs.all { it.color == TileflowRouteInks.LIGHT.line && it.opacity == 0.18 })
+        assertTrue(specs.all { it.ink == TileflowRouteInk.LINE && it.opacity == 0.18 })
+        assertTrue(
+            TileflowIsochroneLayers.specs(isochrones, TileflowRouteInks.DARK, 0.18, "i").all {
+                it.color == TileflowRouteInks.DARK.line && it.ink == null
+            }
+        )
         val feature = JSONObject(specs[1].geoJson).getJSONArray("features").getJSONObject(0)
         assertEquals(5, feature.getJSONObject("properties").getInt("minutes"))
         assertEquals("Polygon", feature.getJSONObject("geometry").getString("type"))

@@ -6,6 +6,7 @@
 - [Framework browser runtime contract](contracts/framework-browser-runtime.md)
 - [Map interactions contract](contracts/map-interactions.md)
 - [SDK responsibility and delivery contract](contracts/sdk-responsibilities.md)
+- [Native Search, Routing, Elevation and GeoIP clients](../platforms/native-services.md)
 - [Generated authoring/resolved map and modules JSON Schema](modules-api-reference.json)
 - [Package release procedure](../PUBLISHING.md)
 - [Contributor setup](../CONTRIBUTING.md)

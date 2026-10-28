@@ -120,8 +120,6 @@ class MapConfigurationTest {
                 {
                     throw TileflowConfigurationException("The tileflow_map_credential is invalid.")
                 } to TileflowErrorCode.INVALID_CONFIGURATION,
-                { configuration("http://127.0.0.1:8787", credential) } to
-                    TileflowErrorCode.INVALID_CONFIGURATION,
             )
         for ((read, code) in cases) assertCode(code) { source.loadable(read) }
         for (invalid in
@@ -135,6 +133,78 @@ class MapConfigurationTest {
                 ),
             )) {
             assertThrows(IllegalArgumentException::class.java) { invalid.validate() }
+        }
+    }
+
+    @Test
+    fun aLoopbackHttpApiOriginServesALocalDevelopmentMap() {
+        for (origin in listOf("http://127.0.0.1:8787", "http://localhost:8787")) {
+            val loadable =
+                TileflowMapSource.hosted(mapId, configuration = configuration(origin, credential))
+                    .loadable { error("The process configuration is not read.") }
+            val endpoint = requireNotNull(loadable.hosted)
+            assertEquals(URI(origin), endpoint.apiOrigin)
+            assertTrue(endpoint.isLoopbackHttp)
+            assertEquals(URI("$origin/maps/$mapId/mobile/manifest.json"), loadable.manifestUrl)
+            loadable.publicMetadataUrls.forEach(loadable.policy::validate)
+        }
+        val remote =
+            TileflowMapSource.hosted(
+                    mapId,
+                    configuration = configuration("https://api.tileflow.test", credential),
+                )
+                .loadable { error("The process configuration is not read.") }
+        assertFalse(requireNotNull(remote.hosted).isLoopbackHttp)
+        assertThrows(IllegalArgumentException::class.java) {
+            remote.policy.validate(URI("http://127.0.0.1:8787/maps/$mapId/mobile/manifest.json"))
+        }
+        // The configuration accepts no other HTTP origin, for a map or a service.
+        for (origin in listOf("http://api.example.test", "http://10.0.2.2:8787")) {
+            assertThrows(TileflowConfigurationException::class.java) {
+                configuration(origin, credential)
+            }
+        }
+    }
+
+    @Test
+    fun aLayoutSelectsAHostedMapWithItsAttributes() {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val attributes =
+            Robolectric.buildAttributeSet()
+                .addAttribute(R.attr.tileflowMapId, mapId)
+                .addAttribute(R.attr.tileflowSurfaceId, "store-locator")
+                .addAttribute(R.attr.tileflowTheme, "dark")
+                .build()
+        val view = TileflowMapView(activity, attributes)
+        try {
+            assertEquals(TileflowMapSource.hosted(mapId, "store-locator"), view.source)
+            assertEquals("dark", view.theme)
+        } finally {
+            view.destroy()
+        }
+        val defaults =
+            TileflowMapView(
+                activity,
+                Robolectric.buildAttributeSet().addAttribute(R.attr.tileflowMapId, mapId).build(),
+            )
+        assertEquals(TileflowMapSource.hosted(mapId), defaults.source)
+        assertNull(defaults.theme)
+        defaults.destroy()
+        val plain = TileflowMapView(activity, Robolectric.buildAttributeSet().build())
+        assertNull(plain.source)
+        plain.destroy()
+        for (invalid in
+            listOf(
+                Robolectric.buildAttributeSet().addAttribute(R.attr.tileflowMapId, "map_short"),
+                Robolectric.buildAttributeSet()
+                    .addAttribute(R.attr.tileflowSurfaceId, "store-locator"),
+                Robolectric.buildAttributeSet()
+                    .addAttribute(R.attr.tileflowMapId, mapId)
+                    .addAttribute(R.attr.tileflowTheme, ""),
+            )) {
+            assertThrows(IllegalArgumentException::class.java) {
+                TileflowMapView(activity, invalid.build())
+            }
         }
     }
 

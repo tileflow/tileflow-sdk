@@ -174,6 +174,10 @@ export const protocol = {
       recoverable: true,
       sources: ['host'],
     },
+    sessionRejected: {
+      recoverable: false,
+      sources: ['host'],
+    },
     missingCredential: {
       recoverable: false,
       sources: ['host'],

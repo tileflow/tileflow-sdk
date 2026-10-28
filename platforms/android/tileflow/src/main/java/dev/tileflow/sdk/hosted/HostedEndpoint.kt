@@ -6,6 +6,7 @@ import dev.tileflow.configuration.TileflowConfiguration
 import dev.tileflow.configuration.TileflowCredential
 import dev.tileflow.configuration.internal.TileflowInternalApi
 import dev.tileflow.configuration.internal.credentialHeader
+import dev.tileflow.configuration.internal.tileflowApiOrigin
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowMapException
 import java.net.URI
@@ -21,9 +22,12 @@ import org.json.JSONObject
  * The credential stays in native memory. It is sent only in the session-start request, never to
  * the renderer, a resource request or a URL, and [toString] never includes it.
  *
+ * The API origin follows the configuration's own rule, the one the service clients use: `https`,
+ * or `http` on a loopback host for local development.
+ *
  * @throws TileflowMapException with [TileflowErrorCode.MISSING_CREDENTIAL] when [configuration]
- *   has no map credential, or [TileflowErrorCode.INVALID_CONFIGURATION] when its API origin is not
- *   an HTTPS origin.
+ *   has no map credential, or [TileflowErrorCode.INVALID_CONFIGURATION] when its API origin breaks
+ *   that rule.
  */
 internal class HostedEndpoint(configuration: TileflowConfiguration) {
     private val credential: TileflowCredential =
@@ -31,8 +35,15 @@ internal class HostedEndpoint(configuration: TileflowConfiguration) {
             ?: throw TileflowMapException(TileflowErrorCode.MISSING_CREDENTIAL)
 
     val apiOrigin: URI =
-        configuration.apiOrigin.takeIf { HostedContract.canonicalOrigin(it.toString()) }
-            ?: throw TileflowMapException(TileflowErrorCode.INVALID_CONFIGURATION)
+        tileflowApiOrigin(configuration.apiOrigin)?.takeIf {
+            it.scheme == "http" || HostedContract.canonicalOrigin(it.toString())
+        } ?: throw TileflowMapException(TileflowErrorCode.INVALID_CONFIGURATION)
+
+    /**
+     * A local development API: `http` on a loopback host. Only then may the session's resource
+     * origins be loopback `http` origins too.
+     */
+    val isLoopbackHttp: Boolean = apiOrigin.scheme == "http"
 
     fun manifestUrl(mapId: String): URI = apiOrigin.resolve("/maps/$mapId/mobile/manifest.json")
 

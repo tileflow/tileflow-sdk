@@ -86,10 +86,11 @@ public struct TileflowMapSource: Equatable, Sendable {
     _ = try policy(for: manifestURL)
   }
 
-  private func policy(for manifestURL: URL?) throws -> ResourcePolicy {
+  private func policy(for manifestURL: URL?, loopbackAPI: Bool = false) throws -> ResourcePolicy {
     let urls = (manifestURL.map { [$0] } ?? []) + Array(resourceOrigins)
     let policy = ResourcePolicy(
-      origins: Set(urls.map(ResourcePolicy.origin)), allowsLoopbackHTTP: allowsLoopbackHTTP)
+      origins: Set(urls.map(ResourcePolicy.origin)),
+      allowsLoopbackHTTP: allowsLoopbackHTTP || loopbackAPI)
     do { for url in urls { try policy.validate(url) } } catch {
       throw TileflowMapError.invalidSource
     }
@@ -119,7 +120,9 @@ public struct TileflowMapSource: Equatable, Sendable {
     publicMetadataURLs.insert(manifestURL)
     return LoadableMapSource(
       map: map, manifestURL: manifestURL, mapID: mapID, surfaceID: surfaceID,
-      policy: try policy(for: manifestURL), publicMetadataURLs: publicMetadataURLs, hosted: hosted)
+      // A Hosted map served by a local development API loads its manifest over loopback HTTP.
+      policy: try policy(for: manifestURL, loopbackAPI: hosted?.isLoopbackHTTP == true),
+      publicMetadataURLs: publicMetadataURLs, hosted: hosted)
   }
 }
 

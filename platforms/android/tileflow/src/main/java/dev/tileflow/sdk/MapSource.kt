@@ -52,9 +52,13 @@ internal constructor(
         policy(manifestUrl)
     }
 
-    private fun policy(manifestUrl: URI?): ResourcePolicy {
+    private fun policy(manifestUrl: URI?, loopbackApi: Boolean = false): ResourcePolicy {
         val urls = resourceOrigins + listOfNotNull(manifestUrl)
-        val policy = ResourcePolicy(urls.map(ResourcePolicy::origin).toSet(), allowsLoopbackHttp)
+        val policy =
+            ResourcePolicy(
+                urls.map(ResourcePolicy::origin).toSet(),
+                allowsLoopbackHttp || loopbackApi,
+            )
         urls.forEach(policy::validate)
         return policy
     }
@@ -91,7 +95,8 @@ internal constructor(
             url,
             mapId,
             surfaceId,
-            policy(url),
+            // A Hosted map served by a local development API loads its manifest over loopback HTTP.
+            policy(url, loopbackApi = hosted?.isLoopbackHttp == true),
             publicMetadataUrls,
             hosted,
         )

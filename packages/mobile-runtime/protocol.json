@@ -197,6 +197,11 @@
       "sources": ["host"],
       "description": "The Hosted service answered outside its contract. The session retries on its own."
     },
+    "sessionRejected": {
+      "recoverable": false,
+      "sources": ["host"],
+      "description": "The Hosted service refused the map's session for a reason that trying again cannot change, for example because the Map does not use session delivery. The context's `reason` is the service's code, such as `MOBILE_SESSION_MODE_REQUIRED`, when its answer carried one, and `status` is the HTTP status."
+    },
     "missingCredential": {
       "recoverable": false,
       "sources": ["host"],
@@ -209,10 +214,10 @@
     "invalidConfiguration": {
       "recoverable": false,
       "sources": ["host"],
-      "description": "A Hosted map's configuration cannot be read: a configured value is invalid, or the API origin is not HTTPS.",
+      "description": "A Hosted map's configuration cannot be read, for example because a configured value is invalid.",
       "documentation": {
-        "swift": "A Hosted map's configuration cannot be read: an Info.plist value is invalid, or the API origin is not HTTPS. ``Tileflow/configuration()`` throws the detailed error.",
-        "kotlin": "A Hosted map's configuration cannot be read: a resource value is invalid, or the API origin is not HTTPS. `Tileflow.configuration(context)` throws the detailed error."
+        "swift": "A Hosted map's configuration cannot be read, for example because an Info.plist value is invalid. ``Tileflow/configuration()`` throws the detailed error.",
+        "kotlin": "A Hosted map's configuration cannot be read, for example because a resource value is invalid. `Tileflow.configuration(context)` throws the detailed error."
       }
     }
   }

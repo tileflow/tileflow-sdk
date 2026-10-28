@@ -25,7 +25,6 @@ actor HostedSession {
   private var failures = 0
   private var delay: (until: ContinuousClock.Instant, error: TileflowMapError)?
   private var forcedRenewalAt: ContinuousClock.Instant?
-  private var backgrounded = false
   private var visibilityWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
   init(
@@ -50,14 +49,10 @@ actor HostedSession {
   }
 
   /// While hidden no bootstrap starts; requests that need one wait until the map is visible.
-  func setBackgrounded(_ value: Bool) {
-    backgrounded = value
-    if value {
-      operation?.task.cancel()
-      operation = nil
-    } else {
-      wakeWaiters()
-    }
+  /// Recorded synchronously, so the latest call wins however quickly the map is hidden and shown.
+  nonisolated func setBackgrounded(_ value: Bool) {
+    lifetime.setHidden(value)
+    Task { await visibilityChanged() }
   }
 
   /// Clears a terminal stop and any retry delay; the next admission bootstraps again.
@@ -159,6 +154,17 @@ actor HostedSession {
     }
     await withCheckedContinuation { visibilityWaiters[id] = $0 }
     timer.cancel()
+  }
+
+  private var backgrounded: Bool { lifetime.isHidden }
+
+  private func visibilityChanged() {
+    if backgrounded {
+      operation?.task.cancel()
+      operation = nil
+    } else {
+      wakeWaiters()
+    }
   }
 
   private func wake(_ id: UUID) { visibilityWaiters.removeValue(forKey: id)?.resume() }
@@ -296,7 +302,18 @@ private final class SessionLifetime: @unchecked Sendable {
   private let lock = NSLock()
   private var closed = false
   private var retryRequested = false
+  private var hidden = false
   init(transport: any NativeHTTPTransporting) { self.transport = transport }
+  var isHidden: Bool {
+    lock.lock()
+    defer { lock.unlock() }
+    return hidden
+  }
+  func setHidden(_ value: Bool) {
+    lock.lock()
+    hidden = value
+    lock.unlock()
+  }
   var isClosed: Bool {
     lock.lock()
     defer { lock.unlock() }

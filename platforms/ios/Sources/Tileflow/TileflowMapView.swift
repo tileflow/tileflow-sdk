@@ -467,14 +467,14 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   }
 
   @objc private func background() {
+    hostedSession?.setBackgrounded(true)
     Task { [weak self] in
-      await self?.hostedSession?.setBackgrounded(true)
       _ = try? await self?.bridge?.call(.setVisibility, payload: .object(["visible": .bool(false)]))
     }
   }
   @objc private func foreground() {
+    hostedSession?.setBackgrounded(false)
     Task { [weak self] in
-      await self?.hostedSession?.setBackgrounded(false)
       _ = try? await self?.bridge?.call(.setVisibility, payload: .object(["visible": .bool(true)]))
     }
   }

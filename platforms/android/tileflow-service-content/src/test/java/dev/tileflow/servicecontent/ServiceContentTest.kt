@@ -79,14 +79,8 @@ class ServiceContentTest {
         )
     }
 
-    private fun isochroneSpecs(prefix: String, maximumBytes: Int) =
-        TileflowIsochroneLayers.specs(
-            isochrones,
-            TileflowRouteInks.LIGHT,
-            0.18,
-            prefix,
-            maximumBytes,
-        )
+    private fun isochroneSpecs(prefix: String) =
+        TileflowIsochroneLayers.specs(isochrones, TileflowRouteInks.LIGHT, 0.18, prefix)
 
     private fun lines(geoJson: String): List<List<TileflowPosition>> {
         val features = JSONObject(geoJson).getJSONArray("features")
@@ -103,12 +97,8 @@ class ServiceContentTest {
         )
 
     @Test
-    fun routeLayersFollowTheDrawOrderAndFitTheBudget() {
-        val raw = GeoJson.lines(listOf(0 to routes.routes[0].geometry)).length * 3 +
-            GeoJson.lines(listOf(1 to routes.routes[1].geometry)).length
-        assertTrue("The contract routes exceed the default budget.", raw > 40_000)
-
-        val specs = TileflowRouteLayers.specs(routes, 0, TileflowRouteInks.LIGHT, "route", 40_000)
+    fun routeLayersFollowTheDrawOrderAndKeepTheFullGeometry() {
+        val specs = TileflowRouteLayers.specs(routes, 0, TileflowRouteInks.LIGHT, "route")
         assertEquals(
             listOf("route-alternatives", "route-glow", "route-casing", "route-line"),
             specs.map { it.id },
@@ -117,16 +107,13 @@ class ServiceContentTest {
         assertEquals(listOf(1.0, 0.16, 1.0, 1.0), specs.map { it.opacity })
         assertEquals(listOf("#94a3b8", "#2563eb", "#1e3a8a", "#2563eb"), specs.map { it.color })
         assertTrue(specs.all { it.kind == TileflowGeoJSONLayerKind.LINE })
-        assertTrue(specs.sumOf { it.geoJson.length } <= 40_000)
-        assertTrue(specs.all { it.geoJson.length <= 49_152 })
-
-        val line = lines(specs.last().geoJson).single()
+        // Every position reaches the map, rounded to six decimals.
         val original = routes.routes[0].geometry
-        assertTrue(line.size in 2 until original.size)
-        assertEquals(rounded(original.first()), line.first())
-        assertEquals(rounded(original.last()), line.last())
-        assertEquals(1, lines(specs.first().geoJson).size)
+        assertEquals(original.map(::rounded), lines(specs.last().geoJson).single())
+        assertEquals(routes.routes[1].geometry.size, lines(specs.first().geoJson).single().size)
         assertFalse(Regex("\\.[0-9]{7}").containsMatchIn(specs.joinToString { it.geoJson }))
+        // The selected route's layers share one payload, which the map receives once.
+        assertEquals(1, specs.drop(1).map { it.geoJson }.toSet().size)
 
         val layers = TileflowRouteLayers.build(routes)
         assertEquals(specs.map { it.id }, layers.map { it.id })
@@ -134,7 +121,7 @@ class ServiceContentTest {
 
     @Test
     fun darkInksDrawTheCoreAndAnySelectedRouteCanBeChosen() {
-        val specs = TileflowRouteLayers.specs(routes, 1, TileflowRouteInks.DARK, "trip", 40_000)
+        val specs = TileflowRouteLayers.specs(routes, 1, TileflowRouteInks.DARK, "trip")
         assertEquals(
             listOf("trip-alternatives", "trip-glow", "trip-casing", "trip-line", "trip-core"),
             specs.map { it.id },
@@ -151,11 +138,7 @@ class ServiceContentTest {
     }
 
     @Test
-    fun smallerBudgetsSimplifyFurtherAndImpossibleOnesFail() {
-        val specs = TileflowRouteLayers.specs(routes, 0, TileflowRouteInks.LIGHT, "route", 4_000)
-        assertTrue(specs.sumOf { it.geoJson.length } <= 4_000)
-        assertTrue(lines(specs.last().geoJson).single().size >= 2)
-        failure<IllegalArgumentException> { TileflowRouteLayers.build(routes, maximumBytes = 100) }
+    fun invalidArgumentsFail() {
         failure<IllegalArgumentException> { TileflowRouteLayers.build(routes, selected = 2) }
         failure<IllegalArgumentException> { TileflowRouteLayers.build(routes, idPrefix = "-route") }
         failure<IllegalArgumentException> {
@@ -165,6 +148,9 @@ class ServiceContentTest {
             TileflowRouteInks.LIGHT.copy(line = "blue")
         }
         failure<IllegalArgumentException> { TileflowRouteInks.LIGHT.copy(glowOpacity = 1.5) }
+        failure<IllegalArgumentException> {
+            TileflowIsochroneLayers.build(isochrones, opacity = 2.0)
+        }
     }
 
     @Test
@@ -178,29 +164,8 @@ class ServiceContentTest {
     }
 
     @Test
-    fun simplificationKeepsEndsAndRingsKeepFourPositions() {
-        val straight = List(11) { TileflowPosition(it / 10.0, 0.0) }
-        assertEquals(straight, Simplification.line(straight, 0.0))
-        assertEquals(listOf(straight.first(), straight.last()), Simplification.line(straight, 1e-6))
-        val bent = straight + TileflowPosition(1.0, 1.0)
-        assertEquals(
-            listOf(straight.first(), straight.last(), bent.last()),
-            Simplification.line(bent, 1e-3),
-        )
-        val ring =
-            List(40) {
-                val angle = it * Math.PI * 2 / 40
-                TileflowPosition(Math.cos(angle) * 1e-4, Math.sin(angle) * 1e-4)
-            } + TileflowPosition(1e-4, 0.0)
-        val collapsed = Simplification.ring(ring, 1.0)
-        assertEquals(4, collapsed.size)
-        assertEquals(collapsed.first(), collapsed.last())
-        assertEquals(3, collapsed.toSet().size)
-    }
-
-    @Test
     fun isochroneLayersDrawTheLongestTimeFirst() {
-        val specs = isochroneSpecs("isochrone", 40_000)
+        val specs = isochroneSpecs("isochrone")
         assertEquals(listOf("isochrone-10", "isochrone-5"), specs.map { it.id })
         assertTrue(specs.all { it.kind == TileflowGeoJSONLayerKind.FILL })
         assertTrue(specs.all { it.color == TileflowRouteInks.LIGHT.line && it.opacity == 0.18 })
@@ -211,23 +176,15 @@ class ServiceContentTest {
     }
 
     @Test
-    fun isochroneRingsSimplifyToTheBudgetWithoutCollapsing() {
-        val budget = isochroneSpecs("isochrone", 40_000).sumOf { it.geoJson.length } - 200
-        val specs = isochroneSpecs("area", budget)
-        assertTrue(specs.sumOf { it.geoJson.length } <= budget)
-        for (spec in specs) {
+    fun isochroneRingsKeepTheirFullGeometry() {
+        for ((spec, isochrone) in
+            isochroneSpecs("area").zip(isochrones.isochrones.sortedByDescending { it.minutes })) {
             val rings =
                 JSONObject(spec.geoJson).getJSONArray("features").getJSONObject(0)
                     .getJSONObject("geometry").getJSONArray("coordinates")
             val ring = positions(rings.getJSONArray(0))
-            assertTrue(ring.size >= 4)
+            assertEquals(isochrone.polygons[0][0].map(::rounded), ring)
             assertEquals(ring.first(), ring.last())
-        }
-        failure<IllegalArgumentException> {
-            TileflowIsochroneLayers.build(isochrones, maximumBytes = 50)
-        }
-        failure<IllegalArgumentException> {
-            TileflowIsochroneLayers.build(isochrones, opacity = 2.0)
         }
     }
 

@@ -250,6 +250,98 @@ public class MapIntegrationTest {
         }
     }
 
+    @Test
+    public fun eventLevelsCameraReasonsAndLargeContentOverTheDataChannel() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val intent =
+            Intent(instrumentation.context, MapHostActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val activity = instrumentation.startActivitySync(intent) as MapHostActivity
+        try {
+            assertTrue(
+                "Map did not load. Errors: ${activity.failures}",
+                activity.loaded.await(30, TimeUnit.SECONDS),
+            )
+            runBlocking {
+                withContext(Dispatchers.Main) {
+                    val map = activity.map
+                    val changes = CopyOnWriteArrayList<TileflowCameraChange>()
+                    map.onEvent = {
+                        when (it) {
+                            is TileflowMapEvent.CameraChanged -> changes.add(it.change)
+                            is TileflowMapEvent.Failed -> activity.failures.add(it.code)
+                            else -> Unit
+                        }
+                    }
+                    // At the default level only the settled camera arrives, tagged with its cause.
+                    map.setCamera(TileflowCamera(-3.69, 40.42, 13.0), durationMillis = 600)
+                    withTimeout(10_000) { while (changes.none { it.isFinal }) delay(50) }
+                    assertEquals(listOf(TileflowCameraChangePhase.ENDED), changes.map { it.phase })
+                    assertEquals(TileflowCameraChangeReason.API, changes.last().reason)
+                    // The continuous level adds the start and throttled updates.
+                    map.setOptions(
+                        TileflowMapOptions(
+                            events = TileflowEventOptions(TileflowEventLevel.CONTINUOUS, 100)
+                        )
+                    )
+                    changes.clear()
+                    map.setCamera(TileflowCamera(-3.70, 40.42, 14.0), durationMillis = 800)
+                    withTimeout(10_000) { while (changes.none { it.isFinal }) delay(50) }
+                    assertEquals(TileflowCameraChangePhase.STARTED, changes.first().phase)
+                    assertTrue(
+                        "${changes.map { it.reason }}",
+                        changes.all { it.reason == TileflowCameraChangeReason.API },
+                    )
+                    val moving = changes.count { it.phase == TileflowCameraChangePhase.MOVING }
+                    assertTrue("$moving throttled updates in 0.8 s", moving in 1..11)
+                    assertEquals(14.0, changes.last().camera.zoom, 0.01)
+
+                    // A 5 MiB layer travels over the data channel and renders.
+                    val (geoJSON, features) = BridgeIntegrationTest.geoJSON(5 * 1024 * 1024)
+                    val started = SystemClock.elapsedRealtime()
+                    map.setContent(
+                        layers =
+                            listOf(
+                                TileflowGeoJSONLayer(
+                                    "selection",
+                                    geoJSON,
+                                    TileflowGeoJSONLayerKind.CIRCLE,
+                                    size = 3.0,
+                                )
+                            )
+                    )
+                    println(
+                        "Tileflow setContent with ${geoJSON.length} bytes of GeoJSON ($features points): ${SystemClock.elapsedRealtime() - started} ms"
+                    )
+                    map.setCamera(TileflowCamera(-3.70, 40.42, 14.0))
+                    assertApplicationLayer(map)
+                    // Invalid GeoJSON is a typed rejection that leaves the content as it was.
+                    try {
+                        map.setContent(
+                            layers =
+                                listOf(
+                                    TileflowGeoJSONLayer(
+                                        "broken",
+                                        """{"type":"Feature"}""",
+                                        TileflowGeoJSONLayerKind.FILL,
+                                    )
+                                )
+                        )
+                        throw AssertionError("The renderer accepted invalid GeoJSON.")
+                    } catch (error: TileflowMapException) {
+                        assertEquals(TileflowErrorCode.INVALID_REQUEST, error.code)
+                        assertEquals("invalidGeoJSON", error.context.reason)
+                        assertEquals(TileflowResourceKind.DATA, error.context.resource)
+                    }
+                    assertApplicationLayer(map)
+                    assertTrue("Map errors: ${activity.failures}", activity.failures.isEmpty())
+                }
+            }
+        } finally {
+            instrumentation.runOnMainSync { activity.finish() }
+        }
+    }
+
     private fun renderer(map: TileflowMapView): WebView = map.getChildAt(0) as WebView
 
     private fun renderProcessGone(view: WebView) {

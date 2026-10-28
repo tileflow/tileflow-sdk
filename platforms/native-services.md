@@ -210,8 +210,9 @@ The map helpers build ordinary map content:
 - `searchProximity` turns the camera into a Search proximity at city scale or closer, and a GeoIP
   location can choose an initial camera.
 
-Lines and rings are simplified until the layers fit the map's content limits, so a long route and a
-marker fit in one `setContent` call.
+Layers keep every position of a route or isochrone, rounded to six decimals (about 0.1 m). The map
+receives their GeoJSON over its data channel, so a long route needs no simplification, and the
+glow, casing, line and core of a route share one copy of it.
 
 ## Errors
 

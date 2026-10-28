@@ -29,18 +29,22 @@ public fun TileflowMap(
                 setSource(source, initialCamera)
             }
         }
+    // A property the view applies again to its next renderer is not lost when the call that
+    // carried it is cancelled by a renderer replacement.
     LaunchedEffect(view, theme) {
         try {
             view.setTheme(theme)
         } catch (error: TileflowMapException) {
-            latestEvent.value(TileflowMapEvent.Failed(error.code))
+            if (error.code != TileflowErrorCode.CANCELLED)
+                latestEvent.value(TileflowMapEvent.Failed(error.code, error.context))
         }
     }
     LaunchedEffect(view, options) {
         try {
             view.setOptions(options)
         } catch (error: TileflowMapException) {
-            latestEvent.value(TileflowMapEvent.Failed(error.code))
+            if (error.code != TileflowErrorCode.CANCELLED)
+                latestEvent.value(TileflowMapEvent.Failed(error.code, error.context))
         }
     }
     DisposableEffect(view) { onDispose { view.destroy() } }

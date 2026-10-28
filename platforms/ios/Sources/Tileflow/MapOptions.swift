@@ -21,20 +21,50 @@ public struct TileflowGestures: Codable, Equatable, Sendable {
   }
 }
 
+/// Which events the map reports. Events beyond the chosen level are never sent by the renderer,
+/// so a map that does not need camera updates does not pay for them.
+public struct TileflowEventOptions: Equatable, Sendable {
+  /// `.essential` reports the camera when it settles, `.camera` also when it starts to move, and
+  /// `.continuous` also while it moves.
+  public var level: TileflowEventLevel
+  /// At `.continuous`, the shortest time between camera updates while the camera moves, from 0
+  /// (once per rendered frame) to 60 seconds. The latest camera is always delivered.
+  public var cameraUpdateInterval: TimeInterval
+
+  public init(level: TileflowEventLevel = .essential, cameraUpdateInterval: TimeInterval = 0) {
+    self.level = level
+    self.cameraUpdateInterval = cameraUpdateInterval
+  }
+
+  func validate() throws {
+    guard
+      (0...Double(ProtocolContract.maximumThrottleMilliseconds) / 1000)
+        .contains(cameraUpdateInterval)
+    else { throw TileflowMapError.invalidRequest }
+  }
+}
+
 public struct TileflowMapOptions: Codable, Equatable, Sendable {
   public var viewMode: TileflowViewMode
   public var quality: TileflowQuality
   public var gestures: TileflowGestures
   public var controls: Bool
+  /// Which events the map reports. Delivery is set up by the SDK, not by the renderer's options.
+  public var events: TileflowEventOptions = .init()
+
   public init(
     viewMode: TileflowViewMode = .flat, quality: TileflowQuality = .balanced,
-    gestures: TileflowGestures = .init(), controls: Bool = true
+    gestures: TileflowGestures = .init(), controls: Bool = true,
+    events: TileflowEventOptions = .init()
   ) {
     self.viewMode = viewMode
     self.quality = quality
     self.gestures = gestures
     self.controls = controls
+    self.events = events
   }
+
+  private enum CodingKeys: String, CodingKey { case viewMode, quality, gestures, controls }
 }
 
 public struct TileflowCoordinate: Codable, Equatable, Sendable {

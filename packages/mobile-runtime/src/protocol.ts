@@ -1,14 +1,51 @@
 import {z} from 'zod';
 import {contentSchema} from './content-contract';
 import {protocol} from './contract';
+import {ProtocolError, type WireError} from './errors';
 
 export {protocol};
+export {
+  type ErrorContext,
+  type ErrorReason,
+  ProtocolError,
+  type ProtocolErrorCode,
+  type ResourceKind,
+  type WireError,
+} from './errors';
 const identifier = z
   .string()
   .min(1)
   .max(128)
   .regex(/^[A-Za-z0-9._:-]+$/u);
 const finite = z.number().finite();
+const requestId = z.string().regex(/^[1-9][0-9]{0,14}$/u);
+
+type Events = typeof protocol.events;
+export type EventName = keyof Events;
+/** Events a host receives only while it subscribes to them. */
+export type SubscribableEvent = {
+  [K in EventName]: Events[K] extends {level: string} ? K : never;
+}[EventName];
+export type EventLevel = (typeof protocol.eventLevels)[number];
+export type CameraReason = (typeof protocol.cameraReasons)[number];
+
+const subscribable = Object.entries(protocol.events)
+  .filter(([, event]) => 'level' in event)
+  .map(([name]) => name) as [SubscribableEvent, ...SubscribableEvent[]];
+export const subscribableEvents: readonly SubscribableEvent[] = subscribable;
+export const subscriptionsSchema = z.partialRecord(
+  z.enum(subscribable),
+  z.strictObject({
+    throttleMs: z.number().int().min(0).max(protocol.limits.maximumThrottleMs),
+  }),
+);
+export type Subscriptions = z.infer<typeof subscriptionsSchema>;
+/** The events a host receives before it chooses: the essential level, unthrottled. */
+export const essentialSubscriptions: Subscriptions = Object.fromEntries(
+  subscribable
+    .filter((name) => (protocol.events[name] as {level: string}).level === 'essential')
+    .map((name) => [name, {throttleMs: 0}]),
+);
 
 export const cameraSchema = z.strictObject({
   longitude: finite.min(-180).max(180),
@@ -64,11 +101,17 @@ const initializeSchema = z.strictObject({
     gestures: {pan: true, zoom: true, rotate: true, pitch: true},
     controls: true,
   }),
+  events: subscriptionsSchema.default(essentialSubscriptions),
 });
 export type InitializeOptions = z.infer<typeof initializeSchema>;
 
 const commandSchema = z.discriminatedUnion('method', [
   z.strictObject({method: z.literal('initialize'), payload: initializeSchema}),
+  z.strictObject({method: z.literal('cancel'), payload: z.strictObject({requestId})}),
+  z.strictObject({
+    method: z.literal('setEvents'),
+    payload: z.strictObject({events: subscriptionsSchema}),
+  }),
   z.strictObject({
     method: z.literal('setCamera'),
     payload: z.strictObject({
@@ -130,16 +173,19 @@ const commandSchema = z.discriminatedUnion('method', [
   z.strictObject({method: z.literal('dispose'), payload: z.null()}),
 ]);
 export type Command = z.infer<typeof commandSchema>;
+/** The host's supported protocol versions, injected before the document's first script. */
+const hostVersionsSchema = z.strictObject({
+  minimum: z.number().int().min(1),
+  maximum: z.number().int().min(1),
+});
 const identitySchema = z.object({
-  protocolVersion: z.literal(protocol.version),
+  protocolVersion: z.number().int().min(1),
   instanceId: identifier,
   generation: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  requestId: z.string().regex(/^[1-9][0-9]{0,14}$/u),
+  requestId,
 });
 const envelopeSchema = z.strictObject({...identitySchema.shape, command: commandSchema});
 export type Request = z.infer<typeof envelopeSchema>;
-export type ProtocolErrorCode = (typeof protocol.errors)[number];
-export type EventName = (typeof protocol.events)[number];
 export type Output = Readonly<{
   protocolVersion: number;
   instanceId: string;
@@ -147,22 +193,24 @@ export type Output = Readonly<{
   requestId?: string;
   event?: EventName;
   result?: unknown;
-  error?: {code: ProtocolErrorCode; message: string};
+  error?: WireError;
 }>;
 
-export class ProtocolError extends Error {
-  constructor(
-    readonly code: ProtocolErrorCode,
-    message: string,
-  ) {
-    super(message);
-  }
+/**
+ * The highest version both sides support, or undefined. The runtime is embedded and versions
+ * normally match; a mismatch still fails with a typed error instead of a silent timeout.
+ */
+export function negotiateVersion(host: unknown): number | undefined {
+  const range = hostVersionsSchema.safeParse(host);
+  if (!range.success) return undefined;
+  const highest = Math.min(range.data.maximum, protocol.version);
+  return highest >= Math.max(range.data.minimum, protocol.minimumVersion) ? highest : undefined;
 }
 
 function parseMessage(value: unknown): unknown {
   if (
     typeof value !== 'string' ||
-    new TextEncoder().encode(value).length > protocol.maximumMessageBytes
+    new TextEncoder().encode(value).length > protocol.limits.maximumMessageBytes
   ) {
     throw new ProtocolError('invalidRequest', 'The request exceeds the protocol limits.');
   }
@@ -173,9 +221,9 @@ function parseMessage(value: unknown): unknown {
   }
 }
 
-export function parseRequest(value: unknown): Request {
+export function parseRequest(value: unknown, version: number = protocol.version): Request {
   const result = envelopeSchema.safeParse(parseMessage(value));
-  if (!result.success)
+  if (!result.success || result.data.protocolVersion !== version)
     throw new ProtocolError('invalidRequest', 'The request does not match the protocol.');
   return result.data;
 }
@@ -190,10 +238,15 @@ export function readRequestIdentity(value: unknown): z.infer<typeof identitySche
   }
 }
 
-/** Request identities are single-use; retirement invalidates in-flight results before cleanup. */
+/**
+ * Request identities are single-use; retirement invalidates in-flight results before cleanup.
+ * `version` is the negotiated protocol version, or undefined when negotiation failed: every
+ * addressable request is then answered with `incompatibleRuntime`.
+ */
 export function createDispatcher(input: {
   instanceId: string;
   generation: number;
+  version: number | undefined;
   execute: (command: Command, signal: AbortSignal) => Promise<unknown>;
   send: (output: Output) => void;
 }) {
@@ -203,45 +256,61 @@ export function createDispatcher(input: {
   let lastRequest = 0;
   let retired = false;
   const envelope = {
-    protocolVersion: protocol.version,
+    protocolVersion: input.version ?? protocol.version,
     instanceId: input.instanceId,
     generation: input.generation,
   };
-  const fail = (requestId: string | undefined, code: ProtocolErrorCode, message: string) =>
-    input.send({...envelope, ...(requestId ? {requestId} : {}), error: {code, message}});
+  const fail = (requestId: string | undefined, error: WireError) =>
+    input.send({...envelope, ...(requestId ? {requestId} : {}), error});
+  const invalid = (message: string): WireError => ({code: 'invalidRequest', message});
+  const ownsIdentity = (identity: {instanceId: string; generation: number}) =>
+    identity.instanceId === input.instanceId && identity.generation === input.generation;
 
   return {
     async receive(value: unknown) {
       if (retired) return;
+      if (input.version === undefined) {
+        const identity = readRequestIdentity(value);
+        if (identity && ownsIdentity(identity))
+          fail(identity.requestId, {
+            code: 'incompatibleRuntime',
+            message: 'The SDK and the renderer share no protocol version.',
+            context: {reason: 'protocolVersion'},
+          });
+        return;
+      }
       let request: Request;
       try {
-        request = parseRequest(value);
+        request = parseRequest(value, input.version);
       } catch {
         // Answer an addressable request so its caller fails now rather than at its timeout.
         const identity = readRequestIdentity(value);
         if (!identity) {
-          fail(undefined, 'invalidRequest', 'The request does not match the protocol.');
-        } else if (
-          identity.instanceId === input.instanceId &&
-          identity.generation === input.generation
-        ) {
+          fail(undefined, invalid('The request does not match the protocol.'));
+        } else if (ownsIdentity(identity)) {
           lastRequest = Math.max(lastRequest, Number(identity.requestId));
-          fail(identity.requestId, 'invalidRequest', 'The request does not match the protocol.');
+          fail(identity.requestId, invalid('The request does not match the protocol.'));
         }
         return;
       }
-      if (request.instanceId !== input.instanceId || request.generation !== input.generation) {
+      if (!ownsIdentity(request)) {
         // An old view must never receive even an error response in the replacement view.
         return;
       }
       const sequence = Number(request.requestId);
       if (sequence <= lastRequest) {
-        fail(request.requestId, 'invalidRequest', 'Request identifiers cannot be reused.');
+        fail(request.requestId, invalid('Request identifiers cannot be reused.'));
         return;
       }
       lastRequest = sequence;
-      if (active.size >= protocol.maximumPendingRequests) {
-        fail(request.requestId, 'invalidRequest', 'The request budget is exhausted.');
+      if (request.command.method === 'cancel') {
+        // Cancellation reaches the operation's signal; the operation answers `cancelled`.
+        active.get(request.command.payload.requestId)?.abort();
+        input.send({...envelope, requestId: request.requestId, result: null});
+        return;
+      }
+      if (active.size >= protocol.limits.maximumPendingRequests) {
+        fail(request.requestId, invalid('The request budget is exhausted.'));
         return;
       }
       const abort = new AbortController();
@@ -249,19 +318,24 @@ export function createDispatcher(input: {
       const timeout = setTimeout(() => {
         if (!active.delete(request.requestId) || retired) return;
         abort.abort();
-        fail(request.requestId, 'timeout', 'The request timed out.');
-      }, protocol.requestTimeoutMs);
+        fail(request.requestId, {code: 'timeout', message: 'The request timed out.'});
+      }, protocol.limits.requestTimeoutMs);
       try {
         const result = await input.execute(request.command, abort.signal);
         if (!retired && active.has(request.requestId)) {
-          input.send({...envelope, requestId: request.requestId, result: result ?? null});
+          if (abort.signal.aborted)
+            fail(request.requestId, {code: 'cancelled', message: 'The request was cancelled.'});
+          else input.send({...envelope, requestId: request.requestId, result: result ?? null});
         }
       } catch (error) {
         if (!retired && active.has(request.requestId)) {
           fail(
             request.requestId,
-            error instanceof ProtocolError ? error.code : 'rendererFailed',
-            error instanceof ProtocolError ? error.message : 'The map operation failed.',
+            error instanceof ProtocolError
+              ? error.toWire()
+              : abort.signal.aborted
+                ? {code: 'cancelled', message: 'The request was cancelled.'}
+                : {code: 'rendererFailed', message: 'The map operation failed.'},
           );
         }
       } finally {

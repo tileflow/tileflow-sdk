@@ -2,7 +2,9 @@ package dev.tileflow.sdk.bridge
 
 import android.webkit.WebView
 import dev.tileflow.sdk.TileflowErrorCode
+import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -20,21 +22,29 @@ internal class MapBridge(
     private val generation: Int,
     private val runtimeHash: String,
     private val webView: WebView,
+    /** Payloads this generation's requests carry; the transport serves them to the renderer. */
+    val data: DataChannel = DataChannel(),
     private val onHello: (MapBridge) -> Unit,
     private val onEvent: (String, JSONObject) -> Unit,
+    /** The handshake failed: the renderer is not usable in this generation. */
+    private val onFailure: (TileflowMapException) -> Unit = {},
 ) {
     private val pending = mutableMapOf<String, CompletableDeferred<Any>>()
     private var sequence = 0L
-    private var ready = false
+    private var version: Int? = null
     private var retired = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val handshakeTimeout = scope.launch {
-        delay(ProtocolContract.REQUEST_TIMEOUT_MILLIS)
-        if (!ready && !retired) {
-            onEvent("error", JSONObject().put("code", "timeout"))
-            retire()
+    private val handshakeTimeout =
+        scope.launch {
+            delay(ProtocolContract.REQUEST_TIMEOUT_MILLIS)
+            if (version == null && !retired)
+                fail(
+                    TileflowMapException(
+                        TileflowErrorCode.TIMEOUT,
+                        TileflowErrorContext.of(ProtocolContract.ErrorReason.HANDSHAKE),
+                    )
+                )
         }
-    }
 
     fun receive(text: String) {
         if (
@@ -49,93 +59,150 @@ internal class MapBridge(
                 return
             }
         if (
-            message.optInt("protocolVersion") != ProtocolContract.VERSION ||
-                message.optString("instanceId") != instanceId ||
+            message.optString("instanceId") != instanceId ||
                 message.optInt("generation") != generation
         )
             return
+        val negotiated = version
+        if (negotiated == null) {
+            if (!message.has("requestId") && message.optString("event") == "hello") hello(message)
+            return
+        }
+        if (message.optInt("protocolVersion") != negotiated) return
         val id = message.optString("requestId")
         if (id.isNotEmpty()) {
             val request = pending.remove(id) ?: return
             val error = message.optJSONObject("error")
             if (error == null) request.complete(message.opt("result") ?: JSONObject.NULL)
-            else request.completeExceptionally(TileflowMapException(error(error.optString("code"))))
+            else request.completeExceptionally(TileflowMapException.fromWire(error))
             return
         }
         val event = message.optString("event")
+        if (event.isNotEmpty() && event != "hello")
+            onEvent(event, message.optJSONObject("result") ?: JSONObject())
+    }
+
+    /**
+     * Accepts the renderer only when it is the embedded one and both sides chose one version. A
+     * mismatch is reported as a typed error rather than left to time out.
+     */
+    private fun hello(message: JSONObject) {
         val result = message.optJSONObject("result") ?: JSONObject()
-        if (event == "hello") {
-            if (ready) return
-            if (result.optString("runtimeHash") != runtimeHash) {
-                onEvent("error", JSONObject().put("code", "incompatibleRuntime"))
-                retire()
-                return
+        val selected = result.optJSONObject("protocol")?.opt("selected") as? Int
+        if (
+            selected == null ||
+                selected != message.optInt("protocolVersion") ||
+                selected !in ProtocolContract.MINIMUM_VERSION..ProtocolContract.VERSION
+        ) {
+            fail(incompatible(ProtocolContract.ErrorReason.PROTOCOL_VERSION))
+            return
+        }
+        if (result.optString("runtimeHash") != runtimeHash) {
+            fail(incompatible(ProtocolContract.ErrorReason.RUNTIME_HASH))
+            return
+        }
+        version = selected
+        handshakeTimeout.cancel()
+        onHello(this)
+    }
+
+    private fun incompatible(reason: ProtocolContract.ErrorReason) =
+        TileflowMapException(
+            TileflowErrorCode.INCOMPATIBLE_RUNTIME,
+            TileflowErrorContext.of(reason),
+        )
+
+    private fun fail(error: TileflowMapException) {
+        retire(TileflowErrorCode.CANCELLED)
+        onFailure(error)
+    }
+
+    /**
+     * Sends a command. [references] are payloads this request carries; they are released however
+     * the request ends. Cancelling the calling coroutine cancels the command in the renderer too.
+     */
+    suspend fun call(
+        method: ProtocolContract.Method,
+        payload: Any = JSONObject.NULL,
+        references: List<DataChannel.Reference> = emptyList(),
+    ): Any {
+        try {
+            if (retired) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+            val negotiated = version ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
+            if (pending.size >= ProtocolContract.MAXIMUM_PENDING_REQUESTS)
+                throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
+            val id = (++sequence).toString()
+            val message = message(negotiated, id, method, payload)
+            val result = CompletableDeferred<Any>()
+            pending[id] = result
+            try {
+                send(message)
+                return withTimeout(ProtocolContract.REQUEST_TIMEOUT_MILLIS) { result.await() }
+            } catch (_: TimeoutCancellationException) {
+                cancelInRenderer(id)
+                throw TileflowMapException(TileflowErrorCode.TIMEOUT)
+            } catch (cancellation: CancellationException) {
+                cancelInRenderer(id)
+                throw cancellation
+            } finally {
+                pending.remove(id)
             }
-            ready = true
-            handshakeTimeout.cancel()
-            onHello(this)
-        } else if (ready) {
-            onEvent(event, result)
+        } finally {
+            data.release(references)
         }
     }
 
-    suspend fun call(method: ProtocolContract.Method, payload: Any = JSONObject.NULL): Any {
-        if (retired) throw TileflowMapException(TileflowErrorCode.DISPOSED)
-        if (!ready) throw TileflowMapException(TileflowErrorCode.NOT_READY)
-        if (pending.size >= ProtocolContract.MAXIMUM_PENDING_REQUESTS)
-            throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
-        val id = (++sequence).toString()
+    /** Stops a request's work in the renderer; nobody waits for its answer. */
+    private fun cancelInRenderer(id: String) {
+        val negotiated = version ?: return
+        if (retired || pending.remove(id) == null) return
+        send(
+            message(
+                negotiated,
+                (++sequence).toString(),
+                ProtocolContract.Method.CANCEL,
+                JSONObject().put("requestId", id),
+            )
+        )
+    }
+
+    private fun message(
+        negotiated: Int,
+        id: String,
+        method: ProtocolContract.Method,
+        payload: Any,
+    ): String {
         val message =
             JSONObject()
-                .put("protocolVersion", ProtocolContract.VERSION)
+                .put("protocolVersion", negotiated)
                 .put("instanceId", instanceId)
                 .put("generation", generation)
                 .put("requestId", id)
                 .put("command", JSONObject().put("method", method.wireName).put("payload", payload))
                 .toString()
         if (message.toByteArray(Charsets.UTF_8).size > ProtocolContract.MAXIMUM_MESSAGE_BYTES) {
-            throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
-        }
-        val result = CompletableDeferred<Any>()
-        pending[id] = result
-        try {
-            // Only a JSON-quoted string is interpolated; method names and user values are data.
-            webView.evaluateJavascript(
-                "window.tileflow.receive(${JSONObject.quote(message)});",
-                null,
+            throw TileflowMapException(
+                TileflowErrorCode.INVALID_REQUEST,
+                TileflowErrorContext(limit = ProtocolContract.MAXIMUM_MESSAGE_BYTES),
             )
-            return withTimeout(ProtocolContract.REQUEST_TIMEOUT_MILLIS) { result.await() }
-        } catch (_: TimeoutCancellationException) {
-            throw TileflowMapException(TileflowErrorCode.TIMEOUT)
-        } finally {
-            pending.remove(id)
         }
+        return message
     }
 
-    fun retire() {
+    private fun send(message: String) {
+        // Only a JSON-quoted string is interpolated; method names and user values are data.
+        webView.evaluateJavascript("window.tileflow.receive(${JSONObject.quote(message)});", null)
+    }
+
+    /** Pending calls fail with [code]: `cancelled` when replaced, `disposed` when destroyed. */
+    fun retire(code: TileflowErrorCode = TileflowErrorCode.DISPOSED) {
         if (retired) return
         retired = true
-        ready = false
+        version = null
         scope.cancel()
         val requests = pending.values.toList()
         pending.clear()
-        requests.forEach {
-            it.completeExceptionally(TileflowMapException(TileflowErrorCode.DISPOSED))
-        }
-    }
-
-    companion object {
-        fun error(code: String): TileflowErrorCode =
-            when (code) {
-                "notReady" -> TileflowErrorCode.NOT_READY
-                "disposed",
-                "cancelled" -> TileflowErrorCode.DISPOSED
-                "timeout" -> TileflowErrorCode.TIMEOUT
-                "resourceFailed" -> TileflowErrorCode.RESOURCE_FAILED
-                "invalidRequest" -> TileflowErrorCode.INVALID_REQUEST
-                "versionMismatch",
-                "incompatibleRuntime" -> TileflowErrorCode.INCOMPATIBLE_RUNTIME
-                else -> TileflowErrorCode.RENDERER_FAILED
-            }
+        requests.forEach { it.completeExceptionally(TileflowMapException(code)) }
+        data.retire()
     }
 }

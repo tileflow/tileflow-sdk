@@ -10,19 +10,28 @@ import {
   createTileflowAnnotationRegistry,
   createTileflowMapLibrePoiController,
 } from '@tileflow/interactions/maplibre';
-import type {MapContent} from './content-contract';
+import type {Overlay} from './content-contract';
+import type {Producer, Warning} from './events';
+import type {FeatureCollection} from './geojson';
 import type {EventName} from './protocol';
+
+/** An overlay whose data the runtime has read from the data channel and validated. */
+export type ResolvedOverlay = Omit<Overlay, 'data'> & {data: FeatureCollection; digest: string};
+type Content = {annotations: TileflowAnnotation[]; overlays: ResolvedOverlay[]};
 
 /** Application content has its own namespace and survives authored style replacement. */
 export function createMapContentRegistry(
   map: MapLibreMap,
-  emit: (event: EventName, value: unknown) => void,
+  output: {emit: (event: EventName, produce: Producer) => void; warn: (warning: Warning) => void},
 ) {
-  let content: MapContent = {annotations: [], overlays: []};
+  let content: Content = {annotations: [], overlays: []};
   let disposed = false;
   let dirty = false;
   const prefix = '__tileflow_app_';
   const owned = new Set<string>();
+  // The digest each source last received, so unchanged data is not sent to the worker again.
+  const applied = new Map<string, string>();
+  const emit = output.emit;
   const annotationRegistry = createTileflowAnnotationRegistry({
     context: map,
     getKey: (definition: TileflowAnnotation) => definition.id,
@@ -39,13 +48,13 @@ export function createMapContentRegistry(
       element.addEventListener('click', (event) => {
         event.stopPropagation();
         if (!disposed)
-          emit('annotationActivated', {
+          emit('annotationActivated', () => ({
             id: state.definition.id,
             coordinate: {
               longitude: state.definition.coordinate[0],
               latitude: state.definition.coordinate[1],
             },
-          });
+          }));
       });
       update();
       state.marker.addTo(map);
@@ -73,12 +82,12 @@ export function createMapContentRegistry(
     cancelFrame: cancelAnimationFrame,
     onActivate: ({target}) => {
       if (!disposed)
-        emit('poiActivated', {
+        emit('poiActivated', () => ({
           id: target.feature.id === undefined ? null : String(target.feature.id),
           coordinate: {longitude: target.coordinate[0], latitude: target.coordinate[1]},
           name: target.feature.properties.name ?? null,
           category: target.feature.category,
-        });
+        }));
     },
   });
   const restore = () => {
@@ -89,6 +98,7 @@ export function createMapContentRegistry(
       if (map.getLayer(id)) map.removeLayer(id);
       if (map.getSource(id)) map.removeSource(id);
       owned.delete(id);
+      applied.delete(id);
     }
     for (const overlay of content.overlays) {
       const id = `${prefix}${overlay.id}`;
@@ -96,8 +106,9 @@ export function createMapContentRegistry(
         throw new Error('Application content conflicts with the authored map.');
       owned.add(id);
       const source = map.getSource(id) as GeoJSONSource | undefined;
-      if (source) source.setData(overlay.data);
-      else map.addSource(id, {type: 'geojson', data: overlay.data});
+      if (!source) map.addSource(id, {type: 'geojson', data: overlay.data});
+      else if (applied.get(id) !== overlay.digest) source.setData(overlay.data);
+      applied.set(id, overlay.digest);
       if (map.getLayer(id)) map.removeLayer(id);
       if (overlay.kind === 'circle')
         map.addLayer({
@@ -132,6 +143,8 @@ export function createMapContentRegistry(
     dirty = false;
   };
   const onStyleLoaded = () => {
+    // A new style has none of the application's sources.
+    applied.clear();
     dirty = true;
     onIdle();
   };
@@ -139,16 +152,21 @@ export function createMapContentRegistry(
     try {
       restore();
     } catch {
-      emit('error', {
+      output.warn({
         code: 'rendererFailed',
         message: 'Application content could not be restored.',
+        context: {reason: 'contentRestore'},
       });
     }
   };
   map.on('style.load', onStyleLoaded);
   map.on('idle', onIdle);
   return {
-    set(next: MapContent) {
+    /** Data held by the current overlays, so content that did not change is not read again. */
+    data(digest: string): FeatureCollection | undefined {
+      return content.overlays.find((overlay) => overlay.digest === digest)?.data;
+    },
+    set(next: Content) {
       const previous = content;
       try {
         content = next;
@@ -174,6 +192,7 @@ export function createMapContentRegistry(
         if (map.getSource(id)) map.removeSource(id);
       }
       owned.clear();
+      applied.clear();
     },
   };
 }

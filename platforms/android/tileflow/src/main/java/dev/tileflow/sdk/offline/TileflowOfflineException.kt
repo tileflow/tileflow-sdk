@@ -52,8 +52,12 @@ public enum class TileflowOfflineErrorCode {
     UNAVAILABLE,
     /** No HTTP answer arrived. */
     NETWORK,
-    /** The service answered outside its contract. */
-    INVALID_RESPONSE;
+    /** The service answered outside its contract, or a body did not match its manifest. */
+    INVALID_RESPONSE,
+    /** The device does not have room for the region. Free space, then resume it. */
+    INSUFFICIENT_STORAGE,
+    /** No region has this identifier. */
+    REGION_NOT_FOUND;
 
     /** Whether the same request can succeed later without the application changing anything. */
     public val isRecoverable: Boolean

@@ -48,8 +48,12 @@ public struct TileflowOfflineError: Error, Hashable, Sendable, CustomStringConve
     case unavailable
     /// No HTTP answer arrived.
     case network
-    /// The service answered outside its contract.
+    /// The service answered outside its contract, or a body did not match its manifest.
     case invalidResponse
+    /// The device does not have room for the region. Free space, then resume it.
+    case insufficientStorage
+    /// No region has this identifier.
+    case regionNotFound
   }
 
   public let code: Code

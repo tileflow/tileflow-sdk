@@ -96,6 +96,8 @@ struct OfflinePackManifest: Sendable {
 struct OfflinePack: Sendable {
   let grant: OfflinePackGrant
   let manifest: OfflinePackManifest
+  /// The service's answer as received, which the store keeps to read the pack again.
+  let response: Data
 }
 
 /// Whether a downloaded pack can still be updated. Access ending never deletes it.
@@ -125,6 +127,9 @@ enum OfflinePackRevalidation: Sendable, Equatable {
 /// keep values the service may extend open; every member the SDK reads, and the invariants
 /// between them, are checked.
 enum OfflinePackContract {
+  /// The largest creation answer the service sends; 50,000 resources measure about 1.4 MB.
+  static let maximumResponseBytes = 8 * 1024 * 1024
+
   enum Operation: Sendable {
     case create
     case revalidate
@@ -144,7 +149,8 @@ enum OfflinePackContract {
     return OfflinePack(
       grant: grant,
       manifest: try self.manifest(
-        manifest, request: request, allowsLoopbackHTTP: allowsLoopbackHTTP))
+        manifest, request: request, allowsLoopbackHTTP: allowsLoopbackHTTP),
+      response: data)
   }
 
   static func manifest(
@@ -170,7 +176,9 @@ enum OfflinePackContract {
       let maximum = integer(value["limits"]?["maxPackResources"], 1...),
       let daily = integer(value["limits"]?["dailyDownloads"], 0...),
       let interval = integer(value["revalidation"]?["intervalSeconds"], 1...),
-      value["revalidation"]?["url"]?.string != nil,
+      // Always absolute on the service's origin; the SDK revalidates at its configured origin.
+      resourceURL(value["revalidation"]?["url"]?.string, allowsLoopbackHTTP: allowsLoopbackHTTP)
+        != nil,
       case .array(let attribution) = value["attribution"]?["sources"],
       attribution.allSatisfy({ if case .object = $0 { true } else { false } }),
       case .array(let documentValues) = value["documents"],

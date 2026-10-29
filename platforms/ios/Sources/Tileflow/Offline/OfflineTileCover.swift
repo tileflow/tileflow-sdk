@@ -23,7 +23,8 @@ enum OfflinePackRegion: Hashable, Sendable {
   }
 
   /// The canonical ring, or nil when the service would refuse it: open, too short or long, or
-  /// without area.
+  /// with every position on one line. A self-crossing ring bounds area under the even-odd cover
+  /// even when its signed areas cancel.
   static func canonical(_ ring: [TileflowPosition]) -> OfflinePackRegion? {
     guard positions.contains(ring.count),
       ring.allSatisfy({ isLongitude($0.longitude) && isLatitude($0.latitude) })
@@ -31,7 +32,7 @@ enum OfflinePackRegion: Hashable, Sendable {
     let rounded = ring.map {
       TileflowPosition(longitude: round($0.longitude), latitude: round($0.latitude))
     }
-    guard rounded.first == rounded.last, area(rounded) != 0 else { return nil }
+    guard rounded.first == rounded.last, !isCollinear(rounded) else { return nil }
     return .polygon(rounded)
   }
 
@@ -104,13 +105,15 @@ enum OfflinePackRegion: Hashable, Sendable {
     return rounded == 0 ? 0 : rounded
   }
 
-  static func area(_ ring: [TileflowPosition]) -> Double {
-    var area = 0.0
-    for index in ring.indices.dropFirst() {
-      area += ring[index - 1].longitude * ring[index].latitude
-      area -= ring[index].longitude * ring[index - 1].latitude
+  /// Whether every position lies on the line through the first two distinct ones, with the
+  /// service's exact arithmetic.
+  static func isCollinear(_ ring: [TileflowPosition]) -> Bool {
+    let first = ring[0]
+    guard let other = ring.first(where: { $0 != first }) else { return true }
+    let (dx, dy) = (other.longitude - first.longitude, other.latitude - first.latitude)
+    return ring.allSatisfy {
+      dx * ($0.latitude - first.latitude) - dy * ($0.longitude - first.longitude) == 0
     }
-    return area / 2
   }
 }
 

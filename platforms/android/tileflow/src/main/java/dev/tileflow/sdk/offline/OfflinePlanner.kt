@@ -17,27 +17,26 @@ internal data class OfflineResource(
 
 /**
  * What downloading a region costs, after Mapbox's tile region estimates: resources, bytes and, for
- * Hosted packs, the map views it is billed.
+ * Hosted content, the map views it is billed.
+ *
+ * @property resourceCount Every resource of the region, including free public ones. A self-hosted
+ *   estimate counts tiles only: the style's sprites and glyphs are known once the style is read.
+ * @property billableResourceCount Resources counted toward map views and the plan's limits.
+ * @property publicResourceCount Free public resources, such as landmarks, which count toward
+ *   nothing.
+ * @property bytes Exact bytes on the wire for Hosted content; null when sizes are unknown.
+ * @property tileCounts Tiles per source: those each source stores in the region for Hosted
+ *   content, and the region's cover for a self-hosted source.
+ * @property mapViews Map views the download is billed: one per started 1,000 billable resources
+ *   the device does not hold yet, per pack. Resources already stored are revalidated for free.
  */
-internal data class TileflowOfflineRegionEstimate(
-    /** Every resource of the region, including free public ones. */
-    val resourceCount: Long,
-    /** Resources counted toward map views and the plan's limits. */
-    val billableResourceCount: Long,
-    /** Free public resources, such as landmarks, which count toward nothing. */
-    val publicResourceCount: Long,
-    /** Exact bytes on the wire for a Hosted pack; null when a source does not expose its sizes. */
-    val bytes: Long?,
-    /**
-     * Tiles per source, the tiles each source stores in the region for a Hosted pack and the
-     * region's cover for a self-hosted source.
-     */
-    val tileCounts: Map<String, Long>,
-    /**
-     * Map views a complete download is billed: one per started 1,000 billable resources. An update
-     * is billed only for the resources that changed.
-     */
-    val mapViews: Long,
+public data class TileflowOfflineRegionEstimate(
+    public val resourceCount: Long,
+    public val billableResourceCount: Long,
+    public val publicResourceCount: Long,
+    public val bytes: Long?,
+    public val tileCounts: Map<String, Long>,
+    public val mapViews: Long,
 )
 
 /** Plans a region from a Hosted manifest or from self-hosted sources. */

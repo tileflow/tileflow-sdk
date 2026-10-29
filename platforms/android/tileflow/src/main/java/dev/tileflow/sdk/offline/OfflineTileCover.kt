@@ -70,13 +70,14 @@ internal sealed class OfflinePackRegion {
 
         /**
          * The canonical ring, or null when the service would refuse it: open, too short or long,
-         * or without area.
+         * or with every position on one line. A self-crossing ring bounds area under the even-odd
+         * cover even when its signed areas cancel.
          */
         fun canonical(ring: List<TileflowPosition>): OfflinePackRegion? {
             if (ring.size !in POSITIONS) return null
             if (ring.any { !isLongitude(it.longitude) || !isLatitude(it.latitude) }) return null
             val rounded = ring.map { TileflowPosition(round(it.longitude), round(it.latitude)) }
-            if (rounded.first() != rounded.last() || area(rounded) == 0.0) return null
+            if (rounded.first() != rounded.last() || isCollinear(rounded)) return null
             return Polygon(rounded)
         }
 
@@ -120,13 +121,18 @@ internal sealed class OfflinePackRegion {
             return if (rounded == 0.0) 0.0 else rounded
         }
 
-        fun area(ring: List<TileflowPosition>): Double {
-            var area = 0.0
-            for (index in 1 until ring.size) {
-                area += ring[index - 1].longitude * ring[index].latitude
-                area -= ring[index].longitude * ring[index - 1].latitude
+        /**
+         * Whether every position lies on the line through the first two distinct ones, with the
+         * service's exact arithmetic.
+         */
+        fun isCollinear(ring: List<TileflowPosition>): Boolean {
+            val first = ring[0]
+            val other = ring.firstOrNull { it != first } ?: return true
+            val dx = other.longitude - first.longitude
+            val dy = other.latitude - first.latitude
+            return ring.all {
+                dx * (it.latitude - first.latitude) - dy * (it.longitude - first.longitude) == 0.0
             }
-            return area / 2
         }
     }
 }

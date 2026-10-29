@@ -53,10 +53,14 @@ public data class TileflowEventOptions(
     }
 }
 
-/** @property events Which events the map reports. */
+/**
+ * @property quality The rendering quality. Null uses [TileflowDeviceProfile.current]'s quality when
+ *   the options reach the map.
+ * @property events Which events the map reports.
+ */
 public data class TileflowMapOptions(
     val viewMode: TileflowViewMode = TileflowViewMode.FLAT,
-    val quality: TileflowQuality = TileflowQuality.BALANCED,
+    val quality: TileflowQuality? = null,
     val gestures: TileflowGestures = TileflowGestures(),
     val controls: Boolean = true,
     val events: TileflowEventOptions = TileflowEventOptions(),
@@ -65,7 +69,11 @@ public data class TileflowMapOptions(
     internal fun json(): JSONObject =
         JSONObject()
             .put("viewMode", viewMode.wireName)
-            .put("quality", quality.wireName)
+            .put(
+                "quality",
+                (quality ?: TileflowDeviceProfile.known()?.quality ?: TileflowQuality.BALANCED)
+                    .wireName,
+            )
             .put("gestures", gestures.json())
             .put("controls", controls)
 }

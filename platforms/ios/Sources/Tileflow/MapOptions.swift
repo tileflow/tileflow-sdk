@@ -46,14 +46,16 @@ public struct TileflowEventOptions: Equatable, Sendable {
 
 public struct TileflowMapOptions: Codable, Equatable, Sendable {
   public var viewMode: TileflowViewMode
-  public var quality: TileflowQuality
+  /// The rendering quality. Nil uses ``TileflowDeviceProfile/current``'s quality when the options
+  /// reach the map.
+  public var quality: TileflowQuality?
   public var gestures: TileflowGestures
   public var controls: Bool
   /// Which events the map reports. Delivery is set up by the SDK, not by the renderer's options.
   public var events: TileflowEventOptions = .init()
 
   public init(
-    viewMode: TileflowViewMode = .flat, quality: TileflowQuality = .balanced,
+    viewMode: TileflowViewMode = .flat, quality: TileflowQuality? = nil,
     gestures: TileflowGestures = .init(), controls: Bool = true,
     events: TileflowEventOptions = .init()
   ) {
@@ -65,6 +67,14 @@ public struct TileflowMapOptions: Codable, Equatable, Sendable {
   }
 
   private enum CodingKeys: String, CodingKey { case viewMode, quality, gestures, controls }
+
+  public func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(viewMode, forKey: .viewMode)
+    try container.encode(quality ?? TileflowDeviceProfile.current.quality, forKey: .quality)
+    try container.encode(gestures, forKey: .gestures)
+    try container.encode(controls, forKey: .controls)
+  }
 }
 
 public struct TileflowCoordinate: Codable, Equatable, Sendable {

@@ -2,5 +2,6 @@
     <application android:usesCleartextTraffic="true">
         <activity android:name="dev.tileflow.sdk.MapHostActivity" android:exported="false" />
         <activity android:name="dev.tileflow.sdk.BridgeHostActivity" android:exported="false" />
+        <activity android:name="dev.tileflow.sdk.CachedMapHostActivity" android:exported="false" />
     </application>
 </manifest>

@@ -25,43 +25,63 @@ final class ResourceSchemeHandler: NSObject, WKURLSchemeHandler {
     }
     operations[identity] = Task { [weak self] in
       guard let self else { return }
+      var responded = false
       do {
         guard let url = urlSchemeTask.request.url else { throw ResourceError.invalidAddress }
-        let payload: ResourcePayload
+        let resource: ResourceResponse
         switch url.host {
         case ResourceURL.runtimeHost:
-          payload = try runtimeResource(url)
+          resource = try Self.complete(runtimeResource(url))
         case ResourceURL.dataHost:
-          payload = try dataResource(urlSchemeTask.request)
+          resource = try Self.complete(dataResource(urlSchemeTask.request))
         case ResourceURL.resourceHost:
           var request = urlSchemeTask.request
           request.url = try ResourceURL.decode(url)
-          payload = try await loader.load(request)
+          resource = try await loader.open(request)
         default:
           throw ResourceError.invalidAddress
         }
-        guard !retired, operations[identity] != nil, !Task.isCancelled else { return }
-        var headers = payload.headers
+        guard isActive(identity) else { return }
+        var headers = resource.headers
         headers["Access-Control-Allow-Origin"] = "*"
         // The renderer reads World fair-use state from these headers, as the web adapters do.
         headers["Access-Control-Expose-Headers"] =
           "Tileflow-Fair-Use, Tileflow-Fair-Use-Notice, Tileflow-Protection"
         guard
           let response = HTTPURLResponse(
-            url: url, statusCode: payload.status, httpVersion: "HTTP/1.1", headerFields: headers
+            url: url, statusCode: resource.status, httpVersion: "HTTP/1.1", headerFields: headers
           )
         else { throw ResourceError.invalidResponse }
         urlSchemeTask.didReceive(response)
-        urlSchemeTask.didReceive(payload.bytes)
+        responded = true
+        switch resource.body {
+        case .data(let bytes):
+          urlSchemeTask.didReceive(bytes)
+        case .stream(let chunks):
+          // Each chunk reaches the renderer as it downloads; stopping the task cancels the rest.
+          for try await chunk in chunks {
+            guard isActive(identity) else { return }
+            urlSchemeTask.didReceive(chunk)
+          }
+          guard isActive(identity) else { return }
+        }
         urlSchemeTask.didFinish()
       } catch {
-        if !retired, operations[identity] != nil, !Task.isCancelled {
+        if isActive(identity) {
           if let error = error as? TileflowMapError { onFailure?(error) }
-          urlSchemeTask.didFailWithError(error)
+          urlSchemeTask.didFailWithError(responded ? ResourceError.invalidResponse : error)
         }
       }
       operations.removeValue(forKey: identity)
     }
+  }
+
+  private func isActive(_ identity: ObjectIdentifier) -> Bool {
+    !retired && operations[identity] != nil && !Task.isCancelled
+  }
+
+  private static func complete(_ payload: ResourcePayload) -> ResourceResponse {
+    ResourceResponse(status: payload.status, headers: payload.headers, body: .data(payload.bytes))
   }
 
   func webView(_ webView: WKWebView, stop urlSchemeTask: any WKURLSchemeTask) {

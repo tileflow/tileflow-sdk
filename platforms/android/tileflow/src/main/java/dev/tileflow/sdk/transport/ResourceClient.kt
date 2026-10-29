@@ -64,21 +64,23 @@ internal class ResourceClient(
                     request.requestHeaders.entries
                         .firstOrNull { it.key.equals("Range", ignoreCase = true) }
                         ?.value
-                val payload = loader.load(ResourceAddress.decode(url), request.method, range)
+                // A successful body streams to the renderer as it downloads; the WebView closing
+                // the stream cancels the rest.
+                val response = loader.open(ResourceAddress.decode(url), request.method, range)
                 WebResourceResponse(
-                    payload.headers["Content-Type"]?.substringBefore(';')
+                    response.headers["Content-Type"]?.substringBefore(';')
                         ?: "application/octet-stream",
                     null,
-                    payload.status,
-                    if (payload.status < 400) "OK" else "Resource error",
-                    payload.headers +
+                    response.status,
+                    if (response.status < 400) "OK" else "Resource error",
+                    response.headers +
                         mapOf(
                             "Access-Control-Allow-Origin" to ResourceAddress.ORIGIN,
                             // The renderer reads World fair-use state, as the web adapters do.
                             "Access-Control-Expose-Headers" to
                                 "Tileflow-Fair-Use, Tileflow-Fair-Use-Notice, Tileflow-Protection",
                         ),
-                    ByteArrayInputStream(payload.bytes),
+                    response.body,
                 )
             }
         } catch (error: Exception) {

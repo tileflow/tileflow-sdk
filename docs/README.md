@@ -7,6 +7,7 @@
 - [Map interactions contract](contracts/map-interactions.md)
 - [SDK responsibility and delivery contract](contracts/sdk-responsibilities.md)
 - [Mobile host and renderer protocol contract](contracts/mobile-protocol.md)
+- [Mobile transport and resource cache contract](contracts/mobile-transport-cache.md)
 - [Native Search, Routing, Elevation and GeoIP clients](../platforms/native-services.md)
 - [Mobile offline regions contract](contracts/mobile-offline.md)
 - [Generated authoring/resolved map and modules JSON Schema](modules-api-reference.json)

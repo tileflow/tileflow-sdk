@@ -23,6 +23,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 
 /**
  * Downloads regions for use without a network and keeps them on the device, after Mapbox's tile
@@ -103,6 +104,11 @@ internal constructor(
         handler: (TileflowOfflineRegionEvent) -> Unit
     ): TileflowOfflineSubscription = subscribers.add(handler)
 
+    /** The network was switched on again: waiting downloads continue and regions are checked. */
+    internal fun reconnected() {
+        scope.launch { core.networkDidConnect() }
+    }
+
     public companion object {
         @Volatile internal var instance: TileflowOfflineStore? = null
         private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -136,10 +142,14 @@ internal constructor(
                                     },
                                     { application.noBackupFilesDir.usableSpace },
                                     subscribers,
+                                    OfflineServingIndex.shared,
                                     { OfflineWorkRunner(application) },
                                 )
                             TileflowOfflineStore(core, subscribers).also { store ->
                                 instance = store
+                                OfflineServingIndex.shared.open = {
+                                    runBlocking { core.open() }
+                                }
                                 scope.launch { core.open() }
                                 watchNetwork(application, core)
                             }

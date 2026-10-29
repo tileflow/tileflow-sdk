@@ -2,9 +2,8 @@
 
 The Swift and Kotlin SDKs download offline regions in native code, independently of the renderer.
 This document describes region geometry and its tile cover, the Hosted pack client, planning and
-estimates, the per-device limit, and the store that downloads, verifies, keeps and updates regions.
-Serving stored regions to a map through the native transport, without a network, is not
-implemented yet. Source of truth: `platforms/ios/Sources/Tileflow/Offline/` and
+estimates, the per-device limit, the store that downloads, verifies, keeps and updates regions, and
+how maps use stored regions without a network. Source of truth: `platforms/ios/Sources/Tileflow/Offline/` and
 `platforms/android/tileflow/src/main/java/dev/tileflow/sdk/offline/`.
 
 ## Public API
@@ -13,24 +12,25 @@ The API follows Mapbox's offline API: a region is an identifier, an area and loa
 application estimates a region, loads it, lists and observes regions, and pauses, resumes, cancels
 or removes them. Loading a stored region again updates it.
 
-| Swift                                                                             | Kotlin                                                                        |
-| --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `TileflowOfflineStore.shared`                                                     | `TileflowOfflineStore.get(context)`                                           |
-| `estimateRegion(_:)`                                                              | `estimateRegion(options)`                                                     |
-| `loadRegion(id:options:)`                                                         | `loadRegion(id, options)`                                                     |
-| `allRegions()`, `region(id:)`                                                     | `allRegions()`, `region(id)`                                                  |
-| `pauseRegion(id:)`, `resumeRegion(id:)`, `cancelRegion(id:)`, `removeRegion(id:)` | `pauseRegion(id)`, `resumeRegion(id)`, `cancelRegion(id)`, `removeRegion(id)` |
-| `subscribe(_:)` → `TileflowOfflineSubscription`                                   | `subscribe(handler)` → `TileflowOfflineSubscription`                          |
-| `handleEventsForBackgroundURLSession(identifier:completionHandler:)`              | (WorkManager; nothing to forward)                                             |
-| `TileflowOfflineRegionLoadOptions`                                                | `TileflowOfflineRegionLoadOptions`                                            |
-| `TileflowOfflineContent.hosted(mapID:themes:)`, `.style(url:sources:)`            | `TileflowOfflineContent.Hosted(mapId, themes)`, `.Style(url, sources)`        |
-| `TileflowOfflineTileSource`                                                       | `TileflowOfflineTileSource`                                                   |
-| `TileflowOfflineNetworkRestriction` (`none`, `disallowExpensive`)                 | `TileflowOfflineNetworkRestriction` (`NONE`, `DISALLOW_EXPENSIVE`)            |
-| `TileflowOfflineRegion` (`DownloadState`, `UpdateState`)                          | `TileflowOfflineRegion` (`DownloadState`, `UpdateState`)                      |
-| `TileflowOfflineRegionEvent` (`changed`, `removed`)                               | `TileflowOfflineRegionEvent` (`Changed`, `Removed`)                           |
-| `TileflowOfflineRegionEstimate`                                                   | `TileflowOfflineRegionEstimate`                                               |
-| `TileflowOfflineGeometry` (`boundingBox`, `polygon`, `corridor(line:width:)`)     | `TileflowOfflineGeometry` (`BoundingBox`, `Polygon`, `Corridor`)              |
-| `TileflowOfflineError` (`code`, `context`, `retryAfter`)                          | `TileflowOfflineException` (`code`, `context`, `retryAfterMillis`)            |
+| Swift                                                                             | Kotlin                                                                         |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `TileflowOfflineStore.shared`                                                     | `TileflowOfflineStore.get(context)`                                            |
+| `estimateRegion(_:)`                                                              | `estimateRegion(options)`                                                      |
+| `loadRegion(id:options:)`                                                         | `loadRegion(id, options)`                                                      |
+| `allRegions()`, `region(id:)`                                                     | `allRegions()`, `region(id)`                                                   |
+| `pauseRegion(id:)`, `resumeRegion(id:)`, `cancelRegion(id:)`, `removeRegion(id:)` | `pauseRegion(id)`, `resumeRegion(id)`, `cancelRegion(id)`, `removeRegion(id)`  |
+| `subscribe(_:)` → `TileflowOfflineSubscription`                                   | `subscribe(handler)` → `TileflowOfflineSubscription`                           |
+| `handleEventsForBackgroundURLSession(identifier:completionHandler:)`              | (WorkManager; nothing to forward)                                              |
+| `TileflowOfflineRegionLoadOptions`                                                | `TileflowOfflineRegionLoadOptions`                                             |
+| `TileflowOfflineContent.hosted(mapID:themes:)`, `.manifest(url:map:sources:)`     | `TileflowOfflineContent.Hosted(mapId, themes)`, `.Manifest(url, map, sources)` |
+| `TileflowOfflineSwitch.shared.isNetworkEnabled`                                   | `TileflowOfflineSwitch.isNetworkEnabled`                                       |
+| `TileflowOfflineTileSource`                                                       | `TileflowOfflineTileSource`                                                    |
+| `TileflowOfflineNetworkRestriction` (`none`, `disallowExpensive`)                 | `TileflowOfflineNetworkRestriction` (`NONE`, `DISALLOW_EXPENSIVE`)             |
+| `TileflowOfflineRegion` (`DownloadState`, `UpdateState`)                          | `TileflowOfflineRegion` (`DownloadState`, `UpdateState`)                       |
+| `TileflowOfflineRegionEvent` (`changed`, `removed`)                               | `TileflowOfflineRegionEvent` (`Changed`, `Removed`)                            |
+| `TileflowOfflineRegionEstimate`                                                   | `TileflowOfflineRegionEstimate`                                                |
+| `TileflowOfflineGeometry` (`boundingBox`, `polygon`, `corridor(line:width:)`)     | `TileflowOfflineGeometry` (`BoundingBox`, `Polygon`, `Corridor`)               |
+| `TileflowOfflineError` (`code`, `context`, `retryAfter`)                          | `TileflowOfflineException` (`code`, `context`, `retryAfterMillis`)             |
 
 Load options hold the geometry, the content, `minZoom` (0), `maxZoom` (15), `terrainMaxZoom` (12),
 the network restriction and application metadata. A region reports its download state
@@ -203,8 +203,12 @@ whose window ends within five minutes, download a pass, and act on how the pass 
 - A `200` body is stored only when it matches the manifest: its size and SHA-256 (the manifest's,
   else the `ETag`'s) agree either as delivered or, for a body the client decoded, as received on the
   wire. Android reads the raw bytes and checks both size and hash on the wire. iOS `URLSession`
-  decodes gzip transparently, so for a decoded body iOS checks the wire size and that the `ETag`
-  names the manifest's hash. A mismatch is retried twice before the download fails.
+  decodes gzip transparently and never exposes the encoded bytes, so for a decoded body iOS checks
+  the wire size (`Content-Length`, which a completed transfer matches) and that the `ETag` names the
+  manifest's hash, and relies on TLS for the bytes in between; gzip's own checksum rejects a
+  corrupted body. World tiles, the gzip-encoded resources, have no manifest hash in any case. If
+  the manifest also listed the decoded size and hash, iOS could check decoded bodies fully; that is
+  a possible contract addition, not built. A mismatch is retried twice before the download fails.
 - A grant refused as invalid, expired or stale, a superseded style or TileJSON, a resource the
   Map no longer delivers, or a resource refused as outside the pack creates that pack again, at
   most three times per download. Stored resources whose size and hash the new manifest repeats are
@@ -240,9 +244,59 @@ access ended. Self-hosted regions are not checked; loading them again revalidate
 
 ## Self-hosted regions
 
-A self-hosted region is a style URL and its tile sources, each a URL template with its own zooms.
-The download reads the style first and adds its sprite sheets (`.json` and `.png`, 1x and 2x) and
-every glyph range of the font stacks its symbol layers name literally, or the renderer's default
-stack for text without `text-font`. Then it downloads the cover at each source's zooms. Nothing is
-billed or counted toward the device limit. Sizes are unknown until downloaded, so a region reports
-its bytes once complete. A `404` or `204` tile or glyph range stays absent offline, as it is online.
+A self-hosted region is a map of a versioned manifest you serve, as `TileflowMapSource` names it,
+and its tile sources, each a URL template with its own zooms. The download reads the manifest and
+every theme style of the map, and stores them with the font files the manifest and styles name
+(`tileflow:fontFaces`), the TileJSON and GeoJSON documents their sources name, their sprite sheets
+(`.json` and `.png`, 1x and 2x) and every glyph range of the font stacks their symbol layers name
+literally, or the renderer's default stack for text without `text-font`. Then it downloads the
+cover at each tile source's zooms. Nothing is billed or counted toward the device limit. Sizes are
+unknown until downloaded, so a region reports its bytes once complete. A `404` or `204` tile or
+glyph range stays absent offline, as it is online. A download stores what it asked for even when
+the server marks it `no-store`: downloading a region is the application's explicit request to keep
+it.
+
+## Serving stored regions
+
+The transport answers a map's requests from stored regions without a session or grant. One rule,
+`OfflineServingRule` on both platforms, decides when; it is the recommended default, pending the
+owner's confirmation:
+
+- **With a network**, a Hosted map starts its normal session, billed as any other. Stored pack
+  entries only save downloads: each protected request carries its grant and the stored `ETag`, and
+  a `304` answers with the stored body. If the session cannot be reached (`sessionUnavailable`), a
+  stored region answers instead.
+- **Without a network** (the system reports no usable path, iOS `NWPathMonitor`, Android the active
+  network's capabilities), a Hosted map serves its protected resources from the packs of its
+  stored regions and starts no session; nothing is billed. Public documents (discovery, profile
+  manifest, landmarks, Team models) answer from the shared scope as stored copies do when the
+  network fails. A protected resource no region holds goes the usual way and fails.
+- **With the network switched off** (`TileflowOfflineSwitch`, Mapbox's offline switch), nothing
+  reaches the network: every request is answered from stored entries alone, packs and the ambient
+  cache, whatever their freshness. A resource neither holds answers at once with status 504, as an
+  HTTP cache answers `only-if-cached`, and the map reports it as a `resourceFailed` warning; a
+  missing style fails the map. Hosted maps start no session; downloads wait and continue when the
+  network is switched on again.
+
+Only regions that are complete and available serve: a region still downloading, an update not yet
+complete and a region being removed do not. The store publishes the cache paths and regional
+credits of the available regions whenever they change; a map that needs them before the store has
+opened waits for the store to read its records.
+
+**Attribution.** A map opened from stored packs shows the attribution of the stored release: the
+style and TileJSON documents are the release's own, so the renderer shows their attribution as it
+does online. Each regional credit the pack's manifest lists (World's `regionalObligations`, with
+the boxes that touch the pack) is passed to the renderer, which shows it, linked to its page, only
+while one of its boxes intersects the view, and not when a source's attribution already contains
+its text.
+
+**When access ends.** A region whose revalidation answers `not_updatable` stops serving: maps no
+longer use it and `isAvailable` is false, while its files stay on the device, neither deleted nor
+encrypted. One internal switch, `servesRegionsAfterAccessEnds` (Kotlin
+`SERVES_REGIONS_AFTER_ACCESS_ENDS`), keeps serving such regions instead; the default awaits the owner
+and counsel.
+
+**Backups.** A device is one app installation: nothing stored for offline use is backed up. iOS
+excludes the pinned partition (`<Application Support>/dev.tileflow/resources-v1`) and the store's
+records (`<Application Support>/dev.tileflow/offline-v1`) from backups; Android keeps both under
+`noBackupFilesDir`, which Auto Backup and device transfers skip.

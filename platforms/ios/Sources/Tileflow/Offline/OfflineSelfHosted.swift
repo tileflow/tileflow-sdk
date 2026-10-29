@@ -17,19 +17,58 @@ enum OfflineSelfHosted {
     }
   }
 
-  static func validate(style url: URL) throws {
+  static func validate(manifest url: URL, map: String) throws {
     guard ["https", "http"].contains(url.scheme), url.host != nil else {
-      throw TileflowOfflineError.options("invalidStyleURL")
+      throw TileflowOfflineError.options("invalidManifestURL")
     }
+    guard !map.isEmpty, map.count <= 128 else { throw TileflowOfflineError.options("invalidMap") }
   }
 
-  /// The style, its sprite sheets at 1x and 2x, and every glyph range of the font stacks its
-  /// layers name literally, as absolute URLs.
+  /// The map's theme styles, and the manifest with the font files its themes name, as absolute
+  /// URLs.
+  static func manifest(_ url: URL, data: Data, map: String) throws -> (
+    styles: [URL], documents: [URL]
+  ) {
+    guard let manifest = try? JSONDecoder().decode(JSONValue.self, from: data),
+      case .object(let themes) = manifest["maps"]?[map]?["themes"]
+    else {
+      throw TileflowOfflineError(.invalidResponse, context: .init(reason: "invalidManifest"))
+    }
+    var styles: [URL] = []
+    var documents = [url]
+    for name in themes.keys.sorted() {
+      guard let theme = themes[name] else { continue }
+      if let style = theme["styleUrl"]?.string.flatMap({ resolve($0, against: url) }),
+        !styles.contains(style)
+      {
+        styles.append(style)
+      }
+      documents += fontFiles(theme["fontFaces"], against: url)
+    }
+    guard !styles.isEmpty else {
+      throw TileflowOfflineError(.invalidResponse, context: .init(reason: "invalidManifest"))
+    }
+    return (styles, documents)
+  }
+
+  /// The style, the font files and source documents it names, its sprite sheets at 1x and 2x, and
+  /// every glyph range of the font stacks its layers name literally, as absolute URLs.
   static func documents(style url: URL, data: Data) throws -> [URL] {
     guard let style = try? JSONDecoder().decode(JSONValue.self, from: data),
       case .object = style
     else { throw TileflowOfflineError(.invalidResponse, context: .init(reason: "invalidStyle")) }
     var documents = [url]
+    documents += fontFiles(style["metadata"]?["tileflow:fontFaces"], against: url)
+    if case .object(let sources) = style["sources"] {
+      for name in sources.keys.sorted() {
+        // TileJSON documents and GeoJSON data; tiles come from the region's tile sources.
+        for member in ["url", "data"] {
+          if let text = sources[name]?[member]?.string, let document = resolve(text, against: url) {
+            documents.append(document)
+          }
+        }
+      }
+    }
     var sprites: [String] = []
     switch style["sprite"] {
     case .string(let base): sprites = [base]
@@ -65,6 +104,21 @@ enum OfflineSelfHosted {
     guard let url = URL(string: text), ["https", "http"].contains(url.scheme), url.host != nil
     else { return nil }
     return url
+  }
+
+  /// The font files of `tileflow:fontFaces` entries: each face's `source`, or the `url` of each
+  /// of its `sources`.
+  private static func fontFiles(_ value: JSONValue?, against base: URL) -> [URL] {
+    guard case .array(let faces) = value else { return [] }
+    var files: [URL] = []
+    for face in faces {
+      var names = face["source"]?.string.map { [$0] } ?? []
+      if case .array(let sources) = face["sources"] {
+        names += sources.compactMap { $0["url"]?.string ?? $0.string }
+      }
+      files += names.compactMap { resolve($0, against: base) }
+    }
+    return files
   }
 
   /// Font stacks of symbol layers: literal `text-font` arrays, or the default stack for text

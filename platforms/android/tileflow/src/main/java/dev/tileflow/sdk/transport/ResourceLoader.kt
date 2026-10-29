@@ -7,6 +7,8 @@ import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.hosted.HostedContract
 import dev.tileflow.sdk.hosted.HostedSession
 import dev.tileflow.sdk.hosted.ResourceReaction
+import dev.tileflow.sdk.offline.OfflineServingIndex
+import dev.tileflow.sdk.offline.OfflineServingRule
 import java.io.ByteArrayInputStream
 import java.io.Closeable
 import java.io.IOException
@@ -43,6 +45,10 @@ internal class ResourceResponse(
  * Only a session bootstrap ends a Hosted map: protected resources the service refuses renew the
  * grant, reload a superseded deployment or wait for a rate limit, as [HostedContract.reaction]
  * describes.
+ *
+ * Downloaded regions answer without a session where [OfflineServingRule] says so: a Hosted map
+ * without a usable network serves its protected resources from the regions' packs, and with the
+ * network switched off every request is answered from stored entries alone, a miss with 504.
  */
 internal class ResourceLoader(
     private val policy: ResourcePolicy,
@@ -54,6 +60,9 @@ internal class ResourceLoader(
         NativeHTTPTransport(maximumBytes, TileflowHttpClient.Lane.RESOURCES),
     private val cache: ResourceCacheStore? = null,
     private val grantScope: ResourceCacheScope? = null,
+    private val offline: OfflineServingIndex? = null,
+    private val networkEnabled: () -> Boolean = { TileflowHttpClient.networkEnabled },
+    private val reachable: () -> Boolean = { true },
     private val onDeploymentSuperseded: (() -> Boolean)? = null,
     private val now: () -> Long = SystemClock::elapsedRealtime,
     private val date: () -> Long = System::currentTimeMillis,
@@ -76,8 +85,16 @@ internal class ResourceLoader(
         require(method == "GET" || method == "HEAD")
         if (range != null) require(Regex("^bytes=[0-9]+-[0-9]*$").matches(range))
         val cacheable = cache != null && method == "GET" && range == null
+        val protected = hosted != null && url !in publicMetadataUrls && !isPublicApiResource(url)
+        if (!networkEnabled()) return storedOnly(url, protected, cacheable)
         // A fresh public entry needs neither the network nor a Hosted session.
         if (cacheable) freshPublicEntry(url)?.let { return response(it) }
+        if (
+            protected &&
+                cacheable &&
+                OfflineServingRule.hostedUsesPacks(networkEnabled = true, reachable = reachable())
+        )
+            packEntry(url)?.let { return response(it) }
         // Only Hosted requests wait or retry, so only they read the clock.
         val deadline = hosted?.let { now() + 30_000 }
         var target = url
@@ -95,7 +112,14 @@ internal class ResourceLoader(
                 ) {
                     val gate = rateLimitedUntil.get()
                     if (gate in (now() + 1) until deadline) pause(gate - now())
-                    hosted.authorize(target, policy)
+                    try {
+                        hosted.authorize(target, policy)
+                    } catch (error: TileflowMapException) {
+                        // The service cannot be reached: a downloaded region answers instead.
+                        if (error.code == TileflowErrorCode.SESSION_UNAVAILABLE && cacheable)
+                            packEntry(target)?.let { return response(it) }
+                        throw error
+                    }
                 } else {
                     policy.validate(target)
                     null
@@ -202,6 +226,42 @@ internal class ResourceLoader(
     }
 
     /** Landmarks and Team models are public on the API origin and never carry a grant. */
+    /**
+     * Answers from stored entries alone, never the network: a downloaded region's pack for a
+     * protected resource, else a pinned or ambient entry of the shared scope whatever its
+     * freshness. A miss answers 504, as an HTTP cache answers `only-if-cached`.
+     */
+    private fun storedOnly(url: URI, protected: Boolean, cacheable: Boolean): ResourceResponse {
+        if (cacheable) {
+            if (protected) {
+                packEntry(url)?.let {
+                    return response(it)
+                }
+            } else {
+                policy.validate(url)
+                storedEntries(ResourceCacheKey(url, ResourceCacheScope.Shared))?.let { stored ->
+                    (stored.pinned ?: stored.ambient)?.let {
+                        return response(it)
+                    }
+                }
+            }
+        }
+        return ResourceResponse(
+            504,
+            mapOf("Cache-Control" to "no-store", "Content-Length" to "0"),
+            ByteArray(0).inputStream(),
+        )
+    }
+
+    /** A downloaded region's entry for a protected resource, when an available region holds it. */
+    private fun packEntry(url: URI): StoredResource? {
+        val offline = offline ?: return null
+        val cache = cache ?: return null
+        val key = ResourceCacheKey(url, grantScope ?: return null)
+        if (!offline.serves(key)) return null
+        return cache.read(key, ResourceCacheRetention.PINNED)
+    }
+
     private fun isPublicApiResource(url: URI): Boolean =
         apiOrigin != null &&
             ResourcePolicy.origin(url) == ResourcePolicy.origin(apiOrigin) &&

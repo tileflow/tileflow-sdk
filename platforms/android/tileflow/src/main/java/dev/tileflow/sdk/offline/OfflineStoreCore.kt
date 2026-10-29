@@ -4,6 +4,7 @@ import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.transport.ResourceCacheEntryFormat
 import dev.tileflow.sdk.transport.ResourceCacheKey
 import dev.tileflow.sdk.transport.ResourceCacheRetention
+import dev.tileflow.sdk.transport.ResourceCacheScope
 import dev.tileflow.sdk.transport.ResourceCacheStore
 import dev.tileflow.sdk.transport.sha256Hex
 import java.io.File
@@ -75,6 +76,8 @@ internal class OfflineStoreCore(
     private val client: () -> OfflinePackClient,
     private val availableBytes: () -> Long?,
     private val subscribers: OfflineSubscribers,
+    /** Where maps learn which stored regions they may use. */
+    private val index: OfflineServingIndex? = null,
     runner: (OfflineStoreCore) -> OfflineRunner,
     /** Space a download leaves free on the device. */
     private val reserveBytes: Long = 64L * 1024 * 1024,
@@ -89,6 +92,7 @@ internal class OfflineStoreCore(
     private val progress = HashMap<String, Pair<Long, Long>>()
     private val plans = HashMap<String, OfflineVersionPlan>()
     private val keySets = HashMap<String, Pair<Set<String>, Set<String>>>()
+    private val creditSets = HashMap<String, Map<String, List<OfflineCredit>>>()
     private val created = HashMap<OfflinePackRequest, OfflinePack>()
 
     // Opening.
@@ -123,6 +127,53 @@ internal class OfflineStoreCore(
             )
                 start(id, pending)
         }
+        publishServing()
+    }
+
+    /** Whether maps may use the region's stored version. */
+    private fun isServed(record: OfflineRegionRecord): Boolean =
+        record.active != null &&
+            !record.removing &&
+            (record.check?.state != "not_updatable" ||
+                OfflineServingRule.SERVES_REGIONS_AFTER_ACCESS_ENDS)
+
+    /** Tells maps which stored resources and regional credits they may use without a network. */
+    private fun publishServing() {
+        val index = index ?: return
+        val paths = HashSet<String>()
+        val credits = HashMap<String, MutableList<OfflineCredit>>()
+        for ((id, record) in records) {
+            if (!isServed(record)) continue
+            val active = record.active ?: continue
+            paths.addAll(keys(id, active).first)
+            val origin = active.apiOrigin?.let { URI(it) } ?: continue
+            if (active.packs == 0) continue
+            for ((scope, list) in credits(id, active, origin)) {
+                val merged = credits.getOrPut(scope) { mutableListOf() }
+                for (credit in list) if (merged.none { it.id == credit.id }) merged.add(credit)
+            }
+        }
+        index.publish(OfflineServingSnapshot(paths, credits))
+    }
+
+    /** The regional credits of a Hosted version's packs, by the cache scope of their Map. */
+    private fun credits(
+        id: String,
+        version: OfflineVersionRecord,
+        apiOrigin: URI,
+    ): Map<String, List<OfflineCredit>> {
+        val key = planKey(id, version.number)
+        creditSets[key]?.let {
+            return it
+        }
+        val plan = runCatching { plan(id, version) }.getOrNull() ?: return emptyMap()
+        val result = HashMap<String, List<OfflineCredit>>()
+        for (pack in plan.packs) {
+            val scope = ResourceCacheScope.grant(apiOrigin, pack.manifest.mapId).directory
+            result[scope] =
+                result[scope].orEmpty() + OfflineCredit.credits(pack.manifest.attribution)
+        }
+        return result.also { creditSets[key] = it }
     }
 
     // Reading.
@@ -162,8 +213,8 @@ internal class OfflineStoreCore(
                     perPack.sumOf { (it + perView - 1) / perView },
                 )
             }
-            is TileflowOfflineContent.Style -> {
-                OfflineSelfHosted.styleUrl(content.url)
+            is TileflowOfflineContent.Manifest -> {
+                OfflineSelfHosted.validate(content.url, content.map)
                 OfflineSelfHosted.validate(content.sources)
                 OfflinePlanner.estimate(
                     options.geometry,
@@ -217,10 +268,10 @@ internal class OfflineStoreCore(
                 apiOrigin = hosted.second
                 lock.withLock { checkDeviceLimit(id, plan) }
             }
-            is TileflowOfflineContent.Style -> {
-                val style = OfflineSelfHosted.styleUrl(content.url)
+            is TileflowOfflineContent.Manifest -> {
+                val manifest = OfflineSelfHosted.validate(content.url, content.map)
                 OfflineSelfHosted.validate(content.sources)
-                val documents = styleDocuments(style)
+                val documents = selfHostedDocuments(manifest, content.map)
                 plan =
                     OfflineVersionPlan.selfHosted(
                         documents,
@@ -407,6 +458,7 @@ internal class OfflineStoreCore(
             lock.withLock {
                 val current = records[id]?.takeIf { !it.removing } ?: return@withLock
                 save(current.copy(check = check))
+                publishServing()
                 emitChanged(id)
             }
         }
@@ -751,6 +803,7 @@ internal class OfflineStoreCore(
         staging.deleteRecursively()
         progress.remove(id)
         finishRetirement(id)
+        publishServing()
         emitChanged(id)
     }
 
@@ -766,6 +819,7 @@ internal class OfflineStoreCore(
         release(id, record.versions)
         layout.region(id).deleteRecursively()
         progress.remove(id)
+        if (isOpen) publishServing()
         subscribers.emit(TileflowOfflineRegionEvent.Removed(id))
     }
 
@@ -803,6 +857,7 @@ internal class OfflineStoreCore(
             layout.version(id, version.number).deleteRecursively()
             plans.remove(planKey(id, version.number))
             keySets.remove(planKey(id, version.number))
+            creditSets.remove(planKey(id, version.number))
         }
     }
 
@@ -837,12 +892,22 @@ internal class OfflineStoreCore(
         return OfflineVersionPlan.hosted(packs, requests, client.apiOrigin) to client.apiOrigin
     }
 
-    private suspend fun styleDocuments(url: URI): List<URI> {
+    /** The manifest, then each theme's style and what it references, without duplicates. */
+    private suspend fun selfHostedDocuments(url: URI, map: String): List<URI> {
+        val manifest = OfflineSelfHosted.manifest(url, document(url), map)
+        val documents = manifest.second.toMutableList()
+        for (style in manifest.first)
+            documents += OfflineSelfHosted.documents(style, document(style))
+        val seen = HashSet<String>()
+        return documents.filter { seen.add(it.toASCIIString()) }
+    }
+
+    private suspend fun document(url: URI): ByteArray {
         val response =
             try {
                 fetcher.fetch(
                     OfflineFetchRequest(
-                        "style/" + sha256Hex(url.toASCIIString().toByteArray()),
+                        "plan/" + sha256Hex(url.toASCIIString().toByteArray()),
                         url,
                         emptyMap(),
                     )
@@ -857,7 +922,7 @@ internal class OfflineStoreCore(
                 TileflowOfflineErrorCode.NOT_FOUND,
                 TileflowErrorContext(status = response.status),
             )
-        return OfflineSelfHosted.documents(url, response.body)
+        return response.body
     }
 
     /** The plan of a stored version, read from its files once. */
@@ -892,7 +957,7 @@ internal class OfflineStoreCore(
                 OfflineVersionPlan.hosted(packs, requests, origin)
             } else {
                 val content =
-                    options.content as? TileflowOfflineContent.Style
+                    options.content as? TileflowOfflineContent.Manifest
                         ?: throw TileflowOfflineException.invalidResponse()
                 val documents =
                     JSONObject(layout.plan(id, version.number).readText()).getJSONArray("documents")
@@ -1019,7 +1084,7 @@ internal class OfflineStoreCore(
             record.id,
             options,
             state,
-            record.active != null,
+            isServed(record),
             version.resources,
             minOf(done.first, version.resources),
             version.bytes,

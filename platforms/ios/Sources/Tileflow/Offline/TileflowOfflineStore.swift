@@ -24,7 +24,7 @@ import Network
 /// Access ending stops updates; it never deletes or locks what the device holds.
 public final class TileflowOfflineStore: Sendable {
   /// The process's store, using ``Tileflow/configuration()`` for Hosted content.
-  public static let shared = TileflowOfflineStore(
+  public static let shared: TileflowOfflineStore = TileflowOfflineStore(
     dependencies: OfflineStoreCore.Dependencies(
       layout: .shared, cache: .shared, fetcher: OfflineURLSessionFetcher.shared,
       client: {
@@ -33,7 +33,8 @@ public final class TileflowOfflineStore: Sendable {
         }
         return try OfflinePackClient(configuration: configuration)
       },
-      availableBytes: { OfflineStorage.availableBytes(at: OfflineLayout.shared.root) }),
+      availableBytes: { OfflineStorage.availableBytes(at: OfflineLayout.shared.root) },
+      index: .shared),
     monitorsNetwork: true)
 
   let core: OfflineStoreCore

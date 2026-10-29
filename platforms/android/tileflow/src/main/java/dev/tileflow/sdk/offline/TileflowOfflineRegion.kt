@@ -12,11 +12,14 @@ public sealed class TileflowOfflineContent {
         TileflowOfflineContent()
 
     /**
-     * A self-hosted style, the sprites and glyph ranges it references, and the tiles of [sources]
-     * inside the region. Nothing is billed, and sizes are known only once downloaded.
+     * A map of a versioned manifest you serve, as a map source names it: the manifest, every
+     * theme's style with the fonts, sprites, glyph ranges and source documents it references, and
+     * the tiles of [sources] inside the region. Nothing is billed, and sizes are known only once
+     * downloaded.
      */
-    public data class Style(
+    public data class Manifest(
         public val url: String,
+        public val map: String,
         public val sources: List<TileflowOfflineTileSource>,
     ) : TileflowOfflineContent()
 }
@@ -84,7 +87,9 @@ constructor(
  * verified. Access ending never removes what the device holds.
  *
  * @property options The options of the version downloading, or else of the stored version.
- * @property isAvailable A complete version is stored.
+ * @property isAvailable A complete version is stored and maps use it without a network. False
+ *   once access to a Hosted region ended ([UpdateState.NotUpdatable]): its files stay on the
+ *   device, and maps stop using them.
  * @property requiredResourceBytes Bytes on the wire; null for self-hosted content until it is
  *   downloaded.
  * @property billableResourceCount Resources counted toward the plan's per-device limit.

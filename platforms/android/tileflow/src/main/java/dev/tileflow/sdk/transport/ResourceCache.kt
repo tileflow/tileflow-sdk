@@ -262,6 +262,14 @@ internal class ResourceCacheStore(
     maximumBytes: Long,
     private val now: () -> Long = System::currentTimeMillis,
 ) {
+    companion object {
+        /**
+         * The largest pinned body, such as one resource of a downloaded region: the largest the
+         * Hosted offline pack contract allows.
+         */
+        const val MAXIMUM_PINNED_ENTRY_BYTES = 32 * 1024 * 1024
+    }
+
     data class Usage(
         val bytes: Long = 0,
         val entries: Int = 0,
@@ -350,7 +358,8 @@ internal class ResourceCacheStore(
     /** Starts writing an entry. The returned writer stores nothing until it commits. */
     fun writer(key: ResourceCacheKey, retention: ResourceCacheRetention): ResourceCacheWriter? {
         val limit =
-            if (retention == ResourceCacheRetention.PINNED) 16L * 1024 * 1024 else maximumEntryBytes
+            if (retention == ResourceCacheRetention.PINNED) MAXIMUM_PINNED_ENTRY_BYTES.toLong()
+            else maximumEntryBytes
         if (limit <= 0) return null
         val staging = File(root(retention), "staging/$stagingName")
         val file = File(staging, UUID.randomUUID().toString())

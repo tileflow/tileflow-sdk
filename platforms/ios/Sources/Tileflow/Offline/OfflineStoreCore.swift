@@ -36,6 +36,8 @@ actor OfflineStoreCore {
     var fetcher: any OfflineResourceFetching
     var client: @Sendable () throws -> OfflinePackClient
     var availableBytes: @Sendable () -> Int64?
+    /// Where maps learn which stored regions they may use.
+    var index: OfflineServingIndex? = nil
     /// Space a download leaves free on the device.
     var reserveBytes: Int64 = 64 * 1024 * 1024
     var concurrency = 64
@@ -61,6 +63,7 @@ actor OfflineStoreCore {
   private var progress: [String: (count: Int, bytes: Int64)] = [:]
   private var plans: [String: OfflineVersionPlan] = [:]
   private var keySets: [String: (all: Set<String>, billable: Set<String>)] = [:]
+  private var creditSets: [String: [String: [OfflineCredit]]] = [:]
   private var created: [OfflinePackRequest: OfflinePack] = [:]
 
   init(_ dependencies: Dependencies, subscribers: OfflineSubscribers) {
@@ -98,6 +101,50 @@ actor OfflineStoreCore {
         if [.downloading, .waiting].contains(pending.state) { startRun(id) }
       }
     }
+    publishServing()
+  }
+
+  /// Whether maps may use the region's stored version.
+  private func isServed(_ record: OfflineRegionRecord) -> Bool {
+    record.active != nil && !record.removing
+      && (record.check?.state != "not_updatable" || OfflineServingRule.servesRegionsAfterAccessEnds)
+  }
+
+  /// Tells maps which stored resources and regional credits they may use without a network.
+  private func publishServing() {
+    guard let index = dependencies.index else { return }
+    var snapshot = OfflineServingSnapshot()
+    for (id, record) in records where isServed(record) {
+      guard let active = record.active else { continue }
+      snapshot.paths.formUnion(keys(id, active).all)
+      guard active.packs > 0, let origin = active.apiOrigin.flatMap(URL.init(string:)) else {
+        continue
+      }
+      for (scope, credits) in credits(id, active, apiOrigin: origin) {
+        var merged = snapshot.credits[scope] ?? []
+        for credit in credits where !merged.contains(where: { $0.id == credit.id }) {
+          merged.append(credit)
+        }
+        snapshot.credits[scope] = merged
+      }
+    }
+    index.publish(snapshot)
+  }
+
+  /// The regional credits of a Hosted version's packs, by the cache scope of their Map.
+  private func credits(_ id: String, _ version: OfflineVersionRecord, apiOrigin: URL) -> [String:
+    [OfflineCredit]]
+  {
+    let key = planKey(id, version.number)
+    if let cached = creditSets[key] { return cached }
+    guard let plan = try? plan(id, version) else { return [:] }
+    var result: [String: [OfflineCredit]] = [:]
+    for pack in plan.packs {
+      let scope = ResourceCacheScope.grant(apiOrigin: apiOrigin, mapID: pack.manifest.mapID)
+      result[scope.directory, default: []] += OfflineCredit.credits(pack.manifest.attribution)
+    }
+    creditSets[key] = result
+    return result
   }
 
   // MARK: Reading
@@ -132,8 +179,8 @@ actor OfflineStoreCore {
         publicResourceCount: plan.resources.filter(\.isPublic).count,
         bytes: plan.bytes.map { Int($0) }, tileCounts: plan.tileCounts,
         mapViews: perPack.reduce(0) { $0 + ($1 + perView - 1) / perView })
-    case .style(let url, let sources):
-      try OfflineSelfHosted.validate(style: url)
+    case .manifest(let url, let map, let sources):
+      try OfflineSelfHosted.validate(manifest: url, map: map)
       try OfflineSelfHosted.validate(sources)
       return try OfflinePlanner.estimate(
         geometry: options.geometry, zooms: options.zooms,
@@ -180,10 +227,10 @@ actor OfflineStoreCore {
       plan = hosted.plan
       apiOrigin = hosted.apiOrigin
       try checkDeviceLimit(id, plan)
-    case .style(let url, let sources):
-      try OfflineSelfHosted.validate(style: url)
+    case .manifest(let url, let map, let sources):
+      try OfflineSelfHosted.validate(manifest: url, map: map)
       try OfflineSelfHosted.validate(sources)
-      let documents = try await styleDocuments(url)
+      let documents = try await selfHostedDocuments(url, map: map)
       plan = OfflineVersionPlan.selfHosted(
         documents: documents, sources: sources, regions: try options.geometry.packRegions(),
         zooms: try options.zooms)
@@ -320,6 +367,7 @@ actor OfflineStoreCore {
       }
       current.check = check
       try? save(current)
+      publishServing()
       emitChanged(id)
     }
   }
@@ -567,6 +615,7 @@ actor OfflineStoreCore {
     try? FileManager.default.removeItem(at: staging)
     progress[id] = nil
     finishRetirement(id)
+    publishServing()
     emitChanged(id)
   }
 
@@ -583,6 +632,7 @@ actor OfflineStoreCore {
     release(id, record.versions)
     try? FileManager.default.removeItem(at: layout.region(id))
     progress[id] = nil
+    if isOpen { publishServing() }
     subscribers.emit(.removed(id: id))
   }
 
@@ -614,6 +664,7 @@ actor OfflineStoreCore {
       try? FileManager.default.removeItem(at: layout.version(id, version.number))
       plans.removeValue(forKey: planKey(id, version.number))
       keySets.removeValue(forKey: planKey(id, version.number))
+      creditSets.removeValue(forKey: planKey(id, version.number))
     }
   }
 
@@ -646,12 +697,23 @@ actor OfflineStoreCore {
     )
   }
 
-  private func styleDocuments(_ url: URL) async throws -> [URL] {
+  /// The manifest, then each theme's style and what it references, without duplicates.
+  private func selfHostedDocuments(_ url: URL, map: String) async throws -> [URL] {
+    let manifest = try OfflineSelfHosted.manifest(url, data: try await document(url), map: map)
+    var documents = manifest.documents
+    for style in manifest.styles {
+      documents += try OfflineSelfHosted.documents(style: style, data: try await document(style))
+    }
+    var seen = Set<String>()
+    return documents.filter { seen.insert($0.absoluteString).inserted }
+  }
+
+  private func document(_ url: URL) async throws -> Data {
     let response: OfflineFetchResponse
     do {
       response = try await dependencies.fetcher.fetch(
         OfflineFetchRequest(
-          id: "style/" + DataChannel.digest(Data(url.absoluteString.utf8)), url: url, headers: [:],
+          id: "plan/" + DataChannel.digest(Data(url.absoluteString.utf8)), url: url, headers: [:],
           allowsExpensiveNetworkAccess: true))
     } catch is CancellationError {
       throw CancellationError()
@@ -661,7 +723,7 @@ actor OfflineStoreCore {
     guard response.status == 200 else {
       throw TileflowOfflineError(.notFound, context: .init(status: response.status))
     }
-    return try OfflineSelfHosted.documents(style: url, data: response.body)
+    return response.body
   }
 
   /// The plan of a stored version, read from its files once.
@@ -691,7 +753,7 @@ actor OfflineStoreCore {
       }
       plan = .hosted(packs: packs, requests: requests, apiOrigin: origin)
     } else {
-      guard case .style(_, let sources) = options.content,
+      guard case .manifest(_, _, let sources) = options.content,
         let value = try? JSONDecoder().decode(
           JSONValue.self, from: Data(contentsOf: layout.plan(id, version.number))),
         case .array(let items) = value["documents"]
@@ -808,7 +870,7 @@ actor OfflineStoreCore {
     default: update = nil
     }
     return TileflowOfflineRegion(
-      id: record.id, options: options, state: state, isAvailable: record.active != nil,
+      id: record.id, options: options, state: state, isAvailable: isServed(record),
       requiredResourceCount: version.resources,
       completedResourceCount: min(done.0, version.resources),
       requiredResourceBytes: version.bytes, completedResourceBytes: done.1,

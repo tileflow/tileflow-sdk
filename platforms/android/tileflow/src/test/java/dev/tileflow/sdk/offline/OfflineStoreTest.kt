@@ -256,7 +256,7 @@ class OfflineStoreTest {
             TileflowOfflineRegion.UpdateState.NotUpdatable("credential_revoked"),
             region.updateState,
         )
-        assertTrue(region.isAvailable)
+        assertFalse("Maps stop using it", region.isAvailable)
         service.clock.addAndGet(10 * 86_400_000L)
         store.core.checkForUpdates()
         assertEquals(1, service.revalidations.get())
@@ -377,14 +377,15 @@ class OfflineStoreTest {
     }
 
     @Test
-    fun selfHostedRegionDownloadsTheStyleItsSpritesGlyphsAndTiles() = runBlocking<Unit> {
+    fun selfHostedRegionDownloadsItsManifestStylesFontsSpritesGlyphsAndTiles() = runBlocking<Unit> {
         val service = OfflineServiceStub()
         val store = store(service)
         val options =
             TileflowOfflineRegionLoadOptions(
                 TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(-3.71, 40.41, -3.69, 40.425)),
-                TileflowOfflineContent.Style(
-                    "https://tiles.example.com/style.json",
+                TileflowOfflineContent.Manifest(
+                    "https://tiles.example.com/manifest.json",
+                    "streets",
                     listOf(
                         TileflowOfflineTileSource(
                             "streets",
@@ -404,12 +405,47 @@ class OfflineStoreTest {
         // Sizes are known once downloaded.
         assertEquals(done.completedResourceBytes, done.requiredResourceBytes)
         assertEquals(0L, done.billableResourceCount)
-        // Style, four sprite files, 256 glyph ranges of one stack and the tiles to zoom 14.
-        assertEquals(1 + 4 + 256 + estimate.resourceCount, done.requiredResourceCount)
+        // Manifest, font file, style, its data, four sprite files, 256 glyph ranges of one stack
+        // and the tiles to zoom 14.
+        assertEquals(1 + 1 + 1 + 1 + 4 + 256 + estimate.resourceCount, done.requiredResourceCount)
         val urls = service.downloads.map { it.url }.toSet()
+        assertTrue("https://tiles.example.com/fonts/face.woff2" in urls)
+        assertTrue("https://tiles.example.com/data/places.json" in urls)
         assertTrue("https://tiles.example.com/sprites/base@2x.png" in urls)
         assertTrue("https://tiles.example.com/fonts/Noto%20Sans%20Regular/0-255.pbf" in urls)
         assertTrue(service.downloads.all { it.headers.isEmpty() })
+    }
+
+    @Test
+    fun mapsUseAvailableRegionsAndStopUsingOnesWhoseAccessEnded() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val index = OfflineServingIndex()
+        val store = store(service, index = index)
+        val style = service.key(service.styleUrl)
+        store.loadRegion("madrid", madrid())
+        waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
+        assertTrue(index.serves(style))
+        val credits = index.credits(ResourceCacheScope.grant(URI(ORIGIN), MAP_ID))
+        assertEquals(listOf("es-ign"), credits.map { it.id })
+        assertEquals(listOf(listOf(-9.4, 35.9, 4.4, 43.8)), credits.single().regions)
+
+        // A region that is still downloading is not used.
+        service.publish()
+        val frozen = service.downloads.size + 3
+        service.freezeAfter = frozen
+        store.loadRegion("madrid", madrid())
+        waitUntil { service.downloads.size >= frozen }
+        assertFalse(index.serves(service.key(service.styleUrl)))
+        store.cancelRegion("madrid")
+        service.freezeAfter = null
+
+        // Access ends: maps stop using the region; its files stay on the device.
+        service.clock.addAndGet(86_401_000)
+        service.revalidationState = "not_updatable"
+        store.core.checkForUpdates()
+        assertFalse(store.region("madrid")!!.isAvailable)
+        assertFalse(index.serves(style))
+        assertNotNull(cache.read(style, ResourceCacheRetention.PINNED))
     }
 
     @Test
@@ -496,6 +532,7 @@ class OfflineStoreTest {
         concurrency: Int = 8,
         fetcher: OfflineResourceFetching? = null,
         runner: ((OfflineStoreCore) -> OfflineRunner)? = null,
+        index: OfflineServingIndex? = null,
     ): OfflineStoreCore {
         val cache =
             if (root == "offline") cache
@@ -513,6 +550,7 @@ class OfflineStoreTest {
             { OfflinePackClient(configuration, { service }, now = { service.clock.get() }) },
             { space?.get() },
             subscribers,
+            index,
             runner ?: { OfflineScopeRunner(it, scope) },
             reserveBytes = 4096,
             concurrency = concurrency,
@@ -528,10 +566,11 @@ class OfflineStoreTest {
         sleeps: MutableList<Long>? = null,
         concurrency: Int = 8,
         fetcher: OfflineResourceFetching? = null,
+        index: OfflineServingIndex? = null,
     ): TileflowOfflineStore {
         val subscribers = OfflineSubscribers()
         return TileflowOfflineStore(
-            core(service, root, subscribers, space, sleeps, concurrency, fetcher),
+            core(service, root, subscribers, space, sleeps, concurrency, fetcher, index = index),
             subscribers,
         )
     }
@@ -651,8 +690,11 @@ class OfflineStoreTest {
             if ("/tiles/" in url && "/17/${changedTile.first}/${changedTile.second}." in url)
                 version = changes["tile"] ?: 1
             if (url.endsWith("/webview-v1/manifest.json")) version = changes["profile"] ?: 1
+            if (url == "https://tiles.example.com/manifest.json")
+                return """{"version":1,"maps":{"streets":{"defaultTheme":"day","themes":{"day":{"styleUrl":"./style.json","fontFaces":[{"family":"Face","source":"./fonts/face.woff2"}]}}}}}"""
+                    .toByteArray()
             if (url == "https://tiles.example.com/style.json")
-                return """{"version":8,"sprite":"https://tiles.example.com/sprites/base","glyphs":"https://tiles.example.com/fonts/{fontstack}/{range}.pbf","sources":{},"layers":[{"id":"l","type":"symbol","layout":{"text-font":["Noto Sans Regular"],"text-field":"x"}}]}"""
+                return """{"version":8,"sprite":"https://tiles.example.com/sprites/base","glyphs":"https://tiles.example.com/fonts/{fontstack}/{range}.pbf","sources":{"places":{"type":"geojson","data":"./data/places.json"}},"layers":[{"id":"l","type":"symbol","layout":{"text-font":["Noto Sans Regular"],"text-field":"x"}}]}"""
                     .toByteArray()
             return "$url#$version".toByteArray()
         }
@@ -770,7 +812,28 @@ class OfflineStoreTest {
                             .put(
                                 "sources",
                                 JSONArray()
-                                    .put(JSONObject().put("source", "world").put("text", "OpenStreetMap")),
+                                    .put(
+                                        JSONObject()
+                                            .put("source", "world")
+                                            .put("text", "OpenStreetMap")
+                                            .put(
+                                                "regionalObligations",
+                                                JSONArray()
+                                                    .put(
+                                                        JSONObject()
+                                                            .put("id", "es-ign")
+                                                            .put("exact", "IGN España")
+                                                            .put("href", "https://www.ign.es")
+                                                            .put(
+                                                                "regions",
+                                                                JSONArray()
+                                                                    .put(
+                                                                        JSONArray("[-9.4,35.9,4.4,43.8]")
+                                                                    ),
+                                                            )
+                                                    ),
+                                            )
+                                    ),
                             ),
                     )
                     .put(

@@ -194,7 +194,7 @@ final class OfflineStoreTests: XCTestCase {
     await store.core.checkForUpdates()
     let region = try await XCTUnwrapAsync(await store.region(id: "madrid"))
     XCTAssertEqual(region.updateState, .notUpdatable(reason: "credential_revoked"))
-    XCTAssertTrue(region.isAvailable)
+    XCTAssertFalse(region.isAvailable, "Maps stop using it")
     service.clock.withLock { $0 += 10 * 86_400 }
     await store.core.checkForUpdates()
     XCTAssertEqual(service.revalidations, 1)
@@ -314,7 +314,7 @@ final class OfflineStoreTests: XCTestCase {
     }
   }
 
-  func testSelfHostedRegionDownloadsTheStyleItsSpritesGlyphsAndTiles() async throws {
+  func testSelfHostedRegionDownloadsItsManifestStylesFontsSpritesGlyphsAndTiles() async throws {
     let service = OfflineServiceStub()
     let store = makeStore(service)
     let source = TileflowOfflineTileSource(
@@ -322,7 +322,9 @@ final class OfflineStoreTests: XCTestCase {
     let options = TileflowOfflineRegionLoadOptions(
       geometry: .boundingBox(
         TileflowBoundingBox(west: -3.71, south: 40.41, east: -3.69, north: 40.425)),
-      content: .style(url: URL(string: "https://tiles.example.com/style.json")!, sources: [source]),
+      content: .manifest(
+        url: URL(string: "https://tiles.example.com/manifest.json")!, map: "streets",
+        sources: [source]),
       minZoom: 12, maxZoom: 15)
     let estimate = try await store.estimateRegion(options)
     XCTAssertNil(estimate.bytes)
@@ -332,14 +334,59 @@ final class OfflineStoreTests: XCTestCase {
     // Sizes are known once downloaded.
     XCTAssertEqual(done.requiredResourceBytes, done.completedResourceBytes)
     XCTAssertEqual(done.billableResourceCount, 0)
-    // Style, four sprite files, 256 glyph ranges of one stack and the tiles to zoom 14.
-    XCTAssertEqual(done.requiredResourceCount, 1 + 4 + 256 + estimate.resourceCount)
     let urls = Set(service.downloads.map(\.url))
+    // Manifest, font file, style, its data, four sprite files, 256 glyph ranges of one stack
+    // and the tiles to zoom 14.
+    XCTAssertEqual(done.requiredResourceCount, 1 + 1 + 1 + 1 + 4 + 256 + estimate.resourceCount)
+    XCTAssertTrue(urls.contains("https://tiles.example.com/fonts/face.woff2"))
+    XCTAssertTrue(urls.contains("https://tiles.example.com/data/places.json"))
     XCTAssertTrue(urls.contains("https://tiles.example.com/sprites/base@2x.png"))
     XCTAssertTrue(
       urls.contains("https://tiles.example.com/fonts/Noto%20Sans%20Regular/0-255.pbf"))
     XCTAssertTrue(service.downloads.allSatisfy { $0.headers.isEmpty })
     XCTAssertTrue(done.completedResourceBytes > 0)
+  }
+
+  func testMapsUseAvailableRegionsAndStopUsingOnesWhoseAccessEnded() async throws {
+    let service = OfflineServiceStub()
+    let index = OfflineServingIndex()
+    let store = makeStore(service, index: index)
+    let style = service.key(service.styleURL)
+    try await store.loadRegion(id: "madrid", options: madrid())
+    _ = try await waitFor(store, "madrid") { $0.state == .complete }
+    let served = await index.serves(style)
+    XCTAssertTrue(served)
+    let scope = ResourceCacheScope.grant(
+      apiOrigin: URL(string: OfflineServiceStub.origin)!, mapID: OfflineServiceStub.mapID)
+    let credits = await index.credits(for: scope)
+    XCTAssertEqual(credits.map(\.id), ["es-ign"])
+    XCTAssertEqual(credits.first?.regions, [[-9.4, 35.9, 4.4, 43.8]])
+
+    // Stored files are excluded from device backups.
+    for root in [cache.durableRoot, layout.root] {
+      let values = try root.resourceValues(forKeys: [.isExcludedFromBackupKey])
+      XCTAssertEqual(values.isExcludedFromBackup, true, root.path)
+    }
+
+    // A region that is still downloading is not used.
+    service.publish()
+    service.freezeAfter = service.downloads.count + 3
+    try await store.loadRegion(id: "madrid", options: madrid())
+    try await waitUntil { service.downloads.count >= service.freezeAfter! }
+    let pendingStyle = await index.serves(service.key(service.styleURL))
+    XCTAssertFalse(pendingStyle)
+    try await store.cancelRegion(id: "madrid")
+    service.freezeAfter = nil
+
+    // Access ends: maps stop using the region; its files stay on the device.
+    service.clock.withLock { $0 += 86_401 }
+    service.revalidationState = "not_updatable"
+    await store.core.checkForUpdates()
+    let region = try await XCTUnwrapAsync(await store.region(id: "madrid"))
+    XCTAssertFalse(region.isAvailable)
+    let hidden = await index.serves(style)
+    XCTAssertFalse(hidden)
+    XCTAssertNotNil(cache.read(style, retention: .pinned))
   }
 
   func testBackgroundFetcherSendsOnlyTheRequestHeadersAndRefusesRedirects() async throws {
@@ -416,7 +463,7 @@ final class OfflineStoreTests: XCTestCase {
   private func makeStore(
     _ service: OfflineServiceStub, root: String = "offline", space: LockedValue<Int64?>? = nil,
     sleeps: LockedValue<[TimeInterval]>? = nil, concurrency: Int = 8,
-    fetcher: (any OfflineResourceFetching)? = nil
+    fetcher: (any OfflineResourceFetching)? = nil, index: OfflineServingIndex? = nil
   ) -> TileflowOfflineStore {
     let cache =
       root == "offline"
@@ -438,7 +485,7 @@ final class OfflineStoreTests: XCTestCase {
             configuration: configuration, transport: service,
             now: { Date(timeIntervalSince1970: clock.withLock { $0 }) })
         },
-        availableBytes: { space?.withLock { $0 } ?? nil }, reserveBytes: 4096,
+        availableBytes: { space?.withLock { $0 } ?? nil }, index: index, reserveBytes: 4096,
         concurrency: concurrency, now: { Date(timeIntervalSince1970: clock.withLock { $0 }) },
         sleep: { delay in
           sleeps?.withLock { $0.append(delay) }
@@ -617,9 +664,14 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
       version = state.changes["tile"] ?? 1
     }
     if url.hasSuffix("/webview-v1/manifest.json") { version = state.changes["profile"] ?? 1 }
+    if url == "https://tiles.example.com/manifest.json" {
+      return Data(
+        #"{"version":1,"maps":{"streets":{"defaultTheme":"day","themes":{"day":{"styleUrl":"./style.json","fontFaces":[{"sources":[{"url":"./fonts/face.woff2"}]}]}}}}}"#
+          .utf8)
+    }
     if url.hasPrefix("https://tiles.example.com/"), url.hasSuffix("/style.json") {
       return Data(
-        #"{"version":8,"sprite":"https://tiles.example.com/sprites/base","glyphs":"https://tiles.example.com/fonts/{fontstack}/{range}.pbf","sources":{},"layers":[{"id":"l","type":"symbol","layout":{"text-font":["Noto Sans Regular"],"text-field":"x"}}]}"#
+        #"{"version":8,"sprite":"https://tiles.example.com/sprites/base","glyphs":"https://tiles.example.com/fonts/{fontstack}/{range}.pbf","sources":{"places":{"type":"geojson","data":"./data/places.json"}},"layers":[{"id":"l","type":"symbol","layout":{"text-font":["Noto Sans Regular"],"text-field":"x"}}]}"#
           .utf8)
     }
     return Data("\(url)#\(version)".utf8)
@@ -724,7 +776,19 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
         "resources": documents.count + entries.count,
         "billableResources": billable, "bytes": bytes,
       ],
-      "attribution": ["sources": [["source": "world", "text": "© OpenStreetMap contributors"]]],
+      "attribution": [
+        "sources": [
+          [
+            "source": "world", "text": "© OpenStreetMap contributors",
+            "regionalObligations": [
+              [
+                "id": "es-ign", "exact": "© IGN España", "href": "https://www.ign.es",
+                "regions": [[-9.4, 35.9, 4.4, 43.8]],
+              ]
+            ],
+          ]
+        ]
+      ],
       "limits": ["maxPackResources": state.maximumPackResources, "dailyDownloads": 200_000],
       "revalidation": [
         "url": "\(Self.origin)/v1/offline/packs/revalidate", "intervalSeconds": 86_400,

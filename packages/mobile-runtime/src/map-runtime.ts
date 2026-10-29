@@ -35,6 +35,7 @@ import {type CameraController, createCameraController} from './camera';
 import {createGestureController} from './camera-gestures';
 import type {Overlay} from './content-contract';
 import {createMapContentRegistry, type ResolvedOverlay} from './content-registry';
+import {creditHtml, visibleCredits} from './credits';
 import {createDataReader} from './data';
 import {
   type Clock,
@@ -115,6 +116,13 @@ export function createMobileMapRuntime(input: {
   let cameras: CameraController | undefined;
   let gestures: ReturnType<typeof createGestureController> | undefined;
   let activeOptions: MapOptions | undefined;
+  // Regional credits of downloaded regions in view, as attribution entries.
+  let credits: string[] = [];
+  const attributionControl = () =>
+    new maplibregl.AttributionControl({
+      compact: true,
+      ...(credits.length ? {customAttribution: credits} : {}),
+    });
   let content: ReturnType<typeof createMapContentRegistry> | undefined;
   let appearance: ReturnType<typeof createMapScene> | undefined;
   let animations: ReturnType<typeof createAnimations> | undefined;
@@ -203,10 +211,7 @@ export function createMobileMapRuntime(input: {
     activeOptions = options;
     gestures?.apply(options.gestures);
     cameras?.setLimits(options.limits);
-    cameras?.setAttribution(
-      options.attribution,
-      () => new maplibregl.AttributionControl({compact: true}),
-    );
+    cameras?.setAttribution(options.attribution, attributionControl);
     if (current.getPixelRatio() !== pixelRatio(options)) current.setPixelRatio(pixelRatio(options));
     if (previous?.viewMode !== options.viewMode) scene?.setViewMode(options.viewMode);
     if (previous?.vegetation !== options.vegetation) appearance?.setVegetation(options.vegetation);
@@ -378,6 +383,30 @@ export function createMobileMapRuntime(input: {
       map.on('load', () => {
         if (!disposed) emit('contentReady', () => ({camera: camera(), theme: style.theme}));
       });
+      if (options.credits.length) {
+        // Each regional credit shows while one of its boxes is in view.
+        const creditMap = map;
+        const update = () => {
+          if (disposed || !activeOptions) return;
+          const view = creditMap.getBounds();
+          const sources = Object.values(creditMap.getStyle()?.sources ?? {})
+            .map((source) => ('attribution' in source ? String(source.attribution ?? '') : ''))
+            .join('\n');
+          const entries = visibleCredits(options.credits, {
+            west: view.getWest(),
+            south: view.getSouth(),
+            east: view.getEast(),
+            north: view.getNorth(),
+          })
+            .filter((credit) => !sources.includes(credit.text))
+            .map(creditHtml);
+          if (entries.join('\n') === credits.join('\n')) return;
+          credits = entries;
+          cameras?.setAttribution(activeOptions.attribution, attributionControl, true);
+        };
+        creditMap.on('load', update);
+        creditMap.on('moveend', update);
+      }
       map.on('click', (event) => {
         const coordinate = {longitude: event.lngLat.lng, latitude: event.lngLat.lat};
         const point = {x: event.point.x, y: event.point.y};

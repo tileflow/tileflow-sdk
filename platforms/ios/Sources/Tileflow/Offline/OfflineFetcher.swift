@@ -40,8 +40,7 @@ final class OfflineURLSessionFetcher: NSObject, OfflineResourceFetching, URLSess
   @unchecked Sendable
 {
   static let backgroundIdentifier = "dev.tileflow.offline"
-  /// The pinned partition stores at most 16 MiB per resource.
-  static let maximumBodyBytes = 16 * 1024 * 1024
+  static let maximumBodyBytes = ResourceCacheStore.maximumPinnedEntryBytes
   static let canonicalHeaders = [
     "Cache-Control", "Content-Encoding", "Content-Length", "Content-Type", "Date", "ETag",
     "Expires", "Last-Modified", "Age", "Retry-After", "Tileflow-Fair-Use",

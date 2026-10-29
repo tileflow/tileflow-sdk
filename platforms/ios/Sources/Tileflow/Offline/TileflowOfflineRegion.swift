@@ -5,9 +5,11 @@ public enum TileflowOfflineContent: Sendable, Hashable {
   /// Themes of a Hosted Map, downloaded as Hosted offline packs with the configured map
   /// credential. A single-style Map's theme is `default`.
   case hosted(mapID: String, themes: [String])
-  /// A self-hosted style, the sprites and glyph ranges it references, and the tiles of `sources`
-  /// inside the region. Nothing is billed, and sizes are known only once downloaded.
-  case style(url: URL, sources: [TileflowOfflineTileSource])
+  /// A map of a versioned manifest you serve, as ``TileflowMapSource`` names it: the manifest,
+  /// every theme's style with the fonts, sprites, glyph ranges and source documents it
+  /// references, and the tiles of `sources` inside the region. Nothing is billed, and sizes are
+  /// known only once downloaded.
+  case manifest(url: URL, map: String, sources: [TileflowOfflineTileSource])
 }
 
 /// A self-hosted tile source to download with its style.
@@ -110,7 +112,9 @@ public struct TileflowOfflineRegion: Sendable, Hashable, Identifiable {
   /// The options of the version downloading, or else of the stored version.
   public let options: TileflowOfflineRegionLoadOptions
   public let state: DownloadState
-  /// A complete version is stored.
+  /// A complete version is stored and maps use it without a network. False once access to a
+  /// Hosted region ended (``UpdateState/notUpdatable(reason:)``): its files stay on the device,
+  /// and maps stop using them.
   public let isAvailable: Bool
   public let requiredResourceCount: Int
   public let completedResourceCount: Int

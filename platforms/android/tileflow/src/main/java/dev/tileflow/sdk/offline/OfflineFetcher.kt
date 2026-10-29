@@ -1,6 +1,7 @@
 package dev.tileflow.sdk.offline
 
 import dev.tileflow.sdk.transport.NetworkUnavailableException
+import dev.tileflow.sdk.transport.ResourceCacheStore
 import dev.tileflow.sdk.transport.TileflowHttpClient
 import dev.tileflow.sdk.transport.sha256Hex
 import java.io.ByteArrayOutputStream
@@ -118,8 +119,7 @@ internal class OfflineHttpFetcher(
     }
 
     companion object {
-        /** The pinned partition stores at most 16 MiB per resource. */
-        const val MAXIMUM_BODY_BYTES = 16 * 1024 * 1024
+        const val MAXIMUM_BODY_BYTES = ResourceCacheStore.MAXIMUM_PINNED_ENTRY_BYTES
 
         val CANONICAL_HEADERS =
             listOf(

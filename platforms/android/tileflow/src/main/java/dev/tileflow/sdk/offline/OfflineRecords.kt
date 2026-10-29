@@ -333,10 +333,11 @@ internal fun TileflowOfflineRegionLoadOptions.toJson(): JSONObject {
                     .put("type", "hosted")
                     .put("mapId", value.mapId)
                     .put("themes", JSONArray(value.themes))
-            is TileflowOfflineContent.Style ->
+            is TileflowOfflineContent.Manifest ->
                 JSONObject()
-                    .put("type", "style")
+                    .put("type", "manifest")
                     .put("url", value.url)
+                    .put("map", value.map)
                     .put(
                         "sources",
                         JSONArray(
@@ -403,8 +404,9 @@ internal fun offlineOptions(value: JSONObject): TileflowOfflineRegionLoadOptions
                     }
                     else -> {
                         val sources = item.getJSONArray("sources")
-                        TileflowOfflineContent.Style(
+                        TileflowOfflineContent.Manifest(
                             item.getString("url"),
+                            item.getString("map"),
                             List(sources.length()) {
                                 val source = sources.getJSONObject(it)
                                 TileflowOfflineTileSource(

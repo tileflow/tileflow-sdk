@@ -27,25 +27,60 @@ internal object OfflineSelfHosted {
                 throw TileflowOfflineException.options("invalidSource")
     }
 
-    fun styleUrl(text: String): URI {
+    /** The manifest's address, once it and the map's name are valid. */
+    fun validate(text: String, map: String): URI {
         val url = runCatching { URI(text) }.getOrNull()
         if (url == null || url.scheme !in setOf("https", "http") || url.host == null)
-            throw TileflowOfflineException.options("invalidStyleURL")
+            throw TileflowOfflineException.options("invalidManifestURL")
+        if (map.isEmpty() || map.length > 128) throw TileflowOfflineException.options("invalidMap")
         return url
     }
 
     /**
-     * The style, its sprite sheets at 1x and 2x, and every glyph range of the font stacks its
-     * layers name literally, as absolute URLs.
+     * The map's theme styles, and the manifest with the font files its themes name, as absolute
+     * URLs.
+     */
+    fun manifest(url: URI, data: ByteArray, map: String): Pair<List<URI>, List<URI>> {
+        val themes =
+            runCatching {
+                    JSONObject(String(data, Charsets.UTF_8))
+                        .getJSONObject("maps")
+                        .getJSONObject(map)
+                        .getJSONObject("themes")
+                }
+                .getOrNull() ?: throw invalid("invalidManifest")
+        val styles = mutableListOf<URI>()
+        val documents = mutableListOf(url)
+        for (name in themes.keys().asSequence().sorted()) {
+            val theme = themes.optJSONObject(name) ?: continue
+            (theme.opt("styleUrl") as? String)?.let { resolve(it, url) }?.let {
+                if (it !in styles) styles.add(it)
+            }
+            documents += fontFiles(theme.opt("fontFaces"), url)
+        }
+        if (styles.isEmpty()) throw invalid("invalidManifest")
+        return styles to documents
+    }
+
+    /**
+     * The style, the font files and source documents it names, its sprite sheets at 1x and 2x, and
+     * every glyph range of the font stacks its layers name literally, as absolute URLs.
      */
     fun documents(style: URI, data: ByteArray): List<URI> {
         val value =
             runCatching { JSONObject(String(data, Charsets.UTF_8)) }.getOrNull()
-                ?: throw TileflowOfflineException(
-                    TileflowOfflineErrorCode.INVALID_RESPONSE,
-                    TileflowErrorContext(reason = "invalidStyle"),
-                )
+                ?: throw invalid("invalidStyle")
         val documents = mutableListOf(style)
+        documents += fontFiles(value.optJSONObject("metadata")?.opt("tileflow:fontFaces"), style)
+        value.optJSONObject("sources")?.let { sources ->
+            for (name in sources.keys().asSequence().sorted()) {
+                // TileJSON documents and GeoJSON data; tiles come from the region's tile sources.
+                for (member in listOf("url", "data")) {
+                    val text = sources.optJSONObject(name)?.opt(member) as? String ?: continue
+                    resolve(text, style)?.let(documents::add)
+                }
+            }
+        }
         val sprites =
             when (val sprite = value.opt("sprite")) {
                 is String -> listOf(sprite)
@@ -89,6 +124,30 @@ internal object OfflineSelfHosted {
                 .getOrNull() ?: return null
         return url.takeIf { it.scheme in setOf("https", "http") && it.host != null }
     }
+
+    /** The font files of `tileflow:fontFaces` entries: each face's `source`, or its `sources`. */
+    private fun fontFiles(value: Any?, base: URI): List<URI> {
+        val faces = value as? JSONArray ?: return emptyList()
+        val files = mutableListOf<URI>()
+        for (index in 0 until faces.length()) {
+            val face = faces.optJSONObject(index) ?: continue
+            val names = mutableListOf<String>()
+            (face.opt("source") as? String)?.let(names::add)
+            face.optJSONArray("sources")?.let { sources ->
+                for (item in 0 until sources.length())
+                    ((sources.optJSONObject(item)?.opt("url") ?: sources.opt(item)) as? String)
+                        ?.let(names::add)
+            }
+            names.mapNotNullTo(files) { resolve(it, base) }
+        }
+        return files
+    }
+
+    private fun invalid(reason: String) =
+        TileflowOfflineException(
+            TileflowOfflineErrorCode.INVALID_RESPONSE,
+            TileflowErrorContext(reason = reason),
+        )
 
     /**
      * Font stacks of symbol layers: literal `text-font` arrays, or the default stack for text

@@ -259,9 +259,9 @@ extension TileflowOfflineRegionLoadOptions {
         "type": .string("hosted"), "mapId": .string(mapID),
         "themes": .array(themes.map(JSONValue.string)),
       ])
-    case .style(let url, let sources):
+    case .manifest(let url, let map, let sources):
       content = .object([
-        "type": .string("style"), "url": .string(url.absoluteString),
+        "type": .string("manifest"), "url": .string(url.absoluteString), "map": .string(map),
         "sources": .array(
           sources.map {
             .object([
@@ -319,12 +319,12 @@ extension TileflowOfflineRegionLoadOptions {
         return nil
       }
       content = .hosted(mapID: mapID, themes: themes.compactMap(\.string))
-    case "style":
+    case "manifest":
       guard let url = item?["url"]?.string.flatMap(URL.init(string:)),
-        case .array(let sources) = item?["sources"]
+        let map = item?["map"]?.string, case .array(let sources) = item?["sources"]
       else { return nil }
-      content = .style(
-        url: url,
+      content = .manifest(
+        url: url, map: map,
         sources: sources.compactMap { source in
           guard let id = source["id"]?.string, let template = source["template"]?.string,
             let low = int("minZoom", in: source), let high = int("maxZoom", in: source)

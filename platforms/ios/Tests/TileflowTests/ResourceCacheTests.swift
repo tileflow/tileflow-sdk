@@ -407,8 +407,7 @@ final class ResourceCacheTests: XCTestCase {
   }
 
   private func encodedQuality(_ options: TileflowMapOptions) throws -> String? {
-    let value = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(options))
-    return value["quality"]?.string
+    try options.wireValue(rightToLeft: false)["quality"]?.string
   }
 
   private func metadata(

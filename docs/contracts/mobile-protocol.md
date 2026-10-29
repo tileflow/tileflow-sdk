@@ -101,11 +101,11 @@ any other event. `hello` and `error` need no subscription.
 
 Each event belongs to one level. Levels are cumulative:
 
-| Level        | Adds                                                                                                     |
-| ------------ | -------------------------------------------------------------------------------------------------------- |
-| `essential`  | `loading`, `contentReady`, `themeChanged`, `warning`, `tap`, `longPress`, activations, `cameraMoveEnded` |
-| `camera`     | `cameraMoveStarted`, `gestureStarted`, `gestureEnded`                                                    |
-| `continuous` | `cameraMoved`, at most once per rendered frame                                                           |
+| Level        | Adds                                                                                                                                                     |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `essential`  | `loading`, `contentReady`, `themeChanged`, `themeTransition`, `warning`, `tap`, `longPress`, activations, `animationEnded`, `shotCue`, `cameraMoveEnded` |
+| `camera`     | `cameraMoveStarted`, `gestureStarted`, `gestureEnded`                                                                                                    |
+| `continuous` | `cameraMoved`, at most once per rendered frame                                                                                                           |
 
 The host sends its subscriptions in `initialize` and replaces them with `setEvents`. Each
 subscription has a throttle interval, from 0 to `maximumThrottleMs`. A throttled event is delivered
@@ -133,6 +133,10 @@ Camera events carry the camera, a revision and the `reason` for the movement:
 - `system`: the SDK moved the camera itself, for example after a layout change or a view mode
   transition.
 
+`themeTransition` reports each phase of a theme change (`preloading`, `applying`, `ready`, `error`)
+with the current and target themes; the `ready` phase carries the route inks of the theme on screen.
+`themeChanged` still reports the settled theme alone.
+
 ## Camera
 
 `moveCamera` moves to a `target` (any of `center`, `zoom`, `bearing`, `pitch`) or a `fit` (bounds,
@@ -159,6 +163,36 @@ moves when the camera settles. `initialize` may carry the first insets.
 The map options carry the gestures, the camera `limits` (zoom 0 to 24, pitch 0 to 85, optional
 bounds) and the `attribution` corner. The attribution is always shown; the host draws the
 compass, scale bar and recenter button natively.
+
+## Scene beyond the theme
+
+Requests for the parts of a map that the web SDKs drive through Core's controllers each replace
+what the previous request of their kind asked for, so a host can send its whole desired state to a
+new renderer:
+
+- `setViewMode` changes between 2D and the declared 3D scene; a `duration` makes the buildings rise
+  or descend. The view mode is also part of the options a host replays.
+- `setSun`, `setEmphasis` and `setStyleState` reach Core's theme controller and answer its status. An
+  emphasis keep area, Boundaries rows (`setBoundaryValues`) and application images (`setImages`, PNG
+  or JPEG with optional variants by theme) travel on the data channel. Images the renderer already
+  holds, by digest, are neither read nor decoded again.
+- `setDepthMarkers` names images by the names given to `setImages`; a marker naming an image the
+  renderer does not hold fails the request.
+- `getRouteInks` answers the route inks of the theme on screen.
+
+Application layers (`setContent`) may name a route `ink` instead of a colour, a `placement`
+(`top` or `ground`), an `occludedOpacity` for a line on the ground, and a line's `progress`.
+
+Animations can outlast a request's timeout. `animateLineProgress` and `playShot` answer with an
+animation identifier once the animation starts; the renderer later sends `animationEnded` with the
+identifier and whether it finished, and `shotCue` for each cue a shot reaches. These events always
+follow the answer that names their animation. `stopAnimation` stops one; a host that gives up on
+an animation sends it. One shot plays at a time; a new shot or a person's gesture stops the playing
+one. A shot reports its camera movement once, with the reason `api`, rather than once per frame.
+Animations end with their renderer generation.
+
+`initialize` also takes `renderer` options fixed for the renderer's lifetime: `antialias` (on by
+default) and `validateStyle` (off by default). A host that changes them starts a new generation.
 
 ## Errors and warnings
 

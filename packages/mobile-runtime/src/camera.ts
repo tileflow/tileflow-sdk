@@ -97,6 +97,10 @@ export function createCameraController(
     wants: (event: EventName) => boolean;
     frame?: (callback: () => void) => unknown;
     cancelFrame?: (handle: unknown) => void;
+    /** Movement events that something else reports, such as each frame of a shot. */
+    ignores?: (event: unknown) => boolean;
+    /** Called when a person's gesture starts moving the camera. */
+    gesture?: () => void;
   },
 ) {
   const frame = output.frame ?? ((callback) => requestAnimationFrame(callback));
@@ -111,6 +115,7 @@ export function createCameraController(
   let insets = none;
   let paddingPending = false;
   let attribution: {control: AttributionControl; corner: Corner} | undefined;
+  let shotMoving = false;
   let disposed = false;
 
   const camera = (): Camera => {
@@ -133,7 +138,9 @@ export function createCameraController(
   };
 
   map.on('movestart', (event) => {
+    if (output.ignores?.(event)) return;
     reason = cameraReason(event);
+    if (reason === 'gesture') output.gesture?.();
     emitCamera('cameraMoveStarted');
   });
   map.on('move', (event) => {
@@ -146,6 +153,7 @@ export function createCameraController(
     });
   });
   map.on('moveend', (event) => {
+    if (output.ignores?.(event)) return;
     if (pendingFrame !== undefined) cancelFrame(pendingFrame);
     pendingFrame = undefined;
     emitCamera('cameraMoveEnded');
@@ -309,6 +317,13 @@ export function createCameraController(
       if (!changed) return;
       if (map.isMoving()) paddingPending = true;
       else applyPadding();
+    },
+    /** A shot moves the camera frame by frame; it starts and ends one movement. */
+    reportShot(moving: boolean) {
+      if (moving === shotMoving || disposed) return;
+      shotMoving = moving;
+      reason = 'api';
+      emitCamera(moving ? 'cameraMoveStarted' : 'cameraMoveEnded');
     },
     setAttribution(corner: Corner, create: () => AttributionControl) {
       if (attribution?.corner === corner) return;

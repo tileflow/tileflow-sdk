@@ -60,6 +60,10 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   /// views behind and around the map; for example over application UI drawn on the map. Native
   /// controls receive their touches regardless.
   public var shouldReceiveTouch: ((CGPoint) -> Bool)?
+  /// The scene beyond the theme the application asked for, given again to each new renderer.
+  var scene = SceneState()
+  /// Calls waiting for an animation of the current renderer to end.
+  let animations = AnimationWaiters()
 
   public init(
     source: TileflowMapSource, theme: String? = nil, initialCamera: TileflowCamera? = nil,
@@ -212,12 +216,20 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   public func setOptions(_ options: TileflowMapOptions) async throws {
     guard !destroyed else { throw TileflowMapError.disposed }
     try options.validate()
+    let previous = self.options
     let previousSubscriptions = subscriptions
     self.options = options
     subscriptions = EventSubscriptions(
       application: options.events, followCamera: options.controls.followCamera)
     touchClaim.gestures = options.gestures
     controlsView.controls = options.controls
+    // Antialiasing and style validation are fixed when a renderer starts.
+    if options.antialias != previous.antialias || options.validatesStyle != previous.validatesStyle,
+      webView != nil
+    {
+      remount()
+      return
+    }
     try await sendOptions(events: subscriptions != previousSubscriptions)
   }
 
@@ -485,6 +497,10 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
             "theme": self.theme.map(JSONValue.string) ?? .null,
             "colorScheme": .string(self.colorScheme), "interactive": .bool(true),
             "options": try self.wireOptions,
+            "renderer": .object([
+              "antialias": .bool(self.options.antialias),
+              "validateStyle": .bool(self.options.validatesStyle),
+            ]),
             "events": self.subscriptions.wireValue,
             "insets": Self.wire(self.effectiveContentInsets),
           ]
@@ -508,6 +524,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
           if let request = self.requestedCamera, request.count != startingRequest {
             try await self.move(to: request.camera, animation: .none)
           }
+          try await self.replayScene(through: bridge)
           if !self.rendererVisible {
             _ = try await bridge.call(.setVisibility, payload: .object(["visible": .bool(false)]))
           }
@@ -619,6 +636,11 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
       }
     case "themeChanged":
       if let name = value["theme"]?.string { onEvent?(.themeChanged(name)) }
+    case "themeTransition":
+      if let transition = TileflowThemeTransition(wire: value) {
+        onEvent?(.themeTransition(transition))
+      }
+    case "animationEnded", "shotCue": animations.receive(event, value)
     case "warning":
       if let count = value["count"]?.number.flatMap({ Int(exactly: $0) }), count > 0 {
         onEvent?(
@@ -655,6 +677,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     pendingReadyEvent = false
     generationReady = false
     rendererVisible = false
+    animations.retire(error)
     bridge?.retire(error)
     resources?.retire()
     webView?.stopLoading()
@@ -667,6 +690,25 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     resources = nil
     webView = nil
     controlsView.isHidden = true
+  }
+
+  /// The current renderer once it has initialized.
+  var readyBridge: MapBridge? { initialized ? bridge : nil }
+  var isDestroyed: Bool { destroyed }
+
+  /// Records options a dedicated call already gave the renderer.
+  func keepOptions(_ options: TileflowMapOptions) { self.options = options }
+
+  /// Records where line progress animations lead, so a new renderer draws the lines there.
+  func keepLineProgress(_ progress: TileflowLineProgress, for layers: Set<String>) {
+    content.overlays = content.overlays.map { layer in
+      guard layers.contains(layer.id), let current = layer.progress else { return layer }
+      var next = layer
+      next.progress = TileflowLineProgress(
+        start: progress.start, end: progress.end, light: progress.light,
+        opacity: progress.opacity, highlight: current.highlight)
+      return next
+    }
   }
 
   public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {

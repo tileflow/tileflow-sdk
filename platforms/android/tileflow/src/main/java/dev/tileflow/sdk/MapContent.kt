@@ -45,28 +45,69 @@ public enum class TileflowGeoJSONLayerKind(internal val wireName: String) {
  * GeometryCollection or foreign members, with closed rings and positions within range); invalid
  * GeoJSON makes [TileflowMapView.setContent] fail with [TileflowErrorCode.INVALID_REQUEST] and the
  * reason `invalidGeoJSON`, leaving the content as it was.
+ *
+ * @property ink A route ink of the theme on screen, drawn instead of [color] and following theme
+ *   changes and blends; the glow and core inks also take the theme's opacity for them.
+ * @property placement [TileflowLayerPlacement.TOP] draws above the whole map;
+ *   [TileflowLayerPlacement.GROUND] lies under its labels and 3D content.
+ * @property occludedOpacity For a line on the ground, how much of it shows where 3D content hides
+ *   it, from 0 to 1.
+ * @property progress For a line, the stretch of it that shows; [animateLineProgress] moves it.
  */
-public class TileflowGeoJSONLayer(
+public class TileflowGeoJSONLayer
+private constructor(
     public val id: String,
-    geoJSON: String,
+    internal val bytes: ByteArray,
+    knownDigest: String?,
     public val kind: TileflowGeoJSONLayerKind,
-    public val color: String = "#e9573f",
-    public val size: Double = 6.0,
-    public val opacity: Double = 1.0,
+    public val color: String,
+    public val size: Double,
+    public val opacity: Double,
+    public val ink: TileflowRouteInk?,
+    public val placement: TileflowLayerPlacement,
+    public val occludedOpacity: Double,
+    public val progress: TileflowLineProgress?,
 ) {
-    internal val bytes: ByteArray = geoJSON.toByteArray(Charsets.UTF_8)
-
-    /** Identifies the data, so layers that share it, or keep it across updates, send it once. */
-    internal val digest: String
+    @JvmOverloads
+    public constructor(
+        id: String,
+        geoJSON: String,
+        kind: TileflowGeoJSONLayerKind,
+        color: String = "#e9573f",
+        size: Double = 6.0,
+        opacity: Double = 1.0,
+        ink: TileflowRouteInk? = null,
+        placement: TileflowLayerPlacement = TileflowLayerPlacement.TOP,
+        occludedOpacity: Double = 0.0,
+        progress: TileflowLineProgress? = null,
+    ) : this(
+        id,
+        geoJSON.toByteArray(Charsets.UTF_8),
+        null,
+        kind,
+        color,
+        size,
+        opacity,
+        ink,
+        placement,
+        occludedOpacity,
+        progress,
+    )
 
     init {
         if (
             !Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$").matches(id) ||
                 !Regex("^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$").matches(color) ||
                 size !in 0.0..64.0 ||
-                opacity !in 0.0..1.0
+                opacity !in 0.0..1.0 ||
+                occludedOpacity !in 0.0..1.0 ||
+                (progress != null && kind != TileflowGeoJSONLayerKind.LINE) ||
+                (occludedOpacity > 0 &&
+                    (kind != TileflowGeoJSONLayerKind.LINE ||
+                        placement != TileflowLayerPlacement.GROUND))
         )
             throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
+        progress?.validate()
         if (bytes.isEmpty() || bytes.size > ProtocolContract.MAXIMUM_DATA_BYTES)
             throw TileflowMapException(
                 TileflowErrorCode.INVALID_REQUEST,
@@ -75,8 +116,26 @@ public class TileflowGeoJSONLayer(
                     ProtocolContract.MAXIMUM_DATA_BYTES,
                 ),
             )
-        digest = DataChannel.digest(bytes)
     }
+
+    /** Identifies the data, so layers that share it, or keep it across updates, send it once. */
+    internal val digest: String = knownDigest ?: DataChannel.digest(bytes)
+
+    /** The same layer drawing another stretch of its line, sharing its data. */
+    internal fun withProgress(next: TileflowLineProgress?): TileflowGeoJSONLayer =
+        TileflowGeoJSONLayer(
+            id,
+            bytes,
+            digest,
+            kind,
+            color,
+            size,
+            opacity,
+            ink,
+            placement,
+            occludedOpacity,
+            next,
+        )
 
     internal fun json(data: DataChannel.Reference): JSONObject =
         JSONObject()
@@ -86,6 +145,12 @@ public class TileflowGeoJSONLayer(
             .put("color", color)
             .put("size", size)
             .put("opacity", opacity)
+            .put("placement", placement.wireName)
+            .put("occludedOpacity", occludedOpacity)
+            .apply {
+                ink?.let { put("ink", it.wireName) }
+                progress?.let { put("progress", it.json()) }
+            }
 }
 
 public data class TileflowPoiSelection(

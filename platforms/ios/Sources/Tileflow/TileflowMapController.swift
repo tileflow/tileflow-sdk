@@ -132,7 +132,7 @@ public final class TileflowMapController {
     self.view = view
   }
   func detach(_ view: TileflowMapView) { if self.view === view { self.view = nil } }
-  private func attached() throws -> TileflowMapView {
+  func attached() throws -> TileflowMapView {
     guard let view else { throw TileflowMapError.notReady }
     return view
   }

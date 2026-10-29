@@ -34,6 +34,17 @@ internal object ProtocolContract {
         UNPROJECT("unproject"),
         SET_VISIBILITY("setVisibility"),
         QUERY_AT_POINT("queryAtPoint"),
+        SET_VIEW_MODE("setViewMode"),
+        SET_SUN("setSun"),
+        SET_EMPHASIS("setEmphasis"),
+        SET_STYLE_STATE("setStyleState"),
+        GET_ROUTE_INKS("getRouteInks"),
+        SET_BOUNDARY_VALUES("setBoundaryValues"),
+        SET_IMAGES("setImages"),
+        SET_DEPTH_MARKERS("setDepthMarkers"),
+        ANIMATE_LINE_PROGRESS("animateLineProgress"),
+        PLAY_SHOT("playShot"),
+        STOP_ANIMATION("stopAnimation"),
         DISPOSE("dispose"),
     }
 
@@ -47,6 +58,9 @@ internal object ProtocolContract {
         LOADING("loading", TileflowEventLevel.ESSENTIAL),
         CONTENT_READY("contentReady", TileflowEventLevel.ESSENTIAL),
         THEME_CHANGED("themeChanged", TileflowEventLevel.ESSENTIAL),
+        THEME_TRANSITION("themeTransition", TileflowEventLevel.ESSENTIAL),
+        ANIMATION_ENDED("animationEnded", TileflowEventLevel.ESSENTIAL),
+        SHOT_CUE("shotCue", TileflowEventLevel.ESSENTIAL),
         WARNING("warning", TileflowEventLevel.ESSENTIAL),
         TAP("tap", TileflowEventLevel.ESSENTIAL),
         LONG_PRESS("longPress", TileflowEventLevel.ESSENTIAL),
@@ -72,6 +86,8 @@ internal object ProtocolContract {
         PROCESS_TERMINATED("processTerminated"),
         CONTENT_RESTORE("contentRestore"),
         SCENE("scene"),
+        INVALID_IMAGE("invalidImage"),
+        UNKNOWN_LAYER("unknownLayer"),
     }
 
     /** Error codes the renderer may send. Any other code from the renderer is a protocol fault. */

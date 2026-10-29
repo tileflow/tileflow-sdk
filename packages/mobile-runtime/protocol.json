@@ -29,10 +29,21 @@
     "unproject",
     "setVisibility",
     "queryAtPoint",
+    "setViewMode",
+    "setSun",
+    "setEmphasis",
+    "setStyleState",
+    "getRouteInks",
+    "setBoundaryValues",
+    "setImages",
+    "setDepthMarkers",
+    "animateLineProgress",
+    "playShot",
+    "stopAnimation",
     "dispose"
   ],
   "eventLevels": {
-    "essential": "Lifecycle, failures, warnings, taps, long presses and activations, and the camera each time it settles.",
+    "essential": "Lifecycle, theme transitions, failures, warnings, taps, long presses and activations, the end of animations and their cues, and the camera each time it settles.",
     "camera": "Also the start of every camera movement, with its reason, and the start and end of each gesture.",
     "continuous": "Also the camera while it moves, at most once per rendered frame or per the requested interval."
   },
@@ -50,6 +61,15 @@
       "level": "essential"
     },
     "themeChanged": {
+      "level": "essential"
+    },
+    "themeTransition": {
+      "level": "essential"
+    },
+    "animationEnded": {
+      "level": "essential"
+    },
+    "shotCue": {
       "level": "essential"
     },
     "warning": {
@@ -95,7 +115,7 @@
     "tile": "A vector, raster or elevation tile.",
     "glyphs": "Label glyphs.",
     "sprite": "Map icons.",
-    "image": "An image the style requests.",
+    "image": "An image the style requests, or one the application passed to the map.",
     "font": "A font file.",
     "model": "A 3D model or scene resource.",
     "data": "Data the application passed to the map.",
@@ -114,7 +134,9 @@
     "graphicsContextLost": "The renderer lost its graphics context.",
     "processTerminated": "The system ended the renderer process again before it loaded.",
     "contentRestore": "Application content could not be restored after the style changed.",
-    "scene": "The map's 3D scene could not be loaded; the map continues without it."
+    "scene": "The map's 3D scene could not be loaded; the map continues without it.",
+    "invalidImage": "An application image could not be decoded, or its variants differ in size.",
+    "unknownLayer": "A request names an application layer that the map's content does not hold."
   },
   "errors": {
     "invalidSource": {

@@ -83,8 +83,8 @@ public enum class TileflowErrorCode(
  */
 public enum class TileflowEventLevel(internal val wireName: String) {
     /**
-     * Lifecycle, failures, warnings, taps, long presses and activations, and the camera each time
-     * it settles.
+     * Lifecycle, theme transitions, failures, warnings, taps, long presses and activations, the end
+     * of animations and their cues, and the camera each time it settles.
      */
     ESSENTIAL("essential"),
     /**
@@ -144,7 +144,7 @@ public enum class TileflowResourceKind(internal val wireName: String) {
     GLYPHS("glyphs"),
     /** Map icons. */
     SPRITE("sprite"),
-    /** An image the style requests. */
+    /** An image the style requests, or one the application passed to the map. */
     IMAGE("image"),
     /** A font file. */
     FONT("font"),

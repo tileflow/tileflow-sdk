@@ -173,7 +173,7 @@ public class TileflowMapController {
         if (view.get() === previous) view.clear()
     }
 
-    private fun attached(): TileflowMapView =
+    internal fun attached(): TileflowMapView =
         view.get() ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
 }
 

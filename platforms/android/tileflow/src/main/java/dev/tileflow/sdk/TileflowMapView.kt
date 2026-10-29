@@ -69,6 +69,11 @@ constructor(
     public var options: TileflowMapOptions = TileflowMapOptions()
         private set
 
+    /** The scene beyond the theme the application asked for, given again to each new renderer. */
+    internal val scene = SceneState()
+    /** Calls waiting for an animation of the current renderer to end. */
+    internal val animations = AnimationWaiters()
+
     private var appearance: Pair<ProtocolContract.Method, JSONObject>? = null
     private var content = MapContent()
     private var contentRevision = 0
@@ -446,10 +451,19 @@ constructor(
     public suspend fun setOptions(options: TileflowMapOptions) {
         if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
         options.validate()
+        val previous = this.options
         val previousSubscriptions = subscriptions
         this.options = options
         subscriptions = EventSubscriptions(options.events, options.controls.followCamera)
         controlsView.controls = options.controls
+        // Antialiasing and style validation are fixed when a renderer starts.
+        if (
+            (options.antialias != previous.antialias ||
+                options.validatesStyle != previous.validatesStyle) && webView != null
+        ) {
+            remount()
+            return
+        }
         sendOptions(events = subscriptions != previousSubscriptions)
     }
 
@@ -1057,6 +1071,7 @@ constructor(
                                         .put("colorScheme", colorScheme())
                                         .put("interactive", true)
                                         .put("options", options.json(rightToLeft))
+                                        .put("renderer", options.rendererJson())
                                         .put("events", subscriptions.json())
                                         .put("insets", effectiveContentPadding.css(density))
                                 val startingSubscriptions = subscriptions
@@ -1076,6 +1091,7 @@ constructor(
                                 requestedCamera
                                     ?.takeIf { it.second != startingRequest }
                                     ?.let { move(it.first) }
+                                replayScene(readyBridge)
                                 if (!rendererVisible)
                                     readyBridge.call(
                                         ProtocolContract.Method.SET_VISIBILITY,
@@ -1206,6 +1222,10 @@ constructor(
             pendingReadyEvent = true
             return
         }
+        if (event == "animationEnded" || event == "shotCue") {
+            animations.receive(event, result)
+            return
+        }
         val parsed =
             try {
                 parseMapEvent(event, result, density)
@@ -1236,6 +1256,35 @@ constructor(
         }
     }
 
+    /** The current renderer once it has initialized. */
+    internal val readyBridge: MapBridge?
+        get() = bridge?.takeIf { initialized }
+
+    internal val isDestroyed: Boolean
+        get() = destroyed
+
+    /** Records options a dedicated call already gave the renderer. */
+    internal fun keepOptions(options: TileflowMapOptions) {
+        this.options = options
+    }
+
+    /** Records where line progress animations lead, so a new renderer draws the lines there. */
+    internal fun keepLineProgress(progress: TileflowLineProgress, layers: Set<String>) {
+        content =
+            content.copy(
+                overlays =
+                    content.overlays.map { layer ->
+                        val current = layer.progress
+                        if (layer.id !in layers || current == null) layer
+                        else layer.withProgress(progress.copy(highlight = current.highlight))
+                    }
+            )
+    }
+
+    internal fun launchOnView(block: suspend CoroutineScope.() -> Unit) {
+        scope.launch(block = block)
+    }
+
     /** Pending calls fail with `cancelled` when replaced and with `disposed` when destroyed. */
     private fun retireGeneration(code: TileflowErrorCode = TileflowErrorCode.CANCELLED) {
         initialized = false
@@ -1248,6 +1297,7 @@ constructor(
         pendingReadyEvent = false
         generationReady = false
         rendererVisible = false
+        animations.retire(code)
         bridge?.retire(code)
         loader?.close()
         bootstrap?.remove()

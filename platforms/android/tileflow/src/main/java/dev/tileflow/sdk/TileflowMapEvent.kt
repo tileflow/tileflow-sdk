@@ -56,6 +56,9 @@ public sealed interface TileflowMapEvent {
 
     public data class ThemeChanged(val theme: String) : TileflowMapEvent
 
+    /** A theme change moved to a new phase; the ready phase carries the theme's route inks. */
+    public data class ThemeTransition(val transition: TileflowThemeTransition) : TileflowMapEvent
+
     /**
      * The map continues, but something it tried did not work, for example tiles that failed to
      * load. Repeats of one warning within a second arrive together; [occurrences] counts them.

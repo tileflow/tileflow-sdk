@@ -99,6 +99,13 @@ public data class TileflowEventOptions(
  *   always shown.
  * @property cameraLimits Where the camera may go.
  * @property events Which events the map reports.
+ * @property vegetation Shows or hides the map's 3D vegetation; null keeps what the map's design
+ *   chooses.
+ * @property antialias Multisampling, which smooths the thin edges of 3D buildings, trees and
+ *   models. Changing it starts a new renderer.
+ * @property validatesStyle Validates each style as the renderer loads it, reporting problems as
+ *   warnings. Tileflow validates its styles when it builds them, so this is off by default.
+ *   Changing it starts a new renderer.
  */
 public data class TileflowMapOptions(
     val viewMode: TileflowViewMode = TileflowViewMode.FLAT,
@@ -107,6 +114,9 @@ public data class TileflowMapOptions(
     val controls: TileflowMapControls = TileflowMapControls(),
     val cameraLimits: TileflowCameraLimits = TileflowCameraLimits(),
     val events: TileflowEventOptions = TileflowEventOptions(),
+    val vegetation: Boolean? = null,
+    val antialias: Boolean = true,
+    val validatesStyle: Boolean = false,
 ) {
     /**
      * The renderer's options. Event delivery is set up separately by the SDK; the attribution's
@@ -123,6 +133,11 @@ public data class TileflowMapOptions(
             .put("gestures", gestures.json())
             .put("limits", cameraLimits.json())
             .put("attribution", controls.attributionPosition.corner(rightToLeft))
+            .put("vegetation", vegetation ?: JSONObject.NULL)
+
+    /** Options fixed for a renderer's lifetime. */
+    internal fun rendererJson(): JSONObject =
+        JSONObject().put("antialias", antialias).put("validateStyle", validatesStyle)
 
     internal fun validate() {
         events.validate()

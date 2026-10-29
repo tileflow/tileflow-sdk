@@ -30,9 +30,11 @@ import dev.tileflow.routing.TileflowRouteRequest
 import dev.tileflow.routing.TileflowRouting
 import dev.tileflow.routing.TileflowRoutingMode
 import dev.tileflow.sdk.TileflowAnnotation
+import dev.tileflow.sdk.TileflowLineProgress
 import dev.tileflow.sdk.TileflowMap
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.TileflowMapSource
+import dev.tileflow.sdk.animateLineProgress
 import dev.tileflow.sdk.rememberTileflowMapController
 import dev.tileflow.search.TileflowGeocodeRequest
 import dev.tileflow.search.TileflowSearch
@@ -131,9 +133,19 @@ private fun ServicesScreen(source: TileflowMapSource, configured: Boolean) {
                                 last.label,
                             ),
                         ),
-                    layers = TileflowRouteLayers.build(response),
+                    layers =
+                        TileflowRouteLayers.build(
+                            response,
+                            progress = TileflowLineProgress(end = 0.0),
+                        ),
                 )
                 controller.fit(TileflowBounds(route.bounds), padding = 48.dp)
+                // The route draws on in the theme's route inks.
+                controller.animateLineProgress(
+                    TileflowRouteLayers.progressLayers(),
+                    TileflowLineProgress(end = 1.0),
+                    durationMillis = 2000,
+                )
                 val kilometres = (route.distance / 100).roundToInt() / 10.0
                 status = "$kilometres km · ${(route.duration / 60).roundToInt()} min"
                 attribution =

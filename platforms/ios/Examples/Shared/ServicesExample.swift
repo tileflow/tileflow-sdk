@@ -9,12 +9,12 @@ func servicesConfigured() -> Bool {
     && configuration?.credential(for: .routing) != nil
 }
 
-/// Finds a place near the camera, walks there from the camera's centre, draws the route in the
-/// given route inks and frames it. Returns a short summary.
+/// Finds a place near the camera, walks there from the camera's centre, frames the route and draws
+/// it on in the theme's route inks. Returns a short summary.
 @MainActor
-func showWalkingRoute(
-  to query: String, on controller: TileflowMapController, inks: TileflowRouteInks
-) async throws -> String {
+func showWalkingRoute(to query: String, on controller: TileflowMapController) async throws
+  -> String
+{
   let camera = try await controller.camera()
   let found = try await TileflowSearch().geocode(
     TileflowGeocodeRequest(query: query, limit: 1, proximity: camera.searchProximity))
@@ -25,8 +25,11 @@ func showWalkingRoute(
   let route = answer.routes[0]
   try await controller.setContent(
     annotations: [TileflowAnnotation(place: place, id: "destination")],
-    layers: try TileflowGeoJSONLayer.route(answer, inks: inks))
+    layers: try TileflowGeoJSONLayer.route(answer, progress: TileflowLineProgress(end: 0)))
   try await controller.fit(TileflowBounds(route.bounds), padding: 48, duration: 0.6)
+  try await controller.animateLineProgress(
+    layers: TileflowGeoJSONLayer.routeProgressLayers(), to: TileflowLineProgress(end: 1),
+    duration: 2)
   let distance = Measurement(value: route.distance, unit: UnitLength.meters)
   return
     "\(place.name ?? place.label): \(distance.formatted(.measurement(width: .abbreviated, usage: .road))), \(Int((route.duration / 60).rounded())) min"

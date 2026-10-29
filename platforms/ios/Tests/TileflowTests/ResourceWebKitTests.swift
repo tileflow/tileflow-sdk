@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class ResourceWebKitTests: XCTestCase {
   func testHTTPHeadRangeAndRedirectBoundaries() async throws {
-    let origin = "http://127.0.0.1:18645"
+    let origin = FixtureServer.origin
     do {
       _ = try await URLSession.shared.data(from: URL(string: "\(origin)/manifest.json")!)
     } catch {

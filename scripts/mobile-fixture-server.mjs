@@ -154,6 +154,196 @@ const send = (request, response, cached, body) => {
   }
   response.end(body);
 };
+
+// A Nautical scene: sea, depth areas and marks, with the notice a Nautical style declares.
+const nauticalData = {
+  type: 'FeatureCollection',
+  features: [
+    {
+      type: 'Feature',
+      properties: {depth: 'shallow'},
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [2.16, 41.35],
+            [2.2, 41.35],
+            [2.2, 41.37],
+            [2.16, 41.37],
+            [2.16, 41.35],
+          ],
+        ],
+      },
+    },
+    {
+      type: 'Feature',
+      properties: {name: 'Fairway buoy'},
+      geometry: {type: 'Point', coordinates: [2.19, 41.36]},
+    },
+    {
+      type: 'Feature',
+      properties: {name: 'Breakwater light'},
+      geometry: {type: 'Point', coordinates: [2.175, 41.365]},
+    },
+  ],
+};
+const nauticalStyle = (dark) => ({
+  version: 8,
+  metadata: {
+    'tileflow:fontFaces': fontFaces(base),
+    'tileflow:notices': [{id: 'nautical', sources: ['sea'], text: 'Not for navigation'}],
+  },
+  sources: {sea: {type: 'geojson', data: './nautical-data.json'}},
+  layers: [
+    {id: 'water', type: 'background', paint: {'background-color': dark ? '#0b2236' : '#bcd9ea'}},
+    {
+      id: 'shallow',
+      type: 'fill',
+      source: 'sea',
+      filter: ['==', '$type', 'Polygon'],
+      paint: {'fill-color': dark ? '#16405c' : '#8ec2df'},
+    },
+    {
+      id: 'marks',
+      type: 'circle',
+      source: 'sea',
+      filter: ['==', '$type', 'Point'],
+      paint: {
+        'circle-color': '#e8b04a',
+        'circle-radius': 8,
+        'circle-stroke-color': '#1d2a33',
+        'circle-stroke-width': 2,
+      },
+    },
+    {
+      id: 'mark-labels',
+      type: 'symbol',
+      source: 'sea',
+      filter: ['==', '$type', 'Point'],
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-font': ['Noto Sans'],
+        'text-size': 14,
+        'text-offset': [0, -1.4],
+      },
+      paint: {'text-color': dark ? '#e6f0f5' : '#10324a'},
+    },
+  ],
+});
+
+// A city block whose style declares Core's 3D buildings. The buildings come from vector tiles,
+// encoded here, which the 3D renderer reads directly.
+const sceneCenter = [-3.7, 40.42];
+const buildings = [];
+for (let row = -4; row <= 4; row += 1)
+  for (let column = -4; column <= 4; column += 1) {
+    const west = sceneCenter[0] + column * 0.0009 - 0.0003;
+    const south = sceneCenter[1] + row * 0.0007 - 0.00025;
+    buildings.push({
+      ring: [
+        [west, south],
+        [west + 0.0006, south],
+        [west + 0.0006, south + 0.0005],
+        [west, south + 0.0005],
+      ],
+      height: 12 + ((row * 7 + column * 13 + 81) % 9) * 9,
+    });
+  }
+const varint = (value) => {
+  const bytes = [];
+  let rest = value;
+  while (rest > 127) {
+    bytes.push((rest & 127) | 128);
+    rest = Math.floor(rest / 128);
+  }
+  bytes.push(rest);
+  return bytes;
+};
+const field = (number, wire, payload) => [
+  ...varint(number * 8 + wire),
+  ...(wire === 2 ? varint(payload.length) : []),
+  ...payload,
+];
+const zigzag = (value) => (value << 1) ^ (value >> 31);
+/** One `building` layer of a Mapbox Vector Tile with the buildings inside tile z/x/y. */
+function buildingTile(z, x, y) {
+  const extent = 4096;
+  const scale = 2 ** z;
+  const project = ([longitude, latitude]) => {
+    const radians = (latitude * Math.PI) / 180;
+    const worldX = ((longitude + 180) / 360) * scale;
+    const worldY =
+      ((1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2) * scale;
+    return [Math.round((worldX - x) * extent), Math.round((worldY - y) * extent)];
+  };
+  const values = [];
+  const features = [];
+  for (const [index, building] of buildings.entries()) {
+    const points = building.ring.map(project);
+    if (points.every(([px, py]) => px < 0 || py < 0 || px > extent || py > extent)) continue;
+    // A clockwise exterior ring on screen: west-south, west-north, east-north, east-south.
+    const ring = [points[0], points[3], points[2], points[1]];
+    const geometry = [9];
+    let [cx, cy] = [0, 0];
+    ring.forEach(([px, py], position) => {
+      if (position === 1) geometry.push(2 | ((ring.length - 1) << 3));
+      geometry.push(zigzag(px - cx), zigzag(py - cy));
+      [cx, cy] = [px, py];
+    });
+    geometry.push(15);
+    values.push(field(3, 1, [...new Uint8Array(new Float64Array([building.height]).buffer)]));
+    features.push(
+      field(2, 2, [
+        ...field(1, 0, varint(index + 1)),
+        ...field(2, 2, [...varint(0), ...varint(values.length - 1)]),
+        ...field(3, 0, varint(3)),
+        ...field(4, 2, geometry.flatMap(varint)),
+      ]),
+    );
+  }
+  const layer = [
+    ...field(15, 0, varint(2)),
+    ...field(1, 2, [...Buffer.from('building')]),
+    ...features.flat(),
+    ...field(3, 2, [...Buffer.from('render_height')]),
+    ...values.flatMap((value) => field(4, 2, value)),
+    ...field(5, 0, varint(extent)),
+  ];
+  return Buffer.from(field(3, 2, layer));
+}
+const sceneStyle = (dark) => ({
+  version: 8,
+  metadata: {
+    'tileflow:fontFaces': fontFaces(base),
+    'tileflow:buildings': {
+      version: 1,
+      source: 'city',
+      layers: {building: 'building'},
+      color: dark ? '#6d7684' : '#e3d9c6',
+      edges: 0.4,
+      lighting: 'sun',
+      colorVariation: 0.2,
+      verticalGradient: true,
+      nightLight: 0,
+      windows: false,
+      shadows: true,
+      occlusion: true,
+    },
+  },
+  sources: {
+    city: {type: 'vector', tiles: [`${base}/city/{z}/{x}/{y}.mvt`], minzoom: 13, maxzoom: 15},
+  },
+  layers: [
+    {id: 'ground', type: 'background', paint: {'background-color': dark ? '#1c2129' : '#ece6da'}},
+    {
+      id: 'footprints',
+      type: 'fill',
+      source: 'city',
+      'source-layer': 'building',
+      paint: {'fill-color': dark ? '#2a313b' : '#d6ccb8'},
+    },
+  ],
+});
 const server = createServer((request, response) => {
   response.setHeader('Access-Control-Allow-Origin', '*');
   const cached = request.url.startsWith(`${cachedPrefix}/`);
@@ -179,6 +369,12 @@ const server = createServer((request, response) => {
   if (request.url === '/redirect') {
     response.writeHead(302, {Location: `${base}/archive.bin`});
     response.end();
+    return;
+  }
+  const tile = /^\/city\/(\d+)\/(\d+)\/(\d+)\.mvt$/u.exec(request.url ?? '');
+  if (tile) {
+    response.setHeader('Content-Type', 'application/vnd.mapbox-vector-tile');
+    response.end(buildingTile(...tile.slice(1).map(Number)));
     return;
   }
   if (path === '/font.woff2') {
@@ -209,6 +405,40 @@ const server = createServer((request, response) => {
                 },
               },
             },
+            nautical: {
+              defaultTheme: 'day',
+              systemThemes: {light: 'day', dark: 'night'},
+              view: {center: [2.18, 41.36], zoom: 13, bearing: 0, pitch: 0},
+              themes: {
+                day: {
+                  styleUrl: `${base}/nautical-day.json`,
+                  colorScheme: 'light',
+                  fontFaces: fontFaces(base),
+                },
+                night: {
+                  styleUrl: `${base}/nautical-night.json`,
+                  colorScheme: 'dark',
+                  fontFaces: fontFaces(base),
+                },
+              },
+            },
+            scene: {
+              defaultTheme: 'day',
+              systemThemes: {light: 'day', dark: 'night'},
+              view: {center: sceneCenter, zoom: 16.2, bearing: -20, pitch: 60},
+              themes: {
+                day: {
+                  styleUrl: `${base}/scene-day.json`,
+                  colorScheme: 'light',
+                  fontFaces: fontFaces(base),
+                },
+                night: {
+                  styleUrl: `${base}/scene-night.json`,
+                  colorScheme: 'dark',
+                  fontFaces: fontFaces(base),
+                },
+              },
+            },
           },
         }
       : path === '/light.json'
@@ -217,7 +447,13 @@ const server = createServer((request, response) => {
           ? style(true, root)
           : path === '/data.json'
             ? features
-            : null;
+            : path === '/nautical-day.json' || path === '/nautical-night.json'
+              ? nauticalStyle(path === '/nautical-night.json')
+              : path === '/nautical-data.json'
+                ? nauticalData
+                : path === '/scene-day.json' || path === '/scene-night.json'
+                  ? sceneStyle(path === '/scene-night.json')
+                  : null;
   if (!value) {
     response.statusCode = 404;
     response.setHeader('Cache-Control', 'no-store');

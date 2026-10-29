@@ -88,11 +88,21 @@ public struct TileflowMapOptions: Equatable, Sendable {
   public var cameraLimits: TileflowCameraLimits
   /// Which events the map reports. Delivery is set up by the SDK, not by the renderer's options.
   public var events: TileflowEventOptions = .init()
+  /// Shows or hides the map's 3D vegetation; nil keeps what the map's design chooses.
+  public var vegetation: Bool?
+  /// Multisampling, which smooths the thin edges of 3D buildings, trees and models. Changing it
+  /// starts a new renderer.
+  public var antialias: Bool = true
+  /// Validates each style as the renderer loads it, reporting problems as warnings. Tileflow
+  /// validates its styles when it builds them, so this is off by default. Changing it starts a
+  /// new renderer.
+  public var validatesStyle: Bool = false
 
   public init(
     viewMode: TileflowViewMode = .flat, quality: TileflowQuality? = nil,
     gestures: TileflowGestures = .init(), controls: TileflowMapControls = .init(),
-    cameraLimits: TileflowCameraLimits = .init(), events: TileflowEventOptions = .init()
+    cameraLimits: TileflowCameraLimits = .init(), events: TileflowEventOptions = .init(),
+    vegetation: Bool? = nil, antialias: Bool = true, validatesStyle: Bool = false
   ) {
     self.viewMode = viewMode
     self.quality = quality
@@ -100,6 +110,9 @@ public struct TileflowMapOptions: Equatable, Sendable {
     self.controls = controls
     self.cameraLimits = cameraLimits
     self.events = events
+    self.vegetation = vegetation
+    self.antialias = antialias
+    self.validatesStyle = validatesStyle
   }
 
   /// The renderer's options. The attribution's corner follows the layout direction.
@@ -109,6 +122,7 @@ public struct TileflowMapOptions: Equatable, Sendable {
       "viewMode": .string(viewMode.rawValue), "quality": .string(quality.rawValue),
       "gestures": try gestures.wireValue(), "limits": try cameraLimits.wireValue(),
       "attribution": .string(controls.attributionPosition.corner(rightToLeft: rightToLeft)),
+      "vegetation": vegetation.map(JSONValue.bool) ?? .null,
     ])
   }
 

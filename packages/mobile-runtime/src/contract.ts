@@ -30,6 +30,17 @@ export const protocol = {
     'unproject',
     'setVisibility',
     'queryAtPoint',
+    'setViewMode',
+    'setSun',
+    'setEmphasis',
+    'setStyleState',
+    'getRouteInks',
+    'setBoundaryValues',
+    'setImages',
+    'setDepthMarkers',
+    'animateLineProgress',
+    'playShot',
+    'stopAnimation',
     'dispose',
   ],
   eventLevels: ['essential', 'camera', 'continuous'],
@@ -47,6 +58,15 @@ export const protocol = {
       level: 'essential',
     },
     themeChanged: {
+      level: 'essential',
+    },
+    themeTransition: {
+      level: 'essential',
+    },
+    animationEnded: {
+      level: 'essential',
+    },
+    shotCue: {
       level: 'essential',
     },
     warning: {
@@ -108,6 +128,8 @@ export const protocol = {
     'processTerminated',
     'contentRestore',
     'scene',
+    'invalidImage',
+    'unknownLayer',
   ],
   errors: {
     invalidSource: {

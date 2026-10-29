@@ -127,7 +127,9 @@ jobs:
 
   capture-smoke:
     name: Capture smoke (${{ matrix.os }}, Node ${{ matrix.node }}, ${{ matrix.suite }})
-    runs-on: ${{ matrix.os }}
+    # Only trusted main executions may use the persistent local Mac.
+    # Pull requests and merge queues retain GitHub-hosted isolation.
+    runs-on: ${{ matrix.os == 'macos-latest' && vars.SDK_LOCAL_MACOS == 'true' && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && fromJSON('["self-hosted", "macOS", "ARM64", "tileflow-sdk"]') || matrix.os }}
     timeout-minutes: 30
     strategy:
       fail-fast: false

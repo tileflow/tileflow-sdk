@@ -313,6 +313,10 @@ final class ResourceCacheStore: @unchecked Sendable {
   /// Entries dropped because they failed verification since the store opened.
   var droppedEntries: Int { lock.withLock { dropped } }
 
+  /// The largest pinned body, such as one resource of a downloaded region: the largest the
+  /// Hosted offline pack contract allows.
+  static let maximumPinnedEntryBytes = 32 * 1024 * 1024
+
   /// The largest body stored: one eighth of the budget, at most 16 MiB.
   var maximumEntryBytes: Int64 { lock.withLock { min(budget / 8, 16 * 1024 * 1024) } }
 
@@ -342,7 +346,7 @@ final class ResourceCacheStore: @unchecked Sendable {
   /// Starts writing an entry. The returned writer stores nothing until it commits.
   func writer(for key: ResourceCacheKey, retention: ResourceCacheRetention) -> ResourceCacheWriter?
   {
-    let limit = retention == .pinned ? 16 * 1024 * 1024 : maximumEntryBytes
+    let limit = retention == .pinned ? Int64(Self.maximumPinnedEntryBytes) : maximumEntryBytes
     guard limit > 0 else { return nil }
     let staging = root(retention).appendingPathComponent(
       "staging/\(stagingName)", isDirectory: true)

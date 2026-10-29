@@ -1,35 +1,52 @@
 # Mobile offline regions contract
 
-The Swift and Kotlin SDKs plan offline regions in native code, independently of the renderer. This
-document describes what exists today: region geometry and its tile cover, the Hosted pack client,
-planning and estimates, and the per-device limit. Storing packs, downloading them in the background
-and serving them to the map through the native transport are not implemented yet; the types below
-are shaped so they can build on them. Source of truth: `platforms/ios/Sources/Tileflow/Offline/` and
+The Swift and Kotlin SDKs download offline regions in native code, independently of the renderer.
+This document describes region geometry and its tile cover, the Hosted pack client, planning and
+estimates, the per-device limit, the store that downloads, verifies, keeps and updates regions, and
+how maps use stored regions without a network. Source of truth: `platforms/ios/Sources/Tileflow/Offline/` and
 `platforms/android/tileflow/src/main/java/dev/tileflow/sdk/offline/`.
 
 ## Public API
 
-Following Mapbox's offline API, a region is an area plus load options (themes and zooms), and an
-application estimates a region before downloading it. Only the area is public today; load
-options, estimates, the pack client and the device limit stay internal until regions can be stored
-and downloaded, so their shape can still change with the store.
+The API follows Mapbox's offline API: a region is an identifier, an area and load options; an
+application estimates a region, loads it, lists and observes regions, and pauses, resumes, cancels
+or removes them. Loading a stored region again updates it.
 
-| Swift                                                     | Kotlin                                                             |
-| --------------------------------------------------------- | ------------------------------------------------------------------ |
-| `TileflowOfflineGeometry.boundingBox(_:)`                 | `TileflowOfflineGeometry.BoundingBox(box)`                         |
-| `TileflowOfflineGeometry.polygon(_:)`                     | `TileflowOfflineGeometry.Polygon(ring)`                            |
-| `TileflowOfflineGeometry.corridor(line:width:)`           | `TileflowOfflineGeometry.Corridor(line, width)`                    |
-| `validate()`, `tileCount(zoom:)`, `tileCount(zoomRange:)` | `validate()`, `tileCount(zoom)`, `tileCount(zoomRange)`            |
-| `TileflowOfflineError` (`code`, `context`, `retryAfter`)  | `TileflowOfflineException` (`code`, `context`, `retryAfterMillis`) |
+| Swift                                                                             | Kotlin                                                                         |
+| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `TileflowOfflineStore.shared`                                                     | `TileflowOfflineStore.get(context)`                                            |
+| `estimateRegion(_:)`                                                              | `estimateRegion(options)`                                                      |
+| `loadRegion(id:options:)`                                                         | `loadRegion(id, options)`                                                      |
+| `allRegions()`, `region(id:)`                                                     | `allRegions()`, `region(id)`                                                   |
+| `pauseRegion(id:)`, `resumeRegion(id:)`, `cancelRegion(id:)`, `removeRegion(id:)` | `pauseRegion(id)`, `resumeRegion(id)`, `cancelRegion(id)`, `removeRegion(id)`  |
+| `subscribe(_:)` → `TileflowOfflineSubscription`                                   | `subscribe(handler)` → `TileflowOfflineSubscription`                           |
+| `handleEventsForBackgroundURLSession(identifier:completionHandler:)`              | (WorkManager; nothing to forward)                                              |
+| `TileflowOfflineRegionLoadOptions`                                                | `TileflowOfflineRegionLoadOptions`                                             |
+| `TileflowOfflineContent.hosted(mapID:themes:)`, `.manifest(url:map:sources:)`     | `TileflowOfflineContent.Hosted(mapId, themes)`, `.Manifest(url, map, sources)` |
+| `TileflowOfflineSwitch.shared.isNetworkEnabled`                                   | `TileflowOfflineSwitch.isNetworkEnabled`                                       |
+| `TileflowOfflineTileSource`                                                       | `TileflowOfflineTileSource`                                                    |
+| `TileflowOfflineNetworkRestriction` (`none`, `disallowExpensive`)                 | `TileflowOfflineNetworkRestriction` (`NONE`, `DISALLOW_EXPENSIVE`)             |
+| `TileflowOfflineRegion` (`DownloadState`, `UpdateState`)                          | `TileflowOfflineRegion` (`DownloadState`, `UpdateState`)                       |
+| `TileflowOfflineRegionEvent` (`changed`, `removed`)                               | `TileflowOfflineRegionEvent` (`Changed`, `Removed`)                            |
+| `TileflowOfflineRegionEstimate`                                                   | `TileflowOfflineRegionEstimate`                                                |
+| `TileflowOfflineGeometry` (`boundingBox`, `polygon`, `corridor(line:width:)`)     | `TileflowOfflineGeometry` (`BoundingBox`, `Polygon`, `Corridor`)               |
+| `TileflowOfflineError` (`code`, `context`, `retryAfter`)                          | `TileflowOfflineException` (`code`, `context`, `retryAfterMillis`)             |
 
-Neither platform exposes renderer or WebView types.
+Load options hold the geometry, the content, `minZoom` (0), `maxZoom` (15), `terrainMaxZoom` (12),
+the network restriction and application metadata. A region reports its download state
+(`downloading`, `waiting`, `paused`, `failed`, `complete`), whether a complete version is stored
+(`isAvailable`), required and completed resources and bytes, its billable resources, the error and
+retry time of a waiting or failed download, when the stored version completed, and what the last
+update check found. Neither platform exposes renderer or WebView types. The pack client, the
+manifest, the planner and the device limit stay internal.
 
 ## Regions and tile cover
 
 - A **bounding box** may cross the antimeridian: as in GeoJSON, a west edge greater than the east
   edge does, and the region downloads as two packs.
 - A **polygon** is one ring of 3 to 255 distinct positions, open or closed, without holes. A ring
-  that crosses itself covers its even-odd interior.
+  that crosses itself covers its even-odd interior, even when its signed areas cancel; a ring whose
+  positions all lie on one line is refused as `emptyArea`.
 - A **corridor** is the area within half of `width` metres of a line of 2 to 10,000 positions,
   with `width` from 1 to 100,000 metres. Consecutive positions more than 180° of longitude apart
   are refused as crossing the antimeridian.
@@ -75,7 +92,8 @@ reports whether it can still be updated.
   configuration's rule (HTTPS, or HTTP on a loopback host for local development).
 - Requests are never retried. Each refusal is a typed error carrying the API's code as the context's
   `reason`, the HTTP status, the pack `limit` when one applies and the `Retry-After` wait (at most
-  one day). Cancelling the calling task or coroutine cancels the request.
+  one day). Cancelling the calling task or coroutine cancels the request. A creation answer is
+  read up to 8 MiB, the service's own bound; 50,000 resources measure about 1.4 MB.
 - The pack grant is opaque: it is kept only to download the pack's own resources and to
   revalidate, and descriptions never include it.
 
@@ -120,8 +138,10 @@ reasons stay open strings. Everything the SDK reads is checked:
 
 From a created pack the planner lists every resource (documents, then each source's tiles with the
 URL the renderer requests), with exact bytes, the hash when the API knows it before download,
-whether it is billable and whether it is public. Public resources, such as landmarks, mobile
-discovery and the profile manifest, are fetched without the grant and count toward nothing.
+whether it is billable and whether it is public. Public resources, such as landmarks, Team 3D
+models at their stable `current.glb` address, mobile discovery and the profile manifest, are
+fetched without the grant and count toward nothing. The discovery and profile routes refuse a
+request that carries the grant.
 
 An estimate reports the resource, billable and public counts, exact bytes, tiles per source and the
 map views a download is billed: one per started 1,000 billable resources. Given the resources a
@@ -130,7 +150,11 @@ without billing them.
 
 For a self-hosted style, the estimate counts the cover at each source's zooms, optionally stopping a
 source before its deepest zoom. Bytes stay unknown, since a TileJSON does not list tile sizes, and
-nothing is billed.
+nothing is billed. The style's sprites and glyph ranges are added when the download reads the style.
+
+A Hosted estimate creates the region's packs, which is free, and counts map views per pack for the
+billable resources the device does not hold yet. Loading the same region while at least ten
+minutes of the packs' download window remain reuses them instead of creating them again.
 
 ## Per-device limit
 
@@ -141,3 +165,138 @@ device holds, what the download adds that the device does not hold yet, and what
 such as the previous version of the pack it updates. A download that does not grow the total is
 accepted even above the limit, so a lower limit never stops updates. Access ending never deletes
 or encrypts a downloaded pack; it only stops updates.
+
+## Store
+
+The store keeps one record per region under `<durable root>/dev.tileflow/offline-v1/` (iOS
+Application Support, Android `noBackupFilesDir`), excluded from backups. Resource bodies live in the
+resource cache's pinned partition under the transport's own keys: grant resources in the scope of
+the pack's API origin and Map, public and self-hosted resources in the shared scope. A resource is
+stored once per key and shared by every region version that lists it.
+
+- A record names the version the region serves (`active`), the one downloading (`pending`) and a
+  replaced version still being released (`retired`), or a removal in progress. Records are written
+  through a temporary file and a rename; each version's created packs (or self-hosted plan) are
+  written before the record that refers to them.
+- A version's stored resources are appended to its progress log (`<digest> <bytes>` per line,
+  synced in batches of 64). A line cut short by a crash is ignored; its resource is requested again
+  with `If-None-Match` and answered with a free `304`.
+- A version becomes `active` only when every resource is stored and verified, by one record
+  replacement. While an update downloads, a changed body of a resource the stored version uses waits
+  in the version's staging directory and enters the pinned partition when the update completes, so
+  the stored version never mixes in an unfinished update.
+- Removing a region, cancelling an update or retiring a replaced version releases only the keys no
+  other region version references. The step is recorded first and finished when the store opens
+  again after a crash.
+- The device's billable total is the number of distinct billable keys across every region's
+  versions. Loading a version checks it against the plan's `maxPackResources` before anything
+  downloads.
+
+## Downloads
+
+Each region's download is one loop: plan the missing resources, check free space, renew grants
+whose window ends within five minutes, download a pass, and act on how the pass ended.
+
+- Each resource is requested at its manifest URL with `X-Tileflow-Offline-Grant` when it needs the
+  grant, without it when public, and with `If-None-Match` when a copy is stored. A stored document
+  whose SHA-256 is the manifest's is not requested at all. No other header is added.
+- A `200` body is stored only when it matches the manifest: its size and SHA-256 (the manifest's,
+  else the `ETag`'s) agree either as delivered or, for a body the client decoded, as received on the
+  wire. Android reads the raw bytes and checks both size and hash on the wire. iOS `URLSession`
+  decodes gzip transparently and never exposes the encoded bytes, so for a decoded body iOS checks
+  the wire size (`Content-Length`, which a completed transfer matches) and that the `ETag` names the
+  manifest's hash, and relies on TLS for the bytes in between; gzip's own checksum rejects a
+  corrupted body. World tiles, the gzip-encoded resources, have no manifest hash in any case. If
+  the manifest also listed the decoded size and hash, iOS could check decoded bodies fully; that is
+  a possible contract addition, not built. A mismatch is retried twice before the download fails.
+- A grant refused as invalid, expired or stale, a superseded style or TileJSON, a resource the
+  Map no longer delivers, or a resource refused as outside the pack creates that pack again, at
+  most three times per download. Stored resources whose size and hash the new manifest repeats are
+  kept.
+- Recoverable refusals (`RATE_LIMITED`, the daily limit, unavailability) wait for the service's
+  `Retry-After`; a missing network waits with backoff up to five minutes, or until the network
+  returns. Other refusals stop the download as `failed` with their typed error; resuming tries
+  again.
+- Free space is checked before a pass (the remaining Hosted bytes plus a 64 MiB reserve) and after
+  every 16 stored resources. Running short, or a write that fails, stops the download as `failed`
+  with `insufficientStorage`; what was stored stays.
+- On iOS each resource is one background `URLSession` download task, at most 64 at a time, so
+  transfers continue while the app is suspended or after the system terminated it. Applications
+  forward `application(_:handleEventsForBackgroundURLSession:completionHandler:)` to the store. A
+  transfer that finished while no process waited for it is delivered when the download asks for the
+  same resource again, and a transfer still running is joined. `disallowExpensive` sets
+  `allowsExpensiveNetworkAccess = false` on each request.
+- On Android each region's download is unique WorkManager work, requiring a connected network, or
+  an unmetered one for `DISALLOW_EXPENSIVE`. WorkManager runs it again after the process ends or the
+  constraint returns; a wait longer than a minute ends the work and schedules it for when the wait
+  ends.
+- A download that was running when the process ended continues when the store is next used, and
+  pausing, cancelling and removing stop its transfers.
+
+## Updates
+
+Stored Hosted regions are revalidated when the network returns, and at most once per the service's
+interval (one day). A just-completed download counts as checked. `update_available` is reported as
+`updateAvailable`; loading the region again creates its packs again and downloads with
+`If-None-Match`, so only changed resources are downloaded and billed. `not_updatable` is reported
+with the service's reason and stops further checks. Nothing is ever deleted or encrypted because
+access ended. Self-hosted regions are not checked; loading them again revalidates every resource.
+
+## Self-hosted regions
+
+A self-hosted region is a map of a versioned manifest you serve, as `TileflowMapSource` names it,
+and its tile sources, each a URL template with its own zooms. The download reads the manifest and
+every theme style of the map, and stores them with the font files the manifest and styles name
+(`tileflow:fontFaces`), the TileJSON and GeoJSON documents their sources name, their sprite sheets
+(`.json` and `.png`, 1x and 2x) and every glyph range of the font stacks their symbol layers name
+literally, or the renderer's default stack for text without `text-font`. Then it downloads the
+cover at each tile source's zooms. Nothing is billed or counted toward the device limit. Sizes are
+unknown until downloaded, so a region reports its bytes once complete. A `404` or `204` tile or
+glyph range stays absent offline, as it is online. A download stores what it asked for even when
+the server marks it `no-store`: downloading a region is the application's explicit request to keep
+it.
+
+## Serving stored regions
+
+The transport answers a map's requests from stored regions without a session or grant. One rule,
+`OfflineServingRule` on both platforms, decides when; it is the recommended default, pending the
+owner's confirmation:
+
+- **With a network**, a Hosted map starts its normal session, billed as any other. Stored pack
+  entries only save downloads: each protected request carries its grant and the stored `ETag`, and
+  a `304` answers with the stored body. If the session cannot be reached (`sessionUnavailable`), a
+  stored region answers instead.
+- **Without a network** (the system reports no usable path, iOS `NWPathMonitor`, Android the active
+  network's capabilities), a Hosted map serves its protected resources from the packs of its
+  stored regions and starts no session; nothing is billed. Public documents (discovery, profile
+  manifest, landmarks, Team models) answer from the shared scope as stored copies do when the
+  network fails. A protected resource no region holds goes the usual way and fails.
+- **With the network switched off** (`TileflowOfflineSwitch`, Mapbox's offline switch), nothing
+  reaches the network: every request is answered from stored entries alone, packs and the ambient
+  cache, whatever their freshness. A resource neither holds answers at once with status 504, as an
+  HTTP cache answers `only-if-cached`, and the map reports it as a `resourceFailed` warning; a
+  missing style fails the map. Hosted maps start no session; downloads wait and continue when the
+  network is switched on again.
+
+Only regions that are complete and available serve: a region still downloading, an update not yet
+complete and a region being removed do not. The store publishes the cache paths and regional
+credits of the available regions whenever they change; a map that needs them before the store has
+opened waits for the store to read its records.
+
+**Attribution.** A map opened from stored packs shows the attribution of the stored release: the
+style and TileJSON documents are the release's own, so the renderer shows their attribution as it
+does online. Each regional credit the pack's manifest lists (World's `regionalObligations`, with
+the boxes that touch the pack) is passed to the renderer, which shows it, linked to its page, only
+while one of its boxes intersects the view, and not when a source's attribution already contains
+its text.
+
+**When access ends.** A region whose revalidation answers `not_updatable` stops serving: maps no
+longer use it and `isAvailable` is false, while its files stay on the device, neither deleted nor
+encrypted. One internal switch, `servesRegionsAfterAccessEnds` (Kotlin
+`SERVES_REGIONS_AFTER_ACCESS_ENDS`), keeps serving such regions instead; the default awaits the owner
+and counsel.
+
+**Backups.** A device is one app installation: nothing stored for offline use is backed up. iOS
+excludes the pinned partition (`<Application Support>/dev.tileflow/resources-v1`) and the store's
+records (`<Application Support>/dev.tileflow/offline-v1`) from backups; Android keeps both under
+`noBackupFilesDir`, which Auto Backup and device transfers skip.

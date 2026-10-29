@@ -107,7 +107,12 @@ internal class OfflinePackManifest(
     val downloadExpiresAtMillis: Long,
 )
 
-internal class OfflinePack(val grant: OfflinePackGrant, val manifest: OfflinePackManifest)
+/** A created pack; [response] is the service's answer as received, which the store keeps. */
+internal class OfflinePack(
+    val grant: OfflinePackGrant,
+    val manifest: OfflinePackManifest,
+    val response: ByteArray,
+)
 
 /** Whether a downloaded pack can still be updated. Access ending never deletes it. */
 internal sealed class OfflinePackRevalidation {
@@ -141,6 +146,9 @@ internal sealed class OfflinePackRevalidation {
  * them, are checked.
  */
 internal object OfflinePackContract {
+    /** The largest creation answer the service sends; 50,000 resources measure about 1.4 MB. */
+    const val MAXIMUM_RESPONSE_BYTES = 8 * 1024 * 1024
+
     enum class Operation {
         CREATE,
         REVALIDATE,
@@ -160,7 +168,7 @@ internal object OfflinePackContract {
             require(value.opt("version") == 1 && value.opt("kind") == "offline_pack")
             val grant = OfflinePackGrant.of(value.opt("grant") as? String ?: "")!!
             val manifest = value.getJSONObject("manifest")
-            OfflinePack(grant, manifest(manifest, request, allowsLoopbackHttp))
+            OfflinePack(grant, manifest(manifest, request, allowsLoopbackHttp), bytes)
         }
 
     fun manifest(
@@ -192,7 +200,8 @@ internal object OfflinePackContract {
         val daily = integer(limits.opt("dailyDownloads"), 0)!!
         val revalidation = value.getJSONObject("revalidation")
         val interval = integer(revalidation.opt("intervalSeconds"), 1)!!
-        require(revalidation.opt("url") is String)
+        // Always absolute on the service's origin; the SDK revalidates at its configured origin.
+        requireNotNull(resourceUrl(revalidation.opt("url"), allowsLoopbackHttp))
         val attributionValues = value.getJSONObject("attribution").getJSONArray("sources")
         val attribution =
             (0 until attributionValues.length()).map { attributionValues.opt(it) as JSONObject }

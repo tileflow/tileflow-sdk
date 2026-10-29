@@ -122,8 +122,12 @@ class OfflineTest {
             }
             val body = item.getJSONObject("body")
             val box = body.getJSONObject("region").getJSONArray("bbox")
-            val options =
-                TileflowOfflineRegionLoadOptions(
+            val built = runCatching {
+                OfflinePackRequest.requests(
+                    body.getString("mapId"),
+                    body.getJSONArray("themes").let { themes ->
+                        (0 until themes.length()).map { themes.getString(it) }
+                    },
                     TileflowOfflineGeometry.BoundingBox(
                         TileflowBoundingBox(
                             box.getDouble(0),
@@ -132,16 +136,11 @@ class OfflineTest {
                             box.getDouble(3),
                         )
                     ),
-                    body.getJSONArray("themes").let { themes ->
-                        (0 until themes.length()).map { themes.getString(it) }
-                    },
                     OfflineZooms(
                         body.getInt("minZoom")..body.getInt("maxZoom"),
                         body.optInt("terrainMaxZoom", OfflineZooms.DEFAULT_TERRAIN_MAXIMUM),
                     ),
                 )
-            val built = runCatching {
-                OfflinePackRequest.requests(body.getString("mapId"), options)
             }
             if (item.has("canonical")) {
                 assertJson(
@@ -173,18 +172,18 @@ class OfflineTest {
         assertEquals(12..12, zooms.zooms(0, minOf(14, zooms.terrainMaximum)))
 
         val estimate = OfflinePlanner.estimate(manifest)
-        assertEquals(37L, estimate.resourceCount)
+        assertEquals(38L, estimate.resourceCount)
         assertEquals(30L, estimate.billableResourceCount)
-        assertEquals(6L, estimate.publicResourceCount)
-        assertEquals(1_724_734L, estimate.bytes)
+        assertEquals(7L, estimate.publicResourceCount)
+        assertEquals(1_974_920L, estimate.bytes)
         assertEquals(mapOf("terrain" to 2L, "world" to 17L), estimate.tileCounts)
         assertEquals(1L, estimate.mapViews)
         assertEquals(0L, OfflinePlanner.estimate(manifest) { true }.mapViews)
 
         val resources = OfflinePlanner.resources(manifest).toList()
-        assertEquals(37, resources.size)
+        assertEquals(38, resources.size)
         assertEquals(30, resources.count { it.billable })
-        assertEquals(1_724_734L, resources.sumOf { it.bytes ?: 0 })
+        assertEquals(1_974_920L, resources.sumOf { it.bytes ?: 0 })
         assertTrue(resources.filter { it.isPublic }.all { !it.billable && it.sha256 != null })
         val world = manifest.tiles[1]
         assertEquals(
@@ -212,9 +211,9 @@ class OfflineTest {
                         it.put(
                             "totals",
                             JSONObject()
-                                .put("resources", 37)
+                                .put("resources", 38)
                                 .put("billableResources", 29)
-                                .put("bytes", 1_724_734),
+                                .put("bytes", 1_974_920),
                         )
                     },
                 "public billable" to
@@ -664,13 +663,9 @@ class OfflineTest {
     private fun createdRequest() =
         OfflinePackRequest.requests(
             "map_offlineofflineof",
-            TileflowOfflineRegionLoadOptions(
-                TileflowOfflineGeometry.BoundingBox(
-                    TileflowBoundingBox(-3.71, 40.41, -3.69, 40.425)
-                ),
-                listOf("light", "dark"),
-                OfflineZooms(12..15),
-            ),
+            listOf("light", "dark"),
+            TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(-3.71, 40.41, -3.69, 40.425)),
+            OfflineZooms(12..15),
         )[0]
 
     private fun createdPack() =

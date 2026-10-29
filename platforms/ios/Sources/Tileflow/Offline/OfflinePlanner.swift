@@ -14,21 +14,22 @@ struct OfflineResource: Sendable, Hashable {
 
 /// What downloading a region costs, after Mapbox's tile region estimates: resources, bytes and,
 /// for Hosted packs, the map views it is billed.
-struct TileflowOfflineRegionEstimate: Sendable, Hashable {
-  /// Every resource of the region, including free public ones.
-  let resourceCount: Int
+public struct TileflowOfflineRegionEstimate: Sendable, Hashable {
+  /// Every resource of the region, including free public ones. A self-hosted estimate counts
+  /// tiles only: the style's sprites and glyphs are known once the style is read.
+  public let resourceCount: Int
   /// Resources counted toward map views and the plan's limits.
-  let billableResourceCount: Int
+  public let billableResourceCount: Int
   /// Free public resources, such as landmarks, which count toward nothing.
-  let publicResourceCount: Int
-  /// Exact bytes on the wire for a Hosted pack; nil when a source does not expose its sizes.
-  let bytes: Int?
-  /// Tiles per source, the tiles each source stores in the region for a Hosted pack and the
+  public let publicResourceCount: Int
+  /// Exact bytes on the wire for Hosted content; nil when sizes are unknown.
+  public let bytes: Int?
+  /// Tiles per source: those each source stores in the region for Hosted content, and the
   /// region's cover for a self-hosted source.
-  let tileCounts: [String: Int]
-  /// Map views a complete download is billed: one per started 1,000 billable resources. An update
-  /// is billed only for the resources that changed.
-  let mapViews: Int
+  public let tileCounts: [String: Int]
+  /// Map views the download is billed: one per started 1,000 billable resources the device does
+  /// not hold yet, per pack. Resources already stored are revalidated for free.
+  public let mapViews: Int
 }
 
 /// Plans a region from a Hosted manifest or from self-hosted sources.

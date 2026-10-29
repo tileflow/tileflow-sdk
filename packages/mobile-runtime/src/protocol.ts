@@ -10,6 +10,7 @@ import {
 } from './camera-contract';
 import {contentSchema} from './content-contract';
 import {protocol} from './contract';
+import {creditSchema} from './credits';
 import {type DataReference, dataReferenceSchema} from './data';
 import {ProtocolError, type WireError} from './errors';
 import {
@@ -140,6 +141,8 @@ const initializeSchema = z.strictObject({
   colorScheme: z.enum(['light', 'dark']).default('light'),
   options: mapOptionsSchema.prefault({}),
   insets: insetsSchema.optional(),
+  /** Regional credits of the downloaded regions a Hosted map opened from. */
+  credits: z.array(creditSchema).max(64).default([]),
   renderer: rendererOptionsSchema.prefault({}),
   events: subscriptionsSchema.default(essentialSubscriptions),
 });

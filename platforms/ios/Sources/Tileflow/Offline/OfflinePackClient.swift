@@ -35,15 +35,6 @@ struct OfflineZooms: Sendable, Hashable {
   }
 }
 
-/// What a Hosted region downloads, after Mapbox's tile region load options: the area, the Map's
-/// themes and the zooms.
-struct TileflowOfflineRegionLoadOptions: Sendable, Hashable {
-  var geometry: TileflowOfflineGeometry
-  /// 1 to 4 theme names of the Map; a single-style Map's theme is `default`.
-  var themes: [String]
-  var zooms: OfflineZooms
-}
-
 /// The renderer whose styles a pack holds.
 enum OfflinePackProfile: String, Sendable {
   case webView = "webview-v1"
@@ -63,24 +54,24 @@ struct OfflinePackRequest: Sendable, Hashable {
 
   static let maximumBodyBytes = 65_536
 
-  /// One request for each pack the options need: a corridor or a box across the antimeridian
+  /// One request for each pack a region needs: a corridor or a box across the antimeridian
   /// downloads as several packs.
   static func requests(
-    mapID: String, options: TileflowOfflineRegionLoadOptions,
-    profile: OfflinePackProfile = .webView
+    mapID: String, themes requested: [String], geometry: TileflowOfflineGeometry,
+    zooms: OfflineZooms, profile: OfflinePackProfile = .webView
   ) throws -> [OfflinePackRequest] {
     guard HostedContract.matches(mapID, #"^map_[A-Za-z0-9_-]{16}$"#) else {
       throw TileflowOfflineError.options("invalidMapID")
     }
-    let themes = Array(Set(options.themes)).sorted()
-    guard (1...4).contains(options.themes.count), themes.count == options.themes.count,
+    let themes = Array(Set(requested)).sorted()
+    guard (1...4).contains(requested.count), themes.count == requested.count,
       themes.allSatisfy({ HostedContract.matches($0, #"^[A-Za-z][A-Za-z0-9_-]{0,63}$"#) })
     else { throw TileflowOfflineError.options("invalidThemes") }
-    return try options.geometry.packRegions().map { region in
+    return try geometry.packRegions().map { region in
       let request = OfflinePackRequest(
         mapID: mapID, profile: profile.rawValue, themes: themes, region: region,
-        minZoom: options.zooms.range.lowerBound, maxZoom: options.zooms.range.upperBound,
-        terrainMaxZoom: options.zooms.terrainMaximum)
+        minZoom: zooms.range.lowerBound, maxZoom: zooms.range.upperBound,
+        terrainMaxZoom: zooms.terrainMaximum)
       guard request.body.count <= maximumBodyBytes else {
         throw TileflowOfflineError.region("tooManyPositions")
       }
@@ -118,7 +109,8 @@ struct OfflinePackClient: Sendable {
   /// credential can still revalidate packs.
   init(
     configuration: TileflowConfiguration,
-    transport: any NativeHTTPTransporting = NativeHTTPTransport(maximumBytes: 16 * 1024 * 1024),
+    transport: any NativeHTTPTransporting = NativeHTTPTransport(
+      maximumBytes: OfflinePackContract.maximumResponseBytes),
     now: @escaping @Sendable () -> Date = Date.init
   ) throws {
     guard

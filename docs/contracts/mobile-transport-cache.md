@@ -101,7 +101,10 @@ and counts it as dropped. Opening a store removes other stores' staging director
   before ambient entries, are never evicted, never count against the budget and are never removed
   by `clear()`. Their owner, for example a store of downloaded regions, tracks which keys it holds
   and removes them explicitly. A pinned entry is served while fresh, revalidated when stale and
-  served stale when the network fails; its owner is responsible for retiring expired content.
+  served stale when the network fails; its owner is responsible for retiring expired content. A
+  pinned body may hold up to 32 MiB, the largest resource a Hosted offline pack lists. Pinned
+  entries of a Hosted map's grant scope are also served without a session when the map has no
+  network, as [Mobile offline regions](mobile-offline.md#serving-stored-regions) describes.
 
 ## Runtime start-up
 
@@ -131,8 +134,9 @@ internal types: `ResourceCacheKey(url:scope:)` for the exact key the transport l
 `TileflowResourceClass.classify` for the partition, `ResourceCacheStore.writer(for:retention:)` with
 `.pinned` to stream an entry in, `ResourceCacheMetadata` for its headers and freshness, and
 `removePinned` to retire entries. The process-wide switch `TileflowHTTPClient.isNetworkEnabled`
-(Kotlin `TileflowHttpClient.networkEnabled`) makes every request fail as if offline, so only stored
-resources answer. Range requests are not cached today.
+(Kotlin `TileflowHttpClient.networkEnabled`), public as `TileflowOfflineSwitch`, keeps every request
+off the network: only stored entries answer, and a miss answers 504. Range requests are not cached
+today.
 
 ## Public API
 

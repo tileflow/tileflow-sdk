@@ -23,8 +23,11 @@ export function parseTileflowMobileDiscovery(
   if (typeof discoveryUrl !== 'string' || discoveryUrl.length > 2048) return fail();
   const url = parseNativeUrl(discoveryUrl);
   const match = /^\/maps\/(map_[A-Za-z0-9_-]{16})\/mobile\/manifest\.json$/u.exec(url.pathname);
-  if (!match || url.protocol !== 'https:' || discoveryUrl !== `${url.origin}${url.pathname}`)
-    return fail();
+  // HTTPS, or HTTP on a loopback host for a local development API, as native configurations allow.
+  const secure =
+    url.protocol === 'https:' ||
+    (url.protocol === 'http:' && (url.hostname === '127.0.0.1' || url.hostname === 'localhost'));
+  if (!match || !secure || discoveryUrl !== `${url.origin}${url.pathname}`) return fail();
   const record = (candidate: unknown): candidate is Record<string, unknown> =>
     candidate !== null && typeof candidate === 'object' && !Array.isArray(candidate);
   if (

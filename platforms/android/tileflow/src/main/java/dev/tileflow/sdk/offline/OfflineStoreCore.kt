@@ -153,7 +153,7 @@ internal class OfflineStoreCore(
                 for (credit in list) if (merged.none { it.id == credit.id }) merged.add(credit)
             }
         }
-        index.publish(OfflineServingSnapshot(paths, credits))
+        index.publish(OfflineServingSnapshot(paths, credits), this)
     }
 
     /** The regional credits of a Hosted version's packs, by the cache scope of their Map. */
@@ -548,8 +548,7 @@ internal class OfflineStoreCore(
                 return OfflineDriveResult.Settled
             }
             val needed = remaining.sumOf { it.bytes ?: 0 }
-            val available = availableBytes()
-            if (available != null && available < needed + reserveBytes) {
+            if (!OfflineStorage.hasRoom(needed + reserveBytes, availableBytes, cache)) {
                 lock.withLock {
                     update(id) {
                         it.failed(

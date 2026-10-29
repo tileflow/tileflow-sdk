@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {createRequire} from 'node:module';
 import {dirname, resolve} from 'node:path';
+import {createHostedFixture} from './mobile-fixture-hosted.mjs';
 
 const require = createRequire(import.meta.url);
 const fontRoot = dirname(require.resolve('@fontsource/noto-sans/package.json'));
@@ -344,8 +345,11 @@ const sceneStyle = (dark) => ({
     },
   ],
 });
+// A Hosted map with sessions and offline packs, drawn from the city tiles.
+const hosted = createHostedFixture({base, tile: buildingTile, center: sceneCenter});
 const server = createServer((request, response) => {
   response.setHeader('Access-Control-Allow-Origin', '*');
+  if (hosted(request, response)) return;
   const cached = request.url.startsWith(`${cachedPrefix}/`);
   const path = cached ? request.url.slice(cachedPrefix.length) : request.url;
   const root = cached ? `${base}${cachedPrefix}` : base;

@@ -218,8 +218,12 @@ whose window ends within five minutes, download a pass, and act on how the pass 
   returns. Other refusals stop the download as `failed` with their typed error; resuming tries
   again.
 - Free space is checked before a pass (the remaining Hosted bytes plus a 64 MiB reserve) and after
-  every 16 stored resources. Running short, or a write that fails, stops the download as `failed`
-  with `insufficientStorage`; what was stored stays.
+  every 16 stored resources, as the system reports space it can make available, cached data
+  included: iOS `volumeAvailableCapacityForImportantUsage`, which counts purgeable space, and
+  Android `StorageManager.getAllocatableBytes`, which counts cached data the system may clear (the
+  free space where it cannot answer). When that falls short, the store clears the ambient map
+  cache, which maps rebuild as they need, and checks again. Still short, or a write that fails,
+  stops the download as `failed` with `insufficientStorage`; what was stored stays.
 - On iOS each resource is one background `URLSession` download task, at most 64 at a time, so
   transfers continue while the app is suspended or after the system terminated it. Applications
   forward `application(_:handleEventsForBackgroundURLSession:completionHandler:)` to the store. A
@@ -278,6 +282,7 @@ owner's confirmation:
   missing style fails the map. Hosted maps start no session; downloads wait and continue when the
   network is switched on again.
 
+Every store in the process publishes the regions it holds, and maps use the regions of all of them.
 Only regions that are complete and available serve: a region still downloading, an update not yet
 complete and a region being removed do not. The store publishes the cache paths and regional
 credits of the available regions whenever they change; a map that needs them before the store has
@@ -300,3 +305,18 @@ and counsel.
 excludes the pinned partition (`<Application Support>/dev.tileflow/resources-v1`) and the store's
 records (`<Application Support>/dev.tileflow/offline-v1`) from backups; Android keeps both under
 `noBackupFilesDir`, which Auto Backup and device transfers skip.
+
+## Tests
+
+- The mobile fixture server (`scripts/mobile-fixture-server.mjs`) also serves a minimal Hosted map,
+  `map_offlinefixture01`: session start, discovery and the WebView profile manifest, one versioned
+  style with its TileJSON and vector tiles, Hosted offline packs (creation, grant-authorized
+  downloads with `ETag` and `304`, revalidation) and counters at `/__fixture/hosted`
+  (`scripts/mobile-fixture-hosted.mjs`). A Hosted map on a loopback HTTP API origin loads its
+  discovery document over loopback HTTP, as Core accepts it for local development APIs.
+- Airplane mode is tested with real rendering on Mac Catalyst (`MapIntegrationTests`) and on an
+  Android emulator (`MapOfflineIntegrationTest`): a self-hosted region and a Hosted pack are
+  downloaded from the fixture server, then shown with the network switched off, with nothing
+  reaching the network and no session; online, the Hosted map starts its session and its stored
+  resources revalidate as `304`. Both need the fixture server; Android also needs
+  `adb reverse tcp:18645 tcp:18645`.

@@ -110,6 +110,25 @@ final class OfflineStoreTests: XCTestCase {
     XCTAssertEqual(Set(service.downloads.map(\.url)).count, service.downloads.count)
   }
 
+  func testAFullDiskFirstMakesRoomFromTheMapCache() async throws {
+    let service = OfflineServiceStub()
+    let cache = self.cache
+    let url = URL(string: "https://maps.example.com/style.json")!
+    let body = Data("cached".utf8)
+    XCTAssertTrue(
+      cache.write(
+        ResourceCacheKey(url: url, scope: .shared), retention: .ambient,
+        metadata: ResourceCacheMetadata(
+          url: url, status: 200, headers: ["Cache-Control": "max-age=60"], responseTime: Date(),
+          protected: false, body: (body.count, DataChannel.digest(body))), body: body))
+    // The disk is full until the map cache is cleared.
+    let store = makeStore(service, available: { cache.usage().bytes > 0 ? 1024 : nil })
+    try await store.loadRegion(id: "madrid", options: madrid())
+    let done = try await waitFor(store, "madrid") { $0.state == .complete }
+    XCTAssertTrue(done.isAvailable)
+    XCTAssertEqual(cache.usage().entries, 0)
+  }
+
   func testFiftyThousandResourcePack() async throws {
     let service = OfflineServiceStub()
     service.tileLimit = 49_998
@@ -463,7 +482,8 @@ final class OfflineStoreTests: XCTestCase {
   private func makeStore(
     _ service: OfflineServiceStub, root: String = "offline", space: LockedValue<Int64?>? = nil,
     sleeps: LockedValue<[TimeInterval]>? = nil, concurrency: Int = 8,
-    fetcher: (any OfflineResourceFetching)? = nil, index: OfflineServingIndex? = nil
+    fetcher: (any OfflineResourceFetching)? = nil, index: OfflineServingIndex? = nil,
+    available: (@Sendable () -> Int64?)? = nil
   ) -> TileflowOfflineStore {
     let cache =
       root == "offline"
@@ -485,7 +505,8 @@ final class OfflineStoreTests: XCTestCase {
             configuration: configuration, transport: service,
             now: { Date(timeIntervalSince1970: clock.withLock { $0 }) })
         },
-        availableBytes: { space?.withLock { $0 } ?? nil }, index: index, reserveBytes: 4096,
+        availableBytes: available ?? { space?.withLock { $0 } ?? nil }, index: index,
+        reserveBytes: 4096,
         concurrency: concurrency, now: { Date(timeIntervalSince1970: clock.withLock { $0 }) },
         sleep: { delay in
           sleeps?.withLock { $0.append(delay) }

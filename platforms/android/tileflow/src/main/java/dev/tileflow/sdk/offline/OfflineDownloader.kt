@@ -271,8 +271,9 @@ internal class OfflineDownloader(
                                 if (stored.size >= BATCH) flush()
                                 if (sinceCheck >= SPACE_CHECK) {
                                     sinceCheck = 0
-                                    val available = availableBytes()
-                                    if (available != null && available < reserveBytes)
+                                    val room =
+                                        OfflineStorage.hasRoom(reserveBytes, availableBytes, cache)
+                                    if (!room)
                                         record(
                                             OfflineDownloadOutcome.Fail(
                                                 TileflowOfflineException(

@@ -10,6 +10,7 @@ import dev.tileflow.configuration.TileflowConfiguration
 import dev.tileflow.configuration.TileflowCredential
 import dev.tileflow.sdk.transport.NativeHTTPTransporting
 import dev.tileflow.sdk.transport.ResourceCacheKey
+import dev.tileflow.sdk.transport.ResourceCacheMetadata
 import dev.tileflow.sdk.transport.ResourceCacheRetention
 import dev.tileflow.sdk.transport.ResourceCacheScope
 import dev.tileflow.sdk.transport.ResourceCacheStore
@@ -149,6 +150,35 @@ class OfflineStoreTest {
         val done = waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
         assertEquals(done.requiredResourceCount, done.completedResourceCount)
         assertEquals(service.downloads.size, service.downloads.map { it.url }.toSet().size)
+    }
+
+    @Test
+    fun aFullDiskFirstMakesRoomFromTheMapCache() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val url = URI("https://maps.example.com/style.json")
+        val body = "cached".toByteArray()
+        assertTrue(
+            cache.write(
+                ResourceCacheKey(url, ResourceCacheScope.Shared),
+                ResourceCacheRetention.AMBIENT,
+                ResourceCacheMetadata.of(
+                    url,
+                    200,
+                    mapOf("Cache-Control" to "max-age=60"),
+                    System.currentTimeMillis(),
+                    false,
+                    body.size,
+                    sha256Hex(body),
+                ),
+                body,
+            )
+        )
+        // The disk is full until the map cache is cleared.
+        val store = store(service, available = { if (cache.usage().bytes > 0) 1024L else null })
+        store.loadRegion("madrid", madrid())
+        val done = waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
+        assertTrue(done.isAvailable)
+        assertEquals(0, cache.usage().entries)
     }
 
     @Test
@@ -533,6 +563,7 @@ class OfflineStoreTest {
         fetcher: OfflineResourceFetching? = null,
         runner: ((OfflineStoreCore) -> OfflineRunner)? = null,
         index: OfflineServingIndex? = null,
+        available: (() -> Long?)? = null,
     ): OfflineStoreCore {
         val cache =
             if (root == "offline") cache
@@ -548,7 +579,7 @@ class OfflineStoreTest {
             cache,
             fetcher ?: service,
             { OfflinePackClient(configuration, { service }, now = { service.clock.get() }) },
-            { space?.get() },
+            available ?: { space?.get() },
             subscribers,
             index,
             runner ?: { OfflineScopeRunner(it, scope) },
@@ -567,10 +598,21 @@ class OfflineStoreTest {
         concurrency: Int = 8,
         fetcher: OfflineResourceFetching? = null,
         index: OfflineServingIndex? = null,
+        available: (() -> Long?)? = null,
     ): TileflowOfflineStore {
         val subscribers = OfflineSubscribers()
         return TileflowOfflineStore(
-            core(service, root, subscribers, space, sleeps, concurrency, fetcher, index = index),
+            core(
+                service,
+                root,
+                subscribers,
+                space,
+                sleeps,
+                concurrency,
+                fetcher,
+                index = index,
+                available = available,
+            ),
             subscribers,
         )
     }

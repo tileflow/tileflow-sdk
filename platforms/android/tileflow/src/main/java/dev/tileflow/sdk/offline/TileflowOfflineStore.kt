@@ -3,6 +3,7 @@ package dev.tileflow.sdk.offline
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import android.os.storage.StorageManager
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingWorkPolicy
@@ -13,6 +14,7 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import dev.tileflow.configuration.Tileflow
 import dev.tileflow.sdk.TileflowMapCache
+import dev.tileflow.sdk.transport.ResourceCacheStore
 import dev.tileflow.sdk.transport.sha256Hex
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
@@ -140,7 +142,7 @@ internal constructor(
                                                 )
                                         OfflinePackClient(configuration)
                                     },
-                                    { application.noBackupFilesDir.usableSpace },
+                                    { OfflineStorage.availableBytes(application) },
                                     subscribers,
                                     OfflineServingIndex.shared,
                                     { OfflineWorkRunner(application) },
@@ -168,6 +170,35 @@ internal constructor(
                 )
             }
         }
+    }
+}
+
+internal object OfflineStorage {
+    /**
+     * Whether [bytes] fit. The system's figure already counts space it can free; when it falls
+     * short, the map cache, which maps rebuild as they need, is cleared to make room before a
+     * download stops for lack of space.
+     */
+    fun hasRoom(bytes: Long, available: () -> Long?, cache: ResourceCacheStore): Boolean {
+        val free = available() ?: return true
+        if (free >= bytes) return true
+        if (cache.usage().bytes <= 0) return false
+        cache.clear()
+        cache.settle()
+        return (available() ?: Long.MAX_VALUE) >= bytes
+    }
+
+    /**
+     * Bytes the app can allocate next to its stored regions, counting cached data the system may
+     * clear to make room, as `StorageManager` reports it; the free space when it cannot.
+     */
+    fun availableBytes(context: Context): Long {
+        val directory = context.noBackupFilesDir
+        return runCatching {
+                val storage = context.getSystemService(StorageManager::class.java)!!
+                storage.getAllocatableBytes(storage.getUuidForPath(directory))
+            }
+            .getOrElse { directory.usableSpace }
     }
 }
 

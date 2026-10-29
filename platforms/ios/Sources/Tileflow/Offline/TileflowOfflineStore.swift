@@ -151,7 +151,22 @@ private struct OfflineCompletion: @unchecked Sendable {
 }
 
 enum OfflineStorage {
-  /// Space available for data the app needs, as the system reports it for important usage.
+  /// Whether `bytes` fit. The system's figure already counts space it can free; when it falls
+  /// short, the map cache, which maps rebuild as they need, is cleared to make room before a
+  /// download stops for lack of space.
+  static func hasRoom(
+    _ bytes: Int64, available: () -> Int64?, cache: ResourceCacheStore
+  ) -> Bool {
+    guard let free = available() else { return true }
+    if free >= bytes { return true }
+    guard cache.usage().bytes > 0 else { return false }
+    cache.clear()
+    cache.settle()
+    return (available() ?? .max) >= bytes
+  }
+
+  /// Space available for data the app needs, as the system reports it for important usage, which
+  /// includes purgeable space such as caches.
   static func availableBytes(at url: URL) -> Int64? {
     var directory = url
     while !FileManager.default.fileExists(atPath: directory.path),

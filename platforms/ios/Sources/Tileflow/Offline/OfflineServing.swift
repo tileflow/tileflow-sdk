@@ -74,29 +74,52 @@ struct OfflineServingSnapshot: Sendable {
   var credits: [String: [OfflineCredit]] = [:]
 }
 
-/// The process's view of stored regions for the transport. The store publishes it whenever a
-/// region becomes available, changes or goes; a map reads it without waiting for the network.
+/// The process's view of stored regions for the transport. Each store publishes what it holds
+/// whenever a region becomes available, changes or goes, and maps see every store's regions; a
+/// map reads it without waiting for the network.
 final class OfflineServingIndex: Sendable {
   static let shared: OfflineServingIndex = OfflineServingIndex {
     await TileflowOfflineStore.shared.core.open()
   }
 
-  private let state = LockedValue<OfflineServingSnapshot?>(nil)
+  private struct State {
+    var stores: [ObjectIdentifier: OfflineServingSnapshot] = [:]
+    var merged = OfflineServingSnapshot()
+  }
+
+  private let state = LockedValue<State?>(nil)
   private let open: @Sendable () async -> Void
 
   init(open: @escaping @Sendable () async -> Void = {}) {
     self.open = open
   }
 
-  func publish(_ snapshot: OfflineServingSnapshot) {
-    state.withLock { $0 = snapshot }
+  /// Replaces what `store` publishes.
+  func publish(_ snapshot: OfflineServingSnapshot, from store: AnyObject) {
+    state.withLock { value in
+      var current = value ?? State()
+      current.stores[ObjectIdentifier(store)] = snapshot
+      var merged = OfflineServingSnapshot()
+      for snapshot in current.stores.values {
+        merged.paths.formUnion(snapshot.paths)
+        for (scope, credits) in snapshot.credits {
+          var list = merged.credits[scope] ?? []
+          for credit in credits where !list.contains(where: { $0.id == credit.id }) {
+            list.append(credit)
+          }
+          merged.credits[scope] = list
+        }
+      }
+      current.merged = merged
+      value = current
+    }
   }
 
-  /// The current snapshot, once the store has read its records.
+  /// The current snapshot, once a store has read its records.
   func snapshot() async -> OfflineServingSnapshot {
-    if let snapshot = state.withLock({ $0 }) { return snapshot }
+    if let snapshot = state.withLock({ $0?.merged }) { return snapshot }
     await open()
-    return state.withLock { $0 } ?? OfflineServingSnapshot()
+    return state.withLock { $0?.merged } ?? OfflineServingSnapshot()
   }
 
   func serves(_ key: ResourceCacheKey) async -> Bool {

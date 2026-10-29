@@ -1,0 +1,782 @@
+{
+  "coverage": [
+    {
+      "name": "polygon",
+      "region": {
+        "type": "polygon",
+        "coordinates": [
+          [-3.75, 40.38],
+          [-3.62, 40.36],
+          [-3.6, 40.47],
+          [-3.72, 40.5],
+          [-3.75, 40.38]
+        ]
+      },
+      "minZoom": 0,
+      "counts": [1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 4, 7, 19, 58, 196, 715],
+      "rows": [
+        [0, 0],
+        [0, 0],
+        [1, 1],
+        [3, 3],
+        [6, 6],
+        [12, 12],
+        [24, 24],
+        [48, 48],
+        [96, 96],
+        [192, 193],
+        [385, 386],
+        [771, 772],
+        [1543, 1545],
+        [3086, 3090],
+        [6172, 6181],
+        [12345, 12362],
+        [24691, 24724]
+      ],
+      "detail": [
+        {
+          "zoom": 12,
+          "rows": [
+            [1543, [[2005, 2007]]],
+            [1544, [[2005, 2006]]],
+            [1545, [[2005, 2006]]]
+          ]
+        },
+        {
+          "zoom": 13,
+          "rows": [
+            [3086, [[4011, 4013]]],
+            [3087, [[4011, 4014]]],
+            [3088, [[4010, 4013]]],
+            [3089, [[4010, 4013]]],
+            [3090, [[4010, 4013]]]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "bbox",
+      "region": {
+        "type": "bbox",
+        "bbox": [-3.72, 40.4, -3.68, 40.43]
+      },
+      "minZoom": 0,
+      "counts": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 4, 6, 20, 72],
+      "rows": [
+        [0, 0],
+        [0, 0],
+        [1, 1],
+        [3, 3],
+        [6, 6],
+        [12, 12],
+        [24, 24],
+        [48, 48],
+        [96, 96],
+        [193, 193],
+        [386, 386],
+        [772, 772],
+        [1544, 1544],
+        [3088, 3089],
+        [6177, 6178],
+        [12354, 12357],
+        [24708, 24715]
+      ],
+      "detail": [
+        {
+          "zoom": 14,
+          "rows": [
+            [6177, [[8022, 8024]]],
+            [6178, [[8022, 8024]]]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "concave",
+      "region": {
+        "type": "polygon",
+        "coordinates": [
+          [-0.2, 51.45],
+          [-0.05, 51.45],
+          [-0.05, 51.56],
+          [-0.1, 51.56],
+          [-0.1, 51.48],
+          [-0.15, 51.48],
+          [-0.15, 51.56],
+          [-0.2, 51.56],
+          [-0.2, 51.45]
+        ]
+      },
+      "minZoom": 0,
+      "counts": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 9, 20, 66, 219, 760],
+      "rows": [
+        [0, 0],
+        [0, 0],
+        [1, 1],
+        [2, 2],
+        [5, 5],
+        [10, 10],
+        [21, 21],
+        [42, 42],
+        [85, 85],
+        [170, 170],
+        [340, 340],
+        [680, 681],
+        [1361, 1363],
+        [2722, 2726],
+        [5444, 5452],
+        [10888, 10904],
+        [21776, 21809]
+      ],
+      "detail": [
+        {
+          "zoom": 13,
+          "rows": [
+            [2722, [[4091, 4094]]],
+            [2723, [[4091, 4094]]],
+            [2724, [[4091, 4094]]],
+            [2725, [[4091, 4094]]],
+            [2726, [[4091, 4094]]]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "self-intersecting",
+      "region": {
+        "type": "polygon",
+        "coordinates": [
+          [2.25, 48.8],
+          [2.42, 48.92],
+          [2.42, 48.8],
+          [2.25, 48.86],
+          [2.25, 48.8]
+        ]
+      },
+      "minZoom": 0,
+      "counts": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 7, 18, 49, 154],
+      "rows": [
+        [0, 0],
+        [0, 0],
+        [1, 1],
+        [2, 2],
+        [5, 5],
+        [11, 11],
+        [22, 22],
+        [44, 44],
+        [88, 88],
+        [176, 176],
+        [352, 352],
+        [704, 705],
+        [1408, 1410],
+        [2816, 2820],
+        [5632, 5640],
+        [11264, 11280]
+      ],
+      "detail": [
+        {
+          "zoom": 12,
+          "rows": [
+            [1408, [[2074, 2075]]],
+            [1409, [[2073, 2075]]],
+            [
+              1410,
+              [
+                [2073, 2073],
+                [2075, 2075]
+              ]
+            ]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "tile-aligned",
+      "region": {
+        "type": "bbox",
+        "bbox": [0, 0, 90, 66.51326]
+      },
+      "minZoom": 0,
+      "counts": [1, 2, 4, 9, 25, 81, 289, 1089, 4225, 16641],
+      "rows": [
+        [0, 0],
+        [0, 1],
+        [1, 2],
+        [2, 4],
+        [4, 8],
+        [8, 16],
+        [16, 32],
+        [32, 64],
+        [64, 128],
+        [128, 256]
+      ],
+      "detail": [
+        {
+          "zoom": 2,
+          "rows": [
+            [1, [[2, 3]]],
+            [2, [[2, 3]]]
+          ]
+        },
+        {
+          "zoom": 3,
+          "rows": [
+            [2, [[4, 6]]],
+            [3, [[4, 6]]],
+            [4, [[4, 6]]]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "high-latitude",
+      "region": {
+        "type": "polygon",
+        "coordinates": [
+          [18.85, 69.62],
+          [19.05, 69.6],
+          [19.1, 69.7],
+          [18.9, 69.72],
+          [18.85, 69.62]
+        ]
+      },
+      "minZoom": 0,
+      "counts": [1, 1, 1, 1, 1, 1, 1, 2, 2, 4, 4, 5, 16, 45, 154, 556, 2111],
+      "rows": [
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [1, 1],
+        [3, 3],
+        [7, 7],
+        [14, 14],
+        [28, 29],
+        [57, 58],
+        [115, 116],
+        [231, 232],
+        [462, 464],
+        [925, 929],
+        [1851, 1859],
+        [3703, 3719],
+        [7407, 7438],
+        [14815, 14877]
+      ],
+      "detail": [
+        {
+          "zoom": 11,
+          "rows": [
+            [462, [[1131, 1131]]],
+            [463, [[1131, 1132]]],
+            [464, [[1131, 1132]]]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "antimeridian-edge",
+      "region": {
+        "type": "bbox",
+        "bbox": [179.5, -17, 180, -16.5]
+      },
+      "minZoom": 0,
+      "counts": [1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 6, 12, 42, 156, 575],
+      "rows": [
+        [0, 0],
+        [1, 1],
+        [2, 2],
+        [4, 4],
+        [8, 8],
+        [17, 17],
+        [34, 35],
+        [69, 70],
+        [139, 140],
+        [279, 280],
+        [559, 561],
+        [1119, 1122],
+        [2238, 2244],
+        [4476, 4488],
+        [8953, 8977]
+      ],
+      "detail": [
+        {
+          "zoom": 9,
+          "rows": [
+            [279, [[511, 511]]],
+            [280, [[511, 511]]]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "southern",
+      "region": {
+        "type": "polygon",
+        "coordinates": [
+          [151.15, -33.92],
+          [151.3, -33.9],
+          [151.25, -33.82],
+          [151.15, -33.92]
+        ]
+      },
+      "minZoom": 0,
+      "counts": [1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 3, 5, 11, 27, 88, 307],
+      "rows": [
+        [0, 0],
+        [1, 1],
+        [2, 2],
+        [4, 4],
+        [9, 9],
+        [19, 19],
+        [38, 38],
+        [76, 76],
+        [153, 153],
+        [307, 307],
+        [614, 614],
+        [1228, 1229],
+        [2457, 2458],
+        [4914, 4917],
+        [9829, 9834],
+        [19658, 19669],
+        [39316, 39338]
+      ],
+      "detail": [
+        {
+          "zoom": 12,
+          "rows": [
+            [2457, [[3768, 3769]]],
+            [2458, [[3767, 3769]]]
+          ]
+        }
+      ]
+    },
+    {
+      "name": "mercator-limit",
+      "region": {
+        "type": "bbox",
+        "bbox": [-10, 80, 10, 85.051129]
+      },
+      "minZoom": 0,
+      "counts": [1, 2, 2, 2, 4, 8, 32, 120, 464, 1740, 6670],
+      "rows": [
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 0],
+        [0, 1],
+        [0, 3],
+        [0, 7],
+        [0, 14],
+        [0, 28],
+        [0, 57],
+        [0, 114]
+      ],
+      "detail": [
+        {
+          "zoom": 4,
+          "rows": [
+            [0, [[7, 8]]],
+            [1, [[7, 8]]]
+          ]
+        }
+      ]
+    }
+  ],
+  "canonical": [
+    {
+      "name": "rounding",
+      "region": {
+        "type": "bbox",
+        "bbox": [-3.7000004, 40.4000005, -3.6799995, 40.4300015]
+      },
+      "canonical": {
+        "type": "bbox",
+        "bbox": [-3.7, 40.400001, -3.679999, 40.430002]
+      }
+    },
+    {
+      "name": "negative-zero",
+      "region": {
+        "type": "bbox",
+        "bbox": [-4e-7, -4e-7, 0.5, 0.5]
+      },
+      "canonical": {
+        "type": "bbox",
+        "bbox": [0, 0, 0.5, 0.5]
+      }
+    },
+    {
+      "name": "polygon-rounding",
+      "region": {
+        "type": "polygon",
+        "coordinates": [
+          [-3.7500004, 40.3800006],
+          [-3.62, 40.36],
+          [-3.6, 40.47],
+          [-3.7500004, 40.3800006]
+        ]
+      },
+      "canonical": {
+        "type": "polygon",
+        "coordinates": [
+          [-3.75, 40.380001],
+          [-3.62, 40.36],
+          [-3.6, 40.47],
+          [-3.75, 40.380001]
+        ]
+      }
+    },
+    {
+      "name": "empty-bbox",
+      "region": {
+        "type": "bbox",
+        "bbox": [1, 1, 1.0000001, 2]
+      },
+      "error": "OFFLINE_PACK_INVALID_INPUT"
+    },
+    {
+      "name": "inverted-bbox",
+      "region": {
+        "type": "bbox",
+        "bbox": [2, 1, 1, 2]
+      },
+      "error": "OFFLINE_PACK_INVALID_INPUT"
+    },
+    {
+      "name": "open-ring",
+      "region": {
+        "type": "polygon",
+        "coordinates": [
+          [0, 0],
+          [1, 0],
+          [1, 1],
+          [0, 1]
+        ]
+      },
+      "error": "OFFLINE_PACK_INVALID_INPUT"
+    },
+    {
+      "name": "zero-area",
+      "region": {
+        "type": "polygon",
+        "coordinates": [
+          [0, 0],
+          [1, 1],
+          [2, 2],
+          [0, 0]
+        ]
+      },
+      "error": "OFFLINE_PACK_INVALID_INPUT"
+    }
+  ],
+  "requests": [
+    {
+      "name": "valid",
+      "body": {
+        "mapId": "map_offlineofflineof",
+        "profile": "webview-v1",
+        "themes": ["light", "dark"],
+        "region": {
+          "type": "bbox",
+          "bbox": [-3.72, 40.4, -3.68, 40.43]
+        },
+        "minZoom": 0,
+        "maxZoom": 15
+      },
+      "canonical": {
+        "mapId": "map_offlineofflineof",
+        "profile": "webview-v1",
+        "themes": ["dark", "light"],
+        "region": {
+          "type": "bbox",
+          "bbox": [-3.72, 40.4, -3.68, 40.43]
+        },
+        "minZoom": 0,
+        "maxZoom": 15,
+        "terrainMaxZoom": 12
+      }
+    },
+    {
+      "name": "terrain-opt-in",
+      "body": {
+        "mapId": "map_offlineofflineof",
+        "profile": "webview-v1",
+        "themes": ["light"],
+        "region": {
+          "type": "bbox",
+          "bbox": [-3.72, 40.4, -3.68, 40.43]
+        },
+        "minZoom": 0,
+        "maxZoom": 15,
+        "terrainMaxZoom": 14
+      },
+      "canonical": {
+        "mapId": "map_offlineofflineof",
+        "profile": "webview-v1",
+        "themes": ["light"],
+        "region": {
+          "type": "bbox",
+          "bbox": [-3.72, 40.4, -3.68, 40.43]
+        },
+        "minZoom": 0,
+        "maxZoom": 15,
+        "terrainMaxZoom": 14
+      }
+    },
+    {
+      "name": "duplicate-theme",
+      "body": {
+        "mapId": "map_offlineofflineof",
+        "profile": "webview-v1",
+        "themes": ["light", "light"],
+        "region": {
+          "type": "bbox",
+          "bbox": [-3.72, 40.4, -3.68, 40.43]
+        },
+        "minZoom": 0,
+        "maxZoom": 15
+      },
+      "error": "OFFLINE_PACK_INVALID_INPUT"
+    },
+    {
+      "name": "inverted-zooms",
+      "body": {
+        "mapId": "map_offlineofflineof",
+        "profile": "webview-v1",
+        "themes": ["light"],
+        "region": {
+          "type": "bbox",
+          "bbox": [-3.72, 40.4, -3.68, 40.43]
+        },
+        "minZoom": 12,
+        "maxZoom": 11
+      },
+      "error": "OFFLINE_PACK_INVALID_INPUT"
+    },
+    {
+      "name": "too-many-themes",
+      "body": {
+        "mapId": "map_offlineofflineof",
+        "profile": "webview-v1",
+        "themes": ["a", "b", "c", "d", "e"],
+        "region": {
+          "type": "bbox",
+          "bbox": [-3.72, 40.4, -3.68, 40.43]
+        },
+        "minZoom": 0,
+        "maxZoom": 15
+      },
+      "error": "OFFLINE_PACK_INVALID_INPUT"
+    }
+  ],
+  "created": {
+    "request": {
+      "mapId": "map_offlineofflineof",
+      "profile": "webview-v1",
+      "themes": ["light", "dark"],
+      "region": {
+        "type": "bbox",
+        "bbox": [-3.71, 40.41, -3.69, 40.425]
+      },
+      "minZoom": 12,
+      "maxZoom": 15
+    },
+    "status": 201,
+    "body": "{\"version\":1,\"kind\":\"offline_pack\",\"grant\":\"tf_offline_v1.eyJ2ZXJzaW9uIjoxLCJhdWRpZW5jZSI6InRpbGVmbG93Om9mZmxpbmUtcGFjayIsInBhY2tJZCI6Im9wa19GaXh0dXJlRml4dHVyZUZpeHR1cmVzIiwiY3JlZGVudGlhbElkIjoia2V5X2ZpeHR1cmVfY2xpZW50IiwiY3JlZGVudGlhbFJldmlzaW9uIjozLCJvcmdhbml6YXRpb25JZCI6Im9yZ19maXh0dXJlIiwicHJvamVjdElkIjoicHJqX2ZpeHR1cmUiLCJtYXBJZCI6Im1hcF9vZmZsaW5lb2ZmbGluZW9mIiwiZGVsaXZlcnlQb2xpY3lSZXZpc2lvbiI6NywiZGVwbG95bWVudFZlcnNpb24iOjEyLCJwcm9maWxlIjoid2Vidmlldy12MSIsInRoZW1lcyI6W3sibmFtZSI6ImRhcmsiLCJzaGEyNTYiOiJlMjYyZDJmYzlmZWUwNDExM2EwNWNjZDU2N2FkOTRhMTY5NzM1NDFkODBhMDJiOTk4MjRhZGYxNzRhMjcxYzYxIn0seyJuYW1lIjoibGlnaHQiLCJzaGEyNTYiOiJlM2RlZWExYjQ0OTAxMjM4MGVmNjUwOWRmMWI4OTA5ZDFjNTQ2N2Q5MDMyMzBlZDVkMTU5NTNhZDdmODk0YWExIn1dLCJyZWdpb24iOnsidHlwZSI6ImJib3giLCJiYm94IjpbLTMuNzEsNDAuNDEsLTMuNjksNDAuNDI1XX0sIm1pblpvb20iOjEyLCJtYXhab29tIjoxNSwic291cmNlcyI6W3siaWQiOiJ0ZXJyYWluIiwidmVyc2lvbiI6IjIwMjYtMDktMTUiLCJkZXNjcmlwdG9yU2hhMjU2IjpudWxsLCJ6b29tcyI6WzEyLDEyXSwidGlsZUpzb25TaGEyNTYiOiIwNjA1ODY0OTIyZjAzYzBjYmFjZTZkZGEyNzFjZDFjMjFjMWZiNTk1YjE2ZTI0YjJjMjMzMTc1NjNlNGJjMjYwIn0seyJpZCI6IndvcmxkIiwidmVyc2lvbiI6IjIwMjYtMTAtMDEiLCJkZXNjcmlwdG9yU2hhMjU2IjoiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYmJiYiIsInpvb21zIjpbMTIsMTVdLCJ0aWxlSnNvblNoYTI1NiI6ImZlMTE2YTQ5YWY4ZjI4Y2ExMTA3Nzc1MzNmYjZmYjNiMWQwMTdjNzJlYTNlMjg2ZGY5MjE4ZmRhZDliYjUwNmEifV0sInJlc291cmNlcyI6MzAsIm1hbmlmZXN0U2hhMjU2IjoiNTc5NWEzODhhYjk4OTMwMTAwYjg1ZjY3ODhhNjIzMWEzYjNiMmM0YzhkY2FjNzI5NDc4NTYwMDg3ZWQ1YThmNCIsImlzc3VlZEF0IjoxNzkzMTg4ODAwLCJleHBpcmVzQXQiOjE3OTMyNzUyMDB9.-608Ab0JpjaU79dSkFd78zI-HCxH0RnZUubVdtQ2PlU\",\"manifest\":{\"version\":1,\"packId\":\"opk_FixtureFixtureFixtures\",\"mapId\":\"map_offlineofflineof\",\"profile\":\"webview-v1\",\"deploymentVersion\":12,\"themes\":[\"dark\",\"light\"],\"region\":{\"type\":\"bbox\",\"bbox\":[-3.71,40.41,-3.69,40.425]},\"minZoom\":12,\"maxZoom\":15,\"terrainMaxZoom\":12,\"createdAt\":\"2026-10-28T12:00:00.000Z\",\"documents\":[{\"kind\":\"discovery\",\"url\":\"https://api.tileflow.test/maps/map_offlineofflineof/mobile/manifest.json\",\"bytes\":640,\"sha256\":\"6666666666666666666666666666666666666666666666666666666666666666\",\"billable\":false,\"access\":\"public\"},{\"kind\":\"profile\",\"url\":\"https://api.tileflow.test/maps/map_offlineofflineof/mobile/webview-v1/manifest.json\",\"bytes\":1210,\"sha256\":\"7777777777777777777777777777777777777777777777777777777777777777\",\"billable\":false,\"access\":\"public\"},{\"kind\":\"style\",\"url\":\"https://api.tileflow.test/maps/map_offlineofflineof/mobile/webview-v1/v12/dark.json\",\"bytes\":923,\"sha256\":\"e262d2fc9fee04113a05ccd567ad94a16973541d80a02b99824adf174a271c61\",\"billable\":true,\"access\":\"grant\"},{\"kind\":\"style\",\"url\":\"https://api.tileflow.test/maps/map_offlineofflineof/mobile/webview-v1/v12/light.json\",\"bytes\":924,\"sha256\":\"e3deea1b449012380ef6509df1b8909d1c5467d903230ed5d15953ad7f894aa1\",\"billable\":true,\"access\":\"grant\"},{\"kind\":\"tilejson\",\"url\":\"https://api.tileflow.test/tiles/terrain/tiles.json?map=map_offlineofflineof\",\"bytes\":158,\"sha256\":\"0605864922f03c0cbace6dda271cd1c21c1fb595b16e24b2c23317563e4bc260\",\"billable\":true,\"access\":\"grant\"},{\"kind\":\"tilejson\",\"url\":\"https://api.tileflow.test/tiles/world/tiles.json?map=map_offlineofflineof\",\"bytes\":261,\"sha256\":\"fe116a49af8f28ca110777533fb6fb3b1d017c72ea3e286df9218fdad9bb506a\",\"billable\":true,\"access\":\"grant\"},{\"kind\":\"glyph\",\"url\":\"https://api.tileflow.test/base/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/glyphs/Inter%20Regular/0-255.pbf\",\"bytes\":71234,\"sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"billable\":true,\"access\":\"grant\"},{\"kind\":\"glyph\",\"url\":\"https://api.tileflow.test/base/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/glyphs/Inter%20Regular/256-511.pbf\",\"bytes\":12002,\"sha256\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"billable\":true,\"access\":\"grant\"},{\"kind\":\"license\",\"url\":\"https://api.tileflow.test/base/cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc/glyphs/Inter%20Regular/LICENSE.md\",\"bytes\":4400,\"sha256\":\"ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff\",\"billable\":false,\"access\":\"grant\"},{\"kind\":\"sprite\",\"url\":\"https://api.tileflow.test/sprites/icp_fixturefixturefix/sprite.json\",\"bytes\":2048,\"sha256\":\"1111111111111111111111111111111111111111111111111111111111111111\",\"billable\":true,\"access\":\"grant\"},{\"kind\":\"sprite\",\"url\":\"https://api.tileflow.test/sprites/icp_fixturefixturefix/sprite.png\",\"bytes\":30000,\"sha256\":\"2222222222222222222222222222222222222222222222222222222222222222\",\"billable\":true,\"access\":\"grant\"},{\"kind\":\"sprite\",\"url\":\"https://api.tileflow.test/sprites/icp_fixturefixturefix/sprite@2x.json\",\"bytes\":2050,\"sha256\":\"3333333333333333333333333333333333333333333333333333333333333333\",\"billable\":true,\"access\":\"grant\"},{\"kind\":\"sprite\",\"url\":\"https://api.tileflow.test/sprites/icp_fixturefixturefix/sprite@2x.png\",\"bytes\":90000,\"sha256\":\"4444444444444444444444444444444444444444444444444444444444444444\",\"billable\":true,\"access\":\"grant\"},{\"kind\":\"font\",\"url\":\"https://api.tileflow.test/font-bundles/fnb_fixturefixturefix/face.woff2\",\"bytes\":48000,\"sha256\":\"5555555555555555555555555555555555555555555555555555555555555555\",\"billable\":true,\"access\":\"grant\"},{\"kind\":\"landmark\",\"url\":\"https://api.tileflow.test/landmarks/tiles.json\",\"bytes\":900,\"sha256\":\"8888888888888888888888888888888888888888888888888888888888888888\",\"billable\":false,\"access\":\"public\"},{\"kind\":\"landmark\",\"url\":\"https://api.tileflow.test/landmarks/releases/9999999999999999999999999999999999999999999999999999999999999999/NOTICE.md\",\"bytes\":2100,\"sha256\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"billable\":false,\"access\":\"public\"},{\"kind\":\"landmark\",\"url\":\"https://api.tileflow.test/landmarks/releases/9999999999999999999999999999999999999999999999999999999999999999/regions/6/31/24.json\",\"bytes\":5500,\"sha256\":\"0000000000000000000000000000000000000000000000000000000000000000\",\"billable\":false,\"access\":\"public\"},{\"kind\":\"landmark\",\"url\":\"https://api.tileflow.test/landmarks/tiles/dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd.glb\",\"bytes\":1400000,\"sha256\":\"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd\",\"billable\":false,\"access\":\"public\"}],\"tiles\":[{\"source\":\"terrain\",\"template\":\"https://api.tileflow.test/tiles/terrain/2026-09-15/{z}/{x}/{y}.webp?map=map_offlineofflineof\",\"zooms\":[12,12],\"entries\":[[12,2005,1544,11632],[12,2006,1544,11849]]},{\"source\":\"world\",\"template\":\"https://api.tileflow.test/tiles/world/2026-10-01/{z}/{x}/{y}.pbf?worldDescriptorSha256=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb&map=map_offlineofflineof\",\"zooms\":[12,15],\"entries\":[[12,2005,1544,2632],[12,2006,1544,2849],[13,4011,3088,1733],[13,4012,3088,1950],[13,4011,3089,2136],[13,4012,3089,2353],[14,8024,6177,524],[14,8023,6178,710],[14,8024,6178,927],[15,16047,12354,3035],[15,16048,12354,3252],[15,16046,12355,3221],[15,16047,12355,431],[15,16048,12355,648],[15,16046,12356,617],[15,16047,12356,834],[15,16048,12356,1051]]}],\"excluded\":[{\"source\":\"boundaries\",\"reason\":\"legal_review\"}],\"totals\":{\"resources\":37,\"billableResources\":30,\"bytes\":1724734},\"attribution\":{\"sources\":[{\"source\":\"terrain\",\"release\":\"2026-09-15\",\"text\":\"Mapterhorn\",\"notice\":{\"id\":\"mapterhorn-2026\",\"text\":\"Elevation data from Mapterhorn and its sources.\"}},{\"source\":\"world\",\"release\":\"2026-10-01\",\"text\":\"© OpenStreetMap contributors\",\"obligations\":[],\"regionalObligations\":[{\"id\":\"es-ign\",\"exact\":\"© IGN España\",\"href\":\"https://www.ign.es\"}],\"page\":\"https://tileflow.dev/attribution\"}]},\"limits\":{\"maxPackResources\":10000,\"dailyDownloads\":20000},\"revalidation\":{\"url\":\"https://api.tileflow.test/v1/offline/packs/revalidate\",\"intervalSeconds\":86400},\"download\":{\"expiresAt\":\"2026-10-29T12:00:00.000Z\"}}}"
+  },
+  "revalidations": [
+    {
+      "name": "current",
+      "body": {
+        "state": "current",
+        "checkedAt": "2026-10-28T12:00:00.000Z",
+        "intervalSeconds": 86400
+      }
+    },
+    {
+      "name": "update-available",
+      "body": {
+        "state": "update_available",
+        "checkedAt": "2026-10-28T12:00:00.000Z",
+        "intervalSeconds": 86400
+      }
+    },
+    {
+      "name": "credential-revoked",
+      "body": {
+        "state": "not_updatable",
+        "reason": "credential_revoked",
+        "checkedAt": "2026-10-28T12:00:00.000Z"
+      }
+    },
+    {
+      "name": "plan-unavailable",
+      "body": {
+        "state": "not_updatable",
+        "reason": "plan_unavailable",
+        "checkedAt": "2026-10-28T12:00:00.000Z"
+      }
+    }
+  ],
+  "failures": [
+    {
+      "operation": "create",
+      "status": 503,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACKS_DISABLED\",\"error\":\"Offline packs are unavailable\"}"
+    },
+    {
+      "operation": "create",
+      "status": 503,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACKS_UNAVAILABLE\",\"error\":\"Offline packs are unavailable\"}"
+    },
+    {
+      "operation": "create",
+      "status": 400,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_INVALID_INPUT\",\"error\":\"Invalid offline pack request\"}"
+    },
+    {
+      "operation": "create",
+      "status": 400,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_AUTHORITY_CONFLICT\",\"error\":\"Use the mobile credential without browser or control-plane authority\"}"
+    },
+    {
+      "operation": "create",
+      "status": 413,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_BODY_TOO_LARGE\",\"error\":\"Offline pack request is too large\"}"
+    },
+    {
+      "operation": "create",
+      "status": 401,
+      "headers": {},
+      "body": "{\"code\":\"MOBILE_CREDENTIAL_INVALID\",\"error\":\"Invalid or expired mobile credential\"}"
+    },
+    {
+      "operation": "create",
+      "status": 403,
+      "headers": {},
+      "body": "{\"code\":\"MOBILE_MAP_MISMATCH\",\"error\":\"The mobile credential does not authorize this Map\"}"
+    },
+    {
+      "operation": "create",
+      "status": 404,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_MAP_NOT_FOUND\",\"error\":\"Map not found\"}"
+    },
+    {
+      "operation": "create",
+      "status": 404,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_THEME_NOT_FOUND\",\"error\":\"Theme not found\"}"
+    },
+    {
+      "operation": "create",
+      "status": 403,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACKS_NOT_INCLUDED\",\"error\":\"The Team's plan does not include offline packs\"}"
+    },
+    {
+      "operation": "create",
+      "status": 403,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_DOWNLOADS_DISABLED\",\"error\":\"Offline downloads are turned off for this credential\"}"
+    },
+    {
+      "operation": "create",
+      "status": 422,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_TOO_LARGE\",\"error\":\"The region exceeds the plan's offline pack limit\",\"limit\":10000}"
+    },
+    {
+      "operation": "create",
+      "status": 422,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_NOT_DOWNLOADABLE\",\"error\":\"Nothing in this region can be downloaded\"}"
+    },
+    {
+      "operation": "revalidate",
+      "status": 401,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_GRANT_INVALID\",\"error\":\"Invalid offline pack grant\"}"
+    },
+    {
+      "operation": "download",
+      "status": 400,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_AUTHORITY_CONFLICT\",\"error\":\"Conflicting delivery authority\"}"
+    },
+    {
+      "operation": "download",
+      "status": 401,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_GRANT_INVALID\",\"error\":\"Invalid offline pack grant\"}"
+    },
+    {
+      "operation": "download",
+      "status": 401,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_GRANT_EXPIRED\",\"error\":\"The offline pack download window has ended\"}"
+    },
+    {
+      "operation": "download",
+      "status": 401,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_GRANT_STALE\",\"error\":\"The offline pack grant is out of date\"}"
+    },
+    {
+      "operation": "download",
+      "status": 403,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_RESOURCE_DENIED\",\"error\":\"The resource is not part of this offline pack\"}"
+    },
+    {
+      "operation": "download",
+      "status": 403,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_DOWNLOADS_DISABLED\",\"error\":\"Offline downloads are turned off for this credential\"}"
+    },
+    {
+      "operation": "download",
+      "status": 409,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_SUPERSEDED\",\"error\":\"The Map changed since the offline pack was created\"}"
+    },
+    {
+      "operation": "download",
+      "status": 429,
+      "headers": {
+        "retry-after": "43200"
+      },
+      "body": "{\"code\":\"OFFLINE_DAILY_LIMIT_REACHED\",\"error\":\"The credential's daily offline download limit is reached\"}"
+    },
+    {
+      "operation": "download",
+      "status": 429,
+      "headers": {},
+      "body": "{\"code\":\"COMMERCIAL_MAP_LIMIT_REACHED\",\"error\":\"Map view limit reached\"}"
+    },
+    {
+      "operation": "download",
+      "status": 429,
+      "headers": {},
+      "body": "{\"code\":\"COMMERCIAL_SPENDING_LIMIT_REACHED\",\"error\":\"The Team reached its monthly spending limit\"}"
+    },
+    {
+      "operation": "download",
+      "status": 503,
+      "headers": {},
+      "body": "{\"code\":\"OFFLINE_PACK_GRANT_UNAVAILABLE\",\"error\":\"Offline pack delivery is unavailable\"}"
+    },
+    {
+      "operation": "download",
+      "status": 429,
+      "headers": {
+        "retry-after": "60"
+      },
+      "body": "{\"code\":\"RATE_LIMITED\",\"error\":\"Too many requests\",\"requestId\":\"req_fixture\"}"
+    }
+  ]
+}

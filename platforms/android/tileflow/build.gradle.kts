@@ -23,6 +23,8 @@ android {
         targetSdk = 36
         unitTests.isIncludeAndroidResources = true
     }
+    // The offline fixtures are shared with the Swift tests.
+    sourceSets["test"].resources.srcDir("../../ios/Tests/TileflowTests/Fixtures/Offline")
     publishing { singleVariant("release") { withSourcesJar() } }
 }
 

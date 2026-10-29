@@ -3,6 +3,9 @@ package dev.tileflow.servicecontent
 import dev.tileflow.configuration.TileflowPosition
 import dev.tileflow.sdk.TileflowGeoJSONLayer
 import dev.tileflow.sdk.TileflowGeoJSONLayerKind
+import dev.tileflow.sdk.TileflowLayerPlacement
+import dev.tileflow.sdk.TileflowLineProgress
+import dev.tileflow.sdk.TileflowRouteInk
 import java.math.BigDecimal
 import kotlin.math.roundToLong
 
@@ -14,9 +17,24 @@ internal class LayerSpec(
     val color: String,
     val size: Double,
     val opacity: Double,
+    val ink: TileflowRouteInk? = null,
+    val placement: TileflowLayerPlacement = TileflowLayerPlacement.GROUND,
+    val occludedOpacity: Double = 0.0,
+    val progress: TileflowLineProgress? = null,
 ) {
     fun layer(): TileflowGeoJSONLayer =
-        TileflowGeoJSONLayer(id, geoJson, kind, color, size, opacity)
+        TileflowGeoJSONLayer(
+            id,
+            geoJson,
+            kind,
+            color,
+            size,
+            opacity,
+            ink,
+            placement,
+            occludedOpacity,
+            progress,
+        )
 }
 
 /** Compact GeoJSON with at most six decimals per coordinate. */

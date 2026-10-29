@@ -1,7 +1,28 @@
 import {z} from 'zod';
+import {
+  cameraForBoundsSchema,
+  cornerSchema,
+  gesturesSchema,
+  insetsSchema,
+  limitsSchema,
+  maximumPitch,
+  moveCameraSchema,
+} from './camera-contract';
 import {contentSchema} from './content-contract';
 import {protocol} from './contract';
 import {ProtocolError, type WireError} from './errors';
+import {
+  animationIdentifier,
+  boundaryValuesRequestSchema,
+  depthMarkersRequestSchema,
+  emphasisRequestSchema,
+  imagesRequestSchema,
+  lineProgressAnimationSchema,
+  shotRequestSchema,
+  styleStateRequestSchema,
+  sunRequestSchema,
+  viewModeRequestSchema,
+} from './scene-contract';
 
 export {protocol};
 export {
@@ -52,7 +73,7 @@ export const cameraSchema = z.strictObject({
   latitude: finite.min(-90).max(90),
   zoom: finite.min(0).max(24),
   bearing: finite.min(-360).max(360).default(0),
-  pitch: finite.min(0).max(85).default(0),
+  pitch: finite.min(0).max(maximumPitch).default(0),
 });
 export type Camera = z.infer<typeof cameraSchema>;
 
@@ -78,29 +99,31 @@ const coordinate = z.strictObject({
 export const mapOptionsSchema = z.strictObject({
   viewMode: z.enum(['2d', '3d']).default('2d'),
   quality: z.enum(['low', 'balanced', 'high']).default('balanced'),
-  gestures: z
-    .strictObject({
-      pan: z.boolean().default(true),
-      zoom: z.boolean().default(true),
-      rotate: z.boolean().default(true),
-      pitch: z.boolean().default(true),
-    })
-    .default({pan: true, zoom: true, rotate: true, pitch: true}),
-  controls: z.boolean().default(true),
+  gestures: gesturesSchema.prefault({}),
+  limits: limitsSchema.prefault({}),
+  /** The attribution is always shown; the host chooses its corner. */
+  attribution: cornerSchema.default('bottom-right'),
+  /** Shows or hides the map's 3D vegetation; null keeps what the map's design chooses. */
+  vegetation: z.boolean().nullable().default(null),
 });
 export type MapOptions = z.infer<typeof mapOptionsSchema>;
+/** Options fixed for the renderer's lifetime: a change needs a new renderer. */
+const rendererOptionsSchema = z.strictObject({
+  /** Multisampling, which smooths the edges of 3D content; on by default, as on the web. */
+  antialias: z.boolean().default(true),
+  /** Validates styles as MapLibre loads them; off by default, as Tileflow validates them. */
+  validateStyle: z.boolean().default(false),
+});
+export type RendererOptions = z.infer<typeof rendererOptionsSchema>;
 const initializeSchema = z.strictObject({
   source: sourceSchema,
   theme: themeSchema.nullish(),
   camera: cameraSchema.optional(),
   interactive: z.boolean().default(true),
   colorScheme: z.enum(['light', 'dark']).default('light'),
-  options: mapOptionsSchema.default({
-    viewMode: '2d',
-    quality: 'balanced',
-    gestures: {pan: true, zoom: true, rotate: true, pitch: true},
-    controls: true,
-  }),
+  options: mapOptionsSchema.prefault({}),
+  insets: insetsSchema.optional(),
+  renderer: rendererOptionsSchema.prefault({}),
   events: subscriptionsSchema.default(essentialSubscriptions),
 });
 export type InitializeOptions = z.infer<typeof initializeSchema>;
@@ -112,14 +135,12 @@ const commandSchema = z.discriminatedUnion('method', [
     method: z.literal('setEvents'),
     payload: z.strictObject({events: subscriptionsSchema}),
   }),
-  z.strictObject({
-    method: z.literal('setCamera'),
-    payload: z.strictObject({
-      camera: cameraSchema,
-      duration: finite.min(0).max(60_000).default(0),
-    }),
-  }),
+  z.strictObject({method: z.literal('moveCamera'), payload: moveCameraSchema}),
+  z.strictObject({method: z.literal('stopCamera'), payload: z.null()}),
   z.strictObject({method: z.literal('getCamera'), payload: z.null()}),
+  z.strictObject({method: z.literal('cameraForBounds'), payload: cameraForBoundsSchema}),
+  z.strictObject({method: z.literal('visibleBounds'), payload: z.null()}),
+  z.strictObject({method: z.literal('setInsets'), payload: insetsSchema}),
   z.strictObject({
     method: z.literal('setTheme'),
     payload: z.strictObject({
@@ -146,20 +167,6 @@ const commandSchema = z.discriminatedUnion('method', [
   }),
   z.strictObject({method: z.literal('setOptions'), payload: mapOptionsSchema}),
   z.strictObject({method: z.literal('setContent'), payload: contentSchema}),
-  z.strictObject({
-    method: z.literal('fitBounds'),
-    payload: z
-      .strictObject({
-        west: finite.min(-180).max(180),
-        south: finite.min(-90).max(90),
-        east: finite.min(-180).max(180),
-        north: finite.min(-90).max(90),
-        padding: finite.min(0).max(1000).default(0),
-        duration,
-        maxZoom: finite.min(0).max(24).default(20),
-      })
-      .refine((value) => value.south <= value.north),
-  }),
   z.strictObject({method: z.literal('project'), payload: coordinate}),
   z.strictObject({method: z.literal('unproject'), payload: point}),
   z.strictObject({
@@ -169,6 +176,20 @@ const commandSchema = z.discriminatedUnion('method', [
   z.strictObject({
     method: z.literal('queryAtPoint'),
     payload: point,
+  }),
+  z.strictObject({method: z.literal('setViewMode'), payload: viewModeRequestSchema}),
+  z.strictObject({method: z.literal('setSun'), payload: sunRequestSchema}),
+  z.strictObject({method: z.literal('setEmphasis'), payload: emphasisRequestSchema}),
+  z.strictObject({method: z.literal('setStyleState'), payload: styleStateRequestSchema}),
+  z.strictObject({method: z.literal('getRouteInks'), payload: z.null()}),
+  z.strictObject({method: z.literal('setBoundaryValues'), payload: boundaryValuesRequestSchema}),
+  z.strictObject({method: z.literal('setImages'), payload: imagesRequestSchema}),
+  z.strictObject({method: z.literal('setDepthMarkers'), payload: depthMarkersRequestSchema}),
+  z.strictObject({method: z.literal('animateLineProgress'), payload: lineProgressAnimationSchema}),
+  z.strictObject({method: z.literal('playShot'), payload: shotRequestSchema}),
+  z.strictObject({
+    method: z.literal('stopAnimation'),
+    payload: z.strictObject({animation: animationIdentifier}),
   }),
   z.strictObject({method: z.literal('dispose'), payload: z.null()}),
 ]);

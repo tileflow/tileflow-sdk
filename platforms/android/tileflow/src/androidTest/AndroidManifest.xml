@@ -3,5 +3,7 @@
         <activity android:name="dev.tileflow.sdk.MapHostActivity" android:exported="false" />
         <activity android:name="dev.tileflow.sdk.BridgeHostActivity" android:exported="false" />
         <activity android:name="dev.tileflow.sdk.CachedMapHostActivity" android:exported="false" />
+        <activity android:name="dev.tileflow.sdk.CameraHostActivity" android:exported="false" />
+        <activity android:name="dev.tileflow.sdk.SceneHostActivity" android:exported="false" />
     </application>
 </manifest>

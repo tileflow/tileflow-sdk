@@ -5,12 +5,20 @@ import Foundation
 /// renderer.
 struct EventSubscriptions: Equatable {
   /// Parts of the SDK that ask for events. The application's choice is one owner among them.
-  enum Owner: Hashable { case application }
+  enum Owner: Hashable {
+    case application
+    /// The camera state follows every movement, so `isMoving` is current at any level.
+    case camera
+    /// The compass and scale bar follow the camera while it moves.
+    case controls
+  }
 
   private var demands: [Owner: [ProtocolContract.Event: Int]] = [:]
 
-  init(application options: TileflowEventOptions = .init()) {
+  init(application options: TileflowEventOptions = .init(), followCamera: Bool = false) {
     set(.application, Self.demand(for: options))
+    set(.camera, [.cameraMoveStarted: 0, .cameraMoveEnded: 0])
+    set(.controls, followCamera ? [.cameraMoved: 0] : [:])
   }
 
   mutating func set(_ owner: Owner, _ demand: [ProtocolContract.Event: Int]) {

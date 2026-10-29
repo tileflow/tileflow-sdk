@@ -8,7 +8,7 @@ import XCTest
 @MainActor
 final class MapIntegrationTests: XCTestCase {
   func testOnlineMapLoadsChangesThemeAndRetires() async throws {
-    let manifest = URL(string: "http://127.0.0.1:18645/manifest.json")!
+    let manifest = FixtureServer.manifest
     do {
       let (_, response) = try await URLSession.shared.data(from: manifest)
       guard (response as? HTTPURLResponse)?.statusCode == 200 else {
@@ -49,9 +49,10 @@ final class MapIntegrationTests: XCTestCase {
     XCTAssertTrue(failures.isEmpty, "\(failures)")
     let initial = try await view.camera()
     XCTAssertEqual(initial.longitude, -3.70, accuracy: 0.01)
-    let features = try await view.query(at: CGPoint(x: view.bounds.midX, y: view.bounds.midY))
-    XCTAssertTrue(features.contains { $0.layer == "poi" }, "The POI did not render: \(features)")
+    // Automatic insets centre the camera inside the safe area, so query where the POI is drawn.
     let point = try await view.project(TileflowCoordinate(longitude: -3.70, latitude: 40.42))
+    let features = try await view.query(at: point)
+    XCTAssertTrue(features.contains { $0.layer == "poi" }, "The POI did not render: \(features)")
     let coordinate = try await view.unproject(point)
     XCTAssertEqual(coordinate.longitude, -3.70, accuracy: 0.0001)
     XCTAssertEqual(coordinate.latitude, 40.42, accuracy: 0.0001)
@@ -108,7 +109,7 @@ final class MapIntegrationTests: XCTestCase {
   }
 
   func testRendererLossWhileHiddenWaitsForVisibilityAndInvalidRequestsAnswerAtOnce() async throws {
-    let manifest = URL(string: "http://127.0.0.1:18645/manifest.json")!
+    let manifest = FixtureServer.manifest
     do {
       _ = try await URLSession.shared.data(from: manifest)
     } catch {
@@ -177,7 +178,7 @@ final class MapIntegrationTests: XCTestCase {
   }
 
   func testEventLevelsCameraReasonsAndLargeContentOverTheDataChannel() async throws {
-    let manifest = URL(string: "http://127.0.0.1:18645/manifest.json")!
+    let manifest = FixtureServer.manifest
     do {
       _ = try await URLSession.shared.data(from: manifest)
     } catch {
@@ -250,19 +251,19 @@ final class MapIntegrationTests: XCTestCase {
     XCTAssertTrue(failures.isEmpty, "\(failures)")
   }
 
-  private func waitUntil(_ condition: () -> Bool) async throws {
-    for _ in 0..<100 {
+  func waitUntil(seconds: Int = 5, _ condition: @escaping () -> Bool) async throws {
+    for _ in 0..<(seconds * 20) {
       if condition() { return }
       try await Task.sleep(for: .milliseconds(50))
     }
     XCTFail("Timed out.")
   }
 
-  private func renderer(_ view: TileflowMapView) throws -> WKWebView {
+  func renderer(_ view: TileflowMapView) throws -> WKWebView {
     try XCTUnwrap(view.subviews.compactMap { $0 as? WKWebView }.first)
   }
 
-  private func assertApplicationLayer(
+  func assertApplicationLayer(
     _ view: TileflowMapView, layer: String = "__tileflow_app_selection"
   ) async throws {
     var observed: [TileflowRenderedFeature] = []

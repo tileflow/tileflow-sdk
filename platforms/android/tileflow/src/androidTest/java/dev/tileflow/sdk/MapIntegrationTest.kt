@@ -95,8 +95,9 @@ public class MapIntegrationTest {
                     )
                     val initial = activity.map.camera()
                     assertEquals(-3.70, initial.longitude, 0.01)
-                    val features =
-                        activity.map.query(activity.map.width / 2f, activity.map.height / 2f)
+                    // The camera centres on the view inside the system bars it overlaps.
+                    val centre = activity.map.project(TileflowCoordinate(-3.70, 40.42))
+                    val features = activity.map.query(centre.x, centre.y)
                     assertTrue(
                         "The POI did not render: $features",
                         features.any { it.layer == "poi" },
@@ -235,7 +236,7 @@ public class MapIntegrationTest {
                     val parent = map.parent as ViewGroup
                     parent.removeView(map)
                     renderProcessGone(renderer(map))
-                    assertEquals(0, map.childCount)
+                    assertTrue((0 until map.childCount).none { map.getChildAt(it) is WebView })
                     parent.addView(map)
                     withTimeout(30_000) { while (loads.get() < 2) delay(50) }
                     // Loading resets the recovery budget, so a later loss is recovered too.
@@ -342,7 +343,8 @@ public class MapIntegrationTest {
         }
     }
 
-    private fun renderer(map: TileflowMapView): WebView = map.getChildAt(0) as WebView
+    private fun renderer(map: TileflowMapView): WebView =
+        (0 until map.childCount).map(map::getChildAt).filterIsInstance<WebView>().single()
 
     private fun renderProcessGone(view: WebView) {
         view.webViewClient.onRenderProcessGone(

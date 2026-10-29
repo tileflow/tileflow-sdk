@@ -129,9 +129,11 @@ extension TileflowMapError {
 /// How much the map reports. Each level includes the events of the levels before it; events beyond
 /// the chosen level never leave the renderer.
 public enum TileflowEventLevel: String, CaseIterable, Sendable {
-  /// Lifecycle, failures, warnings, taps and activations, and the camera each time it settles.
+  /// Lifecycle, theme transitions, failures, warnings, taps, long presses and activations, the end
+  /// of animations and their cues, and the camera each time it settles.
   case essential
-  /// Also the start of every camera movement, with its reason.
+  /// Also the start of every camera movement, with its reason, and the start and end of each
+  /// gesture.
   case camera
   /// Also the camera while it moves, at most once per rendered frame or per the requested interval.
   case continuous
@@ -168,7 +170,7 @@ public enum TileflowResourceKind: String, CaseIterable, Sendable {
   case glyphs
   /// Map icons.
   case sprite
-  /// An image the style requests.
+  /// An image the style requests, or one the application passed to the map.
   case image
   /// A font file.
   case font

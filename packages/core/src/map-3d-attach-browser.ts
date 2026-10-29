@@ -1,3 +1,4 @@
+import type {TileflowBuildings3DChange} from './buildings-3d-browser';
 import {tileflowBuildingsMetadataKey} from './buildings-3d-design';
 import type {TileflowMap3D, TileflowMap3DOptions} from './map-3d-browser';
 import {tileflowStreetLightsMetadataKey} from './street-lights';
@@ -61,8 +62,11 @@ export type AttachTileflowMap3DOptions = TileflowMap3DOptions & {
 export type TileflowMap3DAttachment = {
   /** The mounted scene, once a style that declares 3D has loaded the renderers. */
   readonly scene: TileflowMap3D | undefined;
-  /** `3d` shows the scene; `2d` hides it and draws `auto` vegetation flat. */
-  setViewMode(mode: TileflowViewMode): void;
+  /**
+   * `3d` shows the scene; `2d` hides it and draws `auto` vegetation flat. A transition animates the
+   * buildings' rise or descent; without one the change is immediate.
+   */
+  setViewMode(mode: TileflowViewMode, change?: TileflowBuildings3DChange): void;
   /** Overrides the map's vegetation visibility; undefined restores the authored default. */
   setVegetation(visible: boolean | undefined): void;
   dispose(): void;
@@ -128,10 +132,10 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
     get scene() {
       return scene;
     },
-    setViewMode(mode) {
+    setViewMode(mode, change) {
       if (mode === viewMode) return;
       viewMode = mode;
-      if (scene) void (mode === '3d' ? scene.show() : scene.hide());
+      if (scene) void (mode === '3d' ? scene.show(change) : scene.hide(change));
     },
     setVegetation(visible) {
       vegetation = visible;

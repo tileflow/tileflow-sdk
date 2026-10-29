@@ -16,17 +16,31 @@ export const protocol = {
     'initialize',
     'cancel',
     'setEvents',
-    'setCamera',
+    'moveCamera',
+    'stopCamera',
     'getCamera',
+    'cameraForBounds',
+    'visibleBounds',
+    'setInsets',
     'setTheme',
     'setBlend',
     'setOptions',
     'setContent',
-    'fitBounds',
     'project',
     'unproject',
     'setVisibility',
     'queryAtPoint',
+    'setViewMode',
+    'setSun',
+    'setEmphasis',
+    'setStyleState',
+    'getRouteInks',
+    'setBoundaryValues',
+    'setImages',
+    'setDepthMarkers',
+    'animateLineProgress',
+    'playShot',
+    'stopAnimation',
     'dispose',
   ],
   eventLevels: ['essential', 'camera', 'continuous'],
@@ -46,10 +60,22 @@ export const protocol = {
     themeChanged: {
       level: 'essential',
     },
+    themeTransition: {
+      level: 'essential',
+    },
+    animationEnded: {
+      level: 'essential',
+    },
+    shotCue: {
+      level: 'essential',
+    },
     warning: {
       level: 'essential',
     },
     tap: {
+      level: 'essential',
+    },
+    longPress: {
       level: 'essential',
     },
     annotationActivated: {
@@ -62,6 +88,12 @@ export const protocol = {
       level: 'essential',
     },
     cameraMoveStarted: {
+      level: 'camera',
+    },
+    gestureStarted: {
+      level: 'camera',
+    },
+    gestureEnded: {
       level: 'camera',
     },
     cameraMoved: {
@@ -96,6 +128,8 @@ export const protocol = {
     'processTerminated',
     'contentRestore',
     'scene',
+    'invalidImage',
+    'unknownLayer',
   ],
   errors: {
     invalidSource: {

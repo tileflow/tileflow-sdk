@@ -16,15 +16,27 @@ public class MapEventParserTest {
 
     @Test
     public fun parsesCoordinatesAndIgnoresUnknownEvents() {
+        val touch = """{"coordinate":{"longitude":-3.7,"latitude":40.42},"point":{"x":1,"y":2}}"""
+        // Points arrive in CSS pixels and reach the application in physical pixels.
+        val tap = parseMapEvent("tap", JSONObject(touch), density = 2f) as TileflowMapEvent.Tap
+        assertEquals(TileflowCoordinate(-3.7, 40.42), tap.coordinate)
+        assertEquals(TileflowPoint(2f, 4f), tap.point)
+        assertEquals(-3.7, tap.longitude, 0.0)
         assertEquals(
-            TileflowMapEvent.Tap(-3.7, 40.42),
-            parseMapEvent(
-                "tap",
-                JSONObject(
-                    """{"coordinate":{"longitude":-3.7,"latitude":40.42},"point":{"x":1,"y":2}}"""
-                ),
-            ),
+            TileflowMapEvent.LongPress(TileflowCoordinate(-3.7, 40.42), TileflowPoint(1f, 2f)),
+            parseMapEvent("longPress", JSONObject(touch)),
         )
+        assertEquals(
+            TileflowMapEvent.GestureStarted(TileflowGesture.PITCH),
+            parseMapEvent("gestureStarted", JSONObject("""{"gesture":"pitch"}""")),
+        )
+        assertEquals(
+            TileflowMapEvent.GestureEnded(TileflowGesture.PAN),
+            parseMapEvent("gestureEnded", JSONObject("""{"gesture":"pan"}""")),
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            parseMapEvent("gestureStarted", JSONObject("""{"gesture":"swirl"}"""))
+        }
         assertNull(parseMapEvent("futureEvent", JSONObject()))
         assertThrows(IllegalArgumentException::class.java) {
             parseMapEvent("tap", JSONObject("""{"coordinate":{"longitude":181,"latitude":0}}"""))

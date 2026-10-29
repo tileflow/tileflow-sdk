@@ -451,7 +451,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     let loader = ResourceLoader(
       policy: loadable.policy, hosted: hostedSession, apiOrigin: loadable.hosted?.apiOrigin,
       publicMetadataURLs: loadable.publicMetadataURLs,
-      cache: .shared, grantScope: loadable.grantScope,
+      cache: .shared, grantScope: loadable.grantScope, offline: .shared,
       onDeploymentSuperseded: { [weak self] in
         await self?.deploymentSuperseded(generation: current) ?? false
       })
@@ -512,6 +512,15 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
           ]
           let startingInsets = self.effectiveContentInsets
           if let camera = self.initialCamera { options["camera"] = try .encoded(camera) }
+          // A Hosted map opened from downloaded regions shows their regional credits.
+          if let scope = loadable.grantScope,
+            OfflineServingRule.hostedUsesPacks(
+              networkEnabled: TileflowHTTPClient.shared.isNetworkEnabled,
+              reachable: OfflineReachability.shared.isReachable)
+          {
+            let credits = await OfflineServingIndex.shared.credits(for: scope)
+            if !credits.isEmpty { options["credits"] = .array(credits.map(\.wireValue)) }
+          }
           _ = try await bridge.call(.initialize, payload: .object(options))
           guard !self.destroyed, self.generation == current else { return }
           self.initialized = true

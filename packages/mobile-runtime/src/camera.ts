@@ -329,8 +329,9 @@ export function createCameraController(
       reason = motionReason;
       emitCamera(moving ? 'cameraMoveStarted' : 'cameraMoveEnded');
     },
-    setAttribution(corner: Corner, create: () => AttributionControl) {
-      if (attribution?.corner === corner) return;
+    /** Places the attribution in `corner`; `refresh` replaces it in place, as its entries change. */
+    setAttribution(corner: Corner, create: () => AttributionControl, refresh = false) {
+      if (attribution?.corner === corner && !refresh) return;
       if (attribution) map.removeControl(attribution.control);
       attribution = {control: create(), corner};
       map.addControl(attribution.control, corner);

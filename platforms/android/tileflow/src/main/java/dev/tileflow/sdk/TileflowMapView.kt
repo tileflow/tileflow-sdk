@@ -32,11 +32,15 @@ import dev.tileflow.sdk.location.TileflowFollowMode
 import dev.tileflow.sdk.location.TileflowFollowModeChangeReason
 import dev.tileflow.sdk.location.TileflowLocation
 import dev.tileflow.sdk.location.TileflowLocationProvider
+import dev.tileflow.sdk.offline.OfflineReachability
+import dev.tileflow.sdk.offline.OfflineServingIndex
+import dev.tileflow.sdk.offline.OfflineServingRule
 import dev.tileflow.sdk.transport.EmbeddedRuntime
 import dev.tileflow.sdk.transport.MapPrewarmer
 import dev.tileflow.sdk.transport.ResourceAddress
 import dev.tileflow.sdk.transport.ResourceClient
 import dev.tileflow.sdk.transport.ResourceLoader
+import dev.tileflow.sdk.transport.TileflowHttpClient
 import dev.tileflow.sdk.transport.grantScope
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -48,6 +52,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -1071,6 +1076,8 @@ constructor(
                     publicMetadataUrls = loadable.publicMetadataUrls,
                     cache = TileflowMapCache.get(context).store,
                     grantScope = loadable.grantScope,
+                    offline = OfflineServingIndex.shared(context),
+                    reachable = { OfflineReachability.isReachable(context) },
                     onDeploymentSuperseded = {
                         // A protected style belongs to a superseded deployment: reload once.
                         automaticReloadAvailable.compareAndSet(true, false).also { reload ->
@@ -1132,6 +1139,26 @@ constructor(
                                 val startingSubscriptions = subscriptions
                                 val startingInsets = effectiveContentPadding
                                 camera?.let { configuration.put("camera", it.json()) }
+                                // A Hosted map opened from downloaded regions shows their credits.
+                                loadable.grantScope?.let { grantScope ->
+                                    if (
+                                        OfflineServingRule.hostedUsesPacks(
+                                            TileflowHttpClient.networkEnabled,
+                                            OfflineReachability.isReachable(context),
+                                        )
+                                    ) {
+                                        val credits =
+                                            withContext(Dispatchers.IO) {
+                                                OfflineServingIndex.shared(context)
+                                                    .credits(grantScope)
+                                            }
+                                        if (credits.isNotEmpty())
+                                            configuration.put(
+                                                "credits",
+                                                JSONArray(credits.map { it.toJson() }),
+                                            )
+                                    }
+                                }
                                 readyBridge.call(ProtocolContract.Method.INITIALIZE, configuration)
                                 if (destroyed || generation != current) return@launch
                                 initialized = true

@@ -58,17 +58,6 @@ internal data class OfflineZooms(
     }
 }
 
-/**
- * What a Hosted region downloads, after Mapbox's tile region load options: the area, the Map's
- * themes and the zooms.
- */
-internal data class TileflowOfflineRegionLoadOptions(
-    val geometry: TileflowOfflineGeometry,
-    /** 1 to 4 theme names of the Map; a single-style Map's theme is `default`. */
-    val themes: List<String>,
-    val zooms: OfflineZooms = OfflineZooms(),
-)
-
 /** The renderer whose styles a pack holds. */
 internal enum class OfflinePackProfile(val wireName: String) {
     WEB_VIEW("webview-v1"),
@@ -106,29 +95,48 @@ internal data class OfflinePackRequest(
          * One request for each pack the options need: a corridor or a box across the antimeridian
          * downloads as several packs.
          */
+        /** Reads a body this SDK wrote with [body]. */
+        fun fromJson(bytes: ByteArray): OfflinePackRequest? =
+            runCatching {
+                    val value = JSONObject(String(bytes, Charsets.UTF_8))
+                    val themes = value.getJSONArray("themes")
+                    OfflinePackRequest(
+                        value.getString("mapId"),
+                        value.getString("profile"),
+                        List(themes.length()) { themes.getString(it) },
+                        OfflinePackRegion.fromJson(value.getJSONObject("region"))!!,
+                        value.getInt("minZoom"),
+                        value.getInt("maxZoom"),
+                        value.getInt("terrainMaxZoom"),
+                    )
+                }
+                .getOrNull()
+
         fun requests(
             mapId: String,
-            options: TileflowOfflineRegionLoadOptions,
+            themes: List<String>,
+            geometry: TileflowOfflineGeometry,
+            zooms: OfflineZooms,
             profile: OfflinePackProfile = OfflinePackProfile.WEB_VIEW,
         ): List<OfflinePackRequest> {
             if (!Regex("^map_[A-Za-z0-9_-]{16}$").matches(mapId))
                 throw TileflowOfflineException.options("invalidMapID")
-            val themes = options.themes.distinct().sorted()
+            val sorted = themes.distinct().sorted()
             if (
-                options.themes.size !in 1..4 ||
-                    themes.size != options.themes.size ||
-                    themes.any { !Regex("^[A-Za-z][A-Za-z0-9_-]{0,63}$").matches(it) }
+                themes.size !in 1..4 ||
+                    sorted.size != themes.size ||
+                    sorted.any { !Regex("^[A-Za-z][A-Za-z0-9_-]{0,63}$").matches(it) }
             )
                 throw TileflowOfflineException.options("invalidThemes")
-            return options.geometry.packRegions().map {
+            return geometry.packRegions().map {
                 OfflinePackRequest(
                         mapId,
                         profile.wireName,
-                        themes,
+                        sorted,
                         it,
-                        options.zooms.range.first,
-                        options.zooms.range.last,
-                        options.zooms.terrainMaximum,
+                        zooms.range.first,
+                        zooms.range.last,
+                        zooms.terrainMaximum,
                     )
                     .also { request ->
                         if (request.body.size > MAXIMUM_BODY_BYTES)
@@ -151,7 +159,7 @@ internal data class OfflinePackRequest(
 internal class OfflinePackClient(
     configuration: TileflowConfiguration,
     private val transports: () -> NativeHTTPTransporting = {
-        NativeHTTPTransport(16 * 1024 * 1024)
+        NativeHTTPTransport(OfflinePackContract.MAXIMUM_RESPONSE_BYTES)
     },
     private val dispatcher: CoroutineDispatcher = Dispatchers.IO,
     private val now: () -> Long = System::currentTimeMillis,

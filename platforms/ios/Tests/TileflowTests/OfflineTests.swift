@@ -61,12 +61,12 @@ final class OfflineTests: XCTestCase {
       let zooms = try OfflineZooms(
         range: (body["minZoom"] as! Int)...max(body["minZoom"] as! Int, body["maxZoom"] as! Int),
         terrainMaximum: body["terrainMaxZoom"] as? Int ?? OfflineZooms.defaultTerrainMaximum)
-      let options = TileflowOfflineRegionLoadOptions(
-        geometry: .boundingBox(
-          TileflowBoundingBox(west: box[0], south: box[1], east: box[2], north: box[3])),
-        themes: body["themes"] as! [String], zooms: zooms)
       let built = Result {
-        try OfflinePackRequest.requests(mapID: body["mapId"] as! String, options: options)
+        try OfflinePackRequest.requests(
+          mapID: body["mapId"] as! String, themes: body["themes"] as! [String],
+          geometry: .boundingBox(
+            TileflowBoundingBox(west: box[0], south: box[1], east: box[2], north: box[3])),
+          zooms: zooms)
       }
       switch (item["canonical"], name) {
       case (let canonical?, _):
@@ -98,18 +98,18 @@ final class OfflineTests: XCTestCase {
       zooms.zooms(sourceMinimum: 0, sourceMaximum: min(14, zooms.terrainMaximum)), 12...12)
 
     let estimate = OfflinePlanner.estimate(manifest)
-    XCTAssertEqual(estimate.resourceCount, 37)
+    XCTAssertEqual(estimate.resourceCount, 38)
     XCTAssertEqual(estimate.billableResourceCount, 30)
-    XCTAssertEqual(estimate.publicResourceCount, 6)
-    XCTAssertEqual(estimate.bytes, 1_724_734)
+    XCTAssertEqual(estimate.publicResourceCount, 7)
+    XCTAssertEqual(estimate.bytes, 1_974_920)
     XCTAssertEqual(estimate.tileCounts, ["terrain": 2, "world": 17])
     XCTAssertEqual(estimate.mapViews, 1)
     XCTAssertEqual(OfflinePlanner.estimate(manifest, isStored: { _ in true }).mapViews, 0)
 
     let resources = Array(OfflinePlanner.resources(manifest))
-    XCTAssertEqual(resources.count, 37)
+    XCTAssertEqual(resources.count, 38)
     XCTAssertEqual(resources.filter(\.billable).count, 30)
-    XCTAssertEqual(resources.reduce(0) { $0 + ($1.bytes ?? 0) }, 1_724_734)
+    XCTAssertEqual(resources.reduce(0) { $0 + ($1.bytes ?? 0) }, 1_974_920)
     XCTAssertTrue(
       resources.filter(\.isPublic).allSatisfy { !$0.billable && $0.sha256 != nil })
     let world = manifest.tiles[1]
@@ -130,7 +130,7 @@ final class OfflineTests: XCTestCase {
   func testManifestInvariantsAreChecked() throws {
     let mutations: [(String, (inout [String: Any]) -> Void)] = [
       (
-        "totals", { $0["totals"] = ["resources": 37, "billableResources": 29, "bytes": 1_724_734] }
+        "totals", { $0["totals"] = ["resources": 38, "billableResources": 29, "bytes": 1_974_920] }
       ),
       (
         "public billable",
@@ -482,11 +482,10 @@ private func createdResponse() throws -> [String: Any] {
 
 private func createdRequest() throws -> OfflinePackRequest {
   try OfflinePackRequest.requests(
-    mapID: "map_offlineofflineof",
-    options: TileflowOfflineRegionLoadOptions(
-      geometry: .boundingBox(
-        TileflowBoundingBox(west: -3.71, south: 40.41, east: -3.69, north: 40.425)),
-      themes: ["light", "dark"], zooms: OfflineZooms(range: 12...15)))[0]
+    mapID: "map_offlineofflineof", themes: ["light", "dark"],
+    geometry: .boundingBox(
+      TileflowBoundingBox(west: -3.71, south: 40.41, east: -3.69, north: 40.425)),
+    zooms: OfflineZooms(range: 12...15))[0]
 }
 
 private func createdPack() throws -> OfflinePack {

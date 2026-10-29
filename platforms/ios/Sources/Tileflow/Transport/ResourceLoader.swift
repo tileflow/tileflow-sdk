@@ -44,6 +44,10 @@ extension ResourceLoading {
 /// Only a session bootstrap ends a Hosted map: protected resources the service refuses renew the
 /// grant, reload a superseded deployment or wait for a rate limit, as `HostedContract.reaction`
 /// describes.
+///
+/// Downloaded regions answer without a session where `OfflineServingRule` says so: a Hosted map
+/// without a usable network serves its protected resources from the regions' packs, and with the
+/// network switched off every request is answered from stored entries alone, a miss with 504.
 final class ResourceLoader: ResourceLoading, Sendable {
   private let policy: ResourcePolicy
   private let hosted: HostedSession?
@@ -52,6 +56,9 @@ final class ResourceLoader: ResourceLoading, Sendable {
   private let transport: any NativeHTTPTransporting
   private let cache: ResourceCacheStore?
   private let grantScope: ResourceCacheScope?
+  private let offline: OfflineServingIndex?
+  private let networkEnabled: @Sendable () -> Bool
+  private let reachable: @Sendable () -> Bool
   private let onDeploymentSuperseded: (@Sendable () async -> Bool)?
   private let now: @Sendable () -> ContinuousClock.Instant
   private let date: @Sendable () -> Date
@@ -63,6 +70,9 @@ final class ResourceLoader: ResourceLoading, Sendable {
     hosted: HostedSession? = nil, apiOrigin: URL? = nil, publicMetadataURLs: Set<URL> = [],
     transport: (any NativeHTTPTransporting)? = nil,
     cache: ResourceCacheStore? = nil, grantScope: ResourceCacheScope? = nil,
+    offline: OfflineServingIndex? = nil,
+    networkEnabled: @escaping @Sendable () -> Bool = { TileflowHTTPClient.shared.isNetworkEnabled },
+    reachable: @escaping @Sendable () -> Bool = { OfflineReachability.shared.isReachable },
     onDeploymentSuperseded: (@Sendable () async -> Bool)? = nil,
     now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
     date: @escaping @Sendable () -> Date = { Date() },
@@ -76,6 +86,9 @@ final class ResourceLoader: ResourceLoading, Sendable {
       transport ?? NativeHTTPTransport(maximumBytes: maximumBytes, lane: .resources)
     self.cache = cache
     self.grantScope = grantScope
+    self.offline = offline
+    self.networkEnabled = networkEnabled
+    self.reachable = reachable
     self.onDeploymentSuperseded = onDeploymentSuperseded
     self.now = now
     self.date = date
@@ -109,8 +122,18 @@ final class ResourceLoader: ResourceLoading, Sendable {
       else { throw ResourceError.unsupportedRequest }
     }
     let cacheable = cache != nil && method == "GET" && range == nil
+    let protected = hosted != nil && !publicMetadataURLs.contains(url) && !isPublicAPIResource(url)
+    guard networkEnabled() else {
+      return try await storedOnly(url, protected: protected, cacheable: cacheable)
+    }
     // A fresh public entry needs neither the network nor a Hosted session.
     if cacheable, let stored = freshPublicEntry(url) { return Self.response(stored) }
+    if protected, cacheable,
+      OfflineServingRule.hostedUsesPacks(networkEnabled: true, reachable: reachable()),
+      let packed = await packEntry(url)
+    {
+      return Self.response(packed)
+    }
     let deadline = now().advanced(by: .seconds(30))
     var redirected = false
     var retried = false
@@ -120,11 +143,18 @@ final class ResourceLoader: ResourceLoading, Sendable {
       native.httpMethod = method
       if let range { native.setValue(range, forHTTPHeaderField: "Range") }
       var grant: String?
-      if let hosted, !publicMetadataURLs.contains(url), !isPublicAPIResource(url) {
+      if let hosted, protected {
         if let gate = rateLimit.until, gate > now(), gate < deadline {
           try await pause(now().duration(to: gate))
         }
-        let admission = try await hosted.authorize(url, publicPolicy: policy)
+        let admission: HostedAdmission
+        do {
+          admission = try await hosted.authorize(url, publicPolicy: policy)
+        } catch let error as TileflowMapError where error == .sessionUnavailable {
+          // The service cannot be reached: a downloaded region answers instead.
+          if cacheable, let packed = await packEntry(url) { return Self.response(packed) }
+          throw error
+        }
         grant = admission.grant
         if let grant {
           native.setValue(grant, forHTTPHeaderField: "X-Tileflow-Native-Grant")
@@ -217,6 +247,36 @@ final class ResourceLoader: ResourceLoading, Sendable {
         throw TileflowMapError.quotaExceeded
       }
     }
+  }
+
+  /// Answers from stored entries alone, never the network: a downloaded region's pack for a
+  /// protected resource, else a pinned or ambient entry of the shared scope whatever its
+  /// freshness. A miss answers 504, as an HTTP cache answers `only-if-cached`.
+  private func storedOnly(_ url: URL, protected: Bool, cacheable: Bool) async throws
+    -> ResourceResponse
+  {
+    if cacheable {
+      if protected {
+        if let packed = await packEntry(url) { return Self.response(packed) }
+      } else {
+        try policy.validate(url)
+        let key = ResourceCacheKey(url: url, scope: .shared)
+        if let stored = storedEntries(key), let entry = stored.pinned ?? stored.ambient {
+          return Self.response(entry)
+        }
+      }
+    }
+    return ResourceResponse(
+      status: 504, headers: ["Cache-Control": "no-store", "Content-Length": "0"],
+      body: .data(Data()))
+  }
+
+  /// A downloaded region's entry for a protected resource, when a region the map may use holds it.
+  private func packEntry(_ url: URL) async -> StoredResource? {
+    guard let offline, let cache, let grantScope else { return nil }
+    let key = ResourceCacheKey(url: url, scope: grantScope)
+    guard await offline.serves(key) else { return nil }
+    return cache.read(key, retention: .pinned)
   }
 
   /// Landmarks and Team models are public on the API origin and never carry a grant.

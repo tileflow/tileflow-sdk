@@ -41,7 +41,9 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   private var contentRevision = 0
   private var subscriptions = EventSubscriptions()
   let cameraEvents = CameraEventGate()
-  private let controlsView = MapControlsView()
+  let controlsView = MapControlsView()
+  /// The location provider, the latest position and the follow mode.
+  let location = MapLocation()
   private let touchClaim = MapTouchClaim()
   /// Space covered by the application at each edge, in points.
   public var contentInsets: UIEdgeInsets = .zero {
@@ -76,16 +78,14 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     subscriptions = EventSubscriptions(
       application: options.events, followCamera: options.controls.followCamera)
     super.init(frame: .zero)
+    location.view = self
     accessibilityLabel = "Interactive map"
     controlsView.controls = options.controls
+    controlsView.locationShown = options.location.enabled
     controlsView.camera = initialCamera
     controlsView.isHidden = true
-    controlsView.onCompass = { [weak self] in
-      Task { [weak self] in
-        _ = try? await self?.move(to: .init(bearing: 0), animation: .ease(duration: 0.3), reason: "gesture")
-      }
-    }
-    controlsView.onRecenter = { [weak self] in self?.onEvent?(.recenterRequested) }
+    controlsView.onCompass = { [weak self] in self?.compassTapped() }
+    controlsView.onRecenter = { [weak self] in self?.recenterTapped() }
     addSubview(controlsView)
     touchClaim.gestures = options.gestures
     addGestureRecognizer(touchClaim)
@@ -223,6 +223,8 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
       application: options.events, followCamera: options.controls.followCamera)
     touchClaim.gestures = options.gestures
     controlsView.controls = options.controls
+    controlsView.locationShown = options.location.enabled
+    locationOptionsChanged(from: previous.location)
     // Antialiasing and style validation are fixed when a renderer starts.
     if options.antialias != previous.antialias || options.validatesStyle != previous.validatesStyle,
       webView != nil
@@ -348,6 +350,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     hostedSession = nil
     loadable = nil
     NotificationCenter.default.removeObserver(self)
+    refreshLocation()
     retireGeneration(.disposed)
     onEvent = nil
   }
@@ -366,6 +369,8 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   }
 
   private var isVisible: Bool { window != nil && inForeground }
+  /// Whether the map is in a window while the application is in the foreground.
+  var isShown: Bool { isVisible }
 
   private func resetRecovery() {
     recoveryCount = 0
@@ -404,6 +409,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
 
   private func updateVisibility() {
     guard !destroyed else { return }
+    refreshLocation()
     let visible = isVisible
     // While hidden, the session starts no bootstrap; requests that need one wait until visible.
     hostedSession?.setBackgrounded(!visible)
@@ -525,6 +531,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
             try await self.move(to: request.camera, animation: .none)
           }
           try await self.replayScene(through: bridge)
+          try await self.replayLocation(through: bridge)
           if !self.rendererVisible {
             _ = try await bridge.call(.setVisibility, payload: .object(["visible": .bool(false)]))
           }
@@ -641,6 +648,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
         onEvent?(.themeTransition(transition))
       }
     case "animationEnded", "shotCue": animations.receive(event, value)
+    case "followModeChanged": receiveFollowModeChanged(value)
     case "warning":
       if let count = value["count"]?.number.flatMap({ Int(exactly: $0) }), count > 0 {
         onEvent?(

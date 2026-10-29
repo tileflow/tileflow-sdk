@@ -334,6 +334,7 @@ extension TileflowMapView {
   {
     let payload = try shot.wireValue()
     let bridge = try requireRenderer()
+    endFollowing(.api)
     let started = try await bridge.call(.playShot, payload: payload)
     return try await awaitAnimation(started, on: bridge, onCue: onCue)
   }

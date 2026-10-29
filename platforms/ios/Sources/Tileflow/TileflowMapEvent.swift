@@ -20,8 +20,12 @@ public enum TileflowMapEvent: Sendable {
   case gestureStarted(TileflowGesture)
   /// The gesture ended. Motion that continues after it is part of the camera's movement.
   case gestureEnded(TileflowGesture)
-  /// A person tapped the recenter button. The application chooses where the camera goes.
+  /// A person tapped the recenter button while the map does not show the location. The
+  /// application chooses where the camera goes.
   case recenterRequested
+  /// The follow mode changed without the application setting it: a person moved the map or
+  /// tapped the compass or the recenter button, or the application moved the camera.
+  case followModeChanged(TileflowFollowModeChange)
   case themeChanged(String)
   /// A theme change moved to a new phase; the ready phase carries the theme's route inks.
   case themeTransition(TileflowThemeTransition)

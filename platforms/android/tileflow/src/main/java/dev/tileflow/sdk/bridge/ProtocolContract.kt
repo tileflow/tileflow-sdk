@@ -45,6 +45,8 @@ internal object ProtocolContract {
         ANIMATE_LINE_PROGRESS("animateLineProgress"),
         PLAY_SHOT("playShot"),
         STOP_ANIMATION("stopAnimation"),
+        UPDATE_LOCATION("updateLocation"),
+        SET_FOLLOW_MODE("setFollowMode"),
         DISPOSE("dispose"),
     }
 
@@ -66,6 +68,7 @@ internal object ProtocolContract {
         LONG_PRESS("longPress", TileflowEventLevel.ESSENTIAL),
         ANNOTATION_ACTIVATED("annotationActivated", TileflowEventLevel.ESSENTIAL),
         POI_ACTIVATED("poiActivated", TileflowEventLevel.ESSENTIAL),
+        FOLLOW_MODE_CHANGED("followModeChanged", TileflowEventLevel.ESSENTIAL),
         CAMERA_MOVE_ENDED("cameraMoveEnded", TileflowEventLevel.ESSENTIAL),
         CAMERA_MOVE_STARTED("cameraMoveStarted", TileflowEventLevel.CAMERA),
         GESTURE_STARTED("gestureStarted", TileflowEventLevel.CAMERA),

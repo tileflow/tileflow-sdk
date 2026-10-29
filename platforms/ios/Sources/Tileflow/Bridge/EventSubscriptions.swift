@@ -17,7 +17,8 @@ struct EventSubscriptions: Equatable {
 
   init(application options: TileflowEventOptions = .init(), followCamera: Bool = false) {
     set(.application, Self.demand(for: options))
-    set(.camera, [.cameraMoveStarted: 0, .cameraMoveEnded: 0])
+    // The follow mode ends when a person moves the map, whatever the application's level.
+    set(.camera, [.cameraMoveStarted: 0, .cameraMoveEnded: 0, .followModeChanged: 0])
     set(.controls, followCamera ? [.cameraMoved: 0] : [:])
   }
 

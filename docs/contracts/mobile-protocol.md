@@ -101,11 +101,11 @@ any other event. `hello` and `error` need no subscription.
 
 Each event belongs to one level. Levels are cumulative:
 
-| Level        | Adds                                                                                                                                                     |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `essential`  | `loading`, `contentReady`, `themeChanged`, `themeTransition`, `warning`, `tap`, `longPress`, activations, `animationEnded`, `shotCue`, `cameraMoveEnded` |
-| `camera`     | `cameraMoveStarted`, `gestureStarted`, `gestureEnded`                                                                                                    |
-| `continuous` | `cameraMoved`, at most once per rendered frame                                                                                                           |
+| Level        | Adds                                                                                                                                                                          |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `essential`  | `loading`, `contentReady`, `themeChanged`, `themeTransition`, `warning`, `tap`, `longPress`, activations, `animationEnded`, `shotCue`, `followModeChanged`, `cameraMoveEnded` |
+| `camera`     | `cameraMoveStarted`, `gestureStarted`, `gestureEnded`                                                                                                                         |
+| `continuous` | `cameraMoved`, at most once per rendered frame                                                                                                                                |
 
 The host sends its subscriptions in `initialize` and replaces them with `setEvents`. Each
 subscription has a throttle interval, from 0 to `maximumThrottleMs`. A throttled event is delivered
@@ -131,7 +131,8 @@ Camera events carry the camera, a revision and the `reason` for the movement:
   gesture;
 - `api`: the application moved the camera through the SDK, with or without an animation;
 - `system`: the SDK moved the camera itself, for example after a layout change or a view mode
-  transition.
+  transition;
+- `location`: the camera follows the person's location; see [Location](#location).
 
 `themeTransition` reports each phase of a theme change (`preloading`, `applying`, `ready`, `error`)
 with the current and target themes; the `ready` phase carries the route inks of the theme on screen.
@@ -193,6 +194,32 @@ Animations end with their renderer generation.
 
 `initialize` also takes `renderer` options fixed for the renderer's lifetime: `antialias` (on by
 default) and `validateStyle` (off by default). A host that changes them starts a new generation.
+
+## Location
+
+The host passes on what its location provider reports; the renderer draws the puck and moves the
+camera, so both move together frame by frame.
+
+- The map options carry `location`: whether the renderer draws the location, what the puck's
+  direction indicator shows (`none`, `heading` or `course`), whether it draws the accuracy circle,
+  and after how many milliseconds a fix is stale. A host replays them with the other options.
+- `updateLocation` carries a fix (`longitude`, `latitude`, optional `accuracy` in metres and
+  `course` in degrees, and its `age` in milliseconds when sent) and a `heading` (`direction` in
+  degrees). An absent field keeps what the renderer has; null clears it. A host keeps one update in
+  flight and sends the latest values when it is answered, and gives a new renderer the latest fix and
+  heading with their age measured again.
+- The puck glides from what it shows to each new fix for as long as the provider took to send it, at
+  most one second, and turns its indicator toward a new heading in a quarter of a second. A fix older
+  than the stale limit is drawn grey.
+- `setFollowMode` starts, changes or ends following: `mode` (`none`, `position`, `heading` or
+  `course`), a `minimumZoom` and `pitch` to reach as it starts, a `bearing` to turn to in the
+  `position` mode, a `duration` and the host's `revision`, its count of follow requests. Following
+  waits for the first fix.
+- Each frame of following moves the camera; the renderer reports one movement per glide, with the
+  reason `location`. A pointer resting on the map holds the camera, so a gesture can start.
+- A person's gesture, `moveCamera`, `stopCamera` and `playShot` end following. The renderer then
+  sends `followModeChanged` with `mode: none`, the `reason` (`gesture` or `api`) and the `revision`
+  of the request it ended, so a host ignores an end that a later request already replaced.
 
 ## Errors and warnings
 

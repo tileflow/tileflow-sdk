@@ -7,6 +7,7 @@ import android.view.ViewGroup
 import android.widget.Button
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
@@ -25,6 +26,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -39,6 +41,7 @@ import dev.tileflow.configuration.TileflowConfiguration
 import dev.tileflow.configuration.TileflowCredential
 import dev.tileflow.sdk.TileflowCamera
 import dev.tileflow.sdk.TileflowCameraUpdate
+import dev.tileflow.sdk.TileflowCoordinate
 import dev.tileflow.sdk.TileflowEventLevel
 import dev.tileflow.sdk.TileflowEventOptions
 import dev.tileflow.sdk.TileflowMap
@@ -47,6 +50,14 @@ import dev.tileflow.sdk.TileflowMapEvent
 import dev.tileflow.sdk.TileflowMapOptions
 import dev.tileflow.sdk.TileflowMapSource
 import dev.tileflow.sdk.TileflowMapView
+import dev.tileflow.sdk.location.TileflowFollowMode
+import dev.tileflow.sdk.location.TileflowLocationAccuracy
+import dev.tileflow.sdk.location.TileflowLocationOptions
+import dev.tileflow.sdk.location.TileflowLocationPermissions
+import dev.tileflow.sdk.location.TileflowLocationProvider
+import dev.tileflow.sdk.location.TileflowPuckBearing
+import dev.tileflow.sdk.location.TileflowSimulatedLocationProvider
+import dev.tileflow.sdk.location.rememberTileflowLocationState
 import dev.tileflow.sdk.rememberTileflowCameraState
 import java.net.URI
 import kotlinx.coroutines.launch
@@ -93,6 +104,28 @@ internal fun Intent.mapSource(): TileflowMapSource {
     )
 }
 
+/**
+ * With the `simulateLocation` extra, a walk through central Madrid instead of the device's
+ * location, for the emulator and for demonstrations.
+ */
+internal fun Intent.locationProvider(): TileflowLocationProvider? =
+    if (!getBooleanExtra("simulateLocation", false)) null
+    else
+        TileflowSimulatedLocationProvider(
+            listOf(
+                TileflowCoordinate(-3.7038, 40.4168),
+                TileflowCoordinate(-3.6996, 40.4180),
+                TileflowCoordinate(-3.6922, 40.4194),
+                TileflowCoordinate(-3.6884, 40.4153),
+            ),
+            speed = 6.0,
+            loops = true,
+        )
+
+/** Shows the location with the device's heading. */
+private val showLocation =
+    TileflowLocationOptions(enabled = true, puckBearing = TileflowPuckBearing.HEADING)
+
 /** Where the examples start and where the recenter button returns. */
 private val startCamera = TileflowCamera(-3.70, 40.42, 13.0)
 
@@ -104,14 +137,34 @@ private val exampleOptions =
 
 class ViewExample : ComponentActivity() {
     private lateinit var map: TileflowMapView
+    private lateinit var status: TextView
     private var dark = false
+
+    /**
+     * Asks for the precise location while the app is in use; the person may share an approximate
+     * one. With access, the map shows the location and follows it. The recenter button follows it
+     * again after the map is moved.
+     */
+    private val locationRequest =
+        registerForActivityResult(TileflowLocationPermissions.RequestWhenInUse()) { authorization ->
+            if (!authorization.allowsLocation) {
+                status.text = "Location access is off"
+                return@registerForActivityResult
+            }
+            lifecycleScope.launch {
+                runCatching {
+                    map.setOptions(map.options.copy(location = showLocation))
+                    map.followMode = TileflowFollowMode.POSITION
+                }
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         intent.configureTileflow()
         setContentView(R.layout.map_screen)
         map = findViewById(R.id.map)
-        val status = findViewById<TextView>(R.id.status)
+        status = findViewById(R.id.status)
         // The panel covers the bottom of the map: the camera centres above it and the controls
         // stay clear of it. It sits above the navigation bar, which the map adds on its own.
         val panel = findViewById<View>(R.id.panel)
@@ -132,11 +185,20 @@ class ViewExample : ComponentActivity() {
                 is TileflowMapEvent.LongPress -> status.text = "Long press"
                 TileflowMapEvent.RecenterRequested ->
                     lifecycleScope.launch { runCatching { map.fly(startCamera) } }
+                is TileflowMapEvent.FollowModeChanged ->
+                    status.text =
+                        if (it.change.mode == TileflowFollowMode.NONE)
+                            "Moved away from your location"
+                        else "Following you"
                 else -> Unit
             }
         }
+        map.locationProvider = intent.locationProvider()
         map.setSource(intent.mapSource(), startCamera)
         lifecycleScope.launch { runCatching { map.setOptions(exampleOptions) } }
+        findViewById<Button>(R.id.myLocation).setOnClickListener {
+            locationRequest.launch(TileflowLocationAccuracy.FULL)
+        }
         findViewById<Button>(R.id.theme).setOnClickListener {
             dark = !dark
             lifecycleScope.launch {
@@ -157,14 +219,26 @@ class ComposeExample : ComponentActivity() {
         super.onCreate(savedInstanceState)
         intent.configureTileflow()
         val source = intent.mapSource()
+        val locationProvider = intent.locationProvider()
         setContent {
             var dark by remember { mutableStateOf(false) }
             var expanded by remember { mutableStateOf(false) }
             var status by remember { mutableStateOf("Loading Tileflow…") }
             // The camera survives rotation and process recreation.
             val camera = rememberTileflowCameraState(startCamera)
+            // The follow mode survives rotation too; the recenter button and gestures change it.
+            val location = rememberTileflowLocationState()
+            var showsLocation by rememberSaveable { mutableStateOf(false) }
+            // Asks for the precise location while the app is in use, then shows and follows it.
+            val locationRequest =
+                rememberLauncherForActivityResult(TileflowLocationPermissions.RequestWhenInUse()) {
+                    if (it.allowsLocation) {
+                        showsLocation = true
+                        location.followMode = TileflowFollowMode.POSITION
+                    } else status = "Location access is off"
+                }
             val scope = rememberCoroutineScope()
-            val panel by animateDpAsState(if (expanded) 280.dp else 120.dp, label = "panel")
+            val panel by animateDpAsState(if (expanded) 328.dp else 168.dp, label = "panel")
             MaterialTheme {
                 Box(Modifier.fillMaxSize()) {
                     // The panel's height is content padding: the camera centres above it.
@@ -172,9 +246,13 @@ class ComposeExample : ComponentActivity() {
                         source,
                         Modifier.fillMaxSize(),
                         theme = if (dark) "dark" else "light",
-                        options = exampleOptions,
+                        options =
+                            if (showsLocation) exampleOptions.copy(location = showLocation)
+                            else exampleOptions,
                         cameraState = camera,
                         contentPadding = PaddingValues(bottom = panel),
+                        locationState = location,
+                        locationProvider = locationProvider,
                     ) {
                         when (it) {
                             TileflowMapEvent.ContentReady -> status = "Tileflow · Compose"
@@ -184,6 +262,11 @@ class ComposeExample : ComponentActivity() {
                                 scope.launch {
                                     runCatching { camera.fly(TileflowCameraUpdate(startCamera)) }
                                 }
+                            is TileflowMapEvent.FollowModeChanged ->
+                                status =
+                                    if (it.change.mode == TileflowFollowMode.NONE)
+                                        "Moved away from your location"
+                                    else "Following you"
                             else -> Unit
                         }
                     }
@@ -202,6 +285,11 @@ class ComposeExample : ComponentActivity() {
                             Text(if (expanded) "Collapse panel" else "Expand panel")
                         }
                         Button(onClick = { dark = !dark }) { Text("Change theme") }
+                        Button(
+                            onClick = { locationRequest.launch(TileflowLocationAccuracy.FULL) }
+                        ) {
+                            Text("My location")
+                        }
                     }
                 }
             }

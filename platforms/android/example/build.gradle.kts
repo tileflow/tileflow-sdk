@@ -33,4 +33,7 @@ dependencies {
     implementation(platform("androidx.compose:compose-bom:2025.08.01"))
     implementation("androidx.compose.material3:material3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.9.3")
+    // With Google Play services on the device, the SDK's default location provider uses the Fused
+    // Location Provider; without this dependency it uses the platform's LocationManager.
+    implementation("com.google.android.gms:play-services-location:21.3.0")
 }

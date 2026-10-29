@@ -43,6 +43,9 @@ final class MapViewController: UIViewController {
     let theme = UIButton(type: .system)
     theme.setTitle("Change theme", for: .normal)
     theme.addTarget(self, action: #selector(changeTheme), for: .touchUpInside)
+    let myLocation = UIButton(type: .system)
+    myLocation.setTitle("My location", for: .normal)
+    myLocation.addTarget(self, action: #selector(showMyLocation), for: .touchUpInside)
     let more = UIButton(type: .system)
     more.setTitle("Show more", for: .normal)
     more.addAction(
@@ -52,7 +55,7 @@ final class MapViewController: UIViewController {
         more?.setTitle(self.expanded ? "Show less" : "Show more", for: .normal)
         self.layoutPanel(animated: true)
       }, for: .touchUpInside)
-    [status, theme, more].forEach(panel.addArrangedSubview)
+    [status, theme, myLocation, more].forEach(panel.addArrangedSubview)
     panel.axis = .vertical
     panel.alignment = .leading
     panel.spacing = 8
@@ -62,7 +65,7 @@ final class MapViewController: UIViewController {
     panel.directionalLayoutMargins = .init(top: 16, leading: 16, bottom: 16, trailing: 16)
     panel.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(panel)
-    let height = panel.heightAnchor.constraint(equalToConstant: 132)
+    let height = panel.heightAnchor.constraint(equalToConstant: 168)
     panelHeight = height
     NSLayoutConstraint.activate([
       // The map fills the screen; its automatic insets keep controls clear of the system bars.
@@ -76,6 +79,7 @@ final class MapViewController: UIViewController {
       height,
     ])
     layoutPanel(animated: false)
+    map.locationProvider = exampleLocationProvider()
     map.onEvent = { [weak self] event in
       guard let self else { return }
       switch event {
@@ -84,17 +88,39 @@ final class MapViewController: UIViewController {
       case .tap: self.status.text = "Map selected"
       case .recenterRequested:
         Task { try? await self.map.fly(to: Self.start) }
+      case .followModeChanged(let change):
+        self.status.text = change.mode == .none ? "Moved away from your location" : "Following you"
       default: break
       }
     }
   }
 
   private func layoutPanel(animated: Bool) {
-    let height: CGFloat = expanded ? 280 : 132
+    let height: CGFloat = expanded ? 316 : 168
     panelHeight?.constant = height
     // The panel covers the bottom of the map: the camera and controls keep clear of it.
     map.contentInsets.bottom = height
     if animated { UIView.animate(withDuration: 0.25) { self.view.layoutIfNeeded() } }
+  }
+
+  /// Asks for the location, shows it with the device's heading and follows it. The recenter button
+  /// follows it again after the map is moved, and turns between following and following the
+  /// heading.
+  @objc private func showMyLocation() {
+    Task {
+      guard await requestLocationAccess() else {
+        status.text = "Location access is off"
+        return
+      }
+      var options = map.options
+      options.location = TileflowLocationOptions(enabled: true, puckBearing: .heading)
+      do {
+        try await map.setOptions(options)
+        map.followMode = .position
+      } catch {
+        status.text = "Location unavailable"
+      }
+    }
   }
 
   @objc private func changeTheme() {

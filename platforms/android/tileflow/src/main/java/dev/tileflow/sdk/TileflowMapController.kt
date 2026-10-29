@@ -25,6 +25,20 @@ public class TileflowMapController {
     public val isMoving: Boolean
         get() = view.get()?.isMoving ?: false
 
+    /**
+     * How the attached map's camera follows the location; see [TileflowMapView.followMode]. Setting
+     * it without an attached map does nothing.
+     */
+    public var followMode: dev.tileflow.sdk.location.TileflowFollowMode
+        get() = view.get()?.followMode ?: dev.tileflow.sdk.location.TileflowFollowMode.NONE
+        set(value) {
+            view.get()?.followMode = value
+        }
+
+    /** The latest position the attached map received. */
+    public val latestLocation: dev.tileflow.sdk.location.TileflowLocation?
+        get() = view.get()?.latestLocation
+
     public suspend fun camera(): TileflowCamera = attached().camera()
 
     public suspend fun setCamera(camera: TileflowCamera, durationMillis: Long = 0): Unit =

@@ -430,6 +430,7 @@ public suspend fun TileflowMapView.play(
 ): Boolean {
     val payload = shot.json()
     val bridge = requireRenderer()
+    endFollowing(dev.tileflow.sdk.location.TileflowFollowModeChangeReason.API)
     val started = bridge.call(ProtocolContract.Method.PLAY_SHOT, payload)
     return awaitAnimation(started, bridge, onCue)
 }

@@ -1,6 +1,7 @@
 package dev.tileflow.sdk
 
 import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.location.TileflowLocationOptions
 import org.json.JSONObject
 
 public enum class TileflowTimeOfDay(internal val wireName: String) {
@@ -101,6 +102,7 @@ public data class TileflowEventOptions(
  * @property events Which events the map reports.
  * @property vegetation Shows or hides the map's 3D vegetation; null keeps what the map's design
  *   chooses.
+ * @property location How the map shows the person's location; off by default.
  * @property antialias Multisampling, which smooths the thin edges of 3D buildings, trees and
  *   models. Changing it starts a new renderer.
  * @property validatesStyle Validates each style as the renderer loads it, reporting problems as
@@ -115,6 +117,7 @@ public data class TileflowMapOptions(
     val cameraLimits: TileflowCameraLimits = TileflowCameraLimits(),
     val events: TileflowEventOptions = TileflowEventOptions(),
     val vegetation: Boolean? = null,
+    val location: TileflowLocationOptions = TileflowLocationOptions(),
     val antialias: Boolean = true,
     val validatesStyle: Boolean = false,
 ) {
@@ -134,6 +137,7 @@ public data class TileflowMapOptions(
             .put("limits", cameraLimits.json())
             .put("attribution", controls.attributionPosition.corner(rightToLeft))
             .put("vegetation", vegetation ?: JSONObject.NULL)
+            .put("location", location.json())
 
     /** Options fixed for a renderer's lifetime. */
     internal fun rendererJson(): JSONObject =

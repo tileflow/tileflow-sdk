@@ -30,6 +30,8 @@ internal class EventSubscriptions(
             mapOf(
                 ProtocolContract.Event.CAMERA_MOVE_STARTED to 0L,
                 ProtocolContract.Event.CAMERA_MOVE_ENDED to 0L,
+                // The follow mode ends when a person moves the map, whatever the level.
+                ProtocolContract.Event.FOLLOW_MODE_CHANGED to 0L,
             ),
         )
         set(

@@ -13,6 +13,14 @@ public final class TileflowMapController {
   public var currentCamera: TileflowCamera? { view?.currentCamera }
   /// Whether the attached map's camera is moving.
   public var isMoving: Bool { view?.isMoving ?? false }
+  /// How the attached map's camera follows the location; see ``TileflowMapView/followMode``.
+  /// Setting it without an attached map does nothing.
+  public var followMode: TileflowFollowMode {
+    get { view?.followMode ?? .none }
+    set { view?.followMode = newValue }
+  }
+  /// The latest position the attached map received.
+  public var latestLocation: TileflowLocation? { view?.latestLocation }
 
   public func setCamera(_ camera: TileflowCamera, duration: TimeInterval = 0) async throws {
     try await attached().setCamera(camera, duration: duration)

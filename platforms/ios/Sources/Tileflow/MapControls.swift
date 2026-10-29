@@ -35,8 +35,9 @@ public struct TileflowMapControls: Equatable, Sendable {
   public var scaleBar: Bool
   public var scaleBarPosition: TileflowControlPosition
   public var scaleBarUnits: TileflowScaleBarUnits
-  /// A button that reports ``TileflowMapEvent/recenterRequested``; the application decides where
-  /// the camera goes, for example to the person's location.
+  /// A button that recenters the map. While the map shows the person's location it follows the
+  /// location, and turns between following the position and the heading; otherwise it reports
+  /// ``TileflowMapEvent/recenterRequested`` and the application decides where the camera goes.
   public var recenterButton: Bool
   public var recenterButtonPosition: TileflowControlPosition
   public var attributionPosition: TileflowControlPosition
@@ -112,6 +113,13 @@ final class MapControlsView: UIView {
   var camera: TileflowCamera? {
     didSet { update() }
   }
+  /// Whether the map shows the location, so the recenter button follows it.
+  var locationShown = false {
+    didSet { if locationShown != oldValue { updateRecenter() } }
+  }
+  var followMode: TileflowFollowMode = .none {
+    didSet { if followMode != oldValue { updateRecenter() } }
+  }
   var insets: UIEdgeInsets = .zero {
     didSet { if insets != oldValue { setNeedsLayout() } }
   }
@@ -120,8 +128,7 @@ final class MapControlsView: UIView {
     super.init(frame: frame)
     backgroundColor = .clear
     compass.addAction(UIAction { [weak self] _ in self?.onCompass?() }, for: .primaryActionTriggered)
-    recenter.setImage(UIImage(systemName: "location.fill"), for: .normal)
-    recenter.accessibilityLabel = "Recenter map"
+    updateRecenter()
     recenter.addAction(
       UIAction { [weak self] _ in self?.onRecenter?() }, for: .primaryActionTriggered)
     for control in [compass, recenter] as [UIView] {
@@ -144,6 +151,24 @@ final class MapControlsView: UIView {
   override func point(inside point: CGPoint, with event: UIEvent?) -> Bool {
     subviews.contains {
       !$0.isHidden && $0.isUserInteractionEnabled && $0.frame.insetBy(dx: -4, dy: -4).contains(point)
+    }
+  }
+
+  /// The recenter button shows whether, and how, the camera follows the location.
+  private func updateRecenter() {
+    let symbol: String
+    switch (locationShown, followMode) {
+    case (false, _), (true, .position): symbol = "location.fill"
+    case (true, .none): symbol = "location"
+    case (true, .heading), (true, .course): symbol = "location.north.line.fill"
+    }
+    recenter.setImage(UIImage(systemName: symbol), for: .normal)
+    recenter.accessibilityLabel = locationShown ? "My location" : "Recenter map"
+    switch (locationShown, followMode) {
+    case (false, _), (true, .none): recenter.accessibilityValue = nil
+    case (true, .position): recenter.accessibilityValue = "Following"
+    case (true, .heading): recenter.accessibilityValue = "Following with heading"
+    case (true, .course): recenter.accessibilityValue = "Following with course"
     }
   }
 

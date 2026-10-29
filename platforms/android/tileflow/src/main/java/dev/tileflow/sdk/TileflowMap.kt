@@ -14,6 +14,8 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import dev.tileflow.sdk.location.TileflowLocationProvider
+import dev.tileflow.sdk.location.TileflowLocationState
 
 /**
  * Recomposition preserves the renderer; source replacement is an explicit resource transition.
@@ -23,6 +25,10 @@ import androidx.compose.ui.viewinterop.AndroidView
  * rest of the view and the controls stay inside it, together with the system bars and display
  * cutout. Return false from [touchFilter] to leave a touch that begins at that point to the
  * composables behind the map.
+ *
+ * With a [locationState] the follow mode is hoisted: see [TileflowLocationState]. Show the location
+ * with [TileflowMapOptions.location]; [locationProvider] replaces the SDK's default provider, for
+ * example with a [dev.tileflow.sdk.location.TileflowSimulatedLocationProvider].
  */
 @Composable
 public fun TileflowMap(
@@ -35,14 +41,19 @@ public fun TileflowMap(
     cameraState: TileflowCameraState? = null,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     touchFilter: ((DpOffset) -> Boolean)? = null,
+    locationState: TileflowLocationState? = null,
+    locationProvider: TileflowLocationProvider? = null,
     onEvent: (TileflowMapEvent) -> Unit = {},
 ) {
     val context = LocalContext.current
     val latestEvent = rememberUpdatedState(onEvent)
     val latestFilter = rememberUpdatedState(touchFilter)
     val latestState = rememberUpdatedState(cameraState)
+    val latestLocation = rememberUpdatedState(locationState)
     val events: (TileflowMapEvent) -> Unit = { event ->
         if (event is TileflowMapEvent.CameraChanged) latestState.value?.record(event.change)
+        if (event is TileflowMapEvent.FollowModeChanged)
+            latestLocation.value?.record(event.change)
         latestEvent.value(event)
     }
     val view =
@@ -85,6 +96,21 @@ public fun TileflowMap(
                 }
             }
     }
+    // The application's writes change how the map follows; the map's own writes are in force.
+    LaunchedEffect(view, locationState) {
+        val state = locationState ?: return@LaunchedEffect
+        snapshotFlow { state.followMode }
+            .collect { mode ->
+                if (mode == state.synced && mode == view.followMode) return@collect
+                state.synced = mode
+                view.followMode = mode
+            }
+    }
+    DisposableEffect(view, locationState) {
+        view.location.observer = locationState?.let { state -> state::received }
+        view.latestLocation?.let { locationState?.received(it) }
+        onDispose { view.location.observer = null }
+    }
     DisposableEffect(view) { onDispose { view.destroy() } }
     DisposableEffect(view, controller) {
         try {
@@ -122,6 +148,7 @@ public fun TileflowMap(
             it.onEvent = events
             it.setSource(source, cameraState?.camera ?: initialCamera)
             it.setContentPadding(padding.left, padding.top, padding.right, padding.bottom)
+            if (it.locationProvider !== locationProvider) it.locationProvider = locationProvider
             it.touchFilter =
                 if (!filtering) null
                 else { x, y ->
@@ -147,6 +174,8 @@ public fun TileflowMap(
     cameraState: TileflowCameraState? = null,
     contentPadding: PaddingValues = PaddingValues(0.dp),
     touchFilter: ((DpOffset) -> Boolean)? = null,
+    locationState: TileflowLocationState? = null,
+    locationProvider: TileflowLocationProvider? = null,
     onEvent: (TileflowMapEvent) -> Unit = {},
 ) {
     TileflowMap(
@@ -159,6 +188,8 @@ public fun TileflowMap(
         cameraState,
         contentPadding,
         touchFilter,
+        locationState,
+        locationProvider,
         onEvent,
     )
 }

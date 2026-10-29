@@ -557,13 +557,7 @@ async function runEngine(name) {
     const decoding = await request('setImages', {images: [{name: 'broken', data: brokenImage}]});
     data.delete(brokenImage.id);
     assert.equal(decoding.error?.context?.reason, 'invalidImage', `${name}: undecodable image`);
-    await call('setOptions', {
-      viewMode: '2d',
-      quality: 'balanced',
-      gestures: {pan: true, zoom: true, rotate: true, pitch: true},
-      controls: true,
-      vegetation: false,
-    });
+    await call('setOptions', {viewMode: '2d', quality: 'balanced', vegetation: false});
     await call('setViewMode', {viewMode: '3d', duration: 600});
 
     // A shot reports its movement once, with its cues, however many frames it moves.
@@ -595,11 +589,11 @@ async function runEngine(name) {
       ],
     });
     await call('stopAnimation', {animation: long.animation});
-    const stopped = await event(
+    const stoppedShot = await event(
       'stopped shot',
       (output) => output.event === 'animationEnded' && output.result.animation === long.animation,
     );
-    assert.equal(stopped.result.finished, false, `${name}: stopped shot`);
+    assert.equal(stoppedShot.result.finished, false, `${name}: stopped shot`);
     await call('dispose', null);
 
     const errors = outputs.filter((output) => output.event === 'error' || output.error);

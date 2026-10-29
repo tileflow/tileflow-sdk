@@ -10,12 +10,13 @@ final class SceneTests: XCTestCase {
 
   func testRendererOptionsStayOutOfTheLiveOptionsAndVegetationFollowsTheMap() throws {
     let options = TileflowMapOptions(vegetation: false, antialias: false, validatesStyle: true)
-    let wire = try JSONValue.encoded(options)
+    let wire = try options.wireValue(rightToLeft: false)
     XCTAssertEqual(wire["vegetation"]?.bool, false)
     // Antialiasing and validation start a new renderer; they never reach setOptions.
     XCTAssertNil(wire["antialias"])
     XCTAssertNil(wire["validatesStyle"])
-    XCTAssertNil(try JSONValue.encoded(TileflowMapOptions())["vegetation"])
+    let defaults = try TileflowMapOptions().wireValue(rightToLeft: false)
+    XCTAssertNil(defaults["vegetation"]?.bool)
     XCTAssertTrue(TileflowMapOptions().antialias)
     XCTAssertFalse(TileflowMapOptions().validatesStyle)
   }

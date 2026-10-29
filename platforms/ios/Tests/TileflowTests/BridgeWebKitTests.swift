@@ -45,8 +45,30 @@ final class BridgeWebKitTests: XCTestCase {
         (byte) => byte.toString(16).padStart(2, '0')).join('');
       const waiting = new Map();
       const cancelled = [];
+      const parts = new Map();
       window.tileflow = {receive: async (text) => {
-        const {requestId, command: {method, payload}} = JSON.parse(text);
+        const {requestId, command} = JSON.parse(text);
+        const method = command.method;
+        let payload = command.payload;
+        if (command.payloadData) {
+          // A payload past a control message is read from the data channel, as the runtime does.
+          const response = await fetch(`tileflow://data/${command.payloadData.id}`);
+          payload = JSON.parse(await response.text());
+        }
+        if (method === 'addLayer') return answer(requestId, {
+          deferred: Boolean(command.payloadData), size: JSON.stringify(payload).length});
+        if (method === 'querySourceFeatures') {
+          // A result past a control message is read in parts.
+          const body = JSON.stringify(Array.from({length: payload.limit},
+            (_, id) => ({id, properties: {name: `feature ${id} é`}})));
+          const chunks = [];
+          for (let start = 0; start < body.length; start += 16384)
+            chunks.push(body.slice(start, start + 16384));
+          parts.set(requestId, chunks);
+          return post({...envelope, requestId, chunks: chunks.length});
+        }
+        if (method === 'readResult')
+          return answer(requestId, parts.get(payload.requestId)[payload.index]);
         if (method === 'cancel') {
           cancelled.push(payload.requestId);
           waiting.get(payload.requestId)?.();
@@ -217,6 +239,27 @@ final class BridgeWebKitTests: XCTestCase {
       String(
         format: "Tileflow data channel, %.1f MiB GeoJSON, median of 3: %@.",
         Double(geoJSON.data.count) / 1_048_576, summary.joined(separator: ", ")))
+  }
+
+  func testLargePayloadsAndResultsTravelInParts() async throws {
+    let (stub, failure) = try await stub()
+    defer { stub.close() }
+    XCTAssertNil(failure)
+    // A filter of 20,000 identifiers is far past a control message.
+    var layer = TileflowCircleLayer(id: "chosen", source: "points")
+    layer.filter = .inExpression(.id(), .literal((0..<20_000).map(Double.init)))
+    let payload = JSONValue.object(["layer": try JSONValue.encoded(layer)])
+    let small = try await stub.bridge.call(
+      .addLayer, payload: .object(["layer": try JSONValue.encoded(TileflowCircleLayer(id: "a", source: "b"))]))
+    XCTAssertEqual(small["deferred"]?.bool, false)
+    let large = try await stub.bridge.call(.addLayer, payload: payload)
+    XCTAssertEqual(large["deferred"]?.bool, true)
+    XCTAssertGreaterThan(large["size"]?.number ?? 0, Double(ProtocolContract.maximumMessageBytes))
+    XCTAssertTrue(stub.bridge.data.isEmpty)
+    let result = try await stub.bridge.call(.querySourceFeatures, payload: .object(["limit": .number(5000)]))
+    guard case .array(let features) = result else { return XCTFail("\(result)") }
+    XCTAssertEqual(features.count, 5000)
+    XCTAssertEqual(features.last?["properties"]?["name"]?.string, "feature 4999 é")
   }
 
   private static func milliseconds(_ duration: Duration) -> Double {

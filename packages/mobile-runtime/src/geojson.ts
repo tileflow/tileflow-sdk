@@ -23,6 +23,16 @@ export function geoJSONProblem(value: unknown): string | undefined {
   return undefined;
 }
 
+/** The path of the first problem in a JSON array of features, or undefined. */
+export function featuresProblem(value: unknown): string | undefined {
+  if (!Array.isArray(value)) return '$';
+  for (let index = 0; index < value.length; index += 1) {
+    const problem = featureProblem(value[index]);
+    if (problem !== undefined) return `$[${index}]${problem}`;
+  }
+  return undefined;
+}
+
 export function asFeatureCollection(value: unknown): FeatureCollection | undefined {
   return geoJSONProblem(value) === undefined ? (value as FeatureCollection) : undefined;
 }

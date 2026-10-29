@@ -89,6 +89,7 @@ async function inventory(directory, prefix = '') {
 // Rebuild the embedded runtime from these inputs; never stage a runtime left by an earlier build.
 // Staging checks every resource digest. Consumers never run this build command.
 await command(process.execPath, ['scripts/mobile-protocol-generate.mjs', '--check']);
+await command(process.execPath, ['scripts/mobile-style-generate.mjs', '--check']);
 await rm(resolve(root, 'packages/mobile-runtime/dist'), {recursive: true, force: true});
 await command('pnpm', ['exec', 'turbo', 'build', '--filter=@tileflow/mobile-runtime', '--force']);
 await command(process.execPath, ['scripts/mobile-runtime-stage.mjs']);

@@ -10,5 +10,7 @@
             android:layout_width="match_parent" android:layout_height="wrap_content" />
         <Button android:id="@+id/theme" android:text="Change theme"
             android:layout_width="match_parent" android:layout_height="wrap_content" />
+        <Button android:id="@+id/places" android:text="Show 100,000 places"
+            android:layout_width="match_parent" android:layout_height="wrap_content" />
     </LinearLayout>
 </FrameLayout>

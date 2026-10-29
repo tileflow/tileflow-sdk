@@ -52,7 +52,22 @@ final class MapViewController: UIViewController {
         more?.setTitle(self.expanded ? "Show less" : "Show more", for: .normal)
         self.layoutPanel(animated: true)
       }, for: .touchUpInside)
-    [status, theme, more].forEach(panel.addArrangedSubview)
+    let places = UIButton(type: .system)
+    places.setTitle("Show 100,000 places", for: .normal)
+    places.addAction(
+      UIAction { [weak self] _ in
+        guard let self else { return }
+        Task {
+          do {
+            try await ClusterExample.show(on: self.map, around: TileflowCoordinate(longitude: Self.start.longitude, latitude: Self.start.latitude))
+            _ = try await self.map.ease(to: TileflowCameraUpdate(zoom: 10))
+            self.status.text = "Tap a cluster to zoom in"
+          } catch {
+            self.status.text = "Places unavailable"
+          }
+        }
+      }, for: .touchUpInside)
+    [status, theme, places, more].forEach(panel.addArrangedSubview)
     panel.axis = .vertical
     panel.alignment = .leading
     panel.spacing = 8
@@ -62,7 +77,7 @@ final class MapViewController: UIViewController {
     panel.directionalLayoutMargins = .init(top: 16, leading: 16, bottom: 16, trailing: 16)
     panel.translatesAutoresizingMaskIntoConstraints = false
     view.addSubview(panel)
-    let height = panel.heightAnchor.constraint(equalToConstant: 132)
+    let height = panel.heightAnchor.constraint(equalToConstant: 168)
     panelHeight = height
     NSLayoutConstraint.activate([
       // The map fills the screen; its automatic insets keep controls clear of the system bars.
@@ -81,7 +96,11 @@ final class MapViewController: UIViewController {
       switch event {
       case .contentReady: self.status.text = "Tileflow · UIKit"
       case .failed(let error): self.status.text = "Map error: \(error)"
-      case .tap: self.status.text = "Map selected"
+      case .tap(let touch):
+        Task {
+          let selected = try? await ClusterExample.tap(at: touch.point, on: self.map)
+          self.status.text = selected ?? "Map selected"
+        }
       case .recenterRequested:
         Task { try? await self.map.fly(to: Self.start) }
       default: break
@@ -90,7 +109,7 @@ final class MapViewController: UIViewController {
   }
 
   private func layoutPanel(animated: Bool) {
-    let height: CGFloat = expanded ? 280 : 132
+    let height: CGFloat = expanded ? 300 : 168
     panelHeight?.constant = height
     // The panel covers the bottom of the map: the camera and controls keep clear of it.
     map.contentInsets.bottom = height

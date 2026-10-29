@@ -15,6 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
+import org.json.JSONTokener
 
 /** Accessed only on the UI dispatcher. A bridge is never reused for a new document generation. */
 internal class MapBridge(
@@ -73,8 +74,12 @@ internal class MapBridge(
         if (id.isNotEmpty()) {
             val request = pending.remove(id) ?: return
             val error = message.optJSONObject("error")
-            if (error == null) request.complete(message.opt("result") ?: JSONObject.NULL)
-            else request.completeExceptionally(TileflowMapException.fromWire(error))
+            val chunks = message.optInt("chunks", 0)
+            when {
+                error != null -> request.completeExceptionally(TileflowMapException.fromWire(error))
+                chunks > 0 && !message.has("result") -> request.complete(Chunks(chunks))
+                else -> request.complete(message.opt("result") ?: JSONObject.NULL)
+            }
             return
         }
         val event = message.optString("event")
@@ -117,9 +122,15 @@ internal class MapBridge(
         onFailure(error)
     }
 
+    /** A result larger than a control message, read in this many parts. */
+    private class Chunks(val count: Int)
+
     /**
      * Sends a command. [references] are payloads this request carries; they are released however
      * the request ends. Cancelling the calling coroutine cancels the command in the renderer too.
+     *
+     * A payload larger than a control message travels on the data channel, and a result larger
+     * than one is read in parts, up to the data channel's limit.
      */
     suspend fun call(
         method: ProtocolContract.Method,
@@ -127,17 +138,54 @@ internal class MapBridge(
         references: List<DataChannel.Reference> = emptyList(),
     ): Any {
         try {
-            if (retired) throw TileflowMapException(TileflowErrorCode.DISPOSED)
-            val negotiated = version ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
-            if (pending.size >= ProtocolContract.MAXIMUM_PENDING_REQUESTS)
-                throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
-            val id = (++sequence).toString()
-            val message = message(negotiated, id, method, payload)
+            val (id, reply) = send(method, payload)
+            if (reply !is Chunks) return reply
+            val text = StringBuilder()
+            for (index in 0 until reply.count) {
+                val (_, part) =
+                    send(
+                        ProtocolContract.Method.READ_RESULT,
+                        JSONObject().put("requestId", id).put("index", index),
+                    )
+                text.append(
+                    part as? String ?: throw TileflowMapException(TileflowErrorCode.RENDERER_FAILED)
+                )
+            }
+            return try {
+                JSONTokener(text.toString()).nextValue()
+            } catch (_: Exception) {
+                throw TileflowMapException(TileflowErrorCode.RENDERER_FAILED)
+            }
+        } finally {
+            data.release(references)
+        }
+    }
+
+    /** Sends one request and answers its identifier with its reply. */
+    private suspend fun send(method: ProtocolContract.Method, payload: Any): Pair<String, Any> {
+        if (retired) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+        val negotiated = version ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
+        if (pending.size >= ProtocolContract.MAXIMUM_PENDING_REQUESTS)
+            throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
+        val id = (++sequence).toString()
+        var carried = emptyList<DataChannel.Reference>()
+        try {
+            val message =
+                message(negotiated, id, command(method).put("payload", payload))
+                    ?: run {
+                        // The payload's JSON goes on the data channel; the renderer reads it first.
+                        val bytes = payload.toString().toByteArray(Charsets.UTF_8)
+                        val reference =
+                            data.register(bytes, DataChannel.digest(bytes), "application/json")
+                        carried = listOf(reference)
+                        message(negotiated, id, command(method).put("payloadData", reference.json()))
+                            ?: throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
+                    }
             val result = CompletableDeferred<Any>()
             pending[id] = result
             try {
                 send(message)
-                return withTimeout(ProtocolContract.REQUEST_TIMEOUT_MILLIS) { result.await() }
+                return id to withTimeout(ProtocolContract.REQUEST_TIMEOUT_MILLIS) { result.await() }
             } catch (_: TimeoutCancellationException) {
                 cancelInRenderer(id)
                 throw TileflowMapException(TileflowErrorCode.TIMEOUT)
@@ -148,9 +196,12 @@ internal class MapBridge(
                 pending.remove(id)
             }
         } finally {
-            data.release(references)
+            data.release(carried)
         }
     }
+
+    private fun command(method: ProtocolContract.Method): JSONObject =
+        JSONObject().put("method", method.wireName)
 
     /** Stops a request's work in the renderer; nobody waits for its answer. */
     private fun cancelInRenderer(id: String) {
@@ -171,22 +222,26 @@ internal class MapBridge(
         id: String,
         method: ProtocolContract.Method,
         payload: Any,
-    ): String {
+    ): String =
+        message(negotiated, id, command(method).put("payload", payload))
+            ?: throw TileflowMapException(
+                TileflowErrorCode.INVALID_REQUEST,
+                TileflowErrorContext(limit = ProtocolContract.MAXIMUM_MESSAGE_BYTES),
+            )
+
+    /** A request's text, or null when it exceeds a control message. */
+    private fun message(negotiated: Int, id: String, command: JSONObject): String? {
         val message =
             JSONObject()
                 .put("protocolVersion", negotiated)
                 .put("instanceId", instanceId)
                 .put("generation", generation)
                 .put("requestId", id)
-                .put("command", JSONObject().put("method", method.wireName).put("payload", payload))
+                .put("command", command)
                 .toString()
-        if (message.toByteArray(Charsets.UTF_8).size > ProtocolContract.MAXIMUM_MESSAGE_BYTES) {
-            throw TileflowMapException(
-                TileflowErrorCode.INVALID_REQUEST,
-                TileflowErrorContext(limit = ProtocolContract.MAXIMUM_MESSAGE_BYTES),
-            )
+        return message.takeIf {
+            it.toByteArray(Charsets.UTF_8).size <= ProtocolContract.MAXIMUM_MESSAGE_BYTES
         }
-        return message
     }
 
     private fun send(message: String) {

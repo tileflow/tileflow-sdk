@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  chunkText,
   createDispatcher,
   negotiateVersion,
   type Output,
@@ -200,4 +201,74 @@ test('event subscriptions accept only subscribable events within the throttle bo
     {cameraMoved: {}},
   ])
     assert.throws(() => setEvents(events), JSON.stringify(events));
+});
+
+test('payloads past a control message arrive on the data channel and are checked', async () => {
+  const outputs: Output[] = [];
+  const executed: unknown[] = [];
+  const payloads: Record<string, unknown> = {
+    ['a'.repeat(22)]: {id: 'points'},
+    ['b'.repeat(22)]: {id: 'points', extra: true},
+  };
+  const instance = createDispatcher({
+    instanceId: 'view-a',
+    generation: 1,
+    version,
+    send: (output) => outputs.push(output),
+    execute: async (command) => (executed.push(command), null),
+    readPayload: async (reference) => payloads[reference.id],
+  });
+  const deferred = (id: string, data: string) =>
+    request(id, 1, {
+      method: 'removeSource',
+      payloadData: {id: data.repeat(22), byteLength: 20, sha256: '0'.repeat(64)},
+    });
+  await instance.receive(deferred('1', 'a'));
+  assert.deepEqual(executed, [{method: 'removeSource', payload: {id: 'points'}}]);
+  assert.equal(outputs.at(-1)?.result, null);
+  // The payload is checked against the command once it is read.
+  await instance.receive(deferred('2', 'b'));
+  assert.equal(outputs.at(-1)?.error?.code, 'invalidRequest');
+  assert.equal(executed.length, 1);
+});
+
+test('results past a control message are read in parts', async () => {
+  const outputs: Output[] = [];
+  const big = Array.from({length: 4000}, (_, index) => ({id: index, name: `é feature ${index}`}));
+  const instance = createDispatcher({
+    instanceId: 'view-a',
+    generation: 1,
+    version,
+    send: (output) => outputs.push(output),
+    execute: async () => big,
+  });
+  await instance.receive(request('1'));
+  const answer = outputs.at(-1)!;
+  assert.equal(answer.requestId, '1');
+  assert.ok(answer.chunks! > 1);
+  let text = '';
+  for (let index = 0; index < answer.chunks!; index += 1) {
+    await instance.receive(
+      request(String(index + 2), 1, {method: 'readResult', payload: {requestId: '1', index}}),
+    );
+    const part = outputs.at(-1)!;
+    assert.ok(
+      new TextEncoder().encode(JSON.stringify(part)).byteLength <=
+        protocol.limits.maximumMessageBytes,
+    );
+    text += part.result as string;
+  }
+  assert.deepEqual(JSON.parse(text), big);
+  // The last part releases the result.
+  await instance.receive(
+    request('99', 1, {method: 'readResult', payload: {requestId: '1', index: 0}}),
+  );
+  assert.equal(outputs.at(-1)?.error?.code, 'invalidRequest');
+});
+
+test('result parts never divide a character', () => {
+  const text = `${'a'.repeat(9)}😀${'b'.repeat(5)}`;
+  const parts = chunkText(text, 10);
+  assert.deepEqual(parts, ['a'.repeat(9), `😀${'b'.repeat(5)}`]);
+  assert.equal(parts.join(''), text);
 });

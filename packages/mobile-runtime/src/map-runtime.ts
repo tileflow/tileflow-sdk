@@ -35,7 +35,7 @@ import {type CameraController, createCameraController} from './camera';
 import {createGestureController} from './camera-gestures';
 import type {Overlay} from './content-contract';
 import {createMapContentRegistry, type ResolvedOverlay} from './content-registry';
-import {createDataReader} from './data';
+import {createDataReader, type DataReference} from './data';
 import {
   type Clock,
   createEventHub,
@@ -63,6 +63,7 @@ import {
   resourceTemplateAddress,
 } from './resources';
 import {createMapScene, type DecodedImage} from './scene';
+import {createStyleRegistry, type StyleMap, type StyleRegistry} from './style-registry';
 import {createStyleResourceLoader} from './style-resources';
 
 const resourceKinds: Record<string, ResourceKind> = {
@@ -116,6 +117,7 @@ export function createMobileMapRuntime(input: {
   let gestures: ReturnType<typeof createGestureController> | undefined;
   let activeOptions: MapOptions | undefined;
   let content: ReturnType<typeof createMapContentRegistry> | undefined;
+  let styleRegistry: StyleRegistry | undefined;
   let appearance: ReturnType<typeof createMapScene> | undefined;
   let animations: ReturnType<typeof createAnimations> | undefined;
   let appearanceRevision = 0;
@@ -189,6 +191,7 @@ export function createMobileMapRuntime(input: {
     animations?.dispose();
     appearance?.dispose();
     content?.dispose();
+    styleRegistry?.dispose();
     cameras?.dispose();
     scene?.dispose();
     themes?.dispose();
@@ -337,6 +340,15 @@ export function createMobileMapRuntime(input: {
         inks: () => themeController.getRouteInks(),
       });
       const contentRegistry = content;
+      styleRegistry = createStyleRegistry(map as unknown as StyleMap, {
+        readJSON: readJSONData,
+        warn: (message) =>
+          warnings.warn({
+            code: 'rendererFailed',
+            message,
+            context: {reason: 'contentRestore'},
+          }),
+      });
       animations = createAnimations({
         emit,
         play: (motion, settings) =>
@@ -384,7 +396,8 @@ export function createMobileMapRuntime(input: {
         emit('tap', () => ({coordinate, point}));
       });
       map.on('error', (event) => {
-        if (disposed) return;
+        // The style registry reports a change MapLibre refuses as the request's own failure.
+        if (disposed || styleRegistry?.capturing) return;
         const error = (event as {error?: {status?: unknown; url?: unknown}}).error;
         const url = typeof error?.url === 'string' ? error.url : undefined;
         const status =
@@ -447,6 +460,22 @@ export function createMobileMapRuntime(input: {
       initializing = false;
     }
   }
+
+  /** Reads JSON the host registered on the data channel. */
+  async function readJSONData(reference: DataReference, signal: AbortSignal): Promise<unknown> {
+    const bytes = await readData(reference, signal);
+    try {
+      return JSON.parse(new TextDecoder('utf-8', {fatal: true}).decode(bytes)) as unknown;
+    } catch {
+      throw new ProtocolError('invalidRequest', 'The data is not valid JSON.', {resource: 'data'});
+    }
+  }
+
+  const requireStyle = () => {
+    requireMap();
+    if (!styleRegistry) throw new ProtocolError('notReady', 'The map is not initialized.');
+    return styleRegistry;
+  };
 
   const requireScene = () => {
     requireMap();
@@ -511,6 +540,8 @@ export function createMobileMapRuntime(input: {
 
   return {
     dispose,
+    /** Reads the payload of a request too large for a control message. */
+    readPayload: (reference: DataReference, signal: AbortSignal) => readJSONData(reference, signal),
     async execute(command: Command, signal: AbortSignal): Promise<unknown> {
       cancelled(signal);
       switch (command.method) {
@@ -650,6 +681,37 @@ export function createMobileMapRuntime(input: {
         case 'stopAnimation':
           requireMap();
           animations!.stop(command.payload.animation);
+          return null;
+        case 'addSource':
+          return requireStyle().addSource(command.payload, signal);
+        case 'removeSource':
+          return requireStyle().removeSource(command.payload, signal);
+        case 'setGeoJSONSourceData':
+          return requireStyle().setGeoJSONSourceData(command.payload, signal);
+        case 'updateGeoJSONSource':
+          return requireStyle().updateGeoJSONSource(command.payload, signal);
+        case 'addLayer':
+          return requireStyle().addLayer(command.payload, signal);
+        case 'updateLayer':
+          return requireStyle().updateLayer(command.payload, signal);
+        case 'moveLayer':
+          return requireStyle().moveLayer(command.payload, signal);
+        case 'removeLayer':
+          return requireStyle().removeLayer(command.payload, signal);
+        case 'setFeatureState':
+          return requireStyle().setFeatureState(command.payload, signal);
+        case 'getFeatureState':
+          return requireStyle().getFeatureState(command.payload, signal);
+        case 'removeFeatureState':
+          return requireStyle().removeFeatureState(command.payload, signal);
+        case 'queryRenderedFeatures':
+          return requireStyle().queryRenderedFeatures(command.payload, signal);
+        case 'querySourceFeatures':
+          return requireStyle().querySourceFeatures(command.payload, signal);
+        case 'queryCluster':
+          return requireStyle().queryCluster(command.payload, signal);
+        case 'readResult':
+          // The dispatcher answers result reads itself.
           return null;
         case 'dispose':
           return dispose();

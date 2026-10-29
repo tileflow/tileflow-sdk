@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -39,6 +40,7 @@ import dev.tileflow.configuration.TileflowConfiguration
 import dev.tileflow.configuration.TileflowCredential
 import dev.tileflow.sdk.TileflowCamera
 import dev.tileflow.sdk.TileflowCameraUpdate
+import dev.tileflow.sdk.TileflowCoordinate
 import dev.tileflow.sdk.TileflowEventLevel
 import dev.tileflow.sdk.TileflowEventOptions
 import dev.tileflow.sdk.TileflowMap
@@ -47,7 +49,9 @@ import dev.tileflow.sdk.TileflowMapEvent
 import dev.tileflow.sdk.TileflowMapOptions
 import dev.tileflow.sdk.TileflowMapSource
 import dev.tileflow.sdk.TileflowMapView
+import dev.tileflow.sdk.TileflowPoint
 import dev.tileflow.sdk.rememberTileflowCameraState
+import dev.tileflow.sdk.rememberTileflowMapController
 import java.net.URI
 import kotlinx.coroutines.launch
 
@@ -95,6 +99,7 @@ internal fun Intent.mapSource(): TileflowMapSource {
 
 /** Where the examples start and where the recenter button returns. */
 private val startCamera = TileflowCamera(-3.70, 40.42, 13.0)
+private val startCenter = TileflowCoordinate(startCamera.longitude, startCamera.latitude)
 
 private val exampleOptions =
     TileflowMapOptions(
@@ -128,7 +133,13 @@ class ViewExample : ComponentActivity() {
             when (it) {
                 TileflowMapEvent.ContentReady -> status.text = "Tileflow · Android View"
                 is TileflowMapEvent.Failed -> status.text = "Map error: ${it.code}"
-                is TileflowMapEvent.Tap -> status.text = "Map selected"
+                is TileflowMapEvent.Tap ->
+                    lifecycleScope.launch {
+                        val selected =
+                            runCatching { ClusterExample.tap(ViewClusterMap(map), it.point) }
+                                .getOrNull()
+                        status.text = selected ?: "Map selected"
+                    }
                 is TileflowMapEvent.LongPress -> status.text = "Long press"
                 TileflowMapEvent.RecenterRequested ->
                     lifecycleScope.launch { runCatching { map.fly(startCamera) } }
@@ -137,6 +148,16 @@ class ViewExample : ComponentActivity() {
         }
         map.setSource(intent.mapSource(), startCamera)
         lifecycleScope.launch { runCatching { map.setOptions(exampleOptions) } }
+        findViewById<Button>(R.id.places).setOnClickListener {
+            lifecycleScope.launch {
+                runCatching {
+                        ClusterExample.show(ViewClusterMap(map), startCenter)
+                        map.ease(TileflowCameraUpdate(zoom = 10.0))
+                    }
+                    .onSuccess { status.text = "Tap a cluster to zoom in" }
+                    .onFailure { status.text = "Places unavailable" }
+            }
+        }
         findViewById<Button>(R.id.theme).setOnClickListener {
             dark = !dark
             lifecycleScope.launch {
@@ -163,8 +184,11 @@ class ComposeExample : ComponentActivity() {
             var status by remember { mutableStateOf("Loading Tileflow…") }
             // The camera survives rotation and process recreation.
             val camera = rememberTileflowCameraState(startCamera)
+            val controller = rememberTileflowMapController()
+            val places = remember(controller) { ControllerClusterMap(controller) }
+            val density = LocalDensity.current.density
             val scope = rememberCoroutineScope()
-            val panel by animateDpAsState(if (expanded) 280.dp else 120.dp, label = "panel")
+            val panel by animateDpAsState(if (expanded) 320.dp else 120.dp, label = "panel")
             MaterialTheme {
                 Box(Modifier.fillMaxSize()) {
                     // The panel's height is content padding: the camera centres above it.
@@ -173,13 +197,22 @@ class ComposeExample : ComponentActivity() {
                         Modifier.fillMaxSize(),
                         theme = if (dark) "dark" else "light",
                         options = exampleOptions,
+                        controller = controller,
                         cameraState = camera,
                         contentPadding = PaddingValues(bottom = panel),
                     ) {
                         when (it) {
                             TileflowMapEvent.ContentReady -> status = "Tileflow · Compose"
                             is TileflowMapEvent.Failed -> status = "Map error: ${it.code}"
-                            is TileflowMapEvent.Tap -> status = "Map selected"
+                            is TileflowMapEvent.Tap ->
+                                scope.launch {
+                                    // Taps arrive in pixels; the controller queries in dp.
+                                    val point =
+                                        TileflowPoint(it.point.x / density, it.point.y / density)
+                                    status =
+                                        runCatching { ClusterExample.tap(places, point) }.getOrNull()
+                                            ?: "Map selected"
+                                }
                             TileflowMapEvent.RecenterRequested ->
                                 scope.launch {
                                     runCatching { camera.fly(TileflowCameraUpdate(startCamera)) }
@@ -202,6 +235,21 @@ class ComposeExample : ComponentActivity() {
                             Text(if (expanded) "Collapse panel" else "Expand panel")
                         }
                         Button(onClick = { dark = !dark }) { Text("Change theme") }
+                        if (expanded)
+                            Button(
+                                onClick = {
+                                    scope.launch {
+                                        runCatching {
+                                                ClusterExample.show(places, startCenter)
+                                                camera.ease(TileflowCameraUpdate(zoom = 10.0))
+                                            }
+                                            .onSuccess { status = "Tap a cluster to zoom in" }
+                                            .onFailure { status = "Places unavailable" }
+                                    }
+                                }
+                            ) {
+                                Text("Show 100,000 places")
+                            }
                     }
                 }
             }

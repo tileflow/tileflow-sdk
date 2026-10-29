@@ -54,6 +54,11 @@ Identifiers increase monotonically within a generation and are never reused. At 
 An invalid but addressable request is answered at once with `invalidRequest`. A message for another
 instance or generation is never answered.
 
+A request whose message would exceed `maximumMessageBytes` carries `command.payloadData`, a data
+channel reference to the payload's JSON, instead of `command.payload`. The renderer reads and
+verifies the payload, then checks the command exactly as it checks an inline one. The host releases
+the reference when the request settles. No call has a payload ceiling below the data channel's.
+
 Cancelling the caller's task or coroutine sends `cancel` with the request's identifier. The
 renderer aborts the operation's signal, so reads on the data channel stop too, and answers the
 request with `cancelled`. Swift callers receive `CancellationError`; Kotlin callers receive the
@@ -86,8 +91,13 @@ map resource. There is no local HTTP server.
   generation and `maximumDataReferences` (64) entries. The host refuses payloads beyond them with
   `invalidRequest` and the reason `dataTooLarge`, before anything is sent.
 
-The data channel carries data from the host to the renderer. Results larger than a control message
-in the other direction are not supported yet.
+The data channel carries data from the host to the renderer. A result larger than a control message
+travels the other way in parts: the renderer answers the request with `chunks`, the number of parts,
+instead of `result`, and keeps the result's JSON text until the host has read every part with
+`readResult` (`{requestId, index}`), or for `requestTimeoutMs`. Each part is a string of at most
+16 384 UTF-16 code units that never divides a surrogate pair, so it fits a control message however
+it is escaped. A result whose JSON exceeds `maximumDataBytes` fails with `invalidRequest` and the
+reason `dataTooLarge`.
 
 `setContent` sends every GeoJSON layer this way. The renderer validates the GeoJSON against
 RFC 7946, without GeometryCollection or foreign members, with closed rings, finite positions inside
@@ -183,6 +193,45 @@ new renderer:
 Application layers (`setContent`) may name a route `ink` instead of a colour, a `placement`
 (`top` or `ground`), an `occludedOpacity` for a line on the ground, and a line's `progress`.
 
+## Runtime style
+
+The application's own sources and layers use the MapLibre style specification's names and values
+on the wire; the renderer adds them through MapLibre, which validates them, so a request MapLibre
+refuses fails with `invalidRequest` and MapLibre's message and changes nothing. Application sources
+and layers live in their own namespace inside the renderer: they never name, and cannot collide
+with, the map's own layers and sources, and results and messages name them as the application does.
+
+- `addSource`, `removeSource`: a source of type `geojson`, `vector`, `raster`, `raster-dem` or
+  `image`. GeoJSON data is a data channel reference, `{url}` or `{empty: true}`.
+  `setGeoJSONSourceData` replaces it; `updateGeoJSONSource` adds or replaces features by identifier
+  (`add`, a data channel reference to a JSON array of features) and removes them (`remove`, a list
+  of identifiers), removals first. Feature updates need an identifier on every feature, or a
+  `promoteId`, and are refused for sources loaded from an address.
+- `addLayer`, `updateLayer`, `moveLayer`, `removeLayer`: a layer of any MapLibre layer type. A layer
+  takes a `slot`, one of Core's overlay placements (`above-water`, `below-roads`, `above-roads`,
+  `above-buildings`, `below-labels`, `above-labels`), which the renderer resolves through the
+  style's `tileflow:overlay-placement-manifest`; without a slot it lies above the whole map. A
+  `position` of `{above}` or `{below}` another application layer gives the layer that layer's slot.
+  Within a slot, layers keep the application's order. Layers in `above-buildings` and later slots
+  stay above 3D layers that the map adds under the same anchor later. `updateLayer` applies only the
+  properties that changed, and recreates the layer in place when its type, source or slot changes.
+- `setFeatureState`, `getFeatureState`, `removeFeatureState`: state of a feature of an application
+  source. An identifier that is a whole number is the feature's numeric identifier; any other string
+  is a promoted property value.
+- `queryRenderedFeatures`: features the application's layers draw at a `point`, in a `box`, in a
+  `polygon` or in the whole view, with a filter and a limit. From a pitch of 60° the renderer reads
+  boxes, polygons and the whole view in horizontal bands of 64 CSS pixels and joins the results,
+  each feature once, because MapLibre GL JS misses features near the horizon in a query that reaches
+  far into the distance. `querySourceFeatures` reads a source's loaded tiles, one copy of each
+  identified feature. `queryCluster` answers a clustering source's `children`, `leaves` and
+  `expansionZoom`.
+
+Requests of the runtime style apply in the order they arrive, each once the style can take it. After
+a style change, such as a theme change, the renderer adds the application's sources with their
+current data, its layers in their slots and its feature state again before the new style draws.
+Hosts keep the same state, with each GeoJSON source's data and its feature updates, and send it to a
+new renderer in that order.
+
 Animations can outlast a request's timeout. `animateLineProgress` and `playShot` answer with an
 animation identifier once the animation starts; the renderer later sends `animationEnded` with the
 identifier and whether it finished, and `shotCue` for each cue a shot reaches. These events always
@@ -229,3 +278,12 @@ with `code` and `context`, and `TileflowErrorCode.isRecoverable`. Both deliver f
    both hosts.
 3. Run the runtime tests, `node scripts/mobile-runtime-smoke.mjs`, the size budget, and the Swift
    and Kotlin suites.
+
+## Generated style types
+
+`node scripts/mobile-style-generate.mjs` writes the public layer types, their property enumerations
+and the expression operator factories of both hosts (`Style/StyleLayers.swift`,
+`Style/StyleExpressions.swift`, `StyleLayers.kt` and `StyleExpressions.kt`) from the MapLibre style
+specification that the embedded MapLibre GL JS depends on. Updating MapLibre GL JS therefore
+updates the native style types; `pnpm native:runtime` runs the generator with `--check` and fails
+when they are stale. Never edit a generated file.

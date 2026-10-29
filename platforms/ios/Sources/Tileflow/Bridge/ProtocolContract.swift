@@ -41,6 +41,21 @@ enum ProtocolContract {
     case animateLineProgress
     case playShot
     case stopAnimation
+    case addSource
+    case removeSource
+    case setGeoJSONSourceData
+    case updateGeoJSONSource
+    case addLayer
+    case updateLayer
+    case moveLayer
+    case removeLayer
+    case setFeatureState
+    case getFeatureState
+    case removeFeatureState
+    case queryRenderedFeatures
+    case querySourceFeatures
+    case queryCluster
+    case readResult
     case dispose
   }
 
@@ -104,6 +119,7 @@ enum ProtocolContract {
     case scene
     case invalidImage
     case unknownLayer
+    case unknownSource
   }
 
   /// Error codes the renderer may send. Any other code from the renderer is a protocol fault.

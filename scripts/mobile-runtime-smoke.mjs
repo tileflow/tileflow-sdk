@@ -214,8 +214,20 @@ async function runEngine(name) {
       await page.evaluate((value) => globalThis.tileflow.receive(value), message);
       return {id, done: waitFor(label, (candidate) => candidate.requestId === id)};
     };
+    /** A result larger than a control message arrives in parts the host reads in turn. */
+    const assemble = async (output) => {
+      if (output.chunks === undefined) return output;
+      let text = '';
+      for (let index = 0; index < output.chunks; index += 1) {
+        const part = await (await send('readResult', {requestId: output.requestId, index})).done;
+        assert.equal(part.error, undefined, `${name}: result part ${index}`);
+        text += part.result;
+      }
+      counts['largest result parts'] = Math.max(counts['largest result parts'] ?? 0, output.chunks);
+      return {...output, result: JSON.parse(text)};
+    };
     const request = async (method, payload, label = method) =>
-      (await send(method, payload, label)).done;
+      assemble(await (await send(method, payload, label)).done);
     const call = async (method, payload, label) => {
       const output = await request(method, payload, label);
       assert.equal(output.error, undefined, `${name}: ${method} failed: ${output.error?.message}`);
@@ -223,6 +235,17 @@ async function runEngine(name) {
     };
     const event = (label, predicate) =>
       waitFor(label, (output) => output.requestId === undefined && predicate(output));
+    /** Sends a command whose payload the host put on the data channel, as hosts do past 64 KiB. */
+    const deferredCall = async (method, payloadData) => {
+      const id = String(++requestId);
+      const message = JSON.stringify({...envelope, requestId: id, command: {method, payloadData}});
+      await page.evaluate((value) => globalThis.tileflow.receive(value), message);
+      const output = await assemble(
+        await waitFor(`${method} on the data channel`, (candidate) => candidate.requestId === id),
+      );
+      assert.equal(output.error, undefined, `${name}: ${method} failed: ${output.error?.message}`);
+      return output.result;
+    };
 
     await page.goto(`${origin}/runtime/index.html`);
     const hello = await event('hello', (output) => output.event === 'hello');
@@ -594,6 +617,7 @@ async function runEngine(name) {
       (output) => output.event === 'animationEnded' && output.result.animation === long.animation,
     );
     assert.equal(stoppedShot.result.finished, false, `${name}: stopped shot`);
+    await styleSmoke({name, call, request, deferredCall, register, data, timings, counts, page});
     await call('dispose', null);
 
     const errors = outputs.filter((output) => output.event === 'error' || output.error);
@@ -605,6 +629,9 @@ async function runEngine(name) {
         'invalidRequest',
         'resourceFailed',
         'invalidRequest',
+        'invalidRequest',
+        'invalidRequest',
+        // The runtime style's refusals: a paint value MapLibre rejects and an unknown source.
         'invalidRequest',
         'invalidRequest',
       ],
@@ -620,6 +647,303 @@ async function runEngine(name) {
   } finally {
     await browser.close();
   }
+}
+
+/** Points on a grid around the fixture map, each with a numeric identifier and a rank. */
+function gridPoints(count) {
+  const features = Array.from({length: count}, (_, index) => ({
+    type: 'Feature',
+    id: index,
+    properties: {rank: index % 10},
+    geometry: {
+      type: 'Point',
+      coordinates: [-3.9 + (index % 400) / 1000, 40.3 + Math.floor(index / 400) / 1000],
+    },
+  }));
+  return Buffer.from(JSON.stringify({type: 'FeatureCollection', features}));
+}
+
+/** Frame intervals in the page while the camera moves, as p50 and p95 in milliseconds. */
+async function frameIntervals(page, call, target) {
+  const sampling = page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const intervals = [];
+        let last;
+        const frame = (time) => {
+          if (last !== undefined) intervals.push(time - last);
+          last = time;
+          if (intervals.length < 90) globalThis.requestAnimationFrame(frame);
+          else resolve(intervals);
+        };
+        globalThis.requestAnimationFrame(frame);
+      }),
+  );
+  await call('moveCamera', {...target, animation: {type: 'ease', duration: 1500}});
+  const sorted = (await sampling).sort((a, b) => a - b);
+  const at = (share) => Math.round(sorted[Math.floor(share * (sorted.length - 1))]);
+  return `p50 ${at(0.5)} / p95 ${at(0.95)}`;
+}
+
+/**
+ * The application's runtime style through the real renderer: 100,000 clustered points, cluster
+ * queries, feature state, incremental updates, every query geometry, payloads and results larger
+ * than a control message, and all of it surviving a theme change.
+ */
+async function styleSmoke({
+  name,
+  call,
+  request,
+  deferredCall,
+  register,
+  data,
+  timings,
+  counts,
+  page,
+}) {
+  const time = async (label, run) => {
+    const started = performance.now();
+    const result = await run();
+    timings[label] = Math.round(performance.now() - started);
+    return result;
+  };
+  const poll = async (label, run, accept) => {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const value = await run();
+      if (accept(value)) return value;
+      await new Promise((wait) => setTimeout(wait, 100));
+    }
+    throw new Error(`${name}: ${label}`);
+  };
+  await call('moveCamera', {
+    target: {center: {longitude: -3.7, latitude: 40.42}, zoom: 9, pitch: 0, bearing: 0},
+    animation: {type: 'jump'},
+  });
+  const points = gridPoints(100_000);
+  const reference = register(points);
+  await time(
+    `addSource 100k clustered points (${(points.byteLength / 1048576).toFixed(1)} MiB)`,
+    () =>
+      call('addSource', {
+        id: 'points',
+        source: {
+          type: 'geojson',
+          data: reference,
+          cluster: true,
+          clusterRadius: 50,
+          clusterProperties: {rankSum: ['+', ['get', 'rank']]},
+        },
+      }),
+  );
+  data.delete(reference.id);
+  await call('addLayer', {
+    layer: {
+      id: 'clusters',
+      type: 'circle',
+      source: 'points',
+      filter: ['has', 'point_count'],
+      paint: {
+        'circle-color': ['step', ['get', 'point_count'], '#51bbd6', 100, '#f1f075', 750, '#f28cb1'],
+        'circle-radius': ['step', ['get', 'point_count'], 16, 100, 22, 750, 30],
+      },
+    },
+    slot: 'above-labels',
+  });
+  await call('addLayer', {
+    layer: {
+      id: 'point',
+      type: 'circle',
+      source: 'points',
+      filter: ['!', ['has', 'point_count']],
+      paint: {
+        'circle-radius': 4,
+        'circle-color': [
+          'case',
+          ['boolean', ['feature-state', 'selected'], false],
+          '#ff0000',
+          '#11b4da',
+        ],
+      },
+    },
+  });
+  await call('addLayer', {
+    layer: {id: 'heat', type: 'heatmap', source: 'points', maxzoom: 9},
+    position: {below: 'clusters'},
+  });
+  const refused = await request('addLayer', {
+    layer: {id: 'broken', type: 'circle', source: 'points', paint: {'circle-radius': 'large'}},
+  });
+  assert.equal(refused.error?.code, 'invalidRequest', `${name}: invalid paint`);
+  const unknown = await request('addLayer', {layer: {id: 'x', type: 'line', source: 'missing'}});
+  assert.equal(unknown.error?.context?.reason, 'unknownSource', `${name}: unknown source`);
+  const clusters = await time('first clusters rendered', () =>
+    poll(
+      'clusters render',
+      () => call('queryRenderedFeatures', {layers: ['clusters']}),
+      (features) => features.length > 0,
+    ),
+  );
+  counts['clusters in view at zoom 9'] = clusters.length;
+  const largest = clusters.reduce((a, b) =>
+    a.properties.point_count >= b.properties.point_count ? a : b,
+  );
+  assert.equal(largest.layer, 'clusters');
+  assert.equal(largest.source, 'points');
+  assert.ok(largest.properties.rankSum > 0, `${name}: cluster properties`);
+  const cluster = largest.properties.cluster_id;
+  const children = await call('queryCluster', {source: 'points', cluster, query: 'children'});
+  assert.ok(children.length > 1, `${name}: cluster children`);
+  const leaves = await call('queryCluster', {source: 'points', cluster, query: 'leaves', limit: 5});
+  assert.equal(leaves.length, 5, `${name}: cluster leaves`);
+  // An interactive cluster: a tap finds it, and the map zooms to where it splits.
+  const [longitude, latitude] = largest.geometry.coordinates;
+  const point = await call('project', {longitude, latitude});
+  const expansion = await time('cluster tap: query, expansion zoom', async () => {
+    const hit = await call('queryRenderedFeatures', {geometry: {point}, layers: ['clusters']});
+    assert.ok(hit.length > 0, `${name}: tapped cluster`);
+    return call('queryCluster', {
+      source: 'points',
+      cluster: hit[0].properties.cluster_id,
+      query: 'expansionZoom',
+    });
+  });
+  assert.ok(expansion > 9, `${name}: expansion zoom ${expansion}`);
+  timings['frames while panning 100k clustered points (ms)'] = await frameIntervals(page, call, {
+    target: {center: {longitude: -3.75, latitude: 40.38}, zoom: expansion},
+  });
+  // A polygon and a box around the cluster find it; at a steep pitch, so does the whole view.
+  const around = (size) => [
+    {x: point.x - size, y: point.y - size},
+    {x: point.x + size, y: point.y - size},
+    {x: point.x + size, y: point.y + size},
+    {x: point.x - size, y: point.y + size},
+  ];
+  await call('moveCamera', {
+    target: {center: {longitude, latitude}, zoom: 9},
+    animation: {type: 'jump'},
+  });
+  const centre = await call('project', {longitude, latitude});
+  const ring = around(10).map(({x, y}) => ({x: x - point.x + centre.x, y: y - point.y + centre.y}));
+  const inPolygon = await poll(
+    'polygon query',
+    () => call('queryRenderedFeatures', {geometry: {polygon: ring}, layers: ['clusters']}),
+    (features) => features.length > 0,
+  );
+  assert.ok(inPolygon.some((feature) => feature.properties.cluster_id !== undefined));
+  const inBox = await call('queryRenderedFeatures', {
+    geometry: {box: [ring[0], ring[2]]},
+    layers: ['clusters'],
+    filter: ['>=', ['get', 'point_count'], 2],
+  });
+  assert.ok(inBox.length > 0, `${name}: box query`);
+  await call('moveCamera', {
+    target: {center: {longitude: -3.7, latitude: 40.42}, zoom: 12, pitch: 80},
+    animation: {type: 'jump'},
+  });
+  // Tiles keep arriving after the jump; the view is queried once its features stop changing.
+  let steep = [];
+  for (let stable = 0, attempt = 0; stable < 5 && attempt < 200; attempt += 1) {
+    await new Promise((wait) => setTimeout(wait, 100));
+    const next = await call('queryRenderedFeatures', {limit: 100_000});
+    stable = next.length > 0 && next.length === steep.length ? stable + 1 : 0;
+    steep = next;
+  }
+  // Above the horizon the view shows sky; strips of the view find nothing the whole view misses.
+  const key = (feature) => `${feature.layer}:${feature.id}:${feature.properties.cluster_id}`;
+  const stripped = new Set();
+  for (let strip = 0; strip < 12; strip += 1) {
+    const found = await call('queryRenderedFeatures', {
+      geometry: {
+        box: [
+          {x: 0, y: (844 / 12) * strip},
+          {x: 390, y: (844 / 12) * (strip + 1)},
+        ],
+      },
+      limit: 100_000,
+    });
+    for (const feature of found) stripped.add(key(feature));
+  }
+  const whole = new Set((await call('queryRenderedFeatures', {limit: 100_000})).map(key));
+  const missed = [...stripped].filter((feature) => !whole.has(feature));
+  assert.deepEqual(missed, [], `${name}: the whole view at pitch 80 misses features`);
+  counts['features in the whole view at pitch 80'] = whole.size;
+  await call('moveCamera', {
+    target: {center: {longitude, latitude}, zoom: 9, pitch: 0},
+    animation: {type: 'jump'},
+  });
+
+  // Feature state and the map's style change: everything the application added comes back.
+  await call('setFeatureState', {source: 'points', id: '5', state: {selected: true}});
+  assert.deepEqual(await call('getFeatureState', {source: 'points', id: '5'}), {selected: true});
+  await time('theme change with 100k clustered points', () =>
+    call('setTheme', {theme: 'light', duration: 0}),
+  );
+  assert.deepEqual(await call('getFeatureState', {source: 'points', id: '5'}), {selected: true});
+  const restored = await poll(
+    'clusters after a theme change',
+    () => call('queryRenderedFeatures', {layers: ['clusters']}),
+    (features) => features.length > 0,
+  );
+  counts['clusters after a theme change'] = restored.length;
+  await call('removeFeatureState', {source: 'points', id: '5', key: 'selected'});
+  assert.deepEqual(await call('getFeatureState', {source: 'points', id: '5'}), {});
+
+  // Features change one by one without sending the rest again.
+  await call('addSource', {id: 'live', source: {type: 'geojson', data: {empty: true}}});
+  await call('addLayer', {
+    layer: {id: 'live', type: 'circle', source: 'live', paint: {'circle-radius': 6}},
+    slot: 'below-labels',
+  });
+  const feature = (id, longitude) => ({
+    type: 'Feature',
+    id,
+    properties: {name: `vehicle ${id}`},
+    geometry: {type: 'Point', coordinates: [longitude, latitude]},
+  });
+  const added = register(
+    Buffer.from(JSON.stringify([feature(1, longitude), feature(2, longitude + 0.01)])),
+  );
+  await call('updateGeoJSONSource', {id: 'live', add: added});
+  data.delete(added.id);
+  await call('updateGeoJSONSource', {id: 'live', remove: ['1']});
+  const live = await poll(
+    'incremental features',
+    () => call('querySourceFeatures', {source: 'live'}),
+    (features) => features.length === 1,
+  );
+  assert.equal(live[0].properties.name, 'vehicle 2');
+  await call('updateLayer', {
+    layer: {id: 'live', type: 'circle', source: 'live', paint: {'circle-radius': 9}},
+    slot: 'below-labels',
+  });
+  await call('moveLayer', {id: 'live', position: {above: 'clusters'}});
+
+  // A payload and a result larger than a control message travel in parts.
+  const ids = Array.from({length: 12_000}, (_, index) => index);
+  const payload = register(
+    Buffer.from(
+      JSON.stringify({
+        layer: {
+          id: 'chosen',
+          type: 'circle',
+          source: 'points',
+          filter: ['match', ['id'], ids, true, false],
+        },
+      }),
+    ),
+  );
+  await time('addLayer with a 64 KiB+ filter on the data channel', () =>
+    deferredCall('addLayer', payload),
+  );
+  data.delete(payload.id);
+  const many = await time('cluster leaves, 5,000 features in parts', () =>
+    call('queryCluster', {source: 'points', cluster, query: 'leaves', limit: 5000}),
+  );
+  assert.equal(many.length, Math.min(5000, largest.properties.point_count), `${name}: leaves`);
+  for (const id of ['chosen', 'live', 'heat', 'point', 'clusters'])
+    await call('removeLayer', {id}).catch(() => undefined);
+  await call('removeSource', {id: 'live'});
+  await call('removeSource', {id: 'points'});
 }
 
 /** A host that shares no protocol version with the runtime is told so, never left waiting. */

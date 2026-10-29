@@ -39,7 +39,7 @@
     "smoke:mobile:packed": "node scripts/mobile-packed-smoke.mjs packed",
     "smoke:mobile:android": "node scripts/mobile-packed-smoke.mjs android",
     "smoke:mobile:ios": "node scripts/mobile-packed-smoke.mjs ios",
-    "native:runtime": "node scripts/mobile-protocol-generate.mjs --check && turbo build --filter=@tileflow/mobile-runtime && node scripts/mobile-runtime-stage.mjs",
+    "native:runtime": "node scripts/mobile-protocol-generate.mjs --check && node scripts/mobile-style-generate.mjs --check && turbo build --filter=@tileflow/mobile-runtime && node scripts/mobile-runtime-stage.mjs",
     "static-text:check": "node scripts/generate-static-text-coverage.mjs --check",
     "static-text:generate": "node scripts/generate-static-text-coverage.mjs",
     "publish:alpha:dry-run": "pnpm run release:verify-source && pnpm run build:packages && pnpm run check && pnpm run smoke:capture-public",

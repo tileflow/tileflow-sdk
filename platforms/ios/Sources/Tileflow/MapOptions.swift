@@ -8,16 +8,48 @@ public enum TileflowViewMode: String, Codable, Sendable {
 /// Explicit rendering budgets. Device performance still depends on the map's data and design.
 public enum TileflowQuality: String, Codable, Sendable { case low, balanced, high }
 
+/// Which gestures move the map, and how.
 public struct TileflowGestures: Codable, Equatable, Sendable {
   public var pan: Bool
+  /// Pinching, double taps and other zoom gestures.
   public var zoom: Bool
   public var rotate: Bool
   public var pitch: Bool
-  public init(pan: Bool = true, zoom: Bool = true, rotate: Bool = true, pitch: Bool = true) {
+  /// Whether a double tap zooms in and a two-finger tap zooms out, while ``zoom`` is on.
+  public var doubleTapZoom: Bool
+  /// How many zoom levels a double tap adds, from 0.25 to 4.
+  public var doubleTapZoomDelta: Double
+  /// One finger scrolls what surrounds the map, such as a list or a page, and two fingers move
+  /// the map. The map shows a hint when one finger tries to move it.
+  public var cooperative: Bool
+
+  public init(
+    pan: Bool = true, zoom: Bool = true, rotate: Bool = true, pitch: Bool = true,
+    doubleTapZoom: Bool = true, doubleTapZoomDelta: Double = 1, cooperative: Bool = false
+  ) {
     self.pan = pan
     self.zoom = zoom
     self.rotate = rotate
     self.pitch = pitch
+    self.doubleTapZoom = doubleTapZoom
+    self.doubleTapZoomDelta = doubleTapZoomDelta
+    self.cooperative = cooperative
+  }
+
+  /// No gesture moves the map; taps and long presses are still reported.
+  public static let none = TileflowGestures(
+    pan: false, zoom: false, rotate: false, pitch: false, doubleTapZoom: false)
+
+  /// Whether any gesture moves the map, so the map takes touches from scroll views around it.
+  var movesMap: Bool { pan || zoom || rotate || pitch }
+
+  func wireValue() throws -> JSONValue {
+    guard (0.25...4).contains(doubleTapZoomDelta) else { throw TileflowMapError.invalidRequest }
+    return .object([
+      "pan": .bool(pan), "zoom": .bool(zoom), "rotate": .bool(rotate), "pitch": .bool(pitch),
+      "doubleTapZoom": .bool(doubleTapZoom), "doubleTapZoomDelta": .number(doubleTapZoomDelta),
+      "cooperative": .bool(cooperative),
+    ])
   }
 }
 
@@ -44,36 +76,45 @@ public struct TileflowEventOptions: Equatable, Sendable {
   }
 }
 
-public struct TileflowMapOptions: Codable, Equatable, Sendable {
+public struct TileflowMapOptions: Equatable, Sendable {
   public var viewMode: TileflowViewMode
   /// The rendering quality. Nil uses ``TileflowDeviceProfile/current``'s quality when the options
   /// reach the map.
   public var quality: TileflowQuality?
   public var gestures: TileflowGestures
-  public var controls: Bool
+  /// The compass, scale bar, recenter button and attribution. The attribution is always shown.
+  public var controls: TileflowMapControls
+  /// Where the camera may go.
+  public var cameraLimits: TileflowCameraLimits
   /// Which events the map reports. Delivery is set up by the SDK, not by the renderer's options.
   public var events: TileflowEventOptions = .init()
 
   public init(
     viewMode: TileflowViewMode = .flat, quality: TileflowQuality? = nil,
-    gestures: TileflowGestures = .init(), controls: Bool = true,
-    events: TileflowEventOptions = .init()
+    gestures: TileflowGestures = .init(), controls: TileflowMapControls = .init(),
+    cameraLimits: TileflowCameraLimits = .init(), events: TileflowEventOptions = .init()
   ) {
     self.viewMode = viewMode
     self.quality = quality
     self.gestures = gestures
     self.controls = controls
+    self.cameraLimits = cameraLimits
     self.events = events
   }
 
-  private enum CodingKeys: String, CodingKey { case viewMode, quality, gestures, controls }
+  /// The renderer's options. The attribution's corner follows the layout direction.
+  func wireValue(rightToLeft: Bool) throws -> JSONValue {
+    let quality = quality ?? TileflowDeviceProfile.current.quality
+    return .object([
+      "viewMode": .string(viewMode.rawValue), "quality": .string(quality.rawValue),
+      "gestures": try gestures.wireValue(), "limits": try cameraLimits.wireValue(),
+      "attribution": .string(controls.attributionPosition.corner(rightToLeft: rightToLeft)),
+    ])
+  }
 
-  public func encode(to encoder: any Encoder) throws {
-    var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encode(viewMode, forKey: .viewMode)
-    try container.encode(quality ?? TileflowDeviceProfile.current.quality, forKey: .quality)
-    try container.encode(gestures, forKey: .gestures)
-    try container.encode(controls, forKey: .controls)
+  func validate() throws {
+    try events.validate()
+    _ = try wireValue(rightToLeft: false)
   }
 }
 
@@ -103,7 +144,8 @@ public struct TileflowBounds: Codable, Equatable, Sendable {
 extension TileflowCamera {
   func validate() throws {
     guard (-180...180).contains(longitude), (-90...90).contains(latitude),
-      (0...24).contains(zoom), (-360...360).contains(bearing), (0...85).contains(pitch)
+      (0...24).contains(zoom), (-360...360).contains(bearing),
+      (0...TileflowCameraLimits.maximumPitch).contains(pitch)
     else { throw TileflowMapError.invalidRequest }
   }
 }

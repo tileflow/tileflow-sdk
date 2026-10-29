@@ -11,7 +11,17 @@ public enum TileflowMapEvent: Sendable {
   /// The camera started to move, moved or settled. Which of these arrive depends on
   /// ``TileflowMapOptions/events``; the settled camera always does.
   case cameraChanged(TileflowCameraChange)
-  case tap(longitude: Double, latitude: Double)
+  /// A person tapped the map, outside annotations and points of interest.
+  case tap(TileflowMapTouch)
+  /// A person pressed and held the map without moving.
+  case longPress(TileflowMapTouch)
+  /// A person started to pan, zoom, rotate or pitch the map. Arrives at the
+  /// ``TileflowEventLevel/camera`` level and above.
+  case gestureStarted(TileflowGesture)
+  /// The gesture ended. Motion that continues after it is part of the camera's movement.
+  case gestureEnded(TileflowGesture)
+  /// A person tapped the recenter button. The application chooses where the camera goes.
+  case recenterRequested
   case themeChanged(String)
   /// The map continues, but something it tried did not work, for example tiles that failed to
   /// load. Repeats of one warning within a second arrive together with their count.

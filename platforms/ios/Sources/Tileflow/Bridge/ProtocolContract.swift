@@ -16,13 +16,16 @@ enum ProtocolContract {
     case initialize
     case cancel
     case setEvents
-    case setCamera
+    case moveCamera
+    case stopCamera
     case getCamera
+    case cameraForBounds
+    case visibleBounds
+    case setInsets
     case setTheme
     case setBlend
     case setOptions
     case setContent
-    case fitBounds
     case project
     case unproject
     case setVisibility
@@ -38,10 +41,13 @@ enum ProtocolContract {
     case themeChanged
     case warning
     case tap
+    case longPress
     case annotationActivated
     case poiActivated
     case cameraMoveEnded
     case cameraMoveStarted
+    case gestureStarted
+    case gestureEnded
     case cameraMoved
 
     /// The least detailed level that includes the event, or nil when it needs no subscription.
@@ -54,10 +60,13 @@ enum ProtocolContract {
       case .themeChanged: .essential
       case .warning: .essential
       case .tap: .essential
+      case .longPress: .essential
       case .annotationActivated: .essential
       case .poiActivated: .essential
       case .cameraMoveEnded: .essential
       case .cameraMoveStarted: .camera
+      case .gestureStarted: .camera
+      case .gestureEnded: .camera
       case .cameraMoved: .continuous
       }
     }

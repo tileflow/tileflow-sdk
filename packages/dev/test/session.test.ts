@@ -1678,6 +1678,10 @@ function runPreviewScript(
       assert.ok(map instanceof FakeMap);
       return () => {};
     },
+    attachTileflowHorizonQueries: (map: unknown) => {
+      assert.ok(map instanceof FakeMap);
+      return () => {};
+    },
     // Core's 3D scene, faked as the renderers it mounts for the style's declarations.
     createTileflowMap3D: ({viewMode, vegetation}: {viewMode: string; vegetation: boolean}) => {
       let shown = viewMode === '3d';

@@ -31,6 +31,7 @@
   import {
     attachTileflowAtmosphere,
     attachTileflowLabelPlacement,
+    attachTileflowHorizonQueries,
     attachTileflowFairUseNotice,
     attachTileflowMap3D,
     attachTileflowMapLifecycle,
@@ -616,6 +617,8 @@
     attachTileflowNotices(maplibreMap);
     attachTileflowNauticalLights(maplibreMap);
     attachTileflowLabelPlacement(maplibreMap);
+    // Feature queries and taps keep working once a steep pitch shows the horizon.
+    attachTileflowHorizonQueries(maplibreMap);
     themeController =
       runtime.theme === undefined
         ? null

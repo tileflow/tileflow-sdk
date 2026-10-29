@@ -112,7 +112,7 @@ export function renderTileflowPreviewHtml(
       import * as maplibregl from "${basePath}/__runtime/maplibre-gl.mjs";
       import {createPreviewObserver} from "${basePath}/__runtime/inspector-observer.js";
       import {loadTileflowStyleFonts} from "${basePath}/__runtime/tileflow-browser.js";
-      import {attachTileflowLabelPlacement} from "${basePath}/__runtime/tileflow-browser.js";
+      import {attachTileflowHorizonQueries, attachTileflowLabelPlacement} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowContourProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {registerTileflowPmtilesProtocol} from "${basePath}/__runtime/tileflow-browser.js";
       import {attachTileflowNauticalLights, attachTileflowNotices} from "${basePath}/__runtime/tileflow-browser.js";
@@ -1529,6 +1529,7 @@ export function renderTileflowPreviewHtml(
         attachTileflowNauticalLights(map);
         attachTileflowAtmosphere(map);
         attachTileflowLabelPlacement(map);
+        attachTileflowHorizonQueries(map);
         inspectorObserver?.attach(map);
         installMapBenchmark(map);
         if (window.parent === window) map.addControl(new maplibregl.NavigationControl(), "top-right");

@@ -91,7 +91,7 @@ final class ProtocolTests: XCTestCase {
   func testEventLevelsAreCumulativeAndOnlyChosenEventsAreRequested() {
     func requested(_ options: TileflowEventOptions) -> [String: Int] {
       Dictionary(
-        uniqueKeysWithValues: EventSubscriptions(application: options).events.map {
+        uniqueKeysWithValues: EventSubscriptions.demand(for: options).map {
           ($0.key.rawValue, $0.value)
         })
     }
@@ -110,8 +110,16 @@ final class ProtocolTests: XCTestCase {
     XCTAssertTrue(Set(camera.keys).isSubset(of: Set(continuous.keys)))
     XCTAssertTrue(TileflowEventLevel.continuous.includes(.essential))
     XCTAssertFalse(TileflowEventLevel.essential.includes(.camera))
-    // Several owners share an event at the shortest interval any of them asks for.
-    var shared = EventSubscriptions(application: .init(level: .continuous, cameraUpdateInterval: 1))
+    // The SDK follows every movement for `isMoving`, and every frame for its compass and scale
+    // bar; the renderer sends the union, at the shortest interval any owner asks for.
+    let sdk = EventSubscriptions(application: .init())
+    XCTAssertEqual(sdk.events[.cameraMoveStarted], 0)
+    XCTAssertNil(sdk.events[.cameraMoved])
+    var shared = EventSubscriptions(
+      application: .init(level: .continuous, cameraUpdateInterval: 1), followCamera: true)
+    XCTAssertEqual(shared.events[.cameraMoved], 0)
+    shared.set(.controls, [:])
+    XCTAssertEqual(shared.events[.cameraMoved], 1000)
     shared.set(.application, [.cameraMoved: 50, .hello: 0])
     XCTAssertEqual(shared.events[.cameraMoved], 50)
     XCTAssertNil(shared.events[.hello])

@@ -101,11 +101,11 @@ any other event. `hello` and `error` need no subscription.
 
 Each event belongs to one level. Levels are cumulative:
 
-| Level        | Adds                                                                                        |
-| ------------ | ------------------------------------------------------------------------------------------- |
-| `essential`  | `loading`, `contentReady`, `themeChanged`, `warning`, `tap`, activations, `cameraMoveEnded` |
-| `camera`     | `cameraMoveStarted`                                                                         |
-| `continuous` | `cameraMoved`, at most once per rendered frame                                              |
+| Level        | Adds                                                                                                     |
+| ------------ | -------------------------------------------------------------------------------------------------------- |
+| `essential`  | `loading`, `contentReady`, `themeChanged`, `warning`, `tap`, `longPress`, activations, `cameraMoveEnded` |
+| `camera`     | `cameraMoveStarted`, `gestureStarted`, `gestureEnded`                                                    |
+| `continuous` | `cameraMoved`, at most once per rendered frame                                                           |
 
 The host sends its subscriptions in `initialize` and replaces them with `setEvents`. Each
 subscription has a throttle interval, from 0 to `maximumThrottleMs`. A throttled event is delivered
@@ -115,7 +115,15 @@ waiting for its interval.
 
 The host's subscriptions are the union of what each part of the SDK asks for, with the shortest
 interval any of them asks for. Applications choose a level and the camera update interval through
-the map options.
+the map options. The SDK always follows `cameraMoveStarted` and `cameraMoveEnded`, to keep its
+synchronous camera state current, and `cameraMoved` while a compass or scale bar is shown; the
+host delivers to the application only the events of its level, at its interval, and always the
+latest camera of a throttled run.
+
+`tap` and `longPress` carry the `coordinate` and the `point` in CSS pixels. A long press is a
+primary pointer that holds within 10 CSS pixels for 500 ms; the click that ends it is not a tap.
+`gestureStarted` and `gestureEnded` carry `gesture`: `pan`, `zoom`, `rotate` or `pitch`, for
+movements a person makes.
 
 Camera events carry the camera, a revision and the `reason` for the movement:
 
@@ -124,6 +132,33 @@ Camera events carry the camera, a revision and the `reason` for the movement:
 - `api`: the application moved the camera through the SDK, with or without an animation;
 - `system`: the SDK moved the camera itself, for example after a layout change or a view mode
   transition.
+
+## Camera
+
+`moveCamera` moves to a `target` (any of `center`, `zoom`, `bearing`, `pitch`) or a `fit` (bounds,
+padding, bearing, pitch and maximum zoom), with a `jump`, `ease` or `fly` animation of at most
+20 seconds, so it always answers before the request times out. It answers when the movement
+ends, with the settled camera and its `completion`:
+
+- `finished`: the camera reached its target, including movements that complete when they start;
+- `cancelled`: `stopCamera`, a later movement, or hiding the map stopped it;
+- `interrupted`: a person or the SDK moved the camera before the target.
+
+Cancelling the request stops the movement and answers `cancelled` as an error, like any request.
+`reason` is `api` unless a native map control moves the camera for a person, which sends
+`gesture`. Bounds that do not fit inside the padding fail with `invalidRequest`.
+`cameraForBounds` answers the camera that would frame a `fit`, or null; `visibleBounds` answers the
+region the view shows, with longitudes in [-180, 180] and an east edge west of the west edge when
+it crosses the antimeridian.
+
+`setInsets` sets the space covered at each edge, in CSS pixels. The camera centres on the rest of
+the view and the renderer's control corners (attribution and notices) move inside it. Changing the
+padding stops any movement in MapLibre, so the renderer applies a change made while the camera
+moves when the camera settles. `initialize` may carry the first insets.
+
+The map options carry the gestures, the camera `limits` (zoom 0 to 24, pitch 0 to 85, optional
+bounds) and the `attribution` corner. The attribution is always shown; the host draws the
+compass, scale bar and recenter button natively.
 
 ## Errors and warnings
 

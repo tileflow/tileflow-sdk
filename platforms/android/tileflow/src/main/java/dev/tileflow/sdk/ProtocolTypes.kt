@@ -82,9 +82,15 @@ public enum class TileflowErrorCode(
  * the chosen level never leave the renderer.
  */
 public enum class TileflowEventLevel(internal val wireName: String) {
-    /** Lifecycle, failures, warnings, taps and activations, and the camera each time it settles. */
+    /**
+     * Lifecycle, failures, warnings, taps, long presses and activations, and the camera each time
+     * it settles.
+     */
     ESSENTIAL("essential"),
-    /** Also the start of every camera movement, with its reason. */
+    /**
+     * Also the start of every camera movement, with its reason, and the start and end of each
+     * gesture.
+     */
     CAMERA("camera"),
     /**
      * Also the camera while it moves, at most once per rendered frame or per the requested

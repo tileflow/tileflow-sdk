@@ -133,7 +133,7 @@ private fun ServicesScreen(source: TileflowMapSource, configured: Boolean) {
                         ),
                     layers = TileflowRouteLayers.build(response),
                 )
-                controller.fit(TileflowBounds(route.bounds), padding = 48f)
+                controller.fit(TileflowBounds(route.bounds), padding = 48.dp)
                 val kilometres = (route.distance / 100).roundToInt() / 10.0
                 status = "$kilometres km · ${(route.duration / 60).roundToInt()} min"
                 attribution =

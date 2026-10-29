@@ -22,7 +22,37 @@ public sealed interface TileflowMapEvent {
      */
     public data class CameraChanged(val change: TileflowCameraChange) : TileflowMapEvent
 
-    public data class Tap(val longitude: Double, val latitude: Double) : TileflowMapEvent
+    /**
+     * A person tapped the map, outside annotations and points of interest. [point] is in physical
+     * pixels relative to the view.
+     */
+    public data class Tap(val coordinate: TileflowCoordinate, val point: TileflowPoint) :
+        TileflowMapEvent {
+        public val longitude: Double
+            get() = coordinate.longitude
+
+        public val latitude: Double
+            get() = coordinate.latitude
+    }
+
+    /**
+     * A person pressed and held the map without moving. [point] is in physical pixels relative to
+     * the view.
+     */
+    public data class LongPress(val coordinate: TileflowCoordinate, val point: TileflowPoint) :
+        TileflowMapEvent
+
+    /**
+     * A person started to pan, zoom, rotate or pitch the map. Arrives at the
+     * [TileflowEventLevel.CAMERA] level and above.
+     */
+    public data class GestureStarted(val gesture: TileflowGesture) : TileflowMapEvent
+
+    /** The gesture ended. Motion that continues after it is part of the camera's movement. */
+    public data class GestureEnded(val gesture: TileflowGesture) : TileflowMapEvent
+
+    /** A person tapped the recenter button. The application chooses where the camera goes. */
+    public data object RecenterRequested : TileflowMapEvent
 
     public data class ThemeChanged(val theme: String) : TileflowMapEvent
 

@@ -1,0 +1,159 @@
+{
+  "version": 2,
+  "kind": "offline_download",
+  "grant": "tf_offline_v2.eyJ2ZXJzaW9uIjoyLCJhdWRpZW5jZSI6InRpbGVmbG93Om9mZmxpbmUtcGFjayIsImRvd25sb2FkSWQiOiJvZGxfRklYVFVSRU9ORURPV05MT0FEMDAwMCIsImNyZWRlbnRpYWxJZCI6ImtleV9vZmZsaW5lX2ZpeHR1cmUiLCJjcmVkZW50aWFsUmV2aXNpb24iOjEsIm9yZ2FuaXphdGlvbklkIjoib3JnX29mZmxpbmVfZml4dHVyZSIsInByb2plY3RJZCI6InByal9vZmZsaW5lX2ZpeHR1cmUiLCJtYXBJZCI6Im1hcF9vZmZsaW5lZml4dHVyZTAwIiwiZGVsaXZlcnlQb2xpY3lSZXZpc2lvbiI6MSwiZGVwbG95bWVudFZlcnNpb24iOjEsInByb2ZpbGUiOiJ3ZWJ2aWV3LXYxIiwidGhlbWVzIjpbeyJuYW1lIjoiZGVmYXVsdCIsInNoYTI1NiI6IjM0ZTYyNTk0ZjY2ZWVkNjc0ZDAxYzQ1ZDY5NDc2MjhiNGRjYWM4ODllZDQ1ZTU1OTZjODUzMzVjYWU0NTU5YzkifV0sInJlZ2lvbiI6eyJ0eXBlIjoiYmJveCIsImJib3giOlstMy43MSw0MC40MSwtMy42OSw0MC40MjVdfSwibWluWm9vbSI6MTAsIm1heFpvb20iOjE0LCJ0ZXJyYWluTWF4Wm9vbSI6MTIsInNvdXJjZXMiOlt7ImlkIjoidGVycmFpbiIsInZlcnNpb24iOiIyMDI2LTEwIiwiZGVzY3JpcHRvclNoYTI1NiI6bnVsbCwiem9vbXMiOlsxMCwxMl0sInRpbGVKc29uU2hhMjU2IjoiNDQ4ZDc0Yjg4ZWQzMzk3OThjZTI3Yzk1MDI5ZGZiOTlhYWUyM2QyNjVlNjZjNThhNDA1ZTQ5MDk1MGUyNzc0MiJ9LHsiaWQiOiJ3b3JsZCIsInZlcnNpb24iOiIyMDI2LTEwLTAxIiwiZGVzY3JpcHRvclNoYTI1NiI6ImRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGQiLCJ6b29tcyI6WzEwLDE0XSwidGlsZUpzb25TaGEyNTYiOiJjMmQ0MDY5YTZhMjAzOTg3NWNiZjUwZGQ5NzA5Y2RhZGQ3MDliYjExNjQ0N2JiNzJlNjUxODBlOWM0NTkzYmE5In1dLCJkb2N1bWVudHMiOlt7ImlkIjoic3R5bGUiLCJzaGEyNTYiOiJlMDVlNTU2Mjk2ZDhhMzJkMmU5NmJiY2M3ZTdhOGE4NjJhNTIwY2YxNTAwZDlhMTU5NTY2ZTgxZTNiNDdkZDQyIn0seyJpZCI6ImFzc2V0cyIsInNoYTI1NiI6IjQxMzlkYzQ2MGFlOWMxODEzOWNkZjAzNThkMzg4OWVhZjAxNDYyZWY5N2E2ZGMwOGY3ZjY3MzE0NWY0YTU5NWEifSx7ImlkIjoiZ2x5cGhzL05vdG8gU2FucyBSZWd1bGFyLzAiLCJzaGEyNTYiOiJmOThmNDJjYmFhYjNkMWU1OTdjNjJhMjdhOTI4MmE4YjFmMGU5NWQ1NTczYWQ2ZmRhYjQ4NjVlZGQ4N2U3MmNhIn1dLCJyZXNvdXJjZXMiOjIzLCJtYW5pZmVzdFNoYTI1NiI6IjI4ODRkMmE1YWIwZDU1NWJhZDBkNTZkODlmODQzMTM2MmU0MzU0YmM2MWY3OWI5MzJmNTUzYmQ2NjU1ZWNhYTgiLCJpc3N1ZWRBdCI6MTc5MzM2MTYwMCwiZXhwaXJlc0F0IjoxNzkzNDQ4MDAwfQ.yOTD6I3LfjcIGQOn8-oGnUyvdumbIiGPXSjliKGRrU4",
+  "manifest": {
+    "version": 2,
+    "downloadId": "odl_FIXTUREONEDOWNLOAD0000",
+    "mapId": "map_offlinefixture00",
+    "profile": "webview-v1",
+    "deploymentVersion": 1,
+    "themes": ["default"],
+    "region": {"type": "bbox", "bbox": [-3.71, 40.41, -3.69, 40.425]},
+    "minZoom": 10,
+    "maxZoom": 14,
+    "terrainMaxZoom": 12,
+    "createdAt": "2026-10-30T12:00:00.000Z",
+    "sources": [
+      {
+        "source": "terrain",
+        "version": "2026-10",
+        "template": "https://api.tileflow.test/tiles/terrain/2026-10/{z}/{x}/{y}.webp",
+        "zooms": [10, 12],
+        "contentType": "image/webp",
+        "contentEncoding": null,
+        "absentStatus": 404
+      },
+      {
+        "source": "world",
+        "version": "2026-10-01",
+        "template": "https://api.tileflow.test/tiles/world/2026-10-01/{z}/{x}/{y}.pbf?worldDescriptorSha256=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+        "zooms": [10, 14],
+        "contentType": "application/vnd.mapbox-vector-tile",
+        "contentEncoding": "gzip",
+        "absentStatus": 404
+      }
+    ],
+    "packs": [
+      {
+        "id": "style",
+        "kind": "documents",
+        "url": "https://api.tileflow.test/v1/offline/documents/style.tfpack",
+        "bytes": 1440,
+        "resources": 3,
+        "billableResources": 3
+      },
+      {
+        "id": "assets",
+        "kind": "documents",
+        "url": "https://api.tileflow.test/v1/offline/documents/assets.tfpack",
+        "bytes": 317,
+        "resources": 2,
+        "billableResources": 2
+      },
+      {
+        "id": "glyphs/Noto Sans Regular/0",
+        "kind": "documents",
+        "url": "https://api.tileflow.test/v1/offline/documents/glyphs/Noto%20Sans%20Regular/0.tfpack",
+        "bytes": 625,
+        "resources": 3,
+        "billableResources": 2
+      },
+      {
+        "id": "tiles/terrain/7/62/48",
+        "kind": "tiles",
+        "url": "https://api.tileflow.test/v1/offline/tiles/terrain/2026-10/7/62/48.tfpack",
+        "bytes": 115,
+        "resources": 1,
+        "billableResources": 1,
+        "source": "terrain",
+        "anchor": [7, 62, 48],
+        "zooms": [10, 10]
+      },
+      {
+        "id": "tiles/terrain/11/1002/772",
+        "kind": "tiles",
+        "url": "https://api.tileflow.test/v1/offline/tiles/terrain/2026-10/11/1002/772.tfpack",
+        "bytes": 172,
+        "resources": 2,
+        "billableResources": 2,
+        "source": "terrain",
+        "anchor": [11, 1002, 772],
+        "zooms": [11, 12]
+      },
+      {
+        "id": "tiles/terrain/11/1003/772",
+        "kind": "tiles",
+        "url": "https://api.tileflow.test/v1/offline/tiles/terrain/2026-10/11/1003/772.tfpack",
+        "bytes": 172,
+        "resources": 2,
+        "billableResources": 2,
+        "source": "terrain",
+        "anchor": [11, 1003, 772],
+        "zooms": [11, 12]
+      },
+      {
+        "id": "tiles/world/7/62/48",
+        "kind": "tiles",
+        "url": "https://api.tileflow.test/v1/offline/tiles/world/2026-10-01/7/62/48.tfpack",
+        "bytes": 162,
+        "resources": 1,
+        "billableResources": 1,
+        "source": "world",
+        "anchor": [7, 62, 48],
+        "zooms": [10, 10]
+      },
+      {
+        "id": "tiles/world/11/1002/772",
+        "kind": "tiles",
+        "url": "https://api.tileflow.test/v1/offline/tiles/world/2026-10-01/11/1002/772.tfpack",
+        "bytes": 470,
+        "resources": 4,
+        "billableResources": 4,
+        "source": "world",
+        "anchor": [11, 1002, 772],
+        "zooms": [11, 14]
+      },
+      {
+        "id": "tiles/world/11/1003/772",
+        "kind": "tiles",
+        "url": "https://api.tileflow.test/v1/offline/tiles/world/2026-10-01/11/1003/772.tfpack",
+        "bytes": 674,
+        "resources": 6,
+        "billableResources": 6,
+        "source": "world",
+        "anchor": [11, 1003, 772],
+        "zooms": [11, 14]
+      }
+    ],
+    "publicResources": [
+      {
+        "kind": "discovery",
+        "url": "https://api.tileflow.test/maps/map_offlinefixture00/mobile/manifest.json",
+        "bytes": 2,
+        "sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      }
+    ],
+    "origins": ["https://api.tileflow.test"],
+    "excluded": [{"source": "nautical", "reason": "legal_review"}],
+    "totals": {"packs": 9, "resources": 25, "billableResources": 23, "bytes": 4149},
+    "attribution": {
+      "sources": [
+        {"source": "terrain", "text": "© Mapterhorn"},
+        {"source": "world", "text": "© OpenStreetMap contributors"}
+      ]
+    },
+    "limits": {
+      "maxPackResources": 10000,
+      "dailyDownloads": 20000,
+      "teamDailyDownloads": 20000,
+      "dailyRemaining": 20000,
+      "teamDailyRemaining": 20000
+    },
+    "revalidation": {
+      "url": "https://api.tileflow.test/v1/offline/packs/revalidate",
+      "intervalSeconds": 86400
+    },
+    "download": {"expiresAt": "2026-10-31T12:00:00.000Z"}
+  }
+}

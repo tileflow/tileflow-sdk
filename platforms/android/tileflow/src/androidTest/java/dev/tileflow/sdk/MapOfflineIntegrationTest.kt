@@ -8,6 +8,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import dev.tileflow.configuration.TileflowBoundingBox
 import dev.tileflow.configuration.TileflowConfiguration
 import dev.tileflow.configuration.TileflowCredential
+import dev.tileflow.sdk.offline.OfflineFetchRequest
 import dev.tileflow.sdk.offline.OfflineHttpFetcher
 import dev.tileflow.sdk.offline.OfflineLayout
 import dev.tileflow.sdk.offline.OfflinePackClient
@@ -50,6 +51,7 @@ public class OfflineMapHostActivity : ComponentActivity() {
     lateinit var map: TileflowMapView
     val loaded = CountDownLatch(1)
     val failures = CopyOnWriteArrayList<TileflowErrorCode>()
+    val warnings = CopyOnWriteArrayList<TileflowMapEvent.Warning>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -59,10 +61,11 @@ public class OfflineMapHostActivity : ComponentActivity() {
                     when (it) {
                         TileflowMapEvent.ContentReady -> loaded.countDown()
                         is TileflowMapEvent.Failed -> failures.add(it.code)
+                        is TileflowMapEvent.Warning -> warnings.add(it)
                         else -> Unit
                     }
                 }
-                setSource(requested!!)
+                setSource(requested!!, camera)
             }
         setContentView(map)
     }
@@ -74,6 +77,7 @@ public class OfflineMapHostActivity : ComponentActivity() {
 
     internal companion object {
         @Volatile var requested: TileflowMapSource? = null
+        @Volatile var camera: TileflowCamera? = null
     }
 }
 
@@ -153,9 +157,11 @@ public class MapOfflineIntegrationTest {
             ),
         )
         val downloaded = counters()
-        assertEquals(1, downloaded.getInt("packs"))
-        assertTrue(downloaded.getInt("packResources") > 0)
+        assertEquals("One download created", 1, downloaded.getInt("packs"))
+        val region = runBlocking { store.region("hosted") }!!
+        assertEquals(region.requiredPackCount, downloaded.getLong("packResources"))
         assertEquals(0, downloaded.getInt("sessions"))
+        assertEquals("Discovery and profile", 2, downloaded.getInt("downloads"))
 
         val source = TileflowMapSource.hosted(HOSTED_MAP_ID, configuration = configuration)
         counters(reset = true)
@@ -183,6 +189,75 @@ public class MapOfflineIntegrationTest {
             withNetwork.getInt("notModified") > 0,
         )
         assertTrue(withNetwork.getInt("sessionResources") > 0)
+    }
+
+    /**
+     * Downloads the fixture's Terrain theme with Terrain to z12, then shows it at z14.5 with the
+     * network switched off. Elevation tiles above z12 answer as online (`404`), so the renderer
+     * overzooms the z12 tiles: nothing is missing and no warning is reported.
+     */
+    @Test
+    public fun terrainZoomedPastItsDownloadedZoomsHasNoHolesOffline() {
+        requireFixture("$ORIGIN/maps/$HOSTED_MAP_ID/mobile/manifest.json")
+        val cache = TileflowMapCache.get(context)
+        runBlocking { cache.clear() }
+        val configuration =
+            TileflowConfiguration(
+                apiOrigin = URI(ORIGIN),
+                mapCredential = TileflowCredential("tf_public_" + "f".repeat(48)),
+            )
+        val store = store { OfflinePackClient(configuration) }
+        download(
+            store,
+            "terrain",
+            TileflowOfflineRegionLoadOptions(
+                TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(-3.85, 40.27, -3.55, 40.57)),
+                TileflowOfflineContent.Hosted(HOSTED_MAP_ID, listOf("day", "terrain")),
+                minZoom = 0,
+                maxZoom = 15,
+            ),
+        )
+        counters(reset = true)
+        TileflowOfflineSwitch.isNetworkEnabled = false
+        OfflineMapHostActivity.camera = TileflowCamera(-3.7, 40.42, 14.5, pitch = 45.0)
+        val map = show(TileflowMapSource.hosted(HOSTED_MAP_ID, configuration = configuration))
+        try {
+            runBlocking { withContext(Dispatchers.Main) { map.map.setTheme("terrain") } }
+            // Elevation tiles keep arriving after the theme is shown.
+            Thread.sleep(5_000)
+            assertTrue("The packs did not render", rendered(map, "buildings"))
+            assertTrue("Every tile answered: ${map.warnings}", map.warnings.isEmpty())
+        } finally {
+            instrumentation.runOnMainSync { map.finish() }
+            OfflineMapHostActivity.camera = null
+            TileflowOfflineSwitch.isNetworkEnabled = true
+        }
+        val offline = counters()
+        assertEquals(0, offline.getInt("sessions"))
+        assertEquals(0, offline.getInt("downloads"))
+        assertEquals("Nothing came from the network", 0, runBlocking { cache.usage() }.entries)
+    }
+
+    /**
+     * A transfer stopped part-way, as when the system stops the worker or the network drops,
+     * resumes with `Range` and `If-Range` instead of starting again.
+     */
+    @Test
+    public fun anInterruptedTransferResumesFromWhereItStopped() {
+        requireFixture("$ORIGIN/maps/$HOSTED_MAP_ID/mobile/manifest.json")
+        counters(reset = true)
+        val fetcher = OfflineHttpFetcher()
+        val destination = File(root, "incoming/pack")
+        val request =
+            OfflineFetchRequest("resume/1/pack", URI("$ORIGIN/__fixture/resumable"), emptyMap(), destination)
+        val first = runCatching { runBlocking { fetcher.fetch(request) } }
+        assertTrue("The first transfer stops part-way", first.isFailure)
+        val response = runBlocking { fetcher.fetch(request) }
+        assertEquals(200, response.status)
+        val body = destination.readBytes()
+        assertEquals(2 * 1024 * 1024, body.size)
+        assertTrue(body.withIndex().all { (index, byte) -> byte == ((index * 31) % 251).toByte() })
+        assertEquals("The second transfer asked for the rest only", 1, counters().getInt("ranges"))
     }
 
     /** A store of its own, downloading in the process, whose regions every map may use. */

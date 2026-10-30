@@ -90,11 +90,13 @@ constructor(
  * @property isAvailable A complete version is stored and maps use it without a network. False
  *   once access to a Hosted region ended ([UpdateState.NotUpdatable]): its files stay on the
  *   device, and maps stop using them.
+ * @property requiredPackCount Hosted packs: a source's tiles under one anchor tile, or the styles,
+ *   assets and glyphs. Zero for self-hosted content, which downloads resource by resource.
  * @property requiredResourceBytes Bytes on the wire; null for self-hosted content until it is
  *   downloaded.
  * @property loadedResourceCount Resources the download received from the network, after Mapbox's
- *   loaded resource count: of the version downloading, or else of the stored version. Resources
- *   found stored already or unchanged (`304`) are completed without being loaded.
+ *   loaded resource count: of the version downloading, or else of the stored version. Packs and
+ *   resources found stored already or unchanged (`304`) are completed without being loaded.
  * @property loadedResourceBytes Bytes on the wire of the loaded resources.
  * @property billableResourceCount Resources counted toward the plan's per-device limit.
  * @property error Why the download failed or waits.
@@ -107,6 +109,8 @@ public data class TileflowOfflineRegion(
     public val options: TileflowOfflineRegionLoadOptions,
     public val state: DownloadState,
     public val isAvailable: Boolean,
+    public val requiredPackCount: Long,
+    public val completedPackCount: Long,
     public val requiredResourceCount: Long,
     public val completedResourceCount: Long,
     public val requiredResourceBytes: Long?,

@@ -116,14 +116,18 @@ public struct TileflowOfflineRegion: Sendable, Hashable, Identifiable {
   /// Hosted region ended (``UpdateState/notUpdatable(reason:)``): its files stay on the device,
   /// and maps stop using them.
   public let isAvailable: Bool
+  /// Hosted packs: a source's tiles under one anchor tile, or the styles, assets and glyphs. Zero
+  /// for self-hosted content, which downloads resource by resource.
+  public let requiredPackCount: Int
+  public let completedPackCount: Int
   public let requiredResourceCount: Int
   public let completedResourceCount: Int
   /// Bytes on the wire; nil for self-hosted content, whose sizes are unknown until downloaded.
   public let requiredResourceBytes: Int64?
   public let completedResourceBytes: Int64
   /// Resources the download received from the network, after Mapbox's loaded resource count: of
-  /// the version downloading, or else of the stored version. Resources found stored already or
-  /// unchanged (`304`) are completed without being loaded.
+  /// the version downloading, or else of the stored version. Packs and resources found stored
+  /// already or unchanged (`304`) are completed without being loaded.
   public let loadedResourceCount: Int
   /// Bytes on the wire of the loaded resources.
   public let loadedResourceBytes: Int64

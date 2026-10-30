@@ -5,6 +5,8 @@ import dev.tileflow.sdk.transport.ResourceCacheStore
 import dev.tileflow.sdk.transport.TileflowHttpClient
 import dev.tileflow.sdk.transport.sha256Hex
 import java.io.ByteArrayOutputStream
+import java.io.File
+import java.io.FileOutputStream
 import java.io.IOException
 import java.io.InputStream
 import java.net.URI
@@ -18,11 +20,18 @@ import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
 
-/** One resource request of a download. */
+/**
+ * One resource request of a download.
+ *
+ * @property destination When set, a successful body is written to this file instead of returned,
+ *   and a transfer of the same file that ended part-way resumes where it stopped, with `Range` and
+ *   `If-Range`. The response then answers 200 for the whole body.
+ */
 internal class OfflineFetchRequest(
     val id: String,
     val url: URI,
     val headers: Map<String, String>,
+    val destination: File? = null,
 )
 
 /**
@@ -50,8 +59,10 @@ internal interface OfflineResourceFetching {
 
 /**
  * Downloads with OkHttp, keeping the bytes as they arrive on the wire: it asks for gzip itself, so
- * OkHttp does not decode transparently, hashes and counts the raw body, then decodes it. Runs
- * inside the download worker, which WorkManager starts only on an allowed network.
+ * OkHttp does not decode transparently, hashes and counts the raw body, then decodes it. A file
+ * transfer asks for its bytes as they are, writes them to a partial file beside its destination
+ * and, when it stops part-way, continues from there with `Range` and `If-Range` the next time.
+ * Runs inside the download worker, which WorkManager starts only on an allowed network.
  */
 internal class OfflineHttpFetcher(
     private val client: OkHttpClient =
@@ -65,19 +76,95 @@ internal class OfflineHttpFetcher(
         if (!TileflowHttpClient.networkEnabled) throw NetworkUnavailableException()
         val builder = Request.Builder().url(request.url.toASCIIString()).get()
         for ((name, value) in request.headers) builder.header(name, value)
-        builder.header("Accept-Encoding", "gzip")
+        val destination = request.destination
+        val partial = destination?.let { File(it.path + ".part") }
+        val tag = destination?.let { File(it.path + ".part.etag") }
+        var offset = 0L
+        if (destination == null) {
+            builder.header("Accept-Encoding", "gzip")
+        } else {
+            builder.header("Accept-Encoding", "identity")
+            val etag = tag?.takeIf { it.isFile }?.readText()
+            if (etag != null && partial!!.isFile && partial.length() > 0) {
+                offset = partial.length()
+                builder.header("Range", "bytes=$offset-")
+                builder.header("If-Range", etag)
+            }
+        }
         val call = client.newCall(builder.build())
         return withContext(Dispatchers.IO) {
             suspendCancellableCoroutine { continuation ->
                 continuation.invokeOnCancellation { call.cancel() }
                 try {
-                    continuation.resumeWith(Result.success(execute(call)))
+                    val response =
+                        if (destination == null) execute(call)
+                        else execute(call, destination, partial!!, tag!!, offset)
+                    continuation.resumeWith(Result.success(response))
                 } catch (error: IOException) {
                     continuation.resumeWith(Result.failure(error))
                 }
             }
         }
     }
+
+    /** Writes a successful body to [destination], resuming [partial] from [offset]. */
+    private fun execute(
+        call: Call,
+        destination: File,
+        partial: File,
+        tag: File,
+        offset: Long,
+    ): OfflineFetchResponse =
+        call.execute().use { response ->
+            val headers = HashMap<String, String>()
+            for (name in CANONICAL_HEADERS) response.header(name)?.let { headers[name] = it }
+            val body = response.body?.byteStream() ?: ByteArray(0).inputStream()
+            when (response.code) {
+                200,
+                206 -> {
+                    val append = response.code == 206
+                    if (append) {
+                        val range = Regex("^bytes (\\d+)-(\\d+)/(\\d+)$")
+                            .matchEntire(response.header("Content-Range") ?: "")
+                        if (range == null || range.groupValues[1].toLong() != offset) {
+                            partial.delete()
+                            tag.delete()
+                            throw IOException("Unexpected range")
+                        }
+                    } else {
+                        partial.delete()
+                        tag.delete()
+                    }
+                    partial.parentFile?.mkdirs()
+                    // Only a strong tag can resume the transfer.
+                    headers["ETag"]?.takeIf { !it.startsWith("W/") }?.let { tag.writeText(it) }
+                    FileOutputStream(partial, append).use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        body.use {
+                            while (true) {
+                                val count = it.read(buffer)
+                                if (count < 0) break
+                                if (partial.length() + count > OfflinePackFormat.MAXIMUM_BYTES)
+                                    throw OfflineTooLargeException()
+                                output.write(buffer, 0, count)
+                            }
+                        }
+                        output.fd.sync()
+                    }
+                    destination.delete()
+                    if (!partial.renameTo(destination)) throw IOException("rename failed")
+                    tag.delete()
+                    OfflineFetchResponse(200, headers, ByteArray(0), destination.length(), null)
+                }
+                416 -> {
+                    partial.delete()
+                    tag.delete()
+                    OfflineFetchResponse(416, headers, ByteArray(0), 0, null)
+                }
+                else ->
+                    OfflineFetchResponse(response.code, headers, bounded(body, null), null, null)
+            }
+        }
 
     private fun execute(call: Call): OfflineFetchResponse =
         call.execute().use { response ->

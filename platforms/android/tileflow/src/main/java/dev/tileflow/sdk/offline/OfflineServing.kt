@@ -4,7 +4,12 @@ import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import dev.tileflow.sdk.transport.ResourceCacheKey
+import dev.tileflow.sdk.transport.ResourceCacheMetadata
+import dev.tileflow.sdk.transport.ResourceCacheRetention
 import dev.tileflow.sdk.transport.ResourceCacheScope
+import dev.tileflow.sdk.transport.ResourceCacheStore
+import dev.tileflow.sdk.transport.StoredResource
+import dev.tileflow.sdk.transport.sha256Hex
 import dev.tileflow.sdk.transport.TileflowHttpClient
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -73,7 +78,7 @@ internal data class OfflineCredit(
             return if (regions.isEmpty()) null else OfflineCredit(id, text, href, regions)
         }
 
-        /** The regional credits of a pack's World attribution. */
+        /** The regional credits of a download's World attribution. */
         fun credits(attribution: List<JSONObject>): List<OfflineCredit> =
             attribution.flatMap { source ->
                 val items = source.optJSONArray("regionalObligations") ?: return@flatMap emptyList()
@@ -83,11 +88,59 @@ internal data class OfflineCredit(
 }
 
 /**
+ * A source's stored tiles: the packs under each anchor, and the covers whose tiles a pack would hold
+ * if the archive stored them.
+ */
+internal data class OfflineServedTiles(
+    val template: OfflineTileTemplate,
+    val zooms: IntRange,
+    val absentStatus: Int,
+    val regions: List<OfflinePackRegion> = emptyList(),
+    val anchors: Map<OfflineTileId, List<java.io.File>> = emptyMap(),
+) {
+    fun merging(other: OfflineServedTiles): OfflineServedTiles {
+        val files = anchors.toMutableMap()
+        for ((anchor, list) in other.anchors)
+            files[anchor] = (files[anchor].orEmpty() + list).distinct()
+        return copy(
+            zooms = minOf(zooms.first, other.zooms.first)..maxOf(zooms.last, other.zooms.last),
+            regions = (regions + other.regions).distinct(),
+            anchors = files,
+        )
+    }
+
+    /**
+     * Whether the region downloaded [tile], stored or not, or a tile above the downloaded zooms
+     * whose ancestor at the deepest one it downloaded.
+     */
+    fun covers(tile: OfflineTileId): Boolean {
+        val held = if (tile.z > zooms.last) tile.ancestor(zooms.last) else tile
+        return held.z in zooms &&
+            regions.any { OfflineTileCover(it, held.z).contains(held.x, held.y) }
+    }
+}
+
+/** A Map's stored packs: its documents by address and its sources' tiles by template. */
+internal data class OfflineServedPacks(
+    val documents: Map<String, Pair<java.io.File, OfflinePackEntry>> = emptyMap(),
+    val tiles: Map<String, OfflineServedTiles> = emptyMap(),
+) {
+    fun merging(other: OfflineServedPacks): OfflineServedPacks {
+        val merged = tiles.toMutableMap()
+        for ((template, served) in other.tiles)
+            merged[template] = merged[template]?.merging(served) ?: served
+        return OfflineServedPacks(other.documents + documents, merged)
+    }
+}
+
+/**
  * What stored regions a map may use without a network: the cache paths of every available region's
- * resources, and the regional credits of each Hosted Map's releases by the cache scope of the Map.
+ * resources, the packs of each Hosted Map and the regional credits of its releases, by the cache
+ * scope of the Map.
  */
 internal data class OfflineServingSnapshot(
     val paths: Set<String> = emptySet(),
+    val packs: Map<String, OfflineServedPacks> = emptyMap(),
     val credits: Map<String, List<OfflineCredit>> = emptyMap(),
 )
 
@@ -109,15 +162,18 @@ internal class OfflineServingIndex {
         synchronized(stores) {
             stores[store] = snapshot
             val paths = HashSet<String>()
+            val packs = HashMap<String, OfflineServedPacks>()
             val credits = HashMap<String, MutableList<OfflineCredit>>()
             for (each in stores.values) {
                 paths.addAll(each.paths)
+                for ((scope, served) in each.packs)
+                    packs[scope] = packs[scope]?.merging(served) ?: served
                 for ((scope, list) in each.credits) {
                     val merged = credits.getOrPut(scope) { mutableListOf() }
                     for (credit in list) if (merged.none { it.id == credit.id }) merged.add(credit)
                 }
             }
-            merged = OfflineServingSnapshot(paths, credits)
+            merged = OfflineServingSnapshot(paths, packs, credits)
         }
         published.countDown()
     }
@@ -133,6 +189,90 @@ internal class OfflineServingIndex {
     }
 
     fun serves(key: ResourceCacheKey): Boolean = key.relativePath in snapshot().paths
+
+    /** Indexes of packs read recently: reading one is a few file reads. */
+    private val indexes = HashMap<java.io.File, OfflinePackIndex>()
+
+    /**
+     * A stored region's answer for [key]: its pinned entry, a pack entry, or the status the source
+     * answers online for a tile it does not store. That status answers a tile the region covers
+     * that no stored pack holds, and a tile inside the region above the zooms it downloaded, so the
+     * renderer overzooms the deepest downloaded tile, as it does online where a tile does not exist.
+     * Only a resource the region should hold and does not is a miss.
+     */
+    fun resource(key: ResourceCacheKey, cache: ResourceCacheStore): StoredResource? {
+        val snapshot = snapshot()
+        if (key.relativePath in snapshot.paths)
+            return cache.read(key, ResourceCacheRetention.PINNED)
+        val packs = snapshot.packs[key.scope.directory] ?: return null
+        val url = key.url.toASCIIString()
+        packs.documents[url]?.let { (file, entry) ->
+            return stored(entry, file, key.url)
+        }
+        for (tiles in packs.tiles.values) {
+            val tile = tiles.template.tile(url)?.takeIf { it.z >= tiles.zooms.first } ?: continue
+            val anchor = tile.ancestor(OfflinePackBand.anchor(tile.z))
+            val files = if (tile.z in tiles.zooms) tiles.anchors[anchor].orEmpty() else emptyList()
+            for (file in files) {
+                val entry = index(file)?.entries?.get(tile.name) ?: continue
+                return stored(entry, file, key.url)
+            }
+            if (tiles.covers(tile))
+                return StoredResource(
+                    ResourceCacheMetadata.of(
+                        key.url,
+                        tiles.absentStatus,
+                        emptyMap(),
+                        System.currentTimeMillis(),
+                        true,
+                        0,
+                        sha256Hex(ByteArray(0)),
+                    ),
+                    ByteArray(0),
+                )
+        }
+        return null
+    }
+
+    private fun index(file: java.io.File): OfflinePackIndex? {
+        synchronized(indexes) { indexes[file]?.let { return it } }
+        val index = runCatching { OfflinePackFormat.index(file) }.getOrNull() ?: return null
+        synchronized(indexes) {
+            if (indexes.size >= 256) indexes.clear()
+            indexes[file] = index
+        }
+        return index
+    }
+
+    /**
+     * A pack entry as the renderer receives it: decoded, with its route's `ETag`, which names the
+     * body as stored, so a map online can revalidate it instead of downloading it again.
+     */
+    private fun stored(entry: OfflinePackEntry, file: java.io.File, url: java.net.URI): StoredResource? {
+        val raw = runCatching { OfflinePackFormat.body(entry, file) }.getOrNull() ?: return null
+        val body =
+            when (entry.contentEncoding) {
+                null -> raw
+                "gzip" -> runCatching { OfflinePackFormat.gunzip(raw) }.getOrNull() ?: return null
+                else -> return null
+            }
+        return StoredResource(
+            ResourceCacheMetadata.of(
+                url,
+                200,
+                mapOf(
+                    "Content-Type" to entry.contentType,
+                    "ETag" to "\"${sha256Hex(raw)}\"",
+                    "Cache-Control" to "private, no-cache",
+                ),
+                System.currentTimeMillis(),
+                true,
+                body.size,
+                sha256Hex(body),
+            ),
+            body,
+        )
+    }
 
     fun credits(scope: ResourceCacheScope): List<OfflineCredit> =
         snapshot().credits[scope.directory].orEmpty()

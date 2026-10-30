@@ -3,18 +3,21 @@ import Foundation
 /// Where the offline store keeps its records, beside the resource cache's durable root:
 ///
 ///     regions/<sha256(id)>/region.json        the region record, replaced atomically
-///     regions/<sha256(id)>/v<n>/request-<i>.json, pack-<i>.json
-///                                             a Hosted version's requests and created packs
+///     regions/<sha256(id)>/v<n>/request-<i>.json, download-<i>.json
+///                                             a Hosted version's requests and created downloads
 ///     regions/<sha256(id)>/v<n>/plan.json     a self-hosted version's resolved plan
-///     regions/<sha256(id)>/v<n>/progress      `<digest> <bytes>` of each stored resource, appended
+///     regions/<sha256(id)>/v<n>/progress      each stored pack and resource, appended
 ///     regions/<sha256(id)>/v<n>/staging/<digest>
 ///                                             changed bodies of resources the stored version uses,
 ///                                             committed when the update completes
-///     downloads/                              finished background transfers awaiting verification
+///     packs/<digest>.tfpack                   verified Hosted packs, shared by every version
+///     packs/incoming/                         packs still arriving
+///     downloads/                              finished background transfers awaiting delivery
 ///
-/// Resource bodies live in the resource cache's pinned partition under the transport's own keys.
-/// A record lists its versions; every other file belongs to one of them, so a record that is
-/// replaced atomically never refers to a half-written version.
+/// Hosted packs are kept as they arrived and named by their digest; maps read their entries in
+/// place. Public and self-hosted resources live in the resource cache's pinned partition under the
+/// transport's own keys. A record lists its versions; every other file belongs to one of them, so a
+/// record that is replaced atomically never refers to a half-written version.
 struct OfflineLayout: Sendable {
   let root: URL
 
@@ -27,6 +30,9 @@ struct OfflineLayout: Sendable {
 
   var regions: URL { root.appendingPathComponent("regions", isDirectory: true) }
   var downloads: URL { root.appendingPathComponent("downloads", isDirectory: true) }
+  var packs: OfflinePackStore {
+    OfflinePackStore(directory: root.appendingPathComponent("packs", isDirectory: true))
+  }
 
   func region(_ id: String) -> URL {
     regions.appendingPathComponent(DataChannel.digest(Data(id.utf8)), isDirectory: true)
@@ -38,8 +44,8 @@ struct OfflineLayout: Sendable {
   func request(_ id: String, _ number: Int, pack: Int) -> URL {
     version(id, number).appendingPathComponent("request-\(pack).json")
   }
-  func pack(_ id: String, _ number: Int, pack: Int) -> URL {
-    version(id, number).appendingPathComponent("pack-\(pack).json")
+  func download(_ id: String, _ number: Int, download: Int) -> URL {
+    version(id, number).appendingPathComponent("download-\(download).json")
   }
   func plan(_ id: String, _ number: Int) -> URL {
     version(id, number).appendingPathComponent("plan.json")
@@ -74,16 +80,20 @@ struct OfflineLayout: Sendable {
   }
 }
 
-/// One stored resource of a version: its bytes, and whether this version's download transferred
-/// it, rather than finding it stored already or unchanged (`304`).
+/// One stored pack or resource of a version: its bytes, the resources it holds, and whether this
+/// version's download transferred it, rather than finding it stored already or unchanged (`304`).
 struct OfflineStoredEntry: Hashable, Sendable {
   var bytes: Int64
   var transferred: Bool
+  var resources = 1
+  /// A pack's digest, under which the pack store keeps it.
+  var pack: String?
 }
 
-/// What a version has stored so far: how many resources and bytes, and how many of them the
-/// download transferred from the network.
+/// What a version has stored so far: how many packs, resources and bytes, and how many of them
+/// the download transferred from the network.
 struct OfflineProgress: Hashable, Sendable {
+  var packs = 0
   var count = 0
   var bytes: Int64 = 0
   var loaded = 0
@@ -96,18 +106,20 @@ struct OfflineProgress: Hashable, Sendable {
   }
 
   mutating func add(_ entry: OfflineStoredEntry) {
-    count += 1
+    if entry.pack != nil { packs += 1 }
+    count += entry.resources
     bytes += entry.bytes
     if entry.transferred {
-      loaded += 1
+      loaded += entry.resources
       loadedBytes += entry.bytes
     }
   }
 }
 
-/// A version's stored resources, one `<digest> <bytes> <transferred>` line each, appended as
-/// resources complete; `transferred` is 1 for a body the download received and 0 otherwise. A line
-/// cut short by a crash is ignored; its resource is requested again with `If-None-Match`.
+/// A version's stored packs and resources, appended as they complete: a resource's line is
+/// `<key> <bytes> <transferred>` and a pack's `<key> <bytes> <transferred> <resources> <digest>`,
+/// `transferred` 1 for a body the download received and 0 otherwise. A line cut short by a crash
+/// is ignored; its pack or resource is requested again with `If-None-Match`.
 final class OfflineProgressLog: @unchecked Sendable {
   private let url: URL
   private let lock = NSLock()
@@ -123,11 +135,18 @@ final class OfflineProgressLog: @unchecked Sendable {
     var stored: [String: OfflineStoredEntry] = [:]
     for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
       let parts = line.split(separator: " ")
-      guard (2...3).contains(parts.count), parts[0].count == 64, let bytes = Int64(parts[1]),
-        bytes >= 0, parts.count == 2 || ["0", "1"].contains(parts[2])
+      guard parts.count == 3 || parts.count == 5, parts[0].count == 64,
+        let bytes = Int64(parts[1]), bytes >= 0, ["0", "1"].contains(parts[2])
       else { continue }
-      stored[String(parts[0])] = OfflineStoredEntry(
-        bytes: bytes, transferred: parts.count == 3 && parts[2] == "1")
+      var entry = OfflineStoredEntry(bytes: bytes, transferred: parts[2] == "1")
+      if parts.count == 5 {
+        guard let resources = Int(parts[3]), resources >= 1, parts[4].count == 64,
+          parts[4].allSatisfy(\.isHexDigit)
+        else { continue }
+        entry.resources = resources
+        entry.pack = String(parts[4])
+      }
+      stored[String(parts[0])] = entry
     }
     return stored
   }
@@ -164,8 +183,10 @@ final class OfflineProgressLog: @unchecked Sendable {
     }
   }
 
-  private static func line(_ digest: String, _ entry: OfflineStoredEntry) -> String {
-    "\(digest) \(entry.bytes) \(entry.transferred ? 1 : 0)"
+  private static func line(_ key: String, _ entry: OfflineStoredEntry) -> String {
+    let line = "\(key) \(entry.bytes) \(entry.transferred ? 1 : 0)"
+    guard let pack = entry.pack else { return line }
+    return line + " \(entry.resources) \(pack)"
   }
 }
 
@@ -202,7 +223,9 @@ struct OfflineVersionRecord: Codable, Sendable {
   var options: JSONValue
   /// The API origin whose grant scope holds the version's protected resources.
   var apiOrigin: String?
-  /// Hosted packs, as `request-<i>.json` and `pack-<i>.json`; zero for self-hosted content.
+  /// Hosted downloads, as `request-<i>.json` and `download-<i>.json`; zero for self-hosted content.
+  var downloads: Int
+  /// The packs of the version's downloads.
   var packs: Int
   var resources: Int
   var billable: Int
@@ -231,7 +254,7 @@ struct OfflineCheckRecord: Codable, Hashable, Sendable {
 /// `retired` a replaced version whose resources are still being released. `removing` marks a
 /// removal in progress, which opening the store finishes.
 struct OfflineRegionRecord: Codable, Sendable {
-  var format = 1
+  var format = 2
   var id: String
   var createdAt: Int64
   var active: OfflineVersionRecord?
@@ -246,7 +269,7 @@ struct OfflineRegionRecord: Codable, Sendable {
   static func read(_ url: URL) -> OfflineRegionRecord? {
     guard let data = try? Data(contentsOf: url),
       let record = try? JSONDecoder().decode(OfflineRegionRecord.self, from: data),
-      record.format == 1
+      record.format == 2
     else { return nil }
     return record
   }
@@ -407,5 +430,51 @@ extension OfflinePackRequest {
     self.init(
       mapID: mapID, profile: profile, themes: themes.compactMap(\.string), region: region,
       minZoom: minZoom, maxZoom: maxZoom, terrainMaxZoom: terrain)
+  }
+}
+
+/// Verified Hosted packs, kept as they arrived under their digest and shared by every region
+/// version that lists them. A pack arrives in `incoming/` and is adopted only once verified.
+struct OfflinePackStore: Sendable {
+  let directory: URL
+
+  var incoming: URL { directory.appendingPathComponent("incoming", isDirectory: true) }
+
+  func file(_ digest: String) -> URL { directory.appendingPathComponent("\(digest).tfpack") }
+
+  /// Where the transfer `id` writes its pack.
+  func incoming(_ id: String) -> URL {
+    incoming.appendingPathComponent(id.replacingOccurrences(of: "/", with: "-") + ".tfpack")
+  }
+
+  func size(_ digest: String) -> Int? {
+    (try? FileManager.default.attributesOfItem(atPath: file(digest).path)[.size] as? Int)
+      ?? nil
+  }
+
+  /// Moves a verified pack into the store, unless the store holds it already.
+  func adopt(_ file: URL, digest: String) throws {
+    let target = self.file(digest)
+    let files = FileManager.default
+    if files.fileExists(atPath: target.path) {
+      try? files.removeItem(at: file)
+      return
+    }
+    try files.createDirectory(at: directory, withIntermediateDirectories: true)
+    try files.moveItem(at: file, to: target)
+  }
+
+  func remove(_ digests: some Sequence<String>) {
+    for digest in digests { try? FileManager.default.removeItem(at: file(digest)) }
+  }
+
+  /// Removes incoming packs of transfers whose identifiers start with `prefix`.
+  func removeIncoming(prefix: String) {
+    let name = prefix.replacingOccurrences(of: "/", with: "-")
+    let files = FileManager.default
+    for file in (try? files.contentsOfDirectory(atPath: incoming.path)) ?? []
+    where file.hasPrefix(name) {
+      try? files.removeItem(at: incoming.appendingPathComponent(file))
+    }
   }
 }

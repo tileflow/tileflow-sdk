@@ -63,11 +63,11 @@ internal sealed class OfflineDriveResult {
  * The store's state and its one writer.
  *
  * Records change only under [lock]. A version becomes the region's `active` version only when
- * every resource is stored and verified, by one atomic record replacement; resources are shared
- * across regions by cache key, and a key is released only when no region version references it.
- * Each multi-step change is recorded before it starts (`pending`, `retired`, `removing`) and
- * finished when the store opens again, so a crash never leaves an unreferenced or missing resource
- * behind.
+ * every pack and resource is stored and verified, by one atomic record replacement. Packs are shared
+ * across regions by digest and resources by cache key; either is released only when no region
+ * version references it. Each multi-step change is recorded before it starts (`pending`, `retired`,
+ * `removing`) and finished when the store opens again, so a crash never leaves an unreferenced or
+ * missing pack or resource behind.
  */
 internal class OfflineStoreCore(
     private val layout: OfflineLayout,
@@ -82,6 +82,8 @@ internal class OfflineStoreCore(
     /** Space a download leaves free on the device. */
     private val reserveBytes: Long = 64L * 1024 * 1024,
     private val concurrency: Int = 16,
+    /** Packs transferred at once. */
+    private val packConcurrency: Int = 4,
     private val now: () -> Long = System::currentTimeMillis,
     private val sleep: suspend (Long) -> Unit = { delay(it) },
 ) {
@@ -91,9 +93,14 @@ internal class OfflineStoreCore(
     private var isOpen = false
     private val progress = HashMap<String, OfflineProgress>()
     private val plans = HashMap<String, OfflineVersionPlan>()
-    private val keySets = HashMap<String, Pair<Set<String>, Set<String>>>()
+    private val keySets = HashMap<String, Set<String>>()
+    private val unitSets = HashMap<String, Map<String, Long>>()
+    private val digestSets = HashMap<String, Set<String>>()
+    private val servedSets = HashMap<String, Map<String, OfflineServedPacks>>()
     private val creditSets = HashMap<String, Map<String, List<OfflineCredit>>>()
-    private val created = HashMap<OfflinePackRequest, OfflinePack>()
+    private val created = HashMap<OfflinePackRequest, OfflineDownload>()
+    /** Packs an earlier pass of a pending version held before its download was created again. */
+    private val candidates = HashMap<String, Map<String, OfflinePreviousPack>>()
 
     // Opening.
 
@@ -137,26 +144,93 @@ internal class OfflineStoreCore(
             (record.check?.state != "not_updatable" ||
                 OfflineServingRule.SERVES_REGIONS_AFTER_ACCESS_ENDS)
 
-    /** Tells maps which stored resources and regional credits they may use without a network. */
+    /**
+     * Tells maps which stored packs, resources and regional credits they may use without a
+     * network.
+     */
     private fun publishServing() {
         val index = index ?: return
         val paths = HashSet<String>()
+        val packs = HashMap<String, OfflineServedPacks>()
         val credits = HashMap<String, MutableList<OfflineCredit>>()
         for ((id, record) in records) {
             if (!isServed(record)) continue
             val active = record.active ?: continue
-            paths.addAll(keys(id, active).first)
+            paths.addAll(keys(id, active))
             val origin = active.apiOrigin?.let { URI(it) } ?: continue
-            if (active.packs == 0) continue
+            if (active.downloads == 0) continue
+            for ((scope, served) in served(id, active, origin))
+                packs[scope] = packs[scope]?.merging(served) ?: served
             for ((scope, list) in credits(id, active, origin)) {
                 val merged = credits.getOrPut(scope) { mutableListOf() }
                 for (credit in list) if (merged.none { it.id == credit.id }) merged.add(credit)
             }
         }
-        index.publish(OfflineServingSnapshot(paths, credits), this)
+        index.publish(OfflineServingSnapshot(paths, packs, credits), this)
     }
 
-    /** The regional credits of a Hosted version's packs, by the cache scope of their Map. */
+    /**
+     * The packs of a complete Hosted version as maps read them, by the cache scope of their Map:
+     * document packs' entries by address, tile packs by source template and anchor.
+     */
+    private fun served(
+        id: String,
+        version: OfflineVersionRecord,
+        apiOrigin: URI,
+    ): Map<String, OfflineServedPacks> {
+        val key = planKey(id, version.number)
+        servedSets[key]?.let {
+            return it
+        }
+        val plan = runCatching { plan(id, version) }.getOrNull() ?: return emptyMap()
+        val stored = OfflineProgressLog.read(layout.progress(id, version.number))
+        val documents = HashMap<String, HashMap<String, Pair<File, OfflinePackEntry>>>()
+        val tiles = HashMap<String, HashMap<String, OfflineServedTiles>>()
+        // Every source a download holds answers for its cover, even where no pack was stored.
+        for (download in plan.downloads) {
+            val scope = ResourceCacheScope.grant(apiOrigin, download.manifest.mapId).directory
+            val bySource = tiles.getOrPut(scope) { HashMap() }
+            for (source in download.manifest.sources) {
+                val zooms = source.zooms ?: continue
+                val served =
+                    bySource[source.template.text]
+                        ?: OfflineServedTiles(source.template, zooms, source.absentStatus)
+                bySource[source.template.text] =
+                    served.copy(regions = (served.regions + download.manifest.region).distinct())
+            }
+        }
+        for (planned in plan.packs) {
+            val digest = stored[planned.key]?.pack ?: continue
+            val manifest = plan.downloads[planned.download].manifest
+            val scope = ResourceCacheScope.grant(apiOrigin, manifest.mapId).directory
+            val file = layout.packs.file(digest)
+            when (planned.pack.kind) {
+                OfflinePackKind.DOCUMENTS -> {
+                    val index = runCatching { OfflinePackFormat.index(file) }.getOrNull() ?: continue
+                    val byUrl = documents.getOrPut(scope) { HashMap() }
+                    for (entry in index.entries.values) byUrl.putIfAbsent(entry.name, file to entry)
+                }
+                OfflinePackKind.TILES -> {
+                    val source = planned.pack.source?.let(manifest::source) ?: continue
+                    val anchor = planned.pack.anchor ?: continue
+                    val bySource = tiles.getOrPut(scope) { HashMap() }
+                    val served = bySource[source.template.text] ?: continue
+                    bySource[source.template.text] =
+                        served.copy(
+                            anchors =
+                                served.anchors + (anchor to (served.anchors[anchor].orEmpty() + file))
+                        )
+                }
+            }
+        }
+        val result =
+            (documents.keys + tiles.keys).associateWith {
+                OfflineServedPacks(documents[it].orEmpty(), tiles[it].orEmpty())
+            }
+        return result.also { servedSets[key] = it }
+    }
+
+    /** The regional credits of a Hosted version's downloads, by the cache scope of their Map. */
     private fun credits(
         id: String,
         version: OfflineVersionRecord,
@@ -168,10 +242,10 @@ internal class OfflineStoreCore(
         }
         val plan = runCatching { plan(id, version) }.getOrNull() ?: return emptyMap()
         val result = HashMap<String, List<OfflineCredit>>()
-        for (pack in plan.packs) {
-            val scope = ResourceCacheScope.grant(apiOrigin, pack.manifest.mapId).directory
+        for (download in plan.downloads) {
+            val scope = ResourceCacheScope.grant(apiOrigin, download.manifest.mapId).directory
             result[scope] =
-                result[scope].orEmpty() + OfflineCredit.credits(pack.manifest.attribution)
+                result[scope].orEmpty() + OfflineCredit.credits(download.manifest.attribution)
         }
         return result.also { creditSets[key] = it }
     }
@@ -200,17 +274,22 @@ internal class OfflineStoreCore(
         return when (val content = options.content) {
             is TileflowOfflineContent.Hosted -> {
                 val plan = hostedPlan(options).first
-                val perPack = LongArray(plan.packs.size)
-                for (resource in plan.resources)
-                    if (resource.billable && !isStored(resource.key)) perPack[resource.pack ?: 0]++
+                // Packs the device holds for the same request and release are kept without being
+                // billed.
+                val held = lock.withLock { heldUnits() }
+                val perDownload = LongArray(plan.downloads.size)
+                for (planned in plan.packs)
+                    if (unit(planned, plan) !in held)
+                        perDownload[planned.download] += planned.pack.billableResources.toLong()
                 val perView = OfflinePlanner.RESOURCES_PER_MAP_VIEW
                 TileflowOfflineRegionEstimate(
-                    plan.resources.size.toLong(),
+                    plan.packs.size.toLong(),
+                    plan.resourceCount,
                     plan.billable,
-                    plan.resources.count { it.isPublic }.toLong(),
+                    plan.resources.size.toLong(),
                     plan.bytes,
                     plan.tileCounts,
-                    perPack.sumOf { (it + perView - 1) / perView },
+                    perDownload.sumOf { (it + perView - 1) / perView },
                 )
             }
             is TileflowOfflineContent.Manifest -> {
@@ -272,7 +351,7 @@ internal class OfflineStoreCore(
         var apiOrigin: URI? = null
         when (val content = options.content) {
             is TileflowOfflineContent.Hosted -> {
-                val hosted = hostedPlan(options)
+                val hosted = hostedPlan(options, consuming = true)
                 plan = hosted.first
                 apiOrigin = hosted.second
                 lock.withLock { checkDeviceLimit(id, plan) }
@@ -301,17 +380,18 @@ internal class OfflineStoreCore(
             if (records[id]?.pending != null) discardPending(id)
             val time = now()
             val record = records[id] ?: OfflineRegionRecord(id, time)
-            for ((index, pack) in plan.packs.withIndex()) {
+            for ((index, download) in plan.downloads.withIndex()) {
                 OfflineLayout.write(plan.requests[index].body, layout.request(id, number, index))
-                OfflineLayout.write(pack.response, layout.pack(id, number, index))
+                OfflineLayout.write(download.response, layout.download(id, number, index))
             }
             val pending =
                 OfflineVersionRecord(
                     number,
                     json,
                     apiOrigin?.toString(),
+                    plan.downloads.size,
                     plan.packs.size,
-                    plan.resources.size.toLong(),
+                    plan.resourceCount,
                     plan.billable,
                     plan.bytes,
                     OfflineVersionRecord.State.DOWNLOADING,
@@ -427,10 +507,10 @@ internal class OfflineStoreCore(
             }
         for ((id, plan) in due) {
             val states = ArrayList<OfflinePackRevalidation>()
-            for (pack in plan.packs) {
+            for (download in plan.downloads) {
                 states.add(
                     try {
-                        client.revalidate(pack.grant)
+                        client.revalidate(download.grant)
                     } catch (error: CancellationException) {
                         throw error
                     } catch (_: Exception) {
@@ -438,7 +518,7 @@ internal class OfflineStoreCore(
                     }
                 )
             }
-            if (states.size != plan.packs.size) continue
+            if (states.size != plan.downloads.size) continue
             var check = OfflineCheckRecord("current", null, now(), 86_400_000)
             for (state in states) {
                 check =
@@ -548,12 +628,17 @@ internal class OfflineStoreCore(
                 } ?: return OfflineDriveResult.Settled
             val stored = OfflineProgressLog.read(layout.progress(id, pending.number))
             val remaining = plan.resources.filter { it.key.digest !in stored }
+            // A logged pack whose file is gone is downloaded again.
+            val remainingPacks =
+                plan.packs.filter { planned ->
+                    stored[planned.key]?.pack?.let { layout.packs.size(it) } == null
+                }
             lock.withLock { progress[id] = OfflineProgress.of(stored.values) }
-            if (remaining.isEmpty()) {
+            if (remaining.isEmpty() && remainingPacks.isEmpty()) {
                 lock.withLock { activate(id) }
                 return OfflineDriveResult.Settled
             }
-            val needed = remaining.sumOf { it.bytes ?: 0 }
+            val needed = remaining.sumOf { it.bytes ?: 0 } + remainingPacks.sumOf { it.pack.bytes }
             if (!OfflineStorage.hasRoom(needed + reserveBytes, availableBytes, cache)) {
                 lock.withLock {
                     update(id) {
@@ -571,9 +656,9 @@ internal class OfflineStoreCore(
             }
             val time = now()
             val expiring =
-                plan.packs.indices.firstOrNull { index ->
-                    plan.packs[index].manifest.downloadExpiresAtMillis - time < RENEWAL_MARGIN &&
-                        remaining.any { it.pack == index }
+                plan.downloads.indices.firstOrNull { index ->
+                    plan.downloads[index].manifest.downloadExpiresAtMillis - time <
+                        RENEWAL_MARGIN && remainingPacks.any { it.download == index }
                 }
             if (expiring != null) {
                 renewals += 1
@@ -591,13 +676,18 @@ internal class OfflineStoreCore(
                     }
                 }
             val job =
-                OfflineDownloadJob(
-                    transferPrefix(id, pending.number),
-                    plan,
-                    remaining,
-                    lock.withLock { activePaths() },
-                    layout.staging(id, pending.number),
-                )
+                lock.withLock {
+                    OfflineDownloadJob(
+                        transferPrefix(id, pending.number),
+                        plan,
+                        remaining,
+                        remainingPacks,
+                        previousPacks(id, plan),
+                        activePaths(),
+                        layout.staging(id, pending.number),
+                        layout.packs,
+                    )
+                }
             val log = OfflineProgressLog(layout.progress(id, pending.number))
             val outcome =
                 try {
@@ -608,6 +698,7 @@ internal class OfflineStoreCore(
                             reserveBytes,
                             concurrency,
                             now,
+                            packConcurrency,
                         )
                         .run(job, log) { entries -> didStore(id, entries) }
                 } finally {
@@ -622,7 +713,7 @@ internal class OfflineStoreCore(
                         lock.withLock { update(id) { it.failed(outcome.error) } }
                         return OfflineDriveResult.Settled
                     }
-                    if (!renew(id, pending, outcome.pack, renewals))
+                    if (!renew(id, pending, outcome.download, renewals))
                         return OfflineDriveResult.Settled
                 }
                 is OfflineDownloadOutcome.Wait -> {
@@ -674,8 +765,9 @@ internal class OfflineStoreCore(
         }
 
     /**
-     * Creates a pack of the pending version again, keeping every stored resource the new manifest
-     * lists unchanged. Returns false when the download stopped.
+     * Creates a download of the pending version again. Stored resources and tile packs the new
+     * manifest lists unchanged are kept; other packs it held are offered with `If-None-Match`, so
+     * unchanged ones answer 304. Returns false when the download stopped.
      */
     private suspend fun renew(
         id: String,
@@ -694,29 +786,49 @@ internal class OfflineStoreCore(
         try {
             val client = client()
             val previousPlan = lock.withLock { plan(id, pending) }
-            val pack = client.create(previousPlan.requests[index])
+            val download = client.create(previousPlan.requests[index])
             return lock.withLock {
                 if (records[id]?.pending?.number != pending.number) return@withLock false
-                val previous = previousPlan.resources.associate {
-                    it.key.digest to (it.bytes to it.sha256)
-                }
-                val packs = previousPlan.packs.toMutableList().also { it[index] = pack }
-                val plan = OfflineVersionPlan.hosted(packs, previousPlan.requests, client.apiOrigin)
+                val previousResources =
+                    previousPlan.resources.associate { it.key.digest to (it.bytes to it.sha256) }
+                val previousPacks = previousPlan.packs.associateBy { it.key }
+                val downloads =
+                    previousPlan.downloads.toMutableList().also { it[index] = download }
+                val plan = OfflineVersionPlan.hosted(downloads, previousPlan.requests)
                 checkDeviceLimit(id, plan)
                 val stored = OfflineProgressLog.read(layout.progress(id, pending.number))
                 val kept = HashMap<String, OfflineStoredEntry>()
+                val offered = HashMap(candidates[planKey(id, pending.number)].orEmpty())
                 for (resource in plan.resources) {
                     val entry = stored[resource.key.digest] ?: continue
-                    if (previous[resource.key.digest] == (resource.bytes to resource.sha256))
+                    if (previousResources[resource.key.digest] == (resource.bytes to resource.sha256))
                         kept[resource.key.digest] = entry
                 }
+                for (planned in plan.packs) {
+                    val entry = stored[planned.key] ?: continue
+                    val digest = entry.pack ?: continue
+                    val before = previousPacks[planned.key]
+                    if (
+                        planned.download != index ||
+                            (planned.pack.kind == OfflinePackKind.TILES &&
+                                before?.release == planned.release &&
+                                before?.pack?.url == planned.pack.url &&
+                                before?.pack?.bytes == planned.pack.bytes)
+                    )
+                        kept[planned.key] = entry
+                    else
+                        offered[planned.key] =
+                            OfflinePreviousPack(digest, planned.pack.url, before?.release, false)
+                }
                 OfflineProgressLog.write(kept, layout.progress(id, pending.number))
-                OfflineLayout.write(pack.response, layout.pack(id, pending.number, index))
+                OfflineLayout.write(download.response, layout.download(id, pending.number, index))
+                candidates[planKey(id, pending.number)] = offered
+                forget(id, pending.number)
                 plans[planKey(id, pending.number)] = plan
-                keySets.remove(planKey(id, pending.number))
                 update(id) {
                     it.copy(
-                        resources = plan.resources.size.toLong(),
+                        packs = plan.packs.size,
+                        resources = plan.resourceCount,
                         billable = plan.billable,
                         bytes = plan.bytes,
                     )
@@ -748,15 +860,38 @@ internal class OfflineStoreCore(
         }
     }
 
+    /** What the region's stored version, and earlier passes of this one, hold for each pack key. */
+    private fun previousPacks(id: String, plan: OfflineVersionPlan): Map<String, OfflinePreviousPack> {
+        val result = HashMap<String, OfflinePreviousPack>()
+        val active = records[id]?.active
+        val stored = active?.takeIf { it.downloads > 0 }?.let { runCatching { plan(id, it) }.getOrNull() }
+        if (active != null && stored != null) {
+            val log = OfflineProgressLog.read(layout.progress(id, active.number))
+            for (planned in stored.packs) {
+                val digest = log[planned.key]?.pack ?: continue
+                val sameRequest =
+                    planned.download < plan.requests.size &&
+                        stored.requests[planned.download] == plan.requests[planned.download]
+                result[planned.key] =
+                    OfflinePreviousPack(digest, planned.pack.url, planned.release, sameRequest)
+            }
+        }
+        records[id]?.pending?.let { result.putAll(candidates[planKey(id, it.number)].orEmpty()) }
+        return result
+    }
+
     /**
      * Makes a complete pending version the region's version: staged bodies enter the pinned
-     * partition, one record replacement switches versions, then the replaced version's resources
-     * no other version uses are released.
+     * partition, one record replacement switches versions, then the replaced version's packs and
+     * resources no other version uses are released.
      */
     private fun activate(id: String) {
         val record = records[id] ?: return
         val pending = record.pending ?: return
         val plan = runCatching { plan(id, pending) }.getOrNull() ?: return
+        val stored = OfflineProgressLog.read(layout.progress(id, pending.number))
+        // Every pack the version lists is in the store: a version never activates with a pack gone.
+        if (plan.packs.any { stored[it.key]?.pack?.let(layout.packs::size) == null }) return
         val staging = layout.staging(id, pending.number)
         val byDigest = plan.resources.associateBy { it.key.digest }
         for (file in staging.listFiles().orEmpty()) {
@@ -794,7 +929,7 @@ internal class OfflineStoreCore(
                     "current",
                     null,
                     time,
-                    plan.packs.minOf { it.manifest.revalidationIntervalMillis },
+                    plan.downloads.minOf { it.manifest.revalidationIntervalMillis },
                 )
             else record.check
         runCatching {
@@ -812,6 +947,7 @@ internal class OfflineStoreCore(
             }
         staging.deleteRecursively()
         progress.remove(id)
+        candidates.remove(planKey(id, pending.number))
         finishRetirement(id)
         publishServing()
         emitChanged(id)
@@ -844,17 +980,20 @@ internal class OfflineStoreCore(
     }
 
     /**
-     * Removes pinned entries of [versions] that no other version references, then the versions'
-     * files.
+     * Removes the packs and pinned entries of [versions] that no other version references, then the
+     * versions' files.
      */
     private fun release(id: String, versions: List<OfflineVersionRecord>) {
         val numbers = versions.map { it.number }.toSet()
         val keep = HashSet<String>()
+        val keepPacks = HashSet<String>()
         for ((other, record) in records) {
             if (record.removing) continue
             for (version in record.versions)
-                if (other != id || version.number !in numbers)
-                    keep.addAll(keys(other, version).first)
+                if (other != id || version.number !in numbers) {
+                    keep.addAll(keys(other, version))
+                    keepPacks.addAll(digests(other, version))
+                }
         }
         for (version in versions) {
             runCatching { plan(id, version) }
@@ -864,17 +1003,34 @@ internal class OfflineStoreCore(
                         plan.resources.map { it.key }.filter { it.relativePath !in keep }
                     )
                 }
+            layout.packs.remove(digests(id, version) - keepPacks)
+            layout.packs.removeIncoming(transferPrefix(id, version.number))
             layout.version(id, version.number).deleteRecursively()
-            plans.remove(planKey(id, version.number))
-            keySets.remove(planKey(id, version.number))
-            creditSets.remove(planKey(id, version.number))
+            forget(id, version.number)
+            candidates.remove(planKey(id, version.number))
         }
+    }
+
+    /** Drops what the store derived from a version's files. */
+    private fun forget(id: String, number: Int) {
+        val key = planKey(id, number)
+        plans.remove(key)
+        keySets.remove(key)
+        unitSets.remove(key)
+        digestSets.remove(key)
+        servedSets.remove(key)
+        creditSets.remove(key)
     }
 
     // Plans.
 
+    /**
+     * The downloads of [options]: those an estimate created, or new ones. A load consumes what an
+     * estimate created, so loading again later sees the Map as it is then.
+     */
     private suspend fun hostedPlan(
-        options: TileflowOfflineRegionLoadOptions
+        options: TileflowOfflineRegionLoadOptions,
+        consuming: Boolean = false,
     ): Pair<OfflineVersionPlan, URI> {
         val content =
             options.content as? TileflowOfflineContent.Hosted
@@ -887,19 +1043,22 @@ internal class OfflineStoreCore(
                 options.geometry,
                 options.zooms,
             )
-        val packs = ArrayList<OfflinePack>()
+        val downloads = ArrayList<OfflineDownload>()
         for (request in requests) {
             val reusable =
                 lock.withLock {
-                    created[request]?.takeIf {
-                        it.manifest.downloadExpiresAtMillis - now() > REUSE_WINDOW
-                    }
+                    created[request]
+                        ?.takeIf { it.manifest.downloadExpiresAtMillis - now() > REUSE_WINDOW }
+                        ?.also { if (consuming) created.remove(request) }
                 }
-            val pack =
-                reusable ?: client.create(request).also { lock.withLock { created[request] = it } }
-            packs.add(pack)
+            val download =
+                reusable
+                    ?: client.create(request).also {
+                        if (!consuming) lock.withLock { created[request] = it }
+                    }
+            downloads.add(download)
         }
-        return OfflineVersionPlan.hosted(packs, requests, client.apiOrigin) to client.apiOrigin
+        return OfflineVersionPlan.hosted(downloads, requests) to client.apiOrigin
     }
 
     /** The manifest, then each theme's style and what it references, without duplicates. */
@@ -944,27 +1103,27 @@ internal class OfflineStoreCore(
         val options =
             offlineOptions(version.options) ?: throw TileflowOfflineException.invalidResponse()
         val plan =
-            if (version.packs > 0) {
+            if (version.downloads > 0) {
                 val origin =
                     version.apiOrigin?.let { URI(it) }
                         ?: throw TileflowOfflineException.invalidResponse()
                 val requests = ArrayList<OfflinePackRequest>()
-                val packs = ArrayList<OfflinePack>()
-                for (index in 0 until version.packs) {
+                val downloads = ArrayList<OfflineDownload>()
+                for (index in 0 until version.downloads) {
                     val request =
                         OfflinePackRequest.fromJson(
                             layout.request(id, version.number, index).readBytes()
                         ) ?: throw TileflowOfflineException.invalidResponse()
                     requests.add(request)
-                    packs.add(
-                        OfflinePackContract.pack(
-                            layout.pack(id, version.number, index).readBytes(),
+                    downloads.add(
+                        OfflinePackContract.download(
+                            layout.download(id, version.number, index).readBytes(),
                             request,
                             origin.scheme == "http",
                         )
                     )
                 }
-                OfflineVersionPlan.hosted(packs, requests, origin)
+                OfflineVersionPlan.hosted(downloads, requests)
             } else {
                 val content =
                     options.content as? TileflowOfflineContent.Manifest
@@ -983,21 +1142,62 @@ internal class OfflineStoreCore(
         return plan
     }
 
-    private fun keys(id: String, version: OfflineVersionRecord): Pair<Set<String>, Set<String>> {
+    /** The cache paths of a version's resources. */
+    private fun keys(id: String, version: OfflineVersionRecord): Set<String> {
         val key = planKey(id, version.number)
         keySets[key]?.let {
             return it
         }
-        val plan =
-            runCatching { plan(id, version) }.getOrNull()
-                ?: return emptySet<String>() to emptySet()
-        val all = HashSet<String>()
-        val billable = HashSet<String>()
-        for (resource in plan.resources) {
-            all.add(resource.key.relativePath)
-            if (resource.billable) billable.add(resource.key.relativePath)
+        val plan = runCatching { plan(id, version) }.getOrNull() ?: return emptySet()
+        return plan.resources.map { it.key.relativePath }.toSet().also { keySets[key] = it }
+    }
+
+    /** The digests of the packs a version stored. */
+    private fun digests(id: String, version: OfflineVersionRecord): Set<String> {
+        val key = planKey(id, version.number)
+        val complete = version.state == OfflineVersionRecord.State.COMPLETE
+        if (complete) digestSets[key]?.let { return it }
+        val digests =
+            OfflineProgressLog.read(layout.progress(id, version.number))
+                .values
+                .mapNotNull { it.pack }
+                .toSet()
+        if (complete) digestSets[key] = digests
+        return digests
+    }
+
+    /**
+     * A version's billable units: each pack's billable resources, under a name equal for the same
+     * pack of the same request and release, which holds the same bytes in any region.
+     */
+    private fun units(id: String, version: OfflineVersionRecord): Map<String, Long> {
+        val key = planKey(id, version.number)
+        unitSets[key]?.let {
+            return it
         }
-        return (all to billable).also { keySets[key] = it }
+        val plan = runCatching { plan(id, version) }.getOrNull() ?: return emptyMap()
+        return units(plan).also { unitSets[key] = it }
+    }
+
+    private fun units(plan: OfflineVersionPlan): Map<String, Long> =
+        plan.packs.associate { unit(it, plan) to it.pack.billableResources.toLong() }
+
+    private fun unit(planned: OfflinePlannedPack, plan: OfflineVersionPlan): String {
+        val manifest = plan.downloads[planned.download].manifest
+        val request = sha256Hex(plan.requests[planned.download].body)
+        val release = planned.release ?: "d${manifest.deploymentVersion}"
+        return "$request\n${planned.pack.url.toASCIIString()}\n$release"
+    }
+
+    /** The billable units every stored or downloading version holds. */
+    private fun heldUnits(except: String? = null): Map<String, Long> {
+        val held = HashMap<String, Long>()
+        for ((other, record) in records) {
+            if (other == except || record.removing) continue
+            for (version in listOfNotNull(record.active, record.pending))
+                for ((unit, weight) in units(other, version)) held.putIfAbsent(unit, weight)
+        }
+        return held
     }
 
     /** Cache paths of every stored (active) version. */
@@ -1005,7 +1205,7 @@ internal class OfflineStoreCore(
         val paths = HashSet<String>()
         for ((id, record) in records) {
             if (record.removing) continue
-            record.active?.let { paths.addAll(keys(id, it).first) }
+            record.active?.let { paths.addAll(keys(id, it)) }
         }
         return paths
     }
@@ -1015,26 +1215,18 @@ internal class OfflineStoreCore(
      * grow the device's total is always accepted.
      */
     private fun checkDeviceLimit(id: String, plan: OfflineVersionPlan) {
-        val limit = plan.packs.minOfOrNull { it.manifest.maximumPackResources } ?: return
-        val others = HashSet<String>()
-        for ((other, record) in records) {
-            if (other == id || record.removing) continue
-            for (version in listOfNotNull(record.active, record.pending))
-                others.addAll(keys(other, version).second)
-        }
-        val mine = records[id]?.active?.let { keys(id, it).second } ?: emptySet()
-        val next = plan.resources.filter { it.billable }.map { it.key.relativePath }.toSet()
-        val held = others + mine
+        val limit = plan.downloads.minOfOrNull { it.manifest.maximumPackResources } ?: return
+        val others = heldUnits(except = id)
+        val mine = records[id]?.active?.let { units(id, it) }.orEmpty()
+        val next = units(plan)
+        val held = mine + others
         OfflineDeviceLimit.check(
-            held.size.toLong(),
-            (next - held).size.toLong(),
-            (mine - (others + next)).size.toLong(),
+            held.values.sum(),
+            next.filterKeys { it !in held }.values.sum(),
+            mine.filterKeys { it !in others && it !in next }.values.sum(),
             limit,
         )
     }
-
-    private fun isStored(key: ResourceCacheKey): Boolean =
-        cache.file(key, ResourceCacheRetention.PINNED).exists()
 
     // Records.
 
@@ -1093,6 +1285,7 @@ internal class OfflineStoreCore(
             if (record.pending != null) progress[record.id] ?: OfflineProgress()
             else
                 OfflineProgress(
+                    version.packs.toLong(),
                     version.resources,
                     version.bytes ?: 0,
                     version.loaded ?: 0,
@@ -1120,6 +1313,8 @@ internal class OfflineStoreCore(
             options,
             state,
             isServed(record),
+            version.packs.toLong(),
+            minOf(done.packs, version.packs.toLong()),
             version.resources,
             minOf(done.count, version.resources),
             version.bytes,
@@ -1136,7 +1331,10 @@ internal class OfflineStoreCore(
     }
 
     companion object {
-        /** A created pack is reused while at least this much of its download window remains. */
+        /**
+         * A download an estimate created is reused by the next load while at least this much of
+         * its window remains.
+         */
         const val REUSE_WINDOW = 600_000L
 
         /** Grants are renewed before their window ends. */

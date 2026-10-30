@@ -24,11 +24,12 @@ final class OfflineSubscribers: Sendable {
 
 /// The store's state and its one writer.
 ///
-/// Records change only here. A version becomes the region's `active` version only when every
-/// resource is stored and verified, by one atomic record replacement; resources are shared across
-/// regions by cache key, and a key is released only when no region version references it. Each
-/// multi-step change is recorded before it starts (`pending`, `retired`, `removing`) and finished
-/// when the store opens again, so a crash never leaves an unreferenced or missing resource behind.
+/// Records change only here. A version becomes the region's `active` version only when every pack
+/// and resource is stored and verified, by one atomic record replacement. Packs are shared across
+/// regions by digest and resources by cache key; either is released only when no region version
+/// references it. Each multi-step change is recorded before it starts (`pending`, `retired`,
+/// `removing`) and finished when the store opens again, so a crash never leaves an unreferenced or
+/// missing pack or resource behind.
 actor OfflineStoreCore {
   struct Dependencies: Sendable {
     var layout: OfflineLayout
@@ -41,13 +42,16 @@ actor OfflineStoreCore {
     /// Space a download leaves free on the device.
     var reserveBytes: Int64 = 64 * 1024 * 1024
     var concurrency = 64
+    /// Packs transferred at once.
+    var packConcurrency = 4
     var now: @Sendable () -> Date = { Date() }
     var sleep: @Sendable (TimeInterval) async throws -> Void = {
       try await Task.sleep(nanoseconds: UInt64(max(0, $0) * 1_000_000_000))
     }
   }
 
-  /// A created pack is reused while at least this much of its download window remains.
+  /// A download an estimate created is reused by the next load while at least this much of its
+  /// window remains.
   static let reuseWindow: TimeInterval = 600
   /// Grants are renewed before their window ends.
   static let renewalMargin: TimeInterval = 300
@@ -62,9 +66,14 @@ actor OfflineStoreCore {
   private var runs: [String: (token: UUID, task: Task<Void, Never>)] = [:]
   private var progress: [String: OfflineProgress] = [:]
   private var plans: [String: OfflineVersionPlan] = [:]
-  private var keySets: [String: (all: Set<String>, billable: Set<String>)] = [:]
+  private var keySets: [String: Set<String>] = [:]
+  private var unitSets: [String: [String: Int]] = [:]
+  private var digestSets: [String: Set<String>] = [:]
+  private var servedSets: [String: [String: OfflineServedPacks]] = [:]
   private var creditSets: [String: [String: [OfflineCredit]]] = [:]
-  private var created: [OfflinePackRequest: OfflinePack] = [:]
+  private var created: [OfflinePackRequest: OfflineDownload] = [:]
+  /// Packs an earlier pass of a pending version held before its download was created again.
+  private var candidates: [String: [String: OfflinePreviousPack]] = [:]
 
   init(_ dependencies: Dependencies, subscribers: OfflineSubscribers) {
     self.dependencies = dependencies
@@ -110,15 +119,19 @@ actor OfflineStoreCore {
       && (record.check?.state != "not_updatable" || OfflineServingRule.servesRegionsAfterAccessEnds)
   }
 
-  /// Tells maps which stored resources and regional credits they may use without a network.
+  /// Tells maps which stored packs, resources and regional credits they may use without a
+  /// network.
   private func publishServing() {
     guard let index = dependencies.index else { return }
     var snapshot = OfflineServingSnapshot()
     for (id, record) in records where isServed(record) {
       guard let active = record.active else { continue }
-      snapshot.paths.formUnion(keys(id, active).all)
-      guard active.packs > 0, let origin = active.apiOrigin.flatMap(URL.init(string:)) else {
+      snapshot.paths.formUnion(keys(id, active))
+      guard active.downloads > 0, let origin = active.apiOrigin.flatMap(URL.init(string:)) else {
         continue
+      }
+      for (scope, packs) in served(id, active, apiOrigin: origin) {
+        snapshot.packs[scope, default: .init()].merge(packs)
       }
       for (scope, credits) in credits(id, active, apiOrigin: origin) {
         var merged = snapshot.credits[scope] ?? []
@@ -131,7 +144,7 @@ actor OfflineStoreCore {
     index.publish(snapshot, from: self)
   }
 
-  /// The regional credits of a Hosted version's packs, by the cache scope of their Map.
+  /// The regional credits of a Hosted version's downloads, by the cache scope of their Map.
   private func credits(_ id: String, _ version: OfflineVersionRecord, apiOrigin: URL) -> [String:
     [OfflineCredit]]
   {
@@ -139,11 +152,70 @@ actor OfflineStoreCore {
     if let cached = creditSets[key] { return cached }
     guard let plan = try? plan(id, version) else { return [:] }
     var result: [String: [OfflineCredit]] = [:]
-    for pack in plan.packs {
-      let scope = ResourceCacheScope.grant(apiOrigin: apiOrigin, mapID: pack.manifest.mapID)
-      result[scope.directory, default: []] += OfflineCredit.credits(pack.manifest.attribution)
+    for download in plan.downloads {
+      let scope = ResourceCacheScope.grant(apiOrigin: apiOrigin, mapID: download.manifest.mapID)
+      result[scope.directory, default: []] += OfflineCredit.credits(download.manifest.attribution)
     }
     creditSets[key] = result
+    return result
+  }
+
+  /// The packs of a complete Hosted version as maps read them, by the cache scope of their Map:
+  /// document packs' entries by address, tile packs by source template and anchor.
+  private func served(_ id: String, _ version: OfflineVersionRecord, apiOrigin: URL) -> [String:
+    OfflineServedPacks]
+  {
+    let key = planKey(id, version.number)
+    if let cached = servedSets[key] { return cached }
+    guard let plan = try? plan(id, version) else { return [:] }
+    let stored = OfflineProgressLog.read(layout.progress(id, version.number))
+    let packs = layout.packs
+    var result: [String: OfflineServedPacks] = [:]
+    for planned in plan.packs {
+      guard let digest = stored[planned.key]?.pack else { continue }
+      let manifest = plan.downloads[planned.download].manifest
+      let scope = ResourceCacheScope.grant(apiOrigin: apiOrigin, mapID: manifest.mapID).directory
+      let file = packs.file(digest)
+      var served = result[scope] ?? OfflineServedPacks()
+      switch planned.pack.kind {
+      case .documents:
+        guard let index = try? OfflinePackFormat.index(file) else { continue }
+        for entry in index.entries.values where served.documents[entry.name] == nil {
+          served.documents[entry.name] = (file, entry)
+        }
+      case .tiles:
+        guard let name = planned.pack.source, let source = manifest.source(name),
+          let zooms = source.zooms, let anchor = planned.pack.anchor
+        else { continue }
+        var tiles =
+          served.tiles[source.template.text]
+          ?? OfflineServedTiles(
+            template: source.template, zooms: zooms, absentStatus: source.absentStatus)
+        if !tiles.regions.contains(manifest.region) { tiles.regions.append(manifest.region) }
+        tiles.anchors[anchor, default: []].append(file)
+        served.tiles[source.template.text] = tiles
+      }
+      result[scope] = served
+    }
+    // Every source a download holds answers for its cover, even where no pack was stored.
+    for download in plan.downloads {
+      let scope = ResourceCacheScope.grant(apiOrigin: apiOrigin, mapID: download.manifest.mapID)
+        .directory
+      for source in download.manifest.sources {
+        guard let zooms = source.zooms else { continue }
+        var served = result[scope] ?? OfflineServedPacks()
+        var tiles =
+          served.tiles[source.template.text]
+          ?? OfflineServedTiles(
+            template: source.template, zooms: zooms, absentStatus: source.absentStatus)
+        if !tiles.regions.contains(download.manifest.region) {
+          tiles.regions.append(download.manifest.region)
+        }
+        served.tiles[source.template.text] = tiles
+        result[scope] = served
+      }
+    }
+    servedSets[key] = result
     return result
   }
 
@@ -169,16 +241,18 @@ actor OfflineStoreCore {
     switch options.content {
     case .hosted:
       let plan = try await hostedPlan(options).plan
-      var perPack = Array(repeating: 0, count: plan.packs.count)
-      for resource in plan.resources where resource.billable && !isStored(resource.key) {
-        perPack[resource.pack ?? 0] += 1
+      // Packs the device holds for the same request and release are kept without being billed.
+      let held = heldUnits()
+      var perDownload = Array(repeating: 0, count: plan.downloads.count)
+      for planned in plan.packs where held[Self.unit(planned, plan)] == nil {
+        perDownload[planned.download] += planned.pack.billableResources
       }
       let perView = OfflinePlanner.resourcesPerMapView
       return TileflowOfflineRegionEstimate(
-        resourceCount: plan.resources.count, billableResourceCount: plan.billable,
-        publicResourceCount: plan.resources.filter(\.isPublic).count,
+        packCount: plan.packs.count, resourceCount: plan.resourceCount,
+        billableResourceCount: plan.billable, publicResourceCount: plan.resources.count,
         bytes: plan.bytes.map { Int($0) }, tileCounts: plan.tileCounts,
-        mapViews: perPack.reduce(0) { $0 + ($1 + perView - 1) / perView })
+        mapViews: perDownload.reduce(0) { $0 + ($1 + perView - 1) / perView })
     case .manifest(let url, let map, let sources):
       try OfflineSelfHosted.validate(manifest: url, map: map)
       try OfflineSelfHosted.validate(sources)
@@ -229,7 +303,7 @@ actor OfflineStoreCore {
     var apiOrigin: URL?
     switch options.content {
     case .hosted:
-      let hosted = try await hostedPlan(options)
+      let hosted = try await hostedPlan(options, consuming: true)
       plan = hosted.plan
       apiOrigin = hosted.apiOrigin
       try checkDeviceLimit(id, plan)
@@ -250,14 +324,16 @@ actor OfflineStoreCore {
     var record =
       records[id]
       ?? OfflineRegionRecord(id: id, createdAt: now.offlineMilliseconds)
-    for (index, pack) in plan.packs.enumerated() {
+    for (index, download) in plan.downloads.enumerated() {
       try OfflineLayout.write(
         plan.requests[index].body, to: layout.request(id, number, pack: index))
-      try OfflineLayout.write(pack.response, to: layout.pack(id, number, pack: index))
+      try OfflineLayout.write(
+        download.response, to: layout.download(id, number, download: index))
     }
     record.pending = OfflineVersionRecord(
-      number: number, options: json, apiOrigin: apiOrigin?.absoluteString, packs: plan.packs.count,
-      resources: plan.resources.count, billable: plan.billable, bytes: plan.bytes,
+      number: number, options: json, apiOrigin: apiOrigin?.absoluteString,
+      downloads: plan.downloads.count, packs: plan.packs.count, resources: plan.resourceCount,
+      billable: plan.billable, bytes: plan.bytes,
       state: .downloading, error: nil, retryAt: nil, createdAt: now.offlineMilliseconds,
       completedAt: nil)
     try save(record)
@@ -332,7 +408,7 @@ actor OfflineStoreCore {
     guard var record = records[id], !record.removing else {
       throw TileflowOfflineError(.regionNotFound)
     }
-    record.versions.forEach { stopRun(id, $0) }
+    record.versions.forEach { discardTransfers(id, $0) }
     record.removing = true
     try save(record)
     finishRemoval(id)
@@ -348,7 +424,7 @@ actor OfflineStoreCore {
     let now = dependencies.now()
     for id in records.keys.sorted() {
       guard let record = records[id], !record.removing, let active = record.active,
-        active.packs > 0
+        active.downloads > 0
       else { continue }
       if let check = record.check {
         guard check.state != "not_updatable",
@@ -357,13 +433,12 @@ actor OfflineStoreCore {
       }
       guard let plan = try? plan(id, active) else { continue }
       var states: [OfflinePackRevalidation] = []
-      for pack in plan.packs {
-        guard let state = try? await client.revalidate(pack.grant) else { break }
+      for download in plan.downloads {
+        guard let state = try? await client.revalidate(download.grant) else { break }
         states.append(state)
       }
-      guard states.count == plan.packs.count, var current = records[id], !current.removing else {
-        continue
-      }
+      guard states.count == plan.downloads.count, var current = records[id], !current.removing
+      else { continue }
       var check = OfflineCheckRecord(
         state: "current", reason: nil, checkedAt: now.offlineMilliseconds, interval: 86_400)
       for state in states {
@@ -424,6 +499,14 @@ actor OfflineStoreCore {
     if cancelTransfers { dependencies.fetcher.cancel(prefix: transferPrefix(id, version.number)) }
   }
 
+  /// Stops the version's transfers and forgets what they received.
+  private func discardTransfers(_ id: String, _ version: OfflineVersionRecord) {
+    stopRun(id, version, cancelTransfers: false)
+    let prefix = transferPrefix(id, version.number)
+    dependencies.fetcher.discard(prefix: prefix)
+    layout.packs.removeIncoming(prefix: prefix)
+  }
+
   private func drive(_ id: String) async {
     var renewals = 0
     var attempt = 0
@@ -448,13 +531,21 @@ actor OfflineStoreCore {
         return update(id) { $0.fail(.init(.invalidResponse, context: .init(reason: "storedPack"))) }
       }
       let stored = OfflineProgressLog.read(layout.progress(id, pending.number))
+      let packs = layout.packs
       let remaining = plan.resources.filter { stored[$0.key.digest] == nil }
+      // A logged pack whose file is gone is downloaded again.
+      let remainingPacks = plan.packs.filter { planned in
+        guard let digest = stored[planned.key]?.pack else { return true }
+        return packs.size(digest) == nil
+      }
       progress[id] = OfflineProgress(stored.values)
-      if remaining.isEmpty {
+      if remaining.isEmpty, remainingPacks.isEmpty {
         activate(id)
         return
       }
-      let needed = remaining.reduce(Int64(0)) { $0 + Int64($1.bytes ?? 0) }
+      let needed =
+        remaining.reduce(Int64(0)) { $0 + Int64($1.bytes ?? 0) }
+        + remainingPacks.reduce(Int64(0)) { $0 + Int64($1.pack.bytes) }
       if !OfflineStorage.hasRoom(
         needed + dependencies.reserveBytes, available: dependencies.availableBytes,
         cache: dependencies.cache)
@@ -464,12 +555,12 @@ actor OfflineStoreCore {
         }
       }
       let now = dependencies.now()
-      if let expiring = plan.packs.indices.first(where: { index in
-        plan.packs[index].manifest.downloadExpiresAt.timeIntervalSince(now) < Self.renewalMargin
-          && remaining.contains(where: { $0.pack == index })
+      if let expiring = plan.downloads.indices.first(where: { index in
+        plan.downloads[index].manifest.downloadExpiresAt.timeIntervalSince(now)
+          < Self.renewalMargin && remainingPacks.contains(where: { $0.download == index })
       }) {
         renewals += 1
-        guard await renew(id, pending, pack: expiring, renewals: renewals) else { return }
+        guard await renew(id, pending, download: expiring, renewals: renewals) else { return }
         continue
       }
       if pending.state != .downloading || pending.error != nil {
@@ -482,11 +573,13 @@ actor OfflineStoreCore {
       let downloader = OfflineDownloader(
         cache: dependencies.cache, fetcher: dependencies.fetcher,
         availableBytes: dependencies.availableBytes, reserveBytes: dependencies.reserveBytes,
-        concurrency: dependencies.concurrency, now: dependencies.now)
+        concurrency: dependencies.concurrency, packConcurrency: dependencies.packConcurrency,
+        now: dependencies.now)
       let options = TileflowOfflineRegionLoadOptions(json: pending.options)
       let job = OfflineDownloadJob(
         prefix: transferPrefix(id, pending.number), plan: plan, pending: remaining,
-        activePaths: activePaths(), staging: layout.staging(id, pending.number),
+        pendingPacks: remainingPacks, previous: previousPacks(id, plan),
+        activePaths: activePaths(), staging: layout.staging(id, pending.number), packs: packs,
         restriction: options?.networkRestriction ?? .none)
       let log = OfflineProgressLog(layout.progress(id, pending.number))
       let outcome = await downloader.run(job, log: log) { [weak self] entries in
@@ -498,10 +591,10 @@ actor OfflineStoreCore {
         attempt = 0
       case .cancelled:
         return
-      case .renew(let pack, let error):
+      case .renew(let download, let error):
         renewals += 1
         guard renewals <= Self.maximumRenewals else { return update(id) { $0.fail(error) } }
-        guard await renew(id, pending, pack: pack, renewals: renewals) else { return }
+        guard await renew(id, pending, download: download, renewals: renewals) else { return }
       case .wait(let error, let delay):
         attempt += 1
         let wait = delay ?? min(Self.maximumBackoff, pow(2, Double(min(attempt, 9))))
@@ -523,10 +616,11 @@ actor OfflineStoreCore {
     emitChanged(id)
   }
 
-  /// Creates a pack of the pending version again, keeping every stored resource the new
-  /// manifest lists unchanged. Returns false when the download stopped.
+  /// Creates a download of the pending version again. Stored resources and tile packs the new
+  /// manifest lists unchanged are kept; other packs it held are offered with `If-None-Match`, so
+  /// unchanged ones answer 304. Returns false when the download stopped.
   private func renew(
-    _ id: String, _ pending: OfflineVersionRecord, pack index: Int, renewals: Int
+    _ id: String, _ pending: OfflineVersionRecord, download index: Int, renewals: Int
   ) async -> Bool {
     guard renewals <= Self.maximumRenewals else {
       update(id) { $0.fail(.init(.grantRejected)) }
@@ -535,32 +629,52 @@ actor OfflineStoreCore {
     do {
       let client = try dependencies.client()
       var plan = try self.plan(id, pending)
-      let pack = try await client.create(plan.requests[index])
+      let download = try await client.create(plan.requests[index])
       guard let current = records[id]?.pending, current.number == pending.number else {
         return false
       }
-      let previous = Dictionary(
+      let previousResources = Dictionary(
         plan.resources.map { ($0.key.digest, ($0.bytes, $0.sha256)) },
         uniquingKeysWith: { a, _ in a })
-      var packs = plan.packs
-      packs[index] = pack
-      plan = .hosted(packs: packs, requests: plan.requests, apiOrigin: client.apiOrigin)
+      let previousPacks = Dictionary(
+        plan.packs.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+      var downloads = plan.downloads
+      downloads[index] = download
+      plan = .hosted(downloads: downloads, requests: plan.requests)
       try checkDeviceLimit(id, plan)
       let stored = OfflineProgressLog.read(layout.progress(id, pending.number))
       var kept: [String: OfflineStoredEntry] = [:]
+      var offered = candidates[planKey(id, pending.number)] ?? [:]
       for resource in plan.resources {
         guard let entry = stored[resource.key.digest],
-          let before = previous[resource.key.digest],
+          let before = previousResources[resource.key.digest],
           before.0 == resource.bytes, before.1 == resource.sha256
         else { continue }
         kept[resource.key.digest] = entry
       }
+      for planned in plan.packs {
+        guard let entry = stored[planned.key], let digest = entry.pack else { continue }
+        let before = previousPacks[planned.key]
+        if planned.download != index
+          || (planned.pack.kind == .tiles && before?.release == planned.release
+            && before?.pack.url == planned.pack.url && before?.pack.bytes == planned.pack.bytes)
+        {
+          kept[planned.key] = entry
+        } else {
+          offered[planned.key] = OfflinePreviousPack(
+            digest: digest, url: planned.pack.url, release: before?.release, sameRequest: false)
+        }
+      }
       try OfflineProgressLog.write(kept, to: layout.progress(id, pending.number))
-      try OfflineLayout.write(pack.response, to: layout.pack(id, pending.number, pack: index))
+      try OfflineLayout.write(
+        download.response, to: layout.download(id, pending.number, download: index))
+      candidates[planKey(id, pending.number)] = offered
       plans[planKey(id, pending.number)] = plan
-      keySets.removeValue(forKey: planKey(id, pending.number))
+      forget(id, pending.number)
+      plans[planKey(id, pending.number)] = plan
       update(id) {
-        $0.resources = plan.resources.count
+        $0.packs = plan.packs.count
+        $0.resources = plan.resourceCount
         $0.billable = plan.billable
         $0.bytes = plan.bytes
       }
@@ -587,6 +701,31 @@ actor OfflineStoreCore {
     }
   }
 
+  /// What the region's stored version, and earlier passes of this one, hold for each pack key.
+  private func previousPacks(_ id: String, _ plan: OfflineVersionPlan) -> [String:
+    OfflinePreviousPack]
+  {
+    var result: [String: OfflinePreviousPack] = [:]
+    if let active = records[id]?.active, active.downloads > 0,
+      let stored = try? self.plan(id, active)
+    {
+      let log = OfflineProgressLog.read(layout.progress(id, active.number))
+      for planned in stored.packs {
+        guard let digest = log[planned.key]?.pack else { continue }
+        let sameRequest =
+          planned.download < plan.requests.count
+          && stored.requests[planned.download] == plan.requests[planned.download]
+        result[planned.key] = OfflinePreviousPack(
+          digest: digest, url: planned.pack.url, release: planned.release,
+          sameRequest: sameRequest)
+      }
+    }
+    if let pending = records[id]?.pending {
+      result.merge(candidates[planKey(id, pending.number)] ?? [:]) { _, offered in offered }
+    }
+    return result
+  }
+
   /// Makes a complete pending version the region's version: staged bodies enter the pinned
   /// partition, one record replacement switches versions, then the replaced version's resources
   /// no other version uses are released.
@@ -597,6 +736,13 @@ actor OfflineStoreCore {
     let staging = layout.staging(id, pending.number)
     let byDigest = Dictionary(
       plan.resources.map { ($0.key.digest, $0) }, uniquingKeysWith: { a, _ in a })
+    let stored = OfflineProgressLog.read(layout.progress(id, pending.number))
+    // Every pack the version lists is in the store: a version never activates with a pack gone.
+    guard
+      plan.packs.allSatisfy({ planned in
+        stored[planned.key]?.pack.flatMap { layout.packs.size($0) } != nil
+      })
+    else { return }
     for name in (try? FileManager.default.contentsOfDirectory(atPath: staging.path)) ?? [] {
       guard let resource = byDigest[name],
         let data = try? Data(contentsOf: staging.appendingPathComponent(name)),
@@ -624,13 +770,14 @@ actor OfflineStoreCore {
     record.active = pending
     record.pending = nil
     if plan.isHosted {
-      let interval = plan.packs.map(\.manifest.revalidationInterval).min() ?? 86_400
+      let interval = plan.downloads.map(\.manifest.revalidationInterval).min() ?? 86_400
       record.check = OfflineCheckRecord(
         state: "current", reason: nil, checkedAt: now.offlineMilliseconds, interval: interval)
     }
     do { try save(record) } catch { return }
     try? FileManager.default.removeItem(at: staging)
     progress[id] = nil
+    candidates.removeValue(forKey: planKey(id, pending.number))
     finishRetirement(id)
     publishServing()
     emitChanged(id)
@@ -656,21 +803,23 @@ actor OfflineStoreCore {
   /// Abandons the pending version and releases what only it used.
   private func discardPending(_ id: String) {
     guard var record = records[id], let pending = record.pending else { return }
-    stopRun(id, pending)
+    discardTransfers(id, pending)
     release(id, [pending])
     record.pending = nil
     try? save(record)
     progress[id] = nil
   }
 
-  /// Removes pinned entries of `versions` that no other version references, then the versions'
-  /// files.
+  /// Removes the packs and pinned entries of `versions` that no other version references, then
+  /// the versions' files.
   private func release(_ id: String, _ versions: [OfflineVersionRecord]) {
     let numbers = Set(versions.map(\.number))
     var keep = Set<String>()
+    var keepPacks = Set<String>()
     for (other, record) in records where !record.removing {
       for version in record.versions where other != id || !numbers.contains(version.number) {
-        keep.formUnion(keys(other, version).all)
+        keep.formUnion(keys(other, version))
+        keepPacks.formUnion(digests(other, version))
       }
     }
     for version in versions {
@@ -678,40 +827,53 @@ actor OfflineStoreCore {
         dependencies.cache.removePinned(
           plan.resources.lazy.map(\.key).filter { !keep.contains($0.relativePath) })
       }
+      layout.packs.remove(digests(id, version).subtracting(keepPacks))
+      layout.packs.removeIncoming(prefix: transferPrefix(id, version.number))
       try? FileManager.default.removeItem(at: layout.version(id, version.number))
-      plans.removeValue(forKey: planKey(id, version.number))
-      keySets.removeValue(forKey: planKey(id, version.number))
-      creditSets.removeValue(forKey: planKey(id, version.number))
+      forget(id, version.number)
+      candidates.removeValue(forKey: planKey(id, version.number))
     }
+  }
+
+  /// Drops what the store derived from a version's files.
+  private func forget(_ id: String, _ number: Int) {
+    let key = planKey(id, number)
+    plans.removeValue(forKey: key)
+    keySets.removeValue(forKey: key)
+    unitSets.removeValue(forKey: key)
+    digestSets.removeValue(forKey: key)
+    servedSets.removeValue(forKey: key)
+    creditSets.removeValue(forKey: key)
   }
 
   // MARK: Plans
 
-  private func hostedPlan(_ options: TileflowOfflineRegionLoadOptions) async throws -> (
-    plan: OfflineVersionPlan, apiOrigin: URL
-  ) {
+  /// The downloads of `options`: those an estimate created, or new ones. A load consumes what
+  /// an estimate created, so loading again later sees the Map as it is then.
+  private func hostedPlan(_ options: TileflowOfflineRegionLoadOptions, consuming: Bool = false)
+    async throws -> (plan: OfflineVersionPlan, apiOrigin: URL)
+  {
     guard case .hosted(let mapID, let themes) = options.content else {
       throw TileflowOfflineError.options("invalidContent")
     }
     let client = try dependencies.client()
     let requests = try OfflinePackRequest.requests(
       mapID: mapID, themes: themes, geometry: options.geometry, zooms: options.zooms)
-    var packs: [OfflinePack] = []
+    var downloads: [OfflineDownload] = []
     for request in requests {
       let now = dependencies.now()
-      if let pack = created[request],
-        pack.manifest.downloadExpiresAt.timeIntervalSince(now) > Self.reuseWindow
+      if let download = created[request],
+        download.manifest.downloadExpiresAt.timeIntervalSince(now) > Self.reuseWindow
       {
-        packs.append(pack)
+        if consuming { created.removeValue(forKey: request) }
+        downloads.append(download)
         continue
       }
-      let pack = try await client.create(request)
-      created[request] = pack
-      packs.append(pack)
+      let download = try await client.create(request)
+      if !consuming { created[request] = download }
+      downloads.append(download)
     }
-    return (
-      .hosted(packs: packs, requests: requests, apiOrigin: client.apiOrigin), client.apiOrigin
-    )
+    return (.hosted(downloads: downloads, requests: requests), client.apiOrigin)
   }
 
   /// The manifest, then each theme's style and what it references, without duplicates.
@@ -751,24 +913,24 @@ actor OfflineStoreCore {
       throw TileflowOfflineError(.invalidResponse)
     }
     let plan: OfflineVersionPlan
-    if version.packs > 0 {
+    if version.downloads > 0 {
       guard let origin = version.apiOrigin.flatMap(URL.init(string:)) else {
         throw TileflowOfflineError(.invalidResponse)
       }
       var requests: [OfflinePackRequest] = []
-      var packs: [OfflinePack] = []
-      for index in 0..<version.packs {
+      var downloads: [OfflineDownload] = []
+      for index in 0..<version.downloads {
         guard
           let request = OfflinePackRequest(
             json: try Data(contentsOf: layout.request(id, version.number, pack: index)))
         else { throw TileflowOfflineError(.invalidResponse) }
         requests.append(request)
-        packs.append(
-          try OfflinePackContract.pack(
-            Data(contentsOf: layout.pack(id, version.number, pack: index)), request: request,
-            allowsLoopbackHTTP: origin.scheme == "http"))
+        downloads.append(
+          try OfflinePackContract.download(
+            Data(contentsOf: layout.download(id, version.number, download: index)),
+            request: request, allowsLoopbackHTTP: origin.scheme == "http"))
       }
-      plan = .hosted(packs: packs, requests: requests, apiOrigin: origin)
+      plan = .hosted(downloads: downloads, requests: requests)
     } else {
       guard case .manifest(_, _, let sources) = options.content,
         let value = try? JSONDecoder().decode(
@@ -784,27 +946,66 @@ actor OfflineStoreCore {
     return plan
   }
 
-  private func keys(_ id: String, _ version: OfflineVersionRecord) -> (
-    all: Set<String>, billable: Set<String>
-  ) {
+  /// The cache paths of a version's resources.
+  private func keys(_ id: String, _ version: OfflineVersionRecord) -> Set<String> {
     let key = planKey(id, version.number)
     if let cached = keySets[key] { return cached }
-    guard let plan = try? plan(id, version) else { return ([], []) }
-    var all = Set<String>()
-    var billable = Set<String>()
-    for resource in plan.resources {
-      all.insert(resource.key.relativePath)
-      if resource.billable { billable.insert(resource.key.relativePath) }
+    guard let plan = try? plan(id, version) else { return [] }
+    let paths = Set(plan.resources.map(\.key.relativePath))
+    keySets[key] = paths
+    return paths
+  }
+
+  /// The digests of the packs a version stored.
+  private func digests(_ id: String, _ version: OfflineVersionRecord) -> Set<String> {
+    let key = planKey(id, version.number)
+    if version.state == .complete, let cached = digestSets[key] { return cached }
+    let digests = Set(
+      OfflineProgressLog.read(layout.progress(id, version.number)).values.compactMap(\.pack))
+    if version.state == .complete { digestSets[key] = digests }
+    return digests
+  }
+
+  /// A version's billable units: each pack's billable resources, under a name equal for the same
+  /// pack of the same request and release, which holds the same bytes in any region.
+  private func units(_ id: String, _ version: OfflineVersionRecord) -> [String: Int] {
+    let key = planKey(id, version.number)
+    if let cached = unitSets[key] { return cached }
+    guard let plan = try? plan(id, version) else { return [:] }
+    let units = Self.units(plan)
+    unitSets[key] = units
+    return units
+  }
+
+  private static func units(_ plan: OfflineVersionPlan) -> [String: Int] {
+    var units: [String: Int] = [:]
+    for planned in plan.packs { units[unit(planned, plan)] = planned.pack.billableResources }
+    return units
+  }
+
+  private static func unit(_ planned: OfflinePlannedPack, _ plan: OfflineVersionPlan) -> String {
+    let manifest = plan.downloads[planned.download].manifest
+    let request = DataChannel.digest(plan.requests[planned.download].body)
+    return
+      "\(request)\n\(planned.pack.url.absoluteString)\n\(planned.release ?? "d\(manifest.deploymentVersion)")"
+  }
+
+  /// The billable units every stored or downloading version holds.
+  private func heldUnits(except excluded: String? = nil) -> [String: Int] {
+    var held: [String: Int] = [:]
+    for (other, record) in records where other != excluded && !record.removing {
+      for version in [record.active, record.pending].compactMap({ $0 }) {
+        held.merge(units(other, version)) { a, _ in a }
+      }
     }
-    keySets[key] = (all, billable)
-    return (all, billable)
+    return held
   }
 
   /// Cache paths of every stored (active) version.
   private func activePaths() -> Set<String> {
     var paths = Set<String>()
     for (id, record) in records where !record.removing {
-      if let active = record.active { paths.formUnion(keys(id, active).all) }
+      if let active = record.active { paths.formUnion(keys(id, active)) }
     }
     return paths
   }
@@ -812,27 +1013,16 @@ actor OfflineStoreCore {
   /// The device holds at most the plan's limit of billable resources; a version that does not
   /// grow the device's total is always accepted.
   private func checkDeviceLimit(_ id: String, _ plan: OfflineVersionPlan) throws {
-    guard let limit = plan.packs.map(\.manifest.maximumPackResources).min() else { return }
-    var others = Set<String>()
-    for (other, record) in records where other != id && !record.removing {
-      for version in [record.active, record.pending].compactMap({ $0 }) {
-        others.formUnion(keys(other, version).billable)
-      }
-    }
-    let mine = records[id]?.active.map { keys(id, $0).billable } ?? []
-    var next = Set<String>()
-    for resource in plan.resources where resource.billable {
-      next.insert(resource.key.relativePath)
-    }
-    let held = others.union(mine)
+    guard let limit = plan.downloads.map(\.manifest.maximumPackResources).min() else { return }
+    let others = heldUnits(except: id)
+    let mine = records[id]?.active.map { units(id, $0) } ?? [:]
+    let next = Self.units(plan)
+    let held = others.merging(mine) { a, _ in a }
+    func total(_ units: [String: Int]) -> Int { units.values.reduce(0, +) }
     try OfflineDeviceLimit.check(
-      deviceTotal: held.count, adding: next.subtracting(held).count,
-      releasing: mine.subtracting(others.union(next)).count, limit: limit)
-  }
-
-  private func isStored(_ key: ResourceCacheKey) -> Bool {
-    FileManager.default.fileExists(
-      atPath: dependencies.cache.file(for: key, retention: .pinned).path)
+      deviceTotal: total(held), adding: total(next.filter { held[$0.key] == nil }),
+      releasing: total(mine.filter { others[$0.key] == nil && next[$0.key] == nil }),
+      limit: limit)
   }
 
   // MARK: Records
@@ -895,6 +1085,7 @@ actor OfflineStoreCore {
     var done = progress[record.id] ?? OfflineProgress()
     if !downloading {
       done = OfflineProgress()
+      done.packs = version.packs
       done.count = version.resources
       done.bytes = version.bytes ?? 0
       done.loaded = version.loaded ?? 0
@@ -917,6 +1108,7 @@ actor OfflineStoreCore {
     }
     return TileflowOfflineRegion(
       id: record.id, options: options, state: state, isAvailable: isServed(record),
+      requiredPackCount: version.packs, completedPackCount: min(done.packs, version.packs),
       requiredResourceCount: version.resources,
       completedResourceCount: min(done.count, version.resources),
       requiredResourceBytes: version.bytes, completedResourceBytes: done.bytes,

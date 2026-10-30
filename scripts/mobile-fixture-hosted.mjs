@@ -1,14 +1,19 @@
 import {createHash, randomUUID} from 'node:crypto';
+import {deflateSync, gunzipSync, gzipSync} from 'node:zlib';
 
 /**
  * A minimal Hosted map for the mobile fixture server: session start, discovery and the WebView
- * profile manifest, one versioned style with its TileJSON and vector tiles, Hosted offline packs
- * (creation, grant-authorized downloads, revalidation) and counters tests read.
+ * profile manifest, two versioned themes (`day`, and `terrain` over a constant 650 m elevation
+ * model) with their TileJSONs, gzip vector tiles and elevation tiles, Hosted offline downloads in
+ * pack format 2 (creation, grant-authorized pack downloads, revalidation) and counters tests read.
  *
- * Protected resources answer only a current session grant (`X-Tileflow-Native-Grant`) or pack
- * grant (`X-Tileflow-Offline-Grant`), with a strong `ETag` and `private, no-cache`; `If-None-Match`
- * answers 304. Tests read and reset the counters with `GET`/`POST /__fixture/hosted`, and choose the
- * revalidation state with `POST /__fixture/hosted?revalidation=not_updatable`.
+ * Protected resources answer only a current session grant (`X-Tileflow-Native-Grant`), with a
+ * strong `ETag` and `private, no-cache`; `If-None-Match` answers 304. Packs answer only their
+ * download's grant (`X-Tileflow-Offline-Grant`), with their digest as a strong `ETag`,
+ * `Accept-Ranges`, single ranges (206) and `If-Range`. Tests read and reset the counters with
+ * `GET`/`POST /__fixture/hosted`, choose the revalidation state with
+ * `POST /__fixture/hosted?revalidation=not_updatable`, and resume an interrupted transfer of
+ * `/__fixture/resumable`, whose first response stops part-way.
  */
 export const hostedMapId = 'map_offlinefixture01';
 
@@ -20,7 +25,14 @@ export function createHostedFixture({base, tile, center}) {
     style: `${base}${mapPath}/webview-v1/v1/day.json`,
     tilejson: `${base}/tiles/world/tiles.json?map=${hostedMapId}`,
     template: `${base}/tiles/world/1/{z}/{x}/{y}.pbf?map=${hostedMapId}`,
+    terrainStyle: `${base}${mapPath}/webview-v1/v1/terrain.json`,
+    terrainTilejson: `${base}/tiles/terrain/tiles.json?map=${hostedMapId}`,
+    terrainTemplate: `${base}/tiles/terrain/1/{z}/{x}/{y}.png?map=${hostedMapId}`,
   };
+  // Terrain stops at z14 online; a download stops at its terrainMaxZoom.
+  const terrainZooms = [0, 14];
+  const resumable = Buffer.alloc(2 * 1024 * 1024, 0);
+  for (let index = 0; index < resumable.length; index += 1) resumable[index] = (index * 31) % 251;
   const zooms = [13, 15];
   const documents = {
     [urls.discovery]: {
@@ -36,7 +48,10 @@ export function createHostedFixture({base, tile, center}) {
           mapId: hostedMapId,
           defaultTheme: 'day',
           view: {center, zoom: 15.5, bearing: 0, pitch: 0},
-          themes: {day: {styleUrl: urls.style, colorScheme: 'light'}},
+          themes: {
+            day: {styleUrl: urls.style, colorScheme: 'light'},
+            terrain: {styleUrl: urls.terrainStyle, colorScheme: 'light'},
+          },
         },
       },
     },
@@ -54,6 +69,31 @@ export function createHostedFixture({base, tile, center}) {
         },
       ],
     },
+    [urls.terrainStyle]: {
+      version: 8,
+      sources: {
+        world: {type: 'vector', url: urls.tilejson},
+        terrain: {type: 'raster-dem', url: urls.terrainTilejson, tileSize: 256, encoding: 'mapbox'},
+      },
+      terrain: {source: 'terrain'},
+      layers: [
+        {id: 'ground', type: 'background', paint: {'background-color': '#ece6da'}},
+        {
+          id: 'buildings',
+          type: 'fill',
+          source: 'world',
+          'source-layer': 'building',
+          paint: {'fill-color': '#d6ccb8'},
+        },
+      ],
+    },
+    [urls.terrainTilejson]: {
+      tilejson: '3.0.0',
+      tiles: [urls.terrainTemplate],
+      minzoom: terrainZooms[0],
+      maxzoom: terrainZooms[1],
+      attribution: 'Fixture Terrain',
+    },
     [urls.tilejson]: {
       tilejson: '3.0.0',
       tiles: [urls.template],
@@ -64,8 +104,9 @@ export function createHostedFixture({base, tile, center}) {
   };
   const publicUrls = new Set([urls.discovery, urls.profile]);
   const sessions = new Set();
-  const packs = new Set();
-  const state = {revalidation: 'current'};
+  /** Each download's packs by path, under its grant. */
+  const downloads = new Map();
+  const state = {revalidation: 'current', resumableServed: 0};
   const counters = () => ({
     sessions: 0,
     packs: 0,
@@ -74,6 +115,8 @@ export function createHostedFixture({base, tile, center}) {
     notModified: 0,
     sessionResources: 0,
     packResources: 0,
+    packNotModified: 0,
+    ranges: 0,
   });
   let count = counters();
 
@@ -97,7 +140,117 @@ export function createHostedFixture({base, tile, center}) {
   const body = (url) => {
     if (documents[url]) return Buffer.from(JSON.stringify(documents[url]));
     const match = /\/tiles\/world\/1\/(\d+)\/(\d+)\/(\d+)\.pbf\?map=/u.exec(url);
-    return match ? tile(...match.slice(1).map(Number)) : null;
+    if (match) return storedTile(...match.slice(1).map(Number));
+    const terrain = /\/tiles\/terrain\/1\/(\d+)\/\d+\/\d+\.png\?map=/u.exec(url);
+    return terrain && Number(terrain[1]) <= terrainZooms[1] ? elevation : null;
+  };
+  /** A 256-pixel elevation tile at 650 m everywhere, in Mapbox's RGB encoding. */
+  const elevation = (() => {
+    const crc = (bytes) => {
+      let value = 0xffffffff;
+      for (const byte of bytes) {
+        value ^= byte;
+        for (let bit = 0; bit < 8; bit += 1)
+          value = value & 1 ? (value >>> 1) ^ 0xedb88320 : value >>> 1;
+      }
+      return (value ^ 0xffffffff) >>> 0;
+    };
+    const chunk = (type, data) => {
+      const head = Buffer.alloc(8);
+      head.writeUInt32BE(data.length, 0);
+      head.write(type, 4, 'ascii');
+      const tail = Buffer.alloc(4);
+      tail.writeUInt32BE(crc(Buffer.concat([Buffer.from(type, 'ascii'), data])), 0);
+      return Buffer.concat([head, data, tail]);
+    };
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(256, 0);
+    header.writeUInt32BE(256, 4);
+    header[8] = 8; // bit depth
+    header[9] = 2; // RGB
+    // (-10000 + (1 × 65536 + 160 × 256 + 4) × 0.1) m = 650 m
+    const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array(256).fill([1, 160, 4]).flat())]);
+    const pixels = deflateSync(Buffer.concat(Array(256).fill(row)));
+    return Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk('IHDR', header),
+      chunk('IDAT', pixels),
+      chunk('IEND', Buffer.alloc(0)),
+    ]);
+  })();
+  // World stores its tiles gzip-compressed and serves them as stored.
+  const stored = new Map();
+  const storedTile = (z, x, y) => {
+    const key = `${z}/${x}/${y}`;
+    if (!stored.has(key)) stored.set(key, gzipSync(tile(z, x, y), {mtime: 0}));
+    return stored.get(key);
+  };
+
+  /** A pack in format 2: header, index, bodies and the SHA-256 trailer. */
+  function pack(kind, entries) {
+    const index = [];
+    const data = [];
+    let offset = 0;
+    for (const entry of entries) {
+      const name = Buffer.from(entry.name);
+      const type = Buffer.from(entry.contentType);
+      const encoding = Buffer.from(entry.contentEncoding ?? '');
+      const record = Buffer.alloc(2 + name.length + 1 + type.length + 1 + encoding.length + 12);
+      let at = record.writeUInt16LE(name.length, 0);
+      at += name.copy(record, at);
+      at = record.writeUInt8(type.length, at);
+      at += type.copy(record, at);
+      at = record.writeUInt8(encoding.length, at);
+      at += encoding.copy(record, at);
+      at = record.writeBigUInt64LE(BigInt(offset), at);
+      record.writeUInt32LE(entry.body.length, at);
+      index.push(record);
+      data.push(entry.body);
+      offset += entry.body.length;
+    }
+    const indexBytes = Buffer.concat(index);
+    const header = Buffer.alloc(32);
+    header.write('TFPK', 0, 'ascii');
+    header.writeUInt16LE(1, 4);
+    header.writeUInt8(kind === 'tiles' ? 1 : 2, 6);
+    header.writeUInt32LE(entries.length, 8);
+    header.writeUInt32LE(indexBytes.length, 12);
+    header.writeBigUInt64LE(BigInt(offset), 16);
+    const content = Buffer.concat([header, indexBytes, ...data]);
+    return Buffer.concat([content, createHash('sha256').update(content).digest()]);
+  }
+
+  /** Answers a resource in full, as a single range, or unchanged. A pack's tag is its trailer. */
+  const serve = (request, response, bytes, headers, onBody, tag = sha(bytes)) => {
+    const etag = `"${tag}"`;
+    for (const [name, value] of Object.entries({...headers, ETag: etag}))
+      response.setHeader(name, value);
+    if (request.headers['if-none-match'] === etag) {
+      response.statusCode = 304;
+      response.end();
+      return 'not-modified';
+    }
+    const range = /^bytes=(\d+)-$/u.exec(request.headers.range ?? '');
+    const ifRange = request.headers['if-range'];
+    if (range && (!ifRange || ifRange === etag)) {
+      const start = Number(range[1]);
+      if (start >= bytes.length) {
+        response.writeHead(416, {'Content-Range': `bytes */${bytes.length}`});
+        response.end();
+        return 'unsatisfiable';
+      }
+      response.writeHead(206, {
+        'Content-Range': `bytes ${start}-${bytes.length - 1}/${bytes.length}`,
+        'Content-Length': bytes.length - start,
+      });
+      if (onBody) onBody(response, bytes.subarray(start));
+      else response.end(bytes.subarray(start));
+      return 'range';
+    }
+    response.setHeader('Content-Length', bytes.length);
+    if (onBody) onBody(response, bytes);
+    else response.end(bytes);
+    return 'whole';
   };
   // The tiles of a box at a zoom, a subset of the service's row cover: the box's own tile range.
   const project = (longitude, latitude, zoom) => {
@@ -109,38 +262,121 @@ export function createHostedFixture({base, tile, center}) {
     ];
   };
 
-  function manifest(request, now) {
+  /** A download's manifest; its packs are assembled into `files` by path. */
+  function manifest(request, now, files) {
     const [west, south, east, north] = request.region.bbox;
-    const documentEntry = (kind, url, billable) => {
+    const publicResource = (kind, url) => {
       const bytes = body(url);
-      return {
-        kind,
-        url,
-        bytes: bytes.length,
-        sha256: sha(bytes),
-        billable,
-        access: billable ? 'grant' : 'public',
-      };
+      return {kind, url, bytes: bytes.length, sha256: sha(bytes)};
     };
-    const docs = [
-      documentEntry('discovery', urls.discovery, false),
-      documentEntry('profile', urls.profile, false),
-      documentEntry('style', urls.style, true),
-      documentEntry('tilejson', urls.tilejson, true),
+    const publicResources = [
+      publicResource('discovery', urls.discovery),
+      publicResource('profile', urls.profile),
     ];
-    const low = Math.max(request.minZoom, zooms[0]);
-    const high = Math.min(request.maxZoom, zooms[1]);
-    const entries = [];
-    for (let z = low; z <= high; z += 1) {
-      const [x0, y0] = project(west, north, z);
-      const [x1, y1] = project(east, south, z);
-      for (let y = y0; y <= y1; y += 1)
-        for (let x = x0; x <= x1; x += 1) entries.push([z, x, y, tile(z, x, y).length]);
+    const packs = [];
+    const add = (id, kind, path, entries, extra = {}) => {
+      const bytes = pack(kind, entries);
+      files.set(path, bytes);
+      packs.push({
+        id,
+        kind,
+        url: `${base}${path}`,
+        bytes: bytes.length,
+        resources: entries.length,
+        billableResources: entries.length,
+        ...extra,
+      });
+    };
+    // The style pack holds the requested themes' styles and the TileJSONs they use.
+    const terrainTheme = request.themes.includes('terrain');
+    const documentUrls = [
+      ...(request.themes.includes('day') ? [urls.style] : []),
+      ...(terrainTheme ? [urls.terrainStyle] : []),
+      urls.tilejson,
+      ...(terrainTheme ? [urls.terrainTilejson] : []),
+    ];
+    add(
+      'style',
+      'documents',
+      '/v1/offline/documents/style.tfpack',
+      documentUrls.map((url) => ({name: url, contentType: 'application/json', body: body(url)})),
+    );
+    const tileSources = [
+      {
+        source: 'world',
+        template: urls.template,
+        zooms,
+        contentType: 'application/vnd.mapbox-vector-tile',
+        contentEncoding: 'gzip',
+        tile: storedTile,
+      },
+      ...(terrainTheme
+        ? [
+            {
+              source: 'terrain',
+              template: urls.terrainTemplate,
+              zooms: [terrainZooms[0], Math.min(terrainZooms[1], request.terrainMaxZoom)],
+              contentType: 'image/png',
+              contentEncoding: null,
+              tile: () => elevation,
+            },
+          ]
+        : []),
+    ];
+    const sources = [];
+    const bands = [0, 7, 11, 16, 21];
+    for (const source of tileSources) {
+      const low = Math.max(request.minZoom, source.zooms[0]);
+      const high = Math.min(request.maxZoom, source.zooms[1]);
+      sources.push({
+        source: source.source,
+        version: '1',
+        template: source.template,
+        zooms: low <= high ? [low, high] : null,
+        contentType: source.contentType,
+        contentEncoding: source.contentEncoding,
+        absentStatus: 404,
+      });
+      // The tiles of a box at a zoom are its row cover: the box's own tile range.
+      const anchors = new Map();
+      for (let z = low; z <= high; z += 1) {
+        const anchor = bands.filter((band) => band <= z).at(-1);
+        const [x0, y0] = project(west, north, z);
+        const [x1, y1] = project(east, south, z);
+        for (let y = y0; y <= y1; y += 1)
+          for (let x = x0; x <= x1; x += 1) {
+            const shift = z - anchor;
+            const key = `${anchor}/${x >> shift}/${y >> shift}`;
+            if (!anchors.has(key)) anchors.set(key, []);
+            anchors.get(key).push([z, x, y]);
+          }
+      }
+      for (const [key, tiles] of anchors) {
+        const [z, x, y] = key.split('/').map(Number);
+        const end = bands[bands.indexOf(z) + 1] - 1;
+        add(
+          `tiles/${source.source}/${key}`,
+          'tiles',
+          `/v1/offline/tiles/${source.source}/1/${key}.tfpack`,
+          tiles.map(([tz, tx, ty]) => ({
+            name: `${tz}/${tx}/${ty}`,
+            contentType: source.contentType,
+            contentEncoding: source.contentEncoding,
+            body: source.tile(tz, tx, ty),
+          })),
+          {
+            source: source.source,
+            anchor: [z, x, y],
+            zooms: [Math.max(z, low), Math.min(end, high)],
+          },
+        );
+      }
     }
-    const billable = docs.filter((entry) => entry.billable).length + entries.length;
+    const resources = packs.reduce((sum, item) => sum + item.resources, 0);
+    const billable = packs.reduce((sum, item) => sum + item.billableResources, 0);
     return {
-      version: 1,
-      packId: `opk_${randomUUID().replaceAll('-', '').slice(0, 22)}`,
+      version: 2,
+      downloadId: `odl_${randomUUID().replaceAll('-', '').slice(0, 22)}`,
       mapId: hostedMapId,
       profile: request.profile,
       deploymentVersion: 1,
@@ -150,22 +386,18 @@ export function createHostedFixture({base, tile, center}) {
       maxZoom: request.maxZoom,
       terrainMaxZoom: request.terrainMaxZoom,
       createdAt: iso(now),
-      documents: docs,
-      tiles: [
-        {
-          source: 'world',
-          template: urls.template,
-          zooms: low <= high ? [low, high] : null,
-          entries,
-        },
-      ],
+      sources,
+      packs,
+      publicResources,
+      origins: [base],
       excluded: [],
       totals: {
-        resources: docs.length + entries.length,
+        packs: packs.length,
+        resources: resources + publicResources.length,
         billableResources: billable,
         bytes:
-          docs.reduce((sum, entry) => sum + entry.bytes, 0) +
-          entries.reduce((sum, entry) => sum + entry[3], 0),
+          packs.reduce((sum, item) => sum + item.bytes, 0) +
+          publicResources.reduce((sum, item) => sum + item.bytes, 0),
       },
       attribution: {
         sources: [
@@ -183,7 +415,13 @@ export function createHostedFixture({base, tile, center}) {
           },
         ],
       },
-      limits: {maxPackResources: 10_000, dailyDownloads: 20_000},
+      limits: {
+        maxPackResources: 10_000,
+        dailyDownloads: 20_000,
+        teamDailyDownloads: 20_000,
+        dailyRemaining: 20_000,
+        teamDailyRemaining: 20_000,
+      },
       revalidation: {url: `${base}/v1/offline/packs/revalidate`, intervalSeconds: 86_400},
       download: {expiresAt: iso(new Date(now.getTime() + 86_400_000))},
     };
@@ -196,6 +434,7 @@ export function createHostedFixture({base, tile, center}) {
     if (path === '/__fixture/hosted') {
       if (request.method === 'POST') {
         count = counters();
+        state.resumableServed = 0;
         const revalidation = new URL(url).searchParams.get('revalidation');
         state.revalidation = revalidation ?? 'current';
       }
@@ -231,7 +470,7 @@ export function createHostedFixture({base, tile, center}) {
           disposition: 'unmetered',
           resourceOrigins: [base],
           resourceScopes: ['style', 'tilejson', 'tile'],
-          tilesetIds: ['world'],
+          tilesetIds: ['world', 'terrain'],
         });
       });
       return true;
@@ -242,20 +481,17 @@ export function createHostedFixture({base, tile, center}) {
         if (!request.headers['x-tileflow-mobile-client'] || body.mapId !== hostedMapId)
           return json(response, 401, {code: 'MOBILE_CREDENTIAL_INVALID', error: 'refused'});
         count.packs += 1;
-        const grant = `tf_offline_v1.${Buffer.from(randomUUID()).toString('base64url')}.fixture`;
-        packs.add(grant);
-        json(response, 201, {
-          version: 1,
-          kind: 'offline_pack',
-          grant,
-          manifest: manifest(body, new Date()),
-        });
+        const grant = `tf_offline_v2.${Buffer.from(randomUUID()).toString('base64url')}.fixture`;
+        const files = new Map();
+        const created = manifest(body, new Date(), files);
+        downloads.set(grant, files);
+        json(response, 201, {version: 2, kind: 'offline_download', grant, manifest: created});
       });
       return true;
     }
     if (request.method === 'POST' && path === '/v1/offline/packs/revalidate') {
       readBody(request).then((text) => {
-        if (!packs.has(JSON.parse(text).grant))
+        if (!downloads.has(JSON.parse(text).grant))
           return json(response, 401, {code: 'OFFLINE_PACK_GRANT_INVALID', error: 'refused'});
         count.revalidations += 1;
         json(
@@ -268,33 +504,76 @@ export function createHostedFixture({base, tile, center}) {
       });
       return true;
     }
+    if (request.method === 'GET' && path === '/__fixture/resumable') {
+      // The first transfer stops a quarter of the way; later ones resume from a range.
+      const first = state.resumableServed === 0;
+      state.resumableServed += 1;
+      const outcome = serve(
+        request,
+        response,
+        resumable,
+        {'Accept-Ranges': 'bytes'},
+        (out, bytes) => {
+          if (!first) return out.end(bytes);
+          out.write(bytes.subarray(0, bytes.length / 4), () =>
+            setTimeout(() => out.destroy(), 200),
+          );
+        },
+      );
+      if (outcome === 'range') count.ranges += 1;
+      return true;
+    }
+    if (request.method === 'GET' && path.startsWith('/v1/offline/') && path.endsWith('.tfpack')) {
+      const bytes = downloads.get(request.headers['x-tileflow-offline-grant'])?.get(path);
+      if (!bytes) {
+        json(response, 403, {code: 'OFFLINE_PACK_RESOURCE_DENIED', error: 'refused'});
+        return true;
+      }
+      const outcome = serve(
+        request,
+        response,
+        bytes,
+        {
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'private, no-cache, no-transform',
+          'Content-Type': 'application/vnd.tileflow.pack',
+        },
+        undefined,
+        bytes.subarray(bytes.length - 32).toString('hex'),
+      );
+      if (outcome === 'not-modified') count.packNotModified += 1;
+      else count.packResources += 1;
+      if (outcome === 'range') count.ranges += 1;
+      return true;
+    }
     const bytes = request.method === 'GET' ? body(url) : null;
     if (!bytes) return false;
     if (!publicUrls.has(url)) {
       const session = request.headers['x-tileflow-native-grant'];
-      const pack = request.headers['x-tileflow-offline-grant'];
       if (sessions.has(session)) count.sessionResources += 1;
-      else if (packs.has(pack)) count.packResources += 1;
       else {
         json(response, 401, {code: 'MOBILE_GRANT_INVALID', error: 'refused'});
         return true;
       }
     }
-    const etag = `"${sha(bytes)}"`;
-    response.setHeader('ETag', etag);
-    response.setHeader('Cache-Control', 'private, no-cache');
-    response.setHeader(
-      'Content-Type',
-      url.includes('.pbf') ? 'application/vnd.mapbox-vector-tile' : 'application/json',
+    // Vector tiles travel as stored to clients that accept gzip, and decoded to the others.
+    const gzip = url.includes('.pbf') && /\bgzip\b/u.test(request.headers['accept-encoding'] ?? '');
+    const outcome = serve(
+      request,
+      response,
+      url.includes('.pbf') && !gzip ? gunzipSync(bytes) : bytes,
+      {
+        'Cache-Control': 'private, no-cache',
+        'Content-Type': url.includes('.pbf')
+          ? 'application/vnd.mapbox-vector-tile'
+          : url.includes('.png')
+            ? 'image/png'
+            : 'application/json',
+        ...(gzip ? {'Content-Encoding': 'gzip'} : {}),
+      },
     );
-    if (request.headers['if-none-match'] === etag) {
-      count.notModified += 1;
-      response.statusCode = 304;
-      response.end();
-      return true;
-    }
-    count.downloads += 1;
-    response.end(bytes);
+    if (outcome === 'not-modified') count.notModified += 1;
+    else count.downloads += 1;
     return true;
   };
 }

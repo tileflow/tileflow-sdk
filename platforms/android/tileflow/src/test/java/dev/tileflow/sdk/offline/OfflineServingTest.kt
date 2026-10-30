@@ -34,8 +34,8 @@ import org.robolectric.annotation.Config
 
 /**
  * How maps use downloaded regions: a Hosted map without a network opens from its packs without a
- * session, with a network it starts its session, and with the network switched off every request is
- * answered from stored entries alone.
+ * session, with a network it starts its session and revalidates pack entries instead of downloading
+ * them, and with the network switched off every request is answered from stored entries alone.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [34])
@@ -62,11 +62,11 @@ class OfflineServingTest {
 
     @Test
     fun withoutANetworkAHostedMapOpensFromItsPackWithoutASession() {
-        val body = pin(style, scope)
-        val (loader, sessions, resources) = loader(served = listOf(style), reachable = false)
+        val (loader, sessions, resources) = loader(storedPacks(), reachable = false)
         val response = loader.load(style)
         assertEquals(200, response.status)
-        assertArrayEquals(body, response.bytes)
+        assertArrayEquals(styleBody, response.bytes)
+        assertEquals("application/json", response.headers["Content-Type"])
         assertEquals("no-store", response.headers["Cache-Control"])
         assertTrue("No session starts", sessions.requests.isEmpty())
         assertTrue(resources.requests.isEmpty())
@@ -74,46 +74,97 @@ class OfflineServingTest {
 
     @Test
     fun withANetworkAHostedMapStartsItsSessionAndRevalidatesItsPack() {
-        val body = pin(style, scope)
-        val (loader, sessions, resources) = loader(served = listOf(style), reachable = true)
-        val response = loader.load(style)
+        val (loader, sessions, resources) = loader(storedPacks(), reachable = true)
+        val response = loader.load(tile)
         assertEquals(200, response.status)
-        assertArrayEquals("The unchanged stored copy answers", body, response.bytes)
+        assertArrayEquals("The unchanged stored copy answers, decoded", tileBody, response.bytes)
         assertEquals(listOf("/v1/sessions/start"), sessions.requests.map { it.url.encodedPath })
         val request = resources.requests.single()
         assertNotNull(request.header("X-Tileflow-Native-Grant"))
-        assertEquals(etag(body), request.header("If-None-Match"))
+        // The tag names the body as the route serves it, compressed.
+        assertEquals("\"${sha256Hex(tileGzip)}\"", request.header("If-None-Match"))
     }
 
     @Test
     fun anUnreachableServiceFallsBackToThePack() {
-        val body = pin(style, scope)
-        val (loader, sessions, _) =
-            loader(served = listOf(style), reachable = true, sessionsFail = true)
-        assertArrayEquals(body, loader.load(style).bytes)
+        val (loader, sessions, _) = loader(storedPacks(), reachable = true, sessionsFail = true)
+        assertArrayEquals(styleBody, loader.load(style).bytes)
         assertFalse(sessions.requests.isEmpty())
     }
 
     @Test
     fun withTheNetworkOffOnlyStoredEntriesAnswerAndMissesAnswerAtOnce() {
-        val styleBody = pin(style, scope)
-        // Stored, but no available region holds it, as after access to its region ended.
-        pin(tile, scope)
+        val packs = storedPacks()
         val landmarkBody = pin(landmarks, ResourceCacheScope.Shared)
+        // Stored, but no available region holds it, as after access to its region ended.
         val (loader, sessions, resources) =
-            loader(served = listOf(style), reachable = true, networkEnabled = false)
+            loader(packs.copy(tiles = emptyMap()), reachable = true, networkEnabled = false)
         val started = System.nanoTime()
         assertArrayEquals(styleBody, loader.load(style).bytes)
         assertArrayEquals(landmarkBody, loader.load(landmarks).bytes)
         assertEquals(504, loader.load(tile).status)
-        assertEquals(
-            504,
-            loader.load(URI("https://tiles.tileflow.test/tiles/world/release-1/2/1/1.pbf")).status,
-        )
         assertEquals(504, loader.load(landmarks, range = "bytes=0-10").status)
         assertTrue("Nothing waits for the network", System.nanoTime() - started < 2_000_000_000)
         assertTrue(sessions.requests.isEmpty())
         assertTrue(resources.requests.isEmpty())
+
+        // With the region's tiles: a stored tile answers decoded, a covered tile the archive does
+        // not store answers as the source does online, and a tile outside the cover is a miss.
+        val (tiles, _, _) = loader(packs, reachable = true, networkEnabled = false)
+        val stored = tiles.load(tile)
+        assertEquals(200, stored.status)
+        assertArrayEquals(tileBody, stored.bytes)
+        val absent = tiles.load(template.url(OfflineTileId(2, 1, 1)))
+        assertEquals(404, absent.status)
+        assertEquals(0, absent.bytes.size)
+        assertEquals(504, tiles.load(template.url(OfflineTileId(2, 3, 3))).status)
+        // Above the downloaded zooms inside the region, the renderer overzooms the deepest tile.
+        assertEquals(404, tiles.load(template.url(OfflineTileId(4, 4, 4))).status)
+        assertEquals(504, tiles.load(template.url(OfflineTileId(4, 15, 15))).status)
+    }
+
+    private val template =
+        OfflineTileTemplate.of("https://tiles.tileflow.test/tiles/world/release-1/{z}/{x}/{y}.pbf")!!
+    private val styleBody = """{"version":8}""".toByteArray()
+    private val tileBody = "tile 1/0/0".toByteArray()
+    private val tileGzip = OfflinePackBuilder.gzip(tileBody)
+
+    /**
+     * A style in a document pack and tile 1/0/0 in a tile pack of a region over the north-western
+     * quarter.
+     */
+    private fun storedPacks(): OfflineServedPacks {
+        fun write(kind: OfflinePackKind, entries: List<OfflinePackBuilder.Entry>): File {
+            val data = OfflinePackBuilder.build(kind, entries)
+            return File(directory, "${data.size}-${kind.code}.tfpack").also {
+                it.writeBytes(data)
+                OfflinePackFormat.verify(it, data.size.toLong(), kind)
+            }
+        }
+        val documents =
+            write(
+                OfflinePackKind.DOCUMENTS,
+                listOf(OfflinePackBuilder.Entry(style.toString(), "application/json", null, styleBody)),
+            )
+        val tiles =
+            write(
+                OfflinePackKind.TILES,
+                listOf(OfflinePackBuilder.Entry("1/0/0", "application/x-protobuf", "gzip", tileGzip)),
+            )
+        val entry = OfflinePackFormat.index(documents).entries.getValue(style.toString())
+        return OfflineServedPacks(
+            mapOf(style.toString() to (documents to entry)),
+            mapOf(
+                template.text to
+                    OfflineServedTiles(
+                        template,
+                        0..2,
+                        404,
+                        listOf(OfflinePackRegion.canonical(-170.0, 1.0, -10.0, 80.0)!!),
+                        mapOf(OfflineTileId(0, 0, 0) to listOf(tiles)),
+                    )
+            ),
+        )
     }
 
     private fun pin(url: URI, scope: ResourceCacheScope): ByteArray {
@@ -123,7 +174,7 @@ class OfflineServingTest {
                 url,
                 200,
                 mapOf(
-                    "ETag" to etag(body),
+                    "ETag" to "\"${sha256Hex(body)}\"",
                     "Cache-Control" to "private, no-cache",
                     "Content-Type" to "application/octet-stream",
                 ),
@@ -138,19 +189,14 @@ class OfflineServingTest {
         return body
     }
 
-    private fun etag(body: ByteArray) = "\"${sha256Hex(body)}\""
-
     private fun loader(
-        served: List<URI>,
+        packs: OfflineServedPacks,
         reachable: Boolean,
         networkEnabled: Boolean = true,
         sessionsFail: Boolean = false,
     ): Triple<ResourceLoader, RecordingTransport, RecordingTransport> {
         val index = OfflineServingIndex()
-        index.publish(
-            OfflineServingSnapshot(served.map { ResourceCacheKey(it, scope).relativePath }.toSet()),
-            this,
-        )
+        index.publish(OfflineServingSnapshot(packs = mapOf(scope.directory to packs)), this)
         val fixture =
             JSONObject(
                 javaClass.classLoader!!

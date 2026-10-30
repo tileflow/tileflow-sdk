@@ -54,8 +54,8 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 /**
- * End-to-end store tests against an in-process Hosted service: packs are created, downloaded,
- * verified, stored in a real pinned partition, updated and removed.
+ * End-to-end store tests against an in-process Hosted service: downloads are created, their packs
+ * downloaded, verified, stored, served in place, updated and removed.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [34])
@@ -72,13 +72,15 @@ class OfflineStoreTest {
     }
 
     @Test
-    fun hostedRegionDownloadsVerifiedResourcesAndWorksOffline() = runBlocking<Unit> {
+    fun hostedRegionDownloadsVerifiedPacksAndWorksOffline() = runBlocking<Unit> {
         val service = OfflineServiceStub()
         val store = store(service)
         val region = store.loadRegion("madrid", madrid())
         assertFalse(region.isAvailable)
-        val done = waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
+        val done = waitFor(store, "madrid") { it.state == COMPLETE }
         assertTrue(done.isAvailable)
+        assertTrue(done.requiredPackCount > 2)
+        assertEquals(done.requiredPackCount, done.completedPackCount)
         assertEquals(done.requiredResourceCount, done.completedResourceCount)
         assertEquals(done.requiredResourceBytes, done.completedResourceBytes)
         assertEquals(service.billable, done.billableResourceCount)
@@ -86,45 +88,76 @@ class OfflineStoreTest {
         assertEquals(done.requiredResourceCount, done.loadedResourceCount)
         assertEquals(done.requiredResourceBytes, done.loadedResourceBytes)
 
-        // Each resource was downloaded once, with the grant only where the manifest asks for it.
+        // Each pack and public file was downloaded once, with the grant only on packs.
         assertEquals(1, service.creations.get())
         for (entry in service.downloads) {
-            assertEquals(entry.url, service.isPublic(entry.url), entry.headers[GRANT] == null)
+            assertEquals(entry.url, entry.url.endsWith(".tfpack"), entry.headers[GRANT] != null)
             assertEquals(emptySet<String>(), entry.headers.keys - GRANT)
         }
-        assertEquals(done.requiredResourceCount, service.downloads.size.toLong())
+        val packs = service.downloads.filter { it.url.endsWith(".tfpack") }
+        assertEquals(done.requiredPackCount, packs.size.toLong())
+        assertEquals("Discovery, profile and a landmark", 3, service.downloads.size - packs.size)
+        assertEquals(done.requiredPackCount, storedPacks().size.toLong())
 
         // Without a network, a new store over the same files has the region and every body.
         service.online = false
-        val offline = store(service)
+        val index = OfflineServingIndex()
+        val offline = store(service, index = index)
         val reopened = offline.region("madrid")!!
         assertTrue(reopened.isAvailable)
-        assertEquals(TileflowOfflineRegion.DownloadState.COMPLETE, reopened.state)
+        assertEquals(COMPLETE, reopened.state)
         offline.core.networkDidConnect()
-        assertEquals(done.requiredResourceCount, service.downloads.size.toLong())
-        for ((url, body) in service.served)
-            assertTrue(url, cache.read(service.key(url), ResourceCacheRetention.PINNED)?.body?.contentEquals(body) == true)
+        assertEquals(packs.size + 3, service.downloads.size)
+        assertTrue(service.served.size > done.requiredPackCount)
+        for ((url, body) in service.served) {
+            val resource = index.resource(service.key(url), cache)
+            assertEquals(url, 200, resource?.metadata?.status)
+            assertTrue(url, resource?.body?.contentEquals(body) == true)
+        }
     }
 
     @Test
     fun killedDownloadResumesWithoutDownloadingAgain() = runBlocking<Unit> {
         val service = OfflineServiceStub()
-        val first = store(service, fetcher = FreezingFetcher(service, 20))
+        val first = store(service, fetcher = FreezingFetcher(service, 8))
         first.loadRegion("madrid", madrid())
-        waitUntil { service.downloads.size >= 20 }
+        waitUntil { service.downloads.size >= 8 }
         // The process ends: nothing more is written, a line of the progress log is cut short and a
-        // partial staging file is left behind.
+        // partial pack is left behind.
         val version = layout().regions.walkTopDown().first { it.name == "v1" }
         File(version, "progress").appendText("0123abc")
-        File(version, "staging-partial").writeText("partial")
+        layout().packs.incoming.mkdirs()
+        File(layout().packs.incoming, "x.tfpack.part").writeText("partial")
 
         val second = store(service)
-        val done = waitFor(second, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
-        assertEquals(done.requiredResourceCount, done.completedResourceCount)
+        val done = waitFor(second, "madrid") { it.state == COMPLETE }
+        assertEquals(done.requiredPackCount, done.completedPackCount)
         val bodies = service.downloads.filter { it.status == 200 }.groupingBy { it.url }.eachCount()
-        assertEquals(done.requiredResourceCount, bodies.size.toLong())
-        assertEquals("No resource is downloaded twice", 1, bodies.values.max())
+        assertEquals(done.requiredPackCount + 3, bodies.size.toLong())
+        assertEquals("Nothing is downloaded twice", 1, bodies.values.max())
         assertEquals(1, service.creations.get())
+    }
+
+    @Test
+    fun corruptedPacksAreDownloadedAgainAndNeverStored() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        service.corruptPacks = 1
+        val store = store(service)
+        store.loadRegion("madrid", madrid())
+        val done = waitFor(store, "madrid") { it.state == COMPLETE }
+        val packs = service.downloads.filter { it.url.endsWith(".tfpack") }
+        assertEquals("One pack came twice", done.requiredPackCount + 1, packs.size.toLong())
+
+        // A pack that never verifies stops the download; nothing damaged is kept.
+        val damaged = OfflineServiceStub()
+        damaged.corruptPacks = 1_000
+        val other = store(damaged, root = "damaged")
+        other.loadRegion("madrid", madrid())
+        val failed = waitFor(other, "madrid") { it.state == FAILED }
+        assertEquals(TileflowOfflineErrorCode.INVALID_RESPONSE, failed.error?.code)
+        assertEquals("verificationFailed", failed.error?.context?.reason)
+        assertFalse(failed.isAvailable)
+        assertEquals(emptyList<File>(), storedPacks("damaged"))
     }
 
     @Test
@@ -133,25 +166,27 @@ class OfflineStoreTest {
         val space = AtomicReference<Long?>(1024)
         val store = store(service, space = space)
         store.loadRegion("madrid", madrid())
-        val full = waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.FAILED }
+        val full = waitFor(store, "madrid") { it.state == FAILED }
         assertEquals(TileflowOfflineErrorCode.INSUFFICIENT_STORAGE, full.error?.code)
         assertTrue(service.downloads.isEmpty())
 
         // The disk fills during the download.
         space.set(null)
-        service.onDownload = { if (it == 70) space.set(512) }
+        service.onDownload = { count -> if (count == 8) space.set(512) }
         store.resumeRegion("madrid")
-        val again = waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.FAILED }
+        val again = waitFor(store, "madrid") { it.state == FAILED }
         assertEquals(TileflowOfflineErrorCode.INSUFFICIENT_STORAGE, again.error?.code)
         assertFalse(again.isAvailable)
-        assertTrue(again.completedResourceCount >= 64)
+        assertTrue(again.completedPackCount >= 1)
+        assertTrue(again.completedPackCount < again.requiredPackCount)
 
         space.set(null)
         service.onDownload = null
         store.resumeRegion("madrid")
-        val done = waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
-        assertEquals(done.requiredResourceCount, done.completedResourceCount)
-        assertEquals(service.downloads.size, service.downloads.map { it.url }.toSet().size)
+        val done = waitFor(store, "madrid") { it.state == COMPLETE }
+        assertEquals(done.requiredPackCount, done.completedPackCount)
+        val bodies = service.downloads.filter { it.status == 200 }.map { it.url }
+        assertEquals(bodies.size, bodies.toSet().size)
     }
 
     @Test
@@ -176,15 +211,15 @@ class OfflineStoreTest {
             )
         )
         // The disk is full until the map cache is cleared.
-        val store = store(service, available = { if (cache.usage().bytes > 0) 1024L else null })
+        val store = store(service, available = { if (cache.usage().bytes > 0) 1024 else null })
         store.loadRegion("madrid", madrid())
-        val done = waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
+        val done = waitFor(store, "madrid") { it.state == COMPLETE }
         assertTrue(done.isAvailable)
         assertEquals(0, cache.usage().entries)
     }
 
     @Test
-    fun fiftyThousandResourcePack() = runBlocking<Unit> {
+    fun fiftyThousandResourceDownload() = runBlocking<Unit> {
         val service = OfflineServiceStub()
         service.tileLimit = 49_998
         service.documentsPublicOnly = true
@@ -192,24 +227,27 @@ class OfflineStoreTest {
         val store = store(service, concurrency = 64)
         val options =
             TileflowOfflineRegionLoadOptions(
-                TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(10.0, 10.0, 11.5, 11.5)),
+                TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(10.0, 10.0, 12.5, 12.5)),
                 TileflowOfflineContent.Hosted(MAP_ID, listOf("default")),
-                minZoom = 16,
-                maxZoom = 16,
+                minZoom = 11,
+                maxZoom = 15,
             )
         val estimate = store.estimateRegion(options)
         assertEquals(50_000L, estimate.resourceCount)
         assertEquals(49_998L, estimate.billableResourceCount)
         assertEquals(50L, estimate.mapViews)
+        assertEquals(mapOf("world" to 49_998L), estimate.tileCounts)
+        assertTrue(estimate.packCount < 400)
         val started = System.currentTimeMillis()
         store.loadRegion("large", options)
-        val done =
-            waitFor(store, "large", timeoutMillis = 600_000) {
-                it.state == TileflowOfflineRegion.DownloadState.COMPLETE
-            }
+        val done = waitFor(store, "large", timeoutMillis = 600_000) { it.state == COMPLETE }
         assertEquals(50_000L, done.completedResourceCount)
-        assertEquals("The estimate's pack is reused", 1, service.creations.get())
-        println("50,000 resources stored in ${(System.currentTimeMillis() - started) / 1000} s")
+        assertEquals(estimate.packCount, done.completedPackCount)
+        assertEquals("The estimate's download is reused", 1, service.creations.get())
+        println(
+            "50,000 resources in ${estimate.packCount} packs stored in " +
+                "${(System.currentTimeMillis() - started) / 1000} s"
+        )
 
         // The device holds 49,998 billable resources of 50,000: a further region does not fit.
         try {
@@ -222,80 +260,107 @@ class OfflineStoreTest {
     }
 
     @Test
-    fun updatesDownloadOnlyChangesAndKeepTheStoredVersionUntilComplete() = runBlocking<Unit> {
-        val service = OfflineServiceStub()
-        val store = store(service)
-        store.loadRegion("madrid", madrid())
-        waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
-        val first = service.downloads.size
+    fun updatesDownloadOnlyChangedPacksAndKeepTheStoredVersionUntilComplete() =
+        runBlocking<Unit> {
+            val service = OfflineServiceStub()
+            val index = OfflineServingIndex()
+            val store = store(service, index = index)
+            store.loadRegion("madrid", madrid())
+            waitFor(store, "madrid") { it.state == COMPLETE }
+            val first = service.downloads.size
+            val oldTile = service.tileUrl(service.changedTile)
 
-        // Due only after the service's interval.
-        store.core.checkForUpdates()
-        assertEquals(0, service.revalidations.get())
-        service.clock.addAndGet(86_401_000)
-        service.revalidationState = "update_available"
-        store.core.networkDidConnect()
-        assertEquals(
-            TileflowOfflineRegion.UpdateState.UpdateAvailable,
-            store.region("madrid")!!.updateState,
-        )
-
-        // The deployment changes the style and one tile; the rest answers 304.
-        val oldStyle = service.styleUrl
-        service.publish()
-        service.freezeAfter = first + 5
-        store.loadRegion("madrid", madrid())
-        waitUntil { service.downloads.size >= first + 5 }
-        val updating = store.region("madrid")!!
-        assertTrue("The stored version stays while the update downloads", updating.isAvailable)
-        assertNotNull(cache.read(service.key(oldStyle), ResourceCacheRetention.PINNED))
-
-        service.freezeAfter = null
-        store.pauseRegion("madrid")
-        store.resumeRegion("madrid")
-        val done =
-            waitFor(store, "madrid") {
-                it.state == TileflowOfflineRegion.DownloadState.COMPLETE && it.completedAtMillis != null
-            }
-        val update = service.downloads.drop(first)
-        assertEquals(
-            service.changedUrls.toSet(),
-            update.filter { it.status == 200 }.map { it.url }.toSet(),
-        )
-        // Only the changed resources were loaded; the rest completed unchanged.
-        assertEquals(service.changedUrls.size.toLong(), done.loadedResourceCount)
-        assertEquals(done.requiredResourceCount, done.completedResourceCount)
-        assertTrue(update.filter { it.status == 304 }.all { it.headers["If-None-Match"] != null })
-        assertEquals(TileflowOfflineRegion.UpdateState.Current, done.updateState)
-        // The previous deployment's style is released; the changed tile holds its new body.
-        assertNull(cache.read(service.key(oldStyle), ResourceCacheRetention.PINNED))
-        for (url in service.changedUrls)
-            assertTrue(
-                cache.read(service.key(url), ResourceCacheRetention.PINNED)!!
-                    .body
-                    .contentEquals(service.served[url])
+            // Due only after the service's interval.
+            store.core.checkForUpdates()
+            assertEquals(0, service.revalidations.get())
+            service.clock.addAndGet(86_401_000)
+            service.revalidationState = "update_available"
+            store.core.networkDidConnect()
+            assertEquals(
+                TileflowOfflineRegion.UpdateState.UpdateAvailable,
+                store.region("madrid")!!.updateState,
             )
-    }
+
+            // A deployment changes the styles and a World release one tile; every other pack
+            // answers 304.
+            service.publish()
+            service.freezeAfter = first + 4
+            store.loadRegion("madrid", madrid())
+            waitUntil { service.downloads.size >= first + 4 }
+            val updating = store.region("madrid")!!
+            assertTrue("The stored version stays while the update downloads", updating.isAvailable)
+            assertTrue(
+                index.resource(service.key(oldTile), cache)!!
+                    .body
+                    .contentEquals("tile ${service.changedTile.name}#1".toByteArray())
+            )
+
+            service.freezeAfter = null
+            store.pauseRegion("madrid")
+            store.resumeRegion("madrid")
+            val done = waitFor(store, "madrid") { it.state == COMPLETE && it.completedAtMillis != null }
+            val update = service.downloads.drop(first)
+            assertEquals(
+                setOf(
+                    "$ORIGIN/v1/offline/documents/style.tfpack",
+                    service.changedPackUrl,
+                    "$ORIGIN/maps/$MAP_ID/mobile/webview-v1/manifest.json",
+                ),
+                update.filter { it.status == 200 }.map { it.url }.toSet(),
+            )
+            assertTrue(update.filter { it.status == 304 }.all { it.headers["If-None-Match"] != null })
+            assertEquals(
+                "Every pack of the changed release was asked for",
+                done.requiredPackCount,
+                update.count { it.url.endsWith(".tfpack") }.toLong(),
+            )
+            assertEquals(TileflowOfflineRegion.UpdateState.Current, done.updateState)
+            assertEquals(done.requiredPackCount, done.completedPackCount)
+            assertTrue(done.loadedResourceCount < done.requiredResourceCount)
+            // The new release serves the changed tile; the previous version's packs are released.
+            assertTrue(
+                index.resource(service.key(service.tileUrl(service.changedTile)), cache)!!
+                    .body
+                    .contentEquals("tile ${service.changedTile.name}#2".toByteArray())
+            )
+            assertNull(index.resource(service.key(oldTile), cache))
+            assertEquals(done.requiredPackCount, storedPacks().size.toLong())
+
+            // A deployment alone keeps every tile pack without asking.
+            val before = service.downloads.size
+            service.deploy()
+            store.loadRegion("madrid", madrid())
+            waitFor(store, "madrid") { it.state == COMPLETE }
+            assertEquals(
+                setOf(
+                    "$ORIGIN/v1/offline/documents/style.tfpack",
+                    "$ORIGIN/v1/offline/documents/glyphs/Noto%20Sans%20Regular/0.tfpack",
+                ),
+                service.downloads.drop(before).map { it.url }.filter { it.endsWith(".tfpack") }.toSet(),
+            )
+        }
 
     @Test
     fun metadataChangesInPlaceWithoutDownloadingAgain() = runBlocking<Unit> {
         val service = OfflineServiceStub()
-        val store = store(service, fetcher = FreezingFetcher(service, 10))
-        store.loadRegion("madrid", madrid().copy(metadata = mapOf("name" to "Madrid")))
-        waitUntil { service.downloads.size >= 10 }
+        val store = store(service, fetcher = FreezingFetcher(service, 5))
+        val options = madrid().copy(metadata = mapOf("name" to "Madrid"))
+        store.loadRegion("madrid", options)
+        waitUntil { service.downloads.size >= 5 }
         // Loading with new metadata keeps the download in progress.
-        store.loadRegion("madrid", madrid().copy(metadata = mapOf("name" to "Centro")))
+        val renamed = options.copy(metadata = mapOf("name" to "Centro"))
+        store.loadRegion("madrid", renamed)
         assertEquals(mapOf("name" to "Centro"), store.region("madrid")!!.options.metadata)
-        assertEquals("No new pack", 1, service.creations.get())
+        assertEquals("No new download", 1, service.creations.get())
 
         val other = store(service, root = "other")
-        other.loadRegion("madrid", madrid())
-        waitFor(other, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
+        other.loadRegion("madrid", renamed)
+        waitFor(other, "madrid") { it.state == COMPLETE }
         val downloads = service.downloads.size
         other.updateRegionMetadata("madrid", mapOf("name" to "Sol"))
         val updated = other.region("madrid")!!
         assertEquals(mapOf("name" to "Sol"), updated.options.metadata)
-        assertEquals(TileflowOfflineRegion.DownloadState.COMPLETE, updated.state)
+        assertEquals(COMPLETE, updated.state)
         assertEquals("Nothing downloads", downloads, service.downloads.size)
         // The change survives a new store over the same files.
         assertEquals(
@@ -315,7 +380,7 @@ class OfflineStoreTest {
         val service = OfflineServiceStub()
         val store = store(service)
         store.loadRegion("madrid", madrid())
-        waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
+        val done = waitFor(store, "madrid") { it.state == COMPLETE }
         service.clock.addAndGet(86_401_000)
         service.revalidationState = "not_updatable"
         store.core.checkForUpdates()
@@ -328,21 +393,29 @@ class OfflineStoreTest {
         service.clock.addAndGet(10 * 86_400_000L)
         store.core.checkForUpdates()
         assertEquals(1, service.revalidations.get())
-        for ((url, body) in service.served)
-            assertTrue(cache.read(service.key(url), ResourceCacheRetention.PINNED)!!.body.contentEquals(body))
+        assertEquals(done.requiredPackCount, storedPacks().size.toLong())
     }
 
     @Test
-    fun expiredGrantCreatesThePackAgain() = runBlocking<Unit> {
+    fun expiredOrOverusedGrantsCreateTheDownloadAgain() = runBlocking<Unit> {
         val service = OfflineServiceStub()
-        service.expireGrantAfter = 30
+        service.expireGrantAfter = 6
         val store = store(service)
         store.loadRegion("madrid", madrid())
-        val done = waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
+        val done = waitFor(store, "madrid") { it.state == COMPLETE }
         assertEquals(2, service.creations.get())
-        assertEquals(done.requiredResourceCount, done.completedResourceCount)
+        assertEquals(done.requiredPackCount, done.completedPackCount)
         val bodies = service.downloads.filter { it.status == 200 }.map { it.url }
-        assertEquals("Stored resources are kept", bodies.size, bodies.toSet().size)
+        assertEquals("Stored packs are kept", bodies.size, bodies.toSet().size)
+
+        // A pack asked for too often under one grant: the download is created again.
+        val repeated = OfflineServiceStub()
+        repeated.refuseOnce =
+            OfflineServiceStub.Refusal(5, 429, "OFFLINE_PACK_REPEAT_LIMIT_REACHED", null)
+        val again = store(repeated, root = "repeated")
+        again.loadRegion("madrid", madrid())
+        waitFor(again, "madrid") { it.state == COMPLETE }
+        assertEquals(2, repeated.creations.get())
 
         // A window that ends before the download continues is renewed before downloading.
         val other = OfflineServiceStub()
@@ -351,26 +424,27 @@ class OfflineStoreTest {
         waitUntil { other.downloads.size >= 5 }
         other.clock.addAndGet(86_400_000)
         val second = store(other, root = "second")
-        waitFor(second, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
+        waitFor(second, "madrid") { it.state == COMPLETE }
         assertEquals(2, other.creations.get())
     }
 
     @Test
     fun recoverableRefusalsWaitAsAsked() = runBlocking<Unit> {
         val service = OfflineServiceStub()
-        service.refuseOnce = Refusal(10, 429, "RATE_LIMITED", "7")
-        val sleeps = CopyOnWriteArrayList<Long>()
+        service.refuseOnce =
+            OfflineServiceStub.Refusal(6, 429, "OFFLINE_TEAM_DAILY_LIMIT_REACHED", "7")
+        val sleeps = java.util.Collections.synchronizedList(mutableListOf<Long>())
         val store = store(service, sleeps = sleeps)
         store.loadRegion("madrid", madrid())
-        waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
-        assertTrue(7_000L in sleeps)
+        waitFor(store, "madrid") { it.state == COMPLETE }
+        assertTrue(sleeps.toString(), 7_000L in sleeps)
 
         // A refusal that waiting cannot repair stops the download.
         val refused = OfflineServiceStub()
-        refused.refuseOnce = Refusal(3, 429, "COMMERCIAL_MAP_LIMIT_REACHED", null)
+        refused.refuseOnce = OfflineServiceStub.Refusal(5, 429, "COMMERCIAL_MAP_LIMIT_REACHED", null)
         val other = store(refused, root = "refused")
         other.loadRegion("madrid", madrid())
-        val failed = waitFor(other, "madrid") { it.state == TileflowOfflineRegion.DownloadState.FAILED }
+        val failed = waitFor(other, "madrid") { it.state == FAILED }
         assertEquals(TileflowOfflineErrorCode.QUOTA_EXCEEDED, failed.error?.code)
     }
 
@@ -379,62 +453,57 @@ class OfflineStoreTest {
         val service = OfflineServiceStub()
         val store = store(service)
         store.loadRegion("madrid", madrid())
-        waitUntil { service.downloads.isNotEmpty() }
+        waitUntil { service.downloads.size >= 1 }
         service.online = false
         val waiting = waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.WAITING }
         assertEquals(TileflowOfflineErrorCode.NETWORK, waiting.error?.code)
         service.online = true
         store.core.networkDidConnect()
-        waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
+        waitFor(store, "madrid") { it.state == COMPLETE }
     }
 
     @Test
-    fun removingReleasesOnlyResourcesNoOtherRegionUses() = runBlocking<Unit> {
+    fun removingReleasesOnlyPacksNoOtherRegionUses() = runBlocking<Unit> {
         val service = OfflineServiceStub()
         val store = store(service)
         val events = CopyOnWriteArrayList<TileflowOfflineRegionEvent>()
         val subscription = store.subscribe { events.add(it) }
         store.loadRegion("madrid", madrid())
-        waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
-        val first = service.served.keys.toSet()
+        waitFor(store, "madrid") { it.state == COMPLETE }
+        val first = storedPacks().toSet()
         store.loadRegion("nearby", madrid(east = -3.67))
-        waitFor(store, "nearby") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
-        val all = service.served.keys.toSet()
+        waitFor(store, "nearby") { it.state == COMPLETE }
+        val all = storedPacks().toSet()
         assertTrue(all.size > first.size)
         assertEquals(listOf("madrid", "nearby"), store.allRegions().map { it.id })
 
         store.removeRegion("nearby")
-        for (url in all)
-            assertEquals(
-                url,
-                url in first,
-                cache.read(service.key(url), ResourceCacheRetention.PINNED) != null,
-            )
+        assertEquals("Identical packs are shared", first, storedPacks().toSet())
         store.removeRegion("madrid")
-        for (url in all) assertNull(url, cache.read(service.key(url), ResourceCacheRetention.PINNED))
+        assertEquals(emptyList<File>(), storedPacks())
         assertTrue(store.allRegions().isEmpty())
-        waitUntil { TileflowOfflineRegionEvent.Removed("madrid") in events }
+        waitUntil { events.contains(TileflowOfflineRegionEvent.Removed("madrid")) }
         subscription.cancel()
     }
 
     @Test
     fun pauseAndCancel() = runBlocking<Unit> {
         val service = OfflineServiceStub()
-        service.freezeAfter = 10
+        service.freezeAfter = 5
         val store = store(service)
         store.loadRegion("madrid", madrid())
-        waitUntil { service.downloads.size >= 10 }
+        waitUntil { service.downloads.size >= 5 }
         store.pauseRegion("madrid")
         assertEquals(TileflowOfflineRegion.DownloadState.PAUSED, store.region("madrid")!!.state)
-        delay(100)
         service.freezeAfter = null
         delay(50)
-        assertEquals(10, service.downloads.size)
+        assertEquals(5, service.downloads.size)
 
         // Cancelling a region that never completed removes it and what it stored.
         store.cancelRegion("madrid")
         assertTrue(store.allRegions().isEmpty())
-        for (url in service.served.keys)
+        assertEquals(emptyList<File>(), storedPacks())
+        for (url in service.served.keys.filter(service::isPublic))
             assertNull(cache.read(service.key(url), ResourceCacheRetention.PINNED))
         try {
             store.resumeRegion("madrid")
@@ -491,11 +560,16 @@ class OfflineStoreTest {
         val store = store(service, index = index)
         val style = service.key(service.styleUrl)
         store.loadRegion("madrid", madrid())
-        waitFor(store, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
-        assertTrue(index.serves(style))
+        waitFor(store, "madrid") { it.state == COMPLETE }
+        assertEquals(
+            "application/json",
+            index.resource(style, cache)?.metadata?.headers?.get("Content-Type"),
+        )
         val credits = index.credits(ResourceCacheScope.grant(URI(ORIGIN), MAP_ID))
         assertEquals(listOf("es-ign"), credits.map { it.id })
         assertEquals(listOf(listOf(-9.4, 35.9, 4.4, 43.8)), credits.single().regions)
+        // A tile the region does not cover is not known offline.
+        assertNull(index.resource(service.key(service.tileUrl(OfflineTileId(12, 0, 0))), cache))
 
         // A region that is still downloading is not used.
         service.publish()
@@ -503,7 +577,7 @@ class OfflineStoreTest {
         service.freezeAfter = frozen
         store.loadRegion("madrid", madrid())
         waitUntil { service.downloads.size >= frozen }
-        assertFalse(index.serves(service.key(service.styleUrl)))
+        assertNull(index.resource(service.key(service.styleUrl), cache))
         store.cancelRegion("madrid")
         service.freezeAfter = null
 
@@ -512,8 +586,8 @@ class OfflineStoreTest {
         service.revalidationState = "not_updatable"
         store.core.checkForUpdates()
         assertFalse(store.region("madrid")!!.isAvailable)
-        assertFalse(index.serves(style))
-        assertNotNull(cache.read(style, ResourceCacheRetention.PINNED))
+        assertNull(index.resource(style, cache))
+        assertTrue(storedPacks().isNotEmpty())
     }
 
     @Test
@@ -554,9 +628,6 @@ class OfflineStoreTest {
                 ResourceCacheKey(URI("https://a.test/t/1/2/3.pbf"), ResourceCacheScope.Shared),
                 4,
                 null,
-                billable = true,
-                isPublic = false,
-                pack = 0,
             )
         fun response(body: ByteArray, etag: String?, encoding: String? = null, wire: Long?, sha: String? = null) =
             OfflineFetchResponse(
@@ -587,9 +658,118 @@ class OfflineStoreTest {
         assertNull(OfflineDownloader.etag("\"short\""))
     }
 
+    /**
+     * The service's own packs, generated by its code for two releases: downloaded, verified, served
+     * in place, and updated with only the changed packs transferred.
+     */
+    @Test
+    fun platformsPacksDownloadServeAndUpdate() = runBlocking<Unit> {
+        val service = OfflinePlatformFixture()
+        val index = OfflineServingIndex()
+        val subscribers = OfflineSubscribers()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO).also(scopes::add)
+        val configuration =
+            TileflowConfiguration(
+                apiOrigin = URI(ORIGIN),
+                mapCredential = TileflowCredential("tf_public_" + "c".repeat(48)),
+            )
+        val store =
+            TileflowOfflineStore(
+                OfflineStoreCore(
+                    layout("platform"),
+                    cache,
+                    service,
+                    { OfflinePackClient(configuration, { service }, now = { OfflinePlatformFixture.NOW }) },
+                    { null },
+                    subscribers,
+                    index,
+                    { OfflineScopeRunner(it, scope) },
+                    reserveBytes = 4096,
+                    now = { OfflinePlatformFixture.NOW },
+                ),
+                subscribers,
+            )
+        val options =
+            TileflowOfflineRegionLoadOptions(
+                TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(-3.71, 40.41, -3.69, 40.425)),
+                TileflowOfflineContent.Hosted(OfflinePlatformFixture.MAP_ID, listOf("default")),
+                minZoom = 10,
+                maxZoom = 14,
+            )
+        store.loadRegion("fixture", options)
+        val done = waitFor(store, "fixture") { it.state == COMPLETE }
+        assertEquals(9L, done.requiredPackCount)
+        assertEquals(9L, done.completedPackCount)
+        assertEquals(25L, done.requiredResourceCount)
+        assertEquals(23L, done.billableResourceCount)
+        assertEquals("Nine packs, discovery", 10, service.downloads.count { it.status == 200 })
+
+        // Every entry of every pack answers as the route serves it, decoded.
+        val scopeOfMap = ResourceCacheScope.grant(URI(ORIGIN), OfflinePlatformFixture.MAP_ID)
+        val manifest = service.manifest(1)
+        val held = HashSet<String>()
+        for (pack in service.packs(1)) {
+            val file = OfflinePlatformFixture.file(pack.file)
+            val entries = OfflinePackFormat.index(file)
+            for (entry in entries.entries.values) {
+                val raw = OfflinePackFormat.body(entry, file)
+                var address = entry.name
+                val tile = OfflineTileId.ofName(entry.name)
+                val source = manifest.sources.firstOrNull { pack.id.startsWith("tiles/${it.source}/") }
+                if (entries.kind == OfflinePackKind.TILES && tile != null && source != null) {
+                    address = source.template.url(tile).toASCIIString()
+                    held.add("${source.source}/${tile.name}")
+                }
+                val served = index.resource(ResourceCacheKey(URI(address), scopeOfMap), cache)
+                assertEquals(address, 200, served?.metadata?.status)
+                val expected = if (entry.contentEncoding == "gzip") OfflinePackFormat.gunzip(raw) else raw
+                assertTrue(address, served!!.body.contentEquals(expected))
+            }
+        }
+        // The World tile the archive does not store, and Terrain inside the region above the zoom
+        // the download stops at, answer as online; outside the region nothing is known.
+        val world = manifest.source("world")!!
+        val terrain = manifest.source("terrain")!!
+        val cover = OfflineTileCover(manifest.region, 13)
+        val unstored =
+            cover.rows!!.flatMap { y ->
+                cover.row(y).flatMap { xs -> xs.map { OfflineTileId(13, it, y) } }
+            }.filter { "world/${it.name}" !in held }
+        assertTrue("The archive does not store every covered tile", unstored.isNotEmpty())
+        val deep = OfflineTileCover(manifest.region, 14)
+        val inside = OfflineTileId(14, deep.row(deep.rows!!.first)[0].first, deep.rows!!.first)
+        for (url in listOf(world.template.url(unstored[0]), terrain.template.url(inside))) {
+            val answer = index.resource(ResourceCacheKey(url, scopeOfMap), cache)
+            assertEquals(url.toString(), 404, answer?.metadata?.status)
+            assertEquals(0, answer!!.body.size)
+        }
+        assertNull(index.resource(ResourceCacheKey(terrain.template.url(OfflineTileId(14, 0, 0)), scopeOfMap), cache))
+
+        // A new World release: Terrain's packs are kept without asking, every other pack is asked
+        // for with its digest, and only the changed ones transfer.
+        val before = service.downloads.size
+        service.release = 2
+        store.loadRegion("fixture", options)
+        val updated =
+            waitFor(store, "fixture") {
+                it.state == COMPLETE && it.loadedResourceCount < it.requiredResourceCount
+            }
+        assertEquals(9L, updated.completedPackCount)
+        val asked = service.downloads.drop(before).filter { it.url.endsWith(".tfpack") }
+        assertFalse("Terrain did not change", asked.any { "/tiles/terrain/" in it.url })
+        val first = service.packs(1).associate { it.id to it.etag }
+        val changed = service.packs(2).filter { first[it.id] != it.etag }.map { it.url }.toSet()
+        assertTrue(changed.isNotEmpty())
+        assertEquals(changed, asked.filter { it.status == 200 }.map { it.url }.toSet())
+        assertTrue(asked.filter { it.status == 304 }.all { it.headers["If-None-Match"] != null })
+    }
+
     // Helpers.
 
     private fun layout(root: String = "offline") = OfflineLayout(File(directory, root))
+
+    private fun storedPacks(root: String = "offline"): List<File> =
+        layout(root).packs.directory.listFiles().orEmpty().filter { it.isFile }.sortedBy { it.name }
 
     private fun core(
         service: OfflineServiceStub,
@@ -687,8 +867,6 @@ class OfflineStoreTest {
         }
     }
 
-    internal data class Refusal(val at: Int, val status: Int, val code: String, val retryAfter: String?)
-
     /** A process that ends after [after] requests: later requests never return. */
     private class FreezingFetcher(private val base: OfflineResourceFetching, after: Int) :
         OfflineResourceFetching {
@@ -703,344 +881,11 @@ class OfflineStoreTest {
         }
     }
 
-    /**
-     * A Hosted service in process: it creates packs from the region's cover, serves their
-     * resources with the contract's headers and statuses, and records every download.
-     */
-    private class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetching {
-        class Download(val url: String, val headers: Map<String, String>, val status: Int)
-
-        val clock = AtomicLong(1_793_188_800_000) // 2026-10-28T12:00:00Z
-        val creations = AtomicInteger()
-        val revalidations = AtomicInteger()
-        val downloads = CopyOnWriteArrayList<Download>()
-        val served = java.util.concurrent.ConcurrentHashMap<String, ByteArray>()
-        private val publicUrls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-        private val lock = Any()
-        private var deployment = 1
-        private var changes = HashMap<String, Int>()
-        private val grants = HashMap<String, Pair<Long, Int>>()
-        @Volatile var revalidationState = "current"
-        @Volatile var online = true
-        @Volatile var freezeAfter: Int? = null
-        @Volatile var expireGrantAfter: Int? = null
-        @Volatile var refuseOnce: Refusal? = null
-        @Volatile var tileLimit: Int? = null
-        @Volatile var documentsPublicOnly = false
-        @Volatile var maximumPackResources = 10_000
-        @Volatile var onDownload: ((Int) -> Unit)? = null
-        @Volatile var billable = 0L
-        @Volatile var changedUrls = emptyList<String>()
-
-        private val changedTile: Pair<Int, Int> = run {
-            val cover = OfflineTileCover(OfflinePackRegion.canonical(-3.71, 40.41, -3.69, 40.425)!!, 17)
-            val y = cover.rows!!.first
-            cover.row(y)[0].first to y
-        }
-
-        val styleUrl: String
-            get() = "$ORIGIN/maps/$MAP_ID/mobile/webview-v1/v${synchronized(lock) { deployment }}/light.json"
-
-        fun isPublic(url: String) = url in publicUrls
-
-        fun key(url: String) =
-            ResourceCacheKey(
-                URI(url),
-                if (isPublic(url) || !url.startsWith(ORIGIN)) ResourceCacheScope.Shared
-                else ResourceCacheScope.grant(URI(ORIGIN), MAP_ID),
-            )
-
-        /** A new deployment: a new versioned style URL and new bodies for one tile and the profile. */
-        fun publish() =
-            synchronized(lock) {
-                deployment += 1
-                changes["tile"] = deployment
-                changes["profile"] = deployment
-                changedUrls =
-                    listOf(
-                        "$ORIGIN/tiles/world/17/${changedTile.first}/${changedTile.second}.pbf?map=$MAP_ID",
-                        "$ORIGIN/maps/$MAP_ID/mobile/webview-v1/v$deployment/light.json",
-                        "$ORIGIN/maps/$MAP_ID/mobile/webview-v1/v$deployment/dark.json",
-                        "$ORIGIN/maps/$MAP_ID/mobile/webview-v1/manifest.json",
-                    )
-            }
-
-        private fun body(url: String): ByteArray {
-            var version = 1
-            if ("/tiles/" in url && "/17/${changedTile.first}/${changedTile.second}." in url)
-                version = changes["tile"] ?: 1
-            if (url.endsWith("/webview-v1/manifest.json")) version = changes["profile"] ?: 1
-            if (url == "https://tiles.example.com/manifest.json")
-                return """{"version":1,"maps":{"streets":{"defaultTheme":"day","themes":{"day":{"styleUrl":"./style.json","fontFaces":[{"family":"Face","source":"./fonts/face.woff2"}]}}}}}"""
-                    .toByteArray()
-            if (url == "https://tiles.example.com/style.json")
-                return """{"version":8,"sprite":"https://tiles.example.com/sprites/base","glyphs":"https://tiles.example.com/fonts/{fontstack}/{range}.pbf","sources":{"places":{"type":"geojson","data":"./data/places.json"}},"layers":[{"id":"l","type":"symbol","layout":{"text-font":["Noto Sans Regular"],"text-field":"x"}}]}"""
-                    .toByteArray()
-            return "$url#$version".toByteArray()
-        }
-
-        // NativeHTTPTransporting.
-
-        override fun send(request: Request, timeoutMillis: Long): ResourcePayload {
-            if (!online) throw IOException("offline")
-            if (request.url.encodedPath.endsWith("/revalidate")) {
-                revalidations.incrementAndGet()
-                val checked = date(clock.get())
-                val body =
-                    if (revalidationState == "not_updatable")
-                        """{"state":"not_updatable","reason":"credential_revoked","checkedAt":"$checked"}"""
-                    else
-                        """{"state":"$revalidationState","checkedAt":"$checked","intervalSeconds":86400}"""
-                return ResourcePayload(body.toByteArray(), 200, emptyMap())
-            }
-            val buffer = Buffer().also { request.body!!.writeTo(it) }
-            val packRequest = OfflinePackRequest.fromJson(buffer.readByteArray())!!
-            return synchronized(lock) {
-                creations.incrementAndGet()
-                revalidationState = "current"
-                ResourcePayload(created(packRequest, clock.get()), 201, emptyMap())
-            }
-        }
-
-        override fun cancelActive() {}
-
-        override fun close() {}
-
-        private fun created(request: OfflinePackRequest, now: Long): ByteArray {
-            val mapPath = "$ORIGIN/maps/$MAP_ID/mobile"
-            val documents = JSONArray()
-            var billableDocuments = 0
-            var bytes = 0L
-            fun document(kind: String, url: String, billable: Boolean, public: Boolean) {
-                val body = body(url)
-                if (public) publicUrls.add(url)
-                if (billable) billableDocuments += 1
-                bytes += body.size
-                documents.put(
-                    JSONObject()
-                        .put("kind", kind)
-                        .put("url", url)
-                        .put("bytes", body.size)
-                        .put("sha256", sha256Hex(body))
-                        .put("billable", billable)
-                        .put("access", if (public) "public" else "grant")
-                )
-            }
-            document("discovery", "$mapPath/manifest.json", billable = false, public = true)
-            document("profile", "$mapPath/webview-v1/manifest.json", billable = false, public = true)
-            if (!documentsPublicOnly) {
-                for (theme in request.themes)
-                    document("style", "$mapPath/webview-v1/v$deployment/$theme.json", billable = true, public = false)
-                document("glyph", "$ORIGIN/fonts/Noto%20Sans%20Regular/0-255.pbf", billable = true, public = false)
-                document("landmark", "$ORIGIN/landmarks/2026-10/notice.txt", billable = false, public = true)
-            }
-            val template = "$ORIGIN/tiles/world/{z}/{x}/{y}.pbf?map=$MAP_ID"
-            val entries = JSONArray()
-            var count = 0
-            zooms@ for (zoom in request.minZoom..request.maxZoom) {
-                val cover = OfflineTileCover(request.region, zoom)
-                val rows = cover.rows ?: continue
-                for (y in rows) for (xs in cover.row(y)) for (x in xs) {
-                    if (tileLimit?.let { count >= it } == true) break@zooms
-                    val url = template.replace("{z}", "$zoom").replace("{x}", "$x").replace("{y}", "$y")
-                    val size = body(url).size
-                    bytes += size
-                    count += 1
-                    entries.put(JSONArray().put(zoom).put(x).put(y).put(size))
-                }
-            }
-            billable = (billableDocuments + count).toLong()
-            grants.clear()
-            val grant = "tf_offline_v1.g${creations.get()}.sig"
-            grants[grant] = (now + 86_400_000) to 0
-            val manifest =
-                JSONObject()
-                    .put("version", 1)
-                    .put("packId", "opk_" + "%022d".format(creations.get()))
-                    .put("mapId", request.mapId)
-                    .put("profile", request.profile)
-                    .put("deploymentVersion", deployment)
-                    .put("themes", JSONArray(request.themes))
-                    .put("region", request.region.toJson())
-                    .put("minZoom", request.minZoom)
-                    .put("maxZoom", request.maxZoom)
-                    .put("terrainMaxZoom", request.terrainMaxZoom)
-                    .put("createdAt", date(now))
-                    .put("documents", documents)
-                    .put(
-                        "tiles",
-                        JSONArray()
-                            .put(
-                                JSONObject()
-                                    .put("source", "world")
-                                    .put("template", template)
-                                    .put("zooms", JSONArray().put(request.minZoom).put(request.maxZoom))
-                                    .put("entries", entries)
-                            ),
-                    )
-                    .put("excluded", JSONArray())
-                    .put(
-                        "totals",
-                        JSONObject()
-                            .put("resources", documents.length() + count)
-                            .put("billableResources", billable)
-                            .put("bytes", bytes),
-                    )
-                    .put(
-                        "attribution",
-                        JSONObject()
-                            .put(
-                                "sources",
-                                JSONArray()
-                                    .put(
-                                        JSONObject()
-                                            .put("source", "world")
-                                            .put("text", "OpenStreetMap")
-                                            .put(
-                                                "regionalObligations",
-                                                JSONArray()
-                                                    .put(
-                                                        JSONObject()
-                                                            .put("id", "es-ign")
-                                                            .put("exact", "IGN España")
-                                                            .put("href", "https://www.ign.es")
-                                                            .put(
-                                                                "regions",
-                                                                JSONArray()
-                                                                    .put(
-                                                                        JSONArray("[-9.4,35.9,4.4,43.8]")
-                                                                    ),
-                                                            )
-                                                    ),
-                                            )
-                                    ),
-                            ),
-                    )
-                    .put(
-                        "limits",
-                        JSONObject()
-                            .put("maxPackResources", maximumPackResources)
-                            .put("dailyDownloads", 200_000),
-                    )
-                    .put(
-                        "revalidation",
-                        JSONObject()
-                            .put("url", "$ORIGIN/v1/offline/packs/revalidate")
-                            .put("intervalSeconds", 86_400),
-                    )
-                    .put("download", JSONObject().put("expiresAt", date(now + 86_400_000)))
-            return JSONObject()
-                .put("version", 1)
-                .put("kind", "offline_pack")
-                .put("grant", grant)
-                .put("manifest", manifest)
-                .toString()
-                .toByteArray()
-        }
-
-        // OfflineResourceFetching.
-
-        override suspend fun fetch(request: OfflineFetchRequest): OfflineFetchResponse {
-            val url = request.url.toASCIIString()
-            val context = currentCoroutineContext()
-            var freeze = false
-            val response =
-                synchronized(lock) {
-                    // A request cancelled before a test changes the stub never reaches it.
-                    if (!context.isActive) return@synchronized null
-                    if (!online) return@synchronized null
-                    if (freezeAfter?.let { downloads.size >= it } == true) {
-                        freeze = true
-                        return@synchronized null
-                    }
-                    respond(url, request.headers)
-                }
-            currentCoroutineContext().ensureActive()
-            if (freeze) {
-                delay(Long.MAX_VALUE)
-                error("unreachable")
-            }
-            return response ?: throw IOException("offline")
-        }
-
-        private fun respond(url: String, headers: Map<String, String>): OfflineFetchResponse {
-            val count = downloads.size + 1
-            fun record(response: OfflineFetchResponse): OfflineFetchResponse {
-                downloads.add(Download(url, headers, response.status))
-                if (response.status == 200) served[url] = response.body
-                onDownload?.invoke(count)
-                return response
-            }
-            refuseOnce
-                ?.takeIf { it.at == count }
-                ?.let { refusal ->
-                    refuseOnce = null
-                    return record(
-                        OfflineFetchResponse(
-                            refusal.status,
-                            listOfNotNull(
-                                    "Cache-Control" to "no-store",
-                                    refusal.retryAfter?.let { "Retry-After" to it },
-                                )
-                                .toMap(),
-                            """{"code":"${refusal.code}","error":"refused"}""".toByteArray(),
-                            null,
-                            null,
-                        )
-                    )
-                }
-            if (url.startsWith(ORIGIN) && url !in publicUrls) {
-                val grant = headers[GRANT] ?: ""
-                val entry = grants[grant]
-                var expired = entry == null || clock.get() >= entry.first
-                val limit = expireGrantAfter
-                if (entry != null && limit != null && entry.second >= limit) {
-                    expireGrantAfter = null
-                    grants.remove(grant)
-                    expired = true
-                }
-                if (expired)
-                    return record(
-                        OfflineFetchResponse(
-                            401,
-                            mapOf("Cache-Control" to "no-store"),
-                            """{"code":"OFFLINE_PACK_GRANT_EXPIRED","error":"expired"}""".toByteArray(),
-                            null,
-                            null,
-                        )
-                    )
-                grants[grant] = entry!!.first to entry.second + 1
-            }
-            val body = body(url)
-            val etag = "\"${sha256Hex(body)}\""
-            if (headers["If-None-Match"] == etag)
-                return record(OfflineFetchResponse(304, mapOf("ETag" to etag), ByteArray(0), 0, null))
-            if (url.startsWith("https://tiles.example.com/streets/") && "/14/" in url)
-                return record(OfflineFetchResponse(404, emptyMap(), ByteArray(0), 0, null))
-            return record(
-                OfflineFetchResponse(
-                    200,
-                    mapOf(
-                        "ETag" to etag,
-                        "Cache-Control" to "private, no-cache",
-                        "Content-Type" to "application/octet-stream",
-                    ),
-                    body,
-                    body.size.toLong(),
-                    sha256Hex(body),
-                )
-            )
-        }
-    }
-
     private companion object {
-        const val MAP_ID = "map_offlineofflineof"
-        const val ORIGIN = "https://api.tileflow.test"
-        const val GRANT = "X-Tileflow-Offline-Grant"
-
-        fun date(millis: Long): String =
-            SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
-                .apply { timeZone = TimeZone.getTimeZone("UTC") }
-                .format(millis)
+        const val MAP_ID = OfflineServiceStub.MAP_ID
+        const val ORIGIN = OfflineServiceStub.ORIGIN
+        const val GRANT = OfflineServiceStub.GRANT
+        val COMPLETE = TileflowOfflineRegion.DownloadState.COMPLETE
+        val FAILED = TileflowOfflineRegion.DownloadState.FAILED
     }
 }

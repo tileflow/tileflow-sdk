@@ -2,6 +2,8 @@ package dev.tileflow.sdk.offline
 
 import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.hosted.HostedContract
+import dev.tileflow.sdk.transport.ResourcePolicy
+import dev.tileflow.sdk.transport.sha256Hex
 import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
@@ -13,8 +15,8 @@ import org.json.JSONObject
 import org.json.JSONTokener
 
 /**
- * The signed authority of one Hosted pack: `tf_offline_v1.<payload>.<signature>`. The SDK cannot
- * verify it and never reads it; it sends it only to download the pack's own resources and to
+ * The signed authority of one Hosted download: `tf_offline_v2.<payload>.<signature>`. The SDK
+ * cannot verify it and never reads it; it sends it only to download the download's own packs and to
  * revalidate. [toString] never includes it.
  */
 internal class OfflinePackGrant private constructor(val value: String) {
@@ -22,62 +24,74 @@ internal class OfflinePackGrant private constructor(val value: String) {
 
     override fun hashCode(): Int = value.hashCode()
 
-    override fun toString(): String = "OfflinePackGrant(tf_offline_v1…)"
+    override fun toString(): String = "OfflinePackGrant(tf_offline_v2…)"
+
+    /** A short, stable name for the grant that reveals nothing of it. */
+    val tag: String
+        get() = sha256Hex(value.toByteArray()).take(12)
 
     companion object {
-        private val pattern = Regex("^tf_offline_v1\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$")
+        private val pattern = Regex("^tf_offline_v2\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$")
 
         fun of(value: String): OfflinePackGrant? =
             value.takeIf { it.length <= 16_384 && pattern.matches(it) }?.let(::OfflinePackGrant)
     }
 }
 
-/** One non-tile resource of a pack. */
-internal data class OfflinePackDocument(
-    /**
-     * `discovery`, `profile`, `style`, `tilejson`, `glyph`, `license`, `sprite`, `font` or
-     * `landmark` today; the service may add kinds.
-     */
+/** A free public file a download needs, fetched from its public route without the grant. */
+internal data class OfflinePublicResource(
+    /** `discovery`, `profile`, `landmark` or `model` today; the service may add kinds. */
     val kind: String,
     val url: URI,
-    /** Exact bytes on the wire. */
     val bytes: Long,
-    /** Lowercase hexadecimal SHA-256 of those bytes, when known before download. */
-    val sha256: String?,
-    /** Counted toward the pack's map views and limits. */
-    val billable: Boolean,
-    /** Fetched from its public route without the grant, which never admits it. */
-    val isPublic: Boolean,
+    /** Lowercase hexadecimal SHA-256 of those bytes. */
+    val sha256: String,
 )
 
-/** Exact bytes on the wire. The download's `ETag` carries the hash. */
-internal data class OfflinePackTile(val z: Int, val x: Int, val y: Int, val bytes: Long)
-
-/** The stored tiles of one source inside the region, at the source's zooms. */
-internal class OfflinePackTileSet(
+/** A source whose tiles a download holds. */
+internal data class OfflineDownloadSource(
     val source: String,
-    val template: String,
-    /** Null when every pack zoom is below the source's minimum zoom. */
+    /** The source's pinned release. */
+    val version: String,
+    /** Byte-identical to the tile URL template of the source's TileJSON in the `style` pack. */
+    val template: OfflineTileTemplate,
+    /**
+     * The zooms the download holds; null when every download zoom is below the source's minimum,
+     * and the download holds none of its tiles.
+     */
     val zooms: IntRange?,
-    val entries: List<OfflinePackTile>,
-) {
-    /** The URL the renderer requests for the tile. */
-    fun url(tile: OfflinePackTile): URI =
-        URI(
-            template
-                .replace("{z}", tile.z.toString())
-                .replace("{x}", tile.x.toString())
-                .replace("{y}", tile.y.toString())
-        )
-}
+    val contentType: String,
+    val contentEncoding: String?,
+    /** What the source answers online for a covered tile its archive does not store. */
+    val absentStatus: Int,
+)
+
+/** One pack of a download, as its manifest lists it. */
+internal data class OfflineDownloadPack(
+    /**
+     * `style`, `assets`, `glyphs/<fontstack>/<n>` or `tiles/<source>/<z>/<x>/<y>`: the same pack
+     * keeps its id in every release.
+     */
+    val id: String,
+    val kind: OfflinePackKind,
+    val url: URI,
+    /** Exact bytes of the pack. */
+    val bytes: Long,
+    val resources: Int,
+    val billableResources: Int,
+    /** A tile pack's source, anchor tile and zooms. */
+    val source: String? = null,
+    val anchor: OfflineTileId? = null,
+    val zooms: IntRange? = null,
+)
 
 internal data class OfflinePackExclusion(val source: String, val reason: String)
 
 /**
- * The pack's canonical definition and every resource a renderer needs, as the service signed it.
+ * The download's canonical definition and everything a renderer needs, as the service signed it.
  */
-internal class OfflinePackManifest(
-    val packId: String,
+internal class OfflineDownloadManifest(
+    val downloadId: String,
     val mapId: String,
     val profile: String,
     val deploymentVersion: Long,
@@ -87,10 +101,13 @@ internal class OfflinePackManifest(
     val maxZoom: Int,
     val terrainMaxZoom: Int,
     val createdAtMillis: Long,
-    val documents: List<OfflinePackDocument>,
-    val tiles: List<OfflinePackTileSet>,
+    val sources: List<OfflineDownloadSource>,
+    val packs: List<OfflineDownloadPack>,
+    val publicResources: List<OfflinePublicResource>,
+    /** The origins document entries and tile templates may use. */
+    val origins: Set<String>,
     /**
-     * Sources the styles use that the pack leaves out, with the service's reason, such as
+     * Sources the styles use that the download leaves out, with the service's reason, such as
      * `legal_review`, `not_authorized`, `third_party` or `unavailable`.
      */
     val excluded: List<OfflinePackExclusion>,
@@ -99,22 +116,24 @@ internal class OfflinePackManifest(
     val bytes: Long,
     /** The attribution to show offline, one entry per source, as the service wrote it. */
     val attribution: List<JSONObject>,
-    /** The plan's billable resources per pack, which is also the device's total. */
+    /** The plan's billable resources per download, which is also the device's total. */
     val maximumPackResources: Long,
     val dailyDownloads: Long,
     val revalidationIntervalMillis: Long,
     /** The end of the download window. */
     val downloadExpiresAtMillis: Long,
-)
+) {
+    fun source(name: String): OfflineDownloadSource? = sources.firstOrNull { it.source == name }
+}
 
-/** A created pack; [response] is the service's answer as received, which the store keeps. */
-internal class OfflinePack(
+/** A created download; [response] is the service's answer as received, which the store keeps. */
+internal class OfflineDownload(
     val grant: OfflinePackGrant,
-    val manifest: OfflinePackManifest,
+    val manifest: OfflineDownloadManifest,
     val response: ByteArray,
 )
 
-/** Whether a downloaded pack can still be updated. Access ending never deletes it. */
+/** Whether a stored download can still be updated. Access ending never deletes it. */
 internal sealed class OfflinePackRevalidation {
     abstract val checkedAtMillis: Long
 
@@ -123,13 +142,13 @@ internal sealed class OfflinePackRevalidation {
         OfflinePackRevalidation()
 
     /**
-     * Access continues but the Map changed: create the same pack again and download with
-     * `If-None-Match`, so only changed resources are counted.
+     * Access continues but the Map changed: create the same download again and request each pack
+     * of a changed source or document with `If-None-Match`, so only changed packs are counted.
      */
     data class UpdateAvailable(override val checkedAtMillis: Long, val intervalMillis: Long) :
         OfflinePackRevalidation()
 
-    /** Access ended. The pack stays usable as it is and is no longer updated. */
+    /** Access ended. The download stays usable as it is and is no longer updated. */
     data class NotUpdatable(
         /**
          * `credential_revoked`, `map_unavailable`, `plan_unavailable`, `downloads_disabled`,
@@ -141,12 +160,12 @@ internal sealed class OfflinePackRevalidation {
 }
 
 /**
- * Reads the Hosted offline pack wire contract. Answers ignore members the SDK does not read and
- * keep values the service may extend open; every member the SDK reads, and the invariants between
- * them, are checked.
+ * Reads the Hosted offline download wire contract, format 2. Answers ignore members the SDK does
+ * not read and keep values the service may extend open; every member the SDK reads, and the
+ * invariants between them, are checked.
  */
 internal object OfflinePackContract {
-    /** The largest creation answer the service sends; 50,000 resources measure about 1.4 MB. */
+    /** The largest creation answer the service sends. */
     const val MAXIMUM_RESPONSE_BYTES = 8 * 1024 * 1024
 
     enum class Operation {
@@ -156,29 +175,29 @@ internal object OfflinePackContract {
     }
 
     /**
-     * A created pack. [request] is the canonical request the client sent; the manifest must
-     * describe exactly that pack.
+     * A created download. [request] is the canonical request the client sent; the manifest must
+     * describe exactly that download.
      */
-    fun pack(
+    fun download(
         bytes: ByteArray,
         request: OfflinePackRequest,
         allowsLoopbackHttp: Boolean,
-    ): OfflinePack = checked {
-            val value = json(bytes)
-            require(value.opt("version") == 1 && value.opt("kind") == "offline_pack")
-            val grant = OfflinePackGrant.of(value.opt("grant") as? String ?: "")!!
-            val manifest = value.getJSONObject("manifest")
-            OfflinePack(grant, manifest(manifest, request, allowsLoopbackHttp), bytes)
-        }
+    ): OfflineDownload = checked {
+        val value = json(bytes)
+        require(value.opt("version") == 2 && value.opt("kind") == "offline_download")
+        val grant = OfflinePackGrant.of(value.opt("grant") as? String ?: "")!!
+        val manifest = value.getJSONObject("manifest")
+        OfflineDownload(grant, manifest(manifest, request, allowsLoopbackHttp), bytes)
+    }
 
     fun manifest(
         value: JSONObject,
         request: OfflinePackRequest,
         allowsLoopbackHttp: Boolean,
-    ): OfflinePackManifest = checked {
-        require(!value.has("version") || value.opt("version") == 1)
-        val packId = value.getString("packId")
-        require(Regex("^opk_[A-Za-z0-9_-]{22}$").matches(packId))
+    ): OfflineDownloadManifest = checked {
+        require(value.opt("version") == 2)
+        val downloadId = value.getString("downloadId")
+        require(Regex("^[A-Za-z0-9_-]{8,64}$").matches(downloadId))
         require(value.opt("mapId") == request.mapId && value.opt("profile") == request.profile)
         val deploymentVersion = integer(value.opt("deploymentVersion"), 1)!!
         val themes = value.getJSONArray("themes")
@@ -192,6 +211,7 @@ internal object OfflinePackContract {
         val expiresAt = date(value.getJSONObject("download").opt("expiresAt"))!!
         require(expiresAt > createdAt && expiresAt - createdAt <= 86_400_000)
         val totals = value.getJSONObject("totals")
+        val packCount = integer(totals.opt("packs"), 0)!!
         val resourceCount = integer(totals.opt("resources"), 1)!!
         val billableCount = integer(totals.opt("billableResources"), 0)!!
         val bytes = integer(totals.opt("bytes"), 0)!!
@@ -206,72 +226,130 @@ internal object OfflinePackContract {
         val attribution =
             (0 until attributionValues.length()).map { attributionValues.opt(it) as JSONObject }
 
+        val originValues = value.getJSONArray("origins")
+        require(originValues.length() > 0)
+        val origins =
+            (0 until originValues.length())
+                .map { originValues.opt(it) as String }
+                .onEach { require(HostedContract.canonicalOrigin(it, allowsLoopbackHttp)) }
+                .toSet()
+        fun onOrigins(url: URI) = ResourcePolicy.origin(url) in origins
+
+        val sourceValues = value.getJSONArray("sources")
+        val sources = mutableListOf<OfflineDownloadSource>()
+        for (index in 0 until sourceValues.length()) {
+            val item = sourceValues.getJSONObject(index)
+            val source = item.getString("source")
+            require(isName(source) && sources.none { it.source == source })
+            val version = item.getString("version").also { require(isName(it)) }
+            val text = item.getString("template")
+            val template = OfflineTileTemplate.of(text)!!
+            require(onOrigins(resourceUrl(text, allowsLoopbackHttp, template = true)!!))
+            val contentType = item.getString("contentType")
+            require(Regex("^[a-z0-9.+-]+/[a-z0-9.+-]+$").matches(contentType))
+            val encoding =
+                when (val value = item.opt("contentEncoding")) {
+                    null,
+                    JSONObject.NULL -> null
+                    "gzip" -> "gzip"
+                    else -> throw IllegalArgumentException()
+                }
+            val absent =
+                when (val value = item.opt("absentStatus")) {
+                    null -> 404
+                    204,
+                    404 -> value as Int
+                    else -> throw IllegalArgumentException()
+                }
+            val zooms = item.opt("zooms")
+            sources +=
+                OfflineDownloadSource(
+                    source,
+                    version,
+                    template,
+                    if (zooms == JSONObject.NULL) null else zoomRange(zooms)!!,
+                    contentType,
+                    encoding,
+                    absent,
+                )
+        }
+
+        val packValues = value.getJSONArray("packs")
+        val ids = mutableSetOf<String>()
+        val covers = mutableMapOf<Int, OfflineTileCover>()
+        val packs =
+            (0 until packValues.length()).map { index ->
+                val item = packValues.getJSONObject(index)
+                val id = item.getString("id")
+                require(id.length <= 512 && ids.add(id))
+                val kind = OfflinePackKind.ofManifest(item.opt("kind"))!!
+                val url = resourceUrl(item.opt("url"), allowsLoopbackHttp)!!
+                require(onOrigins(url) && url.rawQuery == null && url.path.endsWith(".tfpack"))
+                val size =
+                    integer(
+                        item.opt("bytes"),
+                        (OfflinePackFormat.HEADER_LENGTH + OfflinePackFormat.TRAILER_LENGTH)
+                            .toLong(),
+                        OfflinePackFormat.MAXIMUM_BYTES.toLong(),
+                    )!!
+                val resources =
+                    integer(item.opt("resources"), 1, OfflinePackFormat.MAXIMUM_ENTRIES.toLong())!!
+                val billable = integer(item.opt("billableResources"), 0, resources)!!
+                when (kind) {
+                    OfflinePackKind.TILES -> {
+                        val parts = item.getJSONArray("anchor")
+                        require(parts.length() == 3)
+                        val z = integer(parts.opt(0), 0, OfflineZooms.MAXIMUM.toLong())!!.toInt()
+                        require(z in OfflinePackBand.anchors)
+                        val x = integer(parts.opt(1), 0, (1L shl z) - 1)!!.toInt()
+                        val y = integer(parts.opt(2), 0, (1L shl z) - 1)!!.toInt()
+                        val name = item.getString("source")
+                        val declared = sources.first { it.source == name }
+                        require(id == "tiles/$name/$z/$x/$y")
+                        val range = zoomRange(item.opt("zooms"))!!
+                        val band = OfflinePackBand.zooms(z)!!
+                        require(range.first in band && range.last in band)
+                        val held = declared.zooms!!
+                        require(range.first in held && range.last in held)
+                        // The anchor is covered at its zoom, which is exactly what the grant
+                        // admits.
+                        require(covers.getOrPut(z) { OfflineTileCover(region, z) }.contains(x, y))
+                        OfflineDownloadPack(
+                            id,
+                            kind,
+                            url,
+                            size,
+                            resources.toInt(),
+                            billable.toInt(),
+                            name,
+                            OfflineTileId(z, x, y),
+                            range,
+                        )
+                    }
+                    OfflinePackKind.DOCUMENTS -> {
+                        require(!item.has("anchor") && !item.has("source"))
+                        require(
+                            id == "style" ||
+                                id == "assets" ||
+                                Regex("^glyphs/[^/]{1,256}/(0|[1-9][0-9]{0,4})$").matches(id)
+                        )
+                        OfflineDownloadPack(id, kind, url, size, resources.toInt(), billable.toInt())
+                    }
+                }
+            }
+
         val urls = mutableSetOf<URI>()
-        val documentValues = value.getJSONArray("documents")
-        val documents =
-            (0 until documentValues.length()).map {
-                val item = documentValues.getJSONObject(it)
+        val publicValues = value.getJSONArray("publicResources")
+        val publicResources =
+            (0 until publicValues.length()).map {
+                val item = publicValues.getJSONObject(it)
                 val kind = item.getString("kind")
                 require(Regex("^[a-z][a-z0-9_-]{0,63}$").matches(kind))
                 val url = resourceUrl(item.opt("url"), allowsLoopbackHttp)!!
                 require(urls.add(url))
-                val size = integer(item.opt("bytes"), 0)!!
-                val billable = item.opt("billable") as Boolean
-                val access = item.opt("access")
-                require(access == "grant" || access == "public")
-                require(!(billable && access == "public"))
-                val sha256 =
-                    when (val digest = item.opt("sha256")) {
-                        JSONObject.NULL -> null
-                        is String -> digest.also { require(Regex("^[0-9a-f]{64}$").matches(it)) }
-                        else -> throw IllegalArgumentException()
-                    }
-                OfflinePackDocument(kind, url, size, sha256, billable, access == "public")
-            }
-
-        val sources = mutableSetOf<String>()
-        val covers = mutableMapOf<Int, OfflineTileCover>()
-        val rows = mutableMapOf<Pair<Int, Int>, List<IntRange>>()
-        val tileValues = value.getJSONArray("tiles")
-        val tiles =
-            (0 until tileValues.length()).map { index ->
-                val item = tileValues.getJSONObject(index)
-                val source = item.getString("source")
-                require(sources.add(source))
-                val template = item.getString("template")
-                require(listOf("{z}", "{x}", "{y}").all { template.split(it).size == 2 })
-                require(resourceUrl(template, allowsLoopbackHttp, template = true) != null)
-                val zooms =
-                    when (val pair = item.opt("zooms")) {
-                        JSONObject.NULL -> null
-                        is JSONArray -> {
-                            require(pair.length() == 2)
-                            val low = integer(pair.opt(0), 0, 30)!!.toInt()
-                            val high = integer(pair.opt(1), 0, 30)!!.toInt()
-                            require(low <= high)
-                            low..high
-                        }
-                        else -> throw IllegalArgumentException()
-                    }
-                val seen = mutableSetOf<Triple<Int, Int, Int>>()
-                val entryValues = item.getJSONArray("entries")
-                val entries =
-                    (0 until entryValues.length()).map {
-                        val parts = entryValues.getJSONArray(it)
-                        require(parts.length() == 4)
-                        val z = integer(parts.opt(0), 0, 30)!!.toInt()
-                        require(zooms != null && z in zooms)
-                        val x = integer(parts.opt(1), 0, (1L shl z) - 1)!!.toInt()
-                        val y = integer(parts.opt(2), 0, (1L shl z) - 1)!!.toInt()
-                        val size = integer(parts.opt(3), 0)!!
-                        require(seen.add(Triple(z, x, y)))
-                        // Every listed tile lies in the region's cover, which is what the grant
-                        // admits.
-                        val cover = covers.getOrPut(z) { OfflineTileCover(region, z) }
-                        require(rows.getOrPut(z to y) { cover.row(y) }.any { x in it })
-                        OfflinePackTile(z, x, y, size)
-                    }
-                OfflinePackTileSet(source, template, zooms, entries)
+                val sha256 = item.getString("sha256")
+                require(Regex("^[0-9a-f]{64}$").matches(sha256))
+                OfflinePublicResource(kind, url, integer(item.opt("bytes"), 0)!!, sha256)
             }
 
         val excludedValues = value.getJSONArray("excluded")
@@ -285,17 +363,14 @@ internal object OfflinePackContract {
             }
 
         // The service's totals must be the sum of what it lists.
-        val tileCount = tiles.sumOf { it.entries.size }.toLong()
-        require(resourceCount == documents.size + tileCount)
-        require(billableCount == documents.count { it.billable } + tileCount)
-        require(
-            bytes ==
-                documents.sumOf { it.bytes } + tiles.sumOf { set -> set.entries.sumOf { it.bytes } }
-        )
+        require(packCount == packs.size.toLong())
+        require(resourceCount == packs.sumOf { it.resources.toLong() } + publicResources.size)
+        require(billableCount == packs.sumOf { it.billableResources.toLong() })
+        require(bytes == packs.sumOf { it.bytes } + publicResources.sumOf { it.bytes })
         require(billableCount <= maximum)
 
-        OfflinePackManifest(
-            packId = packId,
+        OfflineDownloadManifest(
+            downloadId = downloadId,
             mapId = request.mapId,
             profile = request.profile,
             deploymentVersion = deploymentVersion,
@@ -305,8 +380,10 @@ internal object OfflinePackContract {
             maxZoom = request.maxZoom,
             terrainMaxZoom = request.terrainMaxZoom,
             createdAtMillis = createdAt,
-            documents = documents,
-            tiles = tiles,
+            sources = sources,
+            packs = packs,
+            publicResources = publicResources,
+            origins = origins,
             excluded = excluded,
             resourceCount = resourceCount,
             billableResourceCount = billableCount,
@@ -318,6 +395,18 @@ internal object OfflinePackContract {
             downloadExpiresAtMillis = expiresAt,
         )
     }
+
+    /** `[min, max]` zooms. */
+    private fun zoomRange(value: Any?): IntRange? {
+        val pair = value as? JSONArray ?: return null
+        if (pair.length() != 2) return null
+        val low = integer(pair.opt(0), 0, OfflineZooms.MAXIMUM.toLong())?.toInt() ?: return null
+        val high = integer(pair.opt(1), 0, OfflineZooms.MAXIMUM.toLong())?.toInt() ?: return null
+        return if (low <= high) low..high else null
+    }
+
+    /** A source or release name: printable, without separators a path or log would split on. */
+    private fun isName(text: String): Boolean = Regex("^[A-Za-z0-9._-]{1,128}$").matches(text)
 
     fun revalidation(bytes: ByteArray): OfflinePackRevalidation = checked {
         val value = json(bytes)
@@ -360,6 +449,9 @@ internal object OfflinePackContract {
             "OFFLINE_PACK_TOO_LARGE" to (422 to TileflowOfflineErrorCode.PACK_TOO_LARGE),
             "OFFLINE_PACK_NOT_DOWNLOADABLE" to (422 to TileflowOfflineErrorCode.NOT_DOWNLOADABLE),
             "OFFLINE_DAILY_LIMIT_REACHED" to (429 to TileflowOfflineErrorCode.DAILY_LIMIT_REACHED),
+            "OFFLINE_TEAM_DAILY_LIMIT_REACHED" to
+                (429 to TileflowOfflineErrorCode.DAILY_LIMIT_REACHED),
+            "OFFLINE_PACK_REPEAT_LIMIT_REACHED" to (429 to TileflowOfflineErrorCode.RATE_LIMITED),
             "COMMERCIAL_MAP_LIMIT_REACHED" to (429 to TileflowOfflineErrorCode.QUOTA_EXCEEDED),
             "COMMERCIAL_SPENDING_LIMIT_REACHED" to (429 to TileflowOfflineErrorCode.QUOTA_EXCEEDED),
             "RATE_LIMITED" to (429 to TileflowOfflineErrorCode.RATE_LIMITED),

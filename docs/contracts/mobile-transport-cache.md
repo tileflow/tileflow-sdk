@@ -102,9 +102,9 @@ and counts it as dropped. Opening a store removes other stores' staging director
   by `clear()`. Their owner, for example a store of downloaded regions, tracks which keys it holds
   and removes them explicitly. A pinned entry is served while fresh, revalidated when stale and
   served stale when the network fails; its owner is responsible for retiring expired content. A
-  pinned body may hold up to 32 MiB, the largest resource a Hosted offline pack lists. Pinned
-  entries of a Hosted map's grant scope are also served without a session when the map has no
-  network, as [Mobile offline regions](mobile-offline.md#serving-stored-regions) describes.
+  pinned body may hold up to 32 MiB. Downloaded Hosted regions keep their packs beside the cache
+  and their public files as pinned entries; a Hosted map without a network is answered from them
+  without a session.
 
 ## Runtime start-up
 

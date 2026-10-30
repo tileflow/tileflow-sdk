@@ -143,14 +143,17 @@ internal class ResourceLoader(
                     request.header(name, value)
                 }
             }
+            // A downloaded region's pack entry is revalidated instead of downloaded again.
+            val packed = if (stored == null && grant != null && cacheable) packEntry(target) else null
+            packed?.metadata?.headers?.get("ETag")?.let { request.header("If-None-Match", it) }
             val stream =
                 try {
                     transport.open(request.build(), admission?.timeoutMillis ?: 30_000)
                 } catch (error: IOException) {
                     // A closed loader's cancelled requests never fall back to stored responses.
                     if (closed.count > 0 && isNetworkFailure(error))
-                        stored?.afterFailure(date())?.let {
-                            return response(it.resource)
+                        (stored?.afterFailure(date())?.resource ?: packed)?.let {
+                            return response(it)
                         }
                     throw error
                 }
@@ -158,6 +161,10 @@ internal class ResourceLoader(
             if (stream.status == 304 && key != null && candidate != null) {
                 stream.close()
                 return response(revalidated(candidate, key, stream.headers))
+            }
+            if (stream.status == 304 && packed != null) {
+                stream.close()
+                return response(packed)
             }
             if (stream.status in 500..599)
                 stored?.afterFailure(date())?.let {
@@ -253,13 +260,14 @@ internal class ResourceLoader(
         )
     }
 
-    /** A downloaded region's entry for a protected resource, when an available region holds it. */
+    /**
+     * A downloaded region's answer for a protected resource, when an available region holds it or
+     * covers it.
+     */
     private fun packEntry(url: URI): StoredResource? {
         val offline = offline ?: return null
         val cache = cache ?: return null
-        val key = ResourceCacheKey(url, grantScope ?: return null)
-        if (!offline.serves(key)) return null
-        return cache.read(key, ResourceCacheRetention.PINNED)
+        return offline.resource(ResourceCacheKey(url, grantScope ?: return null), cache)
     }
 
     private fun isPublicApiResource(url: URI): Boolean =

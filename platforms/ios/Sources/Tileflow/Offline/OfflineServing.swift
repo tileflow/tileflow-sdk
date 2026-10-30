@@ -55,7 +55,7 @@ struct OfflineCredit: Sendable, Hashable {
     ])
   }
 
-  /// The regional credits of a pack's World attribution.
+  /// The regional credits of a download's World attribution.
   static func credits(_ attribution: [JSONValue]) -> [OfflineCredit] {
     var credits: [OfflineCredit] = []
     for source in attribution {
@@ -66,10 +66,52 @@ struct OfflineCredit: Sendable, Hashable {
   }
 }
 
+/// A source's stored tiles: the packs under each anchor, and the covers whose tiles a pack would
+/// hold if the archive stored them.
+struct OfflineServedTiles: Sendable {
+  let template: OfflineTileTemplate
+  var zooms: ClosedRange<Int>
+  let absentStatus: Int
+  var regions: [OfflinePackRegion] = []
+  var anchors: [OfflineTileID: [URL]] = [:]
+
+  mutating func merge(_ other: OfflineServedTiles) {
+    zooms = min(zooms.lowerBound, other.zooms.lowerBound)...max(
+      zooms.upperBound, other.zooms.upperBound)
+    for region in other.regions where !regions.contains(region) { regions.append(region) }
+    for (anchor, files) in other.anchors {
+      anchors[anchor, default: []] += files.filter { !(anchors[anchor] ?? []).contains($0) }
+    }
+  }
+
+  /// Whether the region downloaded `tile`, stored or not, or a tile above the downloaded zooms
+  /// whose ancestor at the deepest one it downloaded.
+  func covers(_ tile: OfflineTileID) -> Bool {
+    let tile = tile.z > zooms.upperBound ? tile.ancestor(at: zooms.upperBound) : tile
+    return zooms.contains(tile.z)
+      && regions.contains { OfflineTileCover($0, zoom: tile.z).contains(x: tile.x, y: tile.y) }
+  }
+}
+
+/// A Map's stored packs: its documents by address and its sources' tiles by template.
+struct OfflineServedPacks: Sendable {
+  var documents: [String: (file: URL, entry: OfflinePackEntry)] = [:]
+  var tiles: [String: OfflineServedTiles] = [:]
+
+  mutating func merge(_ other: OfflineServedPacks) {
+    documents.merge(other.documents) { current, _ in current }
+    for (template, served) in other.tiles {
+      if tiles[template] == nil { tiles[template] = served } else { tiles[template]!.merge(served) }
+    }
+  }
+}
+
 /// What stored regions a map may use without a network: the cache paths of every available
-/// region's resources, and the regional credits of each Hosted Map's releases.
+/// region's resources, the packs of each Hosted Map and the regional credits of its releases.
 struct OfflineServingSnapshot: Sendable {
   var paths: Set<String> = []
+  /// Packs by the cache scope of the Map they belong to.
+  var packs: [String: OfflineServedPacks] = [:]
   /// Credits by the cache scope of the Map they belong to.
   var credits: [String: [OfflineCredit]] = [:]
 }
@@ -88,6 +130,8 @@ final class OfflineServingIndex: Sendable {
   }
 
   private let state = LockedValue<State?>(nil)
+  /// Indexes of packs read recently: reading one is a few file reads.
+  private let indexes = LockedValue<[URL: OfflinePackIndex]>([:])
   private let open: @Sendable () async -> Void
 
   init(open: @escaping @Sendable () async -> Void = {}) {
@@ -102,6 +146,7 @@ final class OfflineServingIndex: Sendable {
       var merged = OfflineServingSnapshot()
       for snapshot in current.stores.values {
         merged.paths.formUnion(snapshot.paths)
+        for (scope, packs) in snapshot.packs { merged.packs[scope, default: .init()].merge(packs) }
         for (scope, credits) in snapshot.credits {
           var list = merged.credits[scope] ?? []
           for credit in credits where !list.contains(where: { $0.id == credit.id }) {
@@ -124,6 +169,69 @@ final class OfflineServingIndex: Sendable {
 
   func serves(_ key: ResourceCacheKey) async -> Bool {
     await snapshot().paths.contains(key.relativePath)
+  }
+
+  /// A stored region's answer for `key`: its pinned entry, a pack entry, or the status the source
+  /// answers online for a tile it does not store. That status answers a tile the region covers
+  /// that no stored pack holds, and a tile inside the region above the zooms it downloaded, so the
+  /// renderer overzooms the deepest downloaded tile, as it does online where a tile does not
+  /// exist. Only a resource the region should hold and does not is a miss.
+  func resource(_ key: ResourceCacheKey, cache: ResourceCacheStore) async -> StoredResource? {
+    let snapshot = await snapshot()
+    if snapshot.paths.contains(key.relativePath) { return cache.read(key, retention: .pinned) }
+    guard let packs = snapshot.packs[key.scope.directory] else { return nil }
+    let url = key.url.absoluteString
+    if let served = packs.documents[url] {
+      return stored(served.entry, in: served.file, url: key.url)
+    }
+    for tiles in packs.tiles.values {
+      guard let tile = tiles.template.tile(url), tile.z >= tiles.zooms.lowerBound else { continue }
+      let anchor = tile.ancestor(at: OfflinePackBand.anchor(of: tile.z))
+      for file in tiles.zooms.contains(tile.z) ? tiles.anchors[anchor] ?? [] : [] {
+        if let entry = index(file)?.entries[tile.name] {
+          return stored(entry, in: file, url: key.url)
+        }
+      }
+      if tiles.covers(tile) {
+        return StoredResource(
+          metadata: ResourceCacheMetadata(
+            url: key.url, status: tiles.absentStatus, headers: [:], responseTime: Date(),
+            protected: true, body: (0, DataChannel.digest(Data()))), body: Data())
+      }
+    }
+    return nil
+  }
+
+  private func index(_ file: URL) -> OfflinePackIndex? {
+    if let index = indexes.withLock({ $0[file] }) { return index }
+    guard let index = try? OfflinePackFormat.index(file) else { return nil }
+    indexes.withLock { cached in
+      if cached.count >= 256 { cached.removeAll() }
+      cached[file] = index
+    }
+    return index
+  }
+
+  /// A pack entry as the renderer receives it: decoded, with its route's `ETag`, which names the
+  /// body as stored, so a map online can revalidate it instead of downloading it again.
+  private func stored(_ entry: OfflinePackEntry, in file: URL, url: URL) -> StoredResource? {
+    guard let raw = try? OfflinePackFormat.body(entry, in: file) else { return nil }
+    let body: Data
+    switch entry.contentEncoding {
+    case nil: body = raw
+    case "gzip":
+      guard let decoded = try? OfflinePackFormat.gunzip(raw) else { return nil }
+      body = decoded
+    default: return nil
+    }
+    return StoredResource(
+      metadata: ResourceCacheMetadata(
+        url: url, status: 200,
+        headers: [
+          "Content-Type": entry.contentType, "ETag": "\"\(DataChannel.digest(raw))\"",
+          "Cache-Control": "private, no-cache",
+        ], responseTime: Date(), protected: true, body: (body.count, DataChannel.digest(body))),
+      body: body)
   }
 
   func credits(for scope: ResourceCacheScope) async -> [OfflineCredit] {

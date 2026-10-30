@@ -14,21 +14,25 @@ import org.json.JSONObject
  * Where the offline store keeps its records, beside the resource cache's durable root:
  * ```
  * regions/<sha256(id)>/region.json        the region record, replaced atomically
- * regions/<sha256(id)>/v<n>/request-<i>.json, pack-<i>.json
- *                                         a Hosted version's requests and created packs
+ * regions/<sha256(id)>/v<n>/request-<i>.json, download-<i>.json
+ *                                         a Hosted version's requests and created downloads
  * regions/<sha256(id)>/v<n>/plan.json     a self-hosted version's resolved plan
- * regions/<sha256(id)>/v<n>/progress      `<digest> <bytes>` of each stored resource, appended
+ * regions/<sha256(id)>/v<n>/progress      each stored pack and resource, appended
  * regions/<sha256(id)>/v<n>/staging/<digest>
  *                                         changed bodies of resources the stored version uses,
  *                                         committed when the update completes
+ * packs/<digest>.tfpack                   verified Hosted packs, shared by every version
+ * packs/incoming/                         packs still arriving
  * ```
  *
- * Resource bodies live in the resource cache's pinned partition under the transport's own keys. A
- * record lists its versions; every other file belongs to one of them, so a record that is replaced
- * atomically never refers to a half-written version.
+ * Hosted packs are kept as they arrived and named by their digest; maps read their entries in
+ * place. Public and self-hosted resources live in the resource cache's pinned partition under the
+ * transport's own keys. A record lists its versions; every other file belongs to one of them, so a
+ * record that is replaced atomically never refers to a half-written version.
  */
 internal class OfflineLayout(val root: File) {
     val regions = File(root, "regions")
+    val packs = OfflinePackStore(File(root, "packs"))
 
     fun region(id: String) = File(regions, sha256Hex(id.toByteArray()))
 
@@ -39,7 +43,8 @@ internal class OfflineLayout(val root: File) {
     fun request(id: String, number: Int, pack: Int) =
         File(version(id, number), "request-$pack.json")
 
-    fun pack(id: String, number: Int, pack: Int) = File(version(id, number), "pack-$pack.json")
+    fun download(id: String, number: Int, download: Int) =
+        File(version(id, number), "download-$download.json")
 
     fun plan(id: String, number: Int) = File(version(id, number), "plan.json")
 
@@ -66,16 +71,23 @@ internal class OfflineLayout(val root: File) {
 }
 
 /**
- * One stored resource of a version: its bytes, and whether this version's download transferred it,
- * rather than finding it stored already or unchanged (`304`).
+ * One stored pack or resource of a version: its bytes, the resources it holds, and whether this
+ * version's download transferred it, rather than finding it stored already or unchanged (`304`).
  */
-internal data class OfflineStoredEntry(val bytes: Long, val transferred: Boolean)
+internal data class OfflineStoredEntry(
+    val bytes: Long,
+    val transferred: Boolean,
+    val resources: Int = 1,
+    /** A pack's digest, under which the pack store keeps it. */
+    val pack: String? = null,
+)
 
 /**
- * What a version has stored so far: how many resources and bytes, and how many of them the download
- * transferred from the network.
+ * What a version has stored so far: how many packs, resources and bytes, and how many of them the
+ * download transferred from the network.
  */
 internal data class OfflineProgress(
+    val packs: Long = 0,
     val count: Long = 0,
     val bytes: Long = 0,
     val loaded: Long = 0,
@@ -83,9 +95,10 @@ internal data class OfflineProgress(
 ) {
     fun adding(entry: OfflineStoredEntry) =
         OfflineProgress(
-            count + 1,
+            packs + if (entry.pack != null) 1 else 0,
+            count + entry.resources,
             bytes + entry.bytes,
-            loaded + if (entry.transferred) 1 else 0,
+            loaded + if (entry.transferred) entry.resources else 0,
             loadedBytes + if (entry.transferred) entry.bytes else 0,
         )
 
@@ -96,9 +109,10 @@ internal data class OfflineProgress(
 }
 
 /**
- * A version's stored resources, one `<digest> <bytes> <transferred>` line each, appended as
- * resources complete; `transferred` is 1 for a body the download received and 0 otherwise. A line
- * cut short by a crash is ignored; its resource is requested again with `If-None-Match`.
+ * A version's stored packs and resources, appended as they complete: a resource's line is `<key>
+ * <bytes> <transferred>` and a pack's `<key> <bytes> <transferred> <resources> <digest>`,
+ * `transferred` 1 for a body the download received and 0 otherwise. A line cut short by a crash is
+ * ignored; its pack or resource is requested again with `If-None-Match`.
  */
 internal class OfflineProgressLog(private val file: File) {
     private var stream: FileOutputStream? = null
@@ -131,13 +145,21 @@ internal class OfflineProgressLog(private val file: File) {
                 val parts = line.split(' ')
                 val bytes = parts.getOrNull(1)?.toLongOrNull()
                 if (
-                    parts.size in 2..3 &&
+                    (parts.size == 3 || parts.size == 5) &&
                         parts[0].length == 64 &&
                         bytes != null &&
                         bytes >= 0 &&
-                        (parts.size == 2 || parts[2] == "0" || parts[2] == "1")
-                )
-                    stored[parts[0]] = OfflineStoredEntry(bytes, parts.getOrNull(2) == "1")
+                        (parts[2] == "0" || parts[2] == "1")
+                ) {
+                    val entry = OfflineStoredEntry(bytes, parts[2] == "1")
+                    if (parts.size == 3) {
+                        stored[parts[0]] = entry
+                        continue
+                    }
+                    val resources = parts[3].toIntOrNull() ?: continue
+                    if (resources < 1 || !Regex("^[0-9a-f]{64}$").matches(parts[4])) continue
+                    stored[parts[0]] = entry.copy(resources = resources, pack = parts[4])
+                }
             }
             return stored
         }
@@ -148,8 +170,10 @@ internal class OfflineProgressLog(private val file: File) {
                 file,
             )
 
-        private fun line(digest: String, entry: OfflineStoredEntry) =
-            "$digest ${entry.bytes} ${if (entry.transferred) 1 else 0}"
+        private fun line(key: String, entry: OfflineStoredEntry): String {
+            val line = "$key ${entry.bytes} ${if (entry.transferred) 1 else 0}"
+            return entry.pack?.let { "$line ${entry.resources} $it" } ?: line
+        }
     }
 }
 
@@ -205,7 +229,11 @@ internal data class OfflineVersionRecord(
     val options: JSONObject,
     /** The API origin whose grant scope holds the version's protected resources. */
     val apiOrigin: String?,
-    /** Hosted packs, as `request-<i>.json` and `pack-<i>.json`; zero for self-hosted content. */
+    /**
+     * Hosted downloads, as `request-<i>.json` and `download-<i>.json`; zero for self-hosted content.
+     */
+    val downloads: Int,
+    /** The packs of the version's downloads. */
     val packs: Int,
     val resources: Long,
     val billable: Long,
@@ -235,6 +263,7 @@ internal data class OfflineVersionRecord(
             .put("number", number)
             .put("options", options)
             .putOpt("apiOrigin", apiOrigin)
+            .put("downloads", downloads)
             .put("packs", packs)
             .put("resources", resources)
             .put("billable", billable)
@@ -253,6 +282,7 @@ internal data class OfflineVersionRecord(
                 value.getInt("number"),
                 value.getJSONObject("options"),
                 value.optString("apiOrigin").takeIf { value.has("apiOrigin") },
+                value.getInt("downloads"),
                 value.getInt("packs"),
                 value.getLong("resources"),
                 value.getLong("billable"),
@@ -301,7 +331,7 @@ internal data class OfflineRegionRecord(
     fun write(file: File) {
         val value =
             JSONObject()
-                .put("format", 1)
+                .put("format", 2)
                 .put("id", id)
                 .put("createdAt", createdAt)
                 .putOpt("active", active?.toJson())
@@ -325,7 +355,7 @@ internal data class OfflineRegionRecord(
         fun read(file: File): OfflineRegionRecord? =
             runCatching {
                     val value = JSONObject(file.readText())
-                    require(value.getInt("format") == 1)
+                    require(value.getInt("format") == 2)
                     OfflineRegionRecord(
                         value.getString("id"),
                         value.getLong("createdAt"),
@@ -480,3 +510,39 @@ internal fun offlineOptions(value: JSONObject): TileflowOfflineRegionLoadOptions
             )
         }
         .getOrNull()
+
+/**
+ * Verified Hosted packs, kept as they arrived under their digest and shared by every region version
+ * that lists them. A pack arrives in `incoming/` and is adopted only once verified.
+ */
+internal class OfflinePackStore(val directory: File) {
+    val incoming = File(directory, "incoming")
+
+    fun file(digest: String) = File(directory, "$digest.tfpack")
+
+    /** Where the transfer [id] writes its pack. */
+    fun incoming(id: String) = File(incoming, id.replace('/', '-') + ".tfpack")
+
+    fun size(digest: String): Long? = file(digest).takeIf { it.isFile }?.length()
+
+    /** Moves a verified pack into the store, unless the store holds it already. */
+    fun adopt(file: File, digest: String) {
+        val target = file(digest)
+        if (target.isFile) {
+            file.delete()
+            return
+        }
+        directory.mkdirs()
+        if (!file.renameTo(target)) throw java.io.IOException("rename failed")
+    }
+
+    fun remove(digests: Iterable<String>) {
+        for (digest in digests) file(digest).delete()
+    }
+
+    /** Removes incoming packs of transfers whose identifiers start with [prefix]. */
+    fun removeIncoming(prefix: String) {
+        val name = prefix.replace('/', '-')
+        incoming.listFiles()?.filter { it.name.startsWith(name) }?.forEach { it.delete() }
+    }
+}

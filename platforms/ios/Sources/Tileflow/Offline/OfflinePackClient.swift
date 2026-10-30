@@ -54,8 +54,8 @@ struct OfflinePackRequest: Sendable, Hashable {
 
   static let maximumBodyBytes = 65_536
 
-  /// One request for each pack a region needs: a corridor or a box across the antimeridian
-  /// downloads as several packs.
+  /// One request for each download a region needs: a corridor or a box across the antimeridian
+  /// downloads as several.
   static func requests(
     mapID: String, themes requested: [String], geometry: TileflowOfflineGeometry,
     zooms: OfflineZooms, profile: OfflinePackProfile = .webView
@@ -92,10 +92,10 @@ struct OfflinePackRequest: Sendable, Hashable {
   }
 }
 
-/// Creates and revalidates Hosted offline packs.
+/// Creates and revalidates Hosted offline downloads.
 ///
 /// Creation presents the map credential exactly as a Hosted map's session start does, in
-/// `X-Tileflow-Mobile-Client`, and nothing else. Revalidation presents only the pack grant.
+/// `X-Tileflow-Mobile-Client`, and nothing else. Revalidation presents only the download's grant.
 /// Requests are never retried: each refusal comes back as a typed error, with the wait the service
 /// asked for, and cancelling the calling task cancels the request.
 struct OfflinePackClient: Sendable {
@@ -106,7 +106,7 @@ struct OfflinePackClient: Sendable {
   private let now: @Sendable () -> Date
 
   /// The configuration's API origin and map credential. A configuration without a map
-  /// credential can still revalidate packs.
+  /// credential can still revalidate downloads.
   init(
     configuration: TileflowConfiguration,
     transport: any NativeHTTPTransporting = NativeHTTPTransport(
@@ -124,7 +124,7 @@ struct OfflinePackClient: Sendable {
     self.now = now
   }
 
-  func create(_ request: OfflinePackRequest) async throws -> OfflinePack {
+  func create(_ request: OfflinePackRequest) async throws -> OfflineDownload {
     guard let credential else { throw TileflowOfflineError(.missingCredential) }
     var urlRequest = post("v1/offline/packs", body: request.body)
     urlRequest.setValue(credential.value, forHTTPHeaderField: "X-Tileflow-Mobile-Client")
@@ -132,7 +132,7 @@ struct OfflinePackClient: Sendable {
     guard response.status == 201 else {
       throw failure(response, operation: .create)
     }
-    return try OfflinePackContract.pack(
+    return try OfflinePackContract.download(
       response.bytes, request: request, allowsLoopbackHTTP: allowsLoopbackHTTP)
   }
 

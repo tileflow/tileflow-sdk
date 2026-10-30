@@ -159,80 +159,108 @@ class OfflineTest {
     }
 
     @Test
-    fun createdPackIsPlannedExactly() {
-        val manifest = createdPack().manifest
-        assertEquals(listOf("dark", "light"), manifest.themes)
+    fun createdDownloadIsPlannedExactly() {
+        val download = createdDownload()
+        val manifest = download.manifest
+        assertEquals(listOf("default"), manifest.themes)
         assertEquals(10_000L, manifest.maximumPackResources)
-        assertEquals(listOf("boundaries"), manifest.excluded.map { it.source })
-        assertEquals(listOf("terrain", "world"), manifest.tiles.map { it.source })
-        assertEquals(listOf(12..12, 12..15), manifest.tiles.map { it.zooms })
+        assertEquals(listOf("nautical"), manifest.excluded.map { it.source })
+        assertEquals(listOf("terrain", "world"), manifest.sources.map { it.source })
+        assertEquals(listOf(10..12, 10..14), manifest.sources.map { it.zooms })
+        assertEquals(listOf(404, 404), manifest.sources.map { it.absentStatus })
+        assertEquals(listOf(null, "gzip"), manifest.sources.map { it.contentEncoding })
+        assertEquals(setOf("https://api.tileflow.test"), manifest.origins)
         // The zoom policy plans the same source zooms the service did.
-        val zooms = OfflineZooms(12..15)
-        assertEquals(12..15, zooms.zooms(0, 15))
-        assertEquals(12..12, zooms.zooms(0, minOf(14, zooms.terrainMaximum)))
+        val zooms = OfflineZooms(10..14)
+        assertEquals(10..14, zooms.zooms(0, 15))
+        assertEquals(10..12, zooms.zooms(0, minOf(14, zooms.terrainMaximum)))
 
-        val estimate = OfflinePlanner.estimate(manifest)
-        assertEquals(38L, estimate.resourceCount)
-        assertEquals(30L, estimate.billableResourceCount)
-        assertEquals(7L, estimate.publicResourceCount)
-        assertEquals(1_974_920L, estimate.bytes)
-        assertEquals(mapOf("terrain" to 2L, "world" to 17L), estimate.tileCounts)
-        assertEquals(1L, estimate.mapViews)
-        assertEquals(0L, OfflinePlanner.estimate(manifest) { true }.mapViews)
-
-        val resources = OfflinePlanner.resources(manifest).toList()
-        assertEquals(38, resources.size)
-        assertEquals(30, resources.count { it.billable })
-        assertEquals(1_974_920L, resources.sumOf { it.bytes ?: 0 })
-        assertTrue(resources.filter { it.isPublic }.all { !it.billable && it.sha256 != null })
-        val world = manifest.tiles[1]
+        val plan = OfflineVersionPlan.hosted(listOf(download), listOf(createdRequest()))
         assertEquals(
-            "https://api.tileflow.test/tiles/world/2026-10-01/12/2005/1544.pbf" +
-                "?worldDescriptorSha256=${"b".repeat(64)}&map=map_offlineofflineof",
-            world.url(world.entries[0]).toString(),
+            listOf(
+                "style",
+                "assets",
+                "glyphs/Noto Sans Regular/0",
+                "tiles/terrain/7/62/48",
+                "tiles/terrain/11/1002/772",
+                "tiles/terrain/11/1003/772",
+                "tiles/world/7/62/48",
+                "tiles/world/11/1002/772",
+                "tiles/world/11/1003/772",
+            ),
+            plan.packs.map { it.pack.id },
         )
-        // Every listed tile is in the region's cover, and the cover bounds the service's counts.
-        for (set in manifest.tiles) {
-            for (zoom in set.zooms!!) {
-                assertTrue(
-                    set.entries.count { it.z == zoom } <=
-                        OfflineTileCover(manifest.region, zoom).count
-                )
-            }
+        assertEquals(25L, plan.resourceCount)
+        assertEquals(23L, plan.billable)
+        assertEquals(4_149L, plan.bytes)
+        assertEquals("Discovery", 1, plan.resources.size)
+        assertEquals(mapOf("terrain" to 5L, "world" to 11L), plan.tileCounts)
+        // Every tile pack's anchor starts its band; tiles the archive does not store are left out.
+        val cover = (10..14).sumOf { OfflineTileCover(manifest.region, it).count.toLong() }
+        assertTrue(plan.tileCounts.getValue("world") < cover)
+        for (planned in plan.packs.filter { it.pack.kind == OfflinePackKind.TILES }) {
+            assertTrue(planned.pack.anchor!!.z in OfflinePackBand.anchors)
+            assertEquals(
+                if (planned.pack.source == "world") "2026-10-01" else "2026-10",
+                planned.release,
+            )
         }
     }
 
     @Test
     fun manifestInvariantsAreChecked() {
+        fun pack(manifest: JSONObject, change: (JSONObject) -> Unit) {
+            val packs = manifest.getJSONArray("packs")
+            change(
+                (0 until packs.length())
+                    .map { packs.getJSONObject(it) }
+                    .first { it.getString("kind") == "tiles" }
+            )
+        }
         val mutations: List<Pair<String, (JSONObject) -> Unit>> =
             listOf(
                 "totals" to
-                    {
-                        it.put(
-                            "totals",
-                            JSONObject()
-                                .put("resources", 38)
-                                .put("billableResources", 29)
-                                .put("bytes", 1_974_920),
-                        )
+                    { manifest ->
+                        val totals = manifest.getJSONObject("totals")
+                        totals.put("billableResources", totals.getLong("billableResources") - 1)
                     },
-                "public billable" to
-                    {
-                        it.getJSONArray("documents").getJSONObject(0).put("billable", true)
+                "an anchor outside the cover" to
+                    { manifest ->
+                        pack(manifest) {
+                            it.put("anchor", JSONArray(listOf(11, 0, 0)))
+                            it.put("id", "tiles/world/11/0/0")
+                        }
                     },
-                "outside the cover" to
-                    {
-                        val entries =
-                            it.getJSONArray("tiles").getJSONObject(1).getJSONArray("entries")
-                        val first = entries.getJSONArray(0)
-                        entries.put(0, JSONArray(listOf(12, 0, 0, first.getInt(3))))
+                "an anchor no band starts at" to
+                    { manifest ->
+                        pack(manifest) {
+                            val anchor = it.getJSONArray("anchor")
+                            val x = anchor.getInt(1) * 2
+                            val y = anchor.getInt(2) * 2
+                            it.put("anchor", JSONArray(listOf(12, x, y)))
+                            it.put("id", "tiles/world/12/$x/$y")
+                        }
+                    },
+                "zooms outside the band" to
+                    { manifest -> pack(manifest) { it.put("zooms", JSONArray(listOf(12, 16))) } },
+                "an id that is not its anchor" to
+                    { manifest -> pack(manifest) { it.put("id", "tiles/world/11/1/1") } },
+                "an unknown source" to
+                    { manifest -> pack(manifest) { it.put("source", "bathymetry") } },
+                "another origin" to
+                    { manifest ->
+                        pack(manifest) { it.put("url", "https://elsewhere.test/v1/offline/p.tfpack") }
                     },
                 "plain HTTP" to
-                    {
-                        it.getJSONArray("documents")
-                            .getJSONObject(2)
-                            .put("url", "http://api.tileflow.test/style.json")
+                    { manifest ->
+                        pack(manifest) { it.put("url", "http://api.tileflow.test/v1/offline/p.tfpack") }
                     },
+                "larger than a pack can be" to
+                    { manifest -> pack(manifest) { it.put("bytes", 33 * 1024 * 1024) } },
+                "more billable than resources" to
+                    { manifest -> pack(manifest) { it.put("billableResources", 1_000_000) } },
+                "an unknown kind" to { manifest -> pack(manifest) { it.put("kind", "models") } },
+                "format 1" to { it.put("version", 1) },
                 "another region" to
                     {
                         it.put(
@@ -243,11 +271,20 @@ class OfflineTest {
                         )
                     },
                 "over the plan" to
-                    {
-                        it.put(
+                    { manifest ->
+                        val billable = manifest.getJSONObject("totals").getLong("billableResources")
+                        manifest.put(
                             "limits",
-                            JSONObject().put("maxPackResources", 29).put("dailyDownloads", 20_000),
+                            JSONObject()
+                                .put("maxPackResources", billable - 1)
+                                .put("dailyDownloads", 20_000),
                         )
+                    },
+                "a template on another origin" to
+                    {
+                        it.getJSONArray("sources")
+                            .getJSONObject(0)
+                            .put("template", "https://elsewhere.test/{z}/{x}/{y}.pbf")
                     },
             )
         for ((name, mutate) in mutations) {
@@ -255,7 +292,7 @@ class OfflineTest {
             mutate(response.getJSONObject("manifest"))
             val failure =
                 runCatching {
-                        OfflinePackContract.pack(
+                        OfflinePackContract.download(
                             response.toString().toByteArray(),
                             createdRequest(),
                             allowsLoopbackHttp = false,
@@ -265,9 +302,21 @@ class OfflineTest {
             assertEquals(
                 name,
                 TileflowOfflineErrorCode.INVALID_RESPONSE,
-                (failure as TileflowOfflineException).code,
+                (failure as? TileflowOfflineException)?.code,
             )
         }
+        val response = createdResponse().put("grant", "tf_offline_v1.a.b")
+        assertTrue(
+            "A format 1 grant",
+            runCatching {
+                    OfflinePackContract.download(
+                        response.toString().toByteArray(),
+                        createdRequest(),
+                        allowsLoopbackHttp = false,
+                    )
+                }
+                .isFailure,
+        )
     }
 
     @Test
@@ -392,11 +441,7 @@ class OfflineTest {
                             emptyMap(),
                         )
                     else
-                        ResourcePayload(
-                            contract().getJSONObject("created").getString("body").toByteArray(),
-                            201,
-                            emptyMap(),
-                        )
+                        ResourcePayload(createdResponse().toString().toByteArray(), 201, emptyMap())
                 }
 
                 override fun cancelActive() {}
@@ -413,8 +458,8 @@ class OfflineTest {
                 ),
                 transports = { transport },
             )
-        val pack = client.create(createdRequest())
-        client.revalidate(pack.grant)
+        val download = client.create(createdRequest())
+        client.revalidate(download.grant)
 
         val (create, revalidate) = requests
         assertEquals("POST", create.method)
@@ -428,8 +473,8 @@ class OfflineTest {
             revalidate.url.toString(),
         )
         assertEquals(emptySet<String>(), revalidate.headers.names())
-        assertJson("revalidate", JSONObject().put("grant", pack.grant.value), body(revalidate))
-        assertFalse(pack.grant.toString().contains(pack.grant.value))
+        assertJson("revalidate", JSONObject().put("grant", download.grant.value), body(revalidate))
+        assertFalse(download.grant.toString().contains(download.grant.value))
 
         val anonymous =
             OfflinePackClient(
@@ -438,7 +483,7 @@ class OfflineTest {
             )
         try {
             anonymous.create(createdRequest())
-            fail("A pack needs the map credential")
+            fail("A download needs the map credential")
         } catch (error: TileflowOfflineException) {
             assertEquals(TileflowOfflineErrorCode.MISSING_CREDENTIAL, error.code)
         }
@@ -645,6 +690,8 @@ class OfflineTest {
             "OFFLINE_PACK_RESOURCE_DENIED" to TileflowOfflineErrorCode.ACCESS_DENIED,
             "OFFLINE_PACK_SUPERSEDED" to TileflowOfflineErrorCode.SUPERSEDED,
             "OFFLINE_DAILY_LIMIT_REACHED" to TileflowOfflineErrorCode.DAILY_LIMIT_REACHED,
+            "OFFLINE_TEAM_DAILY_LIMIT_REACHED" to TileflowOfflineErrorCode.DAILY_LIMIT_REACHED,
+            "OFFLINE_PACK_REPEAT_LIMIT_REACHED" to TileflowOfflineErrorCode.RATE_LIMITED,
             "COMMERCIAL_MAP_LIMIT_REACHED" to TileflowOfflineErrorCode.QUOTA_EXCEEDED,
             "COMMERCIAL_SPENDING_LIMIT_REACHED" to TileflowOfflineErrorCode.QUOTA_EXCEEDED,
             "RATE_LIMITED" to TileflowOfflineErrorCode.RATE_LIMITED,
@@ -657,20 +704,20 @@ class OfflineTest {
 
     private fun corridors() = JSONArray(resource("offline-corridors.json"))
 
-    private fun createdResponse() =
-        JSONObject(contract().getJSONObject("created").getString("body"))
+    /** The service's creation answer, generated by its own code (`packs-v2/release-1`). */
+    private fun createdResponse() = JSONObject(resource("packs-v2/release-1/create-response.json"))
 
     private fun createdRequest() =
         OfflinePackRequest.requests(
-            "map_offlineofflineof",
-            listOf("light", "dark"),
+            "map_offlinefixture00",
+            listOf("default"),
             TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(-3.71, 40.41, -3.69, 40.425)),
-            OfflineZooms(12..15),
+            OfflineZooms(10..14),
         )[0]
 
-    private fun createdPack() =
-        OfflinePackContract.pack(
-            contract().getJSONObject("created").getString("body").toByteArray(),
+    private fun createdDownload() =
+        OfflinePackContract.download(
+            createdResponse().toString().toByteArray(),
             createdRequest(),
             allowsLoopbackHttp = false,
         )

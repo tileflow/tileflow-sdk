@@ -7,6 +7,8 @@ import dev.tileflow.sdk.transport.ResourceCacheMetadata
 import dev.tileflow.sdk.transport.ResourceCacheRetention
 import dev.tileflow.sdk.transport.ResourceCacheScope
 import dev.tileflow.sdk.transport.ResourceCacheStore
+import dev.tileflow.sdk.transport.ResourcePolicy
+import dev.tileflow.sdk.transport.sha256Hex
 import java.io.File
 import java.io.IOException
 import java.net.URI
@@ -21,83 +23,93 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
-/** One resource of a region version, under the transport's own cache key. */
+/** One public or self-hosted resource of a region version, under the transport's own cache key. */
 internal class OfflinePlannedResource(
     val key: ResourceCacheKey,
     /** Exact bytes on the wire, when known before download. */
     val bytes: Long?,
     /** SHA-256 of those bytes, when known before download. */
     val sha256: String?,
-    val billable: Boolean,
-    val isPublic: Boolean,
-    /** The Hosted pack whose grant admits it; null for public and self-hosted resources. */
-    val pack: Int?,
 ) {
     val url: URI
         get() = key.url
 }
 
-/**
- * A version's resources and the authority to download them. Hosted resources a corridor's
- * overlapping packs share are downloaded once, under the first pack that lists them.
- */
+/** One pack of a Hosted region version. */
+internal class OfflinePlannedPack(
+    /** The download whose grant admits the pack. */
+    val download: Int,
+    val pack: OfflineDownloadPack,
+    /**
+     * A tile pack's source release. The same pack of the same request and release holds the same
+     * bytes, so an update keeps it without asking.
+     */
+    val release: String?,
+) {
+    /**
+     * Names the pack in the version's progress log: a corridor's downloads may list one pack id
+     * with different covers.
+     */
+    val key: String = sha256Hex("$download\n${pack.id}".toByteArray())
+}
+
+/** A version's packs, resources and the authority to download them. */
 internal class OfflineVersionPlan(
-    val packs: List<OfflinePack> = emptyList(),
+    val downloads: List<OfflineDownload> = emptyList(),
     val requests: List<OfflinePackRequest> = emptyList(),
+    val packs: List<OfflinePlannedPack> = emptyList(),
     val resources: List<OfflinePlannedResource> = emptyList(),
     val tileCounts: Map<String, Long> = emptyMap(),
 ) {
     val isHosted: Boolean
-        get() = packs.isNotEmpty()
+        get() = downloads.isNotEmpty()
+
+    /** Every resource: each pack's entries and each file. */
+    val resourceCount: Long
+        get() = packs.sumOf { it.pack.resources.toLong() } + resources.size
 
     val billable: Long
-        get() = resources.count { it.billable }.toLong()
+        get() = packs.sumOf { it.pack.billableResources.toLong() }
 
     /** Null when any size is unknown. */
     val bytes: Long?
         get() {
-            var total = 0L
+            var total = packs.sumOf { it.pack.bytes }
             for (resource in resources) total += resource.bytes ?: return null
             return total
         }
 
     companion object {
+        /** Every pack of every download, and the public files they need once each. */
         fun hosted(
-            packs: List<OfflinePack>,
+            downloads: List<OfflineDownload>,
             requests: List<OfflinePackRequest>,
-            apiOrigin: URI,
         ): OfflineVersionPlan {
+            val packs = ArrayList<OfflinePlannedPack>()
             val resources = ArrayList<OfflinePlannedResource>()
+            val counts = LinkedHashMap<String, Long>()
             val seen = HashSet<String>()
-            for ((index, pack) in packs.withIndex()) {
-                val scope = ResourceCacheScope.grant(apiOrigin, pack.manifest.mapId)
-                for (resource in OfflinePlanner.resources(pack.manifest)) {
+            for ((index, download) in downloads.withIndex()) {
+                for (source in download.manifest.sources) counts.putIfAbsent(source.source, 0)
+                for (pack in download.manifest.packs) {
+                    val release = pack.source?.let { download.manifest.source(it)?.version }
+                    packs.add(OfflinePlannedPack(index, pack, release))
+                    pack.source?.let {
+                        counts[it] = (counts[it] ?: 0) + pack.resources
+                    }
+                }
+                for (resource in download.manifest.publicResources) {
                     if (!seen.add(resource.url.toASCIIString())) continue
                     resources.add(
                         OfflinePlannedResource(
-                            ResourceCacheKey(
-                                resource.url,
-                                if (resource.isPublic) ResourceCacheScope.Shared else scope,
-                            ),
+                            ResourceCacheKey(resource.url, ResourceCacheScope.Shared),
                             resource.bytes,
                             resource.sha256,
-                            resource.billable,
-                            resource.isPublic,
-                            if (resource.isPublic) null else index,
                         )
                     )
                 }
             }
-            // Tiles per source, counted once across packs.
-            val counts = HashMap<String, Long>()
-            val counted = HashSet<String>()
-            for (pack in packs) for (set in pack.manifest.tiles) {
-                counts.putIfAbsent(set.source, 0)
-                for (tile in set.entries)
-                    if (counted.add(set.url(tile).toASCIIString()))
-                        counts[set.source] = counts.getValue(set.source) + 1
-            }
-            return OfflineVersionPlan(packs, requests, resources, counts)
+            return OfflineVersionPlan(downloads, requests, packs, resources, counts)
         }
 
         /**
@@ -116,14 +128,7 @@ internal class OfflineVersionPlan(
             fun add(url: URI): Boolean {
                 if (!seen.add(url.toASCIIString())) return false
                 resources.add(
-                    OfflinePlannedResource(
-                        ResourceCacheKey(url, ResourceCacheScope.Shared),
-                        null,
-                        null,
-                        billable = false,
-                        isPublic = true,
-                        pack = null,
-                    )
+                    OfflinePlannedResource(ResourceCacheKey(url, ResourceCacheScope.Shared), null, null)
                 )
                 return true
             }
@@ -149,42 +154,67 @@ internal class OfflineVersionPlan(
 
 /** What ended a download pass. */
 internal sealed class OfflineDownloadOutcome(val severity: Int) {
-    /** Every resource of the pass is stored. */
+    /** Every pack and resource of the pass is stored. */
     object Complete : OfflineDownloadOutcome(0)
 
     /** A recoverable failure; continue after [delayMillis], or after a backoff when null. */
     class Wait(val error: TileflowOfflineException, val delayMillis: Long?) :
         OfflineDownloadOutcome(1)
 
-    /** A pack's grant expired or its manifest is out of date: create the pack again. */
-    class Renew(val pack: Int, val error: TileflowOfflineException) : OfflineDownloadOutcome(2)
+    /**
+     * A download's grant expired, its packs are out of date or were asked for too often: create
+     * the download again.
+     */
+    class Renew(val download: Int, val error: TileflowOfflineException) : OfflineDownloadOutcome(2)
 
     class Fail(val error: TileflowOfflineException) : OfflineDownloadOutcome(3)
 
     object Cancelled : OfflineDownloadOutcome(4)
 }
 
-/** One pass over a version's missing resources. */
+/** A pack the version a download replaces holds under the same key. */
+internal class OfflinePreviousPack(
+    val digest: String,
+    val url: URI,
+    val release: String?,
+    /**
+     * Whether the replaced version created the pack's download from the same request, so the same
+     * pack of the same release holds the same tiles.
+     */
+    val sameRequest: Boolean,
+)
+
+/** One pass over a version's missing packs and resources. */
 internal class OfflineDownloadJob(
     /** Prefix of every transfer identifier, unique to the region version. */
     val prefix: String,
     val plan: OfflineVersionPlan,
     val pending: List<OfflinePlannedResource>,
+    val pendingPacks: List<OfflinePlannedPack> = emptyList(),
+    /**
+     * What a replaced version or an earlier pass holds for each pack key: offered with
+     * `If-None-Match`, or kept without asking when its source's release did not change.
+     */
+    val previous: Map<String, OfflinePreviousPack> = emptyMap(),
     /**
      * Cache paths the stored versions use: changed bodies wait in [staging] until the version
      * completes, so a stored version never mixes in an unfinished update.
      */
     val activePaths: Set<String>,
     val staging: File,
+    val packs: OfflinePackStore,
 )
 
 /**
- * Downloads, verifies and stores resources into the pinned partition.
+ * Downloads and verifies a version's packs into the pack store and its resources into the pinned
+ * partition.
  *
- * A body is stored only when it matches the manifest: as received, or as decoded, its size and
- * SHA-256 (the manifest's, else the `ETag`'s) agree. A stored copy is offered with
- * `If-None-Match`; a `304` keeps it and is not billed. Recoverable refusals end the pass with the
- * wait the service asked for; a mismatch is retried twice before the download fails.
+ * A pack is kept only when it is exactly the manifest's size, its trailer is the SHA-256 of what
+ * precedes it, its `ETag` names that digest and every entry belongs to it: a tile pack's tiles lie
+ * in its anchor, zooms and the download's cover, a document pack's names on the download's origins.
+ * A stored pack is offered with `If-None-Match`; a `304` keeps it and is not billed. A resource is
+ * stored only when its size and SHA-256 match the manifest. Recoverable refusals end the pass with
+ * the wait the service asked for; a mismatch is retried twice before the download fails.
  */
 internal class OfflineDownloader(
     private val cache: ResourceCacheStore,
@@ -193,7 +223,23 @@ internal class OfflineDownloader(
     private val reserveBytes: Long,
     private val concurrency: Int,
     private val now: () -> Long,
+    /** Packs transferred at once. */
+    private val packConcurrency: Int = 4,
 ) {
+    private sealed class Work {
+        abstract val key: String
+
+        class Resource(val resource: OfflinePlannedResource) : Work() {
+            override val key: String
+                get() = resource.key.digest
+        }
+
+        class Pack(val pack: OfflinePlannedPack) : Work() {
+            override val key: String
+                get() = pack.key
+        }
+    }
+
     private sealed class Result {
         class Stored(val entry: OfflineStoredEntry) : Result()
 
@@ -202,15 +248,28 @@ internal class OfflineDownloader(
         class Outcome(val outcome: OfflineDownloadOutcome) : Result()
     }
 
+    /** Downloads the job's resources, then its packs. */
     suspend fun run(
         job: OfflineDownloadJob,
+        log: OfflineProgressLog,
+        progress: suspend (List<Pair<String, OfflineStoredEntry>>) -> Unit,
+    ): OfflineDownloadOutcome {
+        val files = pass(job.pending.map { Work.Resource(it) }, job, concurrency, log, progress)
+        if (files !is OfflineDownloadOutcome.Complete) return files
+        return pass(job.pendingPacks.map { Work.Pack(it) }, job, packConcurrency, log, progress)
+    }
+
+    private suspend fun pass(
+        work: List<Work>,
+        job: OfflineDownloadJob,
+        concurrency: Int,
         log: OfflineProgressLog,
         progress: suspend (List<Pair<String, OfflineStoredEntry>>) -> Unit,
     ): OfflineDownloadOutcome {
         val lock = Mutex()
         var outcome: OfflineDownloadOutcome = OfflineDownloadOutcome.Complete
         var next = 0
-        val retries = ArrayDeque<OfflinePlannedResource>()
+        val retries = ArrayDeque<Work>()
         val mismatches = HashMap<String, Int>()
         val stored = ArrayList<Pair<String, OfflineStoredEntry>>()
         var sinceCheck = 0
@@ -236,35 +295,36 @@ internal class OfflineDownloader(
                 repeat(concurrency) {
                     launch {
                         while (true) {
-                            val resource =
+                            val item =
                                 lock.withLock {
                                     if (outcome.severity > 0 || !isActive) null
                                     else
                                         retries.removeFirstOrNull()
-                                            ?: job.pending.getOrNull(next)?.also { next += 1 }
+                                            ?: work.getOrNull(next)?.also { next += 1 }
                                 } ?: break
-                            val result = download(resource, job)
+                            val result =
+                                when (item) {
+                                    is Work.Resource -> download(item.resource, job)
+                                    is Work.Pack -> download(item.pack, job)
+                                }
                             lock.withLock {
                                 when (result) {
                                     is Result.Stored -> {
-                                        stored.add(resource.key.digest to result.entry)
-                                        sinceCheck += 1
+                                        stored.add(item.key to result.entry)
+                                        sinceCheck += result.entry.resources
+                                        // A pack is a unit of progress worth reporting at once.
+                                        if (result.entry.pack != null) flush()
                                     }
                                     Result.Mismatch -> {
-                                        val count = (mismatches[resource.key.digest] ?: 0) + 1
-                                        mismatches[resource.key.digest] = count
+                                        val count = (mismatches[item.key] ?: 0) + 1
+                                        mismatches[item.key] = count
                                         if (count >= 3)
                                             record(
                                                 OfflineDownloadOutcome.Fail(
-                                                    TileflowOfflineException(
-                                                        TileflowOfflineErrorCode.INVALID_RESPONSE,
-                                                        TileflowErrorContext(
-                                                            reason = "verificationFailed"
-                                                        ),
-                                                    )
+                                                    OfflinePackFormat.invalid()
                                                 )
                                             )
-                                        else retries.addLast(resource)
+                                        else retries.addLast(item)
                                     }
                                     is Result.Outcome -> record(result.outcome)
                                 }
@@ -295,11 +355,90 @@ internal class OfflineDownloader(
         currentCoroutineContext().ensureActive()
         if (
             outcome is OfflineDownloadOutcome.Complete &&
-                (next < job.pending.size || retries.isNotEmpty())
+                (next < work.size || retries.isNotEmpty())
         )
             return OfflineDownloadOutcome.Cancelled
         return outcome
     }
+
+    // Packs
+
+    private suspend fun download(planned: OfflinePlannedPack, job: OfflineDownloadJob): Result {
+        val pack = planned.pack
+        val previous = job.previous[planned.key]?.takeIf { job.packs.size(it.digest) != null }
+        // The same tiles of the same release under the same request: nothing to ask.
+        if (
+            previous != null &&
+                previous.sameRequest &&
+                pack.kind == OfflinePackKind.TILES &&
+                previous.release != null &&
+                previous.release == planned.release &&
+                previous.url == pack.url &&
+                job.packs.size(previous.digest) == pack.bytes
+        )
+            return Result.Stored(entry(pack, transferred = false, previous.digest))
+        if (!OfflineStorage.hasRoom(pack.bytes + reserveBytes, availableBytes, cache))
+            return Result.Outcome(OfflineDownloadOutcome.Fail(storageError()))
+        val download = job.plan.downloads[planned.download]
+        val headers = HashMap<String, String>()
+        headers[GRANT_HEADER] = download.grant.value
+        previous?.let { headers["If-None-Match"] = "\"${it.digest}\"" }
+        // A new grant starts a new transfer: a resumed one would present the old grant again.
+        val id = job.prefix + planned.key + "." + download.grant.tag
+        val destination = job.packs.incoming(id)
+        job.packs.incoming.mkdirs()
+        val response =
+            try {
+                fetcher.fetch(OfflineFetchRequest(id, pack.url, headers, destination))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: OfflineTooLargeException) {
+                destination.delete()
+                return Result.Outcome(
+                    OfflineDownloadOutcome.Fail(
+                        TileflowOfflineException(
+                            TileflowOfflineErrorCode.INVALID_RESPONSE,
+                            TileflowErrorContext(reason = "resourceTooLarge"),
+                        )
+                    )
+                )
+            } catch (_: Exception) {
+                return Result.Outcome(
+                    OfflineDownloadOutcome.Wait(
+                        TileflowOfflineException(TileflowOfflineErrorCode.NETWORK),
+                        null,
+                    )
+                )
+            }
+        return when {
+            response.status == 200 ->
+                try {
+                    val (digest, index) =
+                        OfflinePackFormat.verify(destination, pack.bytes, pack.kind)
+                    val tag = response.headers["ETag"]
+                    if (tag != null && tag != "\"$digest\"") throw OfflinePackFormat.invalid()
+                    check(index, planned, download.manifest)
+                    job.packs.adopt(destination, digest)
+                    Result.Stored(entry(pack, transferred = true, digest))
+                } catch (_: Exception) {
+                    destination.delete()
+                    Result.Mismatch
+                }
+            response.status == 304 && previous != null ->
+                Result.Stored(entry(pack, transferred = false, previous.digest))
+            response.status == 416 -> {
+                // The partial pack no longer matches: start it again.
+                destination.delete()
+                Result.Mismatch
+            }
+            else -> Result.Outcome(failure(response, planned.download, job))
+        }
+    }
+
+    private fun entry(pack: OfflineDownloadPack, transferred: Boolean, digest: String) =
+        OfflineStoredEntry(pack.bytes, transferred, pack.resources, digest)
+
+    // Resources
 
     private suspend fun download(
         resource: OfflinePlannedResource,
@@ -315,7 +454,6 @@ internal class OfflineDownloader(
                 OfflineStoredEntry(resource.bytes ?: stored.body.size.toLong(), transferred = false)
             )
         val headers = HashMap<String, String>()
-        resource.pack?.let { headers[GRANT_HEADER] = job.plan.packs[it].grant.value }
         stored?.metadata?.headers?.get("ETag")?.let { headers["If-None-Match"] = it }
         val response =
             try {
@@ -354,7 +492,7 @@ internal class OfflineDownloader(
                         200,
                         response.headers,
                         now(),
-                        job.plan.isHosted && !resource.isPublic,
+                        false,
                         response.body.size,
                         digest,
                     )
@@ -387,18 +525,20 @@ internal class OfflineDownloader(
             (response.status == 204 || response.status == 404) && !job.plan.isHosted ->
                 // An absent self-hosted tile or glyph range stays absent offline, as online.
                 Result.Stored(OfflineStoredEntry(0, transferred = false))
-            else -> Result.Outcome(failure(response, resource, job))
+            else -> Result.Outcome(failure(response, null, job))
         }
     }
 
+    // Failures
+
     private fun failure(
         response: OfflineFetchResponse,
-        resource: OfflinePlannedResource,
+        download: Int?,
         job: OfflineDownloadJob,
     ): OfflineDownloadOutcome {
         val retryAfter =
             OfflinePackContract.retryAfterMillis(response.headers["Retry-After"], now())
-        if (!job.plan.isHosted) {
+        if (download == null) {
             val context = TileflowErrorContext(status = response.status)
             return when (response.status) {
                 408,
@@ -430,13 +570,15 @@ internal class OfflineDownloader(
         return when (error.code) {
             TileflowOfflineErrorCode.GRANT_REJECTED,
             TileflowOfflineErrorCode.SUPERSEDED,
-            TileflowOfflineErrorCode.NOT_FOUND ->
-                OfflineDownloadOutcome.Renew(resource.pack ?: 0, error)
+            TileflowOfflineErrorCode.NOT_FOUND -> OfflineDownloadOutcome.Renew(download, error)
             TileflowOfflineErrorCode.ACCESS_DENIED ->
                 if (error.context.reason == "OFFLINE_PACK_RESOURCE_DENIED")
-                    OfflineDownloadOutcome.Renew(resource.pack ?: 0, error)
+                    OfflineDownloadOutcome.Renew(download, error)
                 else OfflineDownloadOutcome.Fail(error)
-            TileflowOfflineErrorCode.RATE_LIMITED,
+            TileflowOfflineErrorCode.RATE_LIMITED ->
+                if (error.context.reason == "OFFLINE_PACK_REPEAT_LIMIT_REACHED")
+                    OfflineDownloadOutcome.Renew(download, error)
+                else OfflineDownloadOutcome.Wait(error, error.retryAfterMillis)
             TileflowOfflineErrorCode.UNAVAILABLE,
             TileflowOfflineErrorCode.DAILY_LIMIT_REACHED ->
                 OfflineDownloadOutcome.Wait(error, error.retryAfterMillis)
@@ -463,6 +605,39 @@ internal class OfflineDownloader(
 
         /** Free space is checked again after this many stored resources. */
         const val SPACE_CHECK = 16
+
+        /** Whether a verified pack holds exactly what its manifest entry promises. */
+        fun check(
+            index: OfflinePackIndex,
+            planned: OfflinePlannedPack,
+            manifest: OfflineDownloadManifest,
+        ) {
+            val pack = planned.pack
+            if (index.kind != pack.kind || index.entries.size != pack.resources)
+                throw OfflinePackFormat.invalid()
+            when (pack.kind) {
+                OfflinePackKind.TILES -> {
+                    val anchor = pack.anchor ?: throw OfflinePackFormat.invalid()
+                    val zooms = pack.zooms ?: throw OfflinePackFormat.invalid()
+                    val covers = HashMap<Int, OfflineTileCover>()
+                    val rows = HashMap<Pair<Int, Int>, List<IntRange>>()
+                    for (name in index.entries.keys) {
+                        val tile = OfflineTileId.ofName(name) ?: throw OfflinePackFormat.invalid()
+                        if (tile.z !in zooms || tile.ancestor(anchor.z) != anchor)
+                            throw OfflinePackFormat.invalid()
+                        val cover = covers.getOrPut(tile.z) { OfflineTileCover(manifest.region, tile.z) }
+                        val row = rows.getOrPut(tile.z to tile.y) { cover.row(tile.y) }
+                        if (row.none { tile.x in it }) throw OfflinePackFormat.invalid()
+                    }
+                }
+                OfflinePackKind.DOCUMENTS ->
+                    for (name in index.entries.keys) {
+                        val url = runCatching { URI(name) }.getOrNull()
+                        if (url?.host == null || ResourcePolicy.origin(url) !in manifest.origins)
+                            throw OfflinePackFormat.invalid()
+                    }
+            }
+        }
 
         /** Whether a body is the manifest's resource, as received or as decoded. */
         fun verify(response: OfflineFetchResponse, resource: OfflinePlannedResource): Boolean {

@@ -1,55 +1,66 @@
 import Foundation
 
-/// One resource of a region version, under the transport's own cache key.
+/// One public or self-hosted resource of a region version, under the transport's own cache key.
 struct OfflinePlannedResource: Sendable {
   let key: ResourceCacheKey
   /// Exact bytes on the wire, when known before download.
   let bytes: Int?
   /// SHA-256 of those bytes, when known before download.
   let sha256: String?
-  let billable: Bool
-  let isPublic: Bool
-  /// The Hosted pack whose grant admits it; nil for public and self-hosted resources.
-  let pack: Int?
 
   var url: URL { key.url }
 }
 
-/// A version's resources and the authority to download them. Hosted resources a corridor's
-/// overlapping packs share are downloaded once, under the first pack that lists them.
+/// One pack of a Hosted region version.
+struct OfflinePlannedPack: Sendable {
+  /// The download whose grant admits the pack.
+  let download: Int
+  let pack: OfflineDownloadPack
+  /// A tile pack's source release. The same pack of the same request and release holds the same
+  /// bytes, so an update keeps it without asking.
+  let release: String?
+  /// Names the pack in the version's progress log: a corridor's downloads may list one pack id
+  /// with different covers.
+  let key: String
+
+  init(download: Int, pack: OfflineDownloadPack, release: String?) {
+    self.download = download
+    self.pack = pack
+    self.release = release
+    key = DataChannel.digest(Data("\(download)\n\(pack.id)".utf8))
+  }
+}
+
+/// A version's packs, resources and the authority to download them.
 struct OfflineVersionPlan: Sendable {
-  var packs: [OfflinePack] = []
+  var downloads: [OfflineDownload] = []
   var requests: [OfflinePackRequest] = []
+  var packs: [OfflinePlannedPack] = []
   var resources: [OfflinePlannedResource] = []
   var tileCounts: [String: Int] = [:]
-  var isHosted: Bool { !packs.isEmpty }
+  var isHosted: Bool { !downloads.isEmpty }
 
-  static func hosted(
-    packs: [OfflinePack], requests: [OfflinePackRequest], apiOrigin: URL
-  ) -> OfflineVersionPlan {
-    var plan = OfflineVersionPlan(packs: packs, requests: requests)
+  /// Every pack of every download, and the public files they need once each.
+  static func hosted(downloads: [OfflineDownload], requests: [OfflinePackRequest])
+    -> OfflineVersionPlan
+  {
+    var plan = OfflineVersionPlan(downloads: downloads, requests: requests)
     var seen = Set<String>()
-    for (index, pack) in packs.enumerated() {
-      let scope = ResourceCacheScope.grant(apiOrigin: apiOrigin, mapID: pack.manifest.mapID)
-      for resource in OfflinePlanner.resources(pack.manifest)
+    for (index, download) in downloads.enumerated() {
+      for source in download.manifest.sources where plan.tileCounts[source.source] == nil {
+        plan.tileCounts[source.source] = 0
+      }
+      for pack in download.manifest.packs {
+        let release = pack.source.flatMap { download.manifest.source($0)?.version }
+        plan.packs.append(OfflinePlannedPack(download: index, pack: pack, release: release))
+        if let source = pack.source { plan.tileCounts[source, default: 0] += pack.resources }
+      }
+      for resource in download.manifest.publicResources
       where seen.insert(resource.url.absoluteString).inserted {
         plan.resources.append(
           OfflinePlannedResource(
-            key: ResourceCacheKey(url: resource.url, scope: resource.isPublic ? .shared : scope),
-            bytes: resource.bytes, sha256: resource.sha256, billable: resource.billable,
-            isPublic: resource.isPublic, pack: resource.isPublic ? nil : index))
-      }
-    }
-    // Tiles per source, counted once across packs.
-    var counted = Set<String>()
-    for pack in packs {
-      for set in pack.manifest.tiles {
-        for tile in set.entries {
-          guard let url = set.url(tile), counted.insert(url.absoluteString).inserted else {
-            continue
-          }
-          plan.tileCounts[set.source, default: 0] += 1
-        }
+            key: ResourceCacheKey(url: resource.url, scope: .shared), bytes: resource.bytes,
+            sha256: resource.sha256))
       }
     }
     return plan
@@ -66,9 +77,7 @@ struct OfflineVersionPlan: Sendable {
     func add(_ url: URL) -> Bool {
       guard seen.insert(url.absoluteString).inserted else { return false }
       plan.resources.append(
-        OfflinePlannedResource(
-          key: ResourceCacheKey(url: url, scope: .shared), bytes: nil, sha256: nil,
-          billable: false, isPublic: true, pack: nil))
+        OfflinePlannedResource(key: ResourceCacheKey(url: url, scope: .shared), bytes: nil, sha256: nil))
       return true
     }
     for url in documents { _ = add(url) }
@@ -97,10 +106,12 @@ struct OfflineVersionPlan: Sendable {
     return plan
   }
 
-  var billable: Int { resources.reduce(0) { $0 + ($1.billable ? 1 : 0) } }
+  /// Every resource: each pack's entries and each file.
+  var resourceCount: Int { packs.reduce(0) { $0 + $1.pack.resources } + resources.count }
+  var billable: Int { packs.reduce(0) { $0 + $1.pack.billableResources } }
   /// Nil when any size is unknown.
   var bytes: Int64? {
-    var total: Int64 = 0
+    var total = packs.reduce(Int64(0)) { $0 + Int64($1.pack.bytes) }
     for resource in resources {
       guard let bytes = resource.bytes else { return nil }
       total += Int64(bytes)
@@ -111,10 +122,11 @@ struct OfflineVersionPlan: Sendable {
 
 /// What ended a download pass.
 enum OfflineDownloadOutcome: Sendable {
-  /// Every resource of the pass is stored.
+  /// Every pack and resource of the pass is stored.
   case complete
-  /// A pack's grant expired or its manifest is out of date: create the pack again.
-  case renew(pack: Int, error: TileflowOfflineError)
+  /// A download's grant expired, its packs are out of date or were asked for too often: create
+  /// the download again.
+  case renew(download: Int, error: TileflowOfflineError)
   /// A recoverable failure; continue after `delay`, or after a backoff when nil.
   case wait(TileflowOfflineError, delay: TimeInterval?)
   case fail(TileflowOfflineError)
@@ -131,25 +143,44 @@ enum OfflineDownloadOutcome: Sendable {
   }
 }
 
-/// One pass over a version's missing resources.
+/// A pack the version a download replaces holds under the same key.
+struct OfflinePreviousPack: Sendable {
+  let digest: String
+  let url: URL
+  let release: String?
+  /// Whether the replaced version created the pack's download from the same request, so the same
+  /// pack of the same release holds the same tiles.
+  let sameRequest: Bool
+}
+
+/// One pass over a version's missing packs and resources.
 struct OfflineDownloadJob: Sendable {
   /// Prefix of every transfer identifier, unique to the region version.
   let prefix: String
   let plan: OfflineVersionPlan
   let pending: [OfflinePlannedResource]
+  let pendingPacks: [OfflinePlannedPack]
+  /// What a replaced version or an earlier pass holds for each pack key: offered with
+  /// `If-None-Match`, or kept without asking when its source's release did not change.
+  let previous: [String: OfflinePreviousPack]
   /// Cache paths the stored versions use: changed bodies wait in `staging` until the version
   /// completes, so a stored version never mixes in an unfinished update.
   let activePaths: Set<String>
   let staging: URL
+  let packs: OfflinePackStore
   let restriction: TileflowOfflineNetworkRestriction
 }
 
-/// Downloads, verifies and stores resources into the pinned partition.
+/// Downloads and verifies a version's packs into the pack store and its resources into the
+/// pinned partition.
 ///
-/// A body is stored only when it matches the manifest: as received, or as the platform decoded
-/// it, its size and SHA-256 (the manifest's, else the `ETag`'s) agree. A stored copy is offered
-/// with `If-None-Match`; a `304` keeps it and is not billed. Recoverable refusals end the pass
-/// with the wait the service asked for; a mismatch is retried twice before the download fails.
+/// A pack is kept only when it is exactly the manifest's size, its trailer is the SHA-256 of what
+/// precedes it, its `ETag` names that digest and every entry belongs to it: a tile pack's tiles lie
+/// in its anchor, zooms and the download's cover, a document pack's names on the download's
+/// origins. A stored pack is offered with `If-None-Match`; a `304` keeps it and is not billed. A
+/// resource is stored only when its size and SHA-256 match the manifest. Recoverable refusals end
+/// the pass with the wait the service asked for; a mismatch is retried twice before the download
+/// fails.
 struct OfflineDownloader: Sendable {
   static let grantHeader = "X-Tileflow-Offline-Grant"
   /// Stored resources are logged and reported in batches.
@@ -162,7 +193,21 @@ struct OfflineDownloader: Sendable {
   let availableBytes: @Sendable () -> Int64?
   let reserveBytes: Int64
   let concurrency: Int
+  /// Packs transferred at once.
+  var packConcurrency = 4
   let now: @Sendable () -> Date
+
+  private enum Work: Sendable {
+    case resource(OfflinePlannedResource)
+    case pack(OfflinePlannedPack)
+
+    var key: String {
+      switch self {
+      case .resource(let resource): resource.key.digest
+      case .pack(let pack): pack.key
+      }
+    }
+  }
 
   private enum Result: Sendable {
     case stored(OfflineStoredEntry)
@@ -170,13 +215,26 @@ struct OfflineDownloader: Sendable {
     case outcome(OfflineDownloadOutcome)
   }
 
+  /// Downloads the job's resources, then its packs.
   func run(
     _ job: OfflineDownloadJob, log: OfflineProgressLog,
     progress: @escaping @Sendable ([(digest: String, entry: OfflineStoredEntry)]) async -> Void
   ) async -> OfflineDownloadOutcome {
+    let files = await pass(
+      job.pending.map(Work.resource), job, concurrency: concurrency, log: log, progress: progress)
+    guard case .complete = files else { return files }
+    return await pass(
+      job.pendingPacks.map(Work.pack), job, concurrency: packConcurrency, log: log,
+      progress: progress)
+  }
+
+  private func pass(
+    _ work: [Work], _ job: OfflineDownloadJob, concurrency: Int, log: OfflineProgressLog,
+    progress: @escaping @Sendable ([(digest: String, entry: OfflineStoredEntry)]) async -> Void
+  ) async -> OfflineDownloadOutcome {
     var outcome = OfflineDownloadOutcome.complete
     var next = 0
-    var retries: [OfflinePlannedResource] = []
+    var retries: [Work] = []
     var mismatches: [String: Int] = [:]
     var stored: [(digest: String, entry: OfflineStoredEntry)] = []
     var sinceCheck = 0
@@ -197,39 +255,43 @@ struct OfflineDownloader: Sendable {
       await progress(entries)
     }
 
-    await withTaskGroup(of: (OfflinePlannedResource, Result).self) { group in
+    await withTaskGroup(of: (Work, Result).self) { group in
       var running = 0
       func fill() {
         while running < concurrency, outcome.severity == 0, !Task.isCancelled {
-          let resource: OfflinePlannedResource
+          let item: Work
           if !retries.isEmpty {
-            resource = retries.removeFirst()
-          } else if next < job.pending.count {
-            resource = job.pending[next]
+            item = retries.removeFirst()
+          } else if next < work.count {
+            item = work[next]
             next += 1
           } else {
             return
           }
           running += 1
-          group.addTask { (resource, await download(resource, job)) }
+          group.addTask {
+            switch item {
+            case .resource(let resource): (item, await download(resource, job))
+            case .pack(let pack): (item, await download(pack, job))
+            }
+          }
         }
       }
       fill()
-      while let (resource, result) = await group.next() {
+      while let (item, result) = await group.next() {
         running -= 1
         switch result {
         case .stored(let entry):
-          stored.append((resource.key.digest, entry))
-          sinceCheck += 1
+          stored.append((item.key, entry))
+          sinceCheck += entry.resources
+          // A pack is a unit of progress worth reporting at once.
+          if entry.pack != nil { await flush() }
         case .mismatch:
-          mismatches[resource.key.digest, default: 0] += 1
-          if mismatches[resource.key.digest]! >= 3 {
-            record(
-              .fail(
-                TileflowOfflineError(.invalidResponse, context: .init(reason: "verificationFailed"))
-              ))
+          mismatches[item.key, default: 0] += 1
+          if mismatches[item.key]! >= 3 {
+            record(.fail(OfflinePackFormat.invalid))
           } else {
-            retries.append(resource)
+            retries.append(item)
           }
         case .outcome(let failure):
           record(failure)
@@ -247,11 +309,115 @@ struct OfflineDownloader: Sendable {
     }
     await flush()
     if Task.isCancelled { return .cancelled }
-    if case .complete = outcome, next < job.pending.count || !retries.isEmpty {
+    if case .complete = outcome, next < work.count || !retries.isEmpty {
       return .cancelled
     }
     return outcome
   }
+
+  // MARK: Packs
+
+  private func download(_ planned: OfflinePlannedPack, _ job: OfflineDownloadJob) async -> Result {
+    let pack = planned.pack
+    let previous = job.previous[planned.key].flatMap {
+      job.packs.size($0.digest) != nil ? $0 : nil
+    }
+    // The same tiles of the same release under the same request: nothing to ask.
+    if let previous, previous.sameRequest, pack.kind == .tiles, previous.release != nil,
+      previous.release == planned.release, previous.url == pack.url,
+      job.packs.size(previous.digest) == pack.bytes
+    {
+      return .stored(entry(pack, transferred: false, digest: previous.digest))
+    }
+    guard
+      OfflineStorage.hasRoom(
+        Int64(pack.bytes) + reserveBytes, available: availableBytes, cache: cache)
+    else { return .outcome(.fail(storageError())) }
+    let download = job.plan.downloads[planned.download]
+    var headers = [Self.grantHeader: download.grant.value]
+    if let previous { headers["If-None-Match"] = "\"\(previous.digest)\"" }
+    // A new grant starts a new transfer: a resumed one would present the old grant again.
+    let id = job.prefix + planned.key + "." + download.grant.tag
+    let destination = job.packs.incoming(id)
+    try? FileManager.default.createDirectory(
+      at: job.packs.incoming, withIntermediateDirectories: true)
+    let response: OfflineFetchResponse
+    do {
+      response = try await fetcher.fetch(
+        OfflineFetchRequest(
+          id: id, url: pack.url, headers: headers,
+          allowsExpensiveNetworkAccess: job.restriction == .none, destination: destination))
+    } catch {
+      return .outcome(transferFailure(error))
+    }
+    switch response.status {
+    case 200:
+      do {
+        let (digest, index) = try OfflinePackFormat.verify(
+          destination, bytes: pack.bytes, kind: pack.kind)
+        if let tag = response.headers["ETag"], tag != "\"\(digest)\"" {
+          throw OfflinePackFormat.invalid
+        }
+        try Self.check(index, planned, download.manifest)
+        try job.packs.adopt(destination, digest: digest)
+        return .stored(entry(pack, transferred: true, digest: digest))
+      } catch {
+        try? FileManager.default.removeItem(at: destination)
+        return .mismatch
+      }
+    case 304 where previous != nil:
+      return .stored(entry(pack, transferred: false, digest: previous!.digest))
+    case 416:
+      // The partial pack no longer matches: start it again.
+      try? FileManager.default.removeItem(at: destination)
+      return .mismatch
+    default:
+      return .outcome(failure(response, download: planned.download, job))
+    }
+  }
+
+  private func entry(_ pack: OfflineDownloadPack, transferred: Bool, digest: String)
+    -> OfflineStoredEntry
+  {
+    OfflineStoredEntry(
+      bytes: Int64(pack.bytes), transferred: transferred, resources: pack.resources, pack: digest)
+  }
+
+  /// Whether a verified pack holds exactly what its manifest entry promises.
+  static func check(
+    _ index: OfflinePackIndex, _ planned: OfflinePlannedPack, _ manifest: OfflineDownloadManifest
+  ) throws {
+    let pack = planned.pack
+    guard index.kind == pack.kind, index.entries.count == pack.resources else {
+      throw OfflinePackFormat.invalid
+    }
+    switch pack.kind {
+    case .tiles:
+      guard let anchor = pack.anchor, let zooms = pack.zooms else {
+        throw OfflinePackFormat.invalid
+      }
+      var covers: [Int: OfflineTileCover] = [:]
+      var rows: [Int: [Int: [ClosedRange<Int>]]] = [:]
+      for name in index.entries.keys {
+        guard let tile = OfflineTileID(name: name), zooms.contains(tile.z),
+          tile.ancestor(at: anchor.z) == anchor
+        else { throw OfflinePackFormat.invalid }
+        let cover = covers[tile.z] ?? OfflineTileCover(manifest.region, zoom: tile.z)
+        covers[tile.z] = cover
+        let row = rows[tile.z]?[tile.y] ?? cover.row(tile.y)
+        rows[tile.z, default: [:]][tile.y] = row
+        guard row.contains(where: { $0.contains(tile.x) }) else { throw OfflinePackFormat.invalid }
+      }
+    case .documents:
+      for name in index.entries.keys {
+        guard let url = URL(string: name), url.host != nil,
+          manifest.origins.contains(ResourcePolicy.origin(url))
+        else { throw OfflinePackFormat.invalid }
+      }
+    }
+  }
+
+  // MARK: Resources
 
   private func download(_ resource: OfflinePlannedResource, _ job: OfflineDownloadJob) async
     -> Result
@@ -261,7 +427,6 @@ struct OfflineDownloader: Sendable {
       return .stored(.init(bytes: Int64(resource.bytes ?? stored.body.count), transferred: false))
     }
     var headers: [String: String] = [:]
-    if let pack = resource.pack { headers[Self.grantHeader] = job.plan.packs[pack].grant.value }
     if let etag = stored?.metadata.headers["ETag"] { headers["If-None-Match"] = etag }
     let response: OfflineFetchResponse
     do {
@@ -269,12 +434,8 @@ struct OfflineDownloader: Sendable {
         OfflineFetchRequest(
           id: job.prefix + resource.key.digest, url: resource.url, headers: headers,
           allowsExpensiveNetworkAccess: job.restriction == .none))
-    } catch let error as TileflowOfflineError {
-      return .outcome(.fail(error))
     } catch {
-      if Task.isCancelled || error is CancellationError { return .outcome(.cancelled) }
-      if let error = error as? URLError, error.code == .cancelled { return .outcome(.cancelled) }
-      return .outcome(.wait(TileflowOfflineError(.network), delay: nil))
+      return .outcome(transferFailure(error))
     }
 
     switch response.status {
@@ -290,7 +451,7 @@ struct OfflineDownloader: Sendable {
       if stored?.metadata.bodySHA256 == digest { return .stored(received) }
       let metadata = ResourceCacheMetadata(
         url: resource.url, status: 200, headers: response.headers, responseTime: now(),
-        protected: job.plan.isHosted && !resource.isPublic, body: (response.body.count, digest))
+        protected: false, body: (response.body.count, digest))
       let written: Bool
       if job.activePaths.contains(resource.key.relativePath) {
         written =
@@ -309,15 +470,24 @@ struct OfflineDownloader: Sendable {
       // An absent self-hosted tile or glyph range stays absent offline, as online.
       return .stored(.init(bytes: 0, transferred: false))
     default:
-      return .outcome(failure(response, resource, job))
+      return .outcome(failure(response, download: nil, job))
     }
   }
 
+  // MARK: Failures
+
+  private func transferFailure(_ error: any Error) -> OfflineDownloadOutcome {
+    if let error = error as? TileflowOfflineError { return .fail(error) }
+    if Task.isCancelled || error is CancellationError { return .cancelled }
+    if let error = error as? URLError, error.code == .cancelled { return .cancelled }
+    return .wait(TileflowOfflineError(.network), delay: nil)
+  }
+
   private func failure(
-    _ response: OfflineFetchResponse, _ resource: OfflinePlannedResource, _ job: OfflineDownloadJob
+    _ response: OfflineFetchResponse, download: Int?, _ job: OfflineDownloadJob
   ) -> OfflineDownloadOutcome {
     let retryAfter = OfflinePackContract.retryAfter(response.headers["Retry-After"], now: now())
-    guard job.plan.isHosted else {
+    guard let download else {
       switch response.status {
       case 408, 429, 500...599:
         return .wait(
@@ -334,9 +504,11 @@ struct OfflineDownloader: Sendable {
       retryAfter: response.headers["Retry-After"], operation: .download, now: now())
     switch error.code {
     case .grantRejected, .superseded, .notFound:
-      return .renew(pack: resource.pack ?? 0, error: error)
+      return .renew(download: download, error: error)
     case .accessDenied where error.context.reason == "OFFLINE_PACK_RESOURCE_DENIED":
-      return .renew(pack: resource.pack ?? 0, error: error)
+      return .renew(download: download, error: error)
+    case .rateLimited where error.context.reason == "OFFLINE_PACK_REPEAT_LIMIT_REACHED":
+      return .renew(download: download, error: error)
     case .rateLimited, .unavailable, .dailyLimitReached:
       return .wait(error, delay: error.retryAfter)
     default:

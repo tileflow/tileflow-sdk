@@ -83,86 +83,95 @@ final class OfflineTests: XCTestCase {
     }
   }
 
-  func testCreatedPackIsPlannedExactly() throws {
-    let pack = try createdPack()
-    let manifest = pack.manifest
-    XCTAssertEqual(manifest.themes, ["dark", "light"])
+  func testCreatedDownloadIsPlannedExactly() throws {
+    let download = try createdDownload()
+    let manifest = download.manifest
+    XCTAssertEqual(manifest.themes, ["default"])
     XCTAssertEqual(manifest.maximumPackResources, 10_000)
-    XCTAssertEqual(manifest.excluded.map(\.source), ["boundaries"])
-    XCTAssertEqual(manifest.tiles.map(\.source), ["terrain", "world"])
-    XCTAssertEqual(manifest.tiles.map(\.zooms), [12...12, 12...15])
+    XCTAssertEqual(manifest.excluded.map(\.source), ["nautical"])
+    XCTAssertEqual(manifest.sources.map(\.source), ["terrain", "world"])
+    XCTAssertEqual(manifest.sources.map(\.zooms), [10...12, 10...14])
+    XCTAssertEqual(manifest.sources.map(\.absentStatus), [404, 404])
+    XCTAssertEqual(manifest.sources.map(\.contentEncoding), [nil, "gzip"])
+    XCTAssertEqual(manifest.origins, ["https://api.tileflow.test"])
     // The zoom policy plans the same source zooms the service did.
-    let zooms = try OfflineZooms(range: 12...15)
-    XCTAssertEqual(zooms.zooms(sourceMinimum: 0, sourceMaximum: 15), 12...15)
+    let zooms = try OfflineZooms(range: 10...14)
+    XCTAssertEqual(zooms.zooms(sourceMinimum: 0, sourceMaximum: 15), 10...14)
     XCTAssertEqual(
-      zooms.zooms(sourceMinimum: 0, sourceMaximum: min(14, zooms.terrainMaximum)), 12...12)
+      zooms.zooms(sourceMinimum: 0, sourceMaximum: min(14, zooms.terrainMaximum)), 10...12)
 
-    let estimate = OfflinePlanner.estimate(manifest)
-    XCTAssertEqual(estimate.resourceCount, 38)
-    XCTAssertEqual(estimate.billableResourceCount, 30)
-    XCTAssertEqual(estimate.publicResourceCount, 7)
-    XCTAssertEqual(estimate.bytes, 1_974_920)
-    XCTAssertEqual(estimate.tileCounts, ["terrain": 2, "world": 17])
-    XCTAssertEqual(estimate.mapViews, 1)
-    XCTAssertEqual(OfflinePlanner.estimate(manifest, isStored: { _ in true }).mapViews, 0)
-
-    let resources = Array(OfflinePlanner.resources(manifest))
-    XCTAssertEqual(resources.count, 38)
-    XCTAssertEqual(resources.filter(\.billable).count, 30)
-    XCTAssertEqual(resources.reduce(0) { $0 + ($1.bytes ?? 0) }, 1_974_920)
-    XCTAssertTrue(
-      resources.filter(\.isPublic).allSatisfy { !$0.billable && $0.sha256 != nil })
-    let world = manifest.tiles[1]
-    XCTAssertEqual(
-      world.url(world.entries[0])?.absoluteString,
-      "https://api.tileflow.test/tiles/world/2026-10-01/12/2005/1544.pbf?worldDescriptorSha256="
-        + String(repeating: "b", count: 64) + "&map=map_offlineofflineof")
-    // Every listed tile is in the region's cover, and the cover bounds the service's counts.
-    for set in manifest.tiles {
-      for zoom in set.zooms! {
-        XCTAssertLessThanOrEqual(
-          set.entries.filter { $0.z == zoom }.count,
-          OfflineTileCover(manifest.region, zoom: zoom).count)
-      }
+    let plan = OfflineVersionPlan.hosted(downloads: [download], requests: [try createdRequest()])
+    XCTAssertEqual(plan.packs.map(\.pack.id), [
+      "style", "assets", "glyphs/Noto Sans Regular/0", "tiles/terrain/7/62/48",
+      "tiles/terrain/11/1002/772", "tiles/terrain/11/1003/772", "tiles/world/7/62/48",
+      "tiles/world/11/1002/772", "tiles/world/11/1003/772",
+    ])
+    XCTAssertEqual(plan.resourceCount, 25)
+    XCTAssertEqual(plan.billable, 23)
+    XCTAssertEqual(plan.bytes, 4_149)
+    XCTAssertEqual(plan.resources.count, 1, "Discovery")
+    XCTAssertEqual(plan.tileCounts, ["terrain": 5, "world": 11])
+    // Every tile pack's anchor starts its band; tiles the archive does not store are left out.
+    var cover = 0
+    for zoom in 10...14 { cover += OfflineTileCover(manifest.region, zoom: zoom).count }
+    XCTAssertLessThan(plan.tileCounts["world"]!, cover)
+    for planned in plan.packs where planned.pack.kind == .tiles {
+      let anchor = try XCTUnwrap(planned.pack.anchor)
+      XCTAssertTrue(OfflinePackBand.anchors.contains(anchor.z))
+      XCTAssertEqual(planned.release, planned.pack.source == "world" ? "2026-10-01" : "2026-10")
     }
   }
 
   func testManifestInvariantsAreChecked() throws {
+    func pack(_ manifest: inout [String: Any], _ change: (inout [String: Any]) -> Void) {
+      var packs = manifest["packs"] as! [[String: Any]]
+      let index = packs.firstIndex { $0["kind"] as? String == "tiles" }!
+      change(&packs[index])
+      manifest["packs"] = packs
+    }
     let mutations: [(String, (inout [String: Any]) -> Void)] = [
       (
-        "totals", { $0["totals"] = ["resources": 38, "billableResources": 29, "bytes": 1_974_920] }
-      ),
-      (
-        "public billable",
+        "totals",
         { manifest in
-          var documents = manifest["documents"] as! [[String: Any]]
-          documents[0]["billable"] = true
-          manifest["documents"] = documents
+          var totals = manifest["totals"] as! [String: Any]
+          totals["billableResources"] = (totals["billableResources"] as! Int) - 1
+          manifest["totals"] = totals
         }
       ),
-      (
-        "outside the cover",
-        { manifest in
-          var tiles = manifest["tiles"] as! [[String: Any]]
-          var entries = tiles[1]["entries"] as! [[Int]]
-          entries[0] = [12, 0, 0, entries[0][3]]
-          tiles[1]["entries"] = entries
-          manifest["tiles"] = tiles
-        }
-      ),
-      (
-        "plain HTTP",
-        { manifest in
-          var documents = manifest["documents"] as! [[String: Any]]
-          documents[2]["url"] = "http://api.tileflow.test/style.json"
-          manifest["documents"] = documents
-        }
-      ),
+      ("an anchor outside the cover", { pack(&$0) { $0["anchor"] = [11, 0, 0]; $0["id"] = "tiles/world/11/0/0" } }),
+      ("an anchor no band starts at", { manifest in pack(&manifest) { item in
+        let anchor = item["anchor"] as! [Int]
+        item["anchor"] = [12, anchor[1] * 2, anchor[2] * 2]
+        item["id"] = "tiles/world/12/\(anchor[1] * 2)/\(anchor[2] * 2)"
+      } }),
+      ("zooms outside the band", { pack(&$0) { $0["zooms"] = [12, 16] } }),
+      ("an id that is not its anchor", { pack(&$0) { $0["id"] = "tiles/world/11/1/1" } }),
+      ("an unknown source", { pack(&$0) { $0["source"] = "bathymetry" } }),
+      ("another origin", { pack(&$0) { $0["url"] = "https://elsewhere.test/v1/offline/p.tfpack" } }),
+      ("plain HTTP", { pack(&$0) { $0["url"] = "http://api.tileflow.test/v1/offline/p.tfpack" } }),
+      ("larger than a pack can be", { pack(&$0) { $0["bytes"] = 33 * 1024 * 1024 } }),
+      ("more billable than resources", { pack(&$0) { $0["billableResources"] = 1_000_000 } }),
+      ("an unknown kind", { pack(&$0) { $0["kind"] = "models" } }),
+      ("format 1", { $0["version"] = 1 }),
       (
         "another region",
         { $0["region"] = ["type": "bbox", "bbox": [-3.71, 40.41, -3.69, 40.43]] }
       ),
-      ("over the plan", { $0["limits"] = ["maxPackResources": 29, "dailyDownloads": 20_000] }),
+      (
+        "over the plan",
+        { manifest in
+          let billable = (manifest["totals"] as! [String: Any])["billableResources"] as! Int
+          manifest["limits"] = ["maxPackResources": billable - 1, "dailyDownloads": 20_000]
+        }
+      ),
+      (
+        "a template on another origin",
+        { manifest in
+          var sources = manifest["sources"] as! [[String: Any]]
+          sources[0]["template"] = "https://elsewhere.test/{z}/{x}/{y}.pbf"
+          manifest["sources"] = sources
+        }
+      ),
     ]
     for (name, mutate) in mutations {
       var response = try createdResponse()
@@ -170,11 +179,17 @@ final class OfflineTests: XCTestCase {
       mutate(&manifest)
       response["manifest"] = manifest
       XCTAssertThrowsError(
-        try OfflinePackContract.pack(
+        try OfflinePackContract.download(
           JSONSerialization.data(withJSONObject: response), request: createdRequest(),
           allowsLoopbackHTTP: false), name
       ) { XCTAssertEqual(($0 as? TileflowOfflineError)?.code, .invalidResponse, name) }
     }
+    var response = try createdResponse()
+    response["grant"] = "tf_offline_v1.a.b"
+    XCTAssertThrowsError(
+      try OfflinePackContract.download(
+        JSONSerialization.data(withJSONObject: response), request: createdRequest(),
+        allowsLoopbackHTTP: false), "A format 1 grant")
   }
 
   func testRevalidationStates() throws {
@@ -243,9 +258,9 @@ final class OfflineTests: XCTestCase {
             #"{"state":"current","checkedAt":"2026-10-28T12:00:00.000Z","intervalSeconds":86400}"#
               .utf8), status: 200, headers: [:])
       }
-      let created = try contract()["created"] as! [String: Any]
       return ResourcePayload(
-        bytes: Data((created["body"] as! String).utf8), status: 201, headers: [:])
+        bytes: try JSONSerialization.data(withJSONObject: createdResponse()), status: 201,
+        headers: [:])
     }
     let credential = "tf_public_" + String(repeating: "a", count: 48)
     let client = try OfflinePackClient(
@@ -254,8 +269,8 @@ final class OfflineTests: XCTestCase {
         servicesCredential: TileflowCredential("tf_public_" + String(repeating: "b", count: 48)),
         mapCredential: TileflowCredential(credential)),
       transport: transport)
-    let pack = try await client.create(try createdRequest())
-    _ = try await client.revalidate(pack.grant)
+    let download = try await client.create(try createdRequest())
+    _ = try await client.revalidate(download.grant)
 
     let (create, revalidate) = (transport.requests[0], transport.requests[1])
     XCTAssertEqual(create.httpMethod, "POST")
@@ -267,15 +282,16 @@ final class OfflineTests: XCTestCase {
     XCTAssertEqual(
       revalidate.url?.absoluteString, "https://api.tileflow.test/v1/offline/packs/revalidate")
     XCTAssertEqual(revalidate.allHTTPHeaderFields, ["Content-Type": "application/json"])
-    XCTAssertEqual(try object(revalidate.httpBody!), ["grant": pack.grant.value] as NSDictionary)
-    XCTAssertFalse(String(describing: pack.grant).contains(pack.grant.value))
+    XCTAssertEqual(
+      try object(revalidate.httpBody!), ["grant": download.grant.value] as NSDictionary)
+    XCTAssertFalse(String(describing: download.grant).contains(download.grant.value))
 
     let anonymous = try OfflinePackClient(
       configuration: TileflowConfiguration(apiOrigin: URL(string: "https://api.tileflow.test")!),
       transport: transport)
     do {
       _ = try await anonymous.create(try createdRequest())
-      XCTFail("A pack needs the map credential")
+      XCTFail("A download needs the map credential")
     } catch let error as TileflowOfflineError {
       XCTAssertEqual(error.code, .missingCredential)
     }
@@ -444,6 +460,8 @@ let offlineErrorCodes: [String: TileflowOfflineError.Code] = [
   "OFFLINE_PACK_GRANT_INVALID": .grantRejected, "OFFLINE_PACK_GRANT_EXPIRED": .grantRejected,
   "OFFLINE_PACK_GRANT_STALE": .grantRejected, "OFFLINE_PACK_RESOURCE_DENIED": .accessDenied,
   "OFFLINE_PACK_SUPERSEDED": .superseded, "OFFLINE_DAILY_LIMIT_REACHED": .dailyLimitReached,
+  "OFFLINE_TEAM_DAILY_LIMIT_REACHED": .dailyLimitReached,
+  "OFFLINE_PACK_REPEAT_LIMIT_REACHED": .rateLimited,
   "COMMERCIAL_MAP_LIMIT_REACHED": .quotaExceeded,
   "COMMERCIAL_SPENDING_LIMIT_REACHED": .quotaExceeded, "RATE_LIMITED": .rateLimited,
 ]
@@ -474,24 +492,30 @@ private func object(_ data: Data) throws -> NSDictionary {
   try JSONSerialization.jsonObject(with: data) as! NSDictionary
 }
 
+/// The service's creation answer, generated by its own code (`packs-v2/release-1`).
 private func createdResponse() throws -> [String: Any] {
-  let created = try contract()["created"] as! [String: Any]
-  return try JSONSerialization.jsonObject(with: Data((created["body"] as! String).utf8))
+  try JSONSerialization.jsonObject(with: Data(contentsOf: packFixture("release-1/create-response.json")))
     as! [String: Any]
 }
 
 private func createdRequest() throws -> OfflinePackRequest {
   try OfflinePackRequest.requests(
-    mapID: "map_offlineofflineof", themes: ["light", "dark"],
+    mapID: "map_offlinefixture00", themes: ["default"],
     geometry: .boundingBox(
       TileflowBoundingBox(west: -3.71, south: 40.41, east: -3.69, north: 40.425)),
-    zooms: OfflineZooms(range: 12...15))[0]
+    zooms: OfflineZooms(range: 10...14))[0]
 }
 
-private func createdPack() throws -> OfflinePack {
-  let created = try contract()["created"] as! [String: Any]
-  return try OfflinePackContract.pack(
-    Data((created["body"] as! String).utf8), request: createdRequest(), allowsLoopbackHTTP: false)
+private func createdDownload() throws -> OfflineDownload {
+  try OfflinePackContract.download(
+    JSONSerialization.data(withJSONObject: createdResponse()), request: createdRequest(),
+    allowsLoopbackHTTP: false)
+}
+
+/// A file of the service's pack fixture, generated by its own code.
+func packFixture(_ path: String) -> URL {
+  Bundle.module.url(forResource: "packs-v2", withExtension: nil, subdirectory: "Fixtures/Offline")!
+    .appendingPathComponent(path)
 }
 
 /// The position `metres` to the left of the segment's heading, on a sphere.

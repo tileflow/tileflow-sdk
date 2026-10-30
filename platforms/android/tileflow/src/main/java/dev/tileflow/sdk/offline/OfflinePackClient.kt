@@ -171,7 +171,7 @@ internal class OfflinePackClient(
     val allowsLoopbackHttp: Boolean = apiOrigin.scheme == "http"
     private val credential: TileflowCredential? = configuration.mapCredential
 
-    suspend fun create(request: OfflinePackRequest): OfflinePack {
+    suspend fun create(request: OfflinePackRequest): OfflineDownload {
         val credential =
             credential
                 ?: throw TileflowOfflineException(TileflowOfflineErrorCode.MISSING_CREDENTIAL)
@@ -182,7 +182,7 @@ internal class OfflinePackClient(
                     .build()
             )
         if (response.status != 201) throw failure(response, OfflinePackContract.Operation.CREATE)
-        return OfflinePackContract.pack(response.bytes, request, allowsLoopbackHttp)
+        return OfflinePackContract.download(response.bytes, request, allowsLoopbackHttp)
     }
 
     suspend fun revalidate(grant: OfflinePackGrant): OfflinePackRevalidation {

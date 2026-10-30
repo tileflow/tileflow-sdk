@@ -177,18 +177,29 @@ final class ResourceLoader: ResourceLoading, Sendable {
           native.setValue(value, forHTTPHeaderField: name)
         }
       }
+      // A downloaded region's pack entry is revalidated instead of downloaded again.
+      let packed = stored == nil && grant != nil && cacheable ? await packEntry(url) : nil
+      if let etag = packed?.metadata.headers["ETag"] {
+        native.setValue(etag, forHTTPHeaderField: "If-None-Match")
+      }
       let response: HTTPResponseStream
       do {
         response = try await transport.open(native)
       } catch {
-        if Self.isNetworkFailure(error), let fallback = stored?.afterFailure(at: date()) {
-          return Self.response(fallback.resource)
+        if Self.isNetworkFailure(error),
+          let fallback = stored?.afterFailure(at: date())?.resource ?? packed
+        {
+          return Self.response(fallback)
         }
         throw error
       }
       if response.status == 304, let key, let candidate = stored?.candidate {
         response.cancel()
         return Self.response(revalidated(candidate, key: key, headers: response.headers))
+      }
+      if response.status == 304, let packed {
+        response.cancel()
+        return Self.response(packed)
       }
       if (500...599).contains(response.status), let fallback = stored?.afterFailure(at: date()) {
         response.cancel()
@@ -271,12 +282,11 @@ final class ResourceLoader: ResourceLoading, Sendable {
       body: .data(Data()))
   }
 
-  /// A downloaded region's entry for a protected resource, when a region the map may use holds it.
+  /// A downloaded region's answer for a protected resource, when a region the map may use holds
+  /// it or covers it.
   private func packEntry(_ url: URL) async -> StoredResource? {
     guard let offline, let cache, let grantScope else { return nil }
-    let key = ResourceCacheKey(url: url, scope: grantScope)
-    guard await offline.serves(key) else { return nil }
-    return cache.read(key, retention: .pinned)
+    return await offline.resource(ResourceCacheKey(url: url, scope: grantScope), cache: cache)
   }
 
   /// Landmarks and Team models are public on the API origin and never carry a grant.

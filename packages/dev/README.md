@@ -124,6 +124,8 @@ export async function createMapHandler() {
 The caller mounts `fetch` in its server and calls `close()` on shutdown. This factory does not open
 a listener. Sessions follow config imports and local asset inputs, retain the last good generation
 after invalid edits, and publish structured state changes through `subscribe()`.
+Session creation waits for the first valid generation or a settled invalid result, including
+when a watched edit replaces the initial build before it finishes.
 Watching follows aliased working directories, including newly created or removed icon metadata.
 Package assets resolve from the config directory. Linked package assets inside the selected working
 tree are watched too; installed assets in `node_modules` remain immutable.

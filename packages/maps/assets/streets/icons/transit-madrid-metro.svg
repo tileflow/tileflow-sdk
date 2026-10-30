@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>Metro de Madrid</title>
+  <desc>Przemysław Sakrajda; simplification by Kizar. CC-BY-SA-3.0. Normalized to a 24px map icon; see THIRD_PARTY_NOTICES.md.</desc>
+  <svg x="1" y="1" width="22" height="22" viewBox="0 0 833.3 500">
+<g>
+	<polygon fill="#FFFFFF" points="166.7,250 416.7,100 666.7,250 416.7,400 	"/>
+	<path fill="#E8112D" d="M166.7,250l250-150l250,150l-250,150L166.7,250z M416.7,0L0,250l416.7,250l416.7-250L416.7,0z"/>
+	<rect x="218.8" y="171.9" fill="#0038A8" width="395.8" height="156.3"/>
+</g>
+  </svg>
+</svg>

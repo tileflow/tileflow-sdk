@@ -6,8 +6,41 @@ type Node = {bounds: number[]; from: number; to: number; left: number; right: nu
 /** Local sky visibility, baked independently of colour and sun direction. Distances are metres. */
 export function buildingModelAmbientVisibility(
   mesh: Geometry,
-  {radius = 2, samples = 48}: {radius?: number; samples?: number} = {},
+  options: {radius?: number; samples?: number} = {},
 ): number[] {
+  const sampler = buildingModelAmbientSampler(mesh, options);
+  const {positions, normals} = mesh;
+  const values = new Array<number>(positions.length / 3);
+  const cache = new Map<string, number>();
+  for (let vertex = 0; vertex < values.length; vertex += 1) {
+    const at = vertex * 3;
+    const point = [positions[at]!, positions[at + 1]!, positions[at + 2]!];
+    const normal = [normals[at]!, normals[at + 1]!, normals[at + 2]!];
+    // Repeated corners with the same normal share samples across material and UV seams.
+    const key = [...point, ...normal].map((v) => Math.round(v * 100_000)).join(',');
+    let value = cache.get(key);
+    if (value === undefined) {
+      value = sampler.sky(point, normal);
+      cache.set(key, value);
+    }
+    values[vertex] = value;
+  }
+  return values;
+}
+
+export type BuildingModelAmbientSampler = {
+  readonly radius: number;
+  /** Sky visibility seen by a surface facing `normal` at `point`; `turn` rotates the ray pattern. */
+  sky(point: readonly number[], normal: readonly number[], rays?: number, turn?: number): number;
+  /** Distance to the nearest surface along a direction, up to the reach. */
+  along(point: readonly number[], direction: readonly number[]): number;
+};
+
+/** Ray queries against a level's own triangles. */
+export function buildingModelAmbientSampler(
+  mesh: Geometry,
+  {radius = 2, samples = 48}: {radius?: number; samples?: number} = {},
+): BuildingModelAmbientSampler {
   if (
     !(radius > 0 && Number.isFinite(radius)) ||
     !Number.isInteger(samples) ||
@@ -16,7 +49,7 @@ export function buildingModelAmbientVisibility(
   )
     throw new RangeError('Model ambient visibility needs a positive radius and 1 to 256 samples.');
 
-  const {positions, normals, indices} = mesh;
+  const {positions, indices} = mesh;
   const count = indices.length / 3;
   const triangles = new Float64Array(count * 9);
   const bounds = new Float64Array(count * 6);
@@ -65,14 +98,22 @@ export function buildingModelAmbientVisibility(
     }
     return index;
   };
-  build(0, count);
+  if (count > 0) build(0, count);
 
-  // Cosine-weighted hemisphere: each sample contributes the same ambient irradiance.
-  const hemisphere = Array.from({length: samples}, (_, i) => {
-    const r = Math.sqrt((i + 0.5) / samples),
-      angle = i * Math.PI * (3 - Math.sqrt(5));
-    return [r * Math.cos(angle), r * Math.sin(angle), Math.sqrt(1 - r * r)];
-  });
+  // Cosine-weighted hemispheres: each sample contributes the same ambient irradiance.
+  const hemispheres = new Map<number, number[][]>();
+  const hemisphere = (count: number) => {
+    let pattern = hemispheres.get(count);
+    if (!pattern) {
+      pattern = Array.from({length: count}, (_, i) => {
+        const r = Math.sqrt((i + 0.5) / count),
+          angle = i * Math.PI * (3 - Math.sqrt(5));
+        return [r * Math.cos(angle), r * Math.sin(angle), Math.sqrt(1 - r * r)];
+      });
+      hemispheres.set(count, pattern);
+    }
+    return pattern;
+  };
   const bias = Math.min(0.002, radius * 0.001);
   const stack = new Int32Array(64);
   const origin = [0, 0, 0];
@@ -80,6 +121,7 @@ export function buildingModelAmbientVisibility(
   const nearest = (): number => {
     let best = radius,
       pending = 1;
+    if (nodes.length === 0) return best;
     stack[0] = 0;
     while (pending > 0) {
       const node = nodes[stack[--pending]!]!;
@@ -121,49 +163,43 @@ export function buildingModelAmbientVisibility(
     return best;
   };
 
-  const values = new Array<number>(positions.length / 3);
-  const cache = new Map<string, number>();
-  for (let vertex = 0; vertex < values.length; vertex += 1) {
-    const at = vertex * 3;
-    const nx = normals[at]!,
-      ny = normals[at + 1]!,
-      nz = normals[at + 2]!;
-    const point = [positions[at]!, positions[at + 1]!, positions[at + 2]!];
-    // Repeated corners with the same normal share samples across material and UV seams.
-    const key = [...point, nx, ny, nz].map((v) => Math.round(v * 100_000)).join(',');
-    const cached = cache.get(key);
-    if (cached !== undefined) {
-      values[vertex] = cached;
-      continue;
-    }
-    const tangent = Math.abs(nz) < 0.9 ? [-ny, nx, 0] : [nz, 0, -nx];
-    const length = Math.hypot(...tangent);
-    if (length === 0) {
-      values[vertex] = 1;
-      continue;
-    }
-    for (let axis = 0; axis < 3; axis += 1) {
-      tangent[axis]! /= length;
-      origin[axis] = point[axis]! + normals[at + axis]! * bias;
-    }
-    const bitangent = [
-      ny * tangent[2]! - nz * tangent[1]!,
-      nz * tangent[0]! - nx * tangent[2]!,
-      nx * tangent[1]! - ny * tangent[0]!,
-    ];
-    let visibility = 0;
-    for (const sample of hemisphere) {
-      for (let axis = 0; axis < 3; axis += 1)
-        direction[axis] =
-          sample[0]! * tangent[axis]! +
-          sample[1]! * bitangent[axis]! +
-          sample[2]! * normals[at + axis]!;
-      visibility += nearest() / radius;
-    }
-    values[vertex] = visibility / samples;
-    cache.set(key, values[vertex]!);
-  }
-  return values;
+  return {
+    radius,
+    sky(point, normal, rays = samples, turn = 0) {
+      const [nx, ny, nz] = normal as [number, number, number];
+      const flat = Math.abs(nz) < 0.9 ? [-ny, nx, 0] : [nz, 0, -nx];
+      const length = Math.hypot(...flat);
+      if (length === 0) return 1;
+      const [c, s] = [Math.cos(turn), Math.sin(turn)];
+      const base = flat.map((value) => value / length);
+      const cross = [
+        ny * base[2]! - nz * base[1]!,
+        nz * base[0]! - nx * base[2]!,
+        nx * base[1]! - ny * base[0]!,
+      ];
+      const tangent = base.map((value, axis) => value * c + cross[axis]! * s);
+      const bitangent = cross.map((value, axis) => value * c - base[axis]! * s);
+      for (let axis = 0; axis < 3; axis += 1) origin[axis] = point[axis]! + normal[axis]! * bias;
+      let visibility = 0;
+      const pattern = hemisphere(rays);
+      for (const sample of pattern) {
+        for (let axis = 0; axis < 3; axis += 1)
+          direction[axis] =
+            sample[0]! * tangent[axis]! +
+            sample[1]! * bitangent[axis]! +
+            sample[2]! * normal[axis]!;
+        visibility += nearest() / radius;
+      }
+      return visibility / pattern.length;
+    },
+    along(point, towards) {
+      for (let axis = 0; axis < 3; axis += 1) {
+        origin[axis] = point[axis]! + towards[axis]! * bias;
+        direction[axis] = towards[axis]!;
+      }
+      return nearest();
+    },
+  };
 }
 
 function hitsBox(box: number[], origin: number[], direction: number[], limit: number): boolean {

@@ -77,13 +77,19 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
     ...(transformRequest ? {transformRequest} : {}),
   };
   const instant = {transition: {duration: 0}};
+  // What the style declares changes with the style, not each time the map settles; without a
+  // controller, reading it serializes the whole style.
+  let declarations: ReadonlySet<string> | undefined;
 
   function sync(): void {
     if (disposed || syncing || !map.isStyleLoaded()) return;
     syncing = true;
     try {
       const shown = viewMode === '3d';
-      const declared = tileflowMap3DDeclarations({map, ...(controller ? {controller} : {})});
+      const declared = (declarations ??= tileflowMap3DDeclarations({
+        map,
+        ...(controller ? {controller} : {}),
+      }));
       const declares = (key: string) => declared.has(key);
       // Undeclared buildings would draw with default design, so a style without them has none.
       if (shown && declares(tileflowBuildingsMetadataKey))
@@ -130,7 +136,8 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
   function dispose(): void {
     if (disposed) return;
     disposed = true;
-    map.off('styledata', sync);
+    map.off('styledata', restyle);
+    map.off('style.load', restyle);
     map.off('idle', sync);
     map.off('remove', dispose);
     streetLights?.dispose();
@@ -141,7 +148,13 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
     vegetation = undefined;
   }
 
-  map.on('styledata', sync);
+  function restyle(): void {
+    declarations = undefined;
+    sync();
+  }
+
+  map.on('styledata', restyle);
+  map.on('style.load', restyle);
   map.on('idle', sync);
   map.on('remove', dispose);
   sync();

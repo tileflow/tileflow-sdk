@@ -4,21 +4,25 @@
 // (EXT_meshopt_compression), as other web maps' landmark models are, and any glTF viewer opens them.
 // Each model is a root node whose `extras.tileflow` names it and carries its footprint; its children
 // are its levels, `near`, `mid` and `far`, each one mesh of one indexed triangle primitive whose node
-// translation and uniform scale turn its whole-step positions into metres. A vertex is 16 bytes in
-// glTF's axes (x east, y up, z south): position, normal, and part, shade and light (`_PAINT`). Node
+// translation and uniform scale turn its whole-step positions into metres, and whose
+// `extras.tileflow.parts` names the parts its vertices count through (a file without them counts
+// through the architectural parts). A vertex is 16 bytes in glTF's axes (x east, y up, z south):
+// position, normal, and part, shade and light (`_PAINT`), then its lighting role. Node
 // tooling encodes files with meshoptimizer's encoder; Core decodes them for its 3D buildings
 // renderer. It has no DOM dependency, and loads meshoptimizer's decoder only to read a compressed
 // file.
 import type {TileflowLandmarkFootprint} from './models-3d-landmarks';
-import {checkTileflowModelSurface, type TileflowModelSurface} from './models-3d-materials';
+import {checkTileflowModelSurface} from './models-3d-materials';
 import {
+  isTileflowModelPartName,
   type TileflowModel,
+  tileflowModelArchitecturalPartNames,
   type TileflowModelBytes,
-  tileflowModelDefaultLightingRoles,
+  tileflowModelDefaultLightingRole,
   type TileflowModelLevelBytes,
   tileflowModelLightingRoles,
   tileflowModelLimits,
-  tileflowModelParts,
+  type TileflowModelSurfaceBytes,
   tileflowModelVertexBytes,
 } from './models-3d-model';
 
@@ -35,7 +39,13 @@ export type TileflowModelEntry = TileflowModel &
 /** What compresses a file's buffers: meshoptimizer's encoder, once ready. */
 export type TileflowModelCompressor = Readonly<{
   reorderMesh(indices: Uint32Array, triangles: boolean, optsize: boolean): [Uint32Array, number];
-  encodeGltfBuffer(source: Uint8Array, count: number, size: number, mode: string): Uint8Array;
+  encodeGltfBuffer(
+    source: Uint8Array,
+    count: number,
+    size: number,
+    mode: string,
+    version?: number,
+  ): Uint8Array;
 }>;
 
 /** What decompresses them: meshoptimizer's decoder, once ready. */
@@ -57,7 +67,6 @@ const levelNames = ['near', 'mid', 'far'] as const;
 const meshopt = 'EXT_meshopt_compression';
 const quantisation = 'KHR_mesh_quantization';
 const steps = 32767;
-const partCount = Object.keys(tileflowModelParts).length;
 const roleCount = Object.keys(tileflowModelLightingRoles).length;
 const modelId = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const [glbMagic, jsonChunk, binChunk] = [0x46546c67, 0x4e4f534a, 0x004e4942];
@@ -124,7 +133,14 @@ export function encodeTileflowModels(
       return bufferViews.length - 1;
     }
     const mode = vertices ? 'ATTRIBUTES' : 'TRIANGLES';
-    const packed = compressor.encodeGltfBuffer(bytes, count, stride, mode);
+    // Vertex codec version 1 packs attribute bytes more tightly; indices have one codec.
+    const packed = compressor.encodeGltfBuffer(
+      bytes,
+      count,
+      stride,
+      mode,
+      vertices ? 1 : undefined,
+    );
     const byteOffset = addBlob(packed);
     const fallbackOffset = fallbackLength;
     fallbackLength += bytes.byteLength + ((4 - (bytes.byteLength % 4)) % 4);
@@ -206,20 +222,35 @@ export function encodeTileflowModels(
       let surface: Record<string, unknown> | undefined;
       if (mesh.surface && level.attributes) {
         const attributes = level.attributes;
-        const data = new Uint8Array(
-          attributes.buffer,
-          attributes.byteOffset,
-          attributes.byteLength,
-        );
-        const view = addView(data, level.count, 32, true);
         const uv = accessors.length;
+        // UV0 and colour as floats; UV1, inside the unit square, with sixteen bits, which keep a
+        // sixteenth of a texel in the widest occlusion atlas and compress far better than floats.
+        const rest = new Float32Array(level.count * 6);
+        const second = new Uint16Array(level.count * 2);
+        for (let vertex = 0; vertex < level.count; vertex++) {
+          const at = vertex * 8;
+          rest.set([attributes[at]!, attributes[at + 1]!], vertex * 6);
+          rest.set(attributes.subarray(at + 4, at + 8), vertex * 6 + 2);
+          second[vertex * 2] = Math.round(attributes[at + 2]! * 65_535);
+          second[vertex * 2 + 1] = Math.round(attributes[at + 3]! * 65_535);
+        }
+        const view = addView(new Uint8Array(rest.buffer), level.count, 24, true);
+        const lightmap = addView(new Uint8Array(second.buffer), level.count, 4, true);
         accessors.push(
-          {bufferView: view, byteOffset: 0, componentType: 5126, count: level.count, type: 'VEC4'},
-          {bufferView: view, byteOffset: 16, componentType: 5126, count: level.count, type: 'VEC4'},
+          {bufferView: view, byteOffset: 0, componentType: 5126, count: level.count, type: 'VEC2'},
+          {
+            bufferView: lightmap,
+            byteOffset: 0,
+            componentType: 5123,
+            normalized: true,
+            count: level.count,
+            type: 'VEC2',
+          },
+          {bufferView: view, byteOffset: 8, componentType: 5126, count: level.count, type: 'VEC4'},
         );
         surface = {
-          version: 1,
-          attributes: [uv, uv + 1],
+          version: 2,
+          attributes: [uv, uv + 1, uv + 2],
           materials: mesh.surface.materials,
           textures: mesh.surface.textures.map(({bytes, ...texture}) => ({
             ...texture,
@@ -236,7 +267,7 @@ export function encodeTileflowModels(
         mesh: meshes.length - 1,
         translation: [...level.centre],
         scale: [level.step, level.step, level.step],
-        ...(surface ? {extras: {tileflow: {surface}}} : {}),
+        extras: {tileflow: {parts: [...partNamesOf(mesh)], ...(surface ? {surface} : {})}},
       });
     }
     roots.push(nodes.length);
@@ -322,7 +353,7 @@ export async function decodeTileflowModels(
         if (source !== 0 || byteStride !== stride || count * byteStride !== length)
           throw new Error();
         if (filter !== undefined && filter !== 'NONE') throw new Error();
-        if (mode !== (stride > 4 ? 'ATTRIBUTES' : 'TRIANGLES')) throw new Error();
+        if (mode !== (view.target === 34963 ? 'TRIANGLES' : 'ATTRIBUTES')) throw new Error();
         out = new Uint8Array(length);
         decoder!.decodeGltfBuffer(out, count, byteStride, slice(bin, byteOffset, byteLength), mode);
       } else {
@@ -362,6 +393,7 @@ export async function decodeTileflowModels(
         }
         levels.push({
           vertices: level.vertices,
+          partNames: level.partNames,
           indices: level.indices,
           centre: level.centre,
           step: level.step,
@@ -592,6 +624,7 @@ function quantise(mesh: TileflowModel['levels'][number], compressor?: TileflowMo
     ...low.map((value, axis) => Math.max(centre[axis]! - value, high[axis]! - centre[axis]!)),
   );
   const step = Math.max(reach, 1e-3) / steps;
+  const names = partNamesOf(mesh);
   const raw = new Uint8Array(count * tileflowModelVertexBytes);
   const view = new DataView(raw.buffer);
   for (let vertex = 0; vertex < count; vertex += 1) {
@@ -613,12 +646,12 @@ function quantise(mesh: TileflowModel['levels'][number], compressor?: TileflowMo
     for (let axis = 0; axis < 3; axis += 1)
       view.setInt8(at + 8 + axis, clamp(Math.round(normal[axis]! * 127), -127, 127));
     const part = mesh.parts[vertex]!;
-    if (!Number.isInteger(part) || part < 0 || part >= partCount)
+    if (!Number.isInteger(part) || part < 0 || part >= names.length)
       throw new RangeError(`Vertex ${vertex} has no part.`);
     raw[at + 12] = part;
     raw[at + 13] = Math.round(((clamp(mesh.shades[vertex]!, -1, 1) + 1) / 2) * 255);
     raw[at + 14] = Math.round(clamp(mesh.occlusion[vertex]!, 0, 1) * 255);
-    const role = mesh.lightingRoles?.[vertex] ?? tileflowModelDefaultLightingRoles[part]!;
+    const role = mesh.lightingRoles?.[vertex] ?? tileflowModelDefaultLightingRole(names[part]!);
     if (!Number.isInteger(role) || role < 0 || role >= roleCount)
       throw new RangeError(`Vertex ${vertex} has no lighting role.`);
     raw[at + 15] = role;
@@ -654,6 +687,26 @@ function quantise(mesh: TileflowModel['levels'][number], compressor?: TileflowMo
     order = new Array<number>(unique);
     for (const [index, vertex] of kept.entries())
       if (remap[index] !== 0xffffffff) order[remap[index]!] = vertex;
+  } else if (compressor) {
+    // Material ranges keep their triangles: each range is reordered for the vertex cache on its
+    // own, then vertices are numbered in the order the triangles first use them.
+    for (const {from, count: length} of mesh.surface!.ranges) {
+      const range = indices.slice(from, from + length);
+      const [remap, unique] = compressor.reorderMesh(range, true, false);
+      const global = new Uint32Array(unique);
+      for (const [vertex, local] of remap.entries())
+        if (local !== 0xffffffff) global[local] = vertex;
+      for (const [at, local] of range.entries()) indices[from + at] = global[local]!;
+    }
+    const renumber = new Uint32Array(kept.length).fill(0xffffffff);
+    order = [];
+    for (const [at, vertex] of indices.entries()) {
+      if (renumber[vertex] === 0xffffffff) {
+        renumber[vertex] = order.length;
+        order.push(kept[vertex]!);
+      }
+      indices[at] = renumber[vertex]!;
+    }
   }
   const vertices = new Uint8Array(order.length * tileflowModelVertexBytes);
   const attributes = mesh.surface ? new Float32Array(order.length * 8) : undefined;
@@ -706,6 +759,10 @@ function checkModel(model: TileflowModelEntry): void {
         throw new RangeError(`Every vertex of level ${at} needs a part, a shade and a light.`);
     if (level.lightingRoles && level.lightingRoles.length !== count)
       throw new RangeError(`Every vertex of level ${at} needs a lighting role.`);
+    if (!isPartNames(partNamesOf(level)))
+      throw new RangeError(
+        `Level ${at} names 1 to ${tileflowModelLimits.parts} different parts, each in lower-case words joined by hyphens or underscores.`,
+      );
     if (level.surface) checkTileflowModelSurface(level.surface, count, level.indices.length);
     for (let index = 0; index < count; index += 1)
       for (let axis = 0; axis < 3; axis += 1) {
@@ -835,6 +892,10 @@ function readLevelNode(
     indexCount / 3 > tileflowModelLimits.triangles
   )
     throw new Error();
+  const own = node.extras?.tileflow?.parts;
+  const partNames: readonly string[] =
+    own === undefined ? tileflowModelArchitecturalPartNames : own;
+  if (!isPartNames(partNames)) throw new Error();
   const vertices = viewBytes(
     position.bufferView,
     tileflowModelVertexBytes,
@@ -843,8 +904,8 @@ function readLevelNode(
   for (let vertex = 0; vertex < count; vertex += 1) {
     const at = vertex * tileflowModelVertexBytes;
     const part = vertices[at + 12]!;
-    if (part >= partCount) throw new Error();
-    if (!hasLightingRoles) vertices[at + 15] = tileflowModelDefaultLightingRoles[part]!;
+    if (part >= partNames.length) throw new Error();
+    if (!hasLightingRoles) vertices[at + 15] = tileflowModelDefaultLightingRole(partNames[part]!);
     else if (vertices[at + 15]! >= roleCount) throw new Error();
   }
   const indexBytes = viewBytes(index.bufferView, width, indexCount * width);
@@ -854,35 +915,54 @@ function readLevelNode(
       : new Uint16Array(indexBytes.buffer, indexBytes.byteOffset, indexCount);
   for (const vertex of indices) if (vertex >= count) throw new Error();
   const physical = node.extras?.tileflow?.surface;
-  let surface: (TileflowModelSurface & {attributes: Float32Array}) | undefined;
+  let surface: TileflowModelSurfaceBytes | undefined;
   if (physical !== undefined) {
     if (
-      physical?.version !== 1 ||
+      physical?.version !== 2 ||
       !Array.isArray(physical.attributes) ||
-      physical.attributes.length !== 2
+      physical.attributes.length !== 3
     )
       throw new Error();
-    const uv = accessor(physical.attributes[0]);
-    const colour = accessor(physical.attributes[1]);
+    // UV0 and colour as floats, UV1 as normalised sixteen-bit values.
+    const [uv, lightmap, colour] = physical.attributes.map(accessor);
     if (
       !uv ||
+      !lightmap ||
       !colour ||
       (uv.byteOffset ?? 0) !== 0 ||
-      colour.byteOffset !== 16 ||
+      colour.byteOffset !== 8 ||
+      (lightmap.byteOffset ?? 0) !== 0 ||
       uv.bufferView !== colour.bufferView ||
-      [uv, colour].some(
-        (value) =>
-          value.componentType !== 5126 ||
-          value.type !== 'VEC4' ||
-          value.count !== count ||
-          value.normalized === true,
-      )
+      uv.bufferView === lightmap.bufferView ||
+      uv.componentType !== 5126 ||
+      uv.type !== 'VEC2' ||
+      colour.componentType !== 5126 ||
+      colour.type !== 'VEC4' ||
+      lightmap.componentType !== 5123 ||
+      lightmap.type !== 'VEC2' ||
+      lightmap.normalized !== true ||
+      [uv, lightmap, colour].some((value) => value.count !== count)
     )
       throw new Error();
-    const attributeBytes = viewBytes(uv.bufferView, 32, count * 32);
+    const restBytes = viewBytes(uv.bufferView, 24, count * 24);
+    const lightmapBytes = viewBytes(lightmap.bufferView, 4, count * 4);
+    const rest = new Float32Array(
+      restBytes.buffer.slice(restBytes.byteOffset, restBytes.byteOffset + count * 24),
+    );
+    const second = new Uint16Array(
+      lightmapBytes.buffer.slice(lightmapBytes.byteOffset, lightmapBytes.byteOffset + count * 4),
+    );
+    const attributes = new Float32Array(count * 8);
+    for (let vertex = 0; vertex < count; vertex++) {
+      const at = vertex * 8;
+      attributes[at] = rest[vertex * 6]!;
+      attributes[at + 1] = rest[vertex * 6 + 1]!;
+      attributes[at + 2] = second[vertex * 2]! / 65_535;
+      attributes[at + 3] = second[vertex * 2 + 1]! / 65_535;
+      attributes.set(rest.subarray(vertex * 6 + 2, vertex * 6 + 6), at + 4);
+    }
     if (!Array.isArray(physical.textures) || physical.textures.length > 32) throw new Error();
-    surface = {
-      attributes: new Float32Array(attributeBytes.buffer, attributeBytes.byteOffset, count * 8),
+    const read = {
       materials: physical.materials,
       ranges: physical.ranges,
       textures: physical.textures.map((texture: any) => {
@@ -897,10 +977,12 @@ function readLevelNode(
       }),
       ...(physical.emitters === undefined ? {} : {emitters: physical.emitters}),
     };
-    checkTileflowModelSurface(surface, count, indexCount);
+    checkTileflowModelSurface({...read, attributes}, count, indexCount);
+    surface = {...read, uv: column(attributes, 0), rgba: column(attributes, 4)};
   }
   return {
     vertices,
+    partNames: [...partNames],
     indices,
     centre: [centre[0], centre[1], centre[2]] as const,
     step: scale[0] as number,
@@ -908,6 +990,39 @@ function readLevelNode(
     max: max as number[],
     surface,
   };
+}
+
+/**
+ * Four of the eight floats each vertex of a surface holds, from `first`: four a vertex, or just four
+ * when every vertex holds the same, as a model without textures or vertex colours does.
+ */
+function column(attributes: Float32Array, first: number): Float32Array {
+  const out = attributes.slice(first, first + 4);
+  for (let at = 8 + first; at < attributes.length; at += 8)
+    for (let component = 0; component < 4; component += 1)
+      if (attributes[at + component] !== out[component]) {
+        const all = new Float32Array(attributes.length / 2);
+        for (let vertex = 0; vertex < all.length / 4; vertex += 1)
+          all.set(attributes.subarray(vertex * 8 + first, vertex * 8 + first + 4), vertex * 4);
+        return all;
+      }
+  return out;
+}
+
+/** The names of a level's parts: its own, or the architectural parts. */
+function partNamesOf(mesh: TileflowModel['levels'][number]): readonly string[] {
+  return mesh.partNames ?? tileflowModelArchitecturalPartNames;
+}
+
+/** Whether a list names a level's parts: 1 to the limit, each a part name, none twice. */
+function isPartNames(names: unknown): names is readonly string[] {
+  return (
+    Array.isArray(names) &&
+    names.length >= 1 &&
+    names.length <= tileflowModelLimits.parts &&
+    names.every(isTileflowModelPartName) &&
+    new Set(names).size === names.length
+  );
 }
 
 /** A glTF binary's JSON and binary chunks. */

@@ -1,9 +1,11 @@
+import {isGroundRoadLabel} from './cartography/label-placement';
 // Tileflow's 3D trees: a custom WebGL2 layer that stands the trees and hedges of a Tileflow map's own
 // vector tiles round the camera, as the map's vegetation module describes them, lit by the theme
 // controller's sun. Trees cast shadows on the ground and on the 3D buildings and take theirs, in the
 // map's shared 3D scene; nearer buildings hide them. Showing, hiding and growing them lays out no
 // source.
 import {tileflowBuildingGroundFragment, tileflowBuildingGroundVertex} from './buildings-3d-shaders';
+import {acquireCameraTileBuilder} from './camera-tile-builder';
 import {cameraFrame, type CameraTiles, createCameraTiles} from './camera-tiles-browser';
 import {inspectModelTriangles, type TileflowModelInspection} from './model-inspection';
 import {
@@ -14,11 +16,11 @@ import {
   tileflowSceneShadowFloor,
 } from './scene-3d-browser';
 import {tileflowSceneMinzoom, tileflowSceneOpacity} from './scene-3d-visibility';
+import {bindTileflowSkyHaze, type TileflowSkyHazeArgs, tileflowSkyHazeOf} from './sky-haze-browser';
 import {resolveTileflowSun, tileflowStyleSunPreset, type TileflowSun} from './sun';
 import {tileflowColourChannels} from './theme-blend';
 import type {TileflowTileRequestTransform} from './tile-reader';
 import {
-  placeTileflowTrees,
   readTileflowVegetation3D,
   tileflowTreeBytes,
   type TileflowTreeForm,
@@ -54,11 +56,17 @@ export type TileflowTrees3DMap = {
   getCenter(): {lat: number; lng: number};
   getLayer(id: string): unknown;
   getLayoutProperty?(layer: string, name: string): unknown;
+  /** The style's layer ids in order, read without serializing the style. */
+  getLayersOrder?(): string[];
   getPitch(): number;
+  getSky?(): unknown;
+  getVerticalFieldOfView?(): number;
   getSource(id: string): unknown;
   getStyle(): unknown;
   getZoom(): number;
   isStyleLoaded(): boolean | void;
+  /** Whether the camera is moving; trees then redraw their shadows less often. */
+  isMoving?(): boolean;
   off(event: string, listener: () => void): unknown;
   on(event: string, listener: () => void): unknown;
   removeLayer(id: string): unknown;
@@ -145,7 +153,7 @@ type TreeTile = {
   /** A vertex array per form, model and level (`round:0:near`), and one for the hedges. */
   gl?: {vbo: WebGLBuffer; vaos: Map<string, Drawing>; hedge?: Drawing & {vbo: WebGLBuffer}};
 };
-type ProjectionArgs = {
+type ProjectionArgs = TileflowSkyHazeArgs & {
   getProjectionData(params: {
     tileID: {canonical: {x: number; y: number; z: number}; wrap: number};
   }): {
@@ -164,6 +172,8 @@ type ProjectionArgs = {
  */
 export function createTileflowTrees3D(options: TileflowTrees3DOptions): TileflowTrees3D {
   const {map} = options;
+  // Places the tiles' trees off the page, in a worker the map's 3D layers share.
+  const builder = acquireCameraTileBuilder();
   const minzoom = options.minzoom ?? tileflowSceneMinzoom;
   const maxTiles = Math.round(options.maxTiles ?? 25);
   if (!Number.isFinite(minzoom) || minzoom < 0 || minzoom > 24)
@@ -265,36 +275,38 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       createCameraTiles<TreeTile>({
         map,
         source,
-        layers: [layers.tree, layers.canopy, layers.hedge].filter((name): name is string => !!name),
         zoom: preferredZoom,
         minzoom,
         maxTiles,
         ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
         active: () => target > 0 || scale > 0,
-        build(tile, tileMetres) {
-          const trees = layers.tree ? tile.layers[layers.tree] : undefined;
-          const canopy = layers.canopy ? tile.layers[layers.canopy] : undefined;
-          const hedges = layers.hedge ? tile.layers[layers.hedge] : undefined;
-          if (!trees && !canopy && !hedges) return emptyTile;
-          const placement = placeTileflowTrees(
-            {...(trees ? {trees} : {}), ...(canopy ? {canopy} : {}), ...(hedges ? {hedges} : {})},
+        async build(tile, tileMetres, signal, priority) {
+          const placement = await builder.build(
             {
-              tile,
-              tileMetres,
-              fields: described.fields,
-              unknownForms: described.unknownForms,
-              regions: described.regions,
-              variants: Object.fromEntries(
-                Object.entries(described.forms).map(([form, own]) => [
-                  form,
-                  own?.models?.length ?? 1,
-                ]),
-              ),
+              url: tile.url,
+              bytes: tile.bytes,
+              priority,
+              task: {
+                kind: 'trees',
+                layers,
+                options: {
+                  tile: {x: tile.x, y: tile.y, z: tile.z},
+                  tileMetres,
+                  fields: described.fields,
+                  unknownForms: described.unknownForms,
+                  regions: described.regions,
+                  variants: Object.fromEntries(
+                    Object.entries(described.forms).map(([form, own]) => [
+                      form,
+                      own?.models?.length ?? 1,
+                    ]),
+                  ),
+                },
+              },
             },
+            signal,
           );
-          return placement.trees.length > 0 || placement.hedges.length > 0
-            ? {placement}
-            : emptyTile;
+          return placement ? {placement} : emptyTile;
         },
         empty: emptyTile,
         release(value) {
@@ -517,6 +529,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       palm: slots(theme?.colors.palm ?? ['#7fa45f']),
       hedge: slots(theme?.colors.hedge ?? ['#5f8a55']),
       size: [[theme?.heightScale ?? 1, theme?.crownScale ?? 1, 0]],
+      materials: [[theme?.minimumHeight ?? 0, theme?.materialVariation ?? 0, 0]],
       forms: tileflowTreeForms.map((form) => [
         theme?.forms[form]?.heightScale ?? 1,
         theme?.forms[form]?.crownScale ?? 1,
@@ -536,6 +549,8 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       palm: mixList(x.palm, y.palm),
       hedge: mixList(x.hedge, y.hedge),
       size,
+      minimumHeight: mixList(x.materials, y.materials)[0]![0]!,
+      materialVariation: mixList(x.materials, y.materials)[0]![1]!,
       /** Each form's height and crown scale: the map's times the form's own. */
       sizes: Object.fromEntries(
         tileflowTreeForms.map((form, index) => [
@@ -590,12 +605,12 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       return {
         zoom: preferredZoom,
         tiles: [left, top, right, bottom],
-        tallest: tallest * shown * size[0]!,
+        tallest: Math.max(tallest * size[0]!, colours().minimumHeight) * shown,
       };
     },
     // Camera-dependent density, detail and fading also change the trees casting shadows.
     key: () =>
-      `trees:${view().key}:${fadeIn().toFixed(4)}:${visibleScale().toFixed(4)}:${generation}:${programs.depth ? 1 : 0}:${Object.values(
+      `trees:${colours().minimumHeight.toFixed(3)}:${map.isMoving?.() ? view().movingKey : view().key}:${fadeIn().toFixed(4)}:${visibleScale().toFixed(4)}:${generation}:${programs.depth ? 1 : 0}:${Object.values(
         colours().sizes,
       )
         .flat()
@@ -612,12 +627,14 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       context.uniform1f(u.u_metres!, frame.metres);
       context.uniformMatrix4fv(u.u_light_matrix!, false, frame.light.matrix);
       const sizes = colours().sizes;
+      const minimumHeight = colours().minimumHeight;
       const camera = view();
       context.uniform1f(u.u_fade!, 1);
       context.uniform2fv(u.u_reach!, [...camera.reach]);
       for (const {x, y, set, value} of drawn()) {
         const selection = camera.tile(x, y);
         if (!selection) continue;
+        context.uniform1f(u.u_minimum_height!, minimumHeight);
         context.uniform2f(u.u_offset!, ...frame.offsetOf({x, y}, set.zoom));
         context.uniform2f(
           u.u_centre!,
@@ -635,6 +652,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
           });
         const hedge = value.gl!.hedge;
         if (hedge) {
+          context.uniform1f(u.u_minimum_height!, 0);
           context.uniform2f(u.u_size_scale!, 1, 1);
           context.bindVertexArray(hedge.vao);
           context.drawArraysInstanced(
@@ -665,6 +683,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
   }
 
   function draw(context: WebGL2RenderingContext, args: ProjectionArgs): void {
+    const haze = tileflowSkyHazeOf(map, args, context);
     const entries = drawn();
     drawnLast = 0;
     if (entries.length === 0 || !meshes || !programs.trees) return;
@@ -680,6 +699,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     const program = programs.trees;
     const u = program.uniforms;
     context.useProgram(program.program);
+    bindTileflowSkyHaze(context, program.uniforms, haze);
     context.enable(context.DEPTH_TEST);
     context.depthFunc(context.LEQUAL);
     context.depthMask(true);
@@ -688,6 +708,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     context.uniform1f(u.u_scale!, visibleScale());
     context.uniform1f(u.u_metres!, metres);
     context.uniform1f(u.u_round!, finishes[palette.finish].round);
+    context.uniform1f(u.u_material_variation!, palette.materialVariation);
     context.uniform1f(u.u_toon!, palette.finish === 'toon' ? 1 : 0);
     context.uniform3fv(u.u_sun_dir!, [...light.direction]);
     context.uniform3fv(u.u_shadow_dir!, light.shadowDirection);
@@ -708,6 +729,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       /** The sunlit colours drawn, darkest first, and the height and crown scales. */
       leaves: number[][];
       size: [number, number];
+      minimumHeight: number;
       instances: number;
       drawing: Drawing;
     }[] = [];
@@ -739,11 +761,21 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
             palette.sizes[form][0]!,
             palette.sizes[form][1]! * drawing.crown,
           ];
+          context.uniform1f(u.u_minimum_height!, palette.minimumHeight);
           context.uniform2f(u.u_size_scale!, ...size);
           context.bindVertexArray(drawing.vao);
           context.drawArraysInstanced(context.TRIANGLES, 0, drawing.count, instances);
           count += instances;
-          draws.push({x, y, offset, leaves, size, instances, drawing});
+          draws.push({
+            x,
+            y,
+            offset,
+            leaves,
+            size,
+            minimumHeight: palette.minimumHeight,
+            instances,
+            drawing,
+          });
         });
       }
       // Hedges stand whole wherever their tile is drawn: they are low and thin out no view.
@@ -751,10 +783,20 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       if (hedge) {
         const instances = value.placement.hedges.length / tileflowTreeBytes;
         context.uniform3fv(u.u_leaves!, palette.hedge.flat());
+        context.uniform1f(u.u_minimum_height!, 0);
         context.uniform2f(u.u_size_scale!, 1, 1);
         context.bindVertexArray(hedge.vao);
         context.drawArraysInstanced(context.TRIANGLES, 0, hedge.count, instances);
-        draws.push({x, y, offset, leaves: palette.hedge, size: [1, 1], instances, drawing: hedge});
+        draws.push({
+          x,
+          y,
+          offset,
+          leaves: palette.hedge,
+          size: [1, 1],
+          minimumHeight: 0,
+          instances,
+          drawing: hedge,
+        });
       }
     }
     drawnLast = count;
@@ -765,6 +807,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       const edgeProgram = programs.edges;
       const e = edgeProgram.uniforms;
       context.useProgram(edgeProgram.program);
+      bindTileflowSkyHaze(context, edgeProgram.uniforms, haze);
       context.enable(context.CULL_FACE);
       context.cullFace(context.FRONT);
       context.uniform1f(e.u_scale!, visibleScale());
@@ -795,6 +838,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
               palette.edgeColor[channel]! * own + draw.leaves[0]![channel]! * 0.4 * (1 - own),
           ),
         );
+        context.uniform1f(e.u_minimum_height!, draw.minimumHeight);
         context.uniform2f(e.u_size_scale!, ...draw.size);
         context.bindVertexArray(draw.drawing.vao);
         context.drawArraysInstanced(context.TRIANGLES, 0, draw.drawing.count, draw.instances);
@@ -809,6 +853,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       context.enable(context.BLEND);
       context.blendFuncSeparate(context.DST_COLOR, context.ZERO, context.ZERO, context.ONE);
       context.useProgram(shadowProgram.program);
+      bindTileflowSkyHaze(context, shadowProgram.uniforms, haze);
       context.uniform1f(shadowProgram.uniforms.u_metres!, frame.metres);
       context.uniform3fv(shadowProgram.uniforms.u_ground_shadow!, light.groundShadow);
       scene.bindShadow(context, shadowProgram.uniforms, light.strength);
@@ -977,6 +1022,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
 
   const layer = {
     id: tileflowTrees3DLayerId,
+    metadata: {'tileflow:scene-kind': 'vegetation'},
     type: 'custom',
     renderingMode: '3d',
     onAdd(_: unknown, context: WebGLRenderingContext | WebGL2RenderingContext) {
@@ -1062,8 +1108,10 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
     }
     const flat = new Set(vegetation()?.flatLayers ?? []);
     if (flat.size === 0) return;
-    const layers = (map.getStyle() as {layers?: {id: string}[]} | undefined)?.layers ?? [];
-    for (const {id} of layers) {
+    const layers =
+      map.getLayersOrder?.() ??
+      ((map.getStyle() as {layers?: {id: string}[]} | undefined)?.layers ?? []).map(({id}) => id);
+    for (const id of layers) {
       if (!flat.has(id.split('::')[0]!)) continue;
       const visibility = map.getLayoutProperty(id, 'visibility');
       if (!flatVisibility.has(id)) flatVisibility.set(id, visibility);
@@ -1075,9 +1123,21 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
 
   function beforeId(): string | undefined {
     if (options.beforeId) return map.getLayer(options.beforeId) ? options.beforeId : undefined;
-    if (map.getLayer(streetLightsLayerId)) return streetLightsLayerId;
     const style = map.getStyle() as
-      {layers?: {id: string; type?: string}[]; metadata?: Record<string, unknown>} | undefined;
+      | {
+          layers?: {id: string; type?: string; metadata?: Record<string, unknown>}[];
+          metadata?: Record<string, unknown>;
+        }
+      | undefined;
+    // Ground names paint over foliage but remain beneath solid buildings. Choose the
+    // earliest boundary also when the placement controller has lifted names for 2D.
+    if (style?.layers?.some(isGroundRoadLabel)) {
+      const boundary = style.layers.find(
+        (entry) => isGroundRoadLabel(entry) || entry.type === 'fill-extrusion',
+      );
+      if (boundary) return boundary.id;
+    }
+    if (map.getLayer(streetLightsLayerId)) return streetLightsLayerId;
     const anchors = (
       style?.metadata?.['tileflow:overlay-placement-manifest'] as
         {anchors?: Record<string, string | null>} | undefined
@@ -1261,6 +1321,7 @@ export function createTileflowTrees3D(options: TileflowTrees3DOptions): Tileflow
       }
       for (const set of tiles) set.dispose();
       tiles = [];
+      builder.dispose();
     },
   };
 }

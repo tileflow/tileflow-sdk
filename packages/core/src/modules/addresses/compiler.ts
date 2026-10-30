@@ -1,3 +1,4 @@
+import {labelOrder} from '../../cartography/label-placement';
 import {type TileflowDomainCompileContext, typographyTextStyle} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applySymbolStyle} from '../../cartography/layer-style';
@@ -53,7 +54,7 @@ export function compileAddresses(
         },
         style,
       ),
-      localOrder: 950,
+      localOrder: labelOrder.address,
       owner: 'addresses',
       slot: 'symbols',
       target: 'addresses.labels',

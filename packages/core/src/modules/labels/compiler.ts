@@ -1,5 +1,6 @@
 import {type TileflowDomainCompileContext, typographyTextStyle} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
+import {groundRoadLabelMetadata, labelOrder} from '../../cartography/label-placement';
 import {applySymbolStyle} from '../../cartography/layer-style';
 import {labelField, labelFieldExpression} from '../../cartography/localization';
 import {mergeTileflowDesign} from '../../cartography/merge';
@@ -24,6 +25,7 @@ import type {TileflowResolvedModuleConfig} from '../resolved';
 import {resolveRoads} from '../roads';
 import {tileflowRoadClasses, tileflowRoadClassFilter} from '../roads/semantics';
 import {resolveLabels, visibleRoadLabelClasses} from './index';
+import {compactRoadNameExpression} from './road-names';
 
 const placeClasses: Record<TileflowPlaceLabelClass, readonly string[]> = {
   continent: ['continent'],
@@ -222,6 +224,12 @@ export function compileLabels(
   const result: TileflowLayerContribution[] = [];
   const {sourceId: source, schema} = context.data;
   const field = labelField(semantics.language, context);
+  const roadField =
+    semantics.roadNameFormat === 'compact'
+      ? expression<string>(
+          compactRoadNameExpression(labelFieldExpression(semantics.language, context)),
+        )
+      : field;
   const aerodromeField = expression<string>(
     aerodromeLabelExpression(semantics.aerodromeCodes, semantics.language, context),
   );
@@ -243,7 +251,7 @@ export function compileLabels(
     result.push(
       symbolContribution(
         `labels.places.${placeClass}`,
-        (navigationPriority ? 1300 : 800) + order++,
+        labelOrder.place + order++,
         applySymbolStyle(
           {
             id,
@@ -280,31 +288,42 @@ export function compileLabels(
     result.push(
       symbolContribution(
         `labels.roads.${roadClass}`,
-        (groundRoadNames ? -1000 : navigationPriority ? 1200 : 200) + order++,
+        (groundRoadNames
+          ? 2
+          : navigationPriority
+            ? labelOrder.navigationRoad
+            : ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'].includes(roadClass)
+              ? labelOrder.majorRoad
+              : labelOrder.road) + order++,
         applySymbolStyle(
           {
             id,
             type: 'symbol',
             source,
             'source-layer': schema.layers.roadName,
+            ...(groundRoadNames ? {metadata: groundRoadLabelMetadata} : {}),
             filter: [
               'all',
               ['has', schema.fields.name],
               tileflowRoadClassFilter(schema.fields, roadClass),
             ],
           },
-          mergeTileflowDesign(style, {text: {field}}),
+          mergeTileflowDesign({text: {field: roadField}}, style),
         ),
         groundRoadNames ? 'buildings' : 'symbols',
-        {group: 'roads', kind: 'road-label', member: roadClass},
+        {
+          group: 'roads',
+          kind: 'road-label',
+          member: roadClass,
+          ...(semantics.roadGrouping === 'network' ? {variant: 'network'} : {}),
+        },
       ),
     );
   }
 
   // Shield visibility is independent from road-name visibility. A map may
   // deliberately suppress road names while retaining route references. Shields
-  // and junction numbers sit below every symbol family except balanced road
-  // names, which they still outrank.
+  // and junction numbers retain foreground orientation priority in both modes.
   const shieldRoads =
     semantics.shields === 'none'
       ? []
@@ -343,7 +362,7 @@ export function compileLabels(
             {
               geometry: 'Point',
               name: 'overview',
-              order: 400,
+              order: labelOrder.shield,
               placement: 'point',
               sourceLayer: schema.layers.roadShield,
               style: styles.shields?.overview,
@@ -353,7 +372,7 @@ export function compileLabels(
       {
         geometry: 'LineString',
         name: 'detail',
-        order: 401,
+        order: labelOrder.shield + 1,
         placement: 'line',
         sourceLayer: schema.layers.roadName,
         style: styles.shields?.detail,
@@ -418,7 +437,7 @@ export function compileLabels(
     result.push(
       symbolContribution(
         'labels.junctions',
-        450,
+        labelOrder.shield + 2,
         applySymbolStyle(
           {
             id: 'tileflow-label-road-junction',

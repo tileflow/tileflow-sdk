@@ -7,6 +7,7 @@ import {
 import {
   getTileflowStyleFontFaces,
   serializeCanonicalJson,
+  steadyTileflowNauticalLights,
   type MapLibreStyle,
   tileflowStyleFontFacesMetadataKey,
   tileflowIconIdPattern,
@@ -73,7 +74,9 @@ export function lowerTileflowNativeCompiledStyles(
   for (const map of Object.keys(input).sort()) {
     styles[map] = {};
     for (const theme of Object.keys(input[map]!).sort()) {
-      const original = input[map]![theme]!;
+      const web = input[map]![theme]!;
+      // Native renderers have no feature state, so Nautical lights show steadily there.
+      const original = steadyTileflowNauticalLights(web);
       try {
         const options = {...urlOptions(map, theme, policy), deferFontClosure: true};
         const pending = validateTileflowNativeStyle(original, options);
@@ -84,6 +87,7 @@ export function lowerTileflowNativeCompiledStyles(
             issue.code !== 'NATIVE_UNSUPPORTED_STYLE' ||
             !(
               issue.path === '/projection' ||
+              issue.path === '/sky' ||
               /^\/layers\/\d+\/(?:layout\/line-cap|paint\/line-dasharray)(?:\/|$)/u.test(
                 issue.path,
               ) ||
@@ -147,15 +151,14 @@ export function lowerTileflowNativeCompiledStyles(
         transformations.push({
           map,
           theme,
-          inputStyleSha256: createHash('sha256')
-            .update(serializeCanonicalJson(original))
-            .digest('hex'),
+          inputStyleSha256: createHash('sha256').update(serializeCanonicalJson(web)).digest('hex'),
           loweredStyleSha256: createHash('sha256')
             .update(serializeCanonicalJson(style))
             .digest('hex'),
           inputLayers: lowered.inputLayers,
           outputLayers: lowered.outputLayers,
           projection: lowered.projection,
+          ...(lowered.sky ? {sky: lowered.sky} : {}),
           layers: lowered.layers,
           symbolOverlap: lowered.symbolOverlap,
         });

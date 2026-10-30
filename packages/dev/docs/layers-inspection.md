@@ -3,7 +3,7 @@
 Open the local preview and select **Layers**. The panel inspects the current map without changing its
 authored style. **By module** groups physical layers using compiler contributions; shared layers retain
 every owner. **Draw order** lists the renderer's public layer sequence, latest draw calls first.
-Custom runtime layers are included even though they are absent from Style JSON. DevTools overlays
+Custom runtime layers are included even though they are absent from Style JSON. Inspector overlays
 are excluded. Unknown ownership is labeled **Unattributed**, rather than guessed from an ID.
 
 Press **I** or the element-picker icon and click an element on the map. Its layer becomes selected in

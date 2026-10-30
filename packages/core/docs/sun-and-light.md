@@ -106,8 +106,10 @@ custom layer draws; the map redraws whenever the sun changes.
 
 `setSun` places the sun by direction, or by the real sun of a date over a place given as
 `[longitude, latitude]`, the map's centre when it is left out. The themes keep the sun's colours,
-strengths and shadow strength; only its direction changes. `setSun(undefined)` returns it to the
-themes. This example assumes an existing MapLibre map and a controller for it:
+strengths and shadow strength; only its direction changes. A map with a
+[street sky](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-sky.md)
+also takes the sky of the sun's hour from its time-of-day themes. `setSun(undefined)` returns both
+to the themes. This example assumes an existing MapLibre map and a controller for it:
 
 <!-- docs:check -->
 

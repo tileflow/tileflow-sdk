@@ -3,15 +3,14 @@ import {spawn} from 'node:child_process';
 import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import {fileURLToPath} from 'node:url';
 import test from 'node:test';
+import {fileURLToPath} from 'node:url';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 
-const entry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const loader = import.meta.resolve('tsx');
 function command(cwd: string, args: string[]) {
   return new Promise<{code: number | null; output: string}>((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', loader, entry, ...args], {
+    const child = spawn(process.execPath, cliFixtureArguments(args), {
       cwd,
       env: {...process.env, TILEFLOW_API_KEY: '', TILEFLOW_API_URL: 'https://unused.invalid'},
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -78,7 +77,11 @@ test('Native incompatibility is detected before credential discovery or manifest
     join(cwd, 'tileflow.config.ts'),
     `import {defineMap} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
-export default defineMap({id:'main', version:1, extends:streets, terrain:'3d'});
+export default defineMap({id:'main', version:1, extends:streets, terrain:'3d',
+  glyphs: {kind:'url', url:'https://fonts.example.test/{fontstack}/{range}.pbf',
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic',
+      'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']}
+});
 `,
   );
   const result = await command(cwd, [

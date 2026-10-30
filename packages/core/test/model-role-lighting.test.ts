@@ -3,7 +3,7 @@ import test from 'node:test';
 import {modelEmitterGeometry} from '../src/models-3d-emitters';
 import {sampleModelRole} from '../src/models-3d-role-lighting';
 
-test('role variation follows model identity, stays bounded, and does not depend on palette slots', () => {
+test('role variation follows model identity, stays bounded, and does not depend on model parts', () => {
   const profile = {
     emissiveStrength: 0.5,
     emissiveVariation: 0.3,

@@ -435,13 +435,28 @@ test('the design reads the models a map places, the colours of their parts and i
       {model: 'far-away', url: '/y.glb', at: [0, 89]},
       {model: 'no-file', at: [0, 0]},
     ],
-    modelColors: {accent: '#806040', surface: 7, stone: '#ffffff'},
+    modelColors: {
+      accent: '#806040',
+      water: '#227799',
+      vegetation: '#527346',
+      wood: '#80705a',
+      surface: 7,
+      stone: '#ffffff',
+      'Pool Water': '#3399cc',
+    },
     landmarks: {url: 'https://api.tileflow.dev/landmarks/tiles.json'},
   });
   assert.deepEqual(design?.models, [
     {model: 'eiffel-tower', url: '/models/eiffel-tower.glb', at: [2.2945, 48.8583], heading: 315},
   ]);
-  assert.deepEqual(design?.modelColors, {accent: '#806040'});
+  // Any part name takes a colour; a value that is no colour, or a key that names no part, does not.
+  assert.deepEqual(design?.modelColors, {
+    accent: '#806040',
+    water: '#227799',
+    vegetation: '#527346',
+    wood: '#80705a',
+    stone: '#ffffff',
+  });
   assert.equal(design?.lighting, 'sun');
   assert.equal(design?.shadows, true);
   assert.equal(design?.occlusion, true);
@@ -755,15 +770,15 @@ test("a landmark's tile and region follow from where it stands, and a region's i
     ...tower,
     footprint: [[-62.5, -62.5, 62.5, -62.5, 62.5, 62.5, -62.5, 62.5]],
   });
-  // An index of the first format, which named no landmarks, is still read.
-  assert.deepEqual(
+  // The first format, which named no landmarks, is no longer read.
+  assert.equal(
     readTileflowLandmarkRegion({
       format: 'tileflow-landmark-region-v1',
       zoom: 14,
       region: [6, 32, 22],
       tiles: [[8296, 5636, hash('a')]],
-    })?.tiles,
-    [[8296, 5636, hash('a')]],
+    }),
+    undefined,
   );
   assert.throws(
     () => serializeTileflowLandmarkRegion({region: [32, 22], tiles: [[0, 0, hash('a'), [tower]]]}),
@@ -785,7 +800,7 @@ test("a landmark's tile and region follow from where it stands, and a region's i
     /no SHA-256/u,
   );
   assert.throws(
-    () => serializeTileflowLandmarkRegion({region: [32, 22], tiles: [[8296, 5636, hash('a')]]}),
+    () => serializeTileflowLandmarkRegion({region: [32, 22], tiles: [[8296, 5636, hash('a'), []]]}),
     /names no landmark/u,
   );
   assert.throws(
@@ -812,7 +827,7 @@ test("a landmark's tile and region follow from where it stands, and a region's i
   assert.equal(
     readTileflowLandmarkRegion({...written, tiles: [[8296, 5636, hash('a')]]}),
     undefined,
-    'a tile of the second format names its landmarks',
+    'a tile names its landmarks',
   );
   assert.equal(
     readTileflowLandmarkRegion({
@@ -824,4 +839,57 @@ test("a landmark's tile and region follow from where it stands, and a region's i
     undefined,
     'footprints travel in whole decimetres',
   );
+});
+
+test('a level names its own parts, and each keeps its name and its role through the file', async () => {
+  const mesh = box();
+  // The roof a pool, the walls and glass a planted bed.
+  const named = {
+    ...mesh,
+    parts: mesh.parts.map((part) => (part === tileflowModelParts.roof ? 0 : 1)),
+    partNames: ['water', 'vegetation'],
+  };
+  const bytes = encodeTileflowModels([tower({levels: [named, box()]})]);
+  const [model] = (await decodeTileflowModels(bytes))!;
+  assert.deepEqual(model!.levels[0]!.partNames, ['water', 'vegetation']);
+  // A level that names no parts of its own counts through the architectural parts.
+  assert.deepEqual(model!.levels[1]!.partNames, [
+    'surface',
+    'secondary',
+    'glass',
+    'accent',
+    'roof',
+  ]);
+  const vertices = model!.levels[0]!.vertices;
+  for (let at = 0; at < vertices.length; at += tileflowModelVertexBytes) {
+    assert.ok(vertices[at + 12] === 0 || vertices[at + 12] === 1);
+    // A part that is not architectural is unclassified, so it never takes a window's light.
+    assert.equal(vertices[at + 15], 0);
+  }
+
+  // A file from before levels named their parts counts through the architectural parts.
+  const length = new DataView(bytes.buffer).getUint32(12, true);
+  const json = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + length)));
+  for (const node of json.nodes) delete node.extras?.tileflow?.parts;
+  const legacy = bytes.slice();
+  legacy.set(new TextEncoder().encode(JSON.stringify(json).padEnd(length, ' ')), 20);
+  const [old] = (await decodeTileflowModels(legacy))!;
+  assert.deepEqual(old!.levels[0]!.partNames, ['surface', 'secondary', 'glass', 'accent', 'roof']);
+
+  // Names are lower-case words, each once, at most sixteen a level, and every vertex names one.
+  const rejects = (partNames: readonly string[], parts = named.parts) =>
+    assert.throws(
+      () => encodeTileflowModels([tower({levels: [{...named, parts, partNames}]})]),
+      /names 1 to 16 different parts|has no part/u,
+    );
+  rejects(['Water', 'vegetation']);
+  rejects(['water', 'water']);
+  rejects(['water']);
+  rejects(Array.from({length: 17}, (_, index) => `part-${index}`));
+  rejects([]);
+  // A file whose level names no parts of a valid list does not decode.
+  for (const node of json.nodes) if (node.name === 'near') node.extras.tileflow.parts = ['Water'];
+  const invalid = bytes.slice();
+  invalid.set(new TextEncoder().encode(JSON.stringify(json).padEnd(length, ' ')), 20);
+  assert.equal(await decodeTileflowModels(invalid), undefined);
 });

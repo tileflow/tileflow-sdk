@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "maximumMessageBytes": 65536,
+  "maximumPendingRequests": 64,
+  "requestTimeoutMs": 30000,
+  "methods": [
+    "initialize",
+    "setCamera",
+    "getCamera",
+    "setTheme",
+    "setBlend",
+    "setOptions",
+    "setContent",
+    "fitBounds",
+    "project",
+    "unproject",
+    "setVisibility",
+    "queryAtPoint",
+    "dispose"
+  ],
+  "events": [
+    "hello",
+    "loading",
+    "contentReady",
+    "cameraChanged",
+    "interaction",
+    "annotationActivated",
+    "poiActivated",
+    "themeChanged",
+    "error"
+  ],
+  "errors": [
+    "invalidRequest",
+    "versionMismatch",
+    "staleGeneration",
+    "notReady",
+    "resourceFailed",
+    "rendererFailed",
+    "timeout",
+    "cancelled",
+    "disposed"
+  ]
+}

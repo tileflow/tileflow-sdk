@@ -1,12 +1,15 @@
 import assert from 'node:assert/strict';
-import {type ChildProcess, spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
+import {connect} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {fileURLToPath} from 'node:url';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
+import {startJsonFixtureProcess} from '../../../test-support/fixture-json-process';
+import {startFixtureProcess} from '../../../test-support/fixture-process';
+import {closeFixtureServer, fixtureResources} from '../../../test-support/fixture-resources';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   assertTileflowVisualRegionFits,
@@ -16,8 +19,37 @@ import {
 } from '../src/visual-compare-command';
 import {tileflowMapFixture} from './map-fixture';
 
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
+test('visual compare cleanup closes unfinished HTTP connections', async () => {
+  let cleanup!: () => Promise<unknown>;
+  const context = {
+    after(callback: () => Promise<unknown>) {
+      cleanup = callback;
+    },
+  } as TestContext;
+  const fixture = await createVectorFixtureServer(context);
+  const socket = connect(Number(new URL(fixture.origin).port), '127.0.0.1');
+  socket.on('error', () => {});
+  await once(socket, 'connect');
+  socket.write('GET /unfinished HTTP/1.1\r\nHost: localhost\r\n');
+  const closing = cleanup();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    assert.equal(
+      await Promise.race([
+        closing.then(() => 'closed'),
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve('blocked'), 500);
+        }),
+      ]),
+      'closed',
+    );
+  } finally {
+    clearTimeout(timer);
+    socket.destroy();
+    await closing;
+  }
+});
 
 test('visual compare zoom matrix is explicit, bounded, unique, and deterministic', () => {
   assert.deepEqual(parseTileflowVisualCompareZooms('6.5', undefined), [6.5]);
@@ -56,7 +88,7 @@ test('visual analysis regions use bounded physical-pixel rectangles', () => {
 
 test('visual compare help and preflight fail before config or browser work', async (t) => {
   const cwd = await createFixture(t, 'tileflow-visual-compare-preflight-');
-  const help = await runCli(cwd, ['visual', 'compare', '--help']);
+  const help = await runCli(t, cwd, ['visual', 'compare', '--help']);
   assert.equal(help.code, 0, help.stderr);
   assert.match(help.stdout, /--against-config <path>/u);
   assert.match(help.stdout, /--against-theme <name>/u);
@@ -77,12 +109,12 @@ test('visual compare help and preflight fail before config or browser work', asy
     '0,0',
     '--no-browser-install',
   ];
-  const noZoom = await runCli(cwd, common);
+  const noZoom = await runCli(t, cwd, common);
   assert.equal(noZoom.code, 1);
   assert.match(noZoom.stderr, /exactly one of --zoom or --zooms/u);
   assert.doesNotMatch(noZoom.stderr, /browser|chromium/u);
 
-  const jsonFailure = await runCli(cwd, [...common, '--json']);
+  const jsonFailure = await runCli(t, cwd, [...common, '--json']);
   assert.equal(jsonFailure.code, 1);
   assert.equal(jsonFailure.stdout, '');
   assert.deepEqual(JSON.parse(jsonFailure.stderr), {
@@ -99,7 +131,7 @@ test('visual compare help and preflight fail before config or browser work', asy
     ],
   });
 
-  const aggregate = await runCli(cwd, [
+  const aggregate = await runCli(t, cwd, [
     ...common,
     '--zooms',
     '1,2,3',
@@ -112,12 +144,12 @@ test('visual compare help and preflight fail before config or browser work', asy
   assert.match(aggregate.stderr, /aggregate physical-pixel limit/u);
   assert.doesNotMatch(aggregate.stderr, /missing-left|browser|chromium/u);
 
-  const invalidRegion = await runCli(cwd, [...common, '--zoom', '2', '--region', '0,0,10.5,10']);
+  const invalidRegion = await runCli(t, cwd, [...common, '--zoom', '2', '--region', '0,0,10.5,10']);
   assert.equal(invalidRegion.code, 1);
   assert.match(invalidRegion.stderr, /--region expects.*integers/u);
   assert.doesNotMatch(invalidRegion.stderr, /missing-left|browser|chromium/u);
 
-  const outsideViewport = await runCli(cwd, [
+  const outsideViewport = await runCli(t, cwd, [
     ...common,
     '--zoom',
     '2',
@@ -136,7 +168,7 @@ test('visual compare help and preflight fail before config or browser work', asy
 
   await mkdir(join(cwd, 'evidence'));
   await writeFile(join(cwd, 'evidence/review.html'), 'preserve me');
-  const existing = await runCli(cwd, [
+  const existing = await runCli(t, cwd, [
     ...common,
     '--zoom',
     '2',
@@ -150,7 +182,7 @@ test('visual compare help and preflight fail before config or browser work', asy
 
   await mkdir(join(cwd, 'real-output'));
   await symlink(join(cwd, 'real-output'), join(cwd, 'linked-output'));
-  const linked = await runCli(cwd, [
+  const linked = await runCli(t, cwd, [
     ...common,
     '--zoom',
     '2',
@@ -161,7 +193,7 @@ test('visual compare help and preflight fail before config or browser work', asy
   assert.match(linked.stderr, /symbolic link/u);
   assert.doesNotMatch(linked.stderr, /missing-left|browser|chromium/u);
 
-  const unsafeWatch = await runCli(cwd, [
+  const unsafeWatch = await runCli(t, cwd, [
     ...common,
     '--zoom',
     '2',
@@ -204,7 +236,7 @@ test('visual compare rejects canonical input clobber and asset-directory overlap
     '--json',
     '--no-browser-install',
   ];
-  const clobber = await runCli(cwd, [...common, '--report', 'evidence/review.html']);
+  const clobber = await runCli(t, cwd, [...common, '--report', 'evidence/review.html']);
   assert.equal(clobber.code, 1);
   assert.equal(clobber.stdout, '');
   assert.match(clobber.stderr, /output overlaps a config input/u);
@@ -214,7 +246,7 @@ test('visual compare rejects canonical input clobber and asset-directory overlap
   await mkdir(assetDirectory);
   const nestedConfig = tileflowMapFixture({data: 'fixture', id: 'nested'});
   await writeFile(join(assetDirectory, 'tileflow.config.ts'), nestedConfig);
-  const overlap = await runCli(cwd, [
+  const overlap = await runCli(t, cwd, [
     ...common.slice(0, 2),
     '--config',
     'evidence/asset-overlap.assets/tileflow.config.ts',
@@ -236,7 +268,7 @@ test('visual compare watch reports initially invalid configs without launching a
   const cwd = await createFixture(t, 'tileflow-visual-compare-initial-invalid-');
   await writeFile(join(cwd, 'left.config.ts'), 'export default {broken: true};\n');
   await writeFile(join(cwd, 'right.config.ts'), 'export default {alsoBroken: true};\n');
-  const running = startCli(cwd, [
+  const running = startCli(t, cwd, [
     'visual',
     'compare',
     '--config',
@@ -282,7 +314,7 @@ test(
     await writeFile(join(cwd, 'left.config.ts'), compareConfig('left', '#f1ead7', tiles.origin));
     await writeFile(join(cwd, 'right.config.ts'), compareConfig('right', '#263b35', tiles.origin));
 
-    const result = await runCli(cwd, [
+    const result = await runCli(t, cwd, [
       'visual',
       'compare',
       '--config',
@@ -387,7 +419,7 @@ test(
 
     const assetDirectory = join(cwd, 'evidence/review.assets');
     await writeFile(join(assetDirectory, 'foreign.txt'), 'preserve foreign asset\n');
-    const narrowed = await runCli(cwd, [
+    const narrowed = await runCli(t, cwd, [
       'visual',
       'compare',
       '--config',
@@ -433,7 +465,7 @@ test(
     const modifiedAssetPath = join(assetDirectory, '01-z0.left.png');
     const modifiedAsset = Buffer.from('foreign modification');
     await writeFile(modifiedAssetPath, modifiedAsset);
-    const rejectedModifiedInventory = await runCli(cwd, [
+    const rejectedModifiedInventory = await runCli(t, cwd, [
       'visual',
       'compare',
       '--config',
@@ -483,7 +515,7 @@ test(
       '--json',
       '--no-browser-install',
     ];
-    const rejectedMismatch = await runCli(cwd, mismatchArguments);
+    const rejectedMismatch = await runCli(t, cwd, mismatchArguments);
     assert.equal(rejectedMismatch.code, 1, rejectedMismatch.stderr);
     const mismatchDocument = JSON.parse(rejectedMismatch.stdout) as TileflowVisualCompareJsonV1;
     assert.equal(mismatchDocument.rows[0]?.review.status, 'data-mismatch');
@@ -494,7 +526,7 @@ test(
       true,
     );
 
-    const allowedMismatch = await runCli(cwd, [
+    const allowedMismatch = await runCli(t, cwd, [
       ...mismatchArguments,
       '--allow-data-mismatch',
       '--force',
@@ -520,7 +552,7 @@ test(
     const rightPath = join(cwd, 'evidence/right.config.ts');
     await writeFile(leftPath, compareConfig('left', '#f1ead7', tiles.origin));
     await writeFile(rightPath, compareConfig('right', '#263b35', tiles.origin));
-    const running = startCli(cwd, [
+    const running = startCli(t, cwd, [
       'visual',
       'compare',
       '--config',
@@ -600,7 +632,7 @@ test(
     const tiles = await createVectorFixtureServer(t);
     const configPath = join(cwd, 'shared.config.ts');
     await writeFile(configPath, compareConfig('shared', '#24384a', tiles.origin));
-    const running = startCli(cwd, [
+    const running = startCli(t, cwd, [
       'visual',
       'compare',
       '--config',
@@ -708,7 +740,7 @@ themes: {light: defineTheme(streetsThemes.light, {
 async function createFixture(t: TestContext, prefix: string): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), prefix));
   await linkWorkspacePackages(directory);
-  t.after(() => rm(directory, {force: true, maxRetries: 5, recursive: true}));
+  fixtureResources(t).push(() => rm(directory, {force: true, maxRetries: 5, recursive: true}));
   return directory;
 }
 
@@ -726,130 +758,32 @@ async function createVectorFixtureServer(t: TestContext): Promise<{origin: strin
   await once(server, 'listening');
   const address = server.address();
   assert.ok(address && typeof address === 'object');
-  t.after(() => new Promise<void>((resolveClose) => server.close(() => resolveClose())));
+  fixtureResources(t).push(() => closeFixtureServer(server));
   return {origin: `http://127.0.0.1:${address.port}`};
 }
 
-function runCli(
-  cwd: string,
-  arguments_: string[],
-): Promise<{code: number | null; stderr: string; stdout: string}> {
-  const child = spawnCli(cwd, arguments_, false);
-  let stderr = '';
-  let stdout = '';
-  child.stderr!.setEncoding('utf8');
-  child.stdout!.setEncoding('utf8');
-  child.stderr!.on('data', (chunk: string) => {
-    stderr += chunk;
+function runCli(t: TestContext, cwd: string, args: string[]) {
+  const running = startFixtureProcess(cliFixtureArguments(args), {
+    cwd,
+    env: cliEnvironment(cwd),
+    signal: t.signal,
   });
-  child.stdout!.on('data', (chunk: string) => {
-    stdout += chunk;
-  });
-  return new Promise((resolveResult, reject) => {
-    child.on('error', reject);
-    child.on('close', (code) => resolveResult({code, stderr, stdout}));
-  });
+  fixtureResources(t).push(running.stop);
+  return running.completion;
 }
 
-function startCli(cwd: string, arguments_: string[]) {
-  const child = spawnCli(cwd, arguments_, true);
-  const events: Array<Record<string, unknown>> = [];
-  const waiters = new Set<{
-    predicate: (event: Record<string, unknown>) => boolean;
-    reject: (error: Error) => void;
-    resolve: (event: Record<string, unknown>) => void;
-    timer: ReturnType<typeof setTimeout>;
-  }>();
-  let stdoutBuffer = '';
-  let stderr = '';
-  child.stderr!.setEncoding('utf8');
-  child.stdout!.setEncoding('utf8');
-  child.stderr!.on('data', (chunk: string) => {
-    stderr += chunk;
-  });
-  child.stdout!.on('data', (chunk: string) => {
-    stdoutBuffer += chunk;
-    const lines = stdoutBuffer.split('\n');
-    stdoutBuffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line) continue;
-      const event = JSON.parse(line) as Record<string, unknown>;
-      events.push(event);
-      for (const waiter of [...waiters]) {
-        if (!waiter.predicate(event)) continue;
-        clearTimeout(waiter.timer);
-        waiters.delete(waiter);
-        waiter.resolve(event);
-      }
-    }
-  });
-  const completion = new Promise<{code: number | null; stderr: string}>((resolveCompletion) => {
-    child.on('close', (code) => resolveCompletion({code, stderr}));
-  });
-  const requestStop = () => {
-    if (child.exitCode !== null || child.signalCode !== null) return;
-    if (child.connected) {
-      try {
-        child.send({type: 'tileflow:stop'}, (error) => {
-          if (error && child.exitCode === null && child.signalCode === null) {
-            child.kill('SIGTERM');
-          }
-        });
-        return;
-      } catch {
-        child.kill('SIGTERM');
-        return;
-      }
-    }
-    child.kill('SIGTERM');
-  };
-  return {
-    completion,
-    events,
-    requestStop,
-    stop: async () => {
-      requestStop();
-      await completion;
-    },
-    waitFor: (
-      predicate: (event: Record<string, unknown>) => boolean,
-      timeoutMs: number,
-    ): Promise<Record<string, unknown>> => {
-      const existing = events.find(predicate);
-      if (existing) return Promise.resolve(existing);
-      return new Promise((resolveEvent, reject) => {
-        const waiter = {
-          predicate,
-          reject,
-          resolve: resolveEvent,
-          timer: setTimeout(() => {
-            waiters.delete(waiter);
-            reject(
-              new Error(
-                `Timed out waiting for visual compare event: ${JSON.stringify(events)} ${stderr}`,
-              ),
-            );
-          }, timeoutMs),
-        };
-        waiters.add(waiter);
-      });
-    },
-  };
+function startCli(t: TestContext, cwd: string, args: string[]) {
+  return startJsonFixtureProcess(t, cliFixtureArguments(args), {cwd, env: cliEnvironment(cwd)});
 }
 
-function spawnCli(cwd: string, arguments_: string[], ipc: boolean): ChildProcess {
-  const environment: NodeJS.ProcessEnv = {...process.env};
-  for (const variable of ['CI', 'GITHUB_ACTIONS', 'GITLAB_CI', 'TILEFLOW_API_KEY']) {
+function cliEnvironment(cwd: string): NodeJS.ProcessEnv {
+  const environment = {...process.env};
+  for (const variable of ['CI', 'GITHUB_ACTIONS', 'GITLAB_CI', 'TILEFLOW_API_KEY'])
     delete environment[variable];
-  }
-  Object.assign(environment, {
+  return {
+    ...environment,
     HOME: process.env.HOME ?? cwd,
     NO_COLOR: '1',
     USERPROFILE: process.env.USERPROFILE ?? cwd,
-  });
-  return spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
-    cwd,
-    env: environment,
-    stdio: ipc ? ['ignore', 'pipe', 'pipe', 'ipc'] : ['ignore', 'pipe', 'pipe'],
-  });
+  };
 }

@@ -4,6 +4,7 @@ import {
   tileflowPortableIdSchema,
   tileflowThemeNameSchema,
 } from './portable-identity';
+import {tileflowMaxPitch} from './camera-limits';
 
 export {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
 
@@ -14,7 +15,7 @@ export const tileflowCaptureSceneLimits = Object.freeze({
   boundsPadding: {maximum: 1_024, minimum: 0},
   captureIdLength: tileflowPortableIdMaximumLength,
   maximumPhysicalPixels: 16_777_216,
-  pitch: {maximum: 85, minimum: 0},
+  pitch: {maximum: tileflowMaxPitch, minimum: 0},
   selectorLength: 256,
   viewport: {maximum: 4_096, minimum: 64},
   zoom: {maximum: 24, minimum: 0},

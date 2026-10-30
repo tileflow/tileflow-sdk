@@ -117,7 +117,7 @@ test('a building becomes a roof and four walls facing out of it', () => {
 test('rounded corners stay inside the footprint and keep roof and wall outlines joined', () => {
   const input = layerOf([{geometry: [square]}]);
   const sharp = meshTileflowBuildings(input, {tileMetres: 1000})!;
-  const rounded = meshTileflowBuildings(input, {tileMetres: 1000, edgeRadius: 0.4})!;
+  const rounded = meshTileflowBuildings(input, {tileMetres: 1000, edgeRadius: 1.5})!;
   assert.ok(rounded.vertices.length > sharp.vertices.length);
   assert.equal(rounded.top, sharp.top);
   const roofPoints = new Set<string>();
@@ -140,6 +140,10 @@ test('rounded corners stay inside the footprint and keep roof and wall outlines 
   }
   assert.ok(curved > 0, 'curved corners need smoothly changing normals');
   assert.deepEqual(roofPoints, wallPoints);
+  assert.ok(
+    roofPoints.has(`${2000 + Math.round((1.5 * tileflowBuildingExtent) / 1000)},2000`),
+    'the full 1.5-metre radius reaches the mesh without clamping to one metre',
+  );
   // Rounding is opt-in and never consumes tiny walls or adds vertices below tile precision.
   assert.deepEqual(meshTileflowBuildings(input, {tileMetres: 1000, edgeRadius: 0}), sharp);
   assert.deepEqual(meshTileflowBuildings(input, {tileMetres: 1000, edgeRadius: 0.01}), sharp);
@@ -532,6 +536,23 @@ test('the 3D buildings design is read only in a known version and shape', () => 
   assert.equal(read.windows, true);
   assert.equal(read.shadows, false);
   assert.equal(read.occlusion, true);
+  assert.equal(read.groundOcclusion, 0.16);
+  for (const [groundOcclusion, expected] of [
+    [0, 0],
+    [0.12, 0.12],
+    [1, 1],
+    [-1, 0.16],
+    [2, 0.16],
+    [NaN, 0.16],
+  ]) {
+    const ground = readTileflowBuildings3D({
+      [tileflowBuildingsMetadataKey]: {...described, groundOcclusion},
+    })!;
+    assert.equal(ground.groundOcclusion, expected);
+    assert.equal(ground.occlusion, true);
+    assert.equal(ground.verticalGradient, read.verticalGradient);
+    assert.equal(ground.modelOcclusion, read.modelOcclusion);
+  }
   assert.equal(
     readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: {...described, version: 2}}),
     undefined,
@@ -627,7 +648,7 @@ test('buildings have a sunlit finish by default and preserve explicit design cho
     ...tileflowDefaultBuildings3DDesign,
     lighting: 'sun' as const,
     edges: 1,
-    edgeRadius: 0.4,
+    edgeRadius: 1.5,
     nightLight: 1,
     colorVariation: 0.06,
     shadows: true,
@@ -655,6 +676,25 @@ test('buildings have a sunlit finish by default and preserve explicit design cho
       ?.edgeRadius,
     0.8,
   );
+});
+
+test('a design gives the zoom bands the city comes in over, or leaves them to the renderer', () => {
+  const metadata = {
+    version: 1,
+    source: 'tileflow',
+    layers: {building: 'building'},
+    color: '#d8d0c0',
+  };
+  const read = (entrance: unknown) =>
+    readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: {...metadata, entrance}})?.entrance;
+  assert.deepEqual(read({buildings: [15.5, 16], models: [14, 14.5]}), {
+    buildings: [15.5, 16],
+    models: [14, 14.5],
+  });
+  // A band must rise across zooms the map has.
+  assert.deepEqual(read({buildings: [16, 15], models: [14, 14.5]}), {models: [14, 14.5]});
+  assert.equal(read({buildings: [15, 30]}), undefined);
+  assert.equal(read([15, 16]), undefined);
 });
 
 test('show, hide and grow are immediate unless animation is requested', async () => {

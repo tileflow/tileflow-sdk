@@ -7,11 +7,24 @@ import {attachTileflowMap3D} from '../src/map-3d-attach-browser';
 const load = () => import('../src/3d');
 const mounted = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function fakeMap(metadata: Record<string, unknown>) {
+function fakeMap(initial: Record<string, unknown>) {
   const listeners = new Map<string, Set<() => void>>();
   const layers = new Set<string>();
+  let metadata = initial;
+  let reads = 0;
   return {
     layers,
+    get reads() {
+      return reads;
+    },
+    fire(event: string) {
+      for (const listener of [...(listeners.get(event) ?? [])]) listener();
+    },
+    loadStyle(next: Record<string, unknown>) {
+      metadata = next;
+      this.fire('styledata');
+      this.fire('style.load');
+    },
     addLayer(layer: {id: string}) {
       layers.add(layer.id);
     },
@@ -21,7 +34,10 @@ function fakeMap(metadata: Record<string, unknown>) {
     getPaintProperty: () => undefined,
     getPitch: () => 60,
     getSource: () => undefined,
-    getStyle: () => ({layers: [{id: 'labels', type: 'symbol'}], metadata}),
+    getStyle() {
+      reads++;
+      return {layers: [{id: 'labels', type: 'symbol'}], metadata};
+    },
     getZoom: () => 16,
     isStyleLoaded: () => true,
     off(event: string, listener: () => void) {
@@ -74,5 +90,17 @@ test('a style without a 3D scene loads nothing', () => {
   });
   assert.equal(loads, 0);
   assert.equal(scene.scene, undefined);
+  scene.dispose();
+});
+
+test('a 2D map settling reads its style once per style, and mounts a later 3D style', async () => {
+  const map = fakeMap({});
+  const scene = attachTileflowMap3D({map, load});
+  const reads = map.reads;
+  for (let index = 0; index < 20; index++) map.fire('idle');
+  assert.equal(map.reads, reads, 'settling does not read the style again');
+  map.loadStyle(buildings);
+  await mounted();
+  assert.ok(map.layers.has(tileflowBuildings3DLayerId));
   scene.dispose();
 });

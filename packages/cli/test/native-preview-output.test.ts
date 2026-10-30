@@ -6,12 +6,9 @@ import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import {fileURLToPath} from 'node:url';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
-
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 
 async function fixture(prefix: string): Promise<string> {
   const cwd = await mkdtemp(join(tmpdir(), prefix));
@@ -29,7 +26,7 @@ function environment(cwd: string): NodeJS.ProcessEnv {
 
 function runCli(cwd: string, arguments_: string[]) {
   return new Promise<{code: number | null; stdout: string; stderr: string}>((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
+    const child = spawn(process.execPath, cliFixtureArguments(arguments_), {
       cwd,
       env: environment(cwd),
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -89,10 +86,7 @@ test('native preview human output names the exact assets-only manifest and profi
   const manifest = `http://127.0.0.1:${port}/native/manifest.json`;
   const child = spawn(
     process.execPath,
-    [
-      '--import',
-      tsxLoader,
-      cliEntry,
+    cliFixtureArguments([
       'preview',
       '--renderer',
       'native',
@@ -100,7 +94,7 @@ test('native preview human output names the exact assets-only manifest and profi
       'main',
       '--port',
       String(port),
-    ],
+    ]),
     {cwd, env: environment(cwd), stdio: ['ignore', 'pipe', 'pipe', 'ipc']},
   );
   let stdout = '';
@@ -160,7 +154,7 @@ test('native preview human output names the exact assets-only manifest and profi
   assert.match(stdout, /Endpoint:\s+assets-only/u);
   assert.match(stdout, /Metro remains the JavaScript development server/u);
   assert.doesNotMatch(stdout, /\bLocal:\s/u);
-  assert.doesNotMatch(stdout, /Map DevTools/u);
+  assert.doesNotMatch(stdout, /Inspector/u);
 
   requestStop();
   assert.equal(await completion, 0, stderr);

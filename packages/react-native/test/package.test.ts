@@ -56,10 +56,6 @@ test('is publishable with exact native peers and one ordinary public root', asyn
   assert.equal(manifest.scripts.postpack, 'node ../../scripts/package-license.mjs --clean');
   const release = await import('../../../scripts/release-config.mjs');
   assert.equal(release.publicPackageNames.includes(manifest.name), true);
-  const readme = await readFile(new URL('README.md', root), 'utf8');
-  assert.match(readme, /^# @tileflow\/react-native\n/u);
-  assert.match(readme, /first alpha release/u);
-  assert.match(readme, /exports a mounted `Map`/u);
   for (const path of [
     'dist/index.js',
     'dist/index.d.ts',

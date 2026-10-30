@@ -6,11 +6,9 @@ import {createServer, type IncomingMessage, type ServerResponse} from 'node:http
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {fileURLToPath} from 'node:url';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {type CliAccountSession, installAccountSession} from '../src/account-session';
 
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 const accountToken = `tf_session_${'a'.repeat(64)}`;
 
 test('project lifecycle stays callable but is hidden from primary help', async (t) => {
@@ -361,7 +359,7 @@ function runCli(
   Object.assign(environment, {HOME: home, NO_COLOR: '1', USERPROFILE: home});
 
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
+    const child = spawn(process.execPath, cliFixtureArguments(arguments_), {
       cwd,
       env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],

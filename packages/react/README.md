@@ -55,8 +55,8 @@ hosted manifest.
 In a Vite application's client entry, add this before mounting React:
 
 ```ts
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import {configureTileflowMapLibre} from '@tileflow/react';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 
 configureTileflowMapLibre({workerUrl});
 ```
@@ -73,8 +73,8 @@ Import MapLibre's CSS once in the application. After the worker and assets are r
 <!-- docs:check -->
 
 ```tsx
-import 'maplibre-gl/dist/maplibre-gl.css';
 import {Map} from '@tileflow/react';
+import 'maplibre-gl/dist/maplibre-gl.css';
 
 export function App() {
   return (
@@ -105,7 +105,8 @@ Maps without this capability ignore the option; omitting it keeps the selected t
 Changing it uses the existing theme transition. `themeBlend` takes precedence. See the
 [authoring contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md#style-with-themes-and-semantic-modules).
 
-`themeTransition={{duration: 450}}` cross-fades theme changes over that many milliseconds.
+Theme and `timeOfDay` changes cross-fade over 450 ms by default, respecting reduced motion.
+`themeTransition={{duration: 700}}` customizes the duration; use `duration: 0` for an immediate change.
 `themeBlend={{themes: ['night', 'dusk', 'day'], position}}` shows a continuous blend of the map's
 themes instead of `theme`: position 0 is the first theme and 1.5 is halfway from the second to the
 third. Moving the position updates the map at once. See
@@ -125,6 +126,11 @@ and [vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/pac
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct camera props
 take priority over `mapOptions`, then the manifest view, then shared defaults. `Map` always selects
 a Tileflow map through its manifest; it has no renderer discriminator or direct-style mode.
+Tileflow's styles are validated when they are compiled, so `validateStyle` defaults to `false`; pass
+`true` to validate them again in the browser.
+The map canvas is multisampled by default (`canvasContextAttributes.antialias` is `true`) so the
+thin edges of 3D models stay continuous; other context attributes you pass are kept, and
+`canvasContextAttributes: {antialias: false}` trades that smoothing for lower GPU cost.
 The obsolete source fields `kind` and `style` are rejected. For a completely unmanaged map, use
 `maplibre-gl` directly rather than a Tileflow component.
 
@@ -137,9 +143,9 @@ and memoize the values; each new object replaces the previous ones, and `null` c
 <!-- docs:check -->
 
 ```tsx
+import {Map, useBoundaryFeatureState} from '@tileflow/react';
 import {useMemo, useState} from 'react';
 import type {Map as MapLibreMap} from 'maplibre-gl';
-import {Map, useBoundaryFeatureState} from '@tileflow/react';
 
 export function Unemployment({rates}: {rates: {ine: string; rate: number}[]}) {
   const [map, setMap] = useState<MapLibreMap | null>(null);
@@ -175,9 +181,9 @@ into hosts managed by the interaction runtime:
 <!-- docs:check -->
 
 ```tsx
+import {Map} from '@tileflow/react';
 import {useState} from 'react';
 import type {TileflowAnnotation, TileflowInteractionState} from '@tileflow/interactions';
-import {Map} from '@tileflow/react';
 
 type Property = {price: number; title: string};
 
@@ -255,8 +261,8 @@ Tileflow credentials on that server, not in React props or a browser bundle.
 <!-- docs:check -->
 
 ```tsx
-import {useState} from 'react';
 import {StaticMap} from '@tileflow/react/static';
+import {useState} from 'react';
 import type {StaticMapAttributionEntry} from '@tileflow/static/client';
 
 export function StaticPreview({idempotencyKey}: {idempotencyKey: string}) {

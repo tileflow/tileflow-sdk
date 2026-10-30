@@ -31,7 +31,9 @@ Each public field has one explicit merge rule:
   Enabled atmosphere requires globe projection; `false` disables an inherited atmosphere.
 - `modules` merges by domain name. Declaring `roads(...)`, for example, replaces that inherited
   module request and every compiler-owned contribution belonging to roads. Omitted domains remain
-  inherited; `disable()` removes a domain and its complete owner-local render stack.
+  inherited; `disable()` removes a domain and its complete owner-local render stack. `refine()`
+  keeps an inherited render stack and merges its operations by name; `renderStack: reset()` removes
+  the stack, and resetting every operation has the same result.
 - `icons`, `fonts`, and `glyphs` follow the asset rules below.
 
 Arrays inside ordinary design objects replace; MapLibre expressions and Tileflow zoom values are
@@ -108,7 +110,7 @@ source map is redistributed, and the map is not affiliated with or endorsed by B
 & Debes. Its separately licensed Cormorant files live in its own package asset closure.
 Its contours are browser-derived from Mapterhorn terrain tiles that are not packaged. Siegfried owns nine light/dark engraving-motif pairs in one directory; both
 themes select the same semantic image vocabulary without changing map structure. Soundings
-owns eleven original nautical symbols and patterns, and selects its chart symbols for Nautical marks
+owns twenty-seven original nautical symbols and patterns, and selects its chart symbols for Nautical marks
 through theme image tokens; GEBCO-derived depth bands are broad visual context, not navigation-grade
 soundings. Blueprint owns four original drafting patterns and one
 schematic POI symbol in its blueprint asset closure. There is no `builtin`, `source`, `sprite`,

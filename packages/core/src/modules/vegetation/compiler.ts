@@ -135,6 +135,17 @@ export function tileflowVegetationDescription(
     },
     heightScale: number(style.heightScale),
     crownScale: number(style.crownScale),
+    ...(style.minimumHeight === undefined
+      ? {}
+      : {minimumHeight: Math.max(0, Number(toMapLibreStyleValue(style.minimumHeight)) || 0)}),
+    ...(style.materialVariation === undefined
+      ? {}
+      : {
+          materialVariation: Math.max(
+            0,
+            Number(toMapLibreStyleValue(style.materialVariation)) || 0,
+          ),
+        }),
     forms: Object.fromEntries(
       Object.entries(style.forms ?? {}).map(([form, own]) => [
         form,

@@ -6,6 +6,7 @@ import {
   readModelRoleLighting,
 } from '../src/building-illumination';
 import {meshTileflowBuildings} from '../src/buildings-3d-mesh';
+import {sampleModelRole} from '../src/models-3d-role-lighting';
 import {resolveTileflowSun} from '../src/sun';
 
 test('architectural flood lighting fades with physical scene brightness independently of palette', () => {
@@ -44,6 +45,9 @@ test('compiled architectural and model lights have bounded independent defaults'
 test('physical role profiles keep material controls and emission independent', () => {
   const role = readModelRoleLighting({
     door: {
+      shading: 'map',
+      ambientOcclusion: 0.3,
+      partColorMix: 0,
       color: '#ffeedd',
       colorMix: 0.6,
       metallic: 0.2,
@@ -56,6 +60,16 @@ test('physical role profiles keep material controls and emission independent', (
     },
   })!;
   assert.equal(role.door!.color, '#ffeedd');
+  assert.equal(role.door!.shading, 'map');
+  assert.equal(role.door!.ambientOcclusion, 0.3);
+  assert.equal(role.door!.partColorMix, 0);
+  assert.equal(role.window!.shading, undefined);
+  const invalid = readModelRoleLighting({
+    wall: {shading: 'unknown', ambientOcclusion: Infinity, partColorMix: -1},
+  })!.wall!;
+  assert.equal(invalid.shading, undefined);
+  assert.equal(invalid.ambientOcclusion, 1);
+  assert.equal(invalid.partColorMix, 1);
   assert.equal(role.door!.colorMix, 0.6);
   assert.equal(role.door!.metallic, 0.2);
   assert.equal(role.door!.roughness, 0.8);
@@ -67,6 +81,10 @@ test('physical role profiles keep material controls and emission independent', (
     lightness: [87, 87],
     space: 'linear',
   });
+  assert.deepEqual(
+    sampleModelRole({...role.window!, color: '#ffffff'}, 'shared-window').color,
+    [1, 1, 1],
+  );
 });
 
 test('an identified building keeps its lighting variation across tiles and feature order', () => {

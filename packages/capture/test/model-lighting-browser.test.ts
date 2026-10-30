@@ -31,9 +31,12 @@ out vec4 v_uv;
 out vec4 v_rgba;
 out vec3 v_position;
 flat out int v_part;
+out float v_haze_depth;
 void main() {
   vec2 uv = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
   gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
+  // No sky: the haze stays off.
+  v_haze_depth = 0.0;
   v_colour = vec3(0.4, 0.5, 0.6);
   v_normal = vec3(0.0, 0.0, 1.0);
   v_shadow = vec3(0.5);
@@ -62,6 +65,8 @@ void main() {
         gl.useProgram(program);
         const scalar = (name: string, value: number) =>
           gl.uniform1f(gl.getUniformLocation(program, name), value);
+        for (let role = 0; role < 7; role++)
+          gl.uniform3f(gl.getUniformLocation(program, `u_role_appearance[${role}]`), 0, 1, 1);
         scalar('u_ambient_occlusion', 1);
         for (let channel = 0; channel < 5; channel++)
           gl.uniform1i(gl.getUniformLocation(program, `u_material_texture${channel}`), 1);

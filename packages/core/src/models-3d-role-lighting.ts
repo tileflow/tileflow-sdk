@@ -13,7 +13,7 @@ export function sampleModelRole(profile: TileflowModelRoleLighting | undefined, 
   };
   const variation = profile?.colorVariation;
   let color = profile?.color ? tileflowColourChannels(profile.color)?.slice(0, 3) : undefined;
-  if (variation) {
+  if (variation && !color) {
     const hsl = [variation.hue, variation.saturation, variation.lightness].map(
       ([low, high], channel) => low + (high - low) * random(channel + 1),
     );

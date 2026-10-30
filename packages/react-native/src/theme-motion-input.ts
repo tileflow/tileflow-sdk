@@ -3,6 +3,7 @@ import type {MapThemeBlend} from './contract';
 import {NativePreparationError} from './native-style-document';
 
 const maximumTransitionMs = 5000;
+const defaultTransitionMs = 450;
 
 function own(value: object, keys: readonly string[]): Record<string, unknown> {
   const prototype = Object.getPrototypeOf(value);
@@ -20,9 +21,9 @@ function own(value: object, keys: readonly string[]): Record<string, unknown> {
 
 /** The transition duration in whole milliseconds; invalid input throws without echoing it. */
 export function snapshotThemeTransition(value: unknown): number {
-  if (value === undefined) return 0;
+  if (value === undefined) return defaultTransitionMs;
   if (!value || typeof value !== 'object') throw new NativePreparationError();
-  const {duration = 0} = own(value, ['duration']);
+  const {duration = defaultTransitionMs} = own(value, ['duration']);
   if (
     typeof duration !== 'number' ||
     !Number.isFinite(duration) ||

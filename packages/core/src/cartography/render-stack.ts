@@ -1,3 +1,4 @@
+import {roadLabelPlacementKey} from './label-placement';
 import type {
   OpenMapTilesFieldBindings,
   OpenMapTilesLayerBindings,
@@ -562,6 +563,13 @@ export function compileRenderStack(
   );
 }
 
+/** A semantic target its owner draws only in a mode other than the one the map selects. */
+export type TileflowModeSpecificTarget = {
+  readonly activeMode: string;
+  readonly mode: string;
+  readonly owner: string;
+};
+
 /** Lower several stacks with one stable global declaration order. */
 export function compileRenderStacks(
   modules: readonly TileflowRenderStackModule[],
@@ -589,6 +597,7 @@ export function compileRenderSelector(
 export function applyCompiledRenderStacks(
   input: readonly TileflowLayerFamilyIR[],
   operations: readonly TileflowCompiledRenderOperation[],
+  targetsOfOtherModes: ReadonlyMap<string, TileflowModeSpecificTarget> = new Map(),
 ): TileflowLayerFamilyIR[] {
   let layers = input.map(cloneJson);
   const passes = operations.filter(
@@ -625,9 +634,12 @@ export function applyCompiledRenderStacks(
   for (const refinement of activeRefinements) {
     const index = findTargetIndex(layers, refinement.target);
     if (index < 0 && !passTargets.has(refinement.target)) {
+      const other = targetsOfOtherModes.get(refinement.target);
       throw renderStackError(
         'unknown-refinement-target',
-        `Render refinement targets unknown semantic contribution: ${refinement.target}.`,
+        other === undefined
+          ? `Render refinement targets unknown semantic contribution: ${refinement.target}.`
+          : `Render refinement targets ${refinement.target}, ${describeOtherMode(other)}`,
       );
     }
     if (
@@ -655,9 +667,12 @@ export function applyCompiledRenderStacks(
   for (const operation of pending) {
     const anchor = placementAnchor(operation.placement);
     if (anchor !== undefined && !knownTargets.has(anchor)) {
+      const other = targetsOfOtherModes.get(anchor);
       throw renderStackError(
         'unknown-or-circular-anchor',
-        `${operation.target} is placed beside unknown semantic target ${anchor}.`,
+        other === undefined
+          ? `${operation.target} is placed beside unknown semantic target ${anchor}.`
+          : `${operation.target} is placed beside ${anchor}, ${describeOtherMode(other)}`,
       );
     }
   }
@@ -1075,6 +1090,13 @@ function moveLayer(
 ): TileflowLayerFamilyIR {
   return {
     ...layer,
+    ...(layer.annotations?.[roadLabelPlacementKey] === undefined
+      ? {}
+      : {
+          annotations: Object.fromEntries(
+            Object.entries(layer.annotations).filter(([key]) => key !== roadLabelPlacementKey),
+          ),
+        }),
     order: anchor?.order ?? layer.order,
     origins: layer.origins.map((origin) =>
       origin.owner === refinement.owner && origin.target === refinement.target
@@ -1470,6 +1492,15 @@ function assertOnlyKeys(input: object, allowed: readonly string[], description: 
       `${description} does not accept ${unexpected.join(', ')}.`,
     );
   }
+}
+
+function describeOtherMode({activeMode, mode, owner}: TileflowModeSpecificTarget): string {
+  return (
+    `which ${owner} draws only in mode '${mode}'; this map draws ${owner} in mode '${activeMode}'. ` +
+    `Place the operation beside a target drawn in mode '${activeMode}' or at a band edge, or ` +
+    `remove it; refine({mode: '${activeMode}', renderStack: reset()}) removes an inherited ` +
+    `${owner} render stack.`
+  );
 }
 
 function renderStackError(code: string, message: string): Error & {code: string} {

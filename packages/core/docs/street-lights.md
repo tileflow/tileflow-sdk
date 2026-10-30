@@ -117,7 +117,8 @@ by default, at most 64) bound where and how far the lights shine, `beforeId` pla
 another one, and `transformRequest` applies the map's request rules to the tiles it reads.
 
 Layers that read the same source share each tile's download, so the street lights and the 3D
-buildings fetch a tile once between them.
+buildings fetch a tile once between them. The lamps are placed in the worker the page's 3D layers
+share, which decodes each tile once for all of them.
 
 ## Limits
 

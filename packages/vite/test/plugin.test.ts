@@ -494,7 +494,13 @@ function setUint64(view: DataView, offset: number, value: number) {
 const externalGlyphProvider = JSON.stringify({
   kind: 'url',
   url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
-  fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic'],
+  fontStacks: [
+    'Noto Sans Regular',
+    'Noto Sans Bold',
+    'Noto Sans Italic',
+    'DINish Medium,Noto Sans Regular',
+    'DINish Bold,Noto Sans Regular',
+  ],
 });
 
 function createHostedManifest(): RuntimeManifest {

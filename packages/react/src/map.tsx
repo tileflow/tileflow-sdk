@@ -24,13 +24,13 @@ import type {
 import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
+  attachTileflowLabelPlacement,
   attachTileflowMap3D,
   attachTileflowMapLifecycle,
+  attachTileflowNauticalLights,
   attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowThemeController,
-  type TileflowMap3DAttachment,
-  type TileflowViewMode,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
   loadTileflowStyleFonts,
@@ -38,8 +38,12 @@ import {
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   subscribeTileflowSystemColorScheme,
+  tileflowCanvasContextAttributes,
+  type TileflowMap3DAttachment,
+  tileflowMaxPitch,
   type TileflowThemeController,
   type TileflowThemeTransition,
+  type TileflowViewMode,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
 import {
@@ -827,6 +831,9 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
 
         const map = new maplibregl.Map({
           ...stableMapOptions,
+          canvasContextAttributes: tileflowCanvasContextAttributes(
+            stableMapOptions?.canvasContextAttributes,
+          ),
           container,
           style: initialRuntimeStyle.style as StyleSpecification | string,
           bearing: bearingRef.current,
@@ -837,6 +844,9 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           attributionControl: stableMapOptions?.attributionControl ?? {
             compact: true,
           },
+          // Tileflow's compiled styles are validated when they are built.
+          validateStyle: stableMapOptions?.validateStyle ?? false,
+          maxPitch: stableMapOptions?.maxPitch ?? tileflowMaxPitch,
           transformRequest,
         });
 
@@ -845,6 +855,8 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         registerCleanup(() => map.remove());
         registerCleanup(attachTileflowAtmosphere(map));
         registerCleanup(attachTileflowNotices(map));
+        registerCleanup(attachTileflowNauticalLights(map));
+        registerCleanup(attachTileflowLabelPlacement(map));
         const themeController =
           initialRuntimeStyle.theme === undefined
             ? undefined

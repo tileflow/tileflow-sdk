@@ -6,12 +6,9 @@ import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {fileURLToPath} from 'node:url';
 import {serializeTileflowIconsLockfile, tileflowIconsLockfileName} from '@tileflow/core';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
-
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 
 async function fixture(t: TestContext) {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-cli-icon-sets-'));
@@ -255,7 +252,7 @@ function runCli(
   Object.assign(environment, overrides, {HOME: cwd, NO_COLOR: '1', USERPROFILE: cwd});
 
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
+    const child = spawn(process.execPath, cliFixtureArguments(arguments_), {
       cwd,
       env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],

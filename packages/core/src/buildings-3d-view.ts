@@ -1,4 +1,4 @@
-import type {BuildingMeshGroup, TileflowBuildingMesh} from './buildings-3d-mesh';
+import type {BuildingMeshGroup} from './buildings-3d-mesh';
 
 /** Conservative homogeneous clip test: reject only when all eight corners miss the same plane. */
 export function buildingBoxVisible(
@@ -22,7 +22,7 @@ export function buildingBoxVisible(
 
 /** Adjacent visible batches merge back into a single draw when the whole tile is visible. */
 export function buildingDrawRanges(
-  mesh: TileflowBuildingMesh,
+  mesh: Readonly<{groups?: readonly BuildingMeshGroup[]; wallsFrom: number; indexCount: number}>,
   visible: (group: BuildingMeshGroup) => boolean,
   wallsOnly = false,
 ): {from: number; count: number}[] {
@@ -30,7 +30,7 @@ export function buildingDrawRanges(
     return [
       {
         from: wallsOnly ? mesh.wallsFrom : 0,
-        count: mesh.indices.length - (wallsOnly ? mesh.wallsFrom : 0),
+        count: mesh.indexCount - (wallsOnly ? mesh.wallsFrom : 0),
       },
     ];
   const groups = mesh.groups.filter(visible);
@@ -64,4 +64,20 @@ export function buildingCornerDetail(
   if (previous === 1 && pixels >= 0.54 && pixels < 3.3) return 1;
   if (previous === 2 && pixels >= 2.7) return 2;
   return pixels < 0.6 ? 0 : pixels < 3 ? 1 : 2;
+}
+
+/**
+ * The nearest view depth of a box: the smallest clip-space w of its corners, which is linear in
+ * position, so the box's corner that minimises it along each axis.
+ */
+export function buildingBoxDepth(
+  matrix: ArrayLike<number>,
+  bounds: readonly [number, number, number, number, number, number],
+): number {
+  const depth =
+    Math.min(matrix[3]! * bounds[0], matrix[3]! * bounds[3]) +
+    Math.min(matrix[7]! * bounds[1], matrix[7]! * bounds[4]) +
+    Math.min(matrix[11]! * bounds[2], matrix[11]! * bounds[5]) +
+    matrix[15]!;
+  return Number.isFinite(depth) ? depth : -Infinity;
 }

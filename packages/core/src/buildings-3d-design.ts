@@ -10,7 +10,11 @@ import {
   type TileflowBuildingFloodLight,
   type TileflowModelRoleLighting,
 } from './building-illumination';
-import {type TileflowModelPart, tileflowModelParts} from './models-3d-model';
+import {
+  readTileflowBuildingSurfaces,
+  type TileflowBuildingSurfaceDesign,
+} from './buildings-3d-surfaces';
+import {isTileflowModelPartName} from './models-3d-model';
 import type {TileflowModelLightingRole} from './models-3d-model';
 
 /** The style metadata key under which a compiled map describes its 3D buildings. */
@@ -42,19 +46,29 @@ export type TileflowBuildings3DDesign = Readonly<{
   nightLight: number;
   /** Height-selected light on ordinary buildings and the ground, independent of shop windows. */
   floodLight?: TileflowBuildingFloodLight;
-  /** Emission by architectural role, independent of model palette slots. */
+  /** Emission by architectural role, independent of the models' parts. */
   modelLighting?: Readonly<Partial<Record<TileflowModelLightingRole, TileflowModelRoleLighting>>>;
   /** Invented night windows, lit by rooms: decoration, not data. */
   windows: boolean;
+  /** Optional decoration on ordinary walls and roofs, independent of model materials. */
+  surfaces?: TileflowBuildingSurfaceDesign;
+  /**
+   * The zoom bands, `[from, to]`, the buildings and the placed models and landmarks come in over:
+   * across its band each fades in and rises from the ground. The renderer's defaults stand for a
+   * band left out.
+   */
+  entrance?: Readonly<{buildings?: readonly [number, number]; models?: readonly [number, number]}>;
   /** Shadows from the sun, and contact shadow at the foot of the walls. */
   shadows: boolean;
   occlusion: boolean;
+  /** Ground contact shadow strength; facade shading is independent. */
+  groundOcclusion?: number;
   /** Strength of prepared model ambient visibility; zero leaves the sky contribution unchanged. */
   modelOcclusion?: number;
   /** Building models the map places in its city, each replacing the buildings under it. */
   models?: readonly TileflowBuildingModelPlacement[];
-  /** The colours of the models' parts; a part without one takes it from the building colour. */
-  modelColors?: Readonly<Partial<Record<TileflowModelPart, string>>>;
+  /** The colours of the models' parts by name; a part without one keeps its material's colour. */
+  modelColors?: Readonly<Record<string, string>>;
   /**
    * Tileflow's landmarks, drawn as models in place of the buildings under them: the TileJSON of
    * their tileset. Without it, the map shows none.
@@ -88,6 +102,7 @@ export const tileflowDefaultBuildings3DDesign = Object.freeze({
   windows: false,
   shadows: true,
   occlusion: true,
+  groundOcclusion: 0.16,
   modelOcclusion: 0.75,
 } satisfies TileflowBuildings3DDesign);
 
@@ -113,6 +128,7 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
   const within = (number: unknown, high: number, fallback: number) =>
     typeof number === 'number' && number >= 0 && number <= high ? number : fallback;
   const defaults = tileflowDefaultBuildings3DDesign;
+  const surfaces = readTileflowBuildingSurfaces(value.surfaces);
   const floodLight = readBuildingFloodLight(value.floodLight);
   const modelLighting = readModelRoleLighting(value.modelLighting);
 
@@ -124,7 +140,7 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
     },
     color: color as string | readonly unknown[],
     edges: within(value.edges, 1, 0),
-    edgeRadius: within(value.edgeRadius, 1, defaults.edgeRadius),
+    edgeRadius: within(value.edgeRadius, 1.5, defaults.edgeRadius),
     lighting: value.lighting === 'style' ? 'style' : defaults.lighting,
     colorVariation: within(value.colorVariation, 1, 0),
     verticalGradient: value.verticalGradient !== false,
@@ -133,13 +149,35 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
     ...(floodLight ? {floodLight} : {}),
     ...(modelLighting ? {modelLighting} : {}),
     windows: value.windows === true,
+    ...(surfaces ? {surfaces} : {}),
+    ...readTileflowBuildingsEntrance(value.entrance),
     shadows: typeof value.shadows === 'boolean' ? value.shadows : defaults.shadows,
     occlusion: typeof value.occlusion === 'boolean' ? value.occlusion : defaults.occlusion,
+    groundOcclusion: within(value.groundOcclusion, 1, defaults.groundOcclusion),
     modelOcclusion: within(value.modelOcclusion, 1, defaults.modelOcclusion),
     ...modelsOf(value.models),
     ...modelColorsOf(value.modelColors),
     ...landmarksOf(value.landmarks),
   };
+}
+
+/** The entrance bands a design gives, skipping any that is not a rising band of zooms. */
+export function readTileflowBuildingsEntrance(
+  value: unknown,
+): Pick<TileflowBuildings3DDesign, 'entrance'> {
+  if (!isRecord(value)) return {};
+  const band = (entry: unknown): readonly [number, number] | undefined =>
+    Array.isArray(entry) &&
+    entry.length === 2 &&
+    entry.every((zoom) => typeof zoom === 'number' && zoom >= 0 && zoom <= 24) &&
+    entry[0] < entry[1]
+      ? [entry[0], entry[1]]
+      : undefined;
+  const buildings = band(value.buildings);
+  const models = band(value.models);
+  return buildings || models
+    ? {entrance: {...(buildings ? {buildings} : {}), ...(models ? {models} : {})}}
+    : {};
 }
 
 const modelId = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
@@ -189,13 +227,11 @@ function modelsOf(value: unknown): {models?: readonly TileflowBuildingModelPlace
   return models.length > 0 ? {models} : {};
 }
 
-function modelColorsOf(value: unknown): {
-  modelColors?: Readonly<Partial<Record<TileflowModelPart, string>>>;
-} {
+function modelColorsOf(value: unknown): {modelColors?: Readonly<Record<string, string>>} {
   if (!isRecord(value)) return {};
-  const colors: Partial<Record<TileflowModelPart, string>> = {};
-  for (const part of Object.keys(tileflowModelParts) as TileflowModelPart[])
-    if (typeof value[part] === 'string') colors[part] = value[part];
+  const colors: Record<string, string> = {};
+  for (const [part, color] of Object.entries(value))
+    if (isTileflowModelPartName(part) && typeof color === 'string') colors[part] = color;
   return Object.keys(colors).length > 0 ? {modelColors: colors} : {};
 }
 

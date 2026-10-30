@@ -36,6 +36,18 @@ function color(value: unknown): Color {
   return parsed;
 }
 
+// Default day uses its own city hierarchy and detailed carriageway swatches.
+function expectedColor(theme: string, role: string, referenceColor: string): string {
+  if (theme !== 'light') return referenceColor;
+  if (role === 'roads.city.primary') return '#D5DBDF';
+  if (role === 'roads.city.secondary') return '#DEE3E6';
+  if (role === 'roads.city.tertiary') return '#E3E7E9';
+  if (role === 'roads.city.minor') return '#DDE2E5';
+  if (/^roads\.(major|motorway|trunk|primary)$/.test(role)) return '#AAB9C9';
+  if (/^roads\.(default|minor|secondary|tertiary|bridge)$/.test(role)) return '#BDCCD9';
+  return referenceColor;
+}
+
 function closeToObserved(actual: unknown, expected: string, context: string) {
   const actualColor = color(actual);
   const expectedColor = color(expected);
@@ -50,7 +62,7 @@ function closeToObserved(actual: unknown, expected: string, context: string) {
 }
 
 for (const [referenceName, theme] of Object.entries(themes)) {
-  test(`Streets ${theme} matches the independently rendered Standard ${referenceName} surfaces`, () => {
+  test(`Streets ${theme} retains calibrated ${referenceName} surfaces and authored road colors`, () => {
     const expected = reference.measurements[referenceName as keyof typeof themes];
     const resolved = resolveTileflowTheme(streetsThemes[theme]);
     const colors = resolved.tokens.color;
@@ -67,7 +79,11 @@ for (const [referenceName, theme] of Object.entries(themes)) {
       ['landcover.urbanPark', 'green'],
       ['landuse.recreation', 'sport'],
     ] as const) {
-      closeToObserved(colors[role], expected[sample], `${theme} ${role}`);
+      closeToObserved(
+        colors[role],
+        expectedColor(theme, role, expected[sample]),
+        `${theme} ${role}`,
+      );
     }
 
     const style = createStyle(streets, {
@@ -110,7 +126,7 @@ for (const [referenceName, theme] of Object.entries(themes)) {
         type: 2,
         properties: {class: 'minor'},
       } as never),
-      expected.road,
+      expectedColor(theme, 'roads.default', expected.road),
       `${theme} road at reference zoom`,
     );
 
@@ -150,18 +166,22 @@ for (const [referenceName, theme] of Object.entries(themes)) {
   });
 }
 
-test('Streets matches independent surface and foreground references in all twelve presets', () => {
+test('Streets retains reference colors with its default day road palette in all twelve presets', () => {
   for (const [name, theme] of Object.entries(themes)) {
     const expected = reference.colors[name as keyof typeof themes];
     const colors = resolveTileflowTheme(streetsThemes[theme]).tokens.color;
     for (const [role, sample] of Object.entries(expected)) {
-      assert.equal(colors[role], sample, `${theme}: ${role}`);
+      assert.equal(colors[role], expectedColor(theme, role, sample), `${theme}: ${role}`);
     }
     // Check the reference's actual GPU observations independently of formula rounding.
     for (const sample of reference.gpu[name as keyof typeof themes]) {
       closeToObserved(
         colors[sample.name],
-        `#${sample.rgb.map((c) => c.toString(16).padStart(2, '0')).join('')}`,
+        expectedColor(
+          theme,
+          sample.name,
+          `#${sample.rgb.map((c) => c.toString(16).padStart(2, '0')).join('')}`,
+        ),
         `${theme}: GPU ${sample.name}`,
       );
     }

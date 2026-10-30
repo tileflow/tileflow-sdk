@@ -55,6 +55,8 @@ internal class AdmissionBootstrapOkHttpNetwork : AdmissionBootstrapNetwork {
 					val reply = try {
 						response.use {
 							val cacheControl = it.header("cache-control") ?: ""
+							// An oversized Retry-After is ignored rather than failing the reply.
+							val retryAfter = (it.header("retry-after") ?: "").takeIf { value -> value.length <= AdmissionBootstrapLimits.RETRY_AFTER_CHARACTERS } ?: ""
 							val body = it.body
 							if (cacheControl.length > 1024 || body == null || body.contentLength() > AdmissionBootstrapLimits.RESPONSE_BYTES) throw IOException("Invalid bootstrap response")
 							val bytes = ByteArrayOutputStream()
@@ -67,7 +69,7 @@ internal class AdmissionBootstrapOkHttpNetwork : AdmissionBootstrapNetwork {
 									bytes.write(buffer, 0, count)
 								}
 							}
-							AdmissionBootstrapReply(it.code, cacheControl, bytes.toByteArray())
+							AdmissionBootstrapReply(it.code, cacheControl, bytes.toByteArray(), retryAfter)
 						}
 					} catch (_: Exception) { null }
 					complete(reply)

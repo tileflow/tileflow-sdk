@@ -9,18 +9,7 @@ import type {TileflowBuildCatalog} from '@tileflow/core/build';
 import {getFirstTileflowMapName} from './config';
 
 export {renderTileflowPreviewHtml} from './preview-html';
-export {
-  normalizeTileflowLandmarkManifest,
-  readBoundedTileflowJsonResponse,
-  readBoundedTileflowResponse,
-} from './landmarks';
-export type {
-  TileflowLandmark,
-  TileflowLandmarkArchive,
-  TileflowLandmarkAxisConvention,
-  TileflowLandmarkManifestV2,
-  TileflowLandmarkModel,
-} from './landmarks';
+export {readBoundedTileflowJsonResponse, readBoundedTileflowResponse} from './bounded-response';
 
 export type TileflowPreviewSelection = {
   map?: string;

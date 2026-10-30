@@ -66,15 +66,20 @@ wetland. The 18 runtime IDs use `siegfried-<motif>` for the historical light tre
 packaged Cormorant Garamond faces selected by both themes. See `siegfried/README.md` and the
 package-level `THIRD_PARTY_NOTICES.md` for provenance and licensing.
 
-The Soundings directory contains eleven original nautical symbols and intrinsic-size patterns:
-`soundings-harbor`, `soundings-lighthouse`, `soundings-light-flare`, `soundings-buoy-port`,
-`soundings-buoy-starboard`, `soundings-buoy-cardinal`, `soundings-buoy-pillar`,
-`soundings-wreck`, `soundings-rock-awash`, `soundings-paper-grain`, and `soundings-water-dots`.
-They express familiar paper-chart concepts without bundling a historical chart, specification
-artwork, or navigation data. Official Soundings draws its paper and water patterns and, through
-theme `nautical.*` image tokens, the buoy, light, lighthouse, wreck, and harbor symbols for its
-Nautical marks. `tileflow.icons.json` declares those eight point symbols as SDF icons, drawn in the
-central 12 of 24 pixels, so each mark takes its own colour; `soundings-rock-awash` remains
+The Soundings directory contains twenty-seven original nautical symbols and intrinsic-size patterns:
+`soundings-harbor`, `soundings-marina`, `soundings-lighthouse`, `soundings-light-flare`,
+`soundings-buoy-port`, `soundings-buoy-starboard`, `soundings-buoy-cardinal`,
+`soundings-buoy-pillar`, `soundings-wreck`, `soundings-rock-awash`, six notice boards
+(`soundings-notice` and its `-prohibition`, `-regulation`, `-restriction`, `-recommendation`, and
+`-information` variants), `soundings-distance-mark`, eight small-craft facilities
+(`soundings-facility`, `soundings-fuel-station`, `soundings-water-tap`, `soundings-slipway`,
+`soundings-pump-out`, `soundings-visitor-berth`, `soundings-boat-hoist`, and `soundings-boatyard`),
+`soundings-paper-grain`, and `soundings-water-dots`. They express familiar paper-chart and inland
+waterway concepts without bundling a historical chart, specification artwork, sign artwork, or
+navigation data. Official Soundings draws its paper and water patterns and, through theme
+`nautical.*` image tokens, its point symbols for Nautical marks. `tileflow.icons.json` declares those
+twenty-four point symbols as SDF icons, drawn in the central 12 of 24 pixels, so each mark takes its
+own colour; `soundings-rock-awash` remains
 fixed-colour artwork and is unused because rocks are drawn as chart crosses. A generic World POI is
 deliberately not relabelled as a harbour. Soundings uses GEBCO-derived depth bands only as broad
 cartographic context, and neither it nor its Nautical marks is a navigation product.

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {renderPass, withRenderStack} from '../src/cartography/render-stack';
 import {zoom} from '../src/cartography/values';
 import {tileflowWorld} from '../src/data';
 import {createStyleResult, parseTileflowMap} from '../src/map';
@@ -12,7 +13,7 @@ import {
   type TileflowMap,
   type TileflowModulePatch,
 } from '../src/maps';
-import {roads} from '../src/modules';
+import {buildings, roads} from '../src/modules';
 import {defineTheme} from '../src/themes';
 import {testLightTheme} from './map-fixture';
 
@@ -271,6 +272,34 @@ test('supports canonical replace, refine, reset, and disable module operations',
   assert.equal(resolved.modules?.roads?.classes?.secondary?.surface?.fill?.color, '#222222');
   assert.equal(resolved.modules?.roads?.classes?.tertiary?.surface?.fill?.color, '#333333');
   assert.deepEqual(resolveMap(replaced).modules?.roads, roads({hierarchy: 'strong'}));
+});
+
+test('resetting every inherited render operation removes the render stack', () => {
+  const pass = renderPass({placement: 'above-buildings', renderer: 'line', style: {width: 1}});
+  const root = defineMap({
+    id: 'render-stack-root',
+    version: 1,
+    defaultTheme: 'light',
+    themes: {light: testLightTheme},
+    modules: {buildings: withRenderStack(buildings(), {inner: pass, outer: pass})},
+  });
+  const refined = (buildingsOperation: ReturnType<typeof refine>) =>
+    resolveMap(
+      defineMap({
+        id: 'render-stack-refined',
+        version: 1,
+        extends: root,
+        modules: {buildings: buildingsOperation},
+      }),
+    ).modules?.buildings;
+
+  const eachReset = refined(refine({renderStack: {inner: reset(), outer: reset()}}));
+  assert.deepEqual(eachReset, buildings());
+  assert.deepEqual(eachReset, refined(refine({renderStack: reset()})));
+  assert.deepEqual(
+    Object.keys(refined(refine({renderStack: {inner: reset()}}))?.renderStack ?? {}),
+    ['outer'],
+  );
 });
 
 test('fails closed for invalid module operation ownership and reset placement', () => {

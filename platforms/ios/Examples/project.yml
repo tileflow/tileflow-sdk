@@ -1,0 +1,36 @@
+name: TileflowExamples
+options:
+  deploymentTarget:
+    iOS: '16.0'
+packages:
+  Tileflow:
+    path: ..
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    GENERATE_INFOPLIST_FILE: YES
+    INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    CODE_SIGN_STYLE: Automatic
+targets:
+  UIKitExample:
+    type: application
+    platform: iOS
+    sources:
+      - UIKit
+      - Shared
+    dependencies:
+      - package: Tileflow
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tileflow.examples.uikit
+  SwiftUIExample:
+    type: application
+    platform: iOS
+    sources:
+      - SwiftUI
+      - Shared
+    dependencies:
+      - package: Tileflow
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.tileflow.examples.swiftui

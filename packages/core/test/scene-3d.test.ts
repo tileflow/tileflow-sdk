@@ -92,6 +92,30 @@ test('focused shadow projections stay still within a texel and advance by whole 
   near(shift, Math.round(shift), 1e-4);
 });
 
+test('a moving view keeps its widened light view while that still covers the view', () => {
+  const direction = tileflowSunDirection(210, 40);
+  const box = {min: [-1000, -1000, 0], max: [1000, 1000, 100]};
+  const view = (offset: number, size = 200) => ({
+    receivers: [
+      [-size + offset, -size, 0],
+      [size + offset, -size, 0],
+      [size + offset, size, 0],
+      [-size + offset, size, 0],
+    ],
+    resolution: 4096,
+    margin: 0.25,
+  });
+  const still = tileflowSunLightMatrix(direction, box, {...view(0), margin: 0});
+  const moving = tileflowSunLightMatrix(direction, box, view(0));
+  assert.ok(moving.extent > still.extent * 1.4, 'a moving view takes a margin round it');
+  const panned = tileflowSunLightMatrix(direction, box, {...view(40), previous: moving.fit});
+  assert.deepEqual(panned.matrix, moving.matrix, 'a short pan keeps the light view');
+  const away = tileflowSunLightMatrix(direction, box, {...view(400), previous: moving.fit});
+  assert.notDeepEqual(away.matrix, moving.matrix, 'a view leaving it is fitted again');
+  const closer = tileflowSunLightMatrix(direction, box, {...view(0, 60), previous: moving.fit});
+  assert.ok(closer.extent < moving.extent / 2, 'a much smaller view regains its resolution');
+});
+
 test('latitude scale changes do not move fixed-world shadows by fractional texels', () => {
   const latitude = 40.4;
   const circumference = 40_075_016.686;
@@ -277,4 +301,57 @@ test('a scene with no direct sunlight allocates no shadow texture', () => {
   tileflowScene3D({}).prepare(gpu.context, light, 1);
   assert.equal(light.strength, 0);
   assert.equal(gpu.allocations(), 0);
+});
+
+test('a moving camera draws the shadow map again only once its view leaves the fit', () => {
+  const world = 512 * 2 ** 19;
+  const metresPerDegree = 40_075_016.686 / 360;
+  let lng = 0;
+  let moving = true;
+  const map = {
+    getCanvas: () => ({clientWidth: 1000, clientHeight: 800}),
+    getCenter: () => ({lng, lat: 0}),
+    getBearing: () => 0,
+    getPitch: () => 0,
+    getZoom: () => 19,
+    getVerticalFieldOfView: () => 36.87,
+    getTerrain: (): object | undefined => undefined,
+    isMoving: () => moving,
+    project: () => ({x: 500, y: 400}),
+    unproject: ([x, y]: [number, number]) => ({
+      lng: lng + ((x - 500) / world) * 360,
+      lat: (Math.atan(Math.sinh(-((y - 400) / world) * 2 * Math.PI)) * 180) / Math.PI,
+    }),
+  };
+  const scene = tileflowScene3D(map);
+  let drawn = 0;
+  scene.register({
+    bounds: () => ({zoom: 15, tiles: [16383, 16383, 16385, 16385], tallest: 100}),
+    key: () => 'same buildings',
+    drawDepth: () => {
+      drawn++;
+    },
+    groundOrder: 0,
+  });
+  const gpu = fakeContext();
+  const light = tileflowSceneLight(resolveTileflowSun(tileflowDefaultSunPreset));
+  const metres = 40_075_016.686 / 2 ** 15 / 8192;
+  scene.prepare(gpu.context, light, metres);
+  assert.equal(drawn, 1);
+  // The view is about 150 m wide; a few metres stay within its margin.
+  for (const step of [2, 4, 6, 8]) {
+    lng = step / metresPerDegree;
+    scene.prepare(gpu.context, light, metres);
+  }
+  assert.equal(drawn, 1, 'a short pan reuses the depth pass');
+  lng = 100 / metresPerDegree;
+  scene.prepare(gpu.context, light, metres);
+  assert.equal(drawn, 2, 'a view beyond the margin draws it again');
+  moving = false;
+  const widened = scene.frame()!.light.extent;
+  scene.prepare(gpu.context, light, metres);
+  assert.equal(drawn, 3, 'a camera at rest is fitted to its view again');
+  assert.ok(scene.frame()!.light.extent < widened);
+  scene.prepare(gpu.context, light, metres);
+  assert.equal(drawn, 3);
 });

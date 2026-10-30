@@ -43,10 +43,11 @@ function fixture(options: {motion?: boolean; blending?: boolean} = {}) {
   let held: ReturnType<typeof deferred<void>> | undefined;
   const documents: Record<string, unknown> = {
     [`${origin}/manifest.json`]: {
-      version: 1,
+      version: 2,
       maps: {
         main: {
           defaultTheme: 'night',
+          timeOfDay: {night: {night: 'night', dusk: 'dusk', day: 'day'}},
           themes: {
             night: {colorScheme: 'dark', styleUrl: './night.json'},
             dusk: {colorScheme: 'dark', styleUrl: './dusk.json'},
@@ -234,7 +235,10 @@ function fixture(options: {motion?: boolean; blending?: boolean} = {}) {
 }
 
 test('theme motion inputs are validated without echoing their values', () => {
-  assert.equal(snapshotThemeTransition(undefined), 0);
+  assert.equal(snapshotThemeTransition(undefined), 450);
+  assert.equal(snapshotThemeTransition({}), 450);
+  assert.equal(snapshotThemeTransition({duration: undefined}), 450);
+  assert.equal(snapshotThemeTransition({duration: 0}), 0);
   assert.equal(snapshotThemeTransition({duration: 449.6}), 450);
   for (const value of [{duration: -1}, {duration: 5001}, {duration: '450'}, {speed: 1}, 450])
     assert.throws(() => snapshotThemeTransition(value), /Native style preparation failed/u);
@@ -251,9 +255,9 @@ test('theme motion inputs are validated without echoing their values', () => {
     assert.throws(() => snapshotThemeBlend(value), /Native style preparation failed/u);
 });
 
-test('a transition covers the current frame before the style changes and is ready after the fade', async () => {
+test('timeOfDay changes cross-fade by default and are ready after the fade', async () => {
   const f = fixture();
-  f.update({themeTransition: {duration: 450}});
+  f.update({theme: 'night', timeOfDay: 'night'});
   await f.draw();
   assert.deepEqual(
     f.calls.filter((call) => !call.startsWith('camera')),
@@ -264,7 +268,7 @@ test('a transition covers the current frame before the style changes and is read
 
   f.calls.length = 0;
   f.holdReveal();
-  f.update({theme: 'day'});
+  f.update({timeOfDay: 'day'});
   await f.owner.whenIdle();
   assert.deepEqual(f.calls.slice(0, 2), ['cover 450', 'expect']);
   f.native('style');
@@ -281,6 +285,21 @@ test('a transition covers the current frame before the style changes and is read
   await f.owner.whenIdle();
   assert.equal(f.phases().at(-1), 'ready');
   assert.equal(f.readiness().at(-1), 'ready');
+  await f.owner.dispose();
+});
+
+test('an explicit zero duration disables the default timeOfDay transition', async () => {
+  const f = fixture();
+  f.update({theme: 'night', timeOfDay: 'night', themeTransition: {duration: 0}});
+  await f.draw();
+  f.calls.length = 0;
+  f.update({timeOfDay: 'day'});
+  await f.draw();
+  assert.equal(
+    f.calls.some((call) => /^(cover|reveal) /u.test(call)),
+    false,
+  );
+  assert.equal(f.phases().at(-1), 'ready');
   await f.owner.dispose();
 });
 

@@ -60,6 +60,40 @@ test('strips only the Tileflow-owned scheme before fetching a managed archive', 
   assert.equal(requested, 'https://assets.example.test/archive.pmtiles');
 });
 
+test('managed archives route nested range requests through the configured transport', async (t) => {
+  let handler: ((request: unknown, controller: AbortController) => Promise<unknown>) | undefined;
+  const requests: string[] = [];
+  t.mock.method(globalThis, 'fetch', async (url) => {
+    requests.push(String(url));
+    throw new Error('transport reached');
+  });
+  registerTileflowPmtilesProtocol(
+    {
+      addProtocol: (_name, installed) => {
+        handler = installed as typeof handler;
+      },
+    },
+    {
+      transformArchiveUrl: (url) => {
+        assert.equal(url, 'https://assets.example.test/map.pmtiles');
+        return 'tileflow://resource/archive';
+      },
+    },
+  );
+  assert.ok(handler);
+  await assert.rejects(
+    handler(
+      {
+        type: 'json',
+        url: 'tileflow-pmtiles://https://assets.example.test/map.pmtiles',
+      },
+      new AbortController(),
+    ),
+    /transport reached/u,
+  );
+  assert.deepEqual(requests, ['tileflow://resource/archive']);
+});
+
 test('reloads one stable logical PMTiles URL when its generation ETag changes', async (t) => {
   const first = createDeepPmtiles();
   const second = createDeepPmtiles();
@@ -271,6 +305,8 @@ test('theme controller preloads in parallel and applies only the latest request'
   releaseDark();
   assert.deepEqual(await dark, {status: 'superseded', theme: 'dark'});
   assert.deepEqual(map.styles, ['/contrast.json']);
+  // Compiled styles are validated when built; MapLibre need not validate them again.
+  assert.deepEqual(map.styleOptions, [{diff: true, validate: false}]);
   assert.equal(controller.getCurrent().theme, 'contrast');
 });
 
@@ -433,6 +469,7 @@ function setPmtilesUint64(view: DataView, offset: number, value: number): void {
 }
 
 class FakeStyleSwitchMap {
+  readonly styleOptions: unknown[] = [];
   readonly styles: string[] = [];
   readonly #listeners = new Map<string, Set<(event?: unknown) => void>>();
 
@@ -448,8 +485,9 @@ class FakeStyleSwitchMap {
     this.#listeners.get(event)?.delete(listener);
   }
 
-  setStyle(style: string) {
+  setStyle(style: string, options?: unknown) {
     this.styles.push(style);
+    this.styleOptions.push(options);
     queueMicrotask(() => {
       const event = style === this.rejectedStyle ? 'error' : 'style.load';
       for (const listener of this.#listeners.get(event) ?? []) {
@@ -596,6 +634,54 @@ test('explicit empty manifest font metadata avoids an extra style request', asyn
     }) as typeof fetch,
   });
   assert.equal(fetched, false);
+});
+
+test('contour protocol routes its nested DEM template through the application transport', async () => {
+  let handler: TileflowContourProtocolHandler | undefined;
+  let sourceUrl: string | undefined;
+  registerTileflowContourProtocol(
+    {
+      addProtocol: (_name, installed) => {
+        handler = installed;
+      },
+    },
+    {
+      transformDemUrl: (url) => {
+        assert.equal(url, 'https://terrain.example.test/{z}/{x}/{y}.png');
+        return 'tileflow://resource/terrain/{z}/{x}/{y}';
+      },
+      loadMaplibreContour: async () => ({
+        default: {
+          DemSource: class {
+            constructor(options: {url: string}) {
+              sourceUrl = options.url;
+            }
+            contourProtocolUrl() {
+              return 'contour://{z}/{x}/{y}';
+            }
+            async contourProtocolV4() {
+              return {data: new ArrayBuffer(0)};
+            }
+          },
+        },
+      }),
+    },
+  );
+  assert.ok(handler);
+  const url = createTileflowContourProtocolUrl({
+    demUrl: 'https://terrain.example.test/{z}/{x}/{y}.png',
+    demMaxzoom: 13,
+    encoding: 'terrarium',
+    maxzoom: 15,
+    multiplier: 1,
+    overzoom: 2,
+    thresholds: {9: [100, 500]},
+  })
+    .replace('{z}', '12')
+    .replace('{x}', '2134')
+    .replace('{y}', '1456');
+  await handler({url}, new AbortController());
+  assert.equal(sourceUrl, 'tileflow://resource/terrain/{z}/{x}/{y}');
 });
 
 test('contour protocol loads the pinned generator lazily and serves self-contained DEM requests', async () => {

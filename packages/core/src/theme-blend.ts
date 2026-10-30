@@ -470,6 +470,9 @@ function assertSameStructure(styles: readonly MapLibreStyle[], base: MapLibreSty
       throw new TileflowThemeBlendError('Blended themes must use the same sources.');
     if (!same(style.sprite, base.sprite) || !same(style.glyphs, base.glyphs))
       throw new TileflowThemeBlendError('Blended themes must use the same sprite and glyphs.');
+    for (const key of ['projection', 'terrain'] as const)
+      if (!same(style[key], base[key]))
+        throw new TileflowThemeBlendError(`Blended themes must use the same ${key}.`);
     for (const [index, layer] of style.layers.entries()) {
       const other = base.layers[index]!;
       for (const key of ['type', 'source', 'source-layer', 'filter', 'minzoom', 'maxzoom'])

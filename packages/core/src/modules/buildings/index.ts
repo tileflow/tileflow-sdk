@@ -1,5 +1,10 @@
+import type {TileflowBuildingSurfaces} from '../../buildings-3d-surfaces';
 import type {TileflowAreaStyle, TileflowExtrusionStyle} from '../../cartography/styles';
-import type {TileflowThemeColorValue, TileflowThemeNumberValue} from '../../cartography/values';
+import type {
+  TileflowThemeColorValue,
+  TileflowThemeNumberValue,
+  TileflowThemeValue,
+} from '../../cartography/values';
 import type {TileflowModelLightingRole} from '../../models-3d-model';
 
 export type TileflowBuildingMode = '3d' | 'flat';
@@ -15,7 +20,7 @@ export type TileflowBuildingsThreeDimensionalStyle = {
   colorVariation?: TileflowThemeNumberValue;
   /** How strongly roof outlines and outer corners catch the light, from 0 (default) to 1. */
   edges?: TileflowThemeNumberValue;
-  /** Radius in metres for softened exterior corners and roof lighting, from 0 to 1; defaults to 0.8. */
+  /** Radius in metres for softened exterior corners and roof lighting, from 0 to 1.5; defaults to 0.8. */
   edgeRadius?: number;
   /** Their own colour, drawn unlit; without it they take the building's colour, lightened. */
   edgeColor?: TileflowThemeColorValue;
@@ -36,7 +41,7 @@ export type TileflowBuildingsThreeDimensionalStyle = {
     /** Wall radius as a fraction of building height; defaults to 1/3. */
     wallHeightRatio?: number;
   };
-  /** Per-role physical materials and emission, separate from palette slots and occlusion. */
+  /** Per-role physical materials and emission, separate from model parts and occlusion. */
   modelLighting?: Partial<
     Record<
       TileflowModelLightingRole,
@@ -58,6 +63,12 @@ export type TileflowBuildingsThreeDimensionalStyle = {
         colorMix?: TileflowThemeNumberValue;
         metallic?: TileflowThemeNumberValue;
         roughness?: TileflowThemeNumberValue;
+        /** Normalize matte light to ordinary buildings, or retain physical glTF lighting (default). */
+        shading?: 'physical' | 'map';
+        /** Role multiplier for model ambient occlusion, from zero to one; defaults to one. */
+        ambientOcclusion?: TileflowThemeNumberValue;
+        /** Named-part colour contribution after the role tint, from zero to one; defaults to one. */
+        partColorMix?: TileflowThemeNumberValue;
         /** Independent HSL ranges, seeded by model identity; no window geometry is invented. */
         colorVariation?: {
           hue: readonly [TileflowThemeNumberValue, TileflowThemeNumberValue];
@@ -68,8 +79,17 @@ export type TileflowBuildingsThreeDimensionalStyle = {
       }
     >
   >;
+  /**
+   * The zoom bands the city comes in over: zooming in, across each band its part fades in and rises
+   * from the ground, and zooming out it sinks and fades again. Defaults to the 0.3 zooms from the
+   * renderer's `minzoom` (15) for the buildings, and to the 0.4 zooms from 0.8 before it for the
+   * placed models and landmarks, which stand first. With reduced motion they only fade.
+   */
+  entrance?: {buildings?: readonly [number, number]; models?: readonly [number, number]};
   /** Contact shadow at the foot of the walls and in tight corners; defaults to true. */
   occlusion?: boolean;
+  /** Ground contact shadow strength, from 0 to 1; defaults to 0.16. Facade shading is independent. */
+  groundOcclusion?: TileflowThemeNumberValue;
   /** Prepared model ambient occlusion strength, from 0 to 1; defaults to 0.75. */
   modelOcclusion?: TileflowThemeNumberValue;
   /** Shadows from the sun, on the buildings and the flat map; defaults to true. */
@@ -79,12 +99,20 @@ export type TileflowBuildingsThreeDimensionalStyle = {
    * barns, factories and churches, and homes lit apart from offices. Defaults to false.
    */
   windows?: boolean;
+  /** Decorative wall joints, roof tiles and painted cornices. Off by default; ordinary buildings only. */
+  surfaces?: TileflowBuildingSurfaces<
+    TileflowThemeNumberValue,
+    TileflowThemeValue<readonly [number, number]>
+  >;
   /**
    * Building models the map places in its city, from the glTF binaries in its `models`
    * directories. Each stands in for the buildings under its footprint.
    */
   models?: readonly TileflowBuildingModelPlacementConfig[];
-  /** The colours of the models' parts; a part without one takes it from the building colour. */
+  /**
+   * The colours of the models' parts, by the names their materials give them, such as `glass` or
+   * `water`. A part the map gives no colour keeps its material's own.
+   */
   modelColors?: Partial<Record<TileflowBuildingModelPart, TileflowThemeColorValue>>;
   /**
    * Tileflow's landmarks, such as the Eiffel Tower, drawn as models in place of the buildings
@@ -95,8 +123,11 @@ export type TileflowBuildingsThreeDimensionalStyle = {
   landmarks?: boolean | {url: string};
 };
 
-/** The parts of a building model, as its materials name them. */
-export type TileflowBuildingModelPart = 'surface' | 'secondary' | 'glass' | 'accent' | 'roof';
+/**
+ * A part of a building model, as its materials name it: lower-case words joined by hyphens or
+ * underscores, such as `surface`, `glass`, `roof` or `water`.
+ */
+export type TileflowBuildingModelPart = string;
 
 /** Where a building model stands. */
 export type TileflowBuildingModelPlacementConfig = {

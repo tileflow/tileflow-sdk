@@ -21,3 +21,13 @@ pnpm-debug.log*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+.build/
+.swiftpm/
+platforms/android/.gradle/
+platforms/android/.kotlin/
+platforms/android/**/build/
+platforms/android/local.properties
+platforms/android/tileflow/src/main/assets/tileflow/
+platforms/ios/Sources/Tileflow/EmbeddedRuntime/
+**/xcuserdata/

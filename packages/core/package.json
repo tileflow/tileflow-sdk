@@ -45,6 +45,11 @@
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
+    "./3d": {
+      "types": "./dist/3d.d.ts",
+      "import": "./dist/3d.js",
+      "default": "./dist/3d.js"
+    },
     "./browser": {
       "types": "./dist/browser.d.ts",
       "import": "./dist/browser.js",

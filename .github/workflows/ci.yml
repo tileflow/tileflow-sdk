@@ -90,6 +90,7 @@ jobs:
       - name: Verify package
         env:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
+          TILEFLOW_TEST_CLI_MODE: ${{ matrix.package == 'tileflow' && 'built' || 'source' }}
         run: pnpm --filter '${{ matrix.package }}' run verify
 
   peer-compatibility:
@@ -184,6 +185,8 @@ jobs:
         env:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
           TILEFLOW_RUN_BROWSER_TESTS: '1'
+          TILEFLOW_TEST_PROGRESS: '1'
+          NODE_OPTIONS: ${{ format('--test-reporter=tap --require={0}/test-support/test-progress.cjs', github.workspace) }}
 
       - name: Run cross-platform CLI browser suite
         if: matrix.suite == 'cli'
@@ -191,8 +194,9 @@ jobs:
         env:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
           TILEFLOW_RUN_BROWSER_TESTS: '1'
-          TILEFLOW_CLI_TEST_PROGRESS: ${{ runner.os == 'Windows' && '1' || '' }}
-          NODE_OPTIONS: ${{ runner.os == 'Windows' && format('--require={0}/test-support/cli-test-progress.cjs', github.workspace) || '' }}
+          TILEFLOW_TEST_PROGRESS: '1'
+          TILEFLOW_TEST_CLI_MODE: built
+          NODE_OPTIONS: ${{ format('--test-reporter=tap --require={0}/test-support/test-progress.cjs', github.workspace) }}
 
   capture-public-tarball:
     name: Clean packed capture consumer
@@ -242,6 +246,70 @@ jobs:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
         run: pnpm run smoke:capture-public
 
+  swift:
+    name: Swift SDK integration
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Prepare embedded runtime
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+          pnpm install --frozen-lockfile
+          pnpm native:runtime
+      - name: Build iOS Simulator test bundle
+        run: |
+          xcodebuild build-for-testing -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination 'generic/platform=iOS Simulator'
+      - name: Test UIKit and WebKit with Mac Catalyst
+        run: |
+          set -euo pipefail
+          node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
+          fixture_pid=$!
+          trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
+          curl --retry 10 --retry-connrefused --retry-delay 1 --fail http://127.0.0.1:18645/manifest.json > /dev/null
+          # Run the complete UIKit suite without the hosted runners' crashing SimMetalHost layer.
+          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination 'platform=macOS,variant=Mac Catalyst' CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO -resultBundlePath "$RUNNER_TEMP/Tileflow.xcresult" | tee "$RUNNER_TEMP/swift-tests.log"
+          ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-tests.log"
+      - name: Upload Swift test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: swift-integration-results
+          path: |
+            ${{ runner.temp }}/Tileflow.xcresult
+            ${{ runner.temp }}/swift-tests.log
+            ${{ runner.temp }}/map-fixture.log
+          retention-days: 7
+
+  kotlin:
+    name: Kotlin SDK package and contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Prepare embedded runtime
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+          pnpm install --frozen-lockfile
+          pnpm native:runtime
+      - name: Verify library and example
+        working-directory: platforms/android
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          ./gradlew :tileflow:testDebugUnitTest :tileflow:lintRelease :tileflow:publishReleasePublicationToCandidateRepository :example:assembleDebug --console=plain
+
   required:
     name: Required
     if: always()
@@ -251,6 +319,8 @@ jobs:
       - peer-compatibility
       - capture-smoke
       - capture-public-tarball
+      - swift
+      - kotlin
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -261,9 +331,13 @@ jobs:
           PEER_COMPATIBILITY_RESULT: ${{ needs.peer-compatibility.result }}
           VERIFY_RESULT: ${{ needs.verify.result }}
           VERIFY_HEAVY_RESULT: ${{ needs.verify-heavy.result }}
+          SWIFT_RESULT: ${{ needs.swift.result }}
+          KOTLIN_RESULT: ${{ needs.kotlin.result }}
         run: |
           test "$VERIFY_RESULT" = "success"
           test "$VERIFY_HEAVY_RESULT" = "success"
           test "$PEER_COMPATIBILITY_RESULT" = "success"
           test "$CAPTURE_SMOKE_RESULT" = "success"
           test "$CAPTURE_PUBLIC_TARBALL_RESULT" = "success"
+          test "$SWIFT_RESULT" = "success"
+          test "$KOTLIN_RESULT" = "success"

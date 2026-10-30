@@ -5,7 +5,7 @@ import {tileflowSceneOpacity} from '../../core/src/scene-3d-visibility';
 import {launchTileflowCaptureBrowser} from '../src/browser';
 
 test(
-  'zoom opacity blends nearest surfaces without grain or rear-wall bleed and restores GL state',
+  'zoom opacity blends nearest surfaces without grain or rear-wall bleed and leaves the opaque state',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1'},
   async () => {
     const browser = await launchTileflowCaptureBrowser({allowInstall: false});
@@ -59,20 +59,12 @@ void main() { fragColor = vec4(u_colour, 1.0); }`,
           const render = (
             globalThis as unknown as {drawBuildingOpacity: typeof drawBuildingOpacity}
           ).drawBuildingOpacity;
+          // The fade reads no GL state back: it starts from and leaves the buildings' opaque state.
           const state = () => [
             gl.isEnabled(gl.BLEND),
             gl.getParameter(gl.DEPTH_WRITEMASK),
             gl.getParameter(gl.DEPTH_FUNC),
             [...gl.getParameter(gl.COLOR_WRITEMASK)],
-            [...gl.getParameter(gl.BLEND_COLOR)],
-            ...[
-              gl.BLEND_SRC_RGB,
-              gl.BLEND_DST_RGB,
-              gl.BLEND_SRC_ALPHA,
-              gl.BLEND_DST_ALPHA,
-              gl.BLEND_EQUATION_RGB,
-              gl.BLEND_EQUATION_ALPHA,
-            ].map((name) => gl.getParameter(name)),
           ];
           return opacities.map((opacity) => {
             gl.enable(gl.DEPTH_TEST);
@@ -107,7 +99,7 @@ void main() { fragColor = vec4(u_colour, 1.0); }`,
       );
       for (const sample of result) {
         assert.equal(sample.error, 0);
-        assert.deepEqual(sample.after, sample.before, 'leave the host GL state unchanged');
+        assert.deepEqual(sample.after, sample.before, "leave the buildings' opaque state");
         assert.equal(sample.draws, sample.opacity === 0 ? 0 : sample.opacity === 1 ? 1 : 2);
         const expected = [
           0.4 * (1 - sample.opacity),

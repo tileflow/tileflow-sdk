@@ -19,6 +19,7 @@ import {
   type TileflowThemeBlendSelection,
   validateTileflowThemeBlendSelection,
 } from './runtime';
+import {readTileflowSky, tileflowSkyAtSun, tileflowSkyMetadataKey, tileflowSkySunKey} from './sky';
 import {
   mixTileflowAzimuths,
   readTileflowSunPreset,
@@ -53,15 +54,43 @@ import {
   type TileflowThemeMotionMap,
   tileflowThemeMotionView,
 } from './theme-motion-browser';
+import {
+  prepareTileflowThemeGeometry,
+  waitForTileflowThemeGeometry,
+} from './theme-preparation-browser';
 import type {MapLibreStyle} from './types';
 
-export {attachTileflowAtmosphere, type TileflowAtmosphereMap} from './atmosphere-browser';
+export {
+  attachTileflowAtmosphere,
+  type TileflowAtmosphereMap,
+  type TileflowAtmosphereRuntimeOptions,
+} from './atmosphere-browser';
+export {tileflowMaxPitch} from './camera-limits';
+export {attachTileflowSky, tileflowSkyLayerId, type TileflowSkyMap} from './sky-browser';
+export {
+  readTileflowSky,
+  tileflowSkyAtSun,
+  tileflowSkyMetadataKey,
+  type TileflowSkyColours,
+  type TileflowSkyMetadata,
+  type TileflowSkyTimesOfDay,
+} from './sky';
+export {
+  attachTileflowSkyHaze,
+  tileflowSkyHazeLayerId,
+  type TileflowSkyHazeMap,
+} from './sky-haze-browser';
+export {tileflowCanvasContextAttributes} from './canvas-context-browser';
 export {
   createBoundaryFeatureState,
   type CreateBoundaryFeatureStateOptions,
   type TileflowBoundaryFeatureState,
   type TileflowFeatureStateMap,
 } from './boundary-areas/feature-state';
+export {
+  attachTileflowLabelPlacement,
+  type TileflowLabelPlacementMap,
+} from './label-placement-browser';
 export {
   tileflowLineProgressGradient,
   type TileflowLineProgressGradientOptions,
@@ -244,6 +273,25 @@ export {
   tileflowNoticesMetadataKey,
   type TileflowMapNotice,
 } from './notices';
+export {
+  attachTileflowNauticalLights,
+  type TileflowNauticalLightsMap,
+} from './nautical-lights-browser';
+export {
+  readTileflowNauticalLights,
+  tileflowNauticalLightStates,
+  tileflowNauticalLightsMetadataKey,
+  type TileflowNauticalLights,
+} from './nautical-lights';
+export {
+  tileflowLightRhythm,
+  tileflowLightRhythmConventions,
+  tileflowLightStateAt,
+  type TileflowLightCharacteristic,
+  type TileflowLightPhase,
+  type TileflowLightRhythm,
+  type TileflowLightState,
+} from './nautical-light-rhythm';
 
 export * from './fair-use-browser';
 export {
@@ -343,12 +391,12 @@ export type TileflowThemeTransitionResult = Readonly<{
 }>;
 
 /**
- * How a theme change appears. With a `duration`, the map cross-fades from the previous theme to
- * the new one: a snapshot of the previous frame covers the map, follows the camera, and fades out
- * once the new theme is drawn. A browser preference for reduced motion changes at once.
+ * How a theme change appears. Compatible themes interpolate on the live map, including its sky
+ * and 3D lighting. Other styles use a stationary cover that clears when the camera moves.
+ * A browser preference for reduced motion changes at once.
  */
 export type TileflowThemeTransitionOptions = Readonly<{
-  /** Cross-fade length in milliseconds, from 0 (the default, an immediate change) to 5000. */
+  /** Milliseconds from 0 (immediate) to 5000. Themes and blends default to 450; other changes to 0. */
   duration?: number;
 }>;
 
@@ -508,6 +556,7 @@ export type TileflowThemeController = {
 
 const maximumBlendThemes = 8;
 const maximumTransitionMs = 5_000;
+const defaultThemeTransitionMs = 450;
 /** Labels and icons cross-fade this long when the nearest theme of a blend changes. */
 const blendLabelFadeMs = 450;
 const maximumTileflowBlendStyleBytes = 16 * 1024 * 1024;
@@ -581,6 +630,10 @@ export function createTileflowThemeController(options: {
   const loadStyle = options.loadStyle ?? loadTileflowBlendStyle;
   const timeoutMs = normalizeThemeTransitionTimeout(options.timeoutMs);
   const defaultTransition = normalizeThemeTransitionDuration(options.transition);
+  const defaultThemeTransition = normalizeThemeTransitionDuration(
+    options.transition,
+    defaultThemeTransitionMs,
+  );
   const styleIdentities = new WeakMap<object, number>();
   // The route inks of each blended theme, in blend order, by the blend's plan.
   const blendRouteInks = new WeakMap<TileflowThemeBlendPlan, readonly TileflowRouteInks[]>();
@@ -605,6 +658,7 @@ export function createTileflowThemeController(options: {
   let shown: Shown = {style: options.initial.style};
   let activeBlend: ActiveBlend | undefined;
   let pendingBlend: PendingBlend | undefined;
+  let stopThemeMotion: (() => void) | undefined;
   let disposed = false;
   let requestId = 0;
   let applyQueue: Promise<void> = Promise.resolve();
@@ -642,6 +696,9 @@ export function createTileflowThemeController(options: {
   let sunStop: (() => void) | undefined;
   let sunSettle: ((result: TileflowThemeTransitionResult) => void) | undefined;
   let sunLightWritten: string | undefined;
+  // The sky a placed sun wrote, and the sky of the style a theme given by URL compiled.
+  let sunSkyWritten: string | undefined;
+  let urlStyleSky: unknown;
 
   function imageContext() {
     return {
@@ -661,6 +718,7 @@ export function createTileflowThemeController(options: {
   return {
     dispose() {
       disposed = true;
+      stopThemeMotion?.();
       releaseMetadata();
       images?.dispose();
       requestId += 1;
@@ -766,9 +824,10 @@ export function createTileflowThemeController(options: {
       const invalid = validateBlendRequest(request);
       if (invalid) return Promise.resolve({error: invalid, status: 'failed', theme: targetTheme});
       if (disposed) return Promise.resolve(disposedResult(targetTheme));
-      const transition = transitionOf(changeOptions);
+      const transition = transitionOf(changeOptions, defaultThemeTransition);
       if (transition instanceof TypeError)
         return Promise.resolve({error: transition, status: 'failed', theme: targetTheme});
+      stopThemeMotion?.();
       const key = blendKey(request.themes);
       if (activeBlend?.key === key) {
         // The same themes: only the position moves, at once, superseding older pending changes.
@@ -810,9 +869,10 @@ export function createTileflowThemeController(options: {
         return Promise.resolve({error: invalidTheme, status: 'failed', theme: style.theme});
       }
       if (disposed) return Promise.resolve(disposedResult(style.theme));
-      const transition = transitionOf(changeOptions);
+      const transition = transitionOf(changeOptions, defaultThemeTransition);
       if (transition instanceof TypeError)
         return Promise.resolve({error: transition, status: 'failed', theme: style.theme});
+      stopThemeMotion?.();
       const runId = ++requestId;
       pendingBlend = undefined;
       options.onTransition?.({
@@ -833,10 +893,13 @@ export function createTileflowThemeController(options: {
     },
   };
 
-  function transitionOf(changeOptions: TileflowThemeChangeOptions | undefined): number | TypeError {
-    if (changeOptions?.transition === undefined) return defaultTransition;
+  function transitionOf(
+    changeOptions: TileflowThemeChangeOptions | undefined,
+    defaultDuration = defaultTransition,
+  ): number | TypeError {
+    if (changeOptions?.transition === undefined) return defaultDuration;
     try {
-      return normalizeThemeTransitionDuration(changeOptions.transition);
+      return normalizeThemeTransitionDuration(changeOptions.transition, defaultDuration);
     } catch (error) {
       return error as TypeError;
     }
@@ -931,13 +994,75 @@ export function createTileflowThemeController(options: {
     if (disposed || runId !== requestId) return {status: 'superseded', theme: targetTheme};
     const previous = {current, shown};
     options.onTransition?.({currentTheme: previous.current.theme, phase: 'applying', targetTheme});
-    const cover = beginTileflowStyleCrossfade(options.map, target.transition);
-    activeBlend?.blender.dispose();
-    activeBlend = undefined;
+    let cover: ReturnType<typeof beginTileflowStyleCrossfade>;
     const styleInput =
       target.kind === 'theme' ? target.style.style : target.plan.styleAt(target.position());
 
     try {
+      let liveTransition = false;
+      // A photograph cannot follow a rotating globe or 3D scene. Use the existing
+      // blend renderer so both appearances are drawn with the current camera.
+      if (
+        target.kind === 'theme' &&
+        !activeBlend &&
+        target.transition > 0 &&
+        !reducedMotion() &&
+        tileflowThemeMotionView(options.map) &&
+        canBlendTileflowThemes(options.map)
+      ) {
+        const themes = [previous.current, target.style];
+        let plan: TileflowThemeBlendPlan | undefined;
+        try {
+          plan = await prepareBlend(themes);
+        } catch {
+          // Different sources, layers or artwork require a complete style switch.
+        }
+        if (disposed || runId !== requestId) return {status: 'superseded', theme: targetTheme};
+        if (plan) {
+          liveTransition = true;
+          // Our animation clock owns the interpolation; native paint transitions would lag
+          // behind it and jump when the final style replaces the temporary blend.
+          const style = {...plan.styleAt(0), transition: {duration: 0, delay: 0}};
+          const from =
+            typeof previous.shown.style === 'string'
+              ? await loadStyle(previous.shown.style)
+              : previous.shown.style;
+          if (!(await prepareGeometry(from, style, runId))) {
+            if (!disposed) await restore(previous);
+            return {status: 'superseded', theme: targetTheme};
+          }
+          await applyMapStyle(options.map, style, timeoutMs);
+          if (disposed) return {status: 'superseded', theme: targetTheme};
+          const blender = createBlender(plan, 0, true);
+          activeBlend = {blender, key: '', plan, themes};
+          shown = {blend: activeBlend, style};
+          shownLayers = style.layers;
+          resetEmphasis();
+          resetStates();
+          resetSun(undefined);
+          await animateTheme(blender, themes, target.transition, runId);
+          if (!disposed && runId === requestId) {
+            const destination =
+              typeof styleInput === 'string' ? await loadStyle(styleInput) : styleInput;
+            const finalBlendStyle = {...plan.styleAt(1), transition: {duration: 0, delay: 0}};
+            await prepareGeometry(finalBlendStyle, destination, runId);
+          }
+          blender.dispose();
+          activeBlend = undefined;
+          if (disposed) return {status: 'superseded', theme: targetTheme};
+          if (runId !== requestId) {
+            await restore(previous);
+            return {status: 'superseded', theme: targetTheme};
+          }
+          // Remove temporary blend layers after reaching the exact destination.
+          // The final style has the same appearance and keeps the native camera.
+        }
+      }
+      if (!liveTransition) {
+        cover = beginTileflowStyleCrossfade(options.map, target.transition);
+      }
+      activeBlend?.blender.dispose();
+      activeBlend = undefined;
       if (target.kind === 'blend') images?.assertBlend(target.plan.images);
       invalidateMetadata();
       await applyMapStyle(options.map, styleInput, timeoutMs);
@@ -985,6 +1110,8 @@ export function createTileflowThemeController(options: {
       return {status: 'applied', theme: current.theme};
     } catch (error) {
       cover?.cancel();
+      activeBlend?.blender.dispose();
+      activeBlend = undefined;
       const normalized = normalizeThemeTransitionError(error, 'Tileflow theme change failed.');
       try {
         await restore(previous);
@@ -1002,20 +1129,84 @@ export function createTileflowThemeController(options: {
     }
   }
 
-  function createBlender(plan: TileflowThemeBlendPlan, position: number): TileflowThemeBlender {
+  async function prepareGeometry(from: MapLibreStyle, to: MapLibreStyle, runId: number) {
+    const getStyle = options.map.getStyle;
+    const displayed = typeof getStyle === 'function' ? getStyle.call(options.map) : undefined;
+    const preparation = prepareTileflowThemeGeometry(displayed ?? from, to);
+    if (!preparation) return !disposed && runId === requestId;
+    await applyMapStyle(options.map, preparation.style, timeoutMs);
+    const ready = await waitForTileflowThemeGeometry(
+      options.map,
+      timeoutMs,
+      () => disposed || runId !== requestId,
+    );
+    if (ready) preparation.reveal(options.map);
+    return ready;
+  }
+
+  function animateTheme(
+    blender: TileflowThemeBlender,
+    themes: readonly TileflowRuntimeStyle[],
+    duration: number,
+    runId: number,
+  ): Promise<void> {
+    const view = tileflowThemeMotionView(options.map)!;
+    return new Promise((resolve, reject) => {
+      const now = () => view.performance?.now?.() ?? Date.now();
+      const started = now();
+      let frame: number | undefined;
+      let settled = false;
+      const finish = (error?: unknown) => {
+        if (settled) return;
+        settled = true;
+        if (frame !== undefined) {
+          view.cancelAnimationFrame?.(frame);
+          view.clearTimeout(frame);
+        }
+        if (stopThemeMotion === cancel) stopThemeMotion = undefined;
+        if (error) reject(error);
+        else resolve();
+      };
+      const cancel = () => finish();
+      const step = () => {
+        frame = undefined;
+        if (disposed || runId !== requestId) return finish();
+        try {
+          const t = Math.min(1, (now() - started) / duration);
+          blender.set(t * t * (3 - 2 * t));
+          current = themes[blender.dominant]!;
+          images?.invalidate();
+          if (t >= 1) finish();
+          else frame = view.requestAnimationFrame?.(step) ?? view.setTimeout(step, 16);
+        } catch (error) {
+          finish(error);
+        }
+      };
+      stopThemeMotion = cancel;
+      step();
+    });
+  }
+
+  function createBlender(
+    plan: TileflowThemeBlendPlan,
+    position: number,
+    liveTransition = false,
+  ): TileflowThemeBlender {
     return createTileflowThemeBlender(options.map, plan, {
       cover(change) {
+        if (liveTransition) return change();
         // Values that read feature state switch with a re-layout; a snapshot covers it.
         const fade = beginTileflowStyleCrossfade(options.map, blendLabelFadeMs);
         change();
         void fade?.finish();
       },
-      labelFadeMs: reducedMotion() ? 0 : blendLabelFadeMs,
+      labelFadeMs: liveTransition || reducedMotion() ? 0 : blendLabelFadeMs,
       // The ground colour moves with the blend, and colours that recede follow it.
       onPosition: () => {
         if (emphasisShown) writeEmphasis(false);
-        // The blend wrote its own light; the sun's takes its place.
+        // The blend wrote its own light and sky; the sun's take their place.
         sunLightWritten = undefined;
+        sunSkyWritten = undefined;
         writeSunLight();
       },
       position,
@@ -1074,8 +1265,62 @@ export function createTileflowThemeController(options: {
     return resolveTileflowSun(preset, sunShown, sunShown.source);
   }
 
+  /** The sky the themes on screen compiled, mixed at the blend's position. */
+  function themeSky(): unknown {
+    if (activeBlend?.plan.sky !== undefined)
+      return fillTileflowThemeBlendTemplate(activeBlend.plan.sky, activeBlend.blender.position);
+    return typeof shown.style === 'string' ? urlStyleSky : shown.style.sky;
+  }
+
+  /**
+   * Publishes the sun on screen for the map's sky layer, and while an application places the sun,
+   * gives the sky the colours of its hour from the time-of-day skies the themes carry.
+   */
+  function writeSunSky(): void {
+    const sun = sunNow();
+    try {
+      (options.map as unknown as Record<symbol, unknown>)[tileflowSkySunKey] = {
+        altitude: sun.altitude,
+        azimuth: sun.azimuth,
+        direction: sun.direction,
+        source: sun.source,
+      };
+    } catch {
+      // A frozen map object keeps the themes' sun for its sky.
+    }
+    const setSky = options.map.setSky as ((sky: unknown, options?: object) => unknown) | undefined;
+    if (typeof setSky !== 'function') return;
+    const style = typeof shown.style === 'string' ? shownStyleDocument() : shown.style;
+    const times = readTileflowSky(
+      (style?.metadata as Record<string, unknown> | undefined)?.[tileflowSkyMetadataKey],
+    )?.timesOfDay;
+    const base = themeSky();
+    try {
+      if (sunShown && times && isPlainObject(base)) {
+        const at = tileflowSkyAtSun(times, sun);
+        const sky = {
+          ...base,
+          'sky-color': at.color,
+          'horizon-color': at.horizonColor,
+          'fog-color': at.horizonColor,
+          'sky-horizon-blend': at.horizonBlend,
+        };
+        const key = JSON.stringify(sky);
+        if (key === sunSkyWritten) return;
+        setSky.call(options.map, sky, {validate: false});
+        sunSkyWritten = key;
+      } else if (sunSkyWritten !== undefined) {
+        setSky.call(options.map, base, {validate: false});
+        sunSkyWritten = undefined;
+      }
+    } catch {
+      // MapLibre refuses while a style loads; resetSun() writes the sky after it.
+    }
+  }
+
   /** The map's light points from the sun when the themes describe one or an application placed it. */
   function writeSunLight(): void {
+    writeSunSky();
     const {published} = themeSunPreset();
     if (!published && !sunShown) return;
     const setLight = options.map.setLight as
@@ -1105,6 +1350,11 @@ export function createTileflowThemeController(options: {
 
   /** After a new style: the themes' sun is read again and the light follows the sun on screen. */
   function resetSun(style: MapLibreStyle | string | undefined): void {
+    sunSkyWritten = undefined;
+    urlStyleSky =
+      typeof style === 'string'
+        ? (shownStyleDocument() as {sky?: unknown} | undefined)?.sky
+        : undefined;
     themeSun =
       style === undefined || typeof style === 'string'
         ? undefined
@@ -1620,8 +1870,9 @@ function validateBlendRequest(request: TileflowThemeBlendRequest): TypeError | u
 
 function normalizeThemeTransitionDuration(
   transition: TileflowThemeTransitionOptions | undefined,
+  defaultDuration = 0,
 ): number {
-  const duration = transition?.duration ?? 0;
+  const duration = transition?.duration ?? defaultDuration;
   if (
     typeof duration !== 'number' ||
     !Number.isFinite(duration) ||
@@ -1709,6 +1960,7 @@ function applyMapStyle(
     const cleanup = () => {
       clearTimeout(timeout);
       map.off('style.load', handleLoad);
+      map.off('render', handleRenderedStyle);
       map.off('error', handleError);
     };
     const settle = (error?: Error) => {
@@ -1719,6 +1971,10 @@ function applyMapStyle(
       else resolve();
     };
     const handleLoad = () => settle();
+    const handleRenderedStyle = () => {
+      const isStyleLoaded = map.isStyleLoaded;
+      if (typeof isStyleLoaded === 'function' && isStyleLoaded.call(map) === true) settle();
+    };
     const handleError = (event?: unknown) =>
       settle(
         normalizeThemeTransitionError(
@@ -1732,6 +1988,7 @@ function applyMapStyle(
     );
 
     map.on('style.load', handleLoad);
+    map.on('render', handleRenderedStyle);
     map.on('error', handleError);
     try {
       if (typeof map.setStyle !== 'function') {
@@ -1739,9 +1996,13 @@ function applyMapStyle(
       }
       const setStyle = map.setStyle as (
         style: MapLibreStyle | string,
-        options?: {diff?: boolean},
+        options?: {diff?: boolean; validate?: boolean},
       ) => unknown;
-      setStyle.call(map, style, {diff: true});
+      // A theme's style is compiled, and validated, when its map is built.
+      setStyle.call(map, style, {diff: true, validate: false});
+      // MapLibre emits no style.load for an empty diff. The live transition's
+      // first style may already match the map, even while camera tiles load.
+      handleRenderedStyle();
     } catch (error) {
       settle(normalizeThemeTransitionError(error, 'MapLibre rejected the Tileflow theme.'));
     }
@@ -2300,3 +2561,21 @@ export {
   type TileflowVegetationOptions,
   type TileflowVegetationController,
 } from './vegetation-browser';
+
+export {
+  createTileflowMap3D,
+  type TileflowMap3D,
+  type TileflowMap3DMap,
+  type TileflowMap3DOptions,
+} from './map-3d-browser';
+
+export {
+  attachTileflowMap3D,
+  tileflowMap3DDeclarations,
+  tileflowMap3DMetadataKeys,
+  tileflowMapDeclares3D,
+  type AttachTileflowMap3DOptions,
+  type TileflowMap3DAttachment,
+  type TileflowMap3DLoader,
+  type TileflowMap3DSource,
+} from './map-3d-attach-browser';

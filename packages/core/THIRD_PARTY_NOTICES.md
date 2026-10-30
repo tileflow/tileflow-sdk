@@ -295,7 +295,7 @@ OF THIS SOFTWARE.
 
 ---
 
-## whatwg-url 17.2.0 and tr46 7.0.0
+## whatwg-url 17.3.0 and tr46 7.0.0
 
 The native entry embeds the low-level `whatwg-url` parser and `tr46` IDNA processing. During the
 native build only, the parser's encoding and query-encoding imports use Tileflow's private UTF-8

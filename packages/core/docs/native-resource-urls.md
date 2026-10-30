@@ -121,7 +121,7 @@ network request. Do not attach a credential merely because this helper accepted 
 
 ## Private parser and source builds
 
-The native entry embeds the low-level parser from `whatwg-url` 17.2.0, `tr46` 7.0.0 (Unicode 18
+The native entry embeds the low-level parser from `whatwg-url` 17.3.0, `tr46` 7.0.0 (Unicode 18
 IDNA processing) and Punycode.js 2.3.1. It exposes no URL class or parser configuration. Package
 consumers only install Core; the published `dist/native.js` has no external runtime imports.
 The parser is a development/build dependency, not an additional runtime package to install.

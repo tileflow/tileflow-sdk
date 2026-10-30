@@ -1316,7 +1316,7 @@ test('Streets keeps its runtime-toggle geometry and business surface in the comp
   const buildings3D = readTileflowBuildings3D(style.metadata);
   assert.ok(buildings3D, 'Streets lost its 3D buildings description');
   const extrusion = byId.get('tileflow-buildings-render-extrusion');
-  assert.equal(buildings3D.color, extrusion?.paint?.['fill-extrusion-color']);
+  assert.deepEqual(buildings3D.color, extrusion?.paint?.['fill-extrusion-color']);
   assert.equal(buildings3D.layers.building, extrusion?.['source-layer']);
   assert.equal(buildings3D.windows, false);
   assert.equal(buildings3D.verticalGradient, true);

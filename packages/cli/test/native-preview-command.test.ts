@@ -95,7 +95,8 @@ test('native preview serves canonical native-v1 assets only and preserves last-k
     await rm(cwd, {force: true, recursive: true});
   });
 
-  const ready = await running.waitFor((event) => event.event === 'ready');
+  // Initial compilation includes watcher discovery and can exceed ten seconds on Windows CI.
+  const ready = await running.waitFor((event) => event.event === 'ready', 30_000);
   assert.equal(ready.renderer, 'native');
   assert.equal(ready.profile, 'native-v1');
   assert.equal(ready.manifest, manifestUrl);
@@ -296,7 +297,7 @@ async function firstWebPreviewReady(
     String(port),
   ]);
   try {
-    const ready = await running.waitFor((event) => event.event === 'ready');
+    const ready = await running.waitFor((event) => event.event === 'ready', 30_000);
     assert.equal(Object.hasOwn(ready, 'renderer'), false);
     assert.equal(Object.hasOwn(ready, 'profile'), false);
     assert.equal(Object.hasOwn(ready, 'manifest'), false);

@@ -17,6 +17,9 @@ test('validates strict v2 records without browser probes or global Zod configura
       }});
     }
     const {z} = await import('zod');
+    // Zod initializes locale and memoizer defaults lazily. Give the consumer its
+    // own configuration and verify that importing/using Core preserves it.
+    z.config({localeError: () => 'caller-owned error', memoizer: z.memoizer()});
     const config = {...z.config()};
     const profile = await import('@tileflow/core/native-profile');
     const row = {

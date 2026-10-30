@@ -10,6 +10,7 @@ import {
   inferTileflowSourceRequirements,
   labels,
   parseTileflowMap,
+  TileflowResolvedMapValidationError,
   water,
 } from '../src';
 import {extendStreets} from './map-fixture';
@@ -198,7 +199,7 @@ test('declared contour layers retain custom text expressions and never infer a f
           },
         }) as never,
       ),
-    /Invalid input/u,
+    TileflowResolvedMapValidationError,
   );
 });
 

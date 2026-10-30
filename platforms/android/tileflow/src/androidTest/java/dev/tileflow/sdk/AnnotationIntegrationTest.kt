@@ -178,6 +178,28 @@ public class AnnotationIntegrationTest {
             overlay.delivery.clear()
             val skew =
                 suspendJavascript(map, "Date.now() - (performance.timeOrigin + performance.now())")
+            suspendJavascript(
+                map,
+                """
+                (() => {
+                    const channel = window.tileflowNative;
+                    const send = channel.postMessage.bind(channel);
+                    const samples = window.tileflowTrackingTiming = {beforeSend: [], longTasks: []};
+                    const measured = message => {
+                        const event = JSON.parse(message);
+                        if (event.event === 'trackedPointsMoved') {
+                            samples.beforeSend.push(performance.timeOrigin + performance.now() - event.result.time);
+                        }
+                        send(message);
+                    };
+                    channel.postMessage = measured;
+                    samples.installed = channel.postMessage === measured;
+                    new PerformanceObserver(list => {
+                        samples.longTasks.push(...list.getEntries().map(entry => entry.duration));
+                    }).observe({type: 'longtask'});
+                })()
+                """.trimIndent(),
+            )
             // Pan by the view's width in half a second, back and forth.
             val width = bounds.east - bounds.west
             val started = SystemClock.uptimeMillis()
@@ -221,6 +243,13 @@ public class AnnotationIntegrationTest {
             println(
                 "Tileflow: delivery to the main thread p50 %.1f ms, p95 %.1f ms; renderer clock skew %s ms"
                     .format(overlay.delivery.percentile(0.5), overlay.delivery.percentile(0.95), skew)
+            )
+            println(
+                "Tileflow: renderer timing " +
+                    suspendJavascript(
+                        map,
+                        "JSON.stringify({...window.tileflowTrackingTiming, clockSkewAfter: Date.now() - (performance.timeOrigin + performance.now())})",
+                    )
             )
             assertTrue("Too few position updates: ${lag.count}", lag.count >= 30)
             assertTrue("Lag p95 $p95 ms", p95 < 100)

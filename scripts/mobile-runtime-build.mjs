@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {cp, mkdir, readFile, writeFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
-import {dirname, resolve} from 'node:path';
+import {dirname, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {collectRuntimeNotices} from './mobile-runtime-notices.mjs';
 
@@ -38,7 +38,7 @@ const coreNativeSource = {
       return {path: resolve(coreSource, 'native.ts')};
     });
     build.onResolve({filter: /^\.\/native-url-provider$/}, (args) => {
-      if (!resolve(args.importer).startsWith(`${coreSource}/`)) return undefined;
+      if (!resolve(args.importer).startsWith(`${coreSource}${sep}`)) return undefined;
       substituted.add('parser');
       return {path: platformUrl};
     });
@@ -66,7 +66,7 @@ if (!substituted.has('entry') || !substituted.has('parser'))
   throw new Error('The runtime no longer reads Core native from source with the platform URL.');
 const forbidden = Object.keys(result.metafile.inputs).filter((path) =>
   /\/(?:react|react-dom|react-native|packages\/(?:cli|dev|capture)|whatwg-url|tr46|punycode)\//u.test(
-    path,
+    path.replaceAll('\\', '/'),
   ),
 );
 if (forbidden.length)

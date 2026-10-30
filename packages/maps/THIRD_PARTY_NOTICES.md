@@ -33,6 +33,29 @@ upstream license is included at `assets/streets/LICENSE-MAKI.txt`.
 POI discs occupy 20px inside a 24px cell. The 15px Maki source geometry is scaled to a centered
 12px box before rasterization, keeping space between the pictograms and the circular border.
 
+## Streets transit network symbols
+
+The three `assets/streets/icons/transit-madrid-*.svg` files identify transport networks on map
+points. Each source is centered, proportionally scaled, and given accessible metadata inside a
+24px SVG cell. Geometry and identity colors are retained; all themes share the same asset.
+
+- `transit-madrid-metro.svg`: [MetroMadridLogoSimplified.svg](https://commons.wikimedia.org/wiki/File:MetroMadridLogoSimplified.svg),
+  by Przemysław Sakrajda, simplified by Kizar, with the current vector revision by Teo.raff.
+  Licensed under [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
+  This adapted SVG is distributed under the same license; the full text is in
+  `assets/streets/LICENSE-CC-BY-SA-3.0.txt`.
+- `transit-madrid-cercanias.svg`: [Cercanias Logo.svg](https://commons.wikimedia.org/wiki/File:Cercanias_Logo.svg),
+  by WikiNight2, with revisions by Alkari and Borjaguado. The source is dedicated to the public
+  domain by its author and marked PD-textlogo on Wikimedia Commons.
+- `transit-madrid-emt.svg`: [Símbolo de EMT Madrid.svg](https://commons.wikimedia.org/wiki/File:S%C3%ADmbolo_de_EMT_Madrid.svg),
+  by Andreuvv, with a vector revision by Teo.raff. Licensed under
+  [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). This adapted SVG is distributed
+  under the same license; the full text is in `assets/streets/LICENSE-CC-BY-SA-4.0.txt`.
+
+The transport identities remain the marks of their respective owners. Their inclusion identifies
+the mapped services and does not imply affiliation or endorsement. These asset-specific terms
+are separate from the package's source-code license.
+
 ## 1777 cabinet atlas reference
 
 The `map1777` map and its eleven SVG material patterns (each in four palettes) are
@@ -84,8 +107,8 @@ contains Tileflow-authored style code and original patterns plus the separately 
 Garamond files documented below. `baedeker` is an official Tileflow map; it is not affiliated with
 or endorsed by Baedeker or Wagner & Debes.
 
-At runtime, Baedeker derives contour vectors in the browser from Mapterhorn terrain tiles. No
-Mapterhorn tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
+At runtime, Baedeker derives contour vectors in the browser from Tileflow Terrain tiles, which
+carry Mapterhorn terrain data. No terrain tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
 catalog of its constituent open terrain sources and their individual attribution and license terms
 at <https://mapterhorn.com/attribution/>. The compiled Style carries that link as source
 attribution.
@@ -97,15 +120,15 @@ code and artwork. Its architectural-blueprint direction uses general drafting co
 package does not include or redistribute an architectural drawing, CAD file, municipal plan,
 survey sheet, font, source image, or third-party symbol artwork.
 
-At runtime, Blueprint derives contour vectors in the browser from Mapterhorn terrain tiles. No
-Mapterhorn tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
+At runtime, Blueprint derives contour vectors in the browser from Tileflow Terrain tiles, which
+carry Mapterhorn terrain data. No terrain tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
 catalog of its constituent open terrain sources and their individual attribution and license terms
 at <https://mapterhorn.com/attribution/>. The compiled Style carries that link as source
 attribution.
 
 ## Nautical-chart references
 
-The `soundings` map and its eleven SVG symbols and patterns are original Tileflow code and artwork.
+The `soundings` map and its twenty-seven SVG symbols and patterns are original Tileflow code and artwork.
 Its visual grammar was informed by NOAA's
 [Historical Map & Chart Collection](https://historicalcharts.noaa.gov/) and the IHO
 [S-4 and INT 1 standards index](https://iho.int/standards-and-specifications) as cartographic
@@ -130,11 +153,21 @@ not a reproduced or historically documented swisstopo colourway.
 - Historical reference: <https://www.swisstopo.admin.ch/en/siegfried-map>
 - 1873 conventional signs: <https://www.swisstopo.admin.ch/dam/en/sd-web/4OmbRYHBFpcd/Zeichenerklaerung-Siegfriedkarte-EN.pdf>
 
-At runtime, Siegfried derives contour vectors in the browser from Mapterhorn terrain tiles. No
-Mapterhorn tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
+At runtime, Siegfried derives contour vectors in the browser from Tileflow Terrain tiles, which
+carry Mapterhorn terrain data. No terrain tile is packaged or redistributed by `@tileflow/maps`. Mapterhorn publishes the full
 catalog of its constituent open terrain sources and their individual attribution and license terms
 at <https://mapterhorn.com/attribution/>. The compiled Style carries that link as source
 attribution.
+
+## Streets lettering
+
+Streets includes unmodified DINish Medium and Bold TTF files from
+[playbeing/dinish](https://github.com/playbeing/dinish/tree/a5f3b2a3b932336225815bf9005e3b72cc3de71c),
+and unmodified Noto Sans Regular, Bold and Italic TTF files from
+[notofonts/noto-fonts](https://github.com/notofonts/noto-fonts/tree/c971829a87e7920f960e7277c3dafd9bedd3c601).
+Both families use the SIL Open Font License 1.1. Complete copyright and license notices are
+included in `assets/streets/fonts/LICENSE-DINish.txt`, `LICENSE-NotoSans.txt`, and the combined
+`LICENSE.txt`. DINish is an independent DIN-inspired font; DIN Pro is not redistributed.
 
 ## Cormorant Garamond
 

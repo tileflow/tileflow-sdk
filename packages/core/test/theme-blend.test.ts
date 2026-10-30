@@ -506,6 +506,11 @@ test('mixes a differing sky between themes', () => {
 
 test('rejects themes that do not share one structure', () => {
   const a = style([layer('land', 'fill', {'fill-color': '#000000'})]);
+  for (const geometry of [{projection: {type: 'globe'}}, {terrain: {source: 'dem'}}])
+    assert.throws(
+      () => planTileflowThemeBlend([a, {...a, ...geometry} as MapLibreStyle]),
+      /same (projection|terrain)/u,
+    );
   assert.throws(() => planTileflowThemeBlend([a]), TileflowThemeBlendError);
   assert.throws(
     () => planTileflowThemeBlend([a, style([layer('water', 'fill', {'fill-color': '#000000'})])]),

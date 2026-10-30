@@ -6,7 +6,10 @@ internal object AdmissionBootstrapLimits {
 	const val QUEUE = 32
 	const val REQUEST_BYTES = 2048
 	const val RESPONSE_BYTES = 65536
-	const val TIMEOUT_MS = 30000L
+	const val RETRY_AFTER_CHARACTERS = 64
+	// Well inside the 30 s ticket and batch deadlines, so a stalled renewal fails its batch
+	// instead of letting the context retire under it.
+	const val TIMEOUT_MS = 10000L
 }
 
 internal class AdmissionBootstrapRequest(
@@ -18,7 +21,7 @@ internal class AdmissionBootstrapRequest(
 	override fun toString() = "AdmissionBootstrapRequest(redacted)"
 }
 
-internal class AdmissionBootstrapReply(val status: Int, val cacheControl: String, val body: ByteArray) {
+internal class AdmissionBootstrapReply(val status: Int, val cacheControl: String, val body: ByteArray, val retryAfter: String = "") {
 	override fun toString() = "AdmissionBootstrapReply(redacted)"
 }
 
@@ -86,7 +89,8 @@ internal class AdmissionBootstrap(
 			work.network = network.start(AdmissionBootstrapRequest(url, credential, body) { mayStart(work) }) { reply ->
 				scheduler.dispatch {
 					val valid = mayStart(work) && reply != null && reply.status in 100..599 &&
-						reply.cacheControl.length <= 1024 && reply.body.size <= AdmissionBootstrapLimits.RESPONSE_BYTES
+						reply.cacheControl.length <= 1024 && reply.retryAfter.length <= AdmissionBootstrapLimits.RETRY_AFTER_CHARACTERS &&
+						reply.body.size <= AdmissionBootstrapLimits.RESPONSE_BYTES
 					finish(work, if (valid) reply else null)
 				}
 			}

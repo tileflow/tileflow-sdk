@@ -33,11 +33,11 @@ export default defineMap({id: 'madrid', version: 1, extends: streets});
 Loading the config executes its imports. It is not a sandbox for untrusted code. Local preparation
 needs no API key, but serving a map can still cause requests to its remote data or font providers.
 
-The CLI's local Map DevTools provides a dockable layer inspector, loaded tiles, assets, scene
+The CLI's local Inspector provides a dockable layer inspector, loaded tiles, assets, scene
 controls and frame timing. Its element picker selects a layer and evaluates its rules using the
 feature clicked on the map.
 Debug's Overdraw overlay uses a heatmap with a visible pass-count legend and explanation.
-See [Map DevTools and compiler inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md)
+See [Inspector and compiler inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md)
 for interaction details and observation limits.
 
 ## Prepare a generation
@@ -66,6 +66,8 @@ compile icons separately can use `prepareTileflowMapTreeModels` from `@tileflow/
 the map's model directories, base directory, working directory, target and diagnostic path. Pass
 its `models` result as `preparedAssets.models` when compiling the style; retain its source
 identities and watch paths when managing revisions. The artifact pipeline does this automatically.
+A GLB whose materials name only `bark`, `leaves`, `fronds` or `stem` is a tree model; any other
+is a building model, whose materials name its parts.
 
 To write production output rather than manage it in memory:
 
@@ -136,9 +138,9 @@ Use `/artifacts` for preparation and output, `/server` for HTTP handling, `/conf
 loading, `/icons` and `/fonts` for asset preparation, `/inspect` for bounded inspection, `/tilesets`
 for local PMTiles inspection, and `/validation` for diagnostics. `/preview` is the local preview
 contract, including experimental preview-only rendering; it does not promise hosted support.
-The package has no root entry point. `/server` also exposes the reusable Map DevTools shell. The CLI
+The package has no root entry point. `/server` also exposes the reusable Inspector shell. The CLI
 connects appearance controls and shared browser context through its optional local
-workflow adapter; see the [Map DevTools guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md).
+workflow adapter; see the [Inspector guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md).
 The navigation contains **Map**, **Layers**, **Tiles**, **Assets**, **Debug** and **Diagnostics**.
 Zoom, Pitch and Bearing appear as **Z**, **P** and **B** directly below it, with live Zoom and Pitch
 sliders and **Copy for AI**. Pitch and Bearing each have an inline reset to 0° within the map's
@@ -261,7 +263,7 @@ These references are also included under `docs/` in the installed package:
 - [Building model preparation](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/building-models.md): colour slots, architectural roles, ambient visibility and compatibility.
 - [Native artifact preparation](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-artifacts.md): static compatibility, renderer-qualified output, and limitations.
 - [Artifact lifecycle](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/artifact-lifecycle.md): generations, immutable snapshots, provenance, and cleanup.
-- [Local comparison and inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md): Map DevTools controls and preview-only models.
+- [Local comparison and inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md): Inspector controls and preview-only models.
 - [Config diagnostics](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/structured-config-inspection-and-diagnostics.md): bounded, machine-readable inspection.
 - [PMTiles inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/bounded-pmtiles-resource-inspection.md): metadata, sampling limits, and requested properties.
 - [Feature and icon inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/bounded-vector-feature-inspection.md): supported sources, icon compilation, and delivered-pixel hashes.

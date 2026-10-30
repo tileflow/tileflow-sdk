@@ -1,9 +1,9 @@
 // Prepares the 3D models a map declares: the glTF binaries (.glb) in its `models` directories, read,
 // checked and turned into Core's models. A model's materials say what it is: one whose materials
-// name the parts of a tree (bark, leaves, fronds, stem) becomes a compact tree model the compiler
-// carries in the style; one whose materials name the parts of a building (surface, secondary, glass,
-// accent, roof) becomes a prepared model file the build writes beside the style. A file's name is
-// its model's id; `<id>.far.glb` is the same model for far trees, and `<id>.mid.glb` and
+// name only the parts of a tree (bark, leaves, fronds, stem) becomes a compact tree model the
+// compiler carries in the style; any other, whose materials name its parts (such as surface, glass,
+// roof or water), is a building model and becomes a prepared model file the build writes beside the
+// style. A file's name is its model's id; `<id>.far.glb` is the same model for far trees, and `<id>.mid.glb` and
 // `<id>.far.glb` a building's farther levels of detail. A later directory's model replaces an
 // earlier one of the same id, as icons do. Tileflow's landmarks are packaged from the same building
 // models into the tiles of a landmarks tileset.
@@ -30,7 +30,7 @@ import {
 import type {TileflowEffectiveModelSourceIdentity} from '@tileflow/core/build';
 import {resolveTileflowAssetDirectories} from './asset-directories';
 import {
-  isTileflowBuildingModel,
+  isTileflowTreeModel,
   prepareTileflowBuildingModelMesh,
   tileflowBuildingModelDeclaredFootprint,
   tileflowBuildingModelFootprint,
@@ -166,16 +166,41 @@ export function encodeTileflowLandmarkRegion(region: TileflowLandmarkRegion): {
   return {bytes, sha256: sha256Of(bytes)};
 }
 
+// Occlusion detail grows with the square root of a level's surface: about 89·A^0.54 texels of
+// visible shade for A square metres. The atlas packs at about three fifths, so its budget is
+// larger. Two floors keep detail the square-root rule would lose: no level takes fewer than
+// 65,536 texels, so small detailed buildings keep their mouldings distinct, and none less than
+// 1.3 texels a metre, so towers keep each storey's mullions and slabs apart. The mid level takes a
+// quarter; the far level keeps visibility on its vertices.
+const nearLightmapTexels = (area: number) =>
+  Math.min(
+    524_288,
+    Math.max(65_536, Math.round((89 / 0.6) * area ** 0.54), Math.round((1.3 ** 2 * area) / 0.6)),
+  );
+const buildingModelLightmapTexels = {
+  near: nearLightmapTexels,
+  mid: (area: number) => nearLightmapTexels(area) / 4,
+} as const;
+
 /** A building model, read from its glTF binaries, with its footprint. */
 function buildingModelEntry(id: string, levels: TileflowBuildingModelLevels): TileflowModelEntry {
   const primitives = readTileflowGltfTriangles(levels.near, {materials: true});
-  if (!isTileflowBuildingModel(primitives))
+  if (isTileflowTreeModel(primitives))
     throw new TileflowGltfError(
-      'is not a building model; name each material surface, secondary, glass, accent or roof',
+      'is not a building model; its materials name only the parts of a tree (bark, leaves, fronds and stem)',
     );
-  const meshes: TileflowModelMesh[] = [prepareTileflowBuildingModelMesh(primitives)];
-  for (const level of [levels.mid, levels.far])
-    if (level) meshes.push(prepareTileflowBuildingModelMesh(level));
+  const meshes: TileflowModelMesh[] = [
+    prepareTileflowBuildingModelMesh(primitives, {
+      lightmapTexels: buildingModelLightmapTexels.near,
+    }),
+  ];
+  if (levels.mid)
+    meshes.push(
+      prepareTileflowBuildingModelMesh(levels.mid, {
+        lightmapTexels: buildingModelLightmapTexels.mid,
+      }),
+    );
+  if (levels.far) meshes.push(prepareTileflowBuildingModelMesh(levels.far));
   return {
     id,
     levels: meshes,
@@ -270,7 +295,8 @@ export async function prepareTileflowMapTreeModels(
       issues.push({message: `has no ${id}.glb beside it`, path: (entry.mid ?? entry.far)!.display});
       continue;
     }
-    // A model whose materials name the parts of a building is a building model.
+    // A model whose materials name only the parts of a tree is a tree model; any other is a
+    // building model, whose preparation names a material it cannot use.
     let nearBytes: Uint8Array;
     let primitives: ReturnType<typeof readTileflowGltfTriangles>;
     try {
@@ -283,7 +309,7 @@ export async function prepareTileflowMapTreeModels(
       });
       continue;
     }
-    if (isTileflowBuildingModel(primitives)) {
+    if (!isTileflowTreeModel(primitives)) {
       const files: {near: Uint8Array; mid?: Uint8Array; far?: Uint8Array} = {near: nearBytes};
       const sources: PreparedTileflowBuildingModel['sources'][number][] = [];
       let failing = entry.near;

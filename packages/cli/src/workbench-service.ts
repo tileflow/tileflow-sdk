@@ -178,9 +178,9 @@ export function createWorkbenchService(options: Options) {
     if (path === '/capture') {
       const {side: id, generation, name, definition} = captureInput.parse(input);
       if (definition.target?.kind === 'application')
-        throw new Error('Map DevTools captures require a map scene.');
+        throw new Error('Inspector captures require a map scene.');
       const side = options.sides[id];
-      if (!side) throw new Error('Unknown Map DevTools side.');
+      if (!side) throw new Error('Unknown Inspector side.');
       const state = side.session.getState();
       if (state.status !== 'ready' || state.generation !== generation)
         return json(
@@ -245,10 +245,10 @@ export function createWorkbenchService(options: Options) {
         request.headers.get('sec-fetch-site') === 'cross-site'
       )
         return json(
-          {code: 'ORIGIN_MISMATCH', message: 'Use Map DevTools from its local origin.'},
+          {code: 'ORIGIN_MISMATCH', message: 'Use Inspector from its local origin.'},
           403,
         );
-      if (closed) return json({code: 'SESSION_CLOSED', message: 'Map DevTools has stopped.'}, 503);
+      if (closed) return json({code: 'SESSION_CLOSED', message: 'Inspector has stopped.'}, 503);
       const path = url.pathname.slice(prefix.length);
       try {
         if (request.method === 'GET') {
@@ -309,7 +309,7 @@ export function createWorkbenchService(options: Options) {
               },
             });
           }
-          return json({code: 'NOT_FOUND', message: 'Unknown Map DevTools endpoint.'}, 404);
+          return json({code: 'NOT_FOUND', message: 'Unknown Inspector endpoint.'}, 404);
         }
         if (request.method !== 'POST')
           return json({code: 'METHOD_NOT_ALLOWED', message: 'Use GET or POST.'}, 405);
@@ -324,14 +324,14 @@ export function createWorkbenchService(options: Options) {
         const body = await readBody(request);
         if (path === '/context') {
           const {client, ...value} = contextInput.parse(body);
-          if (!options.sides[value.side]) throw new Error('Unknown Map DevTools side.');
+          if (!options.sides[value.side]) throw new Error('Unknown Inspector side.');
           contexts.delete(client);
           contexts.set(client, {...value, updatedAt: new Date().toISOString()});
           if (contexts.size > 8) contexts.delete(contexts.keys().next().value!);
           return json({saved: true});
         }
         if (path !== '/capture' && path !== '/compare' && path !== '/captures/delete')
-          return json({code: 'NOT_FOUND', message: 'Unknown Map DevTools action.'}, 404);
+          return json({code: 'NOT_FOUND', message: 'Unknown Inspector action.'}, 404);
         if (pending)
           return json(
             {
@@ -347,7 +347,7 @@ export function createWorkbenchService(options: Options) {
           pending = undefined;
         }
       } catch (error) {
-        const message = error instanceof Error ? error.message : 'Map DevTools operation failed.';
+        const message = error instanceof Error ? error.message : 'Inspector operation failed.';
         return json({code: 'WORKBENCH_OPERATION_FAILED', message: message.slice(0, 1500)}, 400);
       }
     },
@@ -371,7 +371,7 @@ async function readBody(request: Request): Promise<unknown> {
       bytes += value.byteLength;
       if (bytes > 64 * 1024) {
         await reader.cancel();
-        throw new Error('Map DevTools request exceeds 64 KiB.');
+        throw new Error('Inspector request exceeds 64 KiB.');
       }
       chunks.push(value);
     }
@@ -395,8 +395,8 @@ function json(value: Record<string, unknown>, status = 200) {
 export function registerWorkbenchInspection(inspect: Command) {
   inspect
     .command('session')
-    .description('Read the active local Map DevTools context and capabilities')
-    .option('--url <origin>', 'local Map DevTools origin', 'http://127.0.0.1:3333')
+    .description('Read the active local Inspector context and capabilities')
+    .option('--url <origin>', 'local Inspector origin', 'http://127.0.0.1:3333')
     .option('--json', 'print the versioned context document')
     .action(async (options: {url: string; json?: boolean}) => {
       try {
@@ -407,11 +407,11 @@ export function registerWorkbenchInspection(inspect: Command) {
           url.username ||
           url.password
         )
-          throw new Error('--url must identify a local Map DevTools HTTP server.');
+          throw new Error('--url must identify a local Inspector HTTP server.');
         const response = await fetch(new URL(`${prefix}/context`, url.origin), {
           signal: AbortSignal.timeout(5000),
         });
-        if (!response.ok) throw new Error(`Map DevTools returned HTTP ${response.status}.`);
+        if (!response.ok) throw new Error(`Inspector returned HTTP ${response.status}.`);
         const document = await response.json();
         console.log(
           JSON.stringify(

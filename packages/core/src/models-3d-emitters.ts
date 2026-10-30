@@ -1,4 +1,5 @@
 import type {TileflowModelEmitter} from './models-3d-materials';
+import {tileflowHazeFragment, tileflowHazeVertex} from './scene-3d-shaders';
 
 /** A bounded doorway spill: floor wedge and two sides, authored in model metres. */
 export function modelEmitterGeometry(emitter: TileflowModelEmitter) {
@@ -87,6 +88,7 @@ uniform vec2 u_anchor;
 uniform float u_model_metres;
 uniform float u_scale;
 out vec4 v_light_coordinates;
+${tileflowHazeVertex}
 void main() {
   const int indices[12] = int[12](0, 1, 2, 2, 1, 3, 4, 6, 8, 5, 9, 7);
   int index = indices[gl_VertexID];
@@ -96,6 +98,7 @@ void main() {
   float growth = clamp(u_scale, 0.0, 1.0);
   gl_Position = projectTileFor3D(u_anchor + turned * vec2(1.0, -1.0) / u_model_metres,
     position.z * growth * growth * (3.0 - 2.0 * growth));
+  v_haze_depth = gl_Position.w;
   v_light_coordinates = u_emitter_coordinates[index];
 }`;
 
@@ -105,6 +108,7 @@ in vec4 v_light_coordinates;
 uniform vec3 u_emitter_colour;
 uniform float u_emitter_strength;
 uniform float u_opacity;
+${tileflowHazeFragment}
 out vec4 fragColor;
 void main() {
   if (u_emitter_strength <= 0.0) discard;
@@ -113,5 +117,5 @@ void main() {
   float distance = length(vec2(across, light.y)) +
     0.5 * (1.0 - clamp(u_emitter_strength - 1.0, 0.0, 1.0));
   float alpha = clamp((1.0 - distance * distance) * light.w, 0.0, 1.0);
-  fragColor = vec4(u_emitter_colour, alpha * min(1.0, u_emitter_strength) * u_opacity);
+  fragColor = vec4(hazed(u_emitter_colour), alpha * min(1.0, u_emitter_strength) * u_opacity);
 }`;

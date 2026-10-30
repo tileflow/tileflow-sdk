@@ -13,6 +13,7 @@ import type {
   TileflowOverlayCollection,
 } from '../overlays';
 import {tileflowPortableIdSchema} from '../portable-identity';
+import type {TileflowSky} from '../sky';
 import type {TileflowTheme, TileflowThemeName} from '../themes';
 import type {TileflowTimeOfDayVariants} from '../time-of-day';
 import type {TileflowProjection, TileflowTerrain, TileflowViewConfig} from '../types';
@@ -73,6 +74,11 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
   /** Keyed MapLibre overlay units. Omission inherits; entries replace atomically. */
   overlays?: TileflowOverlayCollection;
   projection?: TileflowProjection;
+  /**
+   * The sky above the horizon when the camera tilts up, in either projection, with stars where it
+   * is dark. Colours take theme tokens. False disables an inherited sky.
+   */
+  sky?: TileflowSky;
   /** Keyed logical hosted sources. Omission inherits; entries replace atomically. */
   sources?: TileflowHostedSourceCollection;
   /** Browser color-scheme mapping. Runtime resolves "system" to one of these concrete names. */

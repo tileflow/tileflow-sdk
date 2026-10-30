@@ -1,13 +1,12 @@
-// The tiles round the camera that Tileflow's custom WebGL layers draw from (3D buildings, street
-// lights): the nearest round a point ahead of the centre, as far as the view reaches, read with the
-// map's own tile address and request rules and built a few milliseconds per frame. Layers reading
-// the same source share each tile's download.
+// The tiles round the camera that Tileflow's custom WebGL layers draw from (3D buildings, trees,
+// street lights): the nearest round a point ahead of the centre, as far as the view reaches, read
+// with the map's own tile address and request rules, nearest first, and built from their bytes off
+// the page. Layers reading the same source share each tile's download.
 import {fetchTileflowPmtilesTile, isTileflowPmtilesUrl} from './pmtiles-browser';
 import {
-  createTileflowTileReader,
+  createTileLoader,
   readTileflowMapTileSource,
-  type TileflowTile,
-  type TileflowTileReader,
+  type TileflowTileBytes,
   type TileflowTileRequestTransform,
 } from './tile-reader';
 
@@ -27,6 +26,8 @@ export type CameraTile<T> = {
   readonly x: number;
   readonly y: number;
   value?: T;
+  /** From the point the camera reads round, in tiles. */
+  distance?: number;
   retryAt?: number;
   loading?: AbortController;
   used: number;
@@ -35,7 +36,6 @@ export type CameraTile<T> = {
 export type CameraTilesOptions<T> = Readonly<{
   map: CameraTilesMap;
   source: string;
-  layers: readonly string[];
   /** The deepest zoom to read; a source that stops earlier is read at its own maximum. */
   zoom: number;
   /** Tiles are read from a zoom below this one. */
@@ -44,8 +44,16 @@ export type CameraTilesOptions<T> = Readonly<{
   transformRequest?: TileflowTileRequestTransform;
   /** Whether the layer wants tiles now. */
   active(): boolean;
-  /** Builds a tile's value; a tile without the layers it needs gets `empty`. */
-  build(tile: TileflowTile, tileMetres: number, signal: AbortSignal): T | Promise<T>;
+  /**
+   * Builds a tile's value from its bytes; a tile without the layers it needs gets `empty`. Nearer
+   * tiles have a lower `priority`.
+   */
+  build(
+    tile: TileflowTileBytes,
+    tileMetres: number,
+    signal: AbortSignal,
+    priority: number,
+  ): T | Promise<T>;
   empty: T;
   /** Lets go of a tile's value when it is forgotten. */
   release(value: T): void;
@@ -71,6 +79,8 @@ export type CameraTiles<T> = {
   readonly origin: readonly [number, number];
   /** Metres per tile unit (of 8192) at the camera's latitude. */
   readonly metres: number;
+  /** The disc the wanted tiles cover whole, at the zoom tiles are read at; see `cameraTileRing`. */
+  ring(): CameraTileRing | undefined;
   /** A tile's corner from the origin, in tile units of 8192. */
   offsetOf(tile: {x: number; y: number}): [number, number];
   /**
@@ -92,30 +102,35 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
     key: string;
     entry: CameraTile<T>;
     controller: AbortController;
-    tile: TileflowTile;
+    tile: TileflowTileBytes;
     metres: number;
   }[] = [];
   let wanted: string[] = [];
   let covered: Readonly<{x: number; y: number}>[] = [];
-  let reader: TileflowTileReader | undefined;
+  let ring: CameraTileRing | undefined;
+  type Loader = ReturnType<typeof createTileLoader<TileflowTileBytes>>;
+  let reader: Loader | undefined;
   let zoom = options.zoom;
   let origin: [number, number] = [0, 0];
   let metres = 1;
   let building = false;
   let disposed = false;
 
-  function ensureReader(): TileflowTileReader | undefined {
+  function ensureReader(): Loader | undefined {
     if (reader) return reader;
     const source = readTileflowMapTileSource(map, options.source);
     if (!source) return undefined;
     zoom = Math.min(options.zoom, source.maxzoom);
-    reader = createTileflowTileReader({
-      ...source,
-      layers: options.layers,
-      cacheSize: 0,
-      fetch: sharedTileFetch,
-      ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
-    });
+    // The bytes are decoded where the tile is built.
+    reader = createTileLoader(
+      {
+        ...source,
+        cacheSize: 0,
+        fetch: sharedTileFetch,
+        ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
+      },
+      (bytes, address, url) => ({...address, url, bytes}),
+    );
     return reader;
   }
 
@@ -127,31 +142,14 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
     // without the source's data, such as a placed model, needs to know them.
     const source = ensureReader();
     const centre = map.getCenter();
-    const pitch = map.getPitch();
-    const reach = Math.min(5000, Math.max(800, 1600 * 2 ** (16 - currentZoom) * (1 + pitch / 60)));
-    const bearing = (map.getBearing() * Math.PI) / 180;
-    const ahead = reach * 0.35 * Math.min(1, pitch / 60);
-    const latitude = centre.lat + (Math.cos(bearing) * ahead) / 111_320;
-    const longitude =
-      centre.lng + (Math.sin(bearing) * ahead) / (111_320 * Math.cos((centre.lat * Math.PI) / 180));
-    const [cx, cy] = cameraTileAt(longitude, latitude, zoom);
-    const tileMetres = (earth * Math.cos((latitude * Math.PI) / 180)) / 2 ** zoom;
-    const span = Math.ceil(reach / tileMetres);
-    const candidates: {x: number; y: number; distance: number}[] = [];
-    for (let dx = -span; dx <= span; dx += 1)
-      for (let dy = -span; dy <= span; dy += 1) {
-        const x = Math.floor(cx) + dx;
-        const y = Math.floor(cy) + dy;
-        const distance = Math.hypot(
-          Math.max(x, Math.min(cx, x + 1)) - cx,
-          Math.max(y, Math.min(cy, y + 1)) - cy,
-        );
-        if (distance * tileMetres <= reach) candidates.push({x, y, distance});
-      }
-    candidates.sort((a, b) => a.distance - b.distance);
-    const chosen = candidates.slice(0, options.maxTiles);
-    wanted = chosen.map(({x, y}) => `${x}/${y}`);
-    covered = chosen.map(({x, y}) => ({x, y}));
+    const chosen = cameraTileRing(
+      {...centre, zoom: currentZoom, pitch: map.getPitch(), bearing: map.getBearing()},
+      zoom,
+      options.maxTiles,
+    );
+    ring = chosen;
+    wanted = chosen.tiles.map(({x, y}) => `${x}/${y}`);
+    covered = chosen.tiles.map(({x, y}) => ({x, y}));
     origin = cameraTileAt(centre.lng, centre.lat, zoom);
     metres = (earth * Math.cos((centre.lat * Math.PI) / 180)) / 2 ** zoom / extent;
     if (!source) {
@@ -159,7 +157,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       return;
     }
     const now = performance.now();
-    for (const {x, y} of chosen) {
+    for (const {x, y, distance} of chosen.tiles) {
       const key = `${x}/${y}`;
       let entry = tiles.get(key);
       if (!entry) {
@@ -167,28 +165,27 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
         tiles.set(key, entry);
       }
       entry.used = now;
+      entry.distance = distance;
       if (
         (!entry.value || entry.retryAt !== undefined) &&
         !entry.loading &&
         (entry.retryAt ?? 0) <= now
       )
-        load(source, key, entry, tileMetres);
+        load(source, key, entry, chosen.tileMetres);
     }
     evict();
     map.triggerRepaint();
   }
 
-  function load(
-    source: TileflowTileReader,
-    key: string,
-    entry: CameraTile<T>,
-    tileMetres: number,
-  ): void {
+  function load(source: Loader, key: string, entry: CameraTile<T>, tileMetres: number): void {
     const controller = new AbortController();
     entry.loading = controller;
     entry.retryAt = undefined;
     source
-      .readTile({z: zoom, x: entry.x, y: entry.y}, {signal: controller.signal})
+      .read(
+        {z: zoom, x: entry.x, y: entry.y},
+        {signal: controller.signal, priority: entry.distance ?? 0},
+      )
       .then((tile) => {
         if (disposed || tiles.get(key) !== entry || entry.loading !== controller) return;
         // An absent tile stays empty; it is not read again.
@@ -225,7 +222,12 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       const started = performance.now();
       let built = false;
       while (!disposed && queue.length && performance.now() - started < buildBudgetMs) {
-        const {key, entry, controller, tile, metres: tileMetres} = queue.shift()!;
+        // The nearest tile goes first.
+        let nearest = 0;
+        for (let at = 1; at < queue.length; at += 1)
+          if ((queue[at]!.entry.distance ?? 0) < (queue[nearest]!.entry.distance ?? 0))
+            nearest = at;
+        const {key, entry, controller, tile, metres: tileMetres} = queue.splice(nearest, 1)[0]!;
         const current = () =>
           !disposed &&
           tiles.get(key) === entry &&
@@ -234,7 +236,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
         if (!current()) continue;
         let value: T;
         try {
-          value = await options.build(tile, tileMetres, controller.signal);
+          value = await options.build(tile, tileMetres, controller.signal, entry.distance ?? 0);
         } catch {
           if (current()) {
             entry.loading = undefined;
@@ -309,6 +311,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       return list;
     },
     coverage: () => covered,
+    ring: () => ring,
     all: () => tiles.values(),
     get zoom() {
       return zoom;
@@ -353,8 +356,16 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
 // --- Shared downloads ---
 
 // Recent tile downloads, by request, so layers reading the same tiles fetch each once. A tile is
-// kept for a minute, and only the latest few dozen.
-const shared = new Map<string, {bytes: Promise<{status: number; body: ArrayBuffer}>; at: number}>();
+// kept for a minute, and only the latest few dozen. A download stops once every layer waiting for
+// it has stopped waiting.
+type SharedDownload = {
+  bytes: Promise<{status: number; body: ArrayBuffer}>;
+  at: number;
+  readers: number;
+  settled: boolean;
+  controller: AbortController;
+};
+const shared = new Map<string, SharedDownload>();
 const sharedLimit = 48;
 const sharedFor = 60_000;
 
@@ -363,42 +374,115 @@ async function sharedTileFetch(url: string, init: RequestInit): Promise<Response
   const now = Date.now();
   let entry = shared.get(key);
   if (!entry || now - entry.at > sharedFor) {
-    // The download itself is never cancelled: another layer may be waiting for it. A source served
-    // from a Tileflow PMTiles archive is read through Core's own PMTiles protocol.
+    // A source served from a Tileflow PMTiles archive is read through Core's own PMTiles protocol.
+    const controller = new AbortController();
     const bytes = (
       isTileflowPmtilesUrl(url)
-        ? fetchTileflowPmtilesTile(url)
+        ? fetchTileflowPmtilesTile(url, controller.signal)
         : fetch(url, {
             ...(init.headers ? {headers: init.headers} : {}),
             ...(init.credentials ? {credentials: init.credentials} : {}),
+            signal: controller.signal,
           })
     ).then(async (response) => ({
       status: response.status,
       body: response.ok ? await response.arrayBuffer() : new ArrayBuffer(0),
     }));
-    entry = {bytes, at: now};
+    const download: SharedDownload = {bytes, at: now, readers: 0, settled: false, controller};
+    entry = download;
     shared.delete(key);
-    shared.set(key, entry);
+    shared.set(key, download);
     while (shared.size > sharedLimit) shared.delete(shared.keys().next().value!);
-    bytes.catch(() => shared.delete(key));
+    bytes.then(
+      () => {
+        download.settled = true;
+      },
+      () => {
+        download.settled = true;
+        if (shared.get(key) === download) shared.delete(key);
+      },
+    );
   }
+  const download = entry;
   const signal = init.signal;
-  const {status, body} = await (signal
-    ? Promise.race([
-        entry.bytes,
-        new Promise<never>((_, reject) => {
-          if (signal.aborted) reject(signal.reason);
-          signal.addEventListener('abort', () => reject(signal.reason), {once: true});
-        }),
-      ])
-    : entry.bytes);
-  if (status < 200 || status >= 300) shared.delete(key);
-  return new Response(status === 204 || status === 304 ? null : body.slice(0), {status});
+  download.readers += 1;
+  try {
+    const {status, body} = await (signal
+      ? Promise.race([
+          download.bytes,
+          new Promise<never>((_, reject) => {
+            if (signal.aborted) reject(signal.reason);
+            signal.addEventListener('abort', () => reject(signal.reason), {once: true});
+          }),
+        ])
+      : download.bytes);
+    if (status < 200 || status >= 300) shared.delete(key);
+    return new Response(status === 204 || status === 304 ? null : body.slice(0), {status});
+  } finally {
+    download.readers -= 1;
+    if (signal?.aborted && download.readers === 0 && !download.settled) {
+      download.controller.abort(signal.reason);
+      if (shared.get(key) === download) shared.delete(key);
+    }
+  }
 }
 
 export function cameraFrame(callback: () => void): void {
   if (typeof requestAnimationFrame === 'function') requestAnimationFrame(callback);
   else setTimeout(callback, 16);
+}
+
+/** The tiles a camera reads round itself, and the disc they cover whole. */
+export type CameraTileRing = Readonly<{
+  tiles: readonly Readonly<{x: number; y: number; distance: number}>[];
+  /** The point ahead of the map's centre that the tiles are chosen round, in tile coordinates. */
+  centre: readonly [number, number];
+  /**
+   * The radius, in tiles, of the disc round `centre` that the tiles cover whole: as far as the view
+   * reaches, or less where the tile limit stops the ring short.
+   */
+  radius: number;
+  /** Metres across a tile at the ring's latitude. */
+  tileMetres: number;
+}>;
+
+/**
+ * The nearest tiles round a point ahead of the camera's centre, at most `maxTiles`, as far as the
+ * view reaches: farther with a lower zoom and a higher pitch.
+ */
+export function cameraTileRing(
+  camera: Readonly<{lng: number; lat: number; zoom: number; pitch: number; bearing: number}>,
+  tileZoom: number,
+  maxTiles: number,
+): CameraTileRing {
+  const reach = Math.min(
+    5000,
+    Math.max(800, 1600 * 2 ** (16 - camera.zoom) * (1 + camera.pitch / 60)),
+  );
+  const bearing = (camera.bearing * Math.PI) / 180;
+  const ahead = reach * 0.35 * Math.min(1, camera.pitch / 60);
+  const latitude = camera.lat + (Math.cos(bearing) * ahead) / 111_320;
+  const longitude =
+    camera.lng + (Math.sin(bearing) * ahead) / (111_320 * Math.cos((camera.lat * Math.PI) / 180));
+  const [cx, cy] = cameraTileAt(longitude, latitude, tileZoom);
+  const tileMetres = (earth * Math.cos((latitude * Math.PI) / 180)) / 2 ** tileZoom;
+  const span = Math.ceil(reach / tileMetres);
+  const candidates: {x: number; y: number; distance: number}[] = [];
+  for (let dx = -span; dx <= span; dx += 1)
+    for (let dy = -span; dy <= span; dy += 1) {
+      const x = Math.floor(cx) + dx;
+      const y = Math.floor(cy) + dy;
+      const distance = Math.hypot(
+        Math.max(x, Math.min(cx, x + 1)) - cx,
+        Math.max(y, Math.min(cy, y + 1)) - cy,
+      );
+      if (distance * tileMetres <= reach) candidates.push({x, y, distance});
+    }
+  candidates.sort((a, b) => a.distance - b.distance);
+  const tiles = candidates.slice(0, maxTiles);
+  // Every tile that reaches nearer than the first one left out is in, so that far is covered whole.
+  const radius = Math.min(reach / tileMetres, candidates[tiles.length]?.distance ?? Infinity);
+  return {tiles, centre: [cx, cy], radius, tileMetres};
 }
 
 /** A point as fractional tile coordinates at a zoom. */

@@ -513,6 +513,46 @@ test('coalesces transient styledata while still reporting a settled manifest mis
   controller.dispose();
 });
 
+test('keeps a valid manifest while the style restyles, until a style loads or a layer moves', async () => {
+  const fixture = createFixture();
+  let reads = 0;
+  const layers = new Map(
+    fixture.style.layers.map((layer) => [
+      layer.id,
+      {source: layer.source, sourceLayer: layer['source-layer']},
+    ]),
+  );
+  const manifests: boolean[] = [];
+  const controller = createTileflowMapLibrePoiController({
+    bindings: [binding],
+    cancelFrame: () => undefined,
+    map: {
+      ...fixture.map,
+      getLayer: (id: string) => layers.get(id),
+      getStyle: () => {
+        reads++;
+        return fixture.style;
+      },
+    },
+    onManifestChange: (valid) => manifests.push(valid),
+    requestFrame: () => 1,
+  });
+  assert.equal(reads, 1);
+  for (let index = 0; index < 5; index++) {
+    fixture.fire('styledata', {});
+    await Promise.resolve();
+  }
+  assert.equal(reads, 1, 'a restyled map keeps the manifest');
+  assert.deepEqual(manifests, [true, true, true, true, true, true]);
+  layers.set('tileflow-poi-food-drink-label', {source: 'elsewhere', sourceLayer: 'poi'});
+  fixture.fire('styledata', {});
+  await Promise.resolve();
+  assert.equal(reads, 2, 'a named layer drawn from another source reads the style again');
+  fixture.fire('style.load', {});
+  assert.equal(reads, 3, 'a new style reads the style again');
+  controller.dispose();
+});
+
 test('reads the category of a hit from its feature when one layer draws several categories', () => {
   const fixture = createFixture();
   const diagnostics: string[] = [];

@@ -45,7 +45,7 @@ Baedeker, Cívica, 1777, Siegfried, Soundings, and Blueprint declare only
 `[soundingsIcons]`, and `[blueprintIcons]`, respectively. No official root composes another map's assets even though all
 use the semantic compiler ABI. Baedeker's directory contains eight original travel-atlas patterns;
 its browser-derived Mapterhorn contours use runtime terrain tiles and are not part of the icon
-package. Soundings owns eleven original nautical symbols and
+package. Soundings owns twenty-seven original nautical symbols and
 patterns. Blueprint owns four technical blueprint patterns and one schematic POI node; its
 unbundled Mapterhorn contours remain runtime terrain, and its text uses the canonical Noto Sans
 glyph provider. An application map may inherit a root's exact array, replace it, clear it with `[]`,

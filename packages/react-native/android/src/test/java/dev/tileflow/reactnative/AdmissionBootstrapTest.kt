@@ -122,6 +122,22 @@ class AdmissionBootstrapTest {
 		assertTrue(f.network.pending[1].request.mayStart())
 	}
 
+	@Test fun bootstrapExpiresWellBeforeTheTicketDeadlineAndCarriesRetryAfter() {
+		val f = Fixture(); f.start(1)
+		f.scheduler.time = 9999
+		assertTrue(f.network.pending.single().request.mayStart())
+		f.scheduler.advance(1)
+		assertFalse(f.network.pending.single().request.mayStart())
+		assertNull(f.replies.single())
+		val limited = AdmissionBootstrapReply(429, "no-store", byteArrayOf(), "60")
+		val g = Fixture(); g.start(1)
+		g.network.pending.single().complete(limited); g.scheduler.flush()
+		assertSame(limited, g.replies.single())
+		val h = Fixture(); h.start(1)
+		h.network.pending.single().complete(AdmissionBootstrapReply(429, "no-store", byteArrayOf(), "1".repeat(65))); h.scheduler.flush()
+		assertNull(h.replies.single())
+	}
+
 	@Test fun oversizedResponsesAndCallbacksAfterTimeoutFailWithoutLeakingBody() {
 		for (bad in listOf(AdmissionBootstrapReply(201, "x".repeat(1025), byteArrayOf()), AdmissionBootstrapReply(201, "no-store", ByteArray(65537)), AdmissionBootstrapReply(600, "no-store", byteArrayOf()))) {
 			val f = Fixture(); f.start(1)

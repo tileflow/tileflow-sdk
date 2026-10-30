@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
-import {readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {Worker} from 'node:worker_threads';
 import {meshTileflowBuildings} from '../src/buildings-3d-mesh';
-import {createBuildingMesher} from '../src/buildings-3d-mesher';
+import {buildingContactSegments} from '../src/buildings-3d-occlusion';
+import {prepareBuildingTile, preparedBuildingTileTransfer} from '../src/buildings-3d-tile';
 import {
   buildingBoxVisible,
   buildingCornerDetail,
@@ -23,9 +22,10 @@ const options = {tileMetres: 1000, edgeRadius: 0.8};
 
 test('spatial batches cover every triangle once and merge for a fully visible tile', () => {
   const mesh = meshTileflowBuildings(layer, options)!;
+  const shape = prepareBuildingTile(mesh).mesh;
   assert.equal(mesh.groups!.length, 2);
   assert.deepEqual(
-    buildingDrawRanges(mesh, () => true),
+    buildingDrawRanges(shape, () => true),
     [{from: 0, count: mesh.indices.length}],
   );
   const seen = new Set<number>();
@@ -52,11 +52,27 @@ test('spatial batches cover every triangle once and merge for a fully visible ti
   }
   assert.equal(seen.size, mesh.indices.length);
   assert.ok(
-    buildingDrawRanges(mesh, (group) => group.bounds[0] < 1000).reduce(
+    buildingDrawRanges(shape, (group) => group.bounds[0] < 1000).reduce(
       (sum, range) => sum + range.count,
       0,
     ) < mesh.indices.length,
   );
+});
+
+test('a tile keeps only what drawing needs, with 16-bit indices when its vertices fit', () => {
+  const mesh = meshTileflowBuildings(layer, options)!;
+  const {mesh: shape, data} = prepareBuildingTile(mesh);
+  assert.equal(shape.vertexCount, mesh.vertices.length / 28);
+  assert.equal(shape.indexCount, mesh.indices.length);
+  assert.ok(!('vertices' in shape) && !('indices' in shape));
+  assert.ok(data.indices instanceof Uint16Array);
+  assert.deepEqual([...data.indices], [...mesh.indices]);
+  assert.deepEqual(data.contact, buildingContactSegments(mesh));
+  const transfer = preparedBuildingTileTransfer({mesh: shape, data});
+  assert.equal(new Set(transfer).size, 3, 'each array moves in its own buffer');
+  // 65,537 vertices no longer fit 16 bits.
+  const large = {...mesh, vertices: new Uint8Array(65_537 * 28)};
+  assert.ok(prepareBuildingTile(large).data.indices instanceof Uint32Array);
 });
 
 test('clip tests retain intersecting boxes, elevated roofs and off-camera shadow casters', () => {
@@ -91,66 +107,4 @@ test('corner detail accounts for latitude, radius and an oblique foreground', ()
   assert.equal(buildingCornerDetail(16, 80, 0.8, 60), 2);
   assert.equal(buildingCornerDetail(16, 40, 0.1, 0), 0);
   assert.equal(buildingCornerDetail(15, 40, 0.8, 80), 2);
-});
-
-test('packaged worker produces exactly the local mesh and transfers its buffers', async () => {
-  const code = await readFile(
-    new URL('../dist/worker/buildings-3d-worker.global.js', import.meta.url),
-    'utf8',
-  );
-  const worker = new Worker(
-    `const {parentPort} = require('node:worker_threads'); globalThis.postMessage = (value, transfer) => parentPort.postMessage(value, transfer); ${code}; parentPort.on('message', data => globalThis.onmessage({data}));`,
-    {eval: true},
-  );
-  try {
-    const result = new Promise<{mesh: ReturnType<typeof meshTileflowBuildings>}>(
-      (resolve, reject) => {
-        worker.once('message', resolve);
-        worker.once('error', reject);
-      },
-    );
-    worker.postMessage({layer, options});
-    assert.deepEqual((await result).mesh, meshTileflowBuildings(layer, options));
-  } finally {
-    await worker.terminate();
-  }
-});
-
-test('blocked workers fall back once, cancelled builds and disposal settle', async () => {
-  let attempts = 0;
-  const mesher = createBuildingMesher(() => {
-    attempts++;
-    throw new Error('CSP');
-  });
-  const signal = new AbortController();
-  assert.deepEqual(
-    await mesher.build(layer, options, signal.signal),
-    meshTileflowBuildings(layer, options),
-  );
-  await mesher.build(layer, options, signal.signal);
-  assert.equal(attempts, 1);
-  signal.abort();
-  await assert.rejects(mesher.build(layer, options, signal.signal), /cancelled/);
-  mesher.dispose();
-  await assert.rejects(mesher.build(layer, options, new AbortController().signal), /cancelled/);
-});
-
-test('worker errors fall back and disposing an active worker rejects without hanging', async () => {
-  const fake = {
-    onmessage: null,
-    onerror: null,
-    terminate() {},
-    postMessage() {},
-  } as unknown as globalThis.Worker;
-  const mesher = createBuildingMesher(() => fake);
-  const result = mesher.build(layer, options, new AbortController().signal);
-  await Promise.resolve();
-  fake.onerror!({preventDefault() {}} as ErrorEvent);
-  assert.deepEqual(await result, meshTileflowBuildings(layer, options));
-  mesher.dispose();
-  const active = createBuildingMesher(() => fake);
-  const pending = active.build(layer, options, new AbortController().signal);
-  await Promise.resolve();
-  active.dispose();
-  await assert.rejects(pending, /disposed/);
 });

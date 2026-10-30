@@ -21,6 +21,8 @@ test(
           const vertex = `#version 300 es
 precision highp float;
 uniform float u_test_visibility;
+uniform int u_test_part;
+uniform int u_test_role;
 out vec3 v_colour;
 out vec3 v_normal;
 out vec3 v_shadow;
@@ -31,15 +33,18 @@ out float v_height;
 out vec4 v_uv;
 out vec4 v_rgba;
 out vec3 v_position;
+out float v_haze_depth;
 void main() {
   vec2 uv = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
   gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
+  // No sky: the haze stays off.
+  v_haze_depth = 0.0;
   v_colour = vec3(0.4, 0.5, 0.6);
   v_normal = vec3(0.0, 0.0, 1.0);
   v_shadow = vec3(0.5);
   v_light = u_test_visibility;
-  v_lighting_role = 1;
-  v_part = 0;
+  v_lighting_role = u_test_role;
+  v_part = u_test_part;
   v_height = 0.0;
   v_uv = vec4(uv, uv);
   v_rgba = vec4(0.5, 1.0, 1.0, 0.5);
@@ -72,6 +77,7 @@ void main() {
           const scalar = (name: string, value: number) => gl.uniform1f(loc(name), value);
           const integer = (name: string, value: number) => gl.uniform1i(loc(name), value);
           const vector = (name: string, ...value: number[]) => gl.uniform3fv(loc(name), value);
+          for (let role = 0; role < 7; role++) vector(`u_role_appearance[${role}]`, 0, 1, 1);
           function texture(unit: number, values: number[], width = 1) {
             gl.activeTexture(gl.TEXTURE0 + unit);
             const t = gl.createTexture()!;
@@ -115,6 +121,8 @@ void main() {
             integer(`u_material_texture${channel}`, 2 + channel);
             gl.uniform4f(loc(`u_texture_transform[${channel}]`), 0, 0, 1, 1);
           }
+          integer('u_test_part', 0);
+          integer('u_test_role', 1);
           integer('u_physical', 1);
           integer('u_unlit', 1);
           scalar('u_test_visibility', 1);
@@ -157,10 +165,24 @@ void main() {
           scalar('u_texture_enabled[0]', 0);
           gl.uniform4f(loc('u_role_colour[1]'), 1, 0, 0, 1);
           const tinted = read();
-          vector('u_part_colours[0]', 0, 0, 1);
-          scalar('u_part_mix[0]', 1);
+          gl.uniform4f(loc('u_parts[0]'), 0, 0, 1, 1);
           const recoloured = read();
-          scalar('u_part_mix[0]', 0);
+          gl.uniform4f(loc('u_parts[0]'), 0, 0, 1, 0);
+          integer('u_test_role', 0);
+          // A level's parts beyond the architectural ones, up to the last, recolour on their own.
+          const namedParts = [5, 10, 15].map((part, channel) => {
+            integer('u_test_part', part);
+            gl.uniform4f(
+              loc(`u_parts[${part}]`),
+              ...([0, 1, 2].map((c) => Number(c === channel)) as [number, number, number]),
+              1,
+            );
+            const pixel = read();
+            gl.uniform4f(loc(`u_parts[${part}]`), 0, 0, 0, 0);
+            return pixel;
+          });
+          integer('u_test_part', 0);
+          integer('u_test_role', 1);
           gl.uniform4f(loc('u_role_colour[1]'), 0, 0, 0, 0);
           integer('u_unlit', 0);
           scalar('u_texture_enabled[0]', 0);
@@ -252,6 +274,7 @@ void main() {
             blended,
             tinted,
             recoloured,
+            namedParts,
             ambient,
             ambientOccluded,
             direct,
@@ -293,8 +316,13 @@ void main() {
       assert.deepEqual(
         result.recoloured,
         [0, 0, 255, 255],
-        'palette overrides retain recolouring of physical materials',
+        'part colours retain recolouring of physical materials',
       );
+      for (const [channel, pixel] of result.namedParts.entries()) {
+        assert.ok(pixel[channel]! > 180, 'every part of a level reaches the physical shader');
+        for (const other of [0, 1, 2].filter((value) => value !== channel))
+          assert.equal(pixel[other], 0, 'named parts recolour independently');
+      }
       assert.ok(result.ambientOccluded[0]! < result.ambient[0]! * 0.7);
       assert.deepEqual(
         result.direct,

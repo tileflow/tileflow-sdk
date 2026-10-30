@@ -6,12 +6,10 @@ import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {fileURLToPath} from 'node:url';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
 
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 const ambientApiKey = `tf_live_inspect_${'x'.repeat(40)}`;
 const tile = Buffer.from(
   'GqkBeAIKA3BvaSiAIBIVCAcSCAAAAQECAgMDGAEiBQmAIIAgEhUICBIIAAQBBQIGAwcYASIFCbA7sDsaBG5hbWUaBWNsYXNzGgRyYW5rGgZzZWNyZXQiDgoMQ2VudHJhbCBjYWZlIgYKBGNhZmUiAigDIg8KDURPX05PVF9FWFBPU0UiCQoHT3V0c2lkZSIGCgRzaG9wIgIoCSIQCg5PVVRTSURFX1NFQ1JFVA==',
@@ -141,7 +139,7 @@ function runCli(
   });
 
   return new Promise((resolveResult, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
+    const child = spawn(process.execPath, cliFixtureArguments(arguments_), {
       cwd,
       env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],

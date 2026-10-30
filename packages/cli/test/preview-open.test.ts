@@ -7,31 +7,31 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {fileURLToPath, pathToFileURL} from 'node:url';
+import {inspect} from 'node:util';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
 
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 const comparison = ['--map', 'main', '--against-map', 'main'];
 
 for (const [label, args] of [
   ['single map', []],
   ['comparison', comparison],
 ] as const) {
-  test(`preview opens ${label} DevTools once, after the server is listening`, async (t) => {
+  test(`preview opens ${label} Inspector once, after the server is listening`, async (t) => {
     const preview = await startPreview(t, [...args]);
-    await waitUntil(async () => (await preview.opened()).length === 1);
+    await waitUntil(async () => (await preview.opened()).length === 1, preview.diagnostics);
     assert.deepEqual(await preview.opened(), [preview.origin]);
     const response = await fetch(preview.origin);
     assert.equal(response.status, 200);
-    assert.match(await response.text(), /Tileflow Map DevTools/u);
+    assert.match(await response.text(), /Tileflow Inspector/u);
 
     await writeFile(preview.configPath, tileflowMapFixture({id: 'main', version: 2}));
     const basePath = args.length ? '/left' : '/map';
     await waitUntil(async () => {
       const status = await fetch(`${preview.origin}${basePath}/__status`);
       return (await status.json()).generation >= 2;
-    });
+    }, preview.diagnostics);
     const result = await preview.stop();
     assert.equal(result.code, 0, result.stderr);
     assert.deepEqual(await preview.opened(), [preview.origin]);
@@ -50,7 +50,7 @@ for (const [label, args] of [
     await waitUntil(async () => {
       await fetch(preview.origin);
       return true;
-    });
+    }, preview.diagnostics);
     const result = await preview.stop();
     assert.equal(result.code, 0, result.stderr);
     assert.deepEqual(await preview.opened(), []);
@@ -69,6 +69,71 @@ test('preview does not open the browser if its port is already occupied', async 
   assert.equal(result.code, 1, result.stderr);
   assert.match(result.stdout + result.stderr, /EADDRINUSE|address already in use/iu);
   assert.deepEqual(await preview.opened(), []);
+});
+
+for (const [state, exitCode, signalCode] of [
+  ['running', null, null],
+  ['exited', 7, null],
+  ['signalled', null, 'SIGTERM'],
+] as const) {
+  test(`preview timeout diagnoses the ${state} process without extending the deadline`, async (t) => {
+    let now = 0;
+    t.mock.method(Date, 'now', () => now);
+    const connection = Object.assign(new Error('connection refused'), {code: 'ECONNREFUSED'});
+    const failure = new TypeError('fetch failed', {cause: connection});
+    const snapshot = {
+      origin: 'http://127.0.0.1:43210',
+      pid: 12345,
+      exitCode,
+      signalCode,
+      stdout: 'Preparing comparison',
+      stderr: '',
+    };
+    let attempts = 0;
+    let snapshots = 0;
+
+    await assert.rejects(
+      waitUntil(
+        async () => {
+          attempts += 1;
+          now += 15_000;
+          snapshot.stderr = 'Comparison preparation failed';
+          throw failure;
+        },
+        () => {
+          snapshots += 1;
+          return snapshot;
+        },
+      ),
+      (error: unknown) => {
+        assert.ok(error instanceof Error);
+        assert.equal(error.cause, failure);
+        for (const value of [
+          snapshot.origin,
+          snapshot.stdout,
+          snapshot.stderr,
+          connection.code,
+          `pid: ${snapshot.pid}`,
+          `exitCode: ${exitCode}`,
+          `signalCode: ${signalCode ? `'${signalCode}'` : 'null'}`,
+          '15000',
+        ])
+          assert.ok(error.message.includes(value), `Missing diagnostic: ${value}`);
+        return true;
+      },
+    );
+    assert.equal(attempts, 1);
+    assert.equal(snapshots, 1);
+  });
+}
+
+test('successful preview polling retains retries without collecting failure diagnostics', async () => {
+  let attempts = 0;
+  await waitUntil(
+    async () => ++attempts === 2,
+    () => assert.fail('A successful wait must not collect failure diagnostics.'),
+  );
+  assert.equal(attempts, 2);
 });
 
 async function startPreview(t: TestContext, args: string[], port?: number) {
@@ -111,13 +176,7 @@ syncBuiltinESMExports();
     [
       '--import',
       pathToFileURL(preloadPath).href,
-      '--import',
-      tsxLoader,
-      cliEntry,
-      'preview',
-      '--port',
-      String(port),
-      ...args,
+      ...cliFixtureArguments(['preview', '--port', String(port), ...args]),
     ],
     {
       cwd,
@@ -153,6 +212,14 @@ syncBuiltinESMExports();
   return {
     completion,
     configPath,
+    diagnostics: () => ({
+      origin: `http://127.0.0.1:${port}`,
+      pid: child.pid,
+      exitCode: child.exitCode,
+      signalCode: child.signalCode,
+      stdout,
+      stderr,
+    }),
     opened: async (): Promise<string[]> =>
       (await readFile(logPath, 'utf8'))
         .split('\n')
@@ -163,8 +230,9 @@ syncBuiltinESMExports();
   };
 }
 
-async function waitUntil(predicate: () => Promise<boolean>) {
-  const deadline = Date.now() + 15_000;
+async function waitUntil(predicate: () => Promise<boolean>, diagnostics: () => unknown) {
+  const started = Date.now();
+  const deadline = started + 15_000;
   let lastError: unknown;
   while (Date.now() < deadline) {
     try {
@@ -174,5 +242,11 @@ async function waitUntil(predicate: () => Promise<boolean>) {
     }
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  throw lastError ?? new Error('Timed out waiting for preview.');
+  throw new Error(
+    `Timed out waiting for preview.\n${inspect(
+      {elapsedMs: Date.now() - started, preview: diagnostics(), lastError},
+      {depth: null, colors: false},
+    )}`,
+    {cause: lastError},
+  );
 }

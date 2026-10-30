@@ -1,6 +1,7 @@
 import type {TileflowBuildings3DDesign} from '../buildings-3d-design';
 import type {ResolvedTileflowMap} from '../maps';
 import {resolveLabels} from '../modules/labels';
+import {resolvePoi} from '../modules/poi';
 import {resolveRoads} from '../modules/roads';
 import type {TileflowThemeColorDecision} from '../themes';
 import type {TileflowCompilationDesignDecision} from './compilation-report';
@@ -28,7 +29,7 @@ export function describeTileflowDesignDecisions(input: {
     }),
   );
   const policy = (
-    domain: 'roads' | 'labels' | 'buildings',
+    domain: 'roads' | 'labels' | 'buildings' | 'poi',
     key: string,
     value: unknown,
     reason: string,
@@ -76,7 +77,34 @@ export function describeTileflowDesignDecisions(input: {
       'labels',
       'collisionPriority',
       labels.collisionPriority,
-      'Navigation prioritizes structural road classes within their drawing stack; it does not decouple collision priority from depth.',
+      'Balanced keeps places, route references and major foreground roads before ordinary POIs; navigation also promotes minor roads. Ground names yield to foreground symbols.',
+    );
+  }
+  if (modules.poi.enabled !== false) {
+    const poi = resolvePoi(modules.poi);
+    policy(
+      'poi',
+      'density',
+      poi.density,
+      'Rank and zoom determine eligible POIs; native collisions determine which fit.',
+    );
+    policy(
+      'poi',
+      'detailZoom',
+      poi.detailZoom,
+      'The final extra rank of POI detail becomes eligible at this zoom.',
+    );
+    policy(
+      'poi',
+      'placement.coupleIconAndLabel',
+      poi.placement.coupleIconAndLabel,
+      'Coupled pictograms and names share one collision candidate. Explicit false places them independently.',
+    );
+    policy(
+      'poi',
+      'placement.order',
+      poi.placement.order,
+      'Importance orders compatible categories together by source rank; categories uses the authored category order.',
     );
   }
   if (buildings) {

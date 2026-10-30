@@ -14,6 +14,7 @@ import {
   composeTileflowIconSources,
 } from '@tileflow/dev/icons';
 import {streets} from '@tileflow/maps';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {
   iconPackageBaselineResponseSchema,
   tileflowIconDiffDocumentSchema,
@@ -21,9 +22,7 @@ import {
 import {writeIconDiffReport} from '../src/icon-diff-report';
 import {tileflowMapFixture} from './map-fixture';
 
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const cliNodeModules = fileURLToPath(new URL('../node_modules', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 const fakeApiKey = `tf_live_${'b'.repeat(48)}`;
 const managedMapId = 'map_AbCdEfGhIjKlMnOp';
 
@@ -583,7 +582,7 @@ function runCli(
   Object.assign(environment, overrides, {HOME: cwd, NO_COLOR: '1', USERPROFILE: cwd});
 
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
+    const child = spawn(process.execPath, cliFixtureArguments(arguments_), {
       cwd,
       env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],

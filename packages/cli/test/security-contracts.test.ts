@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {withTileflowConfigSecretsHidden} from '../src/config-execution';
 import {
@@ -20,9 +21,6 @@ import {
   readHostedJson,
 } from '../src/hosted-response';
 import {tileflowMapFixture} from './map-fixture';
-
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 
 test('config secret scope hides env and both API-key argv forms, then restores exactly', async () => {
   const originalArgv = [...process.argv];
@@ -89,7 +87,7 @@ test('dev host defaults to IPv4 loopback and accepts only explicit host literals
   assert.equal(tileflowDevOrigin('::1', 3333), 'http://[::1]:3333');
 });
 
-test('DevTools navigation canonicalizes loopback aliases and preserves view parameters', () => {
+test('Inspector navigation canonicalizes loopback aliases and preserves view parameters', () => {
   const query = '?lng=-3.70345&lat=40.417134&zoom=16.27&theme=faded';
   for (const host of ['127.0.0.1', 'localhost', '::1']) {
     const origin = tileflowDevOrigin(host, 3333);
@@ -108,7 +106,7 @@ test('DevTools navigation canonicalizes loopback aliases and preserves view para
   }
 });
 
-test('DevTools alias redirects do not rewrite API requests or unrelated origins', () => {
+test('Inspector alias redirects do not rewrite API requests or unrelated origins', () => {
   const origin = 'http://127.0.0.1:3333';
   for (const url of [
     'http://localhost:3333/__workbench',
@@ -413,7 +411,7 @@ function runCli(
   Object.assign(environment, overrides, {HOME: cwd, NO_COLOR: '1', USERPROFILE: cwd});
 
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
+    const child = spawn(process.execPath, cliFixtureArguments(arguments_), {
       cwd,
       env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],

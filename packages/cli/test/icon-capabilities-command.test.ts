@@ -5,7 +5,6 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {monitorEventLoopDelay} from 'node:perf_hooks';
 import test from 'node:test';
-import {fileURLToPath} from 'node:url';
 import {
   createTileflowArtifactSession,
   createTileflowBuildArtifacts,
@@ -13,11 +12,10 @@ import {
   type TileflowArtifactSession,
   type TileflowBuildArtifacts,
 } from '@tileflow/dev/artifacts';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {startFixtureProcess} from '../../../test-support/fixture-process';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
-
-const cli = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 
 test('fixture commands keep the parent event loop available to watched builds', async (t) => {
   const server = createServer((_request, response) => response.end('watcher-ready'));
@@ -144,10 +142,17 @@ test('validate, build and development reject the same mixed composition and reco
   let session: TileflowArtifactSession | undefined = undefined;
   registerFixtureCleanup(t, cwd, () => session);
   await linkWorkspacePackages(cwd, ['core', 'maps']);
-  await mkdir(join(cwd, 'icons'));
-  await writeFile(
-    join(cwd, 'icons/health.svg'),
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="red" d="M6 6H18V18H6Z"/></svg>',
+  await Promise.all(['base-icons', 'icons'].map((directory) => mkdir(join(cwd, directory))));
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="red" d="M6 6H18V18H6Z"/></svg>';
+  await Promise.all(
+    [
+      'base-icons/health.svg',
+      ...['doctor', 'doctor-dark', 'doctor-monochrome', 'doctor-monochrome-dark'].map(
+        (name) => `base-icons/${name}.svg`,
+      ),
+      'icons/health.svg',
+    ].map((file) => writeFile(join(cwd, file), svg)),
   );
   const sidecar = join(cwd, 'icons/tileflow.icons.json');
   const config = (bounded: boolean) =>
@@ -156,10 +161,12 @@ test('validate, build and development reject the same mixed composition and reco
       data: 'fixture',
       icons: 'authored',
       imports: "import {fixed, poi} from '@tileflow/core';",
-      fields: `icons: [...streets.icons, './icons'], modules: {poi: poi({categories: ['medical'], placement: {coupleIconAndLabel: true}${bounded ? ", styles: {medical: {icon: {image: fixed('health', {reason: 'Chosen hospital icon'})}}}" : ''}})}`,
+      fields: "icons: ['./base-icons', './icons']",
+      modules: `{poi: poi({categories: ['medical'], placement: {coupleIconAndLabel: true}${bounded ? ", styles: {medical: {icon: {image: fixed('health', {reason: 'Chosen hospital icon'})}}}" : ''}})}`,
     });
   await writeFile(join(cwd, 'tileflow.config.ts'), config(false));
   session = await createTileflowArtifactSession({cwd, watch: true});
+  assert.notEqual(session.getState().status, 'invalid', JSON.stringify(session.getState()));
   const observed = observeFixtureSession(session);
   t.after(() => {
     observed.close();
@@ -190,13 +197,7 @@ test('validate, build and development reject the same mixed composition and reco
   for (const command of ['validate', 'build']) {
     observed.record(`${command}:start`);
     const result = await runFixtureCommand(
-      [
-        '--import',
-        import.meta.resolve('tsx'),
-        cli,
-        command,
-        ...(command === 'validate' ? ['--json'] : []),
-      ],
+      cliFixtureArguments([command, ...(command === 'validate' ? ['--json'] : [])]),
       {
         cwd,
         env: {...process.env, TILEFLOW_API_KEY: '', TILEFLOW_API_URL: '', NO_COLOR: '1'},

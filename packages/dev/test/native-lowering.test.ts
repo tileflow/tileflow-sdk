@@ -169,6 +169,23 @@ test('normalizes literal leaves and documents projection conversion without muta
   }
 });
 
+test('removes and records a browser sky, which Native does not draw', () => {
+  const original = {
+    ...style(line({'line-cap': 'butt'})),
+    sky: {'sky-color': '#5c9ce6', 'horizon-color': '#dcebf7'},
+  };
+  const bytes = JSON.stringify(original);
+  const result = lowerNativeStyleRepresentation(original);
+  assert.equal('sky' in result.style, false);
+  assert.equal(result.sky, 'removed');
+  assert.equal(JSON.stringify(original), bytes);
+  assert.equal(lowerNativeStyleRepresentation(style(line({'line-cap': 'butt'}))).sky, undefined);
+  assert.throws(
+    () => lowerNativeStyleRepresentation({...style(line({'line-cap': 'butt'})), sky: 'blue'}),
+    (error: unknown) => error instanceof NativeLoweringError && error.path === '/sky',
+  );
+});
+
 test('partitions feature cases and the product of cap and dash without changing other properties', () => {
   const original = line(
     {'line-cap': caps},

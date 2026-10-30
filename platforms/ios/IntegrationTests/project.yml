@@ -1,0 +1,47 @@
+name: TileflowIntegration
+options:
+  bundleIdPrefix: dev.tileflow.tests
+  deploymentTarget:
+    iOS: '16.0'
+packages:
+  Tileflow:
+    path: ..
+settings:
+  base:
+    SWIFT_VERSION: '6.0'
+    GENERATE_INFOPLIST_FILE: YES
+    CODE_SIGNING_ALLOWED: NO
+targets:
+  TileflowTestHost:
+    type: application
+    platform: iOS
+    supportedDestinations: [iOS, macCatalyst]
+    sources:
+      - AppDelegate.swift
+    settings:
+      base:
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+  TileflowTests:
+    type: bundle.unit-test
+    platform: iOS
+    supportedDestinations: [iOS, macCatalyst]
+    sources:
+      - path: ../Tests/TileflowTests
+        excludes:
+          - Fixtures
+      - TestBundle.swift
+      - path: ../Tests/TileflowTests/Fixtures
+        type: folder
+        buildPhase: resources
+    dependencies:
+      - target: TileflowTestHost
+      - package: Tileflow
+schemes:
+  TileflowIntegration:
+    build:
+      targets:
+        TileflowTestHost: all
+    test:
+      targets:
+        - TileflowTests

@@ -3,7 +3,7 @@ import {build, defineConfig} from 'tsup';
 
 export default defineConfig(async () => {
   await build({
-    entry: ['src/buildings-3d-worker.ts'],
+    entry: ['src/camera-tile-worker.ts'],
     outDir: 'dist/worker',
     format: ['iife'],
     platform: 'browser',
@@ -12,14 +12,14 @@ export default defineConfig(async () => {
     dts: false,
   });
   return {
-    entry: ['src/browser.ts'],
+    entry: ['src/browser.ts', 'src/3d.ts'],
     format: ['esm'],
     platform: 'browser',
     dts: true,
     splitting: false,
     define: {
-      TILEFLOW_BUILDING_WORKER_SOURCE: JSON.stringify(
-        await readFile('dist/worker/buildings-3d-worker.global.js', 'utf8'),
+      TILEFLOW_CAMERA_TILE_WORKER_SOURCE: JSON.stringify(
+        await readFile('dist/worker/camera-tile-worker.global.js', 'utf8'),
       ),
     },
   };

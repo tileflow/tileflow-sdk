@@ -91,8 +91,8 @@ test('POI labels clear their own icons while preserving normal collision and cou
     }),
     context,
   );
-  const explicitLabel = explicitlyPlaced.find((entry) => entry.layer.id === 'tileflow-poi-label')
-    ?.layer.layout as Record<string, unknown>;
+  const explicitLabel = explicitlyPlaced.find((entry) => entry.layer.id === 'tileflow-poi')?.layer
+    .layout as Record<string, unknown>;
   assert.deepEqual(explicitLabel['text-offset'], [0, 2]);
   assert.equal(explicitLabel['text-radial-offset'], undefined);
   assert.equal(explicitLabel['text-variable-anchor'], undefined);

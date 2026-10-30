@@ -1,0 +1,10 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:fitsSystemWindows="true">
+    <Button android:id="@+id/theme" android:text="Change theme"
+        android:layout_width="match_parent" android:layout_height="wrap_content" />
+    <TextView android:id="@+id/status" android:text="Loading Tileflow…"
+        android:padding="16dp" android:layout_width="match_parent" android:layout_height="wrap_content" />
+    <dev.tileflow.sdk.TileflowMapView android:id="@+id/map"
+        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1" />
+</LinearLayout>

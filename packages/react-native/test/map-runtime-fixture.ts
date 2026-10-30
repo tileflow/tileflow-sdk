@@ -54,6 +54,7 @@ export async function inspectPublicMapRuntime(): Promise<unknown> {
 			export function Map() { throw new Error('A renderer was instantiated during import.'); }
 			export function Camera() { throw new Error('A camera was instantiated during import.'); }
 			export function Marker() { throw new Error('A marker was instantiated during import.'); }
+			export function VectorSource() { throw new Error('A source was instantiated during import.'); }
 		`,
     );
     const core = await module('@tileflow/core', {'./native': './native.js'}, '');

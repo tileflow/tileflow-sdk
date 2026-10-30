@@ -30,8 +30,41 @@ account or hosted command stops with a clear message and asks you to run `tilefl
 Project API and CI keys are independent project credentials and are not removed by a personal
 password change.
 
-The dashboard creates the Map and browser-access policy before repository setup. Keep that exact
-Map ID in the deploy action. If the config contains several maps, select the authored map explicitly:
+## Create the Map from the terminal
+
+After `tileflow login`, the CLI can create the Map itself; nothing has to be copied from the
+dashboard. Run `deploy` without `--map-id`, or create the Map first with `maps create`:
+
+```sh
+npx tileflow login
+npx tileflow deploy --origin https://www.example.com
+npx tileflow maps create --any-website --json
+```
+
+The new Map belongs to a Team you administer. When you administer exactly one Team that can add a
+Map, the CLI uses it; when several can, it asks, or takes `--team @team`; when none can, it stops
+and says why (no administered Team, or every Team has reached its Map limit).
+
+Browser access is always an explicit choice: `--origin` with an exact website origin such as
+`https://www.example.com` (repeat it for up to 20 sites), or `--any-website`. Paths, wildcards and
+bare host names are rejected. On a terminal the CLI asks; without one (for example when an agent
+runs it), a missing choice stops before anything is created and names the flags. Browser access
+is stored with the Map in Tileflow and can be changed in the dashboard; it is never written to the
+repository.
+
+`deploy` creates the Map only after the local config, assets and styles pass, then publishes to it
+in the same run and prints `tileflow deploy --map-id <mapId>` for later deploys. If the manifest
+already records a Map for that repository map, `deploy` stops and shows that command instead of
+creating another Map. Each creation prints a setup key; rerunning an interrupted command with
+`--setup-key <key>` returns the same Map instead of a second one.
+
+Map creation uses only the personal session. With `TILEFLOW_API_KEY`, `--api-key`, `--with-native`,
+or in CI, `deploy` requires `--map-id`.
+
+## Deploy to an existing Map
+
+A Map created in the dashboard, or by an earlier CLI run, is deployed with its exact Map ID. If the
+config contains several maps, select the authored map explicitly:
 
 ```sh
 npx tileflow deploy \

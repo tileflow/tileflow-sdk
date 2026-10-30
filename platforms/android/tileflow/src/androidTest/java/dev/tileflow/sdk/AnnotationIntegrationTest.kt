@@ -130,14 +130,16 @@ public class AnnotationIntegrationTest {
             delay(300)
             assertEquals("The application did not receive the taken tap.", before, appTaps())
             // A tap beside the annotation reaches the application.
-            touch(map, point.x + 200f, point.y + 200f)
+            touch(map, point.x + map.width / 4f, point.y + map.height / 4f)
             until("the application received a tap") { appTaps() > before }
 
             // A pan that starts on the draggable annotation moves it, not the map.
             val camera = map.currentCamera!!
-            touch(map, point.x, point.y, dx = 15f, dy = 10f, steps = 10)
+            val dragX = minOf(150f, map.width / 4f)
+            val dragY = minOf(100f, map.height / 4f)
+            touch(map, point.x, point.y, dx = dragX / 10, dy = dragY / 10, steps = 10)
             until("the drag ended") { dropped.isNotEmpty() }
-            val target = map.unproject(TileflowPoint(point.x + 150f, point.y + 100f))
+            val target = map.unproject(TileflowPoint(point.x + dragX, point.y + dragY))
             assertEquals(target.longitude, dropped.single().longitude, 1e-4)
             assertEquals(target.latitude, dropped.single().latitude, 1e-4)
             assertEquals(camera, map.currentCamera)

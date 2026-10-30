@@ -8,3 +8,4 @@ export {
   type TileflowMap3DMap,
   type TileflowMap3DOptions,
 } from './map-3d-browser';
+export type {TileflowCameraOptions} from './camera';

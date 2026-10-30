@@ -52,7 +52,7 @@ test('mounted public types do not export native handles, private ports or select
   assert.equal(manifest.peerDependencies['maplibre-gl'], undefined);
   assert.equal(manifest.private, undefined);
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
-  assert.ok(manifest.files.includes('docs'));
+  assert.ok(!manifest.files.includes('docs'));
   const lock = await readFile(new URL('../../pnpm-lock.yaml', root), 'utf8');
   const importer = lock.split('  packages/react-native:\n')[1]?.split('\n  packages/')[0];
   assert.ok(importer);

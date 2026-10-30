@@ -110,7 +110,7 @@ Theme and `timeOfDay` changes cross-fade over 450 ms by default, respecting redu
 `themeBlend={{themes: ['night', 'dusk', 'day'], position}}` shows a continuous blend of the map's
 themes instead of `theme`: position 0 is the first theme and 1.5 is halfway from the second to the
 third. Moving the position updates the map at once. See
-[theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md).
+[theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
 
 Interactive maps show the 3D scene their style declares by default: buildings with Tileflow
 landmarks and the map's Team building models, 3D trees, and street lights where the map enables
@@ -120,8 +120,8 @@ draws vegetation as the map's policy sets for the 2D view (Streets keeps its mod
 view). `vegetation` overrides vegetation visibility (omitting it uses the map default); `vegetation={false}`
 hides models and flat artwork alike. Changing either prop updates the existing map immediately.
 They do not change camera pitch and do not apply in image mode. See
-[the map's 3D scene](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md#the-maps-3d-scene)
-and [vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md#visibility-and-representation).
+[the map's 3D scene](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md)
+and [vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
 
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct camera props
 take priority over `mapOptions`, then the manifest view, then shared defaults. `Map` always selects
@@ -163,7 +163,7 @@ export function Unemployment({rates}: {rates: {ine: string; rate: number}[]}) {
 
 Rows join by `ref` here, so this map declares `boundaryAreas: {family: 'boundaries', promoteId:
 'ref'}`. Without `promoteId`, rows join by registry `id`. See
-[boundary areas and choropleths](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/boundary-areas-and-choropleths.md)
+[boundary areas and choropleths](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md)
 for scales, joins and the lookup table.
 
 ## Add annotations and popups

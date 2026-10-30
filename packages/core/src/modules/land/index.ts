@@ -3,6 +3,7 @@ import type {
   TileflowBackgroundStyle,
   TileflowFillStyle,
   TileflowLineStyle,
+  TileflowNumberStyleValue,
 } from '../../cartography/styles';
 
 export type TileflowLanduseClass =
@@ -55,6 +56,20 @@ export type TileflowLandModuleOptions = {
    */
   barriers?: Partial<Record<TileflowBarrierClass, TileflowBarrierStyle>>;
   globalLandcover?: TileflowFillStyle;
+  /** Georeferenced image below global cover; useful for continuous physical context. */
+  globalLandcoverUnderlay?: {
+    url: string;
+    coordinates: readonly [
+      readonly [number, number],
+      readonly [number, number],
+      readonly [number, number],
+      readonly [number, number],
+    ];
+    attribution: string;
+    opacity?: TileflowNumberStyleValue;
+    minZoom?: number;
+    maxZoom?: number;
+  };
   landcover?: Partial<Record<TileflowLandcoverClass, TileflowAreaStyle>>;
   landuse?: Partial<Record<TileflowLanduseClass, TileflowAreaStyle>>;
 };

@@ -321,10 +321,22 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
   if (match) return `tileflow-${match[1]}-render-${match[2]!.replaceAll('.', '-')}`;
 
   match =
+    /^roads\.classes\.(pathway|footway|pedestrian|steps|cycleway)\.surface\.(shadow|fill)-on-green$/u.exec(
+      semanticKey,
+    );
+  if (match) return `tileflow-road-surface-${match[1]}-${match[2]}-on-green`;
+
+  match =
     /^roads\.classes\.([^.]+)\.(tunnel|surface|bridge)\.(shadow|casing|fill|hatch|rampFill)$/u.exec(
       semanticKey,
     );
   if (match) return `tileflow-road-${match[2]}-${match[1]}-${match[3]}`;
+
+  match =
+    /^roads\.classes\.(pathway|footway|pedestrian|steps|cycleway)\.surface\.(shadow|fill)\.onGreen$/u.exec(
+      semanticKey,
+    );
+  if (match) return `tileflow-road-surface-${match[1]}-${match[2]}-on-green`;
 
   match = /^roads\.cohorts\.(tunnel|surface|bridge)\.([^.]+)\.(shadow|casing|fill|rampFill)$/u.exec(
     semanticKey,
@@ -445,6 +457,7 @@ const exactPhysicalLayerIds: Readonly<Record<string, string>> = Object.freeze({
   'labels.junctions': 'tileflow-label-road-junction',
   'land.background': 'tileflow-background',
   'land.globalLandcover': 'tileflow-global-landcover',
+  'land.globalLandcoverUnderlay': 'tileflow-global-landcover-underlay',
   poi: 'tileflow-poi',
   'landforms.classes': 'tileflow-landforms',
   'roads.crossings': 'tileflow-road-crossing',

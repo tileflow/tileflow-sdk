@@ -59,9 +59,6 @@ for reproducible evidence, and `compare` for saved captures, semantic edits, sty
 baselines. `preview` opens Inspector. These tools work in independent projects with
 custom maps and data; official maps are optional.
 
-See the [map authoring workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md)
-for command examples, bounded JSON queries, compatible aliases and efficient agent workflows.
-
 ## Preview and compare
 
 `preview` binds to `127.0.0.1` by default. `--host` explicitly accepts an IP literal or `localhost`;
@@ -111,9 +108,7 @@ npx tileflow inspect session --url http://127.0.0.1:3333 --json
 ```
 
 Use the origin printed by your running preview. This reads browser observations, including their
-age and stale flag; exact source lines and token ownership are not inferred. See the
-[Inspector workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md#work-with-a-person-and-an-agent)
-for storage and context bounds.
+age and stale flag; exact source lines and token ownership are not inferred.
 
 `--api-base-url` or `TILEFLOW_API_URL` changes the API origin used by the official preview sources.
 It does not change the map's authored data ownership or publish any data.
@@ -122,8 +117,6 @@ It does not change the map's authored data ownership or publish any data.
 
 Captures return reusable IDs. Compare two saved renders with
 `tileflow compare --before <id> --after <id> --json`; no config, browser, or network is needed.
-The [authoring workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md)
-describes storage, integrity checks, mismatch outcomes and watch-session reuse.
 
 Add a concrete-theme scene to `tileflow.config.ts`:
 
@@ -176,7 +169,7 @@ Do not run a separate `tileflow preview` server beside the application.
 
 ## Render a timed shot
 
-Commit a [capture shot](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)
+Commit a capture shot
 under `shots` on the same map: a concrete theme, a viewport, and two or more center-camera
 keyframes, optionally with a theme blend. Then render it:
 
@@ -209,8 +202,7 @@ receipt. Use `visual compare` for an authenticated two-style review with matched
 renderer, and data identity. Neither operation approves a baseline. Capture watch mode emits NDJSON
 generation events rather than a single JSON document.
 
-The [capture contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/local-visual-capture.md)
-documents readiness, receipts, comparison limits, and CLI output formats.
+Use `tileflow capture --help` and `tileflow compare --help` for installed command options.
 
 ## Publish data and deploy a map
 
@@ -316,25 +308,9 @@ Missing fonts or sprites require the complete prepared output. Hosted compatibil
 be fixed before authentication or upload, not bypassed with repeated deployment attempts.
 
 See [deployment documentation](https://tileflow.dev/docs/deploy),
-[SDK responsibility boundaries](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/sdk-responsibilities.md),
+[SDK responsibility boundaries](https://github.com/tileflow/tileflow-sdk/blob/main/README.md),
 and [issues](https://github.com/tileflow/tileflow-sdk/issues). Source `main` may be newer than npm;
 use the installed CLI's help and generated contracts for that release.
-
-## Detailed guides
-
-These guides are also included in the installed package under `docs/`. They describe this source
-revision; prefer the installed copy when working with an older release.
-
-- [CLI setup and defaults](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/cli-setup-and-defaults.md)
-- [Build artifacts](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/build-artifacts.md)
-- [Deterministic agent diagnostics](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/deterministic-agent-diagnostics.md)
-- [Coordinates](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/coordinates.md)
-- [Command families](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/command-families.md)
-- [Local visual feedback](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/local-visual-feedback.md)
-- [Inspect vector features](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/inspect-vector-features.md)
-- [Hosted authentication and deploy](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/hosted-authentication-and-deploy.md)
-- [Agent icon composition](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/agent-icon-composition.md)
-- [Read-only icon comparison](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/read-only-icon-comparison.md)
 
 ## Validate icon representations
 
@@ -348,4 +324,4 @@ reports the invalid generation while retaining its last valid artifact.
 
 Declare defaults in `tileflow.icons.json`; inspect effective appearances and text-fitting layouts with
 `tileflow icons list --json`. Diff reports detect default-only changes and show rendered previews.
-See [Author recolorable and adaptable icons](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-icons.md) for the source profile and halo bounds.
+See [Author recolorable and adaptable icons](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/README.md) for the source profile and halo bounds.

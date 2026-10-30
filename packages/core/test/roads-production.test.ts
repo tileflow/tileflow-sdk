@@ -14,6 +14,7 @@ import {planTileflowLayerFamilies} from '../src/cartography/physical-planner';
 import {expression} from '../src/cartography/values';
 import {roadClassesForDetail} from '../src/modules/roads';
 import {compileRoads} from '../src/modules/roads/compiler';
+import {compilePathGroundFamilies} from '../src/modules/roads/path-ground';
 import {tileflowRoadClassFilter} from '../src/modules/roads/semantics';
 import {resolveColors} from '../src/themes';
 import {assembleTileflowLayers, planTileflowLayers} from './layer-ir-fixture';
@@ -34,6 +35,39 @@ const context = {
     poi: {font: 'Noto Sans Regular'},
   },
 };
+
+test('green path overlays lower to distinct physical layers beside their ground paths', () => {
+  const contributions = compileRoads(
+    roads({
+      detail: 'none',
+      classes: {
+        cycleway: {surface: {shadow: {color: '#888888', width: 2}}},
+        footway: {},
+      },
+    }),
+    context,
+  );
+  const result = compilePathGroundFamilies(contributions.map(createTileflowLayerFamilyIR), {
+    greenColor: '#98bca0',
+    groundColor: '#f5f3f3',
+    opacity: 1,
+    widthScale: 0.92,
+  });
+  assert.equal(result.active, true);
+  const {layers} = lowerTileflowDomainIR(planTileflowLayerFamilies(result.families), context.data);
+  const overlays = layers.filter((layer) => layer.source === 'tileflow-path-ground');
+  assert.ok(
+    overlays.some((layer) => layer.id === 'tileflow-road-surface-cycleway-shadow-on-green'),
+  );
+  assert.ok(overlays.some((layer) => layer.id === 'tileflow-road-surface-footway-fill-on-green'));
+  assert.equal(new Set(layers.map((layer) => layer.id)).size, layers.length);
+  for (const overlay of overlays) {
+    const base = layers.find((layer) => layer.id === overlay.id.replace(/-on-green$/, ''));
+    assert.ok(base);
+    assert.equal(base.source, 'tileflow');
+    assert.deepEqual(overlay.filter, base.filter);
+  }
+});
 
 function matchesFilter(
   filter: unknown,

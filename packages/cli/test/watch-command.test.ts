@@ -65,8 +65,14 @@ test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good 
   });
 
   const ready = await running.waitFor((event) => event.event === 'ready');
-  assert.equal(ready.generation, 1);
-  const status = await fetchEventually(`http://127.0.0.1:${port}/map/__status`);
+  // Filesystem backends may coalesce or repeat startup notifications. The public
+  // contract is ordered generations and preservation of the last valid artifacts.
+  assert.equal(typeof ready.generation, 'number');
+  assert.ok(Number.isInteger(ready.generation) && Number(ready.generation) >= 1);
+  const status = await fetchEventually(
+    `http://127.0.0.1:${port}/map/__status`,
+    (body) => body.status === 'ready',
+  );
   assert.equal(status.status, 'ready');
   const preview = await (await fetch(`http://127.0.0.1:${port}/`)).text();
   assert.match(preview, /Tileflow Inspector/);
@@ -86,11 +92,14 @@ test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good 
     200,
   );
   assert.doesNotMatch(preview, /unpkg|fonts\.googleapis|fonts\.gstatic/);
+  const originalStyle = await (
+    await fetch(`http://127.0.0.1:${port}/map/styles/main/light.json`)
+  ).json();
 
   await writeFile(join(cwd, 'tileflow.config.ts'), invalidConfig, 'utf8');
   const invalid = await running.waitFor((event) => event.event === 'invalid');
-  assert.equal(invalid.generation, 2);
-  assert.equal(invalid.lastGoodGeneration, 1);
+  assert.ok(Number(invalid.generation) > Number(ready.generation));
+  assert.ok(Number(invalid.lastGoodGeneration) >= Number(status.generation));
   assert.equal(invalid.code, 'CONFIG_INVALID');
   assert.equal(invalid.phase, 'config-validation');
   assert.equal((invalid.diagnostics as Array<Record<string, unknown>>)[0]?.code, 'CONFIG_INVALID');
@@ -102,12 +111,16 @@ test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good 
     `http://127.0.0.1:${port}/map/__status`,
     (body) => body.status === 'invalid',
   );
-  assert.equal(invalidStatus.lastGoodGeneration, 1);
+  assert.equal(invalidStatus.lastGoodGeneration, invalid.lastGoodGeneration);
   assert.equal((await fetch(`http://127.0.0.1:${port}/map/styles/main/light.json`)).status, 200);
+  assert.deepEqual(
+    await (await fetch(`http://127.0.0.1:${port}/map/styles/main/light.json`)).json(),
+    originalStyle,
+  );
 
   await writeFile(join(cwd, 'tileflow.config.ts'), createValidConfig(), 'utf8');
   const recovered = await running.waitFor((event) => event.event === 'recovered');
-  assert.equal(recovered.generation, 3);
+  assert.ok(Number(recovered.generation) > Number(invalid.generation));
   assert.equal(
     running.events.some(
       (event) =>
@@ -122,7 +135,7 @@ test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good 
 
   running.requestStop();
   const stopped = await running.waitFor((event) => event.event === 'stopped');
-  assert.equal(stopped.generation, 3);
+  assert.equal(stopped.generation, recovered.generation);
   const completion = await running.completion;
   assert.equal(completion.code, 0, completion.stderr);
   assert.doesNotMatch(completion.stderr, /watch-secret/);

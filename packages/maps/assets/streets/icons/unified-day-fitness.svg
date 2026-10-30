@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>Fitness</title>
+  <desc>Tileflow POI disc with a Maki fitness-centre pictogram, CC0-1.0.</desc>
+  <circle cx="12" cy="12" r="10" fill="#FFFFFF" />
+  <circle cx="12" cy="12" r="8.5" fill="#4AB6BC" />
+  <path
+    fill="#FFFFFF"
+    transform="translate(6 6) scale(.8)"
+    d="M14.5,7V8h-1v2h-1v1H11V8H4v3H2.5V10h-1V8H.5V7h1V5h1V4H4V7h7V4h1.5V5h1V7Z"
+  />
+</svg>

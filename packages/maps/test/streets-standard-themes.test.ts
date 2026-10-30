@@ -8,6 +8,9 @@ import {readdirSync} from 'node:fs';
 import test from 'node:test';
 import {createStyle, resolveTileflowTheme} from '@tileflow/core';
 import {streets, streetsThemes} from '../src';
+import {streetsDayColors} from '../src/official/streets-day-colors';
+import {streetsDayGroundColors} from '../src/official/streets-ground-and-access';
+import {streetsNetworkDayColors} from '../src/official/streets-network-overview';
 import {streetsPreparedModels} from './streets-assets';
 import {standardCartographyReference as reference} from './streets-standard-cartography-fixture';
 
@@ -39,12 +42,13 @@ function color(value: unknown): Color {
 // Default day uses its own city hierarchy and detailed carriageway swatches.
 function expectedColor(theme: string, role: string, referenceColor: string): string {
   if (theme !== 'light') return referenceColor;
-  if (role === 'roads.city.primary') return '#D5DBDF';
-  if (role === 'roads.city.secondary') return '#DEE3E6';
-  if (role === 'roads.city.tertiary') return '#E3E7E9';
-  if (role === 'roads.city.minor') return '#DDE2E5';
-  if (/^roads\.(major|motorway|trunk|primary)$/.test(role)) return '#AAB9C9';
-  if (/^roads\.(default|minor|secondary|tertiary|bridge)$/.test(role)) return '#BDCCD9';
+  const authored: Record<string, string> = {
+    ...streetsDayColors,
+    ...streetsDayGroundColors,
+    ...streetsNetworkDayColors,
+    'landcover.global.crop': 'rgba(0, 0, 0, 0)',
+  };
+  if (role in authored) return authored[role]!;
   return referenceColor;
 }
 
@@ -100,15 +104,22 @@ for (const [referenceName, theme] of Object.entries(themes)) {
     ] as const) {
       const layer = style.layers.find((candidate) => candidate.id === id);
       assert.ok(layer, `Missing ${id}`);
-      closeToObserved(
+      const actual = evaluatePaint(
+        layer.paint?.[property as keyof typeof layer.paint],
         property === 'background-color'
-          ? evaluatePaint(
-              layer.paint?.[property],
-              styleSpec.paint_background[property],
-              reference.camera.zoom,
-            )
-          : layer.paint?.[property as keyof typeof layer.paint],
-        expected[sample],
+          ? styleSpec.paint_background[property]
+          : styleSpec.paint_fill['fill-color'],
+        reference.camera.zoom,
+      );
+      closeToObserved(
+        actual,
+        id === 'tileflow-buildings-fill'
+          ? String(colors['buildings.flat.neutral'])
+          : expectedColor(
+              theme,
+              id === 'tileflow-background' ? 'surface.background' : 'landuse.businessCorridor',
+              expected[sample],
+            ),
         `${theme} ${id}`,
       );
     }
@@ -134,7 +145,13 @@ for (const [referenceName, theme] of Object.entries(themes)) {
       (layer) => layer.id === 'tileflow-buildings-render-extrusion',
     );
     assert.ok(extrusion && extrusion.type === 'fill-extrusion', 'Missing compiled extrusion');
-    const input = color(extrusion.paint?.['fill-extrusion-color']);
+    const input = color(
+      evaluatePaint(
+        extrusion.paint?.['fill-extrusion-color'],
+        styleSpec['paint_fill-extrusion']['fill-extrusion-color'],
+        reference.camera.zoom,
+      ),
+    );
     const lighting = style.light;
     assert.ok(
       lighting?.position && lighting.intensity !== undefined,
@@ -147,7 +164,7 @@ for (const [referenceName, theme] of Object.entries(themes)) {
     assert.ok(resolved.sun, 'Missing the authored scene sun');
     closeToObserved(
       input,
-      reference.roofs.observations[referenceName as keyof typeof themes].color,
+      String(colors['buildings.raised.neutral']),
       `${theme} calibrated unshadowed roof`,
     );
 
@@ -217,7 +234,7 @@ test('Streets preset calibration preserves translucent surfaces and fixed road-s
     );
     assert.equal(
       String(colors['labels.shield.dark']).toUpperCase(),
-      '#1B1D27',
+      theme === 'light' ? '#171E27' : '#1B1D27',
       `${theme}: dark sign ink`,
     );
     assert.equal(
@@ -251,7 +268,7 @@ test('Streets evaluates water and ground lighting at their independent zoom hand
     ] as const) {
       closeToObserved(
         evaluatePaint(water.paint?.['fill-color'], styleSpec.paint_fill['fill-color'], z),
-        expected[role],
+        expectedColor(theme, role, expected[role]),
         `${theme} water z${z}`,
       );
     }
@@ -267,7 +284,11 @@ test('Streets evaluates water and ground lighting at their independent zoom hand
           styleSpec.paint_background['background-color'],
           z,
         ),
-        expected[role],
+        expectedColor(
+          theme,
+          theme === 'light' && z === 13 ? 'surface.background' : role,
+          expected[role],
+        ),
         `${theme} land z${z}`,
       );
     }

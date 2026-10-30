@@ -45,7 +45,4 @@ from the presence of an npm package. Config files are trusted executable code.
 
 ## Deeper reference
 
-- [Contract index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/docs/README.md): Ownership and durable integration contracts.
-- [Generated language reference](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/docs/modules-api-reference.json): Exact authoring grammar; prefer `tileflow language schema --json` for an installed release.
-- [Documentation maintenance](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/docs/documentation.md): Writing conventions and executable example checks.
-- [Publication procedure](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/PUBLISHING.md): Explicit, protected release preparation and approval; merging alone does not publish.
+- [Generated language reference](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/core/reference/modules-api-reference.json): Exact authoring grammar; prefer `tileflow language schema --json` for an installed release.

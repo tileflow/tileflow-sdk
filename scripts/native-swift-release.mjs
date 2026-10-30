@@ -42,7 +42,7 @@ export async function remoteHeads(remote, version) {
     listing = await git(['ls-remote', remote, 'refs/heads/main', `refs/tags/${version}`]);
   } catch (error) {
     throw new Error(
-      `The Swift distribution repository ${remote} is not reachable. Create it as described in PUBLISHING.md before releasing.\n${error.message}`,
+      `The Swift distribution repository ${remote} is not reachable. Create the configured distribution repository before releasing.\n${error.message}`,
     );
   }
   const refs = new Map(
@@ -61,7 +61,7 @@ export async function swiftVersions(remote) {
     listing = await git(['ls-remote', '--tags', '--refs', remote]);
   } catch (error) {
     throw new Error(
-      `The Swift distribution repository ${remote} is not reachable. Create it as described in PUBLISHING.md before releasing.\n${error.message}`,
+      `The Swift distribution repository ${remote} is not reachable. Create the configured distribution repository before releasing.\n${error.message}`,
     );
   }
   return listing
@@ -277,7 +277,7 @@ async function main() {
     });
   } else {
     throw new Error(
-      'Usage: native-swift-release.mjs prepare|publish [options] (see PUBLISHING.md)',
+      'Usage: native-swift-release.mjs prepare|publish [options]',
     );
   }
 }

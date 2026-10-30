@@ -1415,7 +1415,8 @@ function runPreviewScript(
     ?.replace(/^[ \t]*import [^\n]+;[ \t]*$/gm, '')
     .replace(/^[ \t]*await loadTileflowStyleFonts\([^\n]+;[ \t]*$/gm, '')
     .replace(/^[ \t]*registerTileflowPmtilesProtocol\([^\n]+;[ \t]*$/gm, '')
-    .replace(/^[ \t]*registerTileflowContourProtocol\([^\n]+;[ \t]*$/gm, '');
+    .replace(/^[ \t]*registerTileflowContourProtocol\([^\n]+;[ \t]*$/gm, '')
+    .replace(/^[ \t]*registerTileflowPathGroundProtocol\([^\n]+;[ \t]*$/gm, '');
   assert.ok(script, 'expected an inline preview script');
 
   let mapOptions: Record<string, unknown> | undefined;

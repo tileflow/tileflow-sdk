@@ -204,8 +204,8 @@ importers:
         specifier: ^1.1.1
         version: 1.1.1
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@types/pngjs':
         specifier: 6.0.5
@@ -217,8 +217,8 @@ importers:
   packages/coordinates:
     dependencies:
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/coordinates-runtime:
     dependencies:
@@ -226,8 +226,8 @@ importers:
         specifier: workspace:>=0.1.0-alpha.16 <0.1.0-beta.0
         version: link:../coordinates
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/core:
     dependencies:
@@ -235,8 +235,8 @@ importers:
         specifier: 24.8.5
         version: 24.8.5
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       '@mapbox/vector-tile':
         specifier: 3.0.0
@@ -257,8 +257,8 @@ importers:
         specifier: 4.5.0
         version: 4.5.0
       whatwg-url:
-        specifier: 17.2.0
-        version: 17.2.0
+        specifier: 17.3.0
+        version: 17.3.0
 
   packages/dev:
     dependencies:
@@ -272,8 +272,8 @@ importers:
         specifier: workspace:>=0.1.0-alpha.16 <0.1.0-beta.0
         version: link:../core
       chokidar:
-        specifier: 4.0.3
-        version: 4.0.3
+        specifier: 6.0.0
+        version: 6.0.0
       fontkit:
         specifier: 2.0.4
         version: 2.0.4
@@ -310,8 +310,8 @@ importers:
   packages/elevation:
     dependencies:
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       maplibre-gl:
         specifier: 6.13.0
@@ -320,8 +320,8 @@ importers:
   packages/geoip:
     dependencies:
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/interactions:
     dependencies:
@@ -329,8 +329,8 @@ importers:
         specifier: '>=6.4.1 <7'
         version: 6.13.0
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/maps:
     devDependencies:
@@ -356,8 +356,8 @@ importers:
         specifier: 6.13.0
         version: 6.13.0
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
     devDependencies:
       esbuild:
         specifier: 0.28.1
@@ -432,20 +432,20 @@ importers:
   packages/routing:
     dependencies:
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/search:
     dependencies:
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/static:
     dependencies:
       zod:
-        specifier: ^4.4.3
-        version: 4.4.3
+        specifier: ^4.6.7
+        version: 4.6.7
 
   packages/svelte:
     dependencies:
@@ -2068,6 +2068,10 @@ packages:
     resolution: {integrity: sha512-Qgzu8kfBvo+cA4962jnP1KkS6Dop5NS6g7R5LFYJr4b8Ub94PPQXUksCw9PvXoeXPRRddRNC5C1JQUR2SMGtnA==}
     engines: {node: '>= 14.16.0'}
 
+  chokidar@6.0.0:
+    resolution: {integrity: sha512-Ec2Z7wpcKBiMpR7DxteoqS/sq5G5d2A4fpxzPv6+fD7xNNdrTghn7L11YwV5EN1B3i72Erc3XVT5FkWIDx90+A==}
+    engines: {node: '>= 22.22'}
+
   chrome-launcher@0.15.2:
     resolution: {integrity: sha512-zdLEwNo3aUVzIhKhTtXfxhdvZhUghrnmkvcAq2NoDd+LeOHKf03H5jwZ8T/STsAlzyALkBVK552iaG1fGf1xVQ==}
     engines: {node: '>=12.13.0'}
@@ -3244,6 +3248,10 @@ packages:
     resolution: {integrity: sha512-GDhwkLfywWL2s6vEjyhri+eXmfH6j1L7JE27WhqLeYzoh/A3DBaYGEj2H/HFZCn/kMfim73FXxEJTw06WtxQwg==}
     engines: {node: '>= 14.18.0'}
 
+  readdirp@5.1.1:
+    resolution: {integrity: sha512-Kko+Y5XQ6fM+Ce3dq3m9YGxnacYZYl9cA1wZjaF3Vbry2L3i1qVg8+CAgNPsXRArPMUMCaOR7oa9Nqntc43JKA==}
+    engines: {node: '>= 20.19.0'}
+
   regenerator-runtime@0.13.11:
     resolution: {integrity: sha512-kY1AZVr2Ra+t+piVaJ4gxaFaReZVH40AKNo7UCX6W+dEwBo/2oZJzqfuN1qLq1oL45o56cPaTXELwrTh8Fpggg==}
 
@@ -3678,8 +3686,8 @@ packages:
   whatwg-fetch@3.6.20:
     resolution: {integrity: sha512-EqhiFU6daOA8kpjOWTL0olhVOF3i7OrFzSYiGsEMB8GcXS+RrzauAERX65xMeNWVqxA6HXH2m69Z9LaKKdisfg==}
 
-  whatwg-url@17.2.0:
-    resolution: {integrity: sha512-IhLIHNcBrzIixC5XXsbr4DxdjajyA5vQ5RwGZMtrUp+GbtE5Nrsge9QKau7jXrC0aTXLYGV0xiW7Tb4YS2aomw==}
+  whatwg-url@17.3.0:
+    resolution: {integrity: sha512-KwOAJrpf+GTgBvcBQJcP38sMF0DsQKdwtG+TxM2pW44P6E5k0hDbWrDmyuJDIF0Uef0aQq0ZoJs+5oI+k8ddhg==}
     engines: {node: ^22.14.0 || >=24.0.0}
 
   which@2.0.2:
@@ -3752,6 +3760,9 @@ packages:
 
   zod@4.4.3:
     resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
+
+  zod@4.6.7:
+    resolution: {integrity: sha512-g8W2D2kU6a8untc053fX1uVBKzM7yqAxW/3zwk83+6RyF2+SKOuV+c0wBDhUwzV1PaGapmZH+rmcUzPf+3CGwg==}
 
 snapshots:
 
@@ -5218,6 +5229,10 @@ snapshots:
     dependencies:
       readdirp: 4.1.2
 
+  chokidar@6.0.0:
+    dependencies:
+      readdirp: 5.1.1
+
   chrome-launcher@0.15.2:
     dependencies:
       '@types/node': 26.6.5
@@ -6471,6 +6486,8 @@ snapshots:
 
   readdirp@4.1.2: {}
 
+  readdirp@5.1.1: {}
+
   regenerator-runtime@0.13.11: {}
 
   require-directory@2.1.1: {}
@@ -6974,7 +6991,7 @@ snapshots:
 
   whatwg-fetch@3.6.20: {}
 
-  whatwg-url@17.2.0:
+  whatwg-url@17.3.0:
     dependencies:
       '@exodus/bytes': 1.16.0
       tr46: 7.0.0
@@ -7032,3 +7049,5 @@ snapshots:
       zod: 4.4.3
 
   zod@4.4.3: {}
+
+  zod@4.6.7: {}

@@ -2,7 +2,7 @@
   "name": "@tileflow/maps",
   "version": "0.0.0-development",
   "license": "Apache-2.0",
-  "description": "Official themed Streets, Baedeker, Cívica, 1777, Siegfried, Soundings, and Blueprint maps for Tileflow.",
+  "description": "Official themed Streets, Baedeker, C\u00edvica, 1777, Siegfried, Soundings, and Blueprint maps for Tileflow.",
   "type": "module",
   "sideEffects": false,
   "homepage": "https://tileflow.dev",
@@ -35,7 +35,6 @@
   "types": "./dist/index.d.ts",
   "files": [
     "assets",
-    "docs",
     "dist",
     "THIRD_PARTY_NOTICES.md",
     "LICENSE"

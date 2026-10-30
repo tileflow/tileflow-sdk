@@ -21,6 +21,8 @@ test(
           const vertex = `#version 300 es
 precision highp float;
 uniform float u_test_visibility;
+uniform float u_test_ground;
+uniform vec3 u_test_normal;
 uniform int u_test_part;
 uniform int u_test_role;
 out vec3 v_colour;
@@ -30,6 +32,7 @@ out float v_light;
 flat out int v_lighting_role;
 flat out int v_part;
 out float v_height;
+out float v_ground_height;
 out vec4 v_uv;
 out vec4 v_rgba;
 out vec3 v_position;
@@ -40,11 +43,12 @@ void main() {
   // No sky: the haze stays off.
   v_haze_depth = 0.0;
   v_colour = vec3(0.4, 0.5, 0.6);
-  v_normal = vec3(0.0, 0.0, 1.0);
+  v_normal = u_test_normal;
   v_shadow = vec3(0.5);
   v_light = u_test_visibility;
   v_lighting_role = u_test_role;
   v_part = u_test_part;
+  v_ground_height = u_test_ground;
   v_height = 0.0;
   v_uv = vec4(uv, uv);
   v_rgba = vec4(0.5, 1.0, 1.0, 0.5);
@@ -77,7 +81,10 @@ void main() {
           const scalar = (name: string, value: number) => gl.uniform1f(loc(name), value);
           const integer = (name: string, value: number) => gl.uniform1i(loc(name), value);
           const vector = (name: string, ...value: number[]) => gl.uniform3fv(loc(name), value);
-          for (let role = 0; role < 7; role++) vector(`u_role_appearance[${role}]`, 0, 1, 1);
+          for (let role = 0; role < 7; role++) {
+            vector(`u_role_appearance[${role}]`, 0, 1, 1);
+            scalar(`u_role_color_scale[${role}]`, 1);
+          }
           function texture(unit: number, values: number[], width = 1) {
             gl.activeTexture(gl.TEXTURE0 + unit);
             const t = gl.createTexture()!;
@@ -133,6 +140,8 @@ void main() {
           scalar('u_opacity', 1);
           scalar('u_metallic', 0);
           gl.uniform4f(loc('u_base_colour'), 1, 1, 1, 1);
+          vector('u_test_normal', 0, 0, 1);
+          scalar('u_test_ground', 10);
           vector('u_sun_dir', 0, 0, 1);
           vector('u_view_position', 0.5, 0.5, 5);
           let reading = 0;
@@ -167,6 +176,9 @@ void main() {
           const tinted = read();
           gl.uniform4f(loc('u_parts[0]'), 0, 0, 1, 1);
           const recoloured = read();
+          scalar('u_role_color_scale[1]', 0.94);
+          const recolouredSubtle = read();
+          scalar('u_role_color_scale[1]', 1);
           gl.uniform4f(loc('u_parts[0]'), 0, 0, 1, 0);
           integer('u_test_role', 0);
           // A level's parts beyond the architectural ones, up to the last, recolour on their own.
@@ -227,6 +239,21 @@ void main() {
           scalar('u_role_emission[1]', 1);
           gl.uniform4f(loc('u_role_emission_colour[1]'), 0, 0, 1, 1);
           const roleEmission = read();
+          // Map shading shares the tile building's ground gradient, without tinting material colours.
+          scalar('u_role_emission[1]', 0);
+          vector('u_emissive', 0, 0, 0);
+          scalar('u_shadow', 0);
+          scalar('u_test_visibility', 1);
+          vector('u_sky_light', 1, 1, 1);
+          vector('u_role_appearance[1]', 1, 1, 1);
+          vector('u_test_normal', 1, 0, 0);
+          vector('u_facade_shading', 1, 0.07, 1.5);
+          scalar('u_test_ground', 10);
+          const mapUpper = read();
+          scalar('u_test_ground', 0);
+          const mapGround = read();
+          vector('u_facade_shading', 0, 0, 1.5);
+          const gradientDisabled = read();
           // The depth shader must accept the same physical alpha interface.
           const depthProgram = program(depth);
           if (gl.getError()) throw new Error('Depth program setup failed.');
@@ -274,6 +301,10 @@ void main() {
             blended,
             tinted,
             recoloured,
+            recolouredSubtle,
+            mapUpper,
+            mapGround,
+            gradientDisabled,
             namedParts,
             ambient,
             ambientOccluded,
@@ -297,6 +328,13 @@ void main() {
         {fragment: tileflowModelFragment, depth: tileflowModelDepthFragment},
       );
       assert.equal(result.error, 0);
+      assert.equal(result.recolouredSubtle[0], 0);
+      assert.equal(result.recolouredSubtle[1], 0);
+      assert.ok(Math.abs(result.recolouredSubtle[2]! / result.recoloured[2]! - 0.94) < 0.006);
+      for (let channel = 0; channel < 3; channel++) {
+        assert.ok(Math.abs(result.mapGround[channel]! / result.mapUpper[channel]! - 0.9) < 0.01);
+        assert.ok(Math.abs(result.gradientDisabled[channel]! - result.mapUpper[channel]!) <= 1);
+      }
       assert.deepEqual(
         result.darkTransfer,
         [11, 15, 15, 255],

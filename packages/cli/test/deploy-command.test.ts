@@ -807,7 +807,9 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
       assert.match(iconImage, /"get","icon"/u);
       const paletteSuffix = theme.includes('monochrome') ? '-monochrome' : '';
       const darkSuffix = streetsDarkThemes.has(theme) ? '-dark' : '';
-      assert.match(iconImage, new RegExp(`"image","food${paletteSuffix}${darkSuffix}"`, 'u'));
+      const foodImage =
+        theme === 'light' ? 'unified-day-food' : `food${paletteSuffix}${darkSuffix}`;
+      assert.match(iconImage, new RegExp(`"image","${foodImage}"`, 'u'));
     }
     assert.deepEqual(parsed.iconPackage, {
       contentHash: requests[0]?.url?.split('/').pop(),
@@ -840,7 +842,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     requests.map((request) => `${request.method} ${request.url?.split('/').slice(0, 3).join('/')}`),
     [`PUT /v1/icon-packages`, `POST /v1/styles`],
   );
-  assert.match(result.stdout, /Uploaded icon package madrid \(5 icons,/);
+  assert.match(result.stdout, /Uploaded icon package madrid \(6 icons,/);
   assert.match(result.stdout, /Published madrid \(v1\)\./);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(fakeApiKey));
 });
@@ -1587,7 +1589,13 @@ async function createIconFixture(t: TestContext) {
   const fixture = await createFixture(t);
   const iconsDirectory = join(fixture.directory, 'icons');
   await mkdir(iconsDirectory);
-  for (const image of ['food', 'food-dark', 'food-monochrome', 'food-monochrome-dark']) {
+  for (const image of [
+    'food',
+    'unified-day-food',
+    'food-dark',
+    'food-monochrome',
+    'food-monochrome-dark',
+  ]) {
     await writeFile(
       join(iconsDirectory, `${image}.svg`),
       '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle id="source-secret" cx="8" cy="8" r="7" /></svg>',

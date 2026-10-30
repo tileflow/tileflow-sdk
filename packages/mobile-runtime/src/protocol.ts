@@ -1,4 +1,5 @@
 import {z} from 'zod';
+import {annotationLayersSchema, trackedPointsSchema} from './annotations-contract';
 import {
   cameraForBoundsSchema,
   cornerSchema,
@@ -9,15 +10,15 @@ import {
   moveCameraSchema,
 } from './camera-contract';
 import {contentSchema} from './content-contract';
+import {protocol} from './contract';
+import {creditSchema} from './credits';
+import {type DataReference, dataReferenceSchema} from './data';
+import {ProtocolError, type WireError} from './errors';
 import {
   followRequestSchema,
   locationOptionsSchema,
   locationUpdateSchema,
 } from './location-contract';
-import {protocol} from './contract';
-import {creditSchema} from './credits';
-import {type DataReference, dataReferenceSchema} from './data';
-import {ProtocolError, type WireError} from './errors';
 import {
   animationIdentifier,
   boundaryValuesRequestSchema,
@@ -220,6 +221,8 @@ const commandSchema = z.discriminatedUnion('method', [
   }),
   z.strictObject({method: z.literal('updateLocation'), payload: locationUpdateSchema}),
   z.strictObject({method: z.literal('setFollowMode'), payload: followRequestSchema}),
+  z.strictObject({method: z.literal('setAnnotationLayers'), payload: annotationLayersSchema}),
+  z.strictObject({method: z.literal('setTrackedPoints'), payload: trackedPointsSchema}),
   z.strictObject({method: z.literal('addSource'), payload: addSourceSchema}),
   z.strictObject({method: z.literal('removeSource'), payload: removeSourceSchema}),
   z.strictObject({method: z.literal('setGeoJSONSourceData'), payload: setGeoJSONSourceDataSchema}),

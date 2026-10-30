@@ -11,6 +11,8 @@ export const protocol = {
     maximumDataReferences: 64,
     maximumThrottleMs: 60000,
     warningWindowMs: 1000,
+    maximumTrackedPoints: 2048,
+    maximumAnnotationLayers: 256,
   },
   methods: [
     'initialize',
@@ -43,6 +45,8 @@ export const protocol = {
     'stopAnimation',
     'updateLocation',
     'setFollowMode',
+    'setAnnotationLayers',
+    'setTrackedPoints',
     'addSource',
     'removeSource',
     'setGeoJSONSourceData',
@@ -101,6 +105,9 @@ export const protocol = {
     poiActivated: {
       level: 'essential',
     },
+    annotationDragged: {
+      level: 'essential',
+    },
     followModeChanged: {
       level: 'essential',
     },
@@ -117,6 +124,9 @@ export const protocol = {
       level: 'camera',
     },
     cameraMoved: {
+      level: 'continuous',
+    },
+    trackedPointsMoved: {
       level: 'continuous',
     },
   },

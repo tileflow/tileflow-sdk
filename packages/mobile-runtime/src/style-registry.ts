@@ -525,10 +525,71 @@ export function createStyleRegistry(
     return ring;
   }
 
+  /** A feature of an inline GeoJSON source, by the identifier MapLibre keys it by. */
+  function storedFeature(sourceId: string, id: FeatureId) {
+    const entry = sources.get(sourceId);
+    if (!entry || entry.spec.type !== 'geojson' || 'url' in entry.spec.data) return undefined;
+    try {
+      const features = indexFeatures(entry);
+      const key = resolveKey(features, id);
+      return key === undefined ? undefined : {entry, features, key, feature: features.get(key)!};
+    } catch {
+      return undefined;
+    }
+  }
+
   return {
     /** Whether the registry is applying a change, whose refusal it reports itself. */
     get capturing() {
       return capturing;
+    },
+    /**
+     * Features of the given application layers within `tolerance` CSS pixels of a point, topmost
+     * first, at once and outside the request order: taps and drags need the frame on screen.
+     */
+    hitTest(point: Point, layerIds: readonly string[], tolerance: number) {
+      if (disposed || !styleLoaded()) return [];
+      const shown = layerIds.map(internalLayer).filter((id) => map.getLayer(id));
+      if (shown.length === 0) return [];
+      let features: QueriedFeature[];
+      try {
+        features = map.queryRenderedFeatures(
+          [
+            [point.x - tolerance, point.y - tolerance],
+            [point.x + tolerance, point.y + tolerance],
+          ],
+          {layers: shown},
+        );
+      } catch {
+        return [];
+      }
+      return features.flatMap((feature) => {
+        const layer = feature.layer ? external(feature.layer.id) : undefined;
+        const source = external(feature.source);
+        if (layer === undefined || source === undefined || feature.id === undefined) return [];
+        return [{layer, source, id: feature.id, properties: feature.properties ?? {}}];
+      });
+    },
+    /** The geometry an inline GeoJSON source holds for a feature, as the application sent it. */
+    featureGeometry(sourceId: string, id: FeatureId): Feature['geometry'] | undefined {
+      return storedFeature(sourceId, id)?.feature.geometry;
+    },
+    /**
+     * Moves a feature of an inline GeoJSON source at once, for a drag. The source keeps the new
+     * geometry, so a style change restores the feature where it was dragged.
+     */
+    moveFeature(sourceId: string, id: FeatureId, geometry: Feature['geometry']): boolean {
+      if (disposed || !styleLoaded()) return false;
+      const stored = storedFeature(sourceId, id);
+      if (!stored) return false;
+      const moved = {...stored.feature, geometry} as Feature;
+      try {
+        apply(() => geoJSONSource(sourceId).updateData({add: [moved]}));
+      } catch {
+        return false;
+      }
+      stored.features.set(stored.key, moved);
+      return true;
     },
     addSource(request: {id: string; source: StyleSource}, signal: AbortSignal) {
       return serial(signal, async () => {
@@ -871,7 +932,17 @@ export function createStyleRegistry(
               if (seen.has(key)) continue;
               seen.add(key);
             }
-            output.push(wireFeature({...feature, source: internalSource(request.source)}));
+            // MapLibre computes a feature's geometry in a getter, which spreading would drop.
+            output.push(
+              wireFeature({
+                id: feature.id,
+                source: internalSource(request.source),
+                sourceLayer: feature.sourceLayer,
+                geometry: feature.geometry,
+                properties: feature.properties,
+                state: feature.state,
+              }),
+            );
             if (output.length >= request.limit) return output;
           }
         }

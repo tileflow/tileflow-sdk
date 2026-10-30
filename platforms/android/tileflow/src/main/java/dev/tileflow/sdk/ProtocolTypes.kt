@@ -83,9 +83,9 @@ public enum class TileflowErrorCode(
  */
 public enum class TileflowEventLevel(internal val wireName: String) {
     /**
-     * Lifecycle, theme transitions, failures, warnings, taps, long presses and activations, the end
-     * of animations and their cues, changes of the location follow mode, and the camera each time
-     * it settles.
+     * Lifecycle, theme transitions, failures, warnings, taps, long presses and activations,
+     * annotation drags, the end of animations and their cues, changes of the location follow mode,
+     * and the camera each time it settles.
      */
     ESSENTIAL("essential"),
     /**
@@ -94,8 +94,8 @@ public enum class TileflowEventLevel(internal val wireName: String) {
      */
     CAMERA("camera"),
     /**
-     * Also the camera while it moves, at most once per rendered frame or per the requested
-     * interval.
+     * Also the camera while it moves, and the screen positions of tracked points, at most once per
+     * rendered frame or per the requested interval.
      */
     CONTINUOUS("continuous"),
     ;

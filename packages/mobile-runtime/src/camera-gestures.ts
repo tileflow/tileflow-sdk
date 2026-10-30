@@ -33,7 +33,14 @@ const doubleTapDistance = 30;
  */
 export function createGestureController(
   map: GestureMap,
-  output: {emit: (event: EventName, produce: Producer) => void; signal: AbortSignal},
+  output: {
+    emit: (event: EventName, produce: Producer) => void;
+    signal: AbortSignal;
+    /** The annotations under a point, which taps and long presses report. */
+    annotations?: (point: {x: number; y: number}) => unknown[];
+    /** Whether an annotation drag holds the pointer, so a still finger is not a long press. */
+    dragging?: () => boolean;
+  },
 ) {
   const {signal} = output;
   let gestures: Gestures | undefined;
@@ -75,13 +82,16 @@ export function createGestureController(
         y,
         timer: setTimeout(() => {
           press = undefined;
+          if (output.dragging?.()) return;
           const bounds = container.getBoundingClientRect();
           const point = {x: x - bounds.left, y: y - bounds.top};
           const coordinate = map.unproject([point.x, point.y]).wrap();
           swallowClickUntil = performance.now() + 1000;
+          const annotations = output.annotations?.(point) ?? [];
           output.emit('longPress', () => ({
             coordinate: {longitude: coordinate.lng, latitude: coordinate.lat},
             point,
+            ...(annotations.length ? {annotations} : {}),
           }));
         }, longPressMs),
       };

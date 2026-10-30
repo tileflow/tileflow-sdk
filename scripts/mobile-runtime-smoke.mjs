@@ -618,6 +618,7 @@ async function runEngine(name) {
     );
     assert.equal(stoppedShot.result.finished, false, `${name}: stopped shot`);
     await styleSmoke({name, call, request, deferredCall, register, data, timings, counts, page});
+    await annotationSmoke({name, call, register, data, counts, page, outputs, event});
     await call('dispose', null);
 
     const errors = outputs.filter((output) => output.event === 'error' || output.error);
@@ -944,6 +945,136 @@ async function styleSmoke({
     await call('removeLayer', {id}).catch(() => undefined);
   await call('removeSource', {id: 'live'});
   await call('removeSource', {id: 'points'});
+}
+
+/**
+ * Annotations through the real renderer: positions of tracked points every frame the camera moves,
+ * taps that name the annotations under them, and a drag that moves an annotation, not the map.
+ */
+async function annotationSmoke({name, call, register, data, counts, page, outputs, event}) {
+  const center = {longitude: -3.7, latitude: 40.42};
+  await call('moveCamera', {
+    target: {center, zoom: 14, pitch: 0, bearing: 0},
+    animation: {type: 'jump'},
+  });
+  await call('setEvents', {
+    events: {
+      tap: {throttleMs: 0},
+      annotationDragged: {throttleMs: 0},
+      trackedPointsMoved: {throttleMs: 0},
+    },
+  });
+  const pins = register(
+    Buffer.from(
+      JSON.stringify({
+        type: 'FeatureCollection',
+        features: [
+          {
+            type: 'Feature',
+            properties: {id: 'pin', draggable: true},
+            geometry: {type: 'Point', coordinates: [center.longitude, center.latitude]},
+          },
+        ],
+      }),
+    ),
+  );
+  await call('addSource', {id: 'pins', source: {type: 'geojson', data: pins, promoteId: 'id'}});
+  data.delete(pins.id);
+  await call('addLayer', {
+    layer: {id: 'pins', type: 'circle', source: 'pins', paint: {'circle-radius': 14}},
+  });
+  await call('setAnnotationLayers', {layers: ['pins']});
+
+  // Tracked points: the positions of a set arrive without a camera movement, then every frame.
+  const tracked = () => outputs.filter((output) => output.event === 'trackedPointsMoved');
+  const far = {longitude: 177, latitude: 0};
+  await call('setTrackedPoints', {
+    revision: 1,
+    points: [
+      [center.longitude, center.latitude],
+      [far.longitude, far.latitude],
+    ],
+  });
+  const first = await event(
+    'tracked points',
+    (output) => output.event === 'trackedPointsMoved' && output.result.revision === 1,
+  );
+  const projected = await call('project', center);
+  assert.ok(
+    Math.abs(first.result.positions[0] - projected.x) < 0.01 &&
+      Math.abs(first.result.positions[1] - projected.y) < 0.01,
+    `${name}: tracked position ${first.result.positions} and ${JSON.stringify(projected)}`,
+  );
+  assert.ok(Math.abs(first.result.time - Date.now()) < 5_000, `${name}: tracked time`);
+  const before = tracked().length;
+  const frames = page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        let count = 0;
+        const started = performance.now();
+        const frame = () => {
+          count += 1;
+          if (performance.now() - started < 600) globalThis.requestAnimationFrame(frame);
+          else resolve(count);
+        };
+        globalThis.requestAnimationFrame(frame);
+      }),
+  );
+  await call('moveCamera', {
+    target: {center: {longitude: -3.69, latitude: 40.42}},
+    animation: {type: 'ease', duration: 600},
+  });
+  const drawn = await frames;
+  const reports = tracked().length - before;
+  counts['tracked point reports per frame during a 600 ms pan'] = (reports / drawn).toFixed(2);
+  assert.ok(reports >= drawn * 0.5, `${name}: ${reports} reports for ${drawn} frames`);
+  await call('moveCamera', {target: {center}, animation: {type: 'jump'}});
+
+  // A tap names the annotations under it, topmost first.
+  const pin = await call('project', center);
+  let tap;
+  for (let attempt = 0; attempt < 50 && !tap?.result.annotations; attempt += 1) {
+    if (attempt) await new Promise((wait) => setTimeout(wait, 100));
+    const count = outputs.length;
+    await page.mouse.click(pin.x, pin.y);
+    tap = await event(
+      'annotation tap',
+      (output) => output.event === 'tap' && outputs.indexOf(output) >= count,
+    );
+  }
+  assert.deepEqual(tap.result.annotations, [{layer: 'pins', id: 'pin'}], `${name}: tapped pin`);
+
+  // A pan that starts on the draggable pin moves it; the map stays.
+  const camera = await call('getCamera', null);
+  await page.mouse.move(pin.x, pin.y);
+  await page.mouse.down();
+  await page.mouse.move(pin.x + 60, pin.y + 40, {steps: 8});
+  await page.mouse.up();
+  const dragged = await event(
+    'annotation drag end',
+    (output) => output.event === 'annotationDragged' && output.result.phase === 'ended',
+  );
+  const phases = outputs
+    .filter((output) => output.event === 'annotationDragged')
+    .map((output) => output.result.phase);
+  assert.equal(phases[0], 'started', `${name}: drag phases ${phases}`);
+  const target = await call('unproject', {x: pin.x + 60, y: pin.y + 40});
+  const [longitude, latitude] = dragged.result.geometry.coordinates;
+  assert.ok(
+    Math.abs(longitude - target.longitude) < 1e-4 && Math.abs(latitude - target.latitude) < 1e-4,
+    `${name}: dropped at ${dragged.result.geometry.coordinates}`,
+  );
+  const after = await call('getCamera', null);
+  assert.equal(after.longitude, camera.longitude, `${name}: the map did not pan`);
+  const stored = await call('querySourceFeatures', {source: 'pins'});
+  assert.deepEqual(
+    stored[0]?.geometry.coordinates.map((value) => value.toFixed(5)),
+    [longitude.toFixed(5), latitude.toFixed(5)],
+  );
+  await call('setTrackedPoints', {revision: 2, points: []});
+  await call('setAnnotationLayers', {layers: []});
+  await call('removeLayer', {id: 'pins'});
+  await call('removeSource', {id: 'pins'});
 }
 
 /** A host that shares no protocol version with the runtime is told so, never left waiting. */

@@ -173,12 +173,16 @@ function fakeMap(options: {anchors?: Record<string, string | null>} = {}) {
     },
     querySourceFeatures(source, query) {
       calls.push(['querySourceFeatures', source, query]);
-      // Tiles repeat a feature that crosses them.
-      return [
-        {id: 1, source, properties: {}},
-        {id: 1, source, properties: {}},
-        {id: 2, source, properties: {}},
-      ];
+      // Tiles repeat a feature that crosses them. MapLibre computes geometry in a getter.
+      class TileFeature {
+        constructor(readonly id: number) {}
+        readonly source = source;
+        readonly properties = {};
+        get geometry() {
+          return {type: 'Point', coordinates: [this.id, 0]};
+        }
+      }
+      return [new TileFeature(1), new TileFeature(1), new TileFeature(2)];
     },
     getCanvas: () => ({clientWidth: 400, clientHeight: 800}),
     on(name, listener) {
@@ -524,10 +528,13 @@ test('queries read application layers and name them as the application does', as
   const sourceFeatures = (await style.querySourceFeatures(
     {source: 'points', limit: 10},
     never,
-  )) as {id: number}[];
+  )) as {id: number; geometry: {coordinates: number[]}}[];
   assert.deepEqual(
-    sourceFeatures.map((feature) => feature.id),
-    [1, 2],
+    sourceFeatures.map((feature) => [feature.id, feature.geometry.coordinates[0]]),
+    [
+      [1, 1],
+      [2, 2],
+    ],
   );
   await assert.rejects(
     style.queryRenderedFeatures({layers: ['missing'], limit: 1}, never),
@@ -618,4 +625,36 @@ test('requests keep MapLibre names and Tileflow limits', () => {
   );
   assert.equal(updateGeoJSONSourceSchema.safeParse({id: 'p'}).success, false);
   assert.equal(queryRenderedFeaturesSchema.parse({geometry: {point: {x: 1, y: 2}}}).limit, 1000);
+});
+
+test('annotation hits and drags read and move the source the application sent', async () => {
+  const map = fakeMap();
+  const style = registry(map, {
+    [reference('a').id]: collection(point('pin', 2), point('other', 3)),
+  });
+  assert.deepEqual(style.hitTest({x: 1, y: 1}, ['pins'], 6), []);
+  await style.addSource({id: 'pins', source: {type: 'geojson', data: reference('a')}}, never);
+  await style.addLayer({layer: layer('pins', 'pins')}, never);
+  const hits = style.hitTest({x: 10, y: 20}, ['pins', 'missing'], 6);
+  assert.deepEqual(hits, [{layer: 'pins', source: 'pins', id: 1, properties: {name: 'point 1'}}]);
+  assert.deepEqual(map.calls.at(-1), [
+    'queryRenderedFeatures',
+    [
+      [4, 14],
+      [16, 26],
+    ],
+    {layers: [app('pins')]},
+  ]);
+  // Features are keyed by identifier; a source without one cannot move a feature.
+  assert.deepEqual(style.featureGeometry('pins', 'pin'), {type: 'Point', coordinates: [2, 0]});
+  const moved = {type: 'Point' as const, coordinates: [5, 6]};
+  assert.equal(style.moveFeature('pins', 'pin', moved), true);
+  assert.deepEqual(map.calls.at(-1), [
+    'updateData',
+    appSource('pins'),
+    {add: [{...point('pin', 2), geometry: moved}]},
+  ]);
+  assert.deepEqual(style.featureGeometry('pins', 'pin'), moved);
+  assert.equal(style.moveFeature('pins', 'nobody', moved), false);
+  assert.equal(style.moveFeature('missing', 'pin', moved), false);
 });

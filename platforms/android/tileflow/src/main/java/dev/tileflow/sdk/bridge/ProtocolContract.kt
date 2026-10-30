@@ -15,6 +15,8 @@ internal object ProtocolContract {
     const val MAXIMUM_DATA_REFERENCES = 64
     const val MAXIMUM_THROTTLE_MILLIS = 60000L
     const val WARNING_WINDOW_MILLIS = 1000L
+    const val MAXIMUM_TRACKED_POINTS = 2048
+    const val MAXIMUM_ANNOTATION_LAYERS = 256
 
     enum class Method(val wireName: String) {
         INITIALIZE("initialize"),
@@ -47,6 +49,8 @@ internal object ProtocolContract {
         STOP_ANIMATION("stopAnimation"),
         UPDATE_LOCATION("updateLocation"),
         SET_FOLLOW_MODE("setFollowMode"),
+        SET_ANNOTATION_LAYERS("setAnnotationLayers"),
+        SET_TRACKED_POINTS("setTrackedPoints"),
         ADD_SOURCE("addSource"),
         REMOVE_SOURCE("removeSource"),
         SET_GEO_JSON_SOURCE_DATA("setGeoJSONSourceData"),
@@ -83,12 +87,14 @@ internal object ProtocolContract {
         LONG_PRESS("longPress", TileflowEventLevel.ESSENTIAL),
         ANNOTATION_ACTIVATED("annotationActivated", TileflowEventLevel.ESSENTIAL),
         POI_ACTIVATED("poiActivated", TileflowEventLevel.ESSENTIAL),
+        ANNOTATION_DRAGGED("annotationDragged", TileflowEventLevel.ESSENTIAL),
         FOLLOW_MODE_CHANGED("followModeChanged", TileflowEventLevel.ESSENTIAL),
         CAMERA_MOVE_ENDED("cameraMoveEnded", TileflowEventLevel.ESSENTIAL),
         CAMERA_MOVE_STARTED("cameraMoveStarted", TileflowEventLevel.CAMERA),
         GESTURE_STARTED("gestureStarted", TileflowEventLevel.CAMERA),
         GESTURE_ENDED("gestureEnded", TileflowEventLevel.CAMERA),
         CAMERA_MOVED("cameraMoved", TileflowEventLevel.CONTINUOUS),
+        TRACKED_POINTS_MOVED("trackedPointsMoved", TileflowEventLevel.CONTINUOUS),
     }
 
     enum class ErrorReason(val wireName: String) {

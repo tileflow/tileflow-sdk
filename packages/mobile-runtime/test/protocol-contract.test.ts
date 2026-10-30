@@ -32,7 +32,13 @@ test('contract rules reject definitions the hosts could not honour', () => {
     ['minimumVersion', (value) => (value.minimumVersion = value.version + 1)],
     ['hello', (value) => (value.events.hello = {level: 'essential'})],
     ['events.tap', (value) => (value.events.tap = {level: 'everything'})],
-    ['eventLevels.continuous', (value) => delete value.events.cameraMoved],
+    [
+      'eventLevels.continuous',
+      (value) => {
+        delete value.events.cameraMoved;
+        delete value.events.trackedPointsMoved;
+      },
+    ],
     ['methods', (value) => value.methods.push('initialize')],
     [
       'cancel',

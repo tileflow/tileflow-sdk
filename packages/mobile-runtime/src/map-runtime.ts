@@ -31,6 +31,11 @@ import {
   type TileflowRuntimeStyle,
 } from '@tileflow/core/runtime';
 import {createAnimations, isShotFrame, shotFrame} from './animations';
+import {
+  type AnnotationController,
+  type AnnotationMap,
+  createAnnotationController,
+} from './annotations';
 import {type CameraController, createCameraController} from './camera';
 import {createGestureController} from './camera-gestures';
 import type {Overlay} from './content-contract';
@@ -130,6 +135,7 @@ export function createMobileMapRuntime(input: {
   let appearance: ReturnType<typeof createMapScene> | undefined;
   let animations: ReturnType<typeof createAnimations> | undefined;
   let location: LocationController | undefined;
+  let annotations: AnnotationController | undefined;
   let appearanceRevision = 0;
   let manifestMap: TileflowRuntimeManifestMap | undefined;
   let configuration: InitializeOptions | undefined;
@@ -199,6 +205,7 @@ export function createMobileMapRuntime(input: {
     events.dispose();
     warnings.dispose();
     animations?.dispose();
+    annotations?.dispose();
     location?.dispose();
     appearance?.dispose();
     content?.dispose();
@@ -348,7 +355,19 @@ export function createMobileMapRuntime(input: {
         clock,
         motion: (moving) => cameraController.reportMotion(moving, 'location'),
       });
-      gestures = createGestureController(map, {emit, signal: lifetime.signal});
+      annotations = createAnnotationController(map as unknown as AnnotationMap, {
+        emit,
+        wants: events.wants,
+        style: () => styleRegistry,
+        signal: lifetime.signal,
+      });
+      const annotationController = annotations;
+      gestures = createGestureController(map, {
+        emit,
+        signal: lifetime.signal,
+        annotations: (point) => annotationController.hits(point),
+        dragging: () => annotationController.dragging,
+      });
       applyOptions(options.options);
       if (options.insets) cameras.setInsets(options.insets);
       content = createMapContentRegistry(map, {
@@ -434,7 +453,8 @@ export function createMobileMapRuntime(input: {
       map.on('click', (event) => {
         const coordinate = {longitude: event.lngLat.lng, latitude: event.lngLat.lat};
         const point = {x: event.point.x, y: event.point.y};
-        emit('tap', () => ({coordinate, point}));
+        const hits = annotations?.hits(point) ?? [];
+        emit('tap', () => ({coordinate, point, ...(hits.length ? {annotations: hits} : {})}));
       });
       map.on('error', (event) => {
         // The style registry reports a change MapLibre refuses as the request's own failure.
@@ -735,6 +755,14 @@ export function createMobileMapRuntime(input: {
         case 'setFollowMode':
           requireMap();
           location!.follow(command.payload);
+          return null;
+        case 'setAnnotationLayers':
+          requireMap();
+          annotations!.setLayers(command.payload);
+          return null;
+        case 'setTrackedPoints':
+          requireMap();
+          annotations!.setTrackedPoints(command.payload);
           return null;
         case 'addSource':
           return requireStyle().addSource(command.payload, signal);

@@ -11,6 +11,8 @@ enum ProtocolContract {
   static let maximumDataReferences = 64
   static let maximumThrottleMilliseconds = 60000
   static let warningWindowMilliseconds = 1000
+  static let maximumTrackedPoints = 2048
+  static let maximumAnnotationLayers = 256
 
   enum Method: String {
     case initialize
@@ -43,6 +45,8 @@ enum ProtocolContract {
     case stopAnimation
     case updateLocation
     case setFollowMode
+    case setAnnotationLayers
+    case setTrackedPoints
     case addSource
     case removeSource
     case setGeoJSONSourceData
@@ -75,12 +79,14 @@ enum ProtocolContract {
     case longPress
     case annotationActivated
     case poiActivated
+    case annotationDragged
     case followModeChanged
     case cameraMoveEnded
     case cameraMoveStarted
     case gestureStarted
     case gestureEnded
     case cameraMoved
+    case trackedPointsMoved
 
     /// The least detailed level that includes the event, or nil when it needs no subscription.
     var level: TileflowEventLevel? {
@@ -98,12 +104,14 @@ enum ProtocolContract {
       case .longPress: .essential
       case .annotationActivated: .essential
       case .poiActivated: .essential
+      case .annotationDragged: .essential
       case .followModeChanged: .essential
       case .cameraMoveEnded: .essential
       case .cameraMoveStarted: .camera
       case .gestureStarted: .camera
       case .gestureEnded: .camera
       case .cameraMoved: .continuous
+      case .trackedPointsMoved: .continuous
       }
     }
   }

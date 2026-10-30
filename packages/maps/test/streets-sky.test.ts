@@ -28,7 +28,7 @@ test('every Streets theme paints its own opaque sky and carries the skies of its
     assert.ok(metadata?.timesOfDay, theme);
     skies.set(theme, String(sky?.['sky-color']));
   }
-  assert.equal(skies.get('light'), '#5c9ce6');
+  assert.equal(skies.get('light'), '#4aa0e2');
   assert.equal(skies.get('dusk'), '#4a4784');
   assert.equal(skies.get('dark'), '#0b1630');
   // Monochrome skies are grey; faded skies stay distinct from the default family.

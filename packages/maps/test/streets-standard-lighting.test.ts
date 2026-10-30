@@ -76,7 +76,15 @@ for (const [name, theme] of Object.entries(themes)) {
     assert.equal(buildings.modelLighting!.wall!.shading, 'map');
     assert.equal(buildings.modelLighting!.window!.shading, 'map');
     assert.equal(buildings.modelLighting!.window!.partColorMix, 1);
-    assert.equal(buildings.modelColors!.surface, buildings.color);
+    const colors = resolveTileflowTheme(streetsThemes[theme]).tokens.color;
+    assert.equal(buildings.modelColors!.surface, colors['buildings.raised.neutral']);
+    assert.deepEqual(buildings.color, [
+      'match',
+      ['get', 'building_tone'],
+      ['commercial', 'active'],
+      colors['buildings.flat.active'],
+      colors['buildings.raised.neutral'],
+    ]);
     assert.equal(buildings.modelLighting!.window!.colorScale, 0.94);
     assert.equal(buildings.modelLighting!.window!.emissiveStrength, 0);
     assert.equal(buildings.modelLighting?.window?.metallic, 0);

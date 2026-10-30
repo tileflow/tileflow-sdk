@@ -45,6 +45,7 @@ import {
   streetsIcons,
   streetsThemes,
 } from '../src';
+import {streetsDayColors} from '../src/official/streets-day-colors';
 import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
 import {streetsPoiImageIds} from './streets-poi-fixture';
 import {standardCartographyReference as colorReference} from './streets-standard-cartography-fixture';
@@ -1381,7 +1382,7 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
   assert.equal(byId.has('tileflow-parking-symbol-label'), false);
 
   const expectedPoiTextColors = Object.fromEntries(
-    Object.entries(colorReference.colors['default-day'])
+    Object.entries({...colorReference.colors['default-day'], ...streetsDayColors})
       .filter(
         ([role]) =>
           role.startsWith('poi.') && !['poi.halo', 'poi.icon', 'poi.label'].includes(role),
@@ -1463,24 +1464,30 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
       ),
     );
   for (const [properties, expected] of [
-    [{category: 'transport', mode: 'subway', type: 'public_transit_facility'}, 'major-transit'],
-    [{category: 'transport', mode: 'train', type: 'train_station'}, 'rail'],
-    [{category: 'transport', mode: 'tram', type: 'tram_stop'}, 'rail-light'],
-    [{category: 'transport', mode: 'bus', type: 'bus_stop'}, 'bus'],
-    [{category: 'transport', mode: 'ferry', type: 'ferry_terminal'}, 'ferry'],
-    [{category: 'transport', mode: 'aerialway', type: 'ground_transport_facility'}, 'aerialway'],
-    [{category: 'transport', type: 'airport'}, 'airport'],
-    [{category: 'food-drink', type: 'bar'}, 'bar'],
-    [{category: 'food-drink', type: 'cafe'}, 'coffee'],
-    [{category: 'food-drink', type: 'restaurant'}, 'food'],
+    [
+      {category: 'transport', mode: 'subway', type: 'public_transit_facility'},
+      'unified-day-major-transit',
+    ],
+    [{category: 'transport', mode: 'train', type: 'train_station'}, 'unified-day-rail'],
+    [{category: 'transport', mode: 'tram', type: 'tram_stop'}, 'unified-day-rail-light'],
+    [{category: 'transport', mode: 'bus', type: 'bus_stop'}, 'unified-day-bus'],
+    [{category: 'transport', mode: 'ferry', type: 'ferry_terminal'}, 'unified-day-ferry'],
+    [
+      {category: 'transport', mode: 'aerialway', type: 'ground_transport_facility'},
+      'unified-day-aerialway',
+    ],
+    [{category: 'transport', type: 'airport'}, 'unified-day-airport'],
+    [{category: 'food-drink', type: 'bar'}, 'unified-day-bar'],
+    [{category: 'food-drink', type: 'cafe'}, 'unified-day-coffee'],
+    [{category: 'food-drink', type: 'restaurant'}, 'unified-day-food'],
     [{category: 'arts-entertainment', type: 'museum'}, 'culture'],
     [{category: 'arts-entertainment', type: 'art_gallery'}, 'art-gallery'],
-    [{category: 'retail', type: 'vehicle_dealer'}, 'car'],
-    [{category: 'retail', type: 'specialty_store'}, 'shopping'],
-    [{category: 'religion', type: 'christian_place_of_worship'}, 'christian'],
-    [{category: 'visitor-amenity', type: 'public_restroom'}, 'toilet'],
-    [{category: 'visitor-amenity', type: 'parking'}, 'parking'],
-    [{category: 'park-nature', type: 'park'}, 'nature'],
+    [{category: 'retail', type: 'vehicle_dealer'}, 'unified-day-car'],
+    [{category: 'retail', type: 'specialty_store'}, 'unified-day-shopping'],
+    [{category: 'religion', type: 'christian_place_of_worship'}, 'unified-day-christian'],
+    [{category: 'visitor-amenity', type: 'public_restroom'}, 'unified-day-toilet'],
+    [{category: 'visitor-amenity', type: 'parking'}, 'unified-day-parking'],
+    [{category: 'park-nature', type: 'park'}, 'unified-day-nature'],
   ] as const) {
     assert.equal(pictogram(properties), expected, JSON.stringify(properties));
   }

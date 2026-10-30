@@ -1,4 +1,4 @@
-import {renderPass, token, zoom} from '@tileflow/core';
+import {field, renderPass, token, zoom} from '@tileflow/core';
 import type {
   TileflowLineStyle,
   TileflowNamedRenderStack,
@@ -35,7 +35,10 @@ function overviewWidth(width: TileflowLineStyle['width'], local: boolean) {
           : value[i] === 14
             ? 1.08
             : 1;
-    if (factor !== 1) value[i + 1] = ['*', value[i + 1], factor];
+    if (factor !== 1) {
+      const authored = value[i + 1];
+      value[i + 1] = ['case', ['==', ['get', field('ramp')], 1], authored, ['*', authored, factor]];
+    }
   }
   return {...width, value} as typeof width;
 }

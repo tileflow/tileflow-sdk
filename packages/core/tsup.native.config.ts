@@ -6,7 +6,7 @@ import {defineConfig, type Options} from 'tsup';
 const packageRoot = dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
 const providerManifest = require('whatwg-url/package.json') as {version: string};
-if (providerManifest.version !== '17.2.0') throw new Error('Expected whatwg-url 17.2.0.');
+if (providerManifest.version !== '17.3.0') throw new Error('Expected whatwg-url 17.3.0.');
 const providerLib = dirname(require.resolve('whatwg-url/lib/url-state-machine.js'));
 const parserRequire = createRequire(resolve(providerLib, 'url-state-machine.js'));
 const tr46Path = parserRequire.resolve('tr46/package.json');

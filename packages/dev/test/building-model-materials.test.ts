@@ -175,3 +175,13 @@ test('import rejects missing UVs and external or invalid images before preparing
     /image|PNG/i,
   );
 });
+
+test('a second UV set outside the unit square is rejected', () => {
+  assert.throws(
+    () =>
+      prepareTileflowBuildingModelMesh(
+        writeGlb([{...geometry, texcoords: [0, 0, 1, 0, 0, 1], texcoords1: [0, 0, 2, 0, 0, 1]}]),
+      ),
+    /TEXCOORD_1/u,
+  );
+});

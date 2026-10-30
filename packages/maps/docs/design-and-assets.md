@@ -1,5 +1,28 @@
 # Map designs and assets
 
+## Streets POIs
+
+Transport POIs with a recognized `network` use that network's symbol. The initial catalog covers
+`Metro de Madrid`, `Cercanías Madrid`, and `EMT Madrid`. Each network has one packaged SVG in a
+24px cell, shared across all themes without recoloring the identity. Matching uses the source's
+exact network value, including on older World tiles without `mode`; it never guesses from a
+station name or applies a city logo to every station. Unknown or missing networks retain the
+existing mode/type/category pictogram. Other railway services and intercity buses keep their
+generic symbols. Sources and asset licenses are recorded in `THIRD_PARTY_NOTICES.md`.
+
+POIs use World ranks with category density: parks and transport retain more detail than
+businesses, hotels and religious sites. Gardens are limited to World filter ranks 0–1 at every
+zoom, keeping principal destinations while suppressing botanical collections and other minor
+garden POIs. World currently classifies both as `garden`, so some small independent gardens are
+also omitted. Other park and landmark types keep their usual eligibility.
+
+All categories share importance order; the two most important ranks precede streets. Discs need
+names except parking and toilets. Native perspective and collisions select labels. See
+[label placement](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/cartographic-defaults.md#label-density-and-perspective).
+Ordinary POI/transit names use 13 px, major destinations 18 px. World size rank zero alone does
+not enlarge small parks. Text padding falls from 6 px to 4 px between z16 and z17; collision
+determines which names fit.
+
 ## civica
 
 `civica` is a self-contained civic print design named “Cívica”. Pale paper, warm stone blocks,
@@ -109,11 +132,14 @@ fallback traced from broad GEBCO band polygons until native contour geometry is 
 show the absolute `min_depth` value, not an inferred range or vessel-specific safety contour.
 Ferries are ordinary World context. Navigation marks come from `tileflow-nautical`: the theme's
 `nautical.*` image tokens select the Soundings chart symbols for buoys (port can, starboard cone,
-cardinal double cone, and a pillar for other buoys), lights, lighthouses, wrecks, harbours, and
-ports. Buoys and light flares take each mark's own colour from the data; beacons stay small coloured
-dots, rocks are chart crosses and stars, and lighthouse, wreck, harbour, and port symbols are
-printed in the chart ink. Technical magenta remains reserved for operational overlays: restricted,
-military, anchorage, and traffic-separation areas, traffic-separation lines, and cables. Coverage is
+cardinal double cone, and a pillar for other buoys), lights, lighthouses, wrecks, harbours, marinas,
+ports, inland notice boards by function, distance marks, and small-craft facilities. Buoys, light
+flares, and notice boards take each mark's own colour from the data; beacons stay small coloured
+dots, rocks are chart crosses and stars, and the other symbols are printed in the chart ink. Light
+flares flash in their rhythm in browser maps. Bridges and berths are drawn as ink structures with
+their clearances, and marinas and harbours as light outlines. Technical magenta remains reserved for
+operational overlays: restricted, military, anchorage, and traffic-separation areas,
+traffic-separation lines, and submarine and overhead cables. Coverage is
 a faint tint before marks appear. The map shows a "Not for navigation" notice wherever it is
 displayed. Soundings is reference cartography and is not a navigation product.
 

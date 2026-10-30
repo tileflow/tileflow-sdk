@@ -1,9 +1,10 @@
 import {defineTheme, token} from '@tileflow/core';
+import {streetsBuildingColors} from './streets-building-colors';
 import {streetsCartographyColors} from './streets-cartography-colors';
 import {streetsLighting} from './streets-lighting';
 import {streetsModelLighting} from './streets-model-lighting';
 import {streetsPoiImageTokens} from './streets-poi';
-import {streetsRoadCasingProfiles} from './streets-road-colors';
+import {streetsDayRoadFillColors, streetsRoadCasingProfiles} from './streets-road-colors';
 import {streetsSkyTokens} from './streets-sky';
 import {
   type StreetsColorTheme,
@@ -21,6 +22,7 @@ import {streetsTreeProfiles} from './streets-tree-colors';
  * compiler's layer topology.
  */
 const streetsLightColors = {
+  'labels.address': '#808080',
   'boundaries.admin': '#CE9298',
   'boundaries.default': '#CE9298',
   'boundaries.disputed': '#CE9298',
@@ -179,16 +181,17 @@ const streetsLightColors = {
   'terrain.hillshade.shadow': '#727B64',
   'transit.primary': '#5C74D6',
   'vegetation.tree.bark': '#918878',
-  'vegetation.tree.broadleaf.a': '#83AD83',
+  'vegetation.tree.broadleaf.a': '#77AA88',
   'vegetation.tree.broadleaf.b': '#91BA8D',
-  'vegetation.tree.broadleaf.c': '#A1C99B',
-  'vegetation.tree.broadleaf.d': '#AFD4A7',
+  'vegetation.tree.broadleaf.c': '#A6C682',
+  'vegetation.tree.broadleaf.d': '#AECFA2',
   'vegetation.tree.conifer.a': '#729B78',
   'vegetation.tree.conifer.b': '#81A880',
   'vegetation.tree.conifer.c': '#91B68B',
 } as const;
 
 const streetsDarkColors = {
+  'labels.address': '#808080',
   'boundaries.admin': '#9A6177',
   'boundaries.default': '#9A6177',
   'boundaries.disputed': '#9A6177',
@@ -534,9 +537,17 @@ function calibratedStreetsColors(
 }
 
 function streetsPaletteColors(preset: StreetsLightPreset, colorTheme: StreetsColorTheme) {
-  return {
+  const palette: Record<string, string> = {
     ...calibratedStreetsColors(preset, colorTheme),
     ...streetsCartographyColors(colorTheme, preset),
+    ...(colorTheme === 'default' && preset === 'day' ? streetsDayRoadFillColors : {}),
+  };
+  return {
+    ...palette,
+    // The parts building models name water, vegetation and wood take the map's water and trees.
+    'buildings.modelWater': palette['hydro.water']!,
+    'buildings.modelVegetation': palette['vegetation.tree.broadleaf.b']!,
+    'buildings.modelWood': palette['vegetation.tree.bark']!,
     'buildings.floodLight': !isDarkStreetsPreset(preset)
       ? '#FFFFFF'
       : colorTheme === 'monochrome'
@@ -545,6 +556,7 @@ function streetsPaletteColors(preset: StreetsLightPreset, colorTheme: StreetsCol
           ? '#F8E4C4'
           : '#F5CFA8',
     ...streetsModelLighting(preset, colorTheme).colors,
+    ...streetsBuildingColors(palette['buildings.extrusion']!, isDarkStreetsPreset(preset)),
     ...streetsSkyTokens(preset, colorTheme).colors,
   };
 }
@@ -567,9 +579,9 @@ function streetsLightingNumbers(preset: StreetsLightPreset, colorTheme: StreetsC
 }
 
 const streetsFonts = {
-  // DIN Pro Medium has much lighter strokes than Noto Sans Bold. Of the
-  // hosted Noto faces, Regular is the closer match for navigation and POIs.
   default: 'Noto Sans Regular',
+  navigation: 'DINish Medium',
+  shield: 'DINish Bold',
   places: 'Noto Sans Bold',
   regular: 'Noto Sans Regular',
   water: 'Noto Sans Italic',
@@ -727,6 +739,7 @@ export const streetsVisual = {
     waterway: token.color('hydro.waterway'),
   },
   label: {
+    address: token.color('labels.address'),
     aerodrome: token.color('labels.aerodrome'),
     country: token.color('labels.country'),
     ferry: token.color('labels.ferry'),
@@ -836,6 +849,7 @@ export const streetsVisual = {
     pathTransition: token.color('roads.path.transition'),
     pathTunnel: token.color('roads.path.tunnel'),
     pedestrianSurface: token.color('roads.pedestrian.surface'),
+    primary: token.color('roads.primary'),
     rail: token.color('roads.rail'),
     railTransit: token.color('roads.railTransit'),
     sidewalkSurface: token.color('roads.sidewalk.surface'),
@@ -880,6 +894,8 @@ export const streetsVisual = {
   },
   font: {
     default: token.font('default'),
+    navigation: token.font('navigation'),
+    shield: token.font('shield'),
     places: token.font('places'),
     regular: token.font('regular'),
     water: token.font('water'),

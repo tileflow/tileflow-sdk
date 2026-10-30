@@ -97,6 +97,78 @@ test('publishes the approved bundle without rebuilding and verifies a final rece
   assert.equal((workflow.match(/id-token: write/gu) ?? []).length, 1);
 });
 
+test('requires all three complete release verification suites before npm approval', async () => {
+  const workflow = await readFile(
+    new URL('../.github/workflows/publish.yml', import.meta.url),
+    'utf8',
+  );
+  const verification = workflow.slice(
+    workflow.indexOf('\n  verify:\n'),
+    workflow.indexOf('\n  publish:\n'),
+  );
+  const publication = workflow.slice(workflow.indexOf('\n  publish:\n'));
+
+  assert.deepEqual([...verification.matchAll(/suite: (\S+)\n/gu)].map((match) => match[1]).sort(), [
+    'cli',
+    'dev',
+    'remaining',
+  ]);
+  assert.match(verification, /fail-fast: false/u);
+  assert.match(verification, /pnpm run check:static/u);
+  assert.match(
+    verification,
+    /pnpm -r --workspace-concurrency=1 --filter '!tileflow' --filter '!@tileflow\/dev' --if-present run verify/u,
+  );
+  assert.match(verification, /package: '@tileflow\/dev'/u);
+  assert.match(verification, /package: tileflow/u);
+  assert.match(verification, /pnpm --filter '\$\{\{ matrix\.package \}\}' run verify/u);
+  const dependencies = publication.match(/needs:\n((?: {6}- \S+\n)+)/u)?.[1] ?? '';
+
+  assert.deepEqual([...dependencies.matchAll(/- (\S+)/gu)].map((match) => match[1]).sort(), [
+    'reconcile',
+    'verify',
+  ]);
+  assert.match(publication, /needs\.verify\.result == 'success'/u);
+  assert.match(publication, /environment: npm-publish/u);
+  assert.doesNotMatch(verification, /continue-on-error:|id-token: write|environment: npm-publish/u);
+});
+
+test('binds every release verification worker to the final plan and immutable bundle', async () => {
+  const workflow = await readFile(
+    new URL('../.github/workflows/publish.yml', import.meta.url),
+    'utf8',
+  );
+  const verification = workflow.slice(
+    workflow.indexOf('\n  verify:\n'),
+    workflow.indexOf('\n  publish:\n'),
+  );
+
+  assert.match(
+    verification,
+    /BUNDLE_DIGEST: \$\{\{ needs\.reconcile\.outputs\.bundle_digest \}\}/u,
+  );
+  assert.match(verification, /RELEASE_SHA: \$\{\{ needs\.reconcile\.outputs\.release_sha \}\}/u);
+  assert.match(verification, /ref: \$\{\{ env\.RELEASE_SHA \}\}/u);
+  assert.match(verification, /node-version: \$\{\{ needs\.reconcile\.outputs\.node_version \}\}/u);
+  assert.match(verification, /shasum -a 256 "\$bundle"/u);
+  assert.match(verification, /plan\.sourceSha !== process\.env\.RELEASE_SHA/u);
+  assert.match(verification, /git rev-parse origin\/main/u);
+  assert.match(
+    verification,
+    /node scripts\/reconcile-release\.mjs apply "\$release_root\/plan\.json"/u,
+  );
+  assert.match(verification, /pnpm exec turbo build --force/u);
+  assert.ok(
+    verification.indexOf('shasum -a 256') < verification.indexOf('reconcile-release.mjs apply'),
+  );
+  assert.ok(
+    verification.indexOf('Recheck verified package artifacts') > verification.indexOf('run verify'),
+  );
+  assert.match(verification, /node scripts\/select-release-tarballs\.mjs/u);
+  assert.match(verification, /node scripts\/compare-package-tarballs\.mjs/u);
+  assert.match(verification, /needs\.reconcile\.outputs\.selected_count != '0'/u);
+});
+
 test('keeps publication independent of private platform orchestration', async () => {
   const workflow = await readFile(
     new URL('../.github/workflows/publish.yml', import.meta.url),
@@ -188,7 +260,7 @@ test('keeps unselected package proof bound to candidate tarballs', async () => {
     new URL('../.github/workflows/publish.yml', import.meta.url),
     'utf8',
   );
-  const validation = workflow.slice(workflow.indexOf('Apply target versions, rebuild, and verify'));
+  const validation = workflow.slice(workflow.indexOf('Apply target versions, rebuild, and pack'));
 
   assert.match(
     validation,

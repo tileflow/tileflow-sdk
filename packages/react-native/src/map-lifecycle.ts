@@ -70,6 +70,9 @@ export function createMapLifecycle(create: () => Owner, retire: (owner: Owner) =
     getSourceState() {
       return active?.owner.getSourceState();
     },
+    retry(): void {
+      active?.owner.retry();
+    },
     subscribe(listener: () => void): () => void {
       listeners.add(listener);
       return () => listeners.delete(listener);

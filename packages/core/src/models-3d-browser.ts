@@ -19,6 +19,7 @@ import {
 } from './buildings-3d-design';
 import {cameraTileAt} from './camera-tiles-browser';
 import {decodeTileflowModels} from './models-3d-file';
+import {tileflowModelLevel, type TileflowModelLevelView} from './models-3d-levels';
 import {
   readTileflowLandmarkRegion,
   readTileflowLandmarksTileJson,
@@ -51,8 +52,6 @@ const keptLandmarkTiles = 9;
 const keptLandmarkRegions = 8;
 // A model is wanted when its origin lies within this many tiles of a tile round the camera.
 const reachTiles = 1;
-// Levels of detail by distance from the camera's centre, in metres.
-const levelDistances = [900, 2600];
 // A failed download is tried again after this long, in milliseconds; a landmarks tileset that
 // cannot be read, after longer.
 const retryAfter = 30_000;
@@ -80,6 +79,8 @@ export type TileflowPlacedModel = {
   used: number;
   /** When it last began to stand, from `performance.now()`, for its fade. */
   standingSince?: number;
+  /** The level of detail it last drew at, which it keeps near a threshold. */
+  level?: number;
 };
 
 /** A landmark whose footprint holds the buildings under it while its tile is on its way. */
@@ -121,8 +122,8 @@ export type TileflowPlacedModels = {
   shown(): readonly TileflowPlacedModel[];
   /** Uploads loaded models to the GPU. */
   upload(context: WebGL2RenderingContext): void;
-  /** The level of detail to draw a model at, from the camera's centre. */
-  levelOf(model: TileflowPlacedModel, centre: Readonly<{lat: number; lng: number}>): number;
+  /** The level of detail to draw a model at, by how large it looks from the camera. */
+  levelOf(model: TileflowPlacedModel, view: TileflowModelLevelView): number;
   /** Changes whenever the models shown change. */
   key(): string;
   /** Lets go of every buffer. */
@@ -153,7 +154,7 @@ export function createTileflowPlacedModels(
   const regions = new Map<
     string,
     {
-      tiles: Map<string, {hash: string; landmarks?: readonly TileflowLandmarkFootprint[]}>;
+      tiles: Map<string, {hash: string; landmarks: readonly TileflowLandmarkFootprint[]}>;
       used: number;
     }
   >();
@@ -304,7 +305,7 @@ export function createTileflowPlacedModels(
         const tiles = new Map(
           region.tiles.map((tile) => [
             `${tile[0]}/${tile[1]}`,
-            {hash: tile[2], ...(tile[3] ? {landmarks: tile[3]} : {})},
+            {hash: tile[2], landmarks: tile[3]},
           ]),
         );
         regions.set(regionKey, {tiles, used: performance.now()});
@@ -596,7 +597,7 @@ export function createTileflowPlacedModels(
         else {
           const failing = (tileFailed.get(hash) ?? 0) > now;
           if (!tileLoading.has(hash) && !failing) loadTile(hash);
-          if (named.landmarks && !failing) onTheirWay.set(hash, named.landmarks);
+          if (!failing) onTheirWay.set(hash, named.landmarks);
         }
       }
       if (
@@ -653,6 +654,7 @@ export function createTileflowPlacedModels(
       for (const entry of next)
         if (!before.delete(entry)) {
           entry.standingSince = now;
+          entry.level = undefined;
           changed.push(...reach(entry));
         }
       for (const entry of before.keys()) {
@@ -764,13 +766,17 @@ export function createTileflowPlacedModels(
         version += 1;
       }
     },
-    levelOf(model, centre) {
-      const [longitude, latitude] = model.placement.at;
-      const north = (latitude - centre.lat) * 111_320;
-      const east = (longitude - centre.lng) * 111_320 * Math.cos((centre.lat * Math.PI) / 180);
-      const distance = Math.hypot(north, east);
-      const level = levelDistances.findIndex((limit) => distance < limit);
-      return Math.min(model.model.levels.length - 1, level < 0 ? levelDistances.length : level);
+    levelOf(model, view) {
+      model.level = tileflowModelLevel(
+        {
+          bounds: model.model.bounds,
+          heading: model.placement.heading,
+          levels: model.model.levels.length,
+        },
+        view,
+        model.level,
+      );
+      return model.level;
     },
     key: () => String(version),
     release(context) {
@@ -839,7 +845,7 @@ function releaseBuffers(context: WebGL2RenderingContext, entry: TileflowPlacedMo
     context.deleteBuffer(level.vbo);
     context.deleteBuffer(level.ibo);
     if (level.surface) {
-      context.deleteBuffer(level.surface.vbo);
+      if (level.surface.vbo) context.deleteBuffer(level.surface.vbo);
       for (const texture of level.surface.textures) context.deleteTexture(texture);
     }
   }

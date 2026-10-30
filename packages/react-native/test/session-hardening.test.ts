@@ -44,10 +44,11 @@ test('safe observable state contains identities only and retains a bounded error
     response(503, {code: 'MOBILE_SESSION_UNAVAILABLE', error: `${credential}${grant}`}),
     response(201, success()),
   ]);
+  const clock = createClock();
   const controller = createHostedNativeSessionController({
     binding: hosted(),
     fetch: queue.fetch,
-    now: createClock().now,
+    now: clock.now,
     sessionIdFactory: createIds(),
   });
   assert.equal(await rejectedCode(controller.acquire()), 'NATIVE_SESSION_UNAVAILABLE');
@@ -63,6 +64,7 @@ test('safe observable state contains identities only and retains a bounded error
   assert.equal(controller.state.status, 'error');
   assert.equal(controller.state.lifecycle, 'foreground');
 
+  clock.advance(1_000);
   const authority = await controller.acquire();
   assert.ok(authority);
   assert.equal(authority.grant, grant);

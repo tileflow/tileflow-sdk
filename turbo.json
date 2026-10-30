@@ -10,6 +10,16 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    "@tileflow/mobile-runtime#build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/scripts/mobile-runtime-build.mjs",
+        "$TURBO_ROOT$/scripts/mobile-runtime-notices.mjs",
+        "$TURBO_ROOT$/LICENSE"
+      ],
+      "outputs": ["dist/**"]
+    },
     "dev": {
       "cache": false,
       "persistent": true

@@ -192,6 +192,13 @@ bounds in degrees, the first region holding a tree applying. They are a choice o
 they never change a tree whose data gives its form, and as mapping improves they apply to fewer
 trees.
 
+`minimumHeight` optionally sets a visual height floor in metres (0–20, default 0). It applies after
+scaling, enlarging only smaller trees and their crowns proportionally; source measurements stay
+unchanged. Hedges retain their measured height and segment length. Color, shadow and outline
+passes use the same size. `materialVariation` (0–1, default 0)
+adds stable brightness variation between trunks and uses authored lobe shades to vary foliage
+within the theme palette. It does not add colors outside that palette.
+
 ## Your own trees
 
 A map can draw a form with its own models. Put glTF binaries (`.glb`) in a directory, declare it in

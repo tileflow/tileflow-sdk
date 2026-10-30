@@ -1,28 +1,22 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
-import {tileflowAtmosphereMetadataKey} from '../atmosphere';
-import {
-  type TileflowResolvedSky,
-  type TileflowSkyColours,
-  type TileflowSkyMetadata,
-  type TileflowSkyTimesOfDay,
-  tileflowSkyMetadataKey,
-} from '../sky';
+import {tileflowAtmosphereMetadataKey, tileflowAtmosphereMetadataVersion} from '../atmosphere';
 import {
   compileTileflowSky,
   compileTileflowStreetSky,
   resolveTileflowAtmosphere,
   resolveTileflowSky,
 } from '../atmosphere-compile';
+import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../boundary-areas/compile';
 import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
 import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
-import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../boundary-areas/compile';
-import {type ResolvedMarine, resolveMarine} from '../marine';
+import {type ResolvedMarine, resolveMarine, tileflowNauticalV1Schema} from '../marine';
 import {buildingTargetsOfOtherModes} from '../modules/buildings/compiler';
 import {tileflowNauticalNotice} from '../modules/nautical';
-import {type TileflowMapNotice, tileflowNoticesMetadataKey} from '../notices';
 import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
+import {declareTileflowNauticalLights, tileflowNauticalLightsMetadataKey} from '../nautical-lights';
+import {type TileflowMapNotice, tileflowNoticesMetadataKey} from '../notices';
 import {
   insertTileflowOverlays,
   resolveTileflowHostedSources,
@@ -34,6 +28,13 @@ import {
   tileflowRouteMetadata,
   tileflowRouteMetadataKey,
 } from '../route-inks';
+import {
+  type TileflowResolvedSky,
+  type TileflowSkyColours,
+  type TileflowSkyMetadata,
+  tileflowSkyMetadataKey,
+  type TileflowSkyTimesOfDay,
+} from '../sky';
 import {tileflowStreetLightsMetadata, tileflowStreetLightsMetadataKey} from '../street-lights';
 import {tileflowSunMetadata, tileflowSunMetadataKey} from '../sun';
 import {compileTerrainContributions, resolveTerrain} from '../terrain';
@@ -627,9 +628,14 @@ function compileSemanticStyleInternal(
   // A declared sky paints the sky at every zoom; it takes over the globe atmosphere's sky colours.
   const sky = resolveTileflowSky(config.sky);
   const notices = compiledNotices(layers, marine);
+  const nauticalLights = declareTileflowNauticalLights(
+    layers,
+    marine?.nautical?.sourceId,
+    tileflowNauticalV1Schema.layers.lights,
+  );
   const style: MapLibreStyle = {
     ...(sky
-      ? {sky: compileTileflowStreetSky(sky)}
+      ? {sky: compileTileflowStreetSky(sky, Boolean(atmosphere))}
       : atmosphere
         ? {sky: compileTileflowSky(atmosphere)}
         : {}),
@@ -656,7 +662,14 @@ function compileSemanticStyleInternal(
               : {}),
           }
         : {}),
-      ...(atmosphere ? {[tileflowAtmosphereMetadataKey]: {version: 1, ...atmosphere}} : {}),
+      ...(atmosphere
+        ? {
+            [tileflowAtmosphereMetadataKey]: {
+              version: tileflowAtmosphereMetadataVersion,
+              ...atmosphere,
+            },
+          }
+        : {}),
       ...(sky ? {[tileflowSkyMetadataKey]: skyMetadata(input, selected.name, sky)} : {}),
       'tileflow:theme': selected.name,
       'tileflow:colorScheme': resolvedTheme.colorScheme,
@@ -704,6 +717,7 @@ function compileSemanticStyleInternal(
         .sort(),
       ...(config.view ? {'tileflow:view': config.view} : {}),
       ...(notices.length > 0 ? {[tileflowNoticesMetadataKey]: notices} : {}),
+      ...(nauticalLights ? {[tileflowNauticalLightsMetadataKey]: nauticalLights} : {}),
     },
   };
   const report: TileflowCompilationReport = {

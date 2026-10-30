@@ -147,6 +147,9 @@ export function createGltfMaterialReader(
     };
     const uv0 = read('TEXCOORD_0', [2]),
       uv1 = read('TEXCOORD_1', [2]);
+    // Prepared files keep the second UV set with sixteen bits inside the unit square.
+    if (uv1?.values.some((value) => !(value >= 0 && value <= 1)))
+      throw new RangeError('TEXCOORD_1 must lie between zero and one.');
     const colour = read('COLOR_0', [3, 4]);
     for (const key of [
       'baseColorTexture',

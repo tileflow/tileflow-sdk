@@ -124,6 +124,22 @@
 	XCTAssertEqual(self.replies.count, 33U);
 	for (NSUInteger i = 0; i < self.network.pending.count; i++) XCTAssertFalse([self mayStart:i]);
 }
+- (void)testBootstrapExpiresWellBeforeTicketDeadlineAndCarriesRetryAfter {
+	[self start:1 context:@"installation_1.1"];
+	self.scheduler.time = 9999;
+	XCTAssertTrue([self mayStart:0]);
+	[self.scheduler advance:1];
+	XCTAssertFalse([self mayStart:0]);
+	XCTAssertEqualObjects(self.replies.lastObject, NSNull.null);
+	NSData *body = [@"{}" dataUsingEncoding:NSUTF8StringEncoding];
+	[self start:2 context:@"installation_1.1"];
+	[self complete:1 body:body headers:@{@"Cache-Control": @"no-store", @"Retry-After": @"60"}];
+	XCTAssertEqualObjects(self.replies.lastObject[@"retryAfter"], @"60");
+	[self start:3 context:@"installation_1.1"];
+	[self complete:2 body:body headers:@{@"Cache-Control": @"no-store", @"Retry-After": [@"" stringByPaddingToLength:65 withString:@"1" startingAtIndex:0]}];
+	XCTAssertEqualObjects(self.replies.lastObject[@"retryAfter"], @"");
+	XCTAssertEqualObjects(self.replies.lastObject[@"bodyBase64"], @"e30=");
+}
 - (void)testExpiryDoesNotDependOnTimerExecutionAndResumeDoesNotReviveWork {
 	[self start:1 context:@"installation_1.1"];
 	self.scheduler.time = 30000;

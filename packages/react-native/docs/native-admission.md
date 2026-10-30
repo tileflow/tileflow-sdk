@@ -59,6 +59,22 @@ Bootstrap uses an independent OkHttp client or ephemeral URLSession channel. It 
 
 Each context binds its validated bootstrap endpoint/credential. Retiring that context cancels its bootstrap without cancelling another Map. TypeScript alone parses session authority and makes admission decisions.
 
+A bootstrap ends after 10 seconds, well inside the 30-second protected transport deadline. A stalled renewal therefore fails its bridge batch, and the tickets waiting on it, instead of outliving them. A ticket whose own deadline passes while JavaScript is still answering its batch fails alone; only a batch that JavaScript does not answer within 30 seconds retires the context. When admission retires the context of a mounted Map, the Map reports `renderer-error` and opens a new context for the same source, up to three times without a successful load in between.
+
+## Session failures
+
+The controller classifies each bootstrap or renewal failure:
+
+| Response                                                                       | Result                                                  |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| 401, 403, 404                                                                  | Stops the session until `ref.retry()` or another source |
+| 429 with `COMMERCIAL_MAP_LIMIT_REACHED` or `COMMERCIAL_SPENDING_LIMIT_REACHED` | Stops the session until `ref.retry()` or another source |
+| Any other 429                                                                  | Rate limited: retries after a delay                     |
+| 408, 5xx, network failure or timeout                                           | Unavailable: retries after a delay                      |
+| Another status, or a response that breaks the session contract                 | Retries after a delay                                   |
+
+A stopped session reports `session-error` through `onError`, including when a renewal is refused after the first load. A delay starts at one second and doubles up to one minute; a `Retry-After` in seconds or as an HTTP date lengthens it, up to 15 minutes. During the delay no bootstrap leaves the device, and a grant that is still valid keeps admitting protected requests. A successful bootstrap or `ref.retry()` clears the delay.
+
 The controller's private transport budget remains anchored to its existing local `validUntil`. Native never reconstructs a fresh lifetime from server timestamps. The budget is bounded by the earlier ticket-enqueue time, the native wait deadline and a safety margin, and is rechecked immediately before network start and redirects. Backgrounding, clock rollback, source replacement, disposal and expiry invalidate stale authority.
 
 No synchronous network hook, main thread or OkHttp interceptor waits for JavaScript. Suspended JavaScript therefore cannot authorize stale protected work.
@@ -93,7 +109,7 @@ Camera commands carry private monotonically correlated tokens. A successful publ
 | Protected response body                |                               8,388,608 bytes |
 | Pending bootstrap bridge work          |                                            32 |
 | Bootstrap request / response           |                          2,048 / 65,536 bytes |
-| Bootstrap deadline                     |                                    30 seconds |
+| Bootstrap deadline                     |                                    10 seconds |
 
 Cancellation retains transport capacity until the corresponding native cleanup boundary. Capacity bounds are transport safety limits, not product quotas or billing counters.
 

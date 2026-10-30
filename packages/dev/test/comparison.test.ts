@@ -7,7 +7,7 @@ import {
   tileflowComparisonSchemaVersion,
 } from '../src/comparison';
 import {renderTileflowComparisonHtml} from '../src/comparison-html';
-import type {DevtoolsHost} from '../src/devtools/types';
+import type {InspectorHost} from '../src/inspector/types';
 import {previewSceneClient} from '../src/preview-scene';
 import {fixtureLightTheme} from './theme-fixture';
 
@@ -82,7 +82,7 @@ test('renders a map-only workspace with a versioned bridge and no capture or com
   ])
     assert.doesNotMatch(html, new RegExp('id="' + id + '"'));
   assert.doesNotMatch(html, /class="(?:brandbar|toolbar|pane-label|statusbar)"/);
-  assert.match(html, /__workbench-runtime\/devtools\.js/);
+  assert.match(html, /__workbench-runtime\/inspector\.js/);
   assert.match(html, /roundNumber\(camera\.zoom\)/);
   assert.match(html, /prefers-reduced-motion/);
   assert.match(html, /aria-controls="inspector"/);
@@ -1355,9 +1355,9 @@ function runComparisonHarness(
   const timeouts = new Map<number, () => void>();
   const intervals: (() => void)[] = [];
   let nextTimeout = 0;
-  const testHooks = {} as {setMode: (mode: string) => void; host: DevtoolsHost};
+  const testHooks = {} as {setMode: (mode: string) => void; host: InspectorHost};
   new Script(
-    source + '\ntestHooks.setMode = setMode; testHooks.host = globalThis.__tileflowDevtoolsHost;',
+    source + '\ntestHooks.setMode = setMode; testHooks.host = globalThis.__tileflowInspectorHost;',
   ).runInNewContext({
     testHooks,
     AbortController,
@@ -2085,7 +2085,7 @@ test('Beacon camera commands update the single-map bridge without being rolled b
   harness.load('left');
   await harness.settle();
   harness.maps.left.camera = {center: [-3, 40], zoom: 13, bearing: 0, pitch: 0};
-  const event = {tileflowDevtools: true};
+  const event = {tileflowInspector: true};
   harness.maps.left.emit('movestart', event);
   harness.maps.left.emit('move', event);
   harness.maps.left.emit('moveend', event);

@@ -168,8 +168,10 @@ static BOOL TFGrantShape(NSString *value) {
 		work.response = response; work.failure = failure; work.delegate = delegate; work.releaseReservation = release;
 		context.work[work.identifier] = work; [context.order addObject:work.identifier];
 		work.timer = [self.scheduler after:30000 perform:^{
-			if ([context.batchTickets containsObject:work.identifier]) [self retire:context.identifier];
-			else [self fail:work];
+			// A slow renewal fails only this request. JavaScript still answers its batch, and the
+			// batch deadline alone retires a context whose JavaScript stopped answering.
+			if ([context.batchTickets containsObject:work.identifier]) [self event:context kind:@"cancel" fields:@{@"tickets": @[work.identifier]}];
+			[self fail:work];
 		}];
 		[self.scheduler enqueue:^{ [self drain:context]; }];
 	}];

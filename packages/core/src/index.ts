@@ -1,4 +1,15 @@
 export type {TileflowAtmosphere, TileflowAtmosphereOptions} from './atmosphere';
+export {
+  readTileflowSky,
+  tileflowSkyAtSun,
+  tileflowSkyMetadataKey,
+  type TileflowSky,
+  type TileflowSkyColours,
+  type TileflowSkyMetadata,
+  type TileflowSkyOptions,
+  type TileflowSkyTimesOfDay,
+} from './sky';
+export {tileflowMaxPitch} from './camera-limits';
 export {createStyle, createStyleResult, parseTileflowMap, validateTileflowMap} from './map';
 export {
   validateTileflowCompiledIconCapabilities,
@@ -412,6 +423,7 @@ export {
   tileflowBathymetryNameLayerLimits,
   tileflowBathymetrySourceId,
   tileflowBathymetryV1Schema,
+  tileflowNauticalPromoteId,
   tileflowNauticalSourceId,
   tileflowNauticalV1Schema,
 } from './marine';
@@ -421,6 +433,26 @@ export {
   tileflowNoticesMetadataKey,
   type TileflowMapNotice,
 } from './notices';
+export {
+  declareTileflowNauticalLights,
+  readTileflowNauticalLights,
+  steadyTileflowNauticalLights,
+  tileflowNauticalLightEclipseOpacity,
+  tileflowNauticalLightStates,
+  tileflowNauticalLightsLimits,
+  tileflowNauticalLightsMetadataKey,
+  type TileflowNauticalLights,
+} from './nautical-lights';
+export {
+  tileflowLightRhythm,
+  tileflowLightRhythmConventions,
+  tileflowLightRhythmLimits,
+  tileflowLightStateAt,
+  type TileflowLightCharacteristic,
+  type TileflowLightPhase,
+  type TileflowLightRhythm,
+  type TileflowLightState,
+} from './nautical-light-rhythm';
 export type {
   ResolvedBathymetry,
   ResolvedBathymetryRelief,
@@ -452,6 +484,7 @@ export {
   poi,
   roads,
   tileflowLandformClasses,
+  tileflowNauticalFacilityIcons,
   tileflowNauticalImageRoles,
   tileflowNauticalNotice,
   tileflowPoiIconOnlyTypes,
@@ -688,11 +721,17 @@ export {
   tileflowBuildingsMetadataKey,
   tileflowTeamModelUrl,
 } from './buildings-3d-design';
+export type {
+  TileflowBuildingSurfaces,
+  TileflowBuildingSurfaceDesign,
+} from './buildings-3d-surfaces';
 export {
+  isTileflowModelPartName,
   tileflowInsideRings,
+  tileflowModelArchitecturalPartNames,
+  tileflowModelDefaultLightingRole,
   tileflowModelLimits,
   tileflowModelLightingRoles,
-  tileflowModelDefaultLightingRoles,
   tileflowModelParts,
   tileflowModelVertexBytes,
   tileflowRingsOverlap,
@@ -702,6 +741,7 @@ export {
   type TileflowModelLightingRole,
   type TileflowModelMesh,
   type TileflowModelPart,
+  type TileflowModelSurfaceBytes,
 } from './models-3d-model';
 export type {TileflowModelEmissionGradient} from './building-illumination';
 export {

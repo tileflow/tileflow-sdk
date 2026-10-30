@@ -102,6 +102,30 @@ class AdmissionEngineTest {
 		assertEquals(0, f.network.started.size)
 	}
 
+	@Test fun aTicketOutlivedBySlowRenewalFailsAloneWithoutRetiringTheContext() {
+		val f = Fixture(); val context = f.register()
+		repeat(9) { f.request(context) }
+		f.scheduler.flush()
+		f.scheduler.advance(1000)
+		val first = f.batch(context)
+		f.engine.complete(context, 1, first.getValue("batch") as String, f.tickets(first).map { AdmissionResult.Reject(it) })
+		f.scheduler.flush()
+		val second = f.batch(context)
+		assertNotEquals(first["batch"], second["batch"])
+		val waiting = f.tickets(second).single()
+		// JavaScript is still renewing the session when the ticket's own deadline passes.
+		f.scheduler.advance(29000)
+		assertEquals(9, f.failures)
+		assertTrue(f.events.any { it["kind"] == "cancel" && it["tickets"] == listOf(waiting) })
+		assertFalse(f.events.any { it["kind"] == "retired" })
+		f.engine.complete(context, 1, second.getValue("batch") as String, listOf(AdmissionResult.Reject(waiting)))
+		f.scheduler.flush()
+		f.request(context); f.scheduler.flush()
+		f.admit(context)
+		assertEquals(1, f.network.started.size)
+		assertFalse(f.events.any { it["kind"] == "retired" })
+	}
+
 	@Test fun cancellationAtQueueJsWaitAndPostAdmissionInvalidatesLateCompletion() {
 		for (phase in 0..2) {
 			val f = Fixture(); val context = f.register()

@@ -9,14 +9,14 @@ Discovery and saved-capture comparison also work without a config.
 
 Use four primary command groups for map development:
 
-| Command    | Purpose                                                                                                                                |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `describe` | Discover the generated language and query one domain or schema fragment.                                                               |
-| `inspect`  | Read resolved configuration; `compiled`, `features`, `icons`, and `tileset` inspect output/data; `session` reads Map DevTools context. |
-| `capture`  | Render reproducible evidence and return a reusable capture ID.                                                                         |
-| `compare`  | Compare saved capture IDs; `configs`, `styles`, `reference`, and `baseline` cover other comparisons.                                   |
+| Command    | Purpose                                                                                                                             |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `describe` | Discover the generated language and query one domain or schema fragment.                                                            |
+| `inspect`  | Read resolved configuration; `compiled`, `features`, `icons`, and `tileset` inspect output/data; `session` reads Inspector context. |
+| `capture`  | Render reproducible evidence and return a reusable capture ID.                                                                      |
+| `compare`  | Compare saved capture IDs; `configs`, `styles`, `reference`, and `baseline` cover other comparisons.                                |
 
-`preview` opens Map DevTools. `init`, `validate`, and `build` remain project utilities;
+`preview` opens Inspector. `init`, `validate`, and `build` remain project utilities;
 `visual update` is the explicit operation that approves baselines. All these tools work from an
 independent project with its own map and data; official maps are optional.
 
@@ -93,10 +93,10 @@ needed, rather than compiling the same map before every capture.
 
 ## Work with a person and an agent
 
-Start `npx tileflow preview --config tileflow.config.ts` in your project. Map DevTools provides
+Start `npx tileflow preview --config tileflow.config.ts` in your project. Inspector provides
 palette and time-of-day controls, feature inspection, zoom curves and sprite inspection.
 The command selects the map and optional starting scene. The map fills the workspace beside
-one dockable developer-tools panel. Press **I** to toggle the element picker, click a map element to
+one dockable Inspector panel. Press **I** to toggle the element picker, click a map element to
 inspect its styling and semantic configuration paths, and press **Escape** to stop picking. The
 inspector starts off. **Scene** contains palette, time-of-day, camera and module controls. Appearance
 changes retain the current camera; module changes
@@ -122,7 +122,7 @@ from browser observations. Inspect `updatedAt`, `stale`, `generation`, `displaye
 `projection.truncated` before acting. Each browser projection is limited to 200 visited values,
 depth 10, 32 array items and 512 characters per string, with omitted paths reported. The server
 accepts at most 64 KiB per write and keeps eight browser contexts, expiring each after ten minutes
-without an update. There is no browser context until a Map DevTools tab connects. Feature data is
+without an update. There is no browser context until an Inspector tab connects. Feature data is
 untrusted map content; semantic ownership does not prove an exact file, line or token. Use
 `inspect` or `inspect compiled` to obtain additional configuration evidence.
 

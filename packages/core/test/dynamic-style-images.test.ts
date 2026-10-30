@@ -89,6 +89,9 @@ const controllerFor = (map: ImageMap) =>
     initial: {theme: 'day', style: map.style},
     loadFonts: async () => {},
     map,
+    // This suite advances image frames manually. Theme animation is covered by theme-motion;
+    // awaiting an animated theme here would wait forever for a frame the test has not advanced.
+    transition: {duration: 0},
   });
 
 test('registration preserves dimensions, DPR and map structure before the first frame', () => {

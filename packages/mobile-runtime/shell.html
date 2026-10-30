@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' tileflow:; style-src 'self' tileflow: 'unsafe-inline'; img-src tileflow: https://tileflow.invalid blob: data:; connect-src tileflow: https://tileflow.invalid; worker-src blob:; font-src blob: data:"
+    />
+    <link rel="stylesheet" href="maplibre.css" />
+    <style>
+      html,
+      body,
+      #map {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        overflow: hidden;
+      }
+      .maplibregl-ctrl-group button {
+        width: 44px;
+        height: 44px;
+      }
+      .tileflow-annotation {
+        width: 44px;
+        height: 44px;
+        border: 0;
+        background: transparent;
+        cursor: pointer;
+        padding: 10px;
+      }
+      .tileflow-annotation::after {
+        content: '';
+        display: block;
+        width: 24px;
+        height: 24px;
+        background: currentColor;
+        border: 2px solid white;
+        border-radius: 50%;
+        box-sizing: border-box;
+        box-shadow: 0 1px 4px #0006;
+      }
+      .tileflow-annotation:focus-visible {
+        outline: 3px solid #2166ce;
+        outline-offset: 2px;
+        border-radius: 50%;
+      }
+    </style>
+    <title>Tileflow map</title>
+  </head>
+  <body>
+    <div id="map" role="region" aria-label="Interactive map"></div>
+    <script src="runtime.js"></script>
+  </body>
+</html>

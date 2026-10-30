@@ -62,7 +62,7 @@ test('ambient visibility is deterministic, independent of colour, and ignores fo
   );
 });
 
-test('architectural lighting roles remain independent of palette slots and default explicitly', () => {
+test('architectural lighting roles remain independent of parts and default explicitly', () => {
   const base = plane(1, 1);
   const mesh = prepareTileflowBuildingModelMesh([
     {...base, material: 'surface', lightingRole: 'door'},
@@ -71,9 +71,10 @@ test('architectural lighting roles remain independent of palette slots and defau
     {...base, material: 'roof'},
     {...base, material: 'accent', lightingRole: 'unclassified'},
   ]);
+  assert.deepEqual(mesh.partNames, ['surface', 'glass', 'roof', 'accent']);
   assert.deepEqual(
     mesh.parts.filter((_, i) => i % 4 === 0),
-    [0, 0, 2, 4, 3],
+    [0, 0, 1, 2, 3],
   );
   assert.deepEqual(
     mesh.lightingRoles!.filter((_, i) => i % 4 === 0),
@@ -94,6 +95,7 @@ test('architectural lighting roles remain independent of palette slots and defau
       },
     ]),
   );
-  assert.deepEqual(fromFile.parts, [3, 3, 3]);
+  assert.deepEqual(fromFile.partNames, ['accent']);
+  assert.deepEqual(fromFile.parts, [0, 0, 0]);
   assert.deepEqual(fromFile.lightingRoles, [6, 6, 6]);
 });

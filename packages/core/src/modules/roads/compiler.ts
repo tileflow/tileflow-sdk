@@ -594,7 +594,7 @@ function compileCrossings(
       ]),
       padding: 0,
       pitchAlignment: 'map',
-      rotate: expression<number>(['+', ['to-number', ['get', fields.direction], 0], 90]),
+      rotate: expression<number>(['+', ['to-number', ['get', fields.direction]], 90]),
       rotationAlignment: 'map',
       size: zoom.linear([
         [15, 0.22],
@@ -626,6 +626,13 @@ function compileCrossings(
           ['!=', ['get', fields.crossing], 'no'],
           ['has', fields.markings],
           ['match', ['get', fields.markings], ['no', 'none', 'unmarked'], false, true],
+          // World leaves direction absent when it cannot resolve a crossing against
+          // a road (including points on adjoining footways). Do not invent an axis.
+          ['has', fields.direction],
+          ['match', ['typeof', ['get', fields.direction]], ['number', 'string'], true, false],
+          ['!=', ['get', fields.direction], ''],
+          ['>=', ['to-number', ['get', fields.direction], -1], 0],
+          ['<=', ['to-number', ['get', fields.direction], -1], 360],
         ],
       },
       config,

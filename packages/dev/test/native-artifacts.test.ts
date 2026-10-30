@@ -514,6 +514,13 @@ test('keeps other origins, web and written output outside the native preview HTT
 
 test('rejects an asset URL that exceeds the native limit only after generation retargeting', async (t) => {
   const cwd = await fixture(t);
+  // Isolate the sprite URL limit; bundled font filenames reach their own limit earlier.
+  await writeFile(
+    join(cwd, 'tileflow.config.ts'),
+    config(`glyphs: {kind:'url', url:'https://fonts.example.test/{fontstack}/{range}.pbf',
+      fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic',
+        'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']},`),
+  );
   const suffix = '/native/icons/main/sprite';
   const origin = 'https://assets.example.test/';
   const assetBaseUrl = origin + 'a'.repeat(2048 - origin.length - suffix.length);

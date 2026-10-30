@@ -65,3 +65,19 @@ export function buildingCornerDetail(
   if (previous === 2 && pixels >= 2.7) return 2;
   return pixels < 0.6 ? 0 : pixels < 3 ? 1 : 2;
 }
+
+/**
+ * The nearest view depth of a box: the smallest clip-space w of its corners, which is linear in
+ * position, so the box's corner that minimises it along each axis.
+ */
+export function buildingBoxDepth(
+  matrix: ArrayLike<number>,
+  bounds: readonly [number, number, number, number, number, number],
+): number {
+  const depth =
+    Math.min(matrix[3]! * bounds[0], matrix[3]! * bounds[3]) +
+    Math.min(matrix[7]! * bounds[1], matrix[7]! * bounds[4]) +
+    Math.min(matrix[11]! * bounds[2], matrix[11]! * bounds[5]) +
+    matrix[15]!;
+  return Number.isFinite(depth) ? depth : -Infinity;
+}

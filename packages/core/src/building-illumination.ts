@@ -14,6 +14,12 @@ export type TileflowModelRoleLighting = Readonly<{
   colorMix?: number;
   metallic?: number;
   roughness?: number;
+  /** Map shading normalizes sunlight to the surrounding extruded buildings. */
+  shading?: 'physical' | 'map';
+  /** Multiplier for the scene's model ambient occlusion. Defaults to one. */
+  ambientOcclusion?: number;
+  /** Contribution of named part colours after the role tint. Defaults to one. */
+  partColorMix?: number;
   colorVariation?: Readonly<{
     hue: readonly [number, number];
     saturation: readonly [number, number];
@@ -86,6 +92,13 @@ export function readModelRoleLighting(
       ...(entry.colorMix === undefined ? {} : {colorMix: bounded(entry.colorMix, 0, 1, 1)}),
       ...(entry.metallic === undefined ? {} : {metallic: bounded(entry.metallic, 0, 1, 0)}),
       ...(entry.roughness === undefined ? {} : {roughness: bounded(entry.roughness, 0, 1, 1)}),
+      ...(entry.shading === 'map' || entry.shading === 'physical' ? {shading: entry.shading} : {}),
+      ...(entry.ambientOcclusion === undefined
+        ? {}
+        : {ambientOcclusion: bounded(entry.ambientOcclusion, 0, 1, 1)}),
+      ...(entry.partColorMix === undefined
+        ? {}
+        : {partColorMix: bounded(entry.partColorMix, 0, 1, 1)}),
       ...readRoleColorVariation(entry.colorVariation),
       emissiveHeight:
         Array.isArray(gradient) &&

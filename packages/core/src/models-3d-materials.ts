@@ -1,8 +1,7 @@
 import {
+  isTileflowModelPartName,
   type TileflowModelLightingRole,
   tileflowModelLightingRoles,
-  type TileflowModelPart,
-  tileflowModelParts,
 } from './models-3d-model';
 
 /** An embedded glTF image and its sampler. Colour space belongs to its material channel. */
@@ -52,7 +51,8 @@ export type TileflowModelEmitter = Readonly<{
   height: number;
   depth?: number;
   role: TileflowModelLightingRole;
-  part: TileflowModelPart;
+  /** The part whose colour it takes, by name. */
+  part: string;
 }>;
 
 export type TileflowModelMaterialRange = Readonly<{
@@ -64,9 +64,9 @@ export type TileflowModelMaterialRange = Readonly<{
   emissiveBounds?: readonly [number, number];
 }>;
 
-/** Optional physical surface data, independent of the legacy palette/role/AO vertex. */
+/** Optional physical surface data, independent of the vertex's part, role and occlusion. */
 export type TileflowModelSurface = Readonly<{
-  /** Eight floats per vertex: UV0, UV1, linear vertex RGBA. */
+  /** Eight floats per vertex: UV0, UV1 (zero to one), linear vertex RGBA. */
   attributes: readonly number[] | Float32Array;
   materials: readonly TileflowModelMaterial[];
   textures: readonly TileflowModelTexture[];
@@ -110,6 +110,7 @@ export function checkTileflowModelSurface(
     const value = attributes[i]!;
     if (!Number.isFinite(value) || Math.abs(value) > 65_536) fail('unbounded vertex attributes');
     if (i % 8 >= 4 && (value < 0 || value > 1)) fail('vertex RGBA must be zero to one');
+    if ((i % 8 === 2 || i % 8 === 3) && (value < 0 || value > 1)) fail('UV1 must be zero to one');
   }
   if (
     !Array.isArray(materials) ||
@@ -227,7 +228,7 @@ export function checkTileflowModelSurface(
         !number(emitter.height, 0.01, 1000) ||
         (emitter.depth !== undefined && !number(emitter.depth, 0, 100)) ||
         !Object.hasOwn(tileflowModelLightingRoles, emitter.role) ||
-        !Object.hasOwn(tileflowModelParts, emitter.part)
+        !isTileflowModelPartName(emitter.part)
       )
         fail('invalid area emitter');
       if (

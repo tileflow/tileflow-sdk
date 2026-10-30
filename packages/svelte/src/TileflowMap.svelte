@@ -30,9 +30,11 @@
   } from '@tileflow/core/runtime';
   import {
     attachTileflowAtmosphere,
+    attachTileflowLabelPlacement,
     attachTileflowFairUseNotice,
     attachTileflowMap3D,
     attachTileflowMapLifecycle,
+    attachTileflowNauticalLights,
     attachTileflowNotices,
     createTileflowSessionStarter,
     createTileflowThemeController,
@@ -44,6 +46,7 @@
     registerTileflowPmtilesProtocol,
     registerTileflowWorldRequestBridge,
     subscribeTileflowSystemColorScheme,
+    tileflowMaxPitch,
     tileflowCanvasContextAttributes,
     type TileflowFairUseNoticeController,
     type TileflowMapLifecycleAttachment,
@@ -591,6 +594,7 @@
       attributionControl: mapOptions?.attributionControl ?? {compact: true},
       // Tileflow's compiled styles are validated when they are built.
       validateStyle: mapOptions?.validateStyle ?? false,
+      maxPitch: mapOptions?.maxPitch ?? tileflowMaxPitch,
       bearing: resolvedBearing,
       center: resolvedCenter as LngLatLike,
       container: targetContainer,
@@ -610,6 +614,8 @@
     mapInstance = maplibreMap;
     attachTileflowAtmosphere(maplibreMap);
     attachTileflowNotices(maplibreMap);
+    attachTileflowNauticalLights(maplibreMap);
+    attachTileflowLabelPlacement(maplibreMap);
     themeController =
       runtime.theme === undefined
         ? null

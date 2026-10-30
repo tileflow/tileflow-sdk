@@ -45,6 +45,7 @@ Selecting `renderer: 'native'` applies `native-lowering-v1` after shared semanti
 before final native validation. It never edits the authored map, the official map definitions or
 the shared compiler. Web output is not lowered.
 
+A browser `sky` is removed, because Native draws no sky, and the entry records `sky: 'removed'`.
 A fixed `projection: {type: 'globe'}` is explicitly normalized to Native's implicit Mercator. This
 is a renderer-specific projection change, not equivalent globe rendering. An explicit fixed
 Mercator declaration is also omitted. Adaptive/expression projections and unknown projection
@@ -150,7 +151,8 @@ engines, `validation: 'static-artifacts'` and the canonical `build-manifest.json
 schema version is 2 and its `preparationVersion` is `native-lowering-v1`.
 
 The `transformations` array is sorted uniquely by map/theme. Each entry records input and lowered
-style SHA-256 values, input/output layer counts and projection normalization. `layers` lists the
+style SHA-256 values, input/output layer counts, projection normalization and, when present, sky
+removal. `layers` lists the
 input ordinal, output start/count and affected properties of each partitioned line layer;
 `symbolOverlap` lists the input ordinal and replaced properties of each symbol layer whose overlap
 modes became `*-allow-overlap` values. Ordinals refer to the complete style layer arrays, including

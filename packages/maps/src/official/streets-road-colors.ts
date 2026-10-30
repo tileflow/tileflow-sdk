@@ -1,5 +1,23 @@
 import type {StreetsColorTheme, StreetsLightPreset} from './streets-theme-colors';
 
+// Day overviews reserve the strongest ink for motorways and trunks. City roles
+// retain a readable local grid and recover detailed colors between z13 and z15.
+export const streetsDayRoadFillColors = {
+  'roads.major': '#AAB9C9',
+  'roads.motorway': '#AAB9C9',
+  'roads.trunk': '#AAB9C9',
+  'roads.primary': '#AAB9C9',
+  'roads.city.primary': '#D5DBDF',
+  'roads.default': '#BDCCD9',
+  'roads.minor': '#BDCCD9',
+  'roads.secondary': '#BDCCD9',
+  'roads.tertiary': '#BDCCD9',
+  'roads.bridge': '#BDCCD9',
+  'roads.city.secondary': '#DEE3E6',
+  'roads.city.tertiary': '#E3E7E9',
+  'roads.city.minor': '#DDE2E5',
+} as const;
+
 // Standard's 2026-10-08 style, evaluated 2026-10-18 with its theme LUT and unshadowed
 // ground lighting. These are displayed colors, not the reference's raw paint values:
 // carriageway borders have zero emissive strength, unlike the brighter road interiors.

@@ -2,10 +2,10 @@
 
 This file records third-party components used by Node preparation and preview. Official map artwork
 and fonts are owned and published by `@tileflow/maps`; `@tileflow/dev` does not carry an `assets/`
-directory. Map DevTools interface fonts are distributed separately under `ui-fonts/`. Node runtime dependencies are installed as separate npm packages. The browser inspector bundles
+directory. Inspector interface fonts are distributed separately under `ui-fonts/`. Node runtime dependencies are installed as separate npm packages. The browser inspector bundles
 the evaluator and decoders described below; native binaries are not copied into the dev package.
 
-## Map DevTools interface fonts
+## Inspector interface fonts
 
 Inter by Rasmus Andersson and JetBrains Mono by JetBrains are distributed under the SIL Open Font License 1.1. Their complete notices accompany the WOFF2 files in `ui-fonts/inter-OFL.txt` and `ui-fonts/jetbrains-mono-OFL.txt`. Source: <https://github.com/rsms/inter> and <https://github.com/JetBrains/JetBrainsMono>.
 
@@ -96,7 +96,7 @@ tests enforce that package boundary.
 
 ## MapLibre style specification 24.8.5
 
-The Map DevTools browser bundle includes the expression evaluator and reference from
+The Inspector browser bundle includes the expression evaluator and reference from
 `@maplibre/maplibre-gl-style-spec` 24.8.5. The following is the complete upstream `LICENSE.txt`,
 including its notices for incorporated code.
 
@@ -223,7 +223,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## pbf 5.1.2
 
-The Map DevTools browser bundle includes the PBF reader to preview map font glyphs.
+The Inspector browser bundle includes the PBF reader to preview map font glyphs.
 Source: <https://github.com/mapbox/pbf/tree/v5.1.2>.
 
 ```text

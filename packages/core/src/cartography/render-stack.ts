@@ -1,3 +1,4 @@
+import {roadLabelPlacementKey} from './label-placement';
 import type {
   OpenMapTilesFieldBindings,
   OpenMapTilesLayerBindings,
@@ -1089,6 +1090,13 @@ function moveLayer(
 ): TileflowLayerFamilyIR {
   return {
     ...layer,
+    ...(layer.annotations?.[roadLabelPlacementKey] === undefined
+      ? {}
+      : {
+          annotations: Object.fromEntries(
+            Object.entries(layer.annotations).filter(([key]) => key !== roadLabelPlacementKey),
+          ),
+        }),
     order: anchor?.order ?? layer.order,
     origins: layer.origins.map((origin) =>
       origin.owner === refinement.owner && origin.target === refinement.target

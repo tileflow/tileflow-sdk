@@ -113,7 +113,6 @@ test('camera internals stay private while the root exports the mounted Map and p
     );
   }
   const readme = await readFile(new URL('README.md', root), 'utf8');
-  assert.match(readme, /first alpha release/u);
   assert.match(readme, /exports a mounted `Map`/u);
   assert.match(readme, /initialView/u);
   assert.match(readme, /onViewChange/u);

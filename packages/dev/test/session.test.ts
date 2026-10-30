@@ -595,11 +595,8 @@ test('serves pinned local preview assets and a cancellable session event stream'
   assert.doesNotMatch(preview, /map\.on\("move", handleMove\)/);
   assert.match(preview, /map\.on\("sourcedata", handleSourceData\)/);
   assert.match(preview, /map\.setProjection\(\{type: "mercator"\}\)/);
-  assert.match(
-    preview,
-    /const projection = map\.getProjection\s*\? map\.getProjection\(\)\?\.type\s*: map\.getStyle\?\.\(\)\?\.projection\?\.type/,
-  );
-  assert.doesNotMatch(preview, /const projection = map\.getStyle/);
+  assert.match(preview, /attachTileflowAtmosphere\(map\)/);
+  assert.doesNotMatch(preview, /function updateGlobeBackdrop/);
   assert.match(preview, /class ThreeDimensionalControl/);
   // TREES and 3D mount Core's renderers, as an application does, from the style's description.
   assert.match(preview, /createTileflowMap3D\(\{map, controller: coreSceneThemes\(map\)/);
@@ -931,7 +928,8 @@ test('selects map and scene previews with their configured cameras and viewport'
   );
   assert.equal(JSON.stringify(persisted.mapOptions?.center), '[-3.7038,40.4168]');
   assert.equal(persisted.mapOptions?.zoom, 15.25);
-  assert.equal('maxPitch' in (persisted.mapOptions ?? {}), false);
+  // The map raises MapLibre's default pitch limit; the URL camera adds no limit of its own.
+  assert.equal(persisted.mapOptions?.maxPitch, 85);
   assert.equal(persisted.mapOptions?.pitch, 0);
   assert.equal('bounds' in (persisted.mapOptions ?? {}), false);
   assert.equal('fitBoundsOptions' in (persisted.mapOptions ?? {}), false);
@@ -1269,7 +1267,7 @@ test('rejects and never watches icon directories outside the working tree', asyn
 });
 
 const tokenModule = `import tokens from './tokens.json';\nexport default tokens;\n`;
-const fixtureGlyphsSource = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}`;
+const fixtureGlyphsSource = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic','DINish Medium,Noto Sans Regular','DINish Bold,Noto Sans Regular']}`;
 const validConfig = `import {defineMap, disable} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 import tokens from './tokens.ts';
@@ -1658,7 +1656,7 @@ function runPreviewScript(
 
   const parentWindow = options.sharedStatus
     ? {
-        __tileflowDevtoolsHost: {
+        __tileflowInspectorHost: {
           subscribePreviewStatus(_child: unknown, receive: (status: unknown) => void) {
             parentStatusReceiver = receive;
             return () => {
@@ -1676,6 +1674,10 @@ function runPreviewScript(
         assert.ok(map instanceof FakeMap);
       },
     }),
+    attachTileflowLabelPlacement: (map: unknown) => {
+      assert.ok(map instanceof FakeMap);
+      return () => {};
+    },
     // Core's 3D scene, faked as the renderers it mounts for the style's declarations.
     createTileflowMap3D: ({viewMode, vegetation}: {viewMode: string; vegetation: boolean}) => {
       let shown = viewMode === '3d';
@@ -1723,7 +1725,10 @@ function runPreviewScript(
         },
       };
     },
+    attachTileflowNauticalLights: () => () => {},
     attachTileflowNotices: () => () => {},
+    attachTileflowAtmosphere: () => () => {},
+    tileflowMaxPitch: 85,
     tileflowCanvasContextAttributes: (attributes: object) => ({antialias: true, ...attributes}),
     readTileflowSunPreset: () => undefined,
     resolveTileflowSun: (preset: unknown) => preset,

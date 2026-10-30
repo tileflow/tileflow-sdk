@@ -13,16 +13,32 @@ import {createStyleWithInspection} from '@tileflow/core/build';
 import {soundings, soundingsIcons} from '../src';
 
 const soundingsIconIds = [
+  'soundings-boat-hoist',
+  'soundings-boatyard',
   'soundings-buoy-cardinal',
   'soundings-buoy-pillar',
   'soundings-buoy-port',
   'soundings-buoy-starboard',
+  'soundings-distance-mark',
+  'soundings-facility',
+  'soundings-fuel-station',
   'soundings-harbor',
   'soundings-light-flare',
   'soundings-lighthouse',
+  'soundings-marina',
+  'soundings-notice',
+  'soundings-notice-information',
+  'soundings-notice-prohibition',
+  'soundings-notice-recommendation',
+  'soundings-notice-regulation',
+  'soundings-notice-restriction',
   'soundings-paper-grain',
+  'soundings-pump-out',
   'soundings-rock-awash',
+  'soundings-slipway',
+  'soundings-visitor-berth',
   'soundings-water-dots',
+  'soundings-water-tap',
   'soundings-wreck',
 ] as const;
 
@@ -79,6 +95,7 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
     url: 'https://api.tileflow.dev/tiles/bathymetry/dem/tiles.json',
   });
   assert.deepEqual(style.sources['tileflow-nautical'], {
+    promoteId: {light: 'provenance'},
     type: 'vector',
     url: 'https://api.tileflow.dev/tiles/nautical/tiles.json',
   });

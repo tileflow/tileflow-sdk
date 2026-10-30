@@ -227,7 +227,15 @@ test('default and explicit web preview lifecycle output remain compatible', asyn
   const cwd = await fixture('tileflow-web-preview-compat-');
   fixtureResources(t).push(() => rm(cwd, {force: true, recursive: true}));
 
-  assert.deepEqual(await firstWebPreviewReady(t, cwd, 'web'), await firstWebPreviewReady(t, cwd));
+  const events = [];
+  for (const renderer of ['web', undefined] as const) {
+    const {generation, lastGoodGeneration, ...event} = await firstWebPreviewReady(t, cwd, renderer);
+    // Watcher startup notifications can coalesce differently between processes.
+    assert.ok(Number.isInteger(generation) && Number(generation) >= 1);
+    assert.equal(lastGoodGeneration, generation);
+    events.push(event);
+  }
+  assert.deepEqual(events[0], events[1]);
 });
 
 test('web preview awaits child shutdown when readiness fails', async (t) => {

@@ -100,7 +100,8 @@ public class MapCacheIntegrationTest {
             assertTrue("Map errors: ${offline.failures}", offline.failures.isEmpty())
             runBlocking {
                 withContext(Dispatchers.Main) {
-                    val features = offline.map.query(offline.map.width / 2f, offline.map.height / 2f)
+                    val point = offline.map.project(TileflowCoordinate(-3.70, 40.42))
+                    val features = offline.map.query(point.x, point.y)
                     assertTrue(
                         "Cached data did not render: $features",
                         features.any { it.layer == "poi" },

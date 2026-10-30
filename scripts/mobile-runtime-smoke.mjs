@@ -1066,10 +1066,22 @@ async function annotationSmoke({name, call, register, data, counts, page, output
   );
   const after = await call('getCamera', null);
   assert.equal(after.longitude, camera.longitude, `${name}: the map did not pan`);
-  const stored = await call('querySourceFeatures', {source: 'pins'});
+  // The drag event acknowledges the edit before the renderer's source worker finishes retiling.
+  const expectedCoordinates = [longitude.toFixed(5), latitude.toFixed(5)];
+  let stored;
+  const deadline = Date.now() + timeoutMs;
+  do {
+    stored = await call('querySourceFeatures', {source: 'pins'});
+    if (
+      JSON.stringify(stored[0]?.geometry.coordinates.map((value) => value.toFixed(5))) ===
+      JSON.stringify(expectedCoordinates)
+    )
+      break;
+    await new Promise((wait) => setTimeout(wait, 50));
+  } while (Date.now() < deadline);
   assert.deepEqual(
     stored[0]?.geometry.coordinates.map((value) => value.toFixed(5)),
-    [longitude.toFixed(5), latitude.toFixed(5)],
+    expectedCoordinates,
   );
   await call('setTrackedPoints', {revision: 2, points: []});
   await call('setAnnotationLayers', {layers: []});

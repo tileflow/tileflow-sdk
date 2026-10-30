@@ -236,7 +236,8 @@ public class MapOfflineIntegrationTest {
 
     private fun rendered(activity: OfflineMapHostActivity, layer: String): Boolean = runBlocking {
         withContext(Dispatchers.Main) {
-            activity.map.query(activity.map.width / 2f, activity.map.height / 2f).any {
+            val point = activity.map.project(TileflowCoordinate(-3.70, 40.42))
+            activity.map.query(point.x, point.y).any {
                 it.layer == layer
             }
         }

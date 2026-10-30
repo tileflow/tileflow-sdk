@@ -474,7 +474,8 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disk-size: 6000M
-          disable-animations: true
+          # Camera, annotation and shot tests require motion; disabling it also requests reduced motion in WebView.
+          disable-animations: false
           script: bash scripts/mobile-android-connected.sh ${{ matrix.webview }} ${{ matrix.arguments }}
       - name: Upload Android test results
         if: failure()

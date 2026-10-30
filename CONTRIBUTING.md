@@ -32,6 +32,13 @@ avoiding a TypeScript loader in each child process. Local tests default to sourc
 the CI path locally, build first, then run `TILEFLOW_TEST_CLI_MODE=built pnpm --filter tileflow test`.
 The built mode never falls back to source when its executable is missing.
 
+Android instrumented tests use a native macOS ARM64 GPU runner when the repository variable
+`ANDROID_GPU_RUNNER` is `true`. It must carry the `tileflow-sdk-android-gpu` label, provide JDK 17
+through `JAVA_HOME` and the Android SDK through `ANDROID_HOME`, and support an ARM64 emulator with
+host graphics. CI verifies the Apple GPU renderer and retains all three Android/WebView cases,
+the 200-annotation workload and the p95 latency budget below 100 ms. Fork pull requests remain on
+GitHub-hosted runners and require the repository's external-contributor approval policy.
+
 CI shares a temporary Node compile cache between subprocesses in each job. It caches bytecode,
 not test results, and is discarded with the runner. For a local comparison, set `NODE_COMPILE_CACHE`
 to a temporary directory or use `NODE_DISABLE_COMPILE_CACHE=1` to disable it.

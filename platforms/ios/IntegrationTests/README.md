@@ -34,6 +34,11 @@ itself. Neither CI run accepts skipped tests. The Catalyst app and test bundle u
 signing, so no developer certificate is needed. On failure, Xcode results are retained in the
 `swift-integration-results` artifact.
 
+The hosted macOS image enables Reduce Motion by default. CI disables it and checks the native
+accessibility setting before launching the test host: camera cancellation, shot cues and annotation
+tracking need actual intermediate animation frames. Keep motion enabled when running these tests
+locally; their assertions and latency budgets are unchanged.
+
 To run the same Catalyst tests locally, keep the fixture server running and use:
 
 ```sh

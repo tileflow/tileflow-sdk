@@ -329,6 +329,10 @@ jobs:
           pnpm native:runtime
       - name: Start fixture map server and pinned iPhone simulator
         run: |
+          # Hosted macOS images enable Reduce Motion. These tests exercise animations,
+          # cancellation and intermediate frames, so run them with motion enabled.
+          defaults write com.apple.universalaccess reduceMotion -bool false
+          swift -e 'import AppKit; precondition(!NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, "Rendering tests require motion enabled")'
           nohup node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
           udid=$(xcrun simctl create "Tileflow CI" "$SIMULATOR_DEVICE_TYPE" "$SIMULATOR_RUNTIME")
           echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
@@ -407,13 +411,14 @@ jobs:
     name: Kotlin SDK on Android emulator (${{ matrix.name }})
     needs: mobile-areas
     if: needs.mobile-areas.outputs.android == 'true'
-    runs-on: ubuntu-latest
+    # Only trusted repository revisions use the native GPU runner; forks stay hosted.
+    runs-on: ${{ vars.ANDROID_GPU_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "macOS", "ARM64", "tileflow-sdk-android-gpu"]') || 'ubuntu-latest' }}
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Each Google APIs x86_64 image ships a fixed System WebView. The connected script
+          # Each Google APIs image ships a fixed System WebView. The connected script
           # records it, and the WebView requirement test fails if it crosses the SDK minimum.
           # Android 16 QPR2 (36.1) and 17 (37.0) images restart system_server after boot on the
           # emulator's software GPU, so Android 16 carries the most recent usable WebView.
@@ -453,10 +458,11 @@ jobs:
       - name: Build instrumented test APKs
         working-directory: platforms/android
         run: |
-          export JAVA_HOME="$JAVA_HOME_17_X64"
+          if [[ "$RUNNER_OS" == Linux ]]; then export JAVA_HOME="$JAVA_HOME_17_X64"; fi
           echo "JAVA_HOME=$JAVA_HOME" >> "$GITHUB_ENV"
           ./gradlew :tileflow:assembleDebugAndroidTest --console=plain
       - name: Enable KVM
+        if: runner.os == 'Linux'
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
@@ -471,19 +477,23 @@ jobs:
           api-level: ${{ matrix.api }}
           system-image-api-level: ${{ matrix.image }}
           target: google_apis
-          arch: x86_64
+          arch: ${{ runner.os == 'macOS' && 'arm64-v8a' || 'x86_64' }}
           profile: pixel_6
-          # Leave two of the hosted runner's four CPUs for software graphics and host work.
+          # Keep CPU allocation consistent; the native runner supplies hardware graphics.
           cores: 2
           ram-size: 4096M
           disk-size: 6000M
-          # Use the current software backend instead of the deprecated swiftshader_indirect mode.
-          emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
+          emulator-options: -no-window -gpu ${{ runner.os == 'macOS' && 'host' || 'swiftshader' }} -no-snapshot -noaudio -no-boot-anim
           # Camera, annotation and shot tests require motion; disabling it also requests reduced motion in WebView.
           disable-animations: false
           # Keep the Pixel 6 logical viewport while bounding software-GPU pixel work on hosted runners.
           # The 200-view workload, animation duration and latency assertions remain unchanged.
           script: |
+            if [[ "$RUNNER_OS" == macOS ]]; then
+              graphics="$(adb shell dumpsys SurfaceFlinger | tr -d '\r' | grep 'GLES:')"
+              echo "$graphics"
+              [[ "$graphics" == *Apple* && "$graphics" != *SwiftShader* ]]
+            fi
             adb shell wm size 360x800
             adb shell wm density 140
             adb shell settings put global window_animation_scale 0

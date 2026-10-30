@@ -484,8 +484,8 @@ jobs:
           # Keep the Pixel 6 logical viewport while bounding software-GPU pixel work on hosted runners.
           # The 200-view workload, animation duration and latency assertions remain unchanged.
           script: |
-            adb shell wm size 540x1200
-            adb shell wm density 210
+            adb shell wm size 360x800
+            adb shell wm density 140
             bash scripts/mobile-android-connected.sh ${{ matrix.webview }} ${{ matrix.arguments }}
       - name: Upload Android test results
         if: failure()

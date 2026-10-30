@@ -108,9 +108,14 @@ test('watches conservative transitive inputs and emits monotonic building/ready 
   session.subscribe((state) => states.push(state));
 
   await writeFile(join(cwd, 'tokens.json'), '{"water":"#abcdef"}\n', 'utf8');
+  // Startup filesystem notifications can produce another ready generation before this edit.
+  // Wait for its artifact within the same deadline, not just an arbitrary generation number.
   const ready = await waitForState(
     session,
-    (state) => state.status === 'ready' && state.generation >= 2,
+    (state) =>
+      state.status === 'ready' &&
+      state.generation >= 2 &&
+      waterColor(session.getLastGoodArtifacts()) === '#abcdef',
   );
   assert.equal(ready.status, 'ready');
   assert.equal(waterColor(session.getLastGoodArtifacts()), '#abcdef');

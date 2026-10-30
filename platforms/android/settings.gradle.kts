@@ -18,4 +18,16 @@ rootProject.name = "Tileflow"
 
 include(":tileflow")
 
+include(":tileflow-configuration")
+
+include(":tileflow-search")
+
+include(":tileflow-routing")
+
+include(":tileflow-elevation")
+
+include(":tileflow-geoip")
+
+include(":tileflow-service-content")
+
 include(":example")

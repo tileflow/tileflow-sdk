@@ -1,3 +1,4 @@
+import {streetsDayImages} from '../src/official/streets-day-colors';
 import {streetsPoiPictograms} from '../src/official/streets-poi';
 import {streetsTransitNetworks} from '../src/official/streets-transit-icons';
 
@@ -9,5 +10,6 @@ export const streetsPoiImageIds: readonly string[] = [
     `${id}-monochrome`,
     `${id}-monochrome-dark`,
   ]),
+  ...new Set(Object.values(streetsDayImages)),
   ...streetsTransitNetworks.map(({id}) => id),
 ];

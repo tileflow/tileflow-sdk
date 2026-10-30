@@ -20,6 +20,28 @@ test('mobile discovery preserves explicit profiles and freezes public selectors'
   assert.ok(Object.isFrozen(result.representations['webview-v1']));
 });
 
+test('a local development API may serve discovery over loopback HTTP', () => {
+  for (const origin of ['http://127.0.0.1:8787', 'http://localhost:8787']) {
+    const local = `${origin}/maps/map_0123456789abcdef`;
+    const discovery = {
+      ...fixture(),
+      representations: {'webview-v1': {manifestUrl: `${local}/mobile/webview-v1/manifest.json`}},
+    };
+    assert.equal(
+      parseTileflowMobileDiscovery(discovery, `${local}/mobile/manifest.json`).representations[
+        'webview-v1'
+      ]?.manifestUrl,
+      `${local}/mobile/webview-v1/manifest.json`,
+    );
+  }
+  assert.throws(() =>
+    parseTileflowMobileDiscovery(
+      fixture(),
+      'http://api.tileflow.test/maps/map_0123456789abcdef/mobile/manifest.json',
+    ),
+  );
+});
+
 test('mobile discovery rejects foreign authority, aliases, unsupported profiles and malformed versions', () => {
   for (const discoveryUrl of [
     url + '?key=x',

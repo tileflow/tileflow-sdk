@@ -19,17 +19,26 @@ The fixture server must stay running throughout the tests. CI rejects skipped te
 The test bundle copies the same fixtures as SwiftPM and supplies its own `Bundle.module`
 accessor; the SDK and its embedded resources still build through SwiftPM.
 
-CI builds the app and test bundle for iOS Simulator, then runs the complete suite with Mac
-Catalyst on the standard macOS 26 runner. Catalyst uses the same UIKit SDK sources and test
-files while rendering through the host graphics stack. Hosted iOS simulators crash their GPU
-process during WebGL draws on both ARM and Intel runners, with iOS 18.5 and 26. The macOS 26
-crash report identifies `SimMetalHost` inside `AppleParavirtGPUMetalIOGPUFamily`.
+CI runs the suite twice on the standard macOS 26 runner with Xcode 26.6. First it runs on a pinned
+iPhone 17 simulator with iOS 26.5, which exercises iOS WebKit, the `tileflow:` scheme transport,
+sessions and resource policy. Hosted iOS simulators crash their GPU process during WebGL draws on
+both ARM and Intel runners, with iOS 18.5 and 26 (rechecked with iOS 26.2 and 26.5 in October
+2026); the macOS 26 crash report identifies `SimMetalHost` inside `AppleParavirtGPUMetalIOGPUFamily`.
+The simulator run therefore excludes `MapIntegrationTests` and `MapStyleIntegrationTests`,
+which draw the map, from its pass. Both run in full in the required Catalyst pass below.
 
-Catalyst coverage does not replace execution on iOS: use the simulator command above on a
-local Mac when changing iOS-specific behavior. The CI build still checks iOS compilation,
-and the Catalyst suite exercises real WebKit rendering, resources, sessions, themes, and
-reloads without skipping tests. Its app and test bundle use ad-hoc signing, so no developer
-certificate is needed. Xcode results are retained in the `swift-integration-results` artifact.
+The complete suite, including map rendering, themes, content restoration and reloads, then runs
+with Mac Catalyst. Catalyst uses the same UIKit SDK sources and test files while rendering
+through the host graphics stack. Use the simulator command above on a local Mac to render on iOS
+itself. Neither CI run accepts skipped tests. The Catalyst app and test bundle use ad-hoc
+signing, so no developer certificate is needed. On failure, Xcode results are retained in the
+`swift-integration-results` artifact.
+
+The hosted macOS image enables Reduce Motion by default. CI disables it in both the macOS and
+UIKit accessibility preference domains. It checks AppKit before launching the test host and the
+camera tests check UIKit and WebKit too: camera cancellation, shot cues and annotation
+tracking need actual intermediate animation frames. Keep motion enabled when running these tests
+locally; their assertions and latency budgets are unchanged.
 
 To run the same Catalyst tests locally, keep the fixture server running and use:
 

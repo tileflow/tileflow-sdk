@@ -1,7 +1,7 @@
 import Foundation
 
 /// Internal wire values keep arbitrary JSON out of the public map API.
-enum JSONValue: Codable, Sendable {
+enum JSONValue: Codable, Equatable, Sendable {
   case null
   case bool(Bool)
   case number(Double)

@@ -1,5 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application android:usesCleartextTraffic="true">
         <activity android:name="dev.tileflow.sdk.MapHostActivity" android:exported="false" />
+        <activity android:name="dev.tileflow.sdk.BridgeHostActivity" android:exported="false" />
+        <activity android:name="dev.tileflow.sdk.CachedMapHostActivity" android:exported="false" />
+        <activity android:name="dev.tileflow.sdk.CameraHostActivity" android:exported="false" />
+        <activity android:name="dev.tileflow.sdk.SceneHostActivity" android:exported="false" />
+        <activity android:name="dev.tileflow.sdk.OfflineMapHostActivity" android:exported="false" />
     </application>
 </manifest>

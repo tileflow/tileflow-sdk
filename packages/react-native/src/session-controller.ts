@@ -14,6 +14,9 @@ const RETRY_AFTER_LIMIT_MS = 15 * 60 * 1000;
 const RETRY_AFTER_SECONDS = /^\d{1,10}$/u;
 // Only these 429 bodies mean the Map or Team is out of quota; any other 429 is rate limiting.
 const QUOTA_CODES = new Set(['COMMERCIAL_MAP_LIMIT_REACHED', 'COMMERCIAL_SPENDING_LIMIT_REACHED']);
+// A refusal reports the service's reason only from a small body with a well-formed code.
+const SERVICE_CODE = /^[A-Z][A-Z0-9_]{0,63}$/u;
+const SERVICE_CODE_BODY_LIMIT = 4096;
 const MOBILE_CREDENTIAL = /^tf_public_[0-9a-f]{48}$/u;
 const MAP_ID = /^map_[A-Za-z0-9_-]{16}$/u;
 const CREDENTIAL_ID = /^key_[A-Za-z0-9_-]{8,80}$/u;
@@ -114,13 +117,17 @@ export type HostedNativeSessionErrorCode =
 
 export type HostedNativeSessionErrorKind = 'terminal' | 'recoverable' | 'cancelled';
 
-/** The request, credential or quota will not succeed again without a change outside the device. */
+/**
+ * The request, credential, Map or quota will not succeed again without a change outside the
+ * device.
+ */
 const TERMINAL_CODES = new Set<HostedNativeSessionErrorCode>([
   'NATIVE_SESSION_INPUT_INVALID',
   'NATIVE_SESSION_CREDENTIAL_REJECTED',
   'NATIVE_SESSION_MAP_MISMATCH',
   'NATIVE_SESSION_MAP_NOT_FOUND',
   'NATIVE_SESSION_QUOTA_EXCEEDED',
+  'NATIVE_SESSION_REJECTED',
 ]);
 
 const ERROR_MESSAGES: Record<HostedNativeSessionErrorCode, string> = {
@@ -143,12 +150,21 @@ const ERROR_MESSAGES: Record<HostedNativeSessionErrorCode, string> = {
 export class HostedNativeSessionError extends Error {
   readonly code: HostedNativeSessionErrorCode;
   readonly kind: HostedNativeSessionErrorKind;
+  /** For `NATIVE_SESSION_REJECTED`, the service's code when its answer carried one. */
+  declare readonly reason?: string;
 
-  constructor(code: HostedNativeSessionErrorCode) {
+  constructor(code: HostedNativeSessionErrorCode, reason?: string) {
     super(ERROR_MESSAGES[code]);
     this.name = 'HostedNativeSessionError';
     this.code = code;
     this.kind = errorKind(code);
+    if (
+      code === 'NATIVE_SESSION_REJECTED' &&
+      typeof reason === 'string' &&
+      SERVICE_CODE.test(reason)
+    ) {
+      this.reason = reason;
+    }
   }
 }
 
@@ -178,6 +194,7 @@ export type HostedNativeResourcePolicy = Readonly<
 type SafeError = Readonly<{
   code: HostedNativeSessionErrorCode;
   kind: HostedNativeSessionErrorKind;
+  reason?: string;
 }>;
 type Lifecycle = 'foreground' | 'background';
 
@@ -422,11 +439,11 @@ export function createHostedNativeSessionController(input: {
     if (retryAt === null || at >= retryAt) failures = Math.min(failures + 1, 16);
     const backoff = Math.min(RETRY_INITIAL_MS * 2 ** (failures - 1), RETRY_LIMIT_MS);
     retryAt = Math.max(retryAt ?? at, at + Math.max(backoff, retryAfterDelays.get(error) ?? 0));
-    retryError = Object.freeze({code: error.code, kind: error.kind});
+    retryError = safeError(error);
   }
 
   function rotateIfRequired(at: number) {
-    if (terminal) throw new HostedNativeSessionError(terminal.code);
+    if (terminal) throw errorFrom(terminal);
     if (!activeSession || binding.kind !== 'hosted') return;
     if (
       at - activeSession.startedAt < ROTATION_AGE_MS &&
@@ -467,7 +484,7 @@ export function createHostedNativeSessionController(input: {
   }
 
   async function ensureAuthority(session: SessionRecord, at: number) {
-    if (terminal) throw new HostedNativeSessionError(terminal.code);
+    if (terminal) throw errorFrom(terminal);
     if (
       session.authority &&
       session.authority.clockEpoch === clock.epoch &&
@@ -487,7 +504,7 @@ export function createHostedNativeSessionController(input: {
       ) {
         return {authority: session.authority, session};
       }
-      throw new HostedNativeSessionError(retryError.code);
+      throw errorFrom(retryError);
     }
 
     const operationBinding = binding;
@@ -515,7 +532,7 @@ export function createHostedNativeSessionController(input: {
           const normalized = abort.signal.aborted ? abort.error() : normalizeError(error);
           const target = latestSession(session);
           if (normalized.kind === 'terminal' && binding === operationBinding && !terminal) {
-            const failure = Object.freeze({code: normalized.code, kind: normalized.kind});
+            const failure = safeError(normalized);
             terminal = failure;
             const rejectedSession = activeSession;
             if (rejectedSession) {
@@ -524,7 +541,9 @@ export function createHostedNativeSessionController(input: {
             }
             // A rejection applies to the binding, including bootstraps across age rotation.
             // Snapshot before callbacks: cancellation observers may replace the binding.
-            for (const pending of [...operations]) pending.abort(failure.code);
+            for (const pending of [...operations]) {
+              pending.abort(failure.code, failure.reason);
+            }
             if (binding === operationBinding && rejectedSession) {
               publishSession(rejectedSession, 'error', failure);
             }
@@ -536,7 +555,7 @@ export function createHostedNativeSessionController(input: {
             normalized.code !== 'NATIVE_SESSION_REPLACED' &&
             normalized.code !== 'NATIVE_SESSION_DISPOSED'
           ) {
-            target.error = Object.freeze({code: normalized.code, kind: normalized.kind});
+            target.error = safeError(normalized);
             publishSession(target, 'error', target.error);
           }
           throw normalized;
@@ -569,7 +588,7 @@ export function createHostedNativeSessionController(input: {
     if (abort.signal.aborted) throw abort.error();
     const expectedSurfaceId = session.authority?.public.surfaceId ?? session.requestedSurfaceId;
     const response = await fetchResponse(hostedBinding, session, expectedSurfaceId, abort);
-    const source = await readBoundedResponse(response, abort);
+    const {source, size} = await readBoundedResponse(response, abort);
     let body: unknown;
     try {
       body = source.length ? JSON.parse(source) : null;
@@ -581,14 +600,16 @@ export function createHostedNativeSessionController(input: {
       body = null;
     }
 
-    if (response.status === 409 && allowRestart && isExactRestart(body, session.sessionId)) {
+    if (response.status === 409 && isExactRestart(body, session.sessionId)) {
+      // A second restart in one bootstrap waits for the retry delay; it is not a refusal.
+      if (!allowRestart) throw new HostedNativeSessionError('NATIVE_SESSION_UNAVAILABLE');
       assertCurrentSession(session, hostedBinding);
       const replacement = redirectSession(session, readClock());
       if (abort.signal.aborted) throw abort.error();
       return bootstrap(replacement, hostedBinding, abort, false, false);
     }
     if (response.status !== 201) {
-      const failure = statusError(response.status, body);
+      const failure = statusError(response.status, body, size);
       const delay = retryAfterMs(response.headers, now);
       if (delay !== null) retryAfterDelays.set(failure, delay);
       throw failure;
@@ -746,7 +767,7 @@ export function createHostedNativeSessionController(input: {
       if (bindingGeneration !== expectedGeneration) {
         throw new HostedNativeSessionError('NATIVE_SESSION_REPLACED');
       }
-      if (terminal) throw new HostedNativeSessionError(terminal.code);
+      if (terminal) throw errorFrom(terminal);
       checkedAt = readClock();
       if (
         resolved.authority.clockEpoch === clock.epoch &&
@@ -828,7 +849,7 @@ export function createHostedNativeSessionController(input: {
       if (disposed) throw new HostedNativeSessionError('NATIVE_SESSION_DISPOSED');
       lifecycle = 'foreground';
       if (terminal) {
-        const error = new HostedNativeSessionError(terminal.code);
+        const error = errorFrom(terminal);
         publish(currentSnapshot());
         throw error;
       }
@@ -1211,7 +1232,7 @@ async function readBoundedResponse(
     bytes.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return decodeUtf8(bytes);
+  return {source: decodeUtf8(bytes), size};
 }
 
 function decodeUtf8(bytes: Uint8Array) {
@@ -1269,7 +1290,7 @@ function hasNoStore(value: string | null) {
   );
 }
 
-function statusError(status: number, body: unknown) {
+function statusError(status: number, body: unknown, size: number) {
   if (status === 401) return new HostedNativeSessionError('NATIVE_SESSION_CREDENTIAL_REJECTED');
   if (status === 403) return new HostedNativeSessionError('NATIVE_SESSION_MAP_MISMATCH');
   if (status === 404) return new HostedNativeSessionError('NATIVE_SESSION_MAP_NOT_FOUND');
@@ -1283,7 +1304,30 @@ function statusError(status: number, body: unknown) {
   if (status === 408 || (status >= 500 && status <= 599)) {
     return new HostedNativeSessionError('NATIVE_SESSION_UNAVAILABLE');
   }
-  return new HostedNativeSessionError('NATIVE_SESSION_REJECTED');
+  if (status >= 400 && status <= 499) {
+    // Any other refusal, such as a Map without session delivery or a conflicting header, repeats
+    // until something outside the device changes.
+    return new HostedNativeSessionError(
+      'NATIVE_SESSION_REJECTED',
+      size <= SERVICE_CODE_BODY_LIMIT && isRecord(body) && typeof body.code === 'string'
+        ? body.code
+        : undefined,
+    );
+  }
+  return new HostedNativeSessionError('NATIVE_SESSION_RESPONSE_INVALID');
+}
+
+/** The safe, frozen projection of an error that state and observers carry. */
+function safeError(error: HostedNativeSessionError): SafeError {
+  return Object.freeze(
+    error.reason === undefined
+      ? {code: error.code, kind: error.kind}
+      : {code: error.code, kind: error.kind, reason: error.reason},
+  );
+}
+
+function errorFrom(error: SafeError) {
+  return new HostedNativeSessionError(error.code, error.reason);
 }
 
 const retryAfterDelays = new WeakMap<HostedNativeSessionError, number>();
@@ -1350,6 +1394,7 @@ class SessionAbortController {
   readonly signal: HostedNativeSessionAbortSignal;
   #aborted = false;
   #code: HostedNativeSessionErrorCode = 'NATIVE_SESSION_REPLACED';
+  #reason: string | undefined;
   readonly #listeners = new Set<() => void>();
 
   constructor() {
@@ -1367,9 +1412,10 @@ class SessionAbortController {
     });
   }
 
-  abort(code: HostedNativeSessionErrorCode) {
+  abort(code: HostedNativeSessionErrorCode, reason?: string) {
     if (this.#aborted) return;
     this.#code = code;
+    this.#reason = reason;
     this.#aborted = true;
     for (const listener of [...this.#listeners]) {
       try {
@@ -1382,7 +1428,7 @@ class SessionAbortController {
   }
 
   error() {
-    return new HostedNativeSessionError(this.#code);
+    return new HostedNativeSessionError(this.#code, this.#reason);
   }
 }
 

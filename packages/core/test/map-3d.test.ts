@@ -104,3 +104,122 @@ test('a 2D map settling reads its style once per style, and mounts a later 3D st
   assert.ok(map.layers.has(tileflowBuildings3DLayerId));
   scene.dispose();
 });
+
+test('a view mode change passes its transition to the scene, so buildings rise or descend', async () => {
+  const map = fakeMap(buildings);
+  const changes: unknown[] = [];
+  const scene = attachTileflowMap3D({
+    map,
+    viewMode: '2d',
+    load: () =>
+      Promise.resolve({
+        createTileflowMap3D: () =>
+          ({
+            show: (change?: unknown) => (changes.push(['show', change]), Promise.resolve()),
+            hide: (change?: unknown) => (changes.push(['hide', change]), Promise.resolve()),
+            setVegetation() {},
+            dispose() {},
+          }) as never,
+      }),
+  });
+  await mounted();
+  const rise = {transition: {duration: 800, mode: 'grow' as const}};
+  scene.setViewMode('3d', rise);
+  scene.setViewMode('3d', rise);
+  scene.setViewMode('2d');
+  assert.deepEqual(changes, [
+    ['show', rise],
+    ['hide', undefined],
+  ]);
+  scene.dispose();
+});
+
+function cameraMap(metadata: Record<string, unknown>) {
+  const map = fakeMap(metadata);
+  let fov = 36.87;
+  let writes = 0;
+  return Object.assign(map, {
+    getPitch: () => 0,
+    getCanvas: () => ({clientHeight: 900}),
+    getVerticalFieldOfView: () => fov,
+    setVerticalFieldOfView(value: number) {
+      fov = value;
+      writes++;
+      map.fire('move');
+    },
+    get writes() {
+      return writes;
+    },
+  });
+}
+const adaptive = {...buildings, 'tileflow:camera': {version: 1, adaptivePerspective: true}};
+
+test('the scene restores flat footprints when returning to 2D and on disposal', async () => {
+  const native = {visibility: 'visible'};
+  const map = fakeMap({
+    'tileflow:buildings': {
+      version: 1,
+      source: 'tileflow',
+      layers: {building: 'building'},
+      color: '#dddddd',
+      flatLayers: [{id: 'footprint', visible: true}],
+    },
+  });
+  const originalLayer = map.getLayer;
+  Object.assign(map, {
+    getLayer: (id: string) => (id === 'footprint' ? native : originalLayer(id)),
+    getLayersOrder: () => ['footprint'],
+    getCanvas: () => ({clientHeight: 900, getContext: () => ({})}),
+    getLayoutProperty: () => native.visibility,
+    setLayoutProperty: (_id: string, _property: string, value: string) => {
+      native.visibility = value;
+    },
+  });
+  const attachment = attachTileflowMap3D({map, load});
+  await mounted();
+  assert.equal(native.visibility, 'none');
+  attachment.setViewMode('2d');
+  assert.equal(native.visibility, 'visible');
+  attachment.setViewMode('3d');
+  assert.equal(native.visibility, 'none');
+  attachment.dispose();
+  assert.equal(native.visibility, 'visible');
+});
+
+test('camera precedence is caller, authored map, then false; switching view restores the lens', async () => {
+  const map = cameraMap(buildings);
+  const attachment = attachTileflowMap3D({map, load});
+  await mounted();
+  assert.equal(map.getVerticalFieldOfView(), 36.87);
+  map.loadStyle(adaptive);
+  assert.ok(map.getVerticalFieldOfView() < 7);
+  attachment.setAdaptivePerspective(false);
+  assert.equal(map.getVerticalFieldOfView(), 36.87);
+  map.loadStyle(adaptive);
+  assert.equal(map.getVerticalFieldOfView(), 36.87);
+  attachment.setAdaptivePerspective(undefined);
+  assert.ok(map.getVerticalFieldOfView() < 7);
+  attachment.setViewMode('2d');
+  assert.equal(map.getVerticalFieldOfView(), 36.87);
+  attachment.setViewMode('3d');
+  assert.ok(map.getVerticalFieldOfView() < 7);
+  map.loadStyle(buildings);
+  assert.equal(map.getVerticalFieldOfView(), 36.87);
+  attachment.setAdaptivePerspective(true);
+  assert.ok(map.getVerticalFieldOfView() < 7);
+  attachment.dispose();
+  assert.equal(map.getVerticalFieldOfView(), 36.87);
+});
+
+test('caller camera changes before lazy loading win, and removal never writes the destroyed camera', async () => {
+  const map = cameraMap(adaptive);
+  const attachment = attachTileflowMap3D({map, load, camera: {adaptivePerspective: false}});
+  attachment.setAdaptivePerspective(true);
+  await mounted();
+  assert.ok(map.getVerticalFieldOfView() < 7);
+  const before = map.getVerticalFieldOfView();
+  map.fire('remove');
+  attachment.dispose();
+  assert.equal(attachment.scene, undefined);
+  assert.equal(map.getVerticalFieldOfView(), before);
+});

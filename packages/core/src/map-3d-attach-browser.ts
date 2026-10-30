@@ -1,3 +1,4 @@
+import type {TileflowBuildings3DChange} from './buildings-3d-browser';
 import {tileflowBuildingsMetadataKey} from './buildings-3d-design';
 import type {TileflowMap3D, TileflowMap3DOptions} from './map-3d-browser';
 import {tileflowStreetLightsMetadataKey} from './street-lights';
@@ -61,10 +62,15 @@ export type AttachTileflowMap3DOptions = TileflowMap3DOptions & {
 export type TileflowMap3DAttachment = {
   /** The mounted scene, once a style that declares 3D has loaded the renderers. */
   readonly scene: TileflowMap3D | undefined;
-  /** `3d` shows the scene; `2d` hides it and draws `auto` vegetation flat. */
-  setViewMode(mode: TileflowViewMode): void;
+  /**
+   * `3d` shows the scene; `2d` hides it and draws `auto` vegetation flat. A transition animates the
+   * buildings' rise or descent; without one the change is immediate.
+   */
+  setViewMode(mode: TileflowViewMode, change?: TileflowBuildings3DChange): void;
   /** Overrides the map's vegetation visibility; undefined restores the authored default. */
   setVegetation(visible: boolean | undefined): void;
+  /** Overrides the camera policy; undefined restores the map's authored default. */
+  setAdaptivePerspective(enabled: boolean | undefined): void;
   dispose(): void;
 };
 
@@ -76,6 +82,7 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
   const {map, load, onError, ...sceneOptions} = options;
   let viewMode: TileflowViewMode = options.viewMode ?? '3d';
   let vegetation = options.vegetation;
+  let adaptivePerspective = options.camera?.adaptivePerspective;
   let scene: TileflowMap3D | undefined;
   let loading = false;
   let disposed = false;
@@ -94,7 +101,13 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
     load()
       .then(({createTileflowMap3D}) => {
         if (disposed) return;
-        scene = createTileflowMap3D({...sceneOptions, map, viewMode, vegetation});
+        scene = createTileflowMap3D({
+          ...sceneOptions,
+          map,
+          viewMode,
+          vegetation,
+          camera: {adaptivePerspective},
+        });
       })
       .catch((error: unknown) => {
         if (!disposed) onError?.(error);
@@ -113,29 +126,38 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
     if (disposed) return;
     disposed = true;
     stopWatching();
-    map.off('remove', dispose);
+    map.off('remove', onRemove);
     scene?.dispose();
     scene = undefined;
+  }
+  function onRemove() {
+    // The mounted scene handles removal itself. Do not restore its lens on a destroyed map.
+    scene = undefined;
+    dispose();
   }
 
   map.on('styledata', restyle);
   map.on('style.load', restyle);
   map.on('idle', check);
-  map.on('remove', dispose);
+  map.on('remove', onRemove);
   check();
 
   return {
     get scene() {
       return scene;
     },
-    setViewMode(mode) {
+    setViewMode(mode, change) {
       if (mode === viewMode) return;
       viewMode = mode;
-      if (scene) void (mode === '3d' ? scene.show() : scene.hide());
+      if (scene) void (mode === '3d' ? scene.show(change) : scene.hide(change));
     },
     setVegetation(visible) {
       vegetation = visible;
       scene?.setVegetation(visible);
+    },
+    setAdaptivePerspective(enabled) {
+      adaptivePerspective = enabled;
+      scene?.setAdaptivePerspective(enabled);
     },
     dispose,
   };

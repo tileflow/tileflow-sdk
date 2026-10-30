@@ -51,7 +51,7 @@ test('staged build and pack adapters use pnpm, fresh output and license inputs w
     'pnpm-lock.yaml',
     'pnpm-workspace.yaml',
     'tsconfig.base.json',
-    'docs/modules-api-reference.json',
+    'packages/core/reference/modules-api-reference.json',
   ]) {
     await writeFixture(join(repository, file), '{}\n');
   }

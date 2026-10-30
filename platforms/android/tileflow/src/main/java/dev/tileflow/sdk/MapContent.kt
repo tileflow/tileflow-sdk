@@ -1,7 +1,7 @@
 package dev.tileflow.sdk
 
-import kotlin.math.abs
-import kotlin.math.floor
+import dev.tileflow.sdk.bridge.DataChannel
+import dev.tileflow.sdk.bridge.ProtocolContract
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -37,43 +37,120 @@ public enum class TileflowGeoJSONLayerKind(internal val wireName: String) {
     FILL("fill"),
 }
 
-/** An application-owned FeatureCollection. The protocol bounds each update. */
-public class TileflowGeoJSONLayer(
+/**
+ * An application-owned GeoJSON FeatureCollection drawn as one layer.
+ *
+ * The GeoJSON travels to the renderer over the SDK's data channel rather than in a message, up to
+ * 32 MiB per layer and 64 MiB per update. The renderer validates it against RFC 7946 (without
+ * GeometryCollection or foreign members, with closed rings and positions within range); invalid
+ * GeoJSON makes [TileflowMapView.setContent] fail with [TileflowErrorCode.INVALID_REQUEST] and the
+ * reason `invalidGeoJSON`, leaving the content as it was.
+ *
+ * @property ink A route ink of the theme on screen, drawn instead of [color] and following theme
+ *   changes and blends; the glow and core inks also take the theme's opacity for them.
+ * @property placement [TileflowLayerPlacement.TOP] draws above the whole map;
+ *   [TileflowLayerPlacement.GROUND] lies under its labels and 3D content.
+ * @property occludedOpacity For a line on the ground, how much of it shows where 3D content hides
+ *   it, from 0 to 1.
+ * @property progress For a line, the stretch of it that shows; [animateLineProgress] moves it.
+ */
+public class TileflowGeoJSONLayer
+private constructor(
     public val id: String,
-    geoJSON: String,
+    internal val bytes: ByteArray,
+    knownDigest: String?,
     public val kind: TileflowGeoJSONLayerKind,
-    public val color: String = "#e9573f",
-    public val size: Double = 6.0,
-    public val opacity: Double = 1.0,
+    public val color: String,
+    public val size: Double,
+    public val opacity: Double,
+    public val ink: TileflowRouteInk?,
+    public val placement: TileflowLayerPlacement,
+    public val occludedOpacity: Double,
+    public val progress: TileflowLineProgress?,
 ) {
-    private val data: JSONObject
+    @JvmOverloads
+    public constructor(
+        id: String,
+        geoJSON: String,
+        kind: TileflowGeoJSONLayerKind,
+        color: String = "#e9573f",
+        size: Double = 6.0,
+        opacity: Double = 1.0,
+        ink: TileflowRouteInk? = null,
+        placement: TileflowLayerPlacement = TileflowLayerPlacement.TOP,
+        occludedOpacity: Double = 0.0,
+        progress: TileflowLineProgress? = null,
+    ) : this(
+        id,
+        geoJSON.toByteArray(Charsets.UTF_8),
+        null,
+        kind,
+        color,
+        size,
+        opacity,
+        ink,
+        placement,
+        occludedOpacity,
+        progress,
+    )
 
     init {
-        try {
-            require(
-                Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$").matches(id) &&
-                    geoJSON.toByteArray().size <= 49_152
-            )
-            require(
-                Regex("^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$").matches(color) &&
-                    size in 0.0..64.0 &&
-                    opacity in 0.0..1.0
-            )
-            data = JSONObject(geoJSON)
-            require(GeoJSONContract.isFeatureCollection(data))
-        } catch (_: Exception) {
+        if (
+            !Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$").matches(id) ||
+                !Regex("^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$").matches(color) ||
+                size !in 0.0..64.0 ||
+                opacity !in 0.0..1.0 ||
+                occludedOpacity !in 0.0..1.0 ||
+                (progress != null && kind != TileflowGeoJSONLayerKind.LINE) ||
+                (occludedOpacity > 0 &&
+                    (kind != TileflowGeoJSONLayerKind.LINE ||
+                        placement != TileflowLayerPlacement.GROUND))
+        )
             throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
-        }
+        progress?.validate()
+        if (bytes.isEmpty() || bytes.size > ProtocolContract.MAXIMUM_DATA_BYTES)
+            throw TileflowMapException(
+                TileflowErrorCode.INVALID_REQUEST,
+                TileflowErrorContext.of(
+                    ProtocolContract.ErrorReason.DATA_TOO_LARGE,
+                    ProtocolContract.MAXIMUM_DATA_BYTES,
+                ),
+            )
     }
 
-    internal fun json(): JSONObject =
+    /** Identifies the data, so layers that share it, or keep it across updates, send it once. */
+    internal val digest: String = knownDigest ?: DataChannel.digest(bytes)
+
+    /** The same layer drawing another stretch of its line, sharing its data. */
+    internal fun withProgress(next: TileflowLineProgress?): TileflowGeoJSONLayer =
+        TileflowGeoJSONLayer(
+            id,
+            bytes,
+            digest,
+            kind,
+            color,
+            size,
+            opacity,
+            ink,
+            placement,
+            occludedOpacity,
+            next,
+        )
+
+    internal fun json(data: DataChannel.Reference): JSONObject =
         JSONObject()
             .put("id", id)
-            .put("data", data)
+            .put("data", data.json())
             .put("kind", kind.wireName)
             .put("color", color)
             .put("size", size)
             .put("opacity", opacity)
+            .put("placement", placement.wireName)
+            .put("occludedOpacity", occludedOpacity)
+            .apply {
+                ink?.let { put("ink", it.wireName) }
+                progress?.let { put("progress", it.json()) }
+            }
 }
 
 public data class TileflowPoiSelection(
@@ -87,7 +164,7 @@ internal data class MapContent(
     val annotations: List<TileflowAnnotation> = emptyList(),
     val overlays: List<TileflowGeoJSONLayer> = emptyList(),
 ) {
-    fun json(): JSONObject {
+    fun validate() {
         if (
             annotations.size > 128 ||
                 overlays.size > 16 ||
@@ -95,116 +172,41 @@ internal data class MapContent(
                 overlays.map { it.id }.toSet().size != overlays.size
         )
             throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
-        val value =
-            JSONObject()
-                .put("annotations", JSONArray(annotations.map { it.json() }))
-                .put("overlays", JSONArray(overlays.map { it.json() }))
-        if (value.toString().toByteArray().size > 60_000)
-            throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
-        return value
-    }
-}
-
-/**
- * The renderer's GeoJSON contract, checked before content crosses the bridge so invalid content
- * fails at the call instead of in the renderer.
- */
-internal object GeoJSONContract {
-    fun isFeatureCollection(value: Any?): Boolean =
-        value is JSONObject &&
-            value.opt("type") == "FeatureCollection" &&
-            keys(value, "type", "features", "bbox") &&
-            isBoundingBox(value) &&
-            items(value.opt("features"), 0..2000)?.all(::isFeature) == true
-
-    private fun isFeature(value: Any?): Boolean {
-        if (
-            value !is JSONObject ||
-                value.opt("type") != "Feature" ||
-                !keys(value, "type", "id", "geometry", "properties", "bbox") ||
-                !isBoundingBox(value) ||
-                !value.has("geometry") ||
-                !value.has("properties")
-        )
-            return false
-        when (val id = value.opt("id")) {
-            null,
-            is String -> if (id != null && id.length > 128) return false
-            is Number ->
-                id.toDouble().let {
-                    if (it != floor(it) || abs(it) > 9_007_199_254_740_991.0) return false
-                }
-            else -> return false
-        }
-        when (val properties = value.get("properties")) {
-            JSONObject.NULL -> Unit
-            is JSONObject ->
-                for (key in properties.keys()) {
-                    if (key.length > 128 || depth(properties.get(key)) > 64) return false
-                }
-            else -> return false
-        }
-        val geometry = value.get("geometry")
-        return geometry == JSONObject.NULL || isGeometry(geometry)
+        annotations.forEach { it.json() }
+        val total = overlays.distinctBy { it.digest }.sumOf { it.bytes.size.toLong() }
+        if (total > ProtocolContract.MAXIMUM_DATA_TOTAL_BYTES)
+            throw TileflowMapException(
+                TileflowErrorCode.INVALID_REQUEST,
+                TileflowErrorContext.of(
+                    ProtocolContract.ErrorReason.DATA_TOO_LARGE,
+                    ProtocolContract.MAXIMUM_DATA_TOTAL_BYTES,
+                ),
+            )
     }
 
-    private fun isGeometry(value: Any?): Boolean {
-        if (
-            value !is JSONObject ||
-                !keys(value, "type", "coordinates", "bbox") ||
-                !isBoundingBox(value) ||
-                !value.has("coordinates")
-        )
-            return false
-        val coordinates = value.get("coordinates")
-        return when (value.opt("type")) {
-            "Point" -> isPosition(coordinates)
-            "MultiPoint" -> items(coordinates, 0..2000)?.all(::isPosition) == true
-            "LineString" -> isLine(coordinates)
-            "MultiLineString" -> items(coordinates, 0..128)?.all(::isLine) == true
-            "Polygon" -> isPolygon(coordinates)
-            "MultiPolygon" -> items(coordinates, 0..128)?.all(::isPolygon) == true
-            else -> false
+    /**
+     * The command payload, with each distinct layer's GeoJSON registered on the data channel. The
+     * caller releases the references when the request settles.
+     */
+    fun json(channel: DataChannel): Pair<JSONObject, List<DataChannel.Reference>> {
+        validate()
+        val annotations = JSONArray(annotations.map { it.json() })
+        val references = mutableListOf<DataChannel.Reference>()
+        try {
+            val overlays =
+                JSONArray(
+                    overlays.map { layer ->
+                        val reference =
+                            channel.register(layer.bytes, layer.digest, "application/geo+json")
+                        references += reference
+                        layer.json(reference)
+                    }
+                )
+            return JSONObject().put("annotations", annotations).put("overlays", overlays) to
+                references
+        } catch (error: Exception) {
+            channel.release(references)
+            throw error
         }
     }
-
-    private fun position(value: Any?): List<Double>? {
-        val numbers = items(value, 2..3)?.map { (it as? Number)?.toDouble() ?: return null }
-        return numbers?.takeIf {
-            it.all(Double::isFinite) && it[0] in -180.0..180.0 && it[1] in -90.0..90.0
-        }
-    }
-
-    private fun isPosition(value: Any?): Boolean = position(value) != null
-
-    private fun isLine(value: Any?): Boolean = items(value, 2..4000)?.all(::isPosition) == true
-
-    private fun isRing(value: Any?): Boolean {
-        val positions = items(value, 4..4000)?.map { position(it) ?: return false } ?: return false
-        return positions.first() == positions.last()
-    }
-
-    private fun isPolygon(value: Any?): Boolean = items(value, 1..128)?.all(::isRing) == true
-
-    private fun isBoundingBox(value: JSONObject): Boolean {
-        if (!value.has("bbox")) return true
-        val box = items(value.get("bbox"), 4..6) ?: return false
-        return box.size != 5 && box.all { (it as? Number)?.toDouble()?.isFinite() == true }
-    }
-
-    private fun keys(value: JSONObject, vararg allowed: String): Boolean =
-        value.keys().asSequence().all { it in allowed }
-
-    private fun items(value: Any?, count: IntRange): List<Any?>? =
-        (value as? JSONArray)?.takeIf { it.length() in count }?.let { array ->
-            (0 until array.length()).map(array::get)
-        }
-
-    private fun depth(value: Any?): Int =
-        when (value) {
-            is JSONArray -> 1 + ((0 until value.length()).maxOfOrNull { depth(value.get(it)) } ?: 0)
-            is JSONObject ->
-                1 + (value.keys().asSequence().maxOfOrNull { depth(value.get(it)) } ?: 0)
-            else -> 0
-        }
 }

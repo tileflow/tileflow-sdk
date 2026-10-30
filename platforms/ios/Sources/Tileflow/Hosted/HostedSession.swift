@@ -7,7 +7,7 @@ struct HostedAdmission: Sendable {
 
 /// One logical map instance owns this actor across renderer generations.
 actor HostedSession {
-  private let client: TileflowClient
+  private let endpoint: HostedEndpoint
   private let mapID: String
   private let surfaceID: String
   private let lifetime: SessionLifetime
@@ -28,12 +28,12 @@ actor HostedSession {
   private var visibilityWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
   init(
-    client: TileflowClient, mapID: String, surfaceID: String,
+    endpoint: HostedEndpoint, mapID: String, surfaceID: String,
     transport: any NativeHTTPTransporting = NativeHTTPTransport(maximumBytes: 65_536),
     now: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
     waitBudget: Duration = .seconds(30)
   ) {
-    self.client = client
+    self.endpoint = endpoint
     self.mapID = mapID
     self.surfaceID = surfaceID
     self.lifetime = SessionLifetime(transport: transport)
@@ -99,7 +99,7 @@ actor HostedSession {
     }
     try publicPolicy.validate(url)
     // An API endpoint can never silently become anonymous when its signed origin is missing.
-    guard ResourcePolicy.origin(url) != ResourcePolicy.origin(client.apiOrigin) else {
+    guard ResourcePolicy.origin(url) != ResourcePolicy.origin(endpoint.apiOrigin) else {
       throw TileflowMapError.accessDenied
     }
     return HostedAdmission(grant: nil, timeout: 30)
@@ -190,7 +190,7 @@ actor HostedSession {
     }
   }
 
-  /// Credential, access and quota failures stop the session; anything else delays the next
+  /// Credential, access, quota and other refusals stop the session; anything else delays the next
   /// bootstrap by 1 s doubling to 60 s, or longer when the service sends Retry-After.
   private func record(_ error: TileflowMapError, retryAfter: TimeInterval?) {
     guard terminal == nil, !lifetime.isClosed, !Task.isCancelled else { return }
@@ -215,7 +215,7 @@ actor HostedSession {
       try Task.checkCancellation()
       let expectedSession = sessionID
       let requestStarted = now()
-      var request = try client.sessionRequest(
+      var request = try endpoint.sessionRequest(
         mapID: mapID, sessionID: expectedSession, surfaceID: surfaceID)
       // A stalled bootstrap ends well within the budget of the requests waiting for it.
       request.timeoutInterval = 10
@@ -226,9 +226,11 @@ actor HostedSession {
       try checkActive()
       try Task.checkCancellation()
       guard sessionID == expectedSession else { throw TileflowMapError.disposed }
-      if response.status == 409, attempt == 0,
+      if response.status == 409,
         HostedContract.isRestart(response.bytes, sessionID: expectedSession)
       {
+        // A second restart in one bootstrap waits for the retry delay; it is not a refusal.
+        guard attempt == 0 else { throw TileflowMapError.sessionUnavailable }
         rotate()
         continue
       }
@@ -238,7 +240,8 @@ actor HostedSession {
           retryAfter: HostedContract.retryAfter(response.headers["Retry-After"], now: Date()))
       }
       let authority = try HostedContract.parse(
-        response.bytes, mapID: mapID, sessionID: expectedSession, surfaceID: surfaceID)
+        response.bytes, mapID: mapID, sessionID: expectedSession, surfaceID: surfaceID,
+        allowsLoopbackHTTP: endpoint.isLoopbackHTTP)
       if let lastServerTime, authority.serverTime < lastServerTime {
         throw TileflowMapError.invalidSessionResponse
       }

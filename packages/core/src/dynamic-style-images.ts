@@ -15,6 +15,11 @@ export type TileflowDynamicImage = Readonly<{
   height: number;
   /** Physical pixels per logical pixel. Defaults to 1; fixed until disposal. */
   pixelRatio?: number;
+  /**
+   * Whether the pixels are a signed distance field, which symbol layers recolour with `icon-color`
+   * and `icon-halo-color`. Defaults to false; fixed until disposal.
+   */
+  sdf?: boolean;
   /** Controller states that invalidate this image, including interpolated values. */
   states?: readonly string[];
   /** Synchronous RGBA pixels; undefined keeps the previous pixels (initially transparent). */
@@ -43,7 +48,7 @@ export type TileflowDynamicImageMap = {
 
 type Pixels = {width: number; height: number; data: Uint8Array};
 type ImageMap = TileflowDynamicImageMap & {
-  addImage(name: string, pixels: Pixels, options: {pixelRatio: number}): unknown;
+  addImage(name: string, pixels: Pixels, options: {pixelRatio: number; sdf?: boolean}): unknown;
   getImage(name: string): unknown;
   getStyle(): unknown;
   removeImage(name: string): unknown;
@@ -174,7 +179,11 @@ export function createTileflowDynamicImageRegistry(
     ) {
       throw new Error(`Dynamic image "${entry.name}" conflicts with an existing image owner.`);
     }
-    if (!existing) map.addImage(entry.name, entry.pixels, {pixelRatio: entry.pixelRatio});
+    if (!existing)
+      map.addImage(entry.name, entry.pixels, {
+        pixelRatio: entry.pixelRatio,
+        ...(entry.definition.sdf ? {sdf: true} : {}),
+      });
     else if (changed) map.updateImage(entry.name, entry.pixels);
     entry.installed = map.getImage(entry.name);
     entry.recoveryImage = undefined;

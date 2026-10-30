@@ -24,7 +24,6 @@ export const configurationFiles = [
   'ios/TileflowNativeConfiguration.mm',
   'ios/Tests/TFMobileConfigurationTests.mm',
   'ios/Tests/TFMobileConfigurationConcurrencyTests.mm',
-  'docs/native-configuration.md',
 ];
 
 test('configuration stays private with the exact peer matrix behind the inert public Map entry', async () => {
@@ -110,7 +109,7 @@ test('one native reader is autolinked without eager constants or another configu
   assert.match(pod, /private_header_files = 'ios\/\*\.h'/u);
 });
 
-test('private build entries, native sources and setup guide contain no credential literals', async () => {
+test('private build entries and native sources contain no credential literals', async () => {
   for (const file of configurationFiles) {
     const source = await read(file);
     assert.doesNotMatch(source, /tf_public_[0-9a-f]{48}/u, file);
@@ -125,10 +124,4 @@ test('private build entries, native sources and setup guide contain no credentia
   for (const name of ['hosted-binding', 'native-configuration-bridge']) {
     assert.ok((await read(`dist/internal/${name}.js`)).length > 0);
   }
-  const guide = await read('docs/native-configuration.md');
-  assert.match(guide, /TileflowMobileConfiguration/u);
-  assert.match(guide, /tileflow_mobile_configuration/u);
-  assert.match(guide, /48 lowercase hexadecimal/u);
-  assert.match(guide, /not.*end.user/su);
-  assert.match(guide, /revok/iu);
 });

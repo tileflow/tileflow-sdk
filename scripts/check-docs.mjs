@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {execFileSync} from 'node:child_process';
 import {existsSync} from 'node:fs';
-import {mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises';
+import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {dirname, join, relative, resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
@@ -78,28 +78,23 @@ export function localLinkTarget(url, source, directory = root) {
   return resolve(dirname(source), path);
 }
 
-async function markdownFiles(directory) {
-  if (!existsSync(directory)) return [];
-  const result = [];
-  for (const entry of await readdir(directory, {withFileTypes: true})) {
-    const path = join(directory, entry.name);
-    if (entry.isDirectory()) result.push(...(await markdownFiles(path)));
-    else if (entry.name.endsWith('.md')) result.push(path);
+export function assertPublicPackageFiles(files, name) {
+  for (const path of files) {
+    assert.ok(
+      !/(?:^|\/)(?:docs|documentation|plans|planning)(?:\/|$)/u.test(path),
+      `${name}: internal documentation must not enter the package: ${path}`,
+    );
   }
-  return result.sort();
 }
 
 async function documents() {
-  const result = ['README.md', 'llms.txt', 'docs/documentation.md'].map((path) => ({
+  const result = ['README.md', 'llms.txt'].map((path) => ({
     path: join(root, path),
     directory: 'cli',
   }));
   for (const entry of publicPackageCatalog) {
     const directory = join(root, 'packages', entry.directory);
     result.push({path: join(directory, 'README.md'), ...entry, readme: true});
-    for (const path of await markdownFiles(join(directory, 'docs'))) {
-      result.push({path, directory: entry.directory});
-    }
   }
   return result;
 }
@@ -113,10 +108,7 @@ async function checkPackaging(entry) {
   );
   const packed = new Set(JSON.parse(output)[0].files.map((file) => file.path));
   assert.ok(packed.has('README.md'), `${entry.name}: README.md is missing from the pack list`);
-  for (const path of await markdownFiles(join(directory, 'docs'))) {
-    const name = relative(directory, path).replaceAll('\\', '/');
-    assert.ok(packed.has(name), `${entry.name}: ${name} is missing from the pack list`);
-  }
+  assertPublicPackageFiles(packed, entry.name);
 }
 
 function declarationTarget(value) {

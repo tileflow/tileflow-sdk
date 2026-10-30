@@ -190,7 +190,9 @@ jobs:
 
       - name: Run cross-platform CLI browser suite
         if: matrix.suite == 'cli'
-        run: pnpm --filter tileflow run test
+        # Comparison previews compile two maps; bound contention on Windows without
+        # relaxing their startup deadlines or dropping any cross-platform tests.
+        run: pnpm --filter tileflow exec tsx --test ${{ runner.os == 'Windows' && '--test-concurrency=2' || '' }} 'test/*.test.ts'
         env:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
           TILEFLOW_RUN_BROWSER_TESTS: '1'
@@ -246,10 +248,37 @@ jobs:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
         run: pnpm run smoke:capture-public
 
-  swift:
-    name: Swift SDK integration
-    runs-on: macos-26
-    timeout-minutes: 30
+  mobile-areas:
+    name: Mobile change areas
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      runtime: ${{ steps.areas.outputs.runtime }}
+      ios: ${{ steps.areas.outputs.ios }}
+      android: ${{ steps.areas.outputs.android }}
+      react-native: ${{ steps.areas.outputs.reactNative }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Test mobile job selection
+        run: node --test scripts/mobile-ci-areas.test.mjs
+
+      - name: Select mobile jobs
+        id: areas
+        env:
+          MOBILE_CI_BASE: ${{ github.event.merge_group.base_sha }}
+        run: node scripts/mobile-ci-areas.mjs >> "$GITHUB_OUTPUT"
+
+  mobile-runtime:
+    name: Mobile runtime in Chromium and WebKit
+    needs: mobile-areas
+    if: needs.mobile-areas.outputs.runtime == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -263,32 +292,92 @@ jobs:
           corepack prepare pnpm@11.13.1 --activate
           pnpm install --frozen-lockfile
           pnpm native:runtime
-      - name: Build iOS Simulator test bundle
+      - name: Check embedded runtime size budget
+        run: node scripts/mobile-runtime-size.mjs
+      - name: Cache exact Playwright browsers
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ runner.arch }}-1.62.1-chromium-headless-shell-1234-webkit-2336
+      - name: Provision pinned Chromium headless shell and WebKit
         run: |
-          xcodebuild build-for-testing -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination 'generic/platform=iOS Simulator'
-      - name: Test UIKit and WebKit with Mac Catalyst
+          sudo "$(command -v node)" scripts/remove-runner-chrome-repositories.mjs
+          pnpm --filter @tileflow/mobile-runtime exec playwright install --with-deps --only-shell chromium webkit
+      - name: Smoke the embedded runtime with a stub native host
+        run: node scripts/mobile-runtime-smoke.mjs
+
+  swift:
+    name: Swift SDK on iOS Simulator and Mac Catalyst
+    needs: mobile-areas
+    if: needs.mobile-areas.outputs.ios == 'true'
+    runs-on: macos-26
+    timeout-minutes: 40
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      SIMULATOR_DEVICE_TYPE: com.apple.CoreSimulator.SimDeviceType.iPhone-17
+      SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-26-5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Prepare embedded runtime
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+          pnpm install --frozen-lockfile
+          pnpm native:runtime
+      - name: Start fixture map server and pinned iPhone simulator
+        run: |
+          # Hosted macOS images enable Reduce Motion. These tests exercise animations,
+          # cancellation and intermediate frames, so run them with motion enabled.
+          defaults write com.apple.universalaccess reduceMotion -bool false
+          # Catalyst/WebKit also reads the UIKit accessibility preference domain.
+          defaults write com.apple.Accessibility ReduceMotionEnabled -bool false
+          swift -e 'import AppKit; precondition(!NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, "Rendering tests require motion enabled")'
+          nohup node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
+          udid=$(xcrun simctl create "Tileflow CI" "$SIMULATOR_DEVICE_TYPE" "$SIMULATOR_RUNTIME")
+          echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b > /dev/null
+          curl --retry 30 --retry-all-errors --retry-delay 1 --fail http://127.0.0.1:18645/manifest.json > /dev/null
+      - name: Test on iOS Simulator
         run: |
           set -euo pipefail
-          node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
-          fixture_pid=$!
-          trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
-          curl --retry 10 --retry-connrefused --retry-delay 1 --fail http://127.0.0.1:18645/manifest.json > /dev/null
-          # Run the complete UIKit suite without the hosted runners' crashing SimMetalHost layer.
-          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination 'platform=macOS,variant=Mac Catalyst' CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO -resultBundlePath "$RUNNER_TEMP/Tileflow.xcresult" | tee "$RUNNER_TEMP/swift-tests.log"
-          ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-tests.log"
+          # Hosted simulators crash their GPU process on WebGL draws (see IntegrationTests/README.md),
+          # so the rendering tests run on Mac Catalyst below; everything else runs on iOS WebKit.
+          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination "platform=iOS Simulator,id=$SIMULATOR_UDID,arch=arm64" -skip-testing:TileflowTests/MapIntegrationTests -skip-testing:TileflowTests/MapStyleIntegrationTests -resultBundlePath "$RUNNER_TEMP/TileflowSimulator.xcresult" | tee "$RUNNER_TEMP/swift-simulator-tests.log"
+          ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-simulator-tests.log"
+      - name: Test UIKit and WebKit rendering with Mac Catalyst
+        run: |
+          set -euo pipefail
+          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination 'platform=macOS,variant=Mac Catalyst' CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO -resultBundlePath "$RUNNER_TEMP/TileflowCatalyst.xcresult" | tee "$RUNNER_TEMP/swift-catalyst-tests.log"
+          ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-catalyst-tests.log"
+      - name: Test the service clients with Mac Catalyst
+        working-directory: platforms/ios
+        run: |
+          set -euo pipefail
+          # Contract tests against the shared recorded answers; they make no network requests.
+          xcodebuild test -scheme Tileflow-Package -only-testing:TileflowServiceTests -destination 'platform=macOS,variant=Mac Catalyst' CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO | tee "$RUNNER_TEMP/swift-service-tests.log"
+          ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-service-tests.log"
       - name: Upload Swift test results
-        if: always()
+        if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: swift-integration-results
           path: |
-            ${{ runner.temp }}/Tileflow.xcresult
-            ${{ runner.temp }}/swift-tests.log
+            ${{ runner.temp }}/TileflowSimulator.xcresult
+            ${{ runner.temp }}/TileflowCatalyst.xcresult
+            ${{ runner.temp }}/swift-*-tests.log
             ${{ runner.temp }}/map-fixture.log
           retention-days: 7
 
   kotlin:
     name: Kotlin SDK package and contracts
+    needs: mobile-areas
+    if: needs.mobile-areas.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -304,11 +393,145 @@ jobs:
           corepack prepare pnpm@11.13.1 --activate
           pnpm install --frozen-lockfile
           pnpm native:runtime
+      - name: Cache Gradle dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('platforms/android/**/*.gradle.kts', 'platforms/android/gradle/wrapper/gradle-wrapper.properties') }}
       - name: Verify library and example
         working-directory: platforms/android
         run: |
           export JAVA_HOME="$JAVA_HOME_17_X64"
-          ./gradlew :tileflow:testDebugUnitTest :tileflow:lintRelease :tileflow:publishReleasePublicationToCandidateRepository :example:assembleDebug --console=plain
+          modules="tileflow tileflow-configuration tileflow-search tileflow-routing tileflow-elevation tileflow-geoip tileflow-service-content"
+          tasks=()
+          for module in $modules; do
+            tasks+=(":$module:testDebugUnitTest" ":$module:lintRelease" ":$module:publishReleasePublicationToCandidateRepository")
+          done
+          ./gradlew "${tasks[@]}" :example:assembleDebug --console=plain
+
+  android-emulator:
+    name: Kotlin SDK on Android emulator (${{ matrix.name }})
+    needs: mobile-areas
+    if: needs.mobile-areas.outputs.android == 'true'
+    # Only trusted repository revisions use the native GPU runner; forks stay hosted.
+    runs-on: ${{ vars.ANDROID_GPU_RUNNER == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && fromJSON('["self-hosted", "macOS", "ARM64", "tileflow-sdk-android-gpu"]') || 'ubuntu-latest' }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Each Google APIs image ships a fixed System WebView. The connected script
+          # records it, and the WebView requirement test fails if it crosses the SDK minimum.
+          # Android 16 QPR2 (36.1) and 17 (37.0) images restart system_server after boot on the
+          # emulator's software GPU, so Android 16 carries the most recent usable WebView.
+          - name: Android 16, recent WebView
+            api: 36
+            image: '36'
+            webview: supported
+          - name: Android 15, minimum WebView 124
+            api: 35
+            image: '35'
+            webview: supported
+          - name: Android 14, WebView 113 rejected
+            api: 34
+            image: '34'
+            webview: rejected
+            arguments: -Pandroid.testInstrumentationRunnerArguments.class=dev.tileflow.sdk.WebViewRequirementIntegrationTest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Prepare embedded runtime
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+          pnpm install --frozen-lockfile
+          pnpm native:runtime
+      - name: Cache Gradle dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('platforms/android/**/*.gradle.kts', 'platforms/android/gradle/wrapper/gradle-wrapper.properties') }}
+      - name: Build instrumented test APKs
+        working-directory: platforms/android
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then export JAVA_HOME="$JAVA_HOME_17_X64"; fi
+          echo "JAVA_HOME=$JAVA_HOME" >> "$GITHUB_ENV"
+          ./gradlew :tileflow:assembleDebugAndroidTest --console=plain
+      - name: Enable KVM
+        if: runner.os == 'Linux'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Start fixture map server
+        run: |
+          nohup node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
+          curl --retry 30 --retry-all-errors --retry-delay 1 --fail http://127.0.0.1:18645/manifest.json > /dev/null
+      - name: Run instrumented tests
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ matrix.api }}
+          system-image-api-level: ${{ matrix.image }}
+          target: google_apis
+          arch: ${{ runner.os == 'macOS' && 'arm64-v8a' || 'x86_64' }}
+          profile: pixel_6
+          # Keep CPU allocation consistent; the native runner supplies hardware graphics.
+          cores: 2
+          ram-size: 4096M
+          disk-size: 6000M
+          emulator-options: -no-window -gpu ${{ runner.os == 'macOS' && 'host' || 'swiftshader' }} -no-snapshot -noaudio -no-boot-anim
+          # Camera, annotation and shot tests require motion; disabling it also requests reduced motion in WebView.
+          disable-animations: false
+          # Keep the Pixel 6 logical viewport while bounding software-GPU pixel work on hosted runners.
+          # The 200-view workload, animation duration and latency assertions remain unchanged.
+          script: |
+            adb shell wm size 360x800
+            adb shell wm density 140
+            adb shell settings put global window_animation_scale 0
+            adb shell settings put global transition_animation_scale 0
+            adb shell settings put global animator_duration_scale 1
+            bash scripts/mobile-android-connected.sh ${{ matrix.webview }} ${{ matrix.arguments }}
+      - name: Upload Android test results
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-emulator-results-${{ matrix.image }}
+          path: |
+            platforms/android/tileflow/build/reports/androidTests
+            platforms/android/tileflow/build/outputs/androidTest-results
+            ${{ runner.temp }}/android-connected
+            ${{ runner.temp }}/map-fixture.log
+          retention-days: 7
+
+  react-native-native:
+    name: React Native native unit tests
+    needs: mobile-areas
+    if: needs.mobile-areas.outputs.react-native == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Cache Gradle dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle-react-native-${{ runner.os }}-${{ hashFiles('test-support/react-native-android/*.kts', 'platforms/android/gradle/wrapper/gradle-wrapper.properties') }}
+      - name: Test Android native modules on the JVM
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          platforms/android/gradlew -p test-support/react-native-android testDebugUnitTest --console=plain
 
   required:
     name: Required
@@ -319,8 +542,12 @@ jobs:
       - peer-compatibility
       - capture-smoke
       - capture-public-tarball
+      - mobile-areas
+      - mobile-runtime
       - swift
       - kotlin
+      - android-emulator
+      - react-native-native
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -331,13 +558,27 @@ jobs:
           PEER_COMPATIBILITY_RESULT: ${{ needs.peer-compatibility.result }}
           VERIFY_RESULT: ${{ needs.verify.result }}
           VERIFY_HEAVY_RESULT: ${{ needs.verify-heavy.result }}
+          MOBILE_AREAS_RESULT: ${{ needs.mobile-areas.result }}
+          MOBILE_RUNTIME_RESULT: ${{ needs.mobile-runtime.result }}
+          MOBILE_RUNTIME_SELECTED: ${{ needs.mobile-areas.outputs.runtime }}
           SWIFT_RESULT: ${{ needs.swift.result }}
+          SWIFT_SELECTED: ${{ needs.mobile-areas.outputs.ios }}
           KOTLIN_RESULT: ${{ needs.kotlin.result }}
+          ANDROID_EMULATOR_RESULT: ${{ needs.android-emulator.result }}
+          ANDROID_SELECTED: ${{ needs.mobile-areas.outputs.android }}
+          REACT_NATIVE_NATIVE_RESULT: ${{ needs.react-native-native.result }}
+          REACT_NATIVE_SELECTED: ${{ needs.mobile-areas.outputs.react-native }}
         run: |
           test "$VERIFY_RESULT" = "success"
           test "$VERIFY_HEAVY_RESULT" = "success"
           test "$PEER_COMPATIBILITY_RESULT" = "success"
           test "$CAPTURE_SMOKE_RESULT" = "success"
           test "$CAPTURE_PUBLIC_TARBALL_RESULT" = "success"
-          test "$SWIFT_RESULT" = "success"
-          test "$KOTLIN_RESULT" = "success"
+          test "$MOBILE_AREAS_RESULT" = "success"
+          # A mobile job may be skipped only because its change area was not selected.
+          selected() { test "$1" = "success" || { test "$1" = "skipped" && test "$2" = "false"; }; }
+          selected "$MOBILE_RUNTIME_RESULT" "$MOBILE_RUNTIME_SELECTED"
+          selected "$SWIFT_RESULT" "$SWIFT_SELECTED"
+          selected "$KOTLIN_RESULT" "$ANDROID_SELECTED"
+          selected "$ANDROID_EMULATOR_RESULT" "$ANDROID_SELECTED"
+          selected "$REACT_NATIVE_NATIVE_RESULT" "$REACT_NATIVE_SELECTED"

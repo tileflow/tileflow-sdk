@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import UIKit
 import WebKit
@@ -11,12 +10,14 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   public private(set) var options: TileflowMapOptions
 
   private var webView: WKWebView?
-  private var bridge: MapBridge?
+  /// The current generation's bridge, while one is loaded.
+  private(set) var bridge: MapBridge?
   private var resources: ResourceSchemeHandler?
   private let instanceID = UUID().uuidString
   private var generation = 0
-  private var destroyed = false
-  private var initialized = false
+  private(set) var destroyed = false
+  /// Whether the current renderer accepted `initialize`; commands before it are not sent.
+  private(set) var initialized = false
   private var readyForEvents = false
   private var pendingReadyEvent = false
   /// Renderer replacements since content last loaded; a crash loop stops after one.
@@ -28,11 +29,57 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   private var rendererVisible = false
   /// A renderer to replace once the view is visible again.
   private var pendingRemount = false
-  private var initialCamera: TileflowCamera?
+  /// The camera the renderer last reported, or the one to start the next renderer at.
+  var initialCamera: TileflowCamera?
+  /// A camera the application asked for while no renderer could move, and how many it asked for.
+  var requestedCamera: (camera: TileflowCamera, count: Int)?
+  /// The current source with its configuration read, kept with its Hosted session.
+  private var loadable: LoadableMapSource?
   private var hostedSession: HostedSession?
   private var appearance: (method: ProtocolContract.Method, payload: JSONValue)?
   private var content = MapContent()
   private var contentRevision = 0
+  private var subscriptions = EventSubscriptions()
+  let cameraEvents = CameraEventGate()
+  let controlsView = MapControlsView()
+  /// The location provider, the latest position and the follow mode.
+  let location = MapLocation()
+  private let touchClaim = MapTouchClaim()
+  /// Space covered by the application at each edge, in points.
+  public var contentInsets: UIEdgeInsets = .zero {
+    didSet { updateInsets() }
+  }
+  /// Whether the safe area (system bars, the home indicator, the notch) adds to ``contentInsets``.
+  public var automaticallyAdjustsContentInsets = true {
+    didSet { updateInsets() }
+  }
+  /// The insets the camera and controls use: ``contentInsets`` plus the safe area if adjusted.
+  public private(set) var effectiveContentInsets: UIEdgeInsets = .zero
+  /// The insets the current renderer has, or nil before it is initialized.
+  private var rendererInsets: UIEdgeInsets?
+  private var insetsUpdate: Task<Void, Never>?
+  /// Return false to leave a touch that begins at this point, in this view's coordinates, to the
+  /// views behind and around the map; for example over application UI drawn on the map. Native
+  /// controls receive their touches regardless.
+  public var shouldReceiveTouch: ((CGPoint) -> Bool)?
+  /// The scene beyond the theme the application asked for, given again to each new renderer.
+  var scene = SceneState()
+  /// The application's runtime style, given again to each new renderer.
+  var runtimeStyle = RuntimeStyle()
+  /// The application images the scene holds.
+  var images: [TileflowMapImage] = []
+  /// Calls waiting for an animation of the current renderer to end.
+  let animations = AnimationWaiters()
+  /// Native view annotations and the accessibility elements of annotations, over the renderer.
+  let annotationOverlay = AnnotationOverlay()
+  /// The map's annotation managers. Each draws its annotations with a source and a layer of the
+  /// application's runtime style.
+  public internal(set) lazy var annotations = TileflowAnnotationOrchestrator(view: self)
+  /// Native views that follow coordinates of the map, such as markers and callouts.
+  public internal(set) lazy var viewAnnotations = TileflowViewAnnotationManager(view: self)
+  /// Whether annotation layers exist, and whether the renderer tracks points for annotations.
+  private var annotationInteraction = false
+  private var annotationTracking = false
 
   public init(
     source: TileflowMapSource, theme: String? = nil, initialCamera: TileflowCamera? = nil,
@@ -42,14 +89,40 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     self.theme = theme
     self.initialCamera = initialCamera
     self.options = options
+    subscriptions = EventSubscriptions(
+      application: options.events, followCamera: options.controls.followCamera)
     super.init(frame: .zero)
+    annotationOverlay.map = self
+    accessibilityCustomRotors = [makeAnnotationRotor()]
+    location.view = self
     accessibilityLabel = "Interactive map"
+    controlsView.controls = options.controls
+    controlsView.locationShown = options.location.enabled
+    controlsView.camera = initialCamera
+    controlsView.isHidden = true
+    controlsView.onCompass = { [weak self] in self?.compassTapped() }
+    controlsView.onRecenter = { [weak self] in self?.recenterTapped() }
+    addSubview(controlsView)
+    insertSubview(annotationOverlay, belowSubview: controlsView)
+    touchClaim.gestures = options.gestures
+    addGestureRecognizer(touchClaim)
     NotificationCenter.default.addObserver(
       self, selector: #selector(background),
       name: UIApplication.didEnterBackgroundNotification, object: nil)
     NotificationCenter.default.addObserver(
       self, selector: #selector(foreground),
       name: UIApplication.willEnterForegroundNotification, object: nil)
+  }
+
+  /// Shows a Hosted map. Its credential and API origin come from ``Tileflow/configuration()``;
+  /// use ``TileflowMapSource/hosted(mapID:surfaceID:publicResourceOrigins:configuration:)`` to
+  /// pass a configuration for this map only.
+  public convenience init(
+    mapID: String, theme: String? = nil, initialCamera: TileflowCamera? = nil,
+    options: TileflowMapOptions = .init()
+  ) {
+    self.init(
+      source: .hosted(mapID: mapID), theme: theme, initialCamera: initialCamera, options: options)
   }
 
   @available(*, unavailable)
@@ -66,14 +139,56 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   public override func layoutSubviews() {
     super.layoutSubviews()
     webView?.frame = bounds
+    annotationOverlay.frame = bounds
+    controlsView.frame = bounds
+    updateInsets()
+  }
+
+  public override func safeAreaInsetsDidChange() {
+    super.safeAreaInsetsDidChange()
+    updateInsets()
+  }
+
+  public override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    let target = super.hitTest(point, with: event)
+    guard let shouldReceiveTouch, target !== controlsView, target?.isDescendant(of: controlsView) != true
+    else { return target }
+    return shouldReceiveTouch(point) ? target : nil
+  }
+
+  /// Sends the insets to the renderer, one update at a time with the latest value.
+  private func updateInsets() {
+    let safe = automaticallyAdjustsContentInsets ? safeAreaInsets : .zero
+    let insets = UIEdgeInsets(
+      top: contentInsets.top + safe.top, left: contentInsets.left + safe.left,
+      bottom: contentInsets.bottom + safe.bottom, right: contentInsets.right + safe.right)
+    effectiveContentInsets = insets
+    controlsView.insets = insets
+    guard initialized, let bridge, insetsUpdate == nil, rendererInsets != insets else { return }
+    insetsUpdate = Task { [weak self] in
+      let sent = try? await bridge.call(.setInsets, payload: Self.wire(insets))
+      guard let self else { return }
+      self.insetsUpdate = nil
+      if sent != nil, self.bridge === bridge { self.rendererInsets = insets }
+      if self.bridge === bridge { self.updateInsets() }
+    }
+  }
+
+  nonisolated static func wire(_ insets: UIEdgeInsets) -> JSONValue {
+    let value = { (inset: CGFloat) in JSONValue.number(min(max(Double(inset), 0), 8192)) }
+    return .object([
+      "top": value(insets.top), "left": value(insets.left), "bottom": value(insets.bottom),
+      "right": value(insets.right),
+    ])
   }
 
   public func setSource(_ source: TileflowMapSource) throws {
     guard !destroyed else { throw TileflowMapError.disposed }
     guard source != self.source else { return }
-    _ = try source.policy()
+    try source.validate()
     hostedSession?.close()
     hostedSession = nil
+    loadable = nil
     self.source = source
     resetRecovery()
     retireGeneration()
@@ -118,11 +233,70 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
 
   public func setOptions(_ options: TileflowMapOptions) async throws {
     guard !destroyed else { throw TileflowMapError.disposed }
+    try options.validate()
+    let previous = self.options
+    let previousSubscriptions = subscriptions
     self.options = options
-    if initialized, let bridge {
-      _ = try await bridge.call(.setOptions, payload: try .encoded(options))
+    subscriptions = EventSubscriptions(
+      application: options.events, followCamera: options.controls.followCamera)
+    subscriptions.set(.annotations, annotationDemand)
+    touchClaim.gestures = options.gestures
+    controlsView.controls = options.controls
+    controlsView.locationShown = options.location.enabled
+    locationOptionsChanged(from: previous.location)
+    // Antialiasing and style validation are fixed when a renderer starts.
+    if options.antialias != previous.antialias || options.validatesStyle != previous.validatesStyle,
+      webView != nil
+    {
+      remount()
+      return
+    }
+    try await sendOptions(events: subscriptions != previousSubscriptions)
+  }
+
+  private var annotationDemand: [ProtocolContract.Event: Int] {
+    var demand: [ProtocolContract.Event: Int] = [:]
+    if annotationInteraction {
+      demand[.tap] = 0
+      demand[.longPress] = 0
+      demand[.annotationDragged] = 0
+    }
+    if annotationTracking { demand[.trackedPointsMoved] = 0 }
+    return demand
+  }
+
+  /// Annotation layers need taps, long presses and drags whatever the application's level.
+  func setAnnotationInteraction(_ needed: Bool) {
+    guard needed != annotationInteraction else { return }
+    annotationInteraction = needed
+    updateAnnotationSubscriptions()
+  }
+
+  /// Tracked points need their positions after every frame.
+  func setTrackingDemand(_ needed: Bool) {
+    guard needed != annotationTracking else { return }
+    annotationTracking = needed
+    updateAnnotationSubscriptions()
+  }
+
+  private func updateAnnotationSubscriptions() {
+    let previous = subscriptions
+    subscriptions.set(.annotations, annotationDemand)
+    guard subscriptions != previous, initialized, let bridge else { return }
+    let events = subscriptions.wireValue
+    Task { _ = try? await bridge.call(.setEvents, payload: .object(["events": events])) }
+  }
+
+  private func sendOptions(events: Bool) async throws {
+    guard initialized, let bridge else { return }
+    _ = try await bridge.call(.setOptions, payload: try wireOptions)
+    if events {
+      _ = try await bridge.call(.setEvents, payload: .object(["events": subscriptions.wireValue]))
     }
   }
+
+  private var rightToLeft: Bool { effectiveUserInterfaceLayoutDirection == .rightToLeft }
+  private var wireOptions: JSONValue { get throws { try options.wireValue(rightToLeft: rightToLeft) } }
 
   private func applyAppearance() async throws {
     guard initialized, let bridge, let appearance else { return }
@@ -135,37 +309,38 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   ) async throws {
     guard !destroyed else { throw TileflowMapError.disposed }
     let next = MapContent(annotations: annotations, overlays: layers)
-    let payload = try next.wireValue()
+    try next.validate()
     let previous = content
     contentRevision += 1
     let revision = contentRevision
     content = next
     do {
-      if initialized, let bridge { _ = try await bridge.call(.setContent, payload: payload) }
+      if initialized, let bridge { try await send(next, through: bridge) }
     } catch {
       if revision == contentRevision { content = previous }
       throw error
     }
   }
 
-  public func setCamera(_ camera: TileflowCamera, duration: TimeInterval = 0) async throws {
-    guard !destroyed else { throw TileflowMapError.disposed }
-    try camera.validate()
-    guard (0...60).contains(duration) else { throw TileflowMapError.invalidRequest }
-    initialCamera = camera
-    guard initialized, let bridge else { return }
-    _ = try await bridge.call(
-      .setCamera,
-      payload: .object([
-        "camera": try .encoded(camera), "duration": .number(duration * 1000),
-      ]))
+  private func send(_ content: MapContent, through bridge: MapBridge) async throws {
+    let (payload, references) = try content.wireValue(data: bridge.data)
+    _ = try await bridge.call(.setContent, payload: payload, data: references)
   }
 
+  /// Moves the camera, easing over `duration` seconds (at most 20), and waits until it settles.
+  /// Before the map loads, the camera becomes the one it starts at.
+  public func setCamera(_ camera: TileflowCamera, duration: TimeInterval = 0) async throws {
+    try await move(to: camera, animation: duration > 0 ? .ease(duration: duration) : .none)
+  }
+
+  /// Reads the renderer's camera. ``currentCamera`` holds the last one it reported without a call.
   public func camera() async throws -> TileflowCamera {
     guard !destroyed else { throw TileflowMapError.disposed }
     guard initialized, let bridge else { throw TileflowMapError.notReady }
-    return try JSONDecoder().decode(
-      TileflowCamera.self, from: JSONEncoder().encode(try await bridge.call(.getCamera)))
+    guard let camera = TileflowCamera(wire: try await bridge.call(.getCamera)) else {
+      throw TileflowMapError.rendererFailed
+    }
+    return camera
   }
 
   /// Returns rendered feature identities at a point in this view's coordinate system.
@@ -182,24 +357,17 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
       [TileflowRenderedFeature].self, from: JSONEncoder().encode(result))
   }
 
+  /// Frames `bounds` with `padding` points around them, inside the content insets, and waits
+  /// until the camera settles. A `duration` above 0 eases there.
   public func fit(
     _ bounds: TileflowBounds, padding: Double = 24, maxZoom: Double = 20,
     duration: TimeInterval = 0
   ) async throws {
-    guard !destroyed else { throw TileflowMapError.disposed }
-    guard initialized, let bridge else { throw TileflowMapError.notReady }
-    guard (-180...180).contains(bounds.west), (-180...180).contains(bounds.east),
-      (-90...90).contains(bounds.south), (-90...90).contains(bounds.north),
-      bounds.south <= bounds.north,
-      (0...1000).contains(padding), (0...24).contains(maxZoom), (0...5).contains(duration)
-    else { throw TileflowMapError.invalidRequest }
-    _ = try await bridge.call(
-      .fitBounds,
-      payload: .object([
-        "west": .number(bounds.west), "south": .number(bounds.south), "east": .number(bounds.east),
-        "north": .number(bounds.north), "padding": .number(padding), "maxZoom": .number(maxZoom),
-        "duration": .number(duration * 1000),
-      ]))
+    guard (0...1000).contains(padding) else { throw TileflowMapError.invalidRequest }
+    try await fit(
+      bounds,
+      padding: UIEdgeInsets(top: padding, left: padding, bottom: padding, right: padding),
+      maxZoom: maxZoom, animation: duration > 0 ? .ease(duration: duration) : .none)
   }
 
   public func project(_ coordinate: TileflowCoordinate) async throws -> CGPoint {
@@ -232,14 +400,17 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     destroyed = true
     hostedSession?.close()
     hostedSession = nil
+    loadable = nil
     NotificationCenter.default.removeObserver(self)
-    retireGeneration()
+    refreshLocation()
+    annotationOverlay.stopRefreshes()
+    retireGeneration(.disposed)
     onEvent = nil
   }
 
   /// Retry the current source after a load or renderer failure. A Hosted session stopped by
-  /// `credentialRejected`, `accessDenied` or `quotaExceeded` bootstraps again. Reloading also
-  /// skips the delay that follows a temporary session failure (`rateLimited`,
+  /// `credentialRejected`, `accessDenied`, `quotaExceeded` or `sessionRejected` bootstraps again.
+  /// Reloading also skips the delay that follows a temporary session failure (`rateLimited`,
   /// `sessionUnavailable` or `invalidSessionResponse`), so call it in response to a user action
   /// rather than from every failure event.
   public func reload() throws {
@@ -251,6 +422,8 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   }
 
   private var isVisible: Bool { window != nil && inForeground }
+  /// Whether the map is in a window while the application is in the foreground.
+  var isShown: Bool { isVisible }
 
   private func resetRecovery() {
     recoveryCount = 0
@@ -289,6 +462,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
 
   private func updateVisibility() {
     guard !destroyed else { return }
+    refreshLocation()
     let visible = isVisible
     // While hidden, the session starts no bootstrap; requests that need one wait until visible.
     hostedSession?.setBackgrounded(!visible)
@@ -308,57 +482,46 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   private var colorScheme: String { traitCollection.userInterfaceStyle == .dark ? "dark" : "light" }
 
   private func mount() throws {
-    let policy = try source.policy()
-    guard let root = Bundle.module.resourceURL?.appendingPathComponent("EmbeddedRuntime") else {
-      throw TileflowMapError.missingRuntime
-    }
-    struct Receipt: Decodable {
-      let runtimeHash: String
-      let protocolVersion: Int
-      let files: [String: String]
-    }
-    guard let bytes = try? Data(contentsOf: root.appendingPathComponent("receipt.json")),
-      let receipt = try? JSONDecoder().decode(Receipt.self, from: bytes),
-      receipt.protocolVersion == ProtocolContract.version,
-      Set(receipt.files.keys) == [
-        "index.html", "runtime.js", "maplibre.css", "notices.txt", "dependencies.json",
-      ]
-    else { throw TileflowMapError.missingRuntime }
-    for (name, expected) in receipt.files {
-      let data = try Data(contentsOf: root.appendingPathComponent(name))
-      let actual = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-      guard actual == expected else { throw TileflowMapError.incompatibleRuntime }
-    }
+    // A failed read is not kept, so `reload()` reads a corrected configuration.
+    let loadable = try self.loadable ?? source.loadable()
+    self.loadable = loadable
+    // The receipt is read once per process; the files are verified once, off the main thread.
+    let (root, receipt) = try EmbeddedRuntime.receipt()
+    if case .failure(let error) = EmbeddedRuntime.verified { throw error }
+    _ = EmbeddedRuntime.verification
+    TileflowDeviceProfile.prepare()
     generation += 1
     let current = generation
     pendingRemount = false
     // A new document starts shown; it is hidden after initialization if the view is not.
     rendererVisible = true
-    if hostedSession == nil, let client = source.client, let mapID = source.mapID,
-      let surfaceID = source.surfaceID
+    if hostedSession == nil, let endpoint = loadable.hosted, let mapID = loadable.mapID,
+      let surfaceID = loadable.surfaceID
     {
-      hostedSession = HostedSession(client: client, mapID: mapID, surfaceID: surfaceID)
+      hostedSession = HostedSession(endpoint: endpoint, mapID: mapID, surfaceID: surfaceID)
     }
     hostedSession?.setBackgrounded(!isVisible)
     let loader = ResourceLoader(
-      policy: policy, hosted: hostedSession, apiOrigin: source.client?.apiOrigin,
-      publicMetadataURLs: source.publicMetadataURLs,
+      policy: loadable.policy, hosted: hostedSession, apiOrigin: loadable.hosted?.apiOrigin,
+      publicMetadataURLs: loadable.publicMetadataURLs,
+      cache: .shared, grantScope: loadable.grantScope, offline: .shared,
       onDeploymentSuperseded: { [weak self] in
         await self?.deploymentSuperseded(generation: current) ?? false
       })
-    let handler = ResourceSchemeHandler(loader: loader, runtimeRoot: root)
+    let data = DataChannel()
+    let handler = ResourceSchemeHandler(loader: loader, runtimeRoot: root, data: data)
     handler.onFailure = { [weak self] error in
       self?.report(error, generation: current)
     }
     let bridge = MapBridge(
-      instanceID: instanceID, generation: current, runtimeHash: receipt.runtimeHash)
+      instanceID: instanceID, generation: current, runtimeHash: receipt.runtimeHash, data: data)
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
     configuration.setURLSchemeHandler(handler, forURLScheme: ResourceURL.scheme)
     configuration.userContentController.add(bridge, name: "tileflow")
     let bootstrap: JSONValue = .object([
       "instanceId": .string(instanceID), "generation": .number(Double(current)),
-      "platform": .string("ios"),
+      "platform": .string("ios"), "protocol": MapBridge.supportedVersions,
     ])
     let json = String(decoding: try JSONEncoder().encode(bootstrap), as: UTF8.self)
     configuration.userContentController.addUserScript(
@@ -380,33 +543,59 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
         guard let self else { return }
         do {
           let startingTheme = self.theme
-          let startingCamera = self.initialCamera
+          let startingRequest = self.requestedCamera?.count
           let startingOptions = self.options
+          let startingSubscriptions = self.subscriptions
           var wireSource: [String: JSONValue] = [
-            "map": .string(self.source.map),
-            "manifestUrl": .string(self.source.manifestURL.absoluteString),
+            "map": .string(loadable.map),
+            "manifestUrl": .string(loadable.manifestURL.absoluteString),
           ]
-          if let mapID = self.source.mapID { wireSource["discoveryMapId"] = .string(mapID) }
+          if let mapID = loadable.mapID { wireSource["discoveryMapId"] = .string(mapID) }
           var options: [String: JSONValue] = [
             "source": .object(wireSource),
             "theme": self.theme.map(JSONValue.string) ?? .null,
             "colorScheme": .string(self.colorScheme), "interactive": .bool(true),
-            "options": try .encoded(self.options),
+            "options": try self.wireOptions,
+            "renderer": .object([
+              "antialias": .bool(self.options.antialias),
+              "validateStyle": .bool(self.options.validatesStyle),
+            ]),
+            "events": self.subscriptions.wireValue,
+            "insets": Self.wire(self.effectiveContentInsets),
           ]
+          let startingInsets = self.effectiveContentInsets
           if let camera = self.initialCamera { options["camera"] = try .encoded(camera) }
+          // A Hosted map opened from downloaded regions shows their regional credits.
+          if let scope = loadable.grantScope,
+            OfflineServingRule.hostedUsesPacks(
+              networkEnabled: TileflowHTTPClient.shared.isNetworkEnabled,
+              reachable: OfflineReachability.shared.isReachable)
+          {
+            let credits = await OfflineServingIndex.shared.credits(for: scope)
+            if !credits.isEmpty { options["credits"] = .array(credits.map(\.wireValue)) }
+          }
           _ = try await bridge.call(.initialize, payload: .object(options))
           guard !self.destroyed, self.generation == current else { return }
           self.initialized = true
-          _ = try await bridge.call(.setContent, payload: self.content.wireValue())
+          self.rendererInsets = startingInsets
+          self.updateInsets()
+          try await self.send(self.content, through: bridge)
           if self.appearance != nil {
             try await self.applyAppearance()
           } else if self.theme != startingTheme {
             try await self.setTheme(self.theme)
           }
-          if self.options != startingOptions { try await self.setOptions(self.options) }
-          if self.initialCamera != startingCamera, let camera = self.initialCamera {
-            try await self.setCamera(camera)
+          if self.options != startingOptions {
+            try await self.sendOptions(events: self.subscriptions != startingSubscriptions)
           }
+          // Only a camera the application asked for during initialization moves the map again.
+          if let request = self.requestedCamera, request.count != startingRequest {
+            try await self.move(to: request.camera, animation: .none)
+          }
+          try await self.replayScene(through: bridge)
+          try await self.replayStyle(through: bridge)
+          try await self.replayLocation(through: bridge)
+          try await self.replayAnnotations(through: bridge)
           if !self.rendererVisible {
             _ = try await bridge.call(.setVisibility, payload: .object(["visible": .bool(false)]))
           }
@@ -424,19 +613,56 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
       guard let self, !self.destroyed, self.generation == current else { return }
       self.receive(event, value, generation: current)
     }
+    bridge.onFailure = { [weak self] error in
+      self?.report(error, generation: current)
+    }
     self.bridge = bridge
     bridge.start()
     resources = handler
     webView = view
-    addSubview(view)
-    view.load(URLRequest(url: ResourceURL.runtimeURL))
+    annotationOverlay.frame = bounds
+    insertSubview(view, belowSubview: annotationOverlay)
+    loadRuntime(in: view, generation: current)
     updateVisibility()
+  }
+
+  /// Loads the renderer once the embedded runtime is verified. The WebView's processes start
+  /// meanwhile, so verification overlaps their launch.
+  private func loadRuntime(in view: WKWebView, generation current: Int) {
+    if case .success = EmbeddedRuntime.verified {
+      view.load(URLRequest(url: ResourceURL.runtimeURL))
+      return
+    }
+    Task { [weak self, weak view] in
+      let failure: TileflowMapError?
+      do {
+        try await EmbeddedRuntime.verification.value
+        failure = nil
+      } catch {
+        failure = error as? TileflowMapError ?? .incompatibleRuntime
+      }
+      guard let self, let view, !self.destroyed, self.generation == current, self.webView === view
+      else { return }
+      if let failure {
+        self.retireGeneration()
+        self.onEvent?(.failed(failure))
+      } else {
+        view.load(URLRequest(url: ResourceURL.runtimeURL))
+      }
+    }
   }
 
   private func contentReady() {
     generationReady = true
     resetRecovery()
+    controlsView.isHidden = false
     onEvent?(.contentReady)
+  }
+
+  /// Keeps the synchronous camera and the controls current.
+  func observe(_ camera: TileflowCamera) {
+    initialCamera = camera
+    controlsView.camera = camera
   }
 
   private func receive(_ event: String, _ value: JSONValue, generation current: Int) {
@@ -459,34 +685,84 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
         onEvent?(.poiActivated(selection))
       }
     case "loading": onEvent?(.loading)
-    case "contentReady": contentReady()
-    case "cameraChanged":
-      if let raw = value["camera"], let bytes = try? JSONEncoder().encode(raw),
-        let camera = try? JSONDecoder().decode(TileflowCamera.self, from: bytes)
-      {
-        initialCamera = camera
-        onEvent?(.cameraChanged(camera, isFinal: value["final"]?.bool == true))
+    case "contentReady":
+      if let camera = TileflowCamera(wire: value["camera"]) { observe(camera) }
+      contentReady()
+    case "cameraMoveStarted", "cameraMoved", "cameraMoveEnded":
+      if let change = Self.cameraChange(event, value) {
+        observe(change.camera)
+        cameraEvents.receive(change, options: options.events) { [weak self] change in
+          guard let self, !self.destroyed, self.generation == current else { return }
+          self.onEvent?(.cameraChanged(change))
+        }
       }
-    case "interaction":
-      if let longitude = value["coordinate"]?["longitude"]?.number,
-        let latitude = value["coordinate"]?["latitude"]?.number
+    case "tap":
+      if let touch = TileflowMapTouch(wire: value),
+        !annotationTouch(value, touch: touch, longPress: false)
       {
-        onEvent?(.tap(longitude: longitude, latitude: latitude))
+        onEvent?(.tap(touch))
+      }
+    case "longPress":
+      if let touch = TileflowMapTouch(wire: value),
+        !annotationTouch(value, touch: touch, longPress: true)
+      {
+        onEvent?(.longPress(touch))
+      }
+    case "annotationDragged": receiveAnnotationDrag(value)
+    case "trackedPointsMoved": annotationOverlay.receive(value)
+    case "gestureStarted", "gestureEnded":
+      if options.events.level.includes(.camera),
+        let gesture = value["gesture"]?.string.flatMap(TileflowGesture.init(rawValue:))
+      {
+        onEvent?(event == "gestureStarted" ? .gestureStarted(gesture) : .gestureEnded(gesture))
       }
     case "themeChanged":
       if let name = value["theme"]?.string { onEvent?(.themeChanged(name)) }
-    case "error": report(MapBridge.error(value["code"]?.string), generation: current)
+    case "themeTransition":
+      if let transition = TileflowThemeTransition(wire: value) {
+        onEvent?(.themeTransition(transition))
+      }
+    case "animationEnded", "shotCue": animations.receive(event, value)
+    case "followModeChanged": receiveFollowModeChanged(value)
+    case "warning":
+      if let count = value["count"]?.number.flatMap({ Int(exactly: $0) }), count > 0 {
+        onEvent?(
+          .warning(TileflowMapWarning(error: TileflowMapError(wire: value), occurrences: count)))
+      }
+    case "error": report(TileflowMapError(wire: value), generation: current)
     default: break
     }
   }
 
-  private func retireGeneration() {
+  nonisolated static func cameraChange(_ event: String, _ value: JSONValue)
+    -> TileflowCameraChange?
+  {
+    let phases: [String: TileflowCameraChangePhase] = [
+      "cameraMoveStarted": .started, "cameraMoved": .moving, "cameraMoveEnded": .ended,
+    ]
+    guard let phase = phases[event], let raw = value["camera"],
+      let reason = value["reason"]?.string.flatMap(TileflowCameraChangeReason.init(rawValue:)),
+      let bytes = try? JSONEncoder().encode(raw),
+      let camera = try? JSONDecoder().decode(TileflowCamera.self, from: bytes),
+      (try? camera.validate()) != nil
+    else { return nil }
+    return TileflowCameraChange(camera: camera, reason: reason, phase: phase)
+  }
+
+  /// Pending calls fail with `cancelled` when a renderer is replaced, `disposed` when destroyed.
+  private func retireGeneration(_ error: TileflowMapError = .cancelled) {
     initialized = false
+    rendererInsets = nil
+    insetsUpdate?.cancel()
+    insetsUpdate = nil
+    cameraEvents.rendererReplaced()
+    annotationOverlay.rendererReplaced()
     readyForEvents = false
     pendingReadyEvent = false
     generationReady = false
     rendererVisible = false
-    bridge?.retire()
+    animations.retire(error)
+    bridge?.retire(error)
     resources?.retire()
     webView?.stopLoading()
     webView?.configuration.userContentController.removeAllScriptMessageHandlers()
@@ -497,6 +773,26 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     bridge = nil
     resources = nil
     webView = nil
+    controlsView.isHidden = true
+  }
+
+  /// The current renderer once it has initialized.
+  var readyBridge: MapBridge? { initialized ? bridge : nil }
+  var isDestroyed: Bool { destroyed }
+
+  /// Records options a dedicated call already gave the renderer.
+  func keepOptions(_ options: TileflowMapOptions) { self.options = options }
+
+  /// Records where line progress animations lead, so a new renderer draws the lines there.
+  func keepLineProgress(_ progress: TileflowLineProgress, for layers: Set<String>) {
+    content.overlays = content.overlays.map { layer in
+      guard layers.contains(layer.id), let current = layer.progress else { return layer }
+      var next = layer
+      next.progress = TileflowLineProgress(
+        start: progress.start, end: progress.end, light: progress.light,
+        opacity: progress.opacity, highlight: current.highlight)
+      return next
+    }
   }
 
   public override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
@@ -515,7 +811,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
           try await self.setTheme(self.theme)
         }
       } catch {
-        if !self.destroyed { self.onEvent?(.failed(error as? TileflowMapError ?? .rendererFailed)) }
+        if !self.destroyed { self.report(propertyError: error) }
       }
     }
   }
@@ -550,7 +846,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     guard webView === self.webView, !destroyed else { return }
     guard recoveryCount < 1 else {
       retireGeneration()
-      onEvent?(.failed(.rendererFailed))
+      onEvent?(.failed(TileflowMapError(.rendererFailed, reason: .processTerminated)))
       return
     }
     recoveryCount += 1

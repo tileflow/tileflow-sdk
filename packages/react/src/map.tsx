@@ -24,6 +24,7 @@ import type {
 import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
+  attachTileflowHorizonQueries,
   attachTileflowLabelPlacement,
   attachTileflowMap3D,
   attachTileflowMapLifecycle,
@@ -35,6 +36,7 @@ import {
   getTileflowSystemColorScheme,
   loadTileflowStyleFonts,
   registerTileflowContourProtocol,
+  registerTileflowPathGroundProtocol,
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   subscribeTileflowSystemColorScheme,
@@ -815,6 +817,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         const fairUseNotice = attachTileflowFairUseNotice(container);
         registerCleanup(() => fairUseNotice.dispose());
         registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
+        registerTileflowPathGroundProtocol({addProtocol: maplibregl.addProtocol});
         registerTileflowPmtilesProtocol({addProtocol: maplibregl.addProtocol});
         const worldRequestBridge = registerTileflowWorldRequestBridge({
           addProtocol: maplibregl.addProtocol,
@@ -857,6 +860,8 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         registerCleanup(attachTileflowNotices(map));
         registerCleanup(attachTileflowNauticalLights(map));
         registerCleanup(attachTileflowLabelPlacement(map));
+        // Feature queries and taps keep working once a steep pitch shows the horizon.
+        registerCleanup(attachTileflowHorizonQueries(map));
         const themeController =
           initialRuntimeStyle.theme === undefined
             ? undefined

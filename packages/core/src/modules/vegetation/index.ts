@@ -52,6 +52,9 @@ export type TileflowVegetationThreeDimensionalStyle = {
       {
         heightScale?: TileflowThemeNumberValue;
         crownScale?: TileflowThemeNumberValue;
+        sizeAnchor?: TileflowThemeNumberValue;
+        crownAnchor?: TileflowThemeNumberValue;
+        sizeCompression?: TileflowThemeNumberValue;
         models?: readonly string[];
       }
     >

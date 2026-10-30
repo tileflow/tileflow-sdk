@@ -51,7 +51,7 @@
     "access": "public"
   },
   "dependencies": {
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "peerDependencies": {
     "maplibre-gl": ">=6.4.1 <7"

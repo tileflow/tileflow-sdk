@@ -228,6 +228,11 @@ class TileflowArtifactSessionImpl implements TileflowArtifactSession {
     }
 
     await this.refresh('initial');
+    // A watcher can supersede the initial build before it publishes any artifacts.
+    // Its completion, not the discarded build, determines whether startup is valid.
+    while (!this.#current && this.#state.status === 'building' && !this.#closed) {
+      await Promise.all([...this.#refreshes]);
+    }
 
     if (this.#watcher && !this.#closed) {
       // Reconcile one creation lost while native notifications were starting.

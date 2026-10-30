@@ -59,12 +59,7 @@ for (const probe of [
   {name: 'a 408', reply: () => response(408, null), code: 'UNAVAILABLE'},
   {name: 'a rate-limit 429', reply: () => response(429, rateLimited), code: 'RATE_LIMITED'},
   {name: 'a bare 429', reply: () => response(429, ''), code: 'RATE_LIMITED'},
-  {
-    name: 'a 400',
-    reply: () => response(400, {code: 'MOBILE_SESSION_INVALID_INPUT'}),
-    code: 'REJECTED',
-  },
-  {name: 'an unknown 418', reply: () => response(418, null), code: 'REJECTED'},
+  {name: 'a redirect status', reply: () => response(302, null), code: 'RESPONSE_INVALID'},
   {
     name: 'a success without no-store',
     reply: () => response(201, success(), {headers: {'cache-control': 'private'}}),
@@ -100,7 +95,7 @@ for (const probe of [
 for (const probe of [
   {status: 500, body: null},
   {status: 429, body: rateLimited},
-  {status: 400, body: null},
+  {status: 302, body: null},
 ]) {
   test(`one ${probe.status} does not stop the map: the next bootstrap succeeds`, async () => {
     const clock = createClock();
@@ -123,18 +118,45 @@ for (const probe of [
   });
 }
 
-for (const [status, body, code] of [
-  [401, {code: 'MOBILE_CREDENTIAL_INVALID'}, 'NATIVE_SESSION_CREDENTIAL_REJECTED'],
-  [403, {code: 'MOBILE_MAP_MISMATCH'}, 'NATIVE_SESSION_MAP_MISMATCH'],
-  [404, {code: 'MOBILE_MAP_NOT_FOUND'}, 'NATIVE_SESSION_MAP_NOT_FOUND'],
+for (const [status, body, code, reason] of [
+  [401, {code: 'MOBILE_CREDENTIAL_INVALID'}, 'NATIVE_SESSION_CREDENTIAL_REJECTED', undefined],
+  [403, {code: 'MOBILE_MAP_MISMATCH'}, 'NATIVE_SESSION_MAP_MISMATCH', undefined],
+  [404, {code: 'MOBILE_MAP_NOT_FOUND'}, 'NATIVE_SESSION_MAP_NOT_FOUND', undefined],
   [
     429,
     {code: 'COMMERCIAL_MAP_LIMIT_REACHED', sessionId: 'ses_test_1'},
     'NATIVE_SESSION_QUOTA_EXCEEDED',
+    undefined,
   ],
-  [429, {code: 'COMMERCIAL_SPENDING_LIMIT_REACHED'}, 'NATIVE_SESSION_QUOTA_EXCEEDED'],
+  [429, {code: 'COMMERCIAL_SPENDING_LIMIT_REACHED'}, 'NATIVE_SESSION_QUOTA_EXCEEDED', undefined],
+  // The platform's other session-start refusals.
+  [
+    400,
+    {code: 'MOBILE_SESSION_MODE_REQUIRED'},
+    'NATIVE_SESSION_REJECTED',
+    'MOBILE_SESSION_MODE_REQUIRED',
+  ],
+  [
+    400,
+    {code: 'MOBILE_AUTHORITY_CONFLICT'},
+    'NATIVE_SESSION_REJECTED',
+    'MOBILE_AUTHORITY_CONFLICT',
+  ],
+  [
+    400,
+    {code: 'MOBILE_SESSION_INVALID_INPUT'},
+    'NATIVE_SESSION_REJECTED',
+    'MOBILE_SESSION_INVALID_INPUT',
+  ],
+  [
+    413,
+    {code: 'MOBILE_SESSION_BODY_TOO_LARGE'},
+    'NATIVE_SESSION_REJECTED',
+    'MOBILE_SESSION_BODY_TOO_LARGE',
+  ],
+  [418, {code: undefined}, 'NATIVE_SESSION_REJECTED', undefined],
 ] as const) {
-  test(`${status} ${body.code} stops the binding until an explicit retry`, async () => {
+  test(`${status} ${body.code ?? 'without a code'} stops the binding until an explicit retry`, async () => {
     const clock = createClock();
     const {queue, controller} = controllerFor(
       [
@@ -145,9 +167,17 @@ for (const [status, body, code] of [
     );
     try {
       await assert.rejects(controller.acquire(), {code, kind: 'terminal'});
+      const stopped = controller.state;
+      assert.equal(stopped.status === 'error' ? stopped.error.reason : null, reason);
       // Neither time nor Retry-After lifts the stop.
       clock.advance(60 * 60 * 1000);
-      await assert.rejects(controller.acquire(), {code});
+      await assert.rejects(controller.acquire(), (error: unknown) => {
+        assert.deepEqual(
+          [(error as {code?: string}).code, (error as {reason?: string}).reason],
+          [code, reason],
+        );
+        return true;
+      });
       assert.equal(queue.calls.length, 1);
       assert.equal(controller.retryDelay?.(), null);
       assert.equal(controller.state.status, 'error');

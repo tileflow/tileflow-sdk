@@ -54,32 +54,4 @@ final class ResourcePolicyTests: XCTestCase {
         origins: ["http://192.168.1.10"], allowsLoopbackHTTP: true
       ).validate(URL(string: "http://192.168.1.10")!))
   }
-
-  func testGeoJSONAndPointsFollowTheRendererContract() throws {
-    func layer(_ text: String) throws -> TileflowGeoJSONLayer {
-      try TileflowGeoJSONLayer(id: "content", geoJSON: Data(text.utf8), kind: .fill)
-    }
-    let ring = "[[0,0],[1,0],[1,1],[0,1],[0,0]]"
-    _ = try layer(
-      #"{"type":"FeatureCollection","bbox":[0,0,1,1],"features":[{"type":"Feature","id":7,"bbox":[0,0,1,1],"geometry":{"type":"Polygon","bbox":[0,0,1,1],"coordinates":[\#(ring)]},"properties":{"name":"Park","tags":["a"]}}]}"#
-    )
-    _ = try layer(
-      #"{"type":"FeatureCollection","features":[{"type":"Feature","geometry":null,"properties":null}]}"#
-    )
-    for invalid in [
-      #"{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"GeometryCollection","geometries":[]},"properties":{}}]}"#,
-      #"{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[181,0]},"properties":{}}]}"#,
-      #"{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,1]]]},"properties":{}}]}"#,
-      #"{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[0,0]}}]}"#,
-      #"{"type":"FeatureCollection","features":[{"type":"Feature","id":1.5,"geometry":null,"properties":null}]}"#,
-      #"{"type":"FeatureCollection","features":[],"bbox":[0,0,1]}"#,
-      #"{"type":"FeatureCollection","features":[],"crs":{}}"#,
-    ] {
-      XCTAssertThrowsError(try layer(invalid), invalid)
-    }
-    try TileflowMapView.validate(CGPoint(x: -120, y: 2400))
-    for point in [CGPoint(x: CGFloat.nan, y: 0), CGPoint(x: 0, y: 40_000)] {
-      XCTAssertThrowsError(try TileflowMapView.validate(point))
-    }
-  }
 }

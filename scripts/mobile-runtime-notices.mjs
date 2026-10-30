@@ -42,6 +42,19 @@ export async function collectRuntimeNotices({inputs, packageRoot, repositoryRoot
     if (texts.length === 0 && manifest.name.startsWith('@tileflow/')) {
       texts.push(await readFile(resolve(repositoryRoot, 'LICENSE'), 'utf8'));
     }
+    // PMTiles omits its license from the npm tarball. Core retains the reviewed upstream
+    // notice; require the exact version heading so an upgrade cannot reuse an older notice.
+    if (texts.length === 0 && manifest.name === 'pmtiles') {
+      const reviewed = await readFile(
+        resolve(repositoryRoot, 'packages/core/THIRD_PARTY_NOTICES.md'),
+        'utf8',
+      );
+      const section = reviewed
+        .replaceAll('\r\n', '\n')
+        .split(`\n## PMTiles ${manifest.version}\n`)[1]
+        ?.split('\n## ')[0];
+      if (section?.trim()) texts.push(section.trim());
+    }
     if (texts.length === 0)
       throw new Error(`No license text found for bundled package ${identity}.`);
     inventory.push({

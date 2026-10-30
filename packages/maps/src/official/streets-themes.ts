@@ -1,6 +1,7 @@
 import {defineTheme, token} from '@tileflow/core';
 import {streetsBuildingColors} from './streets-building-colors';
 import {streetsCartographyColors} from './streets-cartography-colors';
+import {streetsCartographyThemes} from './streets-cartography-themes';
 import {streetsLighting} from './streets-lighting';
 import {streetsModelLighting} from './streets-model-lighting';
 import {streetsPoiImageTokens} from './streets-poi';
@@ -692,20 +693,22 @@ function defineStreetsPaletteTheme(
 
 // Mapbox exposes lighting presets and color themes as independent controls. Tileflow themes are
 // complete snapshots, so include each combination while keeping the familiar light/dark names.
-export const streetsThemes = Object.freeze({
-  light: streetsLightTheme,
-  dark: streetsDarkTheme,
-  dawn: defineStreetsPaletteTheme('dawn', 'dawn', 'default'),
-  dusk: defineStreetsPaletteTheme('dusk', 'dusk', 'default'),
-  faded: defineStreetsPaletteTheme('faded', 'day', 'faded'),
-  monochrome: defineStreetsPaletteTheme('monochrome', 'day', 'monochrome'),
-  'dawn-faded': defineStreetsPaletteTheme('dawn-faded', 'dawn', 'faded'),
-  'dawn-monochrome': defineStreetsPaletteTheme('dawn-monochrome', 'dawn', 'monochrome'),
-  'dusk-faded': defineStreetsPaletteTheme('dusk-faded', 'dusk', 'faded'),
-  'dusk-monochrome': defineStreetsPaletteTheme('dusk-monochrome', 'dusk', 'monochrome'),
-  'dark-faded': defineStreetsPaletteTheme('dark-faded', 'night', 'faded'),
-  'dark-monochrome': defineStreetsPaletteTheme('dark-monochrome', 'night', 'monochrome'),
-});
+export const streetsThemes = Object.freeze(
+  streetsCartographyThemes({
+    light: streetsLightTheme,
+    dark: streetsDarkTheme,
+    dawn: defineStreetsPaletteTheme('dawn', 'dawn', 'default'),
+    dusk: defineStreetsPaletteTheme('dusk', 'dusk', 'default'),
+    faded: defineStreetsPaletteTheme('faded', 'day', 'faded'),
+    monochrome: defineStreetsPaletteTheme('monochrome', 'day', 'monochrome'),
+    'dawn-faded': defineStreetsPaletteTheme('dawn-faded', 'dawn', 'faded'),
+    'dawn-monochrome': defineStreetsPaletteTheme('dawn-monochrome', 'dawn', 'monochrome'),
+    'dusk-faded': defineStreetsPaletteTheme('dusk-faded', 'dusk', 'faded'),
+    'dusk-monochrome': defineStreetsPaletteTheme('dusk-monochrome', 'dusk', 'monochrome'),
+    'dark-faded': defineStreetsPaletteTheme('dark-faded', 'night', 'faded'),
+    'dark-monochrome': defineStreetsPaletteTheme('dark-monochrome', 'night', 'monochrome'),
+  }),
+);
 
 /** Theme references consumed by the shared Streets semantic modules. */
 export const streetsVisual = {

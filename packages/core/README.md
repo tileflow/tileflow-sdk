@@ -69,9 +69,7 @@ Omitted fields inherit, but declaring a field does not imply a recursive merge:
   provider. `atmosphere`, `data`, `projection`, `sky`, `terrain`, and `marine` are also atomic.
 
 Identity (`id`, `name`, `version`) and tooling `scenes` and `shots` belong to the leaf map and do not inherit.
-Module object order does not determine rendering order. See the
-[map inheritance contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/map-inheritance.md)
-for the complete merge rules.
+Module object order does not determine rendering order.
 
 ## Team Icon Sets foundations
 
@@ -104,6 +102,20 @@ Importing `iconSet` adds a declaration; it resolves no revision and does not by 
 Team catalog available to your deployment.
 
 ## Style with themes and semantic modules
+
+`roads.pathGround` optionally gives surface paths different colors on mapped green ground and
+elsewhere. It accepts `greenColor`, `groundColor`, optional `widthScale`, and `opacity` (zero
+disables the treatment). The compiler keeps a complete ground-colored path, adds clipped green
+portions from the same HTTP(S) vector source, and places paths below vehicle casings. Grass,
+woods, wetlands, orchards, nurseries, and green recreation polygons supply context; polygon
+holes remain unpainted. Classification follows tile geometry, not imagery or inferred climate.
+
+Framework web adapters, CLI preview, capture, and the embedded mobile web runtime register the
+derived-source protocol automatically. Raw MapLibre integrations must call
+`registerTileflowPathGroundProtocol({addProtocol: maplibregl.addProtocol})` from
+`@tileflow/core/browser` before creating the map. The `native-v1` build keeps the complete
+ground-colored paths and disables the green overlay, since native renderers cannot run this
+browser protocol. Its build record explicitly reports `pathGround: 'ground-fallback'`.
 
 Themes are complete appearance documents, not loose color overrides. Every theme must supply the
 same token schema. Use `token.color(...)`, `token.number(...)`, `token.image(...)`, and typed font
@@ -138,35 +150,27 @@ export default defineMap({
 `system` is a runtime selection policy, not a stored theme. Builds, captures, static scenes, and
 receipts must use a concrete theme such as `light` or `dark`.
 
-Theme and `timeOfDay` changes animate over 450 ms by default, respecting reduced motion. See
-[theme transitions, time-of-day presets and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md).
+Theme and `timeOfDay` changes animate over 450 ms by default, respecting reduced motion.
 The same controller can make chosen modules recede and the map's labels fade so an application's
-own content reads first; see [map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md).
+own content reads first.
 It also sets the style-wide states that themes read with `expr.globalState`, easing numbers so the
-values a theme interpolates on them move smoothly; see
-[style states](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/style-states.md).
+values a theme interpolates on them move smoothly.
 For application-drawn RGBA symbols, it also manages fixed-size
-[dynamic style images](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/dynamic-style-images.md),
+dynamic style images,
 including state refresh, theme changes and restoration without changing layer placement.
 Applications draw their own routes in the theme's inks, read with `getRouteInks()`, and draw them
 on with `createTileflowLineProgress`. `createTileflowGroundLayers` keeps them under 3D buildings,
-which hide them where they stand in front, and can show the hidden stretches faintly; see
-[route drawing](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/route-drawing.md).
+which hide them where they stand in front, and can show the hidden stretches faintly.
 A theme can describe its sun and sky light (`lighting.sun`, `lighting.ambient`); the controller
 returns the sun the map shows with `getSun()`, mixed during a blend, for an application's own 3D
-layers, and `setSun()` places it by direction or by the real sun of a date and place; see
-[sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md).
+layers, and `setSun()` places it by direction or by the real sun of a date and place.
 `createTileflowBuildings3D` enables worker-meshed buildings rising in at zoom 15–15.3, with scene
-sun, cast/contact shadows and 0.8 m rounded corners. Each effect is independently overridable. See
-[3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md).
+sun, cast/contact shadows and 0.8 m rounded corners. Each effect is independently overridable.
 Street lights default to off, including in Streets. Set `roads.streetLights.enabled: true` and mount
-`createTileflowStreetLights` to enable them; see
-[street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md).
-`createTileflowVegetation` controls all trees using the map's `3d`, `flat` or `auto` policy; see
-[vegetation controls and 3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md).
+`createTileflowStreetLights` to enable them.
+`createTileflowVegetation` controls all trees using the map's `3d`, `flat` or `auto` policy.
 
 POI icons and names place together; `placement.coupleIconAndLabel: false` separates them.
-See [rank limits](docs/cartographic-defaults.md).
 
 The semantic domains are `land`, `water`, `nautical`, `roads`, `buildings`, `boundaries`, `labels`,
 `poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`. Style stable geographic
@@ -231,8 +235,7 @@ framework Map is manifest-backed, without a renderer discriminator or direct-sty
 obsolete source fields `kind` and `style` are rejected. Completely unmanaged maps use upstream
 MapLibre directly. Omitted themes use the manifest default, concrete themes select exact names,
 and `system` requires the manifest's explicit light/dark mapping and a supplied runtime color scheme.
-See the [native source guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-resource-urls.md)
-for source coordination, bounded acquisition and safe diagnostics. The pre-release React Native
+The pre-release React Native
 package uses this contract for its mounted Map; it is not yet published.
 
 ## Data, terrain, and browser resources
@@ -251,24 +254,23 @@ vector data retains the attribution supplied by its owner.
 form for explicit hillshade and contour configuration. Browser-derived contours require a DEM tile
 template, zoom limits, thresholds, and the Tileflow contour protocol. Framework adapters and local
 tooling prepare browser resources; direct MapLibre integrations must register required protocols
-before loading a style. See the
-[browser runtime contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/framework-browser-runtime.md).
+before loading a style.
 
 With `projection: 'globe'`, `atmosphere: true` adds a halo and stars; an object configures colors, star count and size.
 `sky` follows the sun at street level. Frameworks and capture attach both; direct
 MapLibre consumers call `attachTileflowAtmosphere(map)` from `@tileflow/core/browser`.
-See
-[globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md)
-and [street sky](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-sky.md).
 
 Applications that need the map's data themselves, such as streets to route over or the place
 under the camera, read chosen layers of a vector source for an area at a fixed zoom with
-`createTileflowTileReader` from `@tileflow/core/browser`, which also runs in a module worker. See
-[application tile reading](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/application-tile-reading.md).
+`createTileflowTileReader` from `@tileflow/core/browser`, which also runs in a module worker.
 
-In a 3D scene, `createTileflowDepthMarkers` from `@tileflow/core/browser` draws application markers
-that nearer buildings hide, facing the viewer or lying on the ground. See
-[depth markers](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/depth-markers.md).
+Browser 3D scenes support `camera.adaptivePerspective`: caller override,
+map default, then `false`. Streets enables it. Depth markers let buildings
+occlude application markers.
+Model roles use `modelLighting` for independent colours and materials. `colorScale` (0–1,
+default 1) subtly darkens a role after recolouring. Map-shaded models share the buildings’
+vertical/contact gradient; physical roles keep their own lighting. Model corner geometry is
+authored in the asset, while ordinary tile corners use `edgeRadius`.
 
 Text requires exactly one provider. Soundings and Blueprint use URL glyphs; Streets packages DINish
 and Noto Sans; Baedeker, 1777 and Siegfried package Cormorant; Cívica packages its lettering. Hosted
@@ -277,45 +279,11 @@ URLs do not grant redistribution rights.
 
 ## Reference
 
-Use the [generated language schema](https://github.com/tileflow/tileflow-sdk/blob/main/docs/modules-api-reference.json),
-[cartographic authoring contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/cartographic-authoring.md),
+Use the [generated language schema](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/reference/modules-api-reference.json),
 and [public exports](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/src/index.ts)
 for exact options. Prefer the installed CLI's generated contracts when using a published release;
 `main` can contain unreleased changes. Report defects in the
 [issue tracker](https://github.com/tileflow/tileflow-sdk/issues).
-
-## Detailed guides
-
-These guides also ship in the installed package under `docs/` and describe this source revision;
-prefer the installed copy for an older release.
-
-- [Globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md)
-- [Map and terrain examples](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-and-terrain-examples.md)
-- [Authoring model](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/authoring-model.md)
-- [Shared visual primitives](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/shared-visual-primitives.md)
-- [Compiled-style performance](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/compiled-style-performance.md)
-- [Camera moves and the tile cache](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/camera-moves-and-tile-cache.md)
-- [Cartographic defaults and overrides](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/cartographic-defaults.md)
-- [Themes and module styles](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/themes-and-module-styles.md)
-- [Theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md)
-- [Map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md)
-- [Style states](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/style-states.md)
-- [Route drawing](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/route-drawing.md)
-- [Sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md)
-- [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md)
-- [Street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md)
-- [3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md)
-- [Boundary areas and choropleths](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/boundary-areas-and-choropleths.md)
-- [Nautical marks](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/nautical-marks.md)
-- [Data is separate from design](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/data-is-separate-from-design.md)
-- [Capture scenes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-scenes.md)
-- [Capture shots](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)
-- [Public API and browser subpath](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/public-api-and-browser-subpath.md)
-- [Application tile reading](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/application-tile-reading.md)
-- [Depth markers](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/depth-markers.md)
-- [Hosted session authorization](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/hosted-session-authorization.md)
-- [Native resource URLs](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-resource-urls.md)
-- [Native artifact profile](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-artifact-profile.md)
 
 ## Native icon capabilities
 
@@ -323,4 +291,18 @@ Prepared icon metadata identifies SDF assets and their default fill and halo. Co
 symbol layer that can select both SDF and RGBA, including fallbacks and effective local overrides,
 with `TF_ICON_REPRESENTATION_MIXED`. It preserves layers, collisions and interaction IDs. Omitted
 SDF paint follows the resolved image selection; supplied map paint stays independent from asset
-defaults. See [Author recolorable and adaptable icons](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-icons.md).
+defaults. See [Author recolorable and adaptable icons](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/README.md).
+
+Land may supply a georeferenced `globalLandcoverUnderlay` image with `url`, four
+`coordinates` (northwest, northeast, southeast, southwest), `attribution`, zoom bounds
+and themed `opacity`. It is drawn below global cover and omitted when land is disabled.
+Tree forms may use `sizeAnchor` and `crownAnchor` (metres) with `sizeCompression`
+from 0 to 1 to reduce size variation while preserving each tree’s proportions.
+
+## Flat footprints under 3D buildings
+
+`modules.buildings.threeDimensional.flatFootprints` defaults to `true`. Set it to `false`
+to suspend duplicate flat building fills, outlines and flat shadows in the shared 3D scene,
+after its building entrance zoom. Roads then remain visible beneath open landmark structures.
+Returning to 2D or disposing the scene restores their previous visibility; without WebGL2 the
+flat fallback remains. Streets selects this option; other maps keep their authored treatment.

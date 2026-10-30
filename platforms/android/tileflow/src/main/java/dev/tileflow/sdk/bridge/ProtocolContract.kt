@@ -2,24 +2,129 @@
 
 package dev.tileflow.sdk.bridge
 
+import dev.tileflow.sdk.TileflowEventLevel
+
 internal object ProtocolContract {
-    const val VERSION = 1
+    const val VERSION = 2
+    const val MINIMUM_VERSION = 2
     const val MAXIMUM_MESSAGE_BYTES = 65536
     const val MAXIMUM_PENDING_REQUESTS = 64
     const val REQUEST_TIMEOUT_MILLIS = 30000L
+    const val MAXIMUM_DATA_BYTES = 33_554_432
+    const val MAXIMUM_DATA_TOTAL_BYTES = 67_108_864
+    const val MAXIMUM_DATA_REFERENCES = 64
+    const val MAXIMUM_THROTTLE_MILLIS = 60000L
+    const val WARNING_WINDOW_MILLIS = 1000L
+    const val MAXIMUM_TRACKED_POINTS = 2048
+    const val MAXIMUM_ANNOTATION_LAYERS = 256
+
     enum class Method(val wireName: String) {
         INITIALIZE("initialize"),
-        SET_CAMERA("setCamera"),
+        CANCEL("cancel"),
+        SET_EVENTS("setEvents"),
+        MOVE_CAMERA("moveCamera"),
+        STOP_CAMERA("stopCamera"),
         GET_CAMERA("getCamera"),
+        CAMERA_FOR_BOUNDS("cameraForBounds"),
+        VISIBLE_BOUNDS("visibleBounds"),
+        SET_INSETS("setInsets"),
         SET_THEME("setTheme"),
         SET_BLEND("setBlend"),
         SET_OPTIONS("setOptions"),
         SET_CONTENT("setContent"),
-        FIT_BOUNDS("fitBounds"),
         PROJECT("project"),
         UNPROJECT("unproject"),
         SET_VISIBILITY("setVisibility"),
         QUERY_AT_POINT("queryAtPoint"),
+        SET_VIEW_MODE("setViewMode"),
+        SET_SUN("setSun"),
+        SET_EMPHASIS("setEmphasis"),
+        SET_STYLE_STATE("setStyleState"),
+        GET_ROUTE_INKS("getRouteInks"),
+        SET_BOUNDARY_VALUES("setBoundaryValues"),
+        SET_IMAGES("setImages"),
+        SET_DEPTH_MARKERS("setDepthMarkers"),
+        ANIMATE_LINE_PROGRESS("animateLineProgress"),
+        PLAY_SHOT("playShot"),
+        STOP_ANIMATION("stopAnimation"),
+        UPDATE_LOCATION("updateLocation"),
+        SET_FOLLOW_MODE("setFollowMode"),
+        SET_ANNOTATION_LAYERS("setAnnotationLayers"),
+        SET_TRACKED_POINTS("setTrackedPoints"),
+        ADD_SOURCE("addSource"),
+        REMOVE_SOURCE("removeSource"),
+        SET_GEO_JSON_SOURCE_DATA("setGeoJSONSourceData"),
+        UPDATE_GEO_JSON_SOURCE("updateGeoJSONSource"),
+        ADD_LAYER("addLayer"),
+        UPDATE_LAYER("updateLayer"),
+        MOVE_LAYER("moveLayer"),
+        REMOVE_LAYER("removeLayer"),
+        SET_FEATURE_STATE("setFeatureState"),
+        GET_FEATURE_STATE("getFeatureState"),
+        REMOVE_FEATURE_STATE("removeFeatureState"),
+        QUERY_RENDERED_FEATURES("queryRenderedFeatures"),
+        QUERY_SOURCE_FEATURES("querySourceFeatures"),
+        QUERY_CLUSTER("queryCluster"),
+        READ_RESULT("readResult"),
         DISPOSE("dispose"),
     }
+
+    /**
+     * [level] is the least detailed level that includes the event, or null when it needs no
+     * subscription.
+     */
+    enum class Event(val wireName: String, val level: TileflowEventLevel?) {
+        HELLO("hello", null),
+        ERROR("error", null),
+        LOADING("loading", TileflowEventLevel.ESSENTIAL),
+        CONTENT_READY("contentReady", TileflowEventLevel.ESSENTIAL),
+        THEME_CHANGED("themeChanged", TileflowEventLevel.ESSENTIAL),
+        THEME_TRANSITION("themeTransition", TileflowEventLevel.ESSENTIAL),
+        ANIMATION_ENDED("animationEnded", TileflowEventLevel.ESSENTIAL),
+        SHOT_CUE("shotCue", TileflowEventLevel.ESSENTIAL),
+        WARNING("warning", TileflowEventLevel.ESSENTIAL),
+        TAP("tap", TileflowEventLevel.ESSENTIAL),
+        LONG_PRESS("longPress", TileflowEventLevel.ESSENTIAL),
+        ANNOTATION_ACTIVATED("annotationActivated", TileflowEventLevel.ESSENTIAL),
+        POI_ACTIVATED("poiActivated", TileflowEventLevel.ESSENTIAL),
+        ANNOTATION_DRAGGED("annotationDragged", TileflowEventLevel.ESSENTIAL),
+        FOLLOW_MODE_CHANGED("followModeChanged", TileflowEventLevel.ESSENTIAL),
+        CAMERA_MOVE_ENDED("cameraMoveEnded", TileflowEventLevel.ESSENTIAL),
+        CAMERA_MOVE_STARTED("cameraMoveStarted", TileflowEventLevel.CAMERA),
+        GESTURE_STARTED("gestureStarted", TileflowEventLevel.CAMERA),
+        GESTURE_ENDED("gestureEnded", TileflowEventLevel.CAMERA),
+        CAMERA_MOVED("cameraMoved", TileflowEventLevel.CONTINUOUS),
+        TRACKED_POINTS_MOVED("trackedPointsMoved", TileflowEventLevel.CONTINUOUS),
+    }
+
+    enum class ErrorReason(val wireName: String) {
+        PROTOCOL_VERSION("protocolVersion"),
+        RUNTIME_HASH("runtimeHash"),
+        WEB_VIEW_VERSION("webViewVersion"),
+        HANDSHAKE("handshake"),
+        DATA_TOO_LARGE("dataTooLarge"),
+        DATA_INTEGRITY("dataIntegrity"),
+        DATA_UNAVAILABLE("dataUnavailable"),
+        INVALID_GEO_JSON("invalidGeoJSON"),
+        GRAPHICS_CONTEXT_LOST("graphicsContextLost"),
+        PROCESS_TERMINATED("processTerminated"),
+        CONTENT_RESTORE("contentRestore"),
+        SCENE("scene"),
+        INVALID_IMAGE("invalidImage"),
+        UNKNOWN_LAYER("unknownLayer"),
+        UNKNOWN_SOURCE("unknownSource"),
+    }
+
+    /** Error codes the renderer may send. Any other code from the renderer is a protocol fault. */
+    val RUNTIME_ERRORS: Set<String> =
+        setOf(
+            "incompatibleRuntime",
+            "invalidRequest",
+            "notReady",
+            "cancelled",
+            "disposed",
+            "timeout",
+            "resourceFailed",
+            "rendererFailed",
+        )
 }

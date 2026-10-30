@@ -26,7 +26,7 @@ are `suspend` functions. No public type belongs to WebKit, Android WebView or Ma
 Inline GeoJSON travels to the renderer over the SDK's data channel, not in a message: up to 32 MiB
 per source and 64 MiB in flight per map. The renderer checks it against RFC 7946 before the map
 receives it. Addresses go through the SDK's own transport, so their origins must be listed in the
-map source's `resourceOrigins`.
+map source's `resourceOrigins`, or in `publicResourceOrigins` for a Hosted map.
 
 ```swift
 try await map.addSource(
@@ -162,8 +162,8 @@ symbol layers recolour with `iconColor` and `iconHaloColor`. Symbol layers name 
 ## Clusters
 
 A clustering GeoJSON source draws clusters as features with `point_count`, `point_count_abbreviated`
-and `cluster_id`, plus the source's `clusterProperties`. `TileflowFeature.clusterID` (Swift) or
-`clusterId` (Kotlin) reads the identifier that cluster queries take:
+and `cluster_id`, plus the source's `clusterProperties`. `TileflowFeature.clusterId` reads the
+identifier that cluster queries take:
 
 - `clusterExpansionZoom`: the zoom at which a cluster splits;
 - `clusterChildren`: the clusters and points one level below it;
@@ -172,7 +172,7 @@ and `cluster_id`, plus the source's `clusterProperties`. `TileflowFeature.cluste
 ```swift
 let hits = try await map.queryRenderedFeatures(
   in: .point(touch.point), options: .init(layerIds: ["clusters"]))
-if let cluster = hits.first?.feature.clusterID {
+if let cluster = hits.first?.feature.clusterId {
   let zoom = try await map.clusterExpansionZoom(sourceId: "places", clusterId: cluster)
   try await map.ease(to: TileflowCameraUpdate(zoom: zoom))
 }

@@ -114,7 +114,7 @@ final class StyleTests: XCTestCase {
         #"{"id":12,"source":"points","layer":"clusters","geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,0]]]},"properties":{"cluster_id":4,"name":"A","tags":["x"],"nested":{"a":null}},"state":{"selected":true}}"#
       ))
     XCTAssertEqual(feature.feature.id, "12")
-    XCTAssertEqual(feature.feature.clusterID, 4)
+    XCTAssertEqual(feature.feature.clusterId, 4)
     XCTAssertEqual(feature.source, "points")
     XCTAssertEqual(feature.layer, "clusters")
     XCTAssertNil(feature.sourceLayer)

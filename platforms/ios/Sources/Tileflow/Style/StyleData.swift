@@ -171,7 +171,7 @@ public struct TileflowFeature: Sendable, Equatable {
   }
 
   /// For a cluster of a clustering source: the identifier its cluster queries take.
-  public var clusterID: Int? {
+  public var clusterId: Int? {
     properties["cluster_id"]?.number.flatMap { Int(exactly: $0) }
   }
 }

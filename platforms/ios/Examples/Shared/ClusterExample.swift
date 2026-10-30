@@ -74,7 +74,7 @@ enum ClusterExample {
     let hits = try await map.queryRenderedFeatures(
       in: .point(point), options: .init(layerIds: ["clusters", "points"]))
     guard let hit = hits.first else { return nil }
-    if let cluster = hit.feature.clusterID, case .point(let center) = hit.feature.geometry {
+    if let cluster = hit.feature.clusterId, case .point(let center) = hit.feature.geometry {
       let zoom = try await map.clusterExpansionZoom(sourceId: source, clusterId: cluster)
       _ = try await map.ease(
         to: TileflowCameraUpdate(center: center, zoom: zoom), duration: 0.5, easing: .standard)

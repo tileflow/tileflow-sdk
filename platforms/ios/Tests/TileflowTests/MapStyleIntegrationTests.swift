@@ -178,11 +178,11 @@ final class MapStyleIntegrationTests: XCTestCase {
       found.max { ($0.feature.properties["point_count"]?.number ?? 0) < ($1.feature.properties["point_count"]?.number ?? 0) })
     XCTAssertEqual(largest.layer, "clusters")
     XCTAssertGreaterThan(largest.feature.properties["rankSum"]?.number ?? 0, 0)
-    let clusterID = try XCTUnwrap(largest.feature.clusterID)
+    let clusterId = try XCTUnwrap(largest.feature.clusterId)
     guard case .point(let center) = largest.feature.geometry else { return XCTFail("A point") }
-    let children = try await view.clusterChildren(sourceId: "points", clusterId: clusterID)
+    let children = try await view.clusterChildren(sourceId: "points", clusterId: clusterId)
     XCTAssertGreaterThan(children.count, 1)
-    let leaves = try await view.clusterLeaves(sourceId: "points", clusterId: clusterID, limit: 2000)
+    let leaves = try await view.clusterLeaves(sourceId: "points", clusterId: clusterId, limit: 2000)
     XCTAssertEqual(leaves.count, min(2000, Int(largest.feature.properties["point_count"]?.number ?? 0)))
 
     // An interactive cluster: a tap finds it and the map zooms to where it splits.
@@ -191,7 +191,7 @@ final class MapStyleIntegrationTests: XCTestCase {
     let tap = try await elapsed {
       let hits = try await view.queryRenderedFeatures(
         in: .point(tapped), options: .init(layerIds: ["clusters"]))
-      let id = try XCTUnwrap(hits.first?.feature.clusterID)
+      let id = try XCTUnwrap(hits.first?.feature.clusterId)
       zoom = try await view.clusterExpansionZoom(sourceId: "points", clusterId: id)
     }
     measurements.append(String(format: "cluster tap to expansion zoom %.0f ms", tap))

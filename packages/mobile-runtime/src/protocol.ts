@@ -29,7 +29,11 @@ const sourceSchema = z.strictObject({
 });
 const themeSchema = z.string().min(1).max(128);
 const duration = finite.min(0).max(5000).default(0);
-const point = z.strictObject({x: finite.min(0).max(32768), y: finite.min(0).max(32768)});
+// Points may lie outside the view, as a projected off-screen coordinate does.
+const point = z.strictObject({
+  x: finite.min(-32768).max(32768),
+  y: finite.min(-32768).max(32768),
+});
 const coordinate = z.strictObject({
   longitude: finite.min(-180).max(180),
   latitude: finite.min(-90).max(90),
@@ -126,13 +130,13 @@ const commandSchema = z.discriminatedUnion('method', [
   z.strictObject({method: z.literal('dispose'), payload: z.null()}),
 ]);
 export type Command = z.infer<typeof commandSchema>;
-const envelopeSchema = z.strictObject({
+const identitySchema = z.object({
   protocolVersion: z.literal(protocol.version),
   instanceId: identifier,
   generation: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
   requestId: z.string().regex(/^[1-9][0-9]{0,14}$/u),
-  command: commandSchema,
 });
+const envelopeSchema = z.strictObject({...identitySchema.shape, command: commandSchema});
 export type Request = z.infer<typeof envelopeSchema>;
 export type ProtocolErrorCode = (typeof protocol.errors)[number];
 export type EventName = (typeof protocol.events)[number];
@@ -155,23 +159,35 @@ export class ProtocolError extends Error {
   }
 }
 
-export function parseRequest(value: unknown): Request {
+function parseMessage(value: unknown): unknown {
   if (
     typeof value !== 'string' ||
     new TextEncoder().encode(value).length > protocol.maximumMessageBytes
   ) {
     throw new ProtocolError('invalidRequest', 'The request exceeds the protocol limits.');
   }
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(value) as unknown;
+    return JSON.parse(value) as unknown;
   } catch {
     throw new ProtocolError('invalidRequest', 'The request is not valid JSON.');
   }
-  const result = envelopeSchema.safeParse(parsed);
+}
+
+export function parseRequest(value: unknown): Request {
+  const result = envelopeSchema.safeParse(parseMessage(value));
   if (!result.success)
     throw new ProtocolError('invalidRequest', 'The request does not match the protocol.');
   return result.data;
+}
+
+/** The addressing of a request whose command is invalid, so its caller can be answered. */
+export function readRequestIdentity(value: unknown): z.infer<typeof identitySchema> | undefined {
+  try {
+    const result = identitySchema.safeParse(parseMessage(value));
+    return result.success ? result.data : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Request identities are single-use; retirement invalidates in-flight results before cleanup. */
@@ -201,7 +217,17 @@ export function createDispatcher(input: {
       try {
         request = parseRequest(value);
       } catch {
-        fail(undefined, 'invalidRequest', 'The request does not match the protocol.');
+        // Answer an addressable request so its caller fails now rather than at its timeout.
+        const identity = readRequestIdentity(value);
+        if (!identity) {
+          fail(undefined, 'invalidRequest', 'The request does not match the protocol.');
+        } else if (
+          identity.instanceId === input.instanceId &&
+          identity.generation === input.generation
+        ) {
+          lastRequest = Math.max(lastRequest, Number(identity.requestId));
+          fail(identity.requestId, 'invalidRequest', 'The request does not match the protocol.');
+        }
         return;
       }
       if (request.instanceId !== input.instanceId || request.generation !== input.generation) {

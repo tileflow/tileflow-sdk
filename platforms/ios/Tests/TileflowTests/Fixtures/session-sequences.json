@@ -395,39 +395,104 @@
       ]
     }
   ],
-  "resourceRejections": [
+  "resourceReactions": [
     {
       "status": 401,
-      "error": "credentialRejected"
+      "code": "NATIVE_GRANT_STALE",
+      "resource": "tile",
+      "reaction": "refresh"
+    },
+    {
+      "status": 401,
+      "code": "NATIVE_GRANT_EXPIRED",
+      "resource": "style",
+      "reaction": "refresh"
+    },
+    {
+      "status": 401,
+      "resource": "tile",
+      "refreshed": true,
+      "reaction": "none"
     },
     {
       "status": 403,
-      "error": "accessDenied"
+      "code": "NATIVE_GRANT_BINDING_MISMATCH",
+      "resource": "tile",
+      "reaction": "refresh"
+    },
+    {
+      "status": 403,
+      "resource": "tile",
+      "reaction": "refresh"
+    },
+    {
+      "status": 403,
+      "resource": "tile",
+      "refreshed": true,
+      "reaction": "none"
+    },
+    {
+      "status": 403,
+      "resource": "style",
+      "refreshed": true,
+      "reaction": "superseded"
+    },
+    {
+      "status": 403,
+      "code": "NATIVE_GRANT_RESOURCE_DENIED",
+      "resource": "tile",
+      "reaction": "none"
+    },
+    {
+      "status": 403,
+      "code": "NATIVE_GRANT_RESOURCE_DENIED",
+      "resource": "style",
+      "reaction": "superseded"
+    },
+    {
+      "status": 409,
+      "code": "NATIVE_DEPLOYMENT_SUPERSEDED",
+      "resource": "style",
+      "reaction": "superseded"
+    },
+    {
+      "status": 409,
+      "resource": "tile",
+      "reaction": "none"
     },
     {
       "status": 429,
-      "body": {
-        "code": "COMMERCIAL_SPENDING_LIMIT_REACHED",
-        "error": "Spending limit reached"
-      },
-      "error": "quotaExceeded"
+      "code": "RATE_LIMITED",
+      "resource": "tile",
+      "reaction": "rateLimited"
     },
     {
       "status": 429,
-      "body": {
-        "error": "Too many requests",
-        "requestId": "req_fixture"
-      },
-      "error": "rateLimited"
+      "resource": "style",
+      "reaction": "rateLimited"
     },
     {
       "status": 429,
-      "body": {
-        "code": "RATE_LIMITED",
-        "error": "Too many requests",
-        "requestId": "req_fixture"
-      },
-      "error": "rateLimited"
+      "code": "COMMERCIAL_MAP_LIMIT_REACHED",
+      "resource": "tile",
+      "reaction": "quota"
+    },
+    {
+      "status": 429,
+      "code": "COMMERCIAL_SPENDING_LIMIT_REACHED",
+      "resource": "tile",
+      "reaction": "quota"
+    },
+    {
+      "status": 503,
+      "code": "NATIVE_GRANT_UNAVAILABLE",
+      "resource": "tile",
+      "reaction": "none"
+    },
+    {
+      "status": 200,
+      "resource": "style",
+      "reaction": "none"
     }
   ]
 }

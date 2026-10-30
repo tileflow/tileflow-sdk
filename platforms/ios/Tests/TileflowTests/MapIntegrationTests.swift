@@ -107,16 +107,92 @@ final class MapIntegrationTests: XCTestCase {
     }
   }
 
-  private func assertApplicationLayer(_ view: TileflowMapView) async throws {
+  func testRendererLossWhileHiddenWaitsForVisibilityAndInvalidRequestsAnswerAtOnce() async throws {
+    let manifest = URL(string: "http://127.0.0.1:18645/manifest.json")!
+    do {
+      _ = try await URLSession.shared.data(from: manifest)
+    } catch {
+      throw XCTSkip("Start scripts/mobile-fixture-server.mjs to run online map integration.")
+    }
+    let loads = [
+      expectation(description: "Loaded"), expectation(description: "Replaced once visible"),
+      expectation(description: "Replaced again after loading"),
+    ]
+    var loaded = 0
+    var failures: [TileflowMapError] = []
+    let view = TileflowMapView(
+      source: TileflowMapSource(map: "fixture", manifestURL: manifest, allowsLoopbackHTTP: true))
+    view.onEvent = { event in
+      switch event {
+      case .contentReady:
+        if loaded < loads.count { loads[loaded].fulfill() }
+        loaded += 1
+      case .failed(let error): failures.append(error)
+      default: break
+      }
+    }
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+    let controller = UIViewController()
+    window.rootViewController = controller
+    view.frame = window.bounds
+    controller.view.addSubview(view)
+    window.makeKeyAndVisible()
+    defer {
+      view.destroy()
+      window.isHidden = true
+    }
+    await fulfillment(of: [loads[0]], timeout: 30)
+
+    // The style's notices are always visible on the map, as on the web.
+    let notice = try await renderer(view).evaluateJavaScript(
+      "document.querySelector('.tileflow-notice')?.textContent ?? ''")
+    XCTAssertEqual(notice as? String, "Not for navigation")
+    // Off-screen points are valid; an invalid request fails at once rather than at its timeout.
+    let started = ContinuousClock.now
+    _ = try await view.unproject(CGPoint(x: -40, y: -40))
+    _ = try await view.query(at: CGPoint(x: -40, y: 5_000))
+    let bbox = Data(
+      #"{"type":"FeatureCollection","bbox":[-3.71,40.41,-3.69,40.43],"features":[{"type":"Feature","bbox":[-3.7,40.42,-3.7,40.42],"geometry":{"type":"Point","coordinates":[-3.7,40.42]},"properties":{}}]}"#
+        .utf8)
+    try await view.setContent(layers: [try .init(id: "bounded", geoJSON: bbox, kind: .circle)])
+    XCTAssertLessThan(started.duration(to: .now), .seconds(5))
+    // The renderer accepts the steep pitch the camera API allows.
+    try await view.setCamera(TileflowCamera(longitude: -3.7, latitude: 40.42, zoom: 16, pitch: 80))
+    let steep = try await view.camera()
+    XCTAssertEqual(steep.pitch, 80, accuracy: 0.5)
+    try await view.setCamera(TileflowCamera(longitude: -3.7, latitude: 40.42, zoom: 16))
+
+    // A renderer the system ends while the app is hidden is replaced only once it is visible.
+    NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+    view.webViewWebContentProcessDidTerminate(try renderer(view))
+    XCTAssertFalse(view.subviews.contains { $0 is WKWebView })
+    NotificationCenter.default.post(
+      name: UIApplication.willEnterForegroundNotification, object: nil)
+    await fulfillment(of: [loads[1]], timeout: 30)
+    // Loading resets the recovery budget, so a later loss is recovered too.
+    view.webViewWebContentProcessDidTerminate(try renderer(view))
+    await fulfillment(of: [loads[2]], timeout: 30)
+    try await assertApplicationLayer(view, layer: "__tileflow_app_bounded")
+    XCTAssertTrue(failures.isEmpty, "\(failures)")
+  }
+
+  private func renderer(_ view: TileflowMapView) throws -> WKWebView {
+    try XCTUnwrap(view.subviews.compactMap { $0 as? WKWebView }.first)
+  }
+
+  private func assertApplicationLayer(
+    _ view: TileflowMapView, layer: String = "__tileflow_app_selection"
+  ) async throws {
+    var observed: [TileflowRenderedFeature] = []
     for _ in 0..<50 {
       if let point = try? await view.project(.init(longitude: -3.70, latitude: 40.42)),
-        let features = try? await view.query(at: point),
-        features.contains(where: { $0.layer == "__tileflow_app_selection" })
+        let features = try? await view.query(at: point)
       {
-        return
+        observed = features
+        if features.contains(where: { $0.layer == layer }) { return }
       }
       try await Task.sleep(for: .milliseconds(100))
     }
-    XCTFail("Application content was not restored.")
+    XCTFail("Application content was not restored: \(observed)")
   }
 }

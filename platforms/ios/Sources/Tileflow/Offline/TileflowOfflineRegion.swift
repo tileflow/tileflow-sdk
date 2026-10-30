@@ -121,6 +121,12 @@ public struct TileflowOfflineRegion: Sendable, Hashable, Identifiable {
   /// Bytes on the wire; nil for self-hosted content, whose sizes are unknown until downloaded.
   public let requiredResourceBytes: Int64?
   public let completedResourceBytes: Int64
+  /// Resources the download received from the network, after Mapbox's loaded resource count: of
+  /// the version downloading, or else of the stored version. Resources found stored already or
+  /// unchanged (`304`) are completed without being loaded.
+  public let loadedResourceCount: Int
+  /// Bytes on the wire of the loaded resources.
+  public let loadedResourceBytes: Int64
   /// Resources counted toward the plan's per-device limit.
   public let billableResourceCount: Int
   /// Why the download failed or waits.

@@ -60,7 +60,7 @@ actor OfflineStoreCore {
   private var records: [String: OfflineRegionRecord] = [:]
   private var isOpen = false
   private var runs: [String: (token: UUID, task: Task<Void, Never>)] = [:]
-  private var progress: [String: (count: Int, bytes: Int64)] = [:]
+  private var progress: [String: OfflineProgress] = [:]
   private var plans: [String: OfflineVersionPlan] = [:]
   private var keySets: [String: (all: Set<String>, billable: Set<String>)] = [:]
   private var creditSets: [String: [String: [OfflineCredit]]] = [:]
@@ -204,8 +204,14 @@ actor OfflineStoreCore {
     _ = try options.zooms
     let json = options.json
     if var record = records[id], var pending = record.pending,
-      pending.options.canonical == json.canonical
+      Self.withoutMetadata(pending.options) == Self.withoutMetadata(json)
     {
+      // Metadata alone never restarts a download: it changes in place.
+      if pending.options.canonical != json.canonical {
+        record = Self.replacingMetadata(record, json["metadata"] ?? .object([:]))
+        pending = record.pending!
+        try save(record)
+      }
       if pending.state != .downloading {
         pending.state = .downloading
         pending.error = nil
@@ -256,7 +262,7 @@ actor OfflineStoreCore {
       completedAt: nil)
     try save(record)
     plans[planKey(id, number)] = plan
-    progress[id] = (0, 0)
+    progress[id] = OfflineProgress()
     startRun(id)
     let region = snapshot(record)!
     subscribers.emit(.changed(region))
@@ -295,6 +301,16 @@ actor OfflineStoreCore {
       try save(record)
     }
     startRun(id)
+    emitChanged(id)
+  }
+
+  /// Replaces the region's metadata in place, without downloading anything.
+  func updateMetadata(_ id: String, _ metadata: [String: String]) throws {
+    open()
+    guard let record = records[id], !record.removing else {
+      throw TileflowOfflineError(.regionNotFound)
+    }
+    try save(Self.replacingMetadata(record, .object(metadata.mapValues(JSONValue.string))))
     emitChanged(id)
   }
 
@@ -433,9 +449,7 @@ actor OfflineStoreCore {
       }
       let stored = OfflineProgressLog.read(layout.progress(id, pending.number))
       let remaining = plan.resources.filter { stored[$0.key.digest] == nil }
-      progress[id] = (
-        plan.resources.count - remaining.count, stored.values.reduce(0, +)
-      )
+      progress[id] = OfflineProgress(stored.values)
       if remaining.isEmpty {
         activate(id)
         return
@@ -502,10 +516,9 @@ actor OfflineStoreCore {
     }
   }
 
-  private func didStore(_ id: String, _ entries: [(digest: String, bytes: Int64)]) {
-    var current = progress[id] ?? (0, 0)
-    current.count += entries.count
-    current.bytes += entries.reduce(0) { $0 + $1.bytes }
+  private func didStore(_ id: String, _ entries: [(digest: String, entry: OfflineStoredEntry)]) {
+    var current = progress[id] ?? OfflineProgress()
+    for (_, entry) in entries { current.add(entry) }
     progress[id] = current
     emitChanged(id)
   }
@@ -534,13 +547,13 @@ actor OfflineStoreCore {
       plan = .hosted(packs: packs, requests: plan.requests, apiOrigin: client.apiOrigin)
       try checkDeviceLimit(id, plan)
       let stored = OfflineProgressLog.read(layout.progress(id, pending.number))
-      var kept: [String: Int64] = [:]
+      var kept: [String: OfflineStoredEntry] = [:]
       for resource in plan.resources {
-        guard let bytes = stored[resource.key.digest],
+        guard let entry = stored[resource.key.digest],
           let before = previous[resource.key.digest],
           before.0 == resource.bytes, before.1 == resource.sha256
         else { continue }
-        kept[resource.key.digest] = bytes
+        kept[resource.key.digest] = entry
       }
       try OfflineProgressLog.write(kept, to: layout.progress(id, pending.number))
       try OfflineLayout.write(pack.response, to: layout.pack(id, pending.number, pack: index))
@@ -603,7 +616,10 @@ actor OfflineStoreCore {
     pending.error = nil
     pending.retryAt = nil
     pending.completedAt = now.offlineMilliseconds
-    pending.bytes = pending.bytes ?? progress[id]?.bytes
+    let done = progress[id] ?? storedProgress(id, pending)
+    pending.bytes = pending.bytes ?? done.bytes
+    pending.loaded = done.loaded
+    pending.loadedBytes = done.loadedBytes
     record.retired = record.active
     record.active = pending
     record.pending = nil
@@ -838,9 +854,31 @@ actor OfflineStoreCore {
     if let region = records[id].flatMap(snapshot) { subscribers.emit(.changed(region)) }
   }
 
-  private func storedProgress(_ id: String, _ version: OfflineVersionRecord) -> (Int, Int64) {
-    let stored = OfflineProgressLog.read(layout.progress(id, version.number))
-    return (stored.count, stored.values.reduce(0, +))
+  private func storedProgress(_ id: String, _ version: OfflineVersionRecord) -> OfflineProgress {
+    OfflineProgress(OfflineProgressLog.read(layout.progress(id, version.number)).values)
+  }
+
+  /// Options compared as a download sees them: metadata never changes what downloads.
+  private static func withoutMetadata(_ options: JSONValue) -> Data {
+    guard case .object(var members) = options else { return options.canonical }
+    members.removeValue(forKey: "metadata")
+    return JSONValue.object(members).canonical
+  }
+
+  /// The record with `metadata` in the options of every version it keeps.
+  private static func replacingMetadata(_ record: OfflineRegionRecord, _ metadata: JSONValue)
+    -> OfflineRegionRecord
+  {
+    func replaced(_ version: OfflineVersionRecord?) -> OfflineVersionRecord? {
+      guard var version, case .object(var members) = version.options else { return version }
+      members["metadata"] = metadata
+      version.options = .object(members)
+      return version
+    }
+    var record = record
+    record.active = replaced(record.active)
+    record.pending = replaced(record.pending)
+    return record
   }
 
   private func planKey(_ id: String, _ number: Int) -> String { "\(id)\n\(number)" }
@@ -854,7 +892,14 @@ actor OfflineStoreCore {
       let options = TileflowOfflineRegionLoadOptions(json: version.options)
     else { return nil }
     let downloading = record.pending != nil
-    let done = downloading ? progress[record.id] ?? (0, 0) : (version.resources, version.bytes ?? 0)
+    var done = progress[record.id] ?? OfflineProgress()
+    if !downloading {
+      done = OfflineProgress()
+      done.count = version.resources
+      done.bytes = version.bytes ?? 0
+      done.loaded = version.loaded ?? 0
+      done.loadedBytes = version.loadedBytes ?? 0
+    }
     let state: TileflowOfflineRegion.DownloadState =
       switch version.state {
       case .downloading: .downloading
@@ -873,8 +918,9 @@ actor OfflineStoreCore {
     return TileflowOfflineRegion(
       id: record.id, options: options, state: state, isAvailable: isServed(record),
       requiredResourceCount: version.resources,
-      completedResourceCount: min(done.0, version.resources),
-      requiredResourceBytes: version.bytes, completedResourceBytes: done.1,
+      completedResourceCount: min(done.count, version.resources),
+      requiredResourceBytes: version.bytes, completedResourceBytes: done.bytes,
+      loadedResourceCount: done.loaded, loadedResourceBytes: done.loadedBytes,
       billableResourceCount: version.billable, error: version.error?.error,
       retryDate: version.retryAt.map { Date(offlineMilliseconds: $0) },
       completedAt: record.active?.completedAt.map { Date(offlineMilliseconds: $0) },

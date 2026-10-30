@@ -20,6 +20,7 @@ or removes them. Loading a stored region again updates it.
 | `allRegions()`, `region(id:)`                                                     | `allRegions()`, `region(id)`                                                   |
 | `pauseRegion(id:)`, `resumeRegion(id:)`, `cancelRegion(id:)`, `removeRegion(id:)` | `pauseRegion(id)`, `resumeRegion(id)`, `cancelRegion(id)`, `removeRegion(id)`  |
 | `subscribe(_:)` → `TileflowOfflineSubscription`                                   | `subscribe(handler)` → `TileflowOfflineSubscription`                           |
+| `updateRegionMetadata(id:metadata:)`                                              | `updateRegionMetadata(id, metadata)`                                           |
 | `handleEventsForBackgroundURLSession(identifier:completionHandler:)`              | (WorkManager; nothing to forward)                                              |
 | `TileflowOfflineRegionLoadOptions`                                                | `TileflowOfflineRegionLoadOptions`                                             |
 | `TileflowOfflineContent.hosted(mapID:themes:)`, `.manifest(url:map:sources:)`     | `TileflowOfflineContent.Hosted(mapId, themes)`, `.Manifest(url, map, sources)` |
@@ -35,9 +36,13 @@ or removes them. Loading a stored region again updates it.
 Load options hold the geometry, the content, `minZoom` (0), `maxZoom` (15), `terrainMaxZoom` (12),
 the network restriction and application metadata. A region reports its download state
 (`downloading`, `waiting`, `paused`, `failed`, `complete`), whether a complete version is stored
-(`isAvailable`), required and completed resources and bytes, its billable resources, the error and
+(`isAvailable`), required and completed resources and bytes, the resources and bytes its download
+loaded from the network (after Mapbox's loaded resource count: resources found stored already or
+unchanged are completed without being loaded), its billable resources, the error and
 retry time of a waiting or failed download, when the stored version completed, and what the last
-update check found. Neither platform exposes renderer or WebView types. The pack client, the
+update check found. Metadata changes in place, through `updateRegionMetadata` or by loading options
+that differ only in metadata, without a new version or download. Neither platform exposes renderer
+or WebView types. The pack client, the
 manifest, the planner and the device limit stay internal.
 
 ## Regions and tile cover
@@ -178,7 +183,9 @@ stored once per key and shared by every region version that lists it.
   replaced version still being released (`retired`), or a removal in progress. Records are written
   through a temporary file and a rename; each version's created packs (or self-hosted plan) are
   written before the record that refers to them.
-- A version's stored resources are appended to its progress log (`<digest> <bytes>` per line,
+- A version's stored resources are appended to its progress log (`<digest> <bytes> <transferred>`
+  per line, `transferred` 1 when the download received the body and 0 when it was stored already or
+  unchanged,
   synced in batches of 64). A line cut short by a crash is ignored; its resource is requested again
   with `If-None-Match` and answered with a free `304`.
 - A version becomes `active` only when every resource is stored and verified, by one record

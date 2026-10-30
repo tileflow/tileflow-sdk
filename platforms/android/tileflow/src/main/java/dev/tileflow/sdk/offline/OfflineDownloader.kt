@@ -195,7 +195,7 @@ internal class OfflineDownloader(
     private val now: () -> Long,
 ) {
     private sealed class Result {
-        class Stored(val bytes: Long) : Result()
+        class Stored(val entry: OfflineStoredEntry) : Result()
 
         object Mismatch : Result()
 
@@ -205,14 +205,14 @@ internal class OfflineDownloader(
     suspend fun run(
         job: OfflineDownloadJob,
         log: OfflineProgressLog,
-        progress: suspend (List<Pair<String, Long>>) -> Unit,
+        progress: suspend (List<Pair<String, OfflineStoredEntry>>) -> Unit,
     ): OfflineDownloadOutcome {
         val lock = Mutex()
         var outcome: OfflineDownloadOutcome = OfflineDownloadOutcome.Complete
         var next = 0
         val retries = ArrayDeque<OfflinePlannedResource>()
         val mismatches = HashMap<String, Int>()
-        val stored = ArrayList<Pair<String, Long>>()
+        val stored = ArrayList<Pair<String, OfflineStoredEntry>>()
         var sinceCheck = 0
 
         fun record(worse: OfflineDownloadOutcome) {
@@ -247,7 +247,7 @@ internal class OfflineDownloader(
                             lock.withLock {
                                 when (result) {
                                     is Result.Stored -> {
-                                        stored.add(resource.key.digest to result.bytes)
+                                        stored.add(resource.key.digest to result.entry)
                                         sinceCheck += 1
                                     }
                                     Result.Mismatch -> {
@@ -311,7 +311,9 @@ internal class OfflineDownloader(
                 resource.sha256 != null &&
                 stored.metadata.bodySha256 == resource.sha256
         )
-            return Result.Stored(resource.bytes ?: stored.body.size.toLong())
+            return Result.Stored(
+                OfflineStoredEntry(resource.bytes ?: stored.body.size.toLong(), transferred = false)
+            )
         val headers = HashMap<String, String>()
         resource.pack?.let { headers[GRANT_HEADER] = job.plan.packs[it].grant.value }
         stored?.metadata?.headers?.get("ETag")?.let { headers["If-None-Match"] = it }
@@ -344,7 +346,8 @@ internal class OfflineDownloader(
                 if (!verify(response, resource)) return Result.Mismatch
                 val digest = offlineDigest(response.body)
                 val bytes = resource.bytes ?: response.body.size.toLong()
-                if (stored?.metadata?.bodySha256 == digest) return Result.Stored(bytes)
+                val received = OfflineStoredEntry(bytes, transferred = true)
+                if (stored?.metadata?.bodySha256 == digest) return Result.Stored(received)
                 val metadata =
                     ResourceCacheMetadata.of(
                         resource.url,
@@ -371,14 +374,19 @@ internal class OfflineDownloader(
                             metadata,
                             response.body,
                         )
-                if (written) Result.Stored(bytes)
+                if (written) Result.Stored(received)
                 else Result.Outcome(OfflineDownloadOutcome.Fail(storageError()))
             }
             response.status == 304 && stored != null ->
-                Result.Stored(resource.bytes ?: stored.body.size.toLong())
+                Result.Stored(
+                    OfflineStoredEntry(
+                        resource.bytes ?: stored.body.size.toLong(),
+                        transferred = false,
+                    )
+                )
             (response.status == 204 || response.status == 404) && !job.plan.isHosted ->
                 // An absent self-hosted tile or glyph range stays absent offline, as online.
-                Result.Stored(0)
+                Result.Stored(OfflineStoredEntry(0, transferred = false))
             else -> Result.Outcome(failure(response, resource, job))
         }
     }

@@ -74,8 +74,40 @@ struct OfflineLayout: Sendable {
   }
 }
 
-/// A version's stored resources, one `<digest> <bytes>` line each, appended as resources complete.
-/// A line cut short by a crash is ignored; its resource is requested again with `If-None-Match`.
+/// One stored resource of a version: its bytes, and whether this version's download transferred
+/// it, rather than finding it stored already or unchanged (`304`).
+struct OfflineStoredEntry: Hashable, Sendable {
+  var bytes: Int64
+  var transferred: Bool
+}
+
+/// What a version has stored so far: how many resources and bytes, and how many of them the
+/// download transferred from the network.
+struct OfflineProgress: Hashable, Sendable {
+  var count = 0
+  var bytes: Int64 = 0
+  var loaded = 0
+  var loadedBytes: Int64 = 0
+
+  init() {}
+
+  init(_ entries: some Sequence<OfflineStoredEntry>) {
+    for entry in entries { add(entry) }
+  }
+
+  mutating func add(_ entry: OfflineStoredEntry) {
+    count += 1
+    bytes += entry.bytes
+    if entry.transferred {
+      loaded += 1
+      loadedBytes += entry.bytes
+    }
+  }
+}
+
+/// A version's stored resources, one `<digest> <bytes> <transferred>` line each, appended as
+/// resources complete; `transferred` is 1 for a body the download received and 0 otherwise. A line
+/// cut short by a crash is ignored; its resource is requested again with `If-None-Match`.
 final class OfflineProgressLog: @unchecked Sendable {
   private let url: URL
   private let lock = NSLock()
@@ -84,25 +116,28 @@ final class OfflineProgressLog: @unchecked Sendable {
   init(_ url: URL) { self.url = url }
   deinit { try? handle?.close() }
 
-  /// Stored bytes by digest.
-  static func read(_ url: URL) -> [String: Int64] {
+  /// Stored resources by digest.
+  static func read(_ url: URL) -> [String: OfflineStoredEntry] {
     guard let data = try? Data(contentsOf: url), let text = String(data: data, encoding: .utf8)
     else { return [:] }
-    var stored: [String: Int64] = [:]
+    var stored: [String: OfflineStoredEntry] = [:]
     for line in text.split(separator: "\n", omittingEmptySubsequences: true) {
       let parts = line.split(separator: " ")
-      guard parts.count == 2, parts[0].count == 64, let bytes = Int64(parts[1]), bytes >= 0
+      guard (2...3).contains(parts.count), parts[0].count == 64, let bytes = Int64(parts[1]),
+        bytes >= 0, parts.count == 2 || ["0", "1"].contains(parts[2])
       else { continue }
-      stored[String(parts[0])] = bytes
+      stored[String(parts[0])] = OfflineStoredEntry(
+        bytes: bytes, transferred: parts.count == 3 && parts[2] == "1")
     }
     return stored
   }
 
-  static func write(_ stored: [String: Int64], to url: URL) throws {
-    try OfflineLayout.write(Data(stored.map { "\($0.key) \($0.value)\n" }.joined().utf8), to: url)
+  static func write(_ stored: [String: OfflineStoredEntry], to url: URL) throws {
+    try OfflineLayout.write(
+      Data(stored.map { line($0.key, $0.value) + "\n" }.joined().utf8), to: url)
   }
 
-  func append(_ entries: [(digest: String, bytes: Int64)]) throws {
+  func append(_ entries: [(digest: String, entry: OfflineStoredEntry)]) throws {
     guard !entries.isEmpty else { return }
     try lock.withLock {
       if handle == nil {
@@ -116,7 +151,8 @@ final class OfflineProgressLog: @unchecked Sendable {
       // A line cut short by a crash is completed by the newline that starts the next batch.
       try handle?.write(
         contentsOf: Data(
-          ("\n" + entries.map { "\($0.digest) \($0.bytes)" }.joined(separator: "\n") + "\n").utf8))
+          ("\n" + entries.map { Self.line($0.digest, $0.entry) }.joined(separator: "\n") + "\n")
+            .utf8))
       try handle?.synchronize()
     }
   }
@@ -126,6 +162,10 @@ final class OfflineProgressLog: @unchecked Sendable {
       try? handle?.close()
       handle = nil
     }
+  }
+
+  private static func line(_ digest: String, _ entry: OfflineStoredEntry) -> String {
+    "\(digest) \(entry.bytes) \(entry.transferred ? 1 : 0)"
   }
 }
 
@@ -173,6 +213,9 @@ struct OfflineVersionRecord: Codable, Sendable {
   var retryAt: Int64?
   var createdAt: Int64
   var completedAt: Int64?
+  /// Resources and bytes the version's download transferred, kept once it completes.
+  var loaded: Int?
+  var loadedBytes: Int64?
 }
 
 /// What the last revalidation of a region found.

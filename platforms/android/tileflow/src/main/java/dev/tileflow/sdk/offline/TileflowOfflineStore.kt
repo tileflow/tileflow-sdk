@@ -65,9 +65,9 @@ internal constructor(
      * Starts downloading a region and returns as soon as it is recorded.
      *
      * A new identifier creates the region. An identifier whose download is unfinished resumes it
-     * when [options] are unchanged. Otherwise a new version downloads, sending each stored
-     * resource's `ETag` so unchanged resources are neither downloaded nor billed again, and
-     * replaces the stored version when complete.
+     * when [options] are unchanged apart from their metadata, which changes in place. Otherwise a
+     * new version downloads, sending each stored resource's `ETag` so unchanged resources are
+     * neither downloaded nor billed again, and replaces the stored version when complete.
      *
      * @throws TileflowOfflineException before anything downloads: invalid options, the service's
      *   refusal to create a pack, or `DEVICE_LIMIT_EXCEEDED` when the device would hold more
@@ -77,6 +77,13 @@ internal constructor(
         id: String,
         options: TileflowOfflineRegionLoadOptions,
     ): TileflowOfflineRegion = core.load(id, options)
+
+    /**
+     * Replaces the region's metadata in place. Nothing downloads, and a download in progress
+     * continues; loading the region with options that differ only in metadata does the same.
+     */
+    public suspend fun updateRegionMetadata(id: String, metadata: Map<String, String>): Unit =
+        core.updateMetadata(id, metadata)
 
     /** Every region, oldest first. */
     public suspend fun allRegions(): List<TileflowOfflineRegion> = core.regions()

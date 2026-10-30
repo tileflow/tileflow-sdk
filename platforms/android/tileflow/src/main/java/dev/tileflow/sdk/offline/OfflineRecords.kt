@@ -66,21 +66,52 @@ internal class OfflineLayout(val root: File) {
 }
 
 /**
- * A version's stored resources, one `<digest> <bytes>` line each, appended as resources complete.
- * A line cut short by a crash is ignored; its resource is requested again with `If-None-Match`.
+ * One stored resource of a version: its bytes, and whether this version's download transferred it,
+ * rather than finding it stored already or unchanged (`304`).
+ */
+internal data class OfflineStoredEntry(val bytes: Long, val transferred: Boolean)
+
+/**
+ * What a version has stored so far: how many resources and bytes, and how many of them the download
+ * transferred from the network.
+ */
+internal data class OfflineProgress(
+    val count: Long = 0,
+    val bytes: Long = 0,
+    val loaded: Long = 0,
+    val loadedBytes: Long = 0,
+) {
+    fun adding(entry: OfflineStoredEntry) =
+        OfflineProgress(
+            count + 1,
+            bytes + entry.bytes,
+            loaded + if (entry.transferred) 1 else 0,
+            loadedBytes + if (entry.transferred) entry.bytes else 0,
+        )
+
+    companion object {
+        fun of(entries: Iterable<OfflineStoredEntry>) =
+            entries.fold(OfflineProgress()) { progress, entry -> progress.adding(entry) }
+    }
+}
+
+/**
+ * A version's stored resources, one `<digest> <bytes> <transferred>` line each, appended as
+ * resources complete; `transferred` is 1 for a body the download received and 0 otherwise. A line
+ * cut short by a crash is ignored; its resource is requested again with `If-None-Match`.
  */
 internal class OfflineProgressLog(private val file: File) {
     private var stream: FileOutputStream? = null
 
     @Synchronized
-    fun append(entries: List<Pair<String, Long>>) {
+    fun append(entries: List<Pair<String, OfflineStoredEntry>>) {
         if (entries.isEmpty()) return
         val output =
             stream
                 ?: FileOutputStream(file.apply { parentFile?.mkdirs() }, true).also { stream = it }
         // A line cut short by a crash is completed by the newline that starts the next batch.
         output.write(
-            ("\n" + entries.joinToString("\n") { "${it.first} ${it.second}" } + "\n").toByteArray()
+            ("\n" + entries.joinToString("\n") { line(it.first, it.second) } + "\n").toByteArray()
         )
         output.fd.sync()
     }
@@ -92,24 +123,33 @@ internal class OfflineProgressLog(private val file: File) {
     }
 
     companion object {
-        /** Stored bytes by digest. */
-        fun read(file: File): Map<String, Long> {
+        /** Stored resources by digest. */
+        fun read(file: File): Map<String, OfflineStoredEntry> {
             val text = runCatching { file.readText() }.getOrNull() ?: return emptyMap()
-            val stored = HashMap<String, Long>()
+            val stored = HashMap<String, OfflineStoredEntry>()
             for (line in text.split('\n')) {
                 val parts = line.split(' ')
                 val bytes = parts.getOrNull(1)?.toLongOrNull()
-                if (parts.size == 2 && parts[0].length == 64 && bytes != null && bytes >= 0)
-                    stored[parts[0]] = bytes
+                if (
+                    parts.size in 2..3 &&
+                        parts[0].length == 64 &&
+                        bytes != null &&
+                        bytes >= 0 &&
+                        (parts.size == 2 || parts[2] == "0" || parts[2] == "1")
+                )
+                    stored[parts[0]] = OfflineStoredEntry(bytes, parts.getOrNull(2) == "1")
             }
             return stored
         }
 
-        fun write(stored: Map<String, Long>, file: File) =
+        fun write(stored: Map<String, OfflineStoredEntry>, file: File) =
             OfflineLayout.write(
-                stored.entries.joinToString("") { "${it.key} ${it.value}\n" }.toByteArray(),
+                stored.entries.joinToString("") { line(it.key, it.value) + "\n" }.toByteArray(),
                 file,
             )
+
+        private fun line(digest: String, entry: OfflineStoredEntry) =
+            "$digest ${entry.bytes} ${if (entry.transferred) 1 else 0}"
     }
 }
 
@@ -175,6 +215,9 @@ internal data class OfflineVersionRecord(
     val retryAt: Long? = null,
     val createdAt: Long,
     val completedAt: Long? = null,
+    /** Resources and bytes the version's download transferred, kept once it completes. */
+    val loaded: Long? = null,
+    val loadedBytes: Long? = null,
 ) {
     enum class State {
         DOWNLOADING,
@@ -201,6 +244,8 @@ internal data class OfflineVersionRecord(
             .putOpt("retryAt", retryAt)
             .put("createdAt", createdAt)
             .putOpt("completedAt", completedAt)
+            .putOpt("loaded", loaded)
+            .putOpt("loadedBytes", loadedBytes)
 
     companion object {
         fun fromJson(value: JSONObject) =
@@ -217,6 +262,8 @@ internal data class OfflineVersionRecord(
                 if (value.has("retryAt")) value.getLong("retryAt") else null,
                 value.getLong("createdAt"),
                 if (value.has("completedAt")) value.getLong("completedAt") else null,
+                if (value.has("loaded")) value.getLong("loaded") else null,
+                if (value.has("loadedBytes")) value.getLong("loadedBytes") else null,
             )
     }
 }

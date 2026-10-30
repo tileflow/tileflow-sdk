@@ -29,6 +29,8 @@ final class OfflineStoreTests: XCTestCase {
     XCTAssertEqual(done.completedResourceBytes, done.requiredResourceBytes)
     XCTAssertEqual(done.billableResourceCount, service.billableCount)
     XCTAssertEqual(done.updateState, .current)
+    XCTAssertEqual(done.loadedResourceCount, done.requiredResourceCount)
+    XCTAssertEqual(done.loadedResourceBytes, done.requiredResourceBytes)
 
     // Each resource was downloaded once, with the grant only where the manifest asks for it.
     XCTAssertEqual(service.creations, 1)
@@ -193,6 +195,9 @@ final class OfflineStoreTests: XCTestCase {
     let update = service.downloads.dropFirst(first)
     let changed = Set(update.filter { $0.status == 200 }.map(\.url))
     XCTAssertEqual(changed, Set(service.changedURLs))
+    // Only the changed resources were loaded; the rest completed unchanged.
+    XCTAssertEqual(done.loadedResourceCount, service.changedURLs.count)
+    XCTAssertEqual(done.completedResourceCount, done.requiredResourceCount)
     XCTAssertTrue(
       update.filter { $0.status == 304 }.allSatisfy { $0.headers["If-None-Match"] != nil })
     XCTAssertEqual(done.updateState, .current)
@@ -200,6 +205,41 @@ final class OfflineStoreTests: XCTestCase {
     XCTAssertNil(cache.read(service.key(oldStyle), retention: .pinned))
     for url in service.changedURLs {
       XCTAssertEqual(cache.read(service.key(url), retention: .pinned)?.body, service.served[url])
+    }
+  }
+
+  func testMetadataChangesInPlaceWithoutDownloadingAgain() async throws {
+    let service = OfflineServiceStub()
+    let store = makeStore(service, fetcher: OfflineFreezingFetcher(service, after: 10))
+    var options = madrid()
+    options.metadata = ["name": "Madrid"]
+    try await store.loadRegion(id: "madrid", options: options)
+    try await waitUntil { service.downloads.count >= 10 }
+    // Loading with new metadata keeps the download in progress.
+    options.metadata = ["name": "Centro"]
+    try await store.loadRegion(id: "madrid", options: options)
+    let renamed = try await XCTUnwrapAsync(await store.region(id: "madrid"))
+    XCTAssertEqual(renamed.options.metadata, ["name": "Centro"])
+    XCTAssertEqual(service.creations, 1, "No new pack")
+
+    let other = makeStore(service, root: "other")
+    try await other.loadRegion(id: "madrid", options: options)
+    _ = try await waitFor(other, "madrid") { $0.state == .complete }
+    let downloads = service.downloads.count
+    try await other.updateRegionMetadata(id: "madrid", metadata: ["name": "Sol"])
+    let updated = try await XCTUnwrapAsync(await other.region(id: "madrid"))
+    XCTAssertEqual(updated.options.metadata, ["name": "Sol"])
+    XCTAssertEqual(updated.state, .complete)
+    XCTAssertEqual(service.downloads.count, downloads, "Nothing downloads")
+    // The change survives a new store over the same files.
+    let reopened = try await XCTUnwrapAsync(
+      await makeStore(service, root: "other").region(id: "madrid"))
+    XCTAssertEqual(reopened.options.metadata, ["name": "Sol"])
+    do {
+      try await other.updateRegionMetadata(id: "missing", metadata: [:])
+      XCTFail("The region does not exist")
+    } catch let error as TileflowOfflineError {
+      XCTAssertEqual(error.code, .regionNotFound)
     }
   }
 

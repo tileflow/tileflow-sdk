@@ -165,20 +165,20 @@ struct OfflineDownloader: Sendable {
   let now: @Sendable () -> Date
 
   private enum Result: Sendable {
-    case stored(Int64)
+    case stored(OfflineStoredEntry)
     case mismatch
     case outcome(OfflineDownloadOutcome)
   }
 
   func run(
     _ job: OfflineDownloadJob, log: OfflineProgressLog,
-    progress: @escaping @Sendable ([(digest: String, bytes: Int64)]) async -> Void
+    progress: @escaping @Sendable ([(digest: String, entry: OfflineStoredEntry)]) async -> Void
   ) async -> OfflineDownloadOutcome {
     var outcome = OfflineDownloadOutcome.complete
     var next = 0
     var retries: [OfflinePlannedResource] = []
     var mismatches: [String: Int] = [:]
-    var stored: [(digest: String, bytes: Int64)] = []
+    var stored: [(digest: String, entry: OfflineStoredEntry)] = []
     var sinceCheck = 0
 
     func record(_ worse: OfflineDownloadOutcome) {
@@ -218,8 +218,8 @@ struct OfflineDownloader: Sendable {
       while let (resource, result) = await group.next() {
         running -= 1
         switch result {
-        case .stored(let bytes):
-          stored.append((resource.key.digest, bytes))
+        case .stored(let entry):
+          stored.append((resource.key.digest, entry))
           sinceCheck += 1
         case .mismatch:
           mismatches[resource.key.digest, default: 0] += 1
@@ -258,7 +258,7 @@ struct OfflineDownloader: Sendable {
   {
     let stored = cache.read(resource.key, retention: .pinned)
     if let stored, let sha256 = resource.sha256, stored.metadata.bodySHA256 == sha256 {
-      return .stored(Int64(resource.bytes ?? stored.body.count))
+      return .stored(.init(bytes: Int64(resource.bytes ?? stored.body.count), transferred: false))
     }
     var headers: [String: String] = [:]
     if let pack = resource.pack { headers[Self.grantHeader] = job.plan.packs[pack].grant.value }
@@ -286,7 +286,8 @@ struct OfflineDownloader: Sendable {
       }
       let digest = DataChannel.digest(response.body)
       let bytes = Int64(resource.bytes ?? response.body.count)
-      if stored?.metadata.bodySHA256 == digest { return .stored(bytes) }
+      let received = OfflineStoredEntry(bytes: bytes, transferred: true)
+      if stored?.metadata.bodySHA256 == digest { return .stored(received) }
       let metadata = ResourceCacheMetadata(
         url: resource.url, status: 200, headers: response.headers, responseTime: now(),
         protected: job.plan.isHosted && !resource.isPublic, body: (response.body.count, digest))
@@ -300,12 +301,13 @@ struct OfflineDownloader: Sendable {
         written = cache.write(
           resource.key, retention: .pinned, metadata: metadata, body: response.body)
       }
-      return written ? .stored(bytes) : .outcome(.fail(storageError()))
+      return written ? .stored(received) : .outcome(.fail(storageError()))
     case 304 where stored != nil:
-      return .stored(Int64(resource.bytes ?? stored!.body.count))
+      return .stored(
+        .init(bytes: Int64(resource.bytes ?? stored!.body.count), transferred: false))
     case 204 where !job.plan.isHosted, 404 where !job.plan.isHosted:
       // An absent self-hosted tile or glyph range stays absent offline, as online.
-      return .stored(0)
+      return .stored(.init(bytes: 0, transferred: false))
     default:
       return .outcome(failure(response, resource, job))
     }

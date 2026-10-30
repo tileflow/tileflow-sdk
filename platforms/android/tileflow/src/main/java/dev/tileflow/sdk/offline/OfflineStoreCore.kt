@@ -89,7 +89,7 @@ internal class OfflineStoreCore(
     private val lock = Mutex()
     private val records = HashMap<String, OfflineRegionRecord>()
     private var isOpen = false
-    private val progress = HashMap<String, Pair<Long, Long>>()
+    private val progress = HashMap<String, OfflineProgress>()
     private val plans = HashMap<String, OfflineVersionPlan>()
     private val keySets = HashMap<String, Pair<Set<String>, Set<String>>>()
     private val creditSets = HashMap<String, Map<String, List<OfflineCredit>>>()
@@ -240,12 +240,21 @@ internal class OfflineStoreCore(
         lock.withLock {
             val record = records[id]
             val pending = record?.pending
-            if (record != null && pending != null && offlineOptions(pending.options) == options) {
+            val current = pending?.let { offlineOptions(it.options) }
+            if (
+                record != null &&
+                    pending != null &&
+                    current?.copy(metadata = emptyMap()) == options.copy(metadata = emptyMap())
+            ) {
+                // Metadata alone never restarts a download: it changes in place.
+                if (current.metadata != options.metadata)
+                    save(replacingMetadata(record, options.metadata))
+                val latest = records.getValue(id)
                 if (pending.state != OfflineVersionRecord.State.DOWNLOADING)
                     save(
-                        record.copy(
+                        latest.copy(
                             pending =
-                                pending.copy(
+                                latest.pending!!.copy(
                                     state = OfflineVersionRecord.State.DOWNLOADING,
                                     error = null,
                                     retryAt = null,
@@ -310,7 +319,7 @@ internal class OfflineStoreCore(
                 )
             save(record.copy(pending = pending))
             plans[planKey(id, number)] = plan
-            progress[id] = 0L to 0L
+            progress[id] = OfflineProgress()
             start(id, pending)
             snapshot(records.getValue(id))!!.also {
                 subscribers.emit(TileflowOfflineRegionEvent.Changed(it))
@@ -539,10 +548,7 @@ internal class OfflineStoreCore(
                 } ?: return OfflineDriveResult.Settled
             val stored = OfflineProgressLog.read(layout.progress(id, pending.number))
             val remaining = plan.resources.filter { it.key.digest !in stored }
-            lock.withLock {
-                progress[id] =
-                    (plan.resources.size - remaining.size).toLong() to stored.values.sum()
-            }
+            lock.withLock { progress[id] = OfflineProgress.of(stored.values) }
             if (remaining.isEmpty()) {
                 lock.withLock { activate(id) }
                 return OfflineDriveResult.Settled
@@ -658,10 +664,12 @@ internal class OfflineStoreCore(
             }
         }
 
-    private suspend fun didStore(id: String, entries: List<Pair<String, Long>>) =
+    private suspend fun didStore(id: String, entries: List<Pair<String, OfflineStoredEntry>>) =
         lock.withLock {
-            val (count, bytes) = progress[id] ?: (0L to 0L)
-            progress[id] = (count + entries.size) to (bytes + entries.sumOf { it.second })
+            progress[id] =
+                entries.fold(progress[id] ?: OfflineProgress()) { current, entry ->
+                    current.adding(entry.second)
+                }
             emitChanged(id)
         }
 
@@ -696,11 +704,11 @@ internal class OfflineStoreCore(
                 val plan = OfflineVersionPlan.hosted(packs, previousPlan.requests, client.apiOrigin)
                 checkDeviceLimit(id, plan)
                 val stored = OfflineProgressLog.read(layout.progress(id, pending.number))
-                val kept = HashMap<String, Long>()
+                val kept = HashMap<String, OfflineStoredEntry>()
                 for (resource in plan.resources) {
-                    val bytes = stored[resource.key.digest] ?: continue
+                    val entry = stored[resource.key.digest] ?: continue
                     if (previous[resource.key.digest] == (resource.bytes to resource.sha256))
-                        kept[resource.key.digest] = bytes
+                        kept[resource.key.digest] = entry
                 }
                 OfflineProgressLog.write(kept, layout.progress(id, pending.number))
                 OfflineLayout.write(pack.response, layout.pack(id, pending.number, index))
@@ -769,13 +777,16 @@ internal class OfflineStoreCore(
                 }
         }
         val time = now()
+        val done = progress[id] ?: storedProgress(id, pending)
         val active =
             pending.copy(
                 state = OfflineVersionRecord.State.COMPLETE,
                 error = null,
                 retryAt = null,
                 completedAt = time,
-                bytes = pending.bytes ?: progress[id]?.second,
+                bytes = pending.bytes ?: done.bytes,
+                loaded = done.loaded,
+                loadedBytes = done.loadedBytes,
             )
         val check =
             if (plan.isHosted)
@@ -1045,10 +1056,29 @@ internal class OfflineStoreCore(
         }
     }
 
-    private fun storedProgress(id: String, version: OfflineVersionRecord): Pair<Long, Long> {
-        val stored = OfflineProgressLog.read(layout.progress(id, version.number))
-        return stored.size.toLong() to stored.values.sum()
+    private fun storedProgress(id: String, version: OfflineVersionRecord): OfflineProgress =
+        OfflineProgress.of(OfflineProgressLog.read(layout.progress(id, version.number)).values)
+
+    /** The record with [metadata] in the options of every version it keeps. */
+    private fun replacingMetadata(
+        record: OfflineRegionRecord,
+        metadata: Map<String, String>,
+    ): OfflineRegionRecord {
+        fun replaced(version: OfflineVersionRecord?) =
+            version?.copy(
+                options =
+                    JSONObject(version.options.toString()).put("metadata", JSONObject(metadata))
+            )
+        return record.copy(active = replaced(record.active), pending = replaced(record.pending))
     }
+
+    /** Replaces the region's metadata in place, without downloading anything. */
+    suspend fun updateMetadata(id: String, metadata: Map<String, String>) =
+        lock.withLock {
+            openLocked()
+            save(replacingMetadata(existing(id), metadata))
+            emitChanged(id)
+        }
 
     private fun planKey(id: String, number: Int) = "$id\n$number"
 
@@ -1060,8 +1090,14 @@ internal class OfflineStoreCore(
         val version = record.pending ?: record.active ?: return null
         val options = offlineOptions(version.options) ?: return null
         val done =
-            if (record.pending != null) progress[record.id] ?: (0L to 0L)
-            else version.resources to (version.bytes ?: 0)
+            if (record.pending != null) progress[record.id] ?: OfflineProgress()
+            else
+                OfflineProgress(
+                    version.resources,
+                    version.bytes ?: 0,
+                    version.loaded ?: 0,
+                    version.loadedBytes ?: 0,
+                )
         val state =
             when (version.state) {
                 OfflineVersionRecord.State.DOWNLOADING ->
@@ -1085,9 +1121,11 @@ internal class OfflineStoreCore(
             state,
             isServed(record),
             version.resources,
-            minOf(done.first, version.resources),
+            minOf(done.count, version.resources),
             version.bytes,
-            done.second,
+            done.bytes,
+            done.loaded,
+            done.loadedBytes,
             version.billable,
             version.error?.exception,
             version.retryAt,

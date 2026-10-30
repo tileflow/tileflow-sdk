@@ -92,6 +92,10 @@ constructor(
  *   device, and maps stop using them.
  * @property requiredResourceBytes Bytes on the wire; null for self-hosted content until it is
  *   downloaded.
+ * @property loadedResourceCount Resources the download received from the network, after Mapbox's
+ *   loaded resource count: of the version downloading, or else of the stored version. Resources
+ *   found stored already or unchanged (`304`) are completed without being loaded.
+ * @property loadedResourceBytes Bytes on the wire of the loaded resources.
  * @property billableResourceCount Resources counted toward the plan's per-device limit.
  * @property error Why the download failed or waits.
  * @property retryAtMillis When a waiting download continues, when the service asked for a wait.
@@ -107,6 +111,8 @@ public data class TileflowOfflineRegion(
     public val completedResourceCount: Long,
     public val requiredResourceBytes: Long?,
     public val completedResourceBytes: Long,
+    public val loadedResourceCount: Long,
+    public val loadedResourceBytes: Long,
     public val billableResourceCount: Long,
     public val error: TileflowOfflineException?,
     public val retryAtMillis: Long?,

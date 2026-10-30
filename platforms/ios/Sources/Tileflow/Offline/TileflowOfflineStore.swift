@@ -77,7 +77,8 @@ public final class TileflowOfflineStore: Sendable {
   /// Starts downloading a region and returns as soon as it is recorded.
   ///
   /// A new identifier creates the region. An identifier whose download is unfinished resumes it
-  /// when `options` are unchanged. Otherwise a new version downloads, sending each stored
+  /// when `options` are unchanged apart from their metadata, which changes in place. Otherwise a
+  /// new version downloads, sending each stored
   /// resource's `ETag` so unchanged resources are neither downloaded nor billed again, and
   /// replaces the stored version when complete.
   ///
@@ -89,6 +90,12 @@ public final class TileflowOfflineStore: Sendable {
     -> TileflowOfflineRegion
   {
     try await core.load(id, options)
+  }
+
+  /// Replaces the region's metadata in place. Nothing downloads, and a download in progress
+  /// continues; loading the region with options that differ only in metadata does the same.
+  public func updateRegionMetadata(id: String, metadata: [String: String]) async throws {
+    try await core.updateMetadata(id, metadata)
   }
 
   /// Every region, oldest first.

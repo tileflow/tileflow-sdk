@@ -83,6 +83,8 @@ class OfflineStoreTest {
         assertEquals(done.requiredResourceBytes, done.completedResourceBytes)
         assertEquals(service.billable, done.billableResourceCount)
         assertEquals(TileflowOfflineRegion.UpdateState.Current, done.updateState)
+        assertEquals(done.requiredResourceCount, done.loadedResourceCount)
+        assertEquals(done.requiredResourceBytes, done.loadedResourceBytes)
 
         // Each resource was downloaded once, with the grant only where the manifest asks for it.
         assertEquals(1, service.creations.get())
@@ -260,6 +262,9 @@ class OfflineStoreTest {
             service.changedUrls.toSet(),
             update.filter { it.status == 200 }.map { it.url }.toSet(),
         )
+        // Only the changed resources were loaded; the rest completed unchanged.
+        assertEquals(service.changedUrls.size.toLong(), done.loadedResourceCount)
+        assertEquals(done.requiredResourceCount, done.completedResourceCount)
         assertTrue(update.filter { it.status == 304 }.all { it.headers["If-None-Match"] != null })
         assertEquals(TileflowOfflineRegion.UpdateState.Current, done.updateState)
         // The previous deployment's style is released; the changed tile holds its new body.
@@ -270,6 +275,39 @@ class OfflineStoreTest {
                     .body
                     .contentEquals(service.served[url])
             )
+    }
+
+    @Test
+    fun metadataChangesInPlaceWithoutDownloadingAgain() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val store = store(service, fetcher = FreezingFetcher(service, 10))
+        store.loadRegion("madrid", madrid().copy(metadata = mapOf("name" to "Madrid")))
+        waitUntil { service.downloads.size >= 10 }
+        // Loading with new metadata keeps the download in progress.
+        store.loadRegion("madrid", madrid().copy(metadata = mapOf("name" to "Centro")))
+        assertEquals(mapOf("name" to "Centro"), store.region("madrid")!!.options.metadata)
+        assertEquals("No new pack", 1, service.creations.get())
+
+        val other = store(service, root = "other")
+        other.loadRegion("madrid", madrid())
+        waitFor(other, "madrid") { it.state == TileflowOfflineRegion.DownloadState.COMPLETE }
+        val downloads = service.downloads.size
+        other.updateRegionMetadata("madrid", mapOf("name" to "Sol"))
+        val updated = other.region("madrid")!!
+        assertEquals(mapOf("name" to "Sol"), updated.options.metadata)
+        assertEquals(TileflowOfflineRegion.DownloadState.COMPLETE, updated.state)
+        assertEquals("Nothing downloads", downloads, service.downloads.size)
+        // The change survives a new store over the same files.
+        assertEquals(
+            mapOf("name" to "Sol"),
+            store(service, root = "other").region("madrid")!!.options.metadata,
+        )
+        try {
+            other.updateRegionMetadata("missing", emptyMap())
+            fail("The region does not exist")
+        } catch (error: TileflowOfflineException) {
+            assertEquals(TileflowOfflineErrorCode.REGION_NOT_FOUND, error.code)
+        }
     }
 
     @Test

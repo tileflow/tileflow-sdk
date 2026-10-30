@@ -73,7 +73,7 @@
     "@tileflow/vite": "workspace:*",
     "@tileflow/vue": "workspace:*",
     "@tileflow/webpack": "workspace:*",
-    "@types/node": "^25.9.2",
+    "@types/node": "^26.6.5",
     "@types/pngjs": "6.0.5",
     "@vitejs/plugin-vue": "^6.0.8",
     "maplibre-gl-min": "npm:maplibre-gl@6.4.1",

@@ -276,9 +276,7 @@ async function main() {
       remote: values.get('--remote') ?? remotes.push,
     });
   } else {
-    throw new Error(
-      'Usage: native-swift-release.mjs prepare|publish [options]',
-    );
+    throw new Error('Usage: native-swift-release.mjs prepare|publish [options]');
   }
 }
 

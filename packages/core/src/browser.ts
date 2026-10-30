@@ -295,6 +295,10 @@ export {
 
 export * from './fair-use-browser';
 export {
+  registerTileflowPathGroundProtocol,
+  type TileflowPathGroundRegistry,
+} from './path-ground-browser';
+export {
   registerTileflowContourProtocol,
   tileflowMaplibreContourVersion,
   type TileflowContourProtocolHandler,
@@ -2579,3 +2583,4 @@ export {
   type TileflowMap3DLoader,
   type TileflowMap3DSource,
 } from './map-3d-attach-browser';
+export type {TileflowCameraOptions} from './camera';

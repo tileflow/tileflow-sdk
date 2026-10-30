@@ -8,6 +8,7 @@ import {
   createTileflowVegetation,
   loadTileflowStyleFonts,
   registerTileflowContourProtocol,
+  registerTileflowPathGroundProtocol,
   registerTileflowPmtilesProtocol,
   type TileflowBuildings3D,
   type TileflowStreetLights,
@@ -191,6 +192,10 @@ export function createMobileMapRuntime(input: {
         {
           transformDemUrl: (url) => resourceTemplateAddress(url, input.platform),
         },
+      );
+      registerTileflowPathGroundProtocol(
+        {addProtocol: maplibregl.addProtocol},
+        {transformUrl: (url) => resourceAddress(url, input.platform)},
       );
       registerTileflowPmtilesProtocol(
         {addProtocol: maplibregl.addProtocol},

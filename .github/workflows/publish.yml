@@ -1,8 +1,12 @@
 name: Publish
-run-name: Prepare npm alpha bundle from main at ${{ github.sha }}
+run-name: Prepare npm alpha bundle from main at ${{ github.event.workflow_run.head_sha || github.sha }}
 
 on:
   workflow_dispatch:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
 
 permissions:
   actions: read
@@ -15,7 +19,10 @@ concurrency:
 jobs:
   reconcile:
     name: Prepare exact release bundle
-    if: github.repository == 'tileflow/tileflow-sdk' && github.ref == 'refs/heads/main'
+    if: >-
+      github.repository == 'tileflow/tileflow-sdk' && github.ref == 'refs/heads/main' &&
+      (github.event_name == 'workflow_dispatch' ||
+        (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success'))
     runs-on: ubuntu-latest
     timeout-minutes: 40
     permissions:
@@ -32,7 +39,7 @@ jobs:
       NPM_TAG: alpha
       # Ephemeral manifest versions intentionally differ from pnpm's installed workspace snapshot.
       pnpm_config_verify_deps_before_run: warn
-      RELEASE_SHA: ${{ github.sha }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
     steps:
       - name: Checkout proposed main commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

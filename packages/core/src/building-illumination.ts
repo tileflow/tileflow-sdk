@@ -12,6 +12,8 @@ export type TileflowModelRoleLighting = Readonly<{
   emissiveHeight: TileflowModelEmissionGradient;
   color?: string;
   colorMix?: number;
+  /** Relative surface brightness after role and part colours, from zero to one. */
+  colorScale?: number;
   metallic?: number;
   roughness?: number;
   /** Map shading normalizes sunlight to the surrounding extruded buildings. */
@@ -90,6 +92,7 @@ export function readModelRoleLighting(
       ...(typeof entry.emissiveColor === 'string' ? {emissiveColor: entry.emissiveColor} : {}),
       ...(typeof entry.color === 'string' ? {color: entry.color} : {}),
       ...(entry.colorMix === undefined ? {} : {colorMix: bounded(entry.colorMix, 0, 1, 1)}),
+      ...(entry.colorScale === undefined ? {} : {colorScale: bounded(entry.colorScale, 0, 1, 1)}),
       ...(entry.metallic === undefined ? {} : {metallic: bounded(entry.metallic, 0, 1, 0)}),
       ...(entry.roughness === undefined ? {} : {roughness: bounded(entry.roughness, 0, 1, 1)}),
       ...(entry.shading === 'map' || entry.shading === 'physical' ? {shading: entry.shading} : {}),

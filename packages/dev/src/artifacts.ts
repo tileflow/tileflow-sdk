@@ -67,6 +67,7 @@ import {
   type TileflowIconResolutionOptions,
   type TileflowSourceCatalog,
 } from './icons';
+import {prepareEmbeddedImageSources} from './image-source-assets';
 import {
   prepareTileflowLineBackgroundGlyphs,
   type TileflowLineBackgroundGlyphProviders,
@@ -394,9 +395,13 @@ export async function createTileflowArtifactPlan(
       apiBaseUrl: options.apiBaseUrl,
       mapAssets: prepared.mapAssets,
     });
+  const embeddedImages =
+    renderer === 'native'
+      ? prepareEmbeddedImageSources(compiledStyles)
+      : {styles: compiledStyles, assets: []};
   const nativeLowering =
     renderer === 'native'
-      ? lowerTileflowNativeCompiledStyles(compiledStyles, nativeUrls)
+      ? lowerTileflowNativeCompiledStyles(embeddedImages.styles, nativeUrls)
       : undefined;
   const rendererStyles = nativeLowering?.styles ?? compiledStyles;
   if (renderer === 'native')
@@ -420,7 +425,7 @@ export async function createTileflowArtifactPlan(
       }
       throw error;
     });
-    const assets = [...prepared.assets, ...preparedFonts.assets];
+    const assets = [...prepared.assets, ...preparedFonts.assets, ...embeddedImages.assets];
     // Local previews and captures derive line-background glyphs themselves; production output
     // keeps the declared provider, which must serve derived stacks.
     const lineBackgroundGlyphs =
@@ -753,7 +758,8 @@ function getMapBuildAssets(
   for (const asset of assets) {
     if (
       asset.fileName.startsWith(`icons/${mapName}/`) ||
-      asset.fileName.startsWith(`models/${mapName}/`)
+      asset.fileName.startsWith(`models/${mapName}/`) ||
+      asset.fileName.startsWith(`images/${mapName}/`)
     )
       selected.set(asset.fileName, asset);
   }
@@ -1373,6 +1379,7 @@ function assertTileflowArtifactFileName(fileName: string): void {
   const logicalName = fileName.replace(/^generations\/[a-f0-9]{64}\//, '');
   const styleMatch = /^styles\/([^/]+)\/([^/]+)\.json$/u.exec(logicalName);
   const iconMatch = /^icons\/([^/]+)\/sprite(?:@2x)?\.(?:json|png)$/u.exec(logicalName);
+  const imageMatch = /^images\/([^/]+)\/[a-f0-9]{64}\.png$/u.exec(logicalName);
   // A map's building models, named by their id and the start of their SHA-256.
   const modelMatch = /^models\/([^/]+)\/[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{16}\.glb$/u.exec(
     logicalName,
@@ -1385,6 +1392,7 @@ function assertTileflowArtifactFileName(fileName: string): void {
       tileflowMapIdSchema.safeParse(styleMatch[1]).success &&
       tileflowThemeNameSchema.safeParse(styleMatch[2]).success) ||
     (iconMatch && tileflowMapIdSchema.safeParse(iconMatch[1]).success) ||
+    (imageMatch && tileflowMapIdSchema.safeParse(imageMatch[1]).success) ||
     (modelMatch && tileflowMapIdSchema.safeParse(modelMatch[1]).success) ||
     /^tilesets\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.pmtiles$/u.test(logicalName) ||
     /^fonts\/[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{64}\.(?:otf|ttf|woff2)$/.test(logicalName) ||

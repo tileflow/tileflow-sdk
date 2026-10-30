@@ -470,9 +470,9 @@ test('Streets exposes complete palette variants on one map identity', () => {
     ['linear'],
     ['zoom'],
     11,
-    220,
+    420,
     13,
-    300,
+    480,
     14,
     600,
   ]);

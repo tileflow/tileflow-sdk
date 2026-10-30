@@ -152,6 +152,16 @@ export function tileflowVegetationDescription(
         {
           heightScale: number(own?.heightScale),
           crownScale: number(own?.crownScale),
+          ...(own?.sizeAnchor === undefined ? {} : {sizeAnchor: number(own.sizeAnchor)}),
+          ...(own?.crownAnchor === undefined ? {} : {crownAnchor: number(own.crownAnchor)}),
+          ...(own?.sizeCompression === undefined
+            ? {}
+            : {
+                sizeCompression: Math.max(
+                  0,
+                  Math.min(1, Number(toMapLibreStyleValue(own.sizeCompression)) || 0),
+                ),
+              }),
           ...(own?.models?.length ? {models: [...own.models]} : {}),
         },
       ]),

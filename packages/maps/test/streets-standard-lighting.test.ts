@@ -67,23 +67,25 @@ for (const [name, theme] of Object.entries(themes)) {
     assert.deepEqual(readTileflowSunPreset(compiled.metadata), preset);
     const buildings = readTileflowBuildings3D(compiled.metadata)!;
     assert.equal(buildings.occlusion, true);
-    assert.equal(buildings.groundOcclusion, 0.12);
+    assert.equal(buildings.groundOcclusion, 0.07);
     assert.equal(buildings.modelOcclusion, 0.75);
     const dark = name.endsWith('dusk') || name.endsWith('night');
     const mono = name.startsWith('monochrome');
-    // Authored stone shares ordinary-building lighting; glass retains the physical profile.
+    // Model materials share the ordinary buildings; windows retain independent styling.
     assert.equal(buildings.modelLighting!.wall!.emissiveStrength, 0);
     assert.equal(buildings.modelLighting!.wall!.shading, 'map');
-    assert.equal(buildings.modelLighting!.window!.shading, undefined);
-    assert.equal(buildings.modelLighting!.window!.partColorMix, 0);
+    assert.equal(buildings.modelLighting!.window!.shading, 'map');
+    assert.equal(buildings.modelLighting!.window!.partColorMix, 1);
     assert.equal(buildings.modelColors!.surface, buildings.color);
-    assert.equal(buildings.modelLighting?.window?.metallic, 1);
-    assert.equal(buildings.modelLighting?.window?.roughness, 0);
+    assert.equal(buildings.modelLighting!.window!.colorScale, 0.94);
+    assert.equal(buildings.modelLighting!.window!.emissiveStrength, 0);
+    assert.equal(buildings.modelLighting?.window?.metallic, 0);
+    assert.equal(buildings.modelLighting?.window?.roughness, 1);
     assert.equal(buildings.modelLighting?.roof?.emissiveStrength, 0);
     assert.equal(buildings.modelLighting?.lamp?.emissiveStrength, 0);
     if (dark) {
       assert.equal(buildings.modelLighting?.door?.emissiveStrength, 0);
-      assert.equal(buildings.modelLighting?.window?.emissiveVariation, 0.3);
+      assert.equal(buildings.modelLighting?.window?.emissiveVariation, 0);
       assert.equal(buildings.modelLighting?.logo?.emissiveStrength, 0);
     }
     const flood = buildings.floodLight!;

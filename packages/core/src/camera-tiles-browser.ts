@@ -26,6 +26,8 @@ export type CameraTile<T> = {
   readonly x: number;
   readonly y: number;
   value?: T;
+  /** A replacement awaiting renderer preparation; the previous value remains drawable. */
+  pending?: T;
   /** From the point the camera reads round, in tiles. */
   distance?: number;
   retryAt?: number;
@@ -55,6 +57,8 @@ export type CameraTilesOptions<T> = Readonly<{
     priority: number,
   ): T | Promise<T>;
   empty: T;
+  /** Optional GPU readiness check. A replacement is committed only when this returns true. */
+  isReady?(value: T): boolean;
   /** Lets go of a tile's value when it is forgotten. */
   release(value: T): void;
   /** Called when the tiles to draw change. */
@@ -66,6 +70,8 @@ export type CameraTiles<T> = {
   update(): void;
   /** The wanted tiles built so far, nearest first. */
   ready(): (CameraTile<T> & {value: T})[];
+  /** Built values awaiting upload, or the resident value when no replacement is pending. */
+  built(): (CameraTile<T> & {value: T})[];
   /**
    * Every tile wanted round the camera, nearest first, whether it has been read, holds nothing for
    * the layer, or the style has no source to read it from.
@@ -167,7 +173,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       entry.used = now;
       entry.distance = distance;
       if (
-        (!entry.value || entry.retryAt !== undefined) &&
+        ((!entry.value && !entry.pending) || entry.retryAt !== undefined) &&
         !entry.loading &&
         (entry.retryAt ?? 0) <= now
       )
@@ -190,6 +196,8 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
         if (disposed || tiles.get(key) !== entry || entry.loading !== controller) return;
         // An absent tile stays empty; it is not read again.
         if (!tile) {
+          if (entry.pending && entry.pending !== options.empty) options.release(entry.pending);
+          entry.pending = undefined;
           if (entry.value && entry.value !== options.empty) options.release(entry.value);
           entry.value = options.empty;
           entry.loading = undefined;
@@ -248,10 +256,11 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
           if (value !== options.empty) options.release(value);
           continue;
         }
-        const previous = entry.value;
-        entry.value = value;
+        if (entry.pending && entry.pending !== options.empty && entry.pending !== value)
+          options.release(entry.pending);
+        entry.pending = value;
         entry.loading = undefined;
-        if (previous && previous !== options.empty && previous !== value) options.release(previous);
+        commit(entry);
         built = true;
       }
       if (built && !disposed) {
@@ -269,6 +278,22 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
     });
   }
 
+  /** Swap only after the new mesh can draw, preserving the old GPU buffers until then. */
+  function commit(entry: CameraTile<T>): void {
+    const value = entry.pending;
+    if (
+      value === undefined ||
+      (value !== options.empty && options.isReady && !options.isReady(value))
+    )
+      return;
+    const previous = entry.value;
+    entry.value = value;
+    entry.pending = undefined;
+    if (previous && previous !== options.empty && previous !== value) options.release(previous);
+    options.changed();
+    map.triggerRepaint();
+  }
+
   /** Forgets the tiles least recently wanted beyond twice the tiles drawn. */
   function evict(): void {
     const keep = new Set(wanted);
@@ -278,6 +303,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
     for (const [key, entry] of spare.slice(options.maxTiles)) {
       entry.loading?.abort();
       if (entry.value && entry.value !== options.empty) options.release(entry.value);
+      if (entry.pending && entry.pending !== options.empty) options.release(entry.pending);
       tiles.delete(key);
       options.changed();
     }
@@ -305,10 +331,18 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       const list: (CameraTile<T> & {value: T})[] = [];
       for (const key of wanted) {
         const entry = tiles.get(key);
+        if (entry) commit(entry);
         if (entry?.value && entry.value !== options.empty)
           list.push(entry as CameraTile<T> & {value: T});
       }
       return list;
+    },
+    built() {
+      return wanted.flatMap((key) => {
+        const entry = tiles.get(key);
+        const value = entry?.pending ?? entry?.value;
+        return entry && value && value !== options.empty ? [{...entry, value}] : [];
+      });
     },
     coverage: () => covered,
     ring: () => ring,
@@ -331,6 +365,8 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       for (const [key, entry] of tiles) {
         if (!which(entry)) continue;
         entry.loading?.abort();
+        if (entry.pending && entry.pending !== options.empty) options.release(entry.pending);
+        entry.pending = undefined;
         entry.retryAt = undefined;
         // A tile's width in metres at its middle.
         const latitude =
@@ -345,7 +381,10 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       map.off('sourcedata', onSource);
       map.off('move', onMove);
       map.off('moveend', onMoveEnd);
-      for (const entry of tiles.values()) entry.loading?.abort();
+      for (const entry of tiles.values()) {
+        entry.loading?.abort();
+        if (entry.pending && entry.pending !== options.empty) options.release(entry.pending);
+      }
       tiles.clear();
       queue.length = 0;
       reader?.clear();

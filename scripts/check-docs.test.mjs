@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {resolve} from 'node:path';
 import test from 'node:test';
-import {localLinkTarget, parseMarkdown} from './check-docs.mjs';
+import {assertPublicPackageFiles, localLinkTarget, parseMarkdown} from './check-docs.mjs';
 
 test('Markdown exposes marked examples and ignores headings and links inside fences', () => {
   const document = parseMarkdown(
@@ -53,4 +53,19 @@ test('Repository URLs and relative links resolve locally without network request
   assert.equal(localLinkTarget('https://example.com/guide', source, root), undefined);
   assert.equal(localLinkTarget('#section', source, root), undefined);
   assert.throws(() => localLinkTarget('/docs/guide', source, root));
+});
+
+test('public packs retain usage and contracts but exclude internal documentation directories', () => {
+  assert.doesNotThrow(() =>
+    assertPublicPackageFiles(['README.md', 'LICENSE', 'dist/config-reference.json'], 'fixture'),
+  );
+  for (const path of [
+    'docs/guide.md',
+    'plans/cleanup.md',
+    'planning/design.md',
+    'documentation/setup.md',
+    'nested/docs/guide.md',
+  ]) {
+    assert.throws(() => assertPublicPackageFiles([path], 'fixture'), /internal documentation/);
+  }
 });

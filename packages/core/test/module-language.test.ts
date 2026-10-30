@@ -110,7 +110,7 @@ test('keeps registry defaults, type tags, and the resolved schema in lockstep', 
 
 test('keeps the checked-in machine reference byte-for-byte aligned with its generator', async () => {
   const actual = await readFile(
-    new URL('../../../docs/modules-api-reference.json', import.meta.url),
+    new URL('../reference/modules-api-reference.json', import.meta.url),
     'utf8',
   );
   assert.equal(actual, await serializeTileflowConfigReference());
@@ -118,7 +118,7 @@ test('keeps the checked-in machine reference byte-for-byte aligned with its gene
 
 test('keeps the checked-in modules API reference in lockstep with the semantic registry', async () => {
   const reference = JSON.parse(
-    await readFile(new URL('../../../docs/modules-api-reference.json', import.meta.url), 'utf8'),
+    await readFile(new URL('../reference/modules-api-reference.json', import.meta.url), 'utf8'),
   ) as {
     expressions?: {
       astSchemaRefs?: Record<string, unknown>;
@@ -186,7 +186,7 @@ test('keeps the checked-in modules API reference in lockstep with the semantic r
 
 test('publishes authoring and resolved map entrypoints without hiding extends, scenes, or shots', async () => {
   const reference = JSON.parse(
-    await readFile(new URL('../../../docs/modules-api-reference.json', import.meta.url), 'utf8'),
+    await readFile(new URL('../reference/modules-api-reference.json', import.meta.url), 'utf8'),
   ) as {
     $ref?: unknown;
     schemaVersion?: unknown;
@@ -275,7 +275,7 @@ test('publishes authoring and resolved map entrypoints without hiding extends, s
 
 test('publishes AI-reference constraints that match exact assets and capture authoring', async () => {
   const reference = JSON.parse(
-    await readFile(new URL('../../../docs/modules-api-reference.json', import.meta.url), 'utf8'),
+    await readFile(new URL('../reference/modules-api-reference.json', import.meta.url), 'utf8'),
   ) as JsonSchemaObject;
   const definitions = reference.$defs as Record<string, JsonSchemaObject>;
   const standaloneMap = definitions.TileflowStandaloneMap!;
@@ -285,6 +285,7 @@ test('publishes AI-reference constraints that match exact assets and capture aut
   assert.deepEqual(inheritance.fields, {
     atmosphere: 'atomic',
     boundaryAreas: 'atomic',
+    camera: 'deep',
     data: 'atomic',
     defaultTheme: 'atomic',
     extends: 'lineage',
@@ -574,7 +575,7 @@ test('publishes AI-reference constraints that match exact assets and capture aut
 
 test('generated JSON Schema rejects representable semantic false positives', async () => {
   const reference = JSON.parse(
-    await readFile(new URL('../../../docs/modules-api-reference.json', import.meta.url), 'utf8'),
+    await readFile(new URL('../reference/modules-api-reference.json', import.meta.url), 'utf8'),
   ) as JsonSchemaObject;
   const definitions = reference.$defs as Record<string, JsonSchemaObject>;
   const ajv = new Ajv2020({allErrors: true, strict: false});

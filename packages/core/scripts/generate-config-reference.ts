@@ -13,7 +13,7 @@ import {resolvedTileflowMapSchema} from '../src/resolved-map-schema';
 import {tileflowThemeLimits} from '../src/themes';
 
 const referencePath = fileURLToPath(
-  new URL('../../../docs/modules-api-reference.json', import.meta.url),
+  new URL('../reference/modules-api-reference.json', import.meta.url),
 );
 
 type JsonSchema = Record<string, unknown>;
@@ -956,7 +956,7 @@ async function main(): Promise<void> {
   const actual = await readFile(referencePath, 'utf8').catch(() => '');
   if (actual !== expected) {
     throw new Error(
-      'docs/modules-api-reference.json is stale. Run pnpm reference:generate and commit the result.',
+      'packages/core/reference/modules-api-reference.json is stale. Run pnpm reference:generate and commit the result.',
     );
   }
 }

@@ -190,7 +190,9 @@ jobs:
 
       - name: Run cross-platform CLI browser suite
         if: matrix.suite == 'cli'
-        run: pnpm --filter tileflow run test
+        # Comparison previews compile two maps; bound contention on Windows without
+        # relaxing their startup deadlines or dropping any cross-platform tests.
+        run: pnpm --filter tileflow exec tsx --test ${{ runner.os == 'Windows' && '--test-concurrency=2' || '' }} 'test/*.test.ts'
         env:
           NODE_COMPILE_CACHE: ${{ runner.temp }}/node-compile-cache
           TILEFLOW_RUN_BROWSER_TESTS: '1'

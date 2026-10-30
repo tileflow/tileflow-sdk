@@ -111,11 +111,11 @@ any other event. `hello` and `error` need no subscription.
 
 Each event belongs to one level. Levels are cumulative:
 
-| Level        | Adds                                                                                                                                                                          |
-| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `essential`  | `loading`, `contentReady`, `themeChanged`, `themeTransition`, `warning`, `tap`, `longPress`, activations, `animationEnded`, `shotCue`, `followModeChanged`, `cameraMoveEnded` |
-| `camera`     | `cameraMoveStarted`, `gestureStarted`, `gestureEnded`                                                                                                                         |
-| `continuous` | `cameraMoved`, at most once per rendered frame                                                                                                                                |
+| Level        | Adds                                                                                                                                                                                               |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `essential`  | `loading`, `contentReady`, `themeChanged`, `themeTransition`, `warning`, `tap`, `longPress`, activations, `annotationDragged`, `animationEnded`, `shotCue`, `followModeChanged`, `cameraMoveEnded` |
+| `camera`     | `cameraMoveStarted`, `gestureStarted`, `gestureEnded`                                                                                                                                              |
+| `continuous` | `cameraMoved` and `trackedPointsMoved`, at most once per rendered frame                                                                                                                            |
 
 The host sends its subscriptions in `initialize` and replaces them with `setEvents`. Each
 subscription has a throttle interval, from 0 to `maximumThrottleMs`. A throttled event is delivered
@@ -130,7 +130,8 @@ synchronous camera state current, and `cameraMoved` while a compass or scale bar
 host delivers to the application only the events of its level, at its interval, and always the
 latest camera of a throttled run.
 
-`tap` and `longPress` carry the `coordinate` and the `point` in CSS pixels. A long press is a
+`tap` and `longPress` carry the `coordinate` and the `point` in CSS pixels, and `annotations`
+when they touch annotations (see [Annotations](#annotations)). A long press is a
 primary pointer that holds within 10 CSS pixels for 500 ms; the click that ends it is not a tap.
 `gestureStarted` and `gestureEnded` carry `gesture`: `pan`, `zoom`, `rotate` or `pitch`, for
 movements a person makes.
@@ -269,6 +270,42 @@ camera, so both move together frame by frame.
 - A person's gesture, `moveCamera`, `stopCamera` and `playShot` end following. The renderer then
   sends `followModeChanged` with `mode: none`, the `reason` (`gesture` or `api`) and the `revision`
   of the request it ended, so a host ignores an end that a later request already replaced.
+
+## Annotations
+
+Annotations drawn by the map are application layers of the runtime style; the host builds them
+with the requests above and replays them like any other layer. Two requests add what native
+annotations need:
+
+- `setAnnotationLayers` names the application layers (at most `maximumAnnotationLayers`) whose
+  features are annotations; each request replaces the previous one. A `tap` or `longPress` that
+  touches their features, within 6 CSS pixels, carries `annotations`: up to 16 `{layer, id}`,
+  topmost first, with the feature's identifier as a string. Hosts give their sources a `promoteId`,
+  because MapLibre drops string identifiers that are not promoted. The host decides whether an
+  annotation handles the touch; the renderer always sends the event.
+- A pointer that goes down on a feature of those layers whose `draggable` property is `true` takes
+  the map's pan for itself. Once it moves 3 CSS pixels, the renderer moves the feature in its
+  source in every frame, keeping its place under the pointer, and sends `annotationDragged` with
+  the `phase` (`started`, `moved` at most once per frame, `ended`), the `layer`, the `id`, the new
+  `geometry` and the `point`. The source keeps the new geometry across style changes. The host
+  records the final geometry in its own copy of the source when the drag ends, so a new renderer
+  draws the feature where it was dropped. A press that holds still for a long press while a drag
+  holds the pointer is not a long press.
+- `setTrackedPoints` sends a `revision` and up to `maximumTrackedPoints` coordinates whose screen
+  positions the host follows, for native views over the map and accessibility frames. After each
+  rendered frame that moves one of them, and on the next frame after a new set, the renderer sends
+  `trackedPointsMoved` with the `revision`, the frame's `time` in milliseconds since the Unix epoch
+  and `positions`: `x, y` pairs in CSS pixels, to a hundredth, in the order of the set. A pair is
+  null while the point lies behind the globe, beyond the horizon, or under terrain, which the
+  renderer reads at most every 100 ms. Longitudes wrap to the copy of the world nearest the centre.
+  A host keeps the keys of each revision until a later revision's positions arrive, and keeps one
+  `setTrackedPoints` in flight.
+
+The renderer computes positions only while the host subscribes to `trackedPointsMoved`. Hosts
+subscribe to `tap`, `longPress` and `annotationDragged` while they hold annotation managers, and to
+`trackedPointsMoved` while they track points, whatever the application's event level; they deliver
+`tap` and `longPress` to the application only at its level and when no annotation handled them.
+Both requests are part of the state a host gives a new renderer, after its runtime style.
 
 ## Errors and warnings
 

@@ -83,6 +83,21 @@ progress and an hour for a shot. Cancelling the calling task or coroutine stops 
 A person's gesture or a new shot stops a playing shot. A shot reports the camera's movement once,
 with the reason `api`, rather than once per frame.
 
+## Annotations
+
+The web SDKs show markers, popups and tooltips as DOM elements (MapLibre GL JS `Marker` and
+`Popup`, and the `annotations` of `@tileflow/interactions`). The Swift and Kotlin SDKs offer
+annotations drawn by the map and native views pinned to the map, described in
+[annotations](native-annotations.md).
+
+| Web                                                        | Swift                                                    | Kotlin                                                  |
+| ---------------------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------- |
+| `Marker` with an element, anchor, offset and rotation      | `TileflowPointAnnotation` in a point annotation manager  | `TileflowPointAnnotation` in a point annotation manager |
+| `Marker` with `draggable`                                  | `isDraggable` and the drag handlers                      | `isDraggable` and `TileflowAnnotationDragListener`      |
+| GeoJSON circle, line and fill layers the application taps  | Circle, polyline and polygon annotation managers         | Circle, polyline and polygon annotation managers        |
+| `Marker` with any DOM content; `Popup` anchored to a place | `TileflowViewAnnotation` with the application's `UIView` | `viewAnnotationManager.addViewAnnotation` with a `View` |
+| Annotation buttons in the DOM, read by screen readers      | `accessibilityLabel`, VoiceOver order and rotor          | `accessibilityLabel`, TalkBack order and actions        |
+
 ## Differences and why
 
 | Web                                                                                                   | iOS and Android                                                                                                                               | Why                                                                                                                                                                                             |
@@ -99,4 +114,6 @@ with the reason `api`, rather than once per frame.
 | The 3D renderers load with a dynamic import when a style first declares 3D.                           | The renderers are part of the embedded renderer, read from the application, and mount only when a style declares 3D.                          | Nothing is downloaded at run time; the renderer's code ships with the SDK. Loading its 3D part separately is a size and start-up optimisation of the embedded bundle, not a feature difference. |
 | `onLoad(map)` and `mapOptions` give the MapLibre GL JS map.                                           | Not available.                                                                                                                                | The SDKs expose no WebView or MapLibre GL JS types, so a native renderer can replace the embedded one without breaking applications.                                                            |
 | `GeolocateControl` draws the browser's position and follows it; the application asks for it.          | A puck drawn by the renderer, follow modes, a default location provider and permission helpers; see [the location guide](native-location.md). | Native applications expect a map SDK to show and follow the location, and the camera and the puck move together only when the renderer drives both.                                             |
+| `Popup` and tooltips show text the SDK lays out.                                                      | The application builds its callout as a native view; a view annotation anchors it.                                                            | Callouts belong to the application's design system; native views give it the platform's text, controls and accessibility.                                                                       |
+| Markers are DOM elements the browser composites with the map.                                         | Annotations drawn by the map, or native views placed at the display refresh after each renderer frame.                                        | The renderer draws in a WebView, so native views cannot be part of its frame; drawing annotations in the map keeps them on the ground and in sync.                                              |
 | `mode: 'image'` shows a static image of the map.                                                      | Not available yet.                                                                                                                            | A native snapshot of the map is planned.                                                                                                                                                        |

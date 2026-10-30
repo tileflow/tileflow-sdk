@@ -332,6 +332,8 @@ jobs:
           # Hosted macOS images enable Reduce Motion. These tests exercise animations,
           # cancellation and intermediate frames, so run them with motion enabled.
           defaults write com.apple.universalaccess reduceMotion -bool false
+          # Catalyst/WebKit also reads the UIKit accessibility preference domain.
+          defaults write com.apple.Accessibility ReduceMotionEnabled -bool false
           swift -e 'import AppKit; precondition(!NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, "Rendering tests require motion enabled")'
           nohup node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
           udid=$(xcrun simctl create "Tileflow CI" "$SIMULATOR_DEVICE_TYPE" "$SIMULATOR_RUNTIME")

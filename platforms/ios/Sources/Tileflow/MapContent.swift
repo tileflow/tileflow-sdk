@@ -29,38 +29,79 @@ public struct TileflowAnnotation: Equatable, Sendable {
 
 public enum TileflowGeoJSONLayerKind: String, Sendable { case circle, line, fill }
 
-/// An application-owned GeoJSON FeatureCollection. Updates are bounded by the native protocol.
+/// An application-owned GeoJSON FeatureCollection drawn as one layer.
+///
+/// The GeoJSON travels to the renderer over the SDK's data channel rather than in a message, up to
+/// 32 MiB per layer and 64 MiB per update. The renderer validates it against RFC 7946 (without
+/// GeometryCollection or foreign members, with closed rings and positions within range); invalid
+/// GeoJSON makes ``TileflowMapView/setContent(annotations:layers:)`` fail with
+/// ``TileflowMapError/invalidRequest`` and the reason `invalidGeoJSON`, leaving the content as it
+/// was.
 public struct TileflowGeoJSONLayer: Sendable {
   public let id: String
   public let kind: TileflowGeoJSONLayerKind
   public let color: String
   public let size: Double
   public let opacity: Double
-  private let data: JSONValue
+  /// A route ink of the theme on screen, drawn instead of ``color`` and following theme changes
+  /// and blends.
+  public let ink: TileflowRouteInk?
+  public let placement: TileflowLayerPlacement
+  /// For a line on the ground: how much of it shows where 3D content hides it, from 0 to 1.
+  public let occludedOpacity: Double
+  /// For a line: the stretch of it that shows. ``TileflowMapView/animateLineProgress(layers:to:duration:)``
+  /// moves it.
+  public internal(set) var progress: TileflowLineProgress?
+  let geoJSON: Data
+  /// Identifies the data, so layers that share it, or keep it across updates, send it once.
+  let digest: String
 
+  /// - Parameters:
+  ///   - ink: Draws the layer in a route ink of the theme on screen instead of `color`; the glow
+  ///     and core inks also take the theme's opacity for them.
+  ///   - placement: `.top` draws above the whole map; `.ground` lies under its labels and 3D
+  ///     content.
+  ///   - occludedOpacity: For a line on the ground, how much shows where buildings hide it.
+  ///   - progress: For a line, draws only a stretch of it, with an optional head and light.
   public init(
     id: String, geoJSON: Data, kind: TileflowGeoJSONLayerKind,
-    color: String = "#e9573f", size: Double = 6, opacity: Double = 1
+    color: String = "#e9573f", size: Double = 6, opacity: Double = 1,
+    ink: TileflowRouteInk? = nil, placement: TileflowLayerPlacement = .top,
+    occludedOpacity: Double = 0, progress: TileflowLineProgress? = nil
   ) throws {
     guard HostedContract.matches(id, #"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"#),
-      geoJSON.count <= 49_152,
       HostedContract.matches(color, #"^#[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$"#),
-      (0...64).contains(size), (0...1).contains(opacity),
-      let data = try? JSONDecoder().decode(JSONValue.self, from: geoJSON),
-      GeoJSONContract.isFeatureCollection(data)
+      (0...64).contains(size), (0...1).contains(opacity), (0...1).contains(occludedOpacity),
+      progress == nil || kind == .line,
+      occludedOpacity == 0 || (kind == .line && placement == .ground)
     else { throw TileflowMapError.invalidRequest }
+    try progress?.validate()
+    guard !geoJSON.isEmpty, geoJSON.count <= ProtocolContract.maximumDataBytes else {
+      throw TileflowMapError(
+        .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataBytes)
+    }
     self.id = id
     self.kind = kind
     self.color = color
     self.size = size
     self.opacity = opacity
-    self.data = data
+    self.ink = ink
+    self.placement = placement
+    self.occludedOpacity = occludedOpacity
+    self.progress = progress
+    self.geoJSON = geoJSON
+    self.digest = DataChannel.digest(geoJSON)
   }
-  func wireValue() -> JSONValue {
-    .object([
-      "id": .string(id), "data": data, "kind": .string(kind.rawValue), "color": .string(color),
-      "size": .number(size), "opacity": .number(opacity),
-    ])
+
+  func wireValue(data: DataChannel.Reference) -> JSONValue {
+    var value: [String: JSONValue] = [
+      "id": .string(id), "data": data.wireValue, "kind": .string(kind.rawValue),
+      "color": .string(color), "size": .number(size), "opacity": .number(opacity),
+      "placement": .string(placement.rawValue), "occludedOpacity": .number(occludedOpacity),
+    ]
+    if let ink { value["ink"] = .string(ink.rawValue) }
+    if let progress { value["progress"] = progress.wireValue }
+    return .object(value)
   }
 }
 
@@ -74,108 +115,44 @@ public struct TileflowPoiSelection: Decodable, Sendable {
 struct MapContent: Sendable {
   var annotations: [TileflowAnnotation] = []
   var overlays: [TileflowGeoJSONLayer] = []
-  func wireValue() throws -> JSONValue {
+
+  func validate() throws {
     guard annotations.count <= 128, overlays.count <= 16,
       Set(annotations.map(\.id)).count == annotations.count,
       Set(overlays.map(\.id)).count == overlays.count
     else { throw TileflowMapError.invalidRequest }
-    let value = JSONValue.object([
-      "annotations": .array(try annotations.map { try $0.wireValue() }),
-      "overlays": .array(overlays.map { $0.wireValue() }),
-    ])
-    guard try JSONEncoder().encode(value).count <= 60_000 else {
-      throw TileflowMapError.invalidRequest
+    for annotation in annotations { _ = try annotation.wireValue() }
+    var total = 0
+    for (_, layer) in Dictionary(overlays.map { ($0.digest, $0) }, uniquingKeysWith: { a, _ in a })
+    {
+      total += layer.geoJSON.count
     }
-    return value
-  }
-}
-
-/// The renderer's GeoJSON contract, checked before content crosses the bridge so invalid content
-/// fails at the call instead of in the renderer.
-enum GeoJSONContract {
-  static func isFeatureCollection(_ value: JSONValue) -> Bool {
-    guard case .object(let object) = value, object["type"]?.string == "FeatureCollection",
-      Set(object.keys).isSubset(of: ["type", "features", "bbox"]), isBoundingBox(object["bbox"]),
-      case .array(let features) = object["features"], features.count <= 2000
-    else { return false }
-    return features.allSatisfy(isFeature)
+    guard total <= ProtocolContract.maximumDataTotalBytes else {
+      throw TileflowMapError(
+        .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataTotalBytes)
+    }
   }
 
-  private static func isFeature(_ value: JSONValue) -> Bool {
-    guard case .object(let object) = value, object["type"]?.string == "Feature",
-      Set(object.keys).isSubset(of: ["type", "id", "geometry", "properties", "bbox"]),
-      isBoundingBox(object["bbox"]), let geometry = object["geometry"],
-      let properties = object["properties"]
-    else { return false }
-    switch object["id"] {
-    case nil: break
-    case .string(let id)?: guard id.utf16.count <= 128 else { return false }
-    case .number(let id)?:
-      guard id.rounded(.towardZero) == id, abs(id) <= 9_007_199_254_740_991 else { return false }
-    default: return false
-    }
-    switch properties {
-    case .null: break
-    case .object(let values):
-      guard values.allSatisfy({ $0.key.utf16.count <= 128 && depth($0.value) <= 64 }) else {
-        return false
+  /// The command payload, with each distinct layer's GeoJSON registered on the data channel. The
+  /// caller releases the references when the request settles.
+  @MainActor
+  func wireValue(data channel: DataChannel) throws -> (JSONValue, [DataChannel.Reference]) {
+    try validate()
+    let annotations = try annotations.map { try $0.wireValue() }
+    var references: [DataChannel.Reference] = []
+    do {
+      let overlays = try overlays.map { layer in
+        let reference = try channel.register(
+          layer.geoJSON, digest: layer.digest, contentType: "application/geo+json")
+        references.append(reference)
+        return layer.wireValue(data: reference)
       }
-    default: return false
-    }
-    if case .null = geometry { return true }
-    return isGeometry(geometry)
-  }
-
-  private static func isGeometry(_ value: JSONValue) -> Bool {
-    guard case .object(let object) = value,
-      Set(object.keys).isSubset(of: ["type", "coordinates", "bbox"]),
-      isBoundingBox(object["bbox"]), let coordinates = object["coordinates"]
-    else { return false }
-    switch object["type"]?.string {
-    case "Point": return isPosition(coordinates)
-    case "MultiPoint": return items(coordinates, 0...2000).map { $0.allSatisfy(isPosition) } == true
-    case "LineString": return isLine(coordinates)
-    case "MultiLineString": return items(coordinates, 0...128).map { $0.allSatisfy(isLine) } == true
-    case "Polygon": return isPolygon(coordinates)
-    case "MultiPolygon":
-      return items(coordinates, 0...128).map { $0.allSatisfy(isPolygon) } == true
-    default: return false
-    }
-  }
-
-  private static func isPosition(_ value: JSONValue) -> Bool {
-    guard let values = items(value, 2...3) else { return false }
-    let numbers = values.compactMap(\.number)
-    return numbers.count == values.count && numbers.allSatisfy(\.isFinite)
-      && (-180...180).contains(numbers[0]) && (-90...90).contains(numbers[1])
-  }
-  private static func isLine(_ value: JSONValue) -> Bool {
-    items(value, 2...4000).map { $0.allSatisfy(isPosition) } == true
-  }
-  private static func isRing(_ value: JSONValue) -> Bool {
-    guard let positions = items(value, 4...4000), positions.allSatisfy(isPosition) else {
-      return false
-    }
-    return positions.first.flatMap { items($0, 2...3) }?.map(\.number)
-      == positions.last.flatMap { items($0, 2...3) }?.map(\.number)
-  }
-  private static func isPolygon(_ value: JSONValue) -> Bool {
-    items(value, 1...128).map { $0.allSatisfy(isRing) } == true
-  }
-  private static func isBoundingBox(_ value: JSONValue?) -> Bool {
-    guard let value else { return true }
-    guard case .array(let values) = value, [4, 6].contains(values.count) else { return false }
-    return values.allSatisfy { $0.number?.isFinite == true }
-  }
-  private static func items(_ value: JSONValue, _ count: ClosedRange<Int>) -> [JSONValue]? {
-    guard case .array(let values) = value, count.contains(values.count) else { return nil }
-    return values
-  }
-  private static func depth(_ value: JSONValue) -> Int {
-    switch value {
-    case .array(let values): 1 + (values.map(depth).max() ?? 0)
-    case .object(let values): 1 + (values.values.map(depth).max() ?? 0)
-    default: 0
+      return (
+        .object(["annotations": .array(annotations), "overlays": .array(overlays)]), references
+      )
+    } catch {
+      channel.release(references)
+      throw error
     }
   }
 }

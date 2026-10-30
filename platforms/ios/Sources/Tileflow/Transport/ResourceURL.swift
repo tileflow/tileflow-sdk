@@ -5,6 +5,8 @@ enum ResourceURL {
   static let scheme = "tileflow"
   static let resourceHost = "resource"
   static let runtimeHost = "runtime"
+  /// Application payloads registered on a generation's data channel.
+  static let dataHost = "data"
   static let runtimeURL = URL(string: "tileflow://runtime/index.html")!
 
   static func encode(_ url: URL) -> URL {

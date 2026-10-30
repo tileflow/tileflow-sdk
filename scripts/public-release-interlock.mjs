@@ -3,6 +3,10 @@ import {join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 
 export const publicReleaseBlockersFileName = 'PUBLIC_RELEASE_BLOCKERS.json';
+// Native Swift/Kotlin releases have their own interlock with the same schema, so npm and native
+// prerequisites never block each other.
+export const nativeReleaseBlockersFileName = 'NATIVE_RELEASE_BLOCKERS.json';
+const interlockFileNames = [publicReleaseBlockersFileName, nativeReleaseBlockersFileName];
 export const publicReleaseBlockersKind = 'tileflow-public-release-blockers';
 export const publicReleaseBlockersSchemaVersion = 1;
 
@@ -12,18 +16,22 @@ const repositoryRoot = resolve(
 const blockerIdPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 
 export class PublicReleaseBlockedError extends Error {
-  constructor(document) {
+  constructor(document, fileName = publicReleaseBlockersFileName) {
     const ids = document.blockers.map(({id}) => id).join(', ');
     super(
-      `Public SDK release is blocked by ${publicReleaseBlockersFileName}: ${ids}. Resolve every item and remove the file in a reviewed change.`,
+      `Public SDK release is blocked by ${fileName}: ${ids}. Resolve every item and remove the file in a reviewed change.`,
     );
     this.name = 'PublicReleaseBlockedError';
     this.blockers = document.blockers;
   }
 }
 
-export async function readPublicReleaseBlockers(root = repositoryRoot) {
-  const path = join(resolve(root), publicReleaseBlockersFileName);
+export async function readPublicReleaseBlockers(
+  root = repositoryRoot,
+  fileName = publicReleaseBlockersFileName,
+) {
+  if (!interlockFileNames.includes(fileName)) throw new TypeError(`Unknown interlock ${fileName}.`);
+  const path = join(resolve(root), fileName);
   let source;
   try {
     source = await readFile(path, 'utf8');
@@ -36,39 +44,39 @@ export async function readPublicReleaseBlockers(root = repositoryRoot) {
   try {
     document = JSON.parse(source);
   } catch (error) {
-    throw new TypeError(`${publicReleaseBlockersFileName} must contain valid JSON.`, {
+    throw new TypeError(`${fileName} must contain valid JSON.`, {
       cause: error,
     });
   }
-  return validatePublicReleaseBlockers(document);
+  return validatePublicReleaseBlockers(document, fileName);
 }
 
-export function validatePublicReleaseBlockers(document) {
+export function validatePublicReleaseBlockers(document, fileName = publicReleaseBlockersFileName) {
   if (!isPlainRecord(document)) {
-    throw new TypeError(`${publicReleaseBlockersFileName} must contain an object.`);
+    throw new TypeError(`${fileName} must contain an object.`);
   }
   const allowedKeys = new Set(['blockers', 'kind', 'schemaVersion']);
   const unknownKey = Object.keys(document).find((key) => !allowedKeys.has(key));
   if (unknownKey) {
-    throw new TypeError(`${publicReleaseBlockersFileName} has unknown key ${unknownKey}.`);
+    throw new TypeError(`${fileName} has unknown key ${unknownKey}.`);
   }
   if (document.kind !== publicReleaseBlockersKind) {
-    throw new TypeError(`${publicReleaseBlockersFileName} has an unsupported kind.`);
+    throw new TypeError(`${fileName} has an unsupported kind.`);
   }
   if (document.schemaVersion !== publicReleaseBlockersSchemaVersion) {
-    throw new TypeError(`${publicReleaseBlockersFileName} has an unsupported schema version.`);
+    throw new TypeError(`${fileName} has an unsupported schema version.`);
   }
   if (!Array.isArray(document.blockers) || document.blockers.length < 1) {
-    throw new TypeError(`${publicReleaseBlockersFileName} must contain at least one blocker.`);
+    throw new TypeError(`${fileName} must contain at least one blocker.`);
   }
   if (document.blockers.length > 64) {
-    throw new TypeError(`${publicReleaseBlockersFileName} contains too many blockers.`);
+    throw new TypeError(`${fileName} contains too many blockers.`);
   }
 
   const ids = new Set();
   const blockers = document.blockers.map((blocker, index) => {
     if (!isPlainRecord(blocker)) {
-      throw new TypeError(`${publicReleaseBlockersFileName} blocker ${index} must be an object.`);
+      throw new TypeError(`${fileName} blocker ${index} must be an object.`);
     }
     const blockerKeys = Object.keys(blocker);
     if (
@@ -76,15 +84,13 @@ export function validatePublicReleaseBlockers(document) {
       !Object.hasOwn(blocker, 'id') ||
       !Object.hasOwn(blocker, 'summary')
     ) {
-      throw new TypeError(
-        `${publicReleaseBlockersFileName} blocker ${index} must contain only id and summary.`,
-      );
+      throw new TypeError(`${fileName} blocker ${index} must contain only id and summary.`);
     }
     if (typeof blocker.id !== 'string' || !blockerIdPattern.test(blocker.id)) {
-      throw new TypeError(`${publicReleaseBlockersFileName} blocker ${index} has an invalid id.`);
+      throw new TypeError(`${fileName} blocker ${index} has an invalid id.`);
     }
     if (ids.has(blocker.id)) {
-      throw new TypeError(`${publicReleaseBlockersFileName} has duplicate blocker ${blocker.id}.`);
+      throw new TypeError(`${fileName} has duplicate blocker ${blocker.id}.`);
     }
     ids.add(blocker.id);
     if (
@@ -94,9 +100,7 @@ export function validatePublicReleaseBlockers(document) {
       blocker.summary !== blocker.summary.trim() ||
       /[\p{Cc}]/u.test(blocker.summary)
     ) {
-      throw new TypeError(
-        `${publicReleaseBlockersFileName} blocker ${blocker.id} has an invalid summary.`,
-      );
+      throw new TypeError(`${fileName} blocker ${blocker.id} has an invalid summary.`);
     }
     return Object.freeze({id: blocker.id, summary: blocker.summary});
   });
@@ -108,9 +112,12 @@ export function validatePublicReleaseBlockers(document) {
   });
 }
 
-export async function assertPublicReleaseReady(root = repositoryRoot) {
-  const document = await readPublicReleaseBlockers(root);
-  if (document) throw new PublicReleaseBlockedError(document);
+export async function assertPublicReleaseReady(
+  root = repositoryRoot,
+  fileName = publicReleaseBlockersFileName,
+) {
+  const document = await readPublicReleaseBlockers(root, fileName);
+  if (document) throw new PublicReleaseBlockedError(document, fileName);
 }
 
 function isPlainRecord(value) {
@@ -120,11 +127,11 @@ function isPlainRecord(value) {
 }
 
 async function main() {
+  const fileName = process.argv[2] ?? publicReleaseBlockersFileName;
   try {
-    await assertPublicReleaseReady();
-    console.log(
-      `Public SDK release interlock is open: ${publicReleaseBlockersFileName} is absent.`,
-    );
+    if (process.argv.length > 3) throw new TypeError('Pass at most one interlock file name.');
+    await assertPublicReleaseReady(repositoryRoot, fileName);
+    console.log(`Public SDK release interlock is open: ${fileName} is absent.`);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (process.env.GITHUB_ACTIONS === 'true') {

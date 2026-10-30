@@ -1,0 +1,541 @@
+name: Native publish
+run-name: Prepare Swift and Android release from main at ${{ github.sha }}
+
+# Publishes the Swift package to its distribution repository and the Android artifacts to Maven
+# Central. See "Native Swift and Android releases" in PUBLISHING.md. The workflow has no inputs:
+# it binds itself to the current main head, derives the next alpha from what is already public,
+# builds and verifies one bundle, and waits for approval on the native-publish environment.
+# Credentials exist only in that environment and only the publish job can read them.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: native-publish
+  cancel-in-progress: false
+
+env:
+  NATIVE_RELEASE_ENVIRONMENT: native-publish
+
+jobs:
+  readiness:
+    name: Check readiness and plan the version
+    if: github.repository == 'tileflow/tileflow-sdk' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      release_sha: ${{ env.RELEASE_SHA }}
+      version: ${{ steps.plan.outputs.version }}
+    env:
+      RELEASE_SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout proposed main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      # Until every account, key and repository exists, NATIVE_RELEASE_BLOCKERS.json stops the
+      # release here, before anything is built.
+      - name: Enforce native release interlock
+        run: node scripts/public-release-interlock.mjs NATIVE_RELEASE_BLOCKERS.json
+
+      - name: Verify exact successful main CI
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          RELEASE_SHA: ${{ env.RELEASE_SHA }}
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const {
+              assertSuccessfulRequiredJob,
+              findSuccessfulMainCiRun,
+            } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release-workflow.mjs`);
+            const {data} = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'ci.yml',
+              branch: 'main',
+              event: 'push',
+              status: 'completed',
+              head_sha: process.env.RELEASE_SHA,
+              per_page: 100,
+            });
+            const run = findSuccessfulMainCiRun(
+              data.workflow_runs,
+              `${context.repo.owner}/${context.repo.repo}`,
+              process.env.RELEASE_SHA,
+            );
+            if (!run) {
+              core.setFailed(
+                `No successful push CI exists for ${process.env.RELEASE_SHA}; native release preparation is denied.`,
+              );
+              return;
+            }
+            const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: run.id,
+              filter: 'latest',
+              per_page: 100,
+            });
+            assertSuccessfulRequiredJob(jobs);
+            core.notice(`Native release preparation is bound to CI run ${run.id}.`);
+
+      - name: Require current main head
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+
+      # GitHub creates a missing environment on first use without any protection, so the release
+      # refuses to reach the publish job unless the environment already protects it.
+      - name: Require the protected native-publish environment
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const name = process.env.NATIVE_RELEASE_ENVIRONMENT;
+            let environment;
+            try {
+              ({data: environment} = await github.rest.repos.getEnvironment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                environment_name: name,
+              }));
+            } catch (error) {
+              if (error.status !== 404) throw error;
+              core.setFailed(`Create the ${name} environment as described in PUBLISHING.md.`);
+              return;
+            }
+            const problems = [];
+            const reviewers = environment.protection_rules?.find(
+              (rule) => rule.type === 'required_reviewers',
+            );
+            if (!reviewers?.reviewers?.length) problems.push('it has no required reviewer');
+            const policy = environment.deployment_branch_policy;
+            if (!policy || policy.protected_branches === policy.custom_branch_policies) {
+              problems.push('it does not restrict deployments to selected branches');
+            } else if (policy.custom_branch_policies) {
+              const {data} = await github.rest.repos.listDeploymentBranchPolicies({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                environment_name: name,
+              });
+              const patterns = data.branch_policies.map((item) => `${item.type ?? 'branch'}:${item.name}`);
+              if (patterns.length !== 1 || patterns[0] !== 'branch:main') {
+                problems.push(`it allows ${patterns.join(', ') || 'no branch'} instead of main only`);
+              }
+            }
+            if (environment.can_admins_bypass !== false) {
+              problems.push('administrators can bypass its protection rules');
+            }
+            if (problems.length > 0) {
+              core.setFailed(`The ${name} environment is not protected: ${problems.join('; ')}.`);
+            }
+
+      - name: Plan the native version
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/native-release"
+          node scripts/native-release-plan.mjs \
+            --source-revision "$RELEASE_SHA" \
+            --output "$RUNNER_TEMP/native-release/plan.json"
+
+      - name: Upload release plan
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-plan-${{ env.RELEASE_SHA }}
+          path: ${{ runner.temp }}/native-release/plan.json
+          if-no-files-found: error
+          retention-days: 30
+
+  prepare:
+    name: Build and verify native release
+    needs: readiness
+    runs-on: macos-26
+    timeout-minutes: 75
+    outputs:
+      bundle_digest: ${{ steps.bundle.outputs.bundle_digest }}
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      RELEASE_SHA: ${{ needs.readiness.outputs.release_sha }}
+      VERSION: ${{ needs.readiness.outputs.version }}
+      # XcodeGen generates the independent consumer projects; the archive digest is pinned.
+      XCODEGEN_URL: https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+      XCODEGEN_SHA256: 4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Install
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+          pnpm install --frozen-lockfile
+
+      - name: Download release plan
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-plan-${{ env.RELEASE_SHA }}
+          path: ${{ runner.temp }}/native-release
+
+      # Rebuilds the embedded runtime, stages it for both platforms, builds the Swift tree and the
+      # Maven repository, and validates POMs, sources, documentation and module metadata.
+      - name: Build the native candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(node -p "require('$RUNNER_TEMP/native-release/plan.json').version")" = "$VERSION"
+          export JAVA_HOME="$JAVA_HOME_17_arm64"
+          node scripts/native-release-prepare.mjs \
+            --output "$RUNNER_TEMP/native-release/candidate" \
+            --version "$VERSION"
+
+      - name: Prepare the Swift distribution commit and tag
+        run: >-
+          node scripts/native-swift-release.mjs prepare
+          --candidate "$RUNNER_TEMP/native-release/candidate"
+          --output "$RUNNER_TEMP/native-release/swift-release"
+
+      # Consumers resolve the package exactly as an application would: from a git URL at the
+      # release tag. A local mirror of the distribution receives the prepared commit through the
+      # same push code the publish job uses.
+      - name: Publish the Swift release to a local mirror
+        shell: bash
+        run: |
+          set -euo pipefail
+          release="$RUNNER_TEMP/native-release/swift-release"
+          mirror="$RUNNER_TEMP/native-verify/tileflow-swift.git"
+          mkdir -p "$RUNNER_TEMP/native-verify"
+          if [[ "$(node -p "require('$release/swift-release.json').parent")" = null ]]
+          then
+            git init --quiet --bare "$mirror"
+          else
+            repository="$(node -p "require('./platforms/native-release.json').swift.repository")"
+            git clone --quiet --bare --single-branch --branch main "https://github.com/$repository.git" "$mirror"
+          fi
+          node scripts/native-swift-release.mjs publish \
+            --release "$release/swift-release.json" \
+            --bundle "$release/swift-release.bundle" \
+            --swift "$RUNNER_TEMP/native-release/candidate/swift" \
+            --remote "file://$mirror"
+          node scripts/native-consumers-prepare.mjs \
+            "$RUNNER_TEMP/native-release/candidate" \
+            "$RUNNER_TEMP/native-verify/consumers" \
+            --swift-url "file://$mirror"
+
+      - name: Install pinned XcodeGen
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools="$RUNNER_TEMP/xcodegen"
+          mkdir -p "$tools"
+          curl --fail --location --silent --show-error --retry 3 "$XCODEGEN_URL" --output "$tools/xcodegen.zip"
+          echo "$XCODEGEN_SHA256  $tools/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$tools/xcodegen.zip" -d "$tools"
+          binary="$(find "$tools" -type f -name xcodegen -perm -u+x | head -n 1)"
+          test -n "$binary"
+          "$binary" --version
+          echo "XCODEGEN=$binary" >> "$GITHUB_ENV"
+
+      - name: Build the UIKit and SwiftUI examples from the release tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          consumers="$RUNNER_TEMP/native-verify/consumers"
+          "$XCODEGEN" generate --quiet --spec "$consumers/ios/project.yml"
+          node scripts/native-release-verify.mjs swift-example --consumers "$consumers" --scheme UIKitExample
+          node scripts/native-release-verify.mjs swift-example --consumers "$consumers" --scheme SwiftUIExample
+
+      - name: Run the integration tests from the release tag with Mac Catalyst
+        shell: bash
+        run: |
+          set -euo pipefail
+          consumers="$RUNNER_TEMP/native-verify/consumers"
+          nohup node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
+          curl --retry 30 --retry-all-errors --retry-delay 1 --fail http://127.0.0.1:18645/manifest.json > /dev/null
+          "$XCODEGEN" generate --quiet --spec "$consumers/ios-integration/project.yml"
+          xcodebuild test \
+            -project "$consumers/ios-integration/TileflowIntegration.xcodeproj" \
+            -scheme TileflowIntegration \
+            -destination 'platform=macOS,variant=Mac Catalyst' \
+            -derivedDataPath "$RUNNER_TEMP/native-verify/integration-derived" \
+            CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO \
+            | tee "$RUNNER_TEMP/native-verify/swift-integration.log"
+          ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/native-verify/swift-integration.log"
+
+      - name: Build the Android example from the Maven candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_17_arm64"
+          node scripts/native-release-verify.mjs android-example \
+            --consumers "$RUNNER_TEMP/native-verify/consumers"
+
+      - name: Create the release bundle
+        id: bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_root="$RUNNER_TEMP/native-release"
+          git fetch --no-tags --depth 1 origin main
+          test "$(git rev-parse FETCH_HEAD)" = "$RELEASE_SHA"
+          tar -cf "$RUNNER_TEMP/native-release-bundle.tar" -C "$release_root" \
+            plan.json \
+            candidate/candidate.json \
+            candidate/source-inventory.json \
+            candidate/swift \
+            candidate/maven \
+            swift-release
+          bundle_digest="$(shasum -a 256 "$RUNNER_TEMP/native-release-bundle.tar" | cut -d ' ' -f 1)"
+          echo "bundle_digest=$bundle_digest" >> "$GITHUB_OUTPUT"
+          node scripts/native-release-verify.mjs summary --release "$release_root" >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo
+            echo "Bundle SHA-256: \`$bundle_digest\`"
+            echo
+            echo "Approving \`$NATIVE_RELEASE_ENVIRONMENT\` publishes exactly this bundle."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-release-${{ env.RELEASE_SHA }}
+          path: ${{ runner.temp }}/native-release-bundle.tar
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload verification results
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-release-verification
+          path: |
+            ${{ runner.temp }}/native-release/candidate/android-build.log
+            ${{ runner.temp }}/native-verify/*.log
+            ${{ runner.temp }}/map-fixture.log
+          retention-days: 7
+
+  publish:
+    name: Approve and publish native release
+    needs:
+      - readiness
+      - prepare
+    if: needs.prepare.result == 'success' && needs.prepare.outputs.bundle_digest != ''
+    environment: native-publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      actions: read
+      contents: read
+    env:
+      BUNDLE_DIGEST: ${{ needs.prepare.outputs.bundle_digest }}
+      RELEASE_SHA: ${{ needs.readiness.outputs.release_sha }}
+      VERSION: ${{ needs.readiness.outputs.version }}
+    steps:
+      - name: Require release credentials
+        shell: bash
+        env:
+          MAVEN_CENTRAL_TOKEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_TOKEN_USERNAME }}
+          MAVEN_CENTRAL_TOKEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_TOKEN_PASSWORD }}
+          NATIVE_SIGNING_KEY: ${{ secrets.NATIVE_SIGNING_KEY }}
+          NATIVE_SIGNING_KEY_PASSPHRASE: ${{ secrets.NATIVE_SIGNING_KEY_PASSPHRASE }}
+          NATIVE_SIGNING_KEY_FINGERPRINT: ${{ vars.NATIVE_SIGNING_KEY_FINGERPRINT }}
+          SWIFT_DISTRIBUTION_DEPLOY_KEY: ${{ secrets.SWIFT_DISTRIBUTION_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in MAVEN_CENTRAL_TOKEN_USERNAME MAVEN_CENTRAL_TOKEN_PASSWORD NATIVE_SIGNING_KEY \
+            NATIVE_SIGNING_KEY_PASSPHRASE NATIVE_SIGNING_KEY_FINGERPRINT SWIFT_DISTRIBUTION_DEPLOY_KEY
+          do
+            [[ -n "${!name:-}" ]] || missing+=("$name")
+          done
+          if (( ${#missing[@]} > 0 ))
+          then
+            echo "::error title=Native release credentials missing::The $NATIVE_RELEASE_ENVIRONMENT environment lacks ${missing[*]}. NATIVE_SIGNING_KEY_FINGERPRINT is an environment variable; the others are environment secrets. See PUBLISHING.md."
+            exit 1
+          fi
+
+      - name: Checkout exact release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Download release bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: native-release-${{ env.RELEASE_SHA }}
+          path: ${{ runner.temp }}/native-release-download
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Verify release bundle and current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/native-release-download/native-release-bundle.tar"
+          test "$(shasum -a 256 "$bundle" | cut -d ' ' -f 1)" = "$BUNDLE_DIGEST"
+          mkdir -p "$RUNNER_TEMP/native-release"
+          tar -xf "$bundle" -C "$RUNNER_TEMP/native-release"
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+          node scripts/public-release-interlock.mjs NATIVE_RELEASE_BLOCKERS.json
+          node scripts/native-release-verify.mjs bundle \
+            --release "$RUNNER_TEMP/native-release" \
+            --version "$VERSION" \
+            --source-revision "$RELEASE_SHA"
+
+      - name: Import the signing key
+        shell: bash
+        env:
+          NATIVE_SIGNING_KEY: ${{ secrets.NATIVE_SIGNING_KEY }}
+          NATIVE_SIGNING_KEY_FINGERPRINT: ${{ vars.NATIVE_SIGNING_KEY_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          node scripts/native-maven-bundle.mjs import-key --gnupghome "$RUNNER_TEMP/gnupg"
+          node scripts/native-maven-bundle.mjs keyserver --fingerprint "$NATIVE_SIGNING_KEY_FINGERPRINT"
+
+      - name: Check Maven Central state
+        id: central
+        shell: bash
+        env:
+          MAVEN_CENTRAL_TOKEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_TOKEN_USERNAME }}
+          MAVEN_CENTRAL_TOKEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_TOKEN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          state="$(node scripts/native-central-portal.mjs state --version "$VERSION")"
+          echo "Maven Central state for $VERSION: $state"
+          echo "state=$state" >> "$GITHUB_OUTPUT"
+
+      - name: Sign the Maven artifacts and create the Central bundle
+        if: steps.central.outputs.state == 'new'
+        shell: bash
+        env:
+          NATIVE_SIGNING_KEY_PASSPHRASE: ${{ secrets.NATIVE_SIGNING_KEY_PASSPHRASE }}
+        run: >-
+          node scripts/native-maven-bundle.mjs bundle
+          --repository "$RUNNER_TEMP/native-release/candidate/maven"
+          --version "$VERSION"
+          --gnupghome "$RUNNER_TEMP/gnupg"
+          --output "$RUNNER_TEMP/central-bundle.zip"
+
+      # USER_MANAGED stops at VALIDATED: Central checks POMs, signatures and checksums, but nothing
+      # becomes public until the Swift tag exists.
+      - name: Upload to Maven Central and wait for validation
+        id: upload
+        if: steps.central.outputs.state == 'new'
+        shell: bash
+        env:
+          MAVEN_CENTRAL_TOKEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_TOKEN_USERNAME }}
+          MAVEN_CENTRAL_TOKEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_TOKEN_PASSWORD }}
+        run: |
+          set -euo pipefail
+          node scripts/native-central-portal.mjs upload \
+            --version "$VERSION" \
+            --bundle "$RUNNER_TEMP/central-bundle.zip" | tee "$RUNNER_TEMP/central-upload.log"
+          grep '^deployment=' "$RUNNER_TEMP/central-upload.log" | tail -n 1 >> "$GITHUB_OUTPUT"
+
+      - name: Push the Swift release commit and tag
+        shell: bash
+        env:
+          SWIFT_DISTRIBUTION_DEPLOY_KEY: ${{ secrets.SWIFT_DISTRIBUTION_DEPLOY_KEY }}
+        run: |
+          set -euo pipefail
+          ssh_dir="$RUNNER_TEMP/swift-ssh"
+          mkdir -m 700 "$ssh_dir"
+          (umask 077 && printf '%s\n' "$SWIFT_DISTRIBUTION_DEPLOY_KEY" > "$ssh_dir/deploy_key")
+          # GitHub's published SSH host keys (https://api.github.com/meta).
+          cat > "$ssh_dir/known_hosts" <<'KEYS'
+          github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl
+          github.com ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBEmKSENjQEezOmxkZMy7opKgwFB9nkt5YRrYMjNuG5N87uRgg6CLrbo5wAdT/y6v0mKV0U2w0WZ2YB/++Tpockg=
+          KEYS
+          export GIT_SSH_COMMAND="ssh -i $ssh_dir/deploy_key -o IdentitiesOnly=yes -o UserKnownHostsFile=$ssh_dir/known_hosts -o StrictHostKeyChecking=yes"
+          node scripts/native-swift-release.mjs publish \
+            --release "$RUNNER_TEMP/native-release/swift-release/swift-release.json" \
+            --bundle "$RUNNER_TEMP/native-release/swift-release/swift-release.bundle" \
+            --swift "$RUNNER_TEMP/native-release/candidate/swift"
+          rm -rf "$ssh_dir"
+
+      - name: Publish the validated Maven Central deployment
+        id: central-publish
+        if: steps.central.outputs.state == 'new'
+        shell: bash
+        env:
+          DEPLOYMENT: ${{ steps.upload.outputs.deployment }}
+          MAVEN_CENTRAL_TOKEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_TOKEN_USERNAME }}
+          MAVEN_CENTRAL_TOKEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_TOKEN_PASSWORD }}
+        run: node scripts/native-central-portal.mjs publish --version "$VERSION" --deployment "$DEPLOYMENT"
+
+      - name: Verify Maven Central files
+        shell: bash
+        run: >-
+          node scripts/native-central-portal.mjs verify
+          --version "$VERSION"
+          --repository "$RUNNER_TEMP/native-release/candidate/maven"
+
+      - name: Create release receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/native-release-verify.mjs receipt \
+            --release "$RUNNER_TEMP/native-release" \
+            --bundle-digest "$BUNDLE_DIGEST" \
+            --output "$RUNNER_TEMP/native-release-receipt.json"
+          node scripts/native-release-verify.mjs summary --release "$RUNNER_TEMP/native-release" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload release receipt
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-release-receipt-${{ env.VERSION }}
+          path: ${{ runner.temp }}/native-release-receipt.json
+          if-no-files-found: error
+          retention-days: 90
+
+      # A validated deployment that was never published is dropped, so a rerun uploads afresh.
+      - name: Drop the unpublished Central deployment
+        if: failure() && steps.upload.outputs.deployment != '' && steps.central-publish.outcome != 'success'
+        shell: bash
+        env:
+          DEPLOYMENT: ${{ steps.upload.outputs.deployment }}
+          MAVEN_CENTRAL_TOKEN_USERNAME: ${{ secrets.MAVEN_CENTRAL_TOKEN_USERNAME }}
+          MAVEN_CENTRAL_TOKEN_PASSWORD: ${{ secrets.MAVEN_CENTRAL_TOKEN_PASSWORD }}
+        run: node scripts/native-central-portal.mjs drop --version "$VERSION" --deployment "$DEPLOYMENT"
+
+      - name: Remove signing material
+        if: always()
+        shell: bash
+        run: |
+          gpgconf --homedir "$RUNNER_TEMP/gnupg" --kill gpg-agent 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP/gnupg" "$RUNNER_TEMP/swift-ssh" "$RUNNER_TEMP/central-bundle.zip"

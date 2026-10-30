@@ -1,6 +1,10 @@
 package dev.tileflow.sdk
 
+import dev.tileflow.sdk.bridge.DataChannel
+import dev.tileflow.sdk.bridge.ProtocolContract
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -9,29 +13,54 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(manifest = Config.NONE, sdk = [34])
 class MapContentTest {
-    private fun layer(geoJSON: String) =
-        TileflowGeoJSONLayer("content", geoJSON, TileflowGeoJSONLayerKind.FILL)
+    private val text = """{"type":"FeatureCollection","features":[]}"""
 
     @Test
-    fun geoJSONFollowsTheRendererContract() {
-        val ring = "[[0,0],[1,0],[1,1],[0,1],[0,0]]"
-        layer(
-            """{"type":"FeatureCollection","bbox":[0,0,1,1],"features":[{"type":"Feature","id":7,"bbox":[0,0,1,1],"geometry":{"type":"Polygon","bbox":[0,0,1,1],"coordinates":[$ring]},"properties":{"name":"Park","tags":["a"]}}]}"""
-        )
-        layer(
-            """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":null,"properties":null}]}"""
-        )
+    fun layersCheckTheirParametersAndLeaveGeoJSONToTheRenderer() {
+        val layer = TileflowGeoJSONLayer("content", text, TileflowGeoJSONLayerKind.FILL)
+        assertEquals(DataChannel.digest(text.toByteArray()), layer.digest)
         for (invalid in
             listOf(
-                """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"GeometryCollection","geometries":[]},"properties":{}}]}""",
-                """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[181,0]},"properties":{}}]}""",
-                """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Polygon","coordinates":[[[0,0],[1,0],[1,1],[0,1]]]},"properties":{}}]}""",
-                """{"type":"FeatureCollection","features":[{"type":"Feature","geometry":{"type":"Point","coordinates":[0,0]}}]}""",
-                """{"type":"FeatureCollection","features":[{"type":"Feature","id":1.5,"geometry":null,"properties":null}]}""",
-                """{"type":"FeatureCollection","features":[],"bbox":[0,0,1]}""",
-                """{"type":"FeatureCollection","features":[],"crs":{}}""",
+                { TileflowGeoJSONLayer("../style", text, TileflowGeoJSONLayerKind.FILL) },
+                { TileflowGeoJSONLayer("a", text, TileflowGeoJSONLayerKind.FILL, color = "red") },
+                { TileflowGeoJSONLayer("a", text, TileflowGeoJSONLayerKind.LINE, size = 65.0) },
+                { TileflowGeoJSONLayer("a", "", TileflowGeoJSONLayerKind.FILL) },
+                {
+                    TileflowGeoJSONLayer(
+                        "a",
+                        "x".repeat(ProtocolContract.MAXIMUM_DATA_BYTES + 1),
+                        TileflowGeoJSONLayerKind.FILL,
+                    )
+                },
             )) {
-            assertThrows(invalid, TileflowMapException::class.java) { layer(invalid) }
+            val error = assertThrows(TileflowMapException::class.java) { invalid() }
+            assertEquals(TileflowErrorCode.INVALID_REQUEST, error.code)
         }
+    }
+
+    @Test
+    fun layersSharingDataRegisterItOnce() {
+        val channel = DataChannel()
+        val content =
+            MapContent(
+                overlays =
+                    listOf(
+                        TileflowGeoJSONLayer("fill", text, TileflowGeoJSONLayerKind.FILL),
+                        TileflowGeoJSONLayer("outline", text, TileflowGeoJSONLayerKind.LINE),
+                    )
+            )
+        val (payload, references) = content.json(channel)
+        assertEquals(1, references.toSet().size)
+        val overlays = payload.getJSONArray("overlays")
+        assertEquals(
+            references[0].id,
+            overlays.getJSONObject(0).getJSONObject("data").getString("id"),
+        )
+        assertEquals(
+            DataChannel.digest(text.toByteArray()),
+            overlays.getJSONObject(1).getJSONObject("data").getString("sha256"),
+        )
+        channel.release(references)
+        assertTrue(channel.isEmpty)
     }
 }

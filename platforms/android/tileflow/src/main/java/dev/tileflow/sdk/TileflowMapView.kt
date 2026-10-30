@@ -3,12 +3,18 @@ package dev.tileflow.sdk
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.res.Configuration
+import android.os.Parcel
+import android.os.Parcelable
 import android.util.AttributeSet
+import android.view.MotionEvent
 import android.view.View
+import android.view.WindowInsets
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.widget.FrameLayout
 import androidx.annotation.MainThread
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -16,25 +22,45 @@ import androidx.lifecycle.findViewTreeLifecycleOwner
 import androidx.webkit.ScriptHandler
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import dev.tileflow.configuration.Tileflow
+import dev.tileflow.sdk.bridge.DataChannel
+import dev.tileflow.sdk.bridge.EventSubscriptions
 import dev.tileflow.sdk.bridge.MapBridge
 import dev.tileflow.sdk.bridge.ProtocolContract
 import dev.tileflow.sdk.hosted.HostedSession
+import dev.tileflow.sdk.location.TileflowFollowMode
+import dev.tileflow.sdk.location.TileflowFollowModeChangeReason
+import dev.tileflow.sdk.location.TileflowLocation
+import dev.tileflow.sdk.location.TileflowLocationProvider
+import dev.tileflow.sdk.offline.OfflineReachability
+import dev.tileflow.sdk.offline.OfflineServingIndex
+import dev.tileflow.sdk.offline.OfflineServingRule
+import dev.tileflow.sdk.transport.EmbeddedRuntime
+import dev.tileflow.sdk.transport.MapPrewarmer
 import dev.tileflow.sdk.transport.ResourceAddress
 import dev.tileflow.sdk.transport.ResourceClient
 import dev.tileflow.sdk.transport.ResourceLoader
-import java.security.MessageDigest
+import dev.tileflow.sdk.transport.TileflowHttpClient
+import dev.tileflow.sdk.transport.grantScope
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
+/**
+ * A Tileflow map in a View hierarchy. Declared in a layout, `app:tileflowMapId` selects a Hosted
+ * map, `app:tileflowSurfaceId` names where the application shows it and `app:tileflowTheme` sets
+ * its initial theme. Otherwise select a map with [setSource].
+ */
 @MainThread
 public class TileflowMapView
 @JvmOverloads
@@ -52,10 +78,29 @@ constructor(
     public var options: TileflowMapOptions = TileflowMapOptions()
         private set
 
+    /** The scene beyond the theme the application asked for, given again to each new renderer. */
+    internal val scene = SceneState()
+    /** Calls waiting for an animation of the current renderer to end. */
+    internal val animations = AnimationWaiters()
+    /** The application's runtime style, given again to each new renderer. */
+    internal val runtimeStyle = RuntimeStyle()
+    /** The application images the scene holds. */
+    internal var images: List<TileflowMapImage> = emptyList()
+
     private var appearance: Pair<ProtocolContract.Method, JSONObject>? = null
     private var content = MapContent()
     private var contentRevision = 0
+    /** What annotations ask the renderer to report. */
+    private var annotationDemand: Map<ProtocolContract.Event, Long> = emptyMap()
+    private var subscriptions = EventSubscriptions(options.events, options.controls.followCamera)
+    /** The annotation layers the current renderer reports hits and drags for. */
+    private var annotationLayersSent: List<String>? = null
+    private var annotationLayersSending = false
+    private var subscriptionsSending = false
+    /** The camera the renderer last reported, or the one to start the next renderer at. */
     private var camera: TileflowCamera? = null
+    /** A camera the application asked for while no renderer could move, and how many it asked. */
+    private var requestedCamera: Pair<TileflowCamera, Int>? = null
     private var webView: WebView? = null
     private var bridge: MapBridge? = null
     private var loader: ResourceLoader? = null
@@ -76,9 +121,104 @@ constructor(
     private var pendingRemount = false
     // View.isAttachedToWindow stays true until onDetachedFromWindow returns.
     private var attached = false
+    /** The current source with its configuration read, kept with its Hosted session. */
+    private var loadable: LoadableMapSource? = null
     private var hostedSession: HostedSession? = null
     private var lifecycleOwner: LifecycleOwner? = null
     private var rendererVisible = true
+    private val density = resources.displayMetrics.density
+    private val cameraEvents = CameraEventGate(scope)
+    internal val controlsView = MapControlsView(context)
+    /** The location provider, the latest position and the follow mode. */
+    internal val location = MapLocation(this)
+    private var contentPadding = TileflowEdgeInsets.ZERO
+    /** The insets the current renderer has, or null before it is initialized. */
+    private var rendererInsets: TileflowEdgeInsets? = null
+    private var insetsUpdate: Job? = null
+    /** Whether the touch sequence in progress began on a native control. */
+    private var touchOnControl = false
+
+    /**
+     * The camera the renderer last reported, kept current from its events without a call: when it
+     * settles, and while it moves when the application or a control follows it. Before the map
+     * loads, the camera it starts at, or null for the map's authored view.
+     */
+    public val currentCamera: TileflowCamera?
+        get() = camera
+
+    /** Whether the camera is moving, for an animation or a gesture, as of the last event. */
+    public val isMoving: Boolean
+        get() = cameraEvents.isMoving
+
+    /**
+     * Where the map's positions and headings come from; null uses a
+     * [dev.tileflow.sdk.location.TileflowDefaultLocationProvider] that the map creates when it
+     * first shows the location.
+     */
+    public var locationProvider: TileflowLocationProvider?
+        get() = location.custom
+        set(value) {
+            location.custom = value
+            location.consume(null)
+            refreshLocation()
+        }
+
+    /** The latest position the map received, or null before the first. */
+    public val latestLocation: TileflowLocation?
+        get() = location.latest
+
+    /**
+     * How the camera follows the location. A gesture that moves the map, and a camera movement the
+     * application asks for, set it to [TileflowFollowMode.NONE] and report
+     * [TileflowMapEvent.FollowModeChanged]. The camera follows only while
+     * [TileflowLocationOptions.enabled][dev.tileflow.sdk.location.TileflowLocationOptions.enabled];
+     * setting a mode before keeps it until then.
+     */
+    public var followMode: TileflowFollowMode
+        get() = location.follow.mode
+        set(value) = setFollowModeFromApplication(value)
+
+    /**
+     * Whether the system bars and display cutout, where they overlap the view, add to the content
+     * padding.
+     */
+    public var automaticallyAdjustsContentPadding: Boolean = true
+        set(value) {
+            field = value
+            updateInsets()
+        }
+
+    /**
+     * The padding the camera and controls use, in pixels: the content padding plus the system
+     * bars and display cutout when adjusted automatically.
+     */
+    public var effectiveContentPadding: TileflowEdgeInsets = TileflowEdgeInsets.ZERO
+        private set
+
+    /**
+     * Return false to leave a touch that begins at this point, in pixels relative to the view, to
+     * the views behind and around the map; for example over application UI drawn on the map.
+     * Native controls receive their touches regardless.
+     */
+    public var touchFilter: ((x: Float, y: Float) -> Boolean)? = null
+
+    /** Native views over the renderer: view annotations and accessibility targets. */
+    internal val annotationOverlay = AnnotationOverlay(context, this)
+
+    /**
+     * The map's annotation managers: points, circles, polylines and polygons drawn by the map that
+     * people tap, hold and drag.
+     */
+    public var annotations: TileflowAnnotations = TileflowAnnotations()
+        private set
+
+    /** Native views anchored to coordinates, such as callouts. */
+    public var viewAnnotationManager: TileflowViewAnnotationManager =
+        TileflowViewAnnotationManager(unitsInDp = false)
+        private set
+
+    /** Every camera change the SDK follows, before the application's level and interval. */
+    internal var onCameraObserved: ((TileflowCameraChange) -> Unit)? = null
     private val lifecycleObserver =
         object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
@@ -89,20 +229,371 @@ constructor(
                 updateVisibility()
             }
 
+            // Access granted in a system dialog arrives while the activity resumes.
+            override fun onResume(owner: LifecycleOwner) {
+                refreshLocation()
+            }
+
             override fun onDestroy(owner: LifecycleOwner) {
                 destroy()
             }
         }
 
+    init {
+        // A layout selects a Hosted map with `app:tileflowMapId`; an invalid value fails inflation.
+        if (attrs != null) {
+            val values = context.obtainStyledAttributes(attrs, R.styleable.TileflowMapView)
+            try {
+                values.getString(R.styleable.TileflowMapView_tileflowTheme)?.let {
+                    require(it.isNotEmpty() && it.length <= 128) { "Invalid tileflowTheme." }
+                    theme = it
+                }
+                val surfaceId = values.getString(R.styleable.TileflowMapView_tileflowSurfaceId)
+                val mapId = values.getString(R.styleable.TileflowMapView_tileflowMapId)
+                require(surfaceId == null || mapId != null) {
+                    "tileflowSurfaceId needs tileflowMapId."
+                }
+                if (mapId != null) {
+                    setSource(TileflowMapSource.hosted(mapId, surfaceId ?: "mobile-map"))
+                }
+            } finally {
+                values.recycle()
+            }
+        }
+    }
+
+    /**
+     * Shows a Hosted map. Its credential and API origin come from
+     * `Tileflow.configuration(context)`; use [TileflowMapSource.hosted] with [setSource] to pass a
+     * configuration for this map only.
+     */
+    public constructor(context: Context, mapId: String) : this(context) {
+        setSource(TileflowMapSource.hosted(mapId))
+    }
+
+    init {
+        controlsView.controls = options.controls
+        controlsView.locationShown = options.location.enabled
+        controlsView.visibility = GONE
+        controlsView.compass.setOnClickListener {
+            if (compassTapped()) return@setOnClickListener
+            scope.launch {
+                try {
+                    move(
+                        TileflowCameraUpdate(bearing = 0.0),
+                        TileflowCameraAnimation.Ease(300),
+                        reason = "gesture",
+                    )
+                } catch (_: TileflowMapException) {
+                    // The compass acts again on the next tap.
+                }
+            }
+        }
+        controlsView.recenter.setOnClickListener { recenterTapped() }
+        // Annotation views lie over the renderer and under the native controls.
+        addView(
+            annotationOverlay,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+        )
+        addView(controlsView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        annotationOverlay.bind(viewAnnotationManager)
+        viewAnnotationManager.bind(annotationOverlay)
+        annotations.bind(this)
+    }
+
+    /**
+     * Uses annotation objects a controller owns, so they outlive this view; the view's own ones
+     * leave the map.
+     */
+    internal fun adopt(
+        nextAnnotations: TileflowAnnotations,
+        nextViews: TileflowViewAnnotationManager,
+    ) {
+        if (annotations !== nextAnnotations) {
+            annotations.bind(null)
+            annotations = nextAnnotations
+            nextAnnotations.bind(this)
+        }
+        if (viewAnnotationManager !== nextViews) {
+            viewAnnotationManager.bind(null)
+            viewAnnotationManager = nextViews
+            annotationOverlay.bind(nextViews)
+            nextViews.bind(annotationOverlay)
+        }
+        annotationsChanged()
+    }
+
+    /** Gives back annotation objects a controller owns; the view continues with empty ones. */
+    internal fun release(owned: TileflowAnnotations, views: TileflowViewAnnotationManager?) {
+        if (annotations === owned) {
+            owned.bind(null)
+            annotations = TileflowAnnotations().also { it.bind(this) }
+        }
+        if (views != null && viewAnnotationManager === views) {
+            views.bind(null)
+            viewAnnotationManager = TileflowViewAnnotationManager(unitsInDp = false)
+            annotationOverlay.bind(viewAnnotationManager)
+            viewAnnotationManager.bind(annotationOverlay)
+        }
+        annotationsChanged()
+    }
+
+    /** Managers changed: the renderer reports their hits and drags, and views track points. */
+    internal fun annotationsChanged() {
+        if (destroyed) return
+        annotationOverlay.annotationsChanged()
+        sendAnnotationLayers()
+    }
+
+    /** An annotation moved, for example in a drag; accessibility targets follow it. */
+    internal fun annotationMoved() {
+        if (!destroyed) annotationOverlay.annotationsChanged()
+    }
+
+    /** Whether points are tracked changed the events annotations need. */
+    internal fun annotationsTrackingChanged(tracking: Boolean) {
+        val demand = buildMap {
+            if (!annotations.isEmpty) {
+                put(ProtocolContract.Event.TAP, 0L)
+                put(ProtocolContract.Event.LONG_PRESS, 0L)
+                put(ProtocolContract.Event.ANNOTATION_DRAGGED, 0L)
+            }
+            if (tracking) put(ProtocolContract.Event.TRACKED_POINTS_MOVED, 0L)
+        }
+        if (demand == annotationDemand) return
+        annotationDemand = demand
+        subscriptions.set(EventSubscriptions.Owner.ANNOTATIONS, demand)
+        sendSubscriptions()
+    }
+
+    /** Sends the subscriptions, one request at a time with the latest. */
+    private fun sendSubscriptions() {
+        val bridge = bridge?.takeIf { initialized } ?: return
+        if (subscriptionsSending) return
+        subscriptionsSending = true
+        val sent = subscriptions.json().toString()
+        scope.launch {
+            try {
+                bridge.call(
+                    ProtocolContract.Method.SET_EVENTS,
+                    JSONObject().put("events", JSONObject(sent)),
+                )
+            } catch (_: TileflowMapException) {
+                // A new renderer receives the subscriptions when it initializes.
+            } finally {
+                subscriptionsSending = false
+            }
+            if (this@TileflowMapView.bridge === bridge && subscriptions.json().toString() != sent)
+                sendSubscriptions()
+        }
+    }
+
+    /** Sends the annotation layers, one request at a time with the latest. */
+    private fun sendAnnotationLayers() {
+        val bridge = bridge?.takeIf { initialized } ?: return
+        val layers = annotations.layerIds
+        if (annotationLayersSending || layers == annotationLayersSent) return
+        annotationLayersSending = true
+        scope.launch {
+            try {
+                bridge.call(
+                    ProtocolContract.Method.SET_ANNOTATION_LAYERS,
+                    JSONObject().put("layers", JSONArray(layers)),
+                )
+                if (this@TileflowMapView.bridge === bridge) annotationLayersSent = layers
+            } catch (_: TileflowMapException) {
+                // A new renderer receives the layers when it is ready.
+            } finally {
+                annotationLayersSending = false
+            }
+            if (this@TileflowMapView.bridge === bridge) sendAnnotationLayers()
+        }
+    }
+
+    /** Reports a change of the annotations the map could not make. */
+    internal fun annotationWarning(error: TileflowMapException) {
+        if (
+            destroyed ||
+                error.code == TileflowErrorCode.CANCELLED ||
+                error.code == TileflowErrorCode.DISPOSED
+        )
+            return
+        onEvent(TileflowMapEvent.Warning(error.code, error.context, 1))
+    }
+
+    /**
+     * Space covered by the application at each edge, in pixels, such as a sheet over the map. The
+     * camera centres on the rest of the view and the controls and attribution stay inside it.
+     */
+    public fun setContentPadding(left: Float, top: Float, right: Float, bottom: Float) {
+        val next = TileflowEdgeInsets(left, top, right, bottom)
+        if (!next.valid()) throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
+        contentPadding = next
+        updateInsets()
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        updateInsets()
+    }
+
+    override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
+        val result = super.onApplyWindowInsets(insets)
+        post { updateInsets() }
+        return result
+    }
+
+    /** The system bars and display cutout where they overlap this view, in pixels. */
+    private fun systemInsets(): TileflowEdgeInsets {
+        if (!automaticallyAdjustsContentPadding || !isAttachedToWindow)
+            return TileflowEdgeInsets.ZERO
+        val insets =
+            ViewCompat.getRootWindowInsets(this)
+                ?.getInsets(
+                    WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
+                ) ?: return TileflowEdgeInsets.ZERO
+        val location = IntArray(2)
+        getLocationInWindow(location)
+        val root = rootView
+        fun overlap(inset: Int, distance: Int) = (inset - distance).coerceAtLeast(0).toFloat()
+        return TileflowEdgeInsets(
+            overlap(insets.left, location[0]),
+            overlap(insets.top, location[1]),
+            overlap(insets.right, root.width - location[0] - width),
+            overlap(insets.bottom, root.height - location[1] - height),
+        )
+    }
+
+    /** Sends the padding to the renderer, one update at a time with the latest value. */
+    private fun updateInsets() {
+        val system = systemInsets()
+        val insets =
+            TileflowEdgeInsets(
+                contentPadding.left + system.left,
+                contentPadding.top + system.top,
+                contentPadding.right + system.right,
+                contentPadding.bottom + system.bottom,
+            )
+        effectiveContentPadding = insets
+        controlsView.insets = insets
+        val bridge = bridge?.takeIf { initialized } ?: return
+        if (insetsUpdate != null || rendererInsets == insets) return
+        insetsUpdate =
+            scope.launch {
+                val sent =
+                    try {
+                        bridge.call(ProtocolContract.Method.SET_INSETS, insets.css(density))
+                        true
+                    } catch (_: TileflowMapException) {
+                        false
+                    }
+                insetsUpdate = null
+                if (this@TileflowMapView.bridge !== bridge) return@launch
+                if (sent) rendererInsets = insets
+                updateInsets()
+            }
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        val gestures = options.gestures
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                touchOnControl =
+                    controlsView.visibility == VISIBLE &&
+                        controlsView.hasControlAt(event.x, event.y)
+                if (!touchOnControl) {
+                    if (touchFilter?.invoke(event.x, event.y) == false) return false
+                    // Scrolling parents, pagers and sheets leave a drag on the map to the map.
+                    if (gestures.movesMap && !gestures.cooperative)
+                        parent?.requestDisallowInterceptTouchEvent(true)
+                }
+            }
+            MotionEvent.ACTION_POINTER_DOWN ->
+                if (!touchOnControl && gestures.movesMap && gestures.cooperative)
+                    parent?.requestDisallowInterceptTouchEvent(true)
+        }
+        return super.dispatchTouchEvent(event)
+    }
+
+    override fun onSaveInstanceState(): Parcelable =
+        SavedState(super.onSaveInstanceState(), camera)
+
+    override fun onRestoreInstanceState(state: Parcelable?) {
+        if (state !is SavedState) {
+            super.onRestoreInstanceState(state)
+            return
+        }
+        super.onRestoreInstanceState(state.superState)
+        val saved = state.camera ?: return
+        if (destroyed) return
+        if (!initialized) {
+            request(saved)
+            return
+        }
+        scope.launch {
+            try {
+                move(TileflowCameraUpdate(saved))
+            } catch (_: TileflowMapException) {
+                // A renderer replaced meanwhile starts at the saved camera.
+            }
+        }
+    }
+
+    /** The camera a view keeps across configuration changes and process recreation. */
+    internal class SavedState : BaseSavedState {
+        val camera: TileflowCamera?
+
+        constructor(superState: Parcelable?, camera: TileflowCamera?) : super(superState) {
+            this.camera = camera
+        }
+
+        private constructor(parcel: Parcel) : super(parcel) {
+            camera =
+                if (parcel.readInt() == 1)
+                    TileflowCamera(
+                        parcel.readDouble(),
+                        parcel.readDouble(),
+                        parcel.readDouble(),
+                        parcel.readDouble(),
+                        parcel.readDouble(),
+                    )
+                else null
+        }
+
+        override fun writeToParcel(out: Parcel, flags: Int) {
+            super.writeToParcel(out, flags)
+            val camera = camera
+            out.writeInt(if (camera == null) 0 else 1)
+            if (camera != null) {
+                out.writeDouble(camera.longitude)
+                out.writeDouble(camera.latitude)
+                out.writeDouble(camera.zoom)
+                out.writeDouble(camera.bearing)
+                out.writeDouble(camera.pitch)
+            }
+        }
+
+        companion object {
+            @JvmField
+            val CREATOR: Parcelable.Creator<SavedState> =
+                object : Parcelable.Creator<SavedState> {
+                    override fun createFromParcel(source: Parcel): SavedState = SavedState(source)
+
+                    override fun newArray(size: Int): Array<SavedState?> = arrayOfNulls(size)
+                }
+        }
+    }
+
     public fun setSource(source: TileflowMapSource, initialCamera: TileflowCamera? = null) {
         check(!destroyed) { "The map is destroyed." }
         if (source == this.source) return
-        source.policy()
+        source.validate()
         hostedSession?.close()
         hostedSession = null
+        loadable = null
         retireGeneration()
         this.source = source
-        if (initialCamera != null) camera = initialCamera
+        if (initialCamera != null) observe(initialCamera)
         resetRecovery()
         if (attached) mount()
     }
@@ -158,8 +649,39 @@ constructor(
 
     public suspend fun setOptions(options: TileflowMapOptions) {
         if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+        options.validate()
+        val previous = this.options
+        val previousSubscriptions = subscriptions
         this.options = options
-        if (initialized) bridge?.call(ProtocolContract.Method.SET_OPTIONS, options.json())
+        subscriptions =
+            EventSubscriptions(options.events, options.controls.followCamera).also {
+                it.set(EventSubscriptions.Owner.ANNOTATIONS, annotationDemand)
+            }
+        controlsView.controls = options.controls
+        controlsView.locationShown = options.location.enabled
+        locationOptionsChanged(previous)
+        // Antialiasing and style validation are fixed when a renderer starts.
+        if (
+            (options.antialias != previous.antialias ||
+                options.validatesStyle != previous.validatesStyle) && webView != null
+        ) {
+            remount()
+            return
+        }
+        sendOptions(events = subscriptions != previousSubscriptions)
+    }
+
+    private val rightToLeft: Boolean
+        get() = layoutDirection == LAYOUT_DIRECTION_RTL
+
+    private suspend fun sendOptions(events: Boolean) {
+        val bridge = bridge?.takeIf { initialized } ?: return
+        bridge.call(ProtocolContract.Method.SET_OPTIONS, options.json(rightToLeft))
+        if (events)
+            bridge.call(
+                ProtocolContract.Method.SET_EVENTS,
+                JSONObject().put("events", subscriptions.json()),
+            )
     }
 
     private suspend fun applyAppearance() {
@@ -174,45 +696,45 @@ constructor(
     ) {
         if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
         val next = MapContent(annotations.toList(), layers.toList())
-        val payload = next.json()
+        next.validate()
         val previous = content
         val revision = ++contentRevision
         content = next
         try {
-            if (initialized) bridge?.call(ProtocolContract.Method.SET_CONTENT, payload)
+            if (initialized) bridge?.let { send(next, it) }
         } catch (error: Exception) {
             if (contentRevision == revision) content = previous
             throw error
         }
     }
 
-    public suspend fun setCamera(camera: TileflowCamera, durationMillis: Long = 0) {
-        if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
-        if (
-            camera.longitude !in -180.0..180.0 ||
-                camera.latitude !in -90.0..90.0 ||
-                camera.zoom !in 0.0..24.0 ||
-                camera.bearing !in -360.0..360.0 ||
-                camera.pitch !in 0.0..85.0 ||
-                durationMillis !in 0..60_000
-        ) {
-            throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
-        }
-        this.camera = camera
-        if (initialized)
-            bridge?.call(
-                ProtocolContract.Method.SET_CAMERA,
-                JSONObject().put("camera", camera.json()).put("duration", durationMillis),
-            )
+    private suspend fun send(content: MapContent, bridge: MapBridge) {
+        val (payload, references) = content.json(bridge.data)
+        bridge.call(ProtocolContract.Method.SET_CONTENT, payload, references)
     }
 
+    /**
+     * Moves the camera, easing over [durationMillis] (at most 20 000), and waits until it settles.
+     * Before the map loads, the camera becomes the one it starts at.
+     */
+    public suspend fun setCamera(camera: TileflowCamera, durationMillis: Long = 0) {
+        move(
+            camera,
+            if (durationMillis > 0) TileflowCameraAnimation.Ease(durationMillis)
+            else TileflowCameraAnimation.None,
+        )
+    }
+
+    /**
+     * Reads the renderer's camera. [currentCamera] holds the last one it reported without a call.
+     */
     public suspend fun camera(): TileflowCamera {
         if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
-        if (!initialized) throw TileflowMapException(TileflowErrorCode.NOT_READY)
-        val result =
-            bridge?.call(ProtocolContract.Method.GET_CAMERA) as? JSONObject
+        val bridge =
+            bridge?.takeIf { initialized }
                 ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
-        return TileflowCamera.from(result)
+        return cameraOrNull(bridge.call(ProtocolContract.Method.GET_CAMERA))
+            ?: throw TileflowMapException(TileflowErrorCode.RENDERER_FAILED)
     }
 
     /** Returns rendered feature identities at physical pixels relative to this view. */
@@ -233,38 +755,25 @@ constructor(
         }
     }
 
+    /**
+     * Frames [bounds] with [padding] pixels around them, inside the content padding, and waits
+     * until the camera settles. A [durationMillis] above 0 eases there.
+     */
     public suspend fun fit(
         bounds: TileflowBounds,
         padding: Float = 24f,
         maxZoom: Double = 20.0,
         durationMillis: Long = 0,
     ) {
-        if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
-        val bridge =
-            bridge?.takeIf { initialized }
-                ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
-        if (
-            bounds.west !in -180.0..180.0 ||
-                bounds.east !in -180.0..180.0 ||
-                bounds.south !in -90.0..90.0 ||
-                bounds.north !in -90.0..90.0 ||
-                bounds.south > bounds.north ||
-                padding !in 0f..1000f ||
-                maxZoom !in 0.0..24.0 ||
-                durationMillis !in 0..5000
-        ) {
+        if (padding !in 0f..1000f * density)
             throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
-        }
-        bridge.call(
-            ProtocolContract.Method.FIT_BOUNDS,
-            JSONObject()
-                .put("west", bounds.west)
-                .put("east", bounds.east)
-                .put("south", bounds.south)
-                .put("north", bounds.north)
-                .put("padding", (padding / resources.displayMetrics.density).toDouble())
-                .put("maxZoom", maxZoom)
-                .put("duration", durationMillis),
+        fit(
+            bounds,
+            TileflowEdgeInsets(padding, padding, padding, padding),
+            maxZoom = maxZoom,
+            animation =
+                if (durationMillis > 0) TileflowCameraAnimation.Ease(durationMillis)
+                else TileflowCameraAnimation.None,
         )
     }
 
@@ -311,6 +820,202 @@ constructor(
         return JSONObject().put("x", cssX).put("y", cssY)
     }
 
+    /**
+     * Moves the camera and waits until it settles. Cancelling the calling coroutine stops the
+     * movement and throws its `CancellationException`.
+     *
+     * Before the map loads, a complete camera becomes the one it starts at and the call returns
+     * [TileflowCameraAnimationResult.FINISHED]; a partial update fails with
+     * [TileflowErrorCode.NOT_READY].
+     */
+    public suspend fun move(
+        update: TileflowCameraUpdate,
+        animation: TileflowCameraAnimation = TileflowCameraAnimation.None,
+    ): TileflowCameraAnimationResult = move(update, animation, reason = "api")
+
+    public suspend fun move(
+        camera: TileflowCamera,
+        animation: TileflowCameraAnimation = TileflowCameraAnimation.None,
+    ): TileflowCameraAnimationResult = move(TileflowCameraUpdate(camera), animation)
+
+    public suspend fun jump(update: TileflowCameraUpdate): TileflowCameraAnimationResult =
+        move(update, TileflowCameraAnimation.None)
+
+    public suspend fun jump(camera: TileflowCamera): TileflowCameraAnimationResult =
+        move(TileflowCameraUpdate(camera), TileflowCameraAnimation.None)
+
+    public suspend fun ease(
+        update: TileflowCameraUpdate,
+        durationMillis: Long = 500,
+        easing: TileflowEasing = TileflowEasing.STANDARD,
+    ): TileflowCameraAnimationResult =
+        move(update, TileflowCameraAnimation.Ease(durationMillis, easing))
+
+    public suspend fun ease(
+        camera: TileflowCamera,
+        durationMillis: Long = 500,
+        easing: TileflowEasing = TileflowEasing.STANDARD,
+    ): TileflowCameraAnimationResult = ease(TileflowCameraUpdate(camera), durationMillis, easing)
+
+    public suspend fun fly(
+        update: TileflowCameraUpdate,
+        options: TileflowFlyOptions = TileflowFlyOptions(),
+    ): TileflowCameraAnimationResult = move(update, TileflowCameraAnimation.Fly(options))
+
+    public suspend fun fly(
+        camera: TileflowCamera,
+        options: TileflowFlyOptions = TileflowFlyOptions(),
+    ): TileflowCameraAnimationResult = fly(TileflowCameraUpdate(camera), options)
+
+    /**
+     * Frames [bounds] with [padding] pixels around them, inside the content padding, and waits
+     * until the camera settles. Fails with [TileflowErrorCode.INVALID_REQUEST] when the padding
+     * leaves no room.
+     */
+    public suspend fun fit(
+        bounds: TileflowBounds,
+        padding: TileflowEdgeInsets,
+        bearing: Double? = null,
+        pitch: Double? = null,
+        maxZoom: Double? = null,
+        animation: TileflowCameraAnimation = TileflowCameraAnimation.None,
+    ): TileflowCameraAnimationResult {
+        val fit = fitJson(bounds, padding, bearing, pitch, maxZoom)
+        endFollowing(TileflowFollowModeChangeReason.API)
+        return sendMove(JSONObject().put("fit", fit).put("animation", animation.json()))
+    }
+
+    /**
+     * Stops the camera, whether the application or a person moved it, and ends following the
+     * location. A movement the application started ends as
+     * [TileflowCameraAnimationResult.CANCELLED].
+     */
+    public fun stopCamera() {
+        if (destroyed) return
+        endFollowing(TileflowFollowModeChangeReason.API)
+        val bridge = bridge?.takeIf { initialized } ?: return
+        scope.launch {
+            try {
+                bridge.call(ProtocolContract.Method.STOP_CAMERA)
+            } catch (_: TileflowMapException) {
+                // A replaced renderer has no movement to stop.
+            }
+        }
+    }
+
+    /**
+     * The camera that frames [bounds] with [padding] pixels around them, inside the content
+     * padding, without moving. Null when the padding leaves no room.
+     */
+    public suspend fun camera(
+        bounds: TileflowBounds,
+        padding: TileflowEdgeInsets = TileflowEdgeInsets.ZERO,
+        bearing: Double? = null,
+        pitch: Double? = null,
+        maxZoom: Double? = null,
+    ): TileflowCamera? {
+        if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+        val fit = fitJson(bounds, padding, bearing, pitch, maxZoom)
+        val bridge =
+            bridge?.takeIf { initialized }
+                ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
+        val result = bridge.call(ProtocolContract.Method.CAMERA_FOR_BOUNDS, fit)
+        if (result == JSONObject.NULL) return null
+        return cameraOrNull(result) ?: throw TileflowMapException(TileflowErrorCode.RENDERER_FAILED)
+    }
+
+    /**
+     * The camera that frames every coordinate, for example a route's or a shape's, without moving.
+     * Null without coordinates or when the padding leaves no room.
+     */
+    public suspend fun cameraFitting(
+        coordinates: List<TileflowCoordinate>,
+        padding: TileflowEdgeInsets = TileflowEdgeInsets.ZERO,
+        bearing: Double? = null,
+        pitch: Double? = null,
+        maxZoom: Double? = null,
+    ): TileflowCamera? =
+        TileflowBounds.enclosing(coordinates)?.let { camera(it, padding, bearing, pitch, maxZoom) }
+
+    /**
+     * The region the view shows. A view that shows the horizon ends at MapLibre's horizon line; one
+     * that crosses the antimeridian has an east edge west of its west edge.
+     */
+    public suspend fun visibleBounds(): TileflowBounds {
+        if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+        val bridge =
+            bridge?.takeIf { initialized }
+                ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
+        val result = bridge.call(ProtocolContract.Method.VISIBLE_BOUNDS) as? JSONObject
+        return try {
+            result?.let(::boundsFrom)
+        } catch (_: org.json.JSONException) {
+            null
+        } ?: throw TileflowMapException(TileflowErrorCode.RENDERER_FAILED)
+    }
+
+    internal suspend fun move(
+        update: TileflowCameraUpdate,
+        animation: TileflowCameraAnimation,
+        reason: String,
+    ): TileflowCameraAnimationResult {
+        if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+        val target = update.json()
+        val wireAnimation = animation.json()
+        // A movement the application asks for ends following the location.
+        if (reason == "api") endFollowing(TileflowFollowModeChangeReason.API)
+        if (!initialized) {
+            if (update.center == null || update.zoom == null)
+                throw TileflowMapException(TileflowErrorCode.NOT_READY)
+            val start = update.appliedTo(camera ?: TileflowCamera(0.0, 0.0, 0.0))
+            if (!start.isValid()) throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
+            request(start)
+            return TileflowCameraAnimationResult.FINISHED
+        }
+        return sendMove(
+            JSONObject().put("target", target).put("animation", wireAnimation).put("reason", reason)
+        )
+    }
+
+    private suspend fun sendMove(payload: JSONObject): TileflowCameraAnimationResult {
+        if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+        val bridge =
+            bridge?.takeIf { initialized }
+                ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
+        val result = bridge.call(ProtocolContract.Method.MOVE_CAMERA, payload) as? JSONObject
+        val completion = TileflowCameraAnimationResult.fromWire(result?.optString("completion"))
+        val camera = cameraOrNull(result?.optJSONObject("camera"))
+        if (completion == null || camera == null)
+            throw TileflowMapException(TileflowErrorCode.RENDERER_FAILED)
+        if (bridge === this.bridge) observe(camera)
+        return completion
+    }
+
+    private fun fitJson(
+        bounds: TileflowBounds,
+        padding: TileflowEdgeInsets,
+        bearing: Double?,
+        pitch: Double?,
+        maxZoom: Double?,
+    ): JSONObject {
+        if (!padding.valid() || listOf(padding.left, padding.top, padding.right, padding.bottom)
+            .any { it / density > 8192 }
+        )
+            throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
+        val fit = JSONObject().put("bounds", bounds.json()).put("padding", padding.css(density))
+        for ((key, value, range) in
+            listOf(
+                Triple("bearing", bearing, -360.0..360.0),
+                Triple("pitch", pitch, 0.0..TileflowCameraLimits.MAXIMUM_PITCH),
+                Triple("maxZoom", maxZoom, 0.0..24.0),
+            )) {
+            if (value == null) continue
+            if (value !in range) throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
+            fit.put(key, value)
+        }
+        return fit
+    }
+
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         attached = true
@@ -333,6 +1038,10 @@ constructor(
         updateVisibility()
     }
 
+    /** Whether the map is attached and its window and lifecycle show it. */
+    internal val isVisibleOnScreen: Boolean
+        get() = isVisibleToUser()
+
     private fun isVisibleToUser(): Boolean =
         attached &&
             windowVisibility == View.VISIBLE &&
@@ -340,6 +1049,7 @@ constructor(
 
     private fun updateVisibility() {
         if (destroyed) return
+        refreshLocation()
         val visible = isVisibleToUser()
         hostedSession?.setBackgrounded(!visible)
         if (visible == rendererVisible) return
@@ -380,7 +1090,9 @@ constructor(
                     applyAppearance()
                 }
             } catch (error: TileflowMapException) {
-                if (!destroyed) onEvent(TileflowMapEvent.Failed(error.code))
+                // The theme is applied again to the next renderer if this one was replaced.
+                if (!destroyed && error.code != TileflowErrorCode.CANCELLED)
+                    onEvent(TileflowMapEvent.Failed(error.code, error.context))
             }
         }
     }
@@ -392,18 +1104,22 @@ constructor(
         lifecycleOwner = null
         hostedSession?.close()
         hostedSession = null
-        retireGeneration()
+        loadable = null
+        refreshLocation()
+        retireGeneration(TileflowErrorCode.DISPOSED)
+        annotationOverlay.dispose()
         scope.cancel()
         onEvent = {}
     }
 
     /**
      * Retry the current source after a load or renderer failure. A Hosted session stopped by
-     * [TileflowErrorCode.CREDENTIAL_REJECTED], [TileflowErrorCode.ACCESS_DENIED] or
-     * [TileflowErrorCode.QUOTA_EXCEEDED] bootstraps again. Reloading also skips the delay that
-     * follows a temporary session failure ([TileflowErrorCode.RATE_LIMITED],
-     * [TileflowErrorCode.SESSION_UNAVAILABLE] or [TileflowErrorCode.INVALID_SESSION_RESPONSE]), so
-     * call it in response to a user action rather than from every failure event.
+     * [TileflowErrorCode.CREDENTIAL_REJECTED], [TileflowErrorCode.ACCESS_DENIED],
+     * [TileflowErrorCode.QUOTA_EXCEEDED] or [TileflowErrorCode.SESSION_REJECTED] bootstraps again.
+     * Reloading also skips the delay that follows a temporary session failure
+     * ([TileflowErrorCode.RATE_LIMITED], [TileflowErrorCode.SESSION_UNAVAILABLE] or
+     * [TileflowErrorCode.INVALID_SESSION_RESPONSE]), so call it in response to a user action rather
+     * than from every failure event.
      */
     public fun reload() {
         if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
@@ -429,19 +1145,36 @@ constructor(
      * A load that fails while hidden, for example because the system suspended its networking,
      * reloads once visible instead of reporting a failure nobody saw.
      */
-    private fun report(code: TileflowErrorCode, current: Int) {
+    private fun report(
+        code: TileflowErrorCode,
+        current: Int,
+        context: TileflowErrorContext = TileflowErrorContext.NONE,
+    ) {
         if (destroyed || generation != current) return
         if (!generationReady && !isVisibleToUser()) {
             pendingRemount = true
             return
         }
-        onEvent(TileflowMapEvent.Failed(code))
+        onEvent(TileflowMapEvent.Failed(code, context))
     }
 
     private fun contentReady() {
         generationReady = true
         resetRecovery()
+        controlsView.visibility = VISIBLE
         onEvent(TileflowMapEvent.ContentReady)
+    }
+
+    /** The camera to start at, or to move to once the renderer that is loading can move. */
+    private fun request(camera: TileflowCamera) {
+        observe(camera)
+        requestedCamera = camera to (requestedCamera?.second ?: 0) + 1
+    }
+
+    /** Keeps the synchronous camera and the controls current. */
+    internal fun observe(camera: TileflowCamera) {
+        this.camera = camera
+        controlsView.camera = camera
     }
 
     private fun colorScheme(): String =
@@ -456,58 +1189,52 @@ constructor(
     private fun mount() {
         val source = source ?: return
         try {
+            // A failed read is not kept, so reload() reads a corrected configuration.
+            val loadable =
+                this.loadable
+                    ?: source
+                        .loadable { Tileflow.configuration(context) }
+                        .also { this.loadable = it }
             if (
                 !WebViewFeature.isFeatureSupported(WebViewFeature.WEB_MESSAGE_LISTENER) ||
-                    !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)
+                    !WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT) ||
+                    !WebViewRequirement.isSupported(
+                        WebViewCompat.getCurrentWebViewPackage(context)?.versionName
+                    )
             ) {
                 throw TileflowMapException(TileflowErrorCode.INCOMPATIBLE_RUNTIME)
             }
-            val receipt =
-                JSONObject(
-                    context.assets.open("tileflow/receipt.json").bufferedReader().use {
-                        it.readText()
-                    }
-                )
-            require(receipt.getInt("protocolVersion") == ProtocolContract.VERSION)
-            val files = receipt.getJSONObject("files")
-            require(
-                files.keys().asSequence().toSet() ==
-                    setOf(
-                        "index.html",
-                        "runtime.js",
-                        "maplibre.css",
-                        "notices.txt",
-                        "dependencies.json",
-                    )
-            )
-            for (name in files.keys()) {
-                val bytes = context.assets.open("tileflow/$name").use { it.readBytes() }
-                val actual =
-                    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") {
-                        "%02x".format(it)
-                    }
-                require(actual == files.getString(name))
-            }
+            // The receipt is read once per process; the files are verified once, off the main
+            // thread, while the WebView starts.
+            val receipt = EmbeddedRuntime.receipt(context.assets)
+            EmbeddedRuntime.failure?.let { throw it }
+            EmbeddedRuntime.verification(context.assets)
+            TileflowDeviceProfile.current(context)
             generation += 1
             val current = generation
             pendingRemount = false
             // A new document starts shown; it is hidden after initialization if the view is not.
             rendererVisible = true
+            val endpoint = loadable.hosted
             if (
                 hostedSession == null &&
-                    source.client != null &&
-                    source.mapId != null &&
-                    source.surfaceId != null
+                    endpoint != null &&
+                    loadable.mapId != null &&
+                    loadable.surfaceId != null
             ) {
-                hostedSession = HostedSession(source.client, source.mapId, source.surfaceId)
+                hostedSession = HostedSession(endpoint, loadable.mapId, loadable.surfaceId)
             }
             hostedSession?.setBackgrounded(!isVisibleToUser())
             val resourceLoader =
                 ResourceLoader(
-                    source.policy(),
+                    loadable.policy,
                     hosted = hostedSession,
-                    apiOrigin = source.client?.apiOrigin,
-                    publicMetadataUrls = source.publicMetadataUrls,
+                    apiOrigin = endpoint?.apiOrigin,
+                    publicMetadataUrls = loadable.publicMetadataUrls,
+                    cache = TileflowMapCache.get(context).store,
+                    grantScope = loadable.grantScope,
+                    offline = OfflineServingIndex.shared(context),
+                    reachable = { OfflineReachability.isReachable(context) },
                     onDeploymentSuperseded = {
                         // A protected style belongs to a superseded deployment: reload once.
                         automaticReloadAvailable.compareAndSet(true, false).also { reload ->
@@ -517,6 +1244,10 @@ constructor(
                     },
                 )
             val view = WebView(context)
+            // A long press is the map's gesture, not text selection.
+            view.setOnLongClickListener { true }
+            view.isLongClickable = false
+            view.isHapticFeedbackEnabled = false
             view.settings.apply {
                 javaScriptEnabled = true
                 allowFileAccess = false
@@ -529,45 +1260,82 @@ constructor(
                 MapBridge(
                     instanceId,
                     current,
-                    receipt.getString("runtimeHash"),
+                    receipt.runtimeHash,
                     view,
+                    DataChannel(),
                     onHello = { readyBridge ->
                         scope.launch {
                             if (destroyed || generation != current) return@launch
                             try {
                                 val startingTheme = theme
-                                val startingCamera = camera
+                                val startingRequest = requestedCamera?.second
                                 val startingOptions = options
                                 val configuration =
                                     JSONObject()
                                         .put(
                                             "source",
                                             JSONObject()
-                                                .put("map", source.map)
+                                                .put("map", loadable.map)
                                                 .put(
                                                     "manifestUrl",
-                                                    source.manifestUrl.toASCIIString(),
+                                                    loadable.manifestUrl.toASCIIString(),
                                                 )
                                                 .apply {
-                                                    source.mapId?.let { put("discoveryMapId", it) }
+                                                    loadable.mapId?.let {
+                                                        put("discoveryMapId", it)
+                                                    }
                                                 },
                                         )
                                         .put("theme", theme ?: JSONObject.NULL)
                                         .put("colorScheme", colorScheme())
                                         .put("interactive", true)
-                                        .put("options", options.json())
+                                        .put("options", options.json(rightToLeft))
+                                        .put("renderer", options.rendererJson())
+                                        .put("events", subscriptions.json())
+                                        .put("insets", effectiveContentPadding.css(density))
+                                val startingSubscriptions = subscriptions
+                                val startingInsets = effectiveContentPadding
                                 camera?.let { configuration.put("camera", it.json()) }
+                                // A Hosted map opened from downloaded regions shows their credits.
+                                loadable.grantScope?.let { grantScope ->
+                                    if (
+                                        OfflineServingRule.hostedUsesPacks(
+                                            TileflowHttpClient.networkEnabled,
+                                            OfflineReachability.isReachable(context),
+                                        )
+                                    ) {
+                                        val credits =
+                                            withContext(Dispatchers.IO) {
+                                                OfflineServingIndex.shared(context)
+                                                    .credits(grantScope)
+                                            }
+                                        if (credits.isNotEmpty())
+                                            configuration.put(
+                                                "credits",
+                                                JSONArray(credits.map { it.toJson() }),
+                                            )
+                                    }
+                                }
                                 readyBridge.call(ProtocolContract.Method.INITIALIZE, configuration)
                                 if (destroyed || generation != current) return@launch
                                 initialized = true
-                                readyBridge.call(
-                                    ProtocolContract.Method.SET_CONTENT,
-                                    content.json(),
-                                )
+                                rendererInsets = startingInsets
+                                updateInsets()
+                                send(content, readyBridge)
                                 if (appearance != null) applyAppearance()
                                 else if (theme != startingTheme) setTheme(theme)
-                                if (options != startingOptions) setOptions(options)
-                                if (camera != startingCamera) camera?.let { setCamera(it) }
+                                if (options != startingOptions)
+                                    sendOptions(events = subscriptions != startingSubscriptions)
+                                // Only a camera the application asked for meanwhile moves again.
+                                requestedCamera
+                                    ?.takeIf { it.second != startingRequest }
+                                    ?.let { move(it.first) }
+                                replayScene(readyBridge)
+                                replayStyle(readyBridge)
+                                replayLocation(readyBridge)
+                                annotationLayersSent = null
+                                sendAnnotationLayers()
+                                annotationOverlay.rendererReady()
                                 if (!rendererVisible)
                                     readyBridge.call(
                                         ProtocolContract.Method.SET_VISIBILITY,
@@ -584,6 +1352,8 @@ constructor(
                                     (error as? TileflowMapException)?.code
                                         ?: TileflowErrorCode.RENDERER_FAILED,
                                     current,
+                                    (error as? TileflowMapException)?.context
+                                        ?: TileflowErrorContext.NONE,
                                 )
                             }
                         }
@@ -591,6 +1361,7 @@ constructor(
                     onEvent = { event, result ->
                         if (!destroyed && generation == current) receive(event, result, current)
                     },
+                    onFailure = { error -> report(error.code, current, error.context) },
                 )
             WebViewCompat.addWebMessageListener(
                 view,
@@ -611,6 +1382,12 @@ constructor(
                     .put("instanceId", instanceId)
                     .put("generation", current)
                     .put("platform", "android")
+                    .put(
+                        "protocol",
+                        JSONObject()
+                            .put("minimum", ProtocolContract.MINIMUM_VERSION)
+                            .put("maximum", ProtocolContract.VERSION),
+                    )
             bootstrap =
                 WebViewCompat.addDocumentStartJavaScript(
                     view,
@@ -625,7 +1402,8 @@ constructor(
                         if (!destroyed && generation == current)
                             onEvent(TileflowMapEvent.ExternalLinkRequested(it))
                     },
-                    onFailure = { report(it, current) },
+                    onFailure = { report(it.code, current, it.context) },
+                    data = mapBridge.data,
                 ) {
                     // The system may end a hidden renderer to reclaim memory. Replace it once
                     // visible; a renderer that ends again before its content loads is reported.
@@ -633,23 +1411,53 @@ constructor(
                         if (recoveries++ < 1) remount()
                         else {
                             retireGeneration()
-                            onEvent(TileflowMapEvent.Failed(TileflowErrorCode.RENDERER_FAILED))
+                            onEvent(
+                                TileflowMapEvent.Failed(
+                                    TileflowErrorCode.RENDERER_FAILED,
+                                    TileflowErrorContext.of(
+                                        ProtocolContract.ErrorReason.PROCESS_TERMINATED
+                                    ),
+                                )
+                            )
                         }
                     }
                 }
             loader = resourceLoader
             bridge = mapBridge
             webView = view
-            addView(view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-            view.loadUrl(ResourceAddress.RUNTIME_URL)
+            addView(view, 0, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+            loadRuntime(view, current)
             updateVisibility()
         } catch (error: Exception) {
             retireGeneration()
             onEvent(
                 TileflowMapEvent.Failed(
-                    (error as? TileflowMapException)?.code ?: TileflowErrorCode.MISSING_RUNTIME
+                    (error as? TileflowMapException)?.code ?: TileflowErrorCode.MISSING_RUNTIME,
+                    (error as? TileflowMapException)?.context ?: TileflowErrorContext.NONE,
                 )
             )
+        }
+    }
+
+    /**
+     * Loads the renderer once the embedded runtime is verified. The WebView's provider and renderer
+     * start meanwhile, so verification overlaps their launch.
+     */
+    private fun loadRuntime(view: WebView, current: Int) {
+        if (EmbeddedRuntime.isVerified) {
+            view.loadUrl(ResourceAddress.RUNTIME_URL)
+            return
+        }
+        EmbeddedRuntime.verification(context.assets).whenComplete { _, error ->
+            post {
+                if (destroyed || generation != current || webView !== view) return@post
+                if (error == null) view.loadUrl(ResourceAddress.RUNTIME_URL)
+                else {
+                    val failure = EmbeddedRuntime.mapException(error)
+                    retireGeneration()
+                    onEvent(TileflowMapEvent.Failed(failure.code, failure.context))
+                }
+            }
         }
     }
 
@@ -658,31 +1466,110 @@ constructor(
             pendingReadyEvent = true
             return
         }
+        when (event) {
+            "trackedPointsMoved" -> {
+                annotationOverlay.receive(result)
+                return
+            }
+            "annotationDragged" -> {
+                annotations.dispatchDrag(result)
+                return
+            }
+            // An annotation listener that takes a press keeps it from the application's event.
+            "tap",
+            "longPress" ->
+                if (annotations.dispatchPress(annotationHits(result), long = event == "longPress"))
+                    return
+        }
+        if (event == "animationEnded" || event == "shotCue") {
+            animations.receive(event, result)
+            return
+        }
+        if (event == "followModeChanged") {
+            receiveFollowModeChanged(result)
+            return
+        }
         val parsed =
             try {
-                parseMapEvent(event, result)
+                parseMapEvent(event, result, density)
             } catch (_: org.json.JSONException) {
                 TileflowMapEvent.Failed(TileflowErrorCode.RENDERER_FAILED)
             } catch (_: IllegalArgumentException) {
                 TileflowMapEvent.Failed(TileflowErrorCode.RENDERER_FAILED)
             }
-        if (parsed is TileflowMapEvent.CameraChanged) camera = parsed.camera
+        if (parsed == TileflowMapEvent.ContentReady)
+            cameraOrNull(result.optJSONObject("camera"))?.let(::observe)
         // Consumer callbacks execute outside parsing guards: never mask application exceptions.
         when (parsed) {
             null -> Unit
             TileflowMapEvent.ContentReady -> contentReady()
-            is TileflowMapEvent.Failed -> report(parsed.code, current)
+            is TileflowMapEvent.Failed -> report(parsed.code, current, parsed.context)
+            is TileflowMapEvent.CameraChanged -> {
+                observe(parsed.change.camera)
+                onCameraObserved?.invoke(parsed.change)
+                cameraEvents.receive(parsed.change, options.events) {
+                    if (!destroyed && generation == current)
+                        onEvent(TileflowMapEvent.CameraChanged(it))
+                }
+            }
+            is TileflowMapEvent.GestureStarted,
+            is TileflowMapEvent.GestureEnded ->
+                if (options.events.level.includes(TileflowEventLevel.CAMERA)) onEvent(parsed)
             else -> onEvent(parsed)
         }
     }
 
-    private fun retireGeneration() {
+    /** The current renderer once it has initialized. */
+    internal val readyBridge: MapBridge?
+        get() = bridge?.takeIf { initialized }
+
+    internal val isDestroyed: Boolean
+        get() = destroyed
+
+    /** Records options a dedicated call already gave the renderer. */
+    internal fun keepOptions(options: TileflowMapOptions) {
+        this.options = options
+    }
+
+    /** Records where line progress animations lead, so a new renderer draws the lines there. */
+    internal fun keepLineProgress(progress: TileflowLineProgress, layers: Set<String>) {
+        content =
+            content.copy(
+                overlays =
+                    content.overlays.map { layer ->
+                        val current = layer.progress
+                        if (layer.id !in layers || current == null) layer
+                        else layer.withProgress(progress.copy(highlight = current.highlight))
+                    }
+            )
+    }
+
+    internal fun launchOnView(block: suspend CoroutineScope.() -> Unit) {
+        scope.launch(block = block)
+    }
+
+    /** Runs [block] after the current main-thread turn, so changes made in it arrive together. */
+    internal fun launchJob(block: suspend CoroutineScope.() -> Unit): Job =
+        scope.launch(Dispatchers.Main, block = block)
+
+    /** Pending calls fail with `cancelled` when replaced and with `disposed` when destroyed. */
+    private fun retireGeneration(code: TileflowErrorCode = TileflowErrorCode.CANCELLED) {
         initialized = false
+        annotationLayersSent = null
+        annotationLayersSending = false
+        subscriptionsSending = false
+        annotationOverlay.rendererRetired()
+        rendererInsets = null
+        insetsUpdate?.cancel()
+        insetsUpdate = null
+        cameraEvents.rendererReplaced()
+        controlsView.visibility = GONE
         readyForEvents = false
         pendingReadyEvent = false
         generationReady = false
         rendererVisible = false
-        bridge?.retire()
+        animations.retire(code)
+        bridge?.retire(code)
         loader?.close()
         bootstrap?.remove()
         webView?.let {
@@ -696,4 +1583,21 @@ constructor(
         bootstrap = null
         webView = null
     }
+
+    public companion object {
+        /**
+         * Prepares what every map needs before the first one is shown: verifies the embedded
+         * renderer, reads the device profile, opens the shared HTTP client and resource cache, and
+         * loads the WebView provider. Call it on the main thread early, for example in
+         * `Application.onCreate` or before navigating to a screen with a map; calling it again only
+         * repeats the cheap checks. Maps work without it, but the first one then pays these costs
+         * while it loads.
+         */
+        @JvmStatic
+        @MainThread
+        public fun prewarm(context: Context) {
+            MapPrewarmer.start(context)
+        }
+    }
+
 }

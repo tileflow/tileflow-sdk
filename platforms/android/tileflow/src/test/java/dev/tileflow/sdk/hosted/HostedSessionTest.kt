@@ -1,8 +1,10 @@
 package dev.tileflow.sdk.hosted
 
-import dev.tileflow.sdk.TileflowClient
+import dev.tileflow.configuration.TileflowConfiguration
+import dev.tileflow.configuration.TileflowCredential
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowMapException
+import dev.tileflow.sdk.TileflowMapSource
 import dev.tileflow.sdk.transport.NativeHTTPTransporting
 import dev.tileflow.sdk.transport.ResourceLoader
 import dev.tileflow.sdk.transport.ResourcePayload
@@ -107,9 +109,9 @@ class HostedSessionTest {
             Thread.sleep(25)
             response(request)
         }
-        val client = client()
-        assertFalse(client.toString().contains("tf_public_"))
-        val session = HostedSession(client, mapId, "mobile-map", transport = transport)
+        val endpoint = endpoint()
+        assertFalse(endpoint.toString().contains(mapCredential.drop(10)))
+        val session = HostedSession(endpoint, mapId, "mobile-map", transport = transport)
         val pool = Executors.newFixedThreadPool(8)
         try {
             val results =
@@ -119,7 +121,7 @@ class HostedSessionTest {
             val request = transport.requests.single()
             assertEquals("POST", request.method)
             assertEquals("/v1/sessions/start", request.url.encodedPath)
-            assertNotNull(request.header("X-Tileflow-Mobile-Client"))
+            assertEquals(mapCredential, request.header("X-Tileflow-Mobile-Client"))
             listOf("Origin", "Referer", "Cookie", "Authorization", "X-Tileflow-Native-Grant")
                 .forEach {
                     assertNull(request.header(it))
@@ -144,7 +146,7 @@ class HostedSessionTest {
             ResourcePayload(byteArrayOf(), 503, emptyMap())
         }
         val session =
-            HostedSession(client(), mapId, "mobile-map", time::get, transport, waitMillis = 200)
+            HostedSession(endpoint(), mapId, "mobile-map", time::get, transport, waitMillis = 200)
         val pool = Executors.newFixedThreadPool(4)
         try {
             val first = pool.submit {
@@ -179,7 +181,7 @@ class HostedSessionTest {
     fun refreshRetainsIdentityAndAgeRotatesIt() {
         val time = AtomicLong(0)
         val transport = FakeTransport { request, _ -> response(request) }
-        HostedSession(client(), mapId, "mobile-map", time::get, transport).use { session ->
+        HostedSession(endpoint(), mapId, "mobile-map", time::get, transport).use { session ->
             session.authorize(style, policy)
             time.addAndGet(880_000)
             session.authorize(style, policy)
@@ -196,7 +198,7 @@ class HostedSessionTest {
     fun invalidatedGrantRenewsOnceWithinThirtySeconds() {
         val time = AtomicLong(0)
         val transport = FakeTransport { request, _ -> response(request) }
-        HostedSession(client(), mapId, "mobile-map", time::get, transport).use { session ->
+        HostedSession(endpoint(), mapId, "mobile-map", time::get, transport).use { session ->
             val grant = session.authorize(style, policy).grant!!
             assertTrue(session.invalidate("tf_native_v1.b3RoZXI.Z3JhbnQ"))
             session.authorize(style, policy)
@@ -220,7 +222,7 @@ class HostedSessionTest {
             check(release.await(5, TimeUnit.SECONDS))
             response(request)
         }
-        val session = HostedSession(client(), mapId, "mobile-map", time::get, gated)
+        val session = HostedSession(endpoint(), mapId, "mobile-map", time::get, gated)
         val pool = Executors.newFixedThreadPool(2)
         try {
             val pending = pool.submit<String?> { session.authorize(style, policy).grant }
@@ -240,7 +242,7 @@ class HostedSessionTest {
     fun hiddenSessionHoldsBootstrapsUntilVisibleAndKeepsAValidGrant() {
         val time = AtomicLong(0)
         val transport = FakeTransport { request, _ -> response(request) }
-        val session = HostedSession(client(), mapId, "mobile-map", time::get, transport)
+        val session = HostedSession(endpoint(), mapId, "mobile-map", time::get, transport)
         val pool = Executors.newSingleThreadExecutor()
         try {
             session.setBackgrounded(true)
@@ -260,7 +262,7 @@ class HostedSessionTest {
             session.close()
             pool.shutdownNow()
         }
-        HostedSession(client(), mapId, "mobile-map", time::get, transport, waitMillis = 100).use {
+        HostedSession(endpoint(), mapId, "mobile-map", time::get, transport, waitMillis = 100).use {
             it.setBackgrounded(true)
             assertCode(TileflowErrorCode.NOT_READY) { it.authorize(style, policy) }
         }
@@ -284,7 +286,7 @@ class HostedSessionTest {
                 )
             else response(request)
         }
-        HostedSession(client(), mapId, "mobile-map", transport = transport).use { session ->
+        HostedSession(endpoint(), mapId, "mobile-map", transport = transport).use { session ->
             session.authorize(style, policy)
             assertEquals(2, transport.requests.size)
             assertNotEquals(
@@ -293,7 +295,7 @@ class HostedSessionTest {
             )
         }
         val rejected = FakeTransport { _, _ -> ResourcePayload(byteArrayOf(), 401, emptyMap()) }
-        HostedSession(client(), mapId, "mobile-map", transport = rejected).use { session ->
+        HostedSession(endpoint(), mapId, "mobile-map", transport = rejected).use { session ->
             repeat(2) {
                 assertCode(TileflowErrorCode.CREDENTIAL_REJECTED) {
                     session.authorize(style, policy)
@@ -310,7 +312,7 @@ class HostedSessionTest {
             time.addAndGet(880_000)
             response(request)
         }
-        HostedSession(client(), mapId, "mobile-map", time::get, slow).use { session ->
+        HostedSession(endpoint(), mapId, "mobile-map", time::get, slow).use { session ->
             assertCode(TileflowErrorCode.SESSION_UNAVAILABLE) { session.authorize(style, policy) }
         }
         val started = CountDownLatch(1)
@@ -320,7 +322,7 @@ class HostedSessionTest {
             check(release.await(5, TimeUnit.SECONDS))
             response(request)
         }
-        val session = HostedSession(client(), mapId, "mobile-map", transport = delayed)
+        val session = HostedSession(endpoint(), mapId, "mobile-map", transport = delayed)
         val pool = Executors.newSingleThreadExecutor()
         try {
             val result = pool.submit {
@@ -349,17 +351,23 @@ class HostedSessionTest {
                 // Each bootstrap takes the next reply; the last one repeats.
                 val reply = replies.getJSONObject(minOf(count, replies.length() - 1))
                 val status = reply.getInt("status")
+                // A `"$request"` session ID stands for the ID of the request the reply answers.
+                val body =
+                    reply.optJSONObject("body")?.let { JSONObject(it.toString()) }?.apply {
+                        if (optString("sessionId") == "\$request")
+                            put("sessionId", body(request).getString("sessionId"))
+                    }
                 if (status == 201 && !reply.has("body")) response(request)
                 else
                     ResourcePayload(
-                        reply.opt("body")?.toString()?.toByteArray() ?: byteArrayOf(),
+                        body?.toString()?.toByteArray() ?: byteArrayOf(),
                         status,
                         reply.optJSONObject("headers")?.let { headers ->
                             headers.keys().asSequence().associateWith { headers.getString(it) }
                         } ?: emptyMap(),
                     )
             }
-            HostedSession(client(), mapId, "mobile-map", time::get, transport).use { session ->
+            HostedSession(endpoint(), mapId, "mobile-map", time::get, transport).use { session ->
                 val identities = mutableMapOf<String, String>()
                 val steps = scenario.getJSONArray("steps")
                 for (i in 0 until steps.length()) {
@@ -375,7 +383,11 @@ class HostedSessionTest {
                         }
                     }
                     if (step.has("error"))
-                        assertCode(fixtureErrors.getValue(step.getString("error")), name) {
+                        assertCode(
+                            fixtureErrors.getValue(step.getString("error")),
+                            name,
+                            reason = step.optString("reason").ifEmpty { null },
+                        ) {
                             session.authorize(style, policy)
                         }
                     else assertNotNull(name, session.authorize(style, policy).grant)
@@ -395,6 +407,74 @@ class HostedSessionTest {
     }
 
     @Test
+    fun loopbackHttpApiGrantsLoopbackResourcesAndNoOtherApiDoes() {
+        val local =
+            fixture()
+                .getJSONObject("response")
+                .put("resourceOrigins", JSONArray(listOf("http://127.0.0.1:8787")))
+        val transport = FakeTransport { request, _ ->
+            ResourcePayload(
+                JSONObject(local.toString())
+                    .put("sessionId", body(request).getString("sessionId"))
+                    .toString()
+                    .toByteArray(),
+                201,
+                emptyMap(),
+            )
+        }
+        val endpoint =
+            HostedEndpoint(
+                TileflowConfiguration(
+                    apiOrigin = URI("http://127.0.0.1:8787"),
+                    mapCredential = TileflowCredential(mapCredential),
+                )
+            )
+        assertTrue(endpoint.isLoopbackHttp)
+        assertEquals(
+            "http://127.0.0.1:8787/v1/sessions/start",
+            endpoint.sessionRequest(mapId, "s", "mobile-map").url.toString(),
+        )
+        HostedSession(endpoint, mapId, "mobile-map", transport = transport).use { session ->
+            val admission =
+                session.authorize(
+                    URI("http://127.0.0.1:8787/maps/$mapId/mobile/webview-v1/v1/day.json"),
+                    ResourcePolicy(setOf("http://127.0.0.1:8787"), allowsLoopbackHttp = true),
+                )
+            assertNotNull(admission.grant)
+        }
+        // An HTTPS API never grants an HTTP origin.
+        HostedSession(endpoint(), mapId, "mobile-map", transport = transport).use { session ->
+            assertCode(TileflowErrorCode.INVALID_SESSION_RESPONSE) {
+                session.authorize(style, policy)
+            }
+        }
+        // A local API grants only loopback HTTP origins in the configuration's canonical form.
+        val response = fixture().getJSONObject("response")
+        for ((origin, accepted) in
+            listOf(
+                "http://localhost:8787" to true,
+                "http://[::1]:8787" to true,
+                "http://api.example.test" to false,
+                "http://10.0.2.2:8787" to false,
+                "http://127.0.0.1:8787/" to false,
+                "http://127.0.0.1:80" to false,
+                "HTTP://127.0.0.1:8787" to false,
+            )) {
+            response.put("resourceOrigins", JSONArray(listOf(origin)))
+            val parsed = runCatching {
+                HostedContract.parse(
+                    response.toString().toByteArray(),
+                    mapId,
+                    "fixture-session",
+                    "mobile-map",
+                    allowsLoopbackHttp = true,
+                )
+            }
+            assertEquals(origin, accepted, parsed.isSuccess)
+        }
+    }
+
+    @Test
     fun resourceRejectionRetiresAnInFlightRefreshBeforeItCanReturnAuthority() {
         for (expected in HostedContract.terminalCodes) {
             val started = CountDownLatch(1)
@@ -404,7 +484,7 @@ class HostedSessionTest {
                 check(release.await(5, TimeUnit.SECONDS))
                 response(request)
             }
-            val session = HostedSession(client(), mapId, "mobile-map", transport = transport)
+            val session = HostedSession(endpoint(), mapId, "mobile-map", transport = transport)
             val pool = Executors.newFixedThreadPool(2)
             try {
                 val result = pool.submit {
@@ -467,7 +547,7 @@ class HostedSessionTest {
             )
         }
         val tile = URI("https://tiles.tileflow.test/tiles/world/release-1/1/0/0.pbf")
-        HostedSession(client(), mapId, "mobile-map", transport = sessions).use { session ->
+        HostedSession(endpoint(), mapId, "mobile-map", transport = sessions).use { session ->
             ResourceLoader(
                     ResourcePolicy(
                         setOf("https://api.tileflow.test", "https://tiles.tileflow.test")
@@ -503,7 +583,7 @@ class HostedSessionTest {
                 mapOf("Retry-After" to "4"),
             )
         }
-        HostedSession(client(), mapId, "mobile-map", transport = sessions).use { session ->
+        HostedSession(endpoint(), mapId, "mobile-map", transport = sessions).use { session ->
             ResourceLoader(
                     policy,
                     hosted = session,
@@ -547,7 +627,7 @@ class HostedSessionTest {
             )
         }
         val reloads = AtomicLong(0)
-        HostedSession(client(), mapId, "mobile-map", transport = sessions).use { session ->
+        HostedSession(endpoint(), mapId, "mobile-map", transport = sessions).use { session ->
             ResourceLoader(
                     policy,
                     hosted = session,
@@ -572,7 +652,7 @@ class HostedSessionTest {
             else ResourcePayload(byteArrayOf(), 302, mapOf("Location" to version))
         }
         val model = URI("https://api.tileflow.test/team-models/tmd_0123456789abcdef/current.glb")
-        HostedSession(client(), mapId, "mobile-map", transport = sessions).use { session ->
+        HostedSession(endpoint(), mapId, "mobile-map", transport = sessions).use { session ->
             ResourceLoader(
                     policy,
                     hosted = session,
@@ -600,6 +680,8 @@ class HostedSessionTest {
     fun failureClassificationAndRetryAfter() {
         val quota = """{"code":"COMMERCIAL_MAP_LIMIT_REACHED","error":"Limit reached"}"""
         val limiter = """{"error":"Too many requests","requestId":"req_1"}"""
+        val mode = """{"code":"MOBILE_SESSION_MODE_REQUIRED","error":"Session mode"}"""
+        val large = """{"code":"MOBILE_SESSION_BODY_TOO_LARGE","error":"Too large"}"""
         for ((status, body, expected) in
             listOf(
                 Triple(401, "", TileflowErrorCode.CREDENTIAL_REJECTED),
@@ -610,10 +692,39 @@ class HostedSessionTest {
                 Triple(429, "<html>", TileflowErrorCode.RATE_LIMITED),
                 Triple(408, "", TileflowErrorCode.SESSION_UNAVAILABLE),
                 Triple(502, "", TileflowErrorCode.SESSION_UNAVAILABLE),
-                Triple(400, "", TileflowErrorCode.INVALID_SESSION_RESPONSE),
-                Triple(409, "", TileflowErrorCode.INVALID_SESSION_RESPONSE),
+                Triple(400, mode, TileflowErrorCode.SESSION_REJECTED),
+                Triple(413, large, TileflowErrorCode.SESSION_REJECTED),
+                Triple(400, "", TileflowErrorCode.SESSION_REJECTED),
+                Triple(409, "", TileflowErrorCode.SESSION_REJECTED),
+                Triple(451, "<html>", TileflowErrorCode.SESSION_REJECTED),
+                Triple(302, "", TileflowErrorCode.INVALID_SESSION_RESPONSE),
+                Triple(200, "", TileflowErrorCode.INVALID_SESSION_RESPONSE),
             )) {
             assertEquals("$status", expected, HostedContract.failure(status, body.toByteArray()))
+            val rejection = HostedContract.rejection(status, body.toByteArray())
+            assertEquals("$status", expected, rejection.code)
+            assertEquals(
+                "$status",
+                if (body == mode) "MOBILE_SESSION_MODE_REQUIRED"
+                else if (body == large) "MOBILE_SESSION_BODY_TOO_LARGE" else null,
+                rejection.context.reason,
+            )
+            assertEquals(
+                "$status",
+                status.takeIf { expected == TileflowErrorCode.SESSION_REJECTED },
+                rejection.context.status,
+            )
+            assertEquals(
+                "$status",
+                !expected.isRecoverable,
+                expected in HostedContract.terminalCodes,
+            )
+            assertEquals(
+                "$status",
+                status in setOf(401, 403, 404, 400, 409, 413, 451) ||
+                    expected == TileflowErrorCode.QUOTA_EXCEEDED,
+                expected in HostedContract.terminalCodes,
+            )
         }
         // Wed, 21 Oct 2015 07:28:00 GMT
         val now = 1_445_412_480_000L
@@ -632,20 +743,21 @@ class HostedSessionTest {
 
     @Test
     fun publicMetadataAndThirdPartyBytesUseProviderWithoutGrantLeakage() {
-        val client = client()
         val source =
-            client.map(
-                mapId,
-                surfaceId = "mobile-map",
-                publicResourceOrigins = setOf(URI("https://public.example")),
-            )
+            TileflowMapSource.hosted(
+                    mapId,
+                    publicResourceOrigins = setOf(URI("https://public.example")),
+                    configuration = configuration(),
+                )
+                .loadable { error("The process configuration is not read.") }
+        val endpoint = requireNotNull(source.hosted)
         val sessionTransport = FakeTransport { request, _ -> response(request) }
         val resourceTransport = FakeTransport { _, _ ->
             ResourcePayload(byteArrayOf(1, 2), 200, emptyMap())
         }
-        HostedSession(client, mapId, "mobile-map", transport = sessionTransport).use { session ->
+        HostedSession(endpoint, mapId, "mobile-map", transport = sessionTransport).use { session ->
             ResourceLoader(
-                    source.policy(),
+                    source.policy,
                     hosted = session,
                     publicMetadataUrls = source.publicMetadataUrls,
                     transport = resourceTransport,
@@ -677,8 +789,17 @@ class HostedSessionTest {
         }
     }
 
-    private fun client() =
-        TileflowClient(URI("https://api.tileflow.test"), "tf_public_" + "a".repeat(48))
+    private val mapCredential = "tf_public_" + "a".repeat(48)
+
+    /** The map credential and a different services credential, which must never reach the map. */
+    private fun configuration() =
+        TileflowConfiguration(
+            apiOrigin = URI("https://api.tileflow.test"),
+            servicesCredential = TileflowCredential("tf_public_" + "b".repeat(48)),
+            mapCredential = TileflowCredential(mapCredential),
+        )
+
+    private fun endpoint() = HostedEndpoint(configuration())
 
     private val fixtureErrors =
         mapOf(
@@ -688,6 +809,7 @@ class HostedSessionTest {
             "rateLimited" to TileflowErrorCode.RATE_LIMITED,
             "sessionUnavailable" to TileflowErrorCode.SESSION_UNAVAILABLE,
             "invalidSessionResponse" to TileflowErrorCode.INVALID_SESSION_RESPONSE,
+            "sessionRejected" to TileflowErrorCode.SESSION_REJECTED,
         )
 
     private fun sequences() =
@@ -720,12 +842,18 @@ class HostedSessionTest {
             emptyMap(),
         )
 
-    private fun assertCode(code: TileflowErrorCode, message: String? = null, block: () -> Unit) {
+    private fun assertCode(
+        code: TileflowErrorCode,
+        message: String? = null,
+        reason: String? = null,
+        block: () -> Unit,
+    ) {
         try {
             block()
             fail("Expected $code ${message.orEmpty()}")
         } catch (error: TileflowMapException) {
             assertEquals(message, code, error.code)
+            assertEquals(message, reason, error.context.reason)
         }
     }
 

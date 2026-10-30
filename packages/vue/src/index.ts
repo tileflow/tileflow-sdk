@@ -30,6 +30,7 @@ import {
 import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
+  attachTileflowHorizonQueries,
   attachTileflowLabelPlacement,
   attachTileflowMap3D,
   attachTileflowMapLifecycle,
@@ -930,6 +931,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       attachTileflowNotices(map);
       attachTileflowNauticalLights(map);
       attachTileflowLabelPlacement(map);
+      // Feature queries and taps keep working once a steep pitch shows the horizon.
+      attachTileflowHorizonQueries(map);
       themeController =
         runtime.theme === undefined
           ? null

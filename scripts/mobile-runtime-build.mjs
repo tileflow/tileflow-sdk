@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
 import {cp, mkdir, readFile, writeFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
-import {dirname, resolve} from 'node:path';
+import {dirname, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {collectRuntimeNotices} from './mobile-runtime-notices.mjs';
 
@@ -24,6 +24,26 @@ const worker = await build({
   metafile: true,
 });
 const hashPlaceholder = 'TILEFLOW_RUNTIME_CONTENT_HASH_PLACEHOLDER';
+// The runtime reads Core's native entry from source so unused modules drop out, and replaces
+// Core's bundled URL parser, which carries IDNA tables for engines without a conforming URL, with
+// the WebView's own. Nothing else in Core changes.
+const coreSource = resolve(root, 'packages/core/src');
+const platformUrl = resolve(packageRoot, 'src/platform-url.ts');
+const substituted = new Set();
+const coreNativeSource = {
+  name: 'tileflow-core-native-source',
+  setup(build) {
+    build.onResolve({filter: /^@tileflow\/core\/native$/}, () => {
+      substituted.add('entry');
+      return {path: resolve(coreSource, 'native.ts')};
+    });
+    build.onResolve({filter: /^\.\/native-url-provider$/}, (args) => {
+      if (!resolve(args.importer).startsWith(`${coreSource}${sep}`)) return undefined;
+      substituted.add('parser');
+      return {path: platformUrl};
+    });
+  },
+};
 await mkdir(output, {recursive: true});
 const result = await build({
   absWorkingDir: packageRoot,
@@ -40,9 +60,14 @@ const result = await build({
     TILEFLOW_RUNTIME_HASH: JSON.stringify(hashPlaceholder),
     TILEFLOW_MAPLIBRE_WORKER: JSON.stringify(worker.outputFiles[0].text),
   },
+  plugins: [coreNativeSource],
 });
+if (!substituted.has('entry') || !substituted.has('parser'))
+  throw new Error('The runtime no longer reads Core native from source with the platform URL.');
 const forbidden = Object.keys(result.metafile.inputs).filter((path) =>
-  /\/(?:react|react-dom|react-native|packages\/(?:cli|dev|capture))\//u.test(path),
+  /\/(?:react|react-dom|react-native|packages\/(?:cli|dev|capture)|whatwg-url|tr46|punycode)\//u.test(
+    path.replaceAll('\\', '/'),
+  ),
 );
 if (forbidden.length)
   throw new Error(`Unexpected dependencies in mobile runtime: ${forbidden.join(', ')}`);

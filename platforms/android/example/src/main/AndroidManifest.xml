@@ -1,4 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+        Showing the person's location needs the approximate location, and the precise location for
+        a puck that follows a street. The SDK never asks for ACCESS_BACKGROUND_LOCATION.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <application android:label="Tileflow" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:usesCleartextTraffic="true">
         <activity android:name=".ViewExample" android:exported="true">
             <intent-filter>
@@ -7,5 +13,12 @@
             </intent-filter>
         </activity>
         <activity android:name=".ComposeExample" android:exported="true" />
+        <activity android:name=".ServicesExample" android:exported="true" />
+        <!--
+            Hosted maps and Tileflow services read their configuration from the string resources
+            tileflow_map_credential, tileflow_services_credential and tileflow_api_origin unless
+            the application calls Tileflow.configure. Use publishable credentials restricted to
+            this application.
+        -->
     </application>
 </manifest>

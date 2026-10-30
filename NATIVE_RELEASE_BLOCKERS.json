@@ -1,0 +1,22 @@
+{
+  "kind": "tileflow-public-release-blockers",
+  "schemaVersion": 1,
+  "blockers": [
+    {
+      "id": "native-publish-environment",
+      "summary": "Create the protected native-publish environment: main only, a required reviewer and no administrator bypass."
+    },
+    {
+      "id": "maven-central-namespace",
+      "summary": "Verify the dev.tileflow namespace in the Central Publisher Portal and store a publishing user token in the native-publish environment."
+    },
+    {
+      "id": "native-release-signing-key",
+      "summary": "Create the release signing key, publish its public key to keyserver.ubuntu.com and keys.openpgp.org, and store the key, its passphrase and its fingerprint in the native-publish environment."
+    },
+    {
+      "id": "swift-distribution-repository",
+      "summary": "Create the public tileflow/tileflow-swift repository with its branch and tag rules, and store its write deploy key in the native-publish environment."
+    }
+  ]
+}

@@ -132,8 +132,7 @@ export function UnemploymentMap({
 
 Values survive theme changes: they are set again once the new style has loaded. `values: null`
 removes them. Rows keyed by codes the polygons do not carry are joined before they reach the app,
-on a server or at build time; see
-[boundary areas and choropleths](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/boundary-areas-and-choropleths.md#join-by-codes-the-polygons-do-not-carry).
+on a server or at build time.
 
 ## Camera
 

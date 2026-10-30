@@ -11,13 +11,11 @@ for (const outcome of ['ready', 'invalid'] as const) {
     const cwd = await mkdtemp(join(tmpdir(), 'tileflow-session-start-'));
     const config = join(cwd, 'tileflow.config.ts');
     await writeFile(config, 'export default {};');
-    let watcher: FSWatcher | undefined;
     const emit = FSWatcher.prototype.emit;
-    t.mock.method(
+    const notifications = t.mock.method(
       FSWatcher.prototype,
       'emit',
       function (this: FSWatcher, event: string, ...args: unknown[]) {
-        if (event === 'ready') watcher = this;
         if (event === 'all' || event === 'raw') return false;
         return Reflect.apply(emit, this, [event, ...args]) as boolean;
       },
@@ -37,7 +35,10 @@ for (const outcome of ['ready', 'invalid'] as const) {
       async () => {
         const generation = ++builds;
         if (generation === 1) {
-          assert.ok(watcher);
+          const watcher = notifications.mock.calls.find(
+            (call) => call.arguments[0] === 'ready',
+          )?.this;
+          assert.ok(watcher instanceof FSWatcher);
           Reflect.apply(emit, watcher, ['all', 'change', config]);
           await secondStarted;
         } else {

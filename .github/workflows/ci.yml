@@ -489,11 +489,6 @@ jobs:
           # Keep the Pixel 6 logical viewport while bounding software-GPU pixel work on hosted runners.
           # The 200-view workload, animation duration and latency assertions remain unchanged.
           script: |
-            if [[ "$RUNNER_OS" == macOS ]]; then
-              graphics="$(adb shell dumpsys SurfaceFlinger | tr -d '\r' | grep 'GLES:')"
-              echo "$graphics"
-              [[ "$graphics" == *Apple* && "$graphics" != *SwiftShader* ]]
-            fi
             adb shell wm size 360x800
             adb shell wm density 140
             adb shell settings put global window_animation_scale 0

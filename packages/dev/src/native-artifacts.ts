@@ -1,27 +1,31 @@
-import {createHash} from 'node:crypto';
 import {
   convertFilter,
-  validateStyleMin,
   type FilterSpecification,
+  validateStyleMin,
 } from '@maplibre/maplibre-gl-style-spec';
+import {createHash} from 'node:crypto';
 import {
   getTileflowStyleFontFaces,
+  type MapLibreStyle,
   serializeCanonicalJson,
   steadyTileflowNauticalLights,
-  type MapLibreStyle,
-  tileflowStyleFontFacesMetadataKey,
   tileflowIconIdPattern,
   tileflowIconPackageLimits,
+  tileflowStyleFontFacesMetadataKey,
 } from '@tileflow/core';
-import type {TileflowBuildCatalog, TileflowBuildStyles} from '@tileflow/core/build';
+import {
+  prepareTileflowNativePathGround,
+  type TileflowBuildCatalog,
+  type TileflowBuildStyles,
+} from '@tileflow/core/build';
 import {
   createTileflowNativeDiagnostic,
   type TileflowNativeBuildRecord,
   TileflowNativeCompatibilityError,
   type TileflowNativeDiagnostic,
   tileflowNativeProfileLimits,
-  validateTileflowNativeStyle,
   validateTileflowNativePreparedStyle,
+  validateTileflowNativeStyle,
 } from '@tileflow/core/native-profile';
 import type {TileflowBuildAsset} from './icons';
 import {rebindNativeLayerReferences} from './native-layer-references';
@@ -76,7 +80,9 @@ export function lowerTileflowNativeCompiledStyles(
     for (const theme of Object.keys(input[map]!).sort()) {
       const web = input[map]![theme]!;
       // Native renderers have no feature state, so Nautical lights show steadily there.
-      const original = steadyTileflowNauticalLights(web);
+      const steady = steadyTileflowNauticalLights(web);
+      const original = prepareTileflowNativePathGround(steady);
+      const pathGroundFallback = original !== steady;
       try {
         const options = {...urlOptions(map, theme, policy), deferFontClosure: true};
         const pending = validateTileflowNativeStyle(original, options);
@@ -159,6 +165,7 @@ export function lowerTileflowNativeCompiledStyles(
           outputLayers: lowered.outputLayers,
           projection: lowered.projection,
           ...(lowered.sky ? {sky: lowered.sky} : {}),
+          ...(pathGroundFallback ? {pathGround: 'ground-fallback' as const} : {}),
           layers: lowered.layers,
           symbolOverlap: lowered.symbolOverlap,
         });

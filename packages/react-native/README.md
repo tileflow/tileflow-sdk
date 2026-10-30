@@ -1,6 +1,6 @@
 # @tileflow/react-native
 
-`@tileflow/react-native` provides a Tileflow `Map` backed by MapLibre Native on iOS and Android. It is pre-release. The first alpha release requires the bootstrap and Trusted Publisher checks in the [publishing guide](https://github.com/tileflow/tileflow-sdk/blob/main/PUBLISHING.md).
+`@tileflow/react-native` provides a Tileflow `Map` backed by MapLibre Native on iOS and Android. It is pre-release. Publication requires the repository’s protected release workflow.
 
 The package targets exactly React 19.2.0, React Native 0.83.10 and `@maplibre/maplibre-react-native` 11.5.0, with MapLibre Native Android 13.6.1 and iOS 6.31.0 through the pinned integration below. Expo consumers use Expo 55.0.31 with a native development build; Expo Go does not contain the required native modules.
 
@@ -99,7 +99,7 @@ Theme and `timeOfDay` changes cross-fade over 450 ms by default: a snapshot of t
 <Map source={source} themeBlend={{themes: ['night', 'dusk', 'day'], position}} style={{flex: 1}} />
 ```
 
-The first blend of a set of themes prepares every theme's style and replaces the native style once; moving `position` later changes the map without loading. Removing `themeBlend` returns to `theme`. Both keep the same native Map, context and session, and `ready` events wait for the fade. The device's reduce-motion setting changes at once. See [theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md#react-native) for what follows the position on native maps.
+The first blend of a set of themes prepares every theme's style and replaces the native style once; moving `position` later changes the map without loading. Removing `themeBlend` returns to `theme`. Both keep the same native Map, context and session, and `ready` events wait for the fade. The device's reduce-motion setting changes at once. See [theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md) for what follows the position on native maps.
 
 ## Boundary choropleths
 
@@ -178,15 +178,11 @@ Relative URLs are resolved with Core's native URL policy. Protected resources ar
 
 Glyph templates use a finite set of exact font-stack expansions. A later theme may extend that same template only through an acknowledged append-only finite union; it cannot change the resource scope, origin or identity.
 
-See [Private native resource admission](./docs/native-admission.md) for the transport and security boundaries.
-
 ## Hosted mobile application configuration
 
 Hosted native session delivery uses a scoped, revocable, publishable **mobile application credential** configured once in the native application. It authenticates the distributed application, not its end user. The manifest supplies `mapId`, `apiUrl` and `usageMode`; Tileflow requires the manifest API origin to exactly match the configured canonical HTTPS origin before bootstrap.
 
 There is intentionally no credential prop, JS setter, Provider, client object, package-name/bundle-ID authentication or attestation path in this version.
-
-See [Native application configuration](./docs/native-configuration.md) for the exact Android resource and iOS Info.plist keys, credential grammar, origin normalization, rotation/revocation guidance and threat model.
 
 ## Map options and presentation
 
@@ -247,7 +243,7 @@ $MLRN.post_install(installer)
 tileflow_native_admission_post_install(installer)
 ```
 
-Do not add a second MapLibre Native CocoaPod. See [Private native resource admission](./docs/native-admission.md) for installation-order and teardown details.
+Do not add a second MapLibre Native CocoaPod.
 
 ## Source-checkout harness
 
@@ -276,8 +272,7 @@ remain in native vector or GeoJSON layers and are selected through semantic rend
 queries rather than thousands of React marker views.
 
 The application owns persistent selection and its presentation. The SDK emits normalized
-annotation or POI targets but no popup, callout, tooltip, sheet, panel or modal renderer. See
-[Native interaction contract](./docs/native-interactions.md).
+annotation or POI targets but no popup, callout, tooltip, sheet, panel or modal renderer.
 
 ## Current boundary
 
@@ -297,7 +292,3 @@ Source and tests describe contracts; they do not establish that a native build, 
 fix arrives. Applications can compose a validated foreground fix through the existing accessible
 annotation and controlled-camera contracts while keeping permission, provider lifetime, privacy
 policy, status UI and recenter controls outside Tileflow.
-
-See [Application-owned foreground location](./docs/native-location.md) for the package-owned
-source-checkout recipe. The recipe is excluded from package exports and packed runtime files and
-imports no concrete location provider.

@@ -537,6 +537,22 @@ test('the 3D buildings design is read only in a known version and shape', () => 
   assert.equal(read.shadows, false);
   assert.equal(read.occlusion, true);
   assert.equal(read.groundOcclusion, 0.16);
+  assert.equal(read.groundOcclusionRadius, 3);
+  for (const [groundOcclusionRadius, expected] of [
+    [0, 0],
+    [1.5, 1.5],
+    [20, 20],
+    [-1, 3],
+    [21, 3],
+    [Infinity, 3],
+    [NaN, 3],
+  ]) {
+    const ground = readTileflowBuildings3D({
+      [tileflowBuildingsMetadataKey]: {...described, groundOcclusionRadius},
+    })!;
+    assert.equal(ground.groundOcclusionRadius, expected);
+    assert.equal(ground.groundOcclusion, read.groundOcclusion);
+  }
   for (const [groundOcclusion, expected] of [
     [0, 0],
     [0.12, 0.12],

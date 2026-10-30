@@ -439,6 +439,7 @@ export function createTileflowBuildings3D(
         return prepared ? {mesh: prepared.mesh, data: prepared.data} : emptyTile;
       },
       empty: emptyTile,
+      isReady: (value) => value === emptyTile || value.gl !== undefined,
       release(value) {
         if (gl) release(gl, value);
       },
@@ -504,7 +505,7 @@ export function createTileflowBuildings3D(
     models.upload(context);
     if (modelKey !== models.key()) map.triggerRepaint();
     let budget = 2;
-    for (const {value: entry} of camera.ready()) {
+    for (const {value: entry} of camera.built()) {
       if (entry.gl || !entry.data) continue;
       if (budget-- <= 0) {
         map.triggerRepaint();
@@ -951,7 +952,10 @@ export function createTileflowBuildings3D(
 
   /** The view a model's level of detail is chosen for: the camera round it. */
   function modelView(model: TileflowPlacedModel): TileflowModelLevelView {
-    return {camera: modelCamera(model)};
+    return {
+      camera: modelCamera(model),
+      verticalFieldOfView: map.getVerticalFieldOfView?.(),
+    };
   }
 
   function levelOf(model: TileflowPlacedModel): number {
@@ -1098,6 +1102,7 @@ export function createTileflowBuildings3D(
     | 'gradients'
     | 'powers'
     | 'materialColours'
+    | 'colorScales'
     | 'materials'
     | 'appearance',
     Float32Array
@@ -1121,6 +1126,7 @@ export function createTileflowBuildings3D(
     const gradients = new Float32Array(28);
     const powers = new Float32Array(7);
     const materialColours = new Float32Array(28);
+    const colorScales = new Float32Array(7);
     const materials = new Float32Array(28);
     const appearance = new Float32Array(21);
     for (const [role, id] of Object.entries(tileflowModelLightingRoles) as [
@@ -1131,6 +1137,7 @@ export function createTileflowBuildings3D(
         to = themes[upper]!.modelLighting?.[role];
       const sampledFrom = sampleModelRole(from, `${identity}:${role}`);
       const sampledTo = sampleModelRole(to, `${identity}:${role}`);
+      colorScales[id] = (from?.colorScale ?? 1) * (1 - mix) + (to?.colorScale ?? 1) * mix;
       appearance[id * 3] =
         (from?.shading === 'map' ? 1 - mix : 0) + (to?.shading === 'map' ? mix : 0);
       appearance[id * 3 + 1] =
@@ -1165,7 +1172,16 @@ export function createTileflowBuildings3D(
         gradients[id * 4 + component] = first[component]! * (1 - mix) + second[component]! * mix;
       powers[id] = first[4] * (1 - mix) + second[4] * mix;
     }
-    const result = {strengths, colours, gradients, powers, materialColours, materials, appearance};
+    const result = {
+      strengths,
+      colours,
+      gradients,
+      powers,
+      materialColours,
+      colorScales,
+      materials,
+      appearance,
+    };
     if (modelLightingCache.size >= 1024)
       modelLightingCache.delete(modelLightingCache.keys().next().value!);
     modelLightingCache.set(identity, result);
@@ -1374,20 +1390,21 @@ export function createTileflowBuildings3D(
     masks = {};
     const shown = visibleScale();
     const entries = variant === args.shaderData.variantName && shown > 0 && ground ? drawn() : [];
-    if (design().occlusion && entries.length > 0) {
+    const contactRadius = mixed((entry) => entry.groundOcclusionRadius ?? occlusion.ground);
+    if (design().occlusion && contactRadius > 0 && entries.length > 0) {
       const program = programs.contact!;
       masks.contact = contactMask.render(context, () => {
         context.useProgram(program.program);
         context.uniform1f(program.uniforms.u_scale!, shown);
         context.uniform1f(program.uniforms.u_metres!, camera.metres);
-        context.uniform1f(program.uniforms.u_band!, occlusion.ground);
+        context.uniform1f(program.uniforms.u_band!, contactRadius);
         context.uniform1f(
           program.uniforms.u_band_strength!,
           mixed((entry) => entry.groundOcclusion ?? occlusion.groundStrength) * visibleOpacity(),
         );
         for (const tile of entries) {
           const {x, y, value} = tile;
-          const ranges = viewRanges(args, tile, occlusion.ground, true);
+          const ranges = viewRanges(args, tile, contactRadius, true);
           if (!ranges.length) continue;
           const {contact} = value.gl!;
           project(context, program, args, x, y);
@@ -1607,6 +1624,12 @@ export function createTileflowBuildings3D(
         context.uniform3fv(m.u_sun_light!, light.sunLight);
         context.uniform3fv(m.u_sky_light!, light.skyLight);
         context.uniform1f(m.u_night!, light.night);
+        context.uniform3f(
+          m.u_facade_shading!,
+          mixed((entry) => (entry.verticalGradient ? 1 : 0)),
+          occlusionOn ? mixed((entry) => entry.groundOcclusion ?? 0.16) : 0,
+          mixed((entry) => entry.groundOcclusionRadius ?? 3),
+        );
         context.uniform1f(
           m.u_ambient_occlusion!,
           occlusionOn ? mixed((entry) => entry.modelOcclusion ?? 0.75) : 0,
@@ -1623,6 +1646,7 @@ export function createTileflowBuildings3D(
           context.uniform4fv(m.u_role_emission_gradient!, emission.gradients);
           context.uniform1fv(m.u_role_emission_power!, emission.powers);
           context.uniform4fv(m.u_role_colour!, emission.materialColours);
+          context.uniform1fv(m.u_role_color_scale!, emission.colorScales);
           context.uniform4fv(m.u_role_material!, emission.materials);
           context.uniform3fv(m.u_role_appearance!, emission.appearance);
           const at = placed(stand.tileX, stand.tileY);

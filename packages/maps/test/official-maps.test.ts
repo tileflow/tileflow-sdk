@@ -1496,9 +1496,9 @@ test('Streets buildings switch to native extrusions only without the flat render
       modules: {buildings: refine(buildings)},
     });
   assert.throws(() => compileOfficialMap(extend({mode: '3d'}), 'light'), {
-    code: 'unknown-or-circular-anchor',
+    code: 'unknown-refinement-target',
     message:
-      /beside buildings\.flat\.fill, which buildings draws only in mode 'flat'.*refine\(\{mode: '3d', renderStack: reset\(\)\}\)/u,
+      /targets buildings\.flat\.fill, which buildings draws only in mode 'flat'.*refine\(\{mode: '3d', renderStack: reset\(\)\}\)/u,
   });
 
   const layerIds = compileOfficialMap(extend({mode: '3d', renderStack: reset()}), 'light')
@@ -1523,6 +1523,9 @@ test('Streets colours the water, vegetation and wood parts of models in every th
       resolveMap(streets).themes[theme]!.tokens.color['hydro.water'],
     );
     assert.equal(buildings.modelLighting?.unclassified?.emissiveStrength, 0);
-    assert.equal(buildings.modelColors.glass, undefined);
+    assert.equal(
+      buildings.modelColors.glass,
+      resolveMap(streets).themes[theme]!.tokens.color['buildings.modelGlass'],
+    );
   }
 });

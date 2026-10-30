@@ -124,10 +124,23 @@ test('native build writes a separate strict v1 manifest and renderer record', as
   const manifest = JSON.parse(await readFile(join(cwd, 'output/native/manifest.json'), 'utf8'));
   parseTileflowRuntimeManifest(manifest);
   assert.equal(manifest.renderer, undefined);
+  const style = JSON.parse(
+    await readFile(join(cwd, 'output/native/styles/main/light.json'), 'utf8'),
+  );
+  const image = style.sources['tileflow-landcover-underlay'];
+  assert.equal(image.type, 'image');
+  assert.match(image.url, /^\.\.\/\.\.\/images\/main\/[a-f0-9]{64}\.png$/u);
+  const png = await readFile(join(cwd, 'output/native/styles/main', image.url));
+  assert.equal(png.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
   const record = JSON.parse(await readFile(join(cwd, 'output/native/native-build.json'), 'utf8'));
   assert.equal(record.validation, 'static-artifacts');
   assert.equal(record.schemaVersion, 2);
   assert.equal(record.preparationVersion, 'native-lowering-v1');
+  assert.equal(
+    record.transformations.find(({theme}: {theme: string}) => theme === 'light').pathGround,
+    'ground-fallback',
+  );
+  assert.ok(!JSON.stringify(style.sources).includes('tileflow-path-ground:'));
   assert.ok(
     record.transformations.every(
       ({projection}: {projection: string}) => projection === 'globe-to-mercator',

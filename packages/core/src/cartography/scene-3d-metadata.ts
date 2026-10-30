@@ -15,7 +15,13 @@ import {tileflowDefaultStreetLightsDesign} from '../street-lights';
 import type {TileflowDomainCompileContext} from './context';
 import {toMapLibreStyleValue} from './values';
 
-type Layer = {id: string; paint?: Record<string, unknown>};
+type Layer = {
+  id: string;
+  type?: string;
+  layout?: {visibility?: string};
+  metadata?: Record<string, unknown>;
+  paint?: Record<string, unknown>;
+};
 
 // The colour of the map's buildings in 3D: its 3D building pass, its extrusion, then its roofs.
 const colourSources: readonly (readonly [string, string])[] = [
@@ -117,7 +123,7 @@ export function tileflowBuildings3DDesignOf(
                       ...own,
                       emissiveStrength: number(own.emissiveStrength, 0),
                       ...Object.fromEntries(
-                        ['emissiveVariation', 'colorMix', 'metallic', 'roughness']
+                        ['emissiveVariation', 'colorMix', 'colorScale', 'metallic', 'roughness']
                           .filter((key) => own[key] !== undefined)
                           .map((key) => [key, number(own[key], 0)]),
                       ),
@@ -166,7 +172,20 @@ export function tileflowBuildings3DDesignOf(
     shadows: typeof style.shadows === 'boolean' ? style.shadows : defaults.shadows,
     occlusion: typeof style.occlusion === 'boolean' ? style.occlusion : defaults.occlusion,
     groundOcclusion: number(style.groundOcclusion, defaults.groundOcclusion),
+    groundOcclusionRadius: number(style.groundOcclusionRadius, defaults.groundOcclusionRadius),
     modelOcclusion: number(style.modelOcclusion, defaults.modelOcclusion),
+    ...(style.flatFootprints === false
+      ? {
+          flatLayers: layers
+            .filter(
+              (layer) =>
+                layer.id.startsWith('tileflow-buildings-') &&
+                (layer.type === 'fill' || layer.type === 'line') &&
+                layer.metadata?.['tileflow:3d-toggle'] === undefined,
+            )
+            .map((layer) => ({id: layer.id, visible: layer.layout?.visibility !== 'none'})),
+        }
+      : {}),
     ...placedModels(style.models, buildingModels),
     ...modelColours(style.modelColors),
     ...landmarksOf(style.landmarks, tileflowLandmarks),

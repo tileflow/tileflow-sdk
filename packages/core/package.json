@@ -25,14 +25,13 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "docs",
     "LICENSE",
     "THIRD_PARTY_NOTICES.md"
   ],
   "scripts": {
     "prepack": "node ../../scripts/package-license.mjs --prepare",
     "postpack": "node ../../scripts/package-license.mjs --clean",
-    "build": "tsup --config tsup.build.config.ts && tsup --config tsup.native-profile.config.ts && tsup --config tsup.browser.config.ts && tsup --config tsup.native.config.ts && cp ../../docs/modules-api-reference.json dist/config-reference.json",
+    "build": "tsup --config tsup.build.config.ts && tsup --config tsup.native-profile.config.ts && tsup --config tsup.browser.config.ts && tsup --config tsup.native.config.ts && cp reference/modules-api-reference.json dist/config-reference.json",
     "reference:check": "tsx scripts/generate-config-reference.ts --check",
     "reference:generate": "tsx scripts/generate-config-reference.ts --write",
     "verify": "pnpm run build && tsx --test test/*.test.ts",

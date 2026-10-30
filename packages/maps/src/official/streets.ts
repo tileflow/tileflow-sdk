@@ -23,6 +23,7 @@ import {
   type TileflowRoadClassStyle,
   type TileflowSymbolStyle,
   type TileflowThemeColorValue,
+  type TileflowThemeNumberValue,
   token,
   transit,
   water,
@@ -31,6 +32,7 @@ import {
 } from '@tileflow/core';
 import {streetsFonts, streetsIcons, streetsModels} from '../assets';
 import {mapboxRailTransitStyle} from './mapbox-rail';
+import {withStreetsCartography} from './streets-cartography';
 import {withStreetsConstruction} from './streets-construction';
 import {streetsPoiImage} from './streets-poi';
 import {streetsThemes, streetsVisual} from './streets-themes';
@@ -282,7 +284,7 @@ function cityRoadCasingColorStops(minZoom: number): ColorStops {
     minZoom,
     streetsDetailPalette.roadCasing,
     mapboxRoadPalette.detailCasing,
-  );
+  ).map(([level, color]) => [level === 13 ? 14 : level, color] as const);
 }
 
 // Standard's surface casings start at street detail; an overview casing
@@ -442,9 +444,8 @@ function sampleRoadWidth(widths: WidthStops, level: number): number {
   return widths.at(-1)![1];
 }
 
-// Keep the original regional curve through z10 and its exact detailed curve
-// from z15. Intermediate stops separate avenues from highways without losing
-// the local street texture. Ramps retain their independently sampled widths.
+// Keep regional connectors readable before the city profile takes over at z12.
+// Ramps retain their independently sampled widths.
 function cityRoadWidths(widths: WidthStops, at12: number, at14: number): WidthStops {
   return [
     widths[0],
@@ -1342,8 +1343,6 @@ function cityRoadStyle(
     surface: {casing, fill},
     bridge: {
       casing: {...casing, cap: 'butt', join: 'miter', width: roadCasingWidth((minZoom ?? 0) < 12)},
-      // Local structures join their streets at z12; major structures take over
-      // the continuous overview strokes at z13.
       fill: {
         ...fill,
         cap: 'round',
@@ -1521,7 +1520,7 @@ function roadLabelStyle(kind: RoadLabelKind, minZoom: number): TileflowSymbolSty
   };
 }
 
-export const streets = bindOfficialMapTheme(
+const streetsBase = bindOfficialMapTheme(
   defineMap({
     id: 'streets',
     version: 1,
@@ -1541,6 +1540,7 @@ export const streets = bindOfficialMapTheme(
     defaultTheme: 'light',
     systemThemes: {light: 'light', dark: 'dark'},
     projection: 'globe', // 'globe' | 'mercator'. Globe becomes planar at street zooms.
+    camera: {adaptivePerspective: true},
     // Each theme paints the sky seen when the camera tilts up the street; night shows stars.
     sky: {
       color: token.color('sky.color'),
@@ -2326,14 +2326,17 @@ export const streets = bindOfficialMapTheme(
           // stand beside the flat fill, so they require this mode.
           mode: 'flat',
           threeDimensional: {
+            flatFootprints: false,
             edgeRadius: 1.5,
-            groundOcclusion: 0.12,
+            groundOcclusion: 0.07,
+            groundOcclusionRadius: 1.5,
             // Models name pools, planting and timber with these parts to follow the map's colours.
             modelColors: {
               surface: token.color('buildings.modelSurface'),
               secondary: token.color('buildings.modelSecondary'),
               roof: token.color('buildings.modelRoof'),
               accent: token.color('buildings.modelAccent'),
+              glass: token.color('buildings.modelGlass'),
               water: token.color('buildings.modelWater'),
               vegetation: token.color('buildings.modelVegetation'),
               wood: token.color('buildings.modelWood'),
@@ -2359,28 +2362,15 @@ export const streets = bindOfficialMapTheme(
                 metallic: 0,
               },
               window: {
-                // Glass keeps its original role colour even on a shared stone part.
-                partColorMix: 0,
-                roughness: 0,
-                metallic: 1,
-                emissiveStrength: token.number('buildings.modelWindow.strength'),
-                emissiveVariation: token.number('buildings.modelWindow.variation'),
-                emissiveHeight: [0, 0.9, 0, 1, 0.5],
-                colorVariation: {
-                  hue: [
-                    token.number('buildings.modelWindow.hueLow'),
-                    token.number('buildings.modelWindow.hueHigh'),
-                  ],
-                  saturation: [
-                    token.number('buildings.modelWindow.saturationLow'),
-                    token.number('buildings.modelWindow.saturationHigh'),
-                  ],
-                  lightness: [
-                    token.number('buildings.modelWindow.lightnessLow'),
-                    token.number('buildings.modelWindow.lightnessHigh'),
-                  ],
-                  space: 'linear',
-                },
+                shading: 'map',
+                ambientOcclusion: 0.32,
+                color: token.color('buildings.modelSurface'),
+                colorScale: 0.94,
+                partColorMix: 1,
+                roughness: 1,
+                metallic: 0,
+                emissiveStrength: 0,
+                emissiveVariation: 0,
               },
               ...Object.fromEntries(
                 (['unclassified', 'door', 'lamp', 'logo'] as const).map((role) => [
@@ -2858,12 +2848,11 @@ export const streets = bindOfficialMapTheme(
                 minZoom: 6,
               },
               detail: {
-                // World splits route lines more often than the reference source. A shorter
-                // interval keeps route references available in regional views; collision
-                // still suppresses adjacent shields, and street-scale repetition stays sparse.
-                spacing: zoom.linear([
-                  [11, 220],
-                  [13, 300],
+                // Reserve room for the road network in metropolitan views; retain the
+                // existing street-detail interval from z14.
+                spacing: zoom.linear<TileflowThemeNumberValue>([
+                  [11, token.number('labels.shield.spacing11')],
+                  [13, token.number('labels.shield.spacing13')],
                   [14, 600],
                 ]),
               },
@@ -3004,7 +2993,9 @@ export const streets = bindOfficialMapTheme(
         detailZoom: 18,
         // World also calls botanical collections gardens. Keep only the main destinations;
         // zooming in must not turn individual planting sections into named POIs.
-        maxRankByType: {garden: 1},
+        // Generic airport POIs can describe travel businesses or misplaced listings.
+        // Keep only the highest rank; mapped airports use labels.aerodrome.
+        maxRankByType: {airport: 0, garden: 1},
         densityByCategory: {
           lodging: 1,
           'park-nature': 3,
@@ -3047,3 +3038,5 @@ export const streets = bindOfficialMapTheme(
     },
   }),
 );
+
+export const streets = bindOfficialMapTheme(withStreetsCartography(streetsBase));

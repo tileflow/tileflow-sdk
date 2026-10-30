@@ -112,3 +112,64 @@ test('the camera covers its tiles without a source to read and over tiles that h
   assert.deepEqual(empty.coverage(), covered);
   empty.dispose();
 });
+
+test('GPU upload budget never leaves a previously drawn tile empty during detail replacement', async (t) => {
+  t.mock.method(globalThis, 'fetch', async () => new Response(new Uint8Array(0)));
+  type Mesh = {gpu: boolean};
+  const released: Mesh[] = [];
+  const map = {
+    getBearing: () => 0,
+    getCenter: () => ({lat: 40.41, lng: -3.69}),
+    getPitch: () => 0,
+    getZoom: () => 16,
+    getSource: () => ({tiles: ['https://gpu-camera-test.invalid/{z}/{x}/{y}.pbf'], maxzoom: 15}),
+    on() {},
+    off() {},
+    triggerRepaint() {},
+  };
+  const camera = createCameraTiles<Mesh>({
+    map,
+    source: 'world',
+    zoom: 15,
+    minzoom: 14,
+    maxTiles: 4,
+    active: () => true,
+    empty: {gpu: true},
+    build: () => ({gpu: false}),
+    isReady: (mesh) => mesh.gpu,
+    release: (mesh) => released.push(mesh),
+    changed() {},
+  });
+  const until = async (ready: () => boolean) => {
+    for (let n = 0; n < 100 && !ready(); n++) await delay(5);
+    assert.ok(ready());
+  };
+  try {
+    camera.update();
+    await until(() => camera.built().length === 4);
+    for (const tile of camera.built()) tile.value.gpu = true;
+    const original = camera.ready().map((tile) => tile.value);
+    assert.equal(original.length, 4);
+    camera.refresh(() => true);
+    await until(() => camera.built().every((tile) => !tile.value.gpu));
+    assert.deepEqual(
+      camera.ready().map((tile) => tile.value),
+      original,
+    );
+    assert.equal(released.length, 0);
+    // The renderer uploads only two tiles each frame. All four must still draw every frame.
+    for (const tile of camera.built().slice(0, 2)) tile.value.gpu = true;
+    assert.equal(camera.ready().length, 4);
+    assert.equal(released.length, 2);
+    for (const tile of camera.built()) tile.value.gpu = true;
+    assert.equal(camera.ready().length, 4);
+    assert.equal(released.length, 4);
+    camera.refresh(() => true);
+    await until(() => camera.built().every((tile) => !tile.value.gpu));
+    const pending = camera.built().map((tile) => tile.value);
+    camera.dispose();
+    for (const mesh of pending) assert.ok(released.includes(mesh));
+  } finally {
+    camera.dispose();
+  }
+});

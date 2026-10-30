@@ -41,7 +41,7 @@ test('the public archive contains native runtime sources without development tes
     'TileflowNativeAdmission.podspec',
     'react-native.config.cjs',
   ];
-  const documentation = ['README.md', ...(await files('docs'))];
+  const documentation = ['README.md'];
   const expected = [
     ...native,
     ...documentation,
@@ -68,12 +68,12 @@ test('the public archive contains native runtime sources without development tes
     'ios/TileflowNativeConfiguration.mm',
     'dist/internal/hosted-binding.js',
     'dist/internal/native-configuration-bridge.js',
-    'docs/native-admission.md',
-    'docs/native-configuration.md',
   ])
     assert.ok(actual.includes(`package/${required}`), required);
   assert.equal(
-    actual.some((path) => /(?:^|\/)(?:test|tests|harness)(?:\/|$)/iu.test(path)),
+    actual.some((path) =>
+      /(?:^|\/)(?:test|tests|harness|docs|plans|planning)(?:\/|$)/iu.test(path),
+    ),
     false,
   );
   for (const path of [...native, ...documentation]) {

@@ -305,7 +305,7 @@ export function showRoute(map: RouteMap, answer: RoutingRouteResponse) {
 
 To colour the route with the map's theme and draw it on progressively, use Core's route inks and
 line progress; see the
-[route drawing guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/route-drawing.md).
+[route drawing guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
 Keep the answer's `attribution` visible with the route. Like the map, routes come from
 OpenStreetMap data.
 

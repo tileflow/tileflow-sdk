@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import {mkdir, mkdtemp, realpath, rm} from 'node:fs/promises';
+import {mkdir, mkdtemp, realpath, rm, symlink, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
@@ -119,4 +119,43 @@ test('rejects URL, bare, escaping, duplicate, and malformed package directories'
   } finally {
     await rm(cwd, {force: true, recursive: true});
   }
+});
+
+test('nested configs resolve and watch linked package assets in the selected working tree', async (t) => {
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-package-workspace-'));
+  t.after(() => rm(cwd, {force: true, recursive: true}));
+  const baseDirectory = join(cwd, 'consumer');
+  const source = join(cwd, 'source');
+  await mkdir(join(source, 'icons'), {recursive: true});
+  await writeFile(
+    join(source, 'package.json'),
+    JSON.stringify({name: '@example/map', version: '1.0.0'}),
+  );
+  await mkdir(join(baseDirectory, 'node_modules/@example'), {recursive: true});
+  await symlink(source, join(baseDirectory, 'node_modules/@example/map'), 'dir');
+  const descriptor = {kind: 'package-directory' as const, package: '@example/map', path: 'icons'};
+  const options = {
+    cwd,
+    baseDirectory,
+    configPath: 'map.icons',
+    kind: 'icons' as const,
+    target: 'local' as const,
+  };
+  const [linked] = await resolveTileflowAssetDirectories([descriptor], options);
+  assert.equal(linked.realPath, await realpath(join(source, 'icons')));
+  assert.equal(linked.watch, true);
+  assert.equal(linked.packageOwned, true);
+  await rm(join(baseDirectory, 'node_modules/@example/map'));
+  const installed = join(baseDirectory, 'node_modules/@example/released');
+  await mkdir(join(installed, 'icons'), {recursive: true});
+  await writeFile(
+    join(installed, 'package.json'),
+    JSON.stringify({name: '@example/map', version: '1.0.0'}),
+  );
+  const [published] = await resolveTileflowAssetDirectories(
+    [{...descriptor, package: '@example/released'}],
+    options,
+  );
+  assert.equal(published.watch, false);
+  assert.equal(published.realPath, await realpath(join(installed, 'icons')));
 });

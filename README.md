@@ -140,14 +140,12 @@ pnpm check
 pnpm run smoke:capture-public
 ```
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) and the [documentation guide](docs/documentation.md).
-Package behavior belongs in package READMEs; detailed ownership and lifecycle rules live in
-[the SDK contracts](docs/README.md). The hosted API, dashboard, database, infrastructure, and
-repository-only map playground are maintained separately.
+Read [CONTRIBUTING.md](CONTRIBUTING.md). Public package usage belongs in package READMEs.
+Keep planning documents, internal procedures and documentation directories out of this repository.
 
 Source packages use `0.0.0-development`. Merging a PR creates a release candidate, not an npm
 publication. An authorized operator must dispatch the protected publication workflow and approve
-its prepared bundle. See [PUBLISHING.md](PUBLISHING.md); do not edit versions, add changesets, create
+its prepared bundle. Do not edit versions, add changesets, create
 release tags, or run `npm publish`.
 
 ## License

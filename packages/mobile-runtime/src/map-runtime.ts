@@ -45,6 +45,7 @@ import {
   systemClock,
 } from './events';
 import {type FeatureCollection, geoJSONProblem} from './geojson';
+import {createLocationController, isLocationFrame, type LocationController} from './location';
 import {loadMobileManifest} from './manifest';
 import {
   type Camera,
@@ -126,6 +127,7 @@ export function createMobileMapRuntime(input: {
   let content: ReturnType<typeof createMapContentRegistry> | undefined;
   let appearance: ReturnType<typeof createMapScene> | undefined;
   let animations: ReturnType<typeof createAnimations> | undefined;
+  let location: LocationController | undefined;
   let appearanceRevision = 0;
   let manifestMap: TileflowRuntimeManifestMap | undefined;
   let configuration: InitializeOptions | undefined;
@@ -195,6 +197,7 @@ export function createMobileMapRuntime(input: {
     events.dispose();
     warnings.dispose();
     animations?.dispose();
+    location?.dispose();
     appearance?.dispose();
     content?.dispose();
     cameras?.dispose();
@@ -215,6 +218,7 @@ export function createMobileMapRuntime(input: {
     if (current.getPixelRatio() !== pixelRatio(options)) current.setPixelRatio(pixelRatio(options));
     if (previous?.viewMode !== options.viewMode) scene?.setViewMode(options.viewMode);
     if (previous?.vegetation !== options.vegetation) appearance?.setVegetation(options.vegetation);
+    location?.setOptions(options.location);
   }
 
   async function initialize(options: InitializeOptions, signal: AbortSignal) {
@@ -328,11 +332,19 @@ export function createMobileMapRuntime(input: {
       cameras = createCameraController(map, {
         emit,
         wants: events.wants,
-        // A shot reports its movement once, not once per frame.
-        ignores: isShotFrame,
-        gesture: () => animations?.gesture(),
+        // A shot and location following report their movement once, not once per frame.
+        ignores: (event) => isShotFrame(event) || isLocationFrame(event),
+        gesture: () => {
+          animations?.gesture();
+          location?.stopFollowing('gesture');
+        },
       });
       const cameraController = cameras;
+      location = createLocationController(map, {
+        emit,
+        clock,
+        motion: (moving) => cameraController.reportMotion(moving, 'location'),
+      });
       gestures = createGestureController(map, {emit, signal: lifetime.signal});
       applyOptions(options.options);
       if (options.insets) cameras.setInsets(options.insets);
@@ -378,7 +390,7 @@ export function createMobileMapRuntime(input: {
         },
         animateProgress: (request) => contentRegistry.animateProgress(request),
         stopProgress: (layers) => contentRegistry.stopProgress(layers),
-        shotMoving: (moving) => cameraController.reportShot(moving),
+        shotMoving: (moving) => cameraController.reportMotion(moving, 'api'),
       });
       map.on('load', () => {
         if (!disposed) emit('contentReady', () => ({camera: camera(), theme: style.theme}));
@@ -554,9 +566,13 @@ export function createMobileMapRuntime(input: {
         case 'getCamera':
           return camera();
         case 'moveCamera':
+          // A movement the application or a native control asks for ends location following.
+          requireCamera();
+          location?.stopFollowing(command.payload.reason);
           return requireCamera().move(command.payload, signal);
         case 'stopCamera':
           requireCamera().stop();
+          location?.stopFollowing('api');
           return null;
         case 'cameraForBounds':
           return requireCamera().cameraForBounds(command.payload);
@@ -675,10 +691,19 @@ export function createMobileMapRuntime(input: {
           return animations!.animateProgress(command.payload);
         case 'playShot':
           requireMap();
+          location!.stopFollowing('api');
           return animations!.playShot(command.payload, signal);
         case 'stopAnimation':
           requireMap();
           animations!.stop(command.payload.animation);
+          return null;
+        case 'updateLocation':
+          requireMap();
+          location!.update(command.payload);
+          return null;
+        case 'setFollowMode':
+          requireMap();
+          location!.follow(command.payload);
           return null;
         case 'dispose':
           return dispose();

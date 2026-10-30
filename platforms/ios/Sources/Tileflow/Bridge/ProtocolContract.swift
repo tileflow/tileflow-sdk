@@ -41,6 +41,8 @@ enum ProtocolContract {
     case animateLineProgress
     case playShot
     case stopAnimation
+    case updateLocation
+    case setFollowMode
     case dispose
   }
 
@@ -58,6 +60,7 @@ enum ProtocolContract {
     case longPress
     case annotationActivated
     case poiActivated
+    case followModeChanged
     case cameraMoveEnded
     case cameraMoveStarted
     case gestureStarted
@@ -80,6 +83,7 @@ enum ProtocolContract {
       case .longPress: .essential
       case .annotationActivated: .essential
       case .poiActivated: .essential
+      case .followModeChanged: .essential
       case .cameraMoveEnded: .essential
       case .cameraMoveStarted: .camera
       case .gestureStarted: .camera

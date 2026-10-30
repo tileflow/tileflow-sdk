@@ -9,6 +9,7 @@
 - [Mobile host and renderer protocol contract](contracts/mobile-protocol.md)
 - [Mobile transport and resource cache contract](contracts/mobile-transport-cache.md)
 - [Camera, gestures and controls in the Swift and Kotlin map SDKs](../platforms/native-map-camera.md)
+- [The person's location in the Swift and Kotlin map SDKs](../platforms/native-location.md)
 - [Native Search, Routing, Elevation and GeoIP clients](../platforms/native-services.md)
 - [Mobile offline regions contract](contracts/mobile-offline.md)
 - [Tileflow map features on Swift and Kotlin](../platforms/web-parity.md)

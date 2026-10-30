@@ -10,6 +10,8 @@ settings:
     SWIFT_VERSION: '6.0'
     GENERATE_INFOPLIST_FILE: YES
     INFOPLIST_KEY_UILaunchScreen_Generation: YES
+    # Location purpose strings, merged into the generated Info.plist.
+    INFOPLIST_FILE: Shared/Info.plist
     CODE_SIGN_STYLE: Automatic
 targets:
   UIKitExample:

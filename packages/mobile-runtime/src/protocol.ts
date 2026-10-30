@@ -9,6 +9,11 @@ import {
   moveCameraSchema,
 } from './camera-contract';
 import {contentSchema} from './content-contract';
+import {
+  followRequestSchema,
+  locationOptionsSchema,
+  locationUpdateSchema,
+} from './location-contract';
 import {protocol} from './contract';
 import {creditSchema} from './credits';
 import {ProtocolError, type WireError} from './errors';
@@ -106,6 +111,8 @@ export const mapOptionsSchema = z.strictObject({
   attribution: cornerSchema.default('bottom-right'),
   /** Shows or hides the map's 3D vegetation; null keeps what the map's design chooses. */
   vegetation: z.boolean().nullable().default(null),
+  /** How the person's location is drawn. */
+  location: locationOptionsSchema.prefault({}),
 });
 export type MapOptions = z.infer<typeof mapOptionsSchema>;
 /** Options fixed for the renderer's lifetime: a change needs a new renderer. */
@@ -194,6 +201,8 @@ const commandSchema = z.discriminatedUnion('method', [
     method: z.literal('stopAnimation'),
     payload: z.strictObject({animation: animationIdentifier}),
   }),
+  z.strictObject({method: z.literal('updateLocation'), payload: locationUpdateSchema}),
+  z.strictObject({method: z.literal('setFollowMode'), payload: followRequestSchema}),
   z.strictObject({method: z.literal('dispose'), payload: z.null()}),
 ]);
 export type Command = z.infer<typeof commandSchema>;

@@ -10,6 +10,7 @@ import android.graphics.Path
 import android.util.TypedValue
 import android.view.View
 import android.view.ViewGroup
+import dev.tileflow.sdk.location.TileflowFollowMode
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.abs
@@ -56,8 +57,10 @@ public enum class TileflowScaleBarUnits {
  * The map's native controls. They stay inside the map's content padding, so system bars and sheets
  * never cover them. The attribution is always shown; only its corner can change.
  *
- * @property recenterButton A button that reports [TileflowMapEvent.RecenterRequested]; the
- *   application decides where the camera goes, for example to the person's location.
+ * @property recenterButton A button that recenters the map. While the map shows the person's
+ *   location it follows the location, and turns between following the position and the heading;
+ *   otherwise it reports [TileflowMapEvent.RecenterRequested] and the application decides where
+ *   the camera goes.
  */
 public data class TileflowMapControls(
     val compass: TileflowCompassVisibility = TileflowCompassVisibility.ADAPTIVE,
@@ -156,6 +159,19 @@ internal class MapControlsView(context: Context) : ViewGroup(context) {
         set(value) {
             field = value
             update()
+        }
+
+    /** Whether the map shows the location, so the recenter button follows it. */
+    var locationShown: Boolean = false
+        set(value) {
+            field = value
+            recenter.show(value, followMode)
+        }
+
+    var followMode: TileflowFollowMode = TileflowFollowMode.NONE
+        set(value) {
+            field = value
+            recenter.show(locationShown, value)
         }
 
     /** Space covered at each edge, in pixels. */
@@ -334,18 +350,40 @@ internal class CompassView(context: Context) : View(context) {
     }
 }
 
-/** A button that asks the application to recenter the map. */
+/**
+ * A button that recenters the map. While the map shows the location, it shows whether the camera
+ * follows it: an outlined arrow when it does not, a filled arrow when it follows the position, and
+ * an arrow pointing up when the map turns with the heading or the course.
+ */
 internal class RecenterView(context: Context) : View(context) {
     private val density = resources.displayMetrics.density
     private val background = buttonPaint(density)
-    private val glyph = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val glyph = Paint(Paint.ANTI_ALIAS_FLAG).apply { strokeJoin = Paint.Join.ROUND }
     private val arrow = Path()
+    private val upright = Path()
+    private var locationShown = false
+    private var mode = TileflowFollowMode.NONE
 
     init {
         contentDescription = "Recenter map"
         isClickable = true
         isFocusable = true
         setLayerType(LAYER_TYPE_SOFTWARE, null)
+    }
+
+    fun show(locationShown: Boolean, mode: TileflowFollowMode) {
+        this.locationShown = locationShown
+        this.mode = mode
+        contentDescription = if (locationShown) "My location" else "Recenter map"
+        stateDescriptionCompat(
+            when {
+                !locationShown || mode == TileflowFollowMode.NONE -> ""
+                mode == TileflowFollowMode.POSITION -> "Following"
+                mode == TileflowFollowMode.HEADING -> "Following with heading"
+                else -> "Following with course"
+            }
+        )
+        invalidate()
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -357,12 +395,19 @@ internal class RecenterView(context: Context) : View(context) {
         super.onSizeChanged(w, h, oldw, oldh)
         // A navigation arrow, as location buttons commonly show.
         arrow.polygon(w, 30f, 14f, 23f, 31f, 21f, 23f, 13f, 21f)
+        upright.polygon(w, 22f, 11f, 30f, 32f, 22f, 27f, 14f, 32f)
     }
 
     override fun onDraw(canvas: Canvas) {
         canvas.drawButton(this, density, background)
         glyph.color = if (isDark(context)) Color.rgb(100, 170, 255) else Color.rgb(33, 102, 206)
-        canvas.drawPath(arrow, glyph)
+        val outlined = locationShown && mode == TileflowFollowMode.NONE
+        glyph.style = if (outlined) Paint.Style.STROKE else Paint.Style.FILL
+        glyph.strokeWidth = 2 * density
+        val turning =
+            locationShown &&
+                (mode == TileflowFollowMode.HEADING || mode == TileflowFollowMode.COURSE)
+        canvas.drawPath(if (turning) upright else arrow, glyph)
     }
 }
 

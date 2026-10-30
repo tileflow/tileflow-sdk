@@ -12,7 +12,8 @@ extension TileflowMapView {
   public var isMoving: Bool { cameraEvents.isMoving }
 
   /// Moves the camera and waits until it settles. Cancelling the calling task stops the movement
-  /// and throws `CancellationError`.
+  /// and throws `CancellationError`. Any movement the application asks for ends following the
+  /// location.
   ///
   /// Before the map loads, a complete camera becomes the one it starts at and the call returns
   /// ``TileflowCameraAnimationResult/finished``; a partial update fails with
@@ -79,13 +80,17 @@ extension TileflowMapView {
     pitch: Double? = nil, maxZoom: Double? = nil, animation: TileflowCameraAnimation = .none
   ) async throws -> TileflowCameraAnimationResult {
     let fit = try Self.fitValue(bounds, padding: padding, bearing: bearing, pitch: pitch, maxZoom: maxZoom)
+    endFollowing(.api)
     return try await send(.object(["fit": fit, "animation": try animation.wireValue]))
   }
 
-  /// Stops the camera, whether the application or a person moved it. A movement the application
-  /// started ends as ``TileflowCameraAnimationResult/cancelled``.
+  /// Stops the camera, whether the application or a person moved it, and ends following the
+  /// location. A movement the application started ends as
+  /// ``TileflowCameraAnimationResult/cancelled``.
   public func stopCamera() {
-    guard !destroyed, initialized, let bridge else { return }
+    guard !destroyed else { return }
+    endFollowing(.api)
+    guard initialized, let bridge else { return }
     Task { _ = try? await bridge.call(.stopCamera) }
   }
 
@@ -132,6 +137,8 @@ extension TileflowMapView {
     guard !destroyed else { throw TileflowMapError.disposed }
     let target = try update.wireValue()
     let animation = try animation.wireValue
+    // A movement the application asks for ends following the location.
+    if reason == "api" { endFollowing(.api) }
     guard initialized else {
       guard update.center != nil, update.zoom != nil else { throw TileflowMapError.notReady }
       let camera = update.applied(to: initialCamera ?? .init(longitude: 0, latitude: 0, zoom: 0))

@@ -130,7 +130,8 @@ extension TileflowMapError {
 /// the chosen level never leave the renderer.
 public enum TileflowEventLevel: String, CaseIterable, Sendable {
   /// Lifecycle, theme transitions, failures, warnings, taps, long presses and activations, the end
-  /// of animations and their cues, and the camera each time it settles.
+  /// of animations and their cues, changes of the location follow mode, and the camera each time it
+  /// settles.
   case essential
   /// Also the start of every camera movement, with its reason, and the start and end of each
   /// gesture.
@@ -154,6 +155,8 @@ public enum TileflowCameraChangeReason: String, CaseIterable, Sendable {
   /// The SDK moved the camera itself, for example after a layout change or during a view mode
   /// transition.
   case system
+  /// The SDK followed the person's location on the map.
+  case location
 }
 
 /// The kind of resource a warning or error concerns.

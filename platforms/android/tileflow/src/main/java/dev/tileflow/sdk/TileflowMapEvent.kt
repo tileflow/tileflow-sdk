@@ -1,5 +1,6 @@
 package dev.tileflow.sdk
 
+import dev.tileflow.sdk.location.TileflowFollowModeChange
 import java.net.URI
 
 public sealed interface TileflowMapEvent {
@@ -51,8 +52,17 @@ public sealed interface TileflowMapEvent {
     /** The gesture ended. Motion that continues after it is part of the camera's movement. */
     public data class GestureEnded(val gesture: TileflowGesture) : TileflowMapEvent
 
-    /** A person tapped the recenter button. The application chooses where the camera goes. */
+    /**
+     * A person tapped the recenter button while the map does not show the location. The
+     * application chooses where the camera goes.
+     */
     public data object RecenterRequested : TileflowMapEvent
+
+    /**
+     * The follow mode changed without the application setting it: a person moved the map or tapped
+     * the compass or the recenter button, or the application moved the camera.
+     */
+    public data class FollowModeChanged(val change: TileflowFollowModeChange) : TileflowMapEvent
 
     public data class ThemeChanged(val theme: String) : TileflowMapEvent
 

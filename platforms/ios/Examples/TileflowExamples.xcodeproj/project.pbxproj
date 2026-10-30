@@ -14,6 +14,8 @@
 		682B83757E2F67D2BDC472FF /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 534A245A6CD0F455E58B820B /* App.swift */; };
 		6E7F65BEDB02574636821D8B /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D211D65A453C900BFB07BCA /* App.swift */; };
 		72241A85A3E145B9E8A4CC23 /* ServicesExample.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE24C0D071BCF62B55DA15B /* ServicesExample.swift */; };
+		8CD741B4A84C9ABA8F68C83B /* MyLocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8858DEE244160C92E8A47A12 /* MyLocation.swift */; };
+		A08C1ED831B88A20A35DDACD /* MyLocation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8858DEE244160C92E8A47A12 /* MyLocation.swift */; };
 		A1BE414B8D85ED812F95B29E /* ExampleSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0E92D1C209ECD47EF11072D /* ExampleSource.swift */; };
 		C5CE93FEC86CF77DF5E34AA1 /* ServicesExample.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE24C0D071BCF62B55DA15B /* ServicesExample.swift */; };
 		E8801F7E367FC9EF127B1BA8 /* Tileflow in Frameworks */ = {isa = PBXBuildFile; productRef = 2660A6566B3ED55AB8EBAE7C /* Tileflow */; };
@@ -21,9 +23,11 @@
 
 /* Begin PBXFileReference section */
 		1D211D65A453C900BFB07BCA /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
+		1E8E3D18DC0A2CF02C1F86E5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		534A245A6CD0F455E58B820B /* App.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>"; };
 		6FE24C0D071BCF62B55DA15B /* ServicesExample.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServicesExample.swift; sourceTree = "<group>"; };
 		82EA1E3E7E4C71573D04A877 /* SwiftUIExample.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = SwiftUIExample.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8858DEE244160C92E8A47A12 /* MyLocation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MyLocation.swift; sourceTree = "<group>"; };
 		9AD35CD9C1A4A69D7360646C /* ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ios; path = ..; sourceTree = SOURCE_ROOT; };
 		A0E92D1C209ECD47EF11072D /* ExampleSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExampleSource.swift; sourceTree = "<group>"; };
 		BB6B28F907F19E9726E63270 /* UIKitExample.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = UIKitExample.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -63,6 +67,8 @@
 			isa = PBXGroup;
 			children = (
 				A0E92D1C209ECD47EF11072D /* ExampleSource.swift */,
+				1E8E3D18DC0A2CF02C1F86E5 /* Info.plist */,
+				8858DEE244160C92E8A47A12 /* MyLocation.swift */,
 				6FE24C0D071BCF62B55DA15B /* ServicesExample.swift */,
 			);
 			path = Shared;
@@ -194,6 +200,7 @@
 			files = (
 				682B83757E2F67D2BDC472FF /* App.swift in Sources */,
 				47BA81FF43F801C507256086 /* ExampleSource.swift in Sources */,
+				A08C1ED831B88A20A35DDACD /* MyLocation.swift in Sources */,
 				72241A85A3E145B9E8A4CC23 /* ServicesExample.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -204,6 +211,7 @@
 			files = (
 				6E7F65BEDB02574636821D8B /* App.swift in Sources */,
 				A1BE414B8D85ED812F95B29E /* ExampleSource.swift in Sources */,
+				8CD741B4A84C9ABA8F68C83B /* MyLocation.swift in Sources */,
 				C5CE93FEC86CF77DF5E34AA1 /* ServicesExample.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -216,6 +224,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = Shared/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -231,6 +240,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = Shared/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -246,6 +256,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = Shared/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -261,6 +272,7 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = Shared/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -324,6 +336,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Shared/Info.plist;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
@@ -384,6 +397,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Shared/Info.plist;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
 				MTL_ENABLE_DEBUG_INFO = NO;

@@ -34,7 +34,8 @@ renderer.
 
 The `cameraChanged` event carries the camera, the phase (`started`, `moving`, `ended`) and who
 moved it: `gesture` (a person, including the map's controls and the motion after a gesture),
-`api` (the application) or `system` (the SDK, for example after the content insets change). Which
+`api` (the application), `system` (the SDK, for example after the content insets change) or
+`location` (the camera follows the person's location; see [the location guide](native-location.md)). Which
 phases the application receives depends on its event level:
 
 | Level        | Camera events the application receives                                        |
@@ -207,7 +208,9 @@ Map events report what a person does:
   appears only while the map is turned away from north;
 - a scale bar, in kilometres and metres, or miles and feet where the region uses them;
 - a recenter button, which reports `recenterRequested`. The application decides where the camera
-  goes, for example back to a starting view or to the person's location.
+  goes, for example back to a starting view. While the map shows the person's location, the button
+  follows the location instead, and the compass keeps following it with north up; see
+  [the location guide](native-location.md).
 
 Each control takes a corner (`topLeading`, `topTrailing`, `bottomLeading`, `bottomTrailing`;
 Kotlin uses `START` and `END`), which follows the layout direction. The attribution is always

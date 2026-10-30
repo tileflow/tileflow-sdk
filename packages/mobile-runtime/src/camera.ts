@@ -115,7 +115,8 @@ export function createCameraController(
   let insets = none;
   let paddingPending = false;
   let attribution: {control: AttributionControl; corner: Corner} | undefined;
-  let shotMoving = false;
+  /** A movement reported once rather than per frame, such as a shot's or location following's. */
+  let reported: CameraReason | undefined;
   let disposed = false;
 
   const camera = (): Camera => {
@@ -318,11 +319,14 @@ export function createCameraController(
       if (map.isMoving()) paddingPending = true;
       else applyPadding();
     },
-    /** A shot moves the camera frame by frame; it starts and ends one movement. */
-    reportShot(moving: boolean) {
-      if (moving === shotMoving || disposed) return;
-      shotMoving = moving;
-      reason = 'api';
+    /**
+     * A shot or location following moves the camera frame by frame; each reports one movement
+     * that starts and ends, with its own reason.
+     */
+    reportMotion(moving: boolean, motionReason: 'api' | 'location') {
+      if (disposed || (moving ? reported === motionReason : reported !== motionReason)) return;
+      reported = moving ? motionReason : undefined;
+      reason = motionReason;
       emitCamera(moving ? 'cameraMoveStarted' : 'cameraMoveEnded');
     },
     /** Places the attribution in `corner`; `refresh` replaces it in place, as its entries change. */

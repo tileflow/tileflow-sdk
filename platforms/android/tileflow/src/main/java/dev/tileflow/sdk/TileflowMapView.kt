@@ -28,6 +28,10 @@ import dev.tileflow.sdk.bridge.EventSubscriptions
 import dev.tileflow.sdk.bridge.MapBridge
 import dev.tileflow.sdk.bridge.ProtocolContract
 import dev.tileflow.sdk.hosted.HostedSession
+import dev.tileflow.sdk.location.TileflowFollowMode
+import dev.tileflow.sdk.location.TileflowFollowModeChangeReason
+import dev.tileflow.sdk.location.TileflowLocation
+import dev.tileflow.sdk.location.TileflowLocationProvider
 import dev.tileflow.sdk.offline.OfflineReachability
 import dev.tileflow.sdk.offline.OfflineServingIndex
 import dev.tileflow.sdk.offline.OfflineServingRule
@@ -114,7 +118,9 @@ constructor(
     private var rendererVisible = true
     private val density = resources.displayMetrics.density
     private val cameraEvents = CameraEventGate(scope)
-    private val controlsView = MapControlsView(context)
+    internal val controlsView = MapControlsView(context)
+    /** The location provider, the latest position and the follow mode. */
+    internal val location = MapLocation(this)
     private var contentPadding = TileflowEdgeInsets.ZERO
     /** The insets the current renderer has, or null before it is initialized. */
     private var rendererInsets: TileflowEdgeInsets? = null
@@ -133,6 +139,34 @@ constructor(
     /** Whether the camera is moving, for an animation or a gesture, as of the last event. */
     public val isMoving: Boolean
         get() = cameraEvents.isMoving
+
+    /**
+     * Where the map's positions and headings come from; null uses a
+     * [dev.tileflow.sdk.location.TileflowDefaultLocationProvider] that the map creates when it
+     * first shows the location.
+     */
+    public var locationProvider: TileflowLocationProvider?
+        get() = location.custom
+        set(value) {
+            location.custom = value
+            location.consume(null)
+            refreshLocation()
+        }
+
+    /** The latest position the map received, or null before the first. */
+    public val latestLocation: TileflowLocation?
+        get() = location.latest
+
+    /**
+     * How the camera follows the location. A gesture that moves the map, and a camera movement the
+     * application asks for, set it to [TileflowFollowMode.NONE] and report
+     * [TileflowMapEvent.FollowModeChanged]. The camera follows only while
+     * [TileflowLocationOptions.enabled][dev.tileflow.sdk.location.TileflowLocationOptions.enabled];
+     * setting a mode before keeps it until then.
+     */
+    public var followMode: TileflowFollowMode
+        get() = location.follow.mode
+        set(value) = setFollowModeFromApplication(value)
 
     /**
      * Whether the system bars and display cutout, where they overlap the view, add to the content
@@ -168,6 +202,11 @@ constructor(
 
             override fun onStop(owner: LifecycleOwner) {
                 updateVisibility()
+            }
+
+            // Access granted in a system dialog arrives while the activity resumes.
+            override fun onResume(owner: LifecycleOwner) {
+                refreshLocation()
             }
 
             override fun onDestroy(owner: LifecycleOwner) {
@@ -209,8 +248,10 @@ constructor(
 
     init {
         controlsView.controls = options.controls
+        controlsView.locationShown = options.location.enabled
         controlsView.visibility = GONE
         controlsView.compass.setOnClickListener {
+            if (compassTapped()) return@setOnClickListener
             scope.launch {
                 try {
                     move(
@@ -223,7 +264,7 @@ constructor(
                 }
             }
         }
-        controlsView.recenter.setOnClickListener { onEvent(TileflowMapEvent.RecenterRequested) }
+        controlsView.recenter.setOnClickListener { recenterTapped() }
         addView(controlsView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
     }
 
@@ -461,6 +502,8 @@ constructor(
         this.options = options
         subscriptions = EventSubscriptions(options.events, options.controls.followCamera)
         controlsView.controls = options.controls
+        controlsView.locationShown = options.location.enabled
+        locationOptionsChanged(previous)
         // Antialiasing and style validation are fixed when a renderer starts.
         if (
             (options.antialias != previous.antialias ||
@@ -682,15 +725,19 @@ constructor(
         animation: TileflowCameraAnimation = TileflowCameraAnimation.None,
     ): TileflowCameraAnimationResult {
         val fit = fitJson(bounds, padding, bearing, pitch, maxZoom)
+        endFollowing(TileflowFollowModeChangeReason.API)
         return sendMove(JSONObject().put("fit", fit).put("animation", animation.json()))
     }
 
     /**
-     * Stops the camera, whether the application or a person moved it. A movement the application
-     * started ends as [TileflowCameraAnimationResult.CANCELLED].
+     * Stops the camera, whether the application or a person moved it, and ends following the
+     * location. A movement the application started ends as
+     * [TileflowCameraAnimationResult.CANCELLED].
      */
     public fun stopCamera() {
-        val bridge = bridge?.takeIf { initialized && !destroyed } ?: return
+        if (destroyed) return
+        endFollowing(TileflowFollowModeChangeReason.API)
+        val bridge = bridge?.takeIf { initialized } ?: return
         scope.launch {
             try {
                 bridge.call(ProtocolContract.Method.STOP_CAMERA)
@@ -759,6 +806,8 @@ constructor(
         if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
         val target = update.json()
         val wireAnimation = animation.json()
+        // A movement the application asks for ends following the location.
+        if (reason == "api") endFollowing(TileflowFollowModeChangeReason.API)
         if (!initialized) {
             if (update.center == null || update.zoom == null)
                 throw TileflowMapException(TileflowErrorCode.NOT_READY)
@@ -833,6 +882,10 @@ constructor(
         updateVisibility()
     }
 
+    /** Whether the map is attached and its window and lifecycle show it. */
+    internal val isVisibleOnScreen: Boolean
+        get() = isVisibleToUser()
+
     private fun isVisibleToUser(): Boolean =
         attached &&
             windowVisibility == View.VISIBLE &&
@@ -840,6 +893,7 @@ constructor(
 
     private fun updateVisibility() {
         if (destroyed) return
+        refreshLocation()
         val visible = isVisibleToUser()
         hostedSession?.setBackgrounded(!visible)
         if (visible == rendererVisible) return
@@ -895,6 +949,7 @@ constructor(
         hostedSession?.close()
         hostedSession = null
         loadable = null
+        refreshLocation()
         retireGeneration(TileflowErrorCode.DISPOSED)
         scope.cancel()
         onEvent = {}
@@ -1119,6 +1174,7 @@ constructor(
                                     ?.takeIf { it.second != startingRequest }
                                     ?.let { move(it.first) }
                                 replayScene(readyBridge)
+                                replayLocation(readyBridge)
                                 if (!rendererVisible)
                                     readyBridge.call(
                                         ProtocolContract.Method.SET_VISIBILITY,
@@ -1251,6 +1307,10 @@ constructor(
         }
         if (event == "animationEnded" || event == "shotCue") {
             animations.receive(event, result)
+            return
+        }
+        if (event == "followModeChanged") {
+            receiveFollowModeChanged(result)
             return
         }
         val parsed =

@@ -41,6 +41,11 @@ dependencies {
     // PaddingValues for a map's content padding.
     api("androidx.compose.foundation:foundation-layout")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.9.3")
+    // The location permission request is an activity result contract.
+    api("androidx.activity:activity:1.10.1")
+    // The Fused Location Provider, used only when the application includes it; see
+    // TileflowDefaultLocationProvider.
+    compileOnly("com.google.android.gms:play-services-location:21.3.0")
     // Offline regions download as background work that survives the process.
     implementation("androidx.work:work-runtime-ktx:2.10.1")
     testImplementation("junit:junit:4.13.2")

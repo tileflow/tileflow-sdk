@@ -163,10 +163,12 @@ export const apiCameraChange = {tileflowReason: 'api'} as const;
 /**
  * Who moved the camera, from a MapLibre movement event. A person's gesture carries the DOM event
  * that caused it, including the motion that continues after it, and native map controls mark their
- * movements as gestures; application calls carry `apiCameraChange`; anything else is the SDK itself.
+ * movements as gestures; application calls carry `apiCameraChange` and location following its
+ * frames' data; anything else is the SDK itself.
  */
 export function cameraReason(event: unknown): CameraReason {
   const data = event as {originalEvent?: unknown; tileflowReason?: unknown};
   if (data.originalEvent || data.tileflowReason === 'gesture') return 'gesture';
+  if (data.tileflowReason === 'location') return 'location';
   return data.tileflowReason === apiCameraChange.tileflowReason ? 'api' : 'system';
 }

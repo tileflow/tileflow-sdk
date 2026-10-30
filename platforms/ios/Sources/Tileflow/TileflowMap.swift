@@ -20,6 +20,8 @@ public struct TileflowMap: UIViewRepresentable {
   public var shouldReceiveTouch: ((CGPoint) -> Bool)?
   public var onEvent: (TileflowMapEvent) -> Void
   private var camera: Binding<TileflowCamera>?
+  private var followMode: Binding<TileflowFollowMode>?
+  private var locationProvider: (any TileflowLocationProvider)?
 
   public init(
     source: TileflowMapSource,
@@ -64,6 +66,24 @@ public struct TileflowMap: UIViewRepresentable {
     return map
   }
 
+  /// Binds how the camera follows the person's location. The map writes ``TileflowFollowMode/none``
+  /// to the binding when a person moves the map or the application moves the camera, and the
+  /// recenter button and the compass write the mode they choose. Show the location with
+  /// ``TileflowMapOptions/location``.
+  public func followMode(_ mode: Binding<TileflowFollowMode>) -> TileflowMap {
+    var map = self
+    map.followMode = mode
+    return map
+  }
+
+  /// Takes positions and headings from `provider` instead of the SDK's default provider, for
+  /// example a ``TileflowSimulatedLocationProvider``. Nil keeps the default provider.
+  public func locationProvider(_ provider: (any TileflowLocationProvider)?) -> TileflowMap {
+    var map = self
+    map.locationProvider = provider
+    return map
+  }
+
   /// Shows a Hosted map. Its credential and API origin come from ``Tileflow/configuration()``;
   /// use ``TileflowMapSource/hosted(mapID:surfaceID:publicResourceOrigins:configuration:)`` to
   /// pass a configuration for this map only.
@@ -87,6 +107,9 @@ public struct TileflowMap: UIViewRepresentable {
     view.onEvent = events(context.coordinator)
     view.contentInsets = contentInsets
     view.shouldReceiveTouch = shouldReceiveTouch
+    view.locationProvider = locationProvider
+    if let mode = followMode?.wrappedValue { view.followMode = mode }
+    context.coordinator.followMode = followMode?.wrappedValue
     context.coordinator.theme = theme
     context.coordinator.options = options
     context.coordinator.camera = camera?.wrappedValue
@@ -97,11 +120,17 @@ public struct TileflowMap: UIViewRepresentable {
   /// Writes the camera the application receives to the binding before the application sees it.
   private func events(_ coordinator: Coordinator) -> (TileflowMapEvent) -> Void {
     let onEvent = onEvent
-    guard let camera else { return onEvent }
+    guard camera != nil || followMode != nil else { return onEvent }
+    let camera = camera
+    let followMode = followMode
     return { event in
-      if case .cameraChanged(let change) = event {
+      if case .cameraChanged(let change) = event, let camera {
         coordinator.camera = change.camera
         if change.camera != camera.wrappedValue { camera.wrappedValue = change.camera }
+      }
+      if case .followModeChanged(let change) = event, let followMode {
+        coordinator.followMode = change.mode
+        if change.mode != followMode.wrappedValue { followMode.wrappedValue = change.mode }
       }
       onEvent(event)
     }
@@ -111,7 +140,13 @@ public struct TileflowMap: UIViewRepresentable {
     view.onEvent = events(context.coordinator)
     view.contentInsets = contentInsets
     view.shouldReceiveTouch = shouldReceiveTouch
+    if view.locationProvider !== locationProvider { view.locationProvider = locationProvider }
     context.coordinator.bind(controller, to: view)
+    // The map's own writes are already in force; only the application's move it.
+    if let mode = followMode?.wrappedValue, mode != context.coordinator.followMode {
+      context.coordinator.followMode = mode
+      view.followMode = mode
+    }
     if let target = camera?.wrappedValue, target != context.coordinator.camera {
       context.coordinator.camera = target
       let animation: TileflowCameraAnimation =
@@ -155,6 +190,8 @@ public struct TileflowMap: UIViewRepresentable {
     fileprivate var options: TileflowMapOptions?
     /// The camera the binding and the map last agreed on.
     fileprivate var camera: TileflowCamera?
+    /// The follow mode the binding and the map last agreed on.
+    fileprivate var followMode: TileflowFollowMode?
     fileprivate func bind(_ next: TileflowMapController?, to view: TileflowMapView) {
       guard controller !== next else { return }
       controller?.detach(view)

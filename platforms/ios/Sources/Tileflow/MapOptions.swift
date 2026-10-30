@@ -90,6 +90,8 @@ public struct TileflowMapOptions: Equatable, Sendable {
   public var events: TileflowEventOptions = .init()
   /// Shows or hides the map's 3D vegetation; nil keeps what the map's design chooses.
   public var vegetation: Bool?
+  /// How the map shows the person's location; off by default.
+  public var location: TileflowLocationOptions = .init()
   /// Multisampling, which smooths the thin edges of 3D buildings, trees and models. Changing it
   /// starts a new renderer.
   public var antialias: Bool = true
@@ -102,7 +104,8 @@ public struct TileflowMapOptions: Equatable, Sendable {
     viewMode: TileflowViewMode = .flat, quality: TileflowQuality? = nil,
     gestures: TileflowGestures = .init(), controls: TileflowMapControls = .init(),
     cameraLimits: TileflowCameraLimits = .init(), events: TileflowEventOptions = .init(),
-    vegetation: Bool? = nil, antialias: Bool = true, validatesStyle: Bool = false
+    vegetation: Bool? = nil, location: TileflowLocationOptions = .init(), antialias: Bool = true,
+    validatesStyle: Bool = false
   ) {
     self.viewMode = viewMode
     self.quality = quality
@@ -111,6 +114,7 @@ public struct TileflowMapOptions: Equatable, Sendable {
     self.cameraLimits = cameraLimits
     self.events = events
     self.vegetation = vegetation
+    self.location = location
     self.antialias = antialias
     self.validatesStyle = validatesStyle
   }
@@ -123,6 +127,7 @@ public struct TileflowMapOptions: Equatable, Sendable {
       "gestures": try gestures.wireValue(), "limits": try cameraLimits.wireValue(),
       "attribution": .string(controls.attributionPosition.corner(rightToLeft: rightToLeft)),
       "vegetation": vegetation.map(JSONValue.bool) ?? .null,
+      "location": try location.wireValue(),
     ])
   }
 

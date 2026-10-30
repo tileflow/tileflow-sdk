@@ -41,6 +41,8 @@ export const protocol = {
     'animateLineProgress',
     'playShot',
     'stopAnimation',
+    'updateLocation',
+    'setFollowMode',
     'dispose',
   ],
   eventLevels: ['essential', 'camera', 'continuous'],
@@ -84,6 +86,9 @@ export const protocol = {
     poiActivated: {
       level: 'essential',
     },
+    followModeChanged: {
+      level: 'essential',
+    },
     cameraMoveEnded: {
       level: 'essential',
     },
@@ -100,7 +105,7 @@ export const protocol = {
       level: 'continuous',
     },
   },
-  cameraReasons: ['gesture', 'api', 'system'],
+  cameraReasons: ['gesture', 'api', 'system', 'location'],
   resourceKinds: [
     'manifest',
     'style',

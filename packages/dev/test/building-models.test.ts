@@ -9,13 +9,13 @@ import {
   readTileflowLandmarkRegion,
   readTileflowLandmarkTileFootprints,
   tileflowInsideRings,
-  tileflowModelParts,
 } from '@tileflow/core';
 import {hashTileflowAssetSet} from '@tileflow/core/build';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {createTileflowBuildArtifacts} from '../src/artifacts';
 import {
   isTileflowBuildingModel,
+  isTileflowTreeModel,
   prepareTileflowBuildingModelMesh,
   tileflowBuildingModelDeclaredFootprint,
   tileflowBuildingModelFootprint,
@@ -69,10 +69,8 @@ test('a building model keeps its metres round its origin and its parts named by 
   assert.equal(Math.min(...axis(2)), 0);
   // glTF's +Z (towards the viewer) becomes south.
   assert.equal(Math.min(...axis(1)), -5);
-  assert.deepEqual(
-    new Set(mesh.parts),
-    new Set([tileflowModelParts.roof, tileflowModelParts.surface]),
-  );
+  assert.deepEqual(mesh.partNames, ['roof', 'surface']);
+  assert.deepEqual(new Set(mesh.parts), new Set([0, 1]));
   // Each part takes its theme colour: a part of one colour is not shaded.
   assert.ok(mesh.shades.every((shade) => shade === 0));
 });
@@ -86,10 +84,16 @@ test('the reader names what an author must change in a building model', () => {
     }
     return 'no error';
   };
-  assert.match(
-    problem(block(10, 10, 10, {wall: 'Brick'})),
-    /"Brick" that names no part of a building/,
+  assert.match(problem(block(10, 10, 10, {wall: 'Brick Wall'})), /"Brick Wall" that names no part/);
+  // A material may name a part of the model's own; `Brick.001` is the part `brick`.
+  assert.deepEqual(
+    prepareTileflowBuildingModelMesh(writeGlb(block(10, 10, 10, {wall: 'Brick.001'}))).partNames,
+    ['roof', 'brick'],
   );
+  const many = Array.from({length: 17}, (_, index) =>
+    block(1, 1, 1, {wall: `part-${index}`, roof: 'roof'}, [index * 2, 0]),
+  ).flat();
+  assert.match(problem(many), /names 17 parts in its materials; a building model takes at most 16/);
   const sunk = block(10, 10, 10).map((part) => ({
     ...part,
     translation: [0, -3, 0] as [number, number, number],
@@ -198,7 +202,7 @@ test('a map places its building models: the style names their files, which the b
   await mkdir(join(cwd, 'models'));
   await writeFile(join(cwd, 'models', 'tower.glb'), writeGlb(block(20, 20, 120)));
   const config = (model: string) =>
-    `import {buildings, defineMap} from '@tileflow/core'; import {streets, streetsModels} from '@tileflow/maps'; export default defineMap({id:'city',version:1,extends:streets,models:[streetsModels,'./models'],modules:{buildings:buildings({mode:'3d',threeDimensional:{models:[{model:'${model}',at:[2.2945,48.8583],heading:45}],modelColors:{accent:'#806040'}}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}});\n`;
+    `import {buildings, defineMap, fixed} from '@tileflow/core'; import {streets, streetsModels} from '@tileflow/maps'; export default defineMap({id:'city',version:1,extends:streets,models:[streetsModels,'./models'],modules:{buildings:buildings({mode:'3d',threeDimensional:{models:[{model:'${model}',at:[2.2945,48.8583],heading:45}],modelColors:{accent:fixed('#806040',{reason:'Bronze trim'})}}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic','DINish Medium,Noto Sans Regular','DINish Bold,Noto Sans Regular']}});\n`;
   await writeFile(join(cwd, 'tileflow.config.ts'), config('tower'));
 
   const plan = await createTileflowBuildArtifacts({cwd, assetBaseUrl: 'http://localhost:3333'});
@@ -273,7 +277,7 @@ test('one building model prepares from its levels into the file a build writes',
   assert.equal(model?.levels.length, 2);
   await assert.rejects(
     prepareTileflowBuildingModel('tree', {near: smallTree()}),
-    /is not a building model; name each material surface, secondary, glass, accent or roof/,
+    /is not a building model; its materials name only the parts of a tree/,
   );
 });
 
@@ -341,7 +345,7 @@ test('a map places a model served elsewhere by its address, with no file of its 
   const url = 'https://models.example.test/eiffel-tower.glb';
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    `import {buildings, defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'paris',version:1,extends:streets,modules:{buildings:buildings({mode:'3d',threeDimensional:{models:[{model:'eiffel-tower',at:[2.2945,48.8583],url:'${url}'}]}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']}});\n`,
+    `import {buildings, defineMap} from '@tileflow/core'; import {streets} from '@tileflow/maps'; export default defineMap({id:'paris',version:1,extends:streets,modules:{buildings:buildings({mode:'3d',threeDimensional:{models:[{model:'eiffel-tower',at:[2.2945,48.8583],url:'${url}'}]}})},glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic','DINish Medium,Noto Sans Regular','DINish Bold,Noto Sans Regular']}});\n`,
   );
   const plan = await createTileflowBuildArtifacts({cwd, assetBaseUrl: 'http://localhost:3333'});
   t.after(() => plan.dispose?.());
@@ -356,4 +360,30 @@ test('a map places a model served elsewhere by its address, with no file of its 
     /^generations\/[a-f0-9]{64}\/styles\/paris\//u.test(file.fileName),
   );
   assert.ok(generation && String(generation.source).includes(url));
+});
+
+test('a building model names parts of its own, which stay unlit building parts', async () => {
+  // A roof garden: a pool, a planted bed and a pergola, beside an ordinary facade.
+  const bytes = writeGlb([
+    ...block(12, 10, 5, {wall: 'surface', roof: 'water'}),
+    ...block(4, 4, 6, {wall: 'pergola-wood', roof: 'Vegetation'}, [8, 0]),
+  ]);
+  const primitives = readTileflowGltfTriangles(bytes);
+  assert.ok(isTileflowBuildingModel(primitives));
+  assert.ok(!isTileflowTreeModel(primitives));
+  const mesh = prepareTileflowBuildingModelMesh(bytes, {ambientOcclusion: false});
+  assert.deepEqual(mesh.partNames, ['water', 'surface', 'vegetation', 'pergola-wood']);
+  // Only the architectural part is a wall; the others are unclassified, never lit as windows.
+  const roles = new Map(mesh.parts.map((part, vertex) => [part, mesh.lightingRoles![vertex]]));
+  assert.deepEqual(Object.fromEntries(roles), {0: 0, 1: 1, 2: 0, 3: 0});
+
+  const prepared = await prepareTileflowBuildingModel('roof-garden', {near: bytes});
+  const [decoded] = await decodeTileflowModels(prepared.bytes);
+  assert.deepEqual(decoded?.levels[0]!.partNames, mesh.partNames);
+
+  // Only the parts of a tree make a tree model; a building may still name one of them.
+  assert.ok(isTileflowTreeModel(readTileflowGltfTriangles(smallTree())));
+  assert.equal(isTileflowBuildingModel(readTileflowGltfTriangles(smallTree())), false);
+  const planted = readTileflowGltfTriangles(writeGlb(block(10, 10, 5, {roof: 'leaves'})));
+  assert.ok(isTileflowBuildingModel(planted));
 });

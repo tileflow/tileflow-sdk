@@ -628,6 +628,7 @@ test('compiled buildings inherit the shared finish and retain independent overri
     {lighting: 'style'},
     {edgeRadius: 0},
     {edgeRadius: 0.45},
+    {edgeRadius: 1.5},
     {shadows: false},
     {occlusion: false},
     {lighting: 'style', edgeRadius: 0, shadows: false, occlusion: false},

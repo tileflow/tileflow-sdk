@@ -18,6 +18,8 @@ import {
   type HostedNativeResourcePolicy,
   type HostedNativeSessionAuthority,
   type HostedNativeSessionController,
+  type HostedNativeSessionErrorCode,
+  type HostedNativeSessionErrorKind,
   type HostedNativeSessionFetch,
 } from './session-controller';
 
@@ -28,6 +30,10 @@ export type NativeMapAdmissionInput = Omit<SessionInput, 'fetch' | 'sessionIdFac
     sessionIdFactory?: () => string;
     resources: readonly NativeAdmissionResource[];
     onRetired?: () => void;
+    /** Each time the session enters an error, including after first preparation. */
+    onSessionError?: (
+      error: Readonly<{code: HostedNativeSessionErrorCode; kind: HostedNativeSessionErrorKind}>,
+    ) => void;
   }>;
 export type NativeMapAdmission = Readonly<{
   context: string;
@@ -40,6 +46,10 @@ export type NativeMapAdmission = Readonly<{
   extendResources(
     resources: readonly NativeAdmissionResource[],
   ): Promise<Readonly<{resources: number}>>;
+  /** Lets a stopped or delayed session bootstrap again on its next acquisition. */
+  retry(): void;
+  /** Milliseconds until the session may bootstrap after a recoverable failure, or null. */
+  retryDelay(): number | null;
   retire(): Promise<Readonly<{retired: true}>>;
 }>;
 
@@ -318,6 +328,8 @@ export function createNativeAdmissionOwner(options: {
     try {
       resources = normalizeNativeResources(input.resources);
       if (input.onRetired !== undefined && typeof input.onRetired !== 'function') throw cancel();
+      if (input.onSessionError !== undefined && typeof input.onSessionError !== 'function')
+        throw cancel();
     } catch {
       throw cancel('NATIVE_ADMISSION_INVALID');
     }
@@ -392,6 +404,19 @@ export function createNativeAdmissionOwner(options: {
         controller,
         handle: undefined as unknown as NativeMapAdmission,
       };
+      // Report entering an error once; lifecycle snapshots of the same error are not new.
+      let reported: HostedNativeSessionErrorCode | null = null;
+      const releaseSession = controller.subscribe((state) => {
+        const code = state.status === 'error' ? state.error.code : null;
+        if (!context.live || code === reported) return;
+        reported = code;
+        if (state.status !== 'error') return;
+        try {
+          input.onSessionError?.(Object.freeze({code: state.error.code, kind: state.error.kind}));
+        } catch {
+          /* Observers cannot change admission. */
+        }
+      });
       context.handle = Object.freeze({
         context: context.id,
         generation: context.generation,
@@ -421,9 +446,27 @@ export function createNativeAdmissionOwner(options: {
         discriminate: catalog.discriminate,
         discriminateForTest: catalog.discriminate,
         extendResources: catalog.extend,
+        retry() {
+          if (!context.live || disposed) return;
+          try {
+            controller.retry?.();
+          } catch {
+            /* A disposed controller has nothing to retry. */
+          }
+        },
+        retryDelay() {
+          if (!context.live || disposed) return null;
+          try {
+            const delay = controller.retryDelay?.() ?? null;
+            return delay !== null && Number.isSafeInteger(delay) && delay >= 0 ? delay : null;
+          } catch {
+            return null;
+          }
+        },
         retire() {
           if (retirement) return retirement;
           context.live = false;
+          releaseSession();
           context.batch = null;
           context.tickets.clear();
           catalog.retire();

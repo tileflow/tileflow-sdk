@@ -19,6 +19,8 @@ const IGNORE_PATTERNS = [
   '**/cloudflare-env.d.ts',
   '**/package-lock.json',
   'pnpm-lock.yaml',
+  'platforms/ios/Sources/Tileflow/EmbeddedRuntime/**',
+  'platforms/android/tileflow/src/main/assets/tileflow/**',
 ];
 
 const TYPESCRIPT_FILES = ['**/*.{ts,tsx,mts,cts}'];

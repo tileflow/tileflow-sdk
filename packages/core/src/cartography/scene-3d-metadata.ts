@@ -4,12 +4,12 @@
 // 3D building colour, else its roofs', and the tileset of Tileflow's landmarks the map shows.
 import {readBuildingFloodLight, readModelRoleLighting} from '../building-illumination';
 import {
+  readTileflowBuildingsEntrance,
   type TileflowBuildingModelPlacement,
   type TileflowBuildings3DDesign,
-  readTileflowBuildingsEntrance,
   tileflowDefaultBuildings3DDesign,
 } from '../buildings-3d-design';
-import type {TileflowModelPart} from '../models-3d-model';
+import {readTileflowBuildingSurfaces} from '../buildings-3d-surfaces';
 import type {TileflowStreetLightsDesign} from '../street-lights';
 import {tileflowDefaultStreetLightsDesign} from '../street-lights';
 import type {TileflowDomainCompileContext} from './context';
@@ -59,6 +59,23 @@ export function tileflowBuildings3DDesignOf(
   };
   const edgeColor =
     style.edgeColor === undefined ? undefined : toMapLibreStyleValue(style.edgeColor as never);
+  const surfaces = isRecord(style.surfaces)
+    ? readTileflowBuildingSurfaces(
+        Object.fromEntries(
+          Object.entries(style.surfaces).map(([key, entry]) => [
+            key,
+            isRecord(entry)
+              ? Object.fromEntries(
+                  Object.entries(entry).map(([property, value]) => [
+                    property,
+                    property === 'kind' ? value : toMapLibreStyleValue(value as never),
+                  ]),
+                )
+              : entry,
+          ]),
+        ),
+      )
+    : undefined;
   return {
     source: context.data.sourceId as unknown as string,
     layers: {
@@ -144,9 +161,11 @@ export function tileflowBuildings3DDesignOf(
         }
       : {}),
     windows: style.windows === true,
+    ...(surfaces ? {surfaces} : {}),
     ...readTileflowBuildingsEntrance(style.entrance),
     shadows: typeof style.shadows === 'boolean' ? style.shadows : defaults.shadows,
     occlusion: typeof style.occlusion === 'boolean' ? style.occlusion : defaults.occlusion,
+    groundOcclusion: number(style.groundOcclusion, defaults.groundOcclusion),
     modelOcclusion: number(style.modelOcclusion, defaults.modelOcclusion),
     ...placedModels(style.models, buildingModels),
     ...modelColours(style.modelColors),
@@ -194,7 +213,7 @@ function placedModels(
         .map((id) => `${id}.glb`)
         .join(
           ', ',
-        )} to a map.models directory, with materials named surface, secondary, glass, accent or roof, and run the Node build so the directories are prepared.`,
+        )} to a map.models directory, with each material named after its part, such as surface, glass, roof or water, and run the Node build so the directories are prepared.`,
     );
   return {
     models: placements.map((entry) => ({
@@ -207,14 +226,12 @@ function placedModels(
 }
 
 /** The colours of the models' parts, resolved for the theme. */
-function modelColours(value: unknown): {
-  modelColors?: Partial<Record<TileflowModelPart, string>>;
-} {
+function modelColours(value: unknown): {modelColors?: Record<string, string>} {
   if (!isRecord(value)) return {};
-  const colours: Partial<Record<TileflowModelPart, string>> = {};
+  const colours: Record<string, string> = {};
   for (const [part, colour] of Object.entries(value)) {
     const resolved = colour === undefined ? undefined : toMapLibreStyleValue(colour as never);
-    if (typeof resolved === 'string') colours[part as TileflowModelPart] = resolved;
+    if (typeof resolved === 'string') colours[part] = resolved;
   }
   return Object.keys(colours).length > 0 ? {modelColors: colours} : {};
 }

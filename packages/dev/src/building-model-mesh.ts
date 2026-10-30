@@ -1,17 +1,20 @@
 // Turns a glTF binary into a level of Core's building model: each material names its part of the
-// building (surface, secondary, glass, accent or roof), the model keeps its size in metres round its
-// origin (where it stands on the ground, x east and y north), and its colours become shades within
-// its parts' theme colours. The footprint, the outline on the ground the model stands in for, is a
+// building, such as surface, glass, roof or water, so the map can colour it; the model keeps its
+// size in metres round its origin (where it stands on the ground, x east and y north), and its
+// colours become shades within its parts' colours. The footprint, the outline on the ground the model stands in for, is a
 // mesh whose material is named `footprint`, which is never drawn, or else the nearest level's own
 // outline on the ground. It has no filesystem access.
 import {
-  tileflowModelDefaultLightingRoles,
+  isTileflowModelPartName,
+  tileflowModelDefaultLightingRole,
   type TileflowModelLightingRole,
   tileflowModelLightingRoles,
   tileflowModelLimits,
   type TileflowModelMesh,
-  tileflowModelParts,
+  tileflowModelSurfaceLimits,
+  tileflowModelTextureChannels,
 } from '@tileflow/core';
+import {bakeBuildingModelLightmap} from './building-model-lightmap';
 import {buildingModelSurface} from './building-model-materials';
 import {buildingModelAmbientVisibility} from './building-model-occlusion';
 import {
@@ -19,15 +22,33 @@ import {
   TileflowGltfError,
   type TileflowGltfPrimitive,
 } from './gltf-reader';
+import {encodeGreyJpeg} from './grey-jpeg';
+import {tileflowTreeModelPartNames} from './tree-model-mesh';
 
-export const tileflowBuildingModelPartNames = Object.keys(tileflowModelParts) as readonly (
-  'surface' | 'secondary' | 'glass' | 'accent' | 'roof'
-)[];
-
-/** Whether every material of a glTF binary names a part of a building, so it is a building model. */
+/**
+ * Whether a glTF binary is a building model: every material it draws names a part, and not only the
+ * parts of a tree (bark, leaves, fronds and stem), which make it a tree model.
+ */
 export function isTileflowBuildingModel(primitives: readonly TileflowGltfPrimitive[]): boolean {
   const drawn = primitives.filter((primitive) => !isFootprint(primitive));
-  return drawn.length > 0 && drawn.every((primitive) => partOf(primitive.material) !== undefined);
+  return (
+    drawn.length > 0 &&
+    drawn.every((primitive) => partOf(primitive.material) !== undefined) &&
+    !isTileflowTreeModel(primitives)
+  );
+}
+
+/** Whether every material a glTF binary draws names a part of a tree, so it is a tree model. */
+export function isTileflowTreeModel(primitives: readonly TileflowGltfPrimitive[]): boolean {
+  const drawn = primitives.filter((primitive) => !isFootprint(primitive));
+  return (
+    drawn.length > 0 &&
+    drawn.every((primitive) =>
+      (tileflowTreeModelPartNames as readonly (string | undefined)[]).includes(
+        partOf(primitive.material),
+      ),
+    )
+  );
 }
 
 /**
@@ -51,7 +72,14 @@ export function tileflowBuildingModelDeclaredFootprint(
 /** A level of a building model, as Core encodes it. Throws `TileflowGltfError`. */
 export function prepareTileflowBuildingModelMesh(
   bytes: Uint8Array | readonly TileflowGltfPrimitive[],
-  {ambientOcclusion = true}: {ambientOcclusion?: boolean} = {},
+  {
+    ambientOcclusion = true,
+    lightmapTexels = 0,
+  }: {
+    ambientOcclusion?: boolean;
+    /** Texels of the baked occlusion texture; zero keeps visibility on the vertices. */
+    lightmapTexels?: number | ((area: number) => number);
+  } = {},
 ): TileflowModelMesh {
   const primitives =
     bytes instanceof Uint8Array ? readTileflowGltfTriangles(bytes, {materials: true}) : bytes;
@@ -59,22 +87,29 @@ export function prepareTileflowBuildingModelMesh(
   const surface = buildingModelSurface(drawn);
   const positions: number[] = [];
   const normals: (number[] | undefined)[] = [];
+  const partNames: string[] = [];
   const parts: number[] = [];
   const lightingRoles: number[] = [];
   const luminance: number[] = [];
   const indices: number[] = [];
   for (const primitive of drawn) {
-    const part = partOf(primitive.material);
-    if (part === undefined)
+    const name = partOf(primitive.material);
+    if (name === undefined)
       throw new TileflowGltfError(
         primitive.material === undefined
-          ? 'has a mesh without a material; name each material surface, secondary, glass, accent or roof'
-          : `has a material "${primitive.material}" that names no part of a building; name each material surface, secondary, glass, accent or roof`,
+          ? 'has a mesh without a material; name each material after its part, such as surface, glass, roof or water'
+          : `has a material "${primitive.material}" that names no part; name each material after its part in lower-case words joined by hyphens, such as surface, glass, roof or water`,
       );
+    if (!partNames.includes(name)) partNames.push(name);
+    if (partNames.length > tileflowModelLimits.parts)
+      throw new TileflowGltfError(
+        `names ${partNames.length} parts in its materials; a building model takes at most ${tileflowModelLimits.parts} a level. Give materials of the same part the same name`,
+      );
+    const part = partNames.indexOf(name);
     const offset = positions.length / 3;
     const role =
       primitive.lightingRole === undefined
-        ? tileflowModelDefaultLightingRoles[part]!
+        ? tileflowModelDefaultLightingRole(name)
         : typeof primitive.lightingRole === 'string' &&
             Object.hasOwn(tileflowModelLightingRoles, primitive.lightingRole)
           ? tileflowModelLightingRoles[primitive.lightingRole as TileflowModelLightingRole]
@@ -147,18 +182,102 @@ export function prepareTileflowBuildingModelMesh(
     for (const vertex of members)
       shades[vertex] = clamp((luminance[vertex]! - mean) / spread, -1, 1);
   }
+  const texels =
+    typeof lightmapTexels === 'function'
+      ? lightmapTexels(surfaceArea(positions, indices))
+      : lightmapTexels;
+  const lightmap =
+    ambientOcclusion && texels > 0 && surface && lightmapFits(surface)
+      ? bakeBuildingModelLightmap({positions, normals: outNormals, indices}, {texels})
+      : undefined;
+  if (!lightmap)
+    return {
+      positions,
+      normals: outNormals,
+      parts,
+      partNames,
+      lightingRoles,
+      shades,
+      ...(surface ? {surface} : {}),
+      occlusion: ambientOcclusion
+        ? buildingModelAmbientVisibility({positions, normals: outNormals, indices})
+        : new Array<number>(count).fill(1),
+      indices,
+    };
+
+  // The lightmap replaces vertex visibility: vertices split along its charts, the second UV set
+  // addresses it, and every material reads it as its occlusion texture.
+  const {sources} = lightmap;
+  const from = <T>(values: readonly T[], width = 1): T[] =>
+    sources.flatMap((source) => values.slice(source * width, source * width + width));
+  const attributes = from([...surface!.attributes], 8);
+  for (let vertex = 0; vertex < sources.length; vertex++) {
+    attributes[vertex * 8 + 2] = lightmap.uvs[vertex * 2]!;
+    attributes[vertex * 8 + 3] = lightmap.uvs[vertex * 2 + 1]!;
+  }
+  const texture = surface!.textures.length;
   return {
-    positions,
-    normals: outNormals,
-    parts,
-    lightingRoles,
-    shades,
-    ...(surface ? {surface} : {}),
-    occlusion: ambientOcclusion
-      ? buildingModelAmbientVisibility({positions, normals: outNormals, indices})
-      : new Array<number>(count).fill(1),
-    indices,
+    positions: from(positions, 3),
+    normals: from(outNormals, 3),
+    parts: from(parts),
+    partNames,
+    lightingRoles: from(lightingRoles),
+    shades: from(shades),
+    surface: {
+      ...surface!,
+      attributes,
+      materials: surface!.materials.map((material) => ({
+        ...material,
+        occlusionTexture: {texture, texCoord: 1},
+      })),
+      textures: [
+        ...surface!.textures,
+        {
+          mimeType: 'image/jpeg',
+          bytes: encodeGreyJpeg(lightmap.texels, lightmap.width, lightmap.height, lightmapQuality),
+          width: lightmap.width,
+          height: lightmap.height,
+          wrapS: 33071,
+          wrapT: 33071,
+          minFilter: 9987,
+          magFilter: 9729,
+        },
+      ],
+    },
+    occlusion: new Array<number>(sources.length).fill(1),
+    indices: lightmap.indices,
   };
+}
+
+// Shade is smooth: quality 35 keeps it within a few grey levels at about a tenth of a byte a texel.
+const lightmapQuality = 35;
+
+function surfaceArea(positions: readonly number[], indices: readonly number[]): number {
+  let area = 0;
+  for (let at = 0; at + 2 < indices.length; at += 3) {
+    const a = point(positions, indices[at]!);
+    area +=
+      Math.hypot(
+        ...cross(
+          sub(point(positions, indices[at + 1]!), a),
+          sub(point(positions, indices[at + 2]!), a),
+        ),
+      ) / 2;
+  }
+  return area;
+}
+
+// A lightmap takes the second UV set and the occlusion slot, so a surface already using either,
+// or with every texture slot taken, keeps vertex visibility.
+function lightmapFits(surface: NonNullable<TileflowModelMesh['surface']>): boolean {
+  return (
+    surface.textures.length < tileflowModelSurfaceLimits.textures &&
+    surface.materials.every(
+      (material) =>
+        !material.occlusionTexture &&
+        tileflowModelTextureChannels.every((channel) => material[channel]?.texCoord !== 1),
+    )
+  );
 }
 
 /**
@@ -299,13 +418,13 @@ function isFootprint(primitive: TileflowGltfPrimitive): boolean {
   );
 }
 
-function partOf(material: string | undefined): number | undefined {
+/** The part a material names: its name in lower case, without an exporter's `.001` suffix. */
+function partOf(material: string | undefined): string | undefined {
   const name = material
     ?.trim()
     .toLowerCase()
     .replace(/\.\d+$/u, '');
-  const part = tileflowBuildingModelPartNames.find((candidate) => candidate === name);
-  return part === undefined ? undefined : tileflowModelParts[part];
+  return isTileflowModelPartName(name) ? name : undefined;
 }
 
 /** Douglas–Peucker on a closed ring, to within `tolerance` cells. */

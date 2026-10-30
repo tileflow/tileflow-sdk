@@ -204,8 +204,11 @@ export type TileflowTerrainContourLabelStyle = TileflowTerrainLayerRange & {
 export type TileflowTerrainContoursConfig = {
   /** Maximum native zoom exposed by the DEM tile template. */
   demMaxZoom: number;
-  /** Explicit HTTP(S) DEM template containing {z}, {x}, and {y}. */
-  demUrl: string;
+  /**
+   * HTTP(S) DEM template containing {z}, {x}, and {y}. Defaults to the hosted Tileflow Terrain
+   * tiles, `{apiBaseUrl}/tiles/terrain/{z}/{x}/{y}.webp`, which follow the current release.
+   */
+  demUrl?: string;
   index?: TileflowTerrainContourLineStyle;
   labels?: TileflowTerrainContourLabelStyle;
   maxZoom?: number;
@@ -385,14 +388,20 @@ export type TileflowLabelsModuleConfig = {
   language?: TileflowLabelLanguage;
   places?: TileflowLabelDetail;
   roadClasses?: readonly TileflowRoadClass[];
+  /** Share placement and repeated-name suppression across compatible road classes. */
+  roadGrouping?: 'class' | 'network';
+  /** Abbreviate recognized road-type words without translating the selected label language. */
+  roadNameFormat?: 'full' | 'compact';
   /**
    * Where street names draw. `foreground` (the default) keeps them above buildings and
-   * vegetation. `ground` places them below buildings, with map-aligned text by default.
+   * vegetation. `ground` places them above flat footprints and below raised buildings,
+   * with map-aligned text by default.
    * Ground names retain their road-class collision order, but foreground symbols are offered
    * first by the renderer; `collisionPriority` cannot make ground names outrank those symbols.
    * Shields and junction numbers keep their foreground placement.
    */
   roadPlacement?: 'ground' | 'foreground';
+  /** Defaults to streets, including local street names where their geometry is enabled. */
   roads?: TileflowRoadLabelDetail;
   shields?: TileflowRoadShieldDetail;
   styles?: TileflowLabelStyles;
@@ -436,15 +445,21 @@ export type TileflowPoiModuleConfig = {
   type: 'poi';
   categories?: readonly TileflowPoiCategory[];
   color?: TileflowPoiColorMode;
-  /** One density for the whole module: World's ranks decide what each category shows. */
+  /** Defaults to 2. World's ranks decide which features are eligible at each zoom. */
   density?: TileflowPoiDensity;
+  /** Category overrides of density, with the same zoom-dependent detail allowance. */
+  densityByCategory?: Partial<Record<TileflowPoiCategory, TileflowPoiDensity>>;
+  /** Fixed maximum World filter rank per POI type (0–5), independent of zoom detail. */
+  maxRankByType?: Readonly<Record<string, 0 | 1 | 2 | 3 | 4 | 5>>;
+  /** Zoom for the second extra rank of POI detail. Must exceed 16; defaults to 17. */
+  detailZoom?: number;
   icons?: boolean;
   labels?: boolean;
   minZoom?: number;
   placement?: {
     /**
      * Places each pictogram with its name as one unit that needs room for both. Defaults to
-     * `false`.
+     * `true`. Use false to place pictograms and names independently.
      */
     coupleIconAndLabel?: boolean;
     iconPadding?: number;
@@ -463,6 +478,7 @@ export type TileflowPoiModuleConfig = {
      * way. Unset, every POI is placed at the module's own position.
      */
     prominentRank?: 0 | 1 | 2 | 3 | 4 | 5;
+    /** Collision margin around the name, in pixels. Defaults to 3. */
     textPadding?: number;
   };
   styles?: Partial<Record<TileflowPoiCategory, TileflowPoiCategoryStyle>>;

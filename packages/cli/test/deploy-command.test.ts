@@ -7,14 +7,12 @@ import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {fileURLToPath} from 'node:url';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {writeGlb} from '../../dev/test/tree-model-fixtures';
 import {tileflowMapFixture} from './map-fixture';
 
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 const fakeApiKey = `tf_live_${'a'.repeat(48)}`;
 const accountSessionToken = `tf_session_${'b'.repeat(64)}`;
 const managedMapId = 'map_AbCdEfGhIjKlMnOp';
@@ -803,7 +801,8 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
         style.sprite,
         `${api.url}/sprites/icp_12345678-1234-1234-1234-123456789abc/sprite`,
       );
-      const foodPoiLayer = style.layers?.find((layer) => layer.id === 'tileflow-poi-icon');
+      const foodPoiLayer = style.layers?.find((layer) => layer.id === 'tileflow-poi');
+      assert.ok(foodPoiLayer?.layout?.['text-field'], 'default POIs include their name');
       const iconImage = JSON.stringify(foodPoiLayer?.layout?.['icon-image']);
       assert.match(iconImage, /"get","icon"/u);
       const paletteSuffix = theme.includes('monochrome') ? '-monochrome' : '';
@@ -1851,15 +1850,11 @@ function runCli(
       : arguments_;
 
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      ['--import', tsxLoader, cliEntry, ...effectiveArguments],
-      {
-        cwd,
-        env: environment,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
+    const child = spawn(process.execPath, cliFixtureArguments(effectiveArguments), {
+      cwd,
+      env: environment,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     let stderr = '';
     let stdout = '';
     child.stderr.setEncoding('utf8');

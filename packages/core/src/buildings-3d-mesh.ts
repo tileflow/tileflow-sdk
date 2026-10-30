@@ -91,7 +91,7 @@ export type TileflowBuildingMeshOptions = Readonly<{
   tileMetres: number;
   /** Height used where a building has none, in metres; defaults to 5, World's own fallback. */
   defaultHeight?: number;
-  /** Exterior corner radius in metres, up to 1; 0 leaves the footprint unchanged. */
+  /** Exterior corner radius in metres, up to 1.5; 0 leaves the footprint unchanged. */
   edgeRadius?: number;
   /** Maximum turn per rounded segment; defaults to 30 degrees for close views. */
   cornerAngle?: number;
@@ -161,7 +161,7 @@ export function meshTileflowBuildings(
   const metresPerUnit = options.tileMetres / tileflowBuildingExtent;
   const fallback = options.defaultHeight ?? 5;
   const edgeRadius = Number.isFinite(options.edgeRadius)
-    ? Math.max(0, Math.min(1, options.edgeRadius!)) / metresPerUnit
+    ? Math.max(0, Math.min(1.5, options.edgeRadius!)) / metresPerUnit
     : 0;
   const vertices = new VertexWriter();
   const roofs = new IndexWriter();

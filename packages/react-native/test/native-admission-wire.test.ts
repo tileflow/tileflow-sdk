@@ -124,6 +124,36 @@ test('native bootstrap is independent, context-bound and returned as one bounded
   assert.equal(abort.listeners, 0);
 });
 
+test('a bounded native Retry-After reaches the session controller', async () => {
+  for (const [retryAfter, expected] of [
+    ['60', '60'],
+    ['', null],
+    [undefined, null],
+  ] as const) {
+    const {native, wire} = fixture();
+    await wire.bridge.install();
+    const pending = wire.fetchForContext('installation_1.1')(
+      `${apiOrigin}/v1/sessions/start`,
+      init(abortFixture().signal),
+    );
+    native.reply.resolve({...response('{}'), status: 429, retryAfter});
+    const result = await pending;
+    assert.equal(result.headers.get('Retry-After'), expected);
+    assert.equal(result.headers.get('retry-after'), expected);
+  }
+  const {native, wire} = fixture();
+  await wire.bridge.install();
+  const oversized = wire.fetchForContext('installation_1.1')(
+    `${apiOrigin}/v1/sessions/start`,
+    init(abortFixture().signal),
+  );
+  native.reply.resolve({
+    ...response('{}'),
+    retryAfter: '1'.repeat(nativeBootstrapLimits.retryAfterCharacters + 1),
+  });
+  await assert.rejects(oversized, {code: 'NATIVE_ADMISSION_INVALID'});
+});
+
 test('abort remains wired until a delivered bootstrap body releases its reservation', async () => {
   const {native, wire} = fixture();
   await wire.bridge.install();

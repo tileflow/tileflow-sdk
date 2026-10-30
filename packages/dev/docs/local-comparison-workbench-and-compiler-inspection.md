@@ -1,13 +1,13 @@
-# Map DevTools and compiler inspection
+# Inspector and compiler inspection
 
 Start with the [@tileflow/dev guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/README.md) for installation and a complete first example.
 
-The CLI opens Map DevTools through `tileflow preview`. It uses one map and one watched artifact
-session by default. A developer-tools panel groups Map, Layers, Tiles, Assets, Debug and Diagnostics. Camera controls
+The CLI opens Inspector through `tileflow preview`. It uses one map and one watched artifact
+session by default. The panel groups Map, Layers, Tiles, Assets, Debug and Diagnostics. Camera controls
 occupy a separate row below the navigation. Use the three-dot menu to dock left, right or below
 the map and choose System, Light or Dark appearance. Drag the divider to resize it; focused dividers
 also support arrow keys. Dock position and dimensions persist locally. Layer observations and highlights stay local to the preview. The map fills the remaining
-workspace without brand headers or map-status badges. Closing the panel leaves a small **DevTools**
+workspace without brand headers or map-status badges. Closing the panel leaves a small **Inspector**
 button to reopen it; capture and comparison controls are absent from the interface.
 
 Add `--against-map ...` or `--against-config ...` for synchronized comparison. Custom local servers
@@ -34,7 +34,7 @@ const fetch = createTileflowComparisonRequestHandler({
 });
 ```
 
-Set `fitViewport: true` on each dev handler embedded in a resizable Map DevTools pane. Scene previews
+Set `fitViewport: true` on each dev handler embedded in a resizable Inspector pane. Scene previews
 then fit their pane while captures retain the scene's declared frame. Standalone dev handlers keep
 the fixed scene viewport by default.
 

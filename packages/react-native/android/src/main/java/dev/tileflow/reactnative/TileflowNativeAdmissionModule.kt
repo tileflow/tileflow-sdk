@@ -125,7 +125,7 @@ class TileflowNativeAdmissionModule(context: ReactApplicationContext) : ReactCon
 				(bootstrapRequests ?: invalid()).start(context, request, url, credential, body) { reply ->
 					if (reply == null) reject(promise)
 					else promise.resolve(Arguments.makeNativeMap(mapOf(
-						"status" to reply.status, "cacheControl" to reply.cacheControl,
+						"status" to reply.status, "cacheControl" to reply.cacheControl, "retryAfter" to reply.retryAfter,
 						"bodyBase64" to Base64.encodeToString(reply.body, Base64.NO_WRAP))))
 				}
 			} catch (_: Exception) { reject(promise) }

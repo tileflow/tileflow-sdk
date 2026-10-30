@@ -34,7 +34,7 @@
   "scripts": {
     "prepack": "node ../../scripts/package-license.mjs --prepare",
     "postpack": "node ../../scripts/package-license.mjs --clean",
-    "build": "tsup src/artifacts.ts src/config.ts src/fonts.ts src/icons.ts src/inspect.ts src/preview.ts src/server.ts src/tilesets.ts src/validation.ts --format esm --dts --clean --platform node --external sharp && tsup --config tsup.devtools.config.ts",
+    "build": "tsup src/artifacts.ts src/config.ts src/fonts.ts src/icons.ts src/inspect.ts src/preview.ts src/server.ts src/tilesets.ts src/validation.ts --format esm --dts --clean --platform node --external sharp && tsup --config tsup.inspector.config.ts",
     "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
@@ -95,7 +95,6 @@
     "@maplibre/maplibre-gl-style-spec": "26.4.4",
     "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "chokidar": "4.0.3",
-    "fflate": "0.8.3",
     "fontkit": "2.0.4",
     "jiti": "^2.7.0",
     "maplibre-gl": "6.13.0",

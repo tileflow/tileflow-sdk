@@ -17,6 +17,7 @@ const allowedTileflowDependencies = {
   'coordinates-runtime': new Set(['coordinates']),
   core: new Set(),
   dev: new Set(['core']),
+  elevation: new Set(),
   geoip: new Set(),
   interactions: new Set(),
   maps: new Set(['core']),
@@ -70,6 +71,7 @@ test('public package sources respect the SDK responsibility graph', async () => 
             [
               'coordinates',
               'core',
+              'elevation',
               'geoip',
               'interactions',
               'maps',

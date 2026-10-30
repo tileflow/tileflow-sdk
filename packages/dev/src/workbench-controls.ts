@@ -6,7 +6,7 @@ export const controlsStyles = `
   .controls-segments { display:flex; min-width:0; width:max-content; max-width:100%; border:1px solid var(--border); border-radius:4px; overflow:hidden; }
   .controls-segments button { flex:1; min-width:0; padding:4px 10px; border:0; border-radius:0; background:var(--paper); color:var(--muted); cursor:pointer; }
   .controls-segments button + button { border-left:1px solid var(--border); }
-  .controls-segments button[aria-checked=true] { color:var(--accent); background:var(--dt-selected,var(--surface)); box-shadow:inset 0 -2px var(--accent); }
+  .controls-segments button[aria-checked=true] { color:var(--accent); background:var(--inspector-selected,var(--surface)); box-shadow:inset 0 -2px var(--accent); }
   .controls-segments button:disabled { opacity:.4; cursor:not-allowed; }
   .controls-selection { border-bottom:1px solid var(--border); padding-bottom:8px; }
   .controls-selection .control-field select { width:190px; max-width:70%; }
@@ -37,18 +37,18 @@ export const controlsPanel = `
   <aside class="map-controls" id="map-controls" aria-label="Scene settings" tabindex="-1" hidden>
     <div class="controls-heading"><h2>Styles</h2><button id="controls-reset">Reset</button></div>
     <div class="controls-grid">
-    <div class="controls-selection workbench-only dt-card" id="controls-selection" hidden>
+    <div class="controls-selection workbench-only inspector-card" id="controls-selection" hidden>
       <div class="controls-section-title">Appearance</div>
       <div class="control-field" id="wb-time-of-day-field" hidden><span>Time of day</span><div class="controls-segments" id="wb-time-of-day" role="radiogroup" aria-label="Time of day"></div></div>
-      <div class="control-field dt-palette-field" id="wb-theme-field"><span>Theme</span><select id="wb-theme" aria-label="Theme" disabled hidden><option value="">Waiting for map…</option></select><div id="wb-palettes" class="dt-palettes" role="radiogroup" aria-label="Theme"></div></div>
+      <div class="control-field inspector-palette-field" id="wb-theme-field"><span>Theme</span><select id="wb-theme" aria-label="Theme" disabled hidden><option value="">Waiting for map…</option></select><div id="wb-palettes" class="inspector-palettes" role="radiogroup" aria-label="Theme"></div></div>
     </div>
-    <fieldset class="controls-runtime dt-card" id="controls-runtime">
+    <fieldset class="controls-runtime inspector-card" id="controls-runtime">
       <div class="controls-section-title">Preview rendering</div>
       <label class="control-field">3D view<input id="controls-3d" type="checkbox" role="switch"></label>
       <label class="control-field">Building animation<select id="controls-animation" hidden><option value="0">Off</option><option value="800">Grow</option><option value="fade">Fade</option></select><span class="controls-segments" id="controls-animation-segments" role="radiogroup" aria-label="Building animation"></span></label>
     </fieldset>
     </div>
-    <section class="dt-card controls-module-card">
+    <section class="inspector-card controls-module-card">
       <div class="controls-section-title">Map modules</div>
       <fieldset id="controls-modules"></fieldset>
     </section>
@@ -104,7 +104,7 @@ export const controlsClient = String.raw`
       }
 
       function toggleMapControls(open, focus = false) {
-        if (globalThis.__tileflowDevtoolsUI) { globalThis.__tileflowDevtoolsUI.controls(open); return; }
+        if (globalThis.__tileflowInspectorUI) { globalThis.__tileflowInspectorUI.controls(open); return; }
         if (open) {
           setInspectionEnabled(false);
         }
@@ -295,7 +295,7 @@ export const controlsClient = String.raw`
           }
           if (!isCurrent()) return;
           const apply = side.frame.contentWindow.__tileflowApplyScene;
-          if (!apply) throw new Error("Reload DevTools once to enable live scene updates.");
+          if (!apply) throw new Error("Reload Inspector once to enable live scene updates.");
           if (!await apply(JSON.stringify(next), isCurrent)) return;
           side.appliedSceneStyle = styleKey;
           const after = globalThis.__tileflowScene.snapshot();

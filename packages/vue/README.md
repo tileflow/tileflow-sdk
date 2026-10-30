@@ -94,24 +94,32 @@ Maps without this capability ignore the option; omitting it keeps the selected t
 Changing it uses the existing theme transition. `themeBlend` takes precedence. See the
 [authoring contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md#style-with-themes-and-semantic-modules).
 
-`:theme-transition="{duration: 450}"` cross-fades theme changes over that many milliseconds.
+Theme and `time-of-day` changes cross-fade over 450 ms by default, respecting reduced motion.
+`:theme-transition="{duration: 700}"` customizes the duration; use `duration: 0` for an immediate change.
 `:theme-blend="{themes: ['night', 'dusk', 'day'], position}"` shows a continuous blend of the
 map's themes instead of `theme`: position 0 is the first theme and 1.5 is halfway from the second to
 the third. Moving the position updates the map at once. See
 [theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md).
 
-Interactive maps automatically render the map's vegetation. `vegetation` overrides visibility
-(omitting it uses the map default); false hides models and flat artwork alike. `viewMode` is `2d`
-by default and may be `3d`: only maps with `vegetation.mode: 'auto'` switch representation.
-Streets uses model trees in either view. Changing either prop updates the existing map immediately.
-These props do not change camera pitch, buildings or lighting and do not apply in image mode. See
-[vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md#visibility-and-representation).
+Interactive maps show the 3D scene their style declares by default: buildings with Tileflow
+landmarks and the map's Team building models, 3D trees, and street lights where the map enables
+them. The 3D renderers load only when the style declares a scene, so 2D maps do not download them.
+`viewMode` is `3d` by default; `view-mode="2d"` opts out, mounting no 3D buildings or street lights, and
+draws vegetation as the map's policy sets for the 2D view (Streets keeps its model trees in either
+view). `vegetation` overrides vegetation visibility (omitting it uses the map default); `:vegetation="false"`
+hides models and flat artwork alike. Changing either prop updates the existing map immediately.
+They do not change camera pitch and do not apply in image mode. See
+[the map's 3D scene](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md#the-maps-3d-scene)
+and [vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md#visibility-and-representation).
 
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct props take
 priority over those options, then the published view, then shared defaults. `TileflowMap` always
 selects a Tileflow map through its manifest; it has no renderer discriminator or direct-style mode.
 Tileflow's styles are validated when they are compiled, so `validateStyle` defaults to `false`; pass
 `true` to validate them again in the browser.
+The map canvas is multisampled by default (`canvasContextAttributes.antialias` is `true`) so the
+thin edges of 3D models stay continuous; other context attributes you pass are kept, and
+`canvasContextAttributes: {antialias: false}` trades that smoothing for lower GPU cost.
 The obsolete source fields `kind` and `style` are rejected. For a completely unmanaged map, use
 `maplibre-gl` directly rather than a Tileflow component.
 

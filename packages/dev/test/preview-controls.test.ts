@@ -35,7 +35,7 @@ test('controls recompile modules with matching inspection, reuse delivery assets
   const config = `import {defineMap, disable} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 export default defineMap({id:'main',version:1,extends:streets,icons:[],
-glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic']},
+glyphs:{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic','DINish Medium,Noto Sans Regular','DINish Bold,Noto Sans Regular']},
 modules:{roads:disable(),poi:disable(),vegetation:disable()}});`;
   await writeFile(join(cwd, 'tileflow.config.ts'), config);
   const artifacts = await createTileflowBuildArtifacts({cwd, inspection: true});

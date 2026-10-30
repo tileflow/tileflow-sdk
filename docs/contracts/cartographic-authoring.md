@@ -109,10 +109,11 @@ none of which are packaged.
 Siegfried owns nine semantic engraving motifs with separate light and dark SVG sources in one asset
 directory. Both themes compile the same layer topology; the dark theme changes only semantic ink,
 paper, and image-token values and is documented as an original nocturnal interpretation.
-The Soundings asset directory retains eleven original chart symbols and patterns. The official map
-selects its paper/water patterns and, through theme `nautical.*` image tokens, its buoy, light,
-lighthouse, wreck, and harbor symbols for the Nautical marks it enables; these single-colour SDF
-symbols take each mark's colour from the data. The rock symbol is retained but unused, because rocks
+The Soundings asset directory retains twenty-seven original chart symbols and patterns. The official
+map selects its paper/water patterns and, through theme `nautical.*` image tokens, its buoy, light,
+lighthouse, wreck, harbor, marina, notice-board, distance-mark, and small-craft facility symbols for
+the Nautical marks it enables; these single-colour SDF symbols take each mark's colour from the data
+or print in the chart ink. The rock symbol is retained but unused, because rocks
 are drawn as chart crosses. Its GEBCO-derived depth bands and labels provide broad visual context and
 are not navigation-grade survey soundings. Nautical marks are reference cartography; every map that
 draws them declares a "Not for navigation" notice that the browser runtimes render on the map. Applications use the same rule with a config-relative
@@ -299,8 +300,8 @@ request to expose a reference style's layer ID.
 Reference-style inventories can reveal missing concepts, but they are not Tileflow APIs. Tileflow
 World already supplies the fields used by road treatments, road references, networks, and motorway
 junctions. Traffic signals, per-lane widths, and barriers are absent from its current public
-TileJSON contract. Detailed datasets may opt into the typed `streetFurniture`, `sidewalk`, and
-`circularFeature` bindings used by the semantic road controls above. Sidewalk coverage is
+TileJSON contract. Detailed datasets may opt into the typed `streetFurniture`, `sidewalk`,
+`circularFeature`, and `transportationOutline` bindings used by the semantic road controls above. Sidewalk coverage is
 source-backed and may be incomplete; never infer missing polygons by buffering road centerlines.
 Datasets may also publish the optional decorative `canopy` layer, whose `canopyRank`,
 `canopyClearanceAtZoom15`, and `canopyCoverPercent` fields size groves drawn by render passes. No

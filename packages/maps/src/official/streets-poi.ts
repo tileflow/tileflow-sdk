@@ -5,6 +5,7 @@ import {
   type TileflowThemeImageValue,
   token,
 } from '@tileflow/core';
+import {streetsTransitNetworks} from './streets-transit-icons';
 
 type StreetsPoiPictogram = Readonly<{
   /** The disc takes this category's color from `streetsPoiDiscColors`. */
@@ -325,11 +326,13 @@ export function streetsPoiImageTokens(
       image(id),
     ]),
     ...Object.keys(streetsPoiPictograms).map((id) => [`poi.pictogram.${id}`, image(id)]),
+    // A network has one source SVG, shared by every time-of-day and palette variant.
+    ...streetsTransitNetworks.map(({id}) => [`poi.network.${id}`, id]),
   ]);
 }
 
 /**
- * Streets' pictogram for a POI: its transport mode first, then its World type, then its
+ * Streets' pictogram for a POI: its known transport network, mode, World type, then its
  * category. World's own `icon` field is coarser than its type (one `shop` for every store, one
  * `transport` for metro, bus and cable car), so Streets reads the type instead.
  */
@@ -359,7 +362,7 @@ export function streetsPoiImage() {
     labels: [...labels!],
     value: streetsPoiPictogramToken(id as StreetsPoiPictogramId),
   }));
-  return expr.match<string, TileflowThemeImageValue>(
+  const genericImage = expr.match<string, TileflowThemeImageValue>(
     expr.get(field('mode')),
     [firstMode!, ...otherModes],
     expr.match<string, TileflowThemeImageValue>(
@@ -367,5 +370,22 @@ export function streetsPoiImage() {
       [firstCategory!, ...otherCategories],
       token.image('poi.landmark'),
     ),
+  );
+  const [firstNetwork, ...otherNetworks] = streetsTransitNetworks.map(({id, networks}) => ({
+    labels: [...networks],
+    value: token.image(`poi.network.${id}`),
+  }));
+  return expr.case<TileflowThemeImageValue>(
+    [
+      {
+        when: expr.eq(expr.get(field('poiCategory')), 'transport'),
+        value: expr.match<string, TileflowThemeImageValue>(
+          expr.get(field('network')),
+          [firstNetwork!, ...otherNetworks],
+          genericImage,
+        ),
+      },
+    ],
+    genericImage,
   );
 }

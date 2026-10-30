@@ -7,6 +7,9 @@ function packageDirectory(path: string): TileflowPackageDirectory {
 /** Package-owned Streets icons. Filename stems are the canonical runtime IDs. */
 export const streetsIcons = packageDirectory('assets/streets/icons');
 
+/** Package-owned navigation lettering and fallback faces, with their licenses. */
+export const streetsFonts = packageDirectory('assets/streets/fonts');
+
 /** Package-owned Streets tree geometry, including the lighter far models. */
 export const streetsModels = packageDirectory('assets/streets/models');
 

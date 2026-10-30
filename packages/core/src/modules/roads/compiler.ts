@@ -365,34 +365,29 @@ export function compileRoads(
     },
     request?.areas,
   );
+  // `kind` selects an area among the road areas: in the polygons, and in their outer boundaries when
+  // the data publishes them as lines.
   const areaTargets = [
     {
       id: 'tileflow-road-area',
-      filter: ['==', ['geometry-type'], 'Polygon'],
+      kind: undefined,
       name: 'road',
       style: areaStyles.road,
     },
     {
       id: 'tileflow-road-pedestrian-area',
-      filter: [
-        'all',
-        ['==', ['geometry-type'], 'Polygon'],
-        tileflowRoadClassFilter(schema.fields, 'pedestrian'),
-      ],
+      kind: tileflowRoadClassFilter(schema.fields, 'pedestrian'),
       name: 'pedestrian',
       style: areaStyles.pedestrian,
     },
     {
       id: 'tileflow-road-pier-area',
-      filter: [
-        'all',
-        ['==', ['geometry-type'], 'Polygon'],
-        ['==', ['get', schema.fields.class], 'pier'],
-      ],
+      kind: ['==', ['get', schema.fields.class], 'pier'],
       name: 'pier',
       style: areaStyles.pier,
     },
   ] as const;
+  const polygons = ['==', ['geometry-type'], 'Polygon'];
   let areaOrder = 900;
   for (const target of areaTargets) {
     if (!target.style) continue;
@@ -402,13 +397,24 @@ export function compileRoads(
         type: 'fill',
         source,
         'source-layer': schema.layers.road,
-        filter: target.filter,
+        filter: target.kind ? ['all', polygons, target.kind] : polygons,
       },
       target.style,
     )) {
+      // A line over a polygon strokes every ring, holes included. With the outer boundaries in the
+      // data, the outline strokes only them.
+      const {filter: _polygonFilter, ...unfiltered} = area.layer;
+      const outline =
+        area.phase === 'outline' && schema.layers.transportationOutline
+          ? {
+              ...unfiltered,
+              'source-layer': schema.layers.transportationOutline,
+              ...(target.kind ? {filter: target.kind} : {}),
+            }
+          : area.layer;
       contributions.push({
         kind: 'layer',
-        layer: area.layer,
+        layer: outline,
         localOrder: areaOrder++,
         owner: 'roads',
         slot: 'transport-areas',
@@ -588,7 +594,7 @@ function compileCrossings(
       ]),
       padding: 0,
       pitchAlignment: 'map',
-      rotate: expression<number>(['+', ['to-number', ['get', fields.direction], 0], 90]),
+      rotate: expression<number>(['+', ['to-number', ['get', fields.direction]], 90]),
       rotationAlignment: 'map',
       size: zoom.linear([
         [15, 0.22],
@@ -620,6 +626,13 @@ function compileCrossings(
           ['!=', ['get', fields.crossing], 'no'],
           ['has', fields.markings],
           ['match', ['get', fields.markings], ['no', 'none', 'unmarked'], false, true],
+          // World leaves direction absent when it cannot resolve a crossing against
+          // a road (including points on adjoining footways). Do not invent an axis.
+          ['has', fields.direction],
+          ['match', ['typeof', ['get', fields.direction]], ['number', 'string'], true, false],
+          ['!=', ['get', fields.direction], ''],
+          ['>=', ['to-number', ['get', fields.direction], -1], 0],
+          ['<=', ['to-number', ['get', fields.direction], -1], 360],
         ],
       },
       config,
@@ -751,9 +764,12 @@ function resolveRoadTreatments(
   add(request?.modifiers?.indoor, flagFilter(fields.indoor));
   add(request?.modifiers?.official, flagFilter(fields.official));
 
-  for (const [scale, style] of Object.entries(request?.mountainBike ?? {})) {
-    add(style, ['==', ['to-string', ['get', fields.mtbScale]], scale]);
-  }
+  // Mountain-bike difficulty describes trails: paths and tracks. Leaving it off the other classes
+  // keeps their layers solid, and so on MapLibre's solid-line shader.
+  if (isTileflowPathRoadClass(roadClass) || roadClass === 'track')
+    for (const [scale, style] of Object.entries(request?.mountainBike ?? {})) {
+      add(style, ['==', ['to-string', ['get', fields.mtbScale]], scale]);
+    }
 
   if (roadClass === 'service') {
     for (const [serviceType, value] of Object.entries(serviceTypeValues)) {

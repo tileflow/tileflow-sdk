@@ -9,6 +9,9 @@ the lights switch on one by one; they go out as day comes.
 Street lights are off by default in the SDK and in Streets. A compiled map must explicitly set
 `roads.streetLights.enabled: true` before the renderer or preview will show lamp glows.
 
+React, Vue and Svelte maps light a map that enables street lights automatically, as part of its
+[3D scene](buildings-3d.md#the-maps-3d-scene); the 2D view has no street lights.
+
 It is a custom WebGL2 layer for MapLibre GL JS, drawn above the map's buildings and below its
 labels. When `createTileflowBuildings3D` raises the buildings, they hide the lamps behind them. It
 needs WebGL2 and the Mercator projection, and shines from zoom 14 by default.

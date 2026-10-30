@@ -1,4 +1,5 @@
 import {type TileflowBuildingMesh, tileflowBuildingVertexBytes} from './buildings-3d-mesh';
+import {tileflowHazeFragment} from './scene-3d-shaders';
 
 // Shared by every map that enables building occlusion; reach is in metres, never screen pixels.
 export const tileflowBuildingOcclusion = {
@@ -103,9 +104,10 @@ void main() {
 export const buildingContactCompositeFragment = `#version 300 es
 precision highp float;
 uniform highp sampler2D u_contact;
+${tileflowHazeFragment}
 out vec4 fragColor;
 void main() {
-  float shade = texelFetch(u_contact, ivec2(gl_FragCoord.xy), 0).r;
+  float shade = mix(texelFetch(u_contact, ivec2(gl_FragCoord.xy), 0).r, 1.0, hazeOf());
   fragColor = vec4(vec3(shade), 1.0);
 }`;
 

@@ -748,6 +748,10 @@ export type TileflowVegetation3D = Readonly<{
   }>;
   heightScale: number;
   crownScale: number;
+  /** Visual size floor in metres, after scaling; crowns keep their proportions. */
+  minimumHeight?: number;
+  /** Stable variation across trunks and within the theme's foliage palette. */
+  materialVariation?: number;
   /** Each form's own scales and models. */
   forms: Readonly<Partial<Record<TileflowTreeForm, TileflowTreeFormStyle>>>;
   /** The map's own models its forms draw, by id, prepared from its `models` directories. */
@@ -856,6 +860,14 @@ export function readTileflowVegetation3D(metadata: unknown): TileflowVegetation3
     colors: {bark: colors.bark, broadleaf, conifer, palm, hedge},
     heightScale: scale(heightScale),
     crownScale: scale(crownScale),
+    minimumHeight:
+      typeof value.minimumHeight === 'number' && Number.isFinite(value.minimumHeight)
+        ? clamp(value.minimumHeight, [0, 20])
+        : 0,
+    materialVariation:
+      typeof value.materialVariation === 'number' && Number.isFinite(value.materialVariation)
+        ? clamp(value.materialVariation, [0, 1])
+        : 0,
     forms,
     models,
     finish,

@@ -120,12 +120,29 @@ export type TileflowScene3D = {
   drawsGround(caster: TileflowSceneCaster): boolean;
   /** Lets go of the shadow map once no caster is left. */
   release(context: WebGL2RenderingContext): void;
+  /** How far the 3D city stands round the camera, which the distance haze fits itself to. */
+  reach(): TileflowSceneReach | undefined;
+  /** Set by the layer whose tiles reach farthest, each frame it draws; undefined once it stops. */
+  setReach(reach: TileflowSceneReach | undefined): void;
 };
 
-const scenes = new WeakMap<object, TileflowScene3D>();
+/** A disc the 3D city covers whole: its centre and radius, in metres. */
+export type TileflowSceneReach = Readonly<{lng: number; lat: number; radius: number}>;
+
+// `@tileflow/core/browser` and `@tileflow/core/3d` each bundle this module, so every copy on a
+// page keeps a map's scene in one registry shared through the global object.
+const sceneRegistry = Symbol.for('tileflow.scene-3d');
 
 /** The 3D scene of a map, made on first use. */
+/** The 3D city's reach on a map, without making a scene for a map that has none. */
+export function tileflowSceneReach(map: object): TileflowSceneReach | undefined {
+  const global = globalThis as {[sceneRegistry]?: WeakMap<object, TileflowScene3D>};
+  return global[sceneRegistry]?.get(map)?.reach();
+}
+
 export function tileflowScene3D(map: object): TileflowScene3D {
+  const global = globalThis as {[sceneRegistry]?: WeakMap<object, TileflowScene3D>};
+  const scenes = (global[sceneRegistry] ??= new WeakMap());
   let scene = scenes.get(map);
   if (!scene) {
     scene = createScene(map);
@@ -141,6 +158,7 @@ function createScene(map: object): TileflowScene3D {
   let frame: TileflowSceneFrame | undefined;
   // The light's view fitted last and the frame it is in, kept by a moving camera.
   let fitted: {frame: string; fit: ShadowFit} | undefined;
+  let reach: TileflowSceneReach | undefined;
 
   function ensureTarget(context: WebGL2RenderingContext): ShadowTarget {
     if (target && target.context === context) return target;
@@ -294,6 +312,10 @@ function createScene(map: object): TileflowScene3D {
   }
 
   return {
+    reach: () => reach,
+    setReach(next) {
+      reach = next;
+    },
     register(caster) {
       casters.add(caster);
       key = undefined;

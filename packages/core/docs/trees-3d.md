@@ -20,7 +20,8 @@ for its models unless an extension explicitly chooses `flat` or `auto`.
 ## Visibility and representation
 
 Use `createTileflowVegetation` for application controls. React, Vue and Svelte mount it automatically
-in interactive maps. The map chooses `vegetation.mode` independently of visibility:
+in interactive maps, as part of the map's [3D scene](buildings-3d.md#the-maps-3d-scene). The map
+chooses `vegetation.mode` independently of visibility:
 
 | Mode           | 2D view             | 3D view             |
 | -------------- | ------------------- | ------------------- |
@@ -28,7 +29,8 @@ in interactive maps. The map chooses `vegetation.mode` independently of visibili
 | `flat`         | Flat crowns/circles | Flat crowns/circles |
 | `auto`         | Flat crowns/circles | Model trees         |
 
-`viewMode` is explicit application state (`2d` by default), not a pitch threshold. Tilting the camera
+`viewMode` is explicit application state, not a pitch threshold: `2d` by default for
+`createTileflowVegetation`, and `3d` by default in the framework components and `createTileflowMap3D`. Tilting the camera
 does not change representation. Visibility defaults to `vegetation.visible ?? true`; OFF hides every
 representation. Turning trees off releases model buffers and tile readers. Controls apply immediately,
 without a grow/sink animation, and do not change building appearance or lighting.
@@ -70,7 +72,7 @@ export default defineMap({
 Use `refine({visible: false})` for initially hidden vegetation that can be enabled at runtime.
 Use `vegetation: disable()` to remove the module entirely; a runtime toggle cannot restore a module
 that is absent from the compiled map. Browser framework components accept `vegetation={false}` and
-`viewMode="3d"` (Vue: `:vegetation="false"`, `view-mode="3d"`). Image mode uses the compiled static
+`viewMode="2d"` (Vue: `:vegetation="false"`, `view-mode="2d"`). Image mode uses the compiled static
 fallback and does not apply these interactive controls.
 
 ## Animate trees with the low-level renderer
@@ -189,6 +191,13 @@ forms of trees whose data gives none, and `regions` sets them inside `[west, sou
 bounds in degrees, the first region holding a tree applying. They are a choice of look, not data:
 they never change a tree whose data gives its form, and as mapping improves they apply to fewer
 trees.
+
+`minimumHeight` optionally sets a visual height floor in metres (0–20, default 0). It applies after
+scaling, enlarging only smaller trees and their crowns proportionally; source measurements stay
+unchanged. Hedges retain their measured height and segment length. Color, shadow and outline
+passes use the same size. `materialVariation` (0–1, default 0)
+adds stable brightness variation between trunks and uses authored lobe shades to vary foliage
+within the theme palette. It does not add colors outside that palette.
 
 ## Your own trees
 

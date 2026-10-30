@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import {once} from 'node:events';
 import {mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile} from 'node:fs/promises';
-import {createServer, type Server} from 'node:http';
+import {createServer} from 'node:http';
 import {connect} from 'node:net';
 import {tmpdir} from 'node:os';
-import {join, win32} from 'node:path';
+import {basename, join, win32} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {fileURLToPath} from 'node:url';
 import {
   createTileflowCaptureReceipt,
   createTileflowCaptureRendererIdentity,
@@ -16,7 +15,13 @@ import {
   TileflowCaptureError,
   type TileflowShotCapture,
 } from '@tileflow/capture';
+import {getTileflowStyleFontFaces, type MapLibreStyle} from '@tileflow/core';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {startFixtureProcess} from '../../../test-support/fixture-process';
+import {
+  closeFixtureServer,
+  fixtureResources as resourcesFor,
+} from '../../../test-support/fixture-resources';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
   createExploratoryScene,
@@ -39,9 +44,6 @@ import {
   writeCapturePair,
 } from '../src/capture-output';
 import {tileflowMapFixture} from './map-fixture';
-
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 
 test('capture fixture cleanup closes unfinished HTTP connections', async () => {
   let cleanup: (() => Promise<void>) | undefined;
@@ -693,11 +695,21 @@ test('init creates a singular map and only creates a missing ignore file', async
   assert.equal(built.code, 0, `${built.stdout}\n${built.stderr}`);
   const style = JSON.parse(
     await readFile(join(fresh, 'dist/tileflow/styles/madrid/light.json'), 'utf8'),
-  ) as {glyphs?: string};
-  assert.equal(
-    style.glyphs,
-    'https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf',
-  );
+  ) as MapLibreStyle;
+  assert.equal(style.glyphs, undefined);
+  const faces = getTileflowStyleFontFaces(style);
+  // The starter replaces road/POI labels but retains Streets' DINish house numbers.
+  assert.deepEqual(faces.map(({family}) => family).sort(), [
+    'DINish Medium',
+    'Noto Sans Bold',
+    'Noto Sans Regular',
+  ]);
+  for (const face of faces) {
+    assert.match(face.source, /\.ttf$/);
+    assert.ok(
+      (await readFile(join(fresh, 'dist/tileflow/fonts', basename(face.source)))).length > 1000,
+    );
+  }
 
   const existing = await createDirectoryFixture(t, 'tileflow-capture-init-existing-ignore-');
   await writeFile(join(existing, '.gitignore'), 'owned-by-user\n');
@@ -1041,7 +1053,7 @@ for (const mode of ['named', 'exploratory'] as const) {
         tileflowMapFixture({
           id: 'proof',
           icons: 'official',
-          fields: `glyphs: {kind: 'url', url: ${JSON.stringify(`${fixture.origin}/fonts/{fontstack}/{range}.pbf`)}, fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']},
+          fields: `glyphs: {kind: 'url', url: ${JSON.stringify(`${fixture.origin}/fonts/{fontstack}/{range}.pbf`)}, fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic', 'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']},
       data: {
         type: 'vector-tiles',
         tiles: [${JSON.stringify(`${fixture.origin}/tiles/world/{z}/{x}/{y}.pbf`)}],
@@ -1394,35 +1406,6 @@ async function createVectorFixtureServer(
   return {origin, requests};
 }
 
-const resources = new WeakMap<TestContext, Array<() => Promise<unknown>>>();
-
-function resourcesFor(t: TestContext): Array<() => Promise<unknown>> {
-  let owned = resources.get(t);
-  if (!owned) {
-    owned = [];
-    resources.set(t, owned);
-    t.after(async () => {
-      const failures: unknown[] = [];
-      for (const close of owned!.reverse()) {
-        try {
-          await close();
-        } catch (error) {
-          failures.push(error);
-        }
-      }
-      if (failures.length) throw new AggregateError(failures, 'Capture fixture cleanup failed');
-    });
-  }
-  return owned;
-}
-
-function closeFixtureServer(server: Server): Promise<void> {
-  return new Promise((resolve, reject) => {
-    server.close((error) => (error ? reject(error) : resolve()));
-    server.closeAllConnections();
-  });
-}
-
 function runCli(
   t: TestContext,
   cwd: string,
@@ -1446,7 +1429,7 @@ function runCli(
   );
 
   t.signal.throwIfAborted();
-  const running = startFixtureProcess(['--import', tsxLoader, cliEntry, ...arguments_], {
+  const running = startFixtureProcess(cliFixtureArguments(arguments_), {
     cwd,
     env: environment,
     signal: t.signal,

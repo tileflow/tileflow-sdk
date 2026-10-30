@@ -30,13 +30,15 @@
   } from '@tileflow/core/runtime';
   import {
     attachTileflowAtmosphere,
+    attachTileflowLabelPlacement,
     attachTileflowFairUseNotice,
+    attachTileflowMap3D,
     attachTileflowMapLifecycle,
+    attachTileflowNauticalLights,
     attachTileflowNotices,
     createTileflowSessionStarter,
     createTileflowThemeController,
-    createTileflowVegetation,
-    type TileflowVegetationController,
+    type TileflowMap3DAttachment,
     createTileflowTransformRequest,
     getTileflowSystemColorScheme,
     loadTileflowStyleFonts,
@@ -44,6 +46,8 @@
     registerTileflowPmtilesProtocol,
     registerTileflowWorldRequestBridge,
     subscribeTileflowSystemColorScheme,
+    tileflowMaxPitch,
+    tileflowCanvasContextAttributes,
     type TileflowFairUseNoticeController,
     type TileflowMapLifecycleAttachment,
     type TileflowThemeController,
@@ -105,7 +109,7 @@
   export let timeOfDay: TileflowMapProps['timeOfDay'] = undefined;
   export let themeBlend: TileflowMapProps['themeBlend'] = undefined;
   export let vegetation: TileflowMapProps['vegetation'] = undefined;
-  export let viewMode: NonNullable<TileflowMapProps['viewMode']> = '2d';
+  export let viewMode: NonNullable<TileflowMapProps['viewMode']> = '3d';
   export let themeTransition: TileflowMapProps['themeTransition'] = undefined;
   export let tooltip: TileflowMapProps['tooltip'] = undefined;
   export let zoom: TileflowMapProps['zoom'] = undefined;
@@ -148,9 +152,9 @@
   let interactionRuntimesDisposing = false;
   let mapResizeObserver: ResizeObserver | null = null;
   let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
-  let vegetationController: TileflowVegetationController | null = null;
-  $: vegetationController?.setVisible(vegetation);
-  $: vegetationController?.setViewMode(viewMode);
+  let sceneAttachment: TileflowMap3DAttachment | null = null;
+  $: sceneAttachment?.setVegetation(vegetation);
+  $: sceneAttachment?.setViewMode(viewMode);
   let themeController: TileflowThemeController | null = null;
   let systemColorScheme: 'dark' | 'light' = 'light';
   let unsubscribeSystemColorScheme: (() => void) | null = null;
@@ -460,8 +464,8 @@
     const unsubscribeSemanticTargets = semanticRuntimeTargetsUnsubscribe;
     const currentMap = mapInstance;
     const currentThemeController = themeController;
-    const currentVegetationController = vegetationController;
-    vegetationController = null;
+    const currentSceneAttachment = sceneAttachment;
+    sceneAttachment = null;
     const worldRequestBridge = mapWorldRequestBridge;
     interactionRuntimesDisposing = true;
     mapFairUseNotice = null;
@@ -504,7 +508,7 @@
       () => semanticInteractionsForMap?.dispose(),
       () => annotationInteractionsForMap?.dispose(),
       () => lifecycleAttachment?.dispose(),
-      () => currentVegetationController?.dispose(),
+      () => currentSceneAttachment?.dispose(),
       () => currentThemeController?.dispose(),
       () => worldRequestBridge?.dispose(),
       () => fairUseNotice?.dispose(),
@@ -586,9 +590,11 @@
     });
     const maplibreMap = new maplibregl.Map({
       ...mapOptions,
+      canvasContextAttributes: tileflowCanvasContextAttributes(mapOptions?.canvasContextAttributes),
       attributionControl: mapOptions?.attributionControl ?? {compact: true},
       // Tileflow's compiled styles are validated when they are built.
       validateStyle: mapOptions?.validateStyle ?? false,
+      maxPitch: mapOptions?.maxPitch ?? tileflowMaxPitch,
       bearing: resolvedBearing,
       center: resolvedCenter as LngLatLike,
       container: targetContainer,
@@ -608,6 +614,8 @@
     mapInstance = maplibreMap;
     attachTileflowAtmosphere(maplibreMap);
     attachTileflowNotices(maplibreMap);
+    attachTileflowNauticalLights(maplibreMap);
+    attachTileflowLabelPlacement(maplibreMap);
     themeController =
       runtime.theme === undefined
         ? null
@@ -626,11 +634,14 @@
             },
           });
 
-    vegetationController = createTileflowVegetation({
+    // The map's 3D scene loads only once its style declares one, so 2D maps do not pay for it.
+    sceneAttachment = attachTileflowMap3D({
       map: maplibreMap,
       ...(themeController ? {controller: themeController} : {}),
-      visible: vegetation,
+      vegetation,
       viewMode,
+      load: () => import('@tileflow/core/3d'),
+      onError: (error) => console.error('Failed to load the Tileflow 3D scene', error),
       transformRequest: createTileflowTransformRequest({
         getAnalytics: () => resolvedAnalytics,
         sessionController: session,

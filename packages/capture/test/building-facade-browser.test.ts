@@ -30,18 +30,23 @@ uniform float u_test_corners;
 out vec3 v_colour;
 out float v_base;
 out vec3 v_facade;
+out vec2 v_surface;
 out vec4 v_building;
 out vec3 v_normal;
 out vec3 v_shadow;
 flat out vec3 v_wall;
 out vec3 v_edge;
 flat out float v_outline;
+out float v_haze_depth;
 void main() {
   vec2 uv = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
   gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
+  // No sky: the haze stays off.
+  v_haze_depth = 0.0;
   v_colour = vec3(0.8);
   v_base = u_test_base;
   v_facade = vec3(uv.x * 20.0, u_test_base + uv.y * 12.0, u_test_base + 12.0);
+  v_surface = uv * 20.0;
   v_building = vec4(0.0, 0.0, u_test_wall, 0.0);
   v_normal = mix(vec3(0.0, 0.0, 1.0), vec3(0.0, -1.0, 0.0), u_test_wall);
   v_shadow = vec3(0.0);

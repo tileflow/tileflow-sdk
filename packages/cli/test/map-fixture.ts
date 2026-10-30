@@ -12,6 +12,8 @@ export type TileflowMapFixtureOptions = {
    * Streets assets; `authored` leaves the field to `fields`.
    */
   icons?: 'authored' | 'none' | 'official';
+  /** Module overrides applied after the disabled fixture defaults. */
+  modules?: string;
   /** Executable setup placed after imports and before the default export. */
   setup?: string;
   version?: number;
@@ -43,12 +45,12 @@ export function tileflowMapFixture(options: TileflowMapFixtureOptions): string {
   roads: disable(),
   transit: disable(),
   vegetation: disable(),
-  water: disable()
+  water: disable()${options.modules ? `,\n  ...(${options.modules})` : ''}
 }`,
     `glyphs: {
   kind: 'url',
   url: 'https://fixtures.tileflow.test/fonts/{fontstack}/{range}.pbf',
-  fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']
+  fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic', 'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']
 }`,
     options.fields?.trim() ?? '',
   ]

@@ -36,7 +36,7 @@ test('imports Preview MapLibre as a module and pins its matching worker', () => 
   assert.doesNotMatch(html, /maplibre-gl\.js/u);
 });
 
-test('offers a theme switch in standalone previews, not the Map DevTools iframe', () => {
+test('offers a theme switch in standalone previews, not the Inspector iframe', () => {
   const camera = {type: 'center', center: [0, 0], zoom: 2, bearing: 0, pitch: 0} as const;
   const single = renderTileflowPreviewHtml(
     {camera, label: 'map / light', mapName: 'map', themeName: 'light', themeNames: ['light']},
@@ -67,13 +67,15 @@ test('offers a theme switch in standalone previews, not the Map DevTools iframe'
   assert.match(single, /if \(previewThemes\.length > 1 && window\.parent === window\)/u);
 });
 
-test('the preview globe rim follows the rendered silhouette and map atmosphere', () => {
+test('preview delegates atmosphere to the shared runtime without overriding its rendering', async () => {
   const html = renderTileflowPreviewHtml(undefined, '/tileflow', {}, false);
-
-  assert.match(html, /background-color: var\(--tileflow-space, #2F5070\)/u);
-  assert.match(html, /metadata\?\.\["tileflow:atmosphere"\]/u);
-  assert.match(html, /#map\.tileflow-globe \.maplibregl-canvas\s*\{\s*filter:/u);
-  assert.match(html, /rgba\(atmosphere\?\.horizonColor \?\? "#B0DCF6", opacity \* 0\.4\)/u);
-  assert.match(html, /map\.on\("style\.load", \(\) => updateGlobeBackdrop\(map\)\)/u);
-  assert.doesNotMatch(html, /tileflow-globe::before|--tileflow-globe-radius|radius\.toFixed/u);
+  assert.match(html, /import \{attachTileflowAtmosphere, tileflowMaxPitch\} from/u);
+  assert.match(html, /attachTileflowAtmosphere\(map\);/u);
+  assert.doesNotMatch(
+    html,
+    /attachTileflowSky\(|attachTileflowSkyHaze\(|drop-shadow|--tileflow-space|tileflow-globe/u,
+  );
+  const runtime = getTileflowPreviewRuntimeResponse('/__runtime/tileflow-browser.js');
+  assert.ok(runtime);
+  assert.match(await runtime.text(), /attachTileflowAtmosphere/u);
 });

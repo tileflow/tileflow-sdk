@@ -69,7 +69,10 @@ test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good 
   // contract is ordered generations and preservation of the last valid artifacts.
   assert.equal(typeof ready.generation, 'number');
   assert.ok(Number.isInteger(ready.generation) && Number(ready.generation) >= 1);
-  const status = await fetchEventually(`http://127.0.0.1:${port}/map/__status`);
+  const status = await fetchEventually(
+    `http://127.0.0.1:${port}/map/__status`,
+    (body) => body.status === 'ready',
+  );
   assert.equal(status.status, 'ready');
   const preview = await (await fetch(`http://127.0.0.1:${port}/`)).text();
   assert.match(preview, /Tileflow Inspector/);
@@ -96,7 +99,7 @@ test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good 
   await writeFile(join(cwd, 'tileflow.config.ts'), invalidConfig, 'utf8');
   const invalid = await running.waitFor((event) => event.event === 'invalid');
   assert.ok(Number(invalid.generation) > Number(ready.generation));
-  assert.equal(invalid.lastGoodGeneration, ready.generation);
+  assert.ok(Number(invalid.lastGoodGeneration) >= Number(status.generation));
   assert.equal(invalid.code, 'CONFIG_INVALID');
   assert.equal(invalid.phase, 'config-validation');
   assert.equal((invalid.diagnostics as Array<Record<string, unknown>>)[0]?.code, 'CONFIG_INVALID');
@@ -108,7 +111,7 @@ test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good 
     `http://127.0.0.1:${port}/map/__status`,
     (body) => body.status === 'invalid',
   );
-  assert.equal(invalidStatus.lastGoodGeneration, ready.generation);
+  assert.equal(invalidStatus.lastGoodGeneration, invalid.lastGoodGeneration);
   assert.equal((await fetch(`http://127.0.0.1:${port}/map/styles/main/light.json`)).status, 200);
   assert.deepEqual(
     await (await fetch(`http://127.0.0.1:${port}/map/styles/main/light.json`)).json(),

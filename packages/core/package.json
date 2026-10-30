@@ -93,7 +93,7 @@
   },
   "dependencies": {
     "@maplibre/maplibre-gl-style-spec": "24.8.5",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@mapbox/vector-tile": "3.0.0",

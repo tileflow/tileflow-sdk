@@ -2,6 +2,7 @@ import type {
   TileflowAreaStyle,
   TileflowBackgroundStyle,
   TileflowFillStyle,
+  TileflowLineStyle,
 } from '../../cartography/styles';
 
 export type TileflowLanduseClass =
@@ -33,8 +34,26 @@ export type TileflowLandcoverClass =
   | 'wetland'
   | 'wood';
 
+/** The barriers of the data's barrier layer (World's `traffic_control`) the land module draws. */
+export type TileflowBarrierClass = 'fence' | 'hedge' | 'wall';
+
+/**
+ * A barrier's line, a shadow line drawn under it (usually offset with `translate`), and the fill of
+ * those mapped as areas, such as broad hedges.
+ */
+export type TileflowBarrierStyle = {
+  area?: TileflowFillStyle;
+  shadow?: TileflowLineStyle;
+  line?: TileflowLineStyle;
+};
+
 export type TileflowLandModuleOptions = {
   background?: TileflowBackgroundStyle;
+  /**
+   * Hedges, fences and walls, drawn at the top of the land band with hedges uppermost. A barrier
+   * without a style is not drawn, and neither is any when the data has no barrier layer.
+   */
+  barriers?: Partial<Record<TileflowBarrierClass, TileflowBarrierStyle>>;
   globalLandcover?: TileflowFillStyle;
   landcover?: Partial<Record<TileflowLandcoverClass, TileflowAreaStyle>>;
   landuse?: Partial<Record<TileflowLanduseClass, TileflowAreaStyle>>;

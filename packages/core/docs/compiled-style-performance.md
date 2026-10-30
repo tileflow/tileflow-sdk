@@ -168,10 +168,17 @@ Road treatments refine a class without creating another class or exposing source
 `construction`, `expressway`, `indoor`, `official`, `ramp`, and `unpaved` live under `modifiers`;
 general, bicycle, foot, horse, and toll restrictions live under `restrictions`; `alley`,
 `crossover`, `driveway`, `parkingAisle`, and `yard` live under `serviceTypes`; and exact
-mountain-bike difficulty values live under `mountainBike`. Treatments reuse
+mountain-bike difficulty values, which apply to paths and tracks, live under `mountainBike`. Treatments reuse
 surface/tunnel/bridge and casing/fill/shadow paint controls, plus a relative `widthScale`. The
 compiler emits feature-driven paint expressions inside the existing stable class layers rather
 than multiplying every possible combination.
+
+A solid dash, `[1, 0]`, is emitted as no `line-dasharray` at all, so MapLibre draws the line with
+its solid-line shader rather than its dash shader. A treatment's dash that depends on the road
+class is settled for each class layer: a dash for construction paths leaves a motorway's layers
+solid. Roundabout rings state their road widths at each zoom as numbers where the widths allow,
+and name the feature conditions they repeat once with `let`, which keeps their style compact and
+quick to validate.
 
 Road names, shields, and motorway junctions remain label concerns:
 
@@ -251,8 +258,19 @@ The closed category vocabulary is `arts-entertainment`, `education`, `food-drink
 `transport`, and `visitor-amenity`. Producer `type` and `icon` values use stable snake_case names.
 When an `icon` sprite exists it is used directly; an unknown or absent icon safely falls back to the
 category's themed image role. `labels` and `icons` are booleans. Category styles control only
-presentation and may hide or delay candidates, never promote them above the producer's selection.
-`placement.coupleIconAndLabel` keeps a POI's icon and label atomic during collision placement.
+presentation and never promote candidates above the producer's selection.
+`placement.coupleIconAndLabel` keeps a POI's icon and label atomic during collision placement:
+both are required.
+
+MapLibre orders symbol placement only within a layer, so the module compiles every category into
+one layer per representation and orders it by `filter_rank` and `size_rank`: a station is placed
+before a cash machine whatever their categories. Per-category appearance becomes a `match` on
+`category`; zoom curves are hoisted above it so each category keeps its exact curve. Categories that
+need different layer-wide properties use `placement.order: 'categories'`, one layer per category in
+listed order. `placement.prominentRank` places the most important ranks in a second layer above road
+and place labels, which keeps landmarks visible on maps whose labels give street names priority.
+When icons and labels are both drawn, unnamed POIs are omitted except the self-explanatory types in
+`placement.iconOnlyTypes` (parking and public toilets by default), which draw only their pictogram.
 
 ```ts
 poi({
@@ -265,4 +283,4 @@ poi({
 
 The same contract drives regular POI layers, custom HUD treatments, semantic interactions, and
 feature inspection. There is intentionally no compatibility path for the former class mapping,
-rank ceilings, or named density/detail presets.
+rank ceilings, per-category densities, or named density/detail presets.

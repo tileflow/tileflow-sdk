@@ -7,7 +7,7 @@ and visual evidence must change atomically. The canonical workbench is
 the official maps under `packages/maps/src/official/`. The Tileflow Tiles playground consumes
 exact npm packages after publication; it is not the place to invent SDK controls.
 
-Streets, Baedeker, Cívica, Ferraris, Härad, Siegfried, Soundings, and Blueprint are Tileflow's first-party standalone maps, declared with `defineMap()` and compiled
+Streets, Baedeker, Cívica, 1777, Siegfried, Soundings, and Blueprint are Tileflow's first-party standalone maps, declared with `defineMap()` and compiled
 directly from Tileflow-owned semantic modules. The sole semantic compiler is implicit, and they
 define their full designs independently: no official map imports or extends another official map,
 and each owns its asset providers. Streets owns coordinated light and dark appearances.
@@ -76,11 +76,28 @@ MapLibre collision placement, which remains authoritative. The closed category v
 `arts-entertainment`, `education`, `food-drink`, `landmark`, `lodging`, `medical`, `park-nature`,
 `public-services`, `religion`, `retail`, `sport-leisure`, `transport`, and `visitor-amenity`.
 Producer `type` and `icon` values are snake_case; an unavailable icon falls back safely to its
-category image. Category styles are presentational and cannot replace producer selection.
+category image. Category styles are presentational and cannot replace producer selection; there is
+no per-category density.
+
+POI placement follows one importance order across categories. With the default
+`placement.order: 'importance'`, every category shares one MapLibre symbol layer per representation
+(`poi`, or `poi.icon` and `poi.label`, plus `poi.marker` for markers), ordered by `filter_rank` and
+then `size_rank`, and each category's appearance becomes a per-feature `match` on `category`.
+Category styles may therefore differ only in properties MapLibre evaluates per feature. Zoom curves
+of one kind (linear, one exponential base, or step) are combined exactly at the union of their
+stops. A difference in a layer-wide property, such as a zoom range, collision padding, overlap,
+`optional`, or font, fails compilation with `TILEFLOW_POI_PLACEMENT_CONFLICT` and names the
+property. `placement.order: 'categories'` instead gives each category its own `poi.<category>`
+layer, places the first category listed first, and orders ranks only within each category.
+`placement.prominentRank` splits the importance order at a rank: POIs at or below it form a
+`poi.prominent` layer placed before road and place labels, and the others are placed after them.
+When pictograms and names are both drawn, a POI also needs a name, except the World `type` values
+in `placement.iconOnlyTypes` (by default parking and public toilets), which are drawn as a
+pictogram alone. A coupled POI requires both its pictogram and its name.
 
 Official maps own their source assets in `@tileflow/maps/assets/<id>/`. Streets declares
-`icons: [streetsIcons]`. Baedeker, Ferraris, Härad, Siegfried, Soundings, and Blueprint likewise
-declare only `[baedekerIcons]`, `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
+`icons: [streetsIcons]`. Baedeker, 1777, Siegfried, Soundings, and Blueprint likewise
+declare only `[baedekerIcons]`, `[map1777Icons]`, `[siegfriedIcons]`,
 `[soundingsIcons]`, and `[blueprintIcons]`, respectively; none composes another
 official map's assets. Cívica declares `[civicaIcons]` for its original civic-print patterns and
 symbols and `[civicaFonts]` for its packaged lettering. Baedeker owns eight original patterns informed by historical Baedeker and
@@ -88,17 +105,18 @@ Wagner & Debes visual references without redistributing scans, source pixels, hi
 typefaces, legend artwork, geospatial data, or source maps; it is not affiliated with or endorsed
 by Baedeker or Wagner & Debes. Its separately licensed Cormorant files and OFL license live in its
 own package asset closure. Its contours are derived in the browser from Mapterhorn terrain tiles,
-none of which are packaged. Härad's directory contains nine original Tileflow SVG patterns inspired by
-Lantmäteriet's CC0 Häradsekonomiska kartan series (1859–1934) and official legend. The package
-redistributes no Lantmäteriet scan, source pixel, legend artwork, font, or map data.
+none of which are packaged.
 Siegfried owns nine semantic engraving motifs with separate light and dark SVG sources in one asset
 directory. Both themes compile the same layer topology; the dark theme changes only semantic ink,
 paper, and image-token values and is documented as an original nocturnal interpretation.
-The Soundings asset directory retains ten original chart symbols and patterns. The official map
-selects only its harbor and paper/water patterns; buoy, light, lighthouse, wreck, and rock symbols
-remain available for the separate experimental Nautical canary and are not part of official
-Soundings. Its GEBCO-derived depth bands and labels provide broad visual context and are not
-navigation-grade survey soundings. Applications use the same rule with a config-relative
+The Soundings asset directory retains twenty-seven original chart symbols and patterns. The official
+map selects its paper/water patterns and, through theme `nautical.*` image tokens, its buoy, light,
+lighthouse, wreck, harbor, marina, notice-board, distance-mark, and small-craft facility symbols for
+the Nautical marks it enables; these single-colour SDF symbols take each mark's colour from the data
+or print in the chart ink. The rock symbol is retained but unused, because rocks
+are drawn as chart crosses. Its GEBCO-derived depth bands and labels provide broad visual context and
+are not navigation-grade survey soundings. Nautical marks are reference cartography; every map that
+draws them declares a "Not for navigation" notice that the browser runtimes render on the map. Applications use the same rule with a config-relative
 directory, for example `icons: [...streets.icons, './icons']`. Blueprint's asset closure
 contains four original drafting patterns and one schematic POI symbol for its dark blueprint
 design.
@@ -120,9 +138,9 @@ names as IDs, requires a
 `LICENSE.txt` in each contributing directory, applies later exact-name replacements, and emits only
 faces used by the final style. `font` contains an exact face ID; local `fallbacks` contain exact face
 names or explicit CSS generic families. There is no weight field or family-plus-weight synthesis.
-After inheritance resolves, a map that emits text has exactly one provider. Streets, Ferraris,
-Härad, Soundings, and Blueprint each declare the canonical Tileflow URL with exact
-`Noto Sans Regular` and `Noto Sans Bold` stacks. Baedeker and Siegfried each use their own packaged
+After inheritance resolves, a map that emits text has exactly one provider. Streets,
+Soundings, and Blueprint each declare the canonical Tileflow URL with exact
+`Noto Sans Regular` and `Noto Sans Bold` stacks. Baedeker, 1777, and Siegfried each use their own packaged
 `Cormorant Garamond Regular`, `Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic`
 faces. The glyph URL is canonical
 rather than content-addressed; the service uses revalidating cache semantics and does not claim an
@@ -141,9 +159,9 @@ while POI owns stations and stops.
 
 The shared graph also preserves a physical pitched-scene stack. Ground areas and pedestrian
 surfaces sit below road and aeroway geometry; transport markings sit above their carriageways but
-below buildings; road names, shields, and junction references share that transport phase; buildings
-sit below vegetation; and geographic, water, aerodrome, runway, address, landform, and POI labels
-remain the final annotation
+below buildings; buildings sit below vegetation; and road names, shields, junction references, and
+geographic, water, aerodrome, runway, address, landform, and POI labels remain the final annotation
+phase, so no ground layer covers text. `labels.collisionPriority` orders labels only within that
 phase.
 Overview business-corridor areas use a separate background slot, so moving building volumes above
 roads cannot make a thematic wash cover the transport network.
@@ -248,8 +266,9 @@ does not provide glyphs or sprites: each map owns its text and icon providers in
 separate `Map by Tileflow` product credit does not replace upstream source attribution.
 
 Owner-local render stacks address semantic targets, bind every feature and field through the
-resolved data schema, and never accept a physical ID, source layer, raw filter, or positional layer
-anchor. The compiler preserves those references in Domain IR and resolves them at one lowering
+resolved data schema, and never accept a physical ID, source layer, raw filter, or physical layer
+anchor. A pass, or a target its owner moves, is placed at a band edge or above or below one semantic
+target. The compiler preserves those references in Domain IR and resolves them at one lowering
 boundary. The physical planner may split a target at a zoom handoff or combine proven-equivalent
 targets into a data-driven cohort; it never infers semantics from generated IDs. Map versions
 describe editorial revisions, while the implicit compiler versions physical-output compatibility

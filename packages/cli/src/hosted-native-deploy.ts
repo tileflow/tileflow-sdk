@@ -1,16 +1,16 @@
 import {dirname} from 'node:path';
 import {
   getTileflowStyleFontFaces,
+  type MapLibreStyle,
   parseResolvedTileflowMap,
   serializeCanonicalJson,
-  type MapLibreStyle,
 } from '@tileflow/core';
 import {
   createTileflowMapBuildManifest,
   parseTileflowRendererDeploymentArtifact,
-  tileflowRendererDeploymentResponseSchema,
   type TileflowBuildCatalog,
   type TileflowRendererDeploymentArtifact,
+  tileflowRendererDeploymentResponseSchema,
 } from '@tileflow/core/build';
 import {parseTileflowRuntimeManifest, type TileflowRuntimeManifest} from '@tileflow/core/manifest';
 import {
@@ -25,20 +25,21 @@ import {
   loadTileflowConfigWithInputs,
 } from '@tileflow/dev/config';
 import {prepareTileflowStyleFonts} from '@tileflow/dev/fonts';
-import {compileTileflowIconPackages, type CompiledTileflowIconPackage} from '@tileflow/dev/icons';
+import {type CompiledTileflowIconPackage, compileTileflowIconPackages} from '@tileflow/dev/icons';
 import {normalizeApiOrigin} from './account-session';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 import type {DeploySource} from './deploy-source';
 import {
-  requestHostedJson,
-  uploadHostedIconPackage,
   type HostedApi,
   type HostedRequestOptions,
+  requestHostedJson,
+  uploadHostedIconPackage,
 } from './hosted-client';
 import {
   inspectTileflowHostedCompatibility,
   prepareTileflowHostedThemeFamily,
 } from './hosted-preflight';
+import {prepareModelAssets} from './model-assets';
 
 type IconCompilation = Awaited<ReturnType<typeof compileTileflowIconPackages>>;
 export type NativeHostedDeployOptions = Readonly<{
@@ -120,17 +121,27 @@ export async function prepareNativeHostedDeploy(
   const sprite = binding
     ? `${apiOrigin}/sprites/preflight/${binding.packageHash}/sprite`
     : undefined;
-  const mapAssets = Object.fromEntries(
-    compiledIcons.bindings.map((entry) => [
-      entry.mapName,
-      {
-        icons: {
-          ids: entry.iconIds,
-          sprite: `${apiOrigin}/sprites/preflight/${entry.packageHash}/sprite`,
+  const modelAssets = await prepareModelAssets(project, {baseDirectory, target: 'hosted'});
+  // MapLibre Native draws no models, so a renderer collection does not place Team 3D models.
+  if (modelAssets.buildings[mapName])
+    throw failure(
+      "A deployment with --with-native does not take a map's own 3D building models yet. Deploy without --with-native, or remove them from the map's models directories.",
+    );
+  const mapAssets = {
+    ...modelAssets.assets,
+    ...Object.fromEntries(
+      compiledIcons.bindings.map((entry) => [
+        entry.mapName,
+        {
+          ...modelAssets.assets[entry.mapName],
+          icons: {
+            ids: entry.iconIds,
+            sprite: `${apiOrigin}/sprites/preflight/${entry.packageHash}/sprite`,
+          },
         },
-      },
-    ]),
-  );
+      ]),
+    ),
+  };
   const styles = createTileflowStyles(project, {apiBaseUrl: apiOrigin, mapAssets});
   const local = await prepareTileflowLocalTilesets(project, styles, {
     assetBaseUrl: apiOrigin,
@@ -350,7 +361,8 @@ export async function runHostedNativeDeploy(options: NativeHostedDeployOptions, 
     const build = artifact.renderers.web.buildManifest.maps[artifact.mapId]!;
     const manifest = parseTileflowRuntimeManifest({
       apiUrl: apiOrigin,
-      version: 1,
+      version:
+        build.timeOfDay || Object.values(existing?.maps ?? {}).some((map) => map.timeOfDay) ? 2 : 1,
       maps: {
         ...(existing?.maps ?? {}),
         [prepared.mapName]: {
@@ -358,6 +370,7 @@ export async function runHostedNativeDeploy(options: NativeHostedDeployOptions, 
           environment: prepared.mapName,
           mapId,
           ...(build.systemThemes ? {systemThemes: build.systemThemes} : {}),
+          ...(build.timeOfDay ? {timeOfDay: build.timeOfDay} : {}),
           ...(artifact.view ? {view: artifact.view} : {}),
           usageMode: 'session',
           worldGeneration: 'v1',

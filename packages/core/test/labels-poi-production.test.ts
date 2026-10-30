@@ -42,16 +42,14 @@ test('POI labels clear their own icons while preserving normal collision and cou
     }),
     context,
   );
-  const icon = uncoupled.find((entry) => entry.layer.id === 'tileflow-poi-food-drink-icon')?.layer;
-  const label = uncoupled.find(
-    (entry) => entry.layer.id === 'tileflow-poi-food-drink-label',
-  )?.layer;
+  const icon = uncoupled.find((entry) => entry.layer.id === 'tileflow-poi-icon')?.layer;
+  const label = uncoupled.find((entry) => entry.layer.id === 'tileflow-poi-label')?.layer;
   const iconLayout = icon?.layout as Record<string, unknown>;
   const labelLayout = label?.layout as Record<string, unknown>;
 
   assert.deepEqual(
     uncoupled.map((entry) => entry.layer.id),
-    ['tileflow-poi-food-drink-icon', 'tileflow-poi-food-drink-label'],
+    ['tileflow-poi-icon', 'tileflow-poi-label'],
   );
   assert.equal(iconLayout['icon-allow-overlap'], undefined);
   assert.equal(iconLayout['icon-ignore-placement'], undefined);
@@ -75,11 +73,13 @@ test('POI labels clear their own icons while preserving normal collision and cou
 
   assert.deepEqual(
     coupled.map((entry) => entry.layer.id),
-    ['tileflow-poi-food-drink'],
+    ['tileflow-poi'],
   );
   assert.ok(coupledLayout['icon-image']);
   assert.ok(coupledLayout['text-field']);
+  // A coupled POI is its pictogram and its name: neither is placed without the other.
   assert.equal(coupledLayout['icon-optional'], false);
+  assert.equal(coupledLayout['text-optional'], false);
   assert.equal(coupledLayout['text-radial-offset'], 1.1);
 
   const explicitlyPlaced = compilePoi(
@@ -91,9 +91,8 @@ test('POI labels clear their own icons while preserving normal collision and cou
     }),
     context,
   );
-  const explicitLabel = explicitlyPlaced.find(
-    (entry) => entry.layer.id === 'tileflow-poi-food-drink-label',
-  )?.layer.layout as Record<string, unknown>;
+  const explicitLabel = explicitlyPlaced.find((entry) => entry.layer.id === 'tileflow-poi')?.layer
+    .layout as Record<string, unknown>;
   assert.deepEqual(explicitLabel['text-offset'], [0, 2]);
   assert.equal(explicitLabel['text-radial-offset'], undefined);
   assert.equal(explicitLabel['text-variable-anchor'], undefined);

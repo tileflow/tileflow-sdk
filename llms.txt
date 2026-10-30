@@ -37,6 +37,8 @@ from the presence of an npm package. Config files are trusted executable code.
 
 - [Static Maps](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/static/README.md): Scenes, overlays, attribution, idempotency, and asynchronous rendering.
 - [Search](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/search/README.md): Geocoding, suggestions, credentials, retention, and usage.
+- [Routing](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/routing/README.md): Routes, isochrones, travel-time matrices, map matching, and nearest roads for driving, walking, cycling, and trucks; avoidances, tagged speed limits, errors, and drawing.
+- [Elevation](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/elevation/README.md): Point heights, evenly sampled elevation profiles with climbs and grades, GPX tracks, and a MapLibre elevation profile control.
 - [GeoIP](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/geoip/README.md): Approximate connection geography, anonymous/managed access, and fallbacks.
 - [Coordinates](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/coordinates/README.md): CRS contracts, validation, axis conventions, and the HTTP client.
 - [Coordinate runtime](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/coordinates-runtime/README.md): Explicit native distributions, supported profiles, provisioning, and local execution.

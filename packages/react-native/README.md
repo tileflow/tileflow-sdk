@@ -2,7 +2,7 @@
 
 `@tileflow/react-native` provides a Tileflow `Map` backed by MapLibre Native on iOS and Android. It is pre-release. The first alpha release requires the bootstrap and Trusted Publisher checks in the [publishing guide](https://github.com/tileflow/tileflow-sdk/blob/main/PUBLISHING.md).
 
-The package targets exactly React 19.2.0, React Native 0.83.10 and `@maplibre/maplibre-react-native` 11.3.10, with MapLibre Native Android 13.2.0 and iOS 6.26.0 through the pinned integration below. Expo consumers use Expo 55.0.31 with a native development build; Expo Go does not contain the required native modules.
+The package targets exactly React 19.2.0, React Native 0.83.10 and `@maplibre/maplibre-react-native` 11.5.0, with MapLibre Native Android 13.6.1 and iOS 6.31.0 through the pinned integration below. Expo consumers use Expo 55.0.31 with a native development build; Expo Go does not contain the required native modules.
 
 > Related packages and guides: [documentation index](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/llms.txt).
 
@@ -11,7 +11,7 @@ The package targets exactly React 19.2.0, React Native 0.83.10 and `@maplibre/ma
 Start with an Expo development build or a bare React Native application matching those peers. Once the first alpha is available, install the package and its direct dependencies:
 
 ```sh
-npm install --save-exact @tileflow/react-native@alpha @tileflow/core@alpha @tileflow/interactions@alpha @maplibre/maplibre-react-native@11.3.10
+npm install --save-exact @tileflow/react-native@alpha @tileflow/core@alpha @tileflow/interactions@alpha @maplibre/maplibre-react-native@11.5.0
 ```
 
 Keep the lockfile. Complete the [native integration](#native-integration) before building the application. Source on `main` can precede npm; installation or local checks do not establish Hosted availability or physical-device acceptance.
@@ -87,18 +87,53 @@ and protected delivery still require HTTPS.
 
 ## Theme transitions and blends
 
-`themeTransition={{duration: 450}}` cross-fades theme changes: a snapshot of the drawn map covers it, follows the camera and fades out once the new theme is drawn. `themeBlend={{themes: ['night', 'dusk', 'day'], position}}` shows a continuous blend of the map's themes instead of `theme`; position 0 is the first theme and 1.5 is halfway from the second to the third:
+Add `timeOfDay="dusk"` beside `theme` to select a map's optional `day`, `dawn`, `dusk`, or
+`night` preset. For Streets, `theme="light"` with this preset selects the existing `dusk` palette.
+Maps without this capability ignore the option; omitting it keeps the selected theme unchanged.
+Changing it uses the existing theme transition. `themeBlend` takes precedence. See the
+[authoring contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md#style-with-themes-and-semantic-modules).
+
+Theme and `timeOfDay` changes cross-fade over 450 ms by default: a snapshot of the drawn map covers it, follows the camera and fades out once the new theme is drawn. Use `themeTransition={{duration: 700}}` to customize the duration, or `duration: 0` for an immediate change. `themeBlend={{themes: ['night', 'dusk', 'day'], position}}` shows a continuous blend of the map's themes instead of `theme`; position 0 is the first theme and 1.5 is halfway from the second to the third:
 
 ```tsx
-<Map
-  source={source}
-  themeTransition={{duration: 450}}
-  themeBlend={{themes: ['night', 'dusk', 'day'], position}}
-  style={{flex: 1}}
-/>
+<Map source={source} themeBlend={{themes: ['night', 'dusk', 'day'], position}} style={{flex: 1}} />
 ```
 
 The first blend of a set of themes prepares every theme's style and replaces the native style once; moving `position` later changes the map without loading. Removing `themeBlend` returns to `theme`. Both keep the same native Map, context and session, and `ready` events wait for the fade. The device's reduce-motion setting changes at once. See [theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md#react-native) for what follows the position on native maps.
+
+## Boundary choropleths
+
+A map that declares `boundaryAreas` and a `boundaryChoropleth()` without compiled `values` reads
+its colors from feature-state. `boundaryFeatureState` sets that state from the application, with
+the same rows and options as `useBoundaryFeatureState` on the web: rows keyed by the source's
+feature ID (`id`, or `ref` when the map promotes it), `labels` and `state`:
+
+<!-- docs:check -->
+
+```tsx
+import {Map, type MapSource} from '@tileflow/react-native';
+import {useMemo} from 'react';
+
+export function UnemploymentMap({
+  source,
+  rates,
+}: {
+  source: MapSource;
+  rates: ReadonlyMap<number, number>;
+}) {
+  // Memoize the values: each new object replaces the previous ones.
+  const values = useMemo(
+    () => ({joinBy: 'id' as const, rows: [...rates].map(([key, value]) => ({key, value}))}),
+    [rates],
+  );
+  return <Map source={source} boundaryFeatureState={{values}} style={{flex: 1}} />;
+}
+```
+
+Values survive theme changes: they are set again once the new style has loaded. `values: null`
+removes them. Rows keyed by codes the polygons do not carry are joined before they reach the app,
+on a server or at build time; see
+[boundary areas and choropleths](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/boundary-areas-and-choropleths.md#join-by-codes-the-polygons-do-not-carry).
 
 ## Camera
 
@@ -168,13 +203,42 @@ The public lifecycle surface remains:
 - `onReadinessChange`;
 - `onThemeChange`;
 - controlled `onViewChange`;
-- `ref.getSourceState()`.
+- `ref.getSourceState()`;
+- `ref.retry()`.
 
 `getSourceState()` returns only the last safe projected source snapshot. Errors use existing bounded codes/fields/kinds. No URL, response body, native event, credential, grant, session object, native handle or raw cause enters public callbacks, refs or serializable state.
 
+`onError` reports `source-error`, `renderer-error` and, for Hosted session delivery, `session-error`. A `session-error` means Tileflow refused the session: the mobile credential was rejected (`NATIVE_SESSION_CREDENTIAL_REJECTED`), it does not authorize the Map (`NATIVE_SESSION_MAP_MISMATCH`), the Map was not found (`NATIVE_SESSION_MAP_NOT_FOUND`) or its view or spending limit was reached (`NATIVE_SESSION_QUOTA_EXCEEDED`). It can arrive after the first load, when a renewal is refused. The map keeps what it has drawn but loads nothing new until you call `ref.retry()` or change the source:
+
+```tsx
+import {Map, type MapRef} from '@tileflow/react-native';
+import {useRef} from 'react';
+
+export function StoreMap() {
+  const map = useRef<MapRef>(null);
+  return (
+    <Map
+      ref={map}
+      source={{map: 'stores', manifestUrl: 'https://maps.example.com/tileflow/manifest.json'}}
+      onError={(event) => {
+        if (
+          event.type === 'session-error' &&
+          event.error.code === 'NATIVE_SESSION_QUOTA_EXCEEDED'
+        ) {
+          // Show your own notice; call map.current?.retry() once the limit is raised.
+        }
+      }}
+      style={{flex: 1}}
+    />
+  );
+}
+```
+
+Service outages, timeouts and rate limiting are not session errors. The map keeps using its current grant while it is valid and requests another after an increasing delay, from one second up to one minute, or after the `Retry-After` the service sends. A first load that failed this way prepares again on its own. `ref.retry()` also loads again after a source or renderer error, and changes nothing while the map is shown.
+
 ## Native integration
 
-Autolinking registers the private Android/iOS modules used by the mounted lifecycle. Android depends on the exact MapLibre React Native project and MapLibre Native 13.2.0. iOS uses the existing MapLibre React Native CocoaPod plus the exact MapLibre Native 6.26.0 Swift Package Manager product.
+Autolinking registers the private Android/iOS modules used by the mounted lifecycle. Android depends on the exact MapLibre React Native project and MapLibre Native 13.6.1. iOS uses the existing MapLibre React Native CocoaPod plus the exact MapLibre Native 6.31.0 Swift Package Manager product.
 
 For the iOS post-install integration, retain the host's normal React Native/MapLibre setup and then call:
 
@@ -219,6 +283,11 @@ annotation or POI targets but no popup, callout, tooltip, sheet, panel or modal 
 
 The mounted component does not add location, selection-presentation UI, offline product APIs, an
 Expo config plugin, CLI behavior, deployment or publication. The package remains pre-release.
+
+Native maps do not draw a map's 3D scene. Core's 3D buildings, Tileflow landmarks, Team building
+models, 3D trees and street lights are WebGL layers for MapLibre GL JS, which the web `Map`
+components mount by default; a native map shows the style's 2D layers and the vegetation fallback
+the map declares.
 
 Source and tests describe contracts; they do not establish that a native build, simulator/device run, Hosted service, app-store submission or package publication succeeded. Qualify the exact source revision in the intended host before relying on it.
 

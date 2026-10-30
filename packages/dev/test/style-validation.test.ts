@@ -17,6 +17,7 @@ import {
   validateTileflowStyle,
 } from '../src/validation';
 import {fixtureThemeFields} from './theme-fixture';
+import {readStreetsIconIds} from './streets-icon-ids';
 
 const fixtureGlyphs = {
   kind: 'url',
@@ -26,32 +27,10 @@ const fixtureGlyphs = {
 
 const streetsPreparedAssets = {
   icons: {
-    ids: [
-      'coffee',
-      'crosswalk',
-      'culture',
-      'education',
-      'food',
-      'health',
-      'lodging',
-      'major-transit',
-      'oneway',
-      'parking',
-      'road-shield-circle-neutral',
-      'road-shield-rectangle-blue',
-      'road-shield-rectangle-green',
-      'road-shield-rectangle-neutral',
-      'road-shield-rectangle-orange',
-      'road-shield-rectangle-red',
-      'road-shield-rectangle-yellow',
-      'services',
-      'shopping',
-      'sidewalk-dot-dark',
-      'sidewalk-dot',
-    ],
+    ids: readStreetsIconIds(),
     sprite: '/tileflow/test/streets/sprite',
   },
-} as const;
+};
 
 test('direct style creation reports a stable layer/property diagnostic', () => {
   const style = {
@@ -261,7 +240,7 @@ export default defineMap({
   assert.equal(first.assets.length, 0);
 });
 
-test('local Soundings preview resolves World and both Bathymetry components from one API base', async (t) => {
+test('local Soundings preview resolves World, Bathymetry, and Nautical from one API base', async (t) => {
   const cwd = await createFixture(t, 'tileflow-dev-soundings-marine-');
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
@@ -289,7 +268,10 @@ export default soundings;
     type: 'raster-dem',
     url: 'http://127.0.0.1:4888/tiles/bathymetry/dem/tiles.json',
   });
-  assert.equal(style.sources['tileflow-nautical'], undefined);
+  assert.equal(
+    style.sources['tileflow-nautical']?.url,
+    'http://127.0.0.1:4888/tiles/nautical/tiles.json',
+  );
 
   for (const id of ['tileflow-bathymetry-color-relief', 'tileflow-bathymetry-relief']) {
     assert.equal(
@@ -299,16 +281,9 @@ export default soundings;
     );
   }
 
+  assert.ok(style.layers.some((layer) => layer.source === 'tileflow-nautical'));
   assert.equal(
-    style.layers.some((layer) => layer.source === 'tileflow-nautical'),
-    false,
-  );
-  assert.equal(
-    style.layers.some((layer) => layer.id.startsWith('tileflow-poi-')),
-    false,
-  );
-  assert.equal(
-    style.layers.some((layer) => layer.id.startsWith('tileflow-nautical-')),
+    style.layers.some((layer) => layer.id.startsWith('tileflow-poi')),
     false,
   );
   assert.match(style.sprite ?? '', /\/icons\/soundings\/sprite$/u);

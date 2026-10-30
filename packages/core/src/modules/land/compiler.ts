@@ -3,12 +3,25 @@ import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {
   applyBackgroundStyle,
   applyFillStyle,
+  applyLineStyle,
   createAreaLayers,
 } from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {expression, zoom} from '../../cartography/values';
 import type {TileflowResolvedModuleConfig} from '../resolved';
-import type {TileflowLandcoverClass, TileflowLandModuleConfig, TileflowLanduseClass} from './index';
+import type {
+  TileflowBarrierClass,
+  TileflowLandcoverClass,
+  TileflowLandModuleConfig,
+  TileflowLanduseClass,
+} from './index';
+
+// Hedges last, so a hedge along a wall or fence stays on top.
+const barrierClasses = [
+  'fence',
+  'wall',
+  'hedge',
+] as const satisfies readonly TileflowBarrierClass[];
 
 const landuseClasses: Record<TileflowLanduseClass, readonly string[]> = {
   cemetery: ['cemetery'],
@@ -46,25 +59,32 @@ const typedGrassSubclasses = [
 // the plain-grass fallback so no feature receives two green fills.
 const protectedLandcoverMatch = {class: ['protected_area']} as const;
 
-// This order is cartographic: physical cover first, then the protected-area
-// tint, then authored urban green classes. Do not derive it from config key
-// order because it determines which overlapping surface remains visible.
+// Broad physical cover is followed by protection/park surfaces, then explicitly mapped
+// ground details. Keep the latter above park fills without covering pitches/playgrounds.
+// This order is independent of config key order and remains replaceable by render targets.
 const landcoverClasses = [
   ['farmland', {class: ['farmland']}],
-  ['grass', {class: ['grass'], excludeSubclass: typedGrassSubclasses}],
   ['ice', {class: ['ice', 'glacier']}],
-  ['meadow', {class: ['grass'], subclass: ['meadow']}],
   ['rock', {class: ['rock']}],
   ['sand', {class: ['sand', 'beach']}],
-  ['scrub', {class: ['grass'], subclass: ['scrub']}],
   ['wetland', {class: ['wetland']}],
   ['wood', {class: ['wood', 'forest']}],
   ['protected', protectedLandcoverMatch],
   ['urbanPark', {class: ['grass'], subclass: ['park', 'garden']}],
   ['recreationGround', {class: ['grass'], subclass: ['recreation_ground']}],
   ['villageGreen', {class: ['grass'], subclass: ['village_green']}],
+  ['grass', {class: ['grass'], excludeSubclass: typedGrassSubclasses}],
+  ['meadow', {class: ['grass'], subclass: ['meadow']}],
+  ['scrub', {class: ['grass'], subclass: ['scrub']}],
   ['flowerbed', {class: ['grass'], subclass: ['flowerbed']}],
 ] as const satisfies readonly (readonly [TileflowLandcoverClass, TileflowLandcoverClassMatch])[];
+
+const detailedLandcover = new Set<TileflowLandcoverClass>([
+  'grass',
+  'meadow',
+  'scrub',
+  'flowerbed',
+]);
 
 export function compileLand(
   request: TileflowResolvedModuleConfig<TileflowLandModuleConfig> | undefined,
@@ -226,13 +246,13 @@ export function compileLand(
   for (const [name, classes] of Object.entries(landuseClasses) as Array<
     [TileflowLanduseClass, readonly string[]]
   >) {
-    if (name === 'recreation') continue;
+    if (name === 'recreation' || name === 'parking') continue;
     appendLanduse(name, classes);
   }
 
-  for (const [name, match] of landcoverClasses) {
+  const appendLandcover = (name: TileflowLandcoverClass, match: TileflowLandcoverClassMatch) => {
     const style = config.landcover?.[name];
-    if (!style) continue;
+    if (!style) return;
     const protectedSource = name === 'protected';
     const sourceLayer = protectedSource ? schema.layers.park : schema.layers.landcover;
     const filter =
@@ -268,6 +288,10 @@ export function compileLand(
         target: `land.landcover.${name}.${area.phase}`,
       });
     }
+  };
+
+  for (const [name, match] of landcoverClasses) {
+    if (!detailedLandcover.has(name)) appendLandcover(name, match);
   }
 
   // Canonical OpenMapTiles historically mixes ordinary parks and protected
@@ -295,9 +319,62 @@ export function compileLand(
     }
   }
 
-  // Recreation sits above natural and protected landcover so pitches and
-  // playgrounds stay legible when their polygons overlap a park or meadow.
+  for (const [name, match] of landcoverClasses) {
+    if (detailedLandcover.has(name)) appendLandcover(name, match);
+  }
+
+  // Mapped paved surfaces remain legible inside broad park/forest polygons. Recreation
+  // means pitches, tracks, playgrounds and zoos, not the enclosing park itself.
+  appendLanduse('parking', landuseClasses.parking);
   appendLanduse('recreation', landuseClasses.recreation);
+
+  // Barriers are lines; World also publishes the hedges OSM maps as areas, which `area` fills.
+  // A barrier's fill, shadow and line draw in that order.
+  const barrierLayer = schema.layers.trafficControl;
+  for (const name of barrierLayer ? barrierClasses : []) {
+    const style = config.barriers?.[name];
+    const kind = ['==', ['get', subclassField], name];
+    if (style?.area) {
+      contributions.push({
+        kind: 'layer',
+        layer: applyFillStyle(
+          {
+            id: `tileflow-barrier-${name}-area`,
+            type: 'fill',
+            source,
+            'source-layer': barrierLayer,
+            filter: ['all', ['==', ['geometry-type'], 'Polygon'], kind],
+          },
+          style.area,
+        ),
+        localOrder: localOrder++,
+        owner: 'land',
+        slot: 'land',
+        target: `land.barriers.${name}.area`,
+      });
+    }
+    for (const phase of ['shadow', 'line'] as const) {
+      const line = style?.[phase];
+      if (!line) continue;
+      contributions.push({
+        kind: 'layer',
+        layer: applyLineStyle(
+          {
+            id: `tileflow-barrier-${name}${phase === 'shadow' ? '-shadow' : ''}`,
+            type: 'line',
+            source,
+            'source-layer': barrierLayer,
+            filter: kind,
+          },
+          line,
+        ),
+        localOrder: localOrder++,
+        owner: 'land',
+        slot: 'land',
+        target: `land.barriers.${name}.${phase}`,
+      });
+    }
+  }
 
   return contributions;
 }

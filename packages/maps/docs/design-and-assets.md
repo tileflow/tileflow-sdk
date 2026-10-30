@@ -1,5 +1,28 @@
 # Map designs and assets
 
+## Streets POIs
+
+Transport POIs with a recognized `network` use that network's symbol. The initial catalog covers
+`Metro de Madrid`, `Cercanías Madrid`, and `EMT Madrid`. Each network has one packaged SVG in a
+24px cell, shared across all themes without recoloring the identity. Matching uses the source's
+exact network value, including on older World tiles without `mode`; it never guesses from a
+station name or applies a city logo to every station. Unknown or missing networks retain the
+existing mode/type/category pictogram. Other railway services and intercity buses keep their
+generic symbols. Sources and asset licenses are recorded in `THIRD_PARTY_NOTICES.md`.
+
+POIs use World ranks with category density: parks and transport retain more detail than
+businesses, hotels and religious sites. Gardens are limited to World filter ranks 0–1 at every
+zoom, keeping principal destinations while suppressing botanical collections and other minor
+garden POIs. World currently classifies both as `garden`, so some small independent gardens are
+also omitted. Other park and landmark types keep their usual eligibility.
+
+All categories share importance order; the two most important ranks precede streets. Discs need
+names except parking and toilets. Native perspective and collisions select labels. See
+[label placement](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/cartographic-defaults.md#label-density-and-perspective).
+Ordinary POI/transit names use 13 px, major destinations 18 px. World size rank zero alone does
+not enlarge small parks. Text padding falls from 6 px to 4 px between z16 and z17; collision
+determines which names fit.
+
 ## civica
 
 `civica` is a self-contained civic print design named “Cívica”. Pale paper, warm stone blocks,
@@ -43,7 +66,8 @@ never determines landmark color.
 The generalized footprint pass ends at z15 with the same opacity at which the
 detail pass begins.
 
-POI symbols and names form one collision unit. Each category retains its own filter, and candidates
+POI symbols and names form one collision unit. Each category retains its own filter and layer
+(`placement.order: 'categories'`), and destinations listed first are placed first. Candidates
 must carry the schema-bound `poiCategory`, `poiFilterRank`, and `poiSizeRank` fields (`category`,
 `filter_rank`, and `size_rank` in World V1). Size ranks must be 0–16, filter ranks must be
 nonnegative, and the producer's `minZoom` (`min_zoom`) is honored when present. Landmarks, culture,
@@ -66,7 +90,9 @@ Regular fallback.
 `baedeker` is a self-contained travel-atlas and town-plan design with open warm paper, fine coral
 building and residential hatching, paper-negative streets, dominant black railways, horizontally
 engraved cyan water, ring-stippled gardens, and browser-derived Mapterhorn contours. Travel POIs
-are rendered as compact serif labels without modern pictograms. It declares
+are rendered as compact serif labels without modern pictograms; stations and landmarks use the
+semibold face, so each category keeps its own layer and the categories listed first are placed
+first. It declares
 `[baedekerIcons]`, whose eight original Tileflow SVG patterns describe hachures, orchards, paper
 grain, public gardens, residential blocks, sand, water lines, and wetlands, plus
 `[baedekerFonts]`, its own package copy of Cormorant Garamond Regular, SemiBold, and Italic. Its
@@ -80,23 +106,14 @@ Cormorant faces are unmodified upstream font software under the SIL Open Font Li
 Mapterhorn terrain tile is packaged or redistributed. Baedeker is an official Tileflow map and is
 not affiliated with or endorsed by Baedeker or Wagner & Debes.
 
-## ferraris
+## 1777
 
-`ferraris` is a self-contained printed-atlas design. It uses Core's semantic compiler, but
+`map1777` is a self-contained printed-atlas design. It uses Core's semantic compiler, but
 it does not import or extend the `streets` map and it does not inherit Streets assets. It declares
-only `[ferrarisIcons]`, which contains nine original seamless SVG patterns for paper, cultivated
-land, vegetation, settlements, sand, wetlands, and water. Applications can import it directly or
+only `[map1777Icons]`, which contains eleven original material patterns in four palettes for paper,
+cultivated land, vegetation, settlements, sand, wetlands, and water. Its three Cormorant Garamond
+faces are packaged in `[map1777Fonts]`. Applications can import it directly or
 extend it like any other root.
-
-## harad
-
-`harad` is a self-contained historical green-map design named “Härad”. It uses Core's semantic
-compiler ABI without importing or extending the `streets` map or reusing any Streets asset.
-It declares only `[haradIcons]`, whose nine original Tileflow SVG patterns describe arable land,
-coniferous and deciduous woodland, orchards, paper grain, sand, settlements, water lines, and
-wetlands. The visual grammar is inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series
-(1859–1934) and official legend. The package redistributes no Lantmäteriet scan, source pixel, legend
-artwork, font, or map data; the shipped style and SVG patterns are original Tileflow work.
 
 ## soundings
 
@@ -105,18 +122,26 @@ depth-graded water, labelled band edges, continuous colour relief, multidirectio
 port context, named ferry routes, and restrained technical magenta. Its initial camera faces the
 Strait of Gibraltar, allowing an Iberian GEBCO pilot to exercise both Atlantic and Mediterranean
 relief. It selects the public semantic compiler contract without importing or extending `streets`
-and explicitly composes World with `bathymetry({display: 'hybrid'})` while setting Nautical to
-`false`.
+and explicitly composes World with `bathymetry({display: 'hybrid'})` and the `nautical-v1`
+navigation marks.
 
 Vector bands come from `tileflow-bathymetry`; continuous colour relief and hillshade come from
-`tileflow-bathymetry-dem`. The stronger DEM treatment is balanced against the vector wash and depth
-labels rather than against experimental navigation symbols. Dashed outlines remain an honest
+`tileflow-bathymetry-dem`. The DEM treatment is balanced against the vector wash, depth labels, and
+the navigation marks. Dashed outlines remain an honest
 fallback traced from broad GEBCO band polygons until native contour geometry is released. Labels
 show the absolute `min_depth` value, not an inferred range or vessel-specific safety contour.
-Harbours and ferries are ordinary World context. Experimental `nautical-v1` tiles, aids, lights,
-soundings, hazards, reefs, and wrecks are deliberately absent from the official map and remain
-available only to explicitly configured laboratory maps. Soundings is reference cartography and is
-not a navigation product.
+Ferries are ordinary World context. Navigation marks come from `tileflow-nautical`: the theme's
+`nautical.*` image tokens select the Soundings chart symbols for buoys (port can, starboard cone,
+cardinal double cone, and a pillar for other buoys), lights, lighthouses, wrecks, harbours, marinas,
+ports, inland notice boards by function, distance marks, and small-craft facilities. Buoys, light
+flares, and notice boards take each mark's own colour from the data; beacons stay small coloured
+dots, rocks are chart crosses and stars, and the other symbols are printed in the chart ink. Light
+flares flash in their rhythm in browser maps. Bridges and berths are drawn as ink structures with
+their clearances, and marinas and harbours as light outlines. Technical magenta remains reserved for
+operational overlays: restricted, military, anchorage, and traffic-separation areas,
+traffic-separation lines, and submarine and overhead cables. Coverage is
+a faint tint before marks appear. The map shows a "Not for navigation" notice wherever it is
+displayed. Soundings is reference cartography and is not a navigation product.
 
 ## siegfried
 
@@ -137,7 +162,8 @@ and `[siegfriedThemes]` exposes the two complete visual vocabularies for safe de
 Fine technical road strokes, survey-like uppercase labels, precise building footprints, contour
 dimensions, and dedicated landscape and water hatches replace naturalistic map color. It declares
 the canonical Noto Sans glyph provider and only `[blueprintIcons]`, whose four original patterns
-and schematic POI node form its complete sprite vocabulary.
+and schematic POI node form its complete sprite vocabulary. Medical and transport callouts start
+before the other POI labels, so each category keeps its own layer, placed in the listed order.
 Prominent building height callouts use World `render_height`; the map does not require unpublished
 building names or raw heights.
 
@@ -149,15 +175,32 @@ lighting without changing a source, filter, layer order, zoom gate, collision ru
 sidewalk patterns live in the shared `[streetsIcons]` atlas and the selected theme resolves the
 semantic `roads.sidewalkPattern` image token to the correct asset.
 
-Streets uses one ranked destination hierarchy in both themes. Major transit and cultural anchors
-appear first; lodging, health, education, services, shopping, food, coffee, and parking enter
-progressively as the camera approaches street level. Each visible destination is one collision
-unit made from a colored circular pictogram and an optional neutral name, so the marker remains
-useful when the label cannot fit. The pictogram scale grows gently from 1× at z12 to 1.06× at z17,
-giving detailed street views a little more visual presence without increasing POI density.
-Portal-number labels are intentionally disabled. The ten POI
-pictograms are adapted from the pinned CC0 Maki subset documented in
-`THIRD_PARTY_NOTICES.md`; their containers, colors, sizing, and composition are Tileflow-authored.
+Streets places every POI category in World's importance order, with one density for the whole
+module: `filter_rank` and then `size_rank` decide which destinations win, so a metro station is not
+displaced by a nearby cash machine because of its category, and no category waits for a later
+zoom. Its labels give street and place names priority over everyday destinations; World's two most
+important ranks (`prominentRank: 1`) are placed before them, so landmarks such as Palais du Louvre,
+Plaza Mayor, or Battery Park remain at z14. Each destination is one collision unit made from a
+colored disc and its name in the category color: both must fit. Parking and public toilets are
+self-explanatory and appear as a disc alone; other unnamed POIs are omitted. Three-pixel icon and
+text padding keeps nearby names available without disabling collision. Portal-number labels are
+disabled.
+
+Pictograms follow World's transport `mode` first, then its POI `type`, then the category. World's
+own `icon` field is coarser (one `shop` for every store, one `transport` for metro, bus, and cable
+car), so Streets reads the type. `src/official/streets-poi.ts` owns the type and mode tables, the
+85 pictograms, and their disc palette; `scripts/generate-streets-poi-icons.ts` writes each light
+disc and its `-dark` variant, a pale disc with a dark pictogram. Themes bind each type's pictogram
+through a `poi.pictogram.<id>` image token and each category's default pictogram through Core's
+`poi.<category>` image role, so a theme that replaces a category role replaces that category's
+default pictogram. The pictograms keep the CC0 Maki provenance documented in
+`THIRD_PARTY_NOTICES.md`.
+
+Regional hillshade uses the public Mapterhorn TileJSON endpoint with Terrarium encoding, from
+z5 to before z14. Day and night use separate highlight, accent, and shadow tokens. The DEM is a
+remote runtime dependency with its own attribution, and `terrain: 'none'` removes it. The layer
+adds shaded relief without displacing geometry. Flat building footprints, runtime-toggle
+extrusions, and the existing vegetation renderer remain separate from the hillshade.
 
 Road references use a compact Tileflow-owned family of generic rectangular and circular shields.
 The data's normalized `shield_kind` selects neutral, blue, green, red, orange, yellow, or circular
@@ -175,8 +218,8 @@ and the overview candidate schedule keep regional views legible while preserving
 at street scale.
 
 The two palettes are Tileflow-owned, deterministic snapshots calibrated from rendered Mapbox
-Standard `default/day` and `default/night` references on 2026-08-27. They do not import Mapbox style
-JSON, rules, assets, or runtime dependencies. Public roles such as `surface.background`,
+Standard `default/day` and `default/night` references on 2026-10-14. The [Standard playground](https://docs.mapbox.com/playground/standard-style/) is the visual
+reference; the map does not import its style JSON, assets, or runtime dependencies. Public roles such as `surface.background`,
 `landuse.industrial`, `landuse.medical`, `labels.settlement`, `labels.neighborhood`, and
 `labels.road` remain independently wired; `hydro.ocean` also separates Standard Night's deep sea
 from urban and inland water. An agent can alter one cartographic intent without

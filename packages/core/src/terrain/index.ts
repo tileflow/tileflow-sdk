@@ -44,7 +44,7 @@ export function resolveTerrain(
   const encoding = terrainConfig.encoding ?? 'terrarium';
   const raster = mode === 'none' ? undefined : resolveRaster(terrainConfig, apiBaseUrl, encoding);
   const contours = terrainConfig.contours
-    ? resolveContours(terrainConfig.contours, encoding, terrainConfig.attribution)
+    ? resolveContours(terrainConfig.contours, encoding, terrainConfig.attribution, apiBaseUrl)
     : undefined;
 
   if (!raster && !contours) return undefined;
@@ -191,7 +191,10 @@ function resolveRaster(
       ...(terrain.attribution ? {attribution: terrain.attribution} : {}),
       encoding,
       type: 'raster-dem',
-      url,
+      ...(terrain.tiles ? {tiles: [...terrain.tiles]} : {url}),
+      ...(terrain.minZoom === undefined ? {} : {minzoom: terrain.minZoom}),
+      ...(terrain.maxZoom === undefined ? {} : {maxzoom: terrain.maxZoom}),
+      ...(terrain.tileSize === undefined ? {} : {tileSize: terrain.tileSize}),
     },
   };
 }
@@ -200,6 +203,7 @@ function resolveContours(
   contours: NonNullable<TileflowTerrainConfig['contours']>,
   encoding: TileflowTerrainEncoding,
   attribution: string | undefined,
+  apiBaseUrl: string,
 ): ResolvedTerrainContours {
   const thresholdZooms = Object.keys(contours.thresholds).map(Number);
   const minimumZoom = contours.minZoom ?? Math.min(...thresholdZooms);
@@ -208,7 +212,7 @@ function resolveContours(
   const tiles = [
     createTileflowContourProtocolUrl({
       demMaxzoom: contours.demMaxZoom,
-      demUrl: contours.demUrl,
+      demUrl: contours.demUrl ?? `${apiBaseUrl}/tiles/terrain/{z}/{x}/{y}.webp`,
       encoding,
       maxzoom: maximumZoom,
       multiplier: contours.multiplier ?? 1,

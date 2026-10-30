@@ -89,7 +89,8 @@ TypeScript imports.
 
 `icons` is an intentional exception to implicit array composition: omission inherits the exact
 parent array, any declaration replaces it atomically, and `[]` disables map icons. Compose with a
-spread when the child should keep a parent's directories. `fonts` and `glyphs` are mutually
+spread when the child should keep a parent's directories. `models`, the directories of a map's own
+3D models, follows the same rule. `fonts` and `glyphs` are mutually
 exclusive text providers; declaring either atomically replaces an inherited provider of either
 kind. Unknown keys and former compatibility shapes are rejected.
 
@@ -125,8 +126,8 @@ export default defineMap({
 
 The standalone map above is complete as written. A map always owns its complete text provider; Core does not
 obtain fonts or sprites from World and never invents a fallback URL. The URL-backed first-party
-`streets`, `ferraris`, `harad`, `soundings`, and `blueprint` maps declare their glyph
-providers directly. `baedeker`, `civica`, and `siegfried`
+`streets`, `soundings`, and `blueprint` maps declare their glyph
+providers directly. `baedeker`, `civica`, `map1777`, and `siegfried`
 declare packaged fonts, so ordinary imports and derived maps compile without out-of-band release
 metadata.
 
@@ -207,13 +208,22 @@ receive two opaque green fills. Parking areas are polygons from the configured l
 parking access aisles remain road features under `roads.serviceTypes.parkingAisle`. The
 `commercial` target recognizes ordinary `commercial` and `retail` values plus Tileflow's derived
 `business_area` ground class. Its `globalLandcover` fill styles the optional low-zoom global
-land-cover extension without a raw layer patch. The `water.bathymetry` fill does the same for the
+land-cover extension without a raw layer patch. Its `barriers` draw `hedge`, `fence` and `wall`
+from the data's barrier layer (Tileflow World V1's `traffic_control`) at the top of the land band:
+a `line`, a `shadow` line under it, and an `area` fill for the hedges the data maps as areas.
+Nothing is drawn for a barrier without a style, nor for data without the layer. The `water.bathymetry` fill does the same for the
 typed Tileflow World V1 depth bands. An explicit `water({bathymetryContours: {}})` traces the
 submerged edges between those discrete polygon bands; it is an approximate visual contour, not a
 surveyed isoline. `water({bathymetryLabels: {}})` separately opts into numeric metre values derived
 from each polygon's absolute minimum band depth. Existing maps gain neither detail by default, and
 sources without bathymetry bindings omit both requested layers. These labels describe coarse band
 floors, not measured survey soundings, and must not be presented as hydrographic sounding data.
+An explicitly selected Bathymetry source can instead declare `vectorLayers.contours: true` to use
+real contour lines and their `depth` values. Its optional named seafloor and water features have
+separate `water.bathymetryLandforms` and `water.bathymetryWaterNames` styles, with the language
+selected by `labels(...)`. See [the marine source contract](data-is-separate-from-design.md#declare-contour-and-name-layers).
+Those name styles can explicitly select placement for each geometry family with
+`placementByGeometry`; omitting it preserves scalar placement.
 
 `addresses` renders the standard OpenMapTiles `housenumber` points at detailed zooms and exposes a
 single semantic `labels` style. `landforms` renders the standard `mountain_peak` classes (`peak`,
@@ -249,3 +259,11 @@ data; passes placed beside a moved target follow it. Operations sharing a placem
 declaration order, the first lowest. For symbols, a higher layer is also placed first in MapLibre
 collisions, so placement decides both drawing and precedence. An owner whose layers are all
 render passes still satisfies other operations' `requirements`.
+
+A target exists only in the mode that draws it: buildings draw `buildings.flat.fill` and
+`buildings.flat.outline` in mode `'flat'`, and `buildings.extrusion` in mode `'3d'`. `refine()`
+keeps the inherited render stack, so refining an inherited module's `mode` fails when a pass is
+placed beside, or a refinement targets, the other mode's target; the error names both modes.
+Streets' shadows and its extrusion pass stand beside its flat buildings. To draw native extrusions
+in a map that extends Streets, remove that stack with `refine({mode: '3d', renderStack: reset()})`,
+or declare `buildings({mode: '3d'})` to replace the module.

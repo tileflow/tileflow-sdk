@@ -55,8 +55,8 @@ hosted manifest.
 In a Vite application's client entry, add this before mounting React:
 
 ```ts
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import {configureTileflowMapLibre} from '@tileflow/react';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 
 configureTileflowMapLibre({workerUrl});
 ```
@@ -73,8 +73,8 @@ Import MapLibre's CSS once in the application. After the worker and assets are r
 <!-- docs:check -->
 
 ```tsx
-import 'maplibre-gl/dist/maplibre-gl.css';
 import {Map} from '@tileflow/react';
+import 'maplibre-gl/dist/maplibre-gl.css';
 
 export function App() {
   return (
@@ -99,17 +99,72 @@ for assets.
 explicit light/dark mapping, which Streets supplies. Theme changes preserve the MapLibre instance,
 camera, and interactions, and roll back on failure. `onThemeChange` reports transitions.
 
-`themeTransition={{duration: 450}}` cross-fades theme changes over that many milliseconds.
+Add `timeOfDay="dusk"` beside `theme` to select a map's optional `day`, `dawn`, `dusk`, or
+`night` preset. For Streets, `theme="light"` with this preset selects the existing `dusk` palette.
+Maps without this capability ignore the option; omitting it keeps the selected theme unchanged.
+Changing it uses the existing theme transition. `themeBlend` takes precedence. See the
+[authoring contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md#style-with-themes-and-semantic-modules).
+
+Theme and `timeOfDay` changes cross-fade over 450 ms by default, respecting reduced motion.
+`themeTransition={{duration: 700}}` customizes the duration; use `duration: 0` for an immediate change.
 `themeBlend={{themes: ['night', 'dusk', 'day'], position}}` shows a continuous blend of the map's
 themes instead of `theme`: position 0 is the first theme and 1.5 is halfway from the second to the
 third. Moving the position updates the map at once. See
 [theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md).
 
+Interactive maps show the 3D scene their style declares by default: buildings with Tileflow
+landmarks and the map's Team building models, 3D trees, and street lights where the map enables
+them. The 3D renderers load only when the style declares a scene, so 2D maps do not download them.
+`viewMode` is `3d` by default; `viewMode="2d"` opts out, mounting no 3D buildings or street lights, and
+draws vegetation as the map's policy sets for the 2D view (Streets keeps its model trees in either
+view). `vegetation` overrides vegetation visibility (omitting it uses the map default); `vegetation={false}`
+hides models and flat artwork alike. Changing either prop updates the existing map immediately.
+They do not change camera pitch and do not apply in image mode. See
+[the map's 3D scene](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md#the-maps-3d-scene)
+and [vegetation controls](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md#visibility-and-representation).
+
 `mapOptions` accepts native MapLibre options except `container` and `style`. Direct camera props
 take priority over `mapOptions`, then the manifest view, then shared defaults. `Map` always selects
 a Tileflow map through its manifest; it has no renderer discriminator or direct-style mode.
+Tileflow's styles are validated when they are compiled, so `validateStyle` defaults to `false`; pass
+`true` to validate them again in the browser.
+The map canvas is multisampled by default (`canvasContextAttributes.antialias` is `true`) so the
+thin edges of 3D models stay continuous; other context attributes you pass are kept, and
+`canvasContextAttributes: {antialias: false}` trades that smoothing for lower GPU cost.
 The obsolete source fields `kind` and `style` are rejected. For a completely unmanaged map, use
 `maplibre-gl` directly rather than a Tileflow component.
+
+## Color boundary areas from application data
+
+For a map that declares `boundaryAreas` and a `boundaryChoropleth()` overlay without `values`,
+`useBoundaryFeatureState` keeps its feature-state equal to your rows. Take the map from `onLoad`
+and memoize the values; each new object replaces the previous ones, and `null` clears them:
+
+<!-- docs:check -->
+
+```tsx
+import {Map, useBoundaryFeatureState} from '@tileflow/react';
+import {useMemo, useState} from 'react';
+import type {Map as MapLibreMap} from 'maplibre-gl';
+
+export function Unemployment({rates}: {rates: {ine: string; rate: number}[]}) {
+  const [map, setMap] = useState<MapLibreMap | null>(null);
+  const values = useMemo(
+    () => ({
+      joinBy: 'ref' as const,
+      rows: rates.map(({ine, rate}) => ({key: `ES:INE:${ine}`, value: rate})),
+    }),
+    [rates],
+  );
+  useBoundaryFeatureState(map, values);
+  return <Map source={{map: 'madrid-unemployment'}} onLoad={setMap} />;
+}
+```
+
+Rows join by `ref` here, so this map declares `boundaryAreas: {family: 'boundaries', promoteId:
+'ref'}`. Without `promoteId`, rows join by registry `id`. See
+[boundary areas and choropleths](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/boundary-areas-and-choropleths.md)
+for scales, joins and the lookup table.
 
 ## Add annotations and popups
 
@@ -126,9 +181,9 @@ into hosts managed by the interaction runtime:
 <!-- docs:check -->
 
 ```tsx
+import {Map} from '@tileflow/react';
 import {useState} from 'react';
 import type {TileflowAnnotation, TileflowInteractionState} from '@tileflow/interactions';
-import {Map} from '@tileflow/react';
 
 type Property = {price: number; title: string};
 
@@ -206,8 +261,8 @@ Tileflow credentials on that server, not in React props or a browser bundle.
 <!-- docs:check -->
 
 ```tsx
-import {useState} from 'react';
 import {StaticMap} from '@tileflow/react/static';
+import {useState} from 'react';
 import type {StaticMapAttributionEntry} from '@tileflow/static/client';
 
 export function StaticPreview({idempotencyKey}: {idempotencyKey: string}) {

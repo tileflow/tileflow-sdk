@@ -15,8 +15,8 @@ application's own WebGL layers to draw, from the values `getSun()` returns.
 ## Describe a theme's sun
 
 Set `lighting.sun` and `lighting.ambient` in the theme. Every value is optional; unset values take
-the defaults in `tileflowDefaultSunPreset` (azimuth 210°, altitude 60°, white light at 0.5, full
-shadows, a white sky at 0.5):
+the defaults in `tileflowDefaultSunPreset` (azimuth 210°, altitude 60°, white light at 0.2, full
+shadow strength, a white sky at 0.8 for soft daylight shadows):
 
 <!-- docs:check -->
 
@@ -43,6 +43,46 @@ others are inherited. The compiled style carries the resolved sun in its metadat
 direction in `lighting.position` no longer apply to a theme with a sun. A theme without `sun` or
 `ambient` compiles exactly as before.
 
+## Replace inherited lighting
+
+`defineTheme(base, definition)` normally merges lighting field by field. An empty `lighting`,
+`sun`, or `ambient` object therefore preserves inherited values. Use the existing `reset()`
+operation to remove a preset explicitly while keeping the base theme's palette and typography:
+
+<!-- docs:check -->
+
+```ts
+import {defineTheme, reset} from '@tileflow/core';
+import {streetsThemes} from '@tileflow/maps';
+
+export const studio = defineTheme(streetsThemes.light, {
+  id: 'studio',
+  version: 1,
+  colorScheme: 'light',
+  lighting: {
+    sun: reset(),
+    ambient: reset(),
+    anchor: 'viewport',
+    position: [1.15, 180, 40],
+    color: '#FFFFFF',
+    intensity: 0.15,
+  },
+});
+```
+
+Removing both presets lets the native extrusion light use the authored `anchor` and `position`.
+Resetting only `sun` keeps an inherited ambient preset, and resetting only `ambient` keeps the sun;
+the missing counterpart then uses the SDK defaults. `lighting: reset()` clears all inherited
+lighting properties. A direct property such as `position`, `color`, or `intensity` can also be
+reset. The result is a complete theme with those properties absent; it contains no reset nodes.
+To replace a whole sun or ambient object, first derive a theme that resets that object, then derive
+the replacement values from the cleared theme.
+
+Removing a preset does not turn off the renderer's lighting, cast shadows, or ambient occlusion.
+The SDK's 3D scene uses its fallback light when no preset is published. For a graphic building
+style, choose the building module's `lighting: 'style'`, `shadows: false`, and `occlusion: false`
+explicitly. A single static theme needs no time-of-day family or running clock.
+
 ## Read the sun in an application
 
 `themeController.getSun()` returns the sun the map shows:
@@ -66,8 +106,10 @@ custom layer draws; the map redraws whenever the sun changes.
 
 `setSun` places the sun by direction, or by the real sun of a date over a place given as
 `[longitude, latitude]`, the map's centre when it is left out. The themes keep the sun's colours,
-strengths and shadow strength; only its direction changes. `setSun(undefined)` returns it to the
-themes. This example assumes an existing MapLibre map and a controller for it:
+strengths and shadow strength; only its direction changes. A map with a
+[street sky](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-sky.md)
+also takes the sky of the sun's hour from its time-of-day themes. `setSun(undefined)` returns both
+to the themes. This example assumes an existing MapLibre map and a controller for it:
 
 <!-- docs:check -->
 

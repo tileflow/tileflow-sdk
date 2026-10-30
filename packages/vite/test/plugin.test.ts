@@ -4,6 +4,7 @@ import {tmpdir} from 'node:os';
 import {join, resolve} from 'node:path';
 import {test} from 'node:test';
 import {createServer as createViteServer} from 'vite';
+import {streetsThemes} from '@tileflow/maps';
 import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflow} from '../src/index';
@@ -40,25 +41,29 @@ test('emits manifest and style assets under the configured Vite base path', asyn
     'maps/icons/main/sprite@2x.json',
     'maps/icons/main/sprite@2x.png',
     'maps/manifest.json',
-    'maps/styles/main/dark.json',
-    'maps/styles/main/light.json',
+    ...Object.keys(streetsThemes)
+      .map((theme) => `maps/styles/main/${theme}.json`)
+      .sort(),
   ];
   assert.deepEqual(
     names.filter((name) => !name?.includes('/generations/')),
     stableNames,
   );
   const generated = names.filter((name) => name?.includes('/generations/'));
-  assert.equal(generated.length, 6);
+  assert.equal(generated.length, 4 + Object.keys(streetsThemes).length);
   assert.ok(generated.every((name) => /^maps\/generations\/[a-f0-9]{64}\//.test(name ?? '')));
   const manifest = JSON.parse(
     String(emitted.find((asset) => asset.fileName === 'maps/manifest.json')?.source),
   ) as RuntimeManifest;
-  assert.equal(manifest.version, 1);
+  assert.equal(manifest.version, 2);
   assert.equal(Object.hasOwn(manifest, 'kind'), false);
   assert.equal(Object.hasOwn(manifest, 'styles'), false);
   assert.equal(manifest.maps.main?.defaultTheme, 'light');
   assert.deepEqual(manifest.maps.main?.systemThemes, {dark: 'dark', light: 'light'});
-  assert.deepEqual(Object.keys(manifest.maps.main?.themes ?? {}).sort(), ['dark', 'light']);
+  assert.deepEqual(
+    Object.keys(manifest.maps.main?.themes ?? {}).sort(),
+    Object.keys(streetsThemes).sort(),
+  );
   assert.match(
     manifest.maps.main?.themes.light?.styleUrl ?? '',
     /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u,
@@ -423,7 +428,7 @@ const icon =
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="#000" d="M2 20h20L12 2z"/></svg>';
 
 function watchedConfig(source: string): string {
-  return `import {defineMap,disable} from '@tileflow/core'; import {streets} from '@tileflow/maps'; import {mapName} from './tokens'; export default defineMap({id:'main',name:mapName,version:1,extends:streets,glyphs:${externalGlyphProvider},icons:[${JSON.stringify(source)}],modules:{poi:disable(),roads:disable()}});\n`;
+  return `import {defineMap,disable} from '@tileflow/core'; import {streets} from '@tileflow/maps'; import {mapName} from './tokens'; export default defineMap({id:'main',name:mapName,version:1,extends:streets,glyphs:${externalGlyphProvider},icons:[${JSON.stringify(source)}],modules:{poi:disable(),roads:disable(),vegetation:disable()}});\n`;
 }
 
 function streetsConfig(): string {
@@ -489,7 +494,13 @@ function setUint64(view: DataView, offset: number, value: number) {
 const externalGlyphProvider = JSON.stringify({
   kind: 'url',
   url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
-  fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
+  fontStacks: [
+    'Noto Sans Regular',
+    'Noto Sans Bold',
+    'Noto Sans Italic',
+    'DINish Medium,Noto Sans Regular',
+    'DINish Bold,Noto Sans Regular',
+  ],
 });
 
 function createHostedManifest(): RuntimeManifest {
@@ -514,7 +525,7 @@ function createHostedManifest(): RuntimeManifest {
 }
 
 function assertLocalManifest(manifest: RuntimeManifest, base: string): void {
-  assert.equal(manifest.version, 1);
+  assert.equal(manifest.version, 2);
   assert.equal(manifest.apiUrl, undefined);
   assert.equal(Object.hasOwn(manifest, 'kind'), false);
   assert.equal(Object.hasOwn(manifest, 'styles'), false);

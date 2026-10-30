@@ -47,6 +47,8 @@ export type NativeSymbolOverlapTransformation = {
 export type NativeStyleRepresentation = {
   style: JsonObject & {layers: NativeLayer[]};
   projection: NativeProjectionTransformation;
+  /** Native has no sky; a browser sky above the horizon is removed and recorded. */
+  sky?: 'removed';
   layers: NativeLayerTransformation[];
   symbolOverlap: NativeSymbolOverlapTransformation[];
   inputLayers: number;
@@ -665,14 +667,19 @@ export function lowerNativeStyleRepresentation(
       properties: lowered.properties,
     });
   }
-  const changed = projection !== 'none' || transformations.length > 0 || symbolOverlap.length > 0;
+  if (input.sky !== undefined && !object(input.sky)) fail('/sky');
+  const sky = input.sky !== undefined;
+  const changed =
+    projection !== 'none' || sky || transformations.length > 0 || symbolOverlap.length > 0;
   const output: JsonObject & {layers: NativeLayer[]} = changed
     ? {...input, layers}
     : (input as JsonObject & {layers: NativeLayer[]});
   if (changed && projection !== 'none') delete output.projection;
+  if (sky) delete output.sky;
   return {
     style: output,
     projection,
+    ...(sky ? {sky: 'removed' as const} : {}),
     layers: transformations,
     symbolOverlap,
     inputLayers: originalLayers.length,

@@ -30,7 +30,11 @@ import {
 import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
+  attachTileflowLabelPlacement,
+  attachTileflowMap3D,
   attachTileflowMapLifecycle,
+  attachTileflowNauticalLights,
+  attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowThemeController,
   createTileflowTransformRequest,
@@ -40,12 +44,16 @@ import {
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   subscribeTileflowSystemColorScheme,
+  type TileflowBrowserThemeBlendSelection,
+  tileflowCanvasContextAttributes,
   type TileflowFairUseNoticeController,
+  type TileflowMap3DAttachment,
   type TileflowMapLifecycleAttachment,
+  tileflowMaxPitch,
   type TileflowThemeController,
   type TileflowThemeTransition,
-  type TileflowBrowserThemeBlendSelection,
   type TileflowThemeTransitionOptions,
+  type TileflowViewMode,
   type TileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
@@ -69,6 +77,7 @@ import {
   type TileflowRuntimeManifestMap,
   type TileflowRuntimeSource,
   type TileflowRuntimeStyle,
+  type TileflowTimeOfDay,
 } from '@tileflow/core/runtime';
 import {
   initialTileflowInteractionState,
@@ -122,6 +131,8 @@ export type TileflowMapSlots<TAnnotation extends TileflowAnnotation = TileflowAn
 };
 
 type TileflowMapSharedProps = {
+  vegetation?: boolean;
+  viewMode?: TileflowViewMode;
   alt?: string;
   analytics?: TileflowAnalytics;
   center?: [number, number];
@@ -231,7 +242,10 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       required: true,
       type: Object as PropType<TileflowRuntimeSource>,
     },
+    vegetation: {type: Boolean as PropType<boolean | undefined>, default: undefined},
+    viewMode: {type: String as PropType<TileflowViewMode>, default: '3d'},
     theme: String,
+    timeOfDay: String as PropType<TileflowTimeOfDay>,
     themeBlend: Object as PropType<TileflowBrowserThemeBlendSelection>,
     themeTransition: Object as PropType<TileflowThemeTransitionOptions>,
     zoom: Number,
@@ -283,6 +297,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     let mapLifecycle: TileflowMapLifecycleAttachment | null = null;
     let mapResizeObserver: ResizeObserver | null = null;
     let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
+    let sceneAttachment: TileflowMap3DAttachment | null = null;
     let themeController: TileflowThemeController | null = null;
     let unsubscribeSystemColorScheme: (() => void) | null = null;
     let mapLoadId = 0;
@@ -399,8 +414,12 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         }
         return {
           error: false,
-          name: resolveTileflowRuntimeTheme(manifestMap.value, selection, systemColorScheme.value)
-            .name,
+          name: resolveTileflowRuntimeTheme(
+            manifestMap.value,
+            selection,
+            systemColorScheme.value,
+            props.themeBlend ? undefined : props.timeOfDay,
+          ).name,
         } as const;
       } catch {
         return {error: true, name: undefined} as const;
@@ -626,6 +645,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       assertTileflowMapStyleInputs({
         source: props.source,
         theme: props.theme,
+        timeOfDay: props.timeOfDay,
         themeBlend: props.themeBlend,
         themeTransition: props.themeTransition,
       });
@@ -693,6 +713,14 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       updateImageSize();
     };
 
+    watch(
+      () => [props.vegetation, props.viewMode] as const,
+      ([visible, viewMode]) => {
+        sceneAttachment?.setVegetation(visible);
+        sceneAttachment?.setViewMode(viewMode ?? '3d');
+      },
+    );
+
     const destroyMap = () => {
       mapLoadId += 1;
       readinessRunId += 1;
@@ -702,6 +730,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       const resizeObserver = mapResizeObserver;
       const map = mapRef.value;
       const controller = themeController;
+      const scene = sceneAttachment;
+      sceneAttachment = null;
       const annotationInteractionsForMap = annotationRuntime;
       const semanticInteractionsForMap = semanticRuntime;
       const worldRequestBridge = mapWorldRequestBridge;
@@ -719,6 +749,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         () => worldRequestBridge?.dispose(),
         () => fairUseNotice?.dispose(),
         () => lifecycle?.dispose(),
+        () => scene?.dispose(),
         () => controller?.dispose(),
         () => resizeObserver?.disconnect(),
         () => map?.remove(),
@@ -864,9 +895,15 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       });
       const map = new maplibregl.Map({
         ...props.mapOptions,
+        canvasContextAttributes: tileflowCanvasContextAttributes(
+          props.mapOptions?.canvasContextAttributes,
+        ),
         attributionControl: props.mapOptions?.attributionControl ?? {
           compact: true,
         },
+        // Tileflow's compiled styles are validated when they are built.
+        validateStyle: props.mapOptions?.validateStyle ?? false,
+        maxPitch: props.mapOptions?.maxPitch ?? tileflowMaxPitch,
         bearing: resolvedBearing.value,
         center: resolvedCenter.value,
         container,
@@ -888,6 +925,9 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
 
       mapRef.value = map;
       attachTileflowAtmosphere(map);
+      attachTileflowNotices(map);
+      attachTileflowNauticalLights(map);
+      attachTileflowLabelPlacement(map);
       themeController =
         runtime.theme === undefined
           ? null
@@ -905,6 +945,26 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
                 }
               },
             });
+
+      // The map's 3D scene loads only once its style declares one, so 2D maps do not pay for it.
+      sceneAttachment = attachTileflowMap3D({
+        map,
+        ...(themeController ? {controller: themeController} : {}),
+        vegetation: props.vegetation,
+        viewMode: props.viewMode ?? '3d',
+        load: () => import('@tileflow/core/3d'),
+        onError: (error) => console.error('Failed to load the Tileflow 3D scene', error),
+        transformRequest: createTileflowTransformRequest({
+          getAnalytics: () => resolvedAnalytics.value,
+          sessionController: session,
+          sessionId: session.sessionId,
+          transformRequest: (url) =>
+            props.mapOptions?.transformRequest?.(
+              url,
+              'Tile' as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
+            ),
+        }),
+      });
 
       try {
         const mapInteractions = createTileflowMapLibreDomRuntime<

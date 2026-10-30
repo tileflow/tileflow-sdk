@@ -2,20 +2,43 @@ import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {defineMap, openMapTiles, resolveMap, vectorTiles} from '@tileflow/core';
+import {
+  defineMap,
+  openMapTiles,
+  readTileflowNotices,
+  resolveMap,
+  vectorTiles,
+} from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
 import {soundings, soundingsIcons} from '../src';
 
 const soundingsIconIds = [
+  'soundings-boat-hoist',
+  'soundings-boatyard',
   'soundings-buoy-cardinal',
+  'soundings-buoy-pillar',
   'soundings-buoy-port',
   'soundings-buoy-starboard',
+  'soundings-distance-mark',
+  'soundings-facility',
+  'soundings-fuel-station',
   'soundings-harbor',
   'soundings-light-flare',
   'soundings-lighthouse',
+  'soundings-marina',
+  'soundings-notice',
+  'soundings-notice-information',
+  'soundings-notice-prohibition',
+  'soundings-notice-recommendation',
+  'soundings-notice-regulation',
+  'soundings-notice-restriction',
   'soundings-paper-grain',
+  'soundings-pump-out',
   'soundings-rock-awash',
+  'soundings-slipway',
+  'soundings-visitor-berth',
   'soundings-water-dots',
+  'soundings-water-tap',
   'soundings-wreck',
 ] as const;
 
@@ -58,8 +81,8 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
     (soundings.marine as {bathymetry?: {display?: string}}).bathymetry?.display,
     'hybrid',
   );
-  assert.equal((soundings.marine as {nautical?: unknown}).nautical, false);
-  assert.equal('nautical' in soundings.modules, false);
+  assert.deepEqual((soundings.marine as {nautical?: unknown}).nautical, {});
+  assert.equal('nautical' in soundings.modules, true);
   assert.equal(style.sources['tileflow-bathymetry']?.type, 'vector');
   assert.equal(
     style.sources['tileflow-bathymetry']?.url,
@@ -71,7 +94,11 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
     type: 'raster-dem',
     url: 'https://api.tileflow.dev/tiles/bathymetry/dem/tiles.json',
   });
-  assert.equal(style.sources['tileflow-nautical'], undefined);
+  assert.deepEqual(style.sources['tileflow-nautical'], {
+    promoteId: {light: 'provenance'},
+    type: 'vector',
+    url: 'https://api.tileflow.dev/tiles/nautical/tiles.json',
+  });
   assert.equal(style.sprite, '/tileflow/icons/soundings/sprite');
   assert.deepEqual(validateStyleMin(style as never), []);
 
@@ -156,10 +183,20 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
     );
   }
 
-  assert.equal(
-    style.layers.some((layer) => layer.source === 'tileflow-nautical'),
-    false,
-  );
+  // Nautical marks use the Soundings chart symbols; beacons stay coloured dots.
+  for (const group of ['buoys', 'harbours', 'lighthouses', 'lights', 'ports', 'wrecks']) {
+    assert.equal(byId.has(`tileflow-nautical-${group}-marker`), false, group);
+    const image = JSON.stringify(byId.get(`tileflow-nautical-${group}`)?.layout?.['icon-image']);
+    assert.match(image, /soundings-/u, `${group} icon`);
+  }
+  assert.equal(byId.get('tileflow-nautical-beacons-marker')?.type, 'circle');
+  assert.deepEqual(readTileflowNotices(style.metadata), [
+    {
+      id: 'nautical-not-for-navigation',
+      sources: ['tileflow-nautical'],
+      text: 'Not for navigation',
+    },
+  ]);
 
   const pierOutline = compiledLayer(compiled, 'water.render.pierOutline');
   const pierDeck = compiledLayer(compiled, 'water.render.pierDeck');
@@ -209,7 +246,7 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
     'tileflow-poi-rock-awash-icon',
     'tileflow-poi-wreck-icon',
   ]) {
-    assert.equal(byId.has(id), false, `${id} leaked experimental Nautical content`);
+    assert.equal(byId.has(id), false, `${id} leaked Nautical content into World POIs`);
   }
 });
 

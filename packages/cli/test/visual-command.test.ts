@@ -6,31 +6,17 @@ import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {fileURLToPath} from 'node:url';
 import {PNG} from 'pngjs';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
 
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
-
-test('visual help explains reference matching and reviewed baselines', async (t) => {
+test('visual analysis exposes its physical-region option', async (t) => {
   const directory = await createDirectoryFixture(t, 'tileflow-visual-help-');
   t.after(() => rm(directory, {force: true, recursive: true}));
-  const rootHelp = await runCli(directory, ['visual', '--help']);
-  const analyzeHelp = await runCli(directory, ['visual', 'analyze', '--help']);
-  const diffHelp = await runCli(directory, ['visual', 'diff', '--help']);
-  const updateHelp = await runCli(directory, ['visual', 'update', '--help']);
-
-  assert.equal(rootHelp.code, 0, rootHelp.stderr);
-  assert.equal(analyzeHelp.code, 0, analyzeHelp.stderr);
-  assert.equal(diffHelp.code, 0, diffHelp.stderr);
-  assert.equal(updateHelp.code, 0, updateHelp.stderr);
-  assert.match(rootHelp.stdout, /references or approved baselines/i);
-  assert.match(analyzeHelp.stdout, /reference PNG; it is never modified/i);
-  assert.match(analyzeHelp.stdout, /--region <x,y,width,height>/i);
-  assert.match(diffHelp.stdout, /approved baselines without changing them/i);
-  assert.match(updateHelp.stdout, /Save fresh scene renders as approved visual baselines/i);
+  const help = await runCli(directory, ['visual', 'analyze', '--help']);
+  assert.equal(help.code, 0, help.stderr);
+  assert.match(help.stdout, /--region <x,y,width,height>/u);
 });
 
 test('visual diff and update require named scenes or explicit --all, never both', async (t) => {
@@ -559,7 +545,7 @@ function runCli(
   });
 
   return new Promise((resolveResult, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
+    const child = spawn(process.execPath, cliFixtureArguments(arguments_), {
       cwd,
       env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],

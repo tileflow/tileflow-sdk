@@ -121,14 +121,14 @@ their source faces' shapes. Browser adapters load local faces before MapLibre. N
 `glyphs` URL provider instead, which enumerates the exact comma-joined MapLibre request keys in
 `fontStacks`.
 
-Streets, Ferraris, Härad, Soundings, and Blueprint each declare
+Streets, Soundings, and Blueprint each declare
 `https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf`
 with the exact `Noto Sans Regular` and `Noto Sans Bold` stacks. The full hash identifies one
 published, immutable glyph collection independent of World data. The older `/fonts/...` endpoint
 remains a mutable compatibility URL and does not make a resolved map byte-reproducible. The global
 glyph `assetSetSha256` is not the same-domain value as the per-map `assetSetSha256` in
 `build-manifest.json`.
-Baedeker and Siegfried each own a packaged directory containing Cormorant Garamond Regular, SemiBold, and Italic.
+Baedeker, 1777, and Siegfried each own a packaged directory containing Cormorant Garamond Regular, SemiBold, and Italic.
 
 Name the official generation deliberately, or use another OpenMapTiles-compatible vector source:
 
@@ -212,48 +212,29 @@ export default defineMap({
   marine: 'chart', // 'none' | 'bathymetry' | 'nautical' | 'chart'
   modules: {
     nautical: nautical({
-      soundings: {minZoom: 13},
-      aids: {minZoom: 11},
-      lights: {minZoom: 12},
-      hazards: {minZoom: 12},
-      hazardAreas: {
-        fill: {opacity: fixed(0.1, {reason: 'Chart hazard wash is invariant'})},
-      },
-      wrecks: {minZoom: 12},
-      wreckAreas: {
-        outline: {opacity: fixed(0.6, {reason: 'Chart wreck outline is invariant'})},
-      },
-      reefs: {fill: {opacity: fixed(0.3, {reason: 'Chart reef wash is invariant'})}},
+      buoys: {minZoom: 12},
+      lights: {minZoom: 9},
       navigationAreas: {
         fill: {opacity: fixed(0.05, {reason: 'Chart navigation-area wash is invariant'})},
       },
-      coverage: {outline: {visible: false}},
-      labels: {
-        navigationAreas: {minZoom: 11},
-        reefs: {minZoom: 13},
-      },
+      reefs: {fill: {opacity: fixed(0.3, {reason: 'Chart reef wash is invariant'})}},
+      labels: {navigationAreas: {minZoom: 12}},
     }),
   },
 });
 ```
 
 `bathymetry` resolves to vector source `tileflow-bathymetry` and supplies the 13-stop
-`bathymetry-v1` band contract to `water(...)`. `nautical` resolves to `tileflow-nautical`; the
-`nautical(...)` module
-styles its `sounding`, `aid`, `light`, `hazard`, `wreck`, `reef`, `navigation_area`, and `coverage`
-layers. The schema also names the product's provider-neutral provenance fields (`provenance`,
-`provider`, `cell`, `edition`, `update`, `scale`, `coverage`, and `licence`). `chart` enables both.
-Point features label depth, name, or light character as applicable. The `lighthouses` symbol style
-targets `aid` points whose canonical `class` is `lighthouse`, leaving other aids under `aids`.
-Polygon reefs, navigation
-areas, hazards, wrecks, and named/provider coverage have separate collision-aware labels under
-`nautical({labels: {...}})`; unnamed coverage does not emit empty text.
+`bathymetry-v1` band contract to `water(...)`. `nautical` resolves to `tileflow-nautical` at
+`/tiles/nautical/tiles.json`; the `nautical(...)` module draws its `nautical-v1` buoys, beacons,
+lighthouses, lights, hazards, wrecks, reefs, navigation areas, routes, cables, harbours, ports, and
+a restrained coverage indication. `chart` enables both. Every map that draws Nautical declares a
+"Not for navigation" notice, which the browser runtimes render on the map. The
+[Nautical marks guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/nautical-marks.md)
+describes the schema, the semantic groups, the theme image tokens, and the notice.
 Core does not hard-code a nautical provider or attribution: the selected TileJSON owns its actual
 coverage and attribution, and derived vector tiles are not represented as a certified ENC for
-navigation. The V1 geometry contract preserves `sounding`, `aid`, and `light` as points;
-`reef`, `navigation_area`, and `coverage` as polygons; and both point and polygon geometries for
-`hazard` and `wreck`. Point symbols and polygon areas compile separately, without fabricated
-centroids.
+navigation. Point symbols and polygon areas compile separately, without fabricated centroids.
 Advanced callers can override either TileJSON URL, attribution, or source ID and can set the other
 member to `false`:
 
@@ -295,10 +276,181 @@ opt-in.
 
 The vector palette uses thresholds −11 000, −8 000, −6 000, −4 000, −2 000, −1 000, −500, −200,
 −100, −50, −20, −10, and 0 metres. `bands`, `contours`, and `labels` remain separate controls.
-Until native contour fields are contracted, contours are a visual fallback drawn from band polygon
-edges, not surveyed isolines. The V1 schema exposes optional source-layer names
-`bathymetry_contour`, `seafloor_landform`, `water_name`, and `bathymetry_coverage`, but promises
-fields only for required `bathymetry.min_depth` and `bathymetry.sort_key`.
+Without an optional-layer declaration, contours and depth labels retain the legacy polygon-band
+behavior. `marine` shorthands and existing maps keep that behavior.
+
+### Declare contour and name layers
+
+For a compatible source, `vectorLayers` explicitly declares optional layers. Core never fetches
+TileJSON to detect them and never substitutes polygon edges for declared contour lines. A missing
+declared layer therefore draws no features; validate the selected dataset before rendering.
+`display: 'bands'` or `'hybrid'` loads the vector source.
+
+| Declaration                             | Source layer         | Geometry and fields                                                                                                 |
+| --------------------------------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `contours: true`                        | `bathymetry_contour` | Lines with numeric `depth`, negative metres below the source vertical datum. Zero and positive depths are excluded. |
+| `landforms: true` or a range inventory  | `seafloor_landform`  | Named points, lines, or polygons with stable source `id`, provider `class`, and `name`.                             |
+| `waterNames: true` or a range inventory | `water_name`         | Named points, lines, or polygons with the same name contract.                                                       |
+
+Name geometry stays in its source representation. `placement: 'point'` (the default) lets the
+renderer place names inside polygons or on points. Use `placement: 'line'` to label source lines.
+Core creates no substitute point, centroid, or line feature.
+
+Name layers preserve source properties; `id` is a source identifier, with no guarantee of a numeric
+renderer feature ID. Optional `name:<language>` fields retain the source's language assignments.
+`labels({language: 'es'})` selects a nonempty `name:es`, falling back to `name`; `auto` and `local`
+use `name` directly. Core does not infer the language of an unqualified name or invent translations.
+Optional `min_zoom` is inclusive and `max_zoom` exclusive, defaulting to 0 and 24. These nominal
+ranges intersect the symbol style's range. With `true`, MapLibre evaluates feature zoom filters at
+integer zooms: `min_zoom: 7.6` first becomes eligible at zoom 8. For exact fractional boundaries,
+declare an exhaustive range inventory instead:
+
+```ts
+vectorLayers: {
+  contours: true,
+  landforms: {zoomRanges: [{minZoom: 0, maxZoom: 24}]},
+  waterNames: {
+    zoomRanges: [{minZoom: 1, maxZoom: 6.5}, {minZoom: 7.6, maxZoom: 10}],
+  },
+}
+```
+
+Each declared pair becomes a separate symbol layer with fractional renderer bounds and equality
+filters on the source's original range. A `7.6–10` feature appears at 7.6 and disappears at 10.
+Unlisted pairs are omitted. Core never discovers ranges from tiles: validate the source inventory
+against this exhaustive declaration before rendering, and retain that inventory with reproducible
+captures. Numeric pairs must match the source's encoded values exactly.
+
+Each name layer accepts 1–128 unique pairs with `0 <= minZoom < maxZoom <= 24`;
+`tileflowBathymetryNameLayerLimits.maxZoomRanges` exposes the limit. Input order does not affect
+output. Different pairs can overlap in zoom because equality filters keep their feature sets
+disjoint. A style may narrow a pair's visibility; an empty intersection emits no layer.
+Missing or null source bounds default to 0/24. Nonnumeric values use the same numeric-conversion
+fallbacks; numeric strings are converted. Such features draw only if their normalized pair is
+declared. Core preserves the original source properties.
+
+Optional numeric `sort_key` defaults to 0; smaller values enter collision placement first within
+each cohort. Cohorts follow ascending minimum then maximum zoom and sit below ordinary map labels.
+Names use normal collision placement without overlap by default.
+
+This example declares a source whose regional detail supports zoom 14. Its extended ranges are
+explicit design choices, not a promise of worldwide detail:
+
+<!-- docs:check -->
+
+```ts
+import {bathymetry, defineMap, expr, field, fixed, labels, water} from '@tileflow/core';
+import {soundings} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'regional-depth',
+  version: 1,
+  extends: soundings,
+  marine: {
+    bathymetry: bathymetry({
+      url: 'https://tiles.example.test/regional-depth/tiles.json',
+      vectorLayers: {
+        contours: true,
+        landforms: {zoomRanges: [{minZoom: 0, maxZoom: 24}]},
+        waterNames: {zoomRanges: [{minZoom: 7.6, maxZoom: 10}]},
+      },
+      contours: {},
+      labels: {},
+    }),
+    nautical: false,
+  },
+  modules: {
+    labels: labels({language: 'es'}),
+    water: water({
+      bathymetry: {
+        maxZoom: 15,
+        opacity: fixed(0.8, {reason: 'The selected regional source supplies detailed bands'}),
+      },
+      bathymetryContours: {maxZoom: 15},
+      bathymetryLabels: {
+        maxZoom: 15,
+        text: {
+          field: expr.concat(
+            expr.toString(expr.abs(expr.get(field('bathymetryContourDepth')))),
+            ' m',
+          ),
+        },
+      },
+      bathymetryLandforms: {maxZoom: 15},
+      bathymetryWaterNames: {maxZoom: 15},
+    }),
+  },
+});
+```
+
+`water.bathymetryContours` and `water.bathymetryLabels` now consume the declared lines and `depth`;
+labels default to line placement. Band fills still consume `min_depth` and `sort_key`.
+`water.bathymetryLandforms` and `water.bathymetryWaterNames` style the declared names; set
+`visible: false` to hide either. Without their declaration, those styles emit no name layers.
+Name styles may use `class` in expressions without changing the source classification.
+
+Mixed geometry can opt into `placementByGeometry` on either name style. Its resolved policy must
+include `point`, `line`, and `polygon`; `point` must be `'point'`, while the other two accept
+`'point'`, `'line'`, or `'line-center'`. The policy overrides scalar `placement`, including an
+inherited value. Without it, scalar placement and existing generated layers remain unchanged.
+
+For example, this map labels point features at their coordinates and retains line placement for
+lines and polygon boundaries:
+
+<!-- docs:check -->
+
+```ts
+import {bathymetry, defineMap, labels, water} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'marine-names',
+  version: 1,
+  extends: streets,
+  marine: {
+    bathymetry: bathymetry({
+      vectorLayers: {landforms: {zoomRanges: [{minZoom: 0, maxZoom: 24}]}},
+    }),
+    nautical: false,
+  },
+  modules: {
+    labels: labels({language: 'es'}),
+    water: water({
+      bathymetryLandforms: {
+        placementByGeometry: {point: 'point', line: 'line', polygon: 'line'},
+      },
+    }),
+  },
+});
+```
+
+This example declares source availability; the selected source must actually contain those
+features. Equal placements share one geometry-filtered group per source range. A policy emits
+at most three groups per range (384 layers for one name family at the 128-range limit). Groups
+compile in `point`, `line`, `line-center` order below ordinary map labels; source priority orders
+features within each group. Module refinements inherit the policy and style every group.
+Render-stack refinements still address exact semantic targets; inspect each placement/range
+target when applying a narrower refinement.
+Normal collision still applies and can hide a name.
+
+Placement uses the received geometry: `point` places a line label at its first rendered vertex;
+it does not compute a stable line midpoint. Polygon `point` placement uses an interior position
+of the rendered polygon, while `line` follows its boundary. Core does not generate source anchors,
+merge identities or deduplicate names by text. A source can supply multiple stable point anchors
+with shared identity properties and distinct anchor properties; their extent, visibility and
+editorial policy belong to that source. Keep original source identities as properties rather than
+assuming a universal numeric `feature.id`.
+
+Water-module styles override product-level `bands`, `contours`, and `labels`. Existing custom
+`text.field` expressions remain authoritative: when refining a map from legacy polygons to native
+contours, use `expr.get(field('bathymetryContourDepth'))` for its depth. That auxiliary binding
+resolves to `depth` independently of the primary World schema; `bathymetryMinDepth` keeps its
+legacy band meaning. Raw `expr.get('depth')` is rejected by authoring validation.
+Increasing only `maxZoom` does not remove an opacity curve that fades out earlier. Extend ranges
+and opacity only where the selected source supports the intended detail.
+
+The V1 schema also reserves `bathymetry_coverage`; Core adds no coverage rendering by default.
+Derived contours and names provide geographic context, not certified navigation data.
 
 The DEM enables future client-side sampling and depth profiles, but Core intentionally exposes no
 profile or remote sampling API yet. Rendered relief must not be interpreted as navigation-safe
@@ -318,8 +470,20 @@ area polygons, so the holes of a plaza (tree pits, planting beds) are not stroke
 are optional: a generic OpenMapTiles source remains
 valid and the compiler omits unsupported detail instead of inventing geometry. Crossing icons are
 explicit because the data contract cannot assume a sprite name. They require positive physical
-`markings` evidence and reject `crossing=no`; both fields are semantic bindings, so custom schemas
-can remap them without weakening that rule.
+`markings` evidence, reject `crossing=no`, and require a numeric `direction` from 0 to 360 degrees
+(numbers and numeric strings are accepted). World derives missing directions only when the
+crossing has an unambiguous road axis; unresolved points on adjoining footways therefore remain
+hidden instead of receiving a default rotation. All three fields are semantic bindings, so custom
+schemas can remap them without weakening that rule.
+
+Metric road rings scale continuously with the map from zoom 15 through 24, including fractional
+zooms. Their casing is below surface road fills so approaching streets cover the outline at each
+junction. The ring fill stays below bridges and road markings.
+
+Road treatment `widthScale` scales both the stroke and an authored `gapWidth`, keeping hollow
+casings aligned with the carriageway at fractional zoom levels.
+When every dash treatment is continuous (`[1, 0]`), road layers omit the dash pattern so thin
+casings render as solid strokes. Actual construction and tunnel dashes remain patterned.
 
 Datasets may also publish the optional, decorative `canopy` layer: points inside urban parks and
 gardens, at most one per cell of a grid of about 20 m that measured tree canopy covers. Each point
@@ -424,7 +588,11 @@ buildings. Its `activity_score`, `rank`, `min_zoom`, and `confidence` fields con
 warm tint without drawing POI-radius circles. Current building footprints may carry sparse
 `building_tone=commercial|destination|active`; absence means the neutral base building. The three
 values preserve why the warm tone was selected even when a theme maps them to the same color.
-Building visibility is fixed by the layer zoom contract and never by optional semantics. The land
+Buildings may also carry World's `class`, their use in Overture's building subtype values; without
+a tone, the buildings module colours `residential`, `commercial`, public buildings (`civic`,
+`education`, `medical`, `religious` and the like) and works (`industrial`, `agricultural`,
+`service`) with the theme's `residential`, `commercial`, `civic` and `industrial` building colours,
+and every other building with `generic`. Building visibility is fixed by the layer zoom contract and never by optional semantics. The land
 module also exposes
 `medical`, `education`, and `government` independently instead of collapsing their already distinct
 source classes into one civic color.

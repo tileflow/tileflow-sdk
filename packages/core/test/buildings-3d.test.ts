@@ -1,3 +1,4 @@
+import {createExpression} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
@@ -6,10 +7,19 @@ import {
   tileflowSunLightMatrix,
 } from '../src/buildings-3d-browser';
 import {
+  readTileflowBuildings3D,
+  tileflowBuildingsMetadata,
+  tileflowBuildingsMetadataKey,
+  tileflowDefaultBuildings3DDesign,
+} from '../src/buildings-3d-design';
+import {tileflowBuildingStyleLight} from '../src/buildings-3d-light';
+import {
   meshTileflowBuildings,
   tileflowBuildingExtent,
   tileflowBuildingVertexBytes,
 } from '../src/buildings-3d-mesh';
+import {tileflowFeatureColour} from '../src/feature-colour-browser';
+import {tileflowColourChannels} from '../src/theme-blend';
 import type {TileflowTileLayer} from '../src/vector-tile-decode';
 
 // MVT exterior rings are clockwise in tile units (y down); this is a 1000 × 1000 square.
@@ -50,6 +60,20 @@ function vertex(mesh: NonNullable<ReturnType<typeof meshTileflowBuildings>>, ind
   };
 }
 
+test("a building's use class is packed above its tone for the windows", () => {
+  const packed = (properties: Record<string, unknown>) =>
+    vertex(
+      meshTileflowBuildings(layerOf([{geometry: [square], properties}]), {tileMetres: 1000})!,
+      0,
+    ).tone;
+  assert.equal(packed({}), 0);
+  assert.equal(packed({class: 'residential'}), 4);
+  assert.equal(packed({class: 'education'}), 8);
+  assert.equal(packed({class: 'outbuilding'}), 12);
+  assert.equal(packed({class: 'industrial', building_tone: 'destination'}), 15);
+  assert.equal(packed({class: 'unknown', building_tone: 'commercial'}), 1);
+});
+
 test('a building becomes a roof and four walls facing out of it', () => {
   const mesh = meshTileflowBuildings(
     layerOf([{geometry: [square], properties: {building_tone: 'commercial'}}]),
@@ -88,6 +112,76 @@ test('a building becomes a roof and four walls facing out of it', () => {
   }
   // 2000 units of 8192 at 1000 m per tile: about 244 m a side.
   assert.equal(vertex(mesh, 6).length, Math.round((2000 / tileflowBuildingExtent) * 1000));
+});
+
+test('rounded corners stay inside the footprint and keep roof and wall outlines joined', () => {
+  const input = layerOf([{geometry: [square]}]);
+  const sharp = meshTileflowBuildings(input, {tileMetres: 1000})!;
+  const rounded = meshTileflowBuildings(input, {tileMetres: 1000, edgeRadius: 1.5})!;
+  assert.ok(rounded.vertices.length > sharp.vertices.length);
+  assert.equal(rounded.top, sharp.top);
+  const roofPoints = new Set<string>();
+  const wallPoints = new Set<string>();
+  let curved = 0;
+  for (let index = 0; index < rounded.vertices.length / tileflowBuildingVertexBytes; index += 1) {
+    const v = vertex(rounded, index);
+    assert.ok(v.x >= 2000 && v.x <= 4000 && v.y >= 2000 && v.y <= 4000);
+    assert.ok(
+      !([2000, 4000].includes(v.x) && [2000, 4000].includes(v.y)),
+      'a sharp exterior corner remains',
+    );
+    const key = `${v.x},${v.y}`;
+    if (!v.wall) roofPoints.add(key);
+    else {
+      wallPoints.add(key);
+      assert.ok(Math.abs(Math.hypot(...v.normal) - 1) < 0.015);
+      if (Math.abs(v.normal[0]!) > 0.1 && Math.abs(v.normal[1]!) > 0.1) curved += 1;
+    }
+  }
+  assert.ok(curved > 0, 'curved corners need smoothly changing normals');
+  assert.deepEqual(roofPoints, wallPoints);
+  assert.ok(
+    roofPoints.has(`${2000 + Math.round((1.5 * tileflowBuildingExtent) / 1000)},2000`),
+    'the full 1.5-metre radius reaches the mesh without clamping to one metre',
+  );
+  // Rounding is opt-in and never consumes tiny walls or adds vertices below tile precision.
+  assert.deepEqual(meshTileflowBuildings(input, {tileMetres: 1000, edgeRadius: 0}), sharp);
+  assert.deepEqual(meshTileflowBuildings(input, {tileMetres: 1000, edgeRadius: 0.01}), sharp);
+});
+
+test('rounding preserves tile cuts, concave corners and courtyard boundaries', () => {
+  const across = [-2000, 0, 0, 0, 0, 1000, -2000, 1000, -2000, 0];
+  const mesh = meshTileflowBuildings(layerOf([{geometry: [across]}]), {
+    tileMetres: 1000,
+    edgeRadius: 0.4,
+  })!;
+  let cuts = 0;
+  for (
+    let index = mesh.wallsFrom;
+    index < mesh.vertices.length / tileflowBuildingVertexBytes;
+    index += 4
+  ) {
+    const a = vertex(mesh, index);
+    const b = vertex(mesh, index + 1);
+    assert.ok(!(a.x === 0 && b.x === 0), 'rounding introduced a wall on the tile cut');
+    if (a.x === 0 || b.x === 0) cuts += 1;
+  }
+  assert.equal(cuts, 2);
+  const courtyard = [250, 250, 250, 750, 750, 750, 750, 250, 250, 250];
+  const withHole = meshTileflowBuildings(layerOf([{geometry: [square, courtyard]}]), {
+    tileMetres: 1000,
+    edgeRadius: 0.4,
+  })!;
+  const holePoints = new Set<string>();
+  for (
+    let index = withHole.wallsFrom;
+    index < withHole.vertices.length / tileflowBuildingVertexBytes;
+    index += 4
+  ) {
+    const v = vertex(withHole, index);
+    if (v.corners & 4) holePoints.add(`${v.x},${v.y}`);
+  }
+  assert.deepEqual(holePoints, new Set(['2500,2500', '2500,3500', '3500,3500', '3500,2500']));
 });
 
 test("a roof's triangles mark the sides on its outline, not the diagonal between them", () => {
@@ -349,41 +443,297 @@ test('the renderer puts its layer on the map, grows without a renderer and leave
   const map = fakeMap();
   const buildings = createTileflowBuildings3D({map});
   assert.ok(map.layers.has(tileflowBuildings3DLayerId));
+  assert.equal(buildings.scale, 1, 'mounted buildings are enabled automatically');
   await buildings.grow(0.5, {transition: {duration: 0}});
   assert.equal(buildings.scale, 0.5);
   await buildings.show({transition: {duration: 0}});
   assert.equal(buildings.scale, 1);
   await assert.rejects(buildings.grow(Number.NaN), RangeError);
   await assert.rejects(buildings.grow(1, {transition: {duration: -1}}), RangeError);
-  assert.deepEqual(buildings.stats, {tiles: 0, buildings: 0, vertices: 0});
+  assert.deepEqual(buildings.stats, {
+    declared: false,
+    tiles: 0,
+    buildings: 0,
+    vertices: 0,
+    models: 0,
+  });
   buildings.dispose();
   assert.equal(map.layers.has(tileflowBuildings3DLayerId), false);
   for (const set of map.listeners.values()) assert.equal(set.size, 0);
+});
+
+test('standalone buildings reuse metadata until the style changes', () => {
+  const map = fakeMap();
+  let reads = 0;
+  let metadata: Record<string, unknown> = {};
+  map.getStyle = () => {
+    reads += 1;
+    return {metadata, layers: [{id: 'labels', type: 'symbol'}]};
+  };
+  const buildings = createTileflowBuildings3D({map});
+  assert.equal(buildings.stats.declared, false);
+  const initialReads = reads;
+  for (let frame = 0; frame < 120; frame += 1) assert.equal(buildings.stats.declared, false);
+  assert.equal(reads, initialReads);
+  metadata = {
+    [tileflowBuildingsMetadataKey]: tileflowBuildingsMetadata(tileflowDefaultBuildings3DDesign),
+  };
+  map.listeners.get('styledata')?.forEach((listener) => listener());
+  assert.equal(buildings.stats.declared, true);
+  const updatedReads = reads;
+  for (let frame = 0; frame < 120; frame += 1) assert.equal(buildings.stats.declared, true);
+  assert.equal(reads, updatedReads);
+  buildings.dispose();
+  for (const set of map.listeners.values()) assert.equal(set.size, 0);
+});
+
+test('controller-driven style changes do not serialize the style for fallback lighting', () => {
+  const map = {...fakeMap(), getLight: () => ({})};
+  let reads = 0;
+  const getStyle = map.getStyle;
+  map.getStyle = () => {
+    reads += 1;
+    return getStyle();
+  };
+  const metadata = tileflowBuildingsMetadata(tileflowDefaultBuildings3DDesign);
+  const buildings = createTileflowBuildings3D({
+    map,
+    controller: {getThemeMetadata: () => ({values: [metadata], position: 0})},
+  });
+  const initialReads = reads;
+  for (let frame = 0; frame < 120; frame += 1) {
+    map.listeners.get('styledata')?.forEach((listener) => listener());
+    assert.equal(buildings.stats.declared, true);
+  }
+  assert.equal(reads, initialReads);
+  buildings.dispose();
 });
 
 test('renderer options are validated', () => {
   assert.throws(() => createTileflowBuildings3D({map: fakeMap(), minzoom: 30}), RangeError);
   assert.throws(() => createTileflowBuildings3D({map: fakeMap(), maxTiles: 0}), RangeError);
   assert.throws(() => createTileflowBuildings3D({map: fakeMap(), maxTiles: 100}), RangeError);
-  assert.throws(() => createTileflowBuildings3D({map: fakeMap(), nightLight: 3}), RangeError);
-  assert.throws(() => createTileflowBuildings3D({map: fakeMap(), edges: 2}), RangeError);
-  assert.throws(() => createTileflowBuildings3D({map: fakeMap(), edges: Number.NaN}), RangeError);
-  assert.throws(
-    () => createTileflowBuildings3D({map: fakeMap(), edgeColor: 'not a colour'}),
-    RangeError,
+});
+
+test('the 3D buildings design is read only in a known version and shape', () => {
+  const described = {
+    version: 1,
+    source: 'tileflow',
+    layers: {building: 'building', places: 'poi'},
+    color: ['case', ['==', ['get', 'building_tone'], 'destination'], '#ff0000', '#00ff00'],
+    edges: 3,
+    edgeColor: '#7fd8ff',
+    nightLight: 0.5,
+    windows: true,
+    shadows: false,
+  };
+  const read = readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: described})!;
+  assert.deepEqual(read.color, described.color);
+  // A value out of range keeps its default; an unset switch keeps its default.
+  assert.equal(read.edges, 0);
+  assert.equal(read.edgeColor, '#7fd8ff');
+  assert.equal(read.nightLight, 0.5);
+  assert.equal(read.windows, true);
+  assert.equal(read.shadows, false);
+  assert.equal(read.occlusion, true);
+  assert.equal(read.groundOcclusion, 0.16);
+  for (const [groundOcclusion, expected] of [
+    [0, 0],
+    [0.12, 0.12],
+    [1, 1],
+    [-1, 0.16],
+    [2, 0.16],
+    [NaN, 0.16],
+  ]) {
+    const ground = readTileflowBuildings3D({
+      [tileflowBuildingsMetadataKey]: {...described, groundOcclusion},
+    })!;
+    assert.equal(ground.groundOcclusion, expected);
+    assert.equal(ground.occlusion, true);
+    assert.equal(ground.verticalGradient, read.verticalGradient);
+    assert.equal(ground.modelOcclusion, read.modelOcclusion);
+  }
+  assert.equal(
+    readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: {...described, version: 2}}),
+    undefined,
   );
-  assert.throws(
-    () => createTileflowBuildings3D({map: fakeMap(), edgeColor: 3 as unknown as string}),
-    RangeError,
+  assert.equal(readTileflowBuildings3D({}), undefined);
+});
+
+test('a building colour expression evaluates as MapLibre evaluates it', () => {
+  const floors = ['/', ['to-number', ['get', 'render_height'], 0], 3.2];
+  const expressions: unknown[] = [
+    [
+      'case',
+      ['==', ['coalesce', ['get', 'building_tone'], ''], 'destination'],
+      '#d4a017',
+      ['step', ['%', floors, 5], '#f1d4cd', 1, '#d3e8da', 2, '#f6e0b5', 3, '#e2d5f0', 4, '#cfe3f2'],
+    ],
+    ['match', ['get', 'building_tone'], ['active', 'commercial'], '#ff8800', '#336699'],
+    [
+      'interpolate',
+      ['linear'],
+      ['to-number', ['get', 'render_height'], 0],
+      0,
+      '#000000',
+      100,
+      '#ffffff',
+    ],
+    [
+      'let',
+      'tall',
+      ['>=', floors, 10],
+      ['case', ['var', 'tall'], 'rgb(10, 20, 30)', 'hsl(0, 100%, 50%)'],
+    ],
+  ];
+  const buildings = [
+    {render_height: 3},
+    {render_height: 12.8},
+    {render_height: 40, building_tone: 'destination'},
+    {render_height: '25', building_tone: 'commercial'},
+    {},
+  ];
+  for (const expression of expressions)
+    for (const properties of buildings) {
+      const parsed = createExpression(
+        expression as never,
+        {
+          type: 'color',
+          'property-type': 'data-driven',
+          expression: {interpolated: true, parameters: ['zoom', 'feature']},
+          transition: false,
+        } as never,
+      );
+      assert.equal(parsed.result, 'success');
+      const reference = (
+        parsed.value as {
+          evaluate(globals: object, feature: object): {r: number; g: number; b: number};
+        }
+      ).evaluate({zoom: 16}, {type: 'Polygon', properties});
+      const ours = tileflowFeatureColour(
+        expression as unknown[],
+        properties,
+        tileflowColourChannels,
+      )!;
+      assert.ok(ours, JSON.stringify([expression, properties]));
+      for (const [index, channel] of (['r', 'g', 'b'] as const).entries())
+        assert.ok(
+          Math.abs(ours[index]! - reference[channel]) < 0.01,
+          JSON.stringify([expression, properties]),
+        );
+    }
+  // An expression Core does not compile gives no colour.
+  assert.equal(tileflowFeatureColour(['image', 'x'], {}, tileflowColourChannels), undefined);
+});
+
+test('buildings have a sunlit finish by default and preserve explicit design choices', () => {
+  const metadata = {
+    version: 1,
+    source: 'tileflow',
+    layers: {building: 'building', places: 'poi'},
+    color: '#d8d0c0',
+  };
+  assert.deepEqual(
+    readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: metadata}),
+    tileflowDefaultBuildings3DDesign,
   );
-  // A CSS colour, or one per theme, is accepted.
-  createTileflowBuildings3D({map: fakeMap(), edgeColor: '#7fd8ff'}).dispose();
-  createTileflowBuildings3D({
-    map: fakeMap(),
-    edgeColor: (theme) => (theme === 'night' ? '#7fd8ff' : 'white'),
-  }).dispose();
-  assert.throws(
-    () => createTileflowBuildings3D({map: fakeMap(), nightLight: Number.NaN}),
-    RangeError,
+  assert.equal(tileflowDefaultBuildings3DDesign.lighting, 'sun');
+  assert.equal(tileflowDefaultBuildings3DDesign.edgeRadius, 0.8);
+  assert.equal(tileflowDefaultBuildings3DDesign.windows, false);
+  for (const flag of ['shadows', 'occlusion'] as const)
+    assert.equal(tileflowDefaultBuildings3DDesign[flag], true);
+  for (const amount of ['edges', 'nightLight', 'colorVariation'] as const)
+    assert.equal(tileflowDefaultBuildings3DDesign[amount], 0);
+  const enhanced = {
+    ...tileflowDefaultBuildings3DDesign,
+    lighting: 'sun' as const,
+    edges: 1,
+    edgeRadius: 1.5,
+    nightLight: 1,
+    colorVariation: 0.06,
+    shadows: true,
+    occlusion: true,
+    windows: true,
+  };
+  assert.deepEqual(
+    readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: tileflowBuildingsMetadata(enhanced)}),
+    enhanced,
   );
+  // Existing compiled styles with explicit false/zero values retain their chosen finish.
+  const flat = {
+    ...tileflowDefaultBuildings3DDesign,
+    lighting: 'style' as const,
+    edgeRadius: 0,
+    shadows: false,
+    occlusion: false,
+  };
+  assert.deepEqual(
+    readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: tileflowBuildingsMetadata(flat)}),
+    flat,
+  );
+  assert.equal(
+    readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: {...metadata, edgeRadius: 2}})
+      ?.edgeRadius,
+    0.8,
+  );
+});
+
+test('a design gives the zoom bands the city comes in over, or leaves them to the renderer', () => {
+  const metadata = {
+    version: 1,
+    source: 'tileflow',
+    layers: {building: 'building'},
+    color: '#d8d0c0',
+  };
+  const read = (entrance: unknown) =>
+    readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: {...metadata, entrance}})?.entrance;
+  assert.deepEqual(read({buildings: [15.5, 16], models: [14, 14.5]}), {
+    buildings: [15.5, 16],
+    models: [14, 14.5],
+  });
+  // A band must rise across zooms the map has.
+  assert.deepEqual(read({buildings: [16, 15], models: [14, 14.5]}), {models: [14, 14.5]});
+  assert.equal(read({buildings: [15, 30]}), undefined);
+  assert.equal(read([15, 16]), undefined);
+});
+
+test('show, hide and grow are immediate unless animation is requested', async () => {
+  const buildings = createTileflowBuildings3D({map: fakeMap()});
+  try {
+    const shown = buildings.show();
+    assert.equal(buildings.scale, 1);
+    await shown;
+    const hidden = buildings.hide();
+    assert.equal(buildings.scale, 0);
+    await hidden;
+    await buildings.grow(0.4);
+    assert.equal(buildings.scale, 0.4);
+    const animated = buildings.show({transition: {duration: 40}});
+    assert.equal(buildings.scale, 0.4);
+    await animated;
+    assert.equal(buildings.scale, 1);
+    await buildings.hide();
+    const faded = buildings.show({transition: {duration: 40, mode: 'fade'}});
+    assert.equal(buildings.scale, 1, 'Fade reveals full-height geometry instead of growing it');
+    await faded;
+    await buildings.hide();
+    assert.equal(buildings.scale, 0);
+  } finally {
+    buildings.dispose();
+  }
+});
+
+test('building style light preserves authored intensity, colour and anchoring', () => {
+  const light = {anchor: 'map', position: [1, 0, 90], color: '#804020', intensity: 0.08};
+  const fixed = tileflowBuildingStyleLight(light, 90);
+  assert.equal(fixed.intensity, 0.08);
+  assert.deepEqual(fixed.colour, [128 / 255, 64 / 255, 32 / 255]);
+  assert.ok(Math.abs(fixed.position[0]!) < 1e-10);
+  assert.ok(Math.abs(fixed.position[1]! - 1) < 1e-10);
+  const rotating = tileflowBuildingStyleLight({...light, anchor: 'viewport'}, 90);
+  assert.ok(Math.abs(rotating.position[0]! + 1) < 1e-10);
+  assert.ok(Math.abs(rotating.position[1]!) < 1e-10);
+  const fallback = tileflowBuildingStyleLight(undefined, 0);
+  assert.equal(fallback.intensity, 0.5);
+  assert.deepEqual(fallback.colour, [1, 1, 1]);
 });

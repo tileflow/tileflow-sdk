@@ -1,5 +1,10 @@
 # @tileflow/capture
 
+For the complete CLI workflow, use `describe`, `inspect`, `capture`, `compare`, and Inspector (`preview`)
+as described in the [CLI guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/README.md).
+New still captures include their normalized `definition` for later review. The CLI stores immutable
+capture IDs so `compare --before <id> --after <id>` can reuse evidence without rendering again.
+
 Headless Tileflow map capture for Node.js. Produce PNGs with versioned receipts, compare reviewed
 baselines, or inspect differences between deliberate renders. Use the
 [CLI](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/README.md) for ordinary terminal
@@ -19,6 +24,9 @@ Capture uses Playwright's exact pinned Chromium headless shell. The browser is n
 and a system Chrome installation is not a substitute. `allowBrowserInstall: true` permits its
 first-use download. Provision the matching shell and system libraries ahead of time in restricted
 CI environments; never assume that installing the npm package installed the browser.
+
+On Windows, Capture disables Chromium's TCP port randomization to avoid intermittent loopback
+connection failures, preserving Playwright's other launch defaults and sandboxing.
 
 Local capture needs no Tileflow API key. Configs are executable trusted code; remote tiles, fonts,
 and sprites may still require network access and their own permissions.
@@ -243,7 +251,9 @@ the perceptual metric and optional diff image are additional evidence. Never upd
 merely to make a failing comparison pass.
 
 `compareTileflowCapturesForReview` compares two deliberate renders with different styles while
-requiring compatible framing, renderer, and data identity. `analyzeTileflowCaptureReference` analyzes
+requiring compatible framing, renderer, and data identity. It accepts captures with or without a
+retained `definition`; when present, that definition must match the explicit review definition.
+`analyzeTileflowCaptureReference` analyzes
 an external PNG without claiming receipt compatibility. Neither operation approves a baseline.
 See the [receipt and comparison reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/capture/docs/receipts-and-comparison.md),
 also included under `docs/` in the installed package, for identities, metrics, and limits.

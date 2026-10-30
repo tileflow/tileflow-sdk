@@ -1,8 +1,10 @@
+import type {TileflowTimeOfDay} from '@tileflow/core/runtime';
 import type {Map as MapLibreMap, MapOptions as MapLibreMapOptions} from 'maplibre-gl';
 import type {Snippet, SvelteComponentTyped} from 'svelte';
 import type {
   TileflowBrowserThemeBlendSelection,
   TileflowThemeTransition,
+  TileflowViewMode,
   TileflowThemeTransitionOptions,
 } from '@tileflow/core/browser';
 import type {
@@ -37,6 +39,8 @@ export type TileflowMapInteractionSnippet<
 > = Snippet<[context: TileflowInteractionViewContext<TAnnotation>]>;
 
 type TileflowMapBaseProps = {
+  vegetation?: boolean;
+  viewMode?: TileflowViewMode;
   alt?: string;
   analytics?: TileflowAnalytics;
   center?: [number, number];
@@ -49,6 +53,7 @@ type TileflowMapBaseProps = {
   mapOptions?: TileflowMapOptions;
   onThemeChange?: (transition: TileflowThemeTransition) => void;
   theme?: TileflowThemeSelection;
+  timeOfDay?: TileflowTimeOfDay;
   /**
    * Shows a continuous blend of the map's themes instead of `theme`. Moving `position` changes the
    * map at once; changing `themes` prepares a new blend. `hold` keeps labels, icons, and mixed

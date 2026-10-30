@@ -355,7 +355,7 @@ test('refuses to replace a Hosted manifest unless the caller opts in explicitly'
     version?: number;
   };
   assert.equal(replacement.apiUrl, undefined);
-  assert.equal(replacement.version, 1);
+  assert.equal(replacement.version, 2);
   assert.match(
     replacement.maps?.main?.themes?.light?.styleUrl ?? '',
     /styles\/main\/light\.json$/u,
@@ -470,12 +470,12 @@ import {streets} from '@tileflow/maps';
 export default {maps:{${mapNames
     .map(
       (name) =>
-        `${JSON.stringify(name)}:defineMap({id:${JSON.stringify(name)},version:1,extends:streets,icons:[],modules:{poi:{type:'poi',icons:false},roads:disable()},glyphs:${fixtureGlyphsSource}})`,
+        `${JSON.stringify(name)}:defineMap({id:${JSON.stringify(name)},version:1,extends:streets,icons:[],modules:{poi:{type:'poi',icons:false},roads:disable(),vegetation:disable()},glyphs:${fixtureGlyphsSource}})`,
     )
     .join(',')}}};\n`;
 }
 
-const fixtureGlyphsSource = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold']}`;
+const fixtureGlyphsSource = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic','DINish Medium,Noto Sans Regular','DINish Bold,Noto Sans Regular']}`;
 
 async function fixture(t: {after(callback: () => Promise<void>): void}, prefix: string) {
   const cwd = await mkdtemp(join(tmpdir(), prefix));

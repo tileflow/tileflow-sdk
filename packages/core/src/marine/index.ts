@@ -12,7 +12,16 @@ export const tileflowBathymetryDemSourceId = 'tileflow-bathymetry-dem' as const;
 export const tileflowNauticalSourceId = 'tileflow-nautical' as const;
 
 export const tileflowBathymetryV1Schema = Object.freeze({
-  fields: Object.freeze({minDepth: 'min_depth', sortKey: 'sort_key'}),
+  fields: Object.freeze({
+    class: 'class',
+    depth: 'depth',
+    id: 'id',
+    maxZoom: 'max_zoom',
+    minDepth: 'min_depth',
+    minZoom: 'min_zoom',
+    name: 'name',
+    sortKey: 'sort_key',
+  }),
   layer: 'bathymetry',
   layers: Object.freeze({
     bands: 'bathymetry',
@@ -35,32 +44,72 @@ export const tileflowBathymetryV1Schema = Object.freeze({
   }),
 });
 
+/**
+ * The `nautical-v1` vector contract styled by the `nautical` module. Every feature carries the
+ * provenance fields (`provider`, `provenance`, `edition`, `coverage`, `licence`) and `min_zoom`,
+ * the first zoom at which it appears; `rank` (1 is most important within its layer) and `name`
+ * are optional. Colours are S-57 colour names, and multi-valued colours and categories are
+ * comma-separated in source order, for example `black,yellow`. A light's `sequence` lists its
+ * phases in seconds, eclipses in parentheses, for example `0.5+(1.5)+0.5+(4.5)`. Clearances,
+ * depths, and heights are in metres.
+ */
 export const tileflowNauticalV1Schema = Object.freeze({
   fields: Object.freeze({
+    category: 'category',
     cell: 'cell',
     character: 'character',
     class: 'class',
     color: 'color',
+    colorPattern: 'color_pattern',
+    country: 'country',
     coverage: 'coverage',
     depth: 'depth',
-    direction: 'direction',
+    distance: 'distance',
+    distanceUnit: 'distance_unit',
     edition: 'edition',
+    families: 'families',
+    group: 'group',
+    heightM: 'height_m',
+    horizontalClearance: 'horizontal_clearance',
+    impact: 'impact',
+    information: 'information',
+    label: 'label',
     licence: 'licence',
+    lit: 'lit',
+    minZoom: 'min_zoom',
     name: 'name',
-    provider: 'provider',
+    orientation: 'orientation',
+    periodS: 'period_s',
+    position: 'position',
     provenance: 'provenance',
-    quality: 'quality',
+    provider: 'provider',
     rangeNm: 'range_nm',
+    rank: 'rank',
+    reference: 'reference',
+    restriction: 'restriction',
     scale: 'scale',
+    sectorEnd: 'sector_end',
+    sectorStart: 'sector_start',
+    sequence: 'sequence',
+    shape: 'shape',
+    size: 'size',
     subclass: 'subclass',
+    system: 'system',
+    topmark: 'topmark',
+    unlocode: 'unlocode',
     update: 'update',
+    verticalClearance: 'vertical_clearance',
+    verticalClearanceClosed: 'vertical_clearance_closed',
+    verticalClearanceOpen: 'vertical_clearance_open',
+    verticalClearanceSafe: 'vertical_clearance_safe',
+    waterLevel: 'water_level',
   }),
   geometryTypes: Object.freeze({
     aids: Object.freeze(['Point'] as const),
     coverage: Object.freeze(['Polygon'] as const),
-    hazards: Object.freeze(['Point', 'Polygon'] as const),
+    hazards: Object.freeze(['Point', 'LineString', 'Polygon'] as const),
     lights: Object.freeze(['Point'] as const),
-    navigationAreas: Object.freeze(['Polygon'] as const),
+    navigationAreas: Object.freeze(['Point', 'LineString', 'Polygon'] as const),
     reefs: Object.freeze(['Polygon'] as const),
     soundings: Object.freeze(['Point'] as const),
     wrecks: Object.freeze(['Point', 'Polygon'] as const),
@@ -76,6 +125,16 @@ export const tileflowNauticalV1Schema = Object.freeze({
     wrecks: 'wreck',
   }),
   product: 'nautical-v1',
+  /**
+   * Known `provider` values and the `class` of their `coverage` cells. The source's TileJSON owns
+   * each provider's credit; the module never adds attribution.
+   */
+  providers: Object.freeze({
+    'nga-list-of-lights': 'list',
+    'noaa-office-of-coast-survey': 'chart',
+    openstreetmap: 'community',
+    'usace-ienc': 'chart',
+  }),
   schemaVersion: 1,
 });
 
@@ -89,6 +148,25 @@ export type TileflowMarineSourceConfig = {
 };
 
 export type TileflowBathymetryDisplay = 'bands' | 'relief' | 'hybrid';
+
+export const tileflowBathymetryNameLayerLimits = Object.freeze({maxZoomRanges: 128});
+
+/** One exact, inclusive minimum and exclusive maximum nominal source range. */
+export type TileflowBathymetryNameZoomRange = Readonly<{minZoom: number; maxZoom: number}>;
+
+/** Exhaustive source range inventory; unmatched pairs are omitted from rendering. */
+export type TileflowBathymetryNameLayer =
+  | boolean
+  | {
+      zoomRanges: readonly TileflowBathymetryNameZoomRange[];
+    };
+
+/** Explicit availability of compatible optional vector layers; compilation never probes TileJSON. */
+export type TileflowBathymetryVectorLayers = {
+  contours?: boolean;
+  landforms?: TileflowBathymetryNameLayer;
+  waterNames?: TileflowBathymetryNameLayer;
+};
 
 /**
  * Styling and physical-source overrides for the optional Bathymetry DEM.
@@ -114,6 +192,7 @@ export type TileflowBathymetryConfig = TileflowMarineSourceConfig & {
   labels?: false | TileflowSymbolStyle;
   relief?: false | TileflowBathymetryReliefConfig;
   type: 'bathymetry';
+  vectorLayers?: TileflowBathymetryVectorLayers;
 };
 
 export type TileflowBathymetryOptions = Omit<TileflowBathymetryConfig, 'type'>;
@@ -179,6 +258,7 @@ export type ResolvedBathymetry = Readonly<{
   labels?: false | TileflowSymbolStyle;
   relief?: ResolvedBathymetryRelief;
   vector?: ResolvedMarineSource;
+  vectorLayers?: TileflowBathymetryVectorLayers;
 }>;
 
 export type ResolvedMarine = Readonly<{
@@ -243,6 +323,9 @@ function resolveBathymetry(
     ...(advanced?.contours === undefined ? {} : {contours: advanced.contours}),
     display,
     ...(advanced?.labels === undefined ? {} : {labels: advanced.labels}),
+    ...(advanced?.vectorLayers === undefined
+      ? {}
+      : {vectorLayers: cloneJson(advanced.vectorLayers)}),
     ...(reliefVisible ? {relief: resolveBathymetryRelief(reliefConfig ?? {}, apiBaseUrl)} : {}),
     ...(usesVector
       ? {
@@ -292,11 +375,19 @@ function resolveBathymetryRelief(
   };
 }
 
+/**
+ * Feature IDs the Nautical source promotes for MapLibre feature state: each light's unique
+ * `provenance`, which is what animated lights are keyed by.
+ */
+export const tileflowNauticalPromoteId = Object.freeze({
+  [tileflowNauticalV1Schema.layers.lights]: tileflowNauticalV1Schema.fields.provenance,
+});
+
 function resolveNauticalSource(
   config: TileflowMarineSourceConfig,
   apiBaseUrl: string,
 ): ResolvedMarineSource {
-  return resolveMarineSource({
+  const resolved = resolveMarineSource({
     config,
     defaultPath: '/tiles/nautical/tiles.json',
     defaultSourceId: tileflowNauticalSourceId,
@@ -304,6 +395,7 @@ function resolveNauticalSource(
     product: tileflowNauticalV1Schema.product,
     apiBaseUrl,
   });
+  return {...resolved, source: {...resolved.source, promoteId: {...tileflowNauticalPromoteId}}};
 }
 
 function resolveMarineSource(options: {

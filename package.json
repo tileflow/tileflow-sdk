@@ -14,12 +14,13 @@
   "homepage": "https://tileflow.dev/docs",
   "packageManager": "pnpm@11.13.1",
   "engines": {
-    "node": ">=22"
+    "node": "^22.14.0 || >=24.0.0"
   },
   "scripts": {
     "build": "turbo build",
     "build:packages": "turbo build --filter='./packages/*'",
-    "check": "pnpm run legal:check && pnpm run reference:check && pnpm run docs:check && pnpm run test:release && pnpm run test:architecture && pnpm run typecheck && pnpm run lint && pnpm run format:check && pnpm run verify",
+    "check": "pnpm run check:static && pnpm run verify",
+    "check:static": "pnpm run legal:check && pnpm run reference:check && pnpm run docs:check && pnpm run test:release && pnpm run test:architecture && pnpm run typecheck && pnpm run lint && pnpm run format:check",
     "typecheck": "turbo typecheck",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
@@ -38,6 +39,7 @@
     "smoke:mobile:packed": "node scripts/mobile-packed-smoke.mjs packed",
     "smoke:mobile:android": "node scripts/mobile-packed-smoke.mjs android",
     "smoke:mobile:ios": "node scripts/mobile-packed-smoke.mjs ios",
+    "native:runtime": "node scripts/mobile-protocol-generate.mjs --check && turbo build --filter=@tileflow/mobile-runtime && node scripts/mobile-runtime-stage.mjs",
     "static-text:check": "node scripts/generate-static-text-coverage.mjs --check",
     "static-text:generate": "node scripts/generate-static-text-coverage.mjs",
     "publish:alpha:dry-run": "pnpm run release:verify-source && pnpm run build:packages && pnpm run check && pnpm run smoke:capture-public",
@@ -48,7 +50,7 @@
     "@fontsource/noto-sans": "5.3.0",
     "@fontsource/noto-sans-arabic": "5.3.0",
     "@fontsource/noto-sans-hebrew": "5.3.0",
-    "@fontsource/noto-sans-jp": "5.3.0",
+    "@fontsource/noto-sans-jp": "5.3.1",
     "@fontsource/noto-sans-kr": "5.3.0",
     "@fontsource/noto-sans-sc": "5.3.0",
     "@fontsource/noto-sans-tc": "5.3.0",
@@ -63,9 +65,9 @@
     "globals": "^17.9.0",
     "prettier": "^3.9.9",
     "prettier-plugin-svelte": "^3.5.2",
-    "semver": "7.8.0",
+    "semver": "7.8.5",
     "tsup": "^8.5.1",
-    "tsx": "^4.23.12",
+    "tsx": "^4.23.15",
     "turbo": "^2.11.7",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.67.0"

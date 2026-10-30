@@ -102,11 +102,13 @@ static NSTextCheckingResult *TFBootstrapMatch(NSString *value, NSString *pattern
 	context.endpoint = clean; context.credential = credential; context.lastRequest = sequence;
 	TFBootstrapWork *work = [TFBootstrapWork new];
 	work.identifier = requestId; work.context = context; work.alive = [TFBootstrapFlag new];
-	work.deadline = [self.scheduler nowMs] + 30000; work.completion = completion;
+	// Well inside the 30 s ticket and batch deadlines, so a stalled renewal fails its batch
+	// instead of letting the context retire under it.
+	work.deadline = [self.scheduler nowMs] + 10000; work.completion = completion;
 	context.pending[requestId] = work; self.pendingCount++;
-	work.timer = [self.scheduler after:30000 perform:^{ [self finish:work reply:nil]; }];
+	work.timer = [self.scheduler after:10000 perform:^{ [self finish:work reply:nil]; }];
 	NSMutableURLRequest *request = [NSMutableURLRequest requestWithURL:[NSURL URLWithString:clean]
-		cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:30];
+		cachePolicy:NSURLRequestReloadIgnoringLocalCacheData timeoutInterval:10];
 	request.HTTPMethod = @"POST"; request.HTTPBody = [body dataUsingEncoding:NSUTF8StringEncoding];
 	request.HTTPShouldHandleCookies = NO;
 	[request setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
@@ -115,13 +117,17 @@ static NSTextCheckingResult *TFBootstrapMatch(NSString *value, NSString *pattern
 	@try {
 		work.network = [self.network start:request mayStart:^BOOL { return [self mayStart:work]; } completion:^(NSHTTPURLResponse *response, NSData *bytes) {
 			[self.scheduler enqueue:^{
-				NSString *cacheControl = @"";
+				NSString *cacheControl = @"", *retryAfter = @"";
 				for (id name in response.allHeaderFields) {
-					if ([name isKindOfClass:NSString.class] && [(NSString *)name caseInsensitiveCompare:@"Cache-Control"] == NSOrderedSame) cacheControl = response.allHeaderFields[name];
+					if (![name isKindOfClass:NSString.class]) continue;
+					if ([(NSString *)name caseInsensitiveCompare:@"Cache-Control"] == NSOrderedSame) cacheControl = response.allHeaderFields[name];
+					if ([(NSString *)name caseInsensitiveCompare:@"Retry-After"] == NSOrderedSame) retryAfter = response.allHeaderFields[name];
 				}
+				// An oversized Retry-After is ignored rather than failing the reply.
+				if (!TFBootstrapString(retryAfter, 64)) retryAfter = @"";
 				BOOL valid = [self mayStart:work] && [response isKindOfClass:NSHTTPURLResponse.class] && response.statusCode >= 100 && response.statusCode <= 599 &&
 					TFBootstrapString(cacheControl, 1024) && [bytes isKindOfClass:NSData.class] && bytes.length <= 65536;
-				NSDictionary *reply = valid ? @{@"status": @(response.statusCode), @"cacheControl": cacheControl, @"bodyBase64": [bytes base64EncodedStringWithOptions:0]} : nil;
+				NSDictionary *reply = valid ? @{@"status": @(response.statusCode), @"cacheControl": cacheControl, @"retryAfter": retryAfter, @"bodyBase64": [bytes base64EncodedStringWithOptions:0]} : nil;
 				[self finish:work reply:reply];
 			}];
 		}];

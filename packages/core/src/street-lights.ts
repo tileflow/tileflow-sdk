@@ -359,3 +359,78 @@ function hash(value: number): number {
   const s = Math.sin(value * 12.9898 + 78.233) * 43758.5453;
   return s - Math.floor(s);
 }
+
+/** The style metadata key under which a compiled map describes its street lights. */
+export const tileflowStreetLightsMetadataKey = 'tileflow:street-lights';
+
+/** A compiled map's street lights, as the roads module describes them, resolved for one theme. */
+export type TileflowStreetLightsDesign = Readonly<{
+  /** The vector source and its layers with the lamps, the streets and the pavements. */
+  source: string;
+  layers: Readonly<{streetFurniture: string; transportation: string; sidewalk?: string}>;
+  estimate: TileflowStreetLightEstimate;
+  /** The light of lamps whose data gives no colour, as a CSS colour. */
+  color: string;
+  /** How bright the lights shine, from 0 to 2. */
+  intensity: number;
+}>;
+
+/** The fallback design used only when the runtime explicitly enables undeclared street lights. */
+export const tileflowDefaultStreetLightsDesign: TileflowStreetLightsDesign = Object.freeze({
+  source: 'tileflow',
+  layers: Object.freeze({
+    streetFurniture: 'street_furniture',
+    transportation: 'transportation',
+    sidewalk: 'sidewalk',
+  }),
+  estimate: 'lit',
+  color: '#ffcf8f',
+  intensity: 1,
+});
+
+/** The metadata a compiled style publishes for its street lights. */
+export function tileflowStreetLightsMetadata(
+  design: TileflowStreetLightsDesign,
+): Readonly<{version: 1} & TileflowStreetLightsDesign> {
+  return {version: 1, ...design};
+}
+
+/**
+ * Reads the street lights a compiled style describes, or undefined when its metadata has none or a
+ * version or shape this Core does not know.
+ */
+export function readTileflowStreetLights(
+  metadata: unknown,
+): TileflowStreetLightsDesign | undefined {
+  if (typeof metadata !== 'object' || metadata === null || Array.isArray(metadata))
+    return undefined;
+  const value = (metadata as Record<string, unknown>)[tileflowStreetLightsMetadataKey] as
+    Record<string, unknown> | undefined;
+  if (typeof value !== 'object' || value === null || value.version !== 1) return undefined;
+  const layers = value.layers as Record<string, unknown> | undefined;
+  if (
+    typeof value.source !== 'string' ||
+    typeof layers?.streetFurniture !== 'string' ||
+    typeof layers.transportation !== 'string'
+  )
+    return undefined;
+  const estimate = (['lit', 'streets', 'none'] as const).find((name) => name === value.estimate);
+  const intensity =
+    typeof value.intensity === 'number' && value.intensity >= 0 && value.intensity <= 2
+      ? value.intensity
+      : 1;
+  return {
+    source: value.source,
+    layers: {
+      streetFurniture: layers.streetFurniture,
+      transportation: layers.transportation,
+      ...(typeof layers.sidewalk === 'string' ? {sidewalk: layers.sidewalk} : {}),
+    },
+    estimate: estimate ?? 'lit',
+    color:
+      typeof value.color === 'string' && tileflowColourChannels(value.color)
+        ? value.color
+        : tileflowDefaultStreetLightsDesign.color,
+    intensity,
+  };
+}

@@ -43,6 +43,7 @@ type MapMergeStrategy =
 /** Every public map key must choose one resolution strategy explicitly. */
 export const tileflowMapMergeStrategies = {
   atmosphere: 'atomic',
+  boundaryAreas: 'atomic',
   data: 'atomic',
   defaultTheme: 'atomic',
   extends: 'lineage',
@@ -51,16 +52,19 @@ export const tileflowMapMergeStrategies = {
   icons: 'icons',
   id: 'identity',
   marine: 'atomic',
+  models: 'atomic',
   modules: 'modules',
   name: 'identity',
   overlays: 'keyed-resources',
   projection: 'atomic',
   scenes: 'leaf',
   shots: 'leaf',
+  sky: 'atomic',
   sources: 'keyed-resources',
   systemThemes: 'atomic',
   terrain: 'atomic',
   themes: 'atomic',
+  timeOfDay: 'atomic',
   version: 'identity',
   view: 'deep',
 } as const satisfies Record<keyof TileflowMap, MapMergeStrategy>;
@@ -85,7 +89,10 @@ export function resolveMap(map: TileflowMap, options: ResolveMapOptions = {}): R
 
     // A theme collection and its browser scheme mapping form one semantic family. Replacing the
     // collection clears an inherited mapping; the same map may declare a new mapping explicitly.
-    if (current.themes !== undefined) delete design.systemThemes;
+    if (current.themes !== undefined) {
+      delete design.systemThemes;
+      delete design.timeOfDay;
+    }
 
     for (const key of Object.keys(current) as TileflowMapKey[]) {
       const value = current[key];
@@ -258,6 +265,10 @@ function applyModuleOperation(
         assertNoTopLevelModulePatchKeys(patch, mapId, `${path}/patches/${index}`);
         assertNoReset(patch, mapId, `${path}/patches/${index}`, true);
         next = applyModulePatch(next, patch, mapId, `${path}/patches/${index}`);
+      }
+      // Resetting every inherited render operation leaves no stack, as resetting the stack does.
+      if (isPlainRecord(next.renderStack) && Object.keys(next.renderStack).length === 0) {
+        delete next.renderStack;
       }
       assertModuleOwner(next, moduleName, mapId, path);
       resolved[moduleName] = next;

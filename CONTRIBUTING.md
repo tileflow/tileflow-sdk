@@ -4,7 +4,7 @@ Thank you for helping improve the Tileflow SDK.
 
 ## Development setup
 
-Use Node.js 22 or newer and the pnpm version declared in `package.json`:
+Use Node.js 22.14+ (22.x) or 24+ and the pnpm version declared in `package.json`:
 
 ```sh
 corepack enable
@@ -19,6 +19,40 @@ Run a focused package check while iterating, for example:
 pnpm --filter @tileflow/core verify
 pnpm --filter @tileflow/core typecheck
 ```
+
+CI runs Dev and CLI verification in separate jobs; the remaining packages run with static checks.
+Every package still runs its full `verify` script, and `Required` joins every job. `pnpm check`
+retains complete local verification. `pnpm check:static` runs only documentation, release, architecture,
+types, lint and formatting checks.
+
+Capture and CLI browser suites run independently on each Linux, macOS and Windows / Node 22 and 24
+combination. This repeats runner preparation to reduce elapsed time while retaining every test.
+CLI subprocess tests use the freshly built executable in CI (`TILEFLOW_TEST_CLI_MODE=built`),
+avoiding a TypeScript loader in each child process. Local tests default to source mode. To exercise
+the CI path locally, build first, then run `TILEFLOW_TEST_CLI_MODE=built pnpm --filter tileflow test`.
+The built mode never falls back to source when its executable is missing.
+
+CI shares a temporary Node compile cache between subprocesses in each job. It caches bytecode,
+not test results, and is discarded with the runner. For a local comparison, set `NODE_COMPILE_CACHE`
+to a temporary directory or use `NODE_DISABLE_COMPILE_CACHE=1` to disable it.
+
+Tests own their subprocesses and loopback servers. Stop consumers before closing their servers and
+removing fixtures. Use `requestStop()` to request shutdown over IPC and await the command's `stopped`
+event within its existing test deadline. Use `stop()` for cleanup; it terminates the process tree
+if the consumer does not stop. A timeout must fail the test without leaving its worker running.
+JSON process fixtures propagate test cancellation, reject pending event waits when the child exits,
+and dispose consumers before servers and directories. HTTP fixture shutdown closes unfinished
+connections; cleanup continues through remaining resources if one disposer fails.
+Restore the working directory before removing a temporary fixture; Windows keeps the current
+directory locked. CLI tests assert structured output and preserve the test runner's binary events.
+Next, Vue and Svelte capture failures include bounded browser console, page and network diagnostics.
+
+Browser CI uses TAP so failure details appear before the final summary. With
+`TILEFLOW_TEST_PROGRESS=1` and `NODE_OPTIONS=--require=/absolute/path/to/test-support/test-progress.cjs`,
+both suites report active test files every 30 seconds. Workers report CPU time, memory and active
+resource counts; these timers cannot keep a worker alive. Capture framework tests also stream bounded
+browser launch, context, close, crash and network events. Ordinary local tests remain quiet.
+The observer retains its stderr writer so command-level JSON captures exclude progress messages.
 
 Do not edit package versions, add changesets, create release tags, or run `npm publish`. Every
 source package keeps `0.0.0-development`. Merging to `main` creates a candidate; it does not

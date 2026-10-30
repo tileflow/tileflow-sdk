@@ -38,11 +38,12 @@ import {TileflowStyleValidationError} from '@tileflow/dev/validation';
 import {
   captureReceiptPath,
   commitShotFrameDirectory,
-  stageShotFrameDirectory,
   type StagedShotFrameDirectory,
+  stageShotFrameDirectory,
   writeAtomicFileSet,
   writeCapturePair,
 } from './capture-output';
+import {saveCaptureRecord} from './capture-record';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 
 export type CaptureCommandOptions = {
@@ -82,6 +83,7 @@ export type TileflowCaptureJsonV1 = {
 };
 
 export type TileflowCaptureJsonEntry = {
+  captureId?: string;
   scene: string;
   map: string;
   theme: string;
@@ -129,7 +131,15 @@ export type TileflowShotCaptureJsonEntry = {
 
 export type TileflowCaptureFailureJsonV1 = {
   schemaVersion: 1;
-  command: 'capture' | 'capture.shot' | 'setup.capture' | 'visual.compare';
+  command:
+    | 'capture'
+    | 'capture.shot'
+    | 'setup.capture'
+    | 'visual.compare'
+    | 'visual.analyze'
+    | 'visual.diff'
+    | 'visual.update'
+    | 'compare';
   status: 'failed';
   code: string;
   phase: string;
@@ -478,6 +488,7 @@ function validateShotSelectionOptions(
 export function createTileflowCaptureJson(
   captures: Array<{
     capture: TileflowCapture;
+    captureId?: string;
     definition?: NormalizedTileflowCaptureScene;
     outputPath: string;
     receiptPath: string;
@@ -489,7 +500,8 @@ export function createTileflowCaptureJson(
     command: 'capture',
     captures: [...captures]
       .sort((left, right) => compareCodeUnits(left.capture.scene, right.capture.scene))
-      .map(({capture, definition, outputPath, receiptPath}) => ({
+      .map(({capture, captureId, definition, outputPath, receiptPath}) => ({
+        ...(captureId ? {captureId} : {}),
         scene: capture.scene,
         map: capture.map,
         theme: capture.theme,
@@ -583,6 +595,7 @@ async function runCaptureCommand(
       const targets = resolveOutputTargets(result.captures, options, cwd);
       const written: Array<{
         capture: TileflowCapture;
+        captureId?: string;
         definition?: NormalizedTileflowCaptureScene;
         outputPath: string;
         receiptPath: string;
@@ -600,6 +613,7 @@ async function runCaptureCommand(
         });
         written.push({
           ...target,
+          captureId: await saveCaptureRecord(target.capture, cwd),
           ...(exploratoryDefinition ? {definition: exploratoryDefinition} : {}),
         });
       }
@@ -616,7 +630,7 @@ async function runCaptureCommand(
 
       for (const entry of document.captures) {
         console.log(
-          `Captured ${entry.scene} -> ${entry.outputPath} (${entry.sha256.slice(0, 12)}).`,
+          `Captured ${entry.scene} -> ${entry.outputPath} (${entry.sha256.slice(0, 12)}).\nCapture ID: ${entry.captureId}`,
         );
         if (entry.networkDependent) {
           console.error(`Capture ${entry.scene} used remote map resources.`);
@@ -730,6 +744,7 @@ async function runCaptureWatchCommand(
       for (const target of targets) {
         emit({
           event: 'captured',
+          captureId: await saveCaptureRecord(target.capture, cwd),
           generation,
           scene: target.capture.scene,
           map: target.capture.map,

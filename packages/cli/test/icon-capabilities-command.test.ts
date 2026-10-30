@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import {spawnSync} from 'node:child_process';
 import {mkdir, mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {monitorEventLoopDelay} from 'node:perf_hooks';
 import test from 'node:test';
-import {fileURLToPath} from 'node:url';
 import {
   createTileflowArtifactSession,
   createTileflowBuildArtifacts,
@@ -12,10 +12,35 @@ import {
   type TileflowArtifactSession,
   type TileflowBuildArtifacts,
 } from '@tileflow/dev/artifacts';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
+import {startFixtureProcess} from '../../../test-support/fixture-process';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
 
-const cli = fileURLToPath(new URL('../src/index.ts', import.meta.url));
+test('fixture commands keep the parent event loop available to watched builds', async (t) => {
+  const server = createServer((_request, response) => response.end('watcher-ready'));
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+
+  const result = await runFixtureCommand([
+    '--input-type=module',
+    '-e',
+    `
+    const response = await fetch('http://127.0.0.1:${address.port}', {
+      signal: AbortSignal.timeout(1_000),
+    });
+    console.log(await response.text());
+  `,
+  ]);
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /watcher-ready/);
+});
 
 test('the mixed-icon fixture waits for initial watched artifacts', async () => {
   const artifacts: TileflowBuildArtifacts = {
@@ -117,10 +142,17 @@ test('validate, build and development reject the same mixed composition and reco
   let session: TileflowArtifactSession | undefined = undefined;
   registerFixtureCleanup(t, cwd, () => session);
   await linkWorkspacePackages(cwd, ['core', 'maps']);
-  await mkdir(join(cwd, 'icons'));
-  await writeFile(
-    join(cwd, 'icons/health.svg'),
-    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="red" d="M6 6H18V18H6Z"/></svg>',
+  await Promise.all(['base-icons', 'icons'].map((directory) => mkdir(join(cwd, directory))));
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><path fill="red" d="M6 6H18V18H6Z"/></svg>';
+  await Promise.all(
+    [
+      'base-icons/health.svg',
+      ...['doctor', 'doctor-dark', 'doctor-monochrome', 'doctor-monochrome-dark'].map(
+        (name) => `base-icons/${name}.svg`,
+      ),
+      'icons/health.svg',
+    ].map((file) => writeFile(join(cwd, file), svg)),
   );
   const sidecar = join(cwd, 'icons/tileflow.icons.json');
   const config = (bounded: boolean) =>
@@ -129,10 +161,17 @@ test('validate, build and development reject the same mixed composition and reco
       data: 'fixture',
       icons: 'authored',
       imports: "import {fixed, poi} from '@tileflow/core';",
-      fields: `icons: [...streets.icons, './icons'], modules: {poi: poi({categories: ['medical'], placement: {coupleIconAndLabel: true}${bounded ? ", styles: {medical: {icon: {image: fixed('health', {reason: 'Chosen hospital icon'})}}}" : ''}})}`,
+      fields: "icons: ['./base-icons', './icons']",
+      modules: `{poi: poi({categories: ['medical'], placement: {coupleIconAndLabel: true}${bounded ? ", styles: {medical: {icon: {image: fixed('health', {reason: 'Chosen hospital icon'})}}}" : ''}})}`,
     });
   await writeFile(join(cwd, 'tileflow.config.ts'), config(false));
   session = await createTileflowArtifactSession({cwd, watch: true});
+  assert.notEqual(session.getState().status, 'invalid', JSON.stringify(session.getState()));
+  const observed = observeFixtureSession(session);
+  t.after(() => {
+    observed.close();
+    t.diagnostic(observed.report());
+  });
   const previous = await getInitialArtifacts(session);
   assert.ok(
     isTileflowArtifactInputPath(
@@ -148,7 +187,7 @@ test('validate, build and development reject the same mixed composition and reco
       icons: {health: {representation: 'sdf', defaults: {color: '#c43d35'}}},
     }),
   );
-  await waitForStatus(session, 'invalid');
+  await waitForStatus(session, 'invalid', observed.report);
   const invalid = session.getState();
   assert.equal(invalid.status, 'invalid');
   assert.match(JSON.stringify(invalid), /TF_ICON_REPRESENTATION_MIXED/);
@@ -156,35 +195,30 @@ test('validate, build and development reject the same mixed composition and reco
   await assert.rejects(createTileflowBuildArtifacts({cwd}), {code: 'TF_ICON_REPRESENTATION_MIXED'});
 
   for (const command of ['validate', 'build']) {
-    const result = spawnSync(
-      process.execPath,
-      [
-        '--import',
-        import.meta.resolve('tsx'),
-        cli,
-        command,
-        ...(command === 'validate' ? ['--json'] : []),
-      ],
+    observed.record(`${command}:start`);
+    const result = await runFixtureCommand(
+      cliFixtureArguments([command, ...(command === 'validate' ? ['--json'] : [])]),
       {
         cwd,
-        encoding: 'utf8',
-        timeout: 30_000,
         env: {...process.env, TILEFLOW_API_KEY: '', TILEFLOW_API_URL: '', NO_COLOR: '1'},
       },
     );
-    assert.equal(result.status, 1, result.stderr + result.stdout);
+    observed.record(`${command}:exit:${result.code}`);
+    assert.equal(result.code, 1, result.stderr + result.stdout);
     assert.match(
       result.stderr + result.stdout,
       command === 'validate' ? /TF_ICON_REPRESENTATION_MIXED/ : /SDF.*RGBA/,
     );
   }
 
+  observed.record('recovery:write');
   await writeFile(join(cwd, 'tileflow.config.ts'), config(true));
-  await waitForStatus(session, 'ready');
+  await waitForStatus(session, 'ready', observed.report);
+  observed.record('recovery:ready');
   assert.equal(session.getState().status, 'ready');
   assert.notEqual(session.getLastGoodArtifacts(), previous);
   const style = session.getLastGoodArtifacts()!.styles.main!.light!;
-  const layer = style.layers.find((layer) => layer.id === 'tileflow-poi-medical');
+  const layer = style.layers.find((layer) => layer.id === 'tileflow-poi');
   assert.equal((layer?.paint as Record<string, unknown>)['icon-color'], '#c43d35');
 });
 
@@ -216,13 +250,63 @@ async function getInitialArtifacts(
 async function waitForStatus(
   session: Pick<TileflowArtifactSession, 'getState'>,
   status: 'ready' | 'invalid',
+  diagnostic: () => string = () => '',
 ) {
   const deadline = Date.now() + 30_000;
   while (session.getState().status !== status) {
     if (Date.now() > deadline)
       throw new Error(
-        `Timed out waiting for watched ${status} generation: ${JSON.stringify({status: session.getState().status, generation: session.getState().generation})}`,
+        `Timed out waiting for watched ${status} generation: ${JSON.stringify({status: session.getState().status, generation: session.getState().generation})}; ${diagnostic()}`,
       );
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
+}
+
+async function runFixtureCommand(
+  args: string[],
+  options: {cwd?: string; env?: NodeJS.ProcessEnv} = {},
+) {
+  const fixture = startFixtureProcess(args, {...options, signal: AbortSignal.timeout(30_000)});
+  try {
+    return await fixture.completion;
+  } finally {
+    await fixture.stop();
+  }
+}
+
+function observeFixtureSession(session: TileflowArtifactSession) {
+  const started = performance.now();
+  const cpu = process.cpuUsage();
+  const delay = monitorEventLoopDelay({resolution: 20});
+  delay.enable();
+  const events: Array<{elapsedMs: number; event: string; generation: number}> = [];
+  const record = (event: string) => {
+    events.push({
+      elapsedMs: Math.round(performance.now() - started),
+      event,
+      generation: session.getState().generation,
+    });
+    if (events.length > 32) events.shift();
+  };
+  record(session.getState().status);
+  const unsubscribe = session.subscribe((state) => record(state.status));
+
+  return {
+    record,
+    report: () =>
+      JSON.stringify({
+        platform: process.platform,
+        node: process.version,
+        elapsedMs: Math.round(performance.now() - started),
+        cpu: process.cpuUsage(cpu),
+        rss: process.memoryUsage().rss,
+        eventLoopMaxDelayMs: Math.round(delay.max / 1e6),
+        activeResources: process.getActiveResourcesInfo(),
+        events,
+      }),
+    close: () => {
+      unsubscribe();
+      delay.disable();
+    },
+  };
 }

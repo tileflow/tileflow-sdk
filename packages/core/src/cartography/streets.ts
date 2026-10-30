@@ -1,10 +1,22 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
-import {tileflowAtmosphereMetadataKey} from '../atmosphere';
-import {compileTileflowSky, resolveTileflowAtmosphere} from '../atmosphere-compile';
+import {tileflowAtmosphereMetadataKey, tileflowAtmosphereMetadataVersion} from '../atmosphere';
+import {
+  compileTileflowSky,
+  compileTileflowStreetSky,
+  resolveTileflowAtmosphere,
+  resolveTileflowSky,
+} from '../atmosphere-compile';
+import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../boundary-areas/compile';
+import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
 import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
-import {resolveMarine} from '../marine';
+import {type ResolvedMarine, resolveMarine, tileflowNauticalV1Schema} from '../marine';
+import {buildingTargetsOfOtherModes} from '../modules/buildings/compiler';
+import {tileflowNauticalNotice} from '../modules/nautical';
+import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
+import {declareTileflowNauticalLights, tileflowNauticalLightsMetadataKey} from '../nautical-lights';
+import {type TileflowMapNotice, tileflowNoticesMetadataKey} from '../notices';
 import {
   insertTileflowOverlays,
   resolveTileflowHostedSources,
@@ -16,6 +28,14 @@ import {
   tileflowRouteMetadata,
   tileflowRouteMetadataKey,
 } from '../route-inks';
+import {
+  type TileflowResolvedSky,
+  type TileflowSkyColours,
+  type TileflowSkyMetadata,
+  tileflowSkyMetadataKey,
+  type TileflowSkyTimesOfDay,
+} from '../sky';
+import {tileflowStreetLightsMetadata, tileflowStreetLightsMetadataKey} from '../street-lights';
 import {tileflowSunMetadata, tileflowSunMetadataKey} from '../sun';
 import {compileTerrainContributions, resolveTerrain} from '../terrain';
 import {parseTileflowLineBackgroundFontStack} from '../text-background';
@@ -27,8 +47,20 @@ import {
   resolveThemeValues,
   resolveTileflowTheme,
   TileflowThemeAuditError,
+  type TileflowThemeColorDecision,
 } from '../themes';
+import type {TileflowTimeOfDay} from '../time-of-day';
+import {
+  type TileflowVegetation3D,
+  tileflowVegetationMetadata,
+  tileflowVegetationMetadataKey,
+} from '../trees-3d';
+import type {TileflowTreeModel} from '../trees-3d-model';
 import type {MapLibreStyle} from '../types';
+import {
+  type TileflowVegetationDisplay,
+  tileflowVegetationDisplayMetadataKey,
+} from '../vegetation-display';
 import {
   createTileflowCompilationFailure,
   type TileflowCompilationDiagnostic,
@@ -47,6 +79,7 @@ import {
   type TileflowStyleInspection,
 } from './compiler-inspection';
 import {tileflowCompilerMetadataKeys} from './contributions';
+import {describeTileflowDesignDecisions} from './design-decisions';
 import {
   createTileflowDomainIR,
   createTileflowLayerFamilyIR,
@@ -80,7 +113,8 @@ import {
   compileRenderStacks,
   type TileflowRenderStackModule,
 } from './render-stack';
-import {createSemanticDataView} from './semantic-bindings';
+import {tileflowBuildings3DDesignOf, tileflowStreetLightsDesignOf} from './scene-3d-metadata';
+import {bindSemanticReferences, createSemanticDataView} from './semantic-bindings';
 import {tileflowSemanticCompilerIdentity} from './semantic-compiler';
 
 export type TileflowSemanticMapConfig = ResolvedTileflowMap;
@@ -90,6 +124,10 @@ export type TileflowPreparedMapAssets = {
     ids: readonly string[];
     sprite: string;
   };
+  /** The map's own 3D tree models by id, prepared from its `models` directories. */
+  models?: Readonly<Record<string, TileflowTreeModel>>;
+  /** Where each of the map's own building models is served, by id. */
+  buildingModels?: Readonly<Record<string, string>>;
 };
 
 export type TileflowSemanticCompileOptions = {
@@ -104,6 +142,8 @@ export type TileflowSemanticCompileOptions = {
   preparedAssets?: TileflowPreparedMapAssets;
   /** Concrete named theme. Omission deterministically selects map.defaultTheme. */
   theme?: string;
+  /** Optional artistic preset declared by the map. */
+  timeOfDay?: TileflowTimeOfDay;
 };
 
 export type TileflowSemanticCompilationOptions = TileflowSemanticCompileOptions & {
@@ -184,7 +224,9 @@ function compileSemanticStyleInternal(
       suggestion,
       ...(target ? {target} : {}),
     }));
-  const selected = runCompilationPhase('theme', () => resolveThemeSelection(input, options.theme));
+  const selected = runCompilationPhase('theme', () =>
+    resolveThemeSelection(input, options.theme, options.timeOfDay),
+  );
   const resolvedTheme = runCompilationPhase('theme', () => resolveTileflowTheme(selected.theme));
   const {overlays, themes: _themes, ...themeableConfig} = input;
   const resolvedThemeConfig = runCompilationPhase('theme', () =>
@@ -201,6 +243,9 @@ function compileSemanticStyleInternal(
   const data = runCompilationPhase('data', () => resolveTileflowData(config.data, {apiBaseUrl}));
   const marine = runCompilationPhase('data', () => resolveMarine(config.marine, apiBaseUrl));
   const terrain = runCompilationPhase('data', () => resolveTerrain(config.terrain, apiBaseUrl));
+  const boundaryAreas = runCompilationPhase('data', () =>
+    resolveBoundaryAreas(config.boundaryAreas, apiBaseUrl),
+  );
   const terrainSources = [terrain?.raster, terrain?.contours].filter(
     (source): source is NonNullable<typeof source> => source !== undefined,
   );
@@ -241,11 +286,22 @@ function compileSemanticStyleInternal(
       }
       marineSourceIds.add(source.sourceId);
     }
+    if (
+      boundaryAreas &&
+      (boundaryAreas.sourceId === data.sourceId ||
+        terrainSourceIds.has(boundaryAreas.sourceId) ||
+        marineSourceIds.has(boundaryAreas.sourceId))
+    ) {
+      throw new Error(
+        `Boundaries source ID "${boundaryAreas.sourceId}" conflicts with another Tileflow source.`,
+      );
+    }
   });
   const platformSourceIds = [
     data.sourceId,
     ...terrainSources.map(({sourceId}) => sourceId),
     ...marineSources.map(({sourceId}) => sourceId),
+    ...(boundaryAreas ? [boundaryAreas.sourceId] : []),
   ];
   const hostedSources = runCompilationPhase('data', () =>
     resolveTileflowHostedSources(config.id, config.sources, new Set(platformSourceIds)),
@@ -273,7 +329,13 @@ function compileSemanticStyleInternal(
   const semanticCompilerData = runCompilationPhase('data', () =>
     createSemanticDataView(semanticData),
   );
-  const colors = runCompilationPhase('theme', () => resolveThemeColors(selected.theme));
+  const colorDecisions: TileflowThemeColorDecision[] = [];
+  const colors = runCompilationPhase('theme', () =>
+    resolveThemeColors(
+      selected.theme,
+      onReport ? (decision) => colorDecisions.push(decision) : undefined,
+    ),
+  );
   const images = runCompilationPhase('theme', () => resolveThemeImages(selected.theme));
   const typography = resolvedTheme.typography;
   const context = {
@@ -286,6 +348,16 @@ function compileSemanticStyleInternal(
   const modules = runCompilationPhase('domains', () => resolveSemanticModules(config.modules));
   const compiledDomains = runCompilationPhase('domains', () =>
     compileSemanticDomains(modules, context),
+  );
+  const vegetation3D = runCompilationPhase('domains', () =>
+    withPreparedTreeModels(
+      tileflowVegetationDescription(
+        modules.vegetation as Parameters<typeof tileflowVegetationDescription>[0],
+        context as Parameters<typeof tileflowVegetationDescription>[1],
+      ),
+      config,
+      options.preparedAssets,
+    ),
   );
   const renderStackModules = Object.values(modules).filter(
     (module): module is typeof module & TileflowRenderStackModule =>
@@ -315,7 +387,11 @@ function compileSemanticStyleInternal(
   );
   const requestedRenderOperations = domainIR.renderOperations;
   const stackedFamilies = runCompilationPhase('render-stack', () =>
-    applyCompiledRenderStacks(assembledFamilies, requestedRenderOperations),
+    applyCompiledRenderStacks(
+      assembledFamilies,
+      requestedRenderOperations,
+      buildingTargetsOfOtherModes(modules.buildings),
+    ),
   );
   const plannedFamilies = runCompilationPhase('physical-planner', () =>
     planTileflowLayerFamilies(stackedFamilies),
@@ -329,8 +405,11 @@ function compileSemanticStyleInternal(
     insertTileflowOverlays({
       basemapLayers,
       mapId: config.id,
-      overlays: config.overlays,
-      sourceIds: Object.keys(hostedSources.definitions),
+      overlays: validateBoundaryChoroplethOverlays(config.id, config.overlays, boundaryAreas),
+      sourceIds: [
+        ...Object.keys(hostedSources.definitions),
+        ...(boundaryAreas ? [boundaryAreas.sourceId] : []),
+      ],
     }),
   );
   const plannedLayers = loweredOverlays.layers;
@@ -446,6 +525,18 @@ function compileSemanticStyleInternal(
     createTileflowOverlayPlacementManifest(plannedLayers),
   );
   const layers = runCompilationPhase('finalization', () => finalizeTileflowLayers(plannedLayers));
+  // What Core's 3D renderers draw: the buildings in their final colour, and the street lights.
+  const buildings3D = tileflowBuildings3DDesignOf(
+    modules.buildings,
+    context as Parameters<typeof tileflowBuildings3DDesignOf>[1],
+    layers as unknown as Parameters<typeof tileflowBuildings3DDesignOf>[2],
+    options.preparedAssets?.buildingModels,
+    data.kind === 'tileflow-world' ? `${apiBaseUrl}/landmarks/tiles.json` : undefined,
+  );
+  const streetLights = tileflowStreetLightsDesignOf(
+    modules.roads,
+    context as Parameters<typeof tileflowStreetLightsDesignOf>[1],
+  );
   runCompilationPhase('finalization', () =>
     assertTileflowInteractionManifestLayers(interactionManifest, layers),
   );
@@ -480,6 +571,7 @@ function compileSemanticStyleInternal(
     ...(marine?.nautical ? {[marine.nautical.sourceId]: marine.nautical.source} : {}),
     ...(terrain?.raster ? {[terrain.raster.sourceId]: terrain.raster.source} : {}),
     ...(terrain?.contours ? {[terrain.contours.sourceId]: terrain.contours.source} : {}),
+    ...(boundaryAreas ? {[boundaryAreas.sourceId]: boundaryAreas.source} : {}),
     ...hostedSources.definitions,
   };
   const sourceIdentities = {
@@ -491,6 +583,7 @@ function compileSemanticStyleInternal(
       ? {[marine.bathymetry.relief.sourceId]: marine.bathymetry.relief.identity}
       : {}),
     ...(marine?.nautical ? {[marine.nautical.sourceId]: marine.nautical.identity} : {}),
+    ...(boundaryAreas ? {[boundaryAreas.sourceId]: boundaryAreas.identity} : {}),
     ...hostedSources.identities,
   };
   const sourceRequirements = runCompilationPhase('data', () =>
@@ -502,9 +595,50 @@ function compileSemanticStyleInternal(
     }),
   );
 
+  const flatVegetationLayers = layers.filter((layer) => {
+    const metadata = (layer as {metadata?: Record<string, unknown>}).metadata;
+    return (
+      metadata?.['tileflow:vegetation-mode'] !== undefined ||
+      metadata?.['tileflow:domain'] === 'vegetation'
+    );
+  });
+  const vegetationDisplay: TileflowVegetationDisplay | undefined =
+    flatVegetationLayers.length || vegetation3D
+      ? {
+          version: 1,
+          mode: modules.vegetation?.mode ?? '3d',
+          fallback: modules.vegetation?.fallback ?? 'flat',
+          visible: modules.vegetation?.visible ?? true,
+          flatLayers: flatVegetationLayers.map((layer) => ({
+            id: String(layer.id),
+            visible: (layer.layout as Record<string, unknown> | undefined)?.visibility !== 'none',
+          })),
+        }
+      : undefined;
+  if (
+    vegetationDisplay &&
+    (!vegetationDisplay.visible ||
+      (vegetationDisplay.mode === '3d' && vegetationDisplay.fallback === 'none'))
+  ) {
+    for (const layer of flatVegetationLayers)
+      layer.layout = {...(layer.layout as Record<string, unknown> | undefined), visibility: 'none'};
+  }
+
   const atmosphere = resolveTileflowAtmosphere(config.atmosphere);
+  // A declared sky paints the sky at every zoom; it takes over the globe atmosphere's sky colours.
+  const sky = resolveTileflowSky(config.sky);
+  const notices = compiledNotices(layers, marine);
+  const nauticalLights = declareTileflowNauticalLights(
+    layers,
+    marine?.nautical?.sourceId,
+    tileflowNauticalV1Schema.layers.lights,
+  );
   const style: MapLibreStyle = {
-    ...(atmosphere ? {sky: compileTileflowSky(atmosphere)} : {}),
+    ...(sky
+      ? {sky: compileTileflowStreetSky(sky, Boolean(atmosphere))}
+      : atmosphere
+        ? {sky: compileTileflowSky(atmosphere)}
+        : {}),
     version: 8,
     name: config.name ?? 'Streets',
     ...(glyphs ? {glyphs} : {}),
@@ -528,13 +662,45 @@ function compileSemanticStyleInternal(
               : {}),
           }
         : {}),
-      ...(atmosphere ? {[tileflowAtmosphereMetadataKey]: {version: 1, ...atmosphere}} : {}),
+      ...(atmosphere
+        ? {
+            [tileflowAtmosphereMetadataKey]: {
+              version: tileflowAtmosphereMetadataVersion,
+              ...atmosphere,
+            },
+          }
+        : {}),
+      ...(sky ? {[tileflowSkyMetadataKey]: skyMetadata(input, selected.name, sky)} : {}),
       'tileflow:theme': selected.name,
       'tileflow:colorScheme': resolvedTheme.colorScheme,
       [tileflowRouteMetadataKey]: tileflowRouteMetadata(resolveTileflowRouteInks(resolvedTheme)),
       ...(resolvedTheme.sun
         ? {[tileflowSunMetadataKey]: tileflowSunMetadata(resolvedTheme.sun)}
         : {}),
+      ...(buildings3D
+        ? {
+            [tileflowBuildingsMetadataKey]: tileflowBuildingsMetadata(
+              bindSemanticReferences(buildings3D, semanticData),
+            ),
+          }
+        : {}),
+      ...(streetLights
+        ? {
+            [tileflowStreetLightsMetadataKey]: tileflowStreetLightsMetadata(
+              bindSemanticReferences(streetLights, semanticData),
+            ),
+          }
+        : {}),
+      ...(vegetation3D
+        ? {
+            [tileflowVegetationMetadataKey]: tileflowVegetationMetadata({
+              ...bindSemanticReferences(vegetation3D, semanticData),
+              // The layers that draw the trees flat: the module's own and its render passes.
+              flatLayers: flatVegetationLayers.map((layer) => String(layer.id)),
+            }),
+          }
+        : {}),
+      ...(vegetationDisplay ? {[tileflowVegetationDisplayMetadataKey]: vegetationDisplay} : {}),
       'tileflow:data': data.identity,
       'tileflow:sources': sourceIdentities,
       ...(Object.keys(loweredOverlays.identities).length > 0
@@ -550,10 +716,23 @@ function compileSemanticStyleInternal(
         .map(([name]) => name)
         .sort(),
       ...(config.view ? {'tileflow:view': config.view} : {}),
+      ...(notices.length > 0 ? {[tileflowNoticesMetadataKey]: notices} : {}),
+      ...(nauticalLights ? {[tileflowNauticalLightsMetadataKey]: nauticalLights} : {}),
     },
   };
   const report: TileflowCompilationReport = {
     ...partialReport,
+    ...(onReport
+      ? {
+          decisions: describeTileflowDesignDecisions({
+            map: input,
+            modules,
+            theme: selected.name,
+            colors: colorDecisions,
+            ...(buildings3D ? {buildings: buildings3D} : {}),
+          }),
+        }
+      : {}),
     requirements: sourceRequirements,
   };
   onReport?.(report);
@@ -650,9 +829,49 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
+/** A map that draws Nautical objects always carries the fixed "Not for navigation" notice. */
+function compiledNotices(
+  layers: MapLibreStyle['layers'],
+  marine: ResolvedMarine | undefined,
+): TileflowMapNotice[] {
+  const nautical = marine?.nautical?.sourceId;
+  if (!nautical || !layers.some((layer) => layer.source === nautical)) return [];
+  return [{...tileflowNauticalNotice, sources: [nautical]}];
+}
+
 function resolveGlyphs(config: ResolvedTileflowMap): string | undefined {
   if (config.fonts !== undefined) return undefined;
   return config.glyphs?.url;
+}
+
+/**
+ * The tree description with the models its forms draw, from the map's prepared models; a model the
+ * map does not prepare fails the compile, as a missing icon does.
+ */
+function withPreparedTreeModels(
+  vegetation: TileflowVegetation3D | undefined,
+  config: ResolvedTileflowMap,
+  prepared: TileflowPreparedMapAssets | undefined,
+): TileflowVegetation3D | undefined {
+  if (!vegetation) return undefined;
+  const referenced = [
+    ...new Set(Object.values(vegetation.forms).flatMap((form) => form?.models ?? [])),
+  ].sort();
+  if (referenced.length === 0) return vegetation;
+  const available = prepared?.models ?? {};
+  const missing = referenced.filter((id) => !Object.hasOwn(available, id));
+  if (missing.length > 0) {
+    const authoring = config.models?.length
+      ? `Add ${missing.map((id) => `${id}.glb`).join(', ')} to a map.models directory, or run the Node build so the directories are prepared.`
+      : 'Declare map.models with directories containing those .glb files.';
+    throw new Error(
+      `Tileflow map "${config.id}" draws missing 3D models: ${missing.join(', ')}. ${authoring}`,
+    );
+  }
+  return {
+    ...vegetation,
+    models: Object.fromEntries(referenced.map((id) => [id, available[id]!])),
+  };
 }
 
 function assertPreparedIconReferences(
@@ -881,4 +1100,49 @@ function compareCodeUnits(left: string, right: string): number {
 
 function semanticReportKey(...parts: readonly string[]): string {
   return parts.join('\u0000');
+}
+
+/**
+ * The sky's runtime payload. A theme in a time-of-day family also carries the family's skies,
+ * each resolved against its own theme's tokens, so a sun an application places brings the sky of
+ * its hour in the family's own palette.
+ */
+function skyMetadata(
+  input: ResolvedTileflowMap,
+  themeName: string,
+  sky: TileflowResolvedSky,
+): TileflowSkyMetadata {
+  const family = Object.values(input.timeOfDay ?? {}).find((moments) =>
+    Object.values(moments).includes(themeName),
+  );
+  const colours = (name: string | undefined): TileflowSkyColours | undefined => {
+    const theme = name === undefined ? undefined : input.themes[name];
+    if (!theme) return undefined;
+    const resolved = resolveTileflowSky(
+      resolveThemeValues({sky: input.sky}, theme, `map.${input.id}.themes.${name}`).sky,
+    );
+    return resolved
+      ? {
+          color: resolved.color,
+          horizonColor: resolved.horizonColor,
+          horizonBlend: resolved.horizonBlend,
+          glowColor: resolved.glowColor,
+        }
+      : undefined;
+  };
+  const day = colours(family?.day);
+  const night = colours(family?.night);
+  const dawn = colours(family?.dawn);
+  const dusk = colours(family?.dusk);
+  // A family with one twilight lends it to both ends of the day.
+  const timesOfDay: TileflowSkyTimesOfDay | undefined =
+    day && night && (dawn ?? dusk)
+      ? {day, night, dawn: (dawn ?? dusk)!, dusk: (dusk ?? dawn)!}
+      : undefined;
+  return {
+    version: 1,
+    starIntensity: sky.starIntensity,
+    glowColor: sky.glowColor,
+    ...(timesOfDay ? {timesOfDay} : {}),
+  };
 }

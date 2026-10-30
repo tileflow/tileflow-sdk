@@ -54,7 +54,7 @@ export default defineMap({
 cartographic compiler; tooling supplies the exported map ID when it normalizes a scene internally.
 Every scene stores a concrete theme; omission and browser-only `system` are invalid.
 
-### Live comparison workbench
+### Live comparison in Inspector
 
 Use the ordinary preview server with a right-hand selection to compare two maps or themes while
 authoring:
@@ -62,8 +62,8 @@ authoring:
 ```sh
 # Two maps or themes from one config.
 npx tileflow preview \
-  --map harad --theme light \
-  --against-map ferraris --against-theme light
+  --map baedeker --theme light \
+  --against-map map-1777 --against-theme light
 
 # Or compare against another config.
 npx tileflow preview \
@@ -71,7 +71,7 @@ npx tileflow preview \
   --against-config ./reference.config.ts --against-map reference
 ```
 
-Any `--against-*` option opens the comparison workbench. Both previews remain same-origin and share
+Any `--against-*` option opens Inspector in comparison mode. Both previews remain same-origin and share
 one synchronized camera. The toolbar switches between side-by-side, split, opacity overlay, and
 blink modes; the selected mode, camera, split, opacity, and active interaction side survive in the
 URL. Each config has its own watched, last-known-good session, so an invalid edit shows bounded
@@ -81,7 +81,7 @@ Enable **Inspect** and click a rendered feature to see its bounded feature data,
 zoom-curve samples, and compiler contribution sidecar. The sprite gallery shows the compiled atlas,
 not source directories. **Copy scene** produces a concrete-theme scene for the current camera and
 viewport; **Copy command** produces the corresponding capture command. The inspector sidecar exists
-only in memory in this local workbench and is not emitted by `tileflow build`.
+only in memory in the local Inspector session and is not emitted by `tileflow build`.
 
 ### Reproducible two-style review
 

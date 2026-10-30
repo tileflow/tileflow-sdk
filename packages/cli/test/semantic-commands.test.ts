@@ -5,12 +5,10 @@ import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {fileURLToPath} from 'node:url';
 import {createStyleResult} from '@tileflow/core';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
+import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {registerAiCommands} from '../src/ai-commands';
-
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 
 type ProjectedDiagnostic = {
   code: string;
@@ -248,7 +246,7 @@ const before = defineMap({
   glyphs: {
     kind: 'url',
     url: ${JSON.stringify(`https://fonts.example.test/{fontstack}/{range}.pbf?token=${secret}`)},
-    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic', 'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']
   },
   view: {center: [-3.7, 40.4], zoom: 12}
 });
@@ -257,7 +255,7 @@ const after = defineMap({
   glyphs: {
     kind: 'url',
     url: ${JSON.stringify(`https://fonts.example.test/{fontstack}/{range}.pbf?token=${secret}-after`)},
-    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic', 'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']
   },
   modules: {water: disable()},
   projection: 'mercator',
@@ -485,6 +483,7 @@ test('semantic-diff requires explicit from/to selections', async (t) => {
 async function createFixture(t: TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-semantic-commands-'));
   t.after(() => rm(directory, {force: true, recursive: true}));
+  await linkWorkspacePackages(directory);
   return directory;
 }
 
@@ -497,7 +496,7 @@ function runCli(
   Object.assign(environment, {NO_COLOR: '1', USERPROFILE: cwd});
 
   return new Promise((resolveResult, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
+    const child = spawn(process.execPath, cliFixtureArguments(arguments_), {
       cwd,
       env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],

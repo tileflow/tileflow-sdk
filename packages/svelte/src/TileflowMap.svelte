@@ -30,10 +30,15 @@
   } from '@tileflow/core/runtime';
   import {
     attachTileflowAtmosphere,
+    attachTileflowLabelPlacement,
     attachTileflowFairUseNotice,
+    attachTileflowMap3D,
     attachTileflowMapLifecycle,
+    attachTileflowNauticalLights,
+    attachTileflowNotices,
     createTileflowSessionStarter,
     createTileflowThemeController,
+    type TileflowMap3DAttachment,
     createTileflowTransformRequest,
     getTileflowSystemColorScheme,
     loadTileflowStyleFonts,
@@ -41,6 +46,8 @@
     registerTileflowPmtilesProtocol,
     registerTileflowWorldRequestBridge,
     subscribeTileflowSystemColorScheme,
+    tileflowMaxPitch,
+    tileflowCanvasContextAttributes,
     type TileflowFairUseNoticeController,
     type TileflowMapLifecycleAttachment,
     type TileflowThemeController,
@@ -71,7 +78,7 @@
     type TileflowMapLibreSemanticDomRenderTarget,
     type TileflowMapLibreSemanticDomRuntime,
   } from '@tileflow/interactions/maplibre';
-  import type {TileflowMapProps} from './index.js';
+  import type {TileflowMapOptions, TileflowMapProps} from './index.js';
   import {loadTileflowMapLibre} from './maplibre.js';
   import {assertTileflowMapStyleInputs} from './style-source.js';
 
@@ -99,7 +106,10 @@
   export let popup: TileflowMapProps['popup'] = undefined;
   export let source: TileflowMapProps['source'];
   export let theme: TileflowMapProps['theme'] = undefined;
+  export let timeOfDay: TileflowMapProps['timeOfDay'] = undefined;
   export let themeBlend: TileflowMapProps['themeBlend'] = undefined;
+  export let vegetation: TileflowMapProps['vegetation'] = undefined;
+  export let viewMode: NonNullable<TileflowMapProps['viewMode']> = '3d';
   export let themeTransition: TileflowMapProps['themeTransition'] = undefined;
   export let tooltip: TileflowMapProps['tooltip'] = undefined;
   export let zoom: TileflowMapProps['zoom'] = undefined;
@@ -142,6 +152,9 @@
   let interactionRuntimesDisposing = false;
   let mapResizeObserver: ResizeObserver | null = null;
   let mapWorldRequestBridge: TileflowWorldRequestBridge | null = null;
+  let sceneAttachment: TileflowMap3DAttachment | null = null;
+  $: sceneAttachment?.setVegetation(vegetation);
+  $: sceneAttachment?.setViewMode(viewMode);
   let themeController: TileflowThemeController | null = null;
   let systemColorScheme: 'dark' | 'light' = 'light';
   let unsubscribeSystemColorScheme: (() => void) | null = null;
@@ -172,7 +185,7 @@
         : {defaultInteractionState: initialInteractionState}),
     });
   $: resolvedMode = resolveTileflowMapMode({mode});
-  $: assertTileflowMapStyleInputs({source, theme, themeBlend, themeTransition});
+  $: assertTileflowMapStyleInputs({source, theme, timeOfDay, themeBlend, themeTransition});
   $: resolvedCaptureId = normalizeTileflowCaptureId(captureId);
   $: isImageMode = resolvedMode === 'image';
   $: mapName = source.map;
@@ -188,6 +201,7 @@
     colorScheme: systemColorScheme,
     manifestMap,
     theme,
+    timeOfDay,
     themeBlend,
   });
   $: themeBlendKey = themeBlend ? JSON.stringify(themeBlend.themes) : undefined;
@@ -450,6 +464,8 @@
     const unsubscribeSemanticTargets = semanticRuntimeTargetsUnsubscribe;
     const currentMap = mapInstance;
     const currentThemeController = themeController;
+    const currentSceneAttachment = sceneAttachment;
+    sceneAttachment = null;
     const worldRequestBridge = mapWorldRequestBridge;
     interactionRuntimesDisposing = true;
     mapFairUseNotice = null;
@@ -492,6 +508,7 @@
       () => semanticInteractionsForMap?.dispose(),
       () => annotationInteractionsForMap?.dispose(),
       () => lifecycleAttachment?.dispose(),
+      () => currentSceneAttachment?.dispose(),
       () => currentThemeController?.dispose(),
       () => worldRequestBridge?.dispose(),
       () => fairUseNotice?.dispose(),
@@ -573,7 +590,11 @@
     });
     const maplibreMap = new maplibregl.Map({
       ...mapOptions,
+      canvasContextAttributes: tileflowCanvasContextAttributes(mapOptions?.canvasContextAttributes),
       attributionControl: mapOptions?.attributionControl ?? {compact: true},
+      // Tileflow's compiled styles are validated when they are built.
+      validateStyle: mapOptions?.validateStyle ?? false,
+      maxPitch: mapOptions?.maxPitch ?? tileflowMaxPitch,
       bearing: resolvedBearing,
       center: resolvedCenter as LngLatLike,
       container: targetContainer,
@@ -592,6 +613,9 @@
 
     mapInstance = maplibreMap;
     attachTileflowAtmosphere(maplibreMap);
+    attachTileflowNotices(maplibreMap);
+    attachTileflowNauticalLights(maplibreMap);
+    attachTileflowLabelPlacement(maplibreMap);
     themeController =
       runtime.theme === undefined
         ? null
@@ -609,6 +633,26 @@
               }
             },
           });
+
+    // The map's 3D scene loads only once its style declares one, so 2D maps do not pay for it.
+    sceneAttachment = attachTileflowMap3D({
+      map: maplibreMap,
+      ...(themeController ? {controller: themeController} : {}),
+      vegetation,
+      viewMode,
+      load: () => import('@tileflow/core/3d'),
+      onError: (error) => console.error('Failed to load the Tileflow 3D scene', error),
+      transformRequest: createTileflowTransformRequest({
+        getAnalytics: () => resolvedAnalytics,
+        sessionController: session,
+        sessionId: session.sessionId,
+        transformRequest: (url) =>
+          mapOptions?.transformRequest?.(
+            url,
+            'Tile' as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
+          ),
+      }),
+    });
 
     setBridgeInteractionDiagnostic('annotation-runtime', null);
     try {
@@ -1238,6 +1282,7 @@
     colorScheme: 'dark' | 'light';
     manifestMap: TileflowRuntimeManifestMap | null;
     theme: TileflowMapProps['theme'];
+    timeOfDay: TileflowMapProps['timeOfDay'];
     themeBlend: TileflowMapProps['themeBlend'];
   }): Readonly<{error: boolean; name: string | undefined}> {
     // A blend shows its nearest theme until the blend style is ready, and names it while blending.
@@ -1255,7 +1300,12 @@
       }
       return {
         error: false,
-        name: resolveTileflowRuntimeTheme(input.manifestMap, selection, input.colorScheme).name,
+        name: resolveTileflowRuntimeTheme(
+          input.manifestMap,
+          selection,
+          input.colorScheme,
+          input.themeBlend ? undefined : input.timeOfDay,
+        ).name,
       };
     } catch {
       return {error: true, name: undefined};

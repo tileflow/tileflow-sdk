@@ -11,6 +11,8 @@ export type TileflowPmtilesProtocolRegistry = Readonly<{
 
 export type TileflowPmtilesProtocolRegistrationOptions = Readonly<{
   maximumDirectoryDepth?: number;
+  /** Route archive byte requests through an application-owned resource transport. */
+  transformArchiveUrl?: (url: string) => string;
 }>;
 
 type ProtocolRequest = Readonly<{type?: string; url: string}>;
@@ -38,17 +40,49 @@ export function registerTileflowPmtilesProtocol(
 ): void {
   if (registeredPmtilesProtocols.has(registry.addProtocol)) return;
   const maximumDirectoryDepth = normalizeMaximumDirectoryDepth(options.maximumDirectoryDepth);
-  registry.addProtocol(
-    tileflowPmtilesProtocol,
-    new TileflowPmtilesProtocol(maximumDirectoryDepth).tile,
-  );
+  const protocol = new TileflowPmtilesProtocol(maximumDirectoryDepth, options.transformArchiveUrl);
+  sharedProtocol ??= protocol;
+  registry.addProtocol(tileflowPmtilesProtocol, protocol.tile);
   registeredPmtilesProtocols.add(registry.addProtocol);
+}
+
+let sharedProtocol: TileflowPmtilesProtocol | undefined;
+
+/**
+ * Reads a tile of a Tileflow PMTiles archive by its `tileflow-pmtiles://…/{z}/{x}/{y}` address, as
+ * the map's own protocol does and sharing its archives, for readers outside MapLibre such as the
+ * tiles Core's 3D layers read. A tile the archive does not hold answers 204.
+ */
+export async function fetchTileflowPmtilesTile(
+  url: string,
+  signal?: AbortSignal,
+): Promise<Response> {
+  sharedProtocol ??= new TileflowPmtilesProtocol(tileflowPmtilesMaximumDirectoryDepth);
+  const controller = new AbortController();
+  if (signal) {
+    if (signal.aborted) controller.abort(signal.reason);
+    else signal.addEventListener('abort', () => controller.abort(signal.reason), {once: true});
+  }
+  const response = await sharedProtocol.tilev4({type: 'arrayBuffer', url}, controller);
+  const data = response.data;
+  const bytes = data instanceof Uint8Array ? data : undefined;
+  return bytes && bytes.byteLength > 0
+    ? new Response(bytes.slice().buffer, {status: 200})
+    : new Response(null, {status: 204});
+}
+
+/** Whether an address is a Tileflow PMTiles address. */
+export function isTileflowPmtilesUrl(url: string): boolean {
+  return url.startsWith(protocolPrefix);
 }
 
 class TileflowPmtilesProtocol {
   readonly #archives = new Map<string, TileflowPmtilesArchive>();
 
-  constructor(private readonly maximumDirectoryDepth: number) {}
+  constructor(
+    private readonly maximumDirectoryDepth: number,
+    private readonly transformArchiveUrl: (url: string) => string = (url) => url,
+  ) {}
 
   readonly tilev4 = async (
     request: ProtocolRequest,
@@ -90,7 +124,10 @@ class TileflowPmtilesProtocol {
   #archive(target: string): TileflowPmtilesArchive {
     let archive = this.#archives.get(target);
     if (!archive) {
-      archive = new TileflowPmtilesArchive(target, this.maximumDirectoryDepth);
+      archive = new TileflowPmtilesArchive(
+        this.transformArchiveUrl(target),
+        this.maximumDirectoryDepth,
+      );
       this.#archives.set(target, archive);
     }
     return archive;

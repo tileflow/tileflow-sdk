@@ -7,8 +7,17 @@ function packageDirectory(path: string): TileflowPackageDirectory {
 /** Package-owned Streets icons. Filename stems are the canonical runtime IDs. */
 export const streetsIcons = packageDirectory('assets/streets/icons');
 
-/** Package-owned Ferraris patterns. This root does not compose Streets assets. */
-export const ferrarisIcons = packageDirectory('assets/ferraris/icons');
+/** Package-owned navigation lettering and fallback faces, with their licenses. */
+export const streetsFonts = packageDirectory('assets/streets/fonts');
+
+/** Package-owned Streets tree geometry, including the lighter far models. */
+export const streetsModels = packageDirectory('assets/streets/models');
+
+/** Package-owned 1777 lettering and its license. */
+export const map1777Fonts = packageDirectory('assets/map-1777/fonts');
+
+/** Package-owned 1777 patterns. This root does not compose Streets assets. */
+export const map1777Icons = packageDirectory('assets/map-1777/icons');
 
 /** Package-owned Baedeker patterns. This root does not compose another map's assets. */
 export const baedekerIcons = packageDirectory('assets/baedeker/icons');
@@ -21,9 +30,6 @@ export const blueprintIcons = packageDirectory('assets/blueprint/icons');
 
 /** Package-owned Soundings symbols and patterns. This root does not compose Streets assets. */
 export const soundingsIcons = packageDirectory('assets/soundings/icons');
-
-/** Package-owned Härad patterns. This root does not compose Streets assets. */
-export const haradIcons = packageDirectory('assets/harad/icons');
 
 /** Package-owned Siegfried patterns. This root does not compose Streets assets. */
 export const siegfriedIcons = packageDirectory('assets/siegfried/icons');

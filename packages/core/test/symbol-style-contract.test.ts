@@ -333,7 +333,7 @@ function compilePoiMarker(marker: TileflowCircleStyle): string {
         water: {font: 'Noto Sans Regular'},
       },
     },
-  ).find((entry) => entry.target === 'poi.arts-entertainment.marker');
+  ).find((entry) => entry.target === 'poi.marker');
   return JSON.stringify(contribution ?? null);
 }
 

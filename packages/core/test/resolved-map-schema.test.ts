@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  buildings,
   color,
   defineTheme,
   expr,
@@ -412,6 +413,83 @@ test('accepts detailed cartographic module styles and their optional data bindin
         modules: {vegetation: vegetation({threeDimensional: {heightScale: 11}})},
       }),
     /heightScale/,
+  );
+  const trees = (threeDimensional: object) =>
+    parseDesign({modules: {vegetation: vegetation({mode: '3d', threeDimensional} as never)}});
+  assert.doesNotThrow(() =>
+    trees({regions: [{bounds: [-81, 24.4, -79.8, 26.9], unknownForms: {palm: 3, round: 1}}]}),
+  );
+  assert.throws(() => trees({unknownForms: {oak: 1}}), /unknownForms/);
+  assert.doesNotThrow(() =>
+    trees({finish: 'toon', edges: 1, edgeColor: '#102010', forms: {palm: {heightScale: 1.2}}}),
+  );
+  assert.throws(() => trees({finish: 'glossy'}), /finish/);
+  assert.doesNotThrow(() => trees({minimumHeight: 0, materialVariation: 0}));
+  assert.doesNotThrow(() => trees({minimumHeight: 6, materialVariation: 1}));
+  for (const minimumHeight of [-1, 21, NaN])
+    assert.throws(() => trees({minimumHeight}), /minimumHeight/);
+  for (const materialVariation of [-1, 1.1, Infinity])
+    assert.throws(() => trees({materialVariation}), /materialVariation/);
+  // A form draws one to four of the map's own models, by the id of their .glb file.
+  assert.doesNotThrow(() => trees({forms: {palm: {models: ['royal-palm', 'coconut-palm']}}}));
+  assert.throws(() => trees({forms: {palm: {models: ['Royal Palm']}}}), /model id/);
+  assert.throws(() => trees({forms: {palm: {models: ['a', 'b', 'c', 'd', 'e']}}}), /models/);
+  assert.throws(() => trees({forms: {palm: {models: ['a', 'a']}}}), /each model once/);
+  assert.doesNotThrow(() => parseDesign({models: ['./models', '../shared/trees']}));
+  assert.throws(() => parseDesign({models: ['models']}), /models/);
+  assert.throws(() => trees({forms: {oak: {heightScale: 2}}}), /forms/);
+  assert.throws(() => trees({unknownForms: {palm: 0}}), /weight above 0/);
+  assert.throws(
+    () => trees({regions: [{bounds: [0, 50, 1, 40], unknownForms: {palm: 1}}]}),
+    /south below north/,
+  );
+  // Core's 3D buildings and street lights are designed in the buildings and roads modules.
+  assert.doesNotThrow(() =>
+    parseDesign({
+      modules: {
+        buildings: buildings({
+          threeDimensional: {
+            lighting: 'sun',
+            colorVariation: 0.06,
+            edges: 0.5,
+            nightLight: 1.5,
+            windows: true,
+          },
+        }),
+        roads: roads({streetLights: {estimate: 'streets', intensity: 0.8}}),
+      },
+    }),
+  );
+  assert.throws(
+    () => parseDesign({modules: {buildings: buildings({threeDimensional: {edges: 2}})}}),
+    /edges/,
+  );
+  // Tileflow's landmarks switch off, or come from a tileset served over HTTPS or locally.
+  for (const landmarks of [
+    false,
+    {url: 'https://landmarks.example.test/tiles.json'},
+    {url: 'http://localhost:8787/landmarks/tiles.json'},
+  ])
+    assert.doesNotThrow(() =>
+      parseDesign({modules: {buildings: buildings({threeDimensional: {landmarks}})}}),
+    );
+  assert.throws(
+    () =>
+      parseDesign({
+        modules: {
+          buildings: buildings({
+            threeDimensional: {landmarks: {url: 'http://landmarks.example.test/tiles.json'}},
+          }),
+        },
+      }),
+    /HTTPS address, or a local one/,
+  );
+  assert.throws(
+    () =>
+      parseDesign({
+        modules: {roads: roads({streetLights: {estimate: 'everywhere' as never}})},
+      }),
+    /estimate/,
   );
 });
 
@@ -1310,5 +1388,20 @@ test('rejects unsafe authoring objects and unresolved map references', () => {
   assert.throws(
     () => parseMap(Object.create({id: 'madrid', version: 1, extends: extendStreets()})),
     /map object/,
+  );
+});
+
+test('building lighting and colour variation reject unknown modes and out-of-range values', () => {
+  for (const colorVariation of [-0.01, 1.01])
+    assert.throws(
+      () => parseDesign({modules: {buildings: buildings({threeDimensional: {colorVariation}})}}),
+      /colorVariation/,
+    );
+  assert.throws(
+    () =>
+      parseDesign({
+        modules: {buildings: buildings({threeDimensional: {lighting: 'cinematic' as never}})},
+      }),
+    /lighting/,
   );
 });

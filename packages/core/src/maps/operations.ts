@@ -2,7 +2,7 @@ import type {TileflowSemanticModules} from '../cartography/domain-registry';
 
 declare const tileflowResetBrand: unique symbol;
 
-/** Serializable sentinel that removes one inherited override during `refine()`. */
+/** Removes an inherited override in `refine()` or lighting in `defineTheme()`. */
 export type TileflowReset = Readonly<{
   readonly $tileflow: 'reset';
   readonly [tileflowResetBrand]: true;
@@ -62,7 +62,7 @@ export function disable(): TileflowDisableOperation {
   return disableValue;
 }
 
-/** Remove an inherited override so the domain registry can supply its semantic default. */
+/** Remove an inherited module override or theme lighting value, restoring the SDK fallback. */
 export function reset(): TileflowReset {
   return resetValue;
 }

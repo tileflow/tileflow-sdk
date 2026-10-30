@@ -6,6 +6,9 @@ import type {
 } from './manifest-types';
 import {isTileflowPortableId, isTileflowThemeName} from './portable-identity-rules';
 import {type MapLibreStyle, type TileflowViewConfig} from './types';
+import {resolveTileflowTimeOfDayTheme, type TileflowTimeOfDay} from './time-of-day';
+export {isTileflowTimeOfDay, tileflowTimesOfDay} from './time-of-day';
+export type {TileflowTimeOfDay, TileflowTimeOfDayVariants} from './time-of-day';
 
 export type {
   TileflowRuntimeColorScheme,
@@ -134,6 +137,7 @@ export type TileflowRuntimeSource = {
 };
 
 export type TileflowRuntimeStyleOptions = {
+  timeOfDay?: TileflowTimeOfDay;
   colorScheme?: TileflowRuntimeColorScheme;
   manifestMap?: TileflowRuntimeManifestMap | null;
   source: TileflowRuntimeSource;
@@ -289,6 +293,7 @@ export function resolveTileflowRuntimeStyle(
       options.manifestMap,
       options.theme,
       options.colorScheme,
+      options.timeOfDay,
     );
     return {
       analytics: {
@@ -312,6 +317,7 @@ export function resolveTileflowRuntimeTheme(
   map: TileflowRuntimeManifestMap,
   selection: TileflowThemeSelection | undefined,
   colorScheme?: TileflowRuntimeColorScheme,
+  timeOfDay?: TileflowTimeOfDay,
 ): TileflowResolvedRuntimeTheme {
   let name: string;
   if (selection === undefined) {
@@ -336,6 +342,9 @@ export function resolveTileflowRuntimeTheme(
     );
   }
 
+  // Validate the original request before looking up a variant; unknown themes never fall back.
+  if (Object.hasOwn(map.themes, name))
+    name = resolveTileflowTimeOfDayTheme(map.timeOfDay, name, timeOfDay);
   const theme = Object.hasOwn(map.themes, name) ? map.themes[name] : undefined;
   if (!theme) {
     const available = Object.keys(map.themes).sort().join(', ');
@@ -1073,6 +1082,7 @@ export function resolveTileflowManifestMap(
     defaultTheme: entry.defaultTheme,
     ...(entry.environment ? {environment: entry.environment} : {}),
     ...(entry.systemThemes ? {systemThemes: {...entry.systemThemes}} : {}),
+    ...(entry.timeOfDay ? {timeOfDay: entry.timeOfDay} : {}),
     themes: entry.themes,
     usageMode: entry.usageMode,
     view: entry.view,
@@ -1086,6 +1096,7 @@ export function resolveTileflowStaticImageUrl(input: {
   imageSize: {height: number; width: number} | null;
   manifestMap: TileflowRuntimeManifestMap | null;
   theme?: TileflowThemeSelection;
+  timeOfDay?: TileflowTimeOfDay;
   zoom: number;
 }): string | undefined {
   if (!input.manifestMap?.mapId) {
@@ -1100,7 +1111,12 @@ export function resolveTileflowStaticImageUrl(input: {
   const apiUrl = normalizeTileflowUrl(input.manifestMap.apiUrl ?? 'https://api.tileflow.dev');
   const mapId = encodeURIComponent(input.manifestMap.mapId);
   const url = new URL(`/maps/${mapId}/static.png`, apiUrl);
-  const theme = resolveTileflowRuntimeTheme(input.manifestMap, input.theme, input.colorScheme);
+  const theme = resolveTileflowRuntimeTheme(
+    input.manifestMap,
+    input.theme,
+    input.colorScheme,
+    input.timeOfDay,
+  );
 
   url.searchParams.set('center', input.center.join(','));
   url.searchParams.set('theme', theme.name);

@@ -1,4 +1,5 @@
 import type {TileflowAtmosphere} from '../atmosphere';
+import type {TileflowBoundaryAreas} from '../boundary-areas';
 import type {TileflowCaptureScene} from '../capture-scene';
 import type {TileflowCaptureShot} from '../capture-shot';
 import type {TileflowResolvedSemanticModuleOverrides} from '../cartography/domain-registry';
@@ -12,9 +13,11 @@ import type {
   TileflowOverlayCollection,
 } from '../overlays';
 import {tileflowPortableIdSchema} from '../portable-identity';
+import type {TileflowSky} from '../sky';
 import type {TileflowTheme, TileflowThemeName} from '../themes';
+import type {TileflowTimeOfDayVariants} from '../time-of-day';
 import type {TileflowProjection, TileflowTerrain, TileflowViewConfig} from '../types';
-import type {TileflowFontDirectory, TileflowGlyphs} from './assets';
+import type {TileflowFontDirectory, TileflowGlyphs, TileflowModelDirectory} from './assets';
 import type {TileflowAuthoringModules} from './operations';
 
 /** Portable, filesystem-safe identity shared by maps and their leaf-owned scenes. */
@@ -49,6 +52,11 @@ type TileflowMapTextAssets =
 export type TileflowMapDesign = TileflowMapTextAssets & {
   /** Optional atmosphere for globe projection. False disables an inherited atmosphere. */
   atmosphere?: TileflowAtmosphere;
+  /**
+   * Tileflow's Boundaries tileset: administrative and neighbourhood areas for choropleths and
+   * selections. World's border lines remain the `boundaries` module. False removes inherited areas.
+   */
+  boundaryAreas?: TileflowBoundaryAreas;
   data?: TileflowDataConfig;
   /** Name used whenever a concrete theme is not explicitly requested. */
   defaultTheme?: TileflowThemeName;
@@ -56,11 +64,21 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
   icons?: readonly TileflowIconSource[];
   /** Independent Bathymetry and Nautical products composed by the compiler. */
   marine?: TileflowMarine;
+  /**
+   * Directories of the map's own 3D models, glTF binaries (`.glb`) named by id, such as the trees a
+   * vegetation form draws. Omission inherits; declaration replaces; [] means no models.
+   */
+  models?: readonly TileflowModelDirectory[];
   /** Semantic domains, expressed directly or with explicit refine/disable operations. */
   modules?: TileflowAuthoringModules;
   /** Keyed MapLibre overlay units. Omission inherits; entries replace atomically. */
   overlays?: TileflowOverlayCollection;
   projection?: TileflowProjection;
+  /**
+   * The sky above the horizon when the camera tilts up, in either projection, with stars where it
+   * is dark. Colours take theme tokens. False disables an inherited sky.
+   */
+  sky?: TileflowSky;
   /** Keyed logical hosted sources. Omission inherits; entries replace atomically. */
   sources?: TileflowHostedSourceCollection;
   /** Browser color-scheme mapping. Runtime resolves "system" to one of these concrete names. */
@@ -71,6 +89,8 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
   terrain?: TileflowTerrain;
   /** Complete named appearances. Omission inherits; declaration replaces the collection. */
   themes?: Readonly<Record<TileflowThemeName, TileflowTheme>>;
+  /** Optional artistic moments per theme family. Omission inherits; {} disables inheritance. */
+  timeOfDay?: TileflowTimeOfDayVariants;
   view?: TileflowViewConfig;
 };
 

@@ -24,7 +24,11 @@ import type {
 import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
+  attachTileflowLabelPlacement,
+  attachTileflowMap3D,
   attachTileflowMapLifecycle,
+  attachTileflowNauticalLights,
+  attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowThemeController,
   createTileflowTransformRequest,
@@ -34,8 +38,12 @@ import {
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   subscribeTileflowSystemColorScheme,
+  tileflowCanvasContextAttributes,
+  type TileflowMap3DAttachment,
+  tileflowMaxPitch,
   type TileflowThemeController,
   type TileflowThemeTransition,
+  type TileflowViewMode,
 } from '@tileflow/core/browser';
 import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
 import {
@@ -103,6 +111,8 @@ export type TileflowInteractionRenderer<
 > = (context: TileflowInteractionViewContext<TAnnotation>) => ReactNode;
 
 type MapSharedProps = {
+  vegetation?: boolean;
+  viewMode?: TileflowViewMode;
   captureId?: string;
   imageUrl?: string;
   alt?: string;
@@ -194,8 +204,11 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     mapOptions,
     analytics,
     theme,
+    timeOfDay,
     themeBlend,
     themeTransition,
+    vegetation,
+    viewMode = '3d',
     interactionState,
     interactions = defaultInteractions,
     onInteractionDiagnostic,
@@ -238,6 +251,13 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
   const containerRef = useRef<HTMLDivElement | null>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const sceneRef = useRef<TileflowMap3DAttachment | undefined>(undefined);
+  const sceneInputsRef = useRef({vegetation, viewMode});
+  sceneInputsRef.current = {vegetation, viewMode};
+  useEffect(() => {
+    sceneRef.current?.setVegetation(vegetation);
+    sceneRef.current?.setViewMode(viewMode);
+  }, [vegetation, viewMode]);
   const themeControllerRef = useRef<TileflowThemeController | undefined>(undefined);
   const runtimeStyleRef = useRef<ReturnType<typeof resolveTileflowRuntimeStyle>>(null);
   const interactionRuntimeRef = useRef<TileflowMapLibreDomRuntime<TAnnotation> | undefined>(
@@ -327,12 +347,17 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
       }
       return {
         error: false,
-        name: resolveTileflowRuntimeTheme(manifestMap, selection, systemColorScheme).name,
+        name: resolveTileflowRuntimeTheme(
+          manifestMap,
+          selection,
+          systemColorScheme,
+          themeBlendKey ? undefined : timeOfDay,
+        ).name,
       } as const;
     } catch {
       return {error: true, name: undefined} as const;
     }
-  }, [blendThemeName, manifestMap, systemColorScheme, theme, themeBlendKey]);
+  }, [blendThemeName, manifestMap, systemColorScheme, theme, themeBlendKey, timeOfDay]);
   const resolvedThemeName = themeResolution.name;
   const manifestView = resolveTileflowRuntimeView({manifestMap});
   const manifestCenter = useStableMapOptionValue<[number, number]>(
@@ -806,6 +831,9 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
 
         const map = new maplibregl.Map({
           ...stableMapOptions,
+          canvasContextAttributes: tileflowCanvasContextAttributes(
+            stableMapOptions?.canvasContextAttributes,
+          ),
           container,
           style: initialRuntimeStyle.style as StyleSpecification | string,
           bearing: bearingRef.current,
@@ -816,6 +844,9 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           attributionControl: stableMapOptions?.attributionControl ?? {
             compact: true,
           },
+          // Tileflow's compiled styles are validated when they are built.
+          validateStyle: stableMapOptions?.validateStyle ?? false,
+          maxPitch: stableMapOptions?.maxPitch ?? tileflowMaxPitch,
           transformRequest,
         });
 
@@ -823,6 +854,9 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         setupResources.map = map;
         registerCleanup(() => map.remove());
         registerCleanup(attachTileflowAtmosphere(map));
+        registerCleanup(attachTileflowNotices(map));
+        registerCleanup(attachTileflowNauticalLights(map));
+        registerCleanup(attachTileflowLabelPlacement(map));
         const themeController =
           initialRuntimeStyle.theme === undefined
             ? undefined
@@ -849,6 +883,31 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
             }
           });
         }
+        // The map's 3D scene loads only once its style declares one, so 2D maps do not pay for it.
+        const scene = attachTileflowMap3D({
+          map,
+          ...(themeController ? {controller: themeController} : {}),
+          vegetation: sceneInputsRef.current.vegetation,
+          viewMode: sceneInputsRef.current.viewMode,
+          load: () => import('@tileflow/core/3d'),
+          onError: (error) => console.error('Failed to load the Tileflow 3D scene', error),
+          // Direct tile readers use HTTP, not MapLibre's custom World protocol.
+          transformRequest: createTileflowTransformRequest({
+            getAnalytics: () => resolvedAnalyticsRef.current,
+            sessionController: session,
+            sessionId: session.sessionId,
+            transformRequest: (url) =>
+              stableMapOptions?.transformRequest?.(
+                url,
+                'Tile' as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
+              ),
+          }),
+        });
+        sceneRef.current = scene;
+        registerCleanup(() => {
+          scene.dispose();
+          if (sceneRef.current === scene) sceneRef.current = undefined;
+        });
         const browserWindow = container.ownerDocument.defaultView;
         if (!browserWindow) {
           throw new Error('Tileflow semantic interactions require a browser document.');

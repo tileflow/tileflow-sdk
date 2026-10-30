@@ -19,6 +19,9 @@ export type ResolvedLabelsModuleOptions = {
   junctions: boolean;
   places: TileflowLabelDetail;
   roadClasses?: readonly TileflowRoadClass[];
+  roadGrouping: 'class' | 'network';
+  roadNameFormat: 'full' | 'compact';
+  roadPlacement: 'ground' | 'foreground';
   roads: TileflowRoadLabelDetail;
   shields: TileflowRoadShieldDetail;
   water: TileflowLabelDetail;
@@ -30,7 +33,10 @@ const defaults = {
   language: 'auto',
   junctions: true,
   places: 'major',
-  roads: 'major',
+  roadGrouping: 'class',
+  roadPlacement: 'foreground',
+  roadNameFormat: 'full',
+  roads: 'streets',
   shields: 'major',
   water: 'major',
 } as const satisfies ResolvedLabelsModuleOptions;
@@ -49,6 +55,9 @@ export function resolveLabels(
     junctions: request?.junctions ?? defaults.junctions,
     places: request?.places ?? defaults.places,
     ...(request?.roadClasses ? {roadClasses: [...request.roadClasses]} : {}),
+    roadGrouping: request?.roadGrouping ?? defaults.roadGrouping,
+    roadPlacement: request?.roadPlacement ?? defaults.roadPlacement,
+    roadNameFormat: request?.roadNameFormat ?? defaults.roadNameFormat,
     roads: request?.roads ?? defaults.roads,
     shields: request?.shields ?? defaults.shields,
     water: request?.water ?? defaults.water,

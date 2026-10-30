@@ -48,6 +48,25 @@ export const hostedStyleDeploymentResponseSchema = z
       )
       .refine((themes) => Object.keys(themes).length > 0),
     version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
+    /**
+     * The Team 3D models the map places, each at its published current version, and whether that
+     * version was prepared from the same glTF binaries as the map's own files.
+     */
+    teamModels: z
+      .array(
+        z
+          .object({
+            model: z
+              .string()
+              .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u)
+              .max(64),
+            version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+            sources: z.enum(['match', 'differ', 'unknown']),
+          })
+          .strict(),
+      )
+      .max(256)
+      .optional(),
   })
   .strict();
 

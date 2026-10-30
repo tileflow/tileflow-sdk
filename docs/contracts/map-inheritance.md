@@ -6,7 +6,7 @@ single `defineMap()` constructor and the same design fields. The semantic compil
 Inheritance is resolved completely
 before validation, asset preparation, compilation, capture, build, or deploy.
 
-`streets`, `baedeker`, `civica`, `ferraris`, `harad`, `siegfried`, `soundings`, and `blueprint` are first-party standalone maps. Streets and Siegfried own coordinated
+`streets`, `baedeker`, `civica`, `map1777`, `siegfried`, `soundings`, and `blueprint` are first-party standalone maps. Streets and Siegfried own coordinated
 light and dark themes. Every official map defines its complete design directly: none imports or
 extends another official map, and each declares only its own asset providers. They are exported
 from `@tileflow/maps`; there is no public basemap,
@@ -22,15 +22,18 @@ Each public field has one explicit merge rule:
 - Omitted design fields inherit.
 - `view` merges recursively.
 - `themes` replaces as one complete collection when declared; omission inherits it. Replacing the
-  collection clears an inherited `systemThemes` mapping so it cannot point into an obsolete family.
+  collection clears inherited `systemThemes` and `timeOfDay` mappings so they cannot point into an obsolete family.
   `defaultTheme` may independently select one inherited concrete theme, and an explicit
   `systemThemes` replaces the complete light/dark mapping. Every resolved selector must name a
   member of the final collection.
+- `timeOfDay` replaces the complete theme-to-preset catalog; `{}` disables an inherited catalog.
 - `atmosphere`, `data`, `projection`, and `terrain` replace atomically when declared.
   Enabled atmosphere requires globe projection; `false` disables an inherited atmosphere.
 - `modules` merges by domain name. Declaring `roads(...)`, for example, replaces that inherited
   module request and every compiler-owned contribution belonging to roads. Omitted domains remain
-  inherited; `disable()` removes a domain and its complete owner-local render stack.
+  inherited; `disable()` removes a domain and its complete owner-local render stack. `refine()`
+  keeps an inherited render stack and merges its operations by name; `renderStack: reset()` removes
+  the stack, and resetting every operation has the same result.
 - `icons`, `fonts`, and `glyphs` follow the asset rules below.
 
 Arrays inside ordinary design objects replace; MapLibre expressions and Tileflow zoom values are
@@ -57,6 +60,12 @@ token-schema drift, and unresolved nodes fail closed.
 is a fully materialized JSON-safe theme. Changing a theme therefore changes appearance only; data,
 filters, module ownership, semantic interactions, layer ordering, and asset-directory ownership
 remain map concerns.
+
+Theme lighting normally composes by property. In `defineTheme` input, `lighting: reset()` removes
+all inherited lighting; `reset()` on `sun`, `ambient`, or a direct light property removes that
+override. The operation is materialized immediately and never enters a resolved theme document.
+An omitted lighting property still inherits. Removing a preset restores renderer defaults; it
+does not disable shadows. A map may have one theme without `systemThemes` or `timeOfDay`.
 
 ## Icons
 
@@ -88,10 +97,10 @@ Directories are read from left to right. `<id>.<ext>` publishes an ordinary icon
 `<id>.pattern.<ext>` publishes an intrinsic-size line/fill pattern as `<id>`. That published ID must
 already be canonical lower-kebab-case. A later directory replaces an earlier file only when the ID
 matches exactly; case-only collisions fail. The official directory descriptors `streetsIcons`,
-`baedekerIcons`, `civicaIcons`, `ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`,
+`baedekerIcons`, `civicaIcons`, `map1777Icons`, `siegfriedIcons`, `soundingsIcons`,
 `blueprintIcons` let maps reuse package assets
-without exposing installation paths. Baedeker, Ferraris, Härad, Siegfried, Soundings, and
-Blueprint declare only `[baedekerIcons]`, `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
+without exposing installation paths. Baedeker, 1777, Siegfried, Soundings, and
+Blueprint declare only `[baedekerIcons]`, `[map1777Icons]`, `[siegfriedIcons]`,
 `[soundingsIcons]`, and `[blueprintIcons]`, respectively; none of these
 standalone maps composes with Streets assets. Cívica likewise owns only `[civicaIcons]` and
 `[civicaFonts]` for its original civic-print artwork and packaged lettering.
@@ -99,13 +108,11 @@ Baedeker's eight original Tileflow patterns use historical Baedeker and Wagner &
 visual references: no scan, source pixel, historical typeface, legend artwork, geospatial data, or
 source map is redistributed, and the map is not affiliated with or endorsed by Baedeker or Wagner
 & Debes. Its separately licensed Cormorant files live in its own package asset closure.
-Its contours are browser-derived from Mapterhorn terrain tiles that are not packaged. Härad's nine
-original Tileflow SVG patterns are inspired by Lantmäteriet's CC0 Häradsekonomiska kartan series
-(1859–1934) and official legend, without redistributing source scans, pixels, legend artwork,
-fonts, or map data. Siegfried owns nine light/dark engraving-motif pairs in one directory; both
+Its contours are browser-derived from Mapterhorn terrain tiles that are not packaged. Siegfried owns nine light/dark engraving-motif pairs in one directory; both
 themes select the same semantic image vocabulary without changing map structure. Soundings
-owns ten original nautical symbols and patterns; GEBCO-derived depth bands are broad visual context,
-not navigation-grade soundings. Blueprint owns four original drafting patterns and one
+owns twenty-seven original nautical symbols and patterns, and selects its chart symbols for Nautical marks
+through theme image tokens; GEBCO-derived depth bands are broad visual context, not navigation-grade
+soundings. Blueprint owns four original drafting patterns and one
 schematic POI symbol in its blueprint asset closure. There is no `builtin`, `source`, `sprite`,
 icon-level `extends`, `mapping`, or additive operator.
 
@@ -162,13 +169,13 @@ Browser font files and native/PBF glyphs are different delivery mechanisms, so a
 combine them or fall back silently between them. After inheritance resolves, every map that emits
 text has exactly one provider; only a text-free map may have neither.
 
-Streets, Ferraris, Härad, Soundings, and Blueprint each declare the immutable
+Streets, Soundings, and Blueprint each declare the immutable
 `https://api.tileflow.dev/base/33d4de5e8086d9d629d67d3f39fedb87e23686c4c1ac653c27e2a52aee9d00b3/glyphs/{fontstack}/{range}.pbf`
 URL with `Noto Sans Regular` and `Noto Sans Bold`. The hash names one validated, immutable global
 base-asset manifest. The URL is stated directly in each standalone map, not synthesized as a
 fallback. The older canonical `https://api.tileflow.dev/fonts/{fontstack}/{range}.pbf` URL remains
 a revalidating compatibility URL and is not an exact-byte identity.
-Baedeker and Siegfried instead declare `[baedekerFonts]` and `[siegfriedFonts]`, respectively, and
+Baedeker, 1777, and Siegfried instead declare `[baedekerFonts]`, `[map1777Fonts]`, and `[siegfriedFonts]`, respectively, and
 each uses its own package copy of the exact faces `Cormorant Garamond Regular`,
 `Cormorant Garamond SemiBold`, and `Cormorant Garamond Italic`.
 

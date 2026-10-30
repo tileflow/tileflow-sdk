@@ -70,7 +70,6 @@ function createFixture() {
             layers: [
               {
                 anchor: 'pointer-coordinate',
-                category: 'food-drink',
                 layerId: 'tileflow-poi-food-drink-icon',
                 priority: 20,
                 representation: 'icon',
@@ -79,7 +78,6 @@ function createFixture() {
               },
               {
                 anchor: 'pointer-coordinate',
-                category: 'food-drink',
                 layerId: 'tileflow-poi-food-drink-label',
                 priority: 10,
                 representation: 'label',
@@ -89,7 +87,7 @@ function createFixture() {
             ],
           },
         },
-        version: 2,
+        version: 3,
       },
     },
   };
@@ -192,7 +190,7 @@ test('activates stable POIs and fails closed for popup targets without identity'
   fixture.setFeatures([
     {
       layer: {id: 'tileflow-poi-food-drink-label'},
-      properties: {name: 'No ID'},
+      properties: {category: 'food-drink', name: 'No ID'},
       source: 'tileflow',
       sourceLayer: 'poi',
     },
@@ -210,14 +208,14 @@ test('deduplicates repeated POI representations using manifest priority', () => 
     {
       id: 'poi-42',
       layer: {id: 'tileflow-poi-food-drink-label'},
-      properties: {name: 'Label representation'},
+      properties: {category: 'food-drink', name: 'Label representation'},
       source: 'tileflow',
       sourceLayer: 'poi',
     },
     {
       id: 'poi-42',
       layer: {id: 'tileflow-poi-food-drink-icon'},
-      properties: {name: 'Icon representation'},
+      properties: {category: 'food-drink', name: 'Icon representation'},
       source: 'tileflow',
       sourceLayer: 'poi',
     },
@@ -428,7 +426,6 @@ test('rejects a POI manifest spanning multiple feature-ID namespaces', () => {
   });
   fixture.style.metadata['tileflow:interaction-manifest'].domains.poi.layers.push({
     anchor: 'pointer-coordinate',
-    category: 'food-drink',
     layerId: 'other-poi',
     priority: 1,
     representation: 'icon',
@@ -458,13 +455,13 @@ test('accepts and deduplicates GeoJSON POI layers without source-layer', () => {
     {
       id: 'poi-42',
       layer: {id: 'tileflow-poi-food-drink-label'},
-      properties: {name: 'Label representation'},
+      properties: {category: 'food-drink', name: 'Label representation'},
       source: 'tileflow',
     },
     {
       id: 'poi-42',
       layer: {id: 'tileflow-poi-food-drink-icon'},
-      properties: {name: 'Icon representation'},
+      properties: {category: 'food-drink', name: 'Icon representation'},
       source: 'tileflow',
     },
   ]);
@@ -511,6 +508,99 @@ test('coalesces transient styledata while still reporting a settled manifest mis
   fixture.style.layers.splice(0);
   fixture.fire('styledata', {});
   await Promise.resolve();
+  assert.deepEqual(diagnostics, ['SEMANTIC_MANIFEST_MISMATCH']);
+
+  controller.dispose();
+});
+
+test('keeps a valid manifest while the style restyles, until a style loads or a layer moves', async () => {
+  const fixture = createFixture();
+  let reads = 0;
+  const layers = new Map(
+    fixture.style.layers.map((layer) => [
+      layer.id,
+      {source: layer.source, sourceLayer: layer['source-layer']},
+    ]),
+  );
+  const manifests: boolean[] = [];
+  const controller = createTileflowMapLibrePoiController({
+    bindings: [binding],
+    cancelFrame: () => undefined,
+    map: {
+      ...fixture.map,
+      getLayer: (id: string) => layers.get(id),
+      getStyle: () => {
+        reads++;
+        return fixture.style;
+      },
+    },
+    onManifestChange: (valid) => manifests.push(valid),
+    requestFrame: () => 1,
+  });
+  assert.equal(reads, 1);
+  for (let index = 0; index < 5; index++) {
+    fixture.fire('styledata', {});
+    await Promise.resolve();
+  }
+  assert.equal(reads, 1, 'a restyled map keeps the manifest');
+  assert.deepEqual(manifests, [true, true, true, true, true, true]);
+  layers.set('tileflow-poi-food-drink-label', {source: 'elsewhere', sourceLayer: 'poi'});
+  fixture.fire('styledata', {});
+  await Promise.resolve();
+  assert.equal(reads, 2, 'a named layer drawn from another source reads the style again');
+  fixture.fire('style.load', {});
+  assert.equal(reads, 3, 'a new style reads the style again');
+  controller.dispose();
+});
+
+test('reads the category of a hit from its feature when one layer draws several categories', () => {
+  const fixture = createFixture();
+  const diagnostics: string[] = [];
+  const activations: string[] = [];
+  const controller = createTileflowMapLibrePoiController({
+    bindings: [
+      {
+        id: 'stations',
+        target: {categories: ['transport'], domain: 'poi', kind: 'semantic-feature'},
+      },
+    ],
+    cancelFrame: () => undefined,
+    map: fixture.map,
+    onActivate: (match) =>
+      activations.push(`${match.target.feature.category}:${String(match.target.feature.id)}`),
+    onDiagnostic: ({code}) => diagnostics.push(code),
+    requestFrame: () => 1,
+  });
+  const pointer = {lngLat: {lat: 40.4, lng: -3.7}, point: {x: 1, y: 2}};
+
+  // The café in the shared layer is not a station, so the binding ignores it.
+  fixture.fire('click', pointer);
+  assert.deepEqual(activations, []);
+
+  fixture.setFeatures([
+    {
+      id: 'poi-7',
+      layer: {id: 'tileflow-poi-food-drink-label'},
+      properties: {category: 'transport', name: 'Sol', type: 'public_transit_facility'},
+      source: 'tileflow',
+      sourceLayer: 'poi',
+    },
+  ]);
+  fixture.fire('click', pointer);
+  assert.deepEqual(activations, ['transport:poi-7']);
+
+  // A POI layer feature without a supported category does not match its metadata.
+  fixture.setFeatures([
+    {
+      id: 'poi-8',
+      layer: {id: 'tileflow-poi-food-drink-label'},
+      properties: {name: 'Unknown'},
+      source: 'tileflow',
+      sourceLayer: 'poi',
+    },
+  ]);
+  fixture.fire('click', pointer);
+  assert.deepEqual(activations, ['transport:poi-7']);
   assert.deepEqual(diagnostics, ['SEMANTIC_MANIFEST_MISMATCH']);
 
   controller.dispose();

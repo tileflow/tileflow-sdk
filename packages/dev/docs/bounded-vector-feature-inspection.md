@@ -40,13 +40,12 @@ const result = await compileTileflowIconPackages(internalCatalog, {
 ```
 
 Streets declares `[streetsIcons]` and keeps light/dark image-token targets in that one closure.
-Baedeker, Cívica, Ferraris, Härad, Siegfried, Soundings, and Blueprint declare only
-`[baedekerIcons]`, `[civicaIcons]`, `[ferrarisIcons]`, `[haradIcons]`, `[siegfriedIcons]`,
+Baedeker, Cívica, 1777, Siegfried, Soundings, and Blueprint declare only
+`[baedekerIcons]`, `[civicaIcons]`, `[map1777Icons]`, `[siegfriedIcons]`,
 `[soundingsIcons]`, and `[blueprintIcons]`, respectively. No official root composes another map's assets even though all
 use the semantic compiler ABI. Baedeker's directory contains eight original travel-atlas patterns;
 its browser-derived Mapterhorn contours use runtime terrain tiles and are not part of the icon
-package. Härad's directory contains nine original Tileflow patterns inspired by Lantmäteriet's CC0
-Häradsekonomiska kartan series from 1859–1934. Soundings owns ten original nautical symbols and
+package. Soundings owns twenty-seven original nautical symbols and
 patterns. Blueprint owns four technical blueprint patterns and one schematic POI node; its
 unbundled Mapterhorn contours remain runtime terrain, and its text uses the canonical Noto Sans
 glyph provider. An application map may inherit a root's exact array, replace it, clear it with `[]`,

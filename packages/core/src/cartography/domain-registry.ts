@@ -228,12 +228,6 @@ export const tileflowSemanticDomainRegistry = Object.freeze([
     name: 'land',
   }),
   defineDomain({
-    compile: ({context, module}) => compileWater(module, context),
-    defaultModule: water(),
-    dependencies: {},
-    name: 'water',
-  }),
-  defineDomain({
     compile: ({context, module}) => compileNautical(module, context),
     defaultModule: nautical(),
     dependencies: {},
@@ -321,6 +315,13 @@ export const tileflowSemanticDomainRegistry = Object.freeze([
     name: 'labels',
     provides: ['language'],
     resolveServices: ({module}) => ({language: resolveLabels(module).language}),
+  }),
+  defineDomain({
+    compile: ({context, dependencies, module}) =>
+      compileWater(module, context, dependencies.service('language')),
+    defaultModule: water(),
+    dependencies: {services: ['language']},
+    name: 'water',
   }),
   defineDomain({
     compile: ({context, dependencies, module}) =>

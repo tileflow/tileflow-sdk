@@ -1,0 +1,101 @@
+{
+  "schemaVersion": 1,
+  "icons": {
+    "soundings-boat-hoist": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-boatyard": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-buoy-cardinal": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-buoy-pillar": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-buoy-port": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-buoy-starboard": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-distance-mark": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-facility": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-fuel-station": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-harbor": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-light-flare": {
+      "representation": "sdf",
+      "defaults": {"color": "#B12A73", "haloColor": "#F7FBF8", "haloWidth": 0.5, "haloBlur": 0}
+    },
+    "soundings-lighthouse": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-marina": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-notice": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-notice-information": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-notice-prohibition": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-notice-recommendation": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-notice-regulation": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-notice-restriction": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-pump-out": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-slipway": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-visitor-berth": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-water-tap": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    },
+    "soundings-wreck": {
+      "representation": "sdf",
+      "defaults": {"color": "#263D3F", "haloColor": "#F7FBF8", "haloWidth": 1, "haloBlur": 0}
+    }
+  }
+}

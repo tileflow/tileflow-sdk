@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict';
-import {type ChildProcess, spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
@@ -7,12 +6,11 @@ import {connect} from 'node:net';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {fileURLToPath} from 'node:url';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
+import {startJsonFixtureProcess} from '../../../test-support/fixture-json-process';
+import {closeFixtureServer, fixtureResources} from '../../../test-support/fixture-resources';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
-
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 
 test('capture fixture cleanup stops its consumer before closing the HTTP server', async () => {
   let cleanup: (() => Promise<void>) | undefined;
@@ -58,7 +56,7 @@ test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good 
   const cwd = await createFixture('tileflow-dev-watch-');
   await writeWatchFixture(cwd, '#112233');
   const port = await reservePort();
-  const running = startCli(cwd, ['preview', '--json', '--map', 'main', '--port', String(port)], {
+  const running = startCli(t, cwd, ['preview', '--json', '--map', 'main', '--port', String(port)], {
     TILEFLOW_API_KEY: 'watch-secret',
   });
   t.after(async () => {
@@ -68,9 +66,25 @@ test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good 
 
   const ready = await running.waitFor((event) => event.event === 'ready');
   assert.equal(ready.generation, 1);
-  const status = await fetchEventually(`http://127.0.0.1:${port}/__status`);
+  const status = await fetchEventually(`http://127.0.0.1:${port}/map/__status`);
   assert.equal(status.status, 'ready');
   const preview = await (await fetch(`http://127.0.0.1:${port}/`)).text();
+  assert.match(preview, /Tileflow Inspector/);
+  assert.match(preview, /"initialMode":"single"/);
+  assert.match(preview, /Inspect the map/);
+  const viewQuery = '?lng=-3.70345&lat=40.417134&zoom=16.27&theme=faded';
+  const alias = await fetch(`http://localhost:${port}/${viewQuery}`, {redirect: 'manual'});
+  assert.equal(alias.status, 307);
+  assert.equal(alias.headers.get('location'), `http://127.0.0.1:${port}/${viewQuery}`);
+  const navigation = await fetch(`http://localhost:${port}/${viewQuery}`);
+  assert.equal(navigation.url, `http://127.0.0.1:${port}/${viewQuery}`);
+  assert.match(await navigation.text(), /Tileflow Inspector/);
+  assert.equal((await fetch(new URL('/__workbench', navigation.url))).status, 200);
+  assert.equal((await fetch(`http://localhost:${port}/__workbench`)).status, 403);
+  assert.equal(
+    (await fetch(`http://127.0.0.1:${port}/map/__inspection/main/light.json`)).status,
+    200,
+  );
   assert.doesNotMatch(preview, /unpkg|fonts\.googleapis|fonts\.gstatic/);
 
   await writeFile(join(cwd, 'tileflow.config.ts'), invalidConfig, 'utf8');
@@ -85,11 +99,11 @@ test('preview emits valid/invalid/recovered/stopped NDJSON and serves last-good 
     'config-validation',
   );
   const invalidStatus = await fetchEventually(
-    `http://127.0.0.1:${port}/__status`,
+    `http://127.0.0.1:${port}/map/__status`,
     (body) => body.status === 'invalid',
   );
   assert.equal(invalidStatus.lastGoodGeneration, 1);
-  assert.equal((await fetch(`http://127.0.0.1:${port}/styles/main/light.json`)).status, 200);
+  assert.equal((await fetch(`http://127.0.0.1:${port}/map/styles/main/light.json`)).status, 200);
 
   await writeFile(join(cwd, 'tileflow.config.ts'), createValidConfig(), 'utf8');
   const recovered = await running.waitFor((event) => event.event === 'recovered');
@@ -119,6 +133,7 @@ test('preview comparison serves two watched sides and their memory-only inspecti
   await writeWatchFixture(cwd, '#315744');
   const port = await reservePort();
   const running = startCli(
+    t,
     cwd,
     ['preview', '--json', '--map', 'main', '--against-map', 'main', '--port', String(port)],
     {TILEFLOW_API_KEY: 'comparison-secret'},
@@ -136,11 +151,14 @@ test('preview comparison serves two watched sides and their memory-only inspecti
   await fetchEventually(`http://127.0.0.1:${port}/right/__status`);
 
   const shell = await (await fetch(`http://127.0.0.1:${port}/`)).text();
-  assert.match(shell, /Tileflow visual workbench/u);
-  assert.match(shell, /Side by side/u);
-  assert.match(shell, /Copy scene/u);
+  assert.match(shell, /Tileflow Inspector/u);
+  assert.doesNotMatch(shell, /Side by side|Copy scene|id="wb-capture"|id="wb-review"/u);
+  assert.match(shell, /__workbench-runtime\/inspector\.js/u);
   assert.doesNotMatch(shell, /"captureConfig":/u);
   assert.equal(shell.includes(cwd), false);
+  const alias = await fetch(`http://localhost:${port}/?mode=split`, {redirect: 'manual'});
+  assert.equal(alias.status, 307);
+  assert.equal(alias.headers.get('location'), `http://127.0.0.1:${port}/?mode=split`);
   assert.equal((await fetch(`http://127.0.0.1:${port}/left/styles/main/light.json`)).status, 200);
   assert.equal((await fetch(`http://127.0.0.1:${port}/right/styles/main/light.json`)).status, 200);
 
@@ -168,7 +186,7 @@ test('preview comparison serves two watched sides and their memory-only inspecti
   assert.equal(completion.code, 0, completion.stderr);
 });
 
-test('preview comparison publishes distinct cwd-relative config arguments for Copy command', async (t) => {
+test('preview comparison publishes distinct cwd-relative config arguments for browser context', async (t) => {
   const cwd = await createFixture('tileflow-dev-compare-configs-');
   await writeWatchFixture(cwd, '#315744');
   const leftConfig = join(cwd, 'candidate config.ts');
@@ -178,7 +196,7 @@ test('preview comparison publishes distinct cwd-relative config arguments for Co
     writeFile(rightConfig, createValidConfig(), 'utf8'),
   ]);
   const port = await reservePort();
-  const running = startCli(cwd, [
+  const running = startCli(t, cwd, [
     'preview',
     '--json',
     '--config',
@@ -222,7 +240,7 @@ test('preview comparison keeps initial invalid --json output structured and omit
   const cwd = await createFixture('tileflow-dev-compare-initial-invalid-');
   await writeFile(join(cwd, 'tileflow.config.ts'), invalidConfig, 'utf8');
   const port = await reservePort();
-  const running = startCli(cwd, [
+  const running = startCli(t, cwd, [
     'preview',
     '--json',
     '--map',
@@ -267,10 +285,13 @@ test(
     const cwd = await createFixture('tileflow-capture-watch-');
     let stopCapture = async () => {};
     const fixture = await createVectorFixtureServer(t, () => stopCapture());
-    t.after(() => rm(cwd, {force: true, maxRetries: 5, recursive: true, retryDelay: 100}));
+    fixtureResources(t).push(() =>
+      rm(cwd, {force: true, maxRetries: 5, recursive: true, retryDelay: 100}),
+    );
 
     await writeWatchFixture(cwd, '#112233', fixture.origin);
     const running = startCli(
+      t,
       cwd,
       ['capture', 'proof', '--watch', '--json', '--no-browser-install'],
       {
@@ -326,7 +347,13 @@ test(
 test('capture watch exits nonzero when stopped with no valid capture and an invalid generation', async (t) => {
   const cwd = await createFixture('tileflow-capture-watch-invalid-stop-');
   await writeFile(join(cwd, 'tileflow.config.ts'), invalidConfig, 'utf8');
-  const running = startCli(cwd, ['capture', 'proof', '--watch', '--json', '--no-browser-install']);
+  const running = startCli(t, cwd, [
+    'capture',
+    'proof',
+    '--watch',
+    '--json',
+    '--no-browser-install',
+  ]);
   t.after(async () => {
     await running.stop();
     await rm(cwd, {force: true, maxRetries: 5, recursive: true, retryDelay: 100});
@@ -416,118 +443,19 @@ async function createVectorFixtureServer(
   assert.ok(address && typeof address === 'object');
   t.after(async () => {
     await stopConsumer();
-    await new Promise<void>((resolveClose) => server.close(() => resolveClose()));
+    await closeFixtureServer(server);
   });
   return {origin: `http://127.0.0.1:${address.port}`};
 }
 
-function startCli(cwd: string, arguments_: string[], overrides: NodeJS.ProcessEnv = {}) {
-  const environment: NodeJS.ProcessEnv = {...process.env};
-  for (const variable of ['CI', 'GITHUB_ACTIONS', 'GITLAB_CI', 'TILEFLOW_API_KEY']) {
+function startCli(t: TestContext, cwd: string, args: string[], overrides: NodeJS.ProcessEnv = {}) {
+  const environment = {...process.env};
+  for (const variable of ['CI', 'GITHUB_ACTIONS', 'GITLAB_CI', 'TILEFLOW_API_KEY'])
     delete environment[variable];
-  }
-  Object.assign(environment, {HOME: cwd, NO_COLOR: '1', USERPROFILE: cwd}, overrides);
-  const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
+  return startJsonFixtureProcess(t, cliFixtureArguments(args), {
     cwd,
-    env: environment,
-    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    env: {...environment, HOME: cwd, NO_COLOR: '1', USERPROFILE: cwd, ...overrides},
   });
-  const events: Array<Record<string, unknown>> = [];
-  const waiters = new Set<{
-    predicate: (event: Record<string, unknown>) => boolean;
-    reject: (error: Error) => void;
-    resolve: (event: Record<string, unknown>) => void;
-    timer: ReturnType<typeof setTimeout>;
-  }>();
-  let stdoutBuffer = '';
-  let stderr = '';
-  let exited = false;
-
-  child.stderr!.setEncoding('utf8');
-  child.stdout!.setEncoding('utf8');
-  child.stderr!.on('data', (chunk: string) => {
-    stderr += chunk;
-  });
-  child.stdout!.on('data', (chunk: string) => {
-    stdoutBuffer += chunk;
-    const lines = stdoutBuffer.split('\n');
-    stdoutBuffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line) continue;
-      const event = JSON.parse(line) as Record<string, unknown>;
-      events.push(event);
-      for (const waiter of [...waiters]) {
-        if (!waiter.predicate(event)) continue;
-        clearTimeout(waiter.timer);
-        waiters.delete(waiter);
-        waiter.resolve(event);
-      }
-    }
-  });
-
-  const completion = new Promise<{code: number | null; stderr: string}>(
-    (resolveCompletion, reject) => {
-      child.once('error', reject);
-      child.once('close', (code) => {
-        exited = true;
-        for (const waiter of waiters) {
-          clearTimeout(waiter.timer);
-          waiter.reject(new Error(`CLI exited before the expected event (${code}): ${stderr}`));
-        }
-        waiters.clear();
-        resolveCompletion({code, stderr});
-      });
-    },
-  );
-  const requestStop = () => {
-    if (exited) return;
-    if (child.connected) {
-      try {
-        child.send({type: 'tileflow:stop'}, (error) => {
-          if (error && !exited) child.kill('SIGTERM');
-        });
-        return;
-      } catch {
-        child.kill('SIGTERM');
-        return;
-      }
-    }
-    child.kill('SIGTERM');
-  };
-
-  return {
-    child,
-    completion,
-    events,
-    requestStop,
-    stop: async () => {
-      requestStop();
-      await completion.catch(() => undefined);
-    },
-    waitFor: (
-      predicate: (event: Record<string, unknown>) => boolean,
-      timeoutMs = 10_000,
-    ): Promise<Record<string, unknown>> => {
-      const existing = events.find(predicate);
-      if (existing) return Promise.resolve(existing);
-      return new Promise((resolveEvent, reject) => {
-        const waiter = {
-          predicate,
-          reject,
-          resolve: resolveEvent,
-          timer: setTimeout(() => {
-            waiters.delete(waiter);
-            reject(
-              new Error(
-                `Timed out waiting for CLI event. events: ${JSON.stringify(events)} stderr: ${stderr}`,
-              ),
-            );
-          }, timeoutMs),
-        };
-        waiters.add(waiter);
-      });
-    },
-  };
 }
 
 async function reservePort(): Promise<number> {

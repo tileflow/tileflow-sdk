@@ -3,6 +3,7 @@ import {mkdir, mkdtemp, readFile, rm, stat, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import {test, type TestContext} from 'node:test';
+import {streetsThemes} from '@tileflow/maps';
 import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {TileflowWebpackPlugin} from '../src/index';
@@ -69,21 +70,25 @@ test('registers watch inputs and emits deterministic Webpack assets', async (t) 
       'maps/icons/main/sprite@2x.json',
       'maps/icons/main/sprite@2x.png',
       'maps/manifest.json',
-      'maps/styles/main/dark.json',
-      'maps/styles/main/light.json',
+      ...Object.keys(streetsThemes)
+        .map((theme) => `maps/styles/main/${theme}.json`)
+        .sort(),
     ],
   );
   const generated = names.filter((name) => name.includes('/generations/'));
-  assert.equal(generated.length, 6);
+  assert.equal(generated.length, 4 + Object.keys(streetsThemes).length);
   assert.ok(generated.every((name) => /^maps\/generations\/[a-f0-9]{64}\//.test(name)));
   const manifestAsset = emitted.get('maps/manifest.json') as RawSource;
   const manifest = JSON.parse(String(manifestAsset.value)) as RuntimeManifest;
-  assert.equal(manifest.version, 1);
+  assert.equal(manifest.version, 2);
   assert.equal(Object.hasOwn(manifest, 'kind'), false);
   assert.equal(Object.hasOwn(manifest, 'styles'), false);
   assert.equal(manifest.maps.main?.defaultTheme, 'light');
   assert.deepEqual(manifest.maps.main?.systemThemes, {dark: 'dark', light: 'light'});
-  assert.deepEqual(Object.keys(manifest.maps.main?.themes ?? {}).sort(), ['dark', 'light']);
+  assert.deepEqual(
+    Object.keys(manifest.maps.main?.themes ?? {}).sort(),
+    Object.keys(streetsThemes).sort(),
+  );
   assert.match(
     manifest.maps.main?.themes.light?.styleUrl ?? '',
     /^\/app\/maps\/generations\/[a-f0-9]{64}\/styles\/main\/light\.json$/u,
@@ -221,7 +226,13 @@ const streetsConfig = `import {defineMap} from '@tileflow/core'; import {streets
   {
     kind: 'url',
     url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
-    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
+    fontStacks: [
+      'Noto Sans Regular',
+      'Noto Sans Bold',
+      'Noto Sans Italic',
+      'DINish Medium,Noto Sans Regular',
+      'DINish Bold,Noto Sans Regular',
+    ],
   },
 )}});\n`;
 
@@ -253,7 +264,7 @@ function createHostedManifest() {
 }
 
 function assertLocalManifest(manifest: RuntimeManifest, base: string): void {
-  assert.equal(manifest.version, 1);
+  assert.equal(manifest.version, 2);
   assert.equal(manifest.apiUrl, undefined);
   assert.equal(Object.hasOwn(manifest, 'kind'), false);
   assert.equal(Object.hasOwn(manifest, 'styles'), false);

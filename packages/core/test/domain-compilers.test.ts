@@ -1,7 +1,17 @@
 import {featureFilter} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {labels, land, openMapTiles, poi, resolveTileflowData, roads, water, zoom} from '../src';
+import {
+  labels,
+  land,
+  openMapTiles,
+  poi,
+  resolveTileflowData,
+  roads,
+  vectorTiles,
+  water,
+  zoom,
+} from '../src';
 import {expression} from '../src/cartography/values';
 import {compileAeroways} from '../src/modules/aeroways/compiler';
 import {compileBoundaries} from '../src/modules/boundaries/compiler';
@@ -9,6 +19,7 @@ import {compileBuildings} from '../src/modules/buildings/compiler';
 import {compileLabels} from '../src/modules/labels/compiler';
 import {compileLand} from '../src/modules/land/compiler';
 import {compilePoi} from '../src/modules/poi/compiler';
+import {TileflowPoiPlacementError} from '../src/modules/poi/placement';
 import {compileRoads} from '../src/modules/roads/compiler';
 import {compileTransit} from '../src/modules/transit/compiler';
 import {compileVegetation} from '../src/modules/vegetation/compiler';
@@ -114,6 +125,50 @@ test('renders the seven global land-cover classes below OSM and fades them out a
   );
   assert.ok(
     ordered.indexOf('tileflow-global-landcover') < ordered.indexOf('tileflow-landcover-wood'),
+  );
+});
+
+test('land draws only the barriers a map styles, from the barrier layer, hedge areas as polygons', () => {
+  const barriers = land({
+    barriers: {
+      fence: {line: {color: '#d9d9d9'}},
+      hedge: {area: {color: '#90c58a'}, shadow: {color: '#6f9f69'}, line: {color: '#90c58a'}},
+    },
+  });
+  const drawn = (module: Parameters<typeof compileLand>[0], data = context.data) =>
+    assembleTileflowLayers(compileLand(module, {...context, data})).filter((layer) =>
+      String(layer.id).startsWith('tileflow-barrier-'),
+    );
+  const layers = drawn(barriers);
+  assert.deepEqual(
+    layers.map((layer) => layer.id),
+    [
+      'tileflow-barrier-fence',
+      'tileflow-barrier-hedge-area',
+      'tileflow-barrier-hedge-shadow',
+      'tileflow-barrier-hedge',
+    ],
+  );
+  assert.ok(layers.every((layer) => layer['source-layer'] === 'traffic_control'));
+  const matches = (id: string, type: 2 | 3, subclass: string) =>
+    featureFilter(layers.find((layer) => layer.id === id)?.filter as never).filter({zoom: 17}, {
+      type,
+      properties: {class: 'barrier', subclass},
+    } as never);
+  assert.equal(matches('tileflow-barrier-hedge-area', 3, 'hedge'), true);
+  assert.equal(matches('tileflow-barrier-hedge-area', 2, 'hedge'), false);
+  assert.equal(matches('tileflow-barrier-hedge', 3, 'hedge'), true, 'an area hedge is outlined');
+  assert.equal(matches('tileflow-barrier-fence', 2, 'hedge'), false);
+  // No style draws no barrier, and neither does data without a barrier layer.
+  assert.deepEqual(drawn(undefined), []);
+  assert.deepEqual(
+    drawn(
+      barriers,
+      resolveTileflowData(
+        vectorTiles({attribution: 'Fixture', schema: openMapTiles(), url: '/t.json'}),
+      ),
+    ),
+    [],
   );
 });
 
@@ -348,7 +403,7 @@ test('compiles buildings, boundaries, aeroways, and transit without shared layer
   assert.equal(new Set(ids).size, ids.length);
 });
 
-test('colors building tones without making geometry visibility semantic', () => {
+test('colors building tones and use classes without making geometry visibility semantic', () => {
   const contributions = compileBuildings(undefined, context);
   const corridor = contributions.find((entry) => entry.layer.id === 'tileflow-business-corridor')!;
   const buildings = contributions.find((entry) => entry.layer.id === 'tileflow-buildings-fill')!;
@@ -364,7 +419,19 @@ test('colors building tones without making geometry visibility semantic', () => 
     context.colors.buildings.destination,
     ['==', ['coalesce', ['get', 'building_tone'], ''], 'commercial'],
     context.colors.buildings.commercial,
-    context.colors.buildings.generic,
+    [
+      'match',
+      ['coalesce', ['get', 'class'], ''],
+      'residential',
+      context.colors.buildings.residential,
+      'commercial',
+      context.colors.buildings.commercial,
+      ['civic', 'education', 'entertainment', 'medical', 'military', 'religious', 'transportation'],
+      context.colors.buildings.civic,
+      ['agricultural', 'industrial', 'service'],
+      context.colors.buildings.industrial,
+      context.colors.buildings.generic,
+    ],
   ]);
 });
 
@@ -785,7 +852,7 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
     poi({
       categories: ['food-drink', 'transport'],
       density: 3,
-      styles: {'food-drink': {density: 2, text: {color: '#AA4422'}}},
+      styles: {'food-drink': {text: {color: '#AA4422'}}},
     }),
     context,
   );
@@ -798,27 +865,32 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
     false,
   );
   assert.equal((primary.layer.paint as Record<string, unknown>)['text-color'], '#112233');
+  // Coupled categories share one layer and importance order, retaining their label colors.
   assert.deepEqual(
     poiContributions.map((entry) => entry.layer.id),
-    [
-      'tileflow-poi-food-drink-icon',
-      'tileflow-poi-food-drink-label',
-      'tileflow-poi-transport-icon',
-      'tileflow-poi-transport-label',
-    ],
+    ['tileflow-poi'],
   );
   assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /filter_rank/);
-  assert.match(JSON.stringify(poiContributions[1]?.layer.filter), /size_rank/);
+  assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /size_rank/);
+  assert.deepEqual((poiContributions[0]?.layer.filter as unknown[])[1], [
+    'match',
+    ['get', 'category'],
+    ['food-drink', 'transport'],
+    true,
+    false,
+  ]);
   // The density threshold rises one rank at z16 and two from z17, past World's last POI zoom.
   assert.deepEqual((poiContributions[0]?.layer.filter as unknown[])[4], [
     '<=',
     ['to-number', ['get', 'filter_rank'], 6],
-    ['+', ['step', ['zoom'], 0, 16, 1, 17, 2], 2],
-  ]);
-  assert.deepEqual((poiContributions[2]?.layer.filter as unknown[])[4], [
-    '<=',
-    ['to-number', ['get', 'filter_rank'], 6],
     ['+', ['step', ['zoom'], 0, 16, 1, 17, 2], 3],
+  ]);
+  assert.deepEqual((poiContributions[0]?.layer.paint as Record<string, unknown>)['text-color'], [
+    'match',
+    ['get', 'category'],
+    'transport',
+    (context.colors.poi as Record<string, string>).label,
+    '#AA4422',
   ]);
 });
 
@@ -832,7 +904,7 @@ test('POI density shows more ranks as the camera passes World’s last POI zoom'
     [0, 1, 2, 3, 4, 5].filter((rank) =>
       filter.filter({zoom}, {
         type: 1,
-        properties: {category: 'food-drink', filter_rank: rank, size_rank: 16},
+        properties: {category: 'food-drink', filter_rank: rank, name: 'Café', size_rank: 16},
       } as never),
     );
   assert.deepEqual(shownRanks(15), [0, 1, 2, 3]);
@@ -882,9 +954,7 @@ test('compiles a semantic POI marker through the shared circle primitive', () =>
     }),
     context,
   );
-  const marker = contributions.find(
-    (entry) => entry.layer.id === 'tileflow-poi-arts-entertainment-marker',
-  )?.layer;
+  const marker = contributions.find((entry) => entry.layer.id === 'tileflow-poi-marker')?.layer;
 
   assert.equal(marker?.type, 'circle');
   assert.equal((marker?.paint as Record<string, unknown>)['circle-color'], '#7755AA');
@@ -1123,24 +1193,14 @@ test('road names, shields and junctions draw above ground layers under every col
     }
   }
 
-  // MapLibre places the top of the stack first. Balanced road names, then route
-  // references, still yield to every other label; navigation-priority road
-  // names outrank route references and every other label but places.
-  const labelOrder = (collisionPriority: 'balanced' | 'navigation') =>
-    layerIds(collisionPriority)
-      .filter((id) => id.startsWith('tileflow-label-'))
-      .map((id) => (isRoadName(id) ? 'road' : routeReferences.includes(id) ? 'route' : id));
-  const collapse = (order: string[]) => order.filter((id, index) => id !== order[index - 1]);
-  assert.deepEqual(collapse(labelOrder('balanced')).slice(0, 3), [
-    'road',
-    'route',
-    'tileflow-label-water-ocean',
-  ]);
-  assert.deepEqual(collapse(labelOrder('navigation')).slice(0, 2), [
-    'route',
-    'tileflow-label-water-ocean',
-  ]);
-  assert.ok(collapse(labelOrder('navigation')).indexOf('road') > 2);
+  // Route references and place names preserve orientation in both collision policies.
+  for (const policy of ['balanced', 'navigation'] as const) {
+    const ids = layerIds(policy);
+    for (const ref of routeReferences) {
+      assert.ok(ids.indexOf(ref) > ids.indexOf('tileflow-label-road-primary'));
+      assert.ok(ids.indexOf(ref) < ids.indexOf('tileflow-label-place-city'));
+    }
+  }
 });
 
 test('generic OpenMapTiles degrades road shields to one neutral detail layer', () => {
@@ -1180,7 +1240,13 @@ test('generic OpenMapTiles degrades road shields to one neutral detail layer', (
 
 test('POI numeric density and coupling change emitted layers', () => {
   const uncoupled = compilePoi(
-    poi({categories: ['food-drink'], density: 5, icons: true, labels: true}),
+    poi({
+      categories: ['food-drink'],
+      density: 5,
+      icons: true,
+      labels: true,
+      placement: {coupleIconAndLabel: false},
+    }),
     context,
   );
   const coupled = compilePoi(
@@ -1196,13 +1262,13 @@ test('POI numeric density and coupling change emitted layers', () => {
 
   assert.deepEqual(
     uncoupled.map((entry) => entry.layer.id),
-    ['tileflow-poi-food-drink-icon', 'tileflow-poi-food-drink-label'],
+    ['tileflow-poi-icon', 'tileflow-poi-label'],
   );
   assert.match(JSON.stringify(uncoupled[0]?.layer.filter), /filter_rank/);
   assert.match(JSON.stringify(uncoupled[0]?.layer.filter), /,5\]/);
   assert.deepEqual(
     coupled.map((entry) => entry.layer.id),
-    ['tileflow-poi-food-drink'],
+    ['tileflow-poi'],
   );
   assert.match(JSON.stringify(coupled[0]?.layer.filter), /,3\]/);
 
@@ -1212,31 +1278,36 @@ test('POI numeric density and coupling change emitted layers', () => {
   );
   assert.deepEqual(
     labelsOnly.map((entry) => entry.layer.id),
-    ['tileflow-poi-food-drink-label'],
+    ['tileflow-poi-label'],
   );
   assert.match(JSON.stringify(labelsOnly[0]?.layer.filter), /,1\]/);
 });
 
-test('POI categories can introduce their labels at different zoom levels', () => {
-  const contributions = compilePoi(
-    poi({
-      categories: ['arts-entertainment', 'food-drink'],
-      icons: false,
-      labels: true,
-      minZoom: 12.5,
-      styles: {
-        'arts-entertainment': {marker: {radius: 3}, minZoom: 12.5},
-        'food-drink': {marker: {radius: 3}, minZoom: 15.5},
-      },
-    }),
-    context,
+test('POI categories with their own zoom ranges need the category placement order', () => {
+  const request = poi({
+    categories: ['arts-entertainment', 'food-drink'],
+    icons: false,
+    labels: true,
+    minZoom: 12.5,
+    styles: {
+      'arts-entertainment': {marker: {radius: 3}, minZoom: 12.5},
+      'food-drink': {marker: {radius: 3}, minZoom: 15.5},
+    },
+  });
+  // One importance order means one layer, and a MapLibre layer has one zoom range.
+  assert.throws(
+    () => compilePoi(request, context),
+    (error: unknown) =>
+      error instanceof TileflowPoiPlacementError &&
+      /minzoom/u.test(error.message) &&
+      /placement\.order/u.test(error.message),
   );
+
+  const contributions = compilePoi({...request, placement: {order: 'categories'}}, context);
   const culture = contributions.find(
     (entry) => entry.layer.id === 'tileflow-poi-arts-entertainment-label',
-  )?.layer;
-  const food = contributions.find(
-    (entry) => entry.layer.id === 'tileflow-poi-food-drink-label',
-  )?.layer;
+  );
+  const food = contributions.find((entry) => entry.layer.id === 'tileflow-poi-food-drink-label');
   const cultureMarker = contributions.find(
     (entry) => entry.layer.id === 'tileflow-poi-arts-entertainment-marker',
   )?.layer;
@@ -1244,10 +1315,12 @@ test('POI categories can introduce their labels at different zoom levels', () =>
     (entry) => entry.layer.id === 'tileflow-poi-food-drink-marker',
   )?.layer;
 
-  assert.equal(culture?.minzoom, 12.5);
-  assert.equal(food?.minzoom, 15.5);
+  assert.equal(culture?.layer.minzoom, 12.5);
+  assert.equal(food?.layer.minzoom, 15.5);
   assert.equal(cultureMarker?.minzoom, 12.5);
   assert.equal(foodMarker?.minzoom, 15.5);
+  // The first category listed is drawn on top, so MapLibre places it first.
+  assert.ok(culture!.localOrder > food!.localOrder);
 });
 
 test('POI categories are exact and never fall back to class or subclass', () => {

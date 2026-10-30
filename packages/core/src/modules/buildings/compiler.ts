@@ -4,7 +4,8 @@ import {applyExtrusionStyle, createAreaLayers} from '../../cartography/layer-sty
 import {mergeTileflowDesign} from '../../cartography/merge';
 import {expression} from '../../cartography/values';
 import type {TileflowResolvedModuleConfig} from '../resolved';
-import type {TileflowBuildingsModuleConfig} from './index';
+import type {TileflowModeSpecificTarget} from '../../cartography/render-stack';
+import type {TileflowBuildingMode, TileflowBuildingsModuleConfig} from './index';
 
 export function compileBuildings(
   request: TileflowResolvedModuleConfig<TileflowBuildingsModuleConfig> | undefined,
@@ -104,7 +105,8 @@ export function compileBuildings(
         },
         style,
       ),
-      localOrder: 0,
+      // Ground street names belong above flat footprints but below raised geometry.
+      localOrder: 1000,
       owner: 'buildings',
       slot: 'buildings',
       target: 'buildings.extrusion',
@@ -134,6 +136,27 @@ export function compileBuildings(
   return contributions;
 }
 
+/** The semantic targets each mode draws; the businessCorridor targets belong to every mode. */
+const buildingTargetsByMode = {
+  flat: ['buildings.flat.fill', 'buildings.flat.outline'],
+  '3d': ['buildings.extrusion'],
+} as const satisfies Record<TileflowBuildingMode, readonly string[]>;
+
+/** The targets a map's buildings do not draw because it selects another mode. */
+export function buildingTargetsOfOtherModes(
+  request: TileflowResolvedModuleConfig<TileflowBuildingsModuleConfig> | undefined,
+): ReadonlyMap<string, TileflowModeSpecificTarget> {
+  const activeMode = request?.mode ?? 'flat';
+  const targets = new Map<string, TileflowModeSpecificTarget>();
+  for (const [mode, modeTargets] of Object.entries(buildingTargetsByMode)) {
+    if (mode === activeMode) continue;
+    for (const target of modeTargets) {
+      targets.set(target, {activeMode, mode, owner: 'buildings'});
+    }
+  }
+  return targets;
+}
+
 function buildingColorExpression(context: TileflowDomainCompileContext): unknown[] {
   const fields = context.data.schema.fields;
   const colors = context.colors.buildings;
@@ -145,7 +168,21 @@ function buildingColorExpression(context: TileflowDomainCompileContext): unknown
     colors.destination,
     ['==', ['coalesce', ['get', fields.buildingTone], ''], 'commercial'],
     colors.commercial,
-    colors.generic,
+    // Without a tone, World's use class: housing, shops and offices, public buildings and works
+    // each take their theme colour; a shed, a garage or an unknown use the generic one.
+    [
+      'match',
+      ['coalesce', ['get', fields.class], ''],
+      'residential',
+      colors.residential,
+      'commercial',
+      colors.commercial,
+      ['civic', 'education', 'entertainment', 'medical', 'military', 'religious', 'transportation'],
+      colors.civic,
+      ['agricultural', 'industrial', 'service'],
+      colors.industrial,
+      colors.generic,
+    ],
   ];
 }
 

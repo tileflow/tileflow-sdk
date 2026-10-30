@@ -17,6 +17,7 @@ configureTileflowMapLibre(mapLibreConfiguration);
 configureTileflowMapLibre({});
 
 const validProps = [
+  {source, vegetation: false, viewMode: '3d'},
   {source},
   {source: {manifestUrl: 'https://cdn.example.test/manifest.json', map: 'main'}},
   {source, theme: 'system'},

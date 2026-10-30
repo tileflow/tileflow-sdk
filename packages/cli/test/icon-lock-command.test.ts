@@ -8,7 +8,7 @@ import {tileflowIconsLockfileName} from '@tileflow/core';
 import {registerIconLockCommands} from '../src/icon-lock-command';
 
 const apiKey = `tf_live_${'a'.repeat(48)}`;
-const glyphs = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold']}`;
+const glyphs = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic','DINish Medium,Noto Sans Regular','DINish Bold,Noto Sans Regular']}`;
 const modules = `{poi:{type:'poi',icons:false},roads:disable()}`;
 
 type CapturedRequest = {body: unknown; method: string; url: string};

@@ -165,7 +165,6 @@ function createHarness(binding: TileflowInteractionBinding = textBinding) {
             layers: [
               {
                 anchor: 'pointer-coordinate',
-                category: 'food-drink',
                 layerId: 'tileflow-poi-food-drink-icon',
                 priority: 10,
                 representation: 'icon',
@@ -175,7 +174,7 @@ function createHarness(binding: TileflowInteractionBinding = textBinding) {
             ],
           },
         },
-        version: 2,
+        version: 3,
       },
     },
   };
@@ -341,7 +340,6 @@ test('controlled semantic popup waits for committed state', () => {
             layers: [
               {
                 anchor: 'pointer-coordinate',
-                category: 'food-drink',
                 layerId: 'poi',
                 priority: 1,
                 representation: 'icon',
@@ -351,7 +349,7 @@ test('controlled semantic popup waits for committed state', () => {
             ],
           },
         },
-        version: 2,
+        version: 3,
       },
     },
   };
@@ -374,7 +372,7 @@ test('controlled semantic popup waits for committed state', () => {
         {
           id: 7,
           layer: {id: 'poi'},
-          properties: {name: 'POI'},
+          properties: {category: 'food-drink', name: 'POI'},
           source: 'tileflow',
           sourceLayer: 'poi',
         },
@@ -506,7 +504,7 @@ test('resolves transient query and unstable-identity diagnostics after success o
 
   harness.setFeature({
     layer: {id: 'tileflow-poi-food-drink-icon'},
-    properties: {name: 'No stable ID'},
+    properties: {category: 'food-drink', name: 'No stable ID'},
     source: 'tileflow',
     sourceLayer: 'poi',
   });

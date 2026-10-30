@@ -67,6 +67,7 @@ test('map revision identifies the complete resolved theme document and source cl
     id: 'themed',
     defaultTheme: 'dark',
     themes: {dark, light: testLightTheme},
+    timeOfDay: {light: {day: 'light', night: 'dark'}},
   });
   assert.notEqual(
     await hashTileflowMapRevision(resolvedBase, sourceAssets),
@@ -90,6 +91,7 @@ test('build manifest records every concrete theme on independent style identity 
     defaultTheme: 'dark',
     systemThemes: {dark: 'dark', light: 'light'},
     themes: {dark, light: testLightTheme},
+    timeOfDay: {light: {day: 'light', night: 'dark'}},
   });
   const manifest = await createTileflowMapBuildManifest({
     main: {
@@ -105,6 +107,7 @@ test('build manifest records every concrete theme on independent style identity 
   assert.equal(entry.defaultTheme, 'dark');
   assert.deepEqual(entry.semanticCompiler, {name: 'tileflow-semantic', version: 1});
   assert.deepEqual(entry.systemThemes, {dark: 'dark', light: 'light'});
+  assert.deepEqual(entry.timeOfDay, {light: {day: 'light', night: 'dark'}});
   assert.deepEqual(Object.keys(entry.themes), ['dark', 'light']);
   assert.equal(entry.themes.dark?.colorScheme, 'dark');
   assert.equal(entry.themes.dark?.themeId, 'test-dark');

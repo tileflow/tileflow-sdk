@@ -13,7 +13,7 @@ import {tileflowInteractionLimits, tileflowPoiCategories} from './contracts';
 import type {TileflowInteractionDiagnostic} from './validation';
 
 const interactionManifestMetadataKey = 'tileflow:interaction-manifest';
-const interactionManifestVersion = 2;
+const interactionManifestVersion = 3;
 const missingSourceLayerNamespace = '\u0001tileflow-no-source-layer';
 
 export type TileflowMapLibrePoiFeature = Readonly<{
@@ -31,6 +31,8 @@ export type TileflowMapLibrePoiPointerEvent = Readonly<{
 }>;
 
 export type TileflowMapLibrePoiMap = Readonly<{
+  /** A style layer's source; lets the controller keep its manifest while the style only restyles. */
+  getLayer?: (id: string) => Readonly<{source?: unknown; sourceLayer?: unknown}> | undefined;
   getStyle: () => unknown;
   off?: (event: string, listener: (event: unknown) => void) => unknown;
   on: (
@@ -73,8 +75,8 @@ export type TileflowMapLibrePoiController = Readonly<{
   refreshManifest: () => void;
 }>;
 
+/** A layer may draw several categories; a hit's category is the feature's own. */
 type PoiManifestLayer = Readonly<{
-  category: TileflowPoiCategory;
   layerId: string;
   priority: number;
   representation: 'combined' | 'icon' | 'label' | 'marker';
@@ -186,12 +188,23 @@ export function createTileflowMapLibrePoiController(
         );
         continue;
       }
+      const properties = normalizePoiProperties(feature.properties, manifest.fields);
+      const category = properties.category;
+      if (category === undefined) {
+        manifestMismatch = true;
+        diagnostic(
+          options.onDiagnostic,
+          'SEMANTIC_MANIFEST_MISMATCH',
+          'A rendered POI feature has no supported category.',
+        );
+        continue;
+      }
       const binding = bindings.find((candidate) => {
         const target = candidate.target;
         return (
           target.kind === 'semantic-feature' &&
           target.domain === 'poi' &&
-          (!target.categories || target.categories.includes(layer.category))
+          (!target.categories || target.categories.includes(category))
         );
       });
       if (!binding) continue;
@@ -206,9 +219,9 @@ export function createTileflowMapLibrePoiController(
             coordinate: [event.lngLat.lng, event.lngLat.lat],
             domain: 'poi',
             feature: {
-              category: layer.category,
+              category,
               ...(featureId === undefined ? {} : {id: featureId}),
-              properties: normalizePoiProperties(feature.properties, manifest.fields),
+              properties,
             },
             kind: 'semantic-feature',
           },
@@ -261,6 +274,19 @@ export function createTileflowMapLibrePoiController(
     options.onActivate?.(match, modality);
   };
 
+  // Reading the style serializes all of it. Its metadata changes only when a style loads; in
+  // between, a valid manifest stays valid while the layers it names keep their sources.
+  let loaded: {manifest: PoiManifest; sources: string} | undefined;
+  const sourcesOf = (layers: readonly PoiManifestLayer[]) =>
+    options.map.getLayer
+      ? layers
+          .map(({layerId}) => {
+            const layer = options.map.getLayer!(layerId);
+            return layer ? `${String(layer.source)}/${String(layer.sourceLayer)}` : '';
+          })
+          .join('\n')
+      : undefined;
+
   const refreshManifest = () => {
     if (disposed) return;
     setHovered(null, 'programmatic');
@@ -269,6 +295,12 @@ export function createTileflowMapLibrePoiController(
       options.onManifestChange?.(true);
       return;
     }
+    if (loaded && sourcesOf(loaded.manifest.layers) === loaded.sources) {
+      manifest = loaded.manifest;
+      options.onManifestChange?.(true);
+      return;
+    }
+    loaded = undefined;
     const style = options.map.getStyle();
     if (style === undefined) {
       manifest = null;
@@ -276,6 +308,8 @@ export function createTileflowMapLibrePoiController(
       return;
     }
     manifest = parsePoiManifest(style, options.onDiagnostic);
+    const sources = manifest ? sourcesOf(manifest.layers) : undefined;
+    if (manifest && sources !== undefined) loaded = {manifest, sources};
     options.onManifestChange?.(manifest !== null);
   };
 
@@ -291,6 +325,7 @@ export function createTileflowMapLibrePoiController(
   };
   const handleStyleLoad = () => {
     manifestRefreshScheduled = false;
+    loaded = undefined;
     refreshManifest();
   };
 
@@ -472,7 +507,6 @@ function parsePoiManifest(
     const sourceLayer = layer?.sourceLayer;
     if (
       !layer ||
-      !isTileflowPoiCategory(layer.category) ||
       !isSafeManifestName(layer.layerId) ||
       !isSafeManifestName(layer.source) ||
       (sourceLayer !== undefined && !isSafeManifestName(sourceLayer)) ||
@@ -517,7 +551,6 @@ function parsePoiManifest(
     identityNamespace = namespace;
     ids.add(layer.layerId as string);
     layers.push({
-      category: layer.category,
       layerId: layer.layerId as string,
       priority: layer.priority as number,
       representation: layer.representation,
@@ -617,15 +650,11 @@ function relevantLayerIds(
   manifest: PoiManifest,
   bindings: readonly TileflowInteractionBinding[],
 ): string[] {
-  return manifest.layers
-    .filter((layer) =>
-      bindings.some(
-        (binding) =>
-          binding.target.kind === 'semantic-feature' &&
-          (!binding.target.categories || binding.target.categories.includes(layer.category)),
-      ),
-    )
-    .map((layer) => layer.layerId);
+  // Layers may share categories, so any POI binding needs every POI layer; the binding's
+  // categories select among the features those layers return.
+  return bindings.some((binding) => binding.target.kind === 'semantic-feature')
+    ? manifest.layers.map((layer) => layer.layerId)
+    : [];
 }
 
 function normalizePoiProperties(

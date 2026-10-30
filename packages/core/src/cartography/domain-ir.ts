@@ -320,12 +320,13 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
   );
   if (match) return `tileflow-${match[1]}-render-${match[2]!.replaceAll('.', '-')}`;
 
-  match = /^roads\.classes\.([^.]+)\.(tunnel|surface|bridge)\.(shadow|casing|fill|hatch)$/u.exec(
-    semanticKey,
-  );
+  match =
+    /^roads\.classes\.([^.]+)\.(tunnel|surface|bridge)\.(shadow|casing|fill|hatch|rampFill)$/u.exec(
+      semanticKey,
+    );
   if (match) return `tileflow-road-${match[2]}-${match[1]}-${match[3]}`;
 
-  match = /^roads\.cohorts\.(tunnel|surface|bridge)\.([^.]+)\.(shadow|casing|fill)$/u.exec(
+  match = /^roads\.cohorts\.(tunnel|surface|bridge)\.([^.]+)\.(shadow|casing|fill|rampFill)$/u.exec(
     semanticKey,
   );
   if (match) return `tileflow-road-${match[1]}-highzoom-${match[2]}-${match[3]}`;
@@ -344,6 +345,9 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
     const base = `tileflow-${match[1]}-${match[2]}`;
     return match[3] === 'fill' ? base : `${base}-outline`;
   }
+
+  match = /^land\.barriers\.(fence|hedge|wall)\.(area|shadow|line)$/u.exec(semanticKey);
+  if (match) return `tileflow-barrier-${match[1]}${match[2] === 'line' ? '' : `-${match[2]}`}`;
 
   match = /^land\.compatibility\.legacyPark\.(fill|outline)$/u.exec(semanticKey);
   if (match) {
@@ -401,8 +405,24 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
   match = /^labels\.cohorts\.roads\.cohort(\d+)$/u.exec(semanticKey);
   if (match) return `tileflow-label-road-cohort-${match[1]}`;
 
+  match = /^labels\.cohorts\.roads\.network(\d+)$/u.exec(semanticKey);
+  if (match) return `tileflow-label-road-network-${match[1]}`;
+
   match = /^landforms\.classes\.([^.]+)$/u.exec(semanticKey);
   if (match) return `tileflow-landform-${match[1]}`;
+
+  match =
+    /^water\.(bathymetryLandforms|bathymetryWaterNames)(?:\.placement(Point|Line|LineCenter))?(?:\.cohort(\d+))?$/u.exec(
+      semanticKey,
+    );
+  if (match) {
+    const base = match[1] === 'bathymetryLandforms' ? 'landforms' : 'water-names';
+    const placement = match[2]
+      ? `-placement-${match[2] === 'LineCenter' ? 'line-center' : match[2].toLowerCase()}`
+      : '';
+    const cohort = match[3] === undefined ? '' : `-cohort-${match[3]}`;
+    return `tileflow-bathymetry-${base}${placement}${cohort}`;
+  }
 
   match = /^poi\.([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)$/u.exec(semanticKey);
   if (match) return `tileflow-poi-${match[1]!.replaceAll('.', '-')}`;
@@ -425,6 +445,7 @@ const exactPhysicalLayerIds: Readonly<Record<string, string>> = Object.freeze({
   'labels.junctions': 'tileflow-label-road-junction',
   'land.background': 'tileflow-background',
   'land.globalLandcover': 'tileflow-global-landcover',
+  poi: 'tileflow-poi',
   'landforms.classes': 'tileflow-landforms',
   'roads.crossings': 'tileflow-road-crossing',
   'roads.oneWayMarkers': 'tileflow-road-oneway',
@@ -441,24 +462,41 @@ const exactPhysicalLayerIds: Readonly<Record<string, string>> = Object.freeze({
   'water.bathymetry': 'tileflow-bathymetry',
   'water.bathymetryContours': 'tileflow-bathymetry-contours',
   'water.bathymetryLabels': 'tileflow-bathymetry-labels',
+  'water.bathymetryLandforms': 'tileflow-bathymetry-landforms',
+  'water.bathymetryWaterNames': 'tileflow-bathymetry-water-names',
   'water.bathymetryRelief.color': 'tileflow-bathymetry-color-relief',
   'water.bathymetryRelief.hillshade': 'tileflow-bathymetry-relief',
 });
 
 const nauticalPhysicalBases: Readonly<Record<string, string>> = Object.freeze({
   'nautical.aids': 'tileflow-nautical-aids',
+  'nautical.beacons': 'tileflow-nautical-beacons',
+  'nautical.berths': 'tileflow-nautical-berths',
+  'nautical.bridges': 'tileflow-nautical-bridges',
+  'nautical.buoys': 'tileflow-nautical-buoys',
+  'nautical.cables': 'tileflow-nautical-cables',
   'nautical.coverage': 'tileflow-nautical-coverage',
+  'nautical.distanceMarks': 'tileflow-nautical-distance-marks',
+  'nautical.facilities': 'tileflow-nautical-facilities',
+  'nautical.harbourAreas': 'tileflow-nautical-harbour-areas',
+  'nautical.harbours': 'tileflow-nautical-harbours',
   'nautical.hazardAreas': 'tileflow-nautical-hazard-areas',
   'nautical.hazards': 'tileflow-nautical-hazards',
+  'nautical.labels.bridges': 'tileflow-nautical-bridge-labels',
   'nautical.labels.coverage': 'tileflow-nautical-coverage-labels',
   'nautical.labels.hazards': 'tileflow-nautical-hazard-area-labels',
   'nautical.labels.navigationAreas': 'tileflow-nautical-navigation-area-labels',
+  'nautical.labels.overheadCables': 'tileflow-nautical-overhead-cable-labels',
   'nautical.labels.reefs': 'tileflow-nautical-reef-labels',
   'nautical.labels.wrecks': 'tileflow-nautical-wreck-area-labels',
   'nautical.lighthouses': 'tileflow-nautical-lighthouses',
   'nautical.lights': 'tileflow-nautical-lights',
   'nautical.navigationAreas': 'tileflow-nautical-navigation-areas',
+  'nautical.notices': 'tileflow-nautical-notices',
+  'nautical.overheadCables': 'tileflow-nautical-overhead-cables',
+  'nautical.ports': 'tileflow-nautical-ports',
   'nautical.reefs': 'tileflow-nautical-reefs',
+  'nautical.routes': 'tileflow-nautical-routes',
   'nautical.soundings': 'tileflow-nautical-soundings',
   'nautical.wreckAreas': 'tileflow-nautical-wreck-areas',
   'nautical.wrecks': 'tileflow-nautical-wrecks',
@@ -467,7 +505,9 @@ const nauticalPhysicalBases: Readonly<Record<string, string>> = Object.freeze({
 function nauticalPhysicalLayerId(semanticKey: string): string | undefined {
   const direct = nauticalPhysicalBases[semanticKey];
   if (direct) return direct;
-  const match = /^(nautical\.[A-Za-z0-9_.-]+)\.(fill|outline|marker|symbol)$/u.exec(semanticKey);
+  const match = /^(nautical\.[A-Za-z0-9_.-]+)\.(fill|outline|marker|symbol|lines)$/u.exec(
+    semanticKey,
+  );
   if (!match) return undefined;
   const base = nauticalPhysicalBases[match[1]!];
   if (!base) return undefined;

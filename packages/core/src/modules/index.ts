@@ -7,12 +7,17 @@ export type {TileflowBoundariesModuleConfig, TileflowBoundariesModuleOptions} fr
 export {buildings} from './buildings';
 export type {
   TileflowBuildingMode,
+  TileflowBuildingModelPart,
+  TileflowBuildingModelPlacementConfig,
   TileflowBuildingsModuleConfig,
   TileflowBuildingsModuleOptions,
+  TileflowBuildingsThreeDimensionalStyle,
 } from './buildings';
 export {labels} from './labels';
 export {land} from './land';
 export type {
+  TileflowBarrierClass,
+  TileflowBarrierStyle,
   TileflowLandcoverClass,
   TileflowLandModuleConfig,
   TileflowLandModuleOptions,
@@ -24,13 +29,18 @@ export type {
   TileflowLandformsModuleConfig,
   TileflowLandformsModuleOptions,
 } from './landforms';
-export {nautical} from './nautical';
+export {
+  nautical,
+  tileflowNauticalFacilityIcons,
+  tileflowNauticalImageRoles,
+  tileflowNauticalNotice,
+} from './nautical';
 export type {
   TileflowNauticalAreaLabelStyles,
   TileflowNauticalModuleConfig,
   TileflowNauticalModuleOptions,
 } from './nautical';
-export {poi, tileflowPoiImageRoles} from './poi';
+export {poi, tileflowPoiIconOnlyTypes, tileflowPoiImageRoles} from './poi';
 export {roads, tileflowRoadClasses} from './roads';
 export {transit} from './transit';
 export type {
@@ -47,6 +57,8 @@ export type {
 } from './vegetation';
 export {water} from './water';
 export type {
+  TileflowBathymetryNamePlacement,
+  TileflowBathymetryNameStyle,
   TileflowWaterModuleConfig,
   TileflowWaterModuleOptions,
   TileflowWaterwayClass,

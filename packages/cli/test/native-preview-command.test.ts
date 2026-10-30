@@ -1,19 +1,19 @@
 import assert from 'node:assert/strict';
-import {type ChildProcess, spawn} from 'node:child_process';
 import {once} from 'node:events';
 import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
-import test from 'node:test';
-import {fileURLToPath} from 'node:url';
+import test, {type TestContext} from 'node:test';
 import {parseTileflowRuntimeManifest} from '@tileflow/core/manifest';
 import {validateTileflowNativePreparedStyle} from '@tileflow/core/native-profile';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
+import {startJsonFixtureProcess} from '../../../test-support/fixture-json-process';
+import {startFixtureProcess} from '../../../test-support/fixture-process';
+import {closeFixtureServer, fixtureResources} from '../../../test-support/fixture-resources';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
 
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 const validConfig = tileflowMapFixture({id: 'main'});
 const invalidConfig = tileflowMapFixture({
   id: 'main',
@@ -27,129 +27,24 @@ async function fixture(prefix: string): Promise<string> {
   return cwd;
 }
 
-function startCli(cwd: string, arguments_: string[]) {
-  const environment: NodeJS.ProcessEnv = {...process.env};
+function startCli(t: TestContext, cwd: string, args: string[]) {
+  const environment = {...process.env};
   for (const variable of ['CI', 'GITHUB_ACTIONS', 'GITLAB_CI', 'TILEFLOW_API_KEY'])
     delete environment[variable];
-  Object.assign(environment, {HOME: cwd, NO_COLOR: '1', USERPROFILE: cwd});
-  const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
+  return startJsonFixtureProcess(t, cliFixtureArguments(args), {
     cwd,
-    env: environment,
-    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    env: {...environment, HOME: cwd, NO_COLOR: '1', USERPROFILE: cwd},
   });
-  const events: Array<Record<string, unknown>> = [];
-  const waiters = new Set<{
-    predicate: (event: Record<string, unknown>) => boolean;
-    reject: (error: Error) => void;
-    resolve: (event: Record<string, unknown>) => void;
-    timer: ReturnType<typeof setTimeout>;
-  }>();
-  let stdoutBuffer = '';
-  let stderr = '';
-  let exited = false;
-
-  child.stdout!.setEncoding('utf8');
-  child.stderr!.setEncoding('utf8');
-  child.stdout!.on('data', (chunk: string) => {
-    stdoutBuffer += chunk;
-    const lines = stdoutBuffer.split('\n');
-    stdoutBuffer = lines.pop() ?? '';
-    for (const line of lines) {
-      if (!line) continue;
-      const event = JSON.parse(line) as Record<string, unknown>;
-      events.push(event);
-      for (const waiter of [...waiters]) {
-        if (!waiter.predicate(event)) continue;
-        clearTimeout(waiter.timer);
-        waiters.delete(waiter);
-        waiter.resolve(event);
-      }
-    }
-  });
-  child.stderr!.on('data', (chunk: string) => {
-    stderr += chunk;
-  });
-
-  const completion = new Promise<{code: number | null; stderr: string}>((resolve, reject) => {
-    child.once('error', reject);
-    child.once('close', (code) => {
-      exited = true;
-      for (const waiter of waiters) {
-        clearTimeout(waiter.timer);
-        waiter.reject(new Error(`CLI exited before expected event (${code}): ${stderr}`));
-      }
-      waiters.clear();
-      resolve({code, stderr});
-    });
-  });
-  const requestStop = () => {
-    if (exited) return;
-    if (child.connected) {
-      try {
-        child.send({type: 'tileflow:stop'}, (error) => {
-          if (error && !exited) child.kill('SIGTERM');
-        });
-        return;
-      } catch {
-        child.kill('SIGTERM');
-        return;
-      }
-    }
-    child.kill('SIGTERM');
-  };
-
-  return {
-    completion,
-    events,
-    requestStop,
-    stop: async () => {
-      requestStop();
-      await completion.catch(() => undefined);
-    },
-    waitFor: (
-      predicate: (event: Record<string, unknown>) => boolean,
-      timeoutMs = 10_000,
-    ): Promise<Record<string, unknown>> => {
-      const existing = events.find(predicate);
-      if (existing) return Promise.resolve(existing);
-      return new Promise((resolve, reject) => {
-        const waiter = {
-          predicate,
-          reject,
-          resolve,
-          timer: setTimeout(() => {
-            waiters.delete(waiter);
-            reject(
-              new Error(`Timed out waiting for CLI event: ${JSON.stringify(events)} ${stderr}`),
-            );
-          }, timeoutMs),
-        };
-        waiters.add(waiter);
-      });
-    },
-  };
 }
 
-function runCli(cwd: string, arguments_: string[]) {
-  return new Promise<{code: number | null; stdout: string; stderr: string}>((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
-      cwd,
-      env: {...process.env, NO_COLOR: '1', TILEFLOW_API_KEY: ''},
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    let stdout = '';
-    let stderr = '';
-    child.stdout.setEncoding('utf8');
-    child.stderr.setEncoding('utf8');
-    child.stdout.on('data', (chunk: string) => {
-      stdout += chunk;
-    });
-    child.stderr.on('data', (chunk: string) => {
-      stderr += chunk;
-    });
-    child.once('error', reject);
-    child.once('close', (code) => resolve({code, stdout, stderr}));
+function runCli(t: TestContext, cwd: string, args: string[]) {
+  const running = startFixtureProcess(cliFixtureArguments(args), {
+    cwd,
+    env: {...process.env, NO_COLOR: '1', TILEFLOW_API_KEY: ''},
+    signal: t.signal,
   });
+  fixtureResources(t).push(running.stop);
+  return running.completion;
 }
 
 async function reservePort(): Promise<number> {
@@ -183,7 +78,7 @@ test('native preview serves canonical native-v1 assets only and preserves last-k
   const port = await reservePort();
   const origin = `http://127.0.0.1:${port}`;
   const manifestUrl = `${origin}/native/manifest.json`;
-  const running = startCli(cwd, [
+  const running = startCli(t, cwd, [
     'preview',
     '--renderer',
     'native',
@@ -257,7 +152,7 @@ test('native preview serves locally built sprites from its exact development ori
   );
   const port = await reservePort();
   const origin = `http://127.0.0.1:${port}`;
-  const running = startCli(cwd, [
+  const running = startCli(t, cwd, [
     'preview',
     '--renderer',
     'native',
@@ -289,8 +184,11 @@ test('native preview serves locally built sprites from its exact development ori
     const sprite = new URL(String(style.sprite));
     assert.equal(sprite.origin, origin);
     assert.match(sprite.pathname, /^\/native\/generations\/[a-f0-9]{64}\/icons\/main\/sprite$/u);
-    for (const suffix of ['.json', '.png', '@2x.json', '@2x.png'])
-      assert.equal((await fetch(`${sprite.href}${suffix}`)).status, 200, suffix);
+    for (const suffix of ['.json', '.png', '@2x.json', '@2x.png']) {
+      const response = await fetch(`${sprite.href}${suffix}`);
+      assert.equal(response.status, 200, suffix);
+      assert.ok((await response.arrayBuffer()).byteLength > 0, suffix);
+    }
     assert.deepEqual(
       validateTileflowNativePreparedStyle(style, {
         documentUrl: styleUrl,
@@ -307,7 +205,7 @@ test('native preview serves locally built sprites from its exact development ori
 
 test('native preview rejects browser-only workbench selections before config execution', async (t) => {
   const cwd = await fixture('tileflow-native-preview-reject-');
-  t.after(() => rm(cwd, {force: true, recursive: true}));
+  fixtureResources(t).push(() => rm(cwd, {force: true, recursive: true}));
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
     "throw new Error('CONFIG_MUST_NOT_EXECUTE');\n",
@@ -318,7 +216,7 @@ test('native preview rejects browser-only workbench selections before config exe
     ['--scene', 'proof'],
     ['--against-map', 'main'],
   ]) {
-    const result = await runCli(cwd, ['preview', '--renderer', 'native', '--json', ...extra]);
+    const result = await runCli(t, cwd, ['preview', '--renderer', 'native', '--json', ...extra]);
     assert.equal(result.code, 1);
     assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /CONFIG_MUST_NOT_EXECUTE/u);
   }
@@ -326,12 +224,12 @@ test('native preview rejects browser-only workbench selections before config exe
 
 test('default and explicit web preview lifecycle output remain compatible', async (t) => {
   const cwd = await fixture('tileflow-web-preview-compat-');
-  t.after(() => rm(cwd, {force: true, recursive: true}));
+  fixtureResources(t).push(() => rm(cwd, {force: true, recursive: true}));
 
-  assert.deepEqual(await firstWebPreviewReady(cwd, 'web'), await firstWebPreviewReady(cwd));
+  assert.deepEqual(await firstWebPreviewReady(t, cwd, 'web'), await firstWebPreviewReady(t, cwd));
 });
 
-test('web preview awaits child shutdown when readiness fails', async () => {
+test('web preview awaits child shutdown when readiness fails', async (t) => {
   const failure = new Error('Preview did not become ready');
   let readyAttempted!: () => void;
   const attempted = new Promise<void>((resolve) => {
@@ -344,7 +242,8 @@ test('web preview awaits child shutdown when readiness fails', async () => {
   let stopStarted = false;
   let settled = false;
   const running: ReturnType<typeof startCli> = {
-    completion: Promise.resolve({code: 1, stderr: ''}),
+    child: undefined as never,
+    completion: Promise.resolve({code: 1, stdout: '', stderr: ''}),
     events: [],
     requestStop: () => undefined,
     stop: async () => {
@@ -356,7 +255,7 @@ test('web preview awaits child shutdown when readiness fails', async () => {
       throw failure;
     },
   };
-  const outcome = firstWebPreviewReady('fixture', undefined, () => running).then(
+  const outcome = firstWebPreviewReady(t, 'fixture', undefined, () => running).then(
     () => {
       settled = true;
       return undefined;
@@ -381,12 +280,13 @@ test('web preview awaits child shutdown when readiness fails', async () => {
 });
 
 async function firstWebPreviewReady(
+  t: TestContext,
   cwd: string,
   renderer?: 'web',
   startPreview: typeof startCli = startCli,
 ) {
   const port = await reservePort();
-  const running = startPreview(cwd, [
+  const running = startPreview(t, cwd, [
     'preview',
     '--json',
     ...(renderer ? ['--renderer', renderer] : []),

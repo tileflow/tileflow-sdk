@@ -59,14 +59,14 @@ export type TileflowSun = Readonly<{
   source: 'theme' | 'direction' | 'date';
 }>;
 
-/** The sun of a theme that leaves a value unset: high in the south-south-west, in white light. */
+/** Unset sun values: high in the south-south-west, with soft white daylight and ambient fill. */
 export const tileflowDefaultSunPreset: TileflowSunPreset = Object.freeze({
   azimuth: 210,
   altitude: 60,
   color: '#ffffff',
-  intensity: 0.5,
+  intensity: 0.2,
   shadowIntensity: 1,
-  ambient: Object.freeze({color: '#ffffff', intensity: 0.5}),
+  ambient: Object.freeze({color: '#ffffff', intensity: 0.8}),
 });
 
 const degrees = Math.PI / 180;

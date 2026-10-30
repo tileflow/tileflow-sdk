@@ -25,7 +25,9 @@ import {
   water,
 } from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
-import {baedeker, blueprint, civica, ferraris, harad, siegfried, soundings, streets} from '../src';
+import {baedeker, blueprint, civica, map1777, siegfried, soundings, streets} from '../src';
+import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
+import {streetsPoiImageIds} from './streets-poi-fixture';
 
 const moduleFactories = {
   addresses,
@@ -51,9 +53,7 @@ const officialMaps = {
   baedeker,
   civica,
 
-  ferraris,
-  harad,
-
+  'map-1777': map1777,
   blueprint: blueprint,
   siegfried,
   soundings,
@@ -61,8 +61,10 @@ const officialMaps = {
 
 const preparedOfficialAssets = {
   preparedAssets: {
+    models: streetsPreparedModels,
     icons: {
       ids: [
+        ...streetsTreeIconIds,
         'baedeker-hachures',
         'baedeker-orchard',
         'baedeker-paper-grain',
@@ -88,29 +90,38 @@ const preparedOfficialAssets = {
         'civica-poi-transit',
         'civica-water-lines',
         'coffee',
+        'nature',
+        'sport',
+        'worship',
+        'coffee-dark',
+        'culture-dark',
+        'education-dark',
+        'food-dark',
+        'health-dark',
+        'lodging-dark',
+        'major-transit-dark',
+        'parking-dark',
+        'services-dark',
+        'shopping-dark',
+        'nature-dark',
+        'worship-dark',
+        'sport-dark',
         'crosswalk',
         'culture',
 
         'education',
-        'ferraris-crop-hatch',
-        'ferraris-heath',
-        'ferraris-orchard',
-        'ferraris-paper-grain',
-        'ferraris-residential',
-        'ferraris-sand',
-        'ferraris-water-ripples',
-        'ferraris-wetland',
-        'ferraris-woodland',
+        'map-1777-crop-cross',
+        'map-1777-crop-hatch',
+        'map-1777-crop-lines',
+        'map-1777-heath',
+        'map-1777-orchard',
+        'map-1777-paper-grain',
+        'map-1777-residential',
+        'map-1777-sand',
+        'map-1777-water-ripples',
+        'map-1777-wetland',
+        'map-1777-woodland',
         'food',
-        'harad-arable',
-        'harad-conifer',
-        'harad-deciduous',
-        'harad-orchard',
-        'harad-paper-grain',
-        'harad-sand',
-        'harad-settlement',
-        'harad-water-lines',
-        'harad-wetland',
         'health',
         'lodging',
         'major-transit',
@@ -150,16 +161,34 @@ const preparedOfficialAssets = {
         'siegfried-scree',
         'siegfried-water-lines',
         'siegfried-wetland',
+        'soundings-boat-hoist',
+        'soundings-boatyard',
         'soundings-buoy-cardinal',
+        'soundings-buoy-pillar',
         'soundings-buoy-port',
         'soundings-buoy-starboard',
+        'soundings-distance-mark',
+        'soundings-facility',
+        'soundings-fuel-station',
         'soundings-harbor',
         'soundings-light-flare',
         'soundings-lighthouse',
+        'soundings-marina',
+        'soundings-notice',
+        'soundings-notice-information',
+        'soundings-notice-prohibition',
+        'soundings-notice-recommendation',
+        'soundings-notice-regulation',
+        'soundings-notice-restriction',
         'soundings-paper-grain',
+        'soundings-pump-out',
         'soundings-rock-awash',
+        'soundings-slipway',
+        'soundings-visitor-berth',
         'soundings-water-dots',
+        'soundings-water-tap',
         'soundings-wreck',
+        ...streetsPoiImageIds,
       ],
       sprite: '/tileflow/test/official/sprite',
     },
@@ -202,20 +231,45 @@ function compiledRenderTargets(
   compiled: ReturnType<typeof createStyleWithInspection>,
   domain: Domain,
 ): string[] {
-  return compiled.inspection.layers
-    .flatMap((layer) =>
-      layer.contributions.flatMap((contribution) =>
-        contribution.operations
-          .filter((operation) => operation.owner === domain)
-          .map((operation) => operation.target),
+  // One refinement can contribute to several zoom ranges of its semantic target.
+  return [
+    ...new Set(
+      compiled.inspection.layers.flatMap((layer) =>
+        layer.contributions.flatMap((contribution) =>
+          contribution.operations
+            .filter((operation) => operation.owner === domain)
+            .map((operation) => operation.target),
+        ),
       ),
-    )
-    .sort();
+    ),
+  ].sort();
 }
 
 test('raw layer overrides are absent from the public authoring surface', () => {
   for (const name of ['addLayer', 'moveLayer', 'patchLayer', 'removeLayer']) {
     assert.equal(name in publicCore, false, `Unexpected public raw override export ${name}`);
+  }
+});
+
+test('Streets plazas retain their ground ordering without depending on a private land pass', () => {
+  const compiled = compileOfficialMap('streets', streets);
+  const position = (target: string) => {
+    const index = compiled.inspection.layers.findIndex((layer) =>
+      layer.contributions.some((contribution) => contribution.target === target),
+    );
+    assert.ok(index >= 0, `Missing ${target}`);
+    return index;
+  };
+  const plaza = position('roads.areas.pedestrian.fill');
+  assert.ok(position('land.landuse.residential.fill') < plaza);
+  assert.ok(position('land.render.businessArea') < plaza);
+  for (const target of [
+    'land.landuse.recreation.fill',
+    'land.landcover.grass.fill',
+    'land.landcover.meadow.fill',
+    'land.landcover.urbanPark.fill',
+  ]) {
+    assert.ok(plaza < position(target), `${target} must remain above broad plazas`);
   }
 });
 
@@ -287,6 +341,25 @@ for (const [mapName, parent] of Object.entries(officialMaps)) {
 }
 
 for (const [mapName, parent] of Object.entries(officialMaps)) {
+  test(`${mapName}: opt-in Nautical compiles with its not-for-navigation notice`, () => {
+    const child = defineMap({
+      id: `${mapName}-nautical`,
+      version: 1,
+      extends: parent,
+      marine: 'nautical',
+    });
+    const style = createStyle(child, preparedOfficialAssets);
+    assert.deepEqual(validateStyleMin(style as never), []);
+    assert.ok(
+      style.layers.some((layer) => layer.source === publicCore.tileflowNauticalSourceId),
+      `${mapName} drew no Nautical layer`,
+    );
+    assert.deepEqual(
+      publicCore.readTileflowNotices(style.metadata).map(({id}) => id),
+      [publicCore.tileflowNauticalNotice.id],
+    );
+  });
+
   test(`${mapName}: all official contributions bind through a complete data schema remap`, () => {
     const canonical = tileflowWorldV1Schema();
     const fields = Object.fromEntries(

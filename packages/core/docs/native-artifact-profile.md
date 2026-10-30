@@ -39,6 +39,11 @@ preparing the referenced resources.
 
 The exported `tileflowNativeProfile` targets MapLibre React Native 11.3.10 with Native Android 13.2.0
 and iOS 6.26.0. These are static compatibility targets, not a supported application dependency matrix.
+The application integration uses MapLibre React Native 11.5.0 with Android 13.6.1 and iOS 6.31.0.
+The artifact profile retains its earlier validation targets and build-record engine values, keeping
+prepared artifacts compatible with existing Hosted validators. New application dependencies do not
+expand the accepted style vocabulary.
+
 The wrapper's Style Spec version is 26.2.1. Tileflow retains its existing compiler and parser at
 24.8.5: `native-v1` checks that compiler's vocabulary and the intersection of its recorded Android
 and iOS support. It does not expose every feature of Style Spec 26.2.1 or upgrade the web compiler.
@@ -69,7 +74,7 @@ native representation because Native has no GL JS projection controller; this do
 logical map revision.
 
 Dev's `native-lowering-v1` preparation policy explicitly converts a fixed `{type: 'globe'}`
-projection to Native's implicit Mercator before this validator runs. This is a recorded projection
+projection to Native's implicit Mercator and removes a browser `sky` before this validator runs. This is a recorded projection
 change, not globe support or visual equivalence. One authored map serves web and native preparation;
 no native-specific Streets definition is used. Preparation adapts only finite `line-cap` and
 `line-dasharray` decisions into constant-property layers, and replaces constant `icon-overlap` and
@@ -83,7 +88,7 @@ a different composition even when every property value is retained.
 
 `native-build.json` uses strict schema version 2 and `preparationVersion: 'native-lowering-v1'`.
 Its `transformations` array is ordered by map/theme and binds the input/lowered style hashes,
-projection policy, physical layer spans and symbol overlap replacements. The runtime manifest remains version 1. An old v1
+projection policy, an optional `sky: 'removed'`, physical layer spans and symbol overlap replacements. The runtime manifest remains version 1. An old v1
 build-record decoder must reject v2 rather than silently ignore the preparation evidence.
 
 Text must use a valid glyph template containing `{fontstack}` and `{range}`, or a complete static

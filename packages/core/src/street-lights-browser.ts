@@ -4,12 +4,15 @@
 // head; streets and pavements the data maps as lit, without their lamps, take a soft light along
 // them that claims no lamp's place. As the controller's sun darkens the map the lights switch on
 // one by one, and they go out as day comes.
+import {acquireCameraTileBuilder} from './camera-tile-builder';
 import {cameraFrame, createCameraTiles} from './camera-tiles-browser';
 import {
-  placeTileflowStreetLights,
+  readTileflowStreetLights,
+  tileflowDefaultStreetLightsDesign,
   tileflowStreetLightBytes,
-  type TileflowStreetLightEstimate,
   type TileflowStreetLightPlacement,
+  type TileflowStreetLightsDesign,
+  tileflowStreetLightsMetadataKey,
 } from './street-lights';
 import {resolveTileflowSun, tileflowDefaultSunPreset, type TileflowSun} from './sun';
 import {tileflowColourChannels} from './theme-blend';
@@ -34,21 +37,19 @@ export type TileflowStreetLightsMap = {
 
 export type TileflowStreetLightsOptions = Readonly<{
   map: TileflowStreetLightsMap;
-  /** The theme controller, whose sun switches the lights on and off. */
-  controller?: {getSun?(): TileflowSun};
-  /** The vector source to read; defaults to `tileflow`, a Tileflow map's World source. */
-  source?: string;
   /**
-   * Where soft light is estimated where the data maps no lamps: `lit` (the default) along the
-   * streets and pavements the data maps as lit; `streets` also along the streets the data says
-   * nothing about, wherever it maps few lamps, which invents light as night windows do; `none`
-   * nowhere, so only mapped lamps shine.
+   * By default, only a map that enables roads.streetLights supplies lights. Set true to opt in
+   * with the fallback design when metadata is absent, or false to keep every theme's lights off.
    */
-  estimate?: TileflowStreetLightEstimate;
-  /** The light of the lamps whose data gives no colour, as a CSS colour; a warm white by default. */
-  color?: string;
-  /** How bright the lights shine, from 0 to 2; defaults to 1. */
-  intensity?: number;
+  enabled?: boolean;
+  /**
+   * The theme controller, whose sun switches the lights on and off and whose themes hold the map's
+   * street lights (the roads module's `streetLights`).
+   */
+  controller?: {
+    getSun?(): TileflowSun;
+    getThemeMetadata?(key: string): Readonly<{values: readonly unknown[]; position: number}>;
+  };
   /** The zoom from which the lights shine. Defaults to 14. */
   minzoom?: number;
   /** The most tiles lit round the camera, from 1 to 64; defaults to 25. */
@@ -62,8 +63,17 @@ export type TileflowStreetLightsOptions = Readonly<{
 export type TileflowStreetLights = {
   /** How far the lights have switched on, from 0 by day to 1 at night. */
   readonly on: number;
-  /** Tiles lit, lamps, and how many of them the data maps or the layer estimates. */
-  readonly stats: Readonly<{tiles: number; lamps: number; mapped: number; estimated: number}>;
+  /**
+   * Whether the map's style describes its street lights, tiles lit, lamps, and how many of them the
+   * data maps or the layer estimates.
+   */
+  readonly stats: Readonly<{
+    declared: boolean;
+    tiles: number;
+    lamps: number;
+    mapped: number;
+    estimated: number;
+  }>;
   /** Takes the layer off the map and lets go of its buffers. */
   dispose(): void;
 };
@@ -101,20 +111,14 @@ export function createTileflowStreetLights(
   options: TileflowStreetLightsOptions,
 ): TileflowStreetLights {
   const {map} = options;
+  // Places the tiles' lamps off the page, in a worker the map's 3D layers share.
+  const builder = acquireCameraTileBuilder();
   const minzoom = options.minzoom ?? 14;
   const maxTiles = Math.round(options.maxTiles ?? 25);
-  const intensity = options.intensity ?? 1;
   if (!Number.isFinite(minzoom) || minzoom < 0 || minzoom > 24)
     throw new RangeError('Tileflow street lights minzoom must be a zoom from 0 to 24.');
   if (!(maxTiles >= 1 && maxTiles <= 64))
     throw new RangeError('Tileflow street lights maxTiles must be from 1 to 64.');
-  if (!(intensity >= 0 && intensity <= 2))
-    throw new RangeError('Tileflow street lights intensity must be from 0 to 2.');
-  const estimate = options.estimate ?? 'lit';
-  if (!['streets', 'lit', 'none'].includes(estimate))
-    throw new RangeError('Tileflow street lights estimate must be streets, lit or none.');
-  const colour = tileflowColourChannels(options.color ?? '#ffcf8f');
-  if (!colour) throw new RangeError('Tileflow street lights color must be a CSS colour.');
 
   let gl: WebGL2RenderingContext | undefined;
   let programs: Partial<Record<'pool' | 'head', Program>> = {};
@@ -123,32 +127,121 @@ export function createTileflowStreetLights(
   let disposed = false;
   let lastUpdate = 0;
 
-  const camera = createCameraTiles<LightTile>({
-    map,
-    source: options.source ?? 'tileflow',
-    layers: ['street_furniture', 'transportation', 'sidewalk'],
-    zoom: preferredZoom,
-    minzoom,
-    maxTiles,
-    ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
-    active: () => onNow() > 0,
-    build(tile, tileMetres) {
-      const placement = placeTileflowStreetLights(
-        {
-          ...(tile.layers.street_furniture ? {streetFurniture: tile.layers.street_furniture} : {}),
-          ...(tile.layers.transportation ? {transportation: tile.layers.transportation} : {}),
-          ...(tile.layers.sidewalk ? {sidewalks: tile.layers.sidewalk} : {}),
-        },
-        {tileMetres, estimate},
+  // --- The map's design ---
+
+  let fallbackMetadata: Record<string, unknown> | undefined;
+  let designs:
+    | {values: readonly unknown[]; parsed: TileflowStreetLightsDesign[]; declared: boolean}
+    | undefined;
+
+  /** The street lights of every theme on screen and where the blend stands between them. */
+  function designsOnScreen() {
+    const read = options.controller?.getThemeMetadata?.(tileflowStreetLightsMetadataKey) ?? {
+      values: [
+        (fallbackMetadata ??=
+          (map.getStyle() as {metadata?: Record<string, unknown>} | undefined)?.metadata ?? {})[
+          tileflowStreetLightsMetadataKey
+        ],
+      ],
+      position: 0,
+    };
+    if (
+      !designs ||
+      designs.values.length !== read.values.length ||
+      designs.values.some((value, index) => value !== read.values[index])
+    ) {
+      const parsed = read.values.map((value) =>
+        readTileflowStreetLights({[tileflowStreetLightsMetadataKey]: value}),
       );
-      return placement ? {placement} : emptyTile;
-    },
-    empty: emptyTile,
-    release(value) {
-      if (gl) release(gl, value);
-    },
-    changed() {},
-  });
+      designs = {
+        values: read.values,
+        parsed: parsed.map((entry) =>
+          options.enabled === false
+            ? disabledStreetLightsDesign
+            : (entry ??
+              (options.enabled === true
+                ? tileflowDefaultStreetLightsDesign
+                : disabledStreetLightsDesign)),
+        ),
+        declared: parsed.some((entry) => entry !== undefined),
+      };
+    }
+    const count = designs.parsed.length;
+    const position = Math.min(count - 1, Math.max(0, read.position));
+    const lower = Math.floor(position);
+    return {
+      themes: designs.parsed,
+      lower,
+      upper: Math.min(count - 1, lower + 1),
+      mix: position - lower,
+    };
+  }
+
+  /** The design of the theme nearest the blend's position, for what cannot be mixed. */
+  function design(): TileflowStreetLightsDesign {
+    const {themes, lower, upper, mix} = designsOnScreen();
+    return themes[mix < 0.5 ? lower : upper]!;
+  }
+
+  /** The lights' colour and strength, mixed between the themes either side of a blend. */
+  function appearance(): {colour: number[]; intensity: number} {
+    const {themes, lower, upper, mix} = designsOnScreen();
+    const rgb = (entry: TileflowStreetLightsDesign) =>
+      tileflowColourChannels(entry.color) ?? [1, 0.81, 0.56, 1];
+    const [a, b] = [rgb(themes[lower]!), rgb(themes[upper]!)];
+    return {
+      colour: [0, 1, 2].map((channel) => a[channel]! + (b[channel]! - a[channel]!) * mix),
+      intensity: themes[lower]!.intensity * (1 - mix) + themes[upper]!.intensity * mix,
+    };
+  }
+
+  // --- Tiles round the camera ---
+
+  // The tiles are read from the source and layers the design names, and placed by its estimate; a
+  // style that changes either reads them anew.
+  const makeCamera = ({source, layers, estimate}: TileflowStreetLightsDesign) =>
+    createCameraTiles<LightTile>({
+      map,
+      source,
+      zoom: preferredZoom,
+      minzoom,
+      maxTiles,
+      ...(options.transformRequest ? {transformRequest: options.transformRequest} : {}),
+      active: () => onNow() > 0,
+      async build(tile, tileMetres, signal, priority) {
+        const placement = await builder.build(
+          {
+            url: tile.url,
+            bytes: tile.bytes,
+            priority,
+            task: {kind: 'lights', layers, options: {tileMetres, estimate}},
+          },
+          signal,
+        );
+        return placement ? {placement} : emptyTile;
+      },
+      empty: emptyTile,
+      release(value) {
+        if (gl) release(gl, value);
+      },
+      changed() {},
+    });
+  const keyOf = ({source, layers, estimate}: TileflowStreetLightsDesign) =>
+    JSON.stringify([source, layers, estimate]);
+  let cameraKey = keyOf(tileflowDefaultStreetLightsDesign);
+  let camera = makeCamera(tileflowDefaultStreetLightsDesign);
+
+  /** Reads the tiles the map's design names, placed by its estimate. */
+  function ensureCamera(): void {
+    const current = design();
+    const key = keyOf(current);
+    if (key === cameraKey) return;
+    for (const entry of camera.all()) if (entry.value && gl) release(gl, entry.value);
+    camera.dispose();
+    cameraKey = key;
+    camera = makeCamera(current);
+    if (onNow() > 0) camera.update();
+  }
 
   function release(context: WebGL2RenderingContext, tile: LightTile): void {
     if (!tile.gl) return;
@@ -163,6 +256,7 @@ export function createTileflowStreetLights(
 
   /** How far the lights have switched on, from 0 by day to 1 at night. */
   function onNow(): number {
+    if (appearance().intensity <= 0) return 0;
     const brightness = sunNow().brightness;
     return Math.min(1, Math.max(0, (switchOn[1] - brightness) / (switchOn[1] - switchOn[0])));
   }
@@ -196,7 +290,8 @@ export function createTileflowStreetLights(
     render(context: WebGLRenderingContext | WebGL2RenderingContext, args: ProjectionArgs) {
       if (!isWebGL2(context)) return;
       const on = onNow();
-      if (on <= 0 || intensity <= 0 || map.getZoom() < minzoom - 0.5) return;
+      ensureCamera();
+      if (on <= 0 || appearance().intensity <= 0 || map.getZoom() < minzoom - 0.5) return;
       // A sun that sets with the camera still reads the tiles it now needs.
       const now = performance.now();
       if (now - lastUpdate > 1000) {
@@ -272,6 +367,7 @@ export function createTileflowStreetLights(
     context.depthMask(false);
     context.enable(context.BLEND);
     context.blendFuncSeparate(context.ONE, context.ONE, context.ZERO, context.ONE);
+    const {colour, intensity} = appearance();
     for (const name of ['pool', 'head'] as const) {
       const program = programs[name];
       if (!program) continue;
@@ -280,7 +376,7 @@ export function createTileflowStreetLights(
       context.uniform1f(u.u_on!, on);
       context.uniform1f(u.u_intensity!, intensity);
       context.uniform1f(u.u_metres!, camera.metres);
-      context.uniform3f(u.u_colour!, colour![0], colour![1], colour![2]);
+      context.uniform3f(u.u_colour!, colour[0]!, colour[1]!, colour[2]!);
       context.uniform2f(u.u_viewport!, context.drawingBufferWidth, context.drawingBufferHeight);
       for (const {x, y, value} of tiles) {
         project(context, program, args, x, y);
@@ -365,7 +461,13 @@ export function createTileflowStreetLights(
   }
 
   function attach(): void {
-    if (disposed || map.getLayer(tileflowStreetLightsLayerId) || !map.isStyleLoaded()) return;
+    if (disposed || !map.isStyleLoaded()) return;
+    const enabled = designsOnScreen().themes.some((theme) => theme.intensity > 0);
+    if (!enabled) {
+      if (map.getLayer(tileflowStreetLightsLayerId)) map.removeLayer(tileflowStreetLightsLayerId);
+      return;
+    }
+    if (map.getLayer(tileflowStreetLightsLayerId)) return;
     try {
       map.addLayer(layer, beforeId());
     } catch {
@@ -374,9 +476,13 @@ export function createTileflowStreetLights(
   }
 
   // A style still loading takes the layer once it has loaded.
-  const onStyle = () => attach();
+  const onStyle = () => {
+    fallbackMetadata = undefined;
+    attach();
+  };
   map.on('styledata', onStyle);
-  map.on('idle', onStyle);
+  // A settled map has the same style: it only retries attaching the layer.
+  map.on('idle', attach);
   attach();
   cameraFrame(() => camera.update());
 
@@ -395,22 +501,29 @@ export function createTileflowStreetLights(
         mapped += value.placement.mapped;
         estimated += value.placement.estimated;
       }
-      return {tiles: lit, lamps, mapped, estimated};
+      designsOnScreen();
+      return {declared: designs?.declared ?? false, tiles: lit, lamps, mapped, estimated};
     },
     dispose() {
       if (disposed) return;
       disposed = true;
       map.off('styledata', onStyle);
-      map.off('idle', onStyle);
+      map.off('idle', attach);
       try {
         if (map.getLayer(tileflowStreetLightsLayerId)) map.removeLayer(tileflowStreetLightsLayerId);
       } catch {
         // A map already removed has no layers left to remove.
       }
       camera.dispose();
+      builder.dispose();
     },
   };
 }
+
+const disabledStreetLightsDesign: TileflowStreetLightsDesign = Object.freeze({
+  ...tileflowDefaultStreetLightsDesign,
+  intensity: 0,
+});
 
 const emptyTile: LightTile = Object.freeze({
   placement: Object.freeze({lamps: new Uint8Array(0), mapped: 0, estimated: 0}),

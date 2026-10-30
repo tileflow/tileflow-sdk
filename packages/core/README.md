@@ -38,9 +38,8 @@ export default defineMap({
 });
 ```
 
-Coordinates use `[longitude, latitude]`. The map inherits Streets' themes and asset providers.
-A complete root map uses the same `defineMap()` call without `extends`; most applications should
-extend an existing map instead of rebuilding its complete visual contract.
+Coordinates use `[longitude, latitude]`. This map inherits Streets' themes and assets.
+A standalone map uses `defineMap()` without `extends`.
 
 Validate and preview the file with the project-local CLI:
 
@@ -60,14 +59,14 @@ Omitted fields inherit, but declaring a field does not imply a recursive merge:
 - `modules` merges by domain. Declaring `roads(...)` replaces that domain's inherited request and
   render contributions. Use `refine(...)` to patch it, `disable()` to remove it, and `reset()` for
   an explicit reset inside a supported patch.
-- `themes` replaces the complete collection and clears an inherited `systemThemes` mapping.
+- `themes` replaces the complete collection and clears inherited `systemThemes` and `timeOfDay` mappings.
   `defaultTheme` can select an inherited concrete theme; `systemThemes` replaces its complete mapping.
 - `icons` replaces the ordered contributor list. Omission inherits it; `[]` disables it. Local and
   package directories can be combined with explicit locked `iconSet('@team/set')` descriptors.
   Spread the parent's list explicitly when composing contributors. Later contributors win for an
   exact icon ID.
 - `fonts` and `glyphs` are mutually exclusive text providers. Declaring either replaces the inherited
-  provider. `atmosphere`, `data`, `projection`, `terrain`, and `marine` are also atomic.
+  provider. `atmosphere`, `data`, `projection`, `sky`, `terrain`, and `marine` are also atomic.
 
 Identity (`id`, `name`, `version`) and tooling `scenes` and `shots` belong to the leaf map and do not inherit.
 Module object order does not determine rendering order. See the
@@ -101,8 +100,8 @@ Metadata-free RGBA icon packages retain `tileflow-icon-package-v1` identity. SDF
 
 These are portable contracts. `@tileflow/dev` composes declared contributors on its normal
 preparation path, and the `tileflow` CLI owns catalog management and exact lock maintenance.
-Importing `iconSet` adds a declaration; it performs no I/O, resolves no revision, and does not by
-itself make a Team catalog available to your deployment.
+Importing `iconSet` adds a declaration; it resolves no revision and does not by itself make a
+Team catalog available to your deployment.
 
 ## Style with themes and semantic modules
 
@@ -139,9 +138,8 @@ export default defineMap({
 `system` is a runtime selection policy, not a stored theme. Builds, captures, static scenes, and
 receipts must use a concrete theme such as `light` or `dark`.
 
-Because every theme of a map shares one structure, a browser map can cross-fade between themes or
-show a continuous blend of them on the same MapLibre instance, with no extra requests. See
-[theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md).
+Theme and `timeOfDay` changes animate over 450 ms by default, respecting reduced motion. See
+[theme transitions, time-of-day presets and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md).
 The same controller can make chosen modules recede and the map's labels fade so an application's
 own content reads first; see [map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md).
 It also sets the style-wide states that themes read with `expr.globalState`, easing numbers so the
@@ -158,13 +156,17 @@ A theme can describe its sun and sky light (`lighting.sun`, `lighting.ambient`);
 returns the sun the map shows with `getSun()`, mixed during a blend, for an application's own 3D
 layers, and `setSun()` places it by direction or by the real sun of a date and place; see
 [sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md).
-`createTileflowBuildings3D` raises the map's buildings round the camera and lights them from that
-sun, with shadows on the buildings and the flat map, contact shadow and night light from the places
-they hold; it shows, hides and grows them without laying out any source; see
+`createTileflowBuildings3D` enables worker-meshed buildings rising in at zoom 15–15.3, with scene
+sun, cast/contact shadows and 0.8 m rounded corners. Each effect is independently overridable. See
 [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md).
-`createTileflowStreetLights` lights the streets as the sun sets, from the lamps and lit streets the
-map's data holds; see
+Street lights default to off, including in Streets. Set `roads.streetLights.enabled: true` and mount
+`createTileflowStreetLights` to enable them; see
 [street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md).
+`createTileflowVegetation` controls all trees using the map's `3d`, `flat` or `auto` policy; see
+[vegetation controls and 3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md).
+
+POI icons and names place together; `placement.coupleIconAndLabel: false` separates them.
+See [rank limits](docs/cartographic-defaults.md).
 
 The semantic domains are `land`, `water`, `nautical`, `roads`, `buildings`, `boundaries`, `labels`,
 `poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`. Style stable geographic
@@ -182,15 +184,14 @@ validates the authoring input and throws on failure. `createStyle(map, options)`
 throws; `createStyleResult(map, options)` returns structured diagnostics and a compilation report.
 Only a successful result contains `style`.
 
-Core compilation is not asset preparation. A map that references package or local icon/font
-directories needs the CLI, a build plugin, or
+Maps with package/local icon or font directories need the CLI, a build plugin, or
 [`@tileflow/dev/artifacts`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/README.md)
-to produce deployable sprites and font files. Browser components consume the resulting manifest;
-they do not import executable configs.
+to prepare assets. Browser components consume the resulting manifest.
 
-Use these commands to discover the installed language and inspect a prepared map:
+Discover the language and inspect a prepared map:
 
 ```sh
+npx tileflow describe themes --json
 npx tileflow language manifest --json
 npx tileflow language schema --json
 npx tileflow inspect --json
@@ -236,10 +237,12 @@ package uses this contract for its mounted Map; it is not yet published.
 
 ## Data, terrain, and browser resources
 
-Tileflow World is the hosted primary-data path. `vectorTiles()` with `openMapTiles()` supports
-compatible externally supplied vector data for local/self-hosted use; it does not make that source
-eligible for hosted deployment. `hostedTileset()` and semantic overlay placement add named data
-sources. Local PMTiles inputs are for local tooling, not implicit production data publication.
+Tileflow World is the hosted primary source. `vectorTiles()` with `openMapTiles()` supports
+external local/self-hosted data; hosted eligibility is separate. `hostedTileset()`, `boundaryAreas`
+and semantic overlays add named sources. Local PMTiles inputs are tooling-only.
+
+`bathymetry({vectorLayers: {...}})` declares contour/name layers. `marine: 'nautical'` adds
+navigation marks, flashing lights, and a "Not for navigation" notice.
 
 World attribution links to Tileflow's source notice, OpenMapTiles, and OpenStreetMap. External
 vector data retains the attribution supplied by its owner.
@@ -251,12 +254,12 @@ tooling prepare browser resources; direct MapLibre integrations must register re
 before loading a style. See the
 [browser runtime contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/framework-browser-runtime.md).
 
-Set `projection: 'globe'` and `atmosphere: true` in `tileflow.config.ts` for a blue globe rim,
-space background, and stars. Use `atmosphere: false` to disable an inherited atmosphere, or an
-options object for theme-aware colors and bounded star brightness/motion. React, Vue, Svelte, and
-standalone capture apply the browser effect automatically. Direct MapLibre integrations call
-`attachTileflowAtmosphere(map)` from `@tileflow/core/browser`. See
-[globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md).
+With `projection: 'globe'`, `atmosphere: true` adds a halo and stars; an object configures colors, star count and size.
+`sky` follows the sun at street level. Frameworks and capture attach both; direct
+MapLibre consumers call `attachTileflowAtmosphere(map)` from `@tileflow/core/browser`.
+See
+[globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md)
+and [street sky](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-sky.md).
 
 Applications that need the map's data themselves, such as streets to route over or the place
 under the camera, read chosen layers of a vector source for an area at a fixed zoom with
@@ -267,11 +270,10 @@ In a 3D scene, `createTileflowDepthMarkers` from `@tileflow/core/browser` draws 
 that nearer buildings hide, facing the viewer or lying on the ground. See
 [depth markers](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/depth-markers.md).
 
-A map with text must declare exactly one text provider. Streets, Ferraris, Härad, Soundings,
-and Blueprint use URL glyph providers. Baedeker and Siegfried use packaged Cormorant
-fonts, and Cívica uses its packaged lettering. Hosted deployment currently rejects
-package/local font bundles; use self-hosted output or explicitly replace the provider with compatible
-public glyphs. Tile URLs and font providers do not establish redistribution rights.
+Text requires exactly one provider. Soundings and Blueprint use URL glyphs; Streets packages DINish
+and Noto Sans; Baedeker, 1777 and Siegfried package Cormorant; Cívica packages its lettering. Hosted
+rejects packaged/local fonts: self-host or replace them with compatible public glyphs. Tile and font
+URLs do not grant redistribution rights.
 
 ## Reference
 
@@ -284,8 +286,8 @@ for exact options. Prefer the installed CLI's generated contracts when using a p
 
 ## Detailed guides
 
-These guides are also included in the installed package under `docs/`. They describe this source
-revision; prefer the installed copy when working with an older release.
+These guides also ship in the installed package under `docs/` and describe this source revision;
+prefer the installed copy for an older release.
 
 - [Globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md)
 - [Map and terrain examples](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-and-terrain-examples.md)
@@ -293,6 +295,7 @@ revision; prefer the installed copy when working with an older release.
 - [Shared visual primitives](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/shared-visual-primitives.md)
 - [Compiled-style performance](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/compiled-style-performance.md)
 - [Camera moves and the tile cache](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/camera-moves-and-tile-cache.md)
+- [Cartographic defaults and overrides](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/cartographic-defaults.md)
 - [Themes and module styles](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/themes-and-module-styles.md)
 - [Theme transitions and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md)
 - [Map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md)
@@ -301,6 +304,9 @@ revision; prefer the installed copy when working with an older release.
 - [Sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md)
 - [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md)
 - [Street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md)
+- [3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md)
+- [Boundary areas and choropleths](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/boundary-areas-and-choropleths.md)
+- [Nautical marks](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/nautical-marks.md)
 - [Data is separate from design](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/data-is-separate-from-design.md)
 - [Capture scenes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-scenes.md)
 - [Capture shots](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)

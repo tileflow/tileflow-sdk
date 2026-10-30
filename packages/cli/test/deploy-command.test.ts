@@ -1,21 +1,43 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
+import {createHash} from 'node:crypto';
 import {once} from 'node:events';
 import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
-import {fileURLToPath} from 'node:url';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
+import {writeGlb} from '../../dev/test/tree-model-fixtures';
 import {tileflowMapFixture} from './map-fixture';
 
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 const fakeApiKey = `tf_live_${'a'.repeat(48)}`;
 const accountSessionToken = `tf_session_${'b'.repeat(64)}`;
 const managedMapId = 'map_AbCdEfGhIjKlMnOp';
+const streetsThemeNames = [
+  'dark',
+  'dark-faded',
+  'dark-monochrome',
+  'dawn',
+  'dawn-faded',
+  'dawn-monochrome',
+  'dusk',
+  'dusk-faded',
+  'dusk-monochrome',
+  'faded',
+  'light',
+  'monochrome',
+] as const;
+const streetsDarkThemes = new Set([
+  'dark',
+  'dark-faded',
+  'dark-monochrome',
+  'dusk',
+  'dusk-faded',
+  'dusk-monochrome',
+]);
 
 test('Map deploy auto-selects one map, preserves its theme family, and writes a session manifest', async (t) => {
   const fixture = await createFixture(t);
@@ -23,7 +45,7 @@ test('Map deploy auto-selects one map, preserves its theme family, and writes a 
   const api = await createFakeApi(t, async (request) => {
     requestBody = JSON.parse(await readRequestBody(request)) as Record<string, unknown>;
     return {
-      ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {
+      ...hostedDeploymentResponse(managedMapId, streetsThemeNames, {
         changed: true,
         version: 1,
       }),
@@ -61,7 +83,7 @@ test('Map deploy auto-selects one map, preserves its theme family, and writes a 
     Object.keys(
       (requestBody as {artifact?: {styles?: Record<string, unknown>}})?.artifact?.styles ?? {},
     ),
-    ['dark', 'light'],
+    streetsThemeNames,
   );
   assert.equal('policy' in (requestBody ?? {}), false);
   const manifest = JSON.parse(await readFile(fixture.manifestPath, 'utf8')) as {
@@ -241,7 +263,7 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
     }
   ).artifact;
   assert.equal(deployedStyles?.schemaVersion, 1);
-  assert.deepEqual(Object.keys(deployedStyles?.styles ?? {}), ['dark', 'light']);
+  assert.deepEqual(Object.keys(deployedStyles?.styles ?? {}), streetsThemeNames);
   for (const style of Object.values(deployedStyles?.styles ?? {})) {
     assert.equal(style.sprite, 'https://api.example.test/sprites/icp_1234567890abcdef/sprite');
     const source = (style as {sources?: Record<string, {tiles?: unknown; url?: unknown}>}).sources
@@ -256,6 +278,7 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
       madrid: {
         defaultTheme: string;
         systemThemes?: {dark: string; light: string};
+        timeOfDay?: Record<string, unknown>;
         themes: Record<
           string,
           {
@@ -271,19 +294,28 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
     };
     version: number;
   };
-  assert.equal(manifestDocument.version, 1);
+  assert.equal(manifestDocument.version, 2);
   assert.equal(manifestDocument.maps.madrid.defaultTheme, 'light');
+  assert.deepEqual(manifestDocument.maps.madrid.timeOfDay?.light, {
+    day: 'light',
+    dawn: 'dawn',
+    dusk: 'dusk',
+    night: 'dark',
+  });
   assert.deepEqual(manifestDocument.maps.madrid.systemThemes, {dark: 'dark', light: 'light'});
-  assert.deepEqual(Object.keys(manifestDocument.maps.madrid.themes), ['dark', 'light']);
+  assert.deepEqual(Object.keys(manifestDocument.maps.madrid.themes), streetsThemeNames);
   assert.equal(manifestDocument.maps.madrid.themes.dark?.colorScheme, 'dark');
   assert.equal(manifestDocument.maps.madrid.themes.light?.colorScheme, 'light');
   for (const theme of Object.values(manifestDocument.maps.madrid.themes)) {
     assert.deepEqual(theme.fontFaces, []);
     assert.match(theme.revision ?? '', /^[a-f0-9]{64}$/u);
-    assert.match(theme.styleId ?? '', new RegExp(`^${managedMapId}_(?:dark|light)$`, 'u'));
+    assert.ok(streetsThemeNames.some((name) => theme.styleId === `${managedMapId}_${name}`));
     assert.match(
       theme.styleUrl,
-      new RegExp(`^https://api\\.example\\.test/maps/${managedMapId}/(?:dark|light)\\.json$`, 'u'),
+      new RegExp(
+        `^https://api\\.example\\.test/maps/${managedMapId}/(?:${streetsThemeNames.join('|')})\\.json$`,
+        'u',
+      ),
     );
   }
   assert.deepEqual(manifestDocument.maps.madrid.view, {
@@ -298,7 +330,7 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
 test('deploy reports an idempotent hosted no-op without changing the manifest contract', async (t) => {
   const fixture = await createFixture(t);
   const api = await createFakeApi(t, async () => undefined, {
-    ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {
+    ...hostedDeploymentResponse(managedMapId, streetsThemeNames, {
       changed: false,
       version: 7,
     }),
@@ -334,7 +366,7 @@ test('deploy reports an idempotent hosted no-op without changing the manifest co
 test('deploy reports a changed hosted version for one atomic theme family', async (t) => {
   const fixture = await createFixture(t);
   const api = await createFakeApi(t, async () => undefined, {
-    ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {
+    ...hostedDeploymentResponse(managedMapId, streetsThemeNames, {
       changed: true,
       version: 8,
     }),
@@ -385,7 +417,7 @@ test('a failed singular deploy preserves the previous manifest and a retry conve
         changed,
         mapId: managedMapId,
         themes: Object.fromEntries(
-          ['dark', 'light'].map((theme) => [
+          streetsThemeNames.map((theme) => [
             theme,
             {
               styleId: `style_${body.environment}_${theme}`,
@@ -465,7 +497,7 @@ test('a failed singular deploy preserves the previous manifest and a retry conve
     maps: Record<string, {mapId: string}>;
     version: number;
   };
-  assert.equal(manifest.version, 1);
+  assert.equal(manifest.version, 2);
   assert.equal(manifest.maps.beta?.mapId, managedMapId);
   assert.deepEqual(Object.keys(manifest.maps), ['previous', 'beta']);
 });
@@ -530,7 +562,7 @@ test('deploy refuses a self-hosted manifest unless replacement is explicit', asy
     apiUrl?: string;
     version: number;
   };
-  assert.equal(manifest.version, 1);
+  assert.equal(manifest.version, 2);
   assert.equal(manifest.apiUrl, api.url);
 });
 
@@ -601,7 +633,7 @@ test('deploy rejects removed raw style overrides before any remote write', async
       id: 'madrid',
       icons: 'authored',
       fields: `icons: ['./icons'],
-modules: {poi: {type: 'poi', density: 3, icons: true, categories: ['food-drink']}, roads: disable()},
+modules: {poi: {type: 'poi', density: 3, icons: true, categories: ['food-drink']}, roads: disable(), vegetation: disable()},
 overrides: [{kind: 'patch', id: 'tileflow-background', patch: {paint: {'background-color': 42}}}]`,
     }),
   );
@@ -763,18 +795,19 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     assert.equal(typeof mapEntry?.themes?.dark?.styleSha256, 'string');
     assert.equal(typeof mapEntry?.themes?.light?.styleSha256, 'string');
     assert.ok(artifact.buildManifest?.provenance);
-    assert.deepEqual(Object.keys(artifact.styles ?? {}), ['dark', 'light']);
-    for (const style of Object.values(artifact.styles ?? {})) {
+    assert.deepEqual(Object.keys(artifact.styles ?? {}), streetsThemeNames);
+    for (const [theme, style] of Object.entries(artifact.styles ?? {})) {
       assert.equal(
         style.sprite,
         `${api.url}/sprites/icp_12345678-1234-1234-1234-123456789abc/sprite`,
       );
-      const foodPoiLayer = style.layers?.find(
-        (layer) => layer.id === 'tileflow-poi-food-drink-icon',
-      );
+      const foodPoiLayer = style.layers?.find((layer) => layer.id === 'tileflow-poi');
+      assert.ok(foodPoiLayer?.layout?.['text-field'], 'default POIs include their name');
       const iconImage = JSON.stringify(foodPoiLayer?.layout?.['icon-image']);
       assert.match(iconImage, /"get","icon"/u);
-      assert.match(iconImage, /"image","food"/u);
+      const paletteSuffix = theme.includes('monochrome') ? '-monochrome' : '';
+      const darkSuffix = streetsDarkThemes.has(theme) ? '-dark' : '';
+      assert.match(iconImage, new RegExp(`"image","food${paletteSuffix}${darkSuffix}"`, 'u'));
     }
     assert.deepEqual(parsed.iconPackage, {
       contentHash: requests[0]?.url?.split('/').pop(),
@@ -782,7 +815,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     });
     assert.doesNotMatch(JSON.stringify(artifact), /\.\/icons|source-secret/);
     return {
-      ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {
+      ...hostedDeploymentResponse(managedMapId, streetsThemeNames, {
         changed: true,
         version: 1,
       }),
@@ -807,9 +840,111 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     requests.map((request) => `${request.method} ${request.url?.split('/').slice(0, 3).join('/')}`),
     [`PUT /v1/icon-packages`, `POST /v1/styles`],
   );
-  assert.match(result.stdout, /Uploaded icon package madrid \(2 icons,/);
+  assert.match(result.stdout, /Uploaded icon package madrid \(5 icons,/);
   assert.match(result.stdout, /Published madrid \(v1\)\./);
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, new RegExp(fakeApiKey));
+});
+
+test("deploy places a map's own building models as Team 3D models by name and uploads none", async (t) => {
+  const fixture = await createFixture(t);
+  await mkdir(join(fixture.directory, 'models'));
+  // A block 20 m wide and 120 m tall, its walls and roof named as a building's parts.
+  await writeFile(
+    join(fixture.directory, 'models', 'tower.glb'),
+    writeGlb([
+      {
+        material: 'roof',
+        positions: [-10, 120, -10, 10, 120, -10, 10, 120, 10, -10, 120, 10],
+        indices: [0, 2, 1, 0, 3, 2],
+      },
+      {
+        material: 'surface',
+        positions: [-10, 0, 10, 10, 0, 10, 10, 120, 10, -10, 120, 10],
+        indices: [0, 1, 2, 0, 2, 3],
+      },
+    ]),
+  );
+  await writeFile(
+    fixture.configPath,
+    tileflowMapFixture({
+      id: 'madrid',
+      imports: `import {buildings} from '@tileflow/core';`,
+      fields: `models: ['./models'],
+modules: {
+  addresses: disable(), aeroways: disable(), boundaries: disable(), labels: disable(), land: disable(),
+  landforms: disable(), poi: disable(), roads: disable(), transit: disable(), vegetation: disable(),
+  water: disable(),
+  buildings: buildings({mode: '3d', threeDimensional: {models: [{model: 'tower', at: [-3.7038, 40.4168], heading: 30}]}})
+},
+name: 'Madrid'`,
+    }),
+  );
+  const source = await readFile(join(fixture.directory, 'models', 'tower.glb'));
+  const requests: string[] = [];
+  const api = await createFakeApi(t, async (request) => {
+    const bodyBytes = await readRequestBodyBytes(request);
+    requests.push(`${request.method} ${request.url?.split('/').slice(0, 3).join('/')}`);
+    const parsed = JSON.parse(bodyBytes.toString('utf8')) as {
+      artifact: {
+        buildManifest: {
+          maps: Record<
+            string,
+            {assets: unknown[]; sourceAssets: {models?: Array<{id: string; level: string}>}}
+          >;
+        };
+        styles: Record<string, {metadata?: Record<string, unknown>}>;
+      };
+      modelBundle?: unknown;
+      teamModelSources?: Record<string, Array<{level: string; sha256: string; byteLength: number}>>;
+    };
+    assert.equal(parsed.modelBundle, undefined);
+    // Every theme places the Team model by its placeholder; the deploy binds its address.
+    for (const style of Object.values(parsed.artifact.styles)) {
+      const design = style.metadata?.['tileflow:buildings'] as {
+        models: Array<{model: string; url: string}>;
+      };
+      assert.deepEqual(
+        design.models.map(({model, url}) => [model, url]),
+        [['tower', 'tileflow://team-models/tower']],
+      );
+    }
+    // The map follows the model by name: its files are neither assets nor revision sources.
+    const built = parsed.artifact.buildManifest.maps.madrid!;
+    assert.equal(built.sourceAssets.models, undefined);
+    assert.deepEqual(parsed.teamModelSources, {
+      tower: [
+        {
+          level: 'near',
+          sha256: createHash('sha256').update(source).digest('hex'),
+          byteLength: source.byteLength,
+        },
+      ],
+    });
+    return {
+      ...hostedDeploymentResponse(managedMapId, streetsThemeNames, {changed: true, version: 1}),
+      teamModels: [{model: 'tower', version: 2, sources: 'differ'}],
+    };
+  });
+  const result = await runCli(
+    fixture.directory,
+    [
+      'deploy',
+      '--config',
+      fixture.configPath,
+      '--manifest',
+      fixture.manifestPath,
+      '--api-url',
+      api.url,
+    ],
+    {TILEFLOW_API_KEY: fakeApiKey},
+  );
+
+  assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+  assert.deepEqual(requests, ['POST /v1/styles']);
+  assert.match(
+    `${result.stdout}\n${result.stderr}`,
+    /3D model .*tower.* draws its published version 2, which was not prepared from this project's files/u,
+  );
 });
 
 test('deploy binds one composition receipt to the effective package in manifest and body', async (t) => {
@@ -829,7 +964,7 @@ test('deploy binds one composition receipt to the effective package in manifest 
     }
     deployBody = JSON.parse(bodyBytes.toString('utf8')) as Record<string, unknown>;
     return {
-      ...hostedDeploymentResponse(managedMapId, ['dark', 'light'], {changed: true, version: 1}),
+      ...hostedDeploymentResponse(managedMapId, streetsThemeNames, {changed: true, version: 1}),
     };
   });
 
@@ -1411,7 +1546,7 @@ function existingHostedManifest(apiUrl: string): string {
 
 function hostedDeploymentResponse(
   mapId: string,
-  themeNames: readonly string[] = ['dark', 'light'],
+  themeNames: readonly string[] = streetsThemeNames,
   options: {changed?: boolean; version?: number} = {},
 ): Record<string, unknown> {
   return {
@@ -1452,13 +1587,20 @@ async function createIconFixture(t: TestContext) {
   const fixture = await createFixture(t);
   const iconsDirectory = join(fixture.directory, 'icons');
   await mkdir(iconsDirectory);
-  await writeFile(
-    join(iconsDirectory, 'food.svg'),
-    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle id="source-secret" cx="8" cy="8" r="7" /></svg>',
-  );
+  for (const image of ['food', 'food-dark', 'food-monochrome', 'food-monochrome-dark']) {
+    await writeFile(
+      join(iconsDirectory, `${image}.svg`),
+      '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle id="source-secret" cx="8" cy="8" r="7" /></svg>',
+    );
+  }
   await writeFile(
     join(iconsDirectory, 'park.svg'),
     '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><rect width="16" height="16" /></svg>',
+  );
+  // Streets' dark theme draws each POI with its night pictogram.
+  await writeFile(
+    join(iconsDirectory, 'food-dark.svg'),
+    '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"><circle cx="8" cy="8" r="6" /></svg>',
   );
   await writeFile(
     fixture.configPath,
@@ -1466,7 +1608,7 @@ async function createIconFixture(t: TestContext) {
       id: 'madrid',
       icons: 'authored',
       fields: `icons: ['./icons'],
-modules: {poi: {type: 'poi', density: 3, icons: true, categories: ['food-drink']}, roads: disable()},
+modules: {poi: {type: 'poi', density: 3, icons: true, categories: ['food-drink']}, roads: disable(), vegetation: disable()},
 name: 'Madrid'`,
     }),
   );
@@ -1708,15 +1850,11 @@ function runCli(
       : arguments_;
 
   return new Promise((resolve, reject) => {
-    const child = spawn(
-      process.execPath,
-      ['--import', tsxLoader, cliEntry, ...effectiveArguments],
-      {
-        cwd,
-        env: environment,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
+    const child = spawn(process.execPath, cliFixtureArguments(effectiveArguments), {
+      cwd,
+      env: environment,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
     let stderr = '';
     let stdout = '';
     child.stderr.setEncoding('utf8');

@@ -5,7 +5,6 @@ import type {
   TileflowPhysicalFamilyDeclaration,
 } from '../../cartography/contributions';
 import {
-  applyCircleStyle,
   applyFillStyle,
   applyIconStyle,
   applyLineStyle,
@@ -21,7 +20,6 @@ import type {
   TileflowRoadClassStyle,
   TileflowRoadCrossingStyle,
   TileflowRoadLayerStyle,
-  TileflowRoadRoundaboutStyle,
   TileflowRoadSidewalkStyle,
   TileflowRoadsModuleConfig,
   TileflowRoadStructure,
@@ -30,10 +28,12 @@ import type {
 } from '../../types';
 import type {TileflowResolvedModuleConfig} from '../resolved';
 import {resolveRoads, roadStyleMetrics, visibleRoadClasses} from './index';
+import {compileRoundabouts, type RoundaboutSurface} from './roundabouts';
 import {
   isTileflowPathRoadClass,
   tileflowPathRoadClasses,
   tileflowRoadClassFilter,
+  tileflowRoadClassValues,
   tileflowRoadConstructionClasses,
 } from './semantics';
 
@@ -114,6 +114,7 @@ export function compileRoads(
 
   const defaults = defaultClassStyles(context, metrics, semantics);
   const contributions: TileflowLayerContribution[] = [];
+  const roundaboutSurfaces: RoundaboutSurface[] = [];
   const {sourceId: source, schema} = context.data;
 
   for (const [classIndex, roadClass] of roadClassOrder.entries()) {
@@ -129,6 +130,12 @@ export function compileRoads(
       request?.classes?.[roadClass],
     );
     const treatments = resolveRoadTreatments(request, schema.fields, roadClass);
+    const drawn = {
+      field: schema.fields.class,
+      classes: new Set(tileflowRoadClassValues(roadClass)),
+    };
+    const roundaboutSurface: RoundaboutSurface = {roadClass};
+    roundaboutSurfaces.push(roundaboutSurface);
 
     for (const structure of ['tunnel', 'surface', 'bridge'] as const) {
       const structureConfig = classConfig[structure];
@@ -153,8 +160,9 @@ export function compileRoads(
           structure,
           phase,
           phaseDefaults.color as string,
+          drawn,
         );
-        contributions.push({
+        const contribution: TileflowLayerContribution = {
           family: roadLinePhysicalFamily(roadClass, structure, phase),
           kind: 'layer',
           layer: applyLineStyle(
@@ -187,7 +195,36 @@ export function compileRoads(
           owner: 'roads',
           slot: structureSlots[structure][phase],
           target: `roads.classes.${roadClass}.${structure}.${phase}`,
-        });
+        };
+        if (structure === 'surface' && phase !== 'shadow') {
+          roundaboutSurface[phase] = treatedStyle;
+        }
+        if (
+          phase === 'fill' &&
+          !isTileflowPathRoadClass(roadClass) &&
+          semantics.rampOrder === 'below-roads'
+        ) {
+          // Links meet their receiving roads in the same structural band. Paint their
+          // fills first so darker links cannot leave rounded patches over a junction.
+          const rampFilter = flagFilter(schema.fields.ramp);
+          contributions.push({
+            ...contribution,
+            family: {
+              ...roadLinePhysicalFamily(roadClass, structure, 'fill'),
+              group: `${structure}:rampFill:${roadPhysicalCohort(roadClass)}`,
+              outputKey: `roads.cohorts.${structure}.${roadPhysicalCohort(roadClass)}.rampFill`,
+            },
+            layer: {
+              ...contribution.layer,
+              id: `tileflow-road-${structure}-${roadClass}-rampFill`,
+              filter: ['all', contribution.layer.filter, rampFilter],
+            },
+            localOrder: -1000 + classIndex,
+            target: `roads.classes.${roadClass}.${structure}.rampFill`,
+          });
+          contribution.layer.filter = ['all', contribution.layer.filter, ['!', rampFilter]];
+        }
+        contributions.push(contribution);
       }
 
       const hatch = structureConfig.hatch;
@@ -199,6 +236,7 @@ export function compileRoads(
           structure,
           'fill',
           roadColor(context, roadClass),
+          drawn,
         );
         const size =
           hatch.size === undefined
@@ -386,7 +424,7 @@ export function compileRoads(
   }
 
   compileSidewalks(request?.sidewalks, areaStyles.pedestrian?.fill?.color, context, contributions);
-  compileRoundabouts(request?.roundabouts, context, contributions);
+  compileRoundabouts(request?.roundabouts, roundaboutSurfaces, context, contributions);
   compileCrossings(request?.crossings, context, contributions);
 
   if (semantics.oneWayMarkers && visible.size > 0) {
@@ -536,87 +574,6 @@ function compileSidewalks(
   }
 }
 
-function compileRoundabouts(
-  request: TileflowRoadRoundaboutStyle | undefined,
-  context: TileflowDomainCompileContext,
-  contributions: TileflowLayerContribution[],
-): void {
-  const {fields, layers} = context.data.schema;
-  if (!layers.circularFeature) return;
-
-  const circularFields: CircularRoadFields = {
-    circularInnerRadiusMeters: fields.circularInnerRadiusMeters,
-    circularOuterRadiusMeters: fields.circularOuterRadiusMeters,
-    circularRadiusAtZoom15: fields.circularRadiusAtZoom15,
-    circularRadiusMeters: fields.circularRadiusMeters,
-    class: fields.class,
-  };
-  const radius = expression<number>(circularRoadInnerRadius(circularFields, false));
-  const casingRadius = expression<number>(circularRoadInnerRadius(circularFields, true));
-  const config = mergeTileflowDesign<TileflowRoadRoundaboutStyle>(
-    {
-      casing: {
-        color: 'rgba(0, 0, 0, 0)',
-        minZoom: 15,
-        pitchAlignment: 'map',
-        pitchScale: 'map',
-        radius: casingRadius,
-        strokeColor: context.colors.roads.casing,
-        strokeWidth: expression<number>(circularRoadStrokeWidth(circularFields, true)),
-      },
-      fill: {
-        color: 'rgba(0, 0, 0, 0)',
-        minZoom: 15,
-        pitchAlignment: 'map',
-        pitchScale: 'map',
-        radius,
-        strokeColor: expression<string>([
-          'match',
-          ['coalesce', ['get', fields.class], 'minor'],
-          'motorway',
-          context.colors.roads.motorway,
-          'trunk',
-          context.colors.roads.trunk,
-          'primary',
-          context.colors.roads.primary,
-          ['secondary', 'tertiary'],
-          context.colors.roads.secondary,
-          context.colors.roads.minor,
-        ]),
-        strokeWidth: expression<number>(circularRoadStrokeWidth(circularFields, false)),
-      },
-    },
-    request,
-  );
-  const base = {
-    type: 'circle',
-    source: context.data.sourceId,
-    'source-layer': layers.circularFeature,
-    filter: ['==', ['get', fields.circularKind], 'road_ring'],
-  } as const;
-
-  if (config.casing && config.casing.visible !== false) {
-    contributions.push({
-      kind: 'layer',
-      layer: applyCircleStyle({...base, id: 'tileflow-road-circular-casing'}, config.casing),
-      localOrder: 10,
-      owner: 'roads',
-      slot: 'transport-symbols',
-      target: 'roads.roundabouts.casing',
-    });
-  }
-  if (config.fill && config.fill.visible !== false) {
-    contributions.push({
-      kind: 'layer',
-      layer: applyCircleStyle({...base, id: 'tileflow-road-circular-fill'}, config.fill),
-      localOrder: 20,
-      owner: 'roads',
-      slot: 'transport-symbols',
-      target: 'roads.roundabouts.fill',
-    });
-  }
-}
-
 function compileCrossings(
   request: TileflowRoadCrossingStyle | undefined,
   context: TileflowDomainCompileContext,
@@ -637,7 +594,7 @@ function compileCrossings(
       ]),
       padding: 0,
       pitchAlignment: 'map',
-      rotate: expression<number>(['+', ['to-number', ['get', fields.direction], 0], 90]),
+      rotate: expression<number>(['+', ['to-number', ['get', fields.direction]], 90]),
       rotationAlignment: 'map',
       size: zoom.linear([
         [15, 0.22],
@@ -669,6 +626,13 @@ function compileCrossings(
           ['!=', ['get', fields.crossing], 'no'],
           ['has', fields.markings],
           ['match', ['get', fields.markings], ['no', 'none', 'unmarked'], false, true],
+          // World leaves direction absent when it cannot resolve a crossing against
+          // a road (including points on adjoining footways). Do not invent an axis.
+          ['has', fields.direction],
+          ['match', ['typeof', ['get', fields.direction]], ['number', 'string'], true, false],
+          ['!=', ['get', fields.direction], ''],
+          ['>=', ['to-number', ['get', fields.direction], -1], 0],
+          ['<=', ['to-number', ['get', fields.direction], -1], 360],
         ],
       },
       config,
@@ -678,112 +642,6 @@ function compileCrossings(
     slot: 'transport-symbols',
     target: 'roads.crossings',
   });
-}
-
-type CircularRoadFields = {
-  circularRadiusAtZoom15: string;
-  circularRadiusMeters: string;
-  circularInnerRadiusMeters: string;
-  circularOuterRadiusMeters: string;
-  class: string;
-};
-
-const circularRoadBorderTotalWidth = 1;
-
-function circularRoadInnerRadius(fields: CircularRoadFields, casing: boolean): readonly unknown[] {
-  const values = circularRoadValues(fields);
-  const stops: unknown[] = [];
-  for (let level = 15; level <= 22; level += 1) {
-    const centerlineRadius =
-      level === 15 ? values.radiusAtZoom15 : ['*', values.radiusAtZoom15, 2 ** (level - 15)];
-    const physicalInnerRadius = [
-      '*',
-      centerlineRadius,
-      ['/', values.innerRadiusMeters, values.radiusMeters],
-    ];
-    const baseWidth = circularRoadBaseWidth(fields.class);
-    const fallbackWidth =
-      level === 15 ? baseWidth : ['*', baseWidth, circularRoadFallbackScale(level)];
-    const fallbackInnerRadius = ['-', centerlineRadius, ['/', fallbackWidth, 2]];
-    const innerRadius = ['case', values.hasPhysicalRadii, physicalInnerRadius, fallbackInnerRadius];
-    stops.push(level, [
-      'max',
-      0,
-      casing ? ['-', innerRadius, circularRoadBorderTotalWidth / 2] : innerRadius,
-    ]);
-  }
-  return ['interpolate', ['linear'], ['zoom'], ...stops];
-}
-
-function circularRoadStrokeWidth(fields: CircularRoadFields, casing: boolean): readonly unknown[] {
-  const values = circularRoadValues(fields);
-  const baseWidth = circularRoadBaseWidth(fields.class);
-  const stops: unknown[] = [];
-  for (let level = 15; level <= 22; level += 1) {
-    const centerlineRadius =
-      level === 15 ? values.radiusAtZoom15 : ['*', values.radiusAtZoom15, 2 ** (level - 15)];
-    const physicalWidth = [
-      '*',
-      centerlineRadius,
-      ['/', ['-', values.outerRadiusMeters, values.innerRadiusMeters], values.radiusMeters],
-    ];
-    const fallbackWidth =
-      level === 15 ? baseWidth : ['*', baseWidth, circularRoadFallbackScale(level)];
-    stops.push(level, [
-      'case',
-      values.hasPhysicalRadii,
-      casing ? ['+', physicalWidth, circularRoadBorderTotalWidth] : physicalWidth,
-      casing ? ['+', fallbackWidth, circularRoadBorderTotalWidth] : fallbackWidth,
-    ]);
-  }
-  return ['interpolate', ['linear'], ['zoom'], ...stops];
-}
-
-function circularRoadBaseWidth(classField: string): readonly unknown[] {
-  return [
-    'match',
-    ['coalesce', ['get', classField], 'minor'],
-    'motorway',
-    6,
-    'trunk',
-    5.5,
-    'primary',
-    5,
-    'secondary',
-    4.5,
-    'tertiary',
-    4,
-    'service',
-    2.5,
-    'track',
-    2,
-    3,
-  ];
-}
-
-function circularRoadValues(fields: CircularRoadFields) {
-  const radiusAtZoom15 = ['to-number', ['get', fields.circularRadiusAtZoom15], 0];
-  const radiusMeters = ['to-number', ['get', fields.circularRadiusMeters], 0];
-  const outerRadiusMeters = ['to-number', ['get', fields.circularOuterRadiusMeters], 0];
-  const innerRadiusMeters = ['to-number', ['get', fields.circularInnerRadiusMeters], 0];
-  return {
-    hasPhysicalRadii: [
-      'all',
-      ['>', radiusMeters, 0],
-      ['>', outerRadiusMeters, innerRadiusMeters],
-      ['>=', innerRadiusMeters, 0],
-    ],
-    innerRadiusMeters,
-    outerRadiusMeters,
-    radiusAtZoom15,
-    radiusMeters,
-  };
-}
-
-function circularRoadFallbackScale(level: number): number {
-  const interpolationBase = 1.35;
-  const progress = (interpolationBase ** (level - 15) - 1) / (interpolationBase ** (22 - 15) - 1);
-  return 1 + progress * 1.2;
 }
 
 function widthMatchedHatchPattern(
@@ -906,9 +764,12 @@ function resolveRoadTreatments(
   add(request?.modifiers?.indoor, flagFilter(fields.indoor));
   add(request?.modifiers?.official, flagFilter(fields.official));
 
-  for (const [scale, style] of Object.entries(request?.mountainBike ?? {})) {
-    add(style, ['==', ['to-string', ['get', fields.mtbScale]], scale]);
-  }
+  // Mountain-bike difficulty describes trails: paths and tracks. Leaving it off the other classes
+  // keeps their layers solid, and so on MapLibre's solid-line shader.
+  if (isTileflowPathRoadClass(roadClass) || roadClass === 'track')
+    for (const [scale, style] of Object.entries(request?.mountainBike ?? {})) {
+      add(style, ['==', ['to-string', ['get', fields.mtbScale]], scale]);
+    }
 
   if (roadClass === 'service') {
     for (const [serviceType, value] of Object.entries(serviceTypeValues)) {
@@ -929,6 +790,8 @@ function applyRoadTreatments(
   structure: TileflowRoadStructure,
   phase: 'casing' | 'fill' | 'shadow',
   fallbackColor: string,
+  /** The road class's `class` field and values, to settle conditions on them. */
+  drawn: Readonly<{field: string; classes: ReadonlySet<string>}>,
 ): typeof base {
   const result = {...base} as Record<string, unknown>;
   const paintProperties = [
@@ -946,9 +809,24 @@ function applyRoadTreatments(
       const value = style[structure]?.[phase]?.[property];
       return value === undefined
         ? []
-        : [{condition, resolve: () => expressionOutput(value)} satisfies ConditionalBranch];
+        : [
+            {
+              condition,
+              resolve: () => expressionOutput(withinClasses(toMapLibreStyleValue(value), drawn)),
+            } satisfies ConditionalBranch,
+          ];
     });
     if (branches.length > 0) {
+      // An all-solid treatment must use the solid-line shader. Even [1, 0]
+      // runs through the SDF dash atlas, which stipples thin hollow casings.
+      if (
+        property === 'dash' &&
+        isSolidRoadDash(withinClasses(result[property] ?? treatmentPaintDefaults.dash, drawn)) &&
+        branches.every(({resolve}) => isSolidRoadDash(resolve()))
+      ) {
+        delete result[property];
+        continue;
+      }
       result[property] = conditionalStyleValue(
         result[property],
         branches,
@@ -968,9 +846,91 @@ function applyRoadTreatments(
       widthScales,
       treatmentPaintDefaults.width,
     );
+    // A hollow casing's gap follows the carriageway. Scaling only its stroke
+    // lets the widened fill cover the border as the road grows with zoom.
+    if (result.gapWidth !== undefined && result.gapWidth !== 0) {
+      result.gapWidth = conditionalWidthScaleValue(
+        result.gapWidth,
+        widthScales,
+        treatmentPaintDefaults.gapWidth,
+      );
+    }
   }
 
   return result as typeof base;
+}
+
+/**
+ * A value as a road class's features see it: conditions on the `class` field that hold, or fail,
+ * for every class value it draws are settled. In a motorway's layers a dash for construction paths
+ * never applies, and the motorway keeps the solid-line shader.
+ */
+function withinClasses(
+  value: unknown,
+  drawn: Readonly<{field: string; classes: ReadonlySet<string>}>,
+): unknown {
+  const decided = (condition: unknown): boolean | undefined => {
+    if (!Array.isArray(condition)) return typeof condition === 'boolean' ? condition : undefined;
+    const [operator, ...operands] = condition;
+    // The class field by the data's name, or by the semantic name bound to it later.
+    const isClass = (operand: unknown) =>
+      Array.isArray(operand) &&
+      operand.length === 2 &&
+      operand[0] === 'get' &&
+      (operand[1] === drawn.field ||
+        (typeof operand[1] === 'object' &&
+          operand[1] !== null &&
+          (operand[1] as {kind?: unknown}).kind === 'tileflow-data-field' &&
+          (operand[1] as {name?: unknown}).name === 'class'));
+    const among = (labels: readonly unknown[]) => {
+      const hits = [...drawn.classes].filter((value) => labels.includes(value)).length;
+      return hits === 0 ? false : hits === drawn.classes.size ? true : undefined;
+    };
+    if ((operator === '==' || operator === '!=') && operands.length === 2) {
+      const label = isClass(operands[0]) ? operands[1] : isClass(operands[1]) ? operands[0] : null;
+      if (typeof label !== 'string') return undefined;
+      const equal = among([label]);
+      return equal === undefined ? undefined : operator === '==' ? equal : !equal;
+    }
+    if (
+      operator === 'match' &&
+      operands.length === 4 &&
+      isClass(operands[0]) &&
+      typeof operands[2] === 'boolean' &&
+      typeof operands[3] === 'boolean'
+    ) {
+      const labels = Array.isArray(operands[1]) ? operands[1] : [operands[1]];
+      const matched = among(labels);
+      return matched === undefined ? undefined : matched ? operands[2] : operands[3];
+    }
+    if (operator === '!' && operands.length === 1) {
+      const inner = decided(operands[0]);
+      return inner === undefined ? undefined : !inner;
+    }
+    if (operator === 'all' || operator === 'any') {
+      const results = operands.map(decided);
+      if (results.includes(operator === 'all' ? false : true)) return operator !== 'all';
+      return results.every((result) => result !== undefined) ? operator === 'all' : undefined;
+    }
+    return undefined;
+  };
+  if (!Array.isArray(value) || value[0] !== 'case') return value;
+  const branches: unknown[] = [];
+  for (let index = 1; index < value.length - 1; index += 2) {
+    const holds = decided(value[index]);
+    if (holds === false) continue;
+    const output = withinClasses(value[index + 1], drawn);
+    if (holds === true) return branches.length ? ['case', ...branches, output] : output;
+    branches.push(value[index], output);
+  }
+  const fallback = withinClasses(value.at(-1), drawn);
+  return branches.length ? ['case', ...branches, fallback] : fallback;
+}
+
+function isSolidRoadDash(value: unknown): boolean {
+  const output = expressionOutput(value);
+  const dash = Array.isArray(output) && output[0] === 'literal' ? output[1] : output;
+  return Array.isArray(dash) && dash.length === 2 && dash[0] === 1 && dash[1] === 0;
 }
 
 function roadTreatmentPhaseConditions(

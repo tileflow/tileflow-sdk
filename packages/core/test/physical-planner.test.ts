@@ -1,5 +1,6 @@
 import {
   createPropertyExpression,
+  featureFilter,
   latest as mapLibreStyleSpec,
   validateStyleMin,
 } from '@maplibre/maplibre-gl-style-spec';
@@ -78,6 +79,142 @@ function styleErrors(layers: readonly Record<string, unknown>[]): string[] {
     layers,
   }).map((error) => error.message);
 }
+
+function roadNameLayer(roadClass: string, layout: Record<string, unknown> = {}): Layer {
+  return {
+    id: `road-name-${roadClass}`,
+    type: 'symbol',
+    source,
+    'source-layer': 'transportation_name',
+    filter: ['==', ['get', 'class'], roadClass],
+    metadata: semanticMetadata('labels', 'symbols', `labels.roads.${roadClass}`),
+    layout: {'symbol-placement': 'line', 'text-field': ['get', 'name'], ...layout},
+  };
+}
+
+test('merged road names retain top-layer-first collision priority', () => {
+  // Navigation names are authored bottom-to-top: secondary, then primary.
+  // Without consolidation MapLibre offers primary names first.
+  for (const sortKey of [undefined, -90, ['get', 'priority']]) {
+    const layout = sortKey === undefined ? {} : {'symbol-sort-key': sortKey};
+    const layers = planTileflowLayers([
+      roadNameLayer('secondary', layout),
+      roadNameLayer('primary', layout),
+    ]);
+    assert.equal(layers.length, 1);
+    assert.deepEqual(styleErrors(layers), []);
+    const key = (layers[0]!.layout as Record<string, unknown>)['symbol-sort-key'];
+    const priority = (roadClass: string, rank: number) =>
+      evaluateProperty(key, mapLibreStyleSpec.layout_symbol['symbol-sort-key'], 15, {
+        class: roadClass,
+        priority: rank,
+      }) as number;
+    assert.ok(priority('primary', 1000) < priority('secondary', -1000));
+    if (Array.isArray(sortKey)) {
+      assert.ok(priority('primary', -1000) < priority('primary', 1000));
+      assert.ok(priority('secondary', -1000) < priority('secondary', 1000));
+    }
+  }
+});
+
+test('overlapping road names retain bottom-to-top drawing order when merged', () => {
+  for (const kind of ['text', 'icon']) {
+    for (const layout of [
+      {[`${kind}-allow-overlap`]: true},
+      {[`${kind}-ignore-placement`]: true},
+      {[`${kind}-overlap`]: 'always'},
+      {[`${kind}-overlap`]: 'cooperative'},
+      {[`${kind}-overlap`]: 'never', [`${kind}-allow-overlap`]: true},
+    ]) {
+      const layers = planTileflowLayers([
+        roadNameLayer('secondary', layout),
+        roadNameLayer('primary', layout),
+      ]);
+      assert.equal(layers.length, 1);
+      assert.deepEqual(styleErrors(layers), []);
+      const key = (layers[0]!.layout as Record<string, unknown>)['symbol-sort-key'];
+      const rank = (roadClass: string) =>
+        evaluateProperty(key, mapLibreStyleSpec.layout_symbol['symbol-sort-key'], 15, {
+          class: roadClass,
+        }) as number;
+      assert.equal(rank('primary') > rank('secondary'), layout[`${kind}-overlap`] !== 'never');
+    }
+  }
+});
+
+test('camera-dependent overlap keeps separate road layers so collision order can change', () => {
+  const layout = {'text-overlap': ['step', ['zoom'], 'never', 16, 'always']};
+  const layers = planTileflowLayers([
+    roadNameLayer('secondary', layout),
+    roadNameLayer('primary', layout),
+  ]);
+  assert.equal(layers.length, 2);
+  assert.deepEqual(styleErrors(layers), []);
+});
+
+test('network road names share placement without changing class visibility or size', () => {
+  const input = [
+    {...roadNameLayer('minor'), minzoom: 13, maxzoom: 19},
+    {...roadNameLayer('primary'), minzoom: 12},
+    {...roadNameLayer('motorway'), minzoom: 10},
+  ].map((layer, index) => ({
+    ...layer,
+    layout: {
+      ...(layer.layout as Record<string, unknown>),
+      'text-size': ['interpolate', ['linear'], ['zoom'], 10, 8 + index, 18, 14 + index],
+    },
+  }));
+  const output = planTileflowLayers(input, 'network');
+  assert.equal(output.length, 1, 'a single bucket suppresses repeat names across road classes');
+  assert.deepEqual(styleErrors(output), []);
+  assert.equal((output[0]!.layout as Record<string, unknown>)['symbol-sort-key'], undefined);
+  const visible = (layer: Layer, zoom: number, properties: Record<string, unknown>) =>
+    zoom >= Number(layer.minzoom ?? 0) &&
+    zoom < Number(layer.maxzoom ?? Infinity) &&
+    featureFilter(layer.filter as never).filter({zoom}, {type: 2, properties} as never);
+  for (const [index, roadClass] of ['minor', 'primary', 'motorway'].entries()) {
+    for (const zoom of [9, 10, 11.99, 12, 12.99, 13, 15.5, 18, 18.99, 19, 20]) {
+      const properties = {class: roadClass, name: 'Same avenue'};
+      assert.equal(visible(output[0]!, zoom, properties), visible(input[index]!, zoom, properties));
+      if (!visible(input[index]!, zoom, properties)) continue;
+      const size = (layer: Layer) =>
+        evaluateProperty(
+          (layer.layout as Record<string, unknown>)['text-size'],
+          mapLibreStyleSpec.layout_symbol['text-size'],
+          zoom,
+          properties,
+        );
+      assert.equal(size(output[0]!), size(input[index]!));
+    }
+  }
+});
+
+test('network grouping respects explicit priorities, styling and ordering boundaries', () => {
+  const first = roadNameLayer('secondary');
+  const second = roadNameLayer('primary');
+  for (const variant of [
+    {...second, minzoom: 12.5},
+    {...second, paint: {'text-color': '#ff0000'}},
+    roadNameLayer('primary', {'symbol-sort-key': -90}),
+    {
+      ...second,
+      metadata: renderOperationMetadata('pass', 'labels', 'symbols', 'labels.roads.primary'),
+    },
+  ])
+    assert.equal(planTileflowLayers([first, variant], 'network').length, 2);
+  const intervening: Layer = {id: 'divider', type: 'background'};
+  assert.equal(planTileflowLayers([first, intervening, second], 'network').length, 3);
+  const priority = ['get', 'rank'];
+  const common = planTileflowLayers(
+    [
+      roadNameLayer('secondary', {'symbol-sort-key': priority}),
+      roadNameLayer('primary', {'symbol-sort-key': priority}),
+    ],
+    'network',
+  );
+  assert.equal(common.length, 1);
+  assert.deepEqual((common[0]!.layout as Record<string, unknown>)['symbol-sort-key'], priority);
+});
 
 function evaluateProperty(
   expression: unknown,
@@ -655,6 +792,26 @@ test('waterway consolidation uses a solid dash fallback for regular lines', () =
   assert.equal(layers.length, 1);
   assert.match(JSON.stringify(layers[0]?.paint), /line-dasharray/);
   assert.match(JSON.stringify(layers[0]?.paint), /\[1,0\]/);
+});
+
+test('zoom-dependent road selectors remain separate instead of entering paint expressions', () => {
+  const input = (['motorway', 'trunk'] as const).map((roadClass) =>
+    roadLayer(roadClass, roadClass === 'motorway' ? 8 : 6, {
+      filter: [
+        'all',
+        ['==', ['get', 'class'], roadClass],
+        ['step', ['zoom'], ['!=', ['get', 'ramp'], 1], 12, true],
+      ],
+      paint: {
+        'line-color': roadClass === 'motorway' ? '#8899aa' : '#aabbcc',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 12, 2, 18, 8],
+      },
+    }),
+  );
+  const planned = planTileflowLayers(input);
+  assert.deepEqual(styleErrors(input), []);
+  assert.deepEqual(styleErrors(planned), []);
+  assert.deepEqual(planned, input);
 });
 
 test('multi-branch match filters retain every boolean branch', () => {

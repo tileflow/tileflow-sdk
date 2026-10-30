@@ -5,6 +5,7 @@ import {spawn} from 'node:child_process';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {CoordinatesContractError} from '@tileflow/coordinates/contract';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {
   type CoordinatesCommandDependencies,
   registerCoordinatesCommands,
@@ -153,16 +154,7 @@ test('coordinates rejects unknown options before creating a runtime', async () =
 test('coordinates unknown options are structured in the CLI process before runtime setup', async () => {
   const child = spawn(
     process.execPath,
-    [
-      '--import',
-      'tsx',
-      'src/index.ts',
-      'coordinates',
-      'describe',
-      '--id',
-      'EPSG:4326',
-      '--unknown',
-    ],
+    cliFixtureArguments(['coordinates', 'describe', '--id', 'EPSG:4326', '--unknown']),
     {cwd: fileURLToPath(new URL('..', import.meta.url)), stdio: ['ignore', 'pipe', 'pipe']},
   );
   let stdout = '';
@@ -342,7 +334,7 @@ test(
   async () => {
     const child = spawn(
       process.execPath,
-      ['--import', 'tsx', 'src/index.ts', 'coordinates', 'transform', '--input', '-', '--json'],
+      cliFixtureArguments(['coordinates', 'transform', '--input', '-', '--json']),
       {cwd: fileURLToPath(new URL('..', import.meta.url)), stdio: ['pipe', 'pipe', 'pipe']},
     );
     let stdout = '';
@@ -468,7 +460,7 @@ async function runCoordinates(
 }
 
 async function runCli(args: string[]): Promise<CoordinatesRun> {
-  const child = spawn(process.execPath, ['--import', 'tsx', 'src/index.ts', ...args], {
+  const child = spawn(process.execPath, cliFixtureArguments(args), {
     cwd: fileURLToPath(new URL('..', import.meta.url)),
     stdio: ['ignore', 'pipe', 'pipe'],
   });

@@ -8,6 +8,7 @@ import type {
   TileflowLineStackStyle,
   TileflowLineStyle,
   TileflowMarkerSymbolStyle,
+  TileflowNumberStyleValue,
   TileflowSymbolStyle,
 } from './cartography/styles';
 import type {
@@ -203,8 +204,11 @@ export type TileflowTerrainContourLabelStyle = TileflowTerrainLayerRange & {
 export type TileflowTerrainContoursConfig = {
   /** Maximum native zoom exposed by the DEM tile template. */
   demMaxZoom: number;
-  /** Explicit HTTP(S) DEM template containing {z}, {x}, and {y}. */
-  demUrl: string;
+  /**
+   * HTTP(S) DEM template containing {z}, {x}, and {y}. Defaults to the hosted Tileflow Terrain
+   * tiles, `{apiBaseUrl}/tiles/terrain/{z}/{x}/{y}.webp`, which follow the current release.
+   */
+  demUrl?: string;
   index?: TileflowTerrainContourLineStyle;
   labels?: TileflowTerrainContourLabelStyle;
   maxZoom?: number;
@@ -217,6 +221,13 @@ export type TileflowTerrainContoursConfig = {
   thresholds: Readonly<Record<number, readonly [number, number]>>;
 };
 export type TileflowTerrainConfig = {
+  /** Explicit DEM tile templates, mutually exclusive with the TileJSON url. */
+  tiles?: readonly string[];
+  /** Native DEM resolution limits, independent of hillshade visibility. */
+  minZoom?: number;
+  maxZoom?: number;
+  /** Raster tile width in pixels. Defaults to the renderer default when omitted. */
+  tileSize?: 256 | 512;
   attribution?: string;
   contours?: TileflowTerrainContoursConfig;
   encoding?: TileflowTerrainEncoding;
@@ -290,8 +301,30 @@ export type TileflowRoadAreaStyle = {
 export type TileflowRoadCrossingStyle = Omit<TileflowIconStyle, 'image'> &
   Required<Pick<TileflowIconStyle, 'image'>>;
 export type TileflowRoadRoundaboutStyle = {
+  /** Extra casing width in pixels, split equally across both edges; defaults to the road border. */
+  borderWidth?: TileflowNumberStyleValue;
   casing?: TileflowCircleStyle;
+  /** Road width in pixels when metric radii are absent; defaults to the effective surface fill width. */
+  fallbackWidth?: TileflowNumberStyleValue;
   fill?: TileflowCircleStyle;
+};
+/**
+ * How Core's street lights renderer lights the map's streets at night, from the lamps and lit
+ * streets its data holds.
+ */
+export type TileflowRoadStreetLightStyle = {
+  /** The light of lamps whose data gives no colour; a warm white by default. */
+  color?: TileflowThemeColorValue;
+  /** Whether the map has street lights; defaults to false. Set true to opt in. */
+  enabled?: boolean;
+  /**
+   * Where light is estimated where the data maps no lamps: `lit` (the default) along streets and
+   * pavements mapped as lit; `streets` also along streets the data says nothing about, in tiles
+   * that map few lamps, which invents light; `none` nowhere.
+   */
+  estimate?: 'lit' | 'streets' | 'none';
+  /** How bright the lights shine, from 0 to 2; defaults to 1. */
+  intensity?: TileflowThemeNumberValue;
 };
 export type TileflowRoadSidewalkStyle = {
   outline?: TileflowLineStyle;
@@ -310,10 +343,13 @@ export type TileflowRoadsModuleConfig = {
   mountainBike?: Partial<Record<TileflowMountainBikeScale, TileflowRoadTreatmentStyle>>;
   oneWayMarkers?: boolean;
   outline?: TileflowRoadOutline;
+  /** Draw ramp fills below receiving roads by default; `by-class` keeps their class's order. */
+  rampOrder?: 'below-roads' | 'by-class';
   restrictions?: Partial<Record<TileflowRoadRestriction, TileflowRoadTreatmentStyle>>;
   roundabouts?: TileflowRoadRoundaboutStyle;
   serviceTypes?: Partial<Record<TileflowRoadServiceType, TileflowRoadTreatmentStyle>>;
   sidewalks?: TileflowRoadSidewalkStyle;
+  streetLights?: TileflowRoadStreetLightStyle;
   structures?: Partial<Record<TileflowRoadStructure, TileflowRoadLayerStyle>>;
   weight?: TileflowRoadWeight;
   widthScale?: Partial<Record<TileflowRoadClass, TileflowThemeNumberValue>>;
@@ -352,6 +388,20 @@ export type TileflowLabelsModuleConfig = {
   language?: TileflowLabelLanguage;
   places?: TileflowLabelDetail;
   roadClasses?: readonly TileflowRoadClass[];
+  /** Share placement and repeated-name suppression across compatible road classes. */
+  roadGrouping?: 'class' | 'network';
+  /** Abbreviate recognized road-type words without translating the selected label language. */
+  roadNameFormat?: 'full' | 'compact';
+  /**
+   * Where street names draw. `foreground` (the default) keeps them above buildings and
+   * vegetation. `ground` places them above flat footprints and below raised buildings,
+   * with map-aligned text by default.
+   * Ground names retain their road-class collision order, but foreground symbols are offered
+   * first by the renderer; `collisionPriority` cannot make ground names outrank those symbols.
+   * Shields and junction numbers keep their foreground placement.
+   */
+  roadPlacement?: 'ground' | 'foreground';
+  /** Defaults to streets, including local street names where their geometry is enabled. */
   roads?: TileflowRoadLabelDetail;
   shields?: TileflowRoadShieldDetail;
   styles?: TileflowLabelStyles;
@@ -378,21 +428,57 @@ export const tileflowPoiCategories = [
 export type TileflowPoiCategory = (typeof tileflowPoiCategories)[number];
 export type TileflowPoiDensity = 1 | 2 | 3 | 4 | 5;
 export type TileflowPoiColorMode = 'uniform' | 'category';
-export type TileflowPoiCategoryStyle = Omit<TileflowMarkerSymbolStyle, 'priority'> & {
-  /** Optional category-local cap within the module's canonical density tiers. */
-  density?: TileflowPoiDensity;
-};
+/**
+ * How POI categories are placed against each other. `importance` places every category in one
+ * order, by World's ranks. `categories` gives each category its own layer and places the
+ * categories in the order they are listed, the first on top; ranks order each category only.
+ */
+export type TileflowPoiPlacementOrder = 'categories' | 'importance';
+/**
+ * The appearance of one POI category. With the default `importance` order every category shares
+ * one placement layer, so categories may differ only in properties MapLibre evaluates per feature
+ * (image, size, colors, font, offsets); layer-wide properties such as zoom ranges, padding,
+ * overlap or `optional` must match, or the module uses `placement.order: 'categories'`.
+ */
+export type TileflowPoiCategoryStyle = Omit<TileflowMarkerSymbolStyle, 'priority'>;
 export type TileflowPoiModuleConfig = {
   type: 'poi';
   categories?: readonly TileflowPoiCategory[];
   color?: TileflowPoiColorMode;
+  /** Defaults to 2. World's ranks decide which features are eligible at each zoom. */
   density?: TileflowPoiDensity;
+  /** Category overrides of density, with the same zoom-dependent detail allowance. */
+  densityByCategory?: Partial<Record<TileflowPoiCategory, TileflowPoiDensity>>;
+  /** Fixed maximum World filter rank per POI type (0–5), independent of zoom detail. */
+  maxRankByType?: Readonly<Record<string, 0 | 1 | 2 | 3 | 4 | 5>>;
+  /** Zoom for the second extra rank of POI detail. Must exceed 16; defaults to 17. */
+  detailZoom?: number;
   icons?: boolean;
   labels?: boolean;
   minZoom?: number;
   placement?: {
+    /**
+     * Places each pictogram with its name as one unit that needs room for both. Defaults to
+     * `true`. Use false to place pictograms and names independently.
+     */
     coupleIconAndLabel?: boolean;
     iconPadding?: number;
+    /**
+     * World POI `type` values whose pictogram explains them. When pictograms and names are both
+     * drawn, every other POI needs a name, and these types are drawn as a pictogram alone.
+     * Defaults to parking and public toilets.
+     */
+    iconOnlyTypes?: readonly string[];
+    /** Defaults to `importance`. */
+    order?: TileflowPoiPlacementOrder;
+    /**
+     * With the `importance` order, POIs whose World `filter_rank` is at most this value are placed
+     * before the map's road and place labels, and the others after them. A map that gives street
+     * names priority over POIs (labels `collisionPriority: 'navigation'`) keeps its landmarks this
+     * way. Unset, every POI is placed at the module's own position.
+     */
+    prominentRank?: 0 | 1 | 2 | 3 | 4 | 5;
+    /** Collision margin around the name, in pixels. Defaults to 3. */
     textPadding?: number;
   };
   styles?: Partial<Record<TileflowPoiCategory, TileflowPoiCategoryStyle>>;

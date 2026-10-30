@@ -18,7 +18,7 @@ Pod::Spec.new do |s|
 	s.frameworks = 'Foundation', 'UIKit'
 	s.libraries = 'c++'
 	s.dependency 'React-Core', '0.83.10'
-	s.dependency 'MapLibreReactNative', '11.3.10'
+	s.dependency 'MapLibreReactNative', '11.5.0'
 	# Surface integration consumes only the pinned peer's private native view/camera headers.
 	# No Tileflow native header is promoted to a public CocoaPods header.
 	s.pod_target_xcconfig = {

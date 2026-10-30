@@ -305,7 +305,7 @@ test('keeps World selection and glyph delivery explicit and independent', () => 
   assert.equal(Object.hasOwn(source, 'tiles'), false);
   assert.equal(first.glyphs, glyphs.url);
   assert.equal(first.sprite, streetsPreparedAssets.icons.sprite);
-  assert.ok(first.layers.some((layer) => layer.id === 'tileflow-poi-food-drink-icon'));
+  assert.ok(first.layers.some((layer) => layer.id === 'tileflow-poi'));
   assert.deepEqual(first.metadata?.['tileflow:data'], {
     generation: 'v1',
     kind: 'tileflow-world',

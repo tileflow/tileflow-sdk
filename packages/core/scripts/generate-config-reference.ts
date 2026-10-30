@@ -6,7 +6,7 @@ import {tileflowCaptureSceneSchema} from '../src/capture-scene';
 import {tileflowCaptureShotLimits, tileflowCaptureShotSchema} from '../src/capture-shot';
 import {tileflowDataExpressionLimits} from '../src/cartography/data-expression';
 import {tileflowRenderStackLimits} from '../src/cartography/render-stack';
-import {tileflowSemanticFieldNames} from '../src/cartography/semantic-bindings';
+import {tileflowSemanticExpressionFieldNames} from '../src/cartography/semantic-bindings';
 import {tileflowThemeTokenCategories} from '../src/cartography/values';
 import {tileflowMapDefaultMaxDepth, tileflowMapMergeStrategies} from '../src/maps/resolve';
 import {resolvedTileflowMapSchema} from '../src/resolved-map-schema';
@@ -333,6 +333,11 @@ function createThemeContractReference(): JsonSchema {
         rule: 'Each declared selector must exist in themes and its theme.colorScheme must match the system key.',
       },
       {
+        path: 'timeOfDay.{theme}.{day,dawn,dusk,night}',
+        enforcement: 'config-validation',
+        rule: 'Families and their presets must name existing themes. Each family includes itself; a concrete theme belongs to at most one family.',
+      },
+      {
         path: 'themes.*',
         enforcement: 'theme-resolution',
         rule: 'Unknown, cyclic, and cross-category token references are rejected before style compilation.',
@@ -587,7 +592,7 @@ function enrichDataExpressionSchemas(root: JsonSchema): void {
     description: 'Schema-bound semantic field emitted by field(name); never a physical column.',
     properties: {
       kind: {const: 'tileflow-data-field'},
-      name: {enum: tileflowSemanticFieldNames, type: 'string'},
+      name: {enum: tileflowSemanticExpressionFieldNames, type: 'string'},
     },
     required: ['kind', 'name'],
     type: 'object',
@@ -989,6 +994,13 @@ function enrichResolvedMapReference(schema: JsonSchema): void {
     'Ordered local font directories. In authoring, omission inherits, declaration atomically replaces either text provider, and [] explicitly selects no provider for a text-free map.';
   glyphs.description =
     'One explicit PBF glyph provider. In authoring, declaration atomically replaces inherited fonts or glyphs; fonts and glyphs are mutually exclusive.';
+
+  const models = asRecord(properties.models, 'models property');
+  models.description =
+    "Ordered directories of the map's own 3D models: glTF binaries (.glb) whose file names are their ids, drawn where a module names them, such as modules.vegetation.threeDimensional.forms.palm.models. In authoring, omission inherits, declaration atomically replaces, [] selects no models, and a later directory wins by id. <id>.far.glb is the same model for far trees. Each material is named bark, leaves, fronds or stem and takes that part's theme colours.";
+  const modelArray = dereferenceSchema(schema, models, 'models array');
+  modelArray.description = models.description;
+  modelArray.examples = [[], ['./models'], ['./models', '../shared/trees']];
 
   const iconArray = dereferenceSchema(schema, icons, 'icons array');
   iconArray.description = icons.description;

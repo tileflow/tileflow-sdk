@@ -16,6 +16,7 @@ export {
   type TileflowGlyphs,
   type TileflowIconDirectory,
   type TileflowLocalDirectory,
+  type TileflowModelDirectory,
   type TileflowPackageDirectory,
 } from './assets';
 export {resolveMap, TileflowMapResolutionError, tileflowMapDefaultMaxDepth} from './resolve';

@@ -45,6 +45,9 @@ export type TileflowIconDirectory = TileflowLocalDirectory | TileflowPackageDire
 /** One font directory in the ordered map font search path. */
 export type TileflowFontDirectory = TileflowLocalDirectory | TileflowPackageDirectory;
 
+/** One directory of 3D models in the ordered map model search path. */
+export type TileflowModelDirectory = TileflowLocalDirectory | TileflowPackageDirectory;
+
 /**
  * An explicit MapLibre glyph provider. `fontStacks` lists the exact comma-joined request keys
  * produced by each compiled `text-font` array. The map owns the URL; World never supplies fonts.

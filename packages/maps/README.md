@@ -34,7 +34,7 @@ export default defineMap({
 });
 ```
 
-This inherits both Streets themes and changes only the default selection and initial view.
+This inherits Streets' themes and changes only the default selection and initial view.
 Coordinates are `[longitude, latitude]`. To preview it:
 
 ```sh
@@ -46,15 +46,26 @@ npx tileflow preview
 Rendering can request remote tiles, glyphs, or terrain. Installing the package does not make those
 resources available offline.
 
+### Develop Streets in an SDK checkout
+
+After installing and building this workspace, run from its root:
+
+```sh
+node packages/cli/dist/index.js preview --config packages/maps/tileflow.config.ts
+```
+
+Open `http://127.0.0.1:3333`. Source edits reload in Inspector without publishing.
+Add `--scene nyc` for New York or `--against-theme dark --map streets-workbench` to compare themes.
+The CLI owns the interface; compiler and runtime changes require rebuilding those packages.
+
 ## Choose a map
 
-- `streets`: contemporary street cartography with coordinated light and dark themes, ranked POIs,
-  and generic road-reference shields.
+- `streets`: contemporary street cartography with Mapbox-inspired time-of-day and color themes,
+  ranked POIs, Madrid transit network symbols, generic road-reference shields, and regional hillshade.
 - `baedeker`: warm travel-atlas styling, serif labels, original engraved patterns, and contours.
 - `civica`: illustrated civic-print styling with warm paper, olive parks, blue annotations, and
   vermilion landmarks.
-- `ferraris`: printed-atlas styling with patterned land cover and settlements.
-- `harad`: the historical green-map design displayed as **Härad**.
+- [`map1777` (1777)](docs/map-1777.md): 1777 ink and watercolor on current data, with 3D and four times of day.
 - `siegfried`: a terrain atlas with coordinated light/dark ink palettes, contours, and engraved patterns.
 - `soundings`: bathymetric reference cartography with depth bands, continuous relief, and port context.
 - `blueprint`: a dark architectural drawing style, with a default camera centered on San Francisco.
@@ -62,6 +73,155 @@ resources available offline.
 Every official map is a complete, independent root using the same Core compiler. Official map
 objects are deeply frozen shared instances. Do not mutate them; use `defineMap({extends: ...})`
 to create an application-owned map.
+
+### Streets appearance
+
+Streets follows the visual direction of [Mapbox Standard](https://docs.mapbox.com/playground/standard-style/)
+(twelve theme/time combinations), calibrated on 2026-10-18. Inspector offers **Default**, **Faded**, and
+**Monochrome** in its Theme control, independently of the Time of day control's `day`, `dawn`,
+`dusk`, and `night` presets. Each of the twelve combinations selects a complete theme, including
+its map colors and artwork. Default retains the configuration key `light` for compatibility:
+`theme="light" timeOfDay="night"` selects `dark`, while `theme="light" timeOfDay="day"`
+selects `light`. The other concrete themes are `dawn`, `dusk`, `faded`, `monochrome`,
+`dawn-faded`, `dawn-monochrome`, `dusk-faded`, `dusk-monochrome`, `dark-faded`, and
+`dark-monochrome`. Dawn and day use light artwork; dusk and night use dark artwork. Time presets
+adjust authored map colors; selecting one does not apply a global lighting tint to the flat map.
+Ground, water, vegetation, roads, zoning, labels and halos use independently evaluated colors
+from Standard's 2026-10-08 style, including each material's theme LUT, lighting, emission and
+transparency. Ground colors are checked against sRGB framebuffer samples from Mapbox GL JS
+3.28.1 across all twelve combinations; footprints and 3D roofs use separate GPU measurements.
+Water retains its own material and zoom 5–7 / 13–14 transitions; it no longer inherits a
+swimming pool's color offset. Background emission changes between zoom 13 and 14. These values
+are baked into theme tokens, so they add no lighting or LUT work per frame.
+Scene-sun lighting preserves unshadowed roof paint while allowing light color to affect walls.
+The underlying tile data and rendering pipeline differ, so these are close palette matches rather
+than a pixel-identical copy. Streets' own semantic design retains slate-blue
+roads, uppercase road names, warm building footprints, green parks, and compact category-colored
+POI discs. Dark mode uses pale discs with dark pictograms. Pictograms adapted from Maki follow
+World's transport mode and POI type: metro, rail, tram, bus, ferry, cable-car, and airport stations
+are distinct, as are bars, cafés, museums, galleries, car dealers, and places of worship by
+religion.
+
+Streets packages DINish Medium for roads, house numbers and POIs, and Bold for shields, approximating
+the reference's DIN Pro lettering. Other roles retain Noto Sans Regular, Bold and Italic. All
+five faces ship with their licenses; DIN Pro is not bundled.
+POI discs use vivid category colors, 20px containers, and fixed native icon scale at every zoom.
+Maki's 15px artwork is composed into a centered 12px box, leaving room inside the 17px colored
+interior. Their 1x and 2x atlases rasterize these SVG compositions separately; the map displays
+each complete icon at native scale instead of rescaling the bitmap as the zoom changes.
+
+The light surface palette is compared with lossless captures of Standard with 3D buildings and
+trees disabled. Parks use a stronger green with lighter lawns and meadows drawn above them;
+flat buildings use a neutral cream. Day keeps regional connections clear through z10, softens avenues at z12–14 and retains a
+readable local grid. Colors and widths recover their original detail at z15. Widths interpolate
+exponentially (base 1.5), including fractional zooms. Motorways and trunks start at z3, primary roads at z6, secondary and tertiary
+roads at z8, streets and links at z12, and service roads at z15. Surface casings begin at z15
+(z16 for service roads and tracks), growing independently of the carriageway gap.
+Major overview strokes include bridges and tunnels until structural layers take over at z13.
+Local structures join streets at z12. Links retain narrower widths and draw before receiving roads.
+Surface and bridge casings are continuous; tunnel casings are dashed. Construction carriageway
+fills and marks draw below roads in service, including motorway ramps.
+Borders use Standard's 2026-10-08 style, theme LUTs and unshadowed ground lighting, without
+carriageway emissive lift. HD-road borders match across classes, bridges, tunnels and roundabouts
+from z15; lower-zoom tunnels retain class colors. Paths keep separate emission. Streets uses the reference border colors without an additional darkening multiplier. These baked
+2D colors exclude fog and Standard's full lighting pipeline.
+Surface caps round at z14; tunnels retain butt caps and bridges use round fills.
+Crosswalks and compact blue-gray arrows with filled triangular heads fade in from z16.5.
+Day overview colors, from motorway/trunk to primary, secondary, tertiary and local:
+`#AAB9C9`, `#D5DBDF`, `#DEE3E6`, `#E3E7E9`, `#DDE2E5`. Unpaved roads follow the same city hierarchy. From z15: `#AAB9C9`
+for motorway/trunk/primary; `#BDCCD9` for secondary/local.
+From z13, pedestrian plazas use an opaque pale surface above commercial zoning and below
+explicit grass, gardens and parks. The `roads.pedestrian.surface` token follows the ground's
+theme and time of day. From z17, mapped sidewalks add a translucent tint and dot pattern through
+`roads.sidewalk.surface`, preserving the underlying ground color.
+Mapped parking polygons use an opaque neutral fill above overlapping vegetation and below
+roads. This requires a `landuse` polygon classified as `parking`; parking POIs and aisle lines
+alone do not provide the boundary needed to fill the surface.
+Hedges (from z15, shaded from z17), fences and walls (from z16) come from `traffic_control`.
+
+Ferry routes fade in from z8, use fine blue dashes from z13, and show uppercase route names
+along the line from z15 when the data includes them. Their labels use a water-colored halo.
+
+Regional hillshade uses [Mapzen Terrain Tiles on AWS](https://registry.opendata.aws/terrain-tiles/)
+from z5 through z13, with source attribution. The 256-pixel Terrarium source is capped at native z12;
+closer views reuse that resolution, avoiding requests for coverage-dependent high-resolution DEM tiles. This is an additional remote data request. To omit
+it, set `terrain: 'none'` in a map extending `streets`. Hillshade does not change road geometry or
+raise the terrain. Buildings appear automatically from zoom 15 with an opacity fade through 15.25;
+the preview's **3D** control can hide them, and its **Trees** control enables vegetation.
+Streets rounds exterior building corners with a 1.5-metre radius and softens the roof-to-wall
+lighting transition (`threeDimensional.edgeRadius: 1.5`). Courtyards and tile cuts retain their shape.
+Shields use 9 px DINish Bold and closer spacing at z11–13. Street names yield to destinations
+and draw above flat footprints but below 3D buildings, with viewport-aligned letters.
+3D lights use Standard's effective theme presets, retrieved on 2026-10-18: southern sun by day,
+southeast at dawn, southwest at dusk and western moonlight at night. Monochrome has distinct
+directions and strengths. Tileflow holds zoom 14+ values; Standard varies intensity below z14.
+Shading differs; `controller.setSun({date, location})` uses the real sun instead of presets.
+Landmark material profiles and subtle dusk/night illumination are covered in
+[3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md).
+The buildings' `threeDimensional.lighting` and `shadows` options control the effect, and each
+theme's `lighting.sun.shadowIntensity` and `lighting.ambient` control its strength.
+Street lights are opt-in: set `roads.streetLights.enabled: true`.
+Core rounds corners and shades facades; Streets uses `groundOcclusion: 0.12` for ground contact.
+`buildings.threeDimensional.occlusion: false` disables contact and model occlusion.
+`buildings.contactShadow` styles the flat fallback.
+Streets selects Core's `labels.roadPlacement: 'ground'`: street names follow the road plane below
+buildings; POIs, transit names and shields remain above.
+Road names retain class zoom/size curves, favor major roads and add padding through z13.
+Pedestrian paths group separately. Compact types preserve language;
+`labels.roadNameFormat: 'full'` keeps source names.
+Disabling roads omits their names.
+Road rings, ramp and surface ordering use [Core's replaceable defaults](../core/docs/cartographic-defaults.md).
+Streets owns colors, widths, typography and time-of-day themes.
+Each theme paints a [street sky](../core/docs/street-sky.md) with night stars; `atmosphere: true`
+on a globe map adds space around it. Mercator and native targets remain supported.
+
+Streets enables model trees by default (`mode: '3d'`, `fallback: 'none'`). They stay three-dimensional
+in overhead and tilted interactive browser views. Disabling vegetation removes all trees. Renderers
+without model support omit them. Extensions can opt into the included flat crown artwork with
+`vegetation: refine({mode: 'flat'})`, or switch it with explicit view mode using `mode: 'auto'`.
+Seven forms cover rounded, spreading and upright broadleaf trees, conifers, columns, feather and fan
+palms. Light/dark crown images share their geometry. Rounded crowns have three large ovoid masses;
+upright trees have an oval crown and two lower lobes. Open trees have curved, tapered leaves drooping
+from branches; conifers are tiered. Broadleaf variants mix open and compact forms, smooth shading and
+varied colors. An eight-metre visual minimum scales smaller trees and crowns proportionally without
+changing source heights. All presets style bark and crowns independently.
+
+The models have 222–386 triangles nearby and 44–78 at distance, using Core's instanced tree
+renderer; flat crowns use the existing sprite atlas. Tree locations and attributes still come
+from the source tiles. The artwork does not add trees to parks whose data has none. See
+[3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md) for
+browser rendering and platform support. To remove both representations, extend the map:
+
+<!-- docs:check -->
+
+```ts
+import {defineMap, disable} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+
+export default defineMap({
+  id: 'streets-without-trees',
+  version: 1,
+  extends: streets,
+  modules: {vegetation: disable()},
+});
+```
+
+POIs follow World ranks and category density, with extra detail for parks and transport.
+Gardens stay at ranks 0–1 at every zoom, keeping principal destinations while omitting botanical
+collections and some small independent gardens. Other park and landmark types retain their usual
+eligibility. See [Streets POI selection and placement](docs/design-and-assets.md#streets-pois).
+
+Cities and districts hand over at z15, smaller settlements at z13. Co-located cities share one
+anchor. Districts use rank gates below z12, then source availability and collisions. Street names use 0.15 em letter spacing and
+a 1 px halo; administrative regions use bold lettering and water names use italic lettering.
+Road spacing grows from 250 px at z13 to 300 at z15, 400 at z17 and 450 at z19 to curb repetition.
+House numbers start at z17 with wide padding. Labels default to the local language.
+
+The map uses Tileflow data and assets, including packaged DINish and Noto Sans fonts. The
+reference uses DIN Pro Medium, so font shapes and stroke weight
+remain an approximation. Available POIs, abbreviated names,
+proprietary landmark models, transit branding, and building detail can differ from the reference.
+See [map design and asset provenance](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/docs/design-and-assets.md).
 
 ### Blueprint naming
 
@@ -92,25 +252,26 @@ The GitHub-distributed `@tileflow/community-maps` package exports `cyberpunk`, `
 `superTileWorld`, plus each map's font and icon descriptors. Install an exact Git commit using
 the instructions and compatible Core version in that repository.
 
-Soundings is not a navigation product. Its depth-band edges are approximate reference geometry,
-not surveyed isolines or vessel-specific safety contours. Experimental nautical aids and hazards
-are not enabled by that official map.
+Soundings is not a navigation product; its depth-band edges are approximate. It draws Nautical
+marks with its chart symbols and a "Not for navigation" notice; other maps opt in with
+`marine: 'nautical'` (see Core's Nautical marks guide).
 
 ## Themes and assets
 
 `streetsThemes` and `siegfriedThemes` expose complete `light` and `dark` themes. Import those
 collections when using `defineTheme()` to derive a new appearance. A declared `themes` collection
 replaces the inherited collection, so also declare the intended `defaultTheme` and `systemThemes`
-mapping. `system` belongs to browser selection; captures and builds use concrete theme names.
+and optional `timeOfDay` mappings. `system` belongs to browser selection; captures and builds use concrete theme names.
 
 Every map exports an icon-directory descriptor: `streetsIcons`, `baedekerIcons`, `civicaIcons`,
-`ferrarisIcons`, `haradIcons`, `siegfriedIcons`, `soundingsIcons`, and `blueprintIcons`. The descriptors point into this installed package; they are not sprite URLs.
+`map1777Icons`, `siegfriedIcons`, `soundingsIcons`, and `blueprintIcons`. The descriptors point into this installed package; they are not sprite URLs.
 The CLI and build integrations compile the selected directories into runtime assets.
 
-Baedeker and Siegfried also export `baedekerFonts` and `siegfriedFonts` for their packaged Cormorant
-Garamond faces.
+Baedeker, 1777 and Siegfried export `baedekerFonts`, `map1777Fonts` and `siegfriedFonts` for
+their packaged Cormorant Garamond faces.
 Cívica exports `civicaFonts` for DM Serif Text, Barlow Semi Condensed, and Noto Sans fallback.
-Streets, Ferraris, Härad, Soundings, and Blueprint declare Noto Sans URL glyph providers
+Streets exports `streetsFonts` for its packaged navigation lettering and Noto Sans fallback.
+Soundings and Blueprint declare Noto Sans URL glyph providers
 from one immutable Hosted base-asset set, versioned independently of World data.
 
 Omitting `icons` inherits the parent's directory list. Declaring a list replaces it; `[]` removes
@@ -161,3 +322,10 @@ for exact names. The installed package's definitions and README take precedence 
 
 The [design and asset notes](https://github.com/tileflow/tileflow-sdk/blob/main/packages/maps/docs/design-and-assets.md) describe each map's visual grammar, source references, and third-party asset boundaries. They are also included under
 `docs/` in the installed package.
+
+Streets offers three time-of-day families: `light` (displayed as Default), `faded`, and `monochrome`, each with
+`day`, `dawn`, `dusk`, and `night`. For example, `theme="faded" timeOfDay="night"` resolves to
+`dark-faded`. Inspector shows these as separate Theme and Time of day controls. All twelve
+concrete theme names remain available for existing applications and captures. This catalog
+is inherited when extending Streets without overriding it.
+See the [time-of-day contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md#style-with-themes-and-semantic-modules).

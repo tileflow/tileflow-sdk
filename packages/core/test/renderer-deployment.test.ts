@@ -217,3 +217,24 @@ test('renderer response has exact versioned Native routes and no credential or u
   ])
     assert.equal(tileflowRendererDeploymentResponseSchema.safeParse(value).success, false);
 });
+
+test('renderer families preserve a matching valid time-of-day catalog and reject dangling targets', async () => {
+  const value = artifact();
+  for (const family of [value.renderers.web, value.renderers.native]) {
+    Object.assign(family.buildManifest.maps.streets, {timeOfDay: {light: {day: 'light'}}});
+  }
+  value.renderers.native.buildRecord.buildManifestSha256 = hash(
+    value.renderers.native.buildManifest,
+  );
+  const parsed = await parseTileflowRendererDeploymentArtifact(value);
+  assert.deepEqual(parsed.renderers.web.buildManifest.maps.streets?.timeOfDay, {
+    light: {day: 'light'},
+  });
+  for (const family of [value.renderers.web, value.renderers.native]) {
+    Object.assign(family.buildManifest.maps.streets, {timeOfDay: {light: {day: 'absent'}}});
+  }
+  value.renderers.native.buildRecord.buildManifestSha256 = hash(
+    value.renderers.native.buildManifest,
+  );
+  await assert.rejects(() => parseTileflowRendererDeploymentArtifact(value));
+});

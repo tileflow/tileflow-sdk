@@ -24,6 +24,7 @@ jobs:
     outputs:
       bundle_digest: ${{ steps.bundle.outputs.bundle_digest }}
       eligible: ${{ steps.ci.outputs.eligible }}
+      node_version: ${{ steps.node.outputs.node-version }}
       release_sha: ${{ env.RELEASE_SHA }}
       selected_count: ${{ steps.plan.outputs.selected_count }}
     env:
@@ -103,8 +104,9 @@ jobs:
           echo 'current=true' >> "$GITHUB_OUTPUT"
 
       - name: Setup Node
+        id: node
         if: steps.head.outputs.current == 'true'
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           package-manager-cache: false
@@ -115,6 +117,7 @@ jobs:
         run: |
           corepack enable
           corepack prepare pnpm@11.13.1 --activate
+          echo "NODE_COMPILE_CACHE=$RUNNER_TEMP/node-compile-cache" >> "$GITHUB_ENV"
 
       - name: Enforce public SDK release interlock
         if: steps.head.outputs.current == 'true'
@@ -219,7 +222,7 @@ jobs:
           echo "selected_count=$selected_count" >> "$GITHUB_OUTPUT"
           node scripts/reconcile-release.mjs summary "$release_root/plan.json"
 
-      - name: Apply target versions, rebuild, and verify
+      - name: Apply target versions, rebuild, and pack
         if: steps.plan.outputs.selected_count != '' && steps.plan.outputs.selected_count != '0'
         shell: bash
         run: |
@@ -227,7 +230,6 @@ jobs:
           release_root="$RUNNER_TEMP/tileflow-release"
           node scripts/reconcile-release.mjs apply "$release_root/plan.json"
           pnpm exec turbo build --force
-          pnpm check
           node scripts/reconcile-release.mjs \
             pack \
             "$release_root/final" \
@@ -361,23 +363,147 @@ jobs:
             echo
             echo "Bundle SHA-256: \`$bundle_digest\`"
             echo
-            echo 'The `npm-publish` environment approval publishes only the tarballs in this bundle.'
+            echo "The \`npm-publish\` environment approval publishes only the tarballs in this bundle."
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload immutable release bundle
         if: steps.publish-head.outputs.current == 'true'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: npm-release-${{ env.RELEASE_SHA }}
           path: ${{ runner.temp }}/tileflow-release/release-bundle.tar
           if-no-files-found: error
           retention-days: 30
 
-  publish:
-    name: Approve and publish exact bundle
+  verify:
+    name: Verify release (${{ matrix.suite }})
     needs: reconcile
     if: >-
       ${{
+        needs.reconcile.outputs.eligible == 'true' &&
+        needs.reconcile.outputs.selected_count != '' &&
+        needs.reconcile.outputs.selected_count != '0' &&
+        needs.reconcile.outputs.bundle_digest != ''
+      }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: remaining
+            package: ''
+          - suite: dev
+            package: '@tileflow/dev'
+          - suite: cli
+            package: tileflow
+    env:
+      BUNDLE_DIGEST: ${{ needs.reconcile.outputs.bundle_digest }}
+      NPM_CONFIG_PROVENANCE: 'true'
+      pnpm_config_verify_deps_before_run: warn
+      RELEASE_SHA: ${{ needs.reconcile.outputs.release_sha }}
+    steps:
+      - name: Checkout exact release source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Download immutable release bundle
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-release-${{ env.RELEASE_SHA }}
+          path: ${{ runner.temp }}/tileflow-release-download
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ needs.reconcile.outputs.node_version }}
+          package-manager-cache: false
+
+      - name: Verify release bundle and current main
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle="$RUNNER_TEMP/tileflow-release-download/release-bundle.tar"
+          test "$(shasum -a 256 "$bundle" | cut -d ' ' -f 1)" = "$BUNDLE_DIGEST"
+          mkdir -p "$RUNNER_TEMP/tileflow-release"
+          tar -xf "$bundle" -C "$RUNNER_TEMP/tileflow-release"
+          test "$(git rev-parse HEAD)" = "$RELEASE_SHA"
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+          PLAN_PATH="$RUNNER_TEMP/tileflow-release/plan.json" \
+            node -e "const plan = require(process.env.PLAN_PATH); if (plan.sourceSha !== process.env.RELEASE_SHA || !Array.isArray(plan.packages) || plan.packages.length === 0) throw new Error('Release bundle does not match the source SHA.');"
+
+      - name: Setup pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+          echo "NODE_COMPILE_CACHE=$RUNNER_TEMP/node-compile-cache" >> "$GITHUB_ENV"
+
+      - name: Enforce public SDK release interlock
+        run: node scripts/public-release-interlock.mjs
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify development manifests
+        run: pnpm run release:verify-source
+
+      - name: Build the final release graph
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_root="$RUNNER_TEMP/tileflow-release"
+          node scripts/reconcile-release.mjs apply "$release_root/plan.json"
+          pnpm exec turbo build --force
+
+      - name: Static checks
+        if: matrix.suite == 'remaining'
+        run: pnpm run check:static
+
+      - name: Verify remaining packages
+        if: matrix.suite == 'remaining'
+        run: pnpm -r --workspace-concurrency=1 --filter '!tileflow' --filter '!@tileflow/dev' --if-present run verify
+
+      - name: Verify heavy package
+        if: matrix.suite != 'remaining'
+        run: pnpm --filter '${{ matrix.package }}' run verify
+
+      - name: Recheck verified package artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_root="$RUNNER_TEMP/tileflow-release"
+          node scripts/reconcile-release.mjs \
+            pack \
+            "$release_root/verified" \
+            "$release_root/verified-tarballs.txt"
+          node scripts/select-release-tarballs.mjs \
+            "$release_root/plan.json" \
+            "$release_root/verified-tarballs.txt" \
+            "$release_root/verified-selected.txt"
+          mapfile -t bundled_tarballs < "$release_root/selected-relative.txt"
+          mapfile -t verified_tarballs < "$release_root/verified-selected.txt"
+          test "${#bundled_tarballs[@]}" = "${#verified_tarballs[@]}"
+          for index in "${!bundled_tarballs[@]}"
+          do
+            node scripts/compare-package-tarballs.mjs \
+              "$release_root/${bundled_tarballs[$index]}" \
+              "${verified_tarballs[$index]}"
+          done
+          git fetch --no-tags origin main
+          test "$(git rev-parse origin/main)" = "$RELEASE_SHA"
+
+  publish:
+    name: Approve and publish exact bundle
+    needs:
+      - reconcile
+      - verify
+    if: >-
+      ${{
+        needs.verify.result == 'success' &&
         needs.reconcile.outputs.eligible == 'true' &&
         needs.reconcile.outputs.selected_count != '' &&
         needs.reconcile.outputs.selected_count != '0' &&
@@ -404,13 +530,13 @@ jobs:
           ref: ${{ env.RELEASE_SHA }}
 
       - name: Download immutable release bundle
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: npm-release-${{ env.RELEASE_SHA }}
           path: ${{ runner.temp }}/tileflow-release-download
 
       - name: Setup Node
-        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
           package-manager-cache: false
@@ -602,7 +728,7 @@ jobs:
             "$release_root/release-receipt.json"
 
       - name: Upload final release receipt
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: npm-release-receipt-${{ env.RELEASE_SHA }}
           path: ${{ runner.temp }}/tileflow-release/release-receipt.json

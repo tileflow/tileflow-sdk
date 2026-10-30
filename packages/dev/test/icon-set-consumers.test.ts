@@ -21,8 +21,8 @@ import {storeTileflowIconSetArtifact} from '../src/icon-cache';
 import {compileTileflowIconPackages, prepareTileflowCatalogIcons} from '../src/icons';
 import {lockFor, renderedIcon, setFixture} from './icon-set-fixtures';
 
-const glyphs = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold']}`;
-const unreferencedModules = `{poi:{type:'poi',icons:false},roads:disable()}`;
+const glyphs = `{kind:'url',url:'https://fonts.example.test/{fontstack}/{range}.pbf',fontStacks:['Noto Sans Regular','Noto Sans Bold','Noto Sans Italic','DINish Medium,Noto Sans Regular','DINish Bold,Noto Sans Regular']}`;
+const unreferencedModules = `{poi:{type:'poi',icons:false},roads:disable(),vegetation:disable()}`;
 const shopSvg =
   '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24"><rect width="24" height="24" fill="#2563eb"/></svg>';
 
@@ -124,9 +124,19 @@ test('one workspace lock composes the exact subset declared by each map', async 
   const workspaceGlyphs = {
     kind: 'url' as const,
     url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
-    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold'],
+    fontStacks: [
+      'Noto Sans Regular',
+      'Noto Sans Bold',
+      'Noto Sans Italic',
+      'DINish Medium,Noto Sans Regular',
+      'DINish Bold,Noto Sans Regular',
+    ],
   };
-  const workspaceModules = {poi: {type: 'poi' as const, icons: false}, roads: disable()};
+  const workspaceModules = {
+    poi: {type: 'poi' as const, icons: false},
+    roads: disable(),
+    vegetation: disable(),
+  };
   const project: TileflowBuildCatalog = {
     maps: {
       brand: parseTileflowMap(

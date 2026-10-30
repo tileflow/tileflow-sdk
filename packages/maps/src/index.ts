@@ -1,9 +1,8 @@
 import {baedeker as baedekerDefinition} from './official/baedeker';
 import {blueprint as blueprintDefinition} from './official/blueprint';
 import {civica as civicaDefinition} from './official/civica';
-import {ferraris as ferrarisDefinition} from './official/ferraris';
 import {freezeOfficialMap} from './official/freeze';
-import {harad as haradDefinition} from './official/harad';
+import {map1777 as map1777Definition} from './official/map-1777';
 import {siegfried as siegfriedDefinition} from './official/siegfried';
 import {soundings as soundingsDefinition} from './official/soundings';
 import {streets as streetsDefinition} from './official/streets';
@@ -15,20 +14,21 @@ export {
   blueprintIcons,
   civicaFonts,
   civicaIcons,
-  ferrarisIcons,
-  haradIcons,
+  map1777Fonts,
+  map1777Icons,
   siegfriedFonts,
   siegfriedIcons,
   soundingsIcons,
   streetsIcons,
+  streetsFonts,
+  streetsModels,
 } from './assets';
 
 /** Immutable official map singletons. `defineMap` itself remains a mutable authoring identity. */
 export const baedeker = freezeOfficialMap(baedekerDefinition);
 export const civica = freezeOfficialMap(civicaDefinition);
 export const streets = freezeOfficialMap(streetsDefinition);
-export const ferraris = freezeOfficialMap(ferrarisDefinition);
-export const harad = freezeOfficialMap(haradDefinition);
+export const map1777 = freezeOfficialMap(map1777Definition);
 export const blueprint = freezeOfficialMap(blueprintDefinition);
 export const siegfried = freezeOfficialMap(siegfriedDefinition);
 export const soundings = freezeOfficialMap(soundingsDefinition);

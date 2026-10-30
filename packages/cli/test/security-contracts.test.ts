@@ -5,9 +5,15 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {withTileflowConfigSecretsHidden} from '../src/config-execution';
-import {defaultTileflowDevHost, parseTileflowDevHost, tileflowDevOrigin} from '../src/dev-host';
+import {
+  defaultTileflowDevHost,
+  parseTileflowDevHost,
+  redirectTileflowDevNavigation,
+  tileflowDevOrigin,
+} from '../src/dev-host';
 import {inspectTileflowHostedCompatibility} from '../src/hosted-preflight';
 import {
   hostedMapStatusSchema,
@@ -15,9 +21,6 @@ import {
   readHostedJson,
 } from '../src/hosted-response';
 import {tileflowMapFixture} from './map-fixture';
-
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 
 test('config secret scope hides env and both API-key argv forms, then restores exactly', async () => {
   const originalArgv = [...process.argv];
@@ -84,6 +87,48 @@ test('dev host defaults to IPv4 loopback and accepts only explicit host literals
   assert.equal(tileflowDevOrigin('::1', 3333), 'http://[::1]:3333');
 });
 
+test('Inspector navigation canonicalizes loopback aliases and preserves view parameters', () => {
+  const query = '?lng=-3.70345&lat=40.417134&zoom=16.27&theme=faded';
+  for (const host of ['127.0.0.1', 'localhost', '::1']) {
+    const origin = tileflowDevOrigin(host, 3333);
+    for (const alias of ['127.0.0.1', 'localhost', '::1'].filter((value) => value !== host)) {
+      for (const method of ['GET', 'HEAD']) {
+        const response = redirectTileflowDevNavigation(
+          new Request(`${tileflowDevOrigin(alias, 3333)}/${query}`, {method}),
+          origin,
+        );
+        assert.equal(response?.status, 307);
+        assert.equal(response.headers.get('location'), `${origin}/${query}`);
+        assert.equal(response.headers.get('cache-control'), 'no-store');
+      }
+    }
+    assert.equal(redirectTileflowDevNavigation(new Request(`${origin}/`), origin), undefined);
+  }
+});
+
+test('Inspector alias redirects do not rewrite API requests or unrelated origins', () => {
+  const origin = 'http://127.0.0.1:3333';
+  for (const url of [
+    'http://localhost:3333/__workbench',
+    'http://localhost:3333/__workbench/capture',
+    'http://localhost:3333/map/',
+    'http://localhost:4444/',
+    'https://localhost:3333/',
+    'http://unrelated.example:3333/',
+    'http://localhost.unrelated.example:3333/',
+  ]) {
+    assert.equal(redirectTileflowDevNavigation(new Request(url), origin), undefined, url);
+  }
+  assert.equal(
+    redirectTileflowDevNavigation(new Request('http://localhost:3333/', {method: 'POST'}), origin),
+    undefined,
+  );
+  assert.equal(
+    redirectTileflowDevNavigation(new Request('http://localhost:3333/'), 'http://0.0.0.0:3333'),
+    undefined,
+  );
+});
+
 test('one hosted preflight rejects external data for validation and deploy callers', () => {
   const project = {
     maps: {
@@ -115,6 +160,20 @@ test('one hosted preflight rejects external data for validation and deploy calle
       path: 'maps.main.themes.light.data',
     },
   ]);
+
+  // A map's building models are Team 3D models by placeholder; a placement's own address travels as it is.
+  const withModels = (url: string) => ({
+    ...compatible,
+    metadata: {
+      ...compatible.metadata,
+      'tileflow:buildings': {models: [{model: 'tower', url, at: [2.29, 48.86], heading: 0}]},
+    },
+  });
+  for (const url of ['https://models.example.test/tower.glb', 'tileflow://team-models/tower'])
+    assert.deepEqual(
+      inspectTileflowHostedCompatibility(project, {main: {light: withModels(url)}}),
+      [],
+    );
 });
 
 test('hosted success responses validate exact atomic theme families and bounded bodies', async () => {
@@ -352,7 +411,7 @@ function runCli(
   Object.assign(environment, overrides, {HOME: cwd, NO_COLOR: '1', USERPROFILE: cwd});
 
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
+    const child = spawn(process.execPath, cliFixtureArguments(arguments_), {
       cwd,
       env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],

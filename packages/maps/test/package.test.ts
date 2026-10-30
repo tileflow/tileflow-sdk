@@ -3,6 +3,9 @@ import {execFile} from 'node:child_process';
 import {readdir, readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {promisify} from 'node:util';
+import {streetsPoiDiscColors, streetsPoiPictograms} from '../src/official/streets-poi';
+import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
+import {streetsPoiImageIds} from './streets-poi-fixture';
 
 const execFileAsync = promisify(execFile);
 
@@ -56,28 +59,21 @@ test('publishes every official icon and font directory with provenance', async (
       'civica-water-lines.pattern.svg',
     ],
 
-    ferraris: [
-      'ferraris-crop-hatch.pattern.svg',
-      'ferraris-heath.pattern.svg',
-      'ferraris-orchard.pattern.svg',
-      'ferraris-paper-grain.pattern.svg',
-      'ferraris-residential.pattern.svg',
-      'ferraris-sand.pattern.svg',
-      'ferraris-water-ripples.pattern.svg',
-      'ferraris-wetland.pattern.svg',
-      'ferraris-woodland.pattern.svg',
-    ],
-    harad: [
-      'harad-arable.pattern.svg',
-      'harad-conifer.pattern.svg',
-      'harad-deciduous.pattern.svg',
-      'harad-orchard.pattern.svg',
-      'harad-paper-grain.pattern.svg',
-      'harad-sand.pattern.svg',
-      'harad-settlement.pattern.svg',
-      'harad-water-lines.pattern.svg',
-      'harad-wetland.pattern.svg',
-    ],
+    'map-1777': ['', 'dawn-', 'dusk-', 'night-'].flatMap((moment) => [
+      ...[
+        'crop-cross',
+        'crop-hatch',
+        'crop-lines',
+        'heath',
+        'orchard',
+        'paper-grain',
+        'residential',
+        'sand',
+        'water-ripples',
+        'wetland',
+        'woodland',
+      ].map((plate) => `map-1777-${moment}${plate}.pattern.svg`),
+    ]),
 
     blueprint: [
       'blueprint-grid.pattern.svg',
@@ -107,29 +103,41 @@ test('publishes every official icon and font directory with provenance', async (
       'siegfried-wetland.pattern.svg',
     ],
     soundings: [
+      'soundings-boat-hoist.svg',
+      'soundings-boatyard.svg',
       'soundings-buoy-cardinal.svg',
+      'soundings-buoy-pillar.svg',
       'soundings-buoy-port.svg',
       'soundings-buoy-starboard.svg',
+      'soundings-distance-mark.svg',
+      'soundings-facility.svg',
+      'soundings-fuel-station.svg',
       'soundings-harbor.svg',
       'soundings-light-flare.svg',
       'soundings-lighthouse.svg',
+      'soundings-marina.svg',
+      'soundings-notice-information.svg',
+      'soundings-notice-prohibition.svg',
+      'soundings-notice-recommendation.svg',
+      'soundings-notice-regulation.svg',
+      'soundings-notice-restriction.svg',
+      'soundings-notice.svg',
       'soundings-paper-grain.pattern.svg',
+      'soundings-pump-out.svg',
       'soundings-rock-awash.svg',
+      'soundings-slipway.svg',
+      'soundings-visitor-berth.svg',
       'soundings-water-dots.pattern.svg',
+      'soundings-water-tap.svg',
       'soundings-wreck.svg',
+      'tileflow.icons.json',
     ],
 
     streets: [
-      'coffee.svg',
+      ...streetsPoiImageIds.map((id) => `${id}.svg`),
+      ...streetsTreeIconIds.map((id) => `${id}.pattern.svg`),
       'crosswalk.svg',
-      'culture.svg',
-      'education.svg',
-      'food.svg',
-      'health.svg',
-      'lodging.svg',
-      'major-transit.svg',
       'oneway.svg',
-      'parking.svg',
       'road-shield-circle-neutral.svg',
       'road-shield-rectangle-blue.svg',
       'road-shield-rectangle-green.svg',
@@ -137,8 +145,6 @@ test('publishes every official icon and font directory with provenance', async (
       'road-shield-rectangle-orange.svg',
       'road-shield-rectangle-red.svg',
       'road-shield-rectangle-yellow.svg',
-      'services.svg',
-      'shopping.svg',
       'sidewalk-dot-dark.svg',
       'sidewalk-dot.svg',
     ],
@@ -167,8 +173,30 @@ test('publishes every official icon and font directory with provenance', async (
     'utf8',
   );
   assert.notEqual(darkSidewalkDot, lightSidewalkDot);
-  assert.match(lightSidewalkDot, /fill="#C1C5D7"/u);
-  assert.match(darkSidewalkDot, /fill="#525664"/u);
+  assert.match(lightSidewalkDot, /fill="#000000" fill-opacity="0.2"/u);
+  assert.match(darkSidewalkDot, /fill="#FFFFFF" fill-opacity="0.2"/u);
+
+  // Each POI disc takes its palette color; its pictogram and provenance are Maki's.
+  const notices = await readFile(new URL('../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8');
+  for (const [id, pictogram] of Object.entries(streetsPoiPictograms)) {
+    const role = 'disc' in pictogram ? pictogram.disc : pictogram.category;
+    for (const [theme, file] of [
+      ['light', `${id}.svg`],
+      ['dark', `${id}-dark.svg`],
+    ] as const) {
+      const svg = await readFile(
+        new URL(`../assets/streets/icons/${file}`, import.meta.url),
+        'utf8',
+      );
+      assert.match(
+        svg,
+        new RegExp(`r="8.5" fill="${streetsPoiDiscColors[theme][role]}"`, 'u'),
+        file,
+      );
+      assert.match(svg, new RegExp(`Maki ${pictogram.maki} pictogram, CC0-1.0`, 'u'), file);
+    }
+    assert.match(notices, new RegExp(`\`${pictogram.maki}\``, 'u'), pictogram.maki);
+  }
 
   const neutralShield = await readFile(
     new URL('../assets/streets/icons/road-shield-rectangle-neutral.svg', import.meta.url),
@@ -248,6 +276,22 @@ test('publishes every official icon and font directory with provenance', async (
         400_000,
     );
   }
+  assert.deepEqual((await readdir(new URL('../assets/map-1777/fonts/', import.meta.url))).sort(), [
+    'CormorantGaramond-Italic.ttf',
+    'CormorantGaramond-Regular.ttf',
+    'CormorantGaramond-SemiBold.ttf',
+    'LICENSE.txt',
+  ]);
+  for (const font of [
+    'CormorantGaramond-Italic.ttf',
+    'CormorantGaramond-Regular.ttf',
+    'CormorantGaramond-SemiBold.ttf',
+  ]) {
+    assert.ok(
+      (await readFile(new URL(`../assets/map-1777/fonts/${font}`, import.meta.url))).byteLength >
+        400_000,
+    );
+  }
 });
 
 test('keeps the Baedeker standalone source independent from other official maps', async () => {
@@ -255,17 +299,9 @@ test('keeps the Baedeker standalone source independent from other official maps'
   assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(
     source,
-    /from\s+['"]\.\/(?:blueprint|cyberpunk|ferraris|harad|matrix|siegfried|soundings|streets)['"]/u,
+    /from\s+['"]\.\/(?:blueprint|cyberpunk|map-1777|matrix|siegfried|soundings|streets)['"]/u,
   );
   assert.doesNotMatch(source, /\bextends\s*:/u);
-  assert.doesNotMatch(source, /\bstreets\.icons\b/u);
-});
-
-test('keeps the Härad standalone source independent from Streets', async () => {
-  const source = await readFile(new URL('../src/official/harad.ts', import.meta.url), 'utf8');
-  assert.match(source, /\bdefineMap\s*\(/u);
-  assert.doesNotMatch(source, /from\s+['"]\.\/streets['"]/u);
-  assert.doesNotMatch(source, /\bextends\s*:\s*streets\b/u);
   assert.doesNotMatch(source, /\bstreets\.icons\b/u);
 });
 
@@ -291,7 +327,7 @@ test('keeps the Blueprint standalone source independent from other official maps
   assert.match(source, /\bdefineMap\s*\(/u);
   assert.doesNotMatch(
     source,
-    /from\s+['"]\.\/(?:baedeker|cyberpunk|ferraris|harad|matrix|siegfried|soundings|streets)['"]/u,
+    /from\s+['"]\.\/(?:baedeker|cyberpunk|map-1777|matrix|siegfried|soundings|streets)['"]/u,
   );
   assert.doesNotMatch(source, /\bextends\s*:/u);
 });
@@ -300,6 +336,12 @@ test('imports and compiles all packaged official maps against public Core APIs',
   const script = `
     const core = await import('@tileflow/core');
     const maps = await import('@tileflow/maps');
+    const mapExports = Object.entries(maps)
+      .filter(([, value]) => value && typeof value === 'object' && typeof value.id === 'string')
+      .map(([name]) => name).sort();
+    if (JSON.stringify(mapExports) !== JSON.stringify(['baedeker', 'blueprint', 'civica', 'map1777', 'siegfried', 'soundings', 'streets'])) {
+      throw new Error('Official map exports do not match the supported catalog: ' + mapExports.join(', '));
+    }
     for (const name of ['cyberpunk', 'matrix', 'superTileWorld', 'cyberpunkFonts', 'matrixIcons', 'superTileWorldIcons', 'sanFrancisto', 'sanFrancistoIcons']) {
       if (name in maps) throw new Error('Retired export remains in SDK Maps: ' + name);
     }
@@ -307,8 +349,7 @@ test('imports and compiles all packaged official maps against public Core APIs',
       ['baedeker', 'baedeker'],
       ['civica', 'civica'],
       ['streets', 'streets'],
-      ['ferraris', 'ferraris'],
-      ['harad', 'harad'],
+      ['map1777', 'map-1777'],
       ['blueprint', 'blueprint'],
       ['siegfried', 'siegfried'],
       ['soundings', 'soundings'],
@@ -316,8 +357,10 @@ test('imports and compiles all packaged official maps against public Core APIs',
       if (!maps[name] || typeof maps[name] !== 'object') process.exit(2);
       const style = core.createStyle(maps[name], {
         preparedAssets: {
+          models: ${JSON.stringify(streetsPreparedModels)},
           icons: {
             ids: [
+              ...${JSON.stringify(streetsTreeIconIds)},
               'baedeker-hachures', 'baedeker-orchard', 'baedeker-paper-grain',
               'baedeker-park-stipple', 'baedeker-residential', 'baedeker-sand',
               'baedeker-water-lines', 'baedeker-wetland',
@@ -327,13 +370,10 @@ test('imports and compiles all packaged official maps against public Core APIs',
               'civica-poi-garden', 'civica-poi-hospital', 'civica-poi-lodging',
               'civica-poi-monument', 'civica-poi-museum', 'civica-poi-shopping',
               'civica-poi-transit',
-              'coffee', 'crosswalk', 'culture', 'education', 'food', 'health', 'lodging',
-              'ferraris-crop-hatch', 'ferraris-heath', 'ferraris-orchard',
-              'ferraris-paper-grain', 'ferraris-residential', 'ferraris-sand',
-              'ferraris-water-ripples', 'ferraris-wetland', 'ferraris-woodland',
-              'harad-arable', 'harad-conifer', 'harad-deciduous', 'harad-orchard',
-              'harad-paper-grain', 'harad-sand', 'harad-settlement',
-              'harad-water-lines', 'harad-wetland',
+              'coffee', 'nature', 'sport', 'worship', 'coffee-dark', 'culture-dark', 'education-dark', 'food-dark', 'health-dark', 'lodging-dark', 'major-transit-dark', 'parking-dark', 'services-dark', 'shopping-dark', 'nature-dark', 'worship-dark', 'sport-dark', 'crosswalk', 'culture', 'education', 'food', 'health', 'lodging',
+              'map-1777-crop-cross', 'map-1777-crop-hatch', 'map-1777-crop-lines', 'map-1777-heath', 'map-1777-orchard',
+              'map-1777-paper-grain', 'map-1777-residential', 'map-1777-sand',
+              'map-1777-water-ripples', 'map-1777-wetland', 'map-1777-woodland',
               'major-transit', 'oneway', 'parking', 'road-shield-circle-neutral',
               'road-shield-rectangle-blue', 'road-shield-rectangle-green',
               'road-shield-rectangle-neutral', 'road-shield-rectangle-orange',
@@ -351,10 +391,17 @@ test('imports and compiles all packaged official maps against public Core APIs',
               'siegfried-forest', 'siegfried-glacier', 'siegfried-gravel',
               'siegfried-orchard', 'siegfried-paper-grain', 'siegfried-rock',
               'siegfried-scree', 'siegfried-water-lines', 'siegfried-wetland',
-              'soundings-buoy-cardinal', 'soundings-buoy-port',
-              'soundings-buoy-starboard', 'soundings-harbor', 'soundings-light-flare',
-              'soundings-lighthouse', 'soundings-paper-grain', 'soundings-rock-awash',
-              'soundings-water-dots', 'soundings-wreck',
+              'soundings-boat-hoist', 'soundings-boatyard',
+              'soundings-buoy-cardinal', 'soundings-buoy-pillar', 'soundings-buoy-port',
+              'soundings-buoy-starboard', 'soundings-distance-mark', 'soundings-facility',
+              'soundings-fuel-station', 'soundings-harbor', 'soundings-light-flare',
+              'soundings-lighthouse', 'soundings-marina', 'soundings-notice',
+              'soundings-notice-information', 'soundings-notice-prohibition',
+              'soundings-notice-recommendation', 'soundings-notice-regulation',
+              'soundings-notice-restriction', 'soundings-paper-grain', 'soundings-pump-out',
+              'soundings-rock-awash', 'soundings-slipway', 'soundings-visitor-berth',
+              'soundings-water-dots', 'soundings-water-tap', 'soundings-wreck',
+              ...${JSON.stringify(streetsPoiImageIds)},
               ],
             sprite: '/tileflow/test/official/sprite',
           },
@@ -374,8 +421,7 @@ test('imports and compiles all packaged official maps against public Core APIs',
       maps.siegfried.systemThemes?.light !== 'light' ||
       maps.siegfried.systemThemes?.dark !== 'dark'
     ) process.exit(13);
-    if ('extends' in maps.ferraris || 'root' in maps.ferraris) process.exit(8);
-    if ('extends' in maps.harad || 'root' in maps.harad) process.exit(20);
+    if ('extends' in maps.map1777 || 'root' in maps.map1777) process.exit(8);
     if ('extends' in maps.siegfried || 'root' in maps.siegfried) process.exit(25);
     if ('extends' in maps.soundings || 'root' in maps.soundings) process.exit(22);
     const resolvedBaedeker = core.resolveMap(maps.baedeker);
@@ -408,20 +454,15 @@ test('imports and compiles all packaged official maps against public Core APIs',
       maps.civicaIcons?.path !== 'assets/civica/icons' ||
       maps.civicaFonts?.path !== 'assets/civica/fonts'
     ) process.exit(34);
-    const resolvedFerraris = core.resolveMap(maps.ferraris);
+    const resolved1777 = core.resolveMap(maps.map1777);
     if (
-      resolvedFerraris.icons?.length !== 1 ||
-      resolvedFerraris.icons[0]?.kind !== 'package-directory' ||
-      resolvedFerraris.icons[0]?.package !== '@tileflow/maps' ||
-      resolvedFerraris.icons[0]?.path !== 'assets/ferraris/icons'
+      resolved1777.icons?.length !== 1 ||
+      resolved1777.icons[0]?.kind !== 'package-directory' ||
+      resolved1777.icons[0]?.package !== '@tileflow/maps' ||
+      resolved1777.icons[0]?.path !== 'assets/map-1777/icons' ||
+      resolved1777.fonts?.[0]?.path !== 'assets/map-1777/fonts' ||
+      maps.map1777Fonts?.path !== 'assets/map-1777/fonts'
     ) process.exit(9);
-    const resolvedHarad = core.resolveMap(maps.harad);
-    if (
-      resolvedHarad.icons?.length !== 1 ||
-      resolvedHarad.icons[0]?.kind !== 'package-directory' ||
-      resolvedHarad.icons[0]?.package !== '@tileflow/maps' ||
-      resolvedHarad.icons[0]?.path !== 'assets/harad/icons'
-    ) process.exit(21);
     const resolvedSoundings = core.resolveMap(maps.soundings);
     if (
       resolvedSoundings.icons?.length !== 1 ||

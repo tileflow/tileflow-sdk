@@ -27,6 +27,7 @@ import {
 import {tileflowSemanticCompilerIdentity} from './cartography/semantic-compiler';
 import {tileflowMapDefaultMaxDepth} from './maps/resolve';
 import {tileflowHostedSourceLimit, tileflowOverlayPlacements} from './overlays';
+import {tileflowRequiredThemeColorRoles} from './themes';
 
 export const tileflowAuthoringManifestSchemaVersion = 2 as const;
 
@@ -115,7 +116,12 @@ export type TileflowAuthoringManifest = Readonly<{
         statuses: readonly ['emitted', 'suppressed'];
         suppressionReasons: readonly ['disabled', 'no-contributions'];
       }>;
-      optional: readonly ['provenance', 'requirements', 'theme'];
+      optional: readonly ['decisions', 'provenance', 'requirements', 'theme'];
+      decisions: Readonly<{
+        required: readonly ['path', 'source', 'value', 'reason', 'override'];
+        sources: readonly ['default', 'map', 'theme', 'derived'];
+        scope: 'color-roles-and-selected-module-policies';
+      }>;
       planner: Readonly<{
         optional: readonly ['candidateCount', 'selectedCount'];
         required: readonly ['inputCount', 'outputCount', 'stage'];
@@ -162,6 +168,13 @@ export type TileflowAuthoringManifest = Readonly<{
     fieldReference: 'field(name)';
   }>;
   language: 'tileflow-semantic-v1';
+  themes: Readonly<{
+    api: 'defineTheme(definition) or defineTheme(base, definition)';
+    requiredColorRoles: typeof tileflowRequiredThemeColorRoles;
+    lightingReset: 'reset() removes inherited lighting, sun, ambient, or individual light properties during defineTheme composition';
+    timeOfDay: 'optional; an omitted catalog adds no variants or clock';
+    decisionReport: 'compilation.report.decisions';
+  }>;
   operations: readonly TileflowAuthoringOperation[];
   renderStack: Readonly<{
     comparisons: readonly string[];
@@ -585,7 +598,12 @@ export const tileflowAuthoringManifest: TileflowAuthoringManifest = deepFreeze({
         statuses: ['emitted', 'suppressed'],
         suppressionReasons: ['disabled', 'no-contributions'],
       },
-      optional: ['provenance', 'requirements', 'theme'],
+      optional: ['decisions', 'provenance', 'requirements', 'theme'],
+      decisions: {
+        required: ['path', 'source', 'value', 'reason', 'override'],
+        sources: ['default', 'map', 'theme', 'derived'],
+        scope: 'color-roles-and-selected-module-policies',
+      },
       planner: {
         optional: ['candidateCount', 'selectedCount'],
         required: ['inputCount', 'outputCount', 'stage'],
@@ -650,6 +668,14 @@ export const tileflowAuthoringManifest: TileflowAuthoringManifest = deepFreeze({
     fieldReference: 'field(name)',
   },
   language: 'tileflow-semantic-v1',
+  themes: {
+    api: 'defineTheme(definition) or defineTheme(base, definition)',
+    requiredColorRoles: tileflowRequiredThemeColorRoles,
+    lightingReset:
+      'reset() removes inherited lighting, sun, ambient, or individual light properties during defineTheme composition',
+    timeOfDay: 'optional; an omitted catalog adds no variants or clock',
+    decisionReport: 'compilation.report.decisions',
+  },
   operations,
   renderStack: {
     comparisons: [...tileflowRenderSelectorComparisons],

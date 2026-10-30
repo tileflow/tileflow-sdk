@@ -16,9 +16,9 @@ inside a named `maplibreOverlay()` bound to a named Team source.
 
 Advanced cartography remains in the same public language: `withRenderStack()`, `renderPass()`, and
 `refineRenderTarget()` address owner-local semantic targets without exposing physical layer IDs,
-sources, source layers, raw filters, or before/after anchors. Typed `field()` references and
-`expr.*` builders stay semantic until the compiler's single lowering boundary. There is no recipe
-subpath or alternate compiler integration API.
+sources, source layers, raw filters, or physical before/after layer anchors. Typed `field()`
+references and `expr.*` builders stay semantic until the compiler's single lowering boundary. There
+is no recipe subpath or alternate compiler integration API.
 
 `mapRevisionSha256` hashes only resolved cartography: the effective design after `extends`, the
 semantic language, compiler-owned effective contributions, and exact source icon/font identities.
@@ -79,13 +79,21 @@ import {
   attachTileflowAtmosphere,
   attachTileflowFairUseNotice,
   attachTileflowMapLifecycle,
+  attachTileflowNauticalLights,
+  attachTileflowNotices,
   createTileflowSessionStarter,
   createTileflowTransformRequest,
   registerTileflowWorldRequestBridge,
 } from '@tileflow/core/browser';
 ```
 
-The browser entry is not re-exported from the root. It is SSR-safe to import, has no MapLibre
+`@tileflow/core/3d` holds only `createTileflowMap3D` and the 3D renderers it mounts, so an
+application can load them with a dynamic import when a style declares a 3D scene; see
+[3D buildings](buildings-3d.md#the-maps-3d-scene). The browser entry exports the same function.
+
+`attachTileflowNotices(map)` renders the notices a compiled style declares, such as Nautical's
+"Not for navigation", as a compact map control, and `attachTileflowNauticalLights(map)` flashes
+Nautical lights in their rhythm; see [Nautical marks](nautical-marks.md). The browser entry is not re-exported from the root. It is SSR-safe to import, has no MapLibre
 runtime dependency, and reads no browser global during module evaluation. See the
 [framework browser runtime contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/framework-browser-runtime.md) and the
 [cartographic authoring contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/cartographic-authoring.md). Exact field

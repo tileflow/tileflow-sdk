@@ -12,13 +12,13 @@ import {
   createTileflowCaptureReceipt,
   createTileflowCaptureRendererIdentity,
   createTileflowVisualReviewDocument,
-  tileflowVisualArtifactLimits,
-  tileflowVisualReviewLimits,
   type TileflowCapture,
   type TileflowCaptureDataInput,
+  tileflowVisualArtifactLimits,
   type TileflowVisualReviewCapture,
   type TileflowVisualReviewDefinition,
   TileflowVisualReviewError,
+  tileflowVisualReviewLimits,
 } from '../src/index';
 import {validateTileflowVisualReviewPngByteLengths} from '../src/review';
 
@@ -39,14 +39,14 @@ const dataIdentity: TileflowCaptureDataInput = {
 test('compares deliberate map, theme, and style variants without creating baseline semantics', async () => {
   const left = await createReviewCapture({
     color: [26, 84, 52, 255],
-    definition: mapDefinition('harad', 'paper'),
-    scene: 'harad-review',
+    definition: mapDefinition('baedeker', 'paper'),
+    scene: 'baedeker-review',
     styleSha256: '1'.repeat(64),
   });
   const right = await createReviewCapture({
     color: [174, 68, 51, 255],
-    definition: mapDefinition('ferraris', 'historic'),
-    scene: 'ferraris-review',
+    definition: mapDefinition('map-1777', 'historic'),
+    scene: 'map-1777-review',
     styleSha256: '2'.repeat(64),
   });
 
@@ -58,9 +58,9 @@ test('compares deliberate map, theme, and style variants without creating baseli
   assert.equal(comparison.dimensionsMatch, true);
   assert.equal(comparison.rendererMatch, true);
   assert.equal(comparison.dataMatch, true);
-  assert.equal(comparison.left.scene.map, 'harad');
+  assert.equal(comparison.left.scene.map, 'baedeker');
   assert.equal(comparison.left.scene.theme, 'paper');
-  assert.equal(comparison.right.scene.map, 'ferraris');
+  assert.equal(comparison.right.scene.map, 'map-1777');
   assert.equal(comparison.right.scene.theme, 'historic');
   assert.equal(comparison.left.style.sha256, '1'.repeat(64));
   assert.equal(comparison.right.style.sha256, '2'.repeat(64));
@@ -79,6 +79,53 @@ test('compares deliberate map, theme, and style variants without creating baseli
   assert.equal(withoutDiff.status, 'comparable');
   assert.ok(withoutDiff.exact);
   assert.equal(withoutDiff.diffPng, undefined);
+});
+
+test('reviews retained capture definitions while preserving legacy inputs and strict validation', async () => {
+  const legacy = await createReviewCapture({
+    color: [26, 84, 52, 255],
+    definition: mapDefinition('streets', 'day'),
+    scene: 'retained-review',
+  });
+  const retained = {
+    ...legacy,
+    capture: {...legacy.capture, definition: legacy.definition},
+  };
+  assert.equal((await compareTileflowCapturesForReview(retained, legacy)).status, 'comparable');
+  assert.equal((await compareTileflowCapturesForReview(retained, retained)).exact?.ratio, 0);
+
+  await assert.rejects(
+    compareTileflowCapturesForReview(
+      {...retained, capture: {...retained.capture, definition: mapDefinition('other', 'day')}},
+      legacy,
+    ),
+    isReviewError(/retained capture definition does not match/i),
+  );
+
+  let reads = 0;
+  const executable = {...legacy.definition};
+  Object.defineProperty(executable, 'camera', {
+    enumerable: true,
+    get() {
+      reads += 1;
+      return legacy.definition.camera;
+    },
+  });
+  await assert.rejects(
+    compareTileflowCapturesForReview(
+      {...retained, capture: {...retained.capture, definition: executable}},
+      legacy,
+    ),
+    isReviewError(/accessor/i),
+  );
+  assert.equal(reads, 0);
+  await assert.rejects(
+    compareTileflowCapturesForReview(
+      {...retained, capture: {...retained.capture, unexpected: true} as TileflowCapture},
+      legacy,
+    ),
+    isReviewError(/unsupported fields/i),
+  );
 });
 
 test('reports right-minus-left appearance metrics for one physical review region', async () => {

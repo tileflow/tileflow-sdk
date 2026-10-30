@@ -22,9 +22,9 @@ Run these commands from the project directory. After installation, `npx tileflow
 executable. With another package manager, use its local-execution command and the existing lockfile;
 do not add a second lockfile or rely on a globally installed CLI.
 
-`init` creates a singular `tileflow.config.ts` extending the official Streets map. `preview` serves
-the exported map using its configured view; it does not replace an application's normal development
-server.
+`init` creates a singular `tileflow.config.ts` extending the official Streets map. `preview` opens
+Inspector with that map, live reload, rendered-feature inspection, compiler attribution, zoom
+curves, a sprite atlas, scene selection, saved captures, and before/after review.
 
 Local validation, compilation, and asset preparation require no account or API key. Preview and
 capture may fetch configured remote tiles and fonts. Config files are executable trusted code,
@@ -51,35 +51,16 @@ explicitly or supply an application-owned production source.
 To work on another map, use `--config <path>`. An ordinary config exports one map. Multi-map
 workspaces are advanced repository orchestration, not a second application authoring model.
 
-## Discover the language and inspect a change
+## Map development tools
 
-Agents should read generated contracts instead of guessing property names, expression syntax, or
-compiler-generated layer IDs:
+Use `describe` for bounded language discovery (`describe themes --json` lists palette requirements
+and optional time-of-day composition), `inspect` for configuration and data, `capture`
+for reproducible evidence, and `compare` for saved captures, semantic edits, styles, references or
+baselines. `preview` opens Inspector. These tools work in independent projects with
+custom maps and data; official maps are optional.
 
-```sh
-npx tileflow language manifest --json
-npx tileflow language schema --json
-npx tileflow inspect --json
-npx tileflow explain --theme dark --json
-npx tileflow semantic-diff --from-config before/tileflow.config.ts --to-config after/tileflow.config.ts --json
-```
-
-The language commands need no project and perform no network access. `language manifest` returns
-the raw authoring manifest (schema version 2); `language schema` returns the raw generated config
-reference (version 4). Use their versions and schema references when consuming the output.
-
-`validate`, `inspect`, `explain`, and `semantic-diff` return one version-1 command envelope on
-stdout. JSON-mode failures leave stdout empty, write one structured failure to stderr, and exit
-nonzero. Diagnostics include `phase`, `code`, `path`, `severity`, `message`, and `suggestion`.
-A non-empty semantic diff is informational, not a command failure.
-
-Inspection includes resolved inheritance, merge provenance, and the theme contract. `explain`
-returns compilation diagnostics and a report, not the complete Style JSON. Add `--inspection` only
-when physical output provenance is needed; those layer IDs are not stable authoring targets.
-
-For a normal config, map selection is implicit. Paired `--from-config` and `--to-config` compare
-two ordinary configs. Workspace comparisons use their documented explicit map selectors; do not
-mix the paired-config and same-workspace forms.
+See the [map authoring workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md)
+for command examples, bounded JSON queries, compatible aliases and efficient agent workflows.
 
 ## Preview and compare
 
@@ -87,20 +68,62 @@ mix the paired-config and same-workspace forms.
 it does not implicitly expose a public listener. `--theme <name>` selects a concrete theme.
 `--scene <name>` selects a committed standalone scene.
 
-Compare two configs in the live workbench:
+Run `npx tileflow preview` from your project directory to load `tileflow.config.ts`, start the
+watched server, and automatically open Inspector in your default browser once the server is
+listening. Use `--config <path>` for another config or `--no-open` to start without opening a tab.
+`--json` and `--renderer native` also keep the browser closed. The CLI always prints the local URL
+in ordinary web preview output, so you can open it manually if browser launch is unavailable.
+
+Opening Inspector through another loopback name, such as `localhost` instead of `127.0.0.1`,
+redirects to the **Local** origin printed by the CLI, preserving camera and theme query parameters.
+This keeps the map, palette controls, and workbench API on the same origin.
+
+Run from the project directory and keep selected configs inside it, so capture commands copied from
+Inspector resolve the same files. The project itself can live anywhere, independently of this SDK.
+
+The default is one Inspector pane, one watched artifact session, and one map renderer. Choose a
+map, theme or configured scene in **Controls**. Map and theme pickers appear when there are multiple choices. **Compare → Compare live maps** adds a reference from the current
+project; `--against-*` also supports a reference from another config. The native renderer retains its assets-only
+preview endpoint.
+
+Compare two configs live in Inspector:
 
 ```sh
 npx tileflow preview --config candidate/tileflow.config.ts --against-config reference/tileflow.config.ts
 ```
 
-The workbench shares a camera across side-by-side, split, overlay, or blink views. Its inspector
-shows bounded feature and compiler information; invalid edits keep the last valid generation.
-Use headless capture, not the live viewport, when exact dimensions and device-pixel ratio matter.
+Inspector shares a camera across side-by-side, split, overlay, or blink views. Its inspection panels
+show bounded feature and compiler information; invalid edits keep the last valid generation.
+**Capture as reference** saves a starting point. After editing, **Capture & compare** reuses its
+camera and frame to review the change. The selected reference lasts for this browser session.
+
+**Capture** renders the compiled map at the current camera and the fixed dimensions in **Capture settings** (the sliders icon).
+Temporary preview visibility switches are excluded. **Captures** retains local evidence across
+reloads; **Compare** checks saved captures before offering a before/after slider and pixel difference.
+Each capture has a **Delete** action with confirmation that removes its saved image and record from this project.
+It reports incompatible cameras, frames, renderers or data without presenting pixel metrics.
+
+**Copy context for AI** exports the selected feature, semantic configuration paths, camera, revision
+and reproducible commands. An agent can also read the active browser context:
+
+```sh
+npx tileflow inspect session --url http://127.0.0.1:3333 --json
+```
+
+Use the origin printed by your running preview. This reads browser observations, including their
+age and stale flag; exact source lines and token ownership are not inferred. See the
+[Inspector workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md#work-with-a-person-and-an-agent)
+for storage and context bounds.
 
 `--api-base-url` or `TILEFLOW_API_URL` changes the API origin used by the official preview sources.
 It does not change the map's authored data ownership or publish any data.
 
 ## Capture a reproducible scene
+
+Captures return reusable IDs. Compare two saved renders with
+`tileflow compare --before <id> --after <id> --json`; no config, browser, or network is needed.
+The [authoring workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md)
+describes storage, integrity checks, mismatch outcomes and watch-session reuse.
 
 Add a concrete-theme scene to `tileflow.config.ts`:
 
@@ -199,13 +222,17 @@ browser bundle, copied prompt, or command-line argument.
 ```sh
 npx tileflow login
 npx tileflow whoami --json
+npx tileflow deploy --origin https://www.example.com
 npx tileflow deploy --map-id map_AbCdEfGhIjKlMnOp
 npx tileflow status --map-id map_AbCdEfGhIjKlMnOp
 ```
 
-Replace the example Map ID with the destination created in Tileflow. It is a public identifier,
-not a credential or the portable `id` in your config. A CI deploy key must authorize that destination.
-`logout` removes the saved personal session.
+Without `--map-id`, a logged-in `deploy` first creates the Map in the Team you administer (it asks,
+or takes `--team @team`, when several qualify) with the browser access you choose: exact origins
+with `--origin`, or `--any-website`. It prints the Map ID to use for later deploys;
+`tileflow maps create` creates the Map without deploying. The Map ID is a public identifier, not a
+credential or the portable `id` in your config. CI always deploys an existing Map with a deploy key
+for that destination. `logout` removes the saved personal session.
 
 Deploy publishes the compiled concrete-theme family and managed icon assets; it does not ask the
 server to compile TypeScript. Repeating an unchanged deployment reuses its version. Build writers
@@ -312,6 +339,9 @@ revision; prefer the installed copy when working with an older release.
 ## Validate icon representations
 
 `tileflow validate`, development and build resolve icon capabilities before returning a map.
+Validation and deployment also prepare map-owned tree models before compiling styles or making
+remote writes. Invalid or missing model files report a local asset error; prepared geometry travels
+inside the style, including models inherited from Streets.
 `TF_ICON_REPRESENTATION_MIXED` means a layer can select SDF and RGBA icons, including a fallback or
 local override. Keep that selection homogeneous or use an explicit bounded mapping. Development
 reports the invalid generation while retaining its last valid artifact.

@@ -13,10 +13,20 @@ import type {
   TileflowSymbolStyle,
 } from '../../cartography/styles';
 import {expression, zoom} from '../../cartography/values';
-import type {ResolvedBathymetryRelief, TileflowBathymetryReliefConfig} from '../../marine';
+import {
+  type ResolvedBathymetryRelief,
+  type TileflowBathymetryNameLayer,
+  type TileflowBathymetryReliefConfig,
+  tileflowBathymetryV1Schema,
+} from '../../marine';
 import {alpha, mix} from '../../themes';
+import type {TileflowLabelLanguage} from '../../types';
 import type {TileflowResolvedModuleConfig} from '../resolved';
-import type {TileflowWaterModuleConfig, TileflowWaterwayClass} from './index';
+import type {
+  TileflowBathymetryNameStyle,
+  TileflowWaterModuleConfig,
+  TileflowWaterwayClass,
+} from './index';
 
 const waterwayClasses: Record<TileflowWaterwayClass, readonly string[]> = {
   canal: ['canal'],
@@ -28,6 +38,7 @@ const waterwayClasses: Record<TileflowWaterwayClass, readonly string[]> = {
 export function compileWater(
   request: TileflowResolvedModuleConfig<TileflowWaterModuleConfig> | undefined,
   context: TileflowDomainCompileContext,
+  language: TileflowLabelLanguage = 'auto',
 ): TileflowLayerContribution[] {
   const config = mergeTileflowDesign<TileflowResolvedModuleConfig<TileflowWaterModuleConfig>>(
     {
@@ -200,13 +211,20 @@ export function compileWater(
   }
 
   const productContours = bathymetryProduct?.contours;
+  const nativeContours = sidecarBathymetry && bathymetryProduct?.vectorLayers?.contours === true;
+  const contourLayer = nativeContours
+    ? tileflowBathymetryV1Schema.layers.contours
+    : bathymetryLayer;
+  const contourDepthField = nativeContours
+    ? tileflowBathymetryV1Schema.fields.depth
+    : bathymetryDepthField;
   const contourRequest =
     productContours === false
       ? undefined
       : productContours === undefined
         ? request?.bathymetryContours
         : mergeTileflowDesign<TileflowLineStyle>(productContours, request?.bathymetryContours);
-  if (contourRequest !== undefined && bathymetryLayer && bathymetryDepthField) {
+  if (contourRequest !== undefined && contourLayer && contourDepthField) {
     const bathymetryContours = mergeTileflowDesign<TileflowLineStyle>(
       {
         color: context.colors.hydro.label,
@@ -229,12 +247,12 @@ export function compileWater(
             id: 'tileflow-bathymetry-contours',
             type: 'line',
             source: bathymetrySource,
-            'source-layer': bathymetryLayer,
+            'source-layer': contourLayer,
             filter: [
               'all',
-              ['==', ['geometry-type'], 'Polygon'],
-              ['has', bathymetryDepthField],
-              ['<', ['to-number', ['get', bathymetryDepthField], 0], 0],
+              ['==', ['geometry-type'], nativeContours ? 'LineString' : 'Polygon'],
+              ['has', contourDepthField],
+              ['<', ['to-number', ['get', contourDepthField], 0], 0],
             ],
           },
           bathymetryContours,
@@ -254,19 +272,19 @@ export function compileWater(
       : productLabels === undefined
         ? request?.bathymetryLabels
         : mergeTileflowDesign<TileflowSymbolStyle>(productLabels, request?.bathymetryLabels);
-  if (labelRequest !== undefined && bathymetryLayer && bathymetryDepthField) {
+  if (labelRequest !== undefined && contourLayer && contourDepthField) {
     const bathymetryLabels = mergeTileflowDesign<TileflowSymbolStyle>(
       {
         maxZoom: 10,
         minZoom: 3,
-        placement: 'point',
+        placement: nativeContours ? 'line' : 'point',
         priority: 5,
         text: {
           allowOverlap: false,
           color: context.colors.hydro.label,
           field: expression<string>([
             'to-string',
-            ['abs', ['to-number', ['get', bathymetryDepthField], 0]],
+            ['abs', ['to-number', ['get', contourDepthField], 0]],
           ]),
           ...typographyTextStyle(context.typography.water),
           haloColor: context.colors.hydro.water,
@@ -287,8 +305,13 @@ export function compileWater(
             id: 'tileflow-bathymetry-labels',
             type: 'symbol',
             source: bathymetrySource,
-            'source-layer': bathymetryLayer,
-            filter: ['all', ['==', ['geometry-type'], 'Polygon'], ['has', bathymetryDepthField]],
+            'source-layer': contourLayer,
+            filter: [
+              'all',
+              ['==', ['geometry-type'], nativeContours ? 'LineString' : 'Polygon'],
+              ['has', contourDepthField],
+              ...(nativeContours ? [['<', ['to-number', ['get', contourDepthField], 0], 0]] : []),
+            ],
           },
           bathymetryLabels,
         ),
@@ -296,6 +319,43 @@ export function compileWater(
         owner: 'water',
         slot: 'symbols',
         target: 'water.bathymetryLabels',
+      });
+    }
+  }
+
+  if (sidecarBathymetry) {
+    const {layers: marineLayers} = tileflowBathymetryV1Schema;
+    // Reserve disjoint name ranges below ordinary map labels.
+    const splitPlacement = Boolean(
+      config.bathymetryLandforms?.placementByGeometry ||
+      config.bathymetryWaterNames?.placementByGeometry,
+    );
+    const landforms = bathymetryProduct?.vectorLayers?.landforms;
+    const waterNames = bathymetryProduct?.vectorLayers?.waterNames;
+    if (landforms) {
+      appendBathymetryNames(contributions, {
+        availability: landforms,
+        context,
+        language,
+        localOrder: splitPlacement ? -900 : -300,
+        source: sidecarBathymetry.sourceId,
+        sourceLayer: marineLayers.landforms,
+        style: config.bathymetryLandforms,
+        target: 'water.bathymetryLandforms',
+        id: 'tileflow-bathymetry-landforms',
+      });
+    }
+    if (waterNames) {
+      appendBathymetryNames(contributions, {
+        availability: waterNames,
+        context,
+        language,
+        localOrder: splitPlacement ? -450 : -150,
+        source: sidecarBathymetry.sourceId,
+        sourceLayer: marineLayers.waterNames,
+        style: config.bathymetryWaterNames,
+        target: 'water.bathymetryWaterNames',
+        id: 'tileflow-bathymetry-water-names',
       });
     }
   }
@@ -366,6 +426,147 @@ export function compileWater(
   }
 
   return contributions;
+}
+
+function appendBathymetryNames(
+  contributions: TileflowLayerContribution[],
+  options: {
+    availability: Exclude<TileflowBathymetryNameLayer, false>;
+    context: TileflowDomainCompileContext;
+    id: string;
+    language: TileflowLabelLanguage;
+    localOrder: number;
+    source: string;
+    sourceLayer: string;
+    style: TileflowBathymetryNameStyle | undefined;
+    target: string;
+  },
+): void {
+  const {context, language} = options;
+  const {fields} = tileflowBathymetryV1Schema;
+  const localName = ['to-string', ['coalesce', ['get', fields.name], '']];
+  const name =
+    language === 'auto' || language === 'local'
+      ? localName
+      : [
+          'case',
+          ['!=', ['to-string', ['coalesce', ['get', `name:${language}`], '']], ''],
+          ['to-string', ['get', `name:${language}`]],
+          localName,
+        ];
+  const style = mergeTileflowDesign<TileflowBathymetryNameStyle>(
+    {
+      minZoom: 0,
+      placement: 'point',
+      priority: expression<number>(['to-number', ['get', fields.sortKey], 0]),
+      priorityOrder: 'lower-first',
+      text: {
+        ...typographyTextStyle(context.typography.water),
+        allowOverlap: false,
+        ignorePlacement: false,
+        color: context.colors.hydro.label,
+        field: expression<string>(name),
+        haloColor: context.colors.hydro.water,
+        haloWidth: 1,
+        optional: false,
+        padding: 12,
+        size: 11,
+      },
+    },
+    options.style,
+  );
+  if (style.visible === false || style.text?.visible === false) return;
+
+  const sourceMinimum = ['to-number', ['coalesce', ['get', fields.minZoom], 0], 0];
+  const sourceMaximum = ['to-number', ['coalesce', ['get', fields.maxZoom], 24], 24];
+  const ranges =
+    options.availability === true
+      ? undefined
+      : [...options.availability.zoomRanges].sort(
+          (left, right) => left.minZoom - right.minZoom || left.maxZoom - right.maxZoom,
+        );
+  const policy = style.placementByGeometry;
+  const geometryFamilies = [
+    ['Point', policy?.point],
+    ['LineString', policy?.line],
+    ['Polygon', policy?.polygon],
+  ] as const;
+  const groups = policy
+    ? (['point', 'line', 'line-center'] as const).flatMap((placement) => {
+        const geometries = geometryFamilies
+          .filter(([, value]) => value === placement)
+          .map(([geometry]) => geometry);
+        return geometries.length ? [{placement, geometries}] : [];
+      })
+    : [{placement: style.placement, geometries: ['Point', 'LineString', 'Polygon']}];
+
+  for (const [groupIndex, group] of groups.entries()) {
+    const suffix = policy ? `-placement-${group.placement}` : '';
+    const placementTarget =
+      group.placement === 'line-center'
+        ? 'LineCenter'
+        : group.placement === 'line'
+          ? 'Line'
+          : 'Point';
+    const target = policy ? `${options.target}.placement${placementTarget}` : options.target;
+    const layer: TileflowLayerContribution['layer'] = applySymbolStyle(
+      {
+        id: `${options.id}${suffix}`,
+        type: 'symbol',
+        source: options.source,
+        'source-layer': options.sourceLayer,
+        filter: [
+          'all',
+          ['match', ['geometry-type'], group.geometries, true, false],
+          ['!=', name, ''],
+        ],
+      },
+      {...style, placement: group.placement},
+    );
+    const baseFilter = layer.filter as unknown[];
+    const append = (result: TileflowLayerContribution['layer'], rangeTarget: string, order = 0) => {
+      contributions.push({
+        kind: 'layer',
+        layer: result,
+        localOrder: options.localOrder + order * (policy ? 3 : 1) + groupIndex,
+        owner: 'water',
+        slot: 'symbols',
+        target: rangeTarget,
+      });
+    };
+    if (!ranges) {
+      append(
+        {
+          ...layer,
+          filter: [...baseFilter, ['>=', ['zoom'], sourceMinimum], ['<', ['zoom'], sourceMaximum]],
+        },
+        target,
+      );
+      continue;
+    }
+
+    for (const [index, range] of ranges.entries()) {
+      const minzoom = Math.max(Number(layer.minzoom ?? 0), range.minZoom);
+      const maxzoom = Math.min(Number(layer.maxzoom ?? 24), range.maxZoom);
+      if (minzoom >= maxzoom) continue;
+
+      append(
+        {
+          ...layer,
+          id: `${layer.id}-cohort-${index}`,
+          minzoom,
+          maxzoom,
+          filter: [
+            ...baseFilter,
+            ['==', sourceMinimum, range.minZoom],
+            ['==', sourceMaximum, range.maxZoom],
+          ],
+        },
+        `${target}.cohort${index}`,
+        index,
+      );
+    }
+  }
 }
 
 function appendBathymetryRelief(

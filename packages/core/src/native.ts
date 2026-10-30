@@ -1,3 +1,4 @@
+export type {TileflowTimeOfDay, TileflowTimeOfDayVariants} from './time-of-day';
 export {
   resolveTileflowNativeManifestUrl,
   resolveTileflowNativeResourceUrl,
@@ -52,3 +53,19 @@ export type {
   TileflowNativeSourceOptions,
   TileflowNativeSourceState,
 } from './native-source-types';
+// Boundaries feature-state is renderer-neutral: React Native adapts it to its own source handle.
+export {
+  createBoundaryFeatureState,
+  type CreateBoundaryFeatureStateOptions,
+  type TileflowBoundaryFeatureState,
+  type TileflowFeatureStateMap,
+} from './boundary-areas/feature-state';
+export {tileflowBoundaryFamilies} from './boundary-areas/schema';
+export type {TileflowBoundaryFamily} from './boundary-areas/schema';
+export type {TileflowBoundaryRow, TileflowBoundaryValues} from './boundary-areas/join';
+
+export {
+  parseTileflowMobileDiscovery,
+  tileflowMobileDiscoveryMaximumBytes,
+} from './mobile-discovery';
+export type {TileflowMobileDiscovery} from './mobile-discovery';

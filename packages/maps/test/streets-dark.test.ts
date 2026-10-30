@@ -1,12 +1,38 @@
-import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
+import {
+  Color,
+  createPropertyExpression,
+  featureFilter,
+  latest as styleSpec,
+  validateStyleMin,
+} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createStyle, resolveMap, resolveTileflowTheme} from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
 import {streets, streetsIcons, streetsThemes} from '../src';
+import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
+import {streetsPoiImageIds} from './streets-poi-fixture';
+import {standardCartographyReference as colorReference} from './streets-standard-cartography-fixture';
 
 const streetsIconIds = [
+  ...streetsTreeIconIds,
   'coffee',
+  'nature',
+  'sport',
+  'worship',
+  'coffee-dark',
+  'culture-dark',
+  'education-dark',
+  'food-dark',
+  'health-dark',
+  'lodging-dark',
+  'major-transit-dark',
+  'parking-dark',
+  'services-dark',
+  'shopping-dark',
+  'nature-dark',
+  'worship-dark',
+  'sport-dark',
   'crosswalk',
   'culture',
   'education',
@@ -27,10 +53,12 @@ const streetsIconIds = [
   'shopping',
   'sidewalk-dot',
   'sidewalk-dot-dark',
+  ...streetsPoiImageIds,
 ] as const;
 
 const preparedAssets = {
   preparedAssets: {
+    models: streetsPreparedModels,
     icons: {
       ids: streetsIconIds,
       sprite: '/tileflow/test/streets-dark/sprite',
@@ -38,192 +66,254 @@ const preparedAssets = {
   },
 } as const;
 
-// Symmetric physical-output review for the complete Standard-day calibration.
+// Physical-output snapshot from the reference audit, with the seven foliage colors
+// updated after the 2026-10-19 tree geometry/material browser review.
 const approvedLightStyleColors = new Set([
+  // Street-level skies of the Default family (day, dawn, dusk, night: sky, horizon, glow). Each
+  // theme carries them all, so a sun an application places can mix the sky of its hour.
+  '#5C9CE6',
+  '#DCEBF7',
+  '#FFE7B8',
+  '#7F9FD6',
+  '#F6D4BC',
+  '#FFC77A',
+  '#4A4784',
+  '#E7A3A4',
+  '#FFA552',
+  '#0B1630',
+  '#26365A',
+  '#B4645A',
+  // Hedges, their shade, fences and walls: Mapbox Standard's gate-fence-hedge colours.
+  '#9AC38F',
+  '#799D6E',
+  '#D8D8D8',
+  '#CAC5C0',
   '#000000',
-  '#15AFFA59',
-  '#29B5FD59',
+  '#0494DC',
+  '#1891AA',
   '#1B1D27',
-  '#242624',
-  '#303230',
-  '#4C9478',
-  '#505050',
-  '#557BC4',
-  '#5A88A9',
-  '#5C74D6',
-  '#626361',
-  '#667C9E',
-  '#67AD73',
-  '#6D6E6C',
-  '#729B78',
-  '#6ECEFE59',
-  '#806DC4',
-  '#81A880',
-  '#83AD83',
-  '#8A756B',
-  '#8B8E99',
-  '#8D9EAE',
-  '#8E909D',
-  '#8F91AA',
-  '#918878',
-  '#91B68B',
-  '#91BA8D',
-  '#987A55',
-  '#98DCFE',
-  '#99DDFF59',
-  '#ADB3C3',
-  '#A1C99B',
-  '#A1B0C2',
-  '#A3A6C2',
-  '#AED7A5',
-  '#AFD4A7',
-  '#9BE494',
-  '#B1EAAC',
-  '#B85CA4',
-  '#B8E0AE',
-  '#BDB7B1',
-  '#BEC5D8',
-  '#BFE6AE',
-  '#C1EFBE',
-  '#C2E7B5',
-  '#C1C6D3',
-  '#C2C6D6',
-  '#C6C8D4',
-  '#C8C8CF',
-  '#C95E6B',
-  '#CDCED7',
-  '#CCE5C6',
-  '#CE9298',
-  '#CE9698',
-  '#D1C7C7',
-  '#D2EEC6',
-  '#D2F0C2',
-  '#D3F1C5',
-  '#D4F0C5',
-  '#D5DCE0',
-  '#D5E8D0',
-  '#E2F3D1',
-  '#D7892C',
-  '#D7E9DE',
-  '#D8E1D8',
-  '#CFF0C6',
-  '#DED5CA',
-  '#DEE0E8',
-  '#E4E1E5',
-  '#EBE1D8',
-  '#E8E5E6',
-  '#E8E8F0',
-  '#E9E6E7',
-  '#E9E8ED',
-  '#EFECEF',
-  '#ECE4D2',
-  '#EEE0DF',
-  '#F0ECC6',
-  '#F3E9DF',
-  '#F2F0EB',
-  '#F5F0EF',
-  '#F4F0EF',
-  '#F4F7F8',
-  '#F8F6F8',
-  '#FBEDE2',
-  '#FFFFFF',
-  'RGBA(0, 0, 0, 0)',
-  'RGBA(244, 240, 239, 0.72)',
-  // Default route inks, published in the style's metadata for application routes.
   '#1E3A8A',
   '#2563EB',
+  '#267915',
+  '#2682D9',
+  '#2D87E1',
+  '#3359CD',
+  '#404040',
+  '#479CEA',
+  '#586E84',
+  '#626060',
+  '#664CE6',
+  '#808080',
+  '#66CC6E',
+  '#727B64',
+  '#85B090',
+  '#8195AF',
+  '#8387AD',
+  '#94BD98',
+  '#8ABFA0',
+  '#8B8179',
+  '#916130',
+  '#93A3B7',
   '#94A3B8',
+  '#A4CBA3',
+  '#A4CFA5',
+  '#98DCFE',
+  '#99DDFF',
+  '#9BE494',
+  '#9EA9C5',
+  '#AAB9C9',
+  '#A5A5A5',
+  '#A6AB91',
+  '#B9DB9A',
+  '#ADE6A7',
+  '#B2EAAD',
+  '#C1E4BA',
+  '#BCB7B2',
+  '#BDCCD9',
+  '#D5DBDF',
+  '#DEE3E6',
+  '#E3E7E9',
+  '#DDE2E5',
+  '#C1EEBD',
+  '#C3D3B1',
+  '#C4EAC1',
+  '#C9F0C5',
+  '#CAD1DC',
+  '#CBCCDA',
+  '#D0C6C6',
+  '#D0F4C2',
+  '#D2F0C5',
+  '#D3F0D4',
+  '#D6EFD1',
+  '#D6F0D4',
+  '#D8C49A',
   '#DBEAFE',
+  '#DDF1D8',
+  '#E2E5EC',
+  '#E2F3D1',
+  '#E7E8ED',
+  '#E8F4FA',
+  '#EEEAEE',
+  '#EFE5D0',
+  '#EFFAEE',
+  '#F042B6',
+  '#F0EADD',
+  '#F2EBC3',
+  '#F2F0F3',
+  '#F2F2F2',
+  '#F3E9DF',
+  '#F4DFDF',
+  '#F4F0EF',
+  '#F53D3D',
+  '#F57A00',
+  '#F7F6F7',
+  '#F8F5F5',
+  '#FBF9F8',
+  // Subtle model-stone tones around the ordinary building colour.
+  '#EAE2DA',
+  '#F6EEE7',
+  '#F7F0EA',
+  '#FE809F',
+  '#FEECDF',
+  '#FEFEFE',
+  '#FF668C',
+  '#FFFFFF',
+  'RGBA(0, 0, 0, 0)',
+  'RGBA(0, 0, 0, 0.06)',
+  'RGBA(101, 202, 254, 0.35)',
+  'RGBA(111, 206, 254, 0.35)',
+  'RGBA(152, 220, 254, 0.35)',
+  'RGBA(203, 226, 201, 0.5)',
+  'RGBA(244, 240, 239, 0.72)',
+  'RGBA(71, 193, 254, 0.35)',
 ]);
 
 // This is the final compiler output, not only the authoring palette. It intentionally
 // includes Core-derived blends and the unreachable #000000 expression fallback so any
 // new physical color requires an explicit dark-map review.
 const approvedDarkStyleColors = new Set([
+  // Street-level skies of the Default family (day, dawn, dusk, night: sky, horizon, glow). Each
+  // theme carries them all, so a sun an application places can mix the sky of its hour.
+  '#5C9CE6',
+  '#DCEBF7',
+  '#FFE7B8',
+  '#7F9FD6',
+  '#F6D4BC',
+  '#FFC77A',
+  '#4A4784',
+  '#E7A3A4',
+  '#FFA552',
+  '#0B1630',
+  '#26365A',
+  '#B4645A',
+  // Hedges, their shade, fences and walls.
+  '#31403D',
+  '#263532',
+  '#54585B',
+  '#5D6063',
   '#000000',
-  '#081022A8',
-  '#0B1328A8',
-  '#0F162CA8',
-  '#121522',
-  '#13192F',
-  '#13192FA8',
-  '#18223B',
-  '#1B1D27',
-  '#252839',
-  '#2A314B',
-  '#2C2E3D',
-  '#2D3043',
-  '#303344',
-  '#304139',
-  '#33474A',
-  '#343646',
-  '#34453F',
-  '#35473F',
-  '#373A46',
-  '#373B49',
-  '#374440',
-  '#384A40',
-  '#393B49',
-  '#394842',
-  '#3A3C49',
-  '#3A4550',
-  '#3B4943',
-  '#3D414D',
-  '#3D5047',
-  '#3E4B47',
-  '#405348',
-  '#434247',
-  '#44504C',
-  '#453D48',
-  '#45424E',
-  '#454956',
-  '#454A59',
-  '#45534D',
-  '#45594E',
-  '#46564D',
-  '#485650',
-  '#4C505E',
-  '#4D5852',
-  '#4D5D54',
-  '#4D6255',
-  '#4E5260',
-  '#505264',
-  '#505462',
-  '#52483D',
-  '#52503E',
-  '#525664',
-  '#555867',
-  '#565A68',
-  '#5B5D70',
-  '#5F6475',
-  '#5F9169',
-  '#636779',
-  '#63756A',
-  '#6F7188',
-  '#70768A',
-  '#76586D',
-  '#76B59A',
-  '#777B89',
-  '#7C7F8C',
-  '#8296E6',
-  '#8799BE',
-  '#8F9098',
-  '#9A6177',
-  '#9FB6D0',
-  '#A6A7AC',
-  '#AA94DA',
-  '#C786BC',
-  '#D0D0D6',
-  '#D69A58',
-  '#DC7C89',
-  '#FFFFFF',
-  'RGBA(0, 0, 0, 0)',
-  'RGBA(37, 40, 57, 0.82)',
-  // Default route inks, published in the style's metadata for application routes.
+  '#001638',
+  '#05131A',
+  '#08171E',
   '#0B1220',
+  '#0B191F',
+  '#0C0C0C',
+  '#0C1017',
+  '#0D0F15',
+  '#0E1D24',
+  '#0E1D28',
+  '#101827',
+  '#101F25',
+  '#12233B',
+  '#142329',
+  '#171B30',
+  '#171D31',
+  '#192A2E',
+  '#1A2033',
+  '#1B1D27',
+  '#1B2B47',
+  '#1C2137',
+  '#22191F',
+  '#252D36',
+  '#262833',
+  '#264E7A',
+  '#273D59',
+  '#2B2E3E',
+  '#2B2F43',
+  '#2C3044',
+  '#2F493A',
+  '#333333',
+  '#364B44',
+  '#3B4051',
+  '#3C474F',
+  '#3D4256',
+  '#3D4356',
+  '#3E3F4D',
+  '#3E4C4F',
+  '#3E4D4C',
+  '#3F4354',
+  '#3F4455',
+  '#3F544D',
+  '#404D52',
+  '#425550',
+  '#434347',
+  '#437F9D',
+  '#448A4E',
+  '#454A5D',
+  '#455654',
+  '#473D48',
+  '#47414D',
+  '#485654',
+  '#494C5E',
+  '#496155',
+  '#4D4D4D',
+  '#4D5759',
+  '#525A65',
+  '#535665',
+  '#565969',
+  '#575B6C',
+  '#576374',
+  '#595845',
+  '#596173',
+  '#5B5D6E',
+  '#5F6272',
+  '#60677B',
   '#60A5FA',
   '#64748B',
+  '#669BCC',
+  '#6C778B',
+  '#6D718A',
+  '#7AC0D0',
+  '#7AC66D',
+  '#808080',
+  '#82ABFF',
+  '#87B0DB',
+  '#964D66',
+  '#96A5B4',
+  '#A187DB',
+  '#A9AAB0',
+  '#C7A582',
+  '#CCCCCC',
+  '#D57374',
+  '#D987BF',
+  '#E6BB62',
+  '#E6E6E6',
   '#EFF6FF',
+  // Architectural ground light and model stone palette.
+  '#F5CFA8',
+  '#2B2D3A',
+  '#2F3241',
+  '#303343',
+  '#FF668C',
+  '#FFFFFF',
+  'RGBA(0, 0, 0, 0)',
+  'RGBA(12, 38, 71, 0.35)',
+  'RGBA(18, 40, 71, 0.35)',
+  'RGBA(20, 41, 71, 0.35)',
+  'RGBA(255, 255, 255, 0.06)',
+  'RGBA(27, 43, 71, 0.35)',
+  'RGBA(37, 40, 57, 0.82)',
+  'RGBA(69, 81, 85, 0.5)',
 ]);
 
 function compile(theme: 'light' | 'dark') {
@@ -238,6 +328,21 @@ function requireLayer(style: ReturnType<typeof compile>, id: string) {
   const layer = style.layers.find((candidate) => candidate.id === id);
   assert.ok(layer, `Missing compiled layer ${id}`);
   return layer;
+}
+
+function layersForTargets(
+  compiled: ReturnType<typeof compileInspected>,
+  matches: (target: string) => boolean,
+) {
+  return compiled.inspection.layers
+    .filter(({contributions}) => contributions.some(({target}) => matches(target)))
+    .map(({index}) => compiled.style.layers[index]!);
+}
+
+function requireTarget(compiled: ReturnType<typeof compileInspected>, target: string) {
+  const layers = layersForTargets(compiled, (candidate) => candidate === target);
+  assert.ok(layers.length > 0, `Missing semantic target ${target}`);
+  return layers[0]!;
 }
 
 function collectColorLiterals(value: unknown, output: string[] = []): string[] {
@@ -275,13 +380,26 @@ function contrastRatio(first: string, second: string): number {
   );
 }
 
-test('Streets exposes complete light and dark themes on one map identity', () => {
+test('Streets exposes complete palette variants on one map identity', () => {
   const resolvedStreets = resolveMap(streets);
   assert.equal(resolvedStreets.id, 'streets');
   assert.equal('root' in resolvedStreets, false);
   assert.equal(resolvedStreets.defaultTheme, 'light');
   assert.deepEqual(resolvedStreets.systemThemes, {light: 'light', dark: 'dark'});
-  assert.deepEqual(Object.keys(resolvedStreets.themes), ['light', 'dark']);
+  assert.deepEqual(Object.keys(resolvedStreets.themes), [
+    'light',
+    'dark',
+    'dawn',
+    'dusk',
+    'faded',
+    'monochrome',
+    'dawn-faded',
+    'dawn-monochrome',
+    'dusk-faded',
+    'dusk-monochrome',
+    'dark-faded',
+    'dark-monochrome',
+  ]);
   assert.equal(streetsThemes.light.colorScheme, 'light');
   assert.equal(streetsThemes.dark.colorScheme, 'dark');
   assert.equal(streetsThemes.light.id, 'streets-light');
@@ -325,10 +443,10 @@ test('Streets exposes complete light and dark themes on one map identity', () =>
     );
   }
   assert.deepEqual(resolveTileflowTheme(streetsThemes.dark).lighting, {
-    anchor: 'viewport',
-    color: '#9FB6D0',
+    anchor: 'map',
+    color: '#FFFFFF',
     intensity: 0.08,
-    position: [1.15, 210, 30],
+    position: [1.15, 270, 20],
   });
 
   const style = compile('dark');
@@ -352,7 +470,9 @@ test('Streets exposes complete light and dark themes on one map identity', () =>
     ['linear'],
     ['zoom'],
     11,
-    400,
+    220,
+    13,
+    300,
     14,
     600,
   ]);
@@ -410,7 +530,7 @@ test('Streets Dark preserves Streets geometry, ordering, visibility, and label b
   const structuralContract = (layer: (typeof light.layers)[number]) => ({
     filter: layer.filter,
     id: layer.id,
-    layout: layer.layout,
+    layout: JSON.parse(JSON.stringify(layer.layout ?? {}).replace(/-dark(?=")/gu, '')),
     maxzoom: layer.maxzoom,
     minzoom: layer.minzoom,
     source: layer.source,
@@ -435,12 +555,9 @@ test('Streets Dark recolors every color-bearing Streets layer without major ligh
       (color) => color !== 'RGBA(0, 0, 0, 0)',
     );
     if (sourceColors.length === 0) continue;
-    assert.notDeepEqual(
-      darkLayer.paint,
-      lightLayer.paint,
-      `${lightLayer.id} retained its complete light paint`,
-    );
-    recoloredLayerCount += 1;
+    // Standard keeps fully emissive national boundaries unchanged at night.
+    if (JSON.stringify(darkLayer.paint) !== JSON.stringify(lightLayer.paint))
+      recoloredLayerCount += 1;
   }
   assert.ok(recoloredLayerCount > 140, `Only ${recoloredLayerCount} layers were recolored`);
 
@@ -450,32 +567,40 @@ test('Streets Dark recolors every color-bearing Streets layer without major ligh
     'The final Streets Light style introduced an unreviewed physical color',
   );
 
-  assert.equal(requireLayer(dark, 'tileflow-background').paint?.['background-color'], '#2D3043');
+  assert.deepEqual(requireLayer(dark, 'tileflow-background').paint?.['background-color'], [
+    'interpolate',
+    ['linear'],
+    ['zoom'],
+    13,
+    colorReference.colors['default-night']['surface.background.overview'],
+    14,
+    colorReference.colors['default-night']['surface.background'],
+  ]);
   assert.match(
     JSON.stringify(requireLayer(dark, 'tileflow-water').paint?.['fill-color']),
-    /#13192F[\s\S]+#18223B/u,
+    /#273D59[\s\S]+#12233B/u,
   );
-  assert.equal(requireLayer(dark, 'tileflow-buildings-fill').paint?.['fill-color'], '#2C2E3D');
+  assert.equal(requireLayer(dark, 'tileflow-buildings-fill').paint?.['fill-color'], '#262833');
   assert.equal(
     requireLayer(dark, 'tileflow-buildings-render-extrusion').paint?.['fill-extrusion-color'],
-    '#343646',
+    '#2B2E3E',
   );
   assert.equal(
     requireLayer(dark, 'tileflow-land-render-businessArea').paint?.['fill-color'],
-    '#45424E',
+    '#47414D',
   );
 
   const serialized = JSON.stringify(dark).toUpperCase();
   for (const lightSignature of [
     '#505050',
     '#98DCFE',
-    '#ADB3C3',
-    '#B1EAAC',
-    '#BEC5D8',
+    '#9FA8C3',
+    '#B3EAAD',
+    '#BFC4D7',
     '#D49399',
     '#D5E8D0',
-    '#F3E9DF',
-    '#F4F0EF',
+    '#EEEADE',
+    '#F5F1F0',
     '#F7F6F4',
     '#FBEDE2',
   ]) {
@@ -494,15 +619,16 @@ test('Streets Dark recolors every color-bearing Streets layer without major ligh
 });
 
 test('Streets Dark keeps a legible road hierarchy and high-contrast key labels', () => {
-  const style = compile('dark');
-  const ordinaryRoad = '#636779';
-  const ordinaryTunnel = '#525664';
-  const trunkRoad = '#6F7188';
-  const motorwayRoad = '#70768A';
+  const compiled = compileInspected('dark');
+  const {style} = compiled;
+  const ordinaryRoad = '#60677B';
+  const ordinaryTunnel = '#454A5D';
+  const trunkRoad = '#6D718A';
+  const motorwayRoad = '#6C778B';
 
   assert.match(
     JSON.stringify(requireLayer(style, 'tileflow-road-bridge-minor-fill').paint),
-    /#636779/u,
+    /#60677B/u,
   );
   assert.equal(
     requireLayer(style, 'tileflow-road-tunnel-minor-fill').paint?.['line-color'],
@@ -510,49 +636,64 @@ test('Streets Dark keeps a legible road hierarchy and high-contrast key labels',
   );
   assert.match(
     JSON.stringify(requireLayer(style, 'tileflow-road-bridge-trunk-fill').paint),
-    /#6F7188/u,
+    /#6D718A/u,
   );
   assert.match(
     JSON.stringify(requireLayer(style, 'tileflow-road-bridge-motorway-fill').paint),
-    /#70768A/u,
+    /#6C778B/u,
   );
   assert.ok(relativeLuminance(ordinaryTunnel) < relativeLuminance(ordinaryRoad));
   assert.ok(relativeLuminance(ordinaryRoad) < relativeLuminance(trunkRoad));
   assert.ok(relativeLuminance(trunkRoad) < relativeLuminance(motorwayRoad));
 
   const cityLabel = requireLayer(style, 'tileflow-label-place-city');
-  assert.match(JSON.stringify(cityLabel.paint?.['text-color']), /#A6A7AC/u);
-  assert.equal(cityLabel.paint?.['text-halo-color'], '#252839');
+  assert.match(JSON.stringify(cityLabel.paint?.['text-color']), /#CCCCCC/u);
+  assert.equal(cityLabel.paint?.['text-halo-color'], '#333333');
   const waterLabel = requireLayer(style, 'tileflow-label-water-ocean');
-  assert.equal(waterLabel.paint?.['text-color'], '#8799BE');
+  assert.equal(waterLabel.paint?.['text-color'], '#437F9D');
 
-  const roadLabel = requireLayer(style, 'tileflow-label-road-minor');
-  assert.equal(roadLabel.paint?.['text-halo-color'], '#252839');
+  const roadLabel = requireTarget(compiled, 'labels.roads.minor');
+  assert.equal(roadLabel.paint?.['text-halo-color'], '#4D4D4D');
   assert.equal(roadLabel.paint?.['text-halo-width'], 1);
 
   for (const [name, foreground, background] of [
-    ['place label on land', '#A6A7AC', '#2D3043'],
-    ['water label on water', '#8799BE', '#18223B'],
-    ['road label against its halo', '#D0D0D6', '#252839'],
+    ['place label on land', '#CCCCCC', '#2B2F43'],
+
+    ['road label against its halo', '#E6E6E6', '#4D4D4D'],
   ] as const) {
     assert.ok(contrastRatio(foreground, background) >= 4.5, `${name} fell below 4.5:1 contrast`);
   }
   assert.ok(
-    contrastRatio('#D0D0D6', ordinaryRoad) >= 3,
+    contrastRatio('#E6E6E6', ordinaryRoad) >= 3,
     'road label ink lost Mapbox Standard night separation from the carriageway',
   );
 });
 
-test('Streets uses blue road decks with darker casings that strengthen toward close zooms', () => {
+test('Streets uses blue road decks with darker casings at street detail', () => {
   const expected = {
-    light: {casing: '#ADB3C3', deck: '#BEC5D8'},
-    dark: {casing: '#454A59', deck: '#636779'},
+    light: {casing: '#93A3B7', deck: '#BDCCD9'},
+    dark: {casing: '#1A2033', deck: '#60677B'},
   } as const;
 
   for (const theme of ['light', 'dark'] as const) {
     const style = compile(theme);
-    const surfaceCasing = requireLayer(style, 'tileflow-road-surface-highzoom-local-casing');
-    const bridgeCasing = requireLayer(style, 'tileflow-road-bridge-highzoom-local-casing');
+    const casingFor = (structure: string, roadClass: string) => {
+      const layer = style.layers.find(
+        (l) =>
+          l.id.startsWith(`tileflow-road-${structure}-`) &&
+          l.id.endsWith('-casing') &&
+          (l.minzoom ?? 0) <= 17.97 &&
+          (l.maxzoom ?? 25) > 17.97 &&
+          featureFilter(l.filter as never).filter({zoom: 17.97}, {
+            type: 2,
+            properties: {class: roadClass, brunnel: structure},
+          } as never),
+      );
+      assert.ok(layer);
+      return layer;
+    };
+    const surfaceCasing = casingFor('surface', 'minor');
+    const bridgeCasing = casingFor('bridge', 'minor');
     const bridgeDeck = requireLayer(style, 'tileflow-road-bridge-minor-fill');
 
     assert.match(
@@ -573,38 +714,274 @@ test('Streets uses blue road decks with darker casings that strengthen toward cl
     );
 
     for (const layer of [surfaceCasing, bridgeCasing]) {
-      const width = layer.paint?.['line-width'];
-      assert.ok(Array.isArray(width));
-      assert.deepEqual(width.slice(0, 4), ['interpolate', ['linear'], ['zoom'], 6]);
-      assert.equal(width[5], 12);
-      assert.equal(width[7], 15);
-      assert.equal(width[9], 18);
-      assert.equal(width[11], 22);
-      for (const [outputIndex, expectedWidth] of [
-        [4, 0.4],
-        [6, 0.55],
-        [8, 0.75],
-        [10, 1],
-        [12, 1.5],
-      ] as const) {
-        const output = width[outputIndex];
-        assert.ok(Array.isArray(output));
-        assert.equal(output.at(-1), expectedWidth);
+      assert.equal(
+        layer.paint?.['line-dasharray'],
+        undefined,
+        'Continuous borders must avoid the SDF dash shader, including its [1, 0] fallback',
+      );
+      const gap = createPropertyExpression(
+        layer.paint?.['line-gap-width'],
+        styleSpec.paint_line['line-gap-width'],
+      );
+      assert.equal(gap.result, 'success');
+      if (gap.result !== 'success') throw new Error('Invalid road gap');
+      assert.ok(
+        Math.abs(
+          Number(
+            gap.value.evaluate({zoom: 17.97}, {type: 2, properties: {class: 'minor'}} as never),
+          ) -
+            (0.5 + ((20 - 0.5) * (1.5 ** (17.97 - 12) - 1)) / (1.5 ** 6 - 1)),
+        ) < 1e-9,
+        'The casing gap follows the street carriageway at fractional zooms',
+      );
+    }
+
+    for (const roadClass of ['minor', 'primary', 'motorway']) {
+      const tunnel = casingFor('tunnel', roadClass);
+      assert.deepEqual(tunnel.paint?.['line-dasharray'], [3, 3]);
+    }
+
+    for (const roadClass of ['footway', 'pedestrian', 'pathway']) {
+      for (const structure of ['surface', 'bridge']) {
+        const layer = requireLayer(style, `tileflow-road-${structure}-${roadClass}-casing`);
+        assert.equal(layer.paint?.['line-dasharray'], undefined, `${roadClass} has a solid edge`);
       }
     }
 
-    for (const family of ['local', 'arterial', 'major']) {
-      const tunnel = requireLayer(style, `tileflow-road-tunnel-highzoom-${family}-casing`);
-      assert.deepEqual(tunnel.paint?.['line-dasharray'], [3, 3]);
+    const construction = {type: 2, properties: {class: 'minor_construction'}} as never;
+    const opacity = createPropertyExpression(
+      surfaceCasing.paint?.['line-opacity'],
+      styleSpec.paint_line['line-opacity'],
+    );
+    assert.equal(opacity.result, 'success');
+    if (opacity.result === 'success')
+      assert.equal(opacity.value.evaluate({zoom: 18}, construction), 0);
+  }
+});
+
+test('Streets roundabouts retain metric edges and open approach joins throughout zoom', () => {
+  const properties = {
+    class: 'minor',
+    radius_px_z15: 10.458,
+    radius_m: 18.9,
+    inner_radius_m: 16.2,
+    outer_radius_m: 21,
+  };
+  for (const theme of ['light', 'dark'] as const) {
+    const style = compile(theme);
+    const fill = requireLayer(style, 'tileflow-road-circular-fill');
+    const casing = requireLayer(style, 'tileflow-road-circular-casing');
+    for (const [layer, border] of [
+      [fill, 0],
+      [casing, 0.5],
+    ] as const) {
+      const radius = createPropertyExpression(
+        layer.paint?.['circle-radius'],
+        styleSpec.paint_circle['circle-radius'],
+      );
+      const width = createPropertyExpression(
+        layer.paint?.['circle-stroke-width'],
+        styleSpec.paint_circle['circle-stroke-width'],
+      );
+      assert.equal(radius.result, 'success');
+      assert.equal(width.result, 'success');
+      if (radius.result !== 'success' || width.result !== 'success')
+        throw new Error('Invalid ring geometry');
+      for (let z = 15; z <= 24; z += 0.25) {
+        const feature = {type: 1, properties} as never;
+        const inner = radius.value.evaluate({zoom: z}, feature) as number;
+        const outer = inner + (width.value.evaluate({zoom: z}, feature) as number);
+        const pixelsPerMeter = (properties.radius_px_z15 * 2 ** (z - 15)) / properties.radius_m;
+        assert.ok(
+          Math.abs(inner - (16.2 * pixelsPerMeter - border)) < 1e-8,
+          `${theme} inner edge at z${z}`,
+        );
+        assert.ok(
+          Math.abs(outer - (21 * pixelsPerMeter + border)) < 1e-8,
+          `${theme} outer edge at z${z}`,
+        );
+      }
+    }
+    for (const layer of style.layers) {
+      if (layer.id.startsWith('tileflow-road-surface-') && layer.id.endsWith('-fill')) {
+        assert.ok(
+          style.layers.indexOf(casing) < style.layers.indexOf(layer),
+          `${theme}: no casing across an approach`,
+        );
+      }
+      if (layer.id.startsWith('tileflow-road-bridge-')) {
+        assert.ok(
+          style.layers.indexOf(fill) < style.layers.indexOf(layer),
+          `${theme}: bridges above roundabouts`,
+        );
+      }
     }
   }
 });
 
+// Measurements from Mapbox Standard default/day, 2D, HD roads disabled,
+// retrieved 2026-10-14. The tables intentionally live outside the style helpers.
+// Check compiled class eligibility as well as widths: a correct width on a
+// hidden layer, or an extra overview casing, must not pass this regression.
+test('Streets preserves reference detail widths and class thresholds from z0 through z24', () => {
+  const {style, inspection} = compileInspected('light');
+  const reference = {
+    motorway: {start: 3, widths: [0.8, 3.2, 30, 300]},
+    trunk: {start: 3, widths: [0.8, 3.2, 30, 300]},
+    primary: {start: 6, widths: [0.8, 3, 28, 280]},
+    secondary: {start: 8, widths: [0, 2.2, 26, 260]},
+    tertiary: {start: 8, widths: [0, 2.2, 26, 260]},
+    minor: {start: 12, widths: [0, 0.5, 20, 200]},
+    service: {start: 15, widths: [0, 0, 10, 100]},
+    track: {start: 15, widths: [0, 0, 10, 100]},
+  };
+  const interpolate = (z: number, stops: number[], values: number[]) => {
+    if (z <= stops[0]!) return values[0]!;
+    for (let i = 1; i < stops.length; i++) {
+      if (z <= stops[i]!) {
+        const t = (1.5 ** (z - stops[i - 1]!) - 1) / (1.5 ** (stops[i]! - stops[i - 1]!) - 1);
+        return values[i - 1]! + t * (values[i]! - values[i - 1]!);
+      }
+    }
+    return values.at(-1)!;
+  };
+  const layers = inspection.layers
+    .filter(({contributions}) =>
+      contributions.some(({target}) =>
+        /^roads\.classes\.[^.]+\.surface\.(fill|rampFill|casing)$/u.test(target),
+      ),
+    )
+    .map(({index, contributions}) => ({
+      layer: style.layers[index]!,
+      phases: new Set(
+        contributions.map(({target}) => (target.endsWith('.casing') ? 'casing' : 'fill')),
+      ),
+      accepts: featureFilter(style.layers[index]!.filter as never).filter,
+      width: createPropertyExpression(
+        style.layers[index]!.paint?.['line-width'] ?? 0,
+        styleSpec.paint_line['line-width'],
+      ),
+      gap: createPropertyExpression(
+        style.layers[index]!.paint?.['line-gap-width'] ?? 0,
+        styleSpec.paint_line['line-gap-width'],
+      ),
+    }));
+  const zooms = [
+    ...Array.from({length: 97}, (_, i) => i / 4),
+    2.99,
+    3.01,
+    5.99,
+    6.01,
+    7.99,
+    8.01,
+    11.99,
+    12.01,
+    13.99,
+    14.01,
+    14.99,
+    15.01,
+    15.99,
+    16.01,
+    17.97,
+    17.99,
+    18.01,
+    21.99,
+    22.01,
+  ];
+  for (const [roadClass, ref] of Object.entries(reference)) {
+    const supportsRamp = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'].includes(
+      roadClass,
+    );
+    for (const flags of [{}, {expressway: 1}, ...(supportsRamp ? [{ramp: 1}] : [])]) {
+      const ramp = 'ramp' in flags;
+      const feature = {type: 2, properties: {class: roadClass, oneway: 1, ...flags}} as never;
+      const widths = ramp
+        ? ['motorway', 'trunk'].includes(roadClass)
+          ? [0, 0.8, 20, 200]
+          : [0, 0.4, 18, 180]
+        : ref.widths;
+      for (const z of zooms) {
+        const matching = (phase: string) =>
+          layers.filter(
+            ({layer, accepts, phases}) =>
+              phases.has(phase) &&
+              (layer.minzoom ?? 0) <= z &&
+              (layer.maxzoom ?? 25) > z &&
+              accepts({zoom: z}, feature),
+          );
+        const fills = matching('fill');
+        assert.equal(
+          fills.length,
+          z >= Math.max(ref.start, ramp ? 12 : 0) ? 1 : 0,
+          `${roadClass} ${JSON.stringify(flags)} fill eligibility z${z}`,
+        );
+        const casings = matching('casing');
+        const casingStart = ['service', 'track'].includes(roadClass) ? 16 : 15;
+        assert.equal(
+          casings.length,
+          z >= casingStart ? 1 : 0,
+          `${roadClass} casing eligibility z${z}`,
+        );
+        const expected = interpolate(z, [3, 12, 18, 22], widths);
+        const authoredOverview =
+          !ramp && z < 15 && ['primary', 'secondary', 'tertiary', 'minor'].includes(roadClass);
+        for (const fill of authoredOverview ? [] : fills) {
+          assert.equal(fill.width.result, 'success');
+          if (fill.width.result === 'success')
+            assert.ok(
+              Math.abs(Number(fill.width.value.evaluate({zoom: z}, feature)) - expected) < 1e-6,
+              `${roadClass} fill z${z}`,
+            );
+        }
+        for (const casing of casings) {
+          assert.equal(casing.width.result, 'success');
+          assert.equal(casing.gap.result, 'success');
+          const major = !ramp && ['motorway', 'trunk', 'primary'].includes(roadClass);
+          if (casing.width.result === 'success')
+            assert.ok(
+              Math.abs(
+                Number(casing.width.value.evaluate({zoom: z}, feature)) -
+                  interpolate(z, [14, 22], [major ? 1 : 0.8, 2]),
+              ) < 1e-6,
+              `${roadClass} casing z${z}`,
+            );
+          if (casing.gap.result === 'success')
+            assert.ok(
+              Math.abs(Number(casing.gap.value.evaluate({zoom: z}, feature)) - expected) < 1e-6,
+              `${roadClass} gap z${z}`,
+            );
+        }
+      }
+    }
+  }
+});
+
+test('Streets keeps available districts when source ranks change between tile zooms', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    const layer = requireLayer(compile(theme), 'tileflow-label-place-neighborhood');
+    const filter = featureFilter(layer.filter as never).filter;
+    const accepts = (zoom: number, name: string, rank: number, placeClass = 'suburb') =>
+      filter({zoom}, {type: 'Point', properties: {name, rank, class: placeClass}} as never);
+
+    // World tiles observed at this camera give Manhattan a different rank at
+    // each zoom. Zooming in must not discard a district that was already visible.
+    assert.equal(accepts(12, 'Manhattan', 11), true);
+    assert.equal(accepts(13, 'Manhattan', 30), true);
+    assert.equal(accepts(14, 'East Village', 28, 'neighbourhood'), true);
+    assert.equal(accepts(14, 'Greenwich Village', 41, 'neighbourhood'), true);
+
+    // Keep the overview density gate and the place-family boundary intact.
+    assert.equal(accepts(11, 'Overview district', 18), true);
+    assert.equal(accepts(11, 'Minor district', 30), false);
+    assert.equal(accepts(13, 'New York', 1, 'city'), false);
+  }
+});
+
 test('Streets restores Mapbox-scale contrast at city overview and building detail', () => {
-  const style = compile('light');
+  const {style, inspection} = compileInspected('light');
   const countryBoundary = requireLayer(style, 'tileflow-boundary-admin2');
   const regionalBoundary = requireLayer(style, 'tileflow-boundary-admin4');
-  assert.equal(countryBoundary.paint?.['line-color'], '#CE9298');
+  assert.equal(countryBoundary.paint?.['line-color'], '#FF668C');
   assert.deepEqual(countryBoundary.paint?.['line-width'], [
     'interpolate',
     ['linear'],
@@ -616,7 +993,7 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     12,
     2.1,
   ]);
-  assert.equal(regionalBoundary.paint?.['line-color'], '#CE9698');
+  assert.equal(regionalBoundary.paint?.['line-color'], '#FE809F');
   assert.deepEqual(regionalBoundary.paint?.['line-dasharray'], [3, 2]);
   assert.deepEqual(regionalBoundary.paint?.['line-width'], [
     'interpolate',
@@ -632,18 +1009,20 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
 
   const countryLabel = requireLayer(style, 'tileflow-label-place-country');
   const cityLabel = requireLayer(style, 'tileflow-label-place-city');
-  assert.equal(countryLabel.paint?.['text-color'], '#303230');
+  assert.equal(countryLabel.paint?.['text-color'], '#000000');
   assert.deepEqual(cityLabel.layout?.['text-font'], ['Noto Sans Regular']);
   assert.equal(cityLabel.layout?.['text-padding'], 1);
-  assert.equal(cityLabel.maxzoom, 16);
-  assert.match(JSON.stringify(countryLabel.layout?.['text-size']), /,5,\["step"/u);
-  assert.match(JSON.stringify(cityLabel.layout?.['text-size']), /,5,\["step"/u);
-  assert.match(JSON.stringify(cityLabel.paint?.['text-color']), /#303230/u);
+  assert.equal(cityLabel.maxzoom, 15);
+  assert.deepEqual(cityLabel.layout?.['text-variable-anchor'], ['right']);
+  assert.match(JSON.stringify(countryLabel.layout?.['text-size']), /,9,\["step"/u);
+  assert.match(JSON.stringify(cityLabel.layout?.['text-size']), /,6,\["step"/u);
+  assert.match(JSON.stringify(cityLabel.paint?.['text-color']), /#000000/u);
 
   for (const family of ['town', 'village'] as const) {
     const settlement = requireLayer(style, `tileflow-label-place-${family}`);
-    assert.equal(settlement.maxzoom, 16);
-    assert.equal(settlement.paint?.['text-color'], '#242624');
+    assert.equal(settlement.maxzoom, 13);
+    assert.equal(settlement.paint?.['text-color'], '#000000');
+    assert.deepEqual(settlement.layout?.['text-font'], ['Noto Sans Regular']);
     assert.deepEqual(settlement.layout?.['text-variable-anchor'], [
       'left',
       'right',
@@ -654,37 +1033,42 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
       'bottom-left',
       'bottom-right',
     ]);
-    assert.match(JSON.stringify(settlement.layout?.['text-radial-offset']), /,8,0\.35,11,0/u);
+    assert.match(JSON.stringify(settlement.layout?.['text-radial-offset']), /,8,0/u);
   }
 
   const neighborhood = requireLayer(style, 'tileflow-label-place-neighborhood');
   assert.equal(neighborhood.minzoom, 10);
-  assert.equal(neighborhood.maxzoom, 16);
+  assert.equal(neighborhood.maxzoom, 15);
   assert.equal(neighborhood.layout?.['text-transform'], 'uppercase');
-  assert.equal(neighborhood.layout?.['text-padding'], 2);
+  assert.equal(neighborhood.layout?.['text-padding'], 3);
+  assert.deepEqual(neighborhood.layout?.['text-font'], ['Noto Sans Regular']);
   assert.match(JSON.stringify(neighborhood.filter), /,18/u);
-  assert.match(JSON.stringify(neighborhood.layout?.['text-size']), /,10,\["match"/u);
+  assert.match(JSON.stringify(neighborhood.layout?.['text-size']), /,11,\["match"/u);
 
   for (const [roadClass, color] of [
-    ['primary', '#C1C6D3'],
-    ['secondary', '#C2C6D6'],
-    ['tertiary', '#C2C6D6'],
-    ['minor', '#CDCED7'],
+    ['primary', '#AAB9C9'],
+    ['secondary', '#BDCCD9'],
+    ['tertiary', '#BDCCD9'],
+    ['minor', '#BDCCD9'],
   ] as const) {
     const layer = requireLayer(style, `tileflow-road-surface-${roadClass}-fill`);
     assert.match(JSON.stringify(layer.paint?.['line-color']), new RegExp(color));
   }
 
+  const residential = inspection.layers.find((layer) =>
+    layer.contributions.some(({target}) => target === 'land.landuse.residential.fill'),
+  );
+  assert.ok(residential);
   assert.match(
-    JSON.stringify(requireLayer(style, 'tileflow-landuse-1').paint?.['fill-color']),
-    /"residential"\],"#F5F0EF"/u,
+    JSON.stringify(requireLayer(style, residential.id).paint?.['fill-color']),
+    /"residential"\],"#F4F0EF"/u,
   );
   assert.equal(
     requireLayer(style, 'tileflow-land-render-businessArea').paint?.['fill-color'],
-    '#FBEDE2',
+    '#FEECDF',
   );
   const buildingFill = requireLayer(style, 'tileflow-buildings-fill');
-  assert.equal(buildingFill.paint?.['fill-color'], '#F3E9DF');
+  assert.equal(buildingFill.paint?.['fill-color'], '#F0EADD');
   assert.equal(buildingFill.minzoom, 14.25);
   assert.deepEqual(buildingFill.paint?.['fill-opacity'], [
     'interpolate',
@@ -698,7 +1082,7 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     1,
   ]);
   const outlines = requireLayer(style, 'tileflow-buildings-fill-outline');
-  assert.equal(outlines.paint?.['line-color'], '#DED5CA');
+  assert.equal(outlines.paint?.['line-color'], '#D8C49A');
   assert.deepEqual(outlines.paint?.['line-opacity'], [
     'interpolate',
     ['linear'],
@@ -731,7 +1115,7 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
   ]);
 
   const flatShadow = requireLayer(style, 'tileflow-buildings-render-flatShadow');
-  assert.equal(flatShadow.paint?.['line-color'], '#BDB7B1');
+  assert.equal(flatShadow.paint?.['line-color'], '#BCB7B2');
   assert.equal(flatShadow.paint?.['line-blur'], 2);
   assert.deepEqual(flatShadow.paint?.['line-translate'], [0.5, 0.75]);
   assert.deepEqual(flatShadow.paint?.['line-opacity'], [
@@ -760,6 +1144,95 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     20,
     4,
   ]);
+});
+
+test('Streets keeps lawns above parks and sports surfaces above lawns', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    const {inspection} = compileInspected(theme);
+    const indexOf = (target: string) => {
+      const layer = inspection.layers.find((candidate) =>
+        candidate.contributions.some((contribution) => contribution.target === target),
+      );
+      assert.ok(layer, `Missing surface ${target}`);
+      return layer.index;
+    };
+    for (const detail of ['grass', 'meadow']) {
+      for (const base of [
+        'land.landcover.urbanPark.fill',
+        'land.landcover.recreationGround.fill',
+      ]) {
+        assert.ok(indexOf(`land.landcover.${detail}.fill`) > indexOf(base));
+      }
+      assert.ok(indexOf(`land.landcover.${detail}.fill`) < indexOf('land.landuse.recreation.fill'));
+      assert.ok(indexOf(`land.landcover.${detail}.fill`) < indexOf('buildings.flat.fill'));
+    }
+  }
+});
+
+test('Streets parking surfaces cover vegetation but remain below roads', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    const {inspection, style} = compileInspected(theme);
+    const parking = requireLayer(style, 'tileflow-landuse-parking');
+    const outline = requireLayer(style, 'tileflow-landuse-parking-outline');
+    const fillIndex = style.layers.indexOf(parking);
+    const outlineIndex = style.layers.indexOf(outline);
+    assert.equal(parking.paint?.['fill-opacity'], 1);
+    assert.equal(parking.minzoom, 15);
+    assert.ok(outlineIndex > fillIndex);
+    for (const layer of inspection.layers) {
+      if (layer.contributions.some(({target}) => target.startsWith('land.landcover.'))) {
+        assert.ok(layer.index < fillIndex, `${layer.id} must not cover parking`);
+      }
+    }
+    const recreation = inspection.layers.find(({contributions}) =>
+      contributions.some(({target}) => target === 'land.landuse.recreation.fill'),
+    );
+    assert.ok(
+      recreation && recreation.index > fillIndex,
+      'Specific pitches and playgrounds retain their surface order above parking',
+    );
+    const firstRoad = style.layers.findIndex(
+      (layer) => layer.metadata?.['tileflow:domain'] === 'roads' && layer.type === 'line',
+    );
+    assert.ok(outlineIndex < firstRoad);
+    const accepts = featureFilter(parking.filter as never).filter;
+    assert.equal(accepts({zoom: 17}, {type: 3, properties: {class: 'parking'}}), true);
+    assert.equal(accepts({zoom: 17}, {type: 3, properties: {class: 'wood'}}), false);
+  }
+});
+
+test('Streets contact shadows only shade raised buildings that meet the ground', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    const style = compile(theme);
+    const extrusionIndex = style.layers.findIndex(
+      (layer) => layer.id === 'tileflow-buildings-render-extrusion',
+    );
+    for (const role of ['shadowSoft', 'shadowCore']) {
+      const layer = requireLayer(style, `tileflow-buildings-render-${role}`);
+      const filter = featureFilter(layer.filter as never).filter;
+      const accepts = (properties: Record<string, unknown>) =>
+        filter({zoom: 18}, {type: 3, properties} as never);
+      assert.equal(accepts({}), true);
+      assert.equal(accepts({render_height: 12}), true);
+      assert.equal(accepts({render_height: '12', render_min_height: '0'}), true);
+      assert.equal(accepts({render_height: 12, render_min_height: 4}), false);
+      assert.equal(accepts({render_height: 0}), false);
+      for (const hide_3d of [true, 1, '1']) assert.equal(accepts({hide_3d}), false);
+      assert.equal(layer.layout?.visibility, 'none');
+      assert.equal(layer.metadata?.['tileflow:3d-toggle'], 'building');
+      assert.ok(style.layers.indexOf(layer) < extrusionIndex);
+      assert.equal(layer.paint?.['line-translate'], undefined);
+      const opacity = createPropertyExpression(
+        layer.paint?.['line-opacity'],
+        styleSpec.paint_line['line-opacity'],
+      );
+      assert.equal(opacity.result, 'success');
+      if (opacity.result === 'success') {
+        assert.equal(opacity.value.evaluate({zoom: layer.minzoom!}), 0);
+        assert.ok(opacity.value.evaluate({zoom: layer.minzoom! + 0.01}) < 0.005);
+      }
+    }
+  }
 });
 
 test('Streets Dark retains every public render-stack contribution and refinement', () => {
@@ -829,7 +1302,7 @@ test('Streets Dark retains every public render-stack contribution and refinement
   }
 });
 
-test('Streets Dark keeps canonical POI category colors around the same ranked sprites', () => {
+test('Streets Dark keeps canonical POI category colors with themed sprites and identical ranked placement', () => {
   const light = compile('light');
   const dark = compile('dark');
   const categories = [
@@ -847,49 +1320,483 @@ test('Streets Dark keeps canonical POI category colors around the same ranked sp
     'landmark',
     'transport',
   ] as const;
-  const darkCategoryColors = {
-    'arts-entertainment': '#C786BC',
-    education: '#8F9098',
-    'food-drink': '#D69A58',
-    landmark: '#C786BC',
-    lodging: '#AA94DA',
-    medical: '#DC7C89',
-    'park-nature': '#76B59A',
-    'public-services': '#8F9098',
-    religion: '#C786BC',
-    retail: '#76B59A',
-    'sport-leisure': '#76B59A',
-    transport: '#8296E6',
-    'visitor-amenity': '#8F9098',
-  } as const;
+  const darkCategoryColors = Object.fromEntries(
+    Object.entries(colorReference.colors['default-night'])
+      .filter(([role]) => role.startsWith('poi.'))
+      .map(([role, color]) => [role.slice(4), color]),
+  );
 
   assert.equal(
     dark.layers.some(({id}) => id === 'tileflow-addresses-labels'),
-    false,
+    true,
   );
-  for (const category of categories) {
-    const id = `tileflow-poi-${category}`;
+  // Every category shares one importance order: the prominent tier and the rest.
+  assert.deepEqual(
+    dark.layers.filter(({id}) => id.startsWith('tileflow-poi')).map(({id}) => id),
+    ['tileflow-poi', 'tileflow-poi-prominent'],
+  );
+  for (const id of ['tileflow-poi', 'tileflow-poi-prominent']) {
     const lightLayer = requireLayer(light, id);
     const darkLayer = requireLayer(dark, id);
-    assert.deepEqual(darkLayer.layout?.['icon-image'], lightLayer.layout?.['icon-image']);
+    assert.notDeepEqual(darkLayer.layout?.['icon-image'], lightLayer.layout?.['icon-image']);
+    assert.deepEqual(
+      JSON.parse(JSON.stringify(darkLayer.layout?.['icon-image']).replace(/-dark(?=")/gu, '')),
+      lightLayer.layout?.['icon-image'],
+    );
     assert.deepEqual(darkLayer.layout?.['symbol-sort-key'], [
       '+',
       ['*', ['to-number', ['get', 'filter_rank'], 6], 17],
       ['to-number', ['get', 'size_rank'], 17],
     ]);
-    assert.deepEqual(lightLayer.layout?.['icon-size'], [
+    assert.equal(lightLayer.layout?.['icon-size'], 1);
+    assert.deepEqual(lightLayer.layout?.['text-font'], ['DINish Medium', 'Noto Sans Regular']);
+    assert.deepEqual(darkLayer.layout?.['text-font'], lightLayer.layout?.['text-font']);
+    assert.deepEqual(darkLayer.layout?.['icon-size'], lightLayer.layout?.['icon-size']);
+    const textColor = createPropertyExpression(
+      darkLayer.paint?.['text-color'],
+      styleSpec.paint_symbol['text-color'] as never,
+    );
+    assert.equal(textColor.result, 'success');
+    for (const category of categories) {
+      assert.equal(
+        String(
+          (textColor.value as {evaluate: (...args: unknown[]) => unknown}).evaluate(
+            {zoom: 16},
+            {type: 1, properties: {category}},
+          ),
+        ),
+        String(Color.parse(darkCategoryColors[category])),
+        category,
+      );
+    }
+    assert.equal(darkLayer.paint?.['text-halo-color'], '#0C0C0C');
+  }
+});
+
+test('Streets keeps ferries subordinate and limits attributed hillshade to regional zooms', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    const style = compile(theme);
+    const relief = requireLayer(style, 'tileflow-terrain-hillshade');
+    assert.equal(relief.type, 'hillshade');
+    assert.equal(relief.minzoom, 5);
+    assert.equal(relief.maxzoom, 14);
+    assert.equal(relief.paint?.['hillshade-exaggeration'], 0.23);
+    const source = style.sources['tileflow-terrain'] as Record<string, unknown>;
+    assert.equal(source.type, 'raster-dem');
+    assert.equal(source.encoding, 'terrarium');
+    assert.equal(source.url, undefined);
+    assert.deepEqual(source.tiles, [
+      'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
+    ]);
+    assert.equal(source.maxzoom, 12);
+    assert.equal(source.tileSize, 256);
+    assert.match(String(source.attribution), /tilezen\/joerd/u);
+    assert.equal(style.terrain, undefined);
+    const ferry = style.layers.find(({id}) => id.includes('ferry') && !id.includes('label'));
+    assert.ok(ferry);
+    assert.equal(ferry.minzoom, 8);
+    assert.deepEqual(ferry.paint?.['line-opacity'], [
       'interpolate',
       ['linear'],
       ['zoom'],
-      12,
-      1.04,
-      15,
-      1.1,
+      8,
+      0,
       17,
-      1.14,
+      1,
     ]);
-    assert.deepEqual(darkLayer.layout?.['icon-size'], lightLayer.layout?.['icon-size']);
-    assert.equal(darkLayer.paint?.['text-color'], darkCategoryColors[category]);
-    assert.equal(darkLayer.paint?.['text-halo-color'], '#252839');
+    assert.deepEqual(ferry.paint?.['line-dasharray'], [
+      'step',
+      ['zoom'],
+      ['literal', [1, 0]],
+      13,
+      ['literal', [12, 4]],
+    ]);
+    assert.deepEqual(ferry.paint?.['line-width'], [
+      'interpolate',
+      ['exponential', 1.5],
+      ['zoom'],
+      14,
+      0.5,
+      20,
+      1,
+    ]);
+    const label = style.layers.find(({id}) => id.includes('ferry') && id.includes('label'));
+    assert.ok(label);
+    assert.equal(label['source-layer'], 'transportation_name');
+    assert.equal(label.minzoom, 15);
+    assert.equal(label.layout?.['symbol-placement'], 'line');
+    assert.equal(label.layout?.['text-transform'], 'uppercase');
+    assert.equal(
+      label.paint?.['text-color'],
+      colorReference.colors[theme === 'light' ? 'default-day' : 'default-night']['labels.ferry'],
+    );
+    assert.equal(
+      label.paint?.['text-halo-color'],
+      colorReference.colors[theme === 'light' ? 'default-day' : 'default-night'][
+        'labels.ferryHalo'
+      ],
+    );
+    const accepts = (properties: Record<string, string>) =>
+      featureFilter(label.filter as never).filter({zoom: 16}, {type: 2, properties});
+    for (const properties of [{class: 'ferry'}, {class: 'transit', subclass: 'ferry'}]) {
+      assert.equal(accepts({...properties, name: 'Paulus Hook – Pier 11'}), true);
+    }
+    assert.equal(accepts({class: 'primary', name: 'Battery Place'}), false);
+    assert.equal(accepts({class: 'ferry', name: ''}), false);
   }
+});
+
+// Compare evaluated output at the zoom boundaries, not only expression shapes.
+function labelNumber(
+  layer: ReturnType<typeof requireLayer>,
+  property: string,
+  z: number,
+  properties = {},
+) {
+  const specification = styleSpec.layout_symbol[property as keyof typeof styleSpec.layout_symbol];
+  const compiled = createPropertyExpression(layer.layout?.[property], specification);
+  assert.equal(compiled.result, 'success', `${layer.id}.${property}`);
+  if (compiled.result !== 'success') throw new Error('Invalid label expression');
+  return compiled.value.evaluate({zoom: z}, {type: 1, properties});
+}
+
+test('Streets label scales follow the reference hierarchy across overview and street zooms', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    const compiled = compileInspected(theme);
+    const {style} = compiled;
+    const country = requireLayer(style, 'tileflow-label-place-country');
+    const city = requireLayer(style, 'tileflow-label-place-city');
+    const district = requireLayer(style, 'tileflow-label-place-neighborhood');
+    assert.equal(labelNumber(country, 'text-size', 1, {rank: 2}), 11);
+    assert.equal(labelNumber(country, 'text-size', 9, {rank: 2}), 22);
+    assert.equal(labelNumber(country, 'text-size', 9, {rank: 4}), 19);
+    assert.equal(labelNumber(country, 'text-size', 9, {rank: 5}), 17);
+    assert.equal(country.paint?.['text-halo-width'], 1.25);
+    assert.equal(labelNumber(city, 'text-size', 6, {rank: 2}), 18);
+    assert.equal(labelNumber(city, 'text-size', 6, {rank: 6}), 16);
+    assert.equal(labelNumber(city, 'text-size', 15, {rank: 10}), 20);
+    assert.equal(labelNumber(district, 'text-size', 11, {class: 'suburb'}), 12);
+    assert.equal(labelNumber(district, 'text-size', 15, {class: 'suburb'}), 16);
+    assert.equal(labelNumber(district, 'text-size', 15, {class: 'neighbourhood'}), 15);
+    assert.equal(district.paint?.['text-halo-width'], 1.3);
+    assert.equal(district.paint?.['text-halo-blur'], 0);
+    assert.deepEqual(requireLayer(style, 'tileflow-label-place-state').layout?.['text-font'], [
+      'Noto Sans Bold',
+    ]);
+    const names = layersForTargets(compiled, (target) => target.startsWith('labels.roads.'));
+    assert.ok(names.length > 0);
+    for (const roadClass of [
+      'motorway',
+      'trunk',
+      'primary',
+      'secondary',
+      'tertiary',
+      'minor',
+      'service',
+    ]) {
+      let observed = 0;
+      const properties = {name: 'Street', class: roadClass};
+      for (let z = 0; z <= 24; z += 0.25) {
+        for (const layer of names.filter(
+          (candidate) =>
+            (candidate.minzoom ?? 0) <= z &&
+            (candidate.maxzoom ?? 25) > z &&
+            featureFilter(candidate.filter as never).filter({zoom: z}, {type: 2, properties}),
+        )) {
+          observed++;
+          assert.equal(layer.paint?.['text-halo-width'], 1);
+          const size = labelNumber(layer, 'text-size', z, properties);
+          assert.ok(size >= 6.5 && size <= 16, `${roadClass} at z${z}: ${size}`);
+        }
+      }
+      assert.ok(observed > 0, `${roadClass} must exercise its native label size curve`);
+    }
+    const numbers = requireLayer(style, 'tileflow-addresses-labels');
+    assert.equal(numbers.minzoom, 17);
+    assert.equal(numbers.layout?.['text-padding'], 20);
+    assert.equal(labelNumber(numbers, 'text-size', 18), 11);
+    assert.equal(labelNumber(numbers, 'text-size', 20), 13);
+  }
+});
+
+test('Streets street names yield to destinations and buildings without flattening their lettering', () => {
+  for (const theme of ['light', 'dark'] as const) {
+    const compiled = compileInspected(theme);
+    const {style, inspection} = compiled;
+    const buildings = requireLayer(style, 'tileflow-buildings-render-extrusion');
+    const names = layersForTargets(compiled, (target) => target.startsWith('labels.roads.'));
+    const nativeClasses = new Set(
+      inspection.layers.flatMap(({contributions}) =>
+        contributions
+          .filter(({target}) => target.startsWith('labels.roads.'))
+          .map(({target}) => target.slice('labels.roads.'.length)),
+      ),
+    );
+    assert.deepEqual(
+      [...nativeClasses].sort(),
+      [
+        'motorway',
+        'trunk',
+        'primary',
+        'secondary',
+        'tertiary',
+        'minor',
+        'service',
+        'track',
+        'pathway',
+        'footway',
+        'cycleway',
+        'steps',
+        'pedestrian',
+      ].sort(),
+    );
+    const buildingIndex = style.layers.indexOf(buildings);
+    const footprintIndex = inspection.layers.find(({contributions}) =>
+      contributions.some(({target}) => target === 'buildings.flat.outline'),
+    )!.index;
+    const ordinaryPoiIndex = style.layers.indexOf(requireLayer(style, 'tileflow-poi'));
+    const prominentPoiIndex = style.layers.indexOf(requireLayer(style, 'tileflow-poi-prominent'));
+    const roadSurfaceIndex = style.layers.findLastIndex(
+      (layer) => layer.metadata?.['tileflow:domain'] === 'roads',
+    );
+    for (const layer of names) {
+      assert.ok(
+        style.layers.indexOf(layer) > footprintIndex,
+        `${layer.id} must not be clipped by flat building footprints`,
+      );
+      assert.ok(
+        style.layers.indexOf(layer) > roadSurfaceIndex,
+        `${layer.id} must cover road markings`,
+      );
+      assert.ok(
+        style.layers.indexOf(layer) < buildingIndex,
+        `${layer.id} must be hidden by buildings`,
+      );
+      assert.ok(
+        style.layers.indexOf(layer) < ordinaryPoiIndex,
+        `${layer.id} yields to ordinary destinations`,
+      );
+      assert.ok(
+        style.layers.indexOf(layer) < prominentPoiIndex,
+        `${layer.id} yields to important destinations`,
+      );
+      assert.deepEqual(layer.metadata?.['tileflow:road-label-placement'], {
+        version: 1,
+        mode: 'ground',
+      });
+      assert.equal(layer.layout?.['symbol-placement'], 'line');
+      assert.equal(layer.layout?.['text-pitch-alignment'], 'viewport');
+      assert.equal(layer.layout?.['text-rotation-alignment'], 'map');
+      assert.notEqual(layer.layout?.visibility, 'none');
+      assert.equal(layer.layout?.['text-allow-overlap'] ?? false, false);
+    }
+    for (const id of [
+      'tileflow-poi',
+      'tileflow-poi-prominent',
+      'tileflow-label-road-shield-detail',
+    ]) {
+      assert.ok(
+        style.layers.indexOf(requireLayer(style, id)) > buildingIndex,
+        `${id} must remain in the foreground`,
+      );
+    }
+    const accepts = (properties: Record<string, unknown>) =>
+      names.filter(
+        (layer) =>
+          (layer.minzoom ?? 0) <= 18 &&
+          (layer.maxzoom ?? 24) > 18 &&
+          featureFilter(layer.filter as never).filter({zoom: 18}, {type: 2, properties}),
+      );
+    for (const roadClass of [
+      'motorway',
+      'trunk',
+      'primary',
+      'secondary',
+      'tertiary',
+      'minor',
+      'residential',
+      'unclassified',
+      'service',
+      'track',
+      'busway',
+      'bus_guideway',
+      'minor_construction',
+    ]) {
+      assert.equal(accepts({name: 'Main Street', class: roadClass}).length, 1, roadClass);
+    }
+    for (const subclass of [
+      'path',
+      'bridleway',
+      'corridor',
+      'footway',
+      'cycleway',
+      'steps',
+      'pedestrian',
+    ]) {
+      assert.equal(accepts({name: 'Park path', class: 'path', subclass}).length, 1, subclass);
+      assert.equal(
+        accepts({name: 'Park path', class: 'path_construction', subclass}).length,
+        1,
+        subclass,
+      );
+    }
+    for (const properties of [{class: 'minor'}, {name: 'Ferry', class: 'ferry'}]) {
+      assert.equal(accepts(properties).length, 0);
+    }
+    assert.equal(
+      inspection.layers.some(({contributions}) =>
+        contributions.some(({target}) => target.startsWith('labels.render.street')),
+      ),
+      false,
+    );
+  }
+});
+
+test('Streets places every POI category by World rank and density without anonymous clutter', () => {
+  const style = compile('light');
+  const ordinary = requireLayer(style, 'tileflow-poi');
+  const prominent = requireLayer(style, 'tileflow-poi-prominent');
+  const accepts = (
+    layer: ReturnType<typeof requireLayer>,
+    z: number,
+    properties: Record<string, unknown>,
+  ) => featureFilter(layer.filter as never).filter({zoom: z}, {type: 1, properties});
+  const park = {category: 'park-nature', name: 'Park', filter_rank: 2, size_rank: 0};
+  assert.equal(accepts(ordinary, 15, park), true);
+  const {name: _name, ...unnamedPark} = park;
+  const {filter_rank: _rank, ...unrankedPark} = park;
+  assert.equal(accepts(ordinary, 15, unnamedPark), false);
+  assert.equal(accepts(ordinary, 15, unrankedPark), false);
+  assert.equal(accepts(ordinary, 15, {...park, size_rank: 17}), false);
+  // Parks/transport retain rank 3; other categories enter more selectively.
+  const ordinaryLandmark = {category: 'landmark', name: 'Building', filter_rank: 3, size_rank: 16};
+  assert.equal(accepts(ordinary, 15, ordinaryLandmark), false);
+  assert.equal(accepts(ordinary, 15, {...ordinaryLandmark, filter_rank: 2}), true);
+  const smallBusiness = {category: 'food-drink', name: 'Cafe', filter_rank: 5, size_rank: 16};
+  assert.equal(accepts(ordinary, 16, smallBusiness), false);
+  assert.equal(accepts(ordinary, 17, smallBusiness), false);
+  assert.equal(accepts(ordinary, 17, {...smallBusiness, filter_rank: 4}), false);
+  assert.equal(accepts(ordinary, 18, {...smallBusiness, filter_rank: 4}), true);
+  assert.equal(
+    accepts(ordinary, 17, {...smallBusiness, category: 'lodging', filter_rank: 4}),
+    false,
+  );
+  assert.equal(accepts(ordinary, 18, {...smallBusiness, category: 'park-nature'}), true);
+  // World's two most important ranks are placed before street and place names.
+  const louvre = {category: 'arts-entertainment', name: 'Musée', filter_rank: 0, size_rank: 0};
+  assert.equal(accepts(prominent, 14, louvre), true);
+  assert.equal(accepts(ordinary, 14, louvre), false);
+  assert.equal(accepts(prominent, 14, park), false);
+  // Parking and toilets explain themselves and need no name.
+  assert.equal(
+    accepts(ordinary, 18, {
+      category: 'visitor-amenity',
+      type: 'parking',
+      filter_rank: 4,
+      size_rank: 9,
+    }),
+    true,
+  );
+  const parkLabel = {category: 'park-nature', filter_rank: 1, size_rank: 0};
+  assert.equal(labelNumber(prominent, 'text-size', 15, parkLabel), 13);
+  assert.equal(labelNumber(prominent, 'text-size', 17, parkLabel), 18);
+  assert.equal(
+    labelNumber(ordinary, 'text-size', 20, {category: 'food-drink', filter_rank: 3, size_rank: 16}),
+    13,
+  );
+  assert.equal(
+    labelNumber(ordinary, 'text-size', 17, {category: 'transport', filter_rank: 0, size_rank: 0}),
+    13,
+  );
+  assert.equal(labelNumber(ordinary, 'text-padding', 16), 6);
+  assert.equal(labelNumber(ordinary, 'text-padding', 17), 4);
+});
+
+test('Streets keeps principal gardens and suppresses botanical collections at every zoom', () => {
+  // Observed World features in Madrid's botanical garden; the shared type alone cannot
+  // distinguish its destination from the named planting sections inside it.
+  const gardens = [
+    {name: 'Real Jardín Botánico de Madrid', filter_rank: 1, size_rank: 0, visible: true},
+    {name: 'Rosaleda', filter_rank: 3, size_rank: 1, visible: false},
+    {name: 'Huerta y frutales', filter_rank: 3, size_rank: 3, visible: false},
+    {name: 'Plantas ornamentales', filter_rank: 2, size_rank: 1, visible: false},
+    {name: 'Comelínidas', filter_rank: 2, size_rank: 3, visible: false},
+  ];
+  for (const theme of ['light', 'dark'] as const) {
+    const layers = compile(theme).layers.filter((layer) => layer['source-layer'] === 'poi');
+    for (const zoom of [15, 16, 18, 22, 24]) {
+      const accepts = (properties: Record<string, unknown>) =>
+        layers.some((layer) =>
+          featureFilter(layer.filter as never).filter({zoom}, {type: 1, properties}),
+        );
+      for (const {visible, ...garden} of gardens) {
+        assert.equal(
+          accepts({category: 'park-nature', type: 'garden', ...garden}),
+          visible,
+          `${theme}, z${zoom}, ${garden.name}`,
+        );
+      }
+      assert.equal(
+        accepts({
+          category: 'park-nature',
+          type: 'park',
+          name: 'Parque del Retiro',
+          filter_rank: 2,
+          size_rank: 0,
+        }),
+        true,
+      );
+      assert.equal(
+        accepts({
+          category: 'landmark',
+          type: 'monument',
+          name: 'Monument',
+          filter_rank: 1,
+          size_rank: 16,
+        }),
+        true,
+      );
+    }
+  }
+});
+
+test('Streets water retains its italic face without a heavy halo', () => {
+  const style = compile('light');
+  for (const layer of style.layers.filter((l) => l.id.startsWith('tileflow-label-water-'))) {
+    assert.deepEqual(layer.layout?.['text-font'], ['Noto Sans Italic']);
+    assert.equal(layer.paint?.['text-halo-width'], 0);
+  }
+  const resolved = resolveMap(streets);
+  assert.ok(resolved.fonts?.length);
+});
+
+test('Streets retains twelve time presets and the legacy light key for its Default theme', () => {
+  const map = resolveMap(streets);
+  assert.deepEqual(map.timeOfDay, {
+    light: {day: 'light', dawn: 'dawn', dusk: 'dusk', night: 'dark'},
+    faded: {day: 'faded', dawn: 'dawn-faded', dusk: 'dusk-faded', night: 'dark-faded'},
+    monochrome: {
+      day: 'monochrome',
+      dawn: 'dawn-monochrome',
+      dusk: 'dusk-monochrome',
+      night: 'dark-monochrome',
+    },
+  });
+  assert.equal(map.defaultTheme, 'light');
+  assert.deepEqual(map.systemThemes, {light: 'light', dark: 'dark'});
+  for (const [family, moments] of Object.entries(map.timeOfDay!)) {
+    for (const timeOfDay of ['day', 'dawn', 'dusk', 'night'] as const) {
+      assert.deepEqual(
+        createStyle(streets, {...preparedAssets, theme: family, timeOfDay}),
+        createStyle(streets, {...preparedAssets, theme: moments[timeOfDay]}),
+      );
+    }
+  }
+});
+
+test('Streets preserves the reference category ink instead of enforcing a different contrast palette', () => {
+  const colors = resolveTileflowTheme(streetsThemes.light).tokens.color;
+  assert.equal(colors['poi.food-drink'], colorReference.colors['default-day']['poi.food-drink']);
+  assert.equal(colors['poi.halo'], colorReference.colors['default-day']['poi.halo']);
+  assert.ok(contrastRatio(String(colors['poi.food-drink']), String(colors['poi.halo'])) < 4.5);
 });

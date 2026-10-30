@@ -1,6 +1,7 @@
 type TileflowMapStyleInput = {
   source?: unknown;
   theme?: unknown;
+  timeOfDay?: unknown;
   themeBlend?: unknown;
   themeTransition?: unknown;
 };

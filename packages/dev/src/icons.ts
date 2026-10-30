@@ -28,10 +28,12 @@ import {
   type TileflowIconPackageFileName,
   tileflowIconPackageLimits,
   type TileflowIconPackageManifest,
+  tileflowModelContentType,
 } from '@tileflow/core';
 import type {
   TileflowBuildCatalog,
   TileflowEffectiveIconSourceIdentity,
+  TileflowEffectiveModelSourceIdentity,
   TileflowPreparedMapAssets,
 } from '@tileflow/core/build';
 import {
@@ -52,6 +54,9 @@ import {
   type TileflowSpriteIndex as SpriteIndex,
   type TileflowRenderedIcon,
 } from './icon-sprite';
+import {prepareTileflowMapTreeModels} from './tree-models';
+
+export {prepareTileflowMapTreeModels, type PreparedTileflowBuildingModel} from './tree-models';
 
 export {renderTileflowIconAtlasPreview} from './icon-preview';
 
@@ -108,6 +113,8 @@ export type PreparedTileflowCatalog = {
   /** Ordered shared dependency receipts, present only for maps that declare an Icon Set. */
   mapIconCompositions: Record<string, TileflowIconCompositionV1>;
   mapIconSources: Record<string, readonly TileflowEffectiveIconSourceIdentity[]>;
+  /** The files of each map's own 3D models, for its revision. */
+  mapModelSources?: Record<string, readonly TileflowEffectiveModelSourceIdentity[]>;
   project: PreparedTileflowBuildCatalog;
   sourceProject: TileflowSourceCatalog;
   /** Exact files whose contents select the composition, such as the icon lock. */
@@ -656,6 +663,33 @@ export async function prepareTileflowCatalogIcons(
     }
   }
 
+  // Each map's own tree models travel in its style; its building models are files beside it.
+  const mapModelSources: Record<string, readonly TileflowEffectiveModelSourceIdentity[]> = {};
+  const modelWatchPaths: string[] = [];
+  for (const [mapName, map] of Object.entries(project.maps)) {
+    if (!map.models?.length) continue;
+    const models = await prepareTileflowMapTreeModels(map.models, {
+      baseDirectory: options.baseDirectory ?? options.cwd,
+      configPath: `maps.${mapName}.models`,
+      cwd: options.cwd,
+      target: 'local',
+    });
+    // Building models are files of their own beside the style, downloaded only near the camera.
+    const buildingModels: Record<string, string> = {};
+    for (const [id, model] of Object.entries(models.buildings)) {
+      const fileName = `models/${mapName}/${model.fileName}`;
+      assets.push({contentType: tileflowModelContentType, fileName, source: model.bytes});
+      buildingModels[id] = joinUrl(options.assetBaseUrl, fileName);
+    }
+    mapAssets[mapName] = {
+      ...mapAssets[mapName],
+      models: models.models,
+      ...(Object.keys(buildingModels).length > 0 ? {buildingModels} : {}),
+    };
+    mapModelSources[mapName] = models.identities;
+    modelWatchPaths.push(...models.watchPaths);
+  }
+
   return {
     assets,
     baseDirectory: await realpath(options.baseDirectory ?? options.cwd),
@@ -663,10 +697,11 @@ export async function prepareTileflowCatalogIcons(
     mapAssets,
     mapIconCompositions,
     mapIconSources,
+    ...(Object.keys(mapModelSources).length > 0 ? {mapModelSources} : {}),
     project: project as PreparedTileflowBuildCatalog,
     sourceProject: project,
     watchFiles: compiled.watchFiles,
-    watchPaths: compiled.watchPaths,
+    watchPaths: [...compiled.watchPaths, ...modelWatchPaths],
   };
 }
 

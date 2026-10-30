@@ -1,10 +1,15 @@
+export type {TileflowTimeOfDay, TileflowTimeOfDayVariants} from './time-of-day';
 import type {z} from 'zod';
 import {createTileflowRuntimeManifestSchema} from './manifest-schema';
 import {classicManifestSchemaOperations} from './manifest-schema-classic';
 import type {TileflowRuntimeManifest} from './manifest-types';
 import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
 
-export {tileflowRuntimeManifestLimits, tileflowRuntimeManifestVersion} from './manifest-types';
+export {
+  tileflowRuntimeManifestLimits,
+  tileflowRuntimeManifestVersion,
+  tileflowTimeOfDayManifestVersion,
+} from './manifest-types';
 export type {
   TileflowRuntimeColorScheme,
   TileflowRuntimeManifest,

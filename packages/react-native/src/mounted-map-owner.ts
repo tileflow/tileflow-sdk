@@ -10,7 +10,14 @@ import {
 } from '@tileflow/core/native';
 import type {AppearanceSelection, AppearanceState} from './appearance';
 import {snapshotCameraProps} from './camera-input';
-import type {MapBaseProps, MapCameraProps, MapOptions, MapSource, MapSourceState} from './contract';
+import type {
+  MapBaseProps,
+  MapCameraProps,
+  MapOptions,
+  MapSessionError,
+  MapSource,
+  MapSourceState,
+} from './contract';
 import type {MapThemeBlend} from './contract';
 import {assertHostedNativeStyleDocument} from './hosted-manifest-identity';
 import {createHostedNativePreparationGuard} from './hosted-preparation';
@@ -40,6 +47,21 @@ type BindingResolver = Readonly<{
 type Lease = Readonly<{ready: Promise<NativeMapAdmission>; retire(): Promise<void>}>;
 type Renderer = ReturnType<typeof createNativeRendererOwner>;
 type Job = {live: boolean; operations: Set<TileflowNativeManifestOperation>};
+type Schedule = (run: () => void, delayMs: number) => () => void;
+
+const timer: Schedule = (run, delayMs) => {
+  const handle = setTimeout(run, delayMs);
+  return () => clearTimeout(handle);
+};
+// Admission retiring a context reopens it this many times without a load in between.
+const REOPEN_LIMIT = 3;
+const sessionErrorCodes: ReadonlySet<string> = new Set<MapSessionError['code']>([
+  'NATIVE_SESSION_CREDENTIAL_REJECTED',
+  'NATIVE_SESSION_MAP_MISMATCH',
+  'NATIVE_SESSION_MAP_NOT_FOUND',
+  'NATIVE_SESSION_QUOTA_EXCEEDED',
+  'NATIVE_SESSION_INPUT_INVALID',
+]);
 type Epoch = {
   live: boolean;
   developmentOrigin?: string;
@@ -54,6 +76,10 @@ type Epoch = {
   job?: Job;
   retirement?: Promise<void>;
   catalog: Promise<void>;
+  /** Set once opening the admission context failed; the epoch cannot prepare again. */
+  contextFailed?: boolean;
+  /** Cancels a preparation scheduled after a recoverable session failure. */
+  retry?: () => void;
 };
 export type MountedMapPorts = Readonly<{
   documents: {
@@ -75,6 +101,8 @@ export type MountedMapPorts = Readonly<{
     listener: (state: AppearanceState) => void,
   ): () => void;
   now(): Date;
+  /** Delays a preparation retry; defaults to a timer. */
+  schedule?: Schedule;
 }>;
 
 /** The same ready source with another declared theme of its map. */
@@ -181,6 +209,9 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
   let sourceKey: string | undefined;
   let sourceObject: unknown;
   let selectedTheme: string | undefined;
+  let selectedTimeOfDay: MountedMapProps['timeOfDay'];
+  const timeSelection = () =>
+    !blendSelection && props?.timeOfDay !== undefined ? {timeOfDay: props.timeOfDay} : {};
   let colorScheme: 'light' | 'dark' | undefined;
   let appearanceRelease: (() => void) | undefined;
   let appearanceEpoch = 0;
@@ -189,7 +220,9 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
   let sourceState: MapSourceState | undefined;
   let current: Epoch | undefined;
   let lastReadiness = '';
+  let reopenings = 0;
   let disposal: Promise<void> | undefined;
+  const schedule = ports.schedule ?? timer;
   const retired = new Set<Epoch>();
   const tasks = new Set<Promise<unknown>>();
   const listeners = new Set<() => void>();
@@ -230,10 +263,15 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
       if (lastReadiness === identity) return;
       lastReadiness = identity;
     }
+    if (event.type === 'load') reopenings = 0;
     try {
       let result: unknown;
       if (event.type === 'load') result = props.onLoad?.(event);
-      else if (event.type === 'renderer-error' || event.type === 'source-error')
+      else if (
+        event.type === 'renderer-error' ||
+        event.type === 'source-error' ||
+        event.type === 'session-error'
+      )
         result = props.onError?.(event);
       else if (event.type === 'readiness-change') result = props.onReadinessChange?.(event);
       else result = props.onThemeChange?.(event);
@@ -323,11 +361,30 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
       }
     }
   }
+  function cancelRetry(epoch: Epoch) {
+    const cancel = epoch.retry;
+    epoch.retry = undefined;
+    cancel?.();
+  }
+  /** After a recoverable session failure, prepares again once the session may bootstrap. */
+  function retryLater(epoch: Epoch, source: ReadySource) {
+    const delay = epoch.map?.retryDelay();
+    if (typeof delay !== 'number') return;
+    cancelRetry(epoch);
+    const cancel = schedule(() => {
+      if (epoch.retry !== cancel) return;
+      epoch.retry = undefined;
+      if (!disposed && foreground && current === epoch && epoch.live && core.state === source)
+        prepare(epoch, source);
+    }, delay);
+    epoch.retry = cancel;
+  }
   function retire(epoch: Epoch): Promise<void> {
     if (epoch.retirement) return epoch.retirement;
     epoch.live = false;
     retired.add(epoch);
     cancelJob(epoch);
+    cancelRetry(epoch);
     epoch.cache.clear();
     epoch.binding.dispose();
     // Logical context retirement starts immediately; provider removal waits for view detachment.
@@ -352,6 +409,26 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
       if (epoch.retirement === attempt) epoch.retirement = undefined;
     });
     return track(attempt);
+  }
+  /** Replaces the current epoch with a fresh one for the same source. */
+  function restart(epoch: Epoch) {
+    current = undefined;
+    void retire(epoch).catch(() => undefined);
+    current = createEpoch(epoch.developmentOrigin);
+    select();
+  }
+  /** Native admission retired the context of a live Map: report it and open another. */
+  function reopen(epoch: Epoch) {
+    if (disposed || current !== epoch || !epoch.live || !props) return;
+    rendererError();
+    if (reopenings >= REOPEN_LIMIT) return;
+    reopenings += 1;
+    restart(epoch);
+  }
+  function sessionError(epoch: Epoch, code: string) {
+    if (disposed || current !== epoch || !epoch.live || !sessionErrorCodes.has(code)) return;
+    const error = Object.freeze({code: code as MapSessionError['code'], kind: 'terminal' as const});
+    emit({type: 'session-error', generation: generation(), error});
   }
   function createEpoch(developmentOrigin?: string): Epoch {
     const epoch: Epoch = {
@@ -381,7 +458,17 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
         if (!epoch.live || current !== epoch) throw new NativePreparationError();
         const binding = await epoch.binding.replace(source);
         if (!epoch.live || current !== epoch) throw new NativePreparationError();
-        epoch.lease = ports.installation.open({binding, resources: [], now: ports.now});
+        epoch.lease = ports.installation.open({
+          binding,
+          resources: [],
+          now: ports.now,
+          // Admission reports from inside its own cleanup and session publication; defer.
+          onRetired: () => void Promise.resolve().then(() => reopen(epoch)),
+          onSessionError: (error) => {
+            if (error.kind !== 'terminal') return;
+            void Promise.resolve().then(() => sessionError(epoch, error.code));
+          },
+        });
         const map = await epoch.lease.ready;
         epoch.map = map;
         if (!epoch.live || current !== epoch || map.state.status !== 'active') {
@@ -390,7 +477,9 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
         }
         return map;
       });
-      void epoch.context.catch(() => undefined);
+      void epoch.context.catch(() => {
+        epoch.contextFailed = true;
+      });
     }
     return epoch.context;
   }
@@ -550,12 +639,19 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
           epoch.cache.clear();
           // Do not call select(): only an explicit selection replenishes the one-reload budget.
           if (!disposed && foreground && current === epoch && epoch.live && props) {
-            track(core.replace(props.source, {theme: selectionTheme(), colorScheme}));
+            track(
+              core.replace(props.source, {
+                theme: selectionTheme(),
+                colorScheme,
+                ...timeSelection(),
+              }),
+            );
           }
           return;
         }
         rendererError();
         epoch.renderer?.preparationFailed(source.generation);
+        retryLater(epoch, source);
       })
       .finally(() => {
         if (epoch.job === job) epoch.job = undefined;
@@ -588,7 +684,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
   function select() {
     if (disposed || !props || !current?.live) return;
     current.hosted.select();
-    track(core.replace(props.source, {theme: selectionTheme(), colorScheme}));
+    track(core.replace(props.source, {theme: selectionTheme(), colorScheme, ...timeSelection()}));
   }
   function appearance(theme: string | undefined) {
     if ((theme === 'system') === Boolean(appearanceRelease)) return;
@@ -614,6 +710,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
       foreground = false;
       if (current) {
         cancelJob(current);
+        cancelRetry(current);
         current.renderer?.background();
       }
       return;
@@ -680,7 +777,9 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
       const key = source && JSON.stringify(source);
       const changedSource =
         !initialized || key !== sourceKey || (key === undefined && sourceObject !== next.source);
-      const changedTheme = !initialized || (!blend && next.theme !== selectedTheme);
+      const changedTheme =
+        !initialized ||
+        (!blend && (next.theme !== selectedTheme || next.timeOfDay !== selectedTimeOfDay));
       const changedOptions = JSON.stringify(options) !== JSON.stringify(mapOptions);
       camera = input;
       mapOptions = options;
@@ -693,6 +792,7 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
         sourceObject = next.source;
       }
       selectedTheme = next.theme;
+      selectedTimeOfDay = next.timeOfDay;
       initialized = true;
       try {
         appearance(next.theme);
@@ -724,6 +824,22 @@ export function createMountedMapOwner(ports: MountedMapPorts) {
       if (state?.status !== 'ready') select();
     },
     nativeLifecycle,
+    /** Loads again after a stopped session, a failed source or a failed context. */
+    retry(): void {
+      const epoch = current;
+      if (disposed || !props || !epoch?.live) return;
+      reopenings = 0;
+      const map = epoch.map;
+      if (epoch.contextFailed || map?.state.status === 'retired') {
+        restart(epoch);
+        return;
+      }
+      map?.retry();
+      cancelRetry(epoch);
+      const state = core.state;
+      if (state?.status === 'error') select();
+      else if (state?.status === 'ready' && map && foreground) prepare(epoch, state);
+    },
     async whenIdle(): Promise<void> {
       while (tasks.size) await Promise.allSettled([...tasks]);
       await current?.renderer?.whenIdle();

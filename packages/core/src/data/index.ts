@@ -49,6 +49,11 @@ export type OpenMapTilesLayerBindings = {
   sidewalk?: string;
   /** Optional point features such as pedestrian crossings. */
   streetFurniture?: string;
+  /**
+   * Optional barriers and traffic calming at native zoom 15: hedges, fences, walls, kerbs and
+   * guard rails as lines, and hedges mapped as areas of their own as polygons.
+   */
+  trafficControl?: string;
   /** Optional individual-tree point extension used by the vegetation module. */
   tree?: string;
   /**
@@ -111,6 +116,8 @@ export type OpenMapTilesFieldBindings = {
   elevationFeet: string;
   expressway: string;
   foot: string;
+  /** Optional kind of a barrier hedge: `hedge_bank` when it stands on an earth bank. */
+  hedge?: string;
   height: string;
   hide3d: string;
   /** Whether a building footprint owns separately materialized building parts. */
@@ -133,6 +140,11 @@ export type OpenMapTilesFieldBindings = {
   markings: string;
   minHeight: string;
   minZoom: string;
+  /**
+   * Transport mode of World transit POIs and lines: `subway`, `train`, `light_rail`, `tram`,
+   * `monorail`, `funicular`, `bus`, `ferry` or `aerialway`.
+   */
+  mode: string;
   mtbScale: string;
   name: string;
   nameEnglish: string;
@@ -206,6 +218,7 @@ export type TileflowWorldV1Schema = Omit<OpenMapTilesSchema, 'fields' | 'layers'
   fields: OpenMapTilesFieldBindings & {
     bathymetryMinDepth: string;
     bathymetrySortKey: string;
+    hedge: string;
     shieldKind: string;
     shieldLineLengthMeters: string;
     shieldNetwork: string;
@@ -220,6 +233,7 @@ export type TileflowWorldV1Schema = Omit<OpenMapTilesSchema, 'fields' | 'layers'
     sidewalk: string;
     streetFurniture: string;
     roadShield: string;
+    trafficControl: string;
     transportationOutline: string;
   };
 };
@@ -379,6 +393,7 @@ const canonicalFields = {
   markings: 'markings',
   minHeight: 'min_height',
   minZoom: 'min_zoom',
+  mode: 'mode',
   mtbScale: 'mtb_scale',
   name: 'name',
   nameEnglish: 'name:en',
@@ -445,6 +460,7 @@ export function tileflowWorldV1Schema(
     ...options,
     capabilities: {...options.capabilities, bathymetry: true, globalLandcover: true},
     fields: {
+      hedge: 'hedge',
       shieldKind: 'shield_kind',
       shieldLineLengthMeters: 'shield_line_length_m',
       shieldNetwork: 'shield_network',
@@ -458,6 +474,7 @@ export function tileflowWorldV1Schema(
       roadShield: 'transportation_shield',
       sidewalk: 'sidewalk',
       streetFurniture: 'street_furniture',
+      trafficControl: 'traffic_control',
       transportationOutline: 'transportation_outline',
       ...options.layers,
     },
@@ -481,6 +498,7 @@ export function validateTileflowWorldV1Tilejson(
   const roadName = requireTilejsonLayer(layers, schema.layers.roadName, issues);
   const roadShield = requireTilejsonLayer(layers, schema.layers.roadShield, issues);
   const canopy = optionalTilejsonLayer(layers, schema.layers.canopy, issues);
+  const trafficControl = optionalTilejsonLayer(layers, schema.layers.trafficControl, issues);
   const transportationOutline = requireTilejsonLayer(
     layers,
     schema.layers.transportationOutline,
@@ -617,6 +635,13 @@ export function validateTileflowWorldV1Tilejson(
       ['String'],
       issues,
     );
+  }
+
+  if (trafficControl) {
+    requireNativeZoom15(trafficControl, schema.layers.trafficControl, issues);
+    for (const field of [schema.fields.class, schema.fields.subclass]) {
+      requireTilejsonField(trafficControl, schema.layers.trafficControl, field, ['String'], issues);
+    }
   }
 
   if (road) {

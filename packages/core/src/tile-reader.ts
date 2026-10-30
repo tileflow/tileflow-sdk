@@ -2,6 +2,7 @@
 // under the camera), with the map's own tile address and request rules: chosen layers decoded,
 // a bounded cache, one request per tile however many readers wait for it, and cancellation.
 // It has no DOM dependency, so it also runs in a worker.
+import {fetchTileflowPmtilesTile, isTileflowPmtilesUrl} from './pmtiles-browser';
 import {decodeTileflowVectorTile, type TileflowTileLayer} from './vector-tile-decode';
 
 export type TileflowTileAddress = Readonly<{z: number; x: number; y: number}>;
@@ -15,6 +16,14 @@ export type TileflowTileRequestTransform = (
   url: string,
   resourceType: 'Tile',
 ) =>
+  | Promise<
+      | Readonly<{
+          url: string;
+          headers?: Readonly<Record<string, string>>;
+          credentials?: RequestCredentials;
+        }>
+      | undefined
+    >
   | Readonly<{
       url: string;
       headers?: Readonly<Record<string, string>>;
@@ -37,7 +46,10 @@ export type TileflowTileReaderOptions = Readonly<{
   concurrency?: number;
   /** The map's request rules, applied to every tile request. */
   transformRequest?: TileflowTileRequestTransform;
-  /** Defaults to the global `fetch`. */
+  /**
+   * Defaults to the global `fetch`, and to Core's PMTiles protocol for a source served from a
+   * Tileflow PMTiles archive (`tileflow-pmtiles://`).
+   */
   fetch?: (url: string, init: RequestInit) => Promise<Response>;
 }>;
 
@@ -55,7 +67,11 @@ export type TileflowTileReader = {
   /** A tile's chosen layers, or undefined when the source has no tile there (404 or 204). */
   readTile(
     address: TileflowTileAddress,
-    options?: {signal?: AbortSignal},
+    options?: {
+      signal?: AbortSignal;
+      /** Beyond the concurrency limit, lower priorities are requested first. Defaults to 0. */
+      priority?: number;
+    },
   ): Promise<TileflowTile | undefined>;
   /** The tiles covering an area at a zoom, without the absent ones, nearest the centre first. */
   readArea(request: TileflowTileAreaRequest): Promise<TileflowTile[]>;
@@ -124,106 +140,15 @@ export function tileflowTilePointToLngLat(
  */
 export function createTileflowTileReader(options: TileflowTileReaderOptions): TileflowTileReader {
   const settings = validated(options);
-  const cache = new Map<string, TileflowTile | undefined>();
-  const inFlight = new Map<string, Promise<TileflowTile | undefined>>();
-  const queue: (() => void)[] = [];
-  let running = 0;
-  let generation = 0;
-
-  function remember(key: string, tile: TileflowTile | undefined) {
-    if (settings.cacheSize === 0) return;
-    cache.delete(key);
-    cache.set(key, tile);
-    while (cache.size > settings.cacheSize) cache.delete(cache.keys().next().value!);
-  }
-
-  async function slot<T>(work: () => Promise<T>): Promise<T> {
-    if (running >= settings.concurrency) await new Promise<void>((resolve) => queue.push(resolve));
-    running += 1;
-    try {
-      return await work();
-    } finally {
-      running -= 1;
-      queue.shift()?.();
-    }
-  }
-
-  function load(address: TileflowTileAddress, key: string): Promise<TileflowTile | undefined> {
-    const started = generation;
-    const pending = slot(async () => {
-      const template = settings.tiles
-        .replaceAll('{z}', String(address.z))
-        .replaceAll('{x}', String(address.x))
-        .replaceAll('{y}', String(address.y));
-      const request = settings.transformRequest?.(template, 'Tile');
-      const response = await settings.fetch(request?.url ?? template, {
-        ...(request?.headers ? {headers: request.headers} : {}),
-        ...(request?.credentials ? {credentials: request.credentials} : {}),
-      });
-      if (response.status === 404 || response.status === 204) return undefined;
-      if (!response.ok) throw new Error(`Tile ${key} is unavailable (HTTP ${response.status}).`);
-      const bytes = new Uint8Array(await response.arrayBuffer());
-      return Object.freeze({
-        ...address,
-        layers: decodeTileflowVectorTile(bytes, {layers: settings.layers}),
-      });
-    }).then(
-      (tile) => {
-        inFlight.delete(key);
-        if (started === generation) remember(key, tile);
-        return tile;
-      },
-      (error: unknown) => {
-        inFlight.delete(key);
-        throw error;
-      },
-    );
-    inFlight.set(key, pending);
-    return pending;
-  }
-
-  function readTile(
-    address: TileflowTileAddress,
-    {signal}: {signal?: AbortSignal} = {},
-  ): Promise<TileflowTile | undefined> {
-    const {z, x, y} = address;
-    if (
-      ![z, x, y].every(Number.isSafeInteger) ||
-      z < 0 ||
-      x < 0 ||
-      y < 0 ||
-      x >= 2 ** z ||
-      y >= 2 ** z
-    )
-      return Promise.reject(new RangeError(`Invalid tile address ${z}/${x}/${y}.`));
-    if (signal?.aborted) return Promise.reject(abortReason(signal));
-    const key = `${z}/${x}/${y}`;
-    if (cache.has(key)) {
-      const tile = cache.get(key);
-      remember(key, tile);
-      return Promise.resolve(tile);
-    }
-    const pending = inFlight.get(key) ?? load(address, key);
-    if (!signal) return pending;
-    // A reader that stops waiting leaves the request to finish for the cache and other readers.
-    return new Promise((resolve, reject) => {
-      const abort = () => reject(abortReason(signal));
-      signal.addEventListener('abort', abort, {once: true});
-      pending.then(
-        (tile) => {
-          signal.removeEventListener('abort', abort);
-          resolve(tile);
-        },
-        (error: unknown) => {
-          signal.removeEventListener('abort', abort);
-          reject(error);
-        },
-      );
-    });
-  }
-
+  const loader = createTileLoader(options, (bytes, address) =>
+    Object.freeze({...address, layers: decodeTileflowVectorTile(bytes, {layers: settings.layers})}),
+  );
   return {
-    readTile,
+    readTile: (address, {signal, priority} = {}) =>
+      loader.read(address, {
+        ...(signal ? {signal} : {}),
+        ...(priority !== undefined ? {priority} : {}),
+      }),
     async readArea({bounds, zoom, maxTiles = 64, signal}) {
       if (!Number.isFinite(zoom)) throw new RangeError('A tile area needs a finite zoom.');
       const z = Math.min(settings.maxzoom, Math.max(settings.minzoom, Math.round(zoom)));
@@ -232,8 +157,200 @@ export function createTileflowTileReader(options: TileflowTileReaderOptions): Ti
         throw new RangeError(
           `The area takes ${addresses.length} tiles at zoom ${z}, more than the ${maxTiles} allowed.`,
         );
-      const tiles = await Promise.all(addresses.map((address) => readTile(address, {signal})));
+      // The nearest tiles to the centre are read first.
+      const tiles = await Promise.all(
+        addresses.map((address, priority) =>
+          loader.read(address, {...(signal ? {signal} : {}), priority}),
+        ),
+      );
       return tiles.filter((tile): tile is TileflowTile => tile !== undefined);
+    },
+    clear: () => loader.clear(),
+  };
+}
+
+/** A tile's bytes as Tileflow's 3D layers read them, with the address they were requested from. */
+export type TileflowTileBytes = TileflowTileAddress & Readonly<{url: string; bytes: Uint8Array}>;
+
+/**
+ * Reads tiles one request per tile, however many readers wait for it, taking the lowest priority
+ * first beyond the concurrency limit. A request every reader stopped waiting for is dropped before
+ * it starts; once started, it finishes for the cache, or stops when there is no cache to keep it.
+ */
+export function createTileLoader<T>(
+  options: TileflowTileReaderOptions,
+  open: (bytes: Uint8Array, address: TileflowTileAddress, url: string) => T,
+): {
+  read(
+    address: TileflowTileAddress,
+    options?: {signal?: AbortSignal; priority?: number},
+  ): Promise<T | undefined>;
+  clear(): void;
+} {
+  const settings = validated(options);
+  type Job = {
+    key: string;
+    priority: number;
+    readers: number;
+    kept: boolean;
+    state: 'queued' | 'running' | 'done';
+    controller: AbortController;
+    start(): void;
+    drop(reason: unknown): void;
+    result: Promise<T | undefined>;
+  };
+  const cache = new Map<string, T | undefined>();
+  const inFlight = new Map<string, Job>();
+  const queue: Job[] = [];
+  let running = 0;
+  let generation = 0;
+
+  function remember(key: string, value: T | undefined) {
+    if (settings.cacheSize === 0) return;
+    cache.delete(key);
+    cache.set(key, value);
+    while (cache.size > settings.cacheSize) cache.delete(cache.keys().next().value!);
+  }
+
+  function pump() {
+    while (running < settings.concurrency && queue.length > 0) {
+      let next = 0;
+      for (let at = 1; at < queue.length; at += 1)
+        if (queue[at]!.priority < queue[next]!.priority) next = at;
+      const [job] = queue.splice(next, 1);
+      running += 1;
+      job!.state = 'running';
+      job!.start();
+    }
+  }
+
+  function load(address: TileflowTileAddress, key: string, priority: number): Job {
+    const started = generation;
+    const controller = new AbortController();
+    let start!: () => void;
+    let drop!: (reason: unknown) => void;
+    const turn = new Promise<void>((resolve, reject) => {
+      start = resolve;
+      drop = reject;
+    });
+    const job: Job = {
+      key,
+      priority,
+      readers: 0,
+      kept: false,
+      state: 'queued',
+      controller,
+      start,
+      drop,
+      result: turn.then(async () => {
+        try {
+          const template = settings.tiles
+            .replaceAll('{z}', String(address.z))
+            .replaceAll('{x}', String(address.x))
+            .replaceAll('{y}', String(address.y));
+          const request = await settings.transformRequest?.(template, 'Tile');
+          if (started !== generation) return undefined;
+          controller.signal.throwIfAborted();
+          const url = request?.url ?? template;
+          const response = await settings.fetch(url, {
+            ...(request?.headers ? {headers: request.headers} : {}),
+            ...(request?.credentials ? {credentials: request.credentials} : {}),
+            // Without a cache to keep it, a request nobody waits for stops downloading.
+            ...(settings.cacheSize === 0 ? {signal: controller.signal} : {}),
+          });
+          if (response.status === 404 || response.status === 204) return undefined;
+          if (!response.ok)
+            throw new Error(`Tile ${key} is unavailable (HTTP ${response.status}).`);
+          const bytes = new Uint8Array(await response.arrayBuffer());
+          controller.signal.throwIfAborted();
+          return open(bytes, address, url);
+        } finally {
+          running -= 1;
+          pump();
+        }
+      }),
+    };
+    job.result.then(
+      (value) => {
+        job.state = 'done';
+        if (inFlight.get(key) === job) inFlight.delete(key);
+        if (started === generation) remember(key, value);
+      },
+      () => {
+        job.state = 'done';
+        if (inFlight.get(key) === job) inFlight.delete(key);
+      },
+    );
+    inFlight.set(key, job);
+    queue.push(job);
+    pump();
+    return job;
+  }
+
+  /** The last reader of a request stopped waiting for it. */
+  function abandon(job: Job, reason: unknown) {
+    if (job.kept || job.readers > 0) return;
+    if (job.state === 'queued') {
+      queue.splice(queue.indexOf(job), 1);
+      job.drop(reason);
+    } else if (job.state === 'running' && settings.cacheSize === 0) job.controller.abort(reason);
+    else return;
+    if (inFlight.get(job.key) === job) inFlight.delete(job.key);
+  }
+
+  return {
+    read(address, {signal, priority = 0} = {}) {
+      const {z, x, y} = address;
+      if (
+        ![z, x, y].every(Number.isSafeInteger) ||
+        z < 0 ||
+        x < 0 ||
+        y < 0 ||
+        x >= 2 ** z ||
+        y >= 2 ** z
+      )
+        return Promise.reject(new RangeError(`Invalid tile address ${z}/${x}/${y}.`));
+      if (signal?.aborted) return Promise.reject(abortReason(signal));
+      const key = `${z}/${x}/${y}`;
+      if (cache.has(key)) {
+        const value = cache.get(key);
+        remember(key, value);
+        return Promise.resolve(value);
+      }
+      const job = inFlight.get(key) ?? load(address, key, priority);
+      job.priority = Math.min(job.priority, priority);
+      if (!signal) {
+        job.kept = true;
+        return job.result;
+      }
+      job.readers += 1;
+      return new Promise((resolve, reject) => {
+        let waiting = true;
+        const leave = () => {
+          if (!waiting) return;
+          waiting = false;
+          job.readers -= 1;
+          reject(abortReason(signal));
+          abandon(job, abortReason(signal));
+        };
+        signal.addEventListener('abort', leave, {once: true});
+        job.result.then(
+          (value) => {
+            signal.removeEventListener('abort', leave);
+            if (!waiting) return;
+            waiting = false;
+            job.readers -= 1;
+            resolve(value);
+          },
+          (error: unknown) => {
+            signal.removeEventListener('abort', leave);
+            if (!waiting) return;
+            waiting = false;
+            job.readers -= 1;
+            reject(error);
+          },
+        );
+      });
     },
     clear() {
       generation += 1;
@@ -271,8 +388,9 @@ function validated(options: TileflowTileReaderOptions) {
   const concurrency = options.concurrency ?? 6;
   if (!(Number.isInteger(concurrency) && concurrency >= 1 && concurrency <= 32))
     throw new RangeError('Tile reader concurrency runs from 1 to 32 requests.');
-  const fetcher = options.fetch ?? globalThis.fetch?.bind(globalThis);
-  if (typeof fetcher !== 'function') throw new TypeError('A tile reader needs fetch.');
+  if (typeof (options.fetch ?? globalThis.fetch) !== 'function')
+    throw new TypeError('A tile reader needs fetch.');
+  const fetcher = options.fetch ?? fetchTile;
   if (
     options.layers !== undefined &&
     (!Array.isArray(options.layers) || options.layers.some((layer) => typeof layer !== 'string'))
@@ -288,6 +406,12 @@ function validated(options: TileflowTileReaderOptions) {
     layers: options.layers,
     transformRequest: options.transformRequest,
   };
+}
+
+// A source served from a Tileflow PMTiles archive is read through Core's own PMTiles protocol,
+// sharing the map's archives; any other address through the global fetch.
+function fetchTile(url: string, init: RequestInit): Promise<Response> {
+  return isTileflowPmtilesUrl(url) ? fetchTileflowPmtilesTile(url) : globalThis.fetch(url, init);
 }
 
 /** Structural MapLibre capability; importing this module never loads a renderer. */

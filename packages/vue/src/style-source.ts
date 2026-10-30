@@ -6,6 +6,8 @@ import {
 import {
   type TileflowRuntimeSource,
   type TileflowThemeSelection,
+  type TileflowTimeOfDay,
+  isTileflowTimeOfDay,
   validateTileflowRuntimeSource,
   validateTileflowThemeSelection,
 } from '@tileflow/core/runtime';
@@ -13,6 +15,8 @@ import {
 export type TileflowMapStyleSourceProps = {
   source: TileflowRuntimeSource;
   theme?: TileflowThemeSelection;
+  /** Optional artistic preset; ignored by maps without this capability. */
+  timeOfDay?: TileflowTimeOfDay;
   /**
    * Shows a continuous blend of the map's themes instead of `theme`. Moving `position` changes the
    * map at once; changing `themes` prepares a new blend. `hold` keeps labels, icons, and mixed
@@ -26,6 +30,7 @@ export type TileflowMapStyleSourceProps = {
 export type TileflowMapStyleInput = {
   source?: unknown;
   theme?: unknown;
+  timeOfDay?: unknown;
   themeBlend?: unknown;
   themeTransition?: unknown;
 };
@@ -39,6 +44,9 @@ export function validateTileflowMapStyleInputs(
   if (!sourceValidation.ok) return sourceValidation;
   if (input.theme !== undefined && !validateTileflowThemeSelection(input.theme)) {
     return {error: 'theme must be a concrete portable theme name or "system"', ok: false};
+  }
+  if (input.timeOfDay !== undefined && !isTileflowTimeOfDay(input.timeOfDay)) {
+    return {error: 'timeOfDay must be day, dawn, dusk, or night', ok: false};
   }
   if (
     input.themeBlend !== undefined &&

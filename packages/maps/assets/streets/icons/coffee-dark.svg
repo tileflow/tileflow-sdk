@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24">
+  <title>Night Cafe</title>
+  <desc>Tileflow POI disc with a Maki cafe pictogram, CC0-1.0.</desc>
+  <circle cx="12" cy="12" r="10" fill="#0C0C0C" />
+  <circle cx="12" cy="12" r="8.5" fill="#D8BD65" />
+  <path
+    fill="#0C0C0C"
+    transform="translate(6 6) scale(.8)"
+    d="M12 5h-2V3H2v4a4 4 0 0 0 7.45 2H12a2 2 0 1 0 0-4Zm0 3H9.86c.09-.33.14-.66.14-1V6h2a1 1 0 1 1 0 2Zm-2 4.5a.5.5 0 0 1-.5.5h-7a.5.5 0 0 1 0-1h7a.5.5 0 0 1 .5.5Z"
+  />
+</svg>

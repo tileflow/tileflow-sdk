@@ -3,9 +3,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   aeroways,
+  buildings,
+  createStyle,
+  defineMap,
   defineTheme,
+  disable,
   openMapTiles,
   poi,
+  refine,
   resolveTileflowData,
   tileflowPoiImageRoles,
   tileflowWorldV1Schema,
@@ -14,17 +19,20 @@ import {
   water,
 } from '../src';
 import type {TileflowLayerContribution} from '../src/cartography/contributions';
+import {tileflowBuildings3DDesignOf} from '../src/cartography/scene-3d-metadata';
+import {tileflowFeatureColour} from '../src/feature-colour-browser';
 import {compileAeroways} from '../src/modules/aeroways/compiler';
 import {compileBoundaries} from '../src/modules/boundaries/compiler';
 import {compileBuildings} from '../src/modules/buildings/compiler';
 import {compileLand} from '../src/modules/land/compiler';
 import {compilePoi} from '../src/modules/poi/compiler';
 import {compileTransit} from '../src/modules/transit/compiler';
-import {compileVegetation} from '../src/modules/vegetation/compiler';
+import {compileVegetation, tileflowVegetationDescription} from '../src/modules/vegetation/compiler';
 import {compileWater} from '../src/modules/water/compiler';
+import {tileflowColourChannels} from '../src/theme-blend';
 import {resolveColors, resolveThemeColors, resolveThemeImages} from '../src/themes';
 import {assembleTileflowLayers} from './layer-ir-fixture';
-import {testLightTheme} from './map-fixture';
+import {extendStreets, testLightTheme} from './map-fixture';
 
 const context = {
   colors: resolveColors(),
@@ -107,7 +115,7 @@ test('POI image roles are theme-selectable with an explicit built-in fallback co
         ...context,
         images,
       }),
-      'tileflow-poi-food-drink-icon',
+      'tileflow-poi-icon',
     );
     return (layer.layer.layout as Record<string, unknown>)['icon-image'];
   };
@@ -352,27 +360,36 @@ test('3D vegetation keeps a portable styled fallback and exposes runtime paramet
 
   assert.equal(portable.layer.metadata?.['tileflow:vegetation-mode'], '3d');
   assert.equal(portable.layer.metadata?.['tileflow:vegetation-fallback'], 'flat-circle');
-  assert.equal(portable.layer.metadata?.['tileflow:tree-bark-color'], '#654321');
-  assert.deepEqual(portable.layer.metadata?.['tileflow:tree-broadleaf-colors'], ['#112233']);
-  assert.deepEqual(portable.layer.metadata?.['tileflow:tree-conifer-colors'], ['#334455']);
-  assert.equal(portable.layer.metadata?.['tileflow:tree-crown-scale'], 1.2);
-  assert.equal(portable.layer.metadata?.['tileflow:tree-height-scale'], 1.4);
+  // The 3D trees' design is the style's `tileflow:vegetation` description, not layer metadata.
+  const description = tileflowVegetationDescription(
+    vegetation({
+      mode: '3d',
+      threeDimensional: {
+        barkColor: '#654321',
+        broadleafColors: ['#112233'],
+        coniferColors: ['#334455'],
+        crownScale: 1.2,
+        heightScale: 1.4,
+      },
+    }) as never,
+    {...context, data},
+  )!;
+  assert.equal(description.colors.bark, '#654321');
+  assert.deepEqual(description.colors.broadleaf, ['#112233']);
+  assert.deepEqual(description.colors.conifer, ['#334455']);
+  assert.equal(description.crownScale, 1.2);
+  assert.equal(description.heightScale, 1.4);
   assert.equal((portable.layer.paint as Record<string, unknown>)['circle-color'], '#123456');
   assert.equal((portable.layer.paint as Record<string, unknown>)['circle-opacity'], 0.74);
   assert.equal(hosted.layer.metadata?.['tileflow:vegetation-mode'], '3d');
   assert.equal(hosted.layer.metadata?.['tileflow:vegetation-fallback'], 'flat-circle');
-  assert.equal(
-    hosted.layer.metadata?.['tileflow:tree-bark-color'],
-    context.colors.vegetation.tree.bark,
-  );
-  assert.deepEqual(
-    hosted.layer.metadata?.['tileflow:tree-broadleaf-colors'],
-    context.colors.vegetation.tree.broadleaf,
-  );
-  assert.deepEqual(
-    hosted.layer.metadata?.['tileflow:tree-conifer-colors'],
-    context.colors.vegetation.tree.conifer,
-  );
+  const hostedDescription = tileflowVegetationDescription(
+    vegetation({mode: '3d'}) as never,
+    context,
+  )!;
+  assert.equal(hostedDescription.colors.bark, context.colors.vegetation.tree.bark);
+  assert.deepEqual(hostedDescription.colors.broadleaf, context.colors.vegetation.tree.broadleaf);
+  assert.deepEqual(hostedDescription.colors.conifer, context.colors.vegetation.tree.conifer);
   assertValid([portable]);
   assertValid([hosted]);
 });
@@ -382,6 +399,7 @@ test('default 3D vegetation preserves exact dark semantic tree tokens', () => {
     bark: '#3A3228',
     broadleaf: ['#284236', '#2F4B3C', '#365441', '#3C5B46'],
     conifer: ['#203A31', '#294237', '#314A3C'],
+    palm: ['#2B4A30', '#33563A', '#3C6243'],
   } as const;
   const darkTheme = defineTheme(testLightTheme, {
     colorScheme: 'dark',
@@ -396,6 +414,9 @@ test('default 3D vegetation preserves exact dark semantic tree tokens', () => {
         'vegetation.tree.conifer.a': tree.conifer[0],
         'vegetation.tree.conifer.b': tree.conifer[1],
         'vegetation.tree.conifer.c': tree.conifer[2],
+        'vegetation.tree.palm.a': tree.palm[0],
+        'vegetation.tree.palm.b': tree.palm[1],
+        'vegetation.tree.palm.c': tree.palm[2],
       },
     },
     version: 1,
@@ -407,9 +428,14 @@ test('default 3D vegetation preserves exact dark semantic tree tokens', () => {
   );
 
   assert.deepEqual(darkContext.colors.vegetation.tree, tree);
-  assert.equal(trees.layer.metadata?.['tileflow:tree-bark-color'], tree.bark);
-  assert.deepEqual(trees.layer.metadata?.['tileflow:tree-broadleaf-colors'], tree.broadleaf);
-  assert.deepEqual(trees.layer.metadata?.['tileflow:tree-conifer-colors'], tree.conifer);
+  const darkDescription = tileflowVegetationDescription(
+    vegetation({mode: '3d'}) as never,
+    darkContext,
+  )!;
+  assert.equal(darkDescription.colors.bark, tree.bark);
+  assert.deepEqual(darkDescription.colors.broadleaf, tree.broadleaf);
+  assert.deepEqual(darkDescription.colors.conifer, tree.conifer);
+  assert.deepEqual(darkDescription.colors.palm, tree.palm);
   assertValid([trees]);
 });
 
@@ -430,6 +456,29 @@ test('current building tones use bound fields and the available semantic theme c
   for (const tone of ['active', 'commercial', 'destination']) assert.match(color, new RegExp(tone));
   assert.match(color, /tone/);
   assert.doesNotMatch(color, /building_kind|has_business/);
+  assertValid([buildings]);
+});
+
+test('buildings take their theme colour by World class when they have no tone', () => {
+  const colors = resolveColors();
+  const buildings = contribution(compileBuildings(undefined, context), 'tileflow-buildings-fill');
+  const color = (buildings.layer.paint as Record<string, unknown>)['fill-color'] as unknown[];
+  const colourOf = (properties: Record<string, unknown>) =>
+    tileflowFeatureColour(color, properties, tileflowColourChannels);
+  const expected = (value: string) => tileflowFeatureColour(value, {}, tileflowColourChannels);
+  assert.deepEqual(colourOf({class: 'residential'}), expected(colors.buildings.residential));
+  assert.deepEqual(colourOf({class: 'commercial'}), expected(colors.buildings.commercial));
+  for (const value of ['civic', 'education', 'medical', 'religious', 'transportation'])
+    assert.deepEqual(colourOf({class: value}), expected(colors.buildings.civic), value);
+  for (const value of ['industrial', 'agricultural', 'service'])
+    assert.deepEqual(colourOf({class: value}), expected(colors.buildings.industrial), value);
+  for (const properties of [{class: 'outbuilding'}, {class: 'unknown'}, {}])
+    assert.deepEqual(colourOf(properties), expected(colors.buildings.generic));
+  // A tone, the reason for a building's palette, comes before its use.
+  assert.deepEqual(
+    colourOf({class: 'residential', building_tone: 'destination'}),
+    expected(colors.buildings.destination),
+  );
   assertValid([buildings]);
 });
 
@@ -542,3 +591,69 @@ function evaluate(value: unknown, properties: Record<string, unknown>): unknown 
       throw new Error(`Unsupported test expression operator: ${String(operator)}`);
   }
 }
+
+test('compiled buildings inherit the shared finish and retain independent overrides', () => {
+  const layers = [
+    {
+      id: 'tileflow-buildings-render-extrusion',
+      paint: {
+        'fill-extrusion-color': '#eee4da',
+        'fill-extrusion-vertical-gradient': false,
+      },
+    },
+  ];
+  const plain = tileflowBuildings3DDesignOf({}, context, layers)!;
+  assert.equal(plain.color, '#eee4da');
+  assert.equal(plain.verticalGradient, false);
+  assert.equal(plain.lighting, 'sun');
+  assert.equal(plain.edgeRadius, 0.8);
+  assert.equal(plain.colorVariation, 0);
+  assert.equal(plain.edges, 0);
+  assert.equal(plain.nightLight, 0);
+  assert.equal(plain.shadows, true);
+  assert.equal(plain.occlusion, true);
+  const enhanced = {
+    lighting: 'sun',
+    colorVariation: 0.06,
+    edges: 1,
+    nightLight: 1,
+    shadows: true,
+    occlusion: true,
+    windows: true,
+  };
+  const compiled = tileflowBuildings3DDesignOf({threeDimensional: enhanced}, context, layers)!;
+  for (const [name, value] of Object.entries(enhanced))
+    assert.equal(compiled[name as keyof typeof compiled], value);
+  for (const override of [
+    {lighting: 'style'},
+    {edgeRadius: 0},
+    {edgeRadius: 0.45},
+    {edgeRadius: 1.5},
+    {shadows: false},
+    {occlusion: false},
+    {lighting: 'style', edgeRadius: 0, shadows: false, occlusion: false},
+    {entrance: {buildings: [15.5, 16] as const, models: [14, 14.5] as const}},
+  ]) {
+    const result = tileflowBuildings3DDesignOf({threeDimensional: override}, context, layers)!;
+    assert.deepEqual(result, {...plain, ...override});
+  }
+  assert.equal(tileflowBuildings3DDesignOf({enabled: false}, context, layers), undefined);
+});
+
+test('an inherited graphic building design keeps false and zero when another property changes', () => {
+  const authored = {lighting: 'style', edgeRadius: 0, shadows: false, occlusion: false} as const;
+  const base = extendStreets({
+    modules: {poi: disable(), buildings: buildings({threeDimensional: authored})},
+  });
+  const derived = defineMap({
+    id: 'graphic-buildings',
+    version: 1,
+    extends: base,
+    modules: {buildings: refine({threeDimensional: {edges: 0.3}})},
+  });
+  const baseDesign = createStyle(base).metadata?.['tileflow:buildings'];
+  const derivedDesign = createStyle(derived).metadata?.['tileflow:buildings'];
+  assert.deepEqual(derivedDesign, {...(baseDesign as object), edges: 0.3});
+  for (const [key, value] of Object.entries(authored))
+    assert.equal((derivedDesign as Record<string, unknown>)[key], value);
+});

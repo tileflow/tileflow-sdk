@@ -29,6 +29,8 @@ export const publicPackageCatalog = Object.freeze(
       name: '@tileflow/coordinates-runtime',
     },
     {directory: 'search', initialVersion: '0.1.0-alpha.0', name: '@tileflow/search'},
+    {directory: 'routing', initialVersion: '0.1.0-alpha.0', name: '@tileflow/routing'},
+    {directory: 'elevation', initialVersion: '0.1.0-alpha.0', name: '@tileflow/elevation'},
     {directory: 'static', initialVersion: '0.1.0-alpha.0', name: '@tileflow/static'},
     {directory: 'dev', initialVersion: '0.1.0-alpha.0', name: '@tileflow/dev'},
     {directory: 'capture', initialVersion: '0.1.0-alpha.0', name: '@tileflow/capture'},

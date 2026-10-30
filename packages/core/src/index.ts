@@ -1,4 +1,15 @@
 export type {TileflowAtmosphere, TileflowAtmosphereOptions} from './atmosphere';
+export {
+  readTileflowSky,
+  tileflowSkyAtSun,
+  tileflowSkyMetadataKey,
+  type TileflowSky,
+  type TileflowSkyColours,
+  type TileflowSkyMetadata,
+  type TileflowSkyOptions,
+  type TileflowSkyTimesOfDay,
+} from './sky';
+export {tileflowMaxPitch} from './camera-limits';
 export {createStyle, createStyleResult, parseTileflowMap, validateTileflowMap} from './map';
 export {
   validateTileflowCompiledIconCapabilities,
@@ -44,6 +55,7 @@ export {
 } from './cartography/compilation-report';
 export {field} from './cartography/semantic-bindings';
 export type {
+  TileflowDataFieldName,
   TileflowDataFieldReference,
   TileflowDataFieldValue,
   TileflowNumericDataFieldName,
@@ -87,6 +99,7 @@ export type {
   TileflowRenderVisibilityGroup,
 } from './cartography/render-stack';
 export type {
+  TileflowCompilationDesignDecision,
   TileflowCompilationDiagnostic,
   TileflowCompilationDomainReport,
   TileflowCompilationFailure,
@@ -168,6 +181,7 @@ export type {
   TileflowPoiDensity,
   TileflowPoiModuleConfig,
   TileflowPoiModuleOptions,
+  TileflowPoiPlacementOrder,
   TileflowProjection,
   TileflowPlaceLabelClass,
   TileflowRoadOutline,
@@ -188,6 +202,7 @@ export type {
   TileflowRoadRoundaboutStyle,
   TileflowRoadServiceType,
   TileflowRoadSidewalkStyle,
+  TileflowRoadStreetLightStyle,
   TileflowRoadsModuleConfig,
   TileflowRoadsModuleOptions,
   TileflowRoadStructure,
@@ -253,6 +268,7 @@ export type {
   TileflowIconDirectory,
   TileflowLocalDirectory,
   TileflowMap,
+  TileflowModelDirectory,
   TileflowModuleOperation,
   TileflowModulePatch,
   TileflowMapDesign,
@@ -328,6 +344,7 @@ export {
   resolveThemeValues,
   resolveTileflowTheme,
   tileflowThemeLimits,
+  tileflowRequiredThemeColorRoles,
   TileflowThemeAuditError,
 } from './themes';
 export {
@@ -398,15 +415,44 @@ export type {
   TileflowRasterDemSourceRequirementV1,
   TileflowSourceRequirementsV1,
 } from './data/requirements';
+export * from './boundary-areas';
 export {
   bathymetry,
   resolveMarine,
   tileflowBathymetryDemSourceId,
+  tileflowBathymetryNameLayerLimits,
   tileflowBathymetrySourceId,
   tileflowBathymetryV1Schema,
+  tileflowNauticalPromoteId,
   tileflowNauticalSourceId,
   tileflowNauticalV1Schema,
 } from './marine';
+export {
+  readTileflowNotices,
+  tileflowNoticeLimits,
+  tileflowNoticesMetadataKey,
+  type TileflowMapNotice,
+} from './notices';
+export {
+  declareTileflowNauticalLights,
+  readTileflowNauticalLights,
+  steadyTileflowNauticalLights,
+  tileflowNauticalLightEclipseOpacity,
+  tileflowNauticalLightStates,
+  tileflowNauticalLightsLimits,
+  tileflowNauticalLightsMetadataKey,
+  type TileflowNauticalLights,
+} from './nautical-lights';
+export {
+  tileflowLightRhythm,
+  tileflowLightRhythmConventions,
+  tileflowLightRhythmLimits,
+  tileflowLightStateAt,
+  type TileflowLightCharacteristic,
+  type TileflowLightPhase,
+  type TileflowLightRhythm,
+  type TileflowLightState,
+} from './nautical-light-rhythm';
 export type {
   ResolvedBathymetry,
   ResolvedBathymetryRelief,
@@ -415,8 +461,11 @@ export type {
   TileflowBathymetryConfig,
   TileflowBathymetryDemSourceIdentity,
   TileflowBathymetryDisplay,
+  TileflowBathymetryNameLayer,
+  TileflowBathymetryNameZoomRange,
   TileflowBathymetryOptions,
   TileflowBathymetryReliefConfig,
+  TileflowBathymetryVectorLayers,
   TileflowMarine,
   TileflowMarineConfig,
   TileflowMarineMode,
@@ -435,6 +484,10 @@ export {
   poi,
   roads,
   tileflowLandformClasses,
+  tileflowNauticalFacilityIcons,
+  tileflowNauticalImageRoles,
+  tileflowNauticalNotice,
+  tileflowPoiIconOnlyTypes,
   tileflowPoiImageRoles,
   tileflowRoadClasses,
   transit,
@@ -448,9 +501,14 @@ export type {
   TileflowAerowaysModuleOptions,
   TileflowBoundariesModuleConfig,
   TileflowBoundariesModuleOptions,
+  TileflowBarrierClass,
+  TileflowBarrierStyle,
   TileflowBuildingMode,
+  TileflowBuildingModelPart,
+  TileflowBuildingModelPlacementConfig,
   TileflowBuildingsModuleConfig,
   TileflowBuildingsModuleOptions,
+  TileflowBuildingsThreeDimensionalStyle,
   TileflowLandcoverClass,
   TileflowLandformClass,
   TileflowLandformsModuleConfig,
@@ -469,6 +527,8 @@ export type {
   TileflowVegetationModuleOptions,
   TileflowVegetationThreeDimensionalStyle,
   TileflowWaterModuleConfig,
+  TileflowBathymetryNamePlacement,
+  TileflowBathymetryNameStyle,
   TileflowWaterModuleOptions,
   TileflowWaterwayClass,
 } from './modules';
@@ -634,3 +694,107 @@ export {
   tileflowIconMetadataFileName,
   type TileflowIconAppearance,
 } from './icon-appearance';
+export {
+  readTileflowVegetation3D,
+  tileflowTreeForms,
+  tileflowTreeModelIdPattern,
+  tileflowVegetationMetadataKey,
+  type TileflowTreeForm,
+  type TileflowTreeFormMix,
+  type TileflowTreeRegion,
+  type TileflowVegetation3D,
+} from './trees-3d';
+export {tileflowTreeParts} from './trees-3d-mesh';
+export {
+  decodeTileflowTreeModel,
+  encodeTileflowTreeModel,
+  tileflowTreeModelLimits,
+  type TileflowTreeModel,
+  type TileflowTreeModelMesh,
+} from './trees-3d-model';
+export {
+  readTileflowBuildings3D,
+  readTileflowTeamModelName,
+  type TileflowBuildingModelPlacement,
+  tileflowBuildingModelPlacementLimit,
+  type TileflowBuildings3DDesign,
+  tileflowBuildingsMetadataKey,
+  tileflowTeamModelUrl,
+} from './buildings-3d-design';
+export type {
+  TileflowBuildingSurfaces,
+  TileflowBuildingSurfaceDesign,
+} from './buildings-3d-surfaces';
+export {
+  isTileflowModelPartName,
+  tileflowInsideRings,
+  tileflowModelArchitecturalPartNames,
+  tileflowModelDefaultLightingRole,
+  tileflowModelLimits,
+  tileflowModelLightingRoles,
+  tileflowModelParts,
+  tileflowModelVertexBytes,
+  tileflowRingsOverlap,
+  type TileflowModel,
+  type TileflowModelBytes,
+  type TileflowModelLevelBytes,
+  type TileflowModelLightingRole,
+  type TileflowModelMesh,
+  type TileflowModelPart,
+  type TileflowModelSurfaceBytes,
+} from './models-3d-model';
+export type {TileflowModelEmissionGradient} from './building-illumination';
+export {
+  checkTileflowModelSurface,
+  tileflowModelImageSize,
+  tileflowModelSurfaceLimits,
+  tileflowModelTextureChannels,
+  type TileflowModelEmitter,
+  type TileflowModelMaterial,
+  type TileflowModelMaterialRange,
+  type TileflowModelSurface,
+  type TileflowModelTexture,
+  type TileflowModelTextureReference,
+} from './models-3d-materials';
+export {
+  decodeTileflowModels,
+  encodeTileflowModels,
+  readTileflowLandmarkTileFootprints,
+  readTileflowModelFileIds,
+  readTileflowModelFileSummary,
+  tileflowModelContentType,
+  tileflowModelFileName,
+  type TileflowModelCompressor,
+  type TileflowModelDecompressor,
+  type TileflowModelEntry,
+  type TileflowModelFileSummary,
+} from './models-3d-file';
+export {
+  readTileflowLandmarkRegion,
+  readTileflowLandmarksTileJson,
+  serializeTileflowLandmarkRegion,
+  type TileflowLandmarkFootprint,
+  type TileflowLandmarkRegion,
+  type TileflowLandmarkRegionTile,
+  tileflowLandmarkRegionOf,
+  tileflowLandmarkRegionZoom,
+  type TileflowLandmarksTileJson,
+  tileflowLandmarkTileOf,
+  tileflowLandmarkTileZoom,
+} from './models-3d-landmarks';
+export {
+  readTileflowStreetLights,
+  tileflowStreetLightsMetadataKey,
+  type TileflowStreetLightsDesign,
+} from './street-lights';
+
+export {
+  readTileflowVegetationDisplay,
+  resolveTileflowVegetationRepresentation,
+  tileflowVegetationDisplayMetadataKey,
+  type TileflowVegetationDisplay,
+  type TileflowVegetationRepresentation,
+  type TileflowViewMode,
+} from './vegetation-display';
+export {isTileflowTimeOfDay, tileflowTimesOfDay} from './time-of-day';
+export type {TileflowTimeOfDay, TileflowTimeOfDayVariants} from './time-of-day';

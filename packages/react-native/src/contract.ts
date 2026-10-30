@@ -2,6 +2,8 @@ import type {MapProps as NativeMapProps} from '@maplibre/maplibre-react-native';
 import type {ReactNode, Ref} from 'react';
 import type {ViewProps} from 'react-native';
 import type {
+  TileflowBoundaryFamily,
+  TileflowBoundaryValues,
   TileflowNativeInitialView,
   TileflowNativeInitialViewOptions,
   TileflowNativeSource,
@@ -20,12 +22,12 @@ export type MapView = TileflowNativeInitialView;
 export type MapInitialViewInputs = TileflowNativeInitialViewOptions;
 
 /**
- * How a theme change appears. With a `duration`, a snapshot of the current frame covers the map,
+ * How a theme change appears. By default, a snapshot of the current frame covers the map,
  * follows the camera, and fades out once the new theme is drawn. The device's reduce-motion
  * setting changes at once.
  */
 export type MapThemeTransition = Readonly<{
-  /** Cross-fade length in milliseconds, from 0 (the default, an immediate change) to 5000. */
+  /** Cross-fade length in milliseconds, from 0 (immediate) to 5000. Defaults to 450. */
   duration?: number;
 }>;
 
@@ -43,6 +45,7 @@ export type MapThemeBlend = Readonly<{
 export type MapSourceProps = Readonly<{
   source: MapSource;
   theme?: MapThemeSelection;
+  timeOfDay?: TileflowNativeSourceOptions['timeOfDay'];
   /** Cross-fades theme changes, including entering and leaving a blend. */
   themeTransition?: MapThemeTransition;
   /**
@@ -50,6 +53,23 @@ export type MapSourceProps = Readonly<{
    * style that holds all of them; moving `position` later changes the map without loading.
    */
   themeBlend?: MapThemeBlend;
+}>;
+
+/**
+ * Application values on the map's Boundaries areas, for a choropleth that reads them with
+ * `feature-state`. The same rows and options as `useBoundaryFeatureState` on the web: rows keyed by
+ * the source's feature ID (`id`, or `ref` when the map promotes it), joined with
+ * `joinBoundaryRows` when the data carries other codes. Values survive theme changes; `null`
+ * removes them.
+ */
+export type MapBoundaryFeatureState = Readonly<{
+  values: TileflowBoundaryValues | null;
+  /** Defaults to `boundaries`. */
+  family?: TileflowBoundaryFamily;
+  /** Also set the values on `boundary_label` points, for labels styled by value. */
+  labels?: boolean;
+  /** Feature-state key; it must match the choropleth's `state`. Defaults to `value`. */
+  state?: string;
 }>;
 
 type AllowedMapOptions =
@@ -82,6 +102,7 @@ export type MapPresentationProps = Readonly<{
   style?: ViewProps['style'];
   testID?: ViewProps['testID'];
   mapOptions?: MapOptions;
+  boundaryFeatureState?: MapBoundaryFeatureState;
 }>;
 
 type TileflowReady = Extract<TileflowNativeSourceState, {status: 'ready'}>;
@@ -97,9 +118,29 @@ export type MapSourceState =
   | (Readonly<{status: 'ready'; generation: number}> & MapSelection)
   | Readonly<{status: 'error'; generation: number; error: MapSourceError}>;
 
-/** A synchronous read of the last source snapshot. Does not trigger loading or native commands. */
+/**
+ * The Hosted session stopped: its credential, Map or quota was rejected. The map keeps what it has
+ * drawn and loads nothing new until `ref.retry()` or another source. Service outages and rate
+ * limits retry on their own and are not reported.
+ */
+export type MapSessionError = Readonly<{
+  code:
+    | 'NATIVE_SESSION_CREDENTIAL_REJECTED'
+    | 'NATIVE_SESSION_MAP_MISMATCH'
+    | 'NATIVE_SESSION_MAP_NOT_FOUND'
+    | 'NATIVE_SESSION_QUOTA_EXCEEDED'
+    | 'NATIVE_SESSION_INPUT_INVALID';
+  kind: 'terminal';
+}>;
+
 export type MapRef = Readonly<{
+  /** A synchronous read of the last source snapshot. Does not trigger loading or native commands. */
   getSourceState(): MapSourceState | undefined;
+  /**
+   * Loads again a map that stopped: after a `session-error` once its cause is resolved, for
+   * example a raised quota, or after a source or renderer error. A shown map is unaffected.
+   */
+  retry(): void;
 }>;
 
 /** The current style was accepted by the renderer; this alone does not establish a rendered frame. */
@@ -112,7 +153,8 @@ export type MapLoadEvent = Readonly<{
 /** Renderer failures expose no native event, message or remote cause. */
 export type MapErrorEvent =
   | Readonly<{type: 'source-error'; generation: number; error: MapSourceError}>
-  | Readonly<{type: 'renderer-error'; generation: number}>;
+  | Readonly<{type: 'renderer-error'; generation: number}>
+  | Readonly<{type: 'session-error'; generation: number; error: MapSessionError}>;
 
 /** The renderer owner must confirm readiness; a ready manifest alone is insufficient. */
 export type MapReadinessChangeEvent = Readonly<{

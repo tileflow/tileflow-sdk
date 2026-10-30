@@ -22,6 +22,9 @@ is the enforcement mode and fails if the matching shell is absent. Normal captur
 shell automatically. Tileflow neither embeds the shell in its npm tarball nor deletes Playwright's
 shared cache.
 
+On Windows, Capture disables Chromium's TCP port randomization to avoid intermittent loopback
+connection failures. Playwright's other launch defaults, sandboxing, and capture deadlines are preserved.
+
 Chromium receives a bounded non-secret environment allowlist. Browser installation additionally
 accepts upper- or lower-case proxy settings, certificate settings, and Playwright's explicit
 browser-cache/download settings. Tileflow removes an ambient `TILEFLOW_API_KEY` before importing
@@ -186,6 +189,27 @@ fallback. The wrappers update or remove the attributes during prop changes, tear
 recreation without changing existing classes, callbacks, analytics, or native MapLibre options.
 
 ## Capture output and watch
+
+Still captures also retain their normalized concrete-theme scene definition. The CLI saves a
+schema-version-1 record containing that definition, receipt and warnings, plus the PNG, under
+`.tileflow/captures/records/<captureId>.json` and `<captureId>.png`. The ID is the SHA-256 of the
+canonical record JSON; the receipt binds the PNG and scene hashes. Identical records are reused,
+and different contents never replace an existing ID. JSON results and captured watch events expose
+`captureId`. Timed shots retain their separate frame/video contract.
+
+The local adapter supports deletion of an individual capture through its
+`POST /__workbench/captures/delete` action accepts `{id}` with a full capture ID and removes only that
+record's JSON and PNG. It rejects symbolic links and paths outside the project, shares the
+capture/compare busy guard and same-origin JSON request checks, and is idempotent for missing files.
+Scene exports, source configuration and other saved captures remain unchanged. The browser
+interface does not expose capture deletion or reference selection.
+
+`tileflow compare --before <id> --after <id>` reads these saved records without executing a config,
+compiling, starting a browser or fetching data. It checks bounded regular files, hashes, receipt
+shape and normalized scene identity before invoking the same review comparator used for fresh
+renders. Camera, dimensions, renderer and data mismatch remain explicit nonzero outcomes. Comparable
+pixel changes are informational. `--capture-dir`, `--region` and `--diff` select the store, physical
+region and optional contextual diff. No comparison accepts or updates a baseline implicitly.
 
 One-shot capture writes an atomic PNG/receipt pair. Managed output defaults to
 `.tileflow/captures/<scene>.png` and `<scene>.receipt.json`; `tileflow init` ignores managed captures
@@ -361,15 +385,31 @@ shot receipts contain no time, user, repository, absolute path, environment, URL
 ## Visual comparison and baselines
 
 Two deliberate Tileflow renders can be compared without pretending either one is an approved
-baseline. The live authoring surface is `tileflow preview` with any `--against-*` selection. It
-mounts two same-origin preview handlers with independent watched sessions, synchronizes their
-camera, persists workbench state in the URL, and provides side-by-side, split, opacity-overlay, and
+baseline. The live authoring surface is `tileflow preview`, opening Inspector with
+one watched session and one preview handler by default. Any `--against-*` selection adds a second
+same-origin preview handler with its own watched session, synchronizes their
+camera, persists Inspector state in the URL, and provides side-by-side, split, opacity-overlay, and
 blink views. An invalid edit retains that side's last valid artifacts and exposes only bounded
 diagnostics until it recovers. The opt-in compiler sidecar, rendered-feature inspector, zoom-curve
-samples, compiled sprite atlas, and scene/capture-command copy helpers are local diagnostics; the
+samples and compiled sprite atlas are local diagnostics; the
 sidecar is never a build artifact or runtime manifest field.
 
-Durable review evidence uses an exact headless capture matrix:
+The browser interface focuses on map inspection and temporary edits; it exposes no capture,
+copy/export, history or comparison controls. The local capture adapter continues to pin a requested
+ready artifact generation and use the capture session with an explicit map/theme, camera and frame.
+Temporary preview edits are excluded. The renderer starts lazily and is reused until shutdown.
+The adapter stores the same immutable records as `tileflow capture`. Invalid or stale revisions
+cannot begin capture. Saved comparison retains the ordinary frame, renderer and data compatibility
+gates before exposing exact pixel metrics; the result is never baseline approval.
+
+The local Inspector adapter exposes version-1 catalog, history, capture, compare and context JSON.
+`tileflow inspect session --url <local-preview-origin> --json` reads browser observations with their
+generation, displayed generation, update time and stale flag. Bounded feature/style/provenance
+context is separate from deterministic receipts and does not assert exact source-file ownership.
+Limits and user workflow are documented in the
+[CLI guide](../../packages/cli/docs/map-authoring.md#work-with-a-person-and-an-agent).
+
+Durable review evidence also uses an exact headless capture matrix:
 
 ```sh
 npx tileflow visual compare \

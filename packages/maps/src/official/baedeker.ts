@@ -378,7 +378,6 @@ export const baedeker = bindOfficialMapTheme(
       attribution: 'Terrain: <a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
       contours: {
         demMaxZoom: 12,
-        demUrl: 'https://tiles.mapterhorn.com/{z}/{x}/{y}.webp',
         index: {
           color: baedekerPalette.hachure,
           opacity: 0.5,
@@ -874,7 +873,9 @@ export const baedeker = bindOfficialMapTheme(
         icons: false,
         labels: true,
         minZoom: 13,
-        placement: {coupleIconAndLabel: false, textPadding: 1},
+        // Stations and landmarks use the semibold face, and a layer has one font, so each
+        // category keeps its own layer; the categories listed first are placed first.
+        placement: {coupleIconAndLabel: false, order: 'categories', textPadding: 1},
         styles: {
           transport: {
             text: {

@@ -1,5 +1,6 @@
 import {Color} from '@maplibre/maplibre-gl-style-spec';
 import {z} from 'zod';
+import {tileflowMaxPitch} from './camera-limits';
 import {
   type TileflowBandPlacement,
   tileflowBandPlacements,
@@ -16,6 +17,7 @@ import {
   validateTileflowRenderSelectorConstraints,
 } from './cartography/render-stack';
 import {
+  tileflowSemanticExpressionFieldNames,
   tileflowSemanticFieldNames,
   tileflowSemanticLayerNames,
 } from './cartography/semantic-bindings';
@@ -33,6 +35,7 @@ import {
   type TileflowIconSource,
   tileflowIconSourceLimit,
 } from './icon-set';
+import {classicManifestSchemaOperations} from './manifest-schema-classic';
 import {
   isTileflowLocalDirectory,
   tileflowLocalDirectoryMaximumLength,
@@ -42,6 +45,8 @@ import {
   type ResolvedTileflowMap as TileflowCompilerConfig,
   tileflowMapIdSchema,
 } from './maps/types';
+import {tileflowBathymetryNameLayerLimits} from './marine';
+import {isTileflowModelPartName} from './models-3d-model';
 import {tileflowLandformClasses} from './modules/landforms';
 import {tileflowRoadClasses} from './modules/roads/semantics';
 import {
@@ -55,6 +60,9 @@ import {
   isTileflowContourDensityWithinBudget,
 } from './terrain/contour-protocol';
 import {resolveTileflowTheme, type TileflowTheme, tileflowThemeLimits} from './themes';
+import {type TileflowTimeOfDayVariants, validateTileflowTimeOfDayVariants} from './time-of-day';
+import {createTileflowTimeOfDaySchema} from './time-of-day-schema';
+import {tileflowTreeModelIdPattern} from './trees-3d';
 import {tileflowPoiCategories, type ValidationMessage} from './types';
 
 /** Structured schema failure preserved for CLI/editor diagnostics. */
@@ -256,7 +264,7 @@ function validateExpressionFieldNames(
   if (
     candidate.kind === 'tileflow-data-field' &&
     (typeof candidate.name !== 'string' ||
-      !Object.hasOwn(fieldBindingsSchema.shape, candidate.name))
+      !tileflowSemanticExpressionFieldNames.some((name) => name === candidate.name))
   ) {
     context.addIssue({
       code: 'custom',
@@ -377,6 +385,12 @@ const numberValueSchema = z.union([
   themeNumberValueSchema,
   numberExpressionSchema,
   numberZoomValueSchema,
+]);
+const nonnegativeNumberLiteralSchema = terrainNumberValueSchema(z.number().finite().min(0));
+const nonnegativeNumberValueSchema = z.union([
+  nonnegativeNumberLiteralSchema,
+  numberExpressionSchema,
+  zoomValueSchemaFor(nonnegativeNumberLiteralSchema),
 ]);
 const structuralNumberValueSchema = z.union([
   z.number().finite(),
@@ -807,13 +821,20 @@ const symbolStyleSchema = z
 const markerSymbolStyleSchema = symbolStyleSchema
   .extend({marker: circleStyleSchema.optional()})
   .strict();
-const poiCategoryStyleSchema = markerSymbolStyleSchema
-  .omit({priority: true, priorityOrder: true})
+const bathymetryNameStyleSchema = symbolStyleSchema
   .extend({
-    density: z
-      .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
+    placementByGeometry: z
+      .object({
+        point: z.literal('point'),
+        line: z.enum(['line', 'line-center', 'point']),
+        polygon: z.enum(['line', 'line-center', 'point']),
+      })
+      .strict()
       .optional(),
   })
+  .strict();
+const poiCategoryStyleSchema = markerSymbolStyleSchema
+  .omit({priority: true, priorityOrder: true})
   .strict();
 
 const renderScalarSchema = z.union([z.boolean(), z.number().finite(), z.string()]);
@@ -1069,10 +1090,26 @@ const roadTreatmentStyleSchema = z
   })
   .strict();
 
+const barrierStyleSchema = z
+  .object({
+    area: fillStyleSchema.optional(),
+    shadow: lineStyleSchema.optional(),
+    line: lineStyleSchema.optional(),
+  })
+  .strict();
+
 const landModuleSchema = z
   .object({
     type: z.literal('land'),
     background: backgroundStyleSchema.optional(),
+    barriers: z
+      .object({
+        fence: barrierStyleSchema.optional(),
+        hedge: barrierStyleSchema.optional(),
+        wall: barrierStyleSchema.optional(),
+      })
+      .strict()
+      .optional(),
     enabled: z.boolean().optional(),
     globalLandcover: fillStyleSchema.optional(),
     landcover: z
@@ -1120,6 +1157,8 @@ const waterModuleSchema = z
     bathymetry: fillStyleSchema.optional(),
     bathymetryContours: lineStyleSchema.optional(),
     bathymetryLabels: symbolStyleSchema.optional(),
+    bathymetryLandforms: bathymetryNameStyleSchema.optional(),
+    bathymetryWaterNames: bathymetryNameStyleSchema.optional(),
     bodies: areaStyleSchema.optional(),
     enabled: z.boolean().optional(),
     intermittent: z
@@ -1138,6 +1177,59 @@ const waterModuleSchema = z
       .optional(),
   })
   .strict();
+// A theme number within bounds: a literal in range, a theme number token, or a fixed value in range.
+function boundedThemeNumberSchema(min: number, max: number) {
+  return z.union([
+    z.number().finite().min(min).max(max),
+    themeNumberReferenceSchema,
+    z
+      .object({
+        kind: z.literal('theme-fixed'),
+        reason: z.string().trim().min(1),
+        value: z.number().finite().min(min).max(max),
+      })
+      .strict(),
+  ]);
+}
+
+// A zoom band a part of the 3D city comes in over, from where it starts to where it stands.
+const entranceBandSchema = z
+  .tuple([z.number().finite().min(0).max(24), z.number().finite().min(0).max(24)])
+  .refine(([from, to]) => from < to, 'A band starts at a lower zoom than it ends.');
+
+const modelRoleLightingSchema = z
+  .object({
+    emissiveStrength: boundedThemeNumberSchema(0, 5).optional(),
+    emissiveVariation: boundedThemeNumberSchema(0, 1).optional(),
+    emissiveColor: themeColorValueSchema.optional(),
+    color: themeColorValueSchema.optional(),
+    colorMix: boundedThemeNumberSchema(0, 1).optional(),
+    metallic: boundedThemeNumberSchema(0, 1).optional(),
+    roughness: boundedThemeNumberSchema(0, 1).optional(),
+    shading: z.enum(['physical', 'map']).optional(),
+    ambientOcclusion: boundedThemeNumberSchema(0, 1).optional(),
+    partColorMix: boundedThemeNumberSchema(0, 1).optional(),
+    colorVariation: z
+      .object({
+        hue: z.tuple([boundedThemeNumberSchema(0, 360), boundedThemeNumberSchema(0, 360)]),
+        saturation: z.tuple([boundedThemeNumberSchema(0, 100), boundedThemeNumberSchema(0, 100)]),
+        lightness: z.tuple([boundedThemeNumberSchema(0, 100), boundedThemeNumberSchema(0, 100)]),
+        space: z.enum(['srgb', 'linear']).optional(),
+      })
+      .strict()
+      .optional(),
+    emissiveHeight: z
+      .tuple([
+        boundedThemeNumberSchema(0, 1),
+        boundedThemeNumberSchema(0, 1),
+        boundedThemeNumberSchema(0, 1),
+        boundedThemeNumberSchema(0, 1),
+        boundedThemeNumberSchema(-1, 1),
+      ])
+      .optional(),
+  })
+  .strict();
+
 const buildingsModuleSchema = z
   .object({
     type: z.literal('buildings'),
@@ -1147,6 +1239,147 @@ const buildingsModuleSchema = z
     flat: areaStyleSchema.optional(),
     mode: z.enum(['3d', 'flat']).optional(),
     renderStack: renderStackSchema.optional(),
+    threeDimensional: z
+      .object({
+        lighting: z.enum(['style', 'sun']).optional(),
+        colorVariation: boundedThemeNumberSchema(0, 1).optional(),
+        edges: boundedThemeNumberSchema(0, 1).optional(),
+        edgeRadius: z.number().min(0).max(1.5).optional(),
+        edgeColor: themeColorValueSchema.optional(),
+        nightLight: boundedThemeNumberSchema(0, 2).optional(),
+        floodLight: z
+          .object({
+            intensity: boundedThemeNumberSchema(0, 1).optional(),
+            brightnessScale: boundedThemeNumberSchema(0, 16).optional(),
+            color: themeColorValueSchema.optional(),
+            groundRadius: z
+              .tuple([z.number().finite().min(0).max(2048), z.number().finite().min(0).max(2048)])
+              .refine(([min, max]) => min <= max, 'The minimum radius must not exceed the maximum.')
+              .optional(),
+            minGroundHeight: z.number().finite().min(0).max(6000).optional(),
+            minWallHeight: z.number().finite().min(0).max(6000).optional(),
+            wallHeightRatio: z.number().finite().min(0).max(1).optional(),
+          })
+          .strict()
+          .optional(),
+        modelLighting: z
+          .object({
+            unclassified: modelRoleLightingSchema.optional(),
+            wall: modelRoleLightingSchema.optional(),
+            door: modelRoleLightingSchema.optional(),
+            roof: modelRoleLightingSchema.optional(),
+            window: modelRoleLightingSchema.optional(),
+            lamp: modelRoleLightingSchema.optional(),
+            logo: modelRoleLightingSchema.optional(),
+          })
+          .strict()
+          .optional(),
+        entrance: z
+          .object({buildings: entranceBandSchema.optional(), models: entranceBandSchema.optional()})
+          .strict()
+          .optional(),
+        occlusion: z.boolean().optional(),
+        groundOcclusion: boundedThemeNumberSchema(0, 1).optional(),
+        modelOcclusion: boundedThemeNumberSchema(0, 1).optional(),
+        shadows: z.boolean().optional(),
+        windows: z.boolean().optional(),
+        surfaces: z
+          .object({
+            walls: z
+              .object({
+                kind: z.literal('brick'),
+                size: z
+                  .union([
+                    z.tuple([z.number().min(0.5).max(100), z.number().min(0.5).max(100)]),
+                    fixedNumberOffsetSchema.extend({
+                      value: z.tuple([z.number().min(0.5).max(100), z.number().min(0.5).max(100)]),
+                    }),
+                  ])
+                  .optional(),
+                jointWidth: boundedThemeNumberSchema(0.01, 2).optional(),
+                contrast: boundedThemeNumberSchema(0, 1).optional(),
+              })
+              .strict()
+              .optional(),
+            roof: z
+              .object({
+                kind: z.literal('tiles'),
+                size: boundedThemeNumberSchema(0.5, 100).optional(),
+                jointWidth: boundedThemeNumberSchema(0.01, 2).optional(),
+                contrast: boundedThemeNumberSchema(0, 1).optional(),
+              })
+              .strict()
+              .optional(),
+            cornice: z
+              .object({
+                height: boundedThemeNumberSchema(0.05, 5).optional(),
+                contrast: boundedThemeNumberSchema(0, 1).optional(),
+              })
+              .strict()
+              .optional(),
+          })
+          .strict()
+          .optional(),
+        models: z
+          .array(
+            z
+              .object({
+                model: z
+                  .string()
+                  .max(64)
+                  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u),
+                at: z.tuple([z.number().min(-180).max(180), z.number().min(-85).max(85)]),
+                heading: z.number().finite().optional(),
+                url: z
+                  .url()
+                  .max(2048)
+                  .refine((value) => new URL(value).protocol === 'https:', {
+                    message: 'A model served elsewhere has an HTTPS address.',
+                  })
+                  .optional(),
+              })
+              .strict(),
+          )
+          .max(256)
+          .optional(),
+        modelColors: z
+          .record(
+            z.string().refine(isTileflowModelPartName, {
+              message:
+                'A model part is named in lower-case words joined by hyphens or underscores, at most 32 characters.',
+            }),
+            themeColorValueSchema,
+          )
+          .refine((colors) => Object.keys(colors).length <= 64, {
+            message: 'A map colours at most 64 model parts.',
+          })
+          .optional(),
+        landmarks: z
+          .union([
+            z.boolean(),
+            z
+              .object({
+                url: z
+                  .url()
+                  .max(2048)
+                  .refine(
+                    (value) => {
+                      const url = new URL(value);
+                      return (
+                        url.protocol === 'https:' ||
+                        (url.protocol === 'http:' &&
+                          ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+                      );
+                    },
+                    {message: 'A landmarks tileset has an HTTPS address, or a local one.'},
+                  ),
+              })
+              .strict(),
+          ])
+          .optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 const addressesModuleSchema = z
@@ -1268,6 +1501,12 @@ const roadsModuleSchema = z
       .optional(),
     oneWayMarkers: z.boolean().optional(),
     outline: z.enum(['none', 'subtle', 'strong']).optional(),
+    rampOrder: z
+      .enum(['below-roads', 'by-class'])
+      .describe(
+        'Ramp fills draw below receiving roads by default. Use by-class to keep ramp fills in their road class order.',
+      )
+      .optional(),
     restrictions: z
       .object({
         access: roadTreatmentStyleSchema.optional(),
@@ -1280,7 +1519,20 @@ const roadsModuleSchema = z
       .optional(),
     renderStack: renderStackSchema.optional(),
     roundabouts: z
-      .object({casing: circleStyleSchema.optional(), fill: circleStyleSchema.optional()})
+      .object({
+        borderWidth: nonnegativeNumberValueSchema
+          .describe(
+            'Extra casing width in pixels, split across both edges. Defaults to the effective road border width.',
+          )
+          .optional(),
+        casing: circleStyleSchema.optional(),
+        fallbackWidth: nonnegativeNumberValueSchema
+          .describe(
+            'Road width in pixels used only when metric radii are absent. Defaults to the effective surface fill width.',
+          )
+          .optional(),
+        fill: circleStyleSchema.optional(),
+      })
       .strict()
       .optional(),
     serviceTypes: z
@@ -1298,6 +1550,15 @@ const roadsModuleSchema = z
         outline: lineStyleSchema.optional(),
         pattern: fillStyleSchema.optional(),
         surface: fillStyleSchema.optional(),
+      })
+      .strict()
+      .optional(),
+    streetLights: z
+      .object({
+        color: themeColorValueSchema.optional(),
+        enabled: z.boolean().optional(),
+        estimate: z.enum(['lit', 'streets', 'none']).optional(),
+        intensity: boundedThemeNumberSchema(0, 2).optional(),
       })
       .strict()
       .optional(),
@@ -1337,6 +1598,24 @@ const labelsModuleSchema = z
     language: z.string().trim().min(1).optional(),
     places: z.enum(['none', 'major', 'all']).optional(),
     roadClasses: z.array(roadClassSchema).min(1).optional(),
+    roadGrouping: z
+      .enum(['class', 'network'])
+      .describe(
+        'Network shares placement and repeated-name suppression across compatible road classes, preserving class zoom thresholds and text sizes. Class retains independent class priority. Defaults to class.',
+      )
+      .optional(),
+    roadNameFormat: z
+      .enum(['full', 'compact'])
+      .describe(
+        'Compact abbreviates recognized road-type words in the selected language; full preserves source names. Route references are unchanged.',
+      )
+      .optional(),
+    roadPlacement: z
+      .enum(['ground', 'foreground'])
+      .describe(
+        'Street names draw in the foreground by default. Ground names draw below buildings, use map-aligned text by default, and yield collisions to foreground symbols. Shields and junction numbers stay in the foreground.',
+      )
+      .optional(),
     renderStack: renderStackSchema.optional(),
     roads: z.enum(['none', 'highways', 'major', 'streets', 'all']).optional(),
     styles: z
@@ -1370,10 +1649,34 @@ const labelsModuleSchema = z
 const poiModuleSchema = z
   .object({
     type: z.literal('poi'),
+    detailZoom: z.number().finite().gt(16).max(24).optional(),
     categories: z.array(z.enum(tileflowPoiCategories)).optional(),
+    maxRankByType: z
+      .record(
+        z.string().regex(/^[a-z0-9]+(?:_[a-z0-9]+)*$/u, 'Expected a World POI type'),
+        z.union([
+          z.literal(0),
+          z.literal(1),
+          z.literal(2),
+          z.literal(3),
+          z.literal(4),
+          z.literal(5),
+        ]),
+      )
+      .describe('Fixed maximum World filter rank per POI type, independent of zoom detail.')
+      .optional(),
     color: z.enum(['uniform', 'category']).optional(),
     density: z
       .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)])
+      .describe(
+        'POI density from 1 to 5. Defaults to 2; native collisions determine which eligible names fit.',
+      )
+      .optional(),
+    densityByCategory: z
+      .partialRecord(
+        z.enum(tileflowPoiCategories),
+        z.union([z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)]),
+      )
       .optional(),
     enabled: z.boolean().optional(),
     icons: z.boolean().optional(),
@@ -1381,8 +1684,19 @@ const poiModuleSchema = z
     minZoom: zoomNumberSchema.optional(),
     placement: z
       .object({
-        coupleIconAndLabel: z.boolean().optional(),
+        coupleIconAndLabel: z
+          .boolean()
+          .describe(
+            'Place pictogram and name together. Defaults to true; false places them independently.',
+          )
+          .optional(),
+        iconOnlyTypes: z
+          .array(z.string().regex(/^[a-z0-9]+(?:_[a-z0-9]+)*$/u, 'Expected a World POI type'))
+          .max(64)
+          .optional(),
         iconPadding: z.number().finite().min(0).optional(),
+        order: z.enum(['categories', 'importance']).optional(),
+        prominentRank: z.number().int().min(0).max(5).optional(),
         textPadding: z.number().finite().min(0).optional(),
       })
       .strict()
@@ -1395,15 +1709,27 @@ const nauticalModuleSchema = z
   .object({
     type: z.literal('nautical'),
     aids: markerSymbolStyleSchema.optional(),
+    animateLights: z.boolean().optional(),
+    beacons: markerSymbolStyleSchema.optional(),
+    berths: areaStyleSchema.optional(),
+    bridges: areaStyleSchema.optional(),
+    buoys: markerSymbolStyleSchema.optional(),
+    cables: lineStyleSchema.optional(),
     coverage: areaStyleSchema.optional(),
+    distanceMarks: markerSymbolStyleSchema.optional(),
     enabled: z.boolean().optional(),
+    facilities: markerSymbolStyleSchema.optional(),
+    harbourAreas: areaStyleSchema.optional(),
+    harbours: markerSymbolStyleSchema.optional(),
     hazardAreas: areaStyleSchema.optional(),
     hazards: markerSymbolStyleSchema.optional(),
     labels: z
       .object({
+        bridges: symbolStyleSchema.optional(),
         coverage: symbolStyleSchema.optional(),
         hazards: symbolStyleSchema.optional(),
         navigationAreas: symbolStyleSchema.optional(),
+        overheadCables: symbolStyleSchema.optional(),
         reefs: symbolStyleSchema.optional(),
         wrecks: symbolStyleSchema.optional(),
       })
@@ -1412,13 +1738,32 @@ const nauticalModuleSchema = z
     lighthouses: markerSymbolStyleSchema.optional(),
     lights: markerSymbolStyleSchema.optional(),
     navigationAreas: areaStyleSchema.optional(),
+    notices: markerSymbolStyleSchema.optional(),
+    overheadCables: lineStyleSchema.optional(),
+    ports: markerSymbolStyleSchema.optional(),
     reefs: areaStyleSchema.optional(),
     renderStack: renderStackSchema.optional(),
+    routes: lineStyleSchema.optional(),
     soundings: markerSymbolStyleSchema.optional(),
     wreckAreas: areaStyleSchema.optional(),
     wrecks: markerSymbolStyleSchema.optional(),
   })
   .strict();
+
+// Relative weights of tree forms, at least one above zero.
+const treeFormMixSchema = z
+  .object({
+    round: z.number().finite().min(0).optional(),
+    open: z.number().finite().min(0).optional(),
+    tall: z.number().finite().min(0).optional(),
+    conifer: z.number().finite().min(0).optional(),
+    columnar: z.number().finite().min(0).optional(),
+    palm: z.number().finite().min(0).optional(),
+  })
+  .strict()
+  .refine((mix) => Object.values(mix).some((weight) => (weight ?? 0) > 0), {
+    message: 'Expected at least one tree form with a weight above 0',
+  });
 
 const modulesSchema = z
   .object({
@@ -1438,13 +1783,72 @@ const modulesSchema = z
         type: z.literal('vegetation'),
         enabled: z.boolean().optional(),
         flat: circleStyleSchema.optional(),
-        mode: z.enum(['3d', 'flat']).optional(),
+        mode: z.enum(['3d', 'flat', 'auto']).optional(),
+        fallback: z.enum(['flat', 'none']).optional(),
+        visible: z.boolean().optional(),
         renderStack: renderStackSchema.optional(),
         threeDimensional: z
           .object({
             barkColor: themeColorValueSchema.optional(),
             broadleafColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
             coniferColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
+            palmColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
+            hedges: z.boolean().optional(),
+            hedgeColors: z.array(themeColorValueSchema).min(1).max(8).optional(),
+            minimumHeight: boundedThemeNumberSchema(0, 20).optional(),
+            materialVariation: boundedThemeNumberSchema(0, 1).optional(),
+            finish: z.enum(['faceted', 'smooth', 'toon']).optional(),
+            edges: boundedThemeNumberSchema(0, 1).optional(),
+            edgeColor: themeColorValueSchema.optional(),
+            forms: z
+              .partialRecord(
+                z.enum(['round', 'open', 'tall', 'conifer', 'columnar', 'palm']),
+                z
+                  .object({
+                    crownScale: boundedThemeNumberSchema(0.1, 10).optional(),
+                    heightScale: boundedThemeNumberSchema(0.1, 10).optional(),
+                    models: z
+                      .array(
+                        z
+                          .string()
+                          .max(64)
+                          .regex(
+                            tileflowTreeModelIdPattern,
+                            'Expected a model id: its .glb file name in lowercase letters, digits and hyphens',
+                          ),
+                      )
+                      .min(1)
+                      .max(4)
+                      .refine((ids) => new Set(ids).size === ids.length, {
+                        message: 'Expected each model once',
+                      })
+                      .optional(),
+                  })
+                  .strict(),
+              )
+              .optional(),
+            unknownForms: treeFormMixSchema.optional(),
+            regions: z
+              .array(
+                z
+                  .object({
+                    bounds: z
+                      .tuple([
+                        z.number().finite().min(-180).max(180),
+                        z.number().finite().min(-90).max(90),
+                        z.number().finite().min(-180).max(180),
+                        z.number().finite().min(-90).max(90),
+                      ])
+                      .refine(([, south, , north]) => south <= north, {
+                        message:
+                          'Expected bounds as [west, south, east, north] with south below north',
+                      }),
+                    unknownForms: treeFormMixSchema,
+                  })
+                  .strict(),
+              )
+              .max(16)
+              .optional(),
             crownScale: z
               .union([
                 z.number().finite().positive().max(10),
@@ -1504,6 +1908,7 @@ const layerBindingsSchema = z
     roadShield: z.string().trim().min(1).optional(),
     sidewalk: z.string().trim().min(1).optional(),
     streetFurniture: z.string().trim().min(1).optional(),
+    trafficControl: z.string().trim().min(1).optional(),
     tree: z.string().trim().min(1).optional(),
     transportationOutline: z.string().trim().min(1).optional(),
     water: z.string().trim().min(1),
@@ -1542,6 +1947,7 @@ const fieldBindingsSchema = z
     elevationFeet: z.string().trim().min(1),
     expressway: z.string().trim().min(1),
     foot: z.string().trim().min(1),
+    hedge: z.string().trim().min(1).optional(),
     height: z.string().trim().min(1),
     hasParts: z.string().trim().min(1),
     hide3d: z.string().trim().min(1),
@@ -1561,6 +1967,7 @@ const fieldBindingsSchema = z
     markings: z.string().trim().min(1),
     minHeight: z.string().trim().min(1),
     minZoom: z.string().trim().min(1),
+    mode: z.string().trim().min(1),
     mtbScale: z.string().trim().min(1),
     name: z.string().trim().min(1),
     nameEnglish: z.string().trim().min(1),
@@ -1700,6 +2107,38 @@ const bathymetryReliefSchema = z
       });
     }
   });
+const bathymetryNameLayerSchema = z.union([
+  z.boolean(),
+  z
+    .object({
+      zoomRanges: z
+        .array(z.object({minZoom: zoomNumberSchema, maxZoom: zoomNumberSchema}).strict())
+        .min(1)
+        .max(tileflowBathymetryNameLayerLimits.maxZoomRanges)
+        .superRefine((ranges, context) => {
+          const seen = new Set<string>();
+          for (const [index, range] of ranges.entries()) {
+            if (range.minZoom >= range.maxZoom) {
+              context.addIssue({
+                code: 'custom',
+                message: 'Expected minZoom < maxZoom',
+                path: [index, 'maxZoom'],
+              });
+            }
+            const key = `${range.minZoom}/${range.maxZoom}`;
+            if (seen.has(key)) {
+              context.addIssue({
+                code: 'custom',
+                message: 'Expected unique nominal zoom ranges',
+                path: [index],
+              });
+            }
+            seen.add(key);
+          }
+        }),
+    })
+    .strict(),
+]);
 const bathymetryConfigSchema = z
   .object({
     ...marineSourceSchema.shape,
@@ -1709,6 +2148,14 @@ const bathymetryConfigSchema = z
     labels: z.union([z.literal(false), symbolStyleSchema]).optional(),
     relief: z.union([z.literal(false), bathymetryReliefSchema]).optional(),
     type: z.literal('bathymetry'),
+    vectorLayers: z
+      .object({
+        contours: z.boolean().optional(),
+        landforms: bathymetryNameLayerSchema.optional(),
+        waterNames: bathymetryNameLayerSchema.optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 const marineSchema = z.union([
@@ -1719,6 +2166,16 @@ const marineSchema = z.union([
         .union([z.literal(false), marineSourceSchema, bathymetryConfigSchema])
         .optional(),
       nautical: z.union([z.literal(false), marineSourceSchema]).optional(),
+    })
+    .strict(),
+]);
+const boundaryAreasSchema = z.union([
+  z.literal(false),
+  z
+    .object({
+      family: z.enum(['boundaries']),
+      promoteId: z.literal('ref').optional(),
+      url: publicVectorUrlSchema.optional(),
     })
     .strict(),
 ]);
@@ -1887,6 +2344,7 @@ const iconDirectoriesSchema = z
     }
   });
 const fontDirectoriesSchema = z.array(assetDirectorySchema).max(16);
+const modelDirectoriesSchema = z.array(assetDirectorySchema).max(16);
 const fontStacksSchema = z
   .array(
     z
@@ -2000,7 +2458,8 @@ const terrainContoursSchema = z
       .refine(
         isSafeTileflowDemUrlTemplate,
         'Expected a safe HTTP(S) DEM URL template containing {z}, {x}, and {y}',
-      ),
+      )
+      .optional(),
     index: terrainContourLineSchema.optional(),
     labels: terrainContourLabelSchema.optional(),
     maxZoom: z.number().int().min(0).max(24).optional(),
@@ -2088,11 +2547,40 @@ const terrainSchema = z.union([
       encoding: z.enum(['mapbox', 'terrarium']).optional(),
       exaggeration: z.number().finite().min(0).max(10).optional(),
       hillshade: terrainHillshadeSchema.optional(),
+      tiles: z
+        .array(
+          z
+            .string()
+            .refine(
+              isSafeTileflowDemUrlTemplate,
+              'Expected an HTTP(S) DEM template containing {z}, {x}, and {y}',
+            ),
+        )
+        .min(1)
+        .max(8)
+        .optional(),
+      tileSize: z.union([z.literal(256), z.literal(512)]).optional(),
+      minZoom: z.number().int().min(0).max(24).optional(),
+      maxZoom: z.number().int().min(0).max(24).optional(),
       mode: z.enum(['none', 'hillshade', '3d']).optional(),
       sourceId: z.string().trim().min(1).optional(),
       url: z.string().trim().min(1).optional(),
     })
-    .strict(),
+    .strict()
+    .superRefine((value, context) => {
+      if (value.tiles && value.url)
+        context.addIssue({
+          code: 'custom',
+          message: 'Terrain accepts tiles or url, not both',
+          path: ['tiles'],
+        });
+      if ((value.minZoom ?? 0) > (value.maxZoom ?? 24))
+        context.addIssue({
+          code: 'custom',
+          message: 'Terrain maxZoom must be at least minZoom',
+          path: ['maxZoom'],
+        });
+    }),
 ]);
 const atmosphereColorLiteralSchema = z
   .string()
@@ -2111,8 +2599,28 @@ const atmosphereSchema = z.union([
       horizonColor: atmosphereColorSchema.optional(),
       fogColor: atmosphereColorSchema.optional(),
       spaceColor: atmosphereColorSchema.optional(),
+      starColor: atmosphereColorSchema.optional(),
+      starCount: z.number().int().min(0).max(4096).optional(),
+      starSize: z.number().finite().min(0).max(4).optional(),
       starIntensity: z.number().finite().min(0).max(1).optional(),
       starParallax: z.number().finite().min(0).max(1).optional(),
+    })
+    .strict(),
+]);
+const skyNumberSchema = z.union([
+  z.number().finite().min(0).max(1),
+  fixedNumberSchema.extend({value: z.number().finite().min(0).max(1)}),
+  themeNumberReferenceSchema,
+]);
+const skySchema = z.union([
+  z.boolean(),
+  z
+    .object({
+      color: atmosphereColorSchema.optional(),
+      horizonColor: atmosphereColorSchema.optional(),
+      horizonBlend: skyNumberSchema.optional(),
+      glowColor: atmosphereColorSchema.optional(),
+      starIntensity: skyNumberSchema.optional(),
     })
     .strict(),
 ]);
@@ -2122,7 +2630,7 @@ const viewSchema = z
     center: z
       .tuple([z.number().finite().min(-180).max(180), z.number().finite().min(-90).max(90)])
       .optional(),
-    pitch: z.number().finite().min(0).max(85).optional(),
+    pitch: z.number().finite().min(0).max(tileflowMaxPitch).optional(),
     zoom: zoomNumberSchema.optional(),
   })
   .strict();
@@ -2160,6 +2668,7 @@ const systemThemesSchema = z
 export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
   .object({
     atmosphere: atmosphereSchema.optional(),
+    boundaryAreas: boundaryAreasSchema.optional(),
     data: dataSchema.optional(),
     defaultTheme: tileflowThemeNameSchema,
     fonts: fontDirectoriesSchema.optional(),
@@ -2167,14 +2676,22 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
     icons: iconDirectoriesSchema.optional(),
     id: tileflowMapIdSchema,
     marine: marineSchema.optional(),
+    models: modelDirectoriesSchema.optional(),
     modules: modulesSchema.optional(),
     name: z.string().trim().min(1),
     overlays: overlaysSchema.optional(),
     projection: z.enum(['globe', 'mercator']).optional(),
+    sky: skySchema.optional(),
     sources: hostedSourcesSchema.optional(),
     systemThemes: systemThemesSchema.optional(),
     terrain: terrainSchema.optional(),
     themes: themesSchema,
+    timeOfDay: (
+      createTileflowTimeOfDaySchema(
+        classicManifestSchemaOperations,
+        tileflowThemeNameSchema,
+      ) as z.ZodType<TileflowTimeOfDayVariants>
+    ).optional(),
     version: z.number().int().positive(),
     view: viewSchema.optional(),
   })
@@ -2200,6 +2717,15 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
         message: `Expected an existing theme name; available themes: ${Object.keys(map.themes).sort().join(', ')}`,
         path: ['defaultTheme'],
       });
+    }
+    if (map.timeOfDay) {
+      for (const issue of validateTileflowTimeOfDayVariants(map.timeOfDay, map.themes)) {
+        context.addIssue({
+          code: 'custom',
+          message: issue.message,
+          path: ['timeOfDay', ...issue.path],
+        });
+      }
     }
     const themeEntries = Object.entries(map.themes).sort(([left], [right]) =>
       left < right ? -1 : left > right ? 1 : 0,

@@ -30,8 +30,41 @@ account or hosted command stops with a clear message and asks you to run `tilefl
 Project API and CI keys are independent project credentials and are not removed by a personal
 password change.
 
-The dashboard creates the Map and browser-access policy before repository setup. Keep that exact
-Map ID in the deploy action. If the config contains several maps, select the authored map explicitly:
+## Create the Map from the terminal
+
+After `tileflow login`, the CLI can create the Map itself; nothing has to be copied from the
+dashboard. Run `deploy` without `--map-id`, or create the Map first with `maps create`:
+
+```sh
+npx tileflow login
+npx tileflow deploy --origin https://www.example.com
+npx tileflow maps create --any-website --json
+```
+
+The new Map belongs to a Team you administer. When you administer exactly one Team that can add a
+Map, the CLI uses it; when several can, it asks, or takes `--team @team`; when none can, it stops
+and says why (no administered Team, or every Team has reached its Map limit).
+
+Browser access is always an explicit choice: `--origin` with an exact website origin such as
+`https://www.example.com` (repeat it for up to 20 sites), or `--any-website`. Paths, wildcards and
+bare host names are rejected. On a terminal the CLI asks; without one (for example when an agent
+runs it), a missing choice stops before anything is created and names the flags. Browser access
+is stored with the Map in Tileflow and can be changed in the dashboard; it is never written to the
+repository.
+
+`deploy` creates the Map only after the local config, assets and styles pass, then publishes to it
+in the same run and prints `tileflow deploy --map-id <mapId>` for later deploys. If the manifest
+already records a Map for that repository map, `deploy` stops and shows that command instead of
+creating another Map. Each creation prints a setup key; rerunning an interrupted command with
+`--setup-key <key>` returns the same Map instead of a second one.
+
+Map creation uses only the personal session. With `TILEFLOW_API_KEY`, `--api-key`, `--with-native`,
+or in CI, `deploy` requires `--map-id`.
+
+## Deploy to an existing Map
+
+A Map created in the dashboard, or by an earlier CLI run, is deployed with its exact Map ID. If the
+config contains several maps, select the authored map explicitly:
 
 ```sh
 npx tileflow deploy \
@@ -184,8 +217,21 @@ Hosted deploy currently rejects local or package-owned web fonts before authenti
 writes. Use self-hosted delivery or an explicit public glyph provider. Enabling managed font bundles
 requires a separately deployed ownership, quota, retention, and immutable-delivery contract.
 
-For both managed resource kinds, `assetSetSha256` remains a separate per-map output identity. It
+A map's own 3D building models (the building models of its `models` directories) are its Team's
+3D models, which `tileflow models publish` publishes by name. Deploy uploads no model files: it
+compiles each placement's `url` as the placeholder `tileflow://team-models/<name>`, leaves the
+building models out of the build's assets and model source identities, so the map's revision binds
+their names and not their bytes, and sends `teamModelSources`, the SHA-256 and size of each glTF
+binary a model was prepared from. Hosted replaces each placeholder with the model's address in the
+map's Team, which follows the model's current version, and fails the deploy for a model the Team has
+not published. The response's `teamModels` names each placed model's current version and whether it
+was prepared from the same files (`match`, `differ` or `unknown`); the CLI warns on `differ`. A
+deploy with `--with-native` rejects a map's own building models, because MapLibre Native draws no
+models.
+
+For every managed resource kind, `assetSetSha256` remains a separate per-map output identity. It
 hashes each generated file's exact portable name, media type, byte count, and SHA-256 using Core's
 asset-set v1 contract; it does not hash only the icon-package manifest. Hosted must
 confirm the immutable resource bytes, reconstruct those same per-file identities (including the
-`icons/<mapId>/` prefix), and reject the Style when the submitted build-manifest hash diverges.
+`icons/<mapId>/` and `models/<mapId>/` prefixes), and reject the Style when the submitted
+build-manifest hash diverges.

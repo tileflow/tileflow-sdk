@@ -11,36 +11,15 @@ import {
   type TileflowMap,
 } from '@tileflow/core';
 import {createStyleFromCatalog, type TileflowBuildCatalog} from '@tileflow/core/build';
-import {baedeker, blueprint, ferraris, harad, siegfried, soundings, streets} from '@tileflow/maps';
+import {baedeker, blueprint, map1777, siegfried, soundings, streets} from '@tileflow/maps';
 import {
   compileTileflowIconPackages,
   prepareTileflowCatalogIcons,
   TileflowIconCompilationError,
 } from '../src/icons';
+import {readStreetsIconIds} from './streets-icon-ids';
 
-const streetsIconIds = [
-  'coffee',
-  'crosswalk',
-  'culture',
-  'education',
-  'food',
-  'health',
-  'lodging',
-  'major-transit',
-  'oneway',
-  'parking',
-  'road-shield-circle-neutral',
-  'road-shield-rectangle-blue',
-  'road-shield-rectangle-green',
-  'road-shield-rectangle-neutral',
-  'road-shield-rectangle-orange',
-  'road-shield-rectangle-red',
-  'road-shield-rectangle-yellow',
-  'services',
-  'shopping',
-  'sidewalk-dot',
-  'sidewalk-dot-dark',
-] as const;
+const streetsIconIds = readStreetsIconIds();
 
 function defineResolvedMap(input: TileflowMap) {
   return parseTileflowMap(defineMap(input));
@@ -77,9 +56,19 @@ test('prepares inherited Streets directories without mutating the authored map',
     const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
     assert.equal(prepared.assets.length, 4);
     assert.equal(prepared.project, project);
-    assert.deepEqual(prepared.mapAssets.main, {
-      icons: {ids: streetsIconIds, sprite: '/tileflow/icons/main/sprite'},
+    assert.deepEqual(prepared.mapAssets.main?.icons, {
+      ids: streetsIconIds,
+      sprite: '/tileflow/icons/main/sprite',
     });
+    assert.deepEqual(Object.keys(prepared.mapAssets.main?.models ?? {}), [
+      'streets-tree-columnar',
+      'streets-tree-conifer',
+      'streets-tree-open',
+      'streets-tree-palm-fan',
+      'streets-tree-palm-feather',
+      'streets-tree-round',
+      'streets-tree-tall',
+    ]);
 
     const style = createStyleFromCatalog(prepared.project, 'main', {
       preparedAssets: prepared.mapAssets.main,
@@ -95,8 +84,7 @@ test('prepares every independent official root from its package-owned directorie
       maps: {
         baedeker: resolveFixtureMap(baedeker),
 
-        ferraris: resolveFixtureMap(ferraris),
-        harad: resolveFixtureMap(harad),
+        'map-1777': resolveFixtureMap(map1777),
 
         blueprint: resolveFixtureMap(blueprint),
         siegfried: resolveFixtureMap(siegfried),
@@ -120,28 +108,23 @@ test('prepares every independent official root from its package-owned directorie
         'baedeker-wetland',
       ],
 
-      ferraris: [
-        'ferraris-crop-hatch',
-        'ferraris-heath',
-        'ferraris-orchard',
-        'ferraris-paper-grain',
-        'ferraris-residential',
-        'ferraris-sand',
-        'ferraris-water-ripples',
-        'ferraris-wetland',
-        'ferraris-woodland',
-      ],
-      harad: [
-        'harad-arable',
-        'harad-conifer',
-        'harad-deciduous',
-        'harad-orchard',
-        'harad-paper-grain',
-        'harad-sand',
-        'harad-settlement',
-        'harad-water-lines',
-        'harad-wetland',
-      ],
+      'map-1777': ['', 'dawn-', 'dusk-', 'night-']
+        .flatMap((moment) =>
+          [
+            'crop-cross',
+            'crop-hatch',
+            'crop-lines',
+            'heath',
+            'orchard',
+            'paper-grain',
+            'residential',
+            'sand',
+            'water-ripples',
+            'wetland',
+            'woodland',
+          ].map((plate) => `map-1777-${moment}${plate}`),
+        )
+        .sort(),
 
       blueprint: [
         'blueprint-building-hatch',
@@ -171,22 +154,39 @@ test('prepares every independent official root from its package-owned directorie
         'siegfried-wetland',
       ],
       soundings: [
+        'soundings-boat-hoist',
+        'soundings-boatyard',
         'soundings-buoy-cardinal',
+        'soundings-buoy-pillar',
         'soundings-buoy-port',
         'soundings-buoy-starboard',
+        'soundings-distance-mark',
+        'soundings-facility',
+        'soundings-fuel-station',
         'soundings-harbor',
         'soundings-light-flare',
         'soundings-lighthouse',
+        'soundings-marina',
+        'soundings-notice',
+        'soundings-notice-information',
+        'soundings-notice-prohibition',
+        'soundings-notice-recommendation',
+        'soundings-notice-regulation',
+        'soundings-notice-restriction',
         'soundings-paper-grain',
+        'soundings-pump-out',
         'soundings-rock-awash',
+        'soundings-slipway',
+        'soundings-visitor-berth',
         'soundings-water-dots',
+        'soundings-water-tap',
         'soundings-wreck',
       ],
       streets: streetsIconIds,
     } as const;
 
     assert.deepEqual(compiled.watchPaths, []);
-    assert.equal(compiled.packages.length, 7);
+    assert.equal(compiled.packages.length, 6);
     for (const binding of compiled.bindings) {
       assert.deepEqual(
         packagesByHash.get(binding.packageHash)?.manifest.iconNames,
@@ -195,7 +195,7 @@ test('prepares every independent official root from its package-owned directorie
     }
 
     const prepared = await prepareTileflowCatalogIcons(project, {assetBaseUrl: '/tileflow', cwd});
-    assert.equal(prepared.assets.length, 28);
+    assert.equal(prepared.assets.length, 24);
     for (const binding of compiled.bindings) {
       assert.deepEqual(prepared.mapAssets[binding.mapName]?.icons?.ids, binding.iconIds);
     }

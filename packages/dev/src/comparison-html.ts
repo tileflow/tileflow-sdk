@@ -1,3 +1,8 @@
+import {inspectorStyles} from './inspector/styles';
+import {workbenchClient} from './workbench-client';
+import {controlsClient, controlsPanel, controlsStyles} from './workbench-controls';
+import {workbenchIcon, workbenchPanels, workbenchStyles} from './workbench-ui';
+
 export type TileflowComparisonHtmlSide = {
   basePath: string;
   captureConfig?: string;
@@ -11,16 +16,21 @@ export type TileflowComparisonHtmlSide = {
 export type TileflowComparisonHtmlOptions = {
   basePath: string;
   cspNonce?: string;
-  initialMode: 'blink' | 'overlay' | 'side-by-side' | 'split';
+  initialMode: 'single' | 'blink' | 'overlay' | 'side-by-side' | 'split';
   left: TileflowComparisonHtmlSide;
-  right: TileflowComparisonHtmlSide;
+  right?: TileflowComparisonHtmlSide;
   schemaVersion: 1;
   title: string;
+  workbenchUrl?: string;
 };
 
-/** Render a dependency-free local comparison workbench around two same-origin previews. */
+/** Render the local Inspector around one or two same-origin previews. */
 export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOptions): string {
   const documentOptions = serializeInlineJson(options);
+  const fontBasePath = options.basePath
+    .split('/')
+    .map((segment) => encodeURIComponent(decodeURIComponent(segment)).replaceAll("'", '%27'))
+    .join('/');
   const nonceAttribute = options.cspNonce ? ` nonce="${escapeHtml(options.cspNonce)}"` : '';
   return `<!doctype html>
 <html lang="en" data-tileflow-state="loading">
@@ -29,6 +39,10 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>${escapeHtml(options.title)}</title>
     <style${nonceAttribute}>
+      @font-face { font-family:'Inter'; font-weight:100 900; font-display:swap; src:url('${fontBasePath}/__workbench-fonts/inter.woff2') format('woff2'); }
+      @font-face { font-family:'JetBrains Mono'; font-weight:400; font-display:swap; src:url('${fontBasePath}/__workbench-fonts/jetbrains-mono.woff2') format('woff2'); }
+      @font-face { font-family:'Mona Sans'; font-weight:200 900; font-display:swap; src:url('${fontBasePath}/__workbench-fonts/mona-sans.woff2') format('woff2'); }
+      @font-face { font-family:'Hubot Sans'; font-weight:200 900; font-display:swap; src:url('${fontBasePath}/__workbench-fonts/hubot-sans.woff2') format('woff2'); }
       :root {
         color-scheme: light;
         --accent: #3157d5;
@@ -40,6 +54,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         --overlay-alpha: .5;
       }
       * { box-sizing: border-box; }
+      [hidden] { display: none !important; }
+      .stage[data-mode="single"] .pane-right { display: none; }
       html, body { height: 100%; margin: 0; }
       body {
         display: grid;
@@ -64,49 +80,10 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         outline: 3px solid color-mix(in srgb, var(--accent) 45%, transparent);
         outline-offset: 2px;
       }
-      .toolbar {
-        z-index: 10;
-        display: flex;
-        min-height: 48px;
-        align-items: center;
-        gap: 8px;
-        padding: 7px 10px;
-        border-bottom: 1px solid var(--border);
-        background: rgba(255, 255, 255, .97);
-        flex-wrap: wrap;
-      }
-      .toolbar-title { font-weight: 750; margin-right: 4px; }
-      .toolbar-group { display: inline-flex; min-width: 0; align-items: center; gap: 8px; flex-wrap: wrap; }
-      .toolbar-separator { width: 1px; height: 25px; flex: 0 0 auto; background: var(--border); }
-      .toolbar label { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); }
-      .toolbar input[type="range"] { width: 96px; }
-      .toolbar input[type="text"] { width: 150px; padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px; }
       .workspace { position: relative; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; }
       .stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; background: #d8dadd; }
       .pane { position: absolute; inset: 0; min-width: 0; min-height: 0; overflow: hidden; background: #d8dadd; }
       .pane iframe { width: 100%; height: 100%; display: block; border: 0; background: #d8dadd; }
-      .pane-label {
-        position: absolute;
-        z-index: 3;
-        top: 10px;
-        left: 10px;
-        display: flex;
-        max-width: calc(100% - 20px);
-        align-items: center;
-        gap: 7px;
-        border: 1px solid rgba(0, 0, 0, .12);
-        border-radius: 999px;
-        background: rgba(255, 255, 255, .93);
-        box-shadow: 0 3px 14px rgba(0, 0, 0, .12);
-        padding: 5px 9px;
-        pointer-events: none;
-      }
-      .pane-label-text { overflow: hidden; text-overflow: ellipsis; }
-      .side-state-text { flex: 0 0 auto; color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .03em; }
-      .side-state { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #8d929b; }
-      .side-state[data-status="ready"] { background: #248a4a; }
-      .side-state[data-status="building"] { background: #cf8114; }
-      .side-state[data-status="invalid"], .side-state[data-status="error"] { background: #ba3838; }
       .stage[data-mode="side-by-side"] { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1px; }
       .stage[data-mode="side-by-side"] .pane { position: relative; inset: auto; }
       .stage[data-mode="side-by-side"] .pane-right { grid-column: 2; }
@@ -146,74 +123,46 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       .sprite-card { min-width: 0; border: 1px solid var(--border); border-radius: 7px; padding: 7px; background: var(--paper); text-align: center; }
       .sprite-card canvas { display: block; margin: auto; max-width: 64px; max-height: 64px; image-rendering: auto; }
       .sprite-name { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; font-size: 10px; }
-      .feedback { color: var(--muted); min-width: 64px; }
       .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
       @media (max-width: 760px) {
-        .toolbar { align-content: center; gap: 6px; padding: 6px; }
-        .toolbar-title { flex: 1 0 calc(100% - 12px); }
-        .toolbar-separator { display: none; }
-        .toolbar-group { flex: 1 1 100%; gap: 5px; }
-        .toolbar-group button { padding-inline: 7px; }
-        .toolbar input[type="range"] { width: min(24vw, 86px); }
-        .toolbar input[type="text"] { width: min(34vw, 130px); }
         .workspace { grid-template-columns: minmax(0, 1fr); }
         .inspector { position: absolute; z-index: 20; right: 0; inset-block: 0; width: min(92vw, 390px); box-shadow: -8px 0 28px rgba(0,0,0,.18); }
       }
       @media (prefers-reduced-motion: reduce) {
         *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
       }
+      ${workbenchStyles}
+      ${controlsStyles}
+      ${inspectorStyles}
     </style>
   </head>
   <body>
-    <header class="toolbar" aria-label="Comparison controls">
-      <span class="toolbar-title" id="title"></span>
-      <div class="toolbar-group" role="group" aria-label="Comparison mode">
-        <button type="button" data-mode="side-by-side">Side by side</button>
-        <button type="button" data-mode="split">Split</button>
-        <button type="button" data-mode="overlay">Overlay</button>
-        <button type="button" data-mode="blink">Blink</button>
-      </div>
-      <span class="toolbar-separator"></span>
-      <div class="toolbar-group">
-        <label id="split-control">Split <input id="split" type="range" min="5" max="95" value="50" aria-label="Split position" /></label>
-        <label id="alpha-control">Opacity <input id="alpha" type="range" min="0" max="100" value="50" aria-label="Overlay opacity" /></label>
-        <button type="button" id="driver">Interact: left</button>
-        <button type="button" id="blink-pause">Pause blink</button>
-        <button type="button" id="inspect-toggle" aria-controls="inspector" aria-expanded="false" aria-pressed="false">Inspect</button>
-      </div>
-      <span class="toolbar-separator"></span>
-      <div class="toolbar-group">
-        <input id="scene-name" type="text" value="comparison-view" aria-label="Scene name" />
-        <label>DPR <select id="scene-dpr"><option value="1">1</option><option value="2">2</option></select></label>
-        <button type="button" id="copy-scene">Copy scene</button>
-        <button type="button" id="copy-command">Copy command</button>
-      </div>
-      <span class="feedback" id="feedback" role="status"></span>
-    </header>
     <div class="workspace">
       <main class="stage" id="stage" data-driver="left" data-tileflow-capture-id="tileflow-comparison" data-tileflow-state="loading">
         <section class="pane pane-left" data-side="left">
-          <div class="pane-label"><span class="side-state" id="left-state" role="status" aria-live="polite"></span><span class="pane-label-text" id="left-label"></span><span class="side-state-text" id="left-status-text">Building</span></div>
-          <iframe id="left-frame" title="Left Tileflow preview" referrerpolicy="no-referrer"></iframe>
+          <iframe id="left-frame" title="${options.right ? 'Left Tileflow preview' : 'Tileflow map preview'}" referrerpolicy="no-referrer"></iframe>
         </section>
         <section class="pane pane-right" data-side="right">
-          <div class="pane-label"><span class="side-state" id="right-state" role="status" aria-live="polite"></span><span class="pane-label-text" id="right-label"></span><span class="side-state-text" id="right-status-text">Building</span></div>
           <iframe id="right-frame" title="Right Tileflow preview" referrerpolicy="no-referrer"></iframe>
         </section>
         <div class="split-line" aria-hidden="true"></div>
+        <div class="inspect-hint" id="wb-inspect-hint" hidden>Click an element to inspect · Esc to exit</div>
       </main>
       <aside class="inspector" id="inspector" tabindex="-1" aria-labelledby="inspector-title" hidden>
-        <div class="inspector-heading"><h2 id="inspector-title">Cartographic inspector</h2><button type="button" id="inspector-close" aria-label="Close inspector">Close</button></div>
-        <div id="inspection" class="empty">Enable Inspect, then click either map.</div>
-        <h3>Zoom curve</h3>
+        <button type="button" id="inspect-toggle" aria-controls="inspector" aria-expanded="false" aria-pressed="false" aria-keyshortcuts="i" title="Select a map element (I). Escape to stop.">${workbenchIcon('inspect')}Inspect</button>
+        <button type="button" id="controls-toggle" aria-controls="map-controls" aria-expanded="false">Scene</button>
+        <div class="inspector-heading"><h2 id="inspector-title">${workbenchIcon('inspect')} Inspect the map</h2><button type="button" id="inspector-close" aria-label="Close inspector">${workbenchIcon('close')}</button></div>
+        <div id="inspection" class="empty">Click a feature to understand how it is drawn and find its configuration.</div>
+        <details class="zoom-details"><summary>Appearance at different zoom levels</summary>
         <select id="curve-property" disabled><option>Select a rendered layer first</option></select>
-        <div id="curve-output" class="empty">Paint and layout values appear here.</div>
-        <h3>Compiler sidecar</h3>
-        <pre id="sidecar-output">No layer selected.</pre>
-        <h3>Sprite atlas</h3>
+        <div id="curve-output" class="empty">Select an element to explore its appearance.</div></details>
+        <details><summary>Compiler details</summary><h3>Compiler sidecar</h3><pre id="sidecar-output">No layer selected.</pre></details>
+        <details><summary>Sprite atlas</summary>
         <button type="button" id="load-sprites">Load active side sprites</button>
-        <div id="sprite-output" class="sprite-grid"></div>
+        <div id="sprite-output" class="sprite-grid"></div></details>
       </aside>
+      ${workbenchPanels}
+      ${controlsPanel}
     </div>
     <script type="module"${nonceAttribute}>
       const options = ${documentOptions};
@@ -231,24 +180,16 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       const curveOutput = document.getElementById("curve-output");
       const sidecarOutput = document.getElementById("sidecar-output");
       const spriteOutput = document.getElementById("sprite-output");
-      const feedback = document.getElementById("feedback");
-      const splitInput = document.getElementById("split");
-      const alphaInput = document.getElementById("alpha");
-      const driverButton = document.getElementById("driver");
-      const blinkPauseButton = document.getElementById("blink-pause");
       const inspectButton = document.getElementById("inspect-toggle");
       const inspectorCloseButton = document.getElementById("inspector-close");
-      const sceneNameInput = document.getElementById("scene-name");
-      const sceneDprInput = document.getElementById("scene-dpr");
       const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
-      const states = Object.fromEntries(["left", "right"].map((id) => {
+      const sideIds = options.right ? ["left", "right"] : ["left"];
+      const states = Object.fromEntries(sideIds.map((id) => {
         const definition = options[id];
         return [id, {
           id,
           definition,
           frame: document.getElementById(id + "-frame"),
-          stateElement: document.getElementById(id + "-state"),
-          statusTextElement: document.getElementById(id + "-status-text"),
           map: undefined,
           camera: undefined,
           bridgeReady: false,
@@ -277,45 +218,25 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       let spriteLoadSequence = 0;
       let spriteOwnerId;
 
-      document.getElementById("title").textContent = options.title;
       const initialUi = readUiFromUrl();
-      splitInput.value = String(initialUi.split);
-      alphaInput.value = String(initialUi.alpha);
+
       applySliders();
       setMode(initialUi.mode || options.initialMode);
-      updateBlinkMotionPreference();
-      for (const id of ["left", "right"]) {
+      for (const id of sideIds) {
         const side = states[id];
-        document.getElementById(id + "-label").textContent = side.definition.label;
         side.frame.src = side.definition.previewUrl;
         side.frame.addEventListener("load", () => connectSide(side));
         side.frame.addEventListener("focus", () => selectSide(side.id));
         startStatus(side);
       }
 
-      for (const button of document.querySelectorAll("[data-mode]")) {
-        button.addEventListener("click", () => setMode(button.dataset.mode));
-      }
-      splitInput.addEventListener("input", () => { applySliders(); writeUrlState(); });
-      alphaInput.addEventListener("input", () => { applySliders(); writeUrlState(); });
-      driverButton.addEventListener("click", () => {
-        selectSide(stage.dataset.driver === "left" ? "right" : "left");
-      });
-      blinkPauseButton.addEventListener("click", () => {
-        blinkPaused = !blinkPaused;
-        updateBlinkMotionPreference();
-        restartBlink();
-      });
       inspectButton.addEventListener("click", () => setInspectionEnabled(!inspectionEnabled, true));
       inspectorCloseButton.addEventListener("click", () => setInspectionEnabled(false, true));
-      document.getElementById("copy-scene").addEventListener("click", () => copyScene(false));
-      document.getElementById("copy-command").addEventListener("click", () => copyScene(true));
       document.getElementById("load-sprites").addEventListener("click", () => loadSprites(states[activeSideId]));
       curveProperty.addEventListener("change", renderCurve);
       reducedMotion.addEventListener?.("change", () => {
         blinkPaused = reducedMotion.matches;
-        updateBlinkMotionPreference();
-        restartBlink();
+          restartBlink();
       });
       addEventListener("keydown", (event) => {
         if (event.key === "Escape" && inspectionEnabled) setInspectionEnabled(false, true);
@@ -327,18 +248,16 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           side.eventSource?.close();
           side.sidecarAbort?.abort();
           side.spriteAbort?.abort();
-          side.cleanupBridge?.();
+          cleanupSideBridge(side);
         }
       });
 
       function selectSide(id, writeState = true) {
-        if (id !== "left" && id !== "right") return;
+        if (!states[id]) return;
         const changed = activeSideId !== id || stage.dataset.driver !== id;
         const previousSpriteOwner = spriteOwnerId;
         activeSideId = id;
         stage.dataset.driver = id;
-        driverButton.textContent = "Interact: " + id;
-        driverButton.setAttribute("aria-label", "Interact with " + states[id].definition.label);
         if (changed && previousSpriteOwner && previousSpriteOwner !== id) {
           states[previousSpriteOwner].spriteAbort?.abort();
           spriteLoadSequence += 1;
@@ -351,33 +270,31 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
 
       function setInspectionEnabled(enabled, manageFocus = false) {
         inspectionEnabled = enabled;
+        if (globalThis.__tileflowInspectorUI) {
+          inspectButton.setAttribute("aria-pressed", String(enabled));
+          document.getElementById("wb-inspect-hint").hidden = !enabled;
+          for (const side of Object.values(states)) sendInspectionState(side);
+          globalThis.__tileflowInspectorUI.inspectionChanged(enabled);
+          return;
+        }
+        if (enabled) toggleMapControls(false);
         inspectButton.setAttribute("aria-pressed", String(enabled));
         inspectButton.setAttribute("aria-expanded", String(enabled));
         inspector.hidden = !enabled;
-        for (const side of Object.values(states)) sendInspectionState(side);
+        document.getElementById("wb-inspect-hint").hidden = !enabled;
+        for (const side of Object.values(states)) { sendInspectionState(side); side.map?.resize?.(); }
         if (manageFocus) {
           if (enabled) inspector.focus();
           else inspectButton.focus();
         }
       }
 
-      function updateBlinkMotionPreference() {
-        const motionBlocked = reducedMotion.matches;
-        blinkPauseButton.disabled = motionBlocked;
-        blinkPauseButton.textContent = motionBlocked
-          ? "Blink paused (reduced motion)"
-          : blinkPaused ? "Resume blink" : "Pause blink";
-      }
 
       function setMode(mode) {
-        if (!["side-by-side", "split", "overlay", "blink"].includes(mode)) return;
+        if (!options.right) mode = "single";
+        if (!["single", "side-by-side", "split", "overlay", "blink"].includes(mode)) return;
+        if (mode === "single" && activeSideId !== "left") selectSide("left", false);
         stage.dataset.mode = mode;
-        for (const button of document.querySelectorAll("[data-mode]")) {
-          button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
-        }
-        document.getElementById("split-control").hidden = mode !== "split";
-        document.getElementById("alpha-control").hidden = mode !== "overlay";
-        blinkPauseButton.hidden = mode !== "blink";
         restartBlink();
         writeUrlState();
         setTimeout(() => {
@@ -386,8 +303,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       }
 
       function applySliders() {
-        const split = boundedNumber(Number(splitInput.value), 5, 95, 50);
-        const alpha = boundedNumber(Number(alphaInput.value), 0, 100, 50);
+        const split = boundedNumber(initialUi.split, 5, 95, 50);
+        const alpha = boundedNumber(initialUi.alpha, 0, 100, 50);
         stage.style.setProperty("--split", split + "%");
         stage.style.setProperty("--overlay-alpha", String(alpha / 100));
       }
@@ -404,16 +321,27 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         }, 700);
       }
 
+      function cleanupSideBridge(side) {
+        try { side.cleanupBridge?.(); }
+        catch (error) {
+          // A stopped dev server can replace the iframe with a cross-origin browser error page.
+          if (error?.name !== "SecurityError") throw error;
+        } finally { side.cleanupBridge = undefined; }
+      }
+
       function connectSide(side) {
         side.loadEpoch += 1;
+        side.appliedSceneStyle = undefined;
+        side.pendingAppearance = undefined;
         const epoch = side.loadEpoch;
-        side.cleanupBridge?.();
+        cleanupSideBridge(side);
         side.cleanupBridge = undefined;
         side.sidecarAbort?.abort();
         side.spriteAbort?.abort();
         side.sidecarAbort = undefined;
         side.spriteAbort = undefined;
         side.map = undefined;
+        side.bridgeConnected = false;
         side.bridgeReady = false;
         side.camera = undefined;
         side.sidecar = undefined;
@@ -437,7 +365,6 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           curveOutput.textContent = "Paint and layout values appear here.";
           sidecarOutput.textContent = "No layer selected.";
         }
-        renderSideStatus(side);
         updateDocumentReadiness();
         const started = performance.now();
         const findMap = () => {
@@ -448,7 +375,13 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
             const map = childWindow?.__tileflowPreviewMap;
             if (map) {
               side.map = map;
+              // Inspector can edit a connected map while its tiles are still loading.
+              // bridgeReady remains the separate renderer-readiness signal.
+              side.bridgeConnected = true;
+              side.camera = readMapCamera(map);
               side.cleanupBridge = installChildBridge(side, childWindow, map, epoch);
+              if (options.workbenchUrl) void refreshWorkbench();
+              if (!controlsPanel.hidden) void loadMapControls();
               return;
             }
           } catch (error) {
@@ -474,6 +407,68 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         let releaseFrameAfterPaint;
         let readyTimer;
         let readyAnnounced = false;
+        let inspectedFeatures = [];
+        let highlightedIndex = -1;
+        let hoveredFeature, hoveredCoordinate, hoverFrame, hoverHint;
+        let inspectedCoordinate;
+        let highlight;
+        const drawHighlight = () => {
+          const geometry = hoveredFeature?.geometry || inspectedFeatures[highlightedIndex]?.geometry;
+          if ((!inspectionActive && !globalThis.__tileflowInspectorUI) || !geometry || !map.getContainer || !map.project) { if (highlight) highlight.style.display = "none"; return; }
+          if (!highlight) {
+            highlight = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            highlight.setAttribute("aria-hidden", "true");
+            highlight.style.cssText = "position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:3;overflow:hidden";
+            map.getContainer().append(highlight);
+          }
+          highlight.style.display = "";
+          highlight.replaceChildren();
+          let remaining = 3000;
+          const project = (coordinate) => {
+            if (--remaining < 0 || !Array.isArray(coordinate) || !coordinate.slice(0,2).every(Number.isFinite)) return;
+            const point = map.project(coordinate);
+            return Number.isFinite(point.x) && Number.isFinite(point.y) ? point : undefined;
+          };
+          const draw = (coordinates, closed = false) => {
+            if (!Array.isArray(coordinates)) return;
+            const points = coordinates.slice(0, Math.max(0,remaining)).map(project).filter(Boolean);
+            if (!points.length) return;
+            const shape = document.createElementNS("http://www.w3.org/2000/svg", "path");
+            shape.setAttribute("d", points.map((point,index) => (index ? "L" : "M") + point.x + " " + point.y).join(" ") + (closed ? "Z" : ""));
+            shape.setAttribute("fill", closed ? "#1a73e822" : "none");
+            shape.setAttribute("stroke", "#1a73e8"); shape.setAttribute("stroke-width", "3");
+            shape.setAttribute("stroke-linejoin", "round"); highlight.append(shape);
+          };
+          const coordinates = geometry.coordinates;
+          const containsPoint = (ring) => {
+            const coordinate = hoveredCoordinate || inspectedCoordinate;
+            if (!coordinate) return false;
+            const [x,y] = coordinate;
+            let inside = false;
+            for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+              const [xi,yi] = ring[i], [xj,yj] = ring[j];
+              if ((yi > y) !== (yj > y) && x < (xj-xi)*(y-yi)/(yj-yi)+xi) inside = !inside;
+            }
+            return inside;
+          };
+          if (geometry.type === "Polygon") coordinates.forEach((ring) => draw(ring,true));
+          else if (geometry.type === "MultiPolygon") coordinates.filter((polygon) => containsPoint(polygon[0]) && !polygon.slice(1).some(containsPoint)).forEach((polygon) => polygon.forEach((ring) => draw(ring,true)));
+          else if (geometry.type === "LineString") draw(coordinates);
+          else if (geometry.type === "MultiLineString") coordinates.forEach((line) => draw(line));
+          else for (const coordinate of geometry.type === "MultiPoint" ? coordinates : [coordinates]) {
+            const point = project(coordinate); if (!point) continue;
+            const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+            circle.setAttribute("cx", point.x); circle.setAttribute("cy", point.y); circle.setAttribute("r", "10");
+            circle.setAttribute("fill", "#1a73e822"); circle.setAttribute("stroke", "#1a73e8"); circle.setAttribute("stroke-width", "3"); highlight.append(circle);
+          }
+        };
+        side.highlightFeature = (index) => { highlightedIndex = index; drawHighlight(); };
+        side.getInspectedFeature = () => inspectedFeatures[highlightedIndex];
+        const handleKey = (event) => {
+          if (event.target.closest?.("input,select,textarea,[contenteditable]")) return;
+          if (event.key === "Escape" && inspectionEnabled) { event.preventDefault(); setInspectionEnabled(false, true); }
+          if (event.key.toLowerCase() === "i" && !event.metaKey && !event.ctrlKey && !event.altKey) { event.preventDefault(); setInspectionEnabled(!inspectionEnabled, true); }
+        };
         const targetOrigin = childWindow.location.origin;
         // The bridge is installed by the same-origin parent, so callbacks created here
         // belong to the parent realm. Dispatch directly with an explicit child source;
@@ -496,11 +491,11 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           });
         };
         const handleMoveStart = (event) => {
-          if (applyingRequestId === undefined && event?.originalEvent) userMovementActive = true;
+          if (applyingRequestId === undefined && (event?.originalEvent || event?.tileflowInspector === true)) userMovementActive = true;
         };
         const handleMove = (event) => {
           if (applyingRequestId !== undefined) return;
-          if (event?.originalEvent) userMovementActive = true;
+          if (event?.originalEvent || event?.tileflowInspector === true) userMovementActive = true;
           queuedUserMovement = queuedUserMovement || userMovementActive;
           if (movementFrame !== undefined) return;
           movementFrame = childWindow.requestAnimationFrame(() => {
@@ -516,7 +511,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
             scheduleApplyingRelease(applyingRequestId);
             return;
           }
-          if (event?.originalEvent) userMovementActive = true;
+          if (event?.originalEvent || event?.tileflowInspector === true) userMovementActive = true;
           if (movementFrame !== undefined) {
             childWindow.cancelAnimationFrame(movementFrame);
             movementFrame = undefined;
@@ -525,9 +520,45 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           postCamera("end", undefined, userMovementActive);
           userMovementActive = false;
         };
+        const clearHover = () => {
+          if (hoverFrame !== undefined) childWindow.cancelAnimationFrame(hoverFrame);
+          hoverFrame = undefined; hoveredFeature = undefined; hoveredCoordinate = undefined;
+          if (hoverHint) hoverHint.hidden = true;
+          drawHighlight();
+        };
+        side.hoverFeature = (index) => {
+          clearHover();
+          if (!inspectedFeatures[index]) return;
+          hoveredFeature = inspectedFeatures[index];
+          hoveredCoordinate = inspectedCoordinate;
+          drawHighlight();
+        };
+        const handleHover = (event) => {
+          if (!inspectionActive || !globalThis.__tileflowInspectorUI || hoverFrame !== undefined) return;
+          hoverFrame = childWindow.requestAnimationFrame(() => {
+            hoverFrame = undefined;
+            hoveredFeature = map.queryRenderedFeatures(event.point).find((feature) => !feature.layer.id.startsWith("__tileflow-inspector-"));
+            hoveredCoordinate = [event.lngLat.lng, event.lngLat.lat];
+            if (!hoverHint) {
+              hoverHint = document.createElement("div");
+              hoverHint.style.cssText = "position:absolute;z-index:6;pointer-events:none;padding:4px 7px;background:#fff;color:#202124;border:1px solid #dadce0;border-radius:3px;box-shadow:0 2px 5px #0003;font:11px/1.5 monospace;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
+              map.getContainer().append(hoverHint);
+            }
+            hoverHint.hidden = !hoveredFeature;
+            if (hoveredFeature) {
+              hoverHint.textContent = hoveredFeature.layer.id + " · " + hoveredFeature.geometry.type + (hoveredFeature.id === undefined ? "" : " #" + hoveredFeature.id);
+              hoverHint.style.left = Math.max(4,Math.min(event.point.x + 14,map.getContainer().clientWidth - 310)) + "px";
+              hoverHint.style.top = Math.max(4,Math.min(event.point.y + 14,map.getContainer().clientHeight - 32)) + "px";
+            }
+            drawHighlight();
+          });
+        };
         const handleClick = (event) => {
           if (!inspectionActive) return;
-          const features = map.queryRenderedFeatures(event.point).slice(0, 16).map(projectFeature);
+          clearHover();
+          inspectedCoordinate = [event.lngLat.lng, event.lngLat.lat];
+          inspectedFeatures = map.queryRenderedFeatures(event.point).filter((feature) => !feature.layer.id.startsWith("__tileflow-inspector-")).slice(0, 16);
+          const features = inspectedFeatures.map(projectFeature);
           postToParent({
             type: bridgeInspectionType,
             schemaVersion: bridgeSchemaVersion,
@@ -535,6 +566,13 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
             coordinate: [event.lngLat.lng, event.lngLat.lat],
             features
           });
+        };
+        side.inspectRenderedFeature = (feature, coordinate) => {
+          clearHover();
+          inspectedCoordinate = coordinate;
+          inspectedFeatures = [feature];
+          postToParent({type: bridgeInspectionType, schemaVersion: bridgeSchemaVersion,
+            side: side.id, coordinate, features: [projectFeature(feature)]});
         };
         const handleError = (event) => {
           postToParent({
@@ -550,7 +588,9 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           if (!message || message.schemaVersion !== bridgeSchemaVersion) return;
           if (message.type === bridgeSetInspectionType && typeof message.enabled === "boolean") {
             inspectionActive = message.enabled;
+            if (!inspectionActive) clearHover();
             map.getCanvas().style.cursor = inspectionActive ? "crosshair" : "";
+            drawHighlight();
             return;
           }
           if (message.type !== bridgeSetCameraType || !validCamera(message.camera)) return;
@@ -603,10 +643,15 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
             });
           });
         };
+        map.on("move", drawHighlight);
+        map.on("resize", drawHighlight);
+        childWindow.addEventListener("keydown", handleKey);
         map.on("movestart", handleMoveStart);
         map.on("move", handleMove);
         map.on("moveend", handleMoveEnd);
         map.on("click", handleClick);
+        map.on("mousemove", handleHover);
+        map.on("mouseout", clearHover);
         map.on("error", handleError);
         childWindow.addEventListener("message", handleCommand);
         if (map.loaded?.()) announceReady();
@@ -619,10 +664,17 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           if (movementFrame !== undefined) childWindow.cancelAnimationFrame(movementFrame);
           cancelApplyingRelease();
           clearTimeout(readyTimer);
+          clearHover(); hoverHint?.remove();
+          highlight?.remove(); side.highlightFeature = undefined; side.hoverFeature = undefined;
+          side.getInspectedFeature = undefined; side.inspectRenderedFeature = undefined;
+          map.off("move", drawHighlight); map.off("resize", drawHighlight);
+          childWindow.removeEventListener("keydown", handleKey);
           map.off("movestart", handleMoveStart);
           map.off("move", handleMove);
           map.off("moveend", handleMoveEnd);
           map.off("click", handleClick);
+          map.off("mousemove", handleHover);
+          map.off("mouseout", clearHover);
           map.off("error", handleError);
           map.off("load", announceReady);
           map.off("idle", announceReady);
@@ -638,10 +690,11 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         if (message.type === bridgeReadyType && validCamera(message.camera)) {
           side.bridgeReady = true;
           side.camera = message.camera;
-          renderSideStatus(side);
           maybeEstablishInitialCamera();
           sendInspectionState(side);
           void loadSidecar(side);
+          if (options.workbenchUrl) void refreshWorkbench();
+          if (!controlsPanel.hidden) void loadMapControls();
           updateDocumentReadiness();
           return;
         }
@@ -681,7 +734,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         if (message.type === bridgeInspectionType && Array.isArray(message.features)) {
           selectSide(side.id);
           selectedInspection = {side, coordinate: message.coordinate, features: message.features.slice(0, 16), featureIndex: 0};
-          renderInspection();
+          renderInspection(true);
           return;
         }
         if (message.type === bridgeRuntimeErrorType) {
@@ -690,7 +743,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       }
 
       function sendCamera(side, camera) {
-        if (!side.bridgeReady || !camera || !side.frame.contentWindow) return;
+        if (!side?.bridgeReady || !camera || !side.frame.contentWindow) return;
         if (side.camera && camerasEqual(side.camera, camera)) return;
         const requestId = ++requestSequence;
         side.lastCameraRequestId = requestId;
@@ -740,6 +793,16 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           .catch(() => undefined);
         const events = new EventSource(side.definition.eventsUrl);
         side.eventSource = events;
+        let connected = false, disconnected = false;
+        events.addEventListener("open", () => {
+          if (connected && disconnected) {
+            side.artifactGeneration = -1;
+            side.latestArtifactStatus = undefined;
+            side.frame.contentWindow?.location.reload();
+          }
+          connected = true; disconnected = false;
+        });
+        events.addEventListener("error", () => { if (connected) disconnected = true; });
         for (const name of ["building", "ready", "invalid"]) {
           events.addEventListener(name, (event) => {
             try { applyArtifactStatus(side, JSON.parse(event.data)); } catch {}
@@ -762,7 +825,8 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           ? status.lastGoodGeneration
           : undefined;
         side.artifactDiagnostic = status.diagnostics?.[0]?.message;
-        renderSideStatus(side);
+        side.latestArtifactStatus = status;
+        side.previewStatusReceiver?.(status);
         maybeEstablishInitialCamera();
         updateDocumentReadiness();
       }
@@ -781,31 +845,26 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         stage.dataset.tileflowState = value;
       }
 
-      function renderSideStatus(side) {
-        const diagnostic = side.artifactDiagnostic;
-        const message = side.runtimeFailed
-          ? "Runtime error: " + (side.runtimeErrors.at(-1) || "Preview runtime failed")
-          : side.artifactStatus === "invalid"
-            ? "Invalid generation; showing last valid preview" + (diagnostic ? ": " + diagnostic : "")
-            : "Generation " + String(Math.max(0, side.artifactGeneration)) + " · " + side.artifactStatus;
-        side.stateElement.dataset.status = side.runtimeFailed ? "error" : side.artifactStatus;
-        side.stateElement.title = message;
-        side.stateElement.setAttribute("aria-label", side.definition.label + ": " + message);
-        side.statusTextElement.textContent = side.runtimeFailed ? "Runtime error" : side.artifactStatus;
-      }
 
       async function loadSidecar(side) {
         if (!side.definition.sidecarUrl) return undefined;
+        const key = currentSidecarUrl(side);
+        if (side.sidecarKey !== key) {
+          side.sidecarAbort?.abort();
+          side.sidecar = undefined;
+          side.sidecarPromise = undefined;
+          side.sidecarKey = key;
+        }
         if (side.sidecar !== undefined) return side.sidecar;
         if (side.sidecarPromise) return side.sidecarPromise;
         const epoch = side.loadEpoch;
         const controller = new AbortController();
         side.sidecarAbort?.abort();
         side.sidecarAbort = controller;
-        const promise = fetch(currentSidecarUrl(side), {cache: "no-store", signal: controller.signal})
+        const promise = fetch(key, {cache: "no-store", signal: controller.signal})
           .then((response) => response.ok ? response.json() : Promise.reject(new Error("Compiler sidecar unavailable")))
           .then((document) => {
-            if (side.loadEpoch !== epoch || controller.signal.aborted) return undefined;
+            if (side.loadEpoch !== epoch || side.sidecarKey !== key || controller.signal.aborted) return undefined;
             side.sidecar = document;
             if (selectedInspection?.side === side) renderInspection();
             return document;
@@ -843,14 +902,19 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           return configured.href;
         }
         configured.pathname = configured.pathname.slice(0, markerIndex) + marker + map + "/" + theme + ".json";
+        const controls = livePreviewUrl(side).searchParams.get("controls");
+        if (controls) configured.searchParams.set("controls", controls);
+        else configured.searchParams.delete("controls");
         return configured.href;
       }
 
-      function renderInspection() {
+      // Metadata refreshes update the inspection without navigating away from the active tab.
+      function renderInspection(reveal = false) {
         if (!selectedInspection) return;
         const side = selectedInspection.side;
         const feature = selectedInspection.features[selectedInspection.featureIndex];
         inspectionOutput.replaceChildren();
+        for (const entry of Object.values(states)) entry.highlightFeature?.(entry === side ? selectedInspection.featureIndex : -1);
         if (!feature) {
           inspectionOutput.className = "empty";
           inspectionOutput.textContent = side.definition.label + ": no rendered feature at this point.";
@@ -858,6 +922,7 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           curveOutput.className = "empty";
           curveOutput.textContent = "Paint and layout values appear here.";
           sidecarOutput.textContent = "No layer selected.";
+          if (reveal) globalThis.__tileflowInspectorUI?.selectionChanged();
           return;
         }
         inspectionOutput.className = "";
@@ -866,20 +931,20 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         title.textContent = side.definition.label + " · " + feature.layerId;
         const pickerLabel = document.createElement("label");
         pickerLabel.className = "feature-picker";
-        pickerLabel.append(document.createTextNode("Rendered feature (" + selectedInspection.features.length + ")"));
+        pickerLabel.append(document.createTextNode("Elements at this point (" + selectedInspection.features.length + ")"));
         const picker = document.createElement("select");
         picker.setAttribute("aria-label", "Rendered feature at inspected point");
         selectedInspection.features.forEach((candidate, index) => {
           const option = document.createElement("option");
           option.value = String(index);
-          option.textContent = String(index + 1) + ". " + candidate.layerId + " · " + candidate.geometryType +
-            (candidate.id === null ? "" : " · " + String(candidate.id));
+          option.textContent = options.workbenchUrl ? featureDisplayName(candidate) + " · " + candidate.geometryType : String(index + 1) + ". " + candidate.layerId + " · " + candidate.geometryType + (candidate.id === null ? "" : " · " + String(candidate.id));
+          option.title = candidate.layerId;
           picker.append(option);
         });
         picker.value = String(selectedInspection.featureIndex);
         picker.addEventListener("change", () => {
           selectedInspection.featureIndex = boundedInteger(Number(picker.value), 0, selectedInspection.features.length - 1, 0);
-          renderInspection();
+          renderInspection(true);
         });
         pickerLabel.append(picker);
         const summary = document.createElement("pre");
@@ -896,13 +961,15 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
             filter: layer.filter
           } : undefined
         });
-        inspectionOutput.append(title, pickerLabel, summary);
+        if (options.workbenchUrl) renderFeatureSummary(side, feature, layer, pickerLabel, summary);
+        else inspectionOutput.append(title, pickerLabel, summary);
         populateCurveProperties(layer);
         const sidecarLayer = findSidecarLayer(side.sidecar, feature.layerId);
         sidecarOutput.textContent = sidecarLayer
           ? boundedJson(sidecarLayerWithSemanticAttribution(sidecarLayer))
           : "No compiler sidecar entry for this layer.";
         if (side.sidecar === undefined && !side.sidecarPromise) void loadSidecar(side);
+        if (reveal) globalThis.__tileflowInspectorUI?.selectionChanged();
       }
 
       function populateCurveProperties(layer) {
@@ -1180,103 +1247,14 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
           value.x + value.width <= image.naturalWidth && value.y + value.height <= image.naturalHeight;
       }
 
-      async function copyScene(commandOnly) {
-        const name = sceneNameInput.value;
-        if (!validPortableName(name)) {
-          setFeedback("Use a portable kebab-case scene name.");
-          return;
-        }
-        const side = states[activeSideId];
-        const camera = side.camera || canonicalCamera;
-        if (!camera) {
-          setFeedback("Wait for the maps to become ready.");
-          return;
-        }
-        const style = side.map?.getStyle?.();
-        const map = style?.metadata?.["tileflow:map"];
-        const theme = style?.metadata?.["tileflow:theme"];
-        if (!validPortableName(map) || !validConcreteThemeName(theme)) {
-          setFeedback("The active preview does not expose a concrete map and theme.");
-          return;
-        }
-        const dpr = Number(sceneDprInput.value) === 2 ? 2 : 1;
-        const viewport = readMapViewport(side, dpr);
-        const {width, height} = viewport;
-        if (commandOnly) {
-          const command = [
-            "tileflow capture",
-            ...(side.definition.captureConfig
-              ? ["--config " + quoteCliArgument(side.definition.captureConfig)]
-              : []),
-            "--map " + quoteCliArgument(map),
-            "--theme " + quoteCliArgument(theme),
-            "--center=" + formatNumber(camera.center[0]) + "," + formatNumber(camera.center[1]),
-            "--zoom=" + formatNumber(camera.zoom),
-            "--bearing=" + formatNumber(camera.bearing),
-            "--pitch=" + formatNumber(camera.pitch),
-            "--width=" + width,
-            "--height=" + height,
-            "--dpr=" + dpr,
-            "--out=" + quoteCliArgument(name + ".png")
-          ].join(" ");
-          if (!await copyText(command)) {
-            setFeedback("Clipboard access is unavailable.");
-            return;
-          }
-          setFeedback("Exploratory capture command copied.");
-          return;
-        }
-        const definition = {
-          theme,
-          camera: {
-            type: "center",
-            center: [roundNumber(camera.center[0]), roundNumber(camera.center[1])],
-            zoom: roundNumber(camera.zoom),
-            bearing: roundNumber(camera.bearing),
-            pitch: roundNumber(camera.pitch)
-          },
-          viewport: {width, height, dpr},
-          target: {kind: "map"}
-        };
-        const serialized = JSON.stringify(definition, null, 2).replace(/^/gm, "  ");
-        if (!await copyText("'" + name + "': " + serialized.trimStart() + ",")) {
-          setFeedback("Clipboard access is unavailable.");
-          return;
-        }
-        setFeedback("Scene entry copied.");
-      }
 
-      function readMapViewport(side, dpr) {
-        const container = side.map?.getContainer?.();
-        const canvas = side.map?.getCanvas?.();
-        const maximum = dpr === 2 ? 2048 : 4096;
-        const width = boundedInteger(container?.clientWidth || canvas?.clientWidth, 64, maximum, 1280);
-        const height = boundedInteger(container?.clientHeight || canvas?.clientHeight, 64, maximum, 800);
-        return {width, height};
-      }
 
-      async function copyText(value) {
-        try {
-          await navigator.clipboard.writeText(value);
-          return true;
-        } catch {
-          const textarea = document.createElement("textarea");
-          textarea.value = value;
-          textarea.style.position = "fixed";
-          textarea.style.opacity = "0";
-          document.body.append(textarea);
-          textarea.select();
-          const copied = document.execCommand("copy");
-          textarea.remove();
-          return copied;
-        }
-      }
 
       function writeUrlState() {
         const url = new URL(location.href);
         url.searchParams.set("mode", stage.dataset.mode);
-        url.searchParams.set("split", String(Math.round(Number(splitInput.value))));
-        url.searchParams.set("alpha", String(Math.round(Number(alphaInput.value))));
+        url.searchParams.set("split", String(Math.round(initialUi.split)));
+        url.searchParams.set("alpha", String(Math.round(initialUi.alpha)));
         url.searchParams.set("driver", stage.dataset.driver);
         if (canonicalCamera) {
           const values = {
@@ -1291,9 +1269,9 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       function readUiFromUrl() {
         const query = new URL(location.href).searchParams;
         const modeValue = singleQueryValue(query, "mode");
-        const mode = ["side-by-side", "split", "overlay", "blink"].includes(modeValue) ? modeValue : undefined;
+        const mode = ["single", "side-by-side", "split", "overlay", "blink"].includes(modeValue) ? modeValue : undefined;
         const driver = singleQueryValue(query, "driver");
-        selectSide(driver === "right" ? "right" : "left", false);
+        selectSide(driver === "right" && options.right ? "right" : "left", false);
         const split = singleQueryValue(query, "split");
         const alpha = singleQueryValue(query, "alpha");
         return {
@@ -1395,7 +1373,6 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
         if (!side.runtimeErrors.includes(message)) side.runtimeErrors.push(message);
         side.runtimeErrors = side.runtimeErrors.slice(-16);
         side.runtimeFailed = true;
-        renderSideStatus(side);
         updateDocumentReadiness();
       }
 
@@ -1463,8 +1440,32 @@ export function renderTileflowComparisonHtml(options: TileflowComparisonHtmlOpti
       function roundNumber(value) { return Number(value.toFixed(6)); }
       function formatNumber(value) { return String(roundNumber(value)); }
       function wrapLongitude(value) { return ((value + 180) % 360 + 360) % 360 - 180; }
-      function setFeedback(value) { feedback.textContent = value; setTimeout(() => { if (feedback.textContent === value) feedback.textContent = ""; }, 2500); }
+      function setFeedback(value) { globalThis.__tileflowInspectorUI?.feedback(value); }
+      ${controlsClient}
+      ${workbenchClient}
+      globalThis.__tileflowInspectorHost = {
+        schemaVersion: 1,
+        subscribePreviewStatus: (child, receive) => {
+          const side = Object.values(states).find((entry) => entry.frame.contentWindow === child);
+          if (!side) return undefined;
+          side.previewStatusReceiver = receive;
+          if (side.latestArtifactStatus) receive(side.latestArtifactStatus);
+          return () => { if (side.previewStatusReceiver === receive) side.previewStatusReceiver = undefined; };
+        },
+        sides: () => Object.values(states), active: () => states[activeSideId],
+        selection: () => selectedInspection,
+        clearFeatureSelection: () => {
+          selectedInspection = undefined;
+          for (const side of Object.values(states)) { side.highlightFeature?.(-1); side.hoverFeature?.(-1); }
+        },
+        loadSidecar: (side) => loadSidecar(side),
+        selectFeature: (index) => { if (selectedInspection && selectedInspection.features[index]) { selectedInspection.featureIndex = index; renderInspection(true); } },
+        inspect: (enabled) => setInspectionEnabled(enabled), inspecting: () => inspectionEnabled,
+        controls: () => loadMapControls(),
+        sprites: () => loadSprites(states[activeSideId])
+      };
     </script>
+    <script type="module"${nonceAttribute} src="${fontBasePath}/__workbench-runtime/inspector.js"></script>
   </body>
 </html>`;
 }

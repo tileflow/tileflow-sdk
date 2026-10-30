@@ -24,7 +24,13 @@ const maximumHostedRequestTimeoutMs = 60_000;
 export type HostedApi = {apiKey: string; apiUrl: string; mapId?: string};
 export type HostedCapabilityScope = 'static:write' | 'status:read' | 'styles:write';
 export type HostedTeamCapabilityScope =
-  'icons:read' | 'icons:write' | 'status:read' | 'tilesets:read' | 'tilesets:write';
+  | 'icons:read'
+  | 'icons:write'
+  | 'models:read'
+  | 'models:write'
+  | 'status:read'
+  | 'tilesets:read'
+  | 'tilesets:write';
 export type HostedRequestOptions = {
   fetch?: typeof globalThis.fetch;
   signal?: AbortSignal;
@@ -429,6 +435,160 @@ export async function listAccountTeams(
     return {error: 'Team discovery returned unstable ordering.', ok: false};
   }
   return {ok: true, teams};
+}
+
+export type MapSetupTeam = {
+  eligible: boolean;
+  name: string;
+  slug: string;
+  unavailableReason?: 'map_limit';
+};
+
+export type CreatedManagedMap = {
+  allowedOrigins: string[];
+  map: {id: string; name: string | null; state: 'active' | 'setup_pending'};
+  team: {name: string; slug: string};
+};
+
+export type MapSetupFailureCode =
+  | 'account_session_rejected'
+  | 'invalid_request'
+  | 'map_limit'
+  | 'permission_required'
+  | 'setup_conflict'
+  | 'setup_failed'
+  | 'team_not_found';
+
+/** Teams the account administers, with whether each can allocate one more Map now. */
+export async function listMapSetupTeams(
+  session: CliAccountSession,
+  options: HostedRequestOptions = {},
+): Promise<{ok: true; teams: MapSetupTeam[]} | {error: string; ok: false}> {
+  let response: HostedJsonResponse;
+  try {
+    response = await requestHostedJson(
+      session.apiOrigin,
+      '/v1/cli/map-setup/teams',
+      {headers: authorizationHeaders(session.accountSession)},
+      options,
+    );
+  } catch (error) {
+    return {error: safeTransportError(error, 'Team discovery failed.'), ok: false};
+  }
+  if (!response.ok) {
+    return {
+      error:
+        response.status === 401
+          ? rejectedAccountSessionMessage
+          : `Team discovery failed (${response.status}).`,
+      ok: false,
+    };
+  }
+  const body = asRecord(response.body);
+  if (
+    !response.json ||
+    body.schemaVersion !== 1 ||
+    !Array.isArray(body.teams) ||
+    !body.teams.every(isMapSetupTeam)
+  ) {
+    return {error: 'Team discovery returned an invalid response.', ok: false};
+  }
+  return {ok: true, teams: body.teams};
+}
+
+/**
+ * Create, or replay with the same key, one setup-pending Map in the named Team.
+ *
+ * `allowedOrigins: []` stores Any website; the caller must have obtained that choice explicitly.
+ */
+export async function createManagedMapSetup(
+  session: CliAccountSession,
+  input: {allowedOrigins: string[]; idempotencyKey: string; name?: string; team: string},
+  options: HostedRequestOptions = {},
+): Promise<
+  {ok: true; value: CreatedManagedMap} | {code: MapSetupFailureCode; error: string; ok: false}
+> {
+  let response: HostedJsonResponse;
+  try {
+    response = await requestHostedJson(
+      session.apiOrigin,
+      '/v1/cli/maps',
+      {
+        ...jsonRequest('POST', input),
+        headers: {
+          ...authorizationHeaders(session.accountSession),
+          'Content-Type': 'application/json',
+        },
+      },
+      options,
+    );
+  } catch (error) {
+    return {
+      code: 'setup_failed',
+      error: safeTransportError(error, 'Map setup request failed.'),
+      ok: false,
+    };
+  }
+  const body = asRecord(response.body);
+  if (!response.ok) {
+    if (response.status === 401) {
+      return {code: 'account_session_rejected', error: rejectedAccountSessionMessage, ok: false};
+    }
+    const code = mapSetupFailureMessages[body.code as string] ? (body.code as string) : null;
+    return code
+      ? {code: code as MapSetupFailureCode, error: mapSetupFailureMessages[code]!, ok: false}
+      : {code: 'setup_failed', error: `Map setup failed (${response.status}).`, ok: false};
+  }
+  const map = asRecord(body.map);
+  const team = asRecord(body.team);
+  const delivery = asRecord(body.delivery);
+  if (
+    !response.json ||
+    body.schemaVersion !== 1 ||
+    typeof map.id !== 'string' ||
+    !/^map_[A-Za-z0-9_-]{16}$/u.test(map.id) ||
+    (map.name !== null && typeof map.name !== 'string') ||
+    (map.state !== 'setup_pending' && map.state !== 'active') ||
+    typeof team.name !== 'string' ||
+    `@${String(team.slug)}` !== input.team ||
+    !Array.isArray(delivery.allowedOrigins) ||
+    !delivery.allowedOrigins.every((origin) => typeof origin === 'string') ||
+    delivery.allowedOrigins.length !== input.allowedOrigins.length
+  ) {
+    return {code: 'setup_failed', error: 'Map setup returned an invalid response.', ok: false};
+  }
+  return {
+    ok: true,
+    value: {
+      allowedOrigins: delivery.allowedOrigins as string[],
+      map: {id: map.id, name: map.name as string | null, state: map.state},
+      team: {name: team.name, slug: team.slug as string},
+    },
+  };
+}
+
+const mapSetupFailureMessages: Readonly<Record<string, string>> = {
+  invalid_request: 'Tileflow rejected the Map setup request.',
+  map_limit:
+    'This Team has reached its Map limit. Archive or delete a Map, or change the plan, in the Tileflow dashboard.',
+  permission_required: 'Only a Team Admin can create Maps.',
+  setup_conflict:
+    'This setup key was already used with another Team or browser access choice. Omit --setup-key to start a new setup.',
+  team_not_found: 'No Team you administer matches this Team.',
+};
+
+function isMapSetupTeam(value: unknown): value is MapSetupTeam {
+  const team = asRecord(value);
+  return (
+    typeof team.eligible === 'boolean' &&
+    typeof team.name === 'string' &&
+    typeof team.slug === 'string' &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(team.slug) &&
+    (team.unavailableReason === undefined || team.unavailableReason === 'map_limit') &&
+    Object.keys(team).every((key) =>
+      ['eligible', 'name', 'slug', 'unavailableReason'].includes(key),
+    )
+  );
 }
 
 export async function publishHostedStyle(

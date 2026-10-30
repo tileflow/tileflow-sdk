@@ -1,3 +1,6 @@
+import {classicManifestSchemaOperations} from './manifest-schema-classic';
+import {createTileflowTimeOfDaySchema} from './time-of-day-schema';
+import {validateTileflowTimeOfDayVariants, type TileflowTimeOfDayVariants} from './time-of-day';
 import {z} from 'zod';
 import {
   assertTileflowInteractionManifestLayers,
@@ -12,7 +15,7 @@ import {tileflowNativeBuildRecordSchema} from './native-build-record';
 import {validateTileflowNativePreparedStyle} from './native-profile';
 import {tileflowNativeProfileLimits} from './native-profile-helpers';
 import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
-import {tileflowPoiCategories} from './types';
+import {tileflowMaxPitch} from './camera-limits';
 
 /** These are transport/validation bounds, not renderer or commercial quotas. */
 export const tileflowRendererDeploymentLimits = Object.freeze({
@@ -85,6 +88,12 @@ const mapBuildSchema = z
       .strict()
       .optional(),
     themes: z.record(tileflowThemeNameSchema, themeBuildSchema),
+    timeOfDay: (
+      createTileflowTimeOfDaySchema(
+        classicManifestSchemaOperations,
+        tileflowThemeNameSchema,
+      ) as z.ZodType<TileflowTimeOfDayVariants>
+    ).optional(),
   })
   .strict();
 const buildManifestSchema = z
@@ -142,7 +151,7 @@ const viewSchema = z
     center: z.tuple([z.number().min(-180).max(180), z.number().min(-90).max(90)]).optional(),
     zoom: z.number().min(0).max(24).optional(),
     bearing: z.number().finite().optional(),
-    pitch: z.number().min(0).max(85).optional(),
+    pitch: z.number().min(0).max(tileflowMaxPitch).optional(),
   })
   .strict();
 
@@ -185,6 +194,8 @@ export const tileflowRendererDeploymentArtifactSchema = z
         map.lineage[0]?.mapVersion !== map.mapVersion ||
         Boolean(map.sourceAssets.iconComposition) !== (map.mapRevisionSchemaVersion === 2)
       )
+        fail();
+      if (map.timeOfDay && validateTileflowTimeOfDayVariants(map.timeOfDay, map.themes).length)
         fail();
       for (const scheme of ['light', 'dark'] as const) {
         if (map.systemThemes && map.themes[map.systemThemes[scheme]]?.colorScheme !== scheme)
@@ -358,7 +369,7 @@ const artifactName = z
   );
 const semanticSchema = z
   .object({
-    version: z.literal(2),
+    version: z.literal(3),
     domains: z
       .object({
         poi: z
@@ -400,7 +411,6 @@ const semanticSchema = z
                 z
                   .object({
                     anchor: z.literal('pointer-coordinate'),
-                    category: z.enum(tileflowPoiCategories),
                     layerId: artifactName,
                     priority: z.number().int().min(0).max(4095),
                     representation: z.enum(['combined', 'icon', 'label', 'marker']),

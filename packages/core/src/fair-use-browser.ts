@@ -1,6 +1,11 @@
 import {isTileflowWorldReleaseId} from './data/world-release-id-values';
 
-export type TileflowFairUseNoticeState = 'GRACE' | 'MANAGED_REQUIRED';
+/**
+ * `GRACE` and `MANAGED_REQUIRED` come from the site's fair-use state. `LIMITED` means Tileflow is
+ * temporarily limiting anonymous World delivery for everyone: cached areas keep loading while some
+ * uncached areas fail, and a managed map is not affected.
+ */
+export type TileflowFairUseNoticeState = 'GRACE' | 'MANAGED_REQUIRED' | 'LIMITED';
 
 export type TileflowFairUseNotice = Readonly<{
   action: string;
@@ -39,6 +44,9 @@ export type TileflowFairUseNoticeController = Readonly<{
 const protocol = 'tileflow-world';
 const defaultHelpUrl = 'https://tileflow.dev/world/connect';
 const ownerAction = 'Site owner: manage this map with Tileflow.';
+// Degradation is announced only by failing cold tiles, while cached tiles keep succeeding; hold the
+// notice so ordinary successful tiles do not make it flicker.
+const limitedNoticeHoldMs = 60_000;
 const maximumWorldTileBytes = 16 * 1024 * 1024;
 const oversizedWorldTileMessage = 'Tileflow World tile exceeds the maximum response size';
 const unreadableWorldTileMessage = 'Tileflow World tile response could not be read';
@@ -48,7 +56,9 @@ const registrations = new Map<
     currentNoticeState: TileflowFairUseNoticeState | null;
     fetch: typeof fetch;
     lastNoticeSequence: number;
+    limitedUntil: number;
     nextRequestSequence: number;
+    now: () => number;
     onNotice: (notice: TileflowFairUseNotice | null) => void;
   }
 >();
@@ -58,6 +68,7 @@ let channelSequence = 0;
 export function registerTileflowWorldRequestBridge(input: {
   addProtocol: (name: string, handler: TileflowWorldProtocolHandler) => void;
   fetch?: typeof fetch;
+  now?: () => number;
   onNotice: (notice: TileflowFairUseNotice | null) => void;
 }): TileflowWorldRequestBridge {
   if (!installed) {
@@ -69,7 +80,9 @@ export function registerTileflowWorldRequestBridge(input: {
     currentNoticeState: null,
     fetch: input.fetch ?? globalThis.fetch,
     lastNoticeSequence: 0,
+    limitedUntil: 0,
     nextRequestSequence: 0,
+    now: input.now ?? Date.now,
     onNotice: input.onNotice,
   });
   let disposed = false;
@@ -88,6 +101,7 @@ export function registerTileflowWorldRequestBridge(input: {
 }
 
 export function tileflowFairUseNoticeMessage(state: TileflowFairUseNoticeState): string {
+  if (state === 'LIMITED') return 'Some map areas are temporarily unavailable.';
   return state === 'MANAGED_REQUIRED'
     ? 'Map usage is temporarily limited.'
     : 'Map usage is approaching its temporary limit.';
@@ -118,7 +132,7 @@ export function attachTileflowFairUseNotice(
         remove();
         return;
       }
-      if (current?.state === 'MANAGED_REQUIRED' && notice.state === 'GRACE') return;
+      if (current?.state === 'MANAGED_REQUIRED' && notice.state !== 'MANAGED_REQUIRED') return;
       if (element && current?.state !== notice.state) {
         element.remove();
         element = null;
@@ -182,13 +196,34 @@ async function loadTileflowWorldRequest(
   const registrationStillActive = registrations.get(channel) === registration;
   const fairUse = parseFairUseState(response.headers.get('Tileflow-Fair-Use'));
   const ownerNotice = response.headers.get('Tileflow-Fair-Use-Notice') === 'owner';
+  const degraded =
+    response.status === 503 && isDegradation(response.headers.get('Tileflow-Protection'));
+  if (registrationStillActive && degraded) {
+    registration.limitedUntil = registration.now() + limitedNoticeHoldMs;
+    if (
+      registration.currentNoticeState !== 'MANAGED_REQUIRED' &&
+      registration.currentNoticeState !== 'LIMITED'
+    ) {
+      registration.currentNoticeState = 'LIMITED';
+      registration.onNotice(
+        Object.freeze({
+          action: ownerAction,
+          helpUrl: parseHelpUrl(response.headers.get('Link')),
+          message: tileflowFairUseNoticeMessage('LIMITED'),
+          state: 'LIMITED',
+        }),
+      );
+    }
+  }
+  const limitedHeld =
+    registration.currentNoticeState === 'LIMITED' && registration.now() < registration.limitedUntil;
   if (
     registrationStillActive &&
     fairUse !== null &&
     requestSequence >= registration.lastNoticeSequence
   ) {
     if (fairUse === 'OPEN') {
-      if (response.ok) {
+      if (response.ok && !limitedHeld) {
         registration.lastNoticeSequence = requestSequence;
         registration.currentNoticeState = null;
         registration.onNotice(null);
@@ -198,7 +233,10 @@ async function loadTileflowWorldRequest(
       (fairUse === 'GRACE' && (ownerNotice || response.status === 429))
     ) {
       registration.lastNoticeSequence = requestSequence;
-      if (!(registration.currentNoticeState === 'MANAGED_REQUIRED' && fairUse === 'GRACE')) {
+      if (
+        !(registration.currentNoticeState === 'MANAGED_REQUIRED' && fairUse === 'GRACE') &&
+        !(limitedHeld && fairUse === 'GRACE')
+      ) {
         registration.currentNoticeState = fairUse;
         registration.onNotice(
           Object.freeze({
@@ -211,7 +249,7 @@ async function loadTileflowWorldRequest(
       }
     } else if (fairUse === 'GRACE' && response.ok) {
       registration.lastNoticeSequence = requestSequence;
-      if (registration.currentNoticeState !== 'MANAGED_REQUIRED') {
+      if (registration.currentNoticeState !== 'MANAGED_REQUIRED' && !limitedHeld) {
         registration.currentNoticeState = null;
         registration.onNotice(null);
       }
@@ -334,6 +372,10 @@ function abortReason(signal: AbortSignal): unknown {
   return new DOMException('The Tileflow World request was aborted', 'AbortError');
 }
 
+function isDegradation(value: string | null): boolean {
+  return value === 'protected' || value === 'cached-only';
+}
+
 function parseFairUseState(value: string | null): TileflowFairUseNoticeState | 'OPEN' | null {
   if (value === 'open') return 'OPEN';
   if (value === 'grace') return 'GRACE';
@@ -342,6 +384,7 @@ function parseFairUseState(value: string | null): TileflowFairUseNoticeState | '
 }
 
 function noticeContainerStyles(state: TileflowFairUseNoticeState): Record<string, string> {
+  // LIMITED shares the compact pill: it is informative, not a block of this site.
   const shared = {
     display: 'flex',
     left: '50%',
@@ -349,7 +392,7 @@ function noticeContainerStyles(state: TileflowFairUseNoticeState): Record<string
     transform: 'translateX(-50%)',
     zIndex: '3',
   };
-  if (state === 'GRACE') {
+  if (state !== 'MANAGED_REQUIRED') {
     return {
       ...shared,
       alignItems: 'center',
@@ -386,7 +429,7 @@ function noticeContainerStyles(state: TileflowFairUseNoticeState): Record<string
 }
 
 function noticeIndicatorStyles(state: TileflowFairUseNoticeState): Record<string, string> {
-  if (state === 'GRACE') {
+  if (state !== 'MANAGED_REQUIRED') {
     return {
       background: '#c58c28',
       borderRadius: '999px',

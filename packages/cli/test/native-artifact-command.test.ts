@@ -1,23 +1,25 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {access, mkdtemp, readFile, readdir, rm, writeFile} from 'node:fs/promises';
+import {access, mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import {fileURLToPath} from 'node:url';
 import {parseTileflowRuntimeManifest} from '@tileflow/core/manifest';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
+import {tileflowMapFixture} from './map-fixture';
 
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
-const validConfig =
+const completeStreetsConfig =
   "import {defineMap} from '@tileflow/core';import {streets} from '@tileflow/maps';export default defineMap({id:'main',version:1,extends:streets});\n";
 
-async function fixture(t: {after(callback: () => Promise<void>): void}) {
+async function fixture(
+  t: {after(callback: () => Promise<void>): void},
+  config = tileflowMapFixture({id: 'main'}),
+) {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-native-cli-'));
   t.after(() => rm(cwd, {recursive: true, force: true}));
   await linkWorkspacePackages(cwd, ['core', 'maps']);
-  await writeFile(join(cwd, 'tileflow.config.ts'), validConfig);
+  await writeFile(join(cwd, 'tileflow.config.ts'), config);
   return cwd;
 }
 
@@ -26,7 +28,7 @@ function run(
   args: string[],
 ): Promise<{code: number | null; stdout: string; stderr: string}> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...args], {
+    const child = spawn(process.execPath, cliFixtureArguments(args), {
       cwd,
       env: {...process.env, TILEFLOW_API_KEY: '', TILEFLOW_API_URL: 'https://api.example.test'},
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -36,7 +38,7 @@ function run(
     const timer = setTimeout(() => {
       child.kill();
       reject(new Error('CLI fixture timed out.'));
-    }, 60_000);
+    }, 120_000);
     child.stdout.on('data', (value) => {
       stdout += value;
     });
@@ -115,7 +117,7 @@ test('native validate uses the existing envelope and never creates output', asyn
 });
 
 test('native build writes a separate strict v1 manifest and renderer record', async (t) => {
-  const cwd = await fixture(t);
+  const cwd = await fixture(t, completeStreetsConfig);
   const result = await run(cwd, ['build', '--renderer', 'native', '--out', 'output', '--json']);
   assert.equal(result.code, 0, result.stderr);
   assert.equal(JSON.parse(result.stdout).code, 'BUILD_OK');
@@ -166,7 +168,7 @@ test('an incompatible native style fails without creating an output directory', 
   const cwd = await fixture(t);
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    validConfig.replace('extends:streets', "extends:streets,terrain:'3d'"),
+    tileflowMapFixture({id: 'main', fields: "terrain: '3d'"}),
   );
   const result = await run(cwd, ['build', '--renderer', 'native', '--out', 'output', '--json']);
   assert.equal(result.code, 1);

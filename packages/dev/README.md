@@ -37,8 +37,6 @@ The CLI's local Inspector provides a dockable layer inspector, loaded tiles, ass
 controls and frame timing. Its element picker selects a layer and evaluates its rules using the
 feature clicked on the map.
 Debug's Overdraw overlay uses a heatmap with a visible pass-count legend and explanation.
-See [Inspector and compiler inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md)
-for interaction details and observation limits.
 
 ## Prepare a generation
 
@@ -84,6 +82,8 @@ await writeTileflowBuildArtifacts({
 
 Serve the complete output. The writer installs immutable generation assets before changing the
 manifest pointer, tracks its own files, and refuses to replace a hosted manifest by default.
+Native builds retain embedded PNG image sources as hashed files beside the styles, so their
+resource URLs remain portable without permitting data URLs in the native profile.
 `overwriteHostedManifest: true` is an explicit migration option, not a normal build setting.
 Production rejects unresolved local PMTiles; publish data explicitly or provide an application-owned
 production source. Local development snapshots do not publish or redistribute the original dataset.
@@ -125,6 +125,9 @@ The caller mounts `fetch` in its server and calls `close()` on shutdown. This fa
 a listener. Sessions follow config imports and local asset inputs, retain the last good generation
 after invalid edits, and publish structured state changes through `subscribe()`.
 Watching follows aliased working directories, including newly created or removed icon metadata.
+Package assets resolve from the config directory. Linked package assets inside the selected working
+tree are watched too; installed assets in `node_modules` remain immutable.
+
 A single startup consistency check complements ordinary watcher notifications; no recurring scan
 is added.
 
@@ -140,7 +143,7 @@ for local PMTiles inspection, and `/validation` for diagnostics. `/preview` is t
 contract, including experimental preview-only rendering; it does not promise hosted support.
 The package has no root entry point. `/server` also exposes the reusable Inspector shell. The CLI
 connects appearance controls and shared browser context through its optional local
-workflow adapter; see the [Inspector guide](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md).
+workflow adapter.
 The navigation contains **Map**, **Layers**, **Tiles**, **Assets**, **Debug** and **Diagnostics**.
 Zoom, Pitch and Bearing appear as **Z**, **P** and **B** directly below it, with live Zoom and Pitch
 sliders and **Copy for AI**. Pitch and Bearing each have an inline reset to 0° within the map's
@@ -165,7 +168,6 @@ feature's layer in **Rules**. Rules expose live colors, numeric sliders, enums, 
 defaults, and checkboxes for temporarily disabling paint, layout and filters. Diagnosis, Data and
 Origin explain renderer state, sample features and available compiler provenance. **Visible**
 filters to the current viewport. Context can be reviewed as Markdown or JSON before copying.
-See [Layers inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/layers-inspection.md).
 
 **Tiles** shows resident map tiles as a coordinate grid and source-grouped list. Source layers,
 Features and Info expose raw payload sizes, consumer layers, paginated features, GeoJSON and bounds.
@@ -186,8 +188,6 @@ drawing work. Findings open the affected layer and rule, show available evidence
 for an agent. Unavailable observations and stale results remain explicit. **Diagnosis** in
 Layers describes the selected layer's zoom, visibility and feature-rule context without turning
 empty viewport queries into errors. Legacy `tab=beacon` links open Diagnostics.
-See [Map design diagnostics](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/map-design-diagnostics.md)
-for detectors, sampling and interpretation limits.
 
 The preview's globe rim follows the rendered canvas silhouette, including camera and viewport
 changes, and fades between zooms 3 and 6. Its colors follow the map's atmosphere when declared.
@@ -256,22 +256,8 @@ publish anything. Every normal entry point composes declared shared descriptors 
 catalog publication and lock maintenance stay in the `tileflow` CLI, which is the only writer of
 `tileflow.icons.lock.json` and the only caller that resolves `latest`.
 
-## Detailed guides
-
-These references are also included under `docs/` in the installed package:
-
-- [Building model preparation](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/building-models.md): colour slots, architectural roles, ambient visibility and compatibility.
-- [Native artifact preparation](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-artifacts.md): static compatibility, renderer-qualified output, and limitations.
-- [Artifact lifecycle](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/artifact-lifecycle.md): generations, immutable snapshots, provenance, and cleanup.
-- [Local comparison and inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/local-comparison-workbench-and-compiler-inspection.md): Inspector controls and preview-only models.
-- [Config diagnostics](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/structured-config-inspection-and-diagnostics.md): bounded, machine-readable inspection.
-- [PMTiles inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/bounded-pmtiles-resource-inspection.md): metadata, sampling limits, and requested properties.
-- [Feature and icon inspection](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/bounded-vector-feature-inspection.md): supported sources, icon compilation, and delivered-pixel hashes.
-
-For an installed release, prefer its declarations and packaged guides over newer source on `main`.
-
 ## Recolorable icons
 
 Declare SDF defaults and optional stretch/content layout in `tileflow.icons.json` beside ordinary artwork. Preparation
 verifies both densities and rejects mixed representations within one symbol layer, including
-fallbacks and local overrides. See [Author recolorable and adaptable icons](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-icons.md) for the input profile, diagnostics and recovery.
+fallbacks and local overrides.

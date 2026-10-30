@@ -49,6 +49,8 @@ export const tileflowNativeStyleTransformationSchema = strictNativeObject({
   projection: z.enum(['none', 'mercator-to-implicit', 'globe-to-mercator']),
   /** Present when preparation removed a browser sky, which Native does not draw. */
   sky: z.literal('removed').optional(),
+  /** Native keeps complete ground paths without the browser-derived green overlay. */
+  pathGround: z.literal('ground-fallback').optional(),
   layers: z.array(layerTransformationSchema).max(tileflowNativeProfileLimits.maximumLayers),
   symbolOverlap: z
     .array(symbolOverlapTransformationSchema)

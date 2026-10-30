@@ -31,36 +31,22 @@ test('checks the public release interlock before npm reconciliation', async () =
   assert.doesNotMatch(workflow.slice(0, registryRead), /npm (?:view|pack|publish)/u);
 });
 
-test('documents candidate, approval, and human-owned stable SemVer boundaries', async () => {
-  const publishing = await readFile(new URL('../PUBLISHING.md', import.meta.url), 'utf8');
-
-  assert.match(
-    publishing,
-    /ordinary merge to `main`\s+creates a release candidate; it never publishes/u,
-  );
-  assert.match(publishing, /has no package, version, SHA, or channel inputs/u);
-  assert.match(publishing, /one\s+approval on the GitHub `npm-publish` environment/u);
-  assert.match(publishing, /reconciler never chooses patch, minor, or\s+major intent/u);
-  assert.match(publishing, /For `@tileflow\/maps`/u);
-  assert.match(publishing, /workflow never offers a bump\s+override/u);
-  assert.match(
-    publishing,
-    /Candidate tarballs remain the\s+immutability proof for unselected packages/u,
-  );
-  assert.match(publishing, /package's contents must match under the exact\s+release comparison/u);
-});
-
-test('only a deliberate parameter-free dispatch from current main can prepare publication', async () => {
+test('successful main push CI or an operator dispatch prepares the exact protected publication', async () => {
   const workflow = await readFile(
     new URL('../.github/workflows/publish.yml', import.meta.url),
     'utf8',
   );
 
   assert.match(workflow, /^on:\n {2}workflow_dispatch:\n/mu);
-  assert.doesNotMatch(workflow, /^ {2}(?:workflow_run|schedule):/mu);
+  assert.match(workflow, /^ {2}workflow_run:/mu);
+  assert.match(workflow, /github\.event\.workflow_run\.event == 'push'/u);
+  assert.match(workflow, /github\.event\.workflow_run\.conclusion == 'success'/u);
   assert.doesNotMatch(workflow, /workflow_dispatch:\n\s+inputs:/u);
   assert.match(workflow, /github\.ref == 'refs\/heads\/main'/u);
-  assert.match(workflow, /RELEASE_SHA: \$\{\{ github\.sha \}\}/u);
+  assert.match(
+    workflow,
+    /RELEASE_SHA: \$\{\{ github\.event\.workflow_run\.head_sha \|\| github\.sha \}\}/u,
+  );
   assert.match(workflow, /core\.setFailed\(/u);
   assert.match(workflow, /environment: npm-publish/u);
   assert.match(workflow, /retention-days: 30/u);
@@ -187,13 +173,11 @@ test('binds a Coordinates builder input to the selected runtime tarball inside t
     new URL('../.github/workflows/publish.yml', import.meta.url),
     'utf8',
   );
-  const publishing = await readFile(new URL('../PUBLISHING.md', import.meta.url), 'utf8');
 
   assert.match(workflow, /Produce verified Coordinates builder input/u);
   assert.match(workflow, /@tileflow\/coordinates-runtime/u);
   assert.match(workflow, /coordinates-builder-input/u);
   assert.match(workflow, /--admission native-qualified-eligible/u);
-  assert.match(publishing, /coordinates-builder-input\/.*offline-verifiable/su);
 });
 
 test('loads every post-approval repository script without workspace dependencies', async () => {

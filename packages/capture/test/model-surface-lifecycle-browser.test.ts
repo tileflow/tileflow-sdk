@@ -156,6 +156,8 @@ export * from ${source('models-3d-shaders')};`,
           gl.uniform1f(uniforms.u_model_metres!, 1);
           gl.uniform1f(uniforms.u_scale!, 1);
           gl.uniform1f(uniforms.u_opacity!, 1);
+          // Match the renderer's neutral per-role colour scale; WebGL defaults uniforms to zero.
+          gl.uniform1fv(uniforms.u_role_color_scale!, new Float32Array(7).fill(1));
           gl.uniform2f(uniforms.u_heading!, 1, 0);
           gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D, gl.createTexture());

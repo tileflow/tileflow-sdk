@@ -16,7 +16,7 @@ import {extendStreets, testLightTheme} from './map-fixture';
 
 test('keeps the import-free theme example valid, explicit, and compilable', async () => {
   const example = JSON.parse(
-    await readFile(new URL('../../../docs/tileflow.config.example.json', import.meta.url), 'utf8'),
+    await readFile(new URL('./fixtures/tileflow.config.example.json', import.meta.url), 'utf8'),
   );
   const validation = validateTileflowMap(example);
   assert.equal(validation.valid, true, JSON.stringify(validation.messages));

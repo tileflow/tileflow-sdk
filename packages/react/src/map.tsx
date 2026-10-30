@@ -35,6 +35,7 @@ import {
   getTileflowSystemColorScheme,
   loadTileflowStyleFonts,
   registerTileflowContourProtocol,
+  registerTileflowPathGroundProtocol,
   registerTileflowPmtilesProtocol,
   registerTileflowWorldRequestBridge,
   subscribeTileflowSystemColorScheme,
@@ -815,6 +816,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         const fairUseNotice = attachTileflowFairUseNotice(container);
         registerCleanup(() => fairUseNotice.dispose());
         registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
+        registerTileflowPathGroundProtocol({addProtocol: maplibregl.addProtocol});
         registerTileflowPmtilesProtocol({addProtocol: maplibregl.addProtocol});
         const worldRequestBridge = registerTileflowWorldRequestBridge({
           addProtocol: maplibregl.addProtocol,

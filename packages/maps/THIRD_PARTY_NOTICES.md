@@ -205,3 +205,10 @@ Cívica includes five unmodified upstream font files under `assets/civica/fonts/
 component filenames and source revisions for Tileflow's generic font preparation pipeline.
 `assets/civica/fonts/README.md` records individual pinned source links and verified OpenType full
 names. No font file has been subsetted, renamed internally, or modified.
+
+## Historical climate context
+
+Streets uses a smoothed colour proxy derived from Beck et al. (2023),
+https://doi.org/10.1038/s41597-023-02549-6, under CC BY 4.0.
+Source, attribution and adaptation details: assets/streets/climate/NOTICE.txt.
+The image is historical context, not live vegetation.

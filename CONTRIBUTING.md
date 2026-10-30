@@ -57,10 +57,9 @@ The observer retains its stderr writer so command-level JSON captures exclude pr
 Do not edit package versions, add changesets, create release tags, or run `npm publish`. Every
 source package keeps `0.0.0-development`. Merging to `main` creates a candidate; it does not
 publish to npm. Publication requires an explicit workflow dispatch from `main`, verification of the
-prepared release bundle, and approval of the protected `npm-publish` environment. See
-[PUBLISHING.md](PUBLISHING.md) for the complete procedure.
+prepared release bundle, and approval of the protected `npm-publish` environment.
 
-A package README and its packaged guides are part of its public artifact. Documentation changes can
+A package README is part of its public artifact. Documentation changes can
 therefore make that package eligible for its next independent numeric alpha release, but do not
 publish it automatically. Keep builds deterministic and review the packed files before approving a
 release.
@@ -79,8 +78,8 @@ explicitly.
 
 ## Opt-in packed mobile checks
 
-The [packed mobile smoke guide](docs/mobile-packed-smoke.md) documents separate checks for Expo and
-React Native Community consumers built from Core, Interactions and React Native tarballs:
+Use these opt-in checks for Expo and React Native Community consumers built from Core,
+Interactions and React Native tarballs:
 
 ```sh
 pnpm run smoke:mobile:packed
@@ -88,7 +87,7 @@ pnpm run smoke:mobile:android
 pnpm run smoke:mobile:ios
 ```
 
-Read the guide's prerequisites first. Packed checks need Linux/macOS, Node, npm, the repository's
+Packed checks need Linux/macOS, Node, npm, the repository's
 exact pnpm and `tar`; Android additionally needs JDK 21 and the specified Android SDK components;
 iOS needs macOS, Xcode and CocoaPods. Missing or inapplicable prerequisites fail rather than skip.
 These commands are not included in ordinary checks or publication. They verify public compilation,
@@ -99,10 +98,10 @@ with `--keep`. No source package versions or application credentials are changed
 
 ## Public contracts
 
-Keep package exports and README examples aligned. Follow the
-[documentation guide](docs/documentation.md) and run `pnpm run docs:check` after building the packages. Update
-`docs/contracts/local-visual-capture.md` when scene, readiness, receipt, capture, or visual-baseline
-behavior changes. Shared hosted API and rendering contracts must remain backward compatible because
+Keep package exports and README examples aligned; run `pnpm run docs:check` after building.
+Public repositories retain README files, source, tests, licenses and notices. Do not add `docs/`,
+`plans/`, `planning/`, internal procedures or private repository links.
+Shared hosted API and rendering contracts must remain backward compatible because
 npm and platform production cannot update atomically; deploy compatible server behavior before
 merging the SDK client change.
 

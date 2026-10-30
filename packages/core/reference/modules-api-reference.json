@@ -471,9 +471,9 @@
                       "$ref": "#/$defs/scene___schema2"
                     }
                   ],
+                  "items": false,
                   "minItems": 2,
-                  "maxItems": 2,
-                  "items": false
+                  "maxItems": 2
                 },
                 "zoom": {
                   "type": "number",
@@ -2175,9 +2175,9 @@
           "maximum": 90
         }
       ],
+      "items": false,
       "minItems": 4,
-      "maxItems": 4,
-      "items": false
+      "maxItems": 4
     },
     "__schema23": {
       "type": "integer",
@@ -2775,9 +2775,9 @@
           "$ref": "#/$defs/__schema8"
         }
       ],
+      "items": false,
       "minItems": 2,
-      "maxItems": 2,
-      "items": false
+      "maxItems": 2
     },
     "__schema55": {
       "$ref": "#/$defs/__schema56"
@@ -2904,9 +2904,9 @@
           "$ref": "#/$defs/__schema10"
         }
       ],
+      "items": false,
       "minItems": 2,
-      "maxItems": 2,
-      "items": false
+      "maxItems": 2
     },
     "__schema63": {
       "$ref": "#/$defs/__schema64"
@@ -3058,9 +3058,9 @@
           "$ref": "#/$defs/__schema65"
         }
       ],
+      "items": false,
       "minItems": 2,
-      "maxItems": 2,
-      "items": false
+      "maxItems": 2
     },
     "__schema71": {
       "$ref": "#/$defs/__schema72"
@@ -3155,9 +3155,9 @@
               "$ref": "#/$defs/__schema10"
             }
           ],
+          "items": false,
           "minItems": 2,
-          "maxItems": 2,
-          "items": false
+          "maxItems": 2
         },
         {
           "type": "object",
@@ -3178,9 +3178,9 @@
                   "type": "number"
                 }
               ],
+              "items": false,
               "minItems": 2,
-              "maxItems": 2,
-              "items": false
+              "maxItems": 2
             }
           },
           "required": ["kind", "reason", "value"],
@@ -3213,9 +3213,9 @@
           "$ref": "#/$defs/__schema73"
         }
       ],
+      "items": false,
       "minItems": 2,
-      "maxItems": 2,
-      "items": false
+      "maxItems": 2
     },
     "__schema78": {
       "type": "string",
@@ -3407,9 +3407,9 @@
           "$ref": "#/$defs/__schema82"
         }
       ],
+      "items": false,
       "minItems": 2,
-      "maxItems": 2,
-      "items": false
+      "maxItems": 2
     },
     "__schema89": {
       "$ref": "#/$defs/__schema49"
@@ -3577,9 +3577,9 @@
           "$ref": "#/$defs/__schema91"
         }
       ],
+      "items": false,
       "minItems": 2,
-      "maxItems": 2,
-      "items": false
+      "maxItems": 2
     },
     "__schema94": {
       "$ref": "#/$defs/__schema56"
@@ -3683,9 +3683,9 @@
           "$ref": "#/$defs/__schema96"
         }
       ],
+      "items": false,
       "minItems": 2,
-      "maxItems": 2,
-      "items": false
+      "maxItems": 2
     },
     "__schema99": {
       "$ref": "#/$defs/__schema56"
@@ -3850,9 +3850,9 @@
           "type": "number"
         }
       ],
+      "items": false,
       "minItems": 2,
-      "maxItems": 2,
-      "items": false
+      "maxItems": 2
     },
     "__schema113": {
       "type": "string",
@@ -4105,9 +4105,9 @@
               "$ref": "#/$defs/__schema10"
             }
           ],
+          "items": false,
           "minItems": 4,
-          "maxItems": 4,
-          "items": false
+          "maxItems": 4
         },
         {
           "type": "object",
@@ -4136,9 +4136,9 @@
                   "type": "number"
                 }
               ],
+              "items": false,
               "minItems": 4,
-              "maxItems": 4,
-              "items": false
+              "maxItems": 4
             }
           },
           "required": ["kind", "reason", "value"],
@@ -4163,9 +4163,9 @@
           "$ref": "#/$defs/__schema136"
         }
       ],
+      "items": false,
       "minItems": 2,
-      "maxItems": 2,
-      "items": false
+      "maxItems": 2
     },
     "__schema139": {
       "type": "object",
@@ -4433,9 +4433,9 @@
           "type": "string"
         }
       ],
+      "items": false,
       "minItems": 2,
-      "maxItems": 2,
-      "items": false
+      "maxItems": 2
     },
     "__schema143": {
       "type": "string",
@@ -5067,9 +5067,9 @@
                           "$ref": "#/$defs/__schema223"
                         }
                       ],
+                      "items": false,
                       "minItems": 2,
-                      "maxItems": 2,
-                      "items": false
+                      "maxItems": 2
                     },
                     "minGroundHeight": {
                       "type": "number",
@@ -5262,9 +5262,9 @@
                                   "maximum": 100
                                 }
                               ],
+                              "items": false,
                               "minItems": 2,
-                              "maxItems": 2,
-                              "items": false
+                              "maxItems": 2
                             },
                             {
                               "type": "object",
@@ -5289,9 +5289,9 @@
                                       "maximum": 100
                                     }
                                   ],
+                                  "items": false,
                                   "minItems": 2,
-                                  "maxItems": 2,
-                                  "items": false
+                                  "maxItems": 2
                                 }
                               },
                               "required": ["kind", "reason", "value"],
@@ -5847,9 +5847,9 @@
                           "type": "number"
                         }
                       ],
+                      "items": false,
                       "minItems": 2,
-                      "maxItems": 2,
-                      "items": false
+                      "maxItems": 2
                     },
                     {
                       "type": "array",
@@ -5861,9 +5861,9 @@
                           "type": "number"
                         }
                       ],
+                      "items": false,
                       "minItems": 2,
-                      "maxItems": 2,
-                      "items": false
+                      "maxItems": 2
                     },
                     {
                       "type": "array",
@@ -5875,9 +5875,9 @@
                           "type": "number"
                         }
                       ],
+                      "items": false,
                       "minItems": 2,
-                      "maxItems": 2,
-                      "items": false
+                      "maxItems": 2
                     },
                     {
                       "type": "array",
@@ -5889,14 +5889,14 @@
                           "type": "number"
                         }
                       ],
+                      "items": false,
                       "minItems": 2,
-                      "maxItems": 2,
-                      "items": false
+                      "maxItems": 2
                     }
                   ],
+                  "items": false,
                   "minItems": 4,
-                  "maxItems": 4,
-                  "items": false
+                  "maxItems": 4
                 },
                 "attribution": {
                   "type": "string",
@@ -8302,17 +8302,7 @@
       "$ref": "#/$defs/__schema186"
     },
     "__schema186": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ]
+      "type": ["boolean", "number", "string"]
     },
     "__schema187": {
       "type": "string",
@@ -9427,9 +9417,9 @@
                   ]
                 }
               ],
+              "items": false,
               "minItems": 2,
-              "maxItems": 2,
-              "items": false
+              "maxItems": 2
             },
             "saturation": {
               "type": "array",
@@ -9499,9 +9489,9 @@
                   ]
                 }
               ],
+              "items": false,
               "minItems": 2,
-              "maxItems": 2,
-              "items": false
+              "maxItems": 2
             },
             "lightness": {
               "type": "array",
@@ -9571,9 +9561,9 @@
                   ]
                 }
               ],
+              "items": false,
               "minItems": 2,
-              "maxItems": 2,
-              "items": false
+              "maxItems": 2
             },
             "space": {
               "type": "string",
@@ -9747,9 +9737,9 @@
               ]
             }
           ],
+          "items": false,
           "minItems": 5,
-          "maxItems": 5,
-          "items": false
+          "maxItems": 5
         }
       },
       "additionalProperties": false
@@ -9764,9 +9754,9 @@
           "$ref": "#/$defs/__schema227"
         }
       ],
+      "items": false,
       "minItems": 2,
-      "maxItems": 2,
-      "items": false
+      "maxItems": 2
     },
     "__schema226": {
       "type": "number",
@@ -9800,9 +9790,9 @@
               "maximum": 85
             }
           ],
+          "items": false,
           "minItems": 2,
-          "maxItems": 2,
-          "items": false
+          "maxItems": 2
         },
         "heading": {
           "type": "number"
@@ -10327,9 +10317,9 @@
           "$ref": "#/$defs/__schema253"
         }
       ],
+      "items": false,
       "minItems": 2,
-      "maxItems": 2,
-      "items": false
+      "maxItems": 2
     },
     "__schema258": {
       "anyOf": [
@@ -10416,9 +10406,9 @@
               "$ref": "#/$defs/__schema271"
             }
           ],
+          "items": false,
           "minItems": 4,
-          "maxItems": 4,
-          "items": false
+          "maxItems": 4
         },
         "unknownForms": {
           "$ref": "#/$defs/__schema260"
@@ -11125,9 +11115,9 @@
           "$ref": "#/$defs/__schema317"
         }
       ],
+      "items": false,
       "minItems": 2,
-      "maxItems": 2,
-      "items": false
+      "maxItems": 2
     },
     "__schema316": {
       "type": "number",
@@ -11343,9 +11333,9 @@
                   "$ref": "#/$defs/__schema10"
                 }
               ],
+              "items": false,
               "minItems": 3,
-              "maxItems": 3,
-              "items": false
+              "maxItems": 3
             },
             "sun": {
               "type": "object",
@@ -11572,9 +11562,9 @@
               "maximum": 90
             }
           ],
+          "items": false,
           "minItems": 2,
-          "maxItems": 2,
-          "items": false
+          "maxItems": 2
         },
         "pitch": {
           "type": "number",
@@ -24191,9 +24181,9 @@
               "$ref": "#/$defs/__schema10"
             }
           ],
+          "items": false,
           "minItems": 2,
-          "maxItems": 2,
-          "items": false
+          "maxItems": 2
         },
         {
           "type": "object",
@@ -24233,9 +24223,9 @@
                       "type": "number"
                     }
                   ],
+                  "items": false,
                   "minItems": 2,
-                  "maxItems": 2,
-                  "items": false
+                  "maxItems": 2
                 }
               ]
             }
@@ -24456,9 +24446,9 @@
               "$ref": "#/$defs/__schema10"
             }
           ],
+          "items": false,
           "minItems": 4,
-          "maxItems": 4,
-          "items": false
+          "maxItems": 4
         },
         {
           "type": "object",
@@ -24506,9 +24496,9 @@
                       "type": "number"
                     }
                   ],
+                  "items": false,
                   "minItems": 4,
-                  "maxItems": 4,
-                  "items": false
+                  "maxItems": 4
                 }
               ]
             }
@@ -26909,17 +26899,7 @@
       "$ref": "#/$defs/TileflowModulePatchRef77"
     },
     "TileflowModulePatchRef77": {
-      "anyOf": [
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "string"
-        }
-      ]
+      "type": ["boolean", "number", "string"]
     },
     "TileflowModulePatchRef78": {
       "type": "string",
@@ -29171,9 +29151,9 @@
                       "$ref": "#/$defs/__schema223"
                     }
                   ],
+                  "items": false,
                   "minItems": 2,
-                  "maxItems": 2,
-                  "items": false
+                  "maxItems": 2
                 },
                 "minGroundHeight": {
                   "type": "number",
@@ -29366,9 +29346,9 @@
                               "maximum": 100
                             }
                           ],
+                          "items": false,
                           "minItems": 2,
-                          "maxItems": 2,
-                          "items": false
+                          "maxItems": 2
                         },
                         {
                           "type": "object",
@@ -29393,9 +29373,9 @@
                                   "maximum": 100
                                 }
                               ],
+                              "items": false,
                               "minItems": 2,
-                              "maxItems": 2,
-                              "items": false
+                              "maxItems": 2
                             }
                           },
                           "required": ["kind", "reason", "value"],
@@ -29933,9 +29913,9 @@
                       "$ref": "#/$defs/__schema223"
                     }
                   ],
+                  "items": false,
                   "minItems": 2,
-                  "maxItems": 2,
-                  "items": false
+                  "maxItems": 2
                 },
                 "minGroundHeight": {
                   "type": "number",
@@ -30128,9 +30108,9 @@
                               "maximum": 100
                             }
                           ],
+                          "items": false,
                           "minItems": 2,
-                          "maxItems": 2,
-                          "items": false
+                          "maxItems": 2
                         },
                         {
                           "type": "object",
@@ -30155,9 +30135,9 @@
                                   "maximum": 100
                                 }
                               ],
+                              "items": false,
                               "minItems": 2,
-                              "maxItems": 2,
-                              "items": false
+                              "maxItems": 2
                             }
                           },
                           "required": ["kind", "reason", "value"],
@@ -30972,9 +30952,9 @@
                                   "$ref": "#/$defs/__schema223"
                                 }
                               ],
+                              "items": false,
                               "minItems": 2,
-                              "maxItems": 2,
-                              "items": false
+                              "maxItems": 2
                             }
                           ]
                         },
@@ -31400,9 +31380,9 @@
                                               "maximum": 100
                                             }
                                           ],
+                                          "items": false,
                                           "minItems": 2,
-                                          "maxItems": 2,
-                                          "items": false
+                                          "maxItems": 2
                                         },
                                         {
                                           "type": "object",
@@ -31446,9 +31426,9 @@
                                                       "maximum": 100
                                                     }
                                                   ],
+                                                  "items": false,
                                                   "minItems": 2,
-                                                  "maxItems": 2,
-                                                  "items": false
+                                                  "maxItems": 2
                                                 }
                                               ]
                                             }
@@ -32583,9 +32563,9 @@
                           ]
                         }
                       ],
+                      "items": false,
                       "minItems": 2,
-                      "maxItems": 2,
-                      "items": false
+                      "maxItems": 2
                     }
                   ]
                 },
@@ -32662,9 +32642,9 @@
                           ]
                         }
                       ],
+                      "items": false,
                       "minItems": 2,
-                      "maxItems": 2,
-                      "items": false
+                      "maxItems": 2
                     }
                   ]
                 },
@@ -32741,9 +32721,9 @@
                           ]
                         }
                       ],
+                      "items": false,
                       "minItems": 2,
-                      "maxItems": 2,
-                      "items": false
+                      "maxItems": 2
                     }
                   ]
                 },
@@ -32932,9 +32912,9 @@
                   ]
                 }
               ],
+              "items": false,
               "minItems": 5,
-              "maxItems": 5,
-              "items": false
+              "maxItems": 5
             }
           ]
         }
@@ -32951,9 +32931,9 @@
           "$ref": "#/$defs/__schema227"
         }
       ],
+      "items": false,
       "minItems": 2,
-      "maxItems": 2,
-      "items": false
+      "maxItems": 2
     },
     "TileflowLabelsModuleResolved": {
       "$ref": "#/$defs/__schema170/properties/labels",
@@ -33865,9 +33845,9 @@
                       "type": "number"
                     }
                   ],
+                  "items": false,
                   "minItems": 2,
-                  "maxItems": 2,
-                  "items": false
+                  "maxItems": 2
                 },
                 {
                   "type": "array",
@@ -33879,9 +33859,9 @@
                       "type": "number"
                     }
                   ],
+                  "items": false,
                   "minItems": 2,
-                  "maxItems": 2,
-                  "items": false
+                  "maxItems": 2
                 },
                 {
                   "type": "array",
@@ -33893,9 +33873,9 @@
                       "type": "number"
                     }
                   ],
+                  "items": false,
                   "minItems": 2,
-                  "maxItems": 2,
-                  "items": false
+                  "maxItems": 2
                 },
                 {
                   "type": "array",
@@ -33907,14 +33887,14 @@
                       "type": "number"
                     }
                   ],
+                  "items": false,
                   "minItems": 2,
-                  "maxItems": 2,
-                  "items": false
+                  "maxItems": 2
                 }
               ],
+              "items": false,
               "minItems": 4,
-              "maxItems": 4,
-              "items": false
+              "maxItems": 4
             },
             "attribution": {
               "type": "string",
@@ -34099,9 +34079,9 @@
                       "type": "number"
                     }
                   ],
+                  "items": false,
                   "minItems": 2,
-                  "maxItems": 2,
-                  "items": false
+                  "maxItems": 2
                 },
                 {
                   "type": "array",
@@ -34113,9 +34093,9 @@
                       "type": "number"
                     }
                   ],
+                  "items": false,
                   "minItems": 2,
-                  "maxItems": 2,
-                  "items": false
+                  "maxItems": 2
                 },
                 {
                   "type": "array",
@@ -34127,9 +34107,9 @@
                       "type": "number"
                     }
                   ],
+                  "items": false,
                   "minItems": 2,
-                  "maxItems": 2,
-                  "items": false
+                  "maxItems": 2
                 },
                 {
                   "type": "array",
@@ -34141,14 +34121,14 @@
                       "type": "number"
                     }
                   ],
+                  "items": false,
                   "minItems": 2,
-                  "maxItems": 2,
-                  "items": false
+                  "maxItems": 2
                 }
               ],
+              "items": false,
               "minItems": 4,
-              "maxItems": 4,
-              "items": false
+              "maxItems": 4
             },
             "attribution": {
               "type": "string",
@@ -34435,9 +34415,9 @@
                               "type": "number"
                             }
                           ],
+                          "items": false,
                           "minItems": 2,
-                          "maxItems": 2,
-                          "items": false
+                          "maxItems": 2
                         },
                         {
                           "type": "array",
@@ -34449,9 +34429,9 @@
                               "type": "number"
                             }
                           ],
+                          "items": false,
                           "minItems": 2,
-                          "maxItems": 2,
-                          "items": false
+                          "maxItems": 2
                         },
                         {
                           "type": "array",
@@ -34463,9 +34443,9 @@
                               "type": "number"
                             }
                           ],
+                          "items": false,
                           "minItems": 2,
-                          "maxItems": 2,
-                          "items": false
+                          "maxItems": 2
                         },
                         {
                           "type": "array",
@@ -34477,14 +34457,14 @@
                               "type": "number"
                             }
                           ],
+                          "items": false,
                           "minItems": 2,
-                          "maxItems": 2,
-                          "items": false
+                          "maxItems": 2
                         }
                       ],
+                      "items": false,
                       "minItems": 4,
-                      "maxItems": 4,
-                      "items": false
+                      "maxItems": 4
                     }
                   ]
                 },
@@ -41995,9 +41975,9 @@
           "$ref": "#/$defs/scene___schema2"
         }
       ],
+      "items": false,
       "minItems": 4,
-      "maxItems": 4,
-      "items": false
+      "maxItems": 4
     },
     "scene___schema7": {
       "type": "number",
@@ -42197,9 +42177,9 @@
                   "maximum": 90
                 }
               ],
+              "items": false,
               "minItems": 2,
-              "maxItems": 2,
-              "items": false
+              "maxItems": 2
             },
             "zoom": {
               "type": "number",

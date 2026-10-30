@@ -13,7 +13,7 @@
     "@tileflow/core": "workspace:*",
     "@tileflow/interactions": "workspace:*",
     "maplibre-gl": "6.13.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "esbuild": "0.28.1"

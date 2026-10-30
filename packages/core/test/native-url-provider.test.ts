@@ -158,7 +158,7 @@ test('runs the standalone published native file with no installed dependencies o
 
 test('bundles the provider only in native and keeps its declarations private', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', packageRoot), 'utf8'));
-  assert.equal(manifest.devDependencies['whatwg-url'], '17.2.0');
+  assert.equal(manifest.devDependencies['whatwg-url'], '17.3.0');
   assert.equal(manifest.dependencies['whatwg-url'], undefined);
   const native = await readFile(new URL('dist/native.js', packageRoot), 'utf8');
   const runtimeImports: string[] = [];
@@ -204,6 +204,6 @@ test('bundles the provider only in native and keeps its declarations private', a
     /whatwg-url|URLRecord|parseNativeUrl|utf8Encode|percentEncodeAfterEncoding|nativeUrlCodecMaximumLength/u,
   );
   const notices = await readFile(new URL('THIRD_PARTY_NOTICES.md', packageRoot), 'utf8');
-  for (const name of ['whatwg-url 17.2.0', 'tr46 7.0.0', 'Punycode.js 2.3.1'])
+  for (const name of ['whatwg-url 17.3.0', 'tr46 7.0.0', 'Punycode.js 2.3.1'])
     assert.ok(notices.includes(name));
 });

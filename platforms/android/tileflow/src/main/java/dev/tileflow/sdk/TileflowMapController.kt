@@ -17,6 +17,19 @@ import java.lang.ref.WeakReference
 public class TileflowMapController {
     private var view = WeakReference<TileflowMapView>(null)
 
+    /**
+     * The map's annotation managers; see [TileflowMapView.annotations]. The controller keeps them,
+     * so they can be created before the map appears and reach whichever map it attaches to.
+     */
+    public val annotations: TileflowAnnotations = TileflowAnnotations()
+
+    /**
+     * Native views anchored to coordinates; see [TileflowMapView.viewAnnotationManager]. Offsets,
+     * sizes and positions are in dp.
+     */
+    public val viewAnnotationManager: TileflowViewAnnotationManager =
+        TileflowViewAnnotationManager(unitsInDp = true)
+
     /** The camera the map last reported, or null while no map is attached or before it is known. */
     public val currentCamera: TileflowCamera?
         get() = view.get()?.currentCamera
@@ -181,10 +194,13 @@ public class TileflowMapController {
         if (view.get() != null && view.get() !== next)
             throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
         view = WeakReference(next)
+        next.adopt(annotations, viewAnnotationManager)
     }
 
     internal fun detach(previous: TileflowMapView) {
-        if (view.get() === previous) view.clear()
+        if (view.get() !== previous) return
+        view.clear()
+        previous.release(annotations, viewAnnotationManager)
     }
 
     internal fun attached(): TileflowMapView =

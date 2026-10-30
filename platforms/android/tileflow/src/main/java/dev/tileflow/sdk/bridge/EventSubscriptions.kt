@@ -19,6 +19,8 @@ internal class EventSubscriptions(
         CAMERA,
         /** The compass and scale bar follow the camera while it moves. */
         CONTROLS,
+        /** Annotations follow taps, long presses and drags, and views follow tracked points. */
+        ANNOTATIONS,
     }
 
     private val demands = mutableMapOf<Owner, Map<ProtocolContract.Event, Long>>()

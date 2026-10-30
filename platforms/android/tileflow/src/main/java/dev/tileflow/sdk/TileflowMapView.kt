@@ -90,7 +90,13 @@ constructor(
     private var appearance: Pair<ProtocolContract.Method, JSONObject>? = null
     private var content = MapContent()
     private var contentRevision = 0
+    /** What annotations ask the renderer to report. */
+    private var annotationDemand: Map<ProtocolContract.Event, Long> = emptyMap()
     private var subscriptions = EventSubscriptions(options.events, options.controls.followCamera)
+    /** The annotation layers the current renderer reports hits and drags for. */
+    private var annotationLayersSent: List<String>? = null
+    private var annotationLayersSending = false
+    private var subscriptionsSending = false
     /** The camera the renderer last reported, or the one to start the next renderer at. */
     private var camera: TileflowCamera? = null
     /** A camera the application asked for while no renderer could move, and how many it asked. */
@@ -196,6 +202,21 @@ constructor(
      */
     public var touchFilter: ((x: Float, y: Float) -> Boolean)? = null
 
+    /** Native views over the renderer: view annotations and accessibility targets. */
+    internal val annotationOverlay = AnnotationOverlay(context, this)
+
+    /**
+     * The map's annotation managers: points, circles, polylines and polygons drawn by the map that
+     * people tap, hold and drag.
+     */
+    public var annotations: TileflowAnnotations = TileflowAnnotations()
+        private set
+
+    /** Native views anchored to coordinates, such as callouts. */
+    public var viewAnnotationManager: TileflowViewAnnotationManager =
+        TileflowViewAnnotationManager(unitsInDp = false)
+        private set
+
     /** Every camera change the SDK follows, before the application's level and interval. */
     internal var onCameraObserved: ((TileflowCameraChange) -> Unit)? = null
     private val lifecycleObserver =
@@ -269,7 +290,135 @@ constructor(
             }
         }
         controlsView.recenter.setOnClickListener { recenterTapped() }
+        // Annotation views lie over the renderer and under the native controls.
+        addView(
+            annotationOverlay,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+        )
         addView(controlsView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        annotationOverlay.bind(viewAnnotationManager)
+        viewAnnotationManager.bind(annotationOverlay)
+        annotations.bind(this)
+    }
+
+    /**
+     * Uses annotation objects a controller owns, so they outlive this view; the view's own ones
+     * leave the map.
+     */
+    internal fun adopt(
+        nextAnnotations: TileflowAnnotations,
+        nextViews: TileflowViewAnnotationManager,
+    ) {
+        if (annotations !== nextAnnotations) {
+            annotations.bind(null)
+            annotations = nextAnnotations
+            nextAnnotations.bind(this)
+        }
+        if (viewAnnotationManager !== nextViews) {
+            viewAnnotationManager.bind(null)
+            viewAnnotationManager = nextViews
+            annotationOverlay.bind(nextViews)
+            nextViews.bind(annotationOverlay)
+        }
+        annotationsChanged()
+    }
+
+    /** Gives back annotation objects a controller owns; the view continues with empty ones. */
+    internal fun release(owned: TileflowAnnotations, views: TileflowViewAnnotationManager?) {
+        if (annotations === owned) {
+            owned.bind(null)
+            annotations = TileflowAnnotations().also { it.bind(this) }
+        }
+        if (views != null && viewAnnotationManager === views) {
+            views.bind(null)
+            viewAnnotationManager = TileflowViewAnnotationManager(unitsInDp = false)
+            annotationOverlay.bind(viewAnnotationManager)
+            viewAnnotationManager.bind(annotationOverlay)
+        }
+        annotationsChanged()
+    }
+
+    /** Managers changed: the renderer reports their hits and drags, and views track points. */
+    internal fun annotationsChanged() {
+        if (destroyed) return
+        annotationOverlay.annotationsChanged()
+        sendAnnotationLayers()
+    }
+
+    /** An annotation moved, for example in a drag; accessibility targets follow it. */
+    internal fun annotationMoved() {
+        if (!destroyed) annotationOverlay.annotationsChanged()
+    }
+
+    /** Whether points are tracked changed the events annotations need. */
+    internal fun annotationsTrackingChanged(tracking: Boolean) {
+        val demand = buildMap {
+            if (!annotations.isEmpty) {
+                put(ProtocolContract.Event.TAP, 0L)
+                put(ProtocolContract.Event.LONG_PRESS, 0L)
+                put(ProtocolContract.Event.ANNOTATION_DRAGGED, 0L)
+            }
+            if (tracking) put(ProtocolContract.Event.TRACKED_POINTS_MOVED, 0L)
+        }
+        if (demand == annotationDemand) return
+        annotationDemand = demand
+        subscriptions.set(EventSubscriptions.Owner.ANNOTATIONS, demand)
+        sendSubscriptions()
+    }
+
+    /** Sends the subscriptions, one request at a time with the latest. */
+    private fun sendSubscriptions() {
+        val bridge = bridge?.takeIf { initialized } ?: return
+        if (subscriptionsSending) return
+        subscriptionsSending = true
+        val sent = subscriptions.json().toString()
+        scope.launch {
+            try {
+                bridge.call(
+                    ProtocolContract.Method.SET_EVENTS,
+                    JSONObject().put("events", JSONObject(sent)),
+                )
+            } catch (_: TileflowMapException) {
+                // A new renderer receives the subscriptions when it initializes.
+            } finally {
+                subscriptionsSending = false
+            }
+            if (this@TileflowMapView.bridge === bridge && subscriptions.json().toString() != sent)
+                sendSubscriptions()
+        }
+    }
+
+    /** Sends the annotation layers, one request at a time with the latest. */
+    private fun sendAnnotationLayers() {
+        val bridge = bridge?.takeIf { initialized } ?: return
+        val layers = annotations.layerIds
+        if (annotationLayersSending || layers == annotationLayersSent) return
+        annotationLayersSending = true
+        scope.launch {
+            try {
+                bridge.call(
+                    ProtocolContract.Method.SET_ANNOTATION_LAYERS,
+                    JSONObject().put("layers", JSONArray(layers)),
+                )
+                if (this@TileflowMapView.bridge === bridge) annotationLayersSent = layers
+            } catch (_: TileflowMapException) {
+                // A new renderer receives the layers when it is ready.
+            } finally {
+                annotationLayersSending = false
+            }
+            if (this@TileflowMapView.bridge === bridge) sendAnnotationLayers()
+        }
+    }
+
+    /** Reports a change of the annotations the map could not make. */
+    internal fun annotationWarning(error: TileflowMapException) {
+        if (
+            destroyed ||
+                error.code == TileflowErrorCode.CANCELLED ||
+                error.code == TileflowErrorCode.DISPOSED
+        )
+            return
+        onEvent(TileflowMapEvent.Warning(error.code, error.context, 1))
     }
 
     /**
@@ -504,7 +653,10 @@ constructor(
         val previous = this.options
         val previousSubscriptions = subscriptions
         this.options = options
-        subscriptions = EventSubscriptions(options.events, options.controls.followCamera)
+        subscriptions =
+            EventSubscriptions(options.events, options.controls.followCamera).also {
+                it.set(EventSubscriptions.Owner.ANNOTATIONS, annotationDemand)
+            }
         controlsView.controls = options.controls
         controlsView.locationShown = options.location.enabled
         locationOptionsChanged(previous)
@@ -955,6 +1107,7 @@ constructor(
         loadable = null
         refreshLocation()
         retireGeneration(TileflowErrorCode.DISPOSED)
+        annotationOverlay.dispose()
         scope.cancel()
         onEvent = {}
     }
@@ -1180,6 +1333,9 @@ constructor(
                                 replayScene(readyBridge)
                                 replayStyle(readyBridge)
                                 replayLocation(readyBridge)
+                                annotationLayersSent = null
+                                sendAnnotationLayers()
+                                annotationOverlay.rendererReady()
                                 if (!rendererVisible)
                                     readyBridge.call(
                                         ProtocolContract.Method.SET_VISIBILITY,
@@ -1310,6 +1466,21 @@ constructor(
             pendingReadyEvent = true
             return
         }
+        when (event) {
+            "trackedPointsMoved" -> {
+                annotationOverlay.receive(result)
+                return
+            }
+            "annotationDragged" -> {
+                annotations.dispatchDrag(result)
+                return
+            }
+            // An annotation listener that takes a press keeps it from the application's event.
+            "tap",
+            "longPress" ->
+                if (annotations.dispatchPress(annotationHits(result), long = event == "longPress"))
+                    return
+        }
         if (event == "animationEnded" || event == "shotCue") {
             animations.receive(event, result)
             return
@@ -1377,9 +1548,17 @@ constructor(
         scope.launch(block = block)
     }
 
+    /** Runs [block] after the current main-thread turn, so changes made in it arrive together. */
+    internal fun launchJob(block: suspend CoroutineScope.() -> Unit): Job =
+        scope.launch(Dispatchers.Main, block = block)
+
     /** Pending calls fail with `cancelled` when replaced and with `disposed` when destroyed. */
     private fun retireGeneration(code: TileflowErrorCode = TileflowErrorCode.CANCELLED) {
         initialized = false
+        annotationLayersSent = null
+        annotationLayersSending = false
+        subscriptionsSending = false
+        annotationOverlay.rendererRetired()
         rendererInsets = null
         insetsUpdate?.cancel()
         insetsUpdate = null

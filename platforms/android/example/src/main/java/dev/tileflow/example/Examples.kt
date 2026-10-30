@@ -142,6 +142,7 @@ private val exampleOptions =
 class ViewExample : ComponentActivity() {
     private lateinit var map: TileflowMapView
     private lateinit var status: TextView
+    private lateinit var pins: AnnotationExample
     private var dark = false
 
     /**
@@ -169,6 +170,16 @@ class ViewExample : ComponentActivity() {
         setContentView(R.layout.map_screen)
         map = findViewById(R.id.map)
         status = findViewById(R.id.status)
+        // The view's annotation API takes pixels.
+        pins =
+            AnnotationExample(
+                this,
+                map.annotations,
+                map.viewAnnotationManager,
+                resources.displayMetrics.density,
+            ) {
+                status.text = it
+            }
         // The panel covers the bottom of the map: the camera centres above it and the controls
         // stay clear of it. It sits above the navigation bar, which the map adds on its own.
         val panel = findViewById<View>(R.id.panel)
@@ -185,8 +196,10 @@ class ViewExample : ComponentActivity() {
             when (it) {
                 TileflowMapEvent.ContentReady -> status.text = "Tileflow · Android View"
                 is TileflowMapEvent.Failed -> status.text = "Map error: ${it.code}"
+                // Taps on a pin open its callout; a tap anywhere else closes it.
                 is TileflowMapEvent.Tap ->
                     lifecycleScope.launch {
+                        pins.hideCallout()
                         val selected =
                             runCatching { ClusterExample.tap(ViewClusterMap(map), it.point) }
                                 .getOrNull()
@@ -219,6 +232,7 @@ class ViewExample : ComponentActivity() {
                     .onFailure { status.text = "Places unavailable" }
             }
         }
+        findViewById<Button>(R.id.annotations).setOnClickListener { pins.show() }
         findViewById<Button>(R.id.theme).setOnClickListener {
             dark = !dark
             lifecycleScope.launch {
@@ -259,9 +273,21 @@ class ComposeExample : ComponentActivity() {
                 }
             val controller = rememberTileflowMapController()
             val places = remember(controller) { ControllerClusterMap(controller) }
+            // The controller's annotation API takes dp.
+            val pins =
+                remember(controller) {
+                    AnnotationExample(
+                        this@ComposeExample,
+                        controller.annotations,
+                        controller.viewAnnotationManager,
+                        1f,
+                    ) {
+                        status = it
+                    }
+                }
             val density = LocalDensity.current.density
             val scope = rememberCoroutineScope()
-            val panel by animateDpAsState(if (expanded) 368.dp else 168.dp, label = "panel")
+            val panel by animateDpAsState(if (expanded) 424.dp else 168.dp, label = "panel")
             MaterialTheme {
                 Box(Modifier.fillMaxSize()) {
                     // The panel's height is content padding: the camera centres above it.
@@ -283,6 +309,7 @@ class ComposeExample : ComponentActivity() {
                             is TileflowMapEvent.Failed -> status = "Map error: ${it.code}"
                             is TileflowMapEvent.Tap ->
                                 scope.launch {
+                                    pins.hideCallout()
                                     // Taps arrive in pixels; the controller queries in dp.
                                     val point =
                                         TileflowPoint(it.point.x / density, it.point.y / density)
@@ -322,7 +349,7 @@ class ComposeExample : ComponentActivity() {
                         ) {
                             Text("My location")
                         }
-                        if (expanded)
+                        if (expanded) {
                             Button(
                                 onClick = {
                                     scope.launch {
@@ -337,6 +364,8 @@ class ComposeExample : ComponentActivity() {
                             ) {
                                 Text("Show 100,000 places")
                             }
+                            Button(onClick = { pins.show() }) { Text("Show annotations") }
+                        }
                     }
                 }
             }

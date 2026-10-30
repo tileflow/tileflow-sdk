@@ -12,6 +12,7 @@
 		21CA8BBB2F2AFE32B0923BF1 /* OfflineServingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 207B64FB19BDA4FAC6A2A430 /* OfflineServingTests.swift */; };
 		337AE4F2A86D12AB7630AE20 /* FixtureServer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 961C75D1BB95CFA2271FD05A /* FixtureServer.swift */; };
 		41044B92E50B41B4E87B91BB /* MapSceneIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C5AC78C408492798F46C3C3 /* MapSceneIntegrationTests.swift */; };
+		43C24826BA796DEA1753E53F /* MapIntegrationTests+Annotations.swift in Sources */ = {isa = PBXBuildFile; fileRef = F94A0330F88DB76365CB89BE /* MapIntegrationTests+Annotations.swift */; };
 		471C0022F4BE8513D5F01741 /* MapStyleIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49C06DF5B1D8F32A2B5CFBF2 /* MapStyleIntegrationTests.swift */; };
 		4ED773D788ABA9DF08882047 /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = 31CC6D94C1045B22AD7833C0 /* Fixtures */; };
 		4F9049ADEE67D552E9D216BF /* MapIntegrationTests+Camera.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CFFDF6E6B48263D3486262E /* MapIntegrationTests+Camera.swift */; };
@@ -24,6 +25,7 @@
 		70A0C5F8DC9F48A515DA2098 /* CameraTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BEBE8CB1F75686A0207071F /* CameraTests.swift */; };
 		71114A3754B2EB586DC2202B /* LocationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D18786EA197852817C88C29 /* LocationTests.swift */; };
 		74D3A913BF84726CBE62A8D4 /* MapIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7718876CC6A93CE6A5EA82C /* MapIntegrationTests.swift */; };
+		82081FF7F02E4D3A66A09F93 /* AnnotationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 109C7D06683E789B360AD995 /* AnnotationTests.swift */; };
 		8DB7B9D18A359F232EB5A682 /* StyleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76E0530E5F69B4E320DDBDAA /* StyleTests.swift */; };
 		A1D0ECB4F056A1A07236D622 /* ProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 73F1C3651357D91EC00B61E6 /* ProtocolTests.swift */; };
 		A1E7632A655D251C23F633DB /* MapConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8971705707273BE7E1E670CB /* MapConfigurationTests.swift */; };
@@ -47,6 +49,7 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		109C7D06683E789B360AD995 /* AnnotationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationTests.swift; sourceTree = "<group>"; };
 		113918A3BD759C2E418A20A6 /* SceneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneTests.swift; sourceTree = "<group>"; };
 		1CFFDF6E6B48263D3486262E /* MapIntegrationTests+Camera.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MapIntegrationTests+Camera.swift"; sourceTree = "<group>"; };
 		207B64FB19BDA4FAC6A2A430 /* OfflineServingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineServingTests.swift; sourceTree = "<group>"; };
@@ -74,6 +77,7 @@
 		D737ABB575F1DE63D148934A /* OfflineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineTests.swift; sourceTree = "<group>"; };
 		E1680DA220D45C59ED79C00C /* BridgeWebKitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeWebKitTests.swift; sourceTree = "<group>"; };
 		F49D434E75F4048A9225B213 /* HostedSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostedSessionTests.swift; sourceTree = "<group>"; };
+		F94A0330F88DB76365CB89BE /* MapIntegrationTests+Annotations.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MapIntegrationTests+Annotations.swift"; sourceTree = "<group>"; };
 		FBBE6118066EECFB54F6C5F5 /* ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ios; path = ..; sourceTree = SOURCE_ROOT; };
 		FD3905513AF87C616C6FD063 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -93,6 +97,7 @@
 		59917ED7642427EED0225F91 /* TileflowTests */ = {
 			isa = PBXGroup;
 			children = (
+				109C7D06683E789B360AD995 /* AnnotationTests.swift */,
 				E1680DA220D45C59ED79C00C /* BridgeWebKitTests.swift */,
 				7BEBE8CB1F75686A0207071F /* CameraTests.swift */,
 				961C75D1BB95CFA2271FD05A /* FixtureServer.swift */,
@@ -102,6 +107,7 @@
 				858DD9300A5AD87990E7E7FC /* MapCacheIntegrationTests.swift */,
 				8971705707273BE7E1E670CB /* MapConfigurationTests.swift */,
 				B7718876CC6A93CE6A5EA82C /* MapIntegrationTests.swift */,
+				F94A0330F88DB76365CB89BE /* MapIntegrationTests+Annotations.swift */,
 				1CFFDF6E6B48263D3486262E /* MapIntegrationTests+Camera.swift */,
 				7C3A5AF1F3AF50DEF8B25B27 /* MapIntegrationTests+Location.swift */,
 				675716096CE9326E3BF25189 /* MapOfflineIntegrationTests.swift */,
@@ -249,6 +255,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				82081FF7F02E4D3A66A09F93 /* AnnotationTests.swift in Sources */,
 				64B6202B2A09121D0837BAA4 /* BridgeWebKitTests.swift in Sources */,
 				70A0C5F8DC9F48A515DA2098 /* CameraTests.swift in Sources */,
 				337AE4F2A86D12AB7630AE20 /* FixtureServer.swift in Sources */,
@@ -257,6 +264,7 @@
 				71114A3754B2EB586DC2202B /* LocationTests.swift in Sources */,
 				D19D6C208C6275F31F4B75AD /* MapCacheIntegrationTests.swift in Sources */,
 				A1E7632A655D251C23F633DB /* MapConfigurationTests.swift in Sources */,
+				43C24826BA796DEA1753E53F /* MapIntegrationTests+Annotations.swift in Sources */,
 				4F9049ADEE67D552E9D216BF /* MapIntegrationTests+Camera.swift in Sources */,
 				CC26017210DA5275770684F5 /* MapIntegrationTests+Location.swift in Sources */,
 				74D3A913BF84726CBE62A8D4 /* MapIntegrationTests.swift in Sources */,

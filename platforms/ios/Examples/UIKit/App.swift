@@ -70,7 +70,18 @@ final class MapViewController: UIViewController {
           }
         }
       }, for: .touchUpInside)
-    [status, theme, myLocation, places, more].forEach(panel.addArrangedSubview)
+    let annotations = UIButton(type: .system)
+    annotations.setTitle("Show annotations", for: .normal)
+    annotations.addAction(
+      UIAction { [weak self] _ in
+        guard let self else { return }
+        AnnotationsExample.show(
+          annotations: self.map.annotations, viewAnnotations: self.map.viewAnnotations,
+          around: TileflowCoordinate(longitude: Self.start.longitude, latitude: Self.start.latitude)
+        ) { [weak self] message in self?.status.text = message }
+        self.status.text = "Tap or drag a pin"
+      }, for: .touchUpInside)
+    [status, theme, myLocation, places, annotations, more].forEach(panel.addArrangedSubview)
     panel.axis = .vertical
     panel.alignment = .leading
     panel.spacing = 8
@@ -115,7 +126,7 @@ final class MapViewController: UIViewController {
   }
 
   private func layoutPanel(animated: Bool) {
-    let height: CGFloat = expanded ? 336 : 168
+    let height: CGFloat = expanded ? 384 : 168
     panelHeight?.constant = height
     // The panel covers the bottom of the map: the camera and controls keep clear of it.
     map.contentInsets.bottom = height

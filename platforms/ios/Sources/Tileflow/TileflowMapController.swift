@@ -7,6 +7,11 @@ import UIKit
 @MainActor
 public final class TileflowMapController {
   private weak var view: TileflowMapView?
+  /// The map's annotation managers. They belong to the controller, so they can be made before the
+  /// map appears; the attached map draws them.
+  public let annotations = TileflowAnnotationOrchestrator()
+  /// Native views that follow coordinates of the attached map.
+  public let viewAnnotations = TileflowViewAnnotationManager()
   public init() {}
 
   /// The camera the map last reported, or nil while no map is attached or before it is known.
@@ -138,8 +143,13 @@ public final class TileflowMapController {
   func attach(_ view: TileflowMapView) throws {
     guard self.view == nil || self.view === view else { throw TileflowMapError.invalidRequest }
     self.view = view
+    view.adopt(annotations: annotations, viewAnnotations: viewAnnotations)
   }
-  func detach(_ view: TileflowMapView) { if self.view === view { self.view = nil } }
+  func detach(_ view: TileflowMapView) {
+    guard self.view === view else { return }
+    self.view = nil
+    view.release(annotations: annotations, viewAnnotations: viewAnnotations)
+  }
   func attached() throws -> TileflowMapView {
     guard let view else { throw TileflowMapError.notReady }
     return view

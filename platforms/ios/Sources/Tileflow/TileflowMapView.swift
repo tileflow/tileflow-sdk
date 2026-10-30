@@ -70,6 +70,16 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   var images: [TileflowMapImage] = []
   /// Calls waiting for an animation of the current renderer to end.
   let animations = AnimationWaiters()
+  /// Native view annotations and the accessibility elements of annotations, over the renderer.
+  let annotationOverlay = AnnotationOverlay()
+  /// The map's annotation managers. Each draws its annotations with a source and a layer of the
+  /// application's runtime style.
+  public internal(set) lazy var annotations = TileflowAnnotationOrchestrator(view: self)
+  /// Native views that follow coordinates of the map, such as markers and callouts.
+  public internal(set) lazy var viewAnnotations = TileflowViewAnnotationManager(view: self)
+  /// Whether annotation layers exist, and whether the renderer tracks points for annotations.
+  private var annotationInteraction = false
+  private var annotationTracking = false
 
   public init(
     source: TileflowMapSource, theme: String? = nil, initialCamera: TileflowCamera? = nil,
@@ -82,6 +92,8 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     subscriptions = EventSubscriptions(
       application: options.events, followCamera: options.controls.followCamera)
     super.init(frame: .zero)
+    annotationOverlay.map = self
+    accessibilityCustomRotors = [makeAnnotationRotor()]
     location.view = self
     accessibilityLabel = "Interactive map"
     controlsView.controls = options.controls
@@ -91,6 +103,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     controlsView.onCompass = { [weak self] in self?.compassTapped() }
     controlsView.onRecenter = { [weak self] in self?.recenterTapped() }
     addSubview(controlsView)
+    insertSubview(annotationOverlay, belowSubview: controlsView)
     touchClaim.gestures = options.gestures
     addGestureRecognizer(touchClaim)
     NotificationCenter.default.addObserver(
@@ -126,6 +139,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   public override func layoutSubviews() {
     super.layoutSubviews()
     webView?.frame = bounds
+    annotationOverlay.frame = bounds
     controlsView.frame = bounds
     updateInsets()
   }
@@ -225,6 +239,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     self.options = options
     subscriptions = EventSubscriptions(
       application: options.events, followCamera: options.controls.followCamera)
+    subscriptions.set(.annotations, annotationDemand)
     touchClaim.gestures = options.gestures
     controlsView.controls = options.controls
     controlsView.locationShown = options.location.enabled
@@ -237,6 +252,39 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
       return
     }
     try await sendOptions(events: subscriptions != previousSubscriptions)
+  }
+
+  private var annotationDemand: [ProtocolContract.Event: Int] {
+    var demand: [ProtocolContract.Event: Int] = [:]
+    if annotationInteraction {
+      demand[.tap] = 0
+      demand[.longPress] = 0
+      demand[.annotationDragged] = 0
+    }
+    if annotationTracking { demand[.trackedPointsMoved] = 0 }
+    return demand
+  }
+
+  /// Annotation layers need taps, long presses and drags whatever the application's level.
+  func setAnnotationInteraction(_ needed: Bool) {
+    guard needed != annotationInteraction else { return }
+    annotationInteraction = needed
+    updateAnnotationSubscriptions()
+  }
+
+  /// Tracked points need their positions after every frame.
+  func setTrackingDemand(_ needed: Bool) {
+    guard needed != annotationTracking else { return }
+    annotationTracking = needed
+    updateAnnotationSubscriptions()
+  }
+
+  private func updateAnnotationSubscriptions() {
+    let previous = subscriptions
+    subscriptions.set(.annotations, annotationDemand)
+    guard subscriptions != previous, initialized, let bridge else { return }
+    let events = subscriptions.wireValue
+    Task { _ = try? await bridge.call(.setEvents, payload: .object(["events": events])) }
   }
 
   private func sendOptions(events: Bool) async throws {
@@ -355,6 +403,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     loadable = nil
     NotificationCenter.default.removeObserver(self)
     refreshLocation()
+    annotationOverlay.stopRefreshes()
     retireGeneration(.disposed)
     onEvent = nil
   }
@@ -546,6 +595,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
           try await self.replayScene(through: bridge)
           try await self.replayStyle(through: bridge)
           try await self.replayLocation(through: bridge)
+          try await self.replayAnnotations(through: bridge)
           if !self.rendererVisible {
             _ = try await bridge.call(.setVisibility, payload: .object(["visible": .bool(false)]))
           }
@@ -570,7 +620,8 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     bridge.start()
     resources = handler
     webView = view
-    insertSubview(view, belowSubview: controlsView)
+    annotationOverlay.frame = bounds
+    insertSubview(view, belowSubview: annotationOverlay)
     loadRuntime(in: view, generation: current)
     updateVisibility()
   }
@@ -646,9 +697,19 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
         }
       }
     case "tap":
-      if let touch = TileflowMapTouch(wire: value) { onEvent?(.tap(touch)) }
+      if let touch = TileflowMapTouch(wire: value),
+        !annotationTouch(value, touch: touch, longPress: false)
+      {
+        onEvent?(.tap(touch))
+      }
     case "longPress":
-      if let touch = TileflowMapTouch(wire: value) { onEvent?(.longPress(touch)) }
+      if let touch = TileflowMapTouch(wire: value),
+        !annotationTouch(value, touch: touch, longPress: true)
+      {
+        onEvent?(.longPress(touch))
+      }
+    case "annotationDragged": receiveAnnotationDrag(value)
+    case "trackedPointsMoved": annotationOverlay.receive(value)
     case "gestureStarted", "gestureEnded":
       if options.events.level.includes(.camera),
         let gesture = value["gesture"]?.string.flatMap(TileflowGesture.init(rawValue:))
@@ -695,6 +756,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
     insetsUpdate?.cancel()
     insetsUpdate = nil
     cameraEvents.rendererReplaced()
+    annotationOverlay.rendererReplaced()
     readyForEvents = false
     pendingReadyEvent = false
     generationReady = false

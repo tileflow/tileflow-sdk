@@ -11,6 +11,8 @@ struct EventSubscriptions: Equatable {
     case camera
     /// The compass and scale bar follow the camera while it moves.
     case controls
+    /// Annotation layers and the points that native views and accessibility elements follow.
+    case annotations
   }
 
   private var demands: [Owner: [ProtocolContract.Event: Int]] = [:]

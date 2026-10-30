@@ -107,6 +107,14 @@ struct MapScreen: View {
             }
           }
         }
+        Button("Show annotations") {
+          AnnotationsExample.show(
+            annotations: controller.annotations, viewAnnotations: controller.viewAnnotations,
+            around: TileflowCoordinate(
+              longitude: Self.start.longitude, latitude: Self.start.latitude)
+          ) { status = $0 }
+          status = "Tap or drag a pin"
+        }
         Button("Tilt to the street") {
           Task { try? await controller.ease(to: TileflowCameraUpdate(zoom: 17, pitch: 75)) }
         }

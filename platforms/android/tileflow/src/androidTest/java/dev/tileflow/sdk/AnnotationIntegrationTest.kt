@@ -10,6 +10,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -143,9 +144,20 @@ public class AnnotationIntegrationTest {
             assertEquals(target.longitude, dropped.single().longitude, 1e-4)
             assertEquals(target.latitude, dropped.single().latitude, 1e-4)
             assertEquals(camera, map.currentCamera)
-            val moved =
-                map.querySourceFeatures("spots").single().feature.geometry as TileflowGeometry.Point
-            assertEquals(target.longitude, moved.coordinate.longitude, 1e-4)
+            // Source queries read the renderer's worker tiles. The drag callback is immediate,
+            // while its final GeoJSON update can still be in flight to that worker.
+            var moved: TileflowGeometry.Point? = null
+            until("the source has processed the released geometry") {
+                moved =
+                    map.querySourceFeatures("spots").singleOrNull()?.feature?.geometry
+                        as? TileflowGeometry.Point
+                moved?.coordinate?.let {
+                    abs(target.longitude - it.longitude) < 1e-4 &&
+                        abs(target.latitude - it.latitude) < 1e-4
+                } == true
+            }
+            assertEquals(target.longitude, moved!!.coordinate.longitude, 1e-4)
+            assertEquals(target.latitude, moved!!.coordinate.latitude, 1e-4)
         }
     }
 

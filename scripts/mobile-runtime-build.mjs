@@ -9,6 +9,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const packageRoot = resolve(root, 'packages/mobile-runtime');
 const require = createRequire(resolve(packageRoot, 'package.json'));
 const {build} = require('esbuild');
+const {minify} = require('terser');
 const output = resolve(packageRoot, 'dist');
 const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
 const maplibreRoot = dirname(require.resolve('maplibre-gl/package.json'));
@@ -20,22 +21,43 @@ const worker = await build({
   platform: 'browser',
   target: ['safari16', 'chrome109'],
   minify: true,
+  charset: 'utf8',
   write: false,
   metafile: true,
 });
 const hashPlaceholder = 'TILEFLOW_RUNTIME_CONTENT_HASH_PLACEHOLDER';
-// The runtime reads Core's native entry from source so unused modules drop out, and replaces
-// Core's bundled URL parser, which carries IDNA tables for engines without a conforming URL, with
+// Read workspace entries from source so shared modules are bundled once and unused modules drop out.
+// Replace Core's bundled URL parser, which carries IDNA tables for engines without a conforming URL, with
 // the WebView's own. Nothing else in Core changes.
 const coreSource = resolve(root, 'packages/core/src');
+const cameraWorker = await build({
+  absWorkingDir: packageRoot,
+  entryPoints: [resolve(coreSource, 'camera-tile-worker.ts')],
+  bundle: true,
+  format: 'iife',
+  platform: 'browser',
+  target: ['safari16', 'chrome109'],
+  minify: true,
+  charset: 'utf8',
+  write: false,
+  metafile: true,
+});
 const platformUrl = resolve(packageRoot, 'src/platform-url.ts');
 const substituted = new Set();
-const coreNativeSource = {
-  name: 'tileflow-core-native-source',
+const coreSourceEntries = {
+  name: 'tileflow-workspace-source-entries',
   setup(build) {
-    build.onResolve({filter: /^@tileflow\/core\/native$/}, () => {
-      substituted.add('entry');
-      return {path: resolve(coreSource, 'native.ts')};
+    build.onResolve({filter: /^@tileflow\/interactions(?:\/maplibre)?$/}, (args) => ({
+      path: resolve(
+        root,
+        'packages/interactions/src',
+        args.path.endsWith('/maplibre') ? 'maplibre-entry.ts' : 'index.ts',
+      ),
+    }));
+    build.onResolve({filter: /^@tileflow\/core\/(?:native|browser|runtime)$/}, (args) => {
+      const entry = args.path.slice('@tileflow/core/'.length);
+      substituted.add(entry);
+      return {path: resolve(coreSource, entry + '.ts')};
     });
     build.onResolve({filter: /^\.\/native-url-provider$/}, (args) => {
       if (!resolve(args.importer).startsWith(`${coreSource}${sep}`)) return undefined;
@@ -54,16 +76,18 @@ const result = await build({
   platform: 'browser',
   target: ['safari16', 'chrome109'],
   minify: true,
+  charset: 'utf8',
   metafile: true,
   write: false,
   define: {
     TILEFLOW_RUNTIME_HASH: JSON.stringify(hashPlaceholder),
     TILEFLOW_MAPLIBRE_WORKER: JSON.stringify(worker.outputFiles[0].text),
+    TILEFLOW_CAMERA_TILE_WORKER_SOURCE: JSON.stringify(cameraWorker.outputFiles[0].text),
   },
-  plugins: [coreNativeSource],
+  plugins: [coreSourceEntries],
 });
-if (!substituted.has('entry') || !substituted.has('parser'))
-  throw new Error('The runtime no longer reads Core native from source with the platform URL.');
+if (!['native', 'browser', 'runtime', 'parser'].every((entry) => substituted.has(entry)))
+  throw new Error('The runtime no longer reads Core entries from source with the platform URL.');
 const forbidden = Object.keys(result.metafile.inputs).filter((path) =>
   /\/(?:react|react-dom|react-native|packages\/(?:cli|dev|capture)|whatwg-url|tr46|punycode)\//u.test(
     path.replaceAll('\\', '/'),
@@ -74,7 +98,11 @@ if (forbidden.length)
 await cp(resolve(packageRoot, 'shell.html'), resolve(output, 'index.html'));
 await cp(resolve(maplibreRoot, 'dist/maplibre-gl.css'), resolve(output, 'maplibre.css'));
 const notices = await collectRuntimeNotices({
-  inputs: [...Object.keys(result.metafile.inputs), ...Object.keys(worker.metafile.inputs)],
+  inputs: [
+    ...Object.keys(result.metafile.inputs),
+    ...Object.keys(worker.metafile.inputs),
+    ...Object.keys(cameraWorker.metafile.inputs),
+  ],
   packageRoot,
   repositoryRoot: root,
 });
@@ -83,7 +111,15 @@ await writeFile(
   resolve(output, 'dependencies.json'),
   `${JSON.stringify(notices.inventory, null, 2)}\n`,
 );
-const javascript = result.outputFiles[0].text;
+// Compress across the final bundle while retaining license comments and UTF-8 text.
+const compressed = await minify(result.outputFiles[0].text, {
+  ecma: 2022,
+  compress: {passes: 2},
+  mangle: true,
+  format: {ascii_only: false, comments: 'some'},
+});
+const javascript = compressed.code;
+if (!javascript) throw new Error('The embedded runtime minifier produced no JavaScript.');
 if (javascript.split(hashPlaceholder).length !== 2)
   throw new Error('Runtime hash placeholder is not unique.');
 // Hash the actual bundled dependency graph, worker, shell and stylesheet, including changes

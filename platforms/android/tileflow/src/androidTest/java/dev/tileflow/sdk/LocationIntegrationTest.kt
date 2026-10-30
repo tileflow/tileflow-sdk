@@ -124,18 +124,20 @@ public class LocationIntegrationTest {
 
                     // A person dragging the map ends following and says so.
                     val down = SystemClock.uptimeMillis()
+                    val startX = map.width / 3f
+                    val dragWidth = map.width / 3f
                     fun send(action: Int, x: Float) {
                         val event =
-                            MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, 600f, 0)
+                            MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, map.height / 2f, 0)
                         map.dispatchTouchEvent(event)
                         event.recycle()
                     }
-                    send(MotionEvent.ACTION_DOWN, 300f)
+                    send(MotionEvent.ACTION_DOWN, startX)
                     for (step in 1..8) {
-                        send(MotionEvent.ACTION_MOVE, 300f + step * 30f)
+                        send(MotionEvent.ACTION_MOVE, startX + step * dragWidth / 8)
                         delay(16)
                     }
-                    send(MotionEvent.ACTION_UP, 540f)
+                    send(MotionEvent.ACTION_UP, startX + dragWidth)
                     waitFor("a gesture ended following") {
                         map.followMode == TileflowFollowMode.NONE
                     }

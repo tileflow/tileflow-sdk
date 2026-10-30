@@ -477,6 +477,8 @@ jobs:
           cores: 4
           ram-size: 4096M
           disk-size: 6000M
+          # Use the supported Mesa backend; swiftshader_indirect is deprecated by the emulator.
+          emulator-options: -no-window -gpu lavapipe -no-snapshot -noaudio -no-boot-anim
           # Camera, annotation and shot tests require motion; disabling it also requests reduced motion in WebView.
           disable-animations: false
           # Keep the Pixel 6 logical viewport while bounding software-GPU pixel work on hosted runners.

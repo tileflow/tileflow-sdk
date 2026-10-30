@@ -339,8 +339,8 @@ jobs:
         run: |
           set -euo pipefail
           # Hosted simulators crash their GPU process on WebGL draws (see IntegrationTests/README.md),
-          # so the rendering test runs on Mac Catalyst below; everything else runs on iOS WebKit.
-          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination "platform=iOS Simulator,id=$SIMULATOR_UDID,arch=arm64" -skip-testing:TileflowTests/MapIntegrationTests -resultBundlePath "$RUNNER_TEMP/TileflowSimulator.xcresult" | tee "$RUNNER_TEMP/swift-simulator-tests.log"
+          # so the rendering tests run on Mac Catalyst below; everything else runs on iOS WebKit.
+          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination "platform=iOS Simulator,id=$SIMULATOR_UDID,arch=arm64" -skip-testing:TileflowTests/MapIntegrationTests -skip-testing:TileflowTests/MapStyleIntegrationTests -resultBundlePath "$RUNNER_TEMP/TileflowSimulator.xcresult" | tee "$RUNNER_TEMP/swift-simulator-tests.log"
           ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-simulator-tests.log"
       - name: Test UIKit and WebKit rendering with Mac Catalyst
         run: |

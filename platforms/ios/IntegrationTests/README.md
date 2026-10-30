@@ -24,7 +24,8 @@ iPhone 17 simulator with iOS 26.5, which exercises iOS WebKit, the `tileflow:` s
 sessions and resource policy. Hosted iOS simulators crash their GPU process during WebGL draws on
 both ARM and Intel runners, with iOS 18.5 and 26 (rechecked with iOS 26.2 and 26.5 in October
 2026); the macOS 26 crash report identifies `SimMetalHost` inside `AppleParavirtGPUMetalIOGPUFamily`.
-The simulator run therefore skips only `MapIntegrationTests`, which draws the map.
+The simulator run therefore excludes `MapIntegrationTests` and `MapStyleIntegrationTests`,
+which draw the map, from its pass. Both run in full in the required Catalyst pass below.
 
 The complete suite, including map rendering, themes, content restoration and reloads, then runs
 with Mac Catalyst. Catalyst uses the same UIKit SDK sources and test files while rendering

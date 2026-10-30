@@ -49,7 +49,10 @@ export async function collectRuntimeNotices({inputs, packageRoot, repositoryRoot
         resolve(repositoryRoot, 'packages/core/THIRD_PARTY_NOTICES.md'),
         'utf8',
       );
-      const section = reviewed.split(`\n## PMTiles ${manifest.version}\n`)[1]?.split('\n## ')[0];
+      const section = reviewed
+        .replaceAll('\r\n', '\n')
+        .split(`\n## PMTiles ${manifest.version}\n`)[1]
+        ?.split('\n## ')[0];
       if (section?.trim()) texts.push(section.trim());
     }
     if (texts.length === 0)

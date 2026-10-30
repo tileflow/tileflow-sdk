@@ -36,7 +36,10 @@ test('PMTiles uses only its exact reviewed notice when the tarball omits the lic
   await writeFile(join(dependency, 'package.json'), JSON.stringify(manifest));
   await writeFile(
     join(core, 'THIRD_PARTY_NOTICES.md'),
-    '# Notices\n\n## PMTiles 4.5.0\n\nReviewed upstream license fixture\n\n## Another package\nOther notice\n',
+    '# Notices\n\n## PMTiles 4.5.0\n\nReviewed upstream license fixture\n\n## Another package\nOther notice\n'.replaceAll(
+      '\n',
+      '\r\n',
+    ),
   );
   const options = {inputs: ['index.js'], packageRoot: dependency, repositoryRoot: root};
   const result = await collectRuntimeNotices(options);

@@ -473,8 +473,8 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
-          # WebView rendering, software graphics and Android share the hosted runner's four CPUs.
-          cores: 4
+          # Leave two of the hosted runner's four CPUs for software graphics and host work.
+          cores: 2
           ram-size: 4096M
           disk-size: 6000M
           # Use the current software backend instead of the deprecated swiftshader_indirect mode.
@@ -486,6 +486,9 @@ jobs:
           script: |
             adb shell wm size 360x800
             adb shell wm density 140
+            adb shell settings put global window_animation_scale 0
+            adb shell settings put global transition_animation_scale 0
+            adb shell settings put global animator_duration_scale 1
             bash scripts/mobile-android-connected.sh ${{ matrix.webview }} ${{ matrix.arguments }}
       - name: Upload Android test results
         if: failure()

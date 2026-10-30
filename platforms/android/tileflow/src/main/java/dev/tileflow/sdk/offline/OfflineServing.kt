@@ -92,29 +92,44 @@ internal data class OfflineServingSnapshot(
 )
 
 /**
- * The process's view of stored regions for the transport. The store publishes it whenever a region
- * becomes available, changes or goes; a map reads it without waiting for the network.
+ * The process's view of stored regions for the transport. Each store publishes what it holds
+ * whenever a region becomes available, changes or goes, and maps see every store's regions; a map
+ * reads it without waiting for the network.
  */
 internal class OfflineServingIndex {
-    @Volatile private var state: OfflineServingSnapshot? = null
+    private val stores = java.util.IdentityHashMap<Any, OfflineServingSnapshot>()
+    @Volatile private var merged: OfflineServingSnapshot? = null
     private val published = CountDownLatch(1)
 
     /** Opens the store, which publishes; set once a store exists for the process. */
     @Volatile var open: (() -> Unit)? = null
 
-    fun publish(snapshot: OfflineServingSnapshot) {
-        state = snapshot
+    /** Replaces what [store] publishes. */
+    fun publish(snapshot: OfflineServingSnapshot, store: Any) {
+        synchronized(stores) {
+            stores[store] = snapshot
+            val paths = HashSet<String>()
+            val credits = HashMap<String, MutableList<OfflineCredit>>()
+            for (each in stores.values) {
+                paths.addAll(each.paths)
+                for ((scope, list) in each.credits) {
+                    val merged = credits.getOrPut(scope) { mutableListOf() }
+                    for (credit in list) if (merged.none { it.id == credit.id }) merged.add(credit)
+                }
+            }
+            merged = OfflineServingSnapshot(paths, credits)
+        }
         published.countDown()
     }
 
-    /** The current snapshot, once the store has read its records. Blocks a resource thread. */
+    /** The current snapshot, once a store has read its records. Blocks a resource thread. */
     fun snapshot(): OfflineServingSnapshot {
-        state?.let {
+        merged?.let {
             return it
         }
         open?.invoke()
         published.await(10, TimeUnit.SECONDS)
-        return state ?: OfflineServingSnapshot()
+        return merged ?: OfflineServingSnapshot()
     }
 
     fun serves(key: ResourceCacheKey): Boolean = key.relativePath in snapshot().paths

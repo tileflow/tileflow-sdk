@@ -237,7 +237,7 @@ struct OfflineDownloader: Sendable {
         if stored.count >= Self.batch { await flush() }
         if sinceCheck >= Self.spaceCheck {
           sinceCheck = 0
-          if let available = availableBytes(), available < reserveBytes {
+          if !OfflineStorage.hasRoom(reserveBytes, available: availableBytes, cache: cache) {
             record(.fail(TileflowOfflineError(.insufficientStorage)))
           }
         }

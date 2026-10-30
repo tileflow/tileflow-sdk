@@ -148,7 +148,8 @@ class OfflineServingTest {
     ): Triple<ResourceLoader, RecordingTransport, RecordingTransport> {
         val index = OfflineServingIndex()
         index.publish(
-            OfflineServingSnapshot(served.map { ResourceCacheKey(it, scope).relativePath }.toSet())
+            OfflineServingSnapshot(served.map { ResourceCacheKey(it, scope).relativePath }.toSet()),
+            this,
         )
         val fixture =
             JSONObject(

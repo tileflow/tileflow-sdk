@@ -118,7 +118,8 @@ final class OfflineServingTests: XCTestCase {
     let index = OfflineServingIndex()
     index.publish(
       OfflineServingSnapshot(
-        paths: Set(served.map { ResourceCacheKey(url: $0, scope: scope).relativePath })))
+        paths: Set(served.map { ResourceCacheKey(url: $0, scope: scope).relativePath })),
+      from: self)
     let fixture = try JSONDecoder().decode(
       JSONValue.self,
       from: Data(

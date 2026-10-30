@@ -128,7 +128,7 @@ actor OfflineStoreCore {
         snapshot.credits[scope] = merged
       }
     }
-    index.publish(snapshot)
+    index.publish(snapshot, from: self)
   }
 
   /// The regional credits of a Hosted version's packs, by the cache scope of their Map.
@@ -441,8 +441,9 @@ actor OfflineStoreCore {
         return
       }
       let needed = remaining.reduce(Int64(0)) { $0 + Int64($1.bytes ?? 0) }
-      if let available = dependencies.availableBytes(),
-        available < needed + dependencies.reserveBytes
+      if !OfflineStorage.hasRoom(
+        needed + dependencies.reserveBytes, available: dependencies.availableBytes,
+        cache: dependencies.cache)
       {
         return update(id) {
           $0.fail(.init(.insufficientStorage, context: .init(limit: Int(clamping: needed))))

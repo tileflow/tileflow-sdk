@@ -137,7 +137,8 @@ test(
 test(
   'captures an interactive wrapper map from a Webpack application through one server and no Tileflow listener',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
-  async () => {
+  async (t) => {
+    observeBrowserFailures(t);
     const fixture = await createFrameworkFixture('webpack');
     const outputDirectory = join(fixture.cwd, 'dist');
     await mkdir(outputDirectory);
@@ -185,7 +186,8 @@ test(
 test(
   'captures an interactive wrapper map from a Webpack publicPath through one server and no Tileflow listener',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
-  async () => {
+  async (t) => {
+    observeBrowserFailures(t);
     const fixture = await createFrameworkFixture('webpack', {basePath: '/app'});
     const outputDirectory = join(fixture.cwd, 'dist');
     await mkdir(outputDirectory);
@@ -355,7 +357,7 @@ export default defineMap({
   glyphs: {
     kind: 'url',
     url: 'https://fonts.example.test/{fontstack}/{range}.pbf',
-    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic']
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic', 'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']
   }
 });
 `;

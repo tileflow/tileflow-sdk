@@ -47,6 +47,8 @@ export const tileflowNativeStyleTransformationSchema = strictNativeObject({
   inputLayers: layerCountSchema,
   outputLayers: layerCountSchema,
   projection: z.enum(['none', 'mercator-to-implicit', 'globe-to-mercator']),
+  /** Present when preparation removed a browser sky, which Native does not draw. */
+  sky: z.literal('removed').optional(),
   layers: z.array(layerTransformationSchema).max(tileflowNativeProfileLimits.maximumLayers),
   symbolOverlap: z
     .array(symbolOverlapTransformationSchema)

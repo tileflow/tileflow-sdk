@@ -29,16 +29,13 @@ export type TileflowThemeMotionMap = {
   updateImage?: unknown;
 };
 
-type Point = {x: number; y: number};
 type CrossfadeMap = {
   areTilesLoaded(): boolean;
   getCanvas(): HTMLCanvasElement;
   isStyleLoaded(): boolean | void;
   off(event: string, listener: () => void): unknown;
   on(event: string, listener: () => void): unknown;
-  project(lngLat: unknown): Point;
   redraw(): unknown;
-  unproject(point: [number, number]): unknown;
 };
 
 /** A cover over the map while its style changes; see `beginTileflowStyleCrossfade`. */
@@ -57,8 +54,9 @@ const settleTimeoutMs = 10_000;
 
 /**
  * Covers the map with a snapshot of its current frame, before the caller changes the style. The
- * snapshot follows the camera with the projective transform of the ground plane, so it stays in
- * place while someone pans, zooms, rotates, or tilts. Returns undefined when the map or browser
+ * cover stays in the viewport and is removed when the camera moves. A frame contains curved
+ * surfaces, 3D geometry and screen-aligned labels; it cannot be warped as a ground plane.
+ * Returns undefined when the map or browser
  * cannot take the snapshot, or when `duration` is 0; the caller then changes the style directly.
  */
 export function beginTileflowStyleCrossfade(
@@ -102,32 +100,14 @@ export function beginTileflowStyleCrossfade(
   snapshot.dataset.tileflowThemeCrossfade = '';
   canvas.after(snapshot);
 
-  // Four points on the ground, below the horizon at any supported pitch.
-  const corners: [number, number][] = [
-    [width * 0.1, height * 0.45],
-    [width * 0.9, height * 0.45],
-    [width * 0.9, height * 0.9],
-    [width * 0.1, height * 0.9],
-  ];
-  const anchors = corners.map((corner) => map.unproject(corner));
-  const follow = () => {
-    const to = anchors.map((anchor) => map.project(anchor));
-    if (to.some((point) => !Number.isFinite(point.x) || !Number.isFinite(point.y))) return;
-    const matrix = homography(
-      corners,
-      to.map((point) => [point.x, point.y]),
-    );
-    if (matrix) snapshot.style.transform = matrix3d(matrix);
-  };
-  map.on('move', follow);
-
   let removed = false;
   const remove = () => {
     if (removed) return;
     removed = true;
-    map.off('move', follow);
+    map.off('move', remove);
     snapshot.remove();
   };
+  map.on('move', remove);
   const frame = (callback: () => void) => {
     if (typeof view.requestAnimationFrame === 'function') view.requestAnimationFrame(callback);
     else view.setTimeout(callback, 16);
@@ -505,8 +485,6 @@ function isCrossfadeMap(map: TileflowThemeMotionMap): map is TileflowThemeMotion
   return (
     typeof map.getCanvas === 'function' &&
     typeof map.redraw === 'function' &&
-    typeof map.project === 'function' &&
-    typeof map.unproject === 'function' &&
     typeof map.isStyleLoaded === 'function' &&
     typeof map.areTilesLoaded === 'function'
   );
@@ -535,40 +513,4 @@ export function prefersReducedMotion(view: {
 /** The browser window of a map, when it has one. */
 export function tileflowThemeMotionView(map: TileflowThemeMotionMap) {
   return viewOf(map);
-}
-
-/** The projective transform taking four points to four points, or undefined if degenerate. */
-export function homography(
-  from: readonly (readonly [number, number])[],
-  to: readonly (readonly [number, number])[],
-): number[] | undefined {
-  const rows: number[][] = [];
-  for (let index = 0; index < 4; index += 1) {
-    const [x, y] = from[index]!;
-    const [u, v] = to[index]!;
-    rows.push([x, y, 1, 0, 0, 0, -u * x, -u * y, u]);
-    rows.push([0, 0, 0, x, y, 1, -v * x, -v * y, v]);
-  }
-  for (let column = 0; column < 8; column += 1) {
-    let pivot = column;
-    for (let row = column + 1; row < 8; row += 1)
-      if (Math.abs(rows[row]![column]!) > Math.abs(rows[pivot]![column]!)) pivot = row;
-    if (Math.abs(rows[pivot]![column]!) < 1e-12) return undefined;
-    [rows[column], rows[pivot]] = [rows[pivot]!, rows[column]!];
-    for (let row = 0; row < 8; row += 1) {
-      if (row === column) continue;
-      const factor = rows[row]![column]! / rows[column]![column]!;
-      for (let k = column; k <= 8; k += 1) rows[row]![k]! -= factor * rows[column]![k]!;
-    }
-  }
-  return [...rows.map((row, index) => row[8]! / row[index]!), 1];
-}
-
-/** A homography as a CSS matrix3d, for transform-origin 0 0. */
-function matrix3d(matrix: number[]): string {
-  // Ten significant digits keep perspective terms exact enough and drop floating-point noise.
-  const [a, b, c, d, e, f, g, h, i] = matrix.map((value) =>
-    Math.abs(value) < 1e-12 ? 0 : Number(value.toPrecision(10)),
-  );
-  return `matrix3d(${a},${d},0,${g},${b},${e},0,${h},0,0,1,0,${c},${f},0,${i})`;
 }

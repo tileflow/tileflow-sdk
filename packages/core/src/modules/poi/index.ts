@@ -32,6 +32,9 @@ export type ResolvedPoiModuleOptions = {
   categories: readonly TileflowPoiCategory[];
   color: TileflowPoiColorMode;
   density: TileflowPoiDensity;
+  detailZoom: number;
+  densityByCategory: Partial<Record<TileflowPoiCategory, TileflowPoiDensity>>;
+  maxRankByType: NonNullable<TileflowPoiModuleConfig['maxRankByType']>;
   icons: boolean;
   labels: boolean;
   minZoom: number;
@@ -64,19 +67,22 @@ export function resolvePoi(request: TileflowPoiModuleConfig | undefined): Resolv
   return {
     categories: [...new Set(request?.categories ?? tileflowPoiCategories)],
     color: request?.color ?? 'uniform',
-    density: request?.density ?? 3,
+    density: request?.density ?? 2,
+    detailZoom: request?.detailZoom ?? 17,
+    densityByCategory: {...request?.densityByCategory},
+    maxRankByType: {...request?.maxRankByType},
     icons: request?.icons ?? true,
     labels: request?.labels ?? true,
     minZoom: request?.minZoom ?? 0,
     placement: {
-      coupleIconAndLabel: request?.placement?.coupleIconAndLabel ?? false,
+      coupleIconAndLabel: request?.placement?.coupleIconAndLabel ?? true,
       iconOnlyTypes: [...(request?.placement?.iconOnlyTypes ?? tileflowPoiIconOnlyTypes)],
       iconPadding: request?.placement?.iconPadding ?? 2,
       order: request?.placement?.order ?? 'importance',
       ...(request?.placement?.prominentRank === undefined
         ? {}
         : {prominentRank: request.placement.prominentRank}),
-      textPadding: request?.placement?.textPadding ?? 2,
+      textPadding: request?.placement?.textPadding ?? 3,
     },
   };
 }

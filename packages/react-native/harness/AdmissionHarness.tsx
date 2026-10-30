@@ -10,7 +10,8 @@ import {
 
 type Observation = Readonly<{
   map: 'first' | 'second';
-  kind: 'load' | 'readiness' | 'renderer-error' | 'source-error' | 'theme' | 'view';
+  kind:
+    'load' | 'readiness' | 'renderer-error' | 'session-error' | 'source-error' | 'theme' | 'view';
   status?: 'loading' | 'ready' | 'error';
 }>;
 type Slot = Readonly<{
@@ -119,12 +120,7 @@ export function createAdmissionHarness(input: {
                   report({map: slot.map, kind: 'readiness', status: event.status})
                 }
                 onThemeChange={() => report({map: slot.map, kind: 'theme'})}
-                onError={(event) =>
-                  report({
-                    map: slot.map,
-                    kind: event.type === 'source-error' ? 'source-error' : 'renderer-error',
-                  })
-                }
+                onError={(event) => report({map: slot.map, kind: event.type})}
               />
             );
           })}

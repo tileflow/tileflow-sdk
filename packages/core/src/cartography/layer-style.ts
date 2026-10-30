@@ -63,7 +63,8 @@ export function applyLineStyle<TLayer extends Layer>(
   const layout = {...asRecord(layer.layout)};
   setPaint(paint, 'line-blur', style.blur);
   setPaint(paint, 'line-color', style.color);
-  setPaint(paint, 'line-dasharray', style.dash);
+  // A solid dash still draws through the dash shader; a line without one is solid already.
+  if (!isSolidDash(style.dash)) setPaint(paint, 'line-dasharray', style.dash);
   setPaint(paint, 'line-gap-width', style.gapWidth);
   setPaint(paint, 'line-offset', style.offset);
   setPaint(paint, 'line-opacity', style.opacity);
@@ -378,6 +379,14 @@ export function withoutGovernedAllowOverlap(
     if (result[`${part}-overlap`] !== undefined) delete result[`${part}-allow-overlap`];
   }
   return result;
+}
+
+/** Whether a dash is the solid `[1, 0]`, as an array or a literal expression. */
+export function isSolidDash(value: unknown): boolean {
+  if (value === undefined) return false;
+  const dash = toMapLibreStyleValue(value as never) as unknown;
+  const array = Array.isArray(dash) && dash[0] === 'literal' ? dash[1] : dash;
+  return Array.isArray(array) && array.length === 2 && array[0] === 1 && array[1] === 0;
 }
 
 function setPaint(paint: Record<string, unknown>, property: string, value: unknown): void {

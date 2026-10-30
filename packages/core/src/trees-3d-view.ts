@@ -27,6 +27,9 @@ export function tileflowTreeView(camera: {
     reach,
     // Camera movement changes instance density, mesh selection and the per-tree fade.
     key: `${centre.join()}:${reach.join()}:${base}`,
+    // The same with the centre to a sixteenth of a tile, for a moving camera: its trees' shadows
+    // follow those changes at that pace, and exactly again once it stops.
+    movingKey: `${centre.map((value) => Math.round(value * 16) / 16).join()}:${reach.join()}:${base}`,
     tile(x: number, y: number): {level: TileflowTreeLevel; rank: number} | undefined {
       const [cx, cy] = centre;
       const distance =

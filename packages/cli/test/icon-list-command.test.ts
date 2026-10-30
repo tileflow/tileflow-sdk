@@ -7,11 +7,10 @@ import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {tileflowMapFixture} from './map-fixture';
 
-const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
 const cliNodeModules = fileURLToPath(new URL('../node_modules', import.meta.url));
-const tsxLoader = import.meta.resolve('tsx');
 const ambientApiKey = `tf_live_catalog_${'k'.repeat(40)}`;
 const sourceMarker = 'SOURCE_PIXELS_MUST_NOT_REACH_STDOUT';
 
@@ -289,7 +288,7 @@ function runCli(
   Object.assign(environment, overrides, {HOME: cwd, NO_COLOR: '1', USERPROFILE: cwd});
 
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', tsxLoader, cliEntry, ...arguments_], {
+    const child = spawn(process.execPath, cliFixtureArguments(arguments_), {
       cwd,
       env: environment,
       stdio: ['ignore', 'pipe', 'pipe'],

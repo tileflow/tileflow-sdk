@@ -99,7 +99,11 @@ test('public runtime is limited to Map while portable types and platform respons
     join(root, 'native-interaction-poi.ts'),
     join(root, 'native-interaction-owner.ts'),
   ]);
-  const rendererEntries = new Set([join(root, 'map.tsx'), join(root, 'native-marker.tsx')]);
+  const rendererEntries = new Set([
+    join(root, 'map.tsx'),
+    join(root, 'native-marker.tsx'),
+    join(root, 'native-boundary-feature-state.tsx'),
+  ]);
   for (const file of await sourceFiles(root)) {
     const content = await readFile(file, 'utf8');
     for (const specifier of imports(content)) {

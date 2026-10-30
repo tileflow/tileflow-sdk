@@ -378,7 +378,6 @@ export const baedeker = bindOfficialMapTheme(
       attribution: 'Terrain: <a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
       contours: {
         demMaxZoom: 12,
-        demUrl: 'https://tiles.mapterhorn.com/{z}/{x}/{y}.webp',
         index: {
           color: baedekerPalette.hachure,
           opacity: 0.5,

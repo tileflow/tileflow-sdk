@@ -36,7 +36,8 @@ test('session authority stays absent from the public Map contract and package ex
   assert.deepEqual(Object.keys(manifest.exports), ['.']);
   const sourceEntry = await readFile(new URL('src/index.ts', root), 'utf8');
   assert.match(sourceEntry, /export \{Map\} from ['"]\.\/map['"]/u);
-  assert.doesNotMatch(sourceEntry, /session|admission|HostedNative/iu);
+  // Safe session diagnostics are public; session and admission modules are not.
+  assert.doesNotMatch(sourceEntry, /from ['"]\.\/(?:session|native-admission)|HostedNative/iu);
   const declarations = await readFile(new URL('dist/index.d.ts', root), 'utf8');
   for (const name of ['HostedNativeSession', 'NativeSessionAuthority', 'X-Tileflow-Native-Grant']) {
     assert.equal(declarations.includes(name), false, name);

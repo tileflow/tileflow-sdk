@@ -66,33 +66,23 @@ export function tileflowRoadClassFilter(
   fields: {class: string; subclass: string},
   roadClass: TileflowRoadClass,
 ): unknown[] {
+  const classes = tileflowRoadClassValues(roadClass);
   if (isTileflowPathRoadClass(roadClass)) {
     return [
       'all',
-      ['match', ['get', fields.class], ['path', ...constructionClasses[roadClass]], true, false],
+      ['match', ['get', fields.class], classes, true, false],
       ['match', ['get', fields.subclass], pathSubclasses[roadClass], true, false],
     ];
   }
-
-  const classes =
-    roadClass === 'minor'
-      ? [
-          'minor',
-          'residential',
-          'unclassified',
-          ...(compatibleRoadClasses[roadClass] ?? []),
-          ...constructionClasses[roadClass],
-        ]
-      : roadClass === 'service'
-        ? [
-            'service',
-            ...(compatibleRoadClasses[roadClass] ?? []),
-            ...constructionClasses[roadClass],
-          ]
-        : [
-            roadClass,
-            ...(compatibleRoadClasses[roadClass] ?? []),
-            ...constructionClasses[roadClass],
-          ];
   return ['match', ['get', fields.class], classes, true, false];
+}
+
+/** The values of the `class` field a road class draws. */
+export function tileflowRoadClassValues(roadClass: TileflowRoadClass): string[] {
+  if (isTileflowPathRoadClass(roadClass)) return ['path', ...constructionClasses[roadClass]];
+  return [
+    ...(roadClass === 'minor' ? ['minor', 'residential', 'unclassified'] : [roadClass]),
+    ...(compatibleRoadClasses[roadClass] ?? []),
+    ...constructionClasses[roadClass],
+  ];
 }

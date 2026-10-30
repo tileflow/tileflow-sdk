@@ -168,26 +168,36 @@ fails with `TF_BOUNDARY_CHOROPLETH_JOIN`.
 
 In React, `useBoundaryFeatureState(map, values, options)` from `@tileflow/react` keeps
 feature-state equal to `values`; see the
-[React README](https://github.com/tileflow/tileflow-sdk/blob/main/packages/react/README.md).
+[React README](https://github.com/tileflow/tileflow-sdk/blob/main/packages/react/README.md). In
+React Native, the `Map` prop `boundaryFeatureState={{values, labels, state}}` does the same with
+the same rows and options; see the
+[React Native README](https://github.com/tileflow/tileflow-sdk/blob/main/packages/react-native/README.md).
 
 ## Join by codes the polygons do not carry
 
-Rows keyed by `iso_3166_2`, `nuts` or `wikidata`, or keyed by `ref` while feature-state uses
-registry IDs, go through the release's lookup table, `boundaries-lookup.csv.gz`, with one row per
-area and class. Decompress it and parse it with `parseBoundaryLookupCsv`; `joinBoundaryRows`
-then re-keys the rows:
+Rows keyed by `iso_3166_1` or `ref` need no table: the polygons carry both codes, and a map that
+promotes `ref` can set feature-state by official code directly. Rows keyed by `iso_3166_2`, `nuts`
+or `wikidata`, or keyed by `ref` while feature-state uses registry IDs, go through the release's
+lookup table.
+
+The table is split by class, one gzip CSV per class with one row per area of that class:
+`boundaries-lookup-country.csv.gz`, `boundaries-lookup-region.csv.gz`, and so on for every class.
+The Boundaries TileJSON lists their URLs under `tileflow.boundaries.lookup.classes`, by class, and
+the description of the table under `tileflow.boundaries.lookup.manifest`. Fine classes cover many
+areas worldwide, so join where the data is prepared, on a server or at build time, and send the
+application the joined rows, keyed by `id` or `ref`. Parse a file with `parseBoundaryLookupCsv`;
+`joinBoundaryRows` then re-keys the rows:
 
 <!-- docs:check -->
 
 ```ts
+import {readFile} from 'node:fs/promises';
+import {gunzipSync} from 'node:zlib';
 import {createBoundaryLookup, joinBoundaryRows, parseBoundaryLookupCsv} from '@tileflow/core';
 
-export async function regionsByNuts(csvGzipUrl: string, rows: {nuts: string; value: number}[]) {
-  const response = await fetch(csvGzipUrl);
-  if (!response.ok || !response.body) throw new Error(`Lookup table failed: ${response.status}`);
-  const text = await new Response(
-    response.body.pipeThrough(new DecompressionStream('gzip')),
-  ).text();
+// A downloaded `boundaries-lookup-region.csv.gz`, read where the data is prepared.
+export async function regionsByNuts(lookupFile: string, rows: {nuts: string; value: number}[]) {
+  const text = gunzipSync(await readFile(lookupFile)).toString('utf8');
   const lookup = createBoundaryLookup(parseBoundaryLookupCsv(text));
   const joined = joinBoundaryRows(
     rows.map(({nuts, value}) => ({key: nuts, value})),
@@ -197,6 +207,9 @@ export async function regionsByNuts(csvGzipUrl: string, rows: {nuts: string; val
   return joined;
 }
 ```
+
+Rows from several classes join against one lookup built from the rows of each class file. Lookup
+downloads are web delivery, counted like stored tiles; a native app does not download them.
 
 The result has the same `{joinBy, rows}` shape that `values` and `set` accept, keyed by `id` or,
 with `to: 'ref'`, by `ref`. It also lists the keys it could not use:

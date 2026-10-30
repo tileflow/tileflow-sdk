@@ -19,10 +19,11 @@ import {
 } from 'react';
 import {AppState, findNodeHandle, View} from 'react-native';
 import type {TileflowAnnotation} from '@tileflow/interactions';
-import type {MapProps} from './contract';
+import type {MapBoundaryFeatureState, MapProps} from './contract';
 import type {MapMarkerRenderer} from './interaction-contract';
 import {createMapLifecycle} from './map-lifecycle';
 import type {NativeInteractionHost} from './mounted-map-interactions';
+import {NativeBoundaryFeatureState} from './native-boundary-feature-state';
 import {NativeAnnotationMarker} from './native-marker';
 import {createNativeMapOwner, retireNativeMapOwner} from './native-runtime';
 
@@ -39,6 +40,7 @@ function NativeScene<TAnnotation extends TileflowAnnotation>({
   interactions,
   interactionEnabled,
   renderMarker,
+  boundaryFeatureState,
 }: {
   scene: Scene;
   lifecycle: Lifecycle;
@@ -47,6 +49,7 @@ function NativeScene<TAnnotation extends TileflowAnnotation>({
   interactions: Snapshot['interactions'];
   interactionEnabled: boolean;
   renderMarker?: MapMarkerRenderer<TAnnotation>;
+  boundaryFeatureState?: MapBoundaryFeatureState;
 }): ReactElement {
   const view = useRef<View | null>(null);
   const camera = useRef<NativeCameraRef | null>(null);
@@ -56,6 +59,10 @@ function NativeScene<TAnnotation extends TileflowAnnotation>({
   const laidOut = useRef(false);
   const styleLoaded = useRef(false);
   const attachRequested = useRef(false);
+  // The style whose load MapLibre last reported; a newly committed style is loading until then.
+  const latestStyle = useRef(scene.style);
+  latestStyle.current = scene.style;
+  const [loadedStyle, setLoadedStyle] = useState<Scene['style'] | undefined>(undefined);
   const host = useMemo<NativeInteractionHost>(() => {
     const value: NativeInteractionHost = Object.freeze({
       key: scene.key,
@@ -149,6 +156,7 @@ function NativeScene<TAnnotation extends TileflowAnnotation>({
         onDidFinishLoadingStyle={() => {
           // This wakes the private adapter only. A JS callback is not readiness evidence.
           styleLoaded.current = true;
+          setLoadedStyle(latestStyle.current);
           attach();
         }}
       >
@@ -174,6 +182,14 @@ function NativeScene<TAnnotation extends TileflowAnnotation>({
             ) : null;
           })}
         </Fragment>
+        {boundaryFeatureState ? (
+          <NativeBoundaryFeatureState
+            key="tileflow-boundary-feature-state"
+            input={boundaryFeatureState}
+            style={scene.style}
+            loaded={loadedStyle === scene.style}
+          />
+        ) : null}
         {children}
       </NativeMap>
     </View>
@@ -192,9 +208,11 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     lifecycle.getSnapshot,
     lifecycle.getSnapshot,
   );
-  useImperativeHandle(props.ref, () => Object.freeze({getSourceState: lifecycle.getSourceState}), [
-    lifecycle,
-  ]);
+  useImperativeHandle(
+    props.ref,
+    () => Object.freeze({getSourceState: lifecycle.getSourceState, retry: lifecycle.retry}),
+    [lifecycle],
+  );
 
   useLayoutEffect(() => {
     const unmount = lifecycle.mount();
@@ -224,6 +242,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           interactions={snapshot.interactions}
           interactionEnabled={snapshot.interactionEnabled === true}
           renderMarker={props.renderMarker}
+          boundaryFeatureState={props.boundaryFeatureState}
         >
           {props.children}
         </NativeScene>

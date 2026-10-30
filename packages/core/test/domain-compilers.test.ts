@@ -865,14 +865,13 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
     false,
   );
   assert.equal((primary.layer.paint as Record<string, unknown>)['text-color'], '#112233');
-  // Both categories share one icon layer and one label layer, so World's ranks order them
-  // together; each category keeps its own label color.
+  // Coupled categories share one layer and importance order, retaining their label colors.
   assert.deepEqual(
     poiContributions.map((entry) => entry.layer.id),
-    ['tileflow-poi-icon', 'tileflow-poi-label'],
+    ['tileflow-poi'],
   );
   assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /filter_rank/);
-  assert.match(JSON.stringify(poiContributions[1]?.layer.filter), /size_rank/);
+  assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /size_rank/);
   assert.deepEqual((poiContributions[0]?.layer.filter as unknown[])[1], [
     'match',
     ['get', 'category'],
@@ -886,7 +885,7 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
     ['to-number', ['get', 'filter_rank'], 6],
     ['+', ['step', ['zoom'], 0, 16, 1, 17, 2], 3],
   ]);
-  assert.deepEqual((poiContributions[1]?.layer.paint as Record<string, unknown>)['text-color'], [
+  assert.deepEqual((poiContributions[0]?.layer.paint as Record<string, unknown>)['text-color'], [
     'match',
     ['get', 'category'],
     'transport',
@@ -1194,24 +1193,14 @@ test('road names, shields and junctions draw above ground layers under every col
     }
   }
 
-  // MapLibre places the top of the stack first. Balanced road names, then route
-  // references, still yield to every other label; navigation-priority road
-  // names outrank route references and every other label but places.
-  const labelOrder = (collisionPriority: 'balanced' | 'navigation') =>
-    layerIds(collisionPriority)
-      .filter((id) => id.startsWith('tileflow-label-'))
-      .map((id) => (isRoadName(id) ? 'road' : routeReferences.includes(id) ? 'route' : id));
-  const collapse = (order: string[]) => order.filter((id, index) => id !== order[index - 1]);
-  assert.deepEqual(collapse(labelOrder('balanced')).slice(0, 3), [
-    'road',
-    'route',
-    'tileflow-label-water-ocean',
-  ]);
-  assert.deepEqual(collapse(labelOrder('navigation')).slice(0, 2), [
-    'route',
-    'tileflow-label-water-ocean',
-  ]);
-  assert.ok(collapse(labelOrder('navigation')).indexOf('road') > 2);
+  // Route references and place names preserve orientation in both collision policies.
+  for (const policy of ['balanced', 'navigation'] as const) {
+    const ids = layerIds(policy);
+    for (const ref of routeReferences) {
+      assert.ok(ids.indexOf(ref) > ids.indexOf('tileflow-label-road-primary'));
+      assert.ok(ids.indexOf(ref) < ids.indexOf('tileflow-label-place-city'));
+    }
+  }
 });
 
 test('generic OpenMapTiles degrades road shields to one neutral detail layer', () => {
@@ -1251,7 +1240,13 @@ test('generic OpenMapTiles degrades road shields to one neutral detail layer', (
 
 test('POI numeric density and coupling change emitted layers', () => {
   const uncoupled = compilePoi(
-    poi({categories: ['food-drink'], density: 5, icons: true, labels: true}),
+    poi({
+      categories: ['food-drink'],
+      density: 5,
+      icons: true,
+      labels: true,
+      placement: {coupleIconAndLabel: false},
+    }),
     context,
   );
   const coupled = compilePoi(

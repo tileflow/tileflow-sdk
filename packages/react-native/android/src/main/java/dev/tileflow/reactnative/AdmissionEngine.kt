@@ -155,8 +155,10 @@ internal class AdmissionEngine(
 			work = item
 			context.work[item.id] = item
 			item.timer = scheduler.after(AdmissionLimits.WAIT_MS) {
-				if (context.batch?.tickets?.contains(item.id) == true) retire(context.id)
-				else fail(item)
+				// A slow renewal fails only this request. JavaScript still answers its batch, and the
+				// batch deadline alone retires a context whose JavaScript stopped answering.
+				if (context.batch?.tickets?.contains(item.id) == true) event(context, "cancel", mapOf("tickets" to listOf(item.id)))
+				fail(item)
 			}
 			scheduler.dispatch { drain(context) }
 		}

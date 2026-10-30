@@ -1,16 +1,22 @@
 import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
-import {tileflowAtmosphereMetadataKey} from '../atmosphere';
-import {compileTileflowSky, resolveTileflowAtmosphere} from '../atmosphere-compile';
+import {tileflowAtmosphereMetadataKey, tileflowAtmosphereMetadataVersion} from '../atmosphere';
+import {
+  compileTileflowSky,
+  compileTileflowStreetSky,
+  resolveTileflowAtmosphere,
+  resolveTileflowSky,
+} from '../atmosphere-compile';
+import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../boundary-areas/compile';
 import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
 import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
-import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../boundary-areas/compile';
-import {type ResolvedMarine, resolveMarine} from '../marine';
+import {type ResolvedMarine, resolveMarine, tileflowNauticalV1Schema} from '../marine';
 import {buildingTargetsOfOtherModes} from '../modules/buildings/compiler';
 import {tileflowNauticalNotice} from '../modules/nautical';
-import {type TileflowMapNotice, tileflowNoticesMetadataKey} from '../notices';
 import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
+import {declareTileflowNauticalLights, tileflowNauticalLightsMetadataKey} from '../nautical-lights';
+import {type TileflowMapNotice, tileflowNoticesMetadataKey} from '../notices';
 import {
   insertTileflowOverlays,
   resolveTileflowHostedSources,
@@ -22,6 +28,13 @@ import {
   tileflowRouteMetadata,
   tileflowRouteMetadataKey,
 } from '../route-inks';
+import {
+  type TileflowResolvedSky,
+  type TileflowSkyColours,
+  type TileflowSkyMetadata,
+  tileflowSkyMetadataKey,
+  type TileflowSkyTimesOfDay,
+} from '../sky';
 import {tileflowStreetLightsMetadata, tileflowStreetLightsMetadataKey} from '../street-lights';
 import {tileflowSunMetadata, tileflowSunMetadataKey} from '../sun';
 import {compileTerrainContributions, resolveTerrain} from '../terrain';
@@ -612,9 +625,20 @@ function compileSemanticStyleInternal(
   }
 
   const atmosphere = resolveTileflowAtmosphere(config.atmosphere);
+  // A declared sky paints the sky at every zoom; it takes over the globe atmosphere's sky colours.
+  const sky = resolveTileflowSky(config.sky);
   const notices = compiledNotices(layers, marine);
+  const nauticalLights = declareTileflowNauticalLights(
+    layers,
+    marine?.nautical?.sourceId,
+    tileflowNauticalV1Schema.layers.lights,
+  );
   const style: MapLibreStyle = {
-    ...(atmosphere ? {sky: compileTileflowSky(atmosphere)} : {}),
+    ...(sky
+      ? {sky: compileTileflowStreetSky(sky, Boolean(atmosphere))}
+      : atmosphere
+        ? {sky: compileTileflowSky(atmosphere)}
+        : {}),
     version: 8,
     name: config.name ?? 'Streets',
     ...(glyphs ? {glyphs} : {}),
@@ -638,7 +662,15 @@ function compileSemanticStyleInternal(
               : {}),
           }
         : {}),
-      ...(atmosphere ? {[tileflowAtmosphereMetadataKey]: {version: 1, ...atmosphere}} : {}),
+      ...(atmosphere
+        ? {
+            [tileflowAtmosphereMetadataKey]: {
+              version: tileflowAtmosphereMetadataVersion,
+              ...atmosphere,
+            },
+          }
+        : {}),
+      ...(sky ? {[tileflowSkyMetadataKey]: skyMetadata(input, selected.name, sky)} : {}),
       'tileflow:theme': selected.name,
       'tileflow:colorScheme': resolvedTheme.colorScheme,
       [tileflowRouteMetadataKey]: tileflowRouteMetadata(resolveTileflowRouteInks(resolvedTheme)),
@@ -685,6 +717,7 @@ function compileSemanticStyleInternal(
         .sort(),
       ...(config.view ? {'tileflow:view': config.view} : {}),
       ...(notices.length > 0 ? {[tileflowNoticesMetadataKey]: notices} : {}),
+      ...(nauticalLights ? {[tileflowNauticalLightsMetadataKey]: nauticalLights} : {}),
     },
   };
   const report: TileflowCompilationReport = {
@@ -1067,4 +1100,49 @@ function compareCodeUnits(left: string, right: string): number {
 
 function semanticReportKey(...parts: readonly string[]): string {
   return parts.join('\u0000');
+}
+
+/**
+ * The sky's runtime payload. A theme in a time-of-day family also carries the family's skies,
+ * each resolved against its own theme's tokens, so a sun an application places brings the sky of
+ * its hour in the family's own palette.
+ */
+function skyMetadata(
+  input: ResolvedTileflowMap,
+  themeName: string,
+  sky: TileflowResolvedSky,
+): TileflowSkyMetadata {
+  const family = Object.values(input.timeOfDay ?? {}).find((moments) =>
+    Object.values(moments).includes(themeName),
+  );
+  const colours = (name: string | undefined): TileflowSkyColours | undefined => {
+    const theme = name === undefined ? undefined : input.themes[name];
+    if (!theme) return undefined;
+    const resolved = resolveTileflowSky(
+      resolveThemeValues({sky: input.sky}, theme, `map.${input.id}.themes.${name}`).sky,
+    );
+    return resolved
+      ? {
+          color: resolved.color,
+          horizonColor: resolved.horizonColor,
+          horizonBlend: resolved.horizonBlend,
+          glowColor: resolved.glowColor,
+        }
+      : undefined;
+  };
+  const day = colours(family?.day);
+  const night = colours(family?.night);
+  const dawn = colours(family?.dawn);
+  const dusk = colours(family?.dusk);
+  // A family with one twilight lends it to both ends of the day.
+  const timesOfDay: TileflowSkyTimesOfDay | undefined =
+    day && night && (dawn ?? dusk)
+      ? {day, night, dawn: (dawn ?? dusk)!, dusk: (dusk ?? dawn)!}
+      : undefined;
+  return {
+    version: 1,
+    starIntensity: sky.starIntensity,
+    glowColor: sky.glowColor,
+    ...(timesOfDay ? {timesOfDay} : {}),
+  };
 }

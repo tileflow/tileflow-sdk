@@ -1,6 +1,6 @@
 # Map design diagnostics
 
-Open **Diagnostics** in Map DevTools to investigate a map's rules, visual resources and current-view
+Open **Diagnostics** in Inspector to investigate a map's rules, visual resources and current-view
 composition. The list groups findings under **Readability**, **Style**, **Assets** and **Performance**.
 **Problem** means a confirmed configuration or resource failure. **Review** means an observed
 situation may be intentional. Counts refer to grouped findings, not quality scores.

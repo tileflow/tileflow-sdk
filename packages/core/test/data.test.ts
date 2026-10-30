@@ -291,6 +291,8 @@ test('defines and validates the required Tileflow World V1 surface extensions', 
   assert.equal(worldV1.layers.sidewalk, 'sidewalk');
   assert.equal(worldV1.layers.streetFurniture, 'street_furniture');
   assert.equal(worldV1.layers.roadShield, 'transportation_shield');
+  assert.equal(worldV1.layers.transportationOutline, 'transportation_outline');
+  assert.equal(generic.layers.transportationOutline, undefined);
   assert.equal(worldV1.fields.bathymetryMinDepth, 'min_depth');
   assert.equal(worldV1.fields.bathymetrySortKey, 'sort_key');
   assert.equal(worldV1.fields.importanceTier, 'importance_tier');
@@ -321,6 +323,7 @@ test('defines and validates the required Tileflow World V1 surface extensions', 
     'Tileflow World V1 requires transportation.',
     'Tileflow World V1 requires transportation_name.',
     'Tileflow World V1 requires transportation_shield.',
+    'Tileflow World V1 requires transportation_outline.',
   ]);
   assert.equal(
     tileflowWorldV1Schema({capabilities: {globalLandcover: false}}).layers.globalLandcover,
@@ -417,6 +420,17 @@ test('fails closed on malformed or duplicate Tileflow World V1 detail capabiliti
     'Tileflow World V1 requires String category on poi.',
     'Tileflow World V1 requires Number filter_rank on poi.',
     'Tileflow World V1 requires Number min_zoom on poi.',
+  ]);
+
+  const malformedOutline = validWorldV1VectorLayers();
+  malformedOutline[9] = {
+    ...malformedOutline[9]!,
+    minzoom: 14,
+    fields: {...malformedOutline[9]!.fields, class: 'Number'},
+  };
+  assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: malformedOutline}), [
+    'Tileflow World V1 transportation_outline must declare native z13-z15.',
+    'Tileflow World V1 requires String class on transportation_outline.',
   ]);
 
   const duplicate = validWorldV1VectorLayers();
@@ -643,6 +657,17 @@ function validWorldV1VectorLayers(): Array<{
         min_zoom: 'Number',
         size_rank: 'Number',
         type: 'String',
+      },
+    },
+    {
+      id: 'transportation_outline',
+      minzoom: 13,
+      maxzoom: 15,
+      fields: {
+        brunnel: 'String',
+        class: 'String',
+        subclass: 'String',
+        underground: 'Boolean',
       },
     },
   ];

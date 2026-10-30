@@ -66,7 +66,7 @@ Omitted fields inherit, but declaring a field does not imply a recursive merge:
   Spread the parent's list explicitly when composing contributors. Later contributors win for an
   exact icon ID.
 - `fonts` and `glyphs` are mutually exclusive text providers. Declaring either replaces the inherited
-  provider. `atmosphere`, `data`, `projection`, `terrain`, and `marine` are also atomic.
+  provider. `atmosphere`, `data`, `projection`, `sky`, `terrain`, and `marine` are also atomic.
 
 Identity (`id`, `name`, `version`) and tooling `scenes` and `shots` belong to the leaf map and do not inherit.
 Module object order does not determine rendering order. See the
@@ -138,8 +138,7 @@ export default defineMap({
 `system` is a runtime selection policy, not a stored theme. Builds, captures, static scenes, and
 receipts must use a concrete theme such as `light` or `dark`.
 
-Every theme of a map shares one structure, so a browser map can cross-fade or blend themes on one
-MapLibre instance without extra requests. See
+Theme and `timeOfDay` changes animate over 450 ms by default, respecting reduced motion. See
 [theme transitions, time-of-day presets and blends](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/theme-transitions-and-blends.md).
 The same controller can make chosen modules recede and the map's labels fade so an application's
 own content reads first; see [map emphasis](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/map-emphasis.md).
@@ -157,7 +156,7 @@ A theme can describe its sun and sky light (`lighting.sun`, `lighting.ambient`);
 returns the sun the map shows with `getSun()`, mixed during a blend, for an application's own 3D
 layers, and `setSun()` places it by direction or by the real sun of a date and place; see
 [sun and light](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/sun-and-light.md).
-`createTileflowBuildings3D` enables worker-meshed buildings fading in at zoom 15–15.25, with scene
+`createTileflowBuildings3D` enables worker-meshed buildings rising in at zoom 15–15.3, with scene
 sun, cast/contact shadows and 0.8 m rounded corners. Each effect is independently overridable. See
 [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md).
 Street lights default to off, including in Streets. Set `roads.streetLights.enabled: true` and mount
@@ -165,6 +164,9 @@ Street lights default to off, including in Streets. Set `roads.streetLights.enab
 [street lights](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-lights.md).
 `createTileflowVegetation` controls all trees using the map's `3d`, `flat` or `auto` policy; see
 [vegetation controls and 3D trees](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/trees-3d.md).
+
+POI icons and names place together; `placement.coupleIconAndLabel: false` separates them.
+See [rank limits](docs/cartographic-defaults.md).
 
 The semantic domains are `land`, `water`, `nautical`, `roads`, `buildings`, `boundaries`, `labels`,
 `poi`, `aeroways`, `transit`, `vegetation`, `addresses`, and `landforms`. Style stable geographic
@@ -239,8 +241,8 @@ Tileflow World is the hosted primary source. `vectorTiles()` with `openMapTiles(
 external local/self-hosted data; hosted eligibility is separate. `hostedTileset()`, `boundaryAreas`
 and semantic overlays add named sources. Local PMTiles inputs are tooling-only.
 
-`bathymetry({vectorLayers: {...}})` declares compatible contour/name layers. `marine: 'nautical'`
-adds navigation marks and a "Not for navigation" notice.
+`bathymetry({vectorLayers: {...}})` declares contour/name layers. `marine: 'nautical'` adds
+navigation marks, flashing lights, and a "Not for navigation" notice.
 
 World attribution links to Tileflow's source notice, OpenMapTiles, and OpenStreetMap. External
 vector data retains the attribution supplied by its owner.
@@ -252,12 +254,12 @@ tooling prepare browser resources; direct MapLibre integrations must register re
 before loading a style. See the
 [browser runtime contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/framework-browser-runtime.md).
 
-Set `projection: 'globe'` and `atmosphere: true` in `tileflow.config.ts` for a blue globe rim,
-space background, and stars. Use `atmosphere: false` to disable an inherited atmosphere, or an
-options object for theme-aware colors and bounded star brightness/motion. Frameworks and capture
-apply it; direct MapLibre integrations call `attachTileflowAtmosphere(map)` from
-`@tileflow/core/browser`. See
-[globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md).
+With `projection: 'globe'`, `atmosphere: true` adds a halo and stars; an object configures colors, star count and size.
+`sky` follows the sun at street level. Frameworks and capture attach both; direct
+MapLibre consumers call `attachTileflowAtmosphere(map)` from `@tileflow/core/browser`.
+See
+[globe atmosphere](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/globe-atmosphere.md)
+and [street sky](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/street-sky.md).
 
 Applications that need the map's data themselves, such as streets to route over or the place
 under the camera, read chosen layers of a vector source for an area at a fixed zoom with
@@ -268,11 +270,10 @@ In a 3D scene, `createTileflowDepthMarkers` from `@tileflow/core/browser` draws 
 that nearer buildings hide, facing the viewer or lying on the ground. See
 [depth markers](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/depth-markers.md).
 
-A map with text must declare exactly one text provider. Streets, Soundings,
-and Blueprint use URL glyph providers. Baedeker, 1777, and Siegfried use packaged Cormorant
-fonts, and Cívica uses its packaged lettering. Hosted deployment currently rejects
-package/local font bundles; use self-hosted output or explicitly replace the provider with compatible
-public glyphs. Tile URLs and font providers do not establish redistribution rights.
+Text requires exactly one provider. Soundings and Blueprint use URL glyphs; Streets packages DINish
+and Noto Sans; Baedeker, 1777 and Siegfried package Cormorant; Cívica packages its lettering. Hosted
+rejects packaged/local fonts: self-host or replace them with compatible public glyphs. Tile and font
+URLs do not grant redistribution rights.
 
 ## Reference
 

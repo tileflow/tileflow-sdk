@@ -1,11 +1,14 @@
 import {modelEmitterGeometry} from './models-3d-emitters';
 import {type TileflowModelMaterial, tileflowModelTextureChannels} from './models-3d-materials';
 import type {TileflowModelBytes, TileflowModelLevelBytes} from './models-3d-model';
-import {tileflowModelAttributes, tileflowModelSurfaceAttributes} from './models-3d-shaders';
+import {tileflowModelAttributes} from './models-3d-shaders';
 
 export type TileflowModelImages = readonly (readonly ImageBitmap[])[];
 export type TileflowModelSurfaceBuffers = {
-  vbo: WebGLBuffer;
+  /** The surface attributes that differ from vertex to vertex, when any does. */
+  vbo?: WebGLBuffer;
+  /** By surface attribute, the value every vertex shares, set before drawing, or undefined. */
+  shared: readonly (Float32Array | undefined)[];
   textures: WebGLTexture[];
   emitters: ReturnType<typeof modelEmitterGeometry>[];
   centres: Float32Array;
@@ -61,21 +64,41 @@ export function uploadModelSurface(
   images: readonly ImageBitmap[],
 ): TileflowModelSurfaceBuffers | undefined {
   if (!level.surface) return undefined;
-  const vbo = gl.createBuffer()!;
-  gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-  gl.bufferData(gl.ARRAY_BUFFER, level.surface.attributes, gl.STATIC_DRAW);
-  for (const [
-    index,
-    [, size, type, normalised, offset],
-  ] of tileflowModelSurfaceAttributes.entries()) {
+  // A value every vertex shares is not uploaded: its attribute stays off, and drawing sets it.
+  const streams = [level.surface.uv, level.surface.rgba];
+  const shared = streams.map((stream) => (stream.length === 4 ? stream : undefined));
+  const bytes = streams.reduce(
+    (sum, stream) => sum + (stream.length > 4 ? stream.byteLength : 0),
+    0,
+  );
+  let vbo: WebGLBuffer | undefined;
+  if (bytes > 0) {
+    vbo = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, bytes, gl.STATIC_DRAW);
+  }
+  let offset = 0;
+  for (const [index, stream] of streams.entries()) {
     const location = index + tileflowModelAttributes.length;
+    if (stream.length === 4) {
+      gl.disableVertexAttribArray(location);
+      continue;
+    }
+    gl.bufferSubData(gl.ARRAY_BUFFER, offset, stream);
     gl.enableVertexAttribArray(location);
-    gl.vertexAttribPointer(location, size, gl[type], normalised, 32, offset);
+    gl.vertexAttribPointer(location, 4, gl.FLOAT, false, 16, offset);
+    offset += stream.byteLength;
   }
   const flip = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL) as boolean;
   const premultiply = gl.getParameter(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL) as boolean;
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  // Occlusion reads only red: a texture no other channel uses takes one byte a texel.
+  const coloured = new Set<number>();
+  for (const material of level.surface.materials)
+    for (const channel of tileflowModelTextureChannels)
+      if (channel !== 'occlusionTexture' && material[channel])
+        coloured.add(material[channel].texture);
   try {
     const textures = level.surface.textures.map((source, index) => {
       const texture = gl.createTexture()!;
@@ -85,7 +108,9 @@ export function uploadModelSurface(
       const min = source.minFilter ?? gl.LINEAR_MIPMAP_LINEAR;
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, min);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, source.magFilter ?? gl.LINEAR);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, images[index]!);
+      if (coloured.has(index))
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, images[index]!);
+      else gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8, gl.RED, gl.UNSIGNED_BYTE, images[index]!);
       if (min >= gl.NEAREST_MIPMAP_NEAREST) gl.generateMipmap(gl.TEXTURE_2D);
       return texture;
     });
@@ -108,7 +133,8 @@ export function uploadModelSurface(
       );
     }
     return {
-      vbo,
+      ...(vbo ? {vbo} : {}),
+      shared,
       textures,
       centres,
       emitters: (level.surface.emitters ?? []).map(modelEmitterGeometry),
@@ -117,6 +143,15 @@ export function uploadModelSurface(
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flip);
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, premultiply);
   }
+}
+
+/** Sets the surface attributes every vertex of a level shares; drawing the level reads them. */
+export function bindModelSurfaceShared(
+  gl: WebGL2RenderingContext,
+  buffers: TileflowModelSurfaceBuffers,
+): void {
+  for (const [index, value] of buffers.shared.entries())
+    if (value) gl.vertexAttrib4fv(index + tileflowModelAttributes.length, value);
 }
 
 /** The same alpha and texture bindings serve the colour and solar-shadow programs. */

@@ -4,12 +4,16 @@ export const nativeBootstrapLimits = Object.freeze({
   queueDepth: 32,
   requestBytes: 2048,
   responseBytes: 65536,
-  timeoutMs: 30000,
+  retryAfterCharacters: 64,
+  // Well inside the 30 s ticket and batch deadlines.
+  timeoutMs: 10000,
 });
 
 export type NativeBootstrapReply = Readonly<{
   status: number;
   cacheControl: string;
+  /** Empty when the response had none. */
+  retryAfter?: string;
   bodyBase64: string;
 }>;
 

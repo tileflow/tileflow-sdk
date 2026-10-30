@@ -1,6 +1,7 @@
 export {Map} from './map';
 export type {
   MapBaseProps,
+  MapBoundaryFeatureState,
   MapCameraProps,
   MapColorScheme,
   MapErrorEvent,
@@ -13,6 +14,7 @@ export type {
   MapReadinessChangeEvent,
   MapRef,
   MapSelection,
+  MapSessionError,
   MapSource,
   MapSourceError,
   MapSourceProps,

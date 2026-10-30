@@ -160,16 +160,25 @@ texture's marks remain approximately constant in screen pixels across classes, r
 
 `classes.pedestrian` styles line-like pedestrian ways. Polygon pedestrian plazas are a distinct
 geometry and use `areas.pedestrian`, including optional fill opacity, outline color, or sprite
-pattern. This prevents plazas from degrading into a thin polygon outline.
+pattern. This prevents plazas from degrading into a thin polygon outline. With a
+`transportationOutline` binding, as in Tileflow World, area outlines stroke only the outer boundary
+of each area, never its holes.
 
 Road treatments refine a class without creating another class or exposing source fields.
 `construction`, `expressway`, `indoor`, `official`, `ramp`, and `unpaved` live under `modifiers`;
 general, bicycle, foot, horse, and toll restrictions live under `restrictions`; `alley`,
 `crossover`, `driveway`, `parkingAisle`, and `yard` live under `serviceTypes`; and exact
-mountain-bike difficulty values live under `mountainBike`. Treatments reuse
+mountain-bike difficulty values, which apply to paths and tracks, live under `mountainBike`. Treatments reuse
 surface/tunnel/bridge and casing/fill/shadow paint controls, plus a relative `widthScale`. The
 compiler emits feature-driven paint expressions inside the existing stable class layers rather
 than multiplying every possible combination.
+
+A solid dash, `[1, 0]`, is emitted as no `line-dasharray` at all, so MapLibre draws the line with
+its solid-line shader rather than its dash shader. A treatment's dash that depends on the road
+class is settled for each class layer: a dash for construction paths leaves a motorway's layers
+solid. Roundabout rings state their road widths at each zoom as numbers where the widths allow,
+and name the feature conditions they repeat once with `let`, which keeps their style compact and
+quick to validate.
 
 Road names, shields, and motorway junctions remain label concerns:
 

@@ -2,8 +2,10 @@ import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  addresses,
   buildings,
   createStyle,
+  createStyleResult,
   defineMap,
   disable,
   labels,
@@ -21,6 +23,7 @@ import {
   withRenderStack,
 } from '../src';
 import {compileRenderStack} from '../src/cartography/render-stack';
+import {compileAddresses} from '../src/modules/addresses/compiler';
 import {compileBuildings} from '../src/modules/buildings/compiler';
 import {resolveLabels} from '../src/modules/labels';
 import {compileLabels} from '../src/modules/labels/compiler';
@@ -89,6 +92,7 @@ test('a thematic map can place park tint above mapped details using existing tar
 
 test('road placement keeps foreground behavior by default and moves only street names', () => {
   assert.equal(resolveLabels(labels()).roadPlacement, 'foreground');
+  assert.equal(resolveLabels(labels()).roads, 'streets');
   for (const roadPlacement of ['foreground', 'ground'] as const) {
     const names = compileLabels(
       labels({roadPlacement, collisionPriority: 'navigation'}),
@@ -110,6 +114,10 @@ test('road placement keeps foreground behavior by default and moves only street 
     assert.equal(layout['text-pitch-alignment'], roadPlacement === 'ground' ? 'map' : undefined);
     assert.equal(layout['text-allow-overlap'], false);
     assert.deepEqual(
+      (layers[street]!.metadata as Record<string, unknown>)?.['tileflow:road-label-placement'],
+      roadPlacement === 'ground' ? {version: 1, mode: 'ground'} : undefined,
+    );
+    assert.deepEqual(
       validateStyleMin({
         version: 8,
         glyphs: 'https://example.test/fonts/{fontstack}/{range}.pbf',
@@ -119,6 +127,16 @@ test('road placement keeps foreground behavior by default and moves only street 
       [],
     );
   }
+});
+
+test('flat building footprints cannot clip ground street names', () => {
+  const layers = assembleTileflowLayers([
+    ...compileLabels(labels({roadPlacement: 'ground'}), roads(), context),
+    ...compileBuildings(buildings({mode: '2d'}), context),
+  ]);
+  const street = indexOf(layers, 'tileflow-label-road-primary');
+  assert.ok(street > indexOf(layers, 'tileflow-buildings-fill'));
+  assert.ok(street > indexOf(layers, 'tileflow-buildings-fill-outline'));
 });
 
 test('ground names retain language, class hierarchy, filters, and authored text overrides', () => {
@@ -179,6 +197,13 @@ test('explicit render refinements override ground placement and the public schem
   assert.ok(
     indexOf(moved, 'tileflow-label-road-primary') > indexOf(moved, 'tileflow-buildings-fill'),
   );
+  assert.equal(
+    (moved[indexOf(moved, 'tileflow-label-road-primary')]!.metadata as Record<string, unknown>)?.[
+      'tileflow:road-label-placement'
+    ],
+    undefined,
+    'explicit placement must not be overridden by the browser controller',
+  );
   const map = extendStreets({modules: {labels: labels({roadPlacement: 'ground'}), poi: disable()}});
   assert.equal(parseTileflowMap(map).modules.labels?.roadPlacement, 'ground');
   assert.ok(createStyle(map).layers.length > 0);
@@ -213,4 +238,71 @@ test('explicit render refinements override ground placement and the public schem
       }),
     ),
   );
+});
+
+test('balanced labels retain orientation and street detail before house numbers', () => {
+  for (const collisionPriority of ['balanced', 'navigation'] as const) {
+    const compiled = assembleTileflowLayers([
+      ...compileLabels(labels({roads: 'all', collisionPriority}), roads({detail: 'all'}), context),
+      ...compilePoi(poi({categories: ['food-drink']}), context),
+      ...compileAddresses(undefined, context),
+    ]);
+    const at = (id: string) => indexOf(compiled, id);
+    const destination = at('tileflow-poi');
+    assert.ok(at('tileflow-label-place-city') > destination);
+    assert.ok(at('tileflow-label-road-shield-detail') > destination);
+    assert.ok(at('tileflow-label-road-primary') > destination);
+    for (const roadClass of ['secondary', 'tertiary']) {
+      const road = at(`tileflow-label-road-${roadClass}`);
+      assert.ok(road > destination);
+      assert.equal(compiled[road]!.minzoom, 13, 'priority must retain zoom eligibility');
+    }
+    assert.equal(at('tileflow-label-road-minor') > destination, collisionPriority === 'navigation');
+    assert.ok(at('tileflow-label-road-minor') > at('tileflow-addresses-labels'));
+    assert.ok(destination > at('tileflow-addresses-labels'));
+  }
+});
+
+test('default POIs place icon and name together, with an explicit independent alternative', () => {
+  const combined = compilePoi(poi({categories: ['food-drink']}), context);
+  assert.equal(combined.length, 1);
+  const layout = combined[0]!.layer.layout as Record<string, unknown>;
+  assert.equal(layout['icon-optional'], false);
+  assert.equal(layout['text-optional'], false);
+  assert.equal(layout['text-padding'], 3);
+  assert.deepEqual(layout['text-variable-anchor'], ['top', 'bottom', 'right', 'left']);
+  const independent = compilePoi(
+    poi({categories: ['food-drink'], placement: {coupleIconAndLabel: false}}),
+    context,
+  );
+  assert.equal(independent.length, 2);
+  assert.ok(independent.some(({layer}) => layer.layout?.['text-field'] === undefined));
+  assert.ok(independent.some(({layer}) => layer.layout?.['icon-image'] === undefined));
+});
+
+test('physical planning retains the default hierarchy across merged road classes', () => {
+  const result = createStyleResult(
+    extendStreets({
+      modules: {
+        labels: labels({roads: 'all'}),
+        roads: roads({detail: 'all'}),
+        poi: poi({categories: ['food-drink']}),
+        addresses: addresses(),
+      },
+    }),
+    {inspection: true, preparedAssets: {icons: {ids: ['food'], sprite: '/tileflow/test/sprite'}}},
+  );
+  assert.ok(result.ok, JSON.stringify(result.diagnostics));
+  if (!result.ok) return;
+  const at = (target: string) => {
+    const layer = result.report.provenance!.layers.find(({contributions}) =>
+      contributions.some((entry) => entry.target === target),
+    );
+    assert.ok(layer, target);
+    return indexOf(result.style.layers, layer.id);
+  };
+  assert.ok(at('labels.places.city') > at('poi'));
+  assert.ok(at('labels.roads.primary') > at('poi'));
+  assert.ok(at('poi') > at('labels.roads.minor'));
+  assert.ok(at('labels.roads.minor') > at('addresses.labels'));
 });

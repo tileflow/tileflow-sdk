@@ -785,6 +785,34 @@ test('the map audit covers modules, terrain, and typed expression outputs', () =
   );
 });
 
+test('keyed colour collections carry theme intent under keys of their own', () => {
+  const audit = (modelColors: unknown) =>
+    auditTileflowMapThemeValues({modules: {buildings: {threeDimensional: {modelColors}}}}).map(
+      ({category, path, severity, value}) => ({category, path, severity, value}),
+    );
+  const path = 'modules.buildings.threeDimensional.modelColors.glass';
+
+  assert.deepEqual(audit({glass: token.color('surface.water')}), []);
+  assert.deepEqual(audit({glass: fixed('#AFCBE2', {reason: 'Surveyed glazing tint'})}), []);
+  assert.deepEqual(audit({glass: '#AFCBE2'}), [
+    {category: 'color', path, severity: 'error', value: '#AFCBE2'},
+  ]);
+  assert.deepEqual(audit({glass: token.number('quiet')}), [
+    {category: 'color', path, severity: 'error', value: 'quiet'},
+  ]);
+
+  const resolved = resolveThemeValues(
+    {
+      modules: {
+        buildings: {threeDimensional: {modelColors: {glass: token.color('surface.water')}}},
+      },
+    },
+    testLightTheme,
+    'map.test',
+  );
+  assert.equal(resolved.modules.buildings.threeDimensional.modelColors.glass, '#A9D3F5');
+});
+
 test('data schema remaps stay structural when semantic field names resemble visual properties', () => {
   assert.deepEqual(
     auditTileflowMapThemeValues({
@@ -826,6 +854,7 @@ test('POI color strategy stays structural while nested POI paint remains theme-a
 test('the visual classifier shares plural, MapLibre, numeric, and structural semantics', () => {
   assert.equal(classifyTileflowVisualProperty('broadleafColors'), 'color');
   assert.equal(classifyTileflowVisualProperty('colors'), 'color');
+  assert.equal(classifyTileflowVisualProperty('modelColors'), 'color');
   assert.equal(classifyTileflowVisualProperty('text-font'), 'font');
   assert.equal(classifyTileflowVisualProperty('fill-pattern'), 'image');
   assert.equal(classifyTileflowVisualProperty('opacity', 0.5), 'number');

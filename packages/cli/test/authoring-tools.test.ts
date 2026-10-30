@@ -4,7 +4,6 @@ import {mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
-import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import {PNG} from 'pngjs';
 import {
@@ -13,15 +12,14 @@ import {
   type TileflowCapture,
 } from '@tileflow/capture';
 import {normalizeTileflowCaptureScene, serializeCanonicalJson, sha256Hex} from '@tileflow/core';
+import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {captureRecordDirectory, readCaptureRecord, saveCaptureRecord} from '../src/capture-record';
 import {boundJson, selectJsonPointer} from '../src/query-output';
 
-const cli = fileURLToPath(new URL('../src/index.ts', import.meta.url));
-const loader = import.meta.resolve('tsx');
 async function run(args: string[], cwd?: string) {
   try {
     return {
-      ...(await promisify(execFile)(process.execPath, ['--import', loader, cli, ...args], {cwd})),
+      ...(await promisify(execFile)(process.execPath, cliFixtureArguments(args), {cwd})),
       code: 0,
     };
   } catch (error) {

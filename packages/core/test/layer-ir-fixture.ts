@@ -49,11 +49,15 @@ export function assembleTileflowLayers(
 }
 
 /** Test-only physical view used to retain MapLibre expression-equivalence assertions. */
-export function planTileflowLayers(input: readonly Layer[]): Layer[] {
+export function planTileflowLayers(input: readonly Layer[], roadGrouping?: 'network'): Layer[] {
   const originalByKey = new Map(input.map((layer) => [layer.id, layer]));
-  const families = input.map((layer, index) =>
-    createTileflowLayerFamilyIR(toContribution(layer, index)),
-  );
+  const families = input.map((layer, index) => {
+    const contribution = toContribution(layer, index);
+    if (roadGrouping && contribution.family?.kind === 'road-label') {
+      contribution.family = {...contribution.family, variant: roadGrouping};
+    }
+    return createTileflowLayerFamilyIR(contribution);
+  });
   const planned = planTileflowLayerFamilies(families);
   const fixtureIds = fixturePhysicalIds(input.map(toContribution));
   return lowerTileflowDomainIR(planned, fallbackData, fixtureIds).layers.map((layer) => {

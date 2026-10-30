@@ -12,7 +12,7 @@ import {
 import {launchTileflowCaptureBrowser} from '../src/browser';
 
 test(
-  'ground contact uses a smooth union, preserves GL state and resizes its mask',
+  'ground contact uses a smooth union, leaves a known GL state and resizes its mask',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1'},
   async () => {
     const mesh = meshTileflowBuildings(
@@ -42,12 +42,8 @@ test(
           // Execute the production helpers, with the segment bytes supplied by the production mesher.
           const helpers = new Function(
             '__name',
-            'buildingContactSegments',
             `return {mask: (${maskSource})(), vao: ${vaoSource}}`,
-          )(
-            (fn: unknown) => fn,
-            (bytes: number[] | null) => new Uint8Array(bytes ?? segments),
-          );
+          )((fn: unknown) => fn);
           const mask = helpers.mask as ReturnType<typeof createBuildingContactMask>;
           const shader = (type: number, source: string) => {
             const value = gl.createShader(type)!;
@@ -69,8 +65,9 @@ test(
           gl.uniform1f(gl.getUniformLocation(program, 'u_zoom'), 1);
           gl.uniform1f(gl.getUniformLocation(program, 'u_band'), defaults.ground);
           gl.uniform1f(gl.getUniformLocation(program, 'u_band_strength'), defaults.groundStrength);
-          let buffers = helpers.vao(gl, null) as ReturnType<typeof createBuildingContactVao>;
-          gl.bindVertexArray(buffers.vao);
+          let buffers = helpers.vao(gl, new Uint8Array(segments)) as ReturnType<
+            typeof createBuildingContactVao
+          >;
           gl.enable(gl.BLEND);
           gl.enable(gl.DEPTH_TEST);
           gl.enable(gl.CULL_FACE);
@@ -78,23 +75,22 @@ test(
           gl.enable(gl.SCISSOR_TEST);
           gl.clearColor(0.2, 0.4, 0.6, 0.8);
           gl.blendEquationSeparate(gl.FUNC_ADD, gl.FUNC_REVERSE_SUBTRACT);
+          // The mask reads no GL state back: it leaves the map's framebuffer bound with the default
+          // blend equation, and MapLibre restores the rest of its state after a prerender.
           const state = () => [
             gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING),
-            ...[gl.DEPTH_TEST, gl.CULL_FACE, gl.STENCIL_TEST, gl.SCISSOR_TEST].map((cap) =>
-              gl.isEnabled(cap),
-            ),
             gl.getParameter(gl.BLEND_EQUATION_RGB),
             gl.getParameter(gl.BLEND_EQUATION_ALPHA),
-            ...gl.getParameter(gl.COLOR_CLEAR_VALUE),
           ];
-          const before = state();
+          const known = JSON.stringify([null, gl.FUNC_ADD, gl.FUNC_ADD]);
           let restored = true;
           const read = (copies: number, width = 128) => {
             const texture = mask.render(gl, () => {
+              gl.bindVertexArray(buffers.vao);
               for (let index = 0; index < copies; index++)
                 gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, buffers.count);
             });
-            restored &&= JSON.stringify(state()) === JSON.stringify(before);
+            restored &&= JSON.stringify(state()) === known;
             const reader = gl.createFramebuffer()!;
             gl.bindFramebuffer(gl.READ_FRAMEBUFFER, reader);
             gl.framebufferTexture2D(
@@ -123,8 +119,7 @@ test(
               );
               bytes[index * 16 + 13] = cuts;
             });
-            buffers = helpers.vao(gl, [...bytes]);
-            gl.bindVertexArray(buffers.vao);
+            buffers = helpers.vao(gl, bytes);
             return read(1);
           };
           const continuous = renderSegments([[1500, 2000, 6500, 6000]]);
@@ -158,7 +153,7 @@ test(
           } catch {
             threw = true;
           }
-          restored &&= JSON.stringify(state()) === JSON.stringify(before);
+          restored &&= JSON.stringify(state()) === known;
           canvas.width = 160;
           gl.viewport(0, 0, 160, 128);
           const resized = read(1, 160);
@@ -202,7 +197,11 @@ test(
         result.raised.every((pixel) => pixel === 255),
         'raised parts must not shade the ground',
       );
-      assert.equal(result.restored, true, 'mask drawing must preserve the map render state');
+      assert.equal(
+        result.restored,
+        true,
+        'mask drawing must leave the map framebuffer and default blend equation',
+      );
       assert.equal(result.threw, true);
       assert.ok(Math.min(...result.single) >= 214, 'contact strength must stay bounded at corners');
       for (const [index, zoom] of result.zooms.entries()) {

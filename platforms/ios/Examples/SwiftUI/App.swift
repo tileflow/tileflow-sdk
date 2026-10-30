@@ -38,7 +38,11 @@ struct MapScreen: View {
         switch event {
         case .contentReady: status = "Tileflow · SwiftUI"
         case .failed(let error): status = "Map unavailable: \(error)"
-        case .tap: status = "Map selected"
+        case .tap(let touch):
+          Task {
+            let selected = try? await ClusterExample.tap(at: touch.point, on: controller)
+            status = selected ?? "Map selected"
+          }
         case .longPress(let touch):
           status = String(
             format: "Held at %.4f, %.4f", touch.coordinate.latitude, touch.coordinate.longitude)
@@ -89,6 +93,17 @@ struct MapScreen: View {
               } catch {
                 status = "Directions unavailable"
               }
+            }
+          }
+        }
+        Button("Show 100,000 places") {
+          Task {
+            do {
+              try await ClusterExample.show(on: controller, around: TileflowCoordinate(longitude: Self.start.longitude, latitude: Self.start.latitude))
+              withAnimation { camera.zoom = 10 }
+              status = "Tap a cluster to zoom in"
+            } catch {
+              status = "Places unavailable"
             }
           }
         }

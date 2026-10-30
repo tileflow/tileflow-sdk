@@ -47,6 +47,21 @@ internal object ProtocolContract {
         STOP_ANIMATION("stopAnimation"),
         UPDATE_LOCATION("updateLocation"),
         SET_FOLLOW_MODE("setFollowMode"),
+        ADD_SOURCE("addSource"),
+        REMOVE_SOURCE("removeSource"),
+        SET_GEO_JSON_SOURCE_DATA("setGeoJSONSourceData"),
+        UPDATE_GEO_JSON_SOURCE("updateGeoJSONSource"),
+        ADD_LAYER("addLayer"),
+        UPDATE_LAYER("updateLayer"),
+        MOVE_LAYER("moveLayer"),
+        REMOVE_LAYER("removeLayer"),
+        SET_FEATURE_STATE("setFeatureState"),
+        GET_FEATURE_STATE("getFeatureState"),
+        REMOVE_FEATURE_STATE("removeFeatureState"),
+        QUERY_RENDERED_FEATURES("queryRenderedFeatures"),
+        QUERY_SOURCE_FEATURES("querySourceFeatures"),
+        QUERY_CLUSTER("queryCluster"),
+        READ_RESULT("readResult"),
         DISPOSE("dispose"),
     }
 
@@ -91,6 +106,7 @@ internal object ProtocolContract {
         SCENE("scene"),
         INVALID_IMAGE("invalidImage"),
         UNKNOWN_LAYER("unknownLayer"),
+        UNKNOWN_SOURCE("unknownSource"),
     }
 
     /** Error codes the renderer may send. Any other code from the renderer is a protocol fault. */

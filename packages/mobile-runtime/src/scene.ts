@@ -304,6 +304,7 @@ export function createMapScene(input: SceneInput) {
         const digest = JSON.stringify([
           image.data.sha256,
           image.pixelRatio,
+          image.sdf,
           variants.map(([theme, sha256]) => [theme, sha256]),
         ]);
         return {image, base, variants, digest};
@@ -327,6 +328,7 @@ export function createMapScene(input: SceneInput) {
             width: base.width,
             height: base.height,
             pixelRatio: image.pixelRatio,
+            ...(image.sdf ? {sdf: true} : {}),
             render: ({theme}) => (byTheme.get(theme) ?? base).pixels,
           });
         } catch (error) {

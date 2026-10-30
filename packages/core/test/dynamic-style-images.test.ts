@@ -4,7 +4,7 @@ import {createTileflowThemeController} from '../src/browser';
 import type {MapLibreStyle} from '../src/types';
 
 type Pixels = {width: number; height: number; data: Uint8Array};
-type Image = {data: Pixels; pixelRatio: number};
+type Image = {data: Pixels; pixelRatio: number; sdf?: boolean};
 type Listener = (event?: unknown) => void;
 
 class ImageMap {
@@ -54,7 +54,7 @@ class ImageMap {
   getImage(id: string) {
     return this.images.get(id);
   }
-  addImage(id: string, pixels: Pixels, options: {pixelRatio: number}) {
+  addImage(id: string, pixels: Pixels, options: {pixelRatio: number; sdf?: boolean}) {
     assert.ok(!this.images.has(id));
     this.adds.push(id);
     this.images.set(id, {data: structuredClone(pixels), ...options});
@@ -109,6 +109,17 @@ test('registration preserves dimensions, DPR and map structure before the first 
   image.dispose();
   image.dispose();
   assert.deepEqual(map.removals, ['alert']);
+});
+
+test('a signed distance field image is added as one, across style changes', async () => {
+  const map = new ImageMap();
+  const controller = controllerFor(map);
+  controller.registerImage('pin', {...definition, sdf: true});
+  assert.equal(map.getImage('pin')?.sdf, true);
+  await controller.setTheme({theme: 'night', style: {version: 8, sources: {}, layers: []}});
+  assert.equal(map.getImage('pin')?.sdf, true);
+  controller.registerImage('plain', definition);
+  assert.equal(map.getImage('plain')?.sdf, undefined);
 });
 
 test('state dependencies coalesce, read the latest value and skip identical state', async () => {

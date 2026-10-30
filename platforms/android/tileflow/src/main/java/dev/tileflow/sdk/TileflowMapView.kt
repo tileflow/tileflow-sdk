@@ -82,6 +82,10 @@ constructor(
     internal val scene = SceneState()
     /** Calls waiting for an animation of the current renderer to end. */
     internal val animations = AnimationWaiters()
+    /** The application's runtime style, given again to each new renderer. */
+    internal val runtimeStyle = RuntimeStyle()
+    /** The application images the scene holds. */
+    internal var images: List<TileflowMapImage> = emptyList()
 
     private var appearance: Pair<ProtocolContract.Method, JSONObject>? = null
     private var content = MapContent()
@@ -1174,6 +1178,7 @@ constructor(
                                     ?.takeIf { it.second != startingRequest }
                                     ?.let { move(it.first) }
                                 replayScene(readyBridge)
+                                replayStyle(readyBridge)
                                 replayLocation(readyBridge)
                                 if (!rendererVisible)
                                     readyBridge.call(

@@ -288,12 +288,16 @@ public struct TileflowMapImage: Sendable {
   public let name: String
   /// Physical pixels per point.
   public let pixelRatio: Double
+  /// Whether the image is a signed distance field, which symbol layers recolour with
+  /// `iconColor` and `iconHaloColor`.
+  public let sdf: Bool
   let data: Data
   let variants: [String: Data]
 
   /// A PNG or JPEG image and its variants by theme name, each the same size in pixels.
   public init(
-    name: String, data: Data, pixelRatio: Double = 1, variants: [String: Data] = [:]
+    name: String, data: Data, pixelRatio: Double = 1, variants: [String: Data] = [:],
+    sdf: Bool = false
   ) throws {
     guard HostedContract.matches(name, #"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"#),
       (1...4).contains(pixelRatio), !data.isEmpty,
@@ -307,12 +311,15 @@ public struct TileflowMapImage: Sendable {
     }
     self.name = name
     self.pixelRatio = pixelRatio
+    self.sdf = sdf
     self.data = data
     self.variants = variants
   }
 
   /// An image at its own scale, and variants by theme name.
-  public init(name: String, image: UIImage, variants: [String: UIImage] = [:]) throws {
+  public init(
+    name: String, image: UIImage, variants: [String: UIImage] = [:], sdf: Bool = false
+  ) throws {
     guard let data = image.pngData() else { throw TileflowMapError.invalidRequest }
     var encoded: [String: Data] = [:]
     for (theme, variant) in variants {
@@ -320,7 +327,8 @@ public struct TileflowMapImage: Sendable {
       encoded[theme] = bytes
     }
     try self.init(
-      name: name, data: data, pixelRatio: min(4, max(1, Double(image.scale))), variants: encoded)
+      name: name, data: data, pixelRatio: min(4, max(1, Double(image.scale))), variants: encoded,
+      sdf: sdf)
   }
 }
 

@@ -49,7 +49,13 @@ const runtime = createMobileMapRuntime({
   platform: host.platform,
   send: (event, result) => send({...envelope, event, result}),
 });
-const dispatcher = createDispatcher({...host, version, execute: runtime.execute, send});
+const dispatcher = createDispatcher({
+  ...host,
+  version,
+  execute: runtime.execute,
+  readPayload: runtime.readPayload,
+  send,
+});
 window.tileflow = {
   receive: (message) => {
     void dispatcher.receive(message);

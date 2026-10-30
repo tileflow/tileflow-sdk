@@ -249,7 +249,7 @@ extension TileflowMapView {
 
   /// Replaces the application's images. Unchanged images are neither sent nor decoded again.
   public func setImages(_ images: [TileflowMapImage]) async throws {
-    guard images.count <= 32, Set(images.map(\.name)).count == images.count else {
+    guard images.count <= 64, Set(images.map(\.name)).count == images.count else {
       throw TileflowMapError.invalidRequest
     }
     let payloads = images.flatMap { [$0.data] + $0.variants.values }
@@ -261,34 +261,43 @@ extension TileflowMapView {
       throw TileflowMapError(
         .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataTotalBytes)
     }
-    try await sendScene(
-      SceneCommand(.setImages) { channel, _ in
-        var references: [DataChannel.Reference] = []
-        do {
-          let register = { (bytes: Data) throws -> JSONValue in
-            let reference = try channel.register(
-              bytes, digest: DataChannel.digest(bytes), contentType: "application/octet-stream")
-            references.append(reference)
-            return reference.wireValue
-          }
-          let value = try images.map { image -> JSONValue in
-            var entry: [String: JSONValue] = [
-              "name": .string(image.name), "data": try register(image.data),
-              "pixelRatio": .number(image.pixelRatio),
-            ]
-            if !image.variants.isEmpty {
-              entry["variants"] = .object(
-                try image.variants.mapValues { try register($0) })
+    let previousImages = self.images
+    self.images = images
+    do {
+      try await sendScene(
+        SceneCommand(.setImages) { channel, _ in
+          var references: [DataChannel.Reference] = []
+          do {
+            let register = { (bytes: Data) throws -> JSONValue in
+              let reference = try channel.register(
+                bytes, digest: DataChannel.digest(bytes), contentType: "application/octet-stream")
+              references.append(reference)
+              return reference.wireValue
             }
-            return .object(entry)
+            let value = try images.map { image -> JSONValue in
+              var entry: [String: JSONValue] = [
+                "name": .string(image.name), "data": try register(image.data),
+                "pixelRatio": .number(image.pixelRatio),
+              ]
+              if image.sdf { entry["sdf"] = .bool(true) }
+              if !image.variants.isEmpty {
+                entry["variants"] = .object(
+                  try image.variants.mapValues { try register($0) })
+              }
+              return .object(entry)
+            }
+            return (.object(["images": .array(value)]), references)
+          } catch {
+            channel.release(references)
+            throw error
           }
-          return (.object(["images": .array(value)]), references)
-        } catch {
-          channel.release(references)
-          throw error
-        }
-      },
-      keep: { $0.images = $1 })
+        },
+        keep: { $0.images = $1 })
+    } catch let error as TileflowMapError where error == .invalidRequest {
+      // A refused request is not kept, as the scene does not keep it.
+      self.images = previousImages
+      throw error
+    }
   }
 
   /// Replaces the markers drawn in the map's 3D scene. Each names an image passed with

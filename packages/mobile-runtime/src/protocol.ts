@@ -16,6 +16,7 @@ import {
 } from './location-contract';
 import {protocol} from './contract';
 import {creditSchema} from './credits';
+import {type DataReference, dataReferenceSchema} from './data';
 import {ProtocolError, type WireError} from './errors';
 import {
   animationIdentifier,
@@ -29,6 +30,22 @@ import {
   sunRequestSchema,
   viewModeRequestSchema,
 } from './scene-contract';
+import {
+  addLayerSchema,
+  addSourceSchema,
+  getFeatureStateSchema,
+  moveLayerSchema,
+  queryClusterSchema,
+  queryRenderedFeaturesSchema,
+  querySourceFeaturesSchema,
+  removeFeatureStateSchema,
+  removeLayerSchema,
+  removeSourceSchema,
+  setFeatureStateSchema,
+  setGeoJSONSourceDataSchema,
+  updateGeoJSONSourceSchema,
+  updateLayerSchema,
+} from './style-contract';
 
 export {protocol};
 export {
@@ -203,6 +220,27 @@ const commandSchema = z.discriminatedUnion('method', [
   }),
   z.strictObject({method: z.literal('updateLocation'), payload: locationUpdateSchema}),
   z.strictObject({method: z.literal('setFollowMode'), payload: followRequestSchema}),
+  z.strictObject({method: z.literal('addSource'), payload: addSourceSchema}),
+  z.strictObject({method: z.literal('removeSource'), payload: removeSourceSchema}),
+  z.strictObject({method: z.literal('setGeoJSONSourceData'), payload: setGeoJSONSourceDataSchema}),
+  z.strictObject({method: z.literal('updateGeoJSONSource'), payload: updateGeoJSONSourceSchema}),
+  z.strictObject({method: z.literal('addLayer'), payload: addLayerSchema}),
+  z.strictObject({method: z.literal('updateLayer'), payload: updateLayerSchema}),
+  z.strictObject({method: z.literal('moveLayer'), payload: moveLayerSchema}),
+  z.strictObject({method: z.literal('removeLayer'), payload: removeLayerSchema}),
+  z.strictObject({method: z.literal('setFeatureState'), payload: setFeatureStateSchema}),
+  z.strictObject({method: z.literal('getFeatureState'), payload: getFeatureStateSchema}),
+  z.strictObject({method: z.literal('removeFeatureState'), payload: removeFeatureStateSchema}),
+  z.strictObject({
+    method: z.literal('queryRenderedFeatures'),
+    payload: queryRenderedFeaturesSchema,
+  }),
+  z.strictObject({method: z.literal('querySourceFeatures'), payload: querySourceFeaturesSchema}),
+  z.strictObject({method: z.literal('queryCluster'), payload: queryClusterSchema}),
+  z.strictObject({
+    method: z.literal('readResult'),
+    payload: z.strictObject({requestId, index: z.number().int().min(0).max(4096)}),
+  }),
   z.strictObject({method: z.literal('dispose'), payload: z.null()}),
 ]);
 export type Command = z.infer<typeof commandSchema>;
@@ -219,6 +257,17 @@ const identitySchema = z.object({
 });
 const envelopeSchema = z.strictObject({...identitySchema.shape, command: commandSchema});
 export type Request = z.infer<typeof envelopeSchema>;
+/**
+ * A request whose payload exceeds a control message: the host registers the payload's JSON on the
+ * data channel and the renderer reads it before it checks the command.
+ */
+const deferredEnvelopeSchema = z.strictObject({
+  ...identitySchema.shape,
+  command: z.strictObject({
+    method: z.enum(protocol.methods),
+    payloadData: dataReferenceSchema,
+  }),
+});
 export type Output = Readonly<{
   protocolVersion: number;
   instanceId: string;
@@ -226,8 +275,26 @@ export type Output = Readonly<{
   requestId?: string;
   event?: EventName;
   result?: unknown;
+  /** A result larger than a control message, which the host reads in this many `readResult` parts. */
+  chunks?: number;
   error?: WireError;
 }>;
+
+/** UTF-16 code units per result part: escaped as JSON, a part stays under a control message. */
+export const resultChunkUnits = 16_384;
+
+/** Splits JSON text into parts that never divide a surrogate pair. */
+export function chunkText(text: string, units = resultChunkUnits): string[] {
+  const chunks: string[] = [];
+  for (let start = 0; start < text.length;) {
+    let end = Math.min(text.length, start + units);
+    const last = text.charCodeAt(end - 1);
+    if (end < text.length && last >= 0xd800 && last <= 0xdbff) end -= 1;
+    chunks.push(text.slice(start, end));
+    start = end;
+  }
+  return chunks;
+}
 
 /**
  * The highest version both sides support, or undefined. The runtime is embedded and versions
@@ -282,8 +349,12 @@ export function createDispatcher(input: {
   version: number | undefined;
   execute: (command: Command, signal: AbortSignal) => Promise<unknown>;
   send: (output: Output) => void;
+  /** Reads and parses a payload the host sent on the data channel. */
+  readPayload?: (reference: DataReference, signal: AbortSignal) => Promise<unknown>;
 }) {
   const active = new Map<string, AbortController>();
+  // Results larger than a control message, by request, until the host reads their last part.
+  const results = new Map<string, {chunks: string[]; expiry: ReturnType<typeof setTimeout>}>();
   // Each native bridge emits monotonically increasing identifiers. Keeping a high-water mark
   // rejects replays without retaining every request throughout a long-lived map session.
   let lastRequest = 0;
@@ -298,6 +369,60 @@ export function createDispatcher(input: {
   const invalid = (message: string): WireError => ({code: 'invalidRequest', message});
   const ownsIdentity = (identity: {instanceId: string; generation: number}) =>
     identity.instanceId === input.instanceId && identity.generation === input.generation;
+  const bytes = (text: string) =>
+    text.length * 3 <= protocol.limits.maximumMessageBytes
+      ? text.length
+      : new TextEncoder().encode(text).byteLength;
+
+  /** Answers a request; a result larger than a control message waits to be read in parts. */
+  function deliver(requestId: string, result: unknown) {
+    const output = {...envelope, requestId, result};
+    const text = JSON.stringify(output);
+    if (bytes(text) <= protocol.limits.maximumMessageBytes) {
+      input.send(output);
+      return;
+    }
+    const body = JSON.stringify(result);
+    if (bytes(body) > protocol.limits.maximumDataBytes) {
+      fail(requestId, {
+        code: 'invalidRequest',
+        message: 'The result exceeds its size limit; ask for fewer features.',
+        context: {reason: 'dataTooLarge', limit: protocol.limits.maximumDataBytes},
+      });
+      return;
+    }
+    const chunks = chunkText(body);
+    const expiry = setTimeout(() => results.delete(requestId), protocol.limits.requestTimeoutMs);
+    results.set(requestId, {chunks, expiry});
+    input.send({...envelope, requestId, chunks: chunks.length});
+  }
+
+  function readResult(requestId: string, payload: {requestId: string; index: number}) {
+    const held = results.get(payload.requestId);
+    const chunk = held?.chunks[payload.index];
+    if (!held || chunk === undefined) {
+      fail(requestId, invalid('The result is no longer available.'));
+      return;
+    }
+    input.send({...envelope, requestId, result: chunk});
+    if (payload.index === held.chunks.length - 1) {
+      clearTimeout(held.expiry);
+      results.delete(payload.requestId);
+    }
+  }
+
+  /** The command of a request whose payload travelled on the data channel. */
+  async function readCommand(
+    deferred: z.infer<typeof deferredEnvelopeSchema>['command'],
+    signal: AbortSignal,
+  ): Promise<Command> {
+    if (!input.readPayload) throw new ProtocolError('invalidRequest', 'Payload data is not read.');
+    const payload = await input.readPayload(deferred.payloadData, signal);
+    const command = commandSchema.safeParse({method: deferred.method, payload});
+    if (!command.success)
+      throw new ProtocolError('invalidRequest', 'The request does not match the protocol.');
+    return command.data;
+  }
 
   return {
     async receive(value: unknown) {
@@ -312,19 +437,32 @@ export function createDispatcher(input: {
           });
         return;
       }
-      let request: Request;
+      let request: Request | z.infer<typeof deferredEnvelopeSchema>;
       try {
         request = parseRequest(value, input.version);
       } catch {
-        // Answer an addressable request so its caller fails now rather than at its timeout.
-        const identity = readRequestIdentity(value);
-        if (!identity) {
-          fail(undefined, invalid('The request does not match the protocol.'));
-        } else if (ownsIdentity(identity)) {
-          lastRequest = Math.max(lastRequest, Number(identity.requestId));
-          fail(identity.requestId, invalid('The request does not match the protocol.'));
+        const deferred = deferredEnvelopeSchema.safeParse(
+          (() => {
+            try {
+              return parseMessage(value);
+            } catch {
+              return undefined;
+            }
+          })(),
+        );
+        if (deferred.success && deferred.data.protocolVersion === input.version) {
+          request = deferred.data;
+        } else {
+          // Answer an addressable request so its caller fails now rather than at its timeout.
+          const identity = readRequestIdentity(value);
+          if (!identity) {
+            fail(undefined, invalid('The request does not match the protocol.'));
+          } else if (ownsIdentity(identity)) {
+            lastRequest = Math.max(lastRequest, Number(identity.requestId));
+            fail(identity.requestId, invalid('The request does not match the protocol.'));
+          }
+          return;
         }
-        return;
       }
       if (!ownsIdentity(request)) {
         // An old view must never receive even an error response in the replacement view.
@@ -336,34 +474,41 @@ export function createDispatcher(input: {
         return;
       }
       lastRequest = sequence;
-      if (request.command.method === 'cancel') {
+      const command = request.command;
+      if ('payload' in command && command.method === 'cancel') {
         // Cancellation reaches the operation's signal; the operation answers `cancelled`.
-        active.get(request.command.payload.requestId)?.abort();
+        active.get(command.payload.requestId)?.abort();
         input.send({...envelope, requestId: request.requestId, result: null});
+        return;
+      }
+      if ('payload' in command && command.method === 'readResult') {
+        readResult(request.requestId, command.payload);
         return;
       }
       if (active.size >= protocol.limits.maximumPendingRequests) {
         fail(request.requestId, invalid('The request budget is exhausted.'));
         return;
       }
+      const requestId = request.requestId;
       const abort = new AbortController();
-      active.set(request.requestId, abort);
+      active.set(requestId, abort);
       const timeout = setTimeout(() => {
-        if (!active.delete(request.requestId) || retired) return;
+        if (!active.delete(requestId) || retired) return;
         abort.abort();
-        fail(request.requestId, {code: 'timeout', message: 'The request timed out.'});
+        fail(requestId, {code: 'timeout', message: 'The request timed out.'});
       }, protocol.limits.requestTimeoutMs);
       try {
-        const result = await input.execute(request.command, abort.signal);
-        if (!retired && active.has(request.requestId)) {
+        const resolved = 'payload' in command ? command : await readCommand(command, abort.signal);
+        const result = await input.execute(resolved, abort.signal);
+        if (!retired && active.has(requestId)) {
           if (abort.signal.aborted)
-            fail(request.requestId, {code: 'cancelled', message: 'The request was cancelled.'});
-          else input.send({...envelope, requestId: request.requestId, result: result ?? null});
+            fail(requestId, {code: 'cancelled', message: 'The request was cancelled.'});
+          else deliver(requestId, result ?? null);
         }
       } catch (error) {
-        if (!retired && active.has(request.requestId)) {
+        if (!retired && active.has(requestId)) {
           fail(
-            request.requestId,
+            requestId,
             error instanceof ProtocolError
               ? error.toWire()
               : abort.signal.aborted
@@ -373,13 +518,15 @@ export function createDispatcher(input: {
         }
       } finally {
         clearTimeout(timeout);
-        active.delete(request.requestId);
+        active.delete(requestId);
       }
     },
     retire() {
       retired = true;
       for (const abort of active.values()) abort.abort();
       active.clear();
+      for (const held of results.values()) clearTimeout(held.expiry);
+      results.clear();
     },
   };
 }

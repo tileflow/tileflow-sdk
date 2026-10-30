@@ -64,6 +64,10 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
   public var shouldReceiveTouch: ((CGPoint) -> Bool)?
   /// The scene beyond the theme the application asked for, given again to each new renderer.
   var scene = SceneState()
+  /// The application's runtime style, given again to each new renderer.
+  var runtimeStyle = RuntimeStyle()
+  /// The application images the scene holds.
+  var images: [TileflowMapImage] = []
   /// Calls waiting for an animation of the current renderer to end.
   let animations = AnimationWaiters()
 
@@ -540,6 +544,7 @@ public final class TileflowMapView: UIView, WKNavigationDelegate, WKUIDelegate {
             try await self.move(to: request.camera, animation: .none)
           }
           try await self.replayScene(through: bridge)
+          try await self.replayStyle(through: bridge)
           try await self.replayLocation(through: bridge)
           if !self.rendererVisible {
             _ = try await bridge.call(.setVisibility, payload: .object(["visible": .bool(false)]))

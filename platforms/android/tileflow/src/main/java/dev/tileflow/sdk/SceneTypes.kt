@@ -314,6 +314,11 @@ constructor(
     data: ByteArray,
     public val pixelRatio: Double = 1.0,
     variants: Map<String, ByteArray> = emptyMap(),
+    /**
+     * Whether the image is a signed distance field, which symbol layers recolour with `iconColor`
+     * and `iconHaloColor`.
+     */
+    public val sdf: Boolean = false,
 ) {
     internal val data: ByteArray = data.copyOf()
     internal val variants: Map<String, ByteArray> = variants.mapValues { it.value.copyOf() }
@@ -351,6 +356,7 @@ constructor(
             name: String,
             bitmap: Bitmap,
             variants: Map<String, Bitmap> = emptyMap(),
+            sdf: Boolean = false,
         ): TileflowMapImage {
             fun png(bitmap: Bitmap): ByteArray =
                 ByteArrayOutputStream().use {
@@ -365,6 +371,7 @@ constructor(
                 png(bitmap),
                 (density.toDouble() / DisplayMetrics.DENSITY_DEFAULT).coerceIn(1.0, 4.0),
                 variants.mapValues { png(it.value) },
+                sdf,
             )
         }
     }

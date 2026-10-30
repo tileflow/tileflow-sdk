@@ -13,6 +13,7 @@
 - [Native Search, Routing, Elevation and GeoIP clients](../platforms/native-services.md)
 - [Mobile offline regions contract](contracts/mobile-offline.md)
 - [Tileflow map features on Swift and Kotlin](../platforms/web-parity.md)
+- [Runtime style, data and queries on Swift and Kotlin](../platforms/native-style-data.md)
 - [Generated authoring/resolved map and modules JSON Schema](modules-api-reference.json)
 - [Package release procedure](../PUBLISHING.md)
 - [Contributor setup](../CONTRIBUTING.md)

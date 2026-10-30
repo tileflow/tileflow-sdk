@@ -321,7 +321,7 @@ public suspend fun TileflowMapView.setBoundaryValues(values: TileflowBoundaryVal
 
 /** Replaces the application's images. Unchanged images are neither sent nor decoded again. */
 public suspend fun TileflowMapView.setImages(images: List<TileflowMapImage>) {
-    if (images.size > 32 || images.map { it.name }.toSet().size != images.size) invalid()
+    if (images.size > 64 || images.map { it.name }.toSet().size != images.size) invalid()
     val payloads = images.flatMap { listOf(it.data) + it.variants.values }
     val distinct = payloads.associateBy(DataChannel::digest)
     if (
@@ -336,6 +336,18 @@ public suspend fun TileflowMapView.setImages(images: List<TileflowMapImage>) {
             ),
         )
     val kept = images.toList()
+    val previousImages = this.images
+    this.images = kept
+    try {
+        sendImages(kept)
+    } catch (error: TileflowMapException) {
+        // A refused request is not kept, as the scene does not keep it.
+        if (error.code == TileflowErrorCode.INVALID_REQUEST) this.images = previousImages
+        throw error
+    }
+}
+
+private suspend fun TileflowMapView.sendImages(kept: List<TileflowMapImage>) {
     sendScene(
         SceneCommand(ProtocolContract.Method.SET_IMAGES) { channel, _ ->
             val references = mutableListOf<DataChannel.Reference>()
@@ -353,6 +365,7 @@ public suspend fun TileflowMapView.setImages(images: List<TileflowMapImage>) {
                                 .put("data", register(image.data))
                                 .put("pixelRatio", image.pixelRatio)
                                 .apply {
+                                    if (image.sdf) put("sdf", true)
                                     if (image.variants.isNotEmpty())
                                         put(
                                             "variants",

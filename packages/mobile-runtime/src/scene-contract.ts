@@ -85,9 +85,11 @@ export const imagesRequestSchema = z.strictObject({
         pixelRatio: finite.min(1).max(4).default(1),
         /** The image to show instead while a named theme is on screen, of the same size. */
         variants: z.record(themeName, dataReferenceSchema).optional(),
+        /** A signed distance field: layers recolour it with `icon-color` and `icon-halo-color`. */
+        sdf: z.boolean().default(false),
       }),
     )
-    .max(32)
+    .max(64)
     .refine((items) => new Set(items.map((item) => item.name)).size === items.length),
 });
 

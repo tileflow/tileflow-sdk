@@ -42,6 +42,21 @@
     "stopAnimation",
     "updateLocation",
     "setFollowMode",
+    "addSource",
+    "removeSource",
+    "setGeoJSONSourceData",
+    "updateGeoJSONSource",
+    "addLayer",
+    "updateLayer",
+    "moveLayer",
+    "removeLayer",
+    "setFeatureState",
+    "getFeatureState",
+    "removeFeatureState",
+    "queryRenderedFeatures",
+    "querySourceFeatures",
+    "queryCluster",
+    "readResult",
     "dispose"
   ],
   "eventLevels": {
@@ -133,7 +148,7 @@
     "runtimeHash": "The renderer is not the one the SDK was built with.",
     "webViewVersion": "The system WebView is older than the supported minimum.",
     "handshake": "The renderer did not complete its handshake in time.",
-    "dataTooLarge": "Data exceeds the size limit for one item or for all items in flight.",
+    "dataTooLarge": "Data, or a result, exceeds the size limit for one item or for all items in flight.",
     "dataIntegrity": "Data arrived with a different length or digest than was sent.",
     "dataUnavailable": "Data was released before the renderer read it.",
     "invalidGeoJSON": "GeoJSON breaks the renderer's contract.",
@@ -142,7 +157,8 @@
     "contentRestore": "Application content could not be restored after the style changed.",
     "scene": "The map's 3D scene could not be loaded; the map continues without it.",
     "invalidImage": "An application image could not be decoded, or its variants differ in size.",
-    "unknownLayer": "A request names an application layer that the map's content does not hold."
+    "unknownLayer": "A request names an application layer that the map does not hold.",
+    "unknownSource": "A request names an application source that the map does not hold."
   },
   "errors": {
     "invalidSource": {

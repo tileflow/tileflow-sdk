@@ -15,14 +15,17 @@ targets:
   TileflowTestHost:
     type: application
     platform: iOS
+    supportedDestinations: [iOS, macCatalyst]
     sources:
       - AppDelegate.swift
     settings:
       base:
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
   TileflowTests:
     type: bundle.unit-test
     platform: iOS
+    supportedDestinations: [iOS, macCatalyst]
     sources:
       - path: ../Tests/TileflowTests
         excludes:

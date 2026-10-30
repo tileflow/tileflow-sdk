@@ -263,21 +263,29 @@ jobs:
           corepack prepare pnpm@11.13.1 --activate
           pnpm install --frozen-lockfile
           pnpm native:runtime
-      - name: Test in iOS Simulator
+      - name: Build iOS Simulator test bundle
+        run: |
+          xcodebuild build-for-testing -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination 'generic/platform=iOS Simulator'
+      - name: Test UIKit and WebKit with Mac Catalyst
         run: |
           set -euo pipefail
           node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
           fixture_pid=$!
           trap 'kill "$fixture_pid" 2>/dev/null || true' EXIT
-          xcrun simctl list devices available --json > "$RUNNER_TEMP/simulators.json"
-          simulator_sdk=$(xcrun --sdk iphonesimulator --show-sdk-version)
-          device_id=$(node -e 'const fs=require("node:fs");const v=JSON.parse(fs.readFileSync(process.argv[1]));const runtime="com.apple.CoreSimulator.SimRuntime.iOS-"+process.argv[2].replaceAll(".","-");const d=v.devices[runtime]?.find(d=>d.isAvailable && d.name.startsWith("iPhone"));if(!d)throw Error("No iPhone simulator for "+runtime);process.stdout.write(d.udid)' "$RUNNER_TEMP/simulators.json" "$simulator_sdk")
-          xcrun simctl boot "$device_id" || true
-          xcrun simctl bootstatus "$device_id" -b
-          curl --fail http://127.0.0.1:18645/manifest.json > /dev/null
-          # WebKit needs an application host, not SwiftPM's standalone xctest process.
-          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination "platform=iOS Simulator,id=$device_id" -resultBundlePath "$RUNNER_TEMP/Tileflow.xcresult" | tee "$RUNNER_TEMP/swift-tests.log"
+          curl --retry 10 --retry-connrefused --retry-delay 1 --fail http://127.0.0.1:18645/manifest.json > /dev/null
+          # Run the complete UIKit suite without the hosted runners' crashing SimMetalHost layer.
+          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination 'platform=macOS,variant=Mac Catalyst' CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO -resultBundlePath "$RUNNER_TEMP/Tileflow.xcresult" | tee "$RUNNER_TEMP/swift-tests.log"
           ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-tests.log"
+      - name: Upload Swift test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: swift-integration-results
+          path: |
+            ${{ runner.temp }}/Tileflow.xcresult
+            ${{ runner.temp }}/swift-tests.log
+            ${{ runner.temp }}/map-fixture.log
+          retention-days: 7
 
   kotlin:
     name: Kotlin SDK package and contracts

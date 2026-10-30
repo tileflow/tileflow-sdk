@@ -13,7 +13,8 @@ import {writeFrameworkMapFixture} from './tileflow-source-fixture';
 
 test(
   'captures React wrapper readiness at narrow and desktop sizes through one Vite server',
-  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 60_000},
+  // Four captures and two failure cases also pay for cold Vite/config compilation on CI.
+  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 120_000},
   async (t) => {
     const browserFailures = observeBrowserFailures(t);
     const capturePackageRoot = dirname(fileURLToPath(new URL('../package.json', import.meta.url)));

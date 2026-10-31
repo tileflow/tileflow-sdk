@@ -60,5 +60,8 @@
     "maplibre-gl": {
       "optional": true
     }
+  },
+  "devDependencies": {
+    "maplibre-gl": "6.16.0"
   }
 }

@@ -74,7 +74,7 @@ test('keeps config compilation out of runtime and browser bundles', async () => 
 test('ships notices for every third-party component embedded in the browser entry', async () => {
   const notices = await readFile(new URL('../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8');
   for (const requiredNotice of [
-    'maplibre-contour 0.1.0',
+    'maplibre-contour 0.1.1',
     'PMTiles 4.5.0',
     'fflate 0.8.3',
     'd3-contour',

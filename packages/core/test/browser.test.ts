@@ -542,7 +542,7 @@ class DelayedStyleSwitchMap {
 test('ships the pinned contour generator inside the browser entry without a CDN runtime', async () => {
   const browserEntry = await readFile(new URL('../dist/browser.js', import.meta.url), 'utf8');
 
-  assert.match(browserEntry, /maplibre-contour@0\.1\.0/u);
+  assert.match(browserEntry, /maplibre-contour@0\.1\.1/u);
   assert.doesNotMatch(browserEntry, /unpkg\.com/u);
   assert.doesNotMatch(browserEntry, /import\(["']maplibre-contour["']\)/u);
 });

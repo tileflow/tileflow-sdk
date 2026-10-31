@@ -39,11 +39,11 @@ const growth = `
 uniform float u_scale;
 uniform vec2 u_offset; // this tile's corner from the scene's origin, in tile units
 uniform float u_metres; // metres per tile unit
-// The disc the city's tiles cover whole, in this tile's units: its centre, where heights start to
-// ease down and where they are gone; none while its radius is 0. And the view's direction along the
-// ground, in this tile's axes.
+// In this tile's units: origin and start/end of the fade along the view, or centre and radii of the
+// fallback covered disc. The direction is along the ground in this tile's axes.
 uniform vec4 u_ring;
 uniform vec2 u_ring_ahead;
+uniform bool u_ring_directional;
 
 float progressOf() {
   return clamp(u_scale * 1.25 - a_wave.x * 0.25, 0.0, 1.0);
@@ -55,9 +55,11 @@ float elevationOf(float own, float top, float p) {
 }
 
 // Buildings sink into the ground over the last stretch of the city's reach, so it ends without an
-// edge of cut-off blocks. Only its far side does: where the tile limit holds the ring short, the
-// buildings round the camera, nearer than its centre, keep standing.
+// edge of cut-off blocks. The view-aligned fade leaves the entire near width standing; the legacy
+// disc fallback also exempts its near side.
 float reachOf(vec2 position) {
+  if (u_ring_directional)
+    return 1.0 - smoothstep(u_ring.z, u_ring.w, dot(position - u_ring.xy, u_ring_ahead));
   if (u_ring.w <= 0.0) return 1.0;
   vec2 from = position - u_ring.xy;
   float far = smoothstep(0.0, u_ring.w - u_ring.z, dot(from, u_ring_ahead));

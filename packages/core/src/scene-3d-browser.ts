@@ -127,7 +127,13 @@ export type TileflowScene3D = {
 };
 
 /** A disc the 3D city covers whole: its centre and radius, in metres. */
-export type TileflowSceneReach = Readonly<{lng: number; lat: number; radius: number}>;
+export type TileflowSceneReach = Readonly<{
+  lng: number;
+  lat: number;
+  radius: number;
+  /** Far boundary along the view from the map centre, in metres. */
+  forward?: number;
+}>;
 
 // `@tileflow/core/browser` and `@tileflow/core/3d` each bundle this module, so every copy on a
 // page keeps a map's scene in one registry shared through the global object.

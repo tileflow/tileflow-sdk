@@ -1,5 +1,5 @@
 // The tiles round the camera that Tileflow's custom WebGL layers draw from (3D buildings, trees,
-// street lights): the nearest round a point ahead of the centre, as far as the view reaches, read
+// street lights): visible foreground first, then the nearest round a point ahead of the centre, read
 // with the map's own tile address and request rules, nearest first, and built from their bytes off
 // the page. Layers reading the same source share each tile's download.
 import {fetchTileflowPmtilesTile, isTileflowPmtilesUrl} from './pmtiles-browser';
@@ -14,12 +14,14 @@ import {
 export type CameraTilesMap = {
   getBearing(): number;
   getCenter(): {lat: number; lng: number};
+  getCanvas?(): {clientWidth?: number; clientHeight: number};
   getPitch(): number;
   getSource(id: string): unknown;
   getZoom(): number;
   off(event: string, listener: () => void): unknown;
   on(event: string, listener: () => void): unknown;
   triggerRepaint(): unknown;
+  unproject?(point: [number, number]): {lng: number; lat: number};
 };
 
 export type CameraTile<T> = {
@@ -28,8 +30,8 @@ export type CameraTile<T> = {
   value?: T;
   /** A replacement awaiting renderer preparation; the previous value remains drawable. */
   pending?: T;
-  /** From the point the camera reads round, in tiles. */
-  distance?: number;
+  /** Download/build order: visible foreground precedes the remaining distance ring. */
+  priority?: number;
   retryAt?: number;
   loading?: AbortController;
   used: number;
@@ -47,8 +49,8 @@ export type CameraTilesOptions<T> = Readonly<{
   /** Whether the layer wants tiles now. */
   active(): boolean;
   /**
-   * Builds a tile's value from its bytes; a tile without the layers it needs gets `empty`. Nearer
-   * tiles have a lower `priority`.
+   * Builds a tile's value from its bytes; a tile without the layers it needs gets `empty`. Tiles
+   * needed first have a lower `priority`.
    */
   build(
     tile: TileflowTileBytes,
@@ -68,12 +70,12 @@ export type CameraTilesOptions<T> = Readonly<{
 export type CameraTiles<T> = {
   /** Chooses the tiles round the camera and reads the missing ones. */
   update(): void;
-  /** The wanted tiles built so far, nearest first. */
+  /** The wanted tiles built so far, in foreground/download priority order. */
   ready(): (CameraTile<T> & {value: T})[];
   /** Built values awaiting upload, or the resident value when no replacement is pending. */
   built(): (CameraTile<T> & {value: T})[];
   /**
-   * Every tile wanted round the camera, nearest first, whether it has been read, holds nothing for
+   * Every tile wanted round the camera, in priority order, whether it has been read, holds nothing for
    * the layer, or the style has no source to read it from.
    */
   coverage(): readonly Readonly<{x: number; y: number}>[];
@@ -152,6 +154,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       {...centre, zoom: currentZoom, pitch: map.getPitch(), bearing: map.getBearing()},
       zoom,
       options.maxTiles,
+      cameraForeground(map, zoom),
     );
     ring = chosen;
     wanted = chosen.tiles.map(({x, y}) => `${x}/${y}`);
@@ -163,7 +166,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       return;
     }
     const now = performance.now();
-    for (const {x, y, distance} of chosen.tiles) {
+    for (const [priority, {x, y}] of chosen.tiles.entries()) {
       const key = `${x}/${y}`;
       let entry = tiles.get(key);
       if (!entry) {
@@ -171,7 +174,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
         tiles.set(key, entry);
       }
       entry.used = now;
-      entry.distance = distance;
+      entry.priority = priority;
       if (
         ((!entry.value && !entry.pending) || entry.retryAt !== undefined) &&
         !entry.loading &&
@@ -190,7 +193,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
     source
       .read(
         {z: zoom, x: entry.x, y: entry.y},
-        {signal: controller.signal, priority: entry.distance ?? 0},
+        {signal: controller.signal, priority: entry.priority ?? 0},
       )
       .then((tile) => {
         if (disposed || tiles.get(key) !== entry || entry.loading !== controller) return;
@@ -230,10 +233,10 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       const started = performance.now();
       let built = false;
       while (!disposed && queue.length && performance.now() - started < buildBudgetMs) {
-        // The nearest tile goes first.
+        // Follow the current camera's foreground/download order, including queued older reads.
         let nearest = 0;
         for (let at = 1; at < queue.length; at += 1)
-          if ((queue[at]!.entry.distance ?? 0) < (queue[nearest]!.entry.distance ?? 0))
+          if ((queue[at]!.entry.priority ?? 0) < (queue[nearest]!.entry.priority ?? 0))
             nearest = at;
         const {key, entry, controller, tile, metres: tileMetres} = queue.splice(nearest, 1)[0]!;
         const current = () =>
@@ -244,7 +247,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
         if (!current()) continue;
         let value: T;
         try {
-          value = await options.build(tile, tileMetres, controller.signal, entry.distance ?? 0);
+          value = await options.build(tile, tileMetres, controller.signal, entry.priority ?? 0);
         } catch {
           if (current()) {
             entry.loading = undefined;
@@ -324,6 +327,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
   map.on('sourcedata', onSource);
   map.on('move', onMove);
   map.on('moveend', onMoveEnd);
+  map.on('resize', onMoveEnd);
 
   return {
     update,
@@ -381,6 +385,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       map.off('sourcedata', onSource);
       map.off('move', onMove);
       map.off('moveend', onMoveEnd);
+      map.off('resize', onMoveEnd);
       for (const entry of tiles.values()) {
         entry.loading?.abort();
         if (entry.pending && entry.pending !== options.empty) options.release(entry.pending);
@@ -486,13 +491,14 @@ export type CameraTileRing = Readonly<{
 }>;
 
 /**
- * The nearest tiles round a point ahead of the camera's centre, at most `maxTiles`, as far as the
- * view reaches: farther with a lower zoom and a higher pitch.
+ * At most `maxTiles` within reach: the supplied foreground in fractional tile coordinates first,
+ * then nearest to a point ahead of the centre. Reach grows with lower zoom and higher pitch.
  */
 export function cameraTileRing(
   camera: Readonly<{lng: number; lat: number; zoom: number; pitch: number; bearing: number}>,
   tileZoom: number,
   maxTiles: number,
+  foreground?: readonly (readonly [number, number])[],
 ): CameraTileRing {
   const reach = Math.min(
     5000,
@@ -517,11 +523,81 @@ export function cameraTileRing(
       );
       if (distance * tileMetres <= reach) candidates.push({x, y, distance});
     }
-  candidates.sort((a, b) => a.distance - b.distance);
-  const tiles = candidates.slice(0, maxTiles);
-  // Every tile that reaches nearer than the first one left out is in, so that far is covered whole.
-  const radius = Math.min(reach / tileMetres, candidates[tiles.length]?.distance ?? Infinity);
+  const [ox, oy] = cameraTileAt(camera.lng, camera.lat, tileZoom);
+  // Protect the near half of the actual viewport before spending the budget on the distance
+  // ring. The old forward shift could spend all 25 tiles behind the visible foreground. Keep
+  // the ring's centre tile too, so its distance haze still has a covered disc to fit to.
+  const order = (tile: {x: number; y: number; distance: number}) =>
+    tile.x === Math.floor(cx) && tile.y === Math.floor(cy)
+      ? -1
+      : foreground && tileIntersectsForeground(tile, foreground)
+        ? 0
+        : 1;
+  const ranked = candidates.map((tile) => ({
+    ...tile,
+    order: order(tile),
+    near: Math.hypot(
+      Math.max(tile.x - ox, 0, ox - tile.x - 1),
+      Math.max(tile.y - oy, 0, oy - tile.y - 1),
+    ),
+  }));
+  ranked.sort(
+    (a, b) => a.order - b.order || (a.order === 0 ? a.near - b.near : a.distance - b.distance),
+  );
+  const tiles = ranked.slice(0, maxTiles).map(({x, y, distance}) => ({x, y, distance}));
+  // Foreground priority changes ordering: only the nearest OMITTED tile certifies a whole disc.
+  const radius = ranked
+    .slice(tiles.length)
+    .reduce((radius, tile) => Math.min(radius, tile.distance), reach / tileMetres);
   return {tiles, centre: [cx, cy], radius, tileMetres};
+}
+
+/** Public projection APIs account for the viewport, bearing, padding and the current lens. */
+function cameraForeground(map: CameraTilesMap, zoom: number): [number, number][] | undefined {
+  const canvas = map.getCanvas?.();
+  const width = canvas?.clientWidth ?? 0;
+  const height = canvas?.clientHeight ?? 0;
+  if (!map.unproject || width <= 0 || height <= 0) return undefined;
+  const origin = cameraTileAt(map.getCenter().lng, map.getCenter().lat, zoom)[0];
+  const world = 2 ** zoom;
+  const points: [number, number][] = [];
+  // Never unproject sky above the horizon. The lower half stays ground-facing at high pitch.
+  for (const point of [
+    [0, height / 2],
+    [width, height / 2],
+    [width, height],
+    [0, height],
+  ] as [number, number][]) {
+    const location = map.unproject(point);
+    if (!Number.isFinite(location.lng) || !Number.isFinite(location.lat)) return undefined;
+    const [x, y] = cameraTileAt(location.lng, location.lat, zoom);
+    // A viewport crossing the antimeridian is local to this world copy, not world-wide.
+    points.push([x + Math.round((origin - x) / world) * world, y]);
+  }
+  return points;
+}
+
+/** Separating axes of the ground quadrilateral and tile; a rotated view must not reserve its bbox. */
+function tileIntersectsForeground(
+  tile: {x: number; y: number},
+  points: readonly (readonly [number, number])[],
+): boolean {
+  const axes: [number, number][] = [
+    [1, 0],
+    [0, 1],
+  ];
+  for (let i = 0; i < points.length; i++) {
+    const a = points[i]!;
+    const b = points[(i + 1) % points.length]!;
+    axes.push([a[1] - b[1], b[0] - a[0]]);
+  }
+  return axes.every(([dx, dy]) => {
+    const projected = points.map(([x, y]) => (x - tile.x) * dx + (y - tile.y) * dy);
+    return (
+      Math.max(...projected) >= Math.min(0, dx) + Math.min(0, dy) &&
+      Math.min(...projected) <= Math.max(0, dx) + Math.max(0, dy)
+    );
+  });
 }
 
 /** A point as fractional tile coordinates at a zoom. */

@@ -126,7 +126,7 @@ async function loadPinnedMaplibreContour(): Promise<unknown> {
 
 function resolveMaplibreContourLibrary(module: unknown): MaplibreContourLibrary {
   if (!module || typeof module !== 'object') {
-    throw new Error('maplibre-contour 0.1.0 did not expose its browser module.');
+    throw new Error('maplibre-contour 0.1.1 did not expose its browser module.');
   }
   const library = (module as {default?: unknown}).default;
   if (
@@ -134,7 +134,7 @@ function resolveMaplibreContourLibrary(module: unknown): MaplibreContourLibrary 
     typeof library !== 'object' ||
     typeof (library as {DemSource?: unknown}).DemSource !== 'function'
   ) {
-    throw new Error('maplibre-contour 0.1.0 did not expose DemSource.');
+    throw new Error('maplibre-contour 0.1.1 did not expose DemSource.');
   }
   return library as MaplibreContourLibrary;
 }

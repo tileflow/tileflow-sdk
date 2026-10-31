@@ -1,6 +1,6 @@
 // The tiles round the camera that Tileflow's custom WebGL layers draw from (3D buildings, trees,
-// street lights): visible foreground first, then the nearest round a point ahead of the centre, read
-// with the map's own tile address and request rules, nearest first, and built from their bytes off
+// street lights): visible ground from the bottom towards the horizon, then offscreen neighbours,
+// read with the map's own tile address and request rules, and built from their bytes off
 // the page. Layers reading the same source share each tile's download.
 import {fetchTileflowPmtilesTile, isTileflowPmtilesUrl} from './pmtiles-browser';
 import {
@@ -154,7 +154,7 @@ export function createCameraTiles<T>(options: CameraTilesOptions<T>): CameraTile
       {...centre, zoom: currentZoom, pitch: map.getPitch(), bearing: map.getBearing()},
       zoom,
       options.maxTiles,
-      cameraForeground(map, zoom),
+      cameraViewport(map, zoom),
     );
     ring = chosen;
     wanted = chosen.tiles.map(({x, y}) => `${x}/${y}`);
@@ -486,118 +486,141 @@ export type CameraTileRing = Readonly<{
    * reaches, or less where the tile limit stops the ring short.
    */
   radius: number;
+  /** View-aligned far boundary, in tile coordinates, when the viewport is available. */
+  fade?: Readonly<{origin: readonly [number, number]; start: number; end: number}>;
   /** Metres across a tile at the ring's latitude. */
   tileMetres: number;
 }>;
 
 /**
- * At most `maxTiles` within reach: the supplied foreground in fractional tile coordinates first,
- * then nearest to a point ahead of the centre. Reach grows with lower zoom and higher pitch.
+ * Visible ground from the bottom of the viewport towards the horizon, then offscreen tiles within
+ * reach. A tile is ranked by its nearest VISIBLE point, so a rotated tile's offscreen corner cannot
+ * jump ahead of the foreground. The first omitted visible tile sets the far fade boundary.
  */
 export function cameraTileRing(
   camera: Readonly<{lng: number; lat: number; zoom: number; pitch: number; bearing: number}>,
   tileZoom: number,
   maxTiles: number,
-  foreground?: readonly (readonly [number, number])[],
+  viewport?: readonly (readonly [number, number])[],
 ): CameraTileRing {
   const reach = Math.min(
     5000,
     Math.max(800, 1600 * 2 ** (16 - camera.zoom) * (1 + camera.pitch / 60)),
   );
   const bearing = (camera.bearing * Math.PI) / 180;
+  const direction = [Math.sin(bearing), -Math.cos(bearing)] as const;
   const ahead = reach * 0.35 * Math.min(1, camera.pitch / 60);
   const latitude = camera.lat + (Math.cos(bearing) * ahead) / 111_320;
   const longitude =
     camera.lng + (Math.sin(bearing) * ahead) / (111_320 * Math.cos((camera.lat * Math.PI) / 180));
   const [cx, cy] = cameraTileAt(longitude, latitude, tileZoom);
-  const tileMetres = (earth * Math.cos((latitude * Math.PI) / 180)) / 2 ** tileZoom;
-  const span = Math.ceil(reach / tileMetres);
-  const candidates: {x: number; y: number; distance: number}[] = [];
-  for (let dx = -span; dx <= span; dx += 1)
-    for (let dy = -span; dy <= span; dy += 1) {
-      const x = Math.floor(cx) + dx;
-      const y = Math.floor(cy) + dy;
-      const distance = Math.hypot(
-        Math.max(x, Math.min(cx, x + 1)) - cx,
-        Math.max(y, Math.min(cy, y + 1)) - cy,
-      );
-      if (distance * tileMetres <= reach) candidates.push({x, y, distance});
-    }
   const [ox, oy] = cameraTileAt(camera.lng, camera.lat, tileZoom);
-  // Protect the near half of the actual viewport before spending the budget on the distance
-  // ring. The old forward shift could spend all 25 tiles behind the visible foreground. Keep
-  // the ring's centre tile too, so its distance haze still has a covered disc to fit to.
-  const order = (tile: {x: number; y: number; distance: number}) =>
-    tile.x === Math.floor(cx) && tile.y === Math.floor(cy)
-      ? -1
-      : foreground && tileIntersectsForeground(tile, foreground)
-        ? 0
-        : 1;
-  const ranked = candidates.map((tile) => ({
-    ...tile,
-    order: order(tile),
-    near: Math.hypot(
-      Math.max(tile.x - ox, 0, ox - tile.x - 1),
-      Math.max(tile.y - oy, 0, oy - tile.y - 1),
-    ),
-  }));
-  ranked.sort(
-    (a, b) => a.order - b.order || (a.order === 0 ? a.near - b.near : a.distance - b.distance),
+  const tileMetres = (earth * Math.cos((camera.lat * Math.PI) / 180)) / 2 ** tileZoom;
+  const far = (reach + ahead) / tileMetres;
+  const along = ([x, y]: readonly [number, number]) =>
+    (x - ox) * direction[0] + (y - oy) * direction[1];
+  // Cap the horizon before enumerating tiles, but keep the actual near edge, even outside the
+  // old forward-shifted distance ring. Unprojecting sky must never create a world-sized bbox.
+  const visible = viewport && clipGround(viewport, (point) => far - along(point));
+  const span = Math.ceil(reach / tileMetres);
+  const left = Math.floor(Math.min(cx - span, ...(visible?.map(([x]) => x) ?? [])));
+  const right = Math.floor(Math.max(cx + span, ...(visible?.map(([x]) => x) ?? [])));
+  const top = Math.floor(Math.min(cy - span, ...(visible?.map(([, y]) => y) ?? [])));
+  const bottom = Math.floor(Math.max(cy + span, ...(visible?.map(([, y]) => y) ?? [])));
+  const candidates: {x: number; y: number; distance: number; near: number}[] = [];
+  for (let x = left; x <= right; x++)
+    for (let y = top; y <= bottom; y++) {
+      const distance = Math.hypot(Math.max(x - cx, 0, cx - x - 1), Math.max(y - cy, 0, cy - y - 1));
+      let intersection = visible ?? [];
+      for (const boundary of [
+        ([px]: readonly [number, number]) => px - x,
+        ([px]: readonly [number, number]) => x + 1 - px,
+        ([, py]: readonly [number, number]) => py - y,
+        ([, py]: readonly [number, number]) => y + 1 - py,
+      ])
+        intersection = clipGround(intersection, boundary);
+      const near = Math.min(...intersection.map(along));
+      if (near < Infinity || distance * tileMetres <= reach)
+        candidates.push({x, y, distance, near});
+    }
+  candidates.sort((a, b) => a.near - b.near || a.distance - b.distance);
+  const tiles = candidates.slice(0, maxTiles).map(({x, y, distance}) => ({x, y, distance}));
+  const omitted = candidates.slice(tiles.length);
+  const radius = omitted.reduce(
+    (radius, tile) => Math.min(radius, tile.distance),
+    reach / tileMetres,
   );
-  const tiles = ranked.slice(0, maxTiles).map(({x, y, distance}) => ({x, y, distance}));
-  // Foreground priority changes ordering: only the nearest OMITTED tile certifies a whole disc.
-  const radius = ranked
-    .slice(tiles.length)
-    .reduce((radius, tile) => Math.min(radius, tile.distance), reach / tileMetres);
-  return {tiles, centre: [cx, cy], radius, tileMetres};
+  const end = Math.min(far, ...omitted.map((tile) => tile.near));
+  const near = visible?.length ? Math.min(...visible.map(along)) : end;
+  return {
+    tiles,
+    centre: [cx, cy],
+    radius,
+    tileMetres,
+    ...(visible?.length
+      ? {
+          fade: {
+            origin: [ox, oy] as const,
+            start: end - Math.max(0.25, (end - near) * 0.2),
+            end,
+          },
+        }
+      : {}),
+  };
 }
 
 /** Public projection APIs account for the viewport, bearing, padding and the current lens. */
-function cameraForeground(map: CameraTilesMap, zoom: number): [number, number][] | undefined {
+function cameraViewport(map: CameraTilesMap, zoom: number): [number, number][] | undefined {
   const canvas = map.getCanvas?.();
   const width = canvas?.clientWidth ?? 0;
   const height = canvas?.clientHeight ?? 0;
   if (!map.unproject || width <= 0 || height <= 0) return undefined;
   const origin = cameraTileAt(map.getCenter().lng, map.getCenter().lat, zoom)[0];
   const world = 2 ** zoom;
+  const pointAt = (x: number, y: number): [number, number] => {
+    const location = map.unproject!([x, y]);
+    const [tx, ty] = cameraTileAt(location.lng, location.lat, zoom);
+    return [tx + Math.round((origin - tx) / world) * world, ty];
+  };
+  const bearing = (map.getBearing() * Math.PI) / 180;
   const points: [number, number][] = [];
-  // Never unproject sky above the horizon. The lower half stays ground-facing at high pitch.
-  for (const point of [
-    [0, height / 2],
-    [width, height / 2],
-    [width, height],
-    [0, height],
-  ] as [number, number][]) {
-    const location = map.unproject(point);
-    if (!Number.isFinite(location.lng) || !Number.isFinite(location.lat)) return undefined;
-    const [x, y] = cameraTileAt(location.lng, location.lat, zoom);
-    // A viewport crossing the antimeridian is local to this world copy, not world-wide.
-    points.push([x + Math.round((origin - x) / world) * world, y]);
+  for (const x of [0, width]) {
+    const bottom = pointAt(x, height);
+    const middle = pointAt(x, height / 2);
+    let top = pointAt(x, 0);
+    // Above the horizon the ground intersection is behind the camera. Continue the two visible
+    // side rays instead; cameraTileRing clips them to its finite forward reach before enumeration.
+    if ((top[0] - middle[0]) * Math.sin(bearing) - (top[1] - middle[1]) * Math.cos(bearing) <= 0) {
+      const stretch = world / Math.hypot(middle[0] - bottom[0], middle[1] - bottom[1]);
+      top = [
+        middle[0] + (middle[0] - bottom[0]) * stretch,
+        middle[1] + (middle[1] - bottom[1]) * stretch,
+      ];
+    }
+    points.push(bottom, top);
   }
-  return points;
+  if (points.some((point) => point.some((value) => !Number.isFinite(value)))) return undefined;
+  return [points[0]!, points[1]!, points[3]!, points[2]!];
 }
 
-/** Separating axes of the ground quadrilateral and tile; a rotated view must not reserve its bbox. */
-function tileIntersectsForeground(
-  tile: {x: number; y: number},
+/** Clip a convex ground polygon to the positive side of a line. */
+function clipGround(
   points: readonly (readonly [number, number])[],
-): boolean {
-  const axes: [number, number][] = [
-    [1, 0],
-    [0, 1],
-  ];
+  distance: (point: readonly [number, number]) => number,
+): [number, number][] {
+  const result: [number, number][] = [];
   for (let i = 0; i < points.length; i++) {
     const a = points[i]!;
     const b = points[(i + 1) % points.length]!;
-    axes.push([a[1] - b[1], b[0] - a[0]]);
+    const da = distance(a);
+    const db = distance(b);
+    if (da >= 0) result.push([a[0], a[1]]);
+    if (da < 0 !== db < 0) {
+      const t = da / (da - db);
+      result.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]);
+    }
   }
-  return axes.every(([dx, dy]) => {
-    const projected = points.map(([x, y]) => (x - tile.x) * dx + (y - tile.y) * dy);
-    return (
-      Math.max(...projected) >= Math.min(0, dx) + Math.min(0, dy) &&
-      Math.min(...projected) <= Math.max(0, dx) + Math.max(0, dy)
-    );
-  });
+  return result;
 }
 
 /** A point as fractional tile coordinates at a zoom. */

@@ -3,6 +3,28 @@ import test from 'node:test';
 import {setTimeout as delay} from 'node:timers/promises';
 import {cameraTileAt, cameraTileRing, createCameraTiles} from '../src/camera-tiles-browser';
 
+test('a tight budget covers the bottom row before the centre or horizon, with a far-only fade', () => {
+  const camera = {lng: -74.01325, lat: 40.7118, zoom: 15.422, pitch: 58.5, bearing: 0};
+  const viewport = [
+    [9646.2, 12321.9],
+    [9645.8, 12317.1],
+    [9649.2, 12317.1],
+    [9648.8, 12321.9],
+  ] as const;
+  const tight = cameraTileRing(camera, 15, 3, viewport);
+  assert.deepEqual(tight.tiles.map(({x, y}) => [x, y]).sort(), [
+    [9646, 12321],
+    [9647, 12321],
+    [9648, 12321],
+  ]);
+  // At the first omitted row all heights have reached zero. Across the entire near edge they
+  // retain full height; the fade's depth is independent of the horizontal distance to the centre.
+  const fade = tight.fade!;
+  assert.ok(fade.start < fade.end);
+  assert.ok(fade.origin[1] - 12321.9 < fade.start);
+  assert.ok(Math.abs(fade.end - (fade.origin[1] - 12321)) < 1e-8);
+});
+
 test('foreground reservation keeps the tile budget and a conservative distance-haze disc', () => {
   const camera = {lng: -74.01325, lat: 40.7118, zoom: 15.422, pitch: 58.5, bearing: 0};
   const foreground = [

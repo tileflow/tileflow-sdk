@@ -104,6 +104,26 @@ test(
               if (!selected.has(key)) missing.add(key);
             }
           const landmark = map.project([-74.01356, 40.70357]);
+          const bottom = new Set<string>();
+          for (let x = 0; x <= width; x++) {
+            const point = map.unproject([x, height]);
+            const [tx, ty] = globals.CameraFixture.cameraTileAt(point.lng, point.lat, 15);
+            bottom.add(`${Math.floor(tx)}/${Math.floor(ty)}`);
+          }
+          const tight = globals.CameraFixture.createCameraTiles({
+            map,
+            source: 'absent',
+            zoom: 15,
+            minzoom: 14,
+            maxTiles: bottom.size,
+            active: () => true,
+            empty: {},
+            build: () => ({}),
+            release() {},
+            changed() {},
+          });
+          tight.update();
+          const tightSelected = new Set(tight.coverage().map(({x, y}) => `${x}/${y}`));
           results.push({
             width,
             height,
@@ -111,6 +131,7 @@ test(
             pitch,
             count: selected.size,
             missing: [...missing],
+            missingBottom: [...bottom].filter((key) => !tightSelected.has(key)),
             customHouse: {
               visible:
                 landmark.x >= 0 && landmark.x <= width && landmark.y >= 0 && landmark.y <= height,
@@ -118,6 +139,7 @@ test(
             },
           });
           camera.dispose();
+          tight.dispose();
           map.remove();
         }
         return results;
@@ -125,6 +147,7 @@ test(
       for (const sample of cases) {
         assert.equal(sample.count, 25);
         assert.deepEqual(sample.missing, [], JSON.stringify(sample));
+        assert.deepEqual(sample.missingBottom, [], JSON.stringify(sample));
         if (sample.bearing === 0) {
           assert.equal(sample.customHouse.visible, true);
           assert.equal(sample.customHouse.selected, true);

@@ -267,9 +267,11 @@ under the camera, read chosen layers of a vector source for an area at a fixed z
 Browser 3D scenes support `camera.adaptivePerspective`: caller override,
 map default, then `false`. Streets enables it. Depth markers let buildings
 occlude application markers.
-Custom 3D layers prioritize tiles intersecting the visible foreground before filling their
-distance ring. Coverage follows the viewport and its projection on resize, within each layer's
-`maxTiles` budget (25 by default); views exceeding that budget still have bounded coverage.
+Custom 3D layers load visible ground from the bottom of the viewport towards the horizon before
+spending tiles offscreen. Buildings fade down at the far boundary, across the view's width, and
+distance haze follows that boundary. Coverage follows the viewport and its projection on resize,
+within each layer's `maxTiles` budget (25 by default); views exceeding that budget still have
+bounded coverage, with the nearest ground taking priority.
 Model roles use `modelLighting` for independent colours and materials. `colorScale` (0–1,
 default 1) subtly darkens a role after recolouring. Map-shaded models share the buildings’
 vertical/contact gradient; physical roles keep their own lighting. Model corner geometry is

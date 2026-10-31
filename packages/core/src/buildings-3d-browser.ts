@@ -863,6 +863,7 @@ export function createTileflowBuildings3D(
         context.uniform2f(program.uniforms.u_offset!, ...offset);
         context.uniform4f(program.uniforms.u_ring ?? null, ...ring);
         context.uniform2f(program.uniforms.u_ring_ahead ?? null, ...ahead);
+        context.uniform1i(program.uniforms.u_ring_directional ?? null, camera.ring()?.fade ? 1 : 0);
         const buffers = value.gl!;
         context.bindVertexArray(buffers.vao);
         for (const range of ranges)
@@ -1252,7 +1253,7 @@ export function createTileflowBuildings3D(
     );
   }
 
-  /** The disc the city's tiles cover whole, in metres round a point, for the distance haze. */
+  /** The city's covered reach and optional view-aligned far boundary for the distance haze. */
   function reachNow(): TileflowSceneReach | undefined {
     const ring = camera.ring();
     if (!ring) return undefined;
@@ -1261,17 +1262,25 @@ export function createTileflowBuildings3D(
       lng: (ring.centre[0] / n) * 360 - 180,
       lat: (Math.atan(Math.sinh(Math.PI * (1 - (2 * ring.centre[1]) / n))) * 180) / Math.PI,
       radius: ring.radius * ring.tileMetres,
+      ...(ring.fade ? {forward: ring.fade.end * ring.tileMetres} : {}),
     };
   }
 
   /**
-   * The ring of the city's tiles in a tile's own units: its centre, and the radii where buildings
-   * start to sink and where they are gone (the last fifth of the way).
+   * The covered city's fade in a tile's own units: origin and start/end along the view, or the
+   * fallback disc's centre and radii when the viewport projection is unavailable.
    */
   function ringIn(x: number, y: number): [number, number, number, number] {
     const ring = camera.ring();
     if (!ring) return [0, 0, 0, 0];
     const extent = tileflowBuildingExtent;
+    if (ring.fade)
+      return [
+        (ring.fade.origin[0] - x) * extent,
+        (ring.fade.origin[1] - y) * extent,
+        ring.fade.start * extent,
+        ring.fade.end * extent,
+      ];
     const cx = (ring.centre[0] - x) * extent;
     const cy = (ring.centre[1] - y) * extent;
     const inner = ring.radius * extent * 0.8;
@@ -1289,8 +1298,8 @@ export function createTileflowBuildings3D(
   }
 
   /**
-   * Whether a box, in a tile's units, keeps any height: inside the city's ring, or on its near side,
-   * which never sinks (see `reachOf` in the shaders).
+   * Whether a box keeps any height before the view's far boundary, or inside the fallback ring's
+   * far edge (see `reachOf` in the shaders).
    */
   function insideRing(
     ring: readonly number[],
@@ -1299,6 +1308,12 @@ export function createTileflowBuildings3D(
     right: number,
     bottom: number,
   ): boolean {
+    if (camera.ring()?.fade)
+      return (
+        Math.min(ahead[0] * (left - ring[0]!), ahead[0] * (right - ring[0]!)) +
+          Math.min(ahead[1] * (top - ring[1]!), ahead[1] * (bottom - ring[1]!)) <
+        ring[3]!
+      );
     const radius = ring[3]!;
     if (!(radius > 0)) return true;
     const cx = ring[0]!;
@@ -1546,6 +1561,7 @@ export function createTileflowBuildings3D(
         );
         context.uniform4f(u.u_ring ?? null, ...ringIn(x, y));
         context.uniform2f(u.u_ring_ahead ?? null, ...ahead);
+        context.uniform1i(u.u_ring_directional ?? null, camera.ring()?.fade ? 1 : 0);
         const palette = themes ? paletteOf(context, entry, themes.themes) : undefined;
         context.uniform1f(u.u_palette_on!, palette ? 1 : 0);
         context.activeTexture(context.TEXTURE1);

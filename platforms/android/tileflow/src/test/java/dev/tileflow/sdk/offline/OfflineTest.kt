@@ -191,7 +191,11 @@ class OfflineTest {
             plan.packs.map { it.pack.id },
         )
         assertEquals(25L, plan.resourceCount)
-        assertEquals(23L, plan.billable)
+        assertEquals("Only tiles are billable", 16L, plan.billable)
+        assertTrue(
+            plan.packs.filter { it.pack.kind == OfflinePackKind.DOCUMENTS }
+                .all { it.pack.billableResources == 0 }
+        )
         assertEquals(4_149L, plan.bytes)
         assertEquals("Discovery", 1, plan.resources.size)
         assertEquals(mapOf("terrain" to 5L, "world" to 11L), plan.tileCounts)
@@ -400,6 +404,18 @@ class OfflineTest {
                 now,
             )
         assertEquals(TileflowOfflineErrorCode.CREDENTIAL_REJECTED, unknown.code)
+        // Downloads stopped by the service wait and try again; access has not ended.
+        val stopped =
+            OfflinePackContract.failure(
+                503,
+                """{"code":"OFFLINE_DOWNLOADS_STOPPED","error":"x"}""".toByteArray(),
+                "120",
+                OfflinePackContract.Operation.DOWNLOAD,
+                0,
+            )
+        assertEquals(TileflowOfflineErrorCode.UNAVAILABLE, stopped.code)
+        assertTrue(stopped.isRecoverable)
+        assertEquals(120_000L, stopped.retryAfterMillis)
         assertNull(unknown.context.limit)
         assertEquals(
             TileflowOfflineErrorCode.GRANT_REJECTED,

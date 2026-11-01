@@ -107,7 +107,8 @@ final class OfflineTests: XCTestCase {
       "tiles/world/11/1002/772", "tiles/world/11/1003/772",
     ])
     XCTAssertEqual(plan.resourceCount, 25)
-    XCTAssertEqual(plan.billable, 23)
+    XCTAssertEqual(plan.billable, 16, "Only tiles are billable")
+    XCTAssertTrue(plan.packs.filter { $0.pack.kind == .documents }.allSatisfy { $0.pack.billableResources == 0 })
     XCTAssertEqual(plan.bytes, 4_149)
     XCTAssertEqual(plan.resources.count, 1, "Discovery")
     XCTAssertEqual(plan.tileCounts, ["terrain": 5, "world": 11])
@@ -237,6 +238,13 @@ final class OfflineTests: XCTestCase {
     let unknown = OfflinePackContract.failure(
       status: 401, body: forged, retryAfter: nil, operation: .create, now: now)
     XCTAssertEqual(unknown.code, .credentialRejected)
+    // Downloads stopped by the service wait and try again; access has not ended.
+    let stopped = OfflinePackContract.failure(
+      status: 503, body: Data(#"{"code":"OFFLINE_DOWNLOADS_STOPPED","error":"x"}"#.utf8),
+      retryAfter: "120", operation: .download, now: now)
+    XCTAssertEqual(stopped.code, .unavailable)
+    XCTAssertTrue(stopped.isRecoverable)
+    XCTAssertEqual(stopped.retryAfter, 120)
     XCTAssertNil(unknown.context.limit)
     XCTAssertEqual(
       OfflinePackContract.failure(

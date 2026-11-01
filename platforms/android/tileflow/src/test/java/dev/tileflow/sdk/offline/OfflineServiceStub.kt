@@ -252,7 +252,8 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
                     .put("url", url)
                     .put("bytes", data.size)
                     .put("resources", entries.size)
-                    .put("billableResources", entries.size)
+                    // Only tiles are billable.
+                    .put("billableResources", if (kind == OfflinePackKind.TILES) entries.size else 0)
                     .apply(extra)
             )
         }

@@ -1,6 +1,10 @@
 import Foundation
 import Network
 
+#if canImport(BackgroundTasks)
+  import BackgroundTasks
+#endif
+
 /// Downloads regions for use without a network and keeps them on the device, after Mapbox's tile
 /// store: estimate, load, list, observe, pause, resume, cancel and remove regions by identifier.
 ///
@@ -20,8 +24,9 @@ import Network
 /// ``handleEventsForBackgroundURLSession(identifier:completionHandler:)``. Unfinished downloads
 /// resume when the store is first used after launch, recoverable failures wait and continue by
 /// themselves, and stored Hosted regions are checked for updates when the network returns and
-/// at most once per the service's interval. Loading a region again downloads only what changed.
-/// Access ending stops updates; it never deletes or locks what the device holds.
+/// at most once per the service's interval. Loading a region again downloads only what changed,
+/// and ``setAutomaticUpdates(_:)`` lets the store do so by itself on unmetered networks. Access
+/// ending stops updates; it never deletes or locks what the device holds.
 public final class TileflowOfflineStore: Sendable {
   /// The process's store, using ``Tileflow/configuration()`` for Hosted content.
   public static let shared: TileflowOfflineStore = TileflowOfflineStore(
@@ -34,7 +39,8 @@ public final class TileflowOfflineStore: Sendable {
         return try OfflinePackClient(configuration: configuration)
       },
       availableBytes: { OfflineStorage.availableBytes(at: OfflineLayout.shared.root) },
-      index: .shared),
+      index: .shared, scheduler: OfflineBackgroundTaskScheduler(),
+      conditions: { .current() }),
     monitorsNetwork: true)
 
   let core: OfflineStoreCore
@@ -136,6 +142,60 @@ public final class TileflowOfflineStore: Sendable {
     subscribers.add(handler)
   }
 
+  /// Whether stored Hosted regions update by themselves. Off unless turned on with
+  /// ``setAutomaticUpdates(_:)``; the choice is kept across launches.
+  public var automaticUpdatesEnabled: Bool {
+    get async { await core.automaticUpdatesEnabled() }
+  }
+
+  /// Turns automatic updates on or off for every stored Hosted region.
+  ///
+  /// Updates are manual by default, as with Mapbox: loading a region again downloads what changed.
+  /// Turned on, the store revalidates stored regions about once a day and downloads each update
+  /// the service reports, as loading the region again would, but only on Wi-Fi or another network
+  /// that is neither expensive nor in Low Data Mode, and not in Low Power Mode. Only changed packs
+  /// download, the stored version keeps serving until the update is complete, and region events
+  /// and progress report the update as for a manual one. Each automatic update is billed like a
+  /// manual one: map views for the billable resources of the changed packs.
+  ///
+  /// Updates run as a background app refresh task. List ``backgroundUpdateTaskIdentifier`` under
+  /// `BGTaskSchedulerPermittedIdentifiers` in the app's Info.plist and call
+  /// ``registerBackgroundTasks()`` before the app finishes launching; they also run when the
+  /// network returns while the app is in use.
+  ///
+  /// - Throws: ``TileflowOfflineError`` with `invalidConfiguration` (reason
+  ///   `backgroundTaskNotPermitted`) when the app does not list the task identifier; nothing changes.
+  public func setAutomaticUpdates(_ enabled: Bool) async throws {
+    try await core.setAutomaticUpdates(enabled)
+  }
+
+  /// The background task identifier automatic updates run under, which the app lists under
+  /// `BGTaskSchedulerPermittedIdentifiers` in its Info.plist.
+  public static let backgroundUpdateTaskIdentifier = OfflineBackgroundTaskScheduler.identifier
+
+  /// Registers the background task that runs automatic updates. Call it once, before the app
+  /// finishes launching, as `BGTaskScheduler` requires, with ``backgroundUpdateTaskIdentifier``
+  /// listed in the app's Info.plist. A store whose automatic updates are on asks for its next run.
+  public static func registerBackgroundTasks() {
+    #if canImport(BackgroundTasks)
+      BGTaskScheduler.shared.register(
+        forTaskWithIdentifier: backgroundUpdateTaskIdentifier, using: nil
+      ) { task in
+        let run = Task { await shared.core.runScheduledUpdates() }
+        task.expirationHandler = { run.cancel() }
+        let completion = OfflineTaskCompletion(task: task)
+        Task {
+          await run.value
+          completion.complete()
+        }
+      }
+      Task {
+        let core = shared.core
+        if await core.automaticUpdatesEnabled() { try? await core.setAutomaticUpdates(true) }
+      }
+    #endif
+  }
+
   /// The background `URLSession` identifier the store downloads with.
   public static let backgroundSessionIdentifier = OfflineURLSessionFetcher.backgroundIdentifier
 
@@ -156,6 +216,14 @@ public final class TileflowOfflineStore: Sendable {
 private struct OfflineCompletion: @unchecked Sendable {
   let call: () -> Void
 }
+
+#if canImport(BackgroundTasks)
+  /// The system's task, completed once its run ends.
+  private struct OfflineTaskCompletion: @unchecked Sendable {
+    let task: BGTask
+    func complete() { task.setTaskCompleted(success: true) }
+  }
+#endif
 
 enum OfflineStorage {
   /// Whether `bytes` fit. The system's figure already counts space it can free; when it falls

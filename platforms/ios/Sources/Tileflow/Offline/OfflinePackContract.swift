@@ -392,6 +392,8 @@ enum OfflinePackContract {
     "OFFLINE_PACKS_DISABLED": (503, .unavailable),
     "OFFLINE_PACKS_UNAVAILABLE": (503, .unavailable),
     "OFFLINE_PACK_GRANT_UNAVAILABLE": (503, .unavailable),
+    // Downloads stopped for now: the device keeps what it holds and tries again later.
+    "OFFLINE_DOWNLOADS_STOPPED": (503, .unavailable),
   ]
 
   /// Classifies a refused pack request. A code is trusted only with its documented status;

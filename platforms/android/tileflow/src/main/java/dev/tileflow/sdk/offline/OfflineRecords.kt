@@ -13,6 +13,7 @@ import org.json.JSONObject
 /**
  * Where the offline store keeps its records, beside the resource cache's durable root:
  * ```
+ * settings.json                          the store's settings, replaced atomically
  * regions/<sha256(id)>/region.json        the region record, replaced atomically
  * regions/<sha256(id)>/v<n>/request-<i>.json, download-<i>.json
  *                                         a Hosted version's requests and created downloads
@@ -32,6 +33,7 @@ import org.json.JSONObject
  */
 internal class OfflineLayout(val root: File) {
     val regions = File(root, "regions")
+    val settings = File(root, "settings.json")
     val packs = OfflinePackStore(File(root, "packs"))
 
     fun region(id: String) = File(regions, sha256Hex(id.toByteArray()))
@@ -246,6 +248,8 @@ internal data class OfflineVersionRecord(
     /** Resources and bytes the version's download transferred, kept once it completes. */
     val loaded: Long? = null,
     val loadedBytes: Long? = null,
+    /** An update the store started by itself, which downloads only on unmetered networks. */
+    val automatic: Boolean? = null,
 ) {
     enum class State {
         DOWNLOADING,
@@ -275,6 +279,7 @@ internal data class OfflineVersionRecord(
             .putOpt("completedAt", completedAt)
             .putOpt("loaded", loaded)
             .putOpt("loadedBytes", loadedBytes)
+            .putOpt("automatic", automatic)
 
     companion object {
         fun fromJson(value: JSONObject) =
@@ -294,6 +299,7 @@ internal data class OfflineVersionRecord(
                 if (value.has("completedAt")) value.getLong("completedAt") else null,
                 if (value.has("loaded")) value.getLong("loaded") else null,
                 if (value.has("loadedBytes")) value.getLong("loadedBytes") else null,
+                if (value.has("automatic")) value.getBoolean("automatic") else null,
             )
     }
 }

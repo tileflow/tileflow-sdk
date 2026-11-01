@@ -2,6 +2,8 @@ package dev.tileflow.sdk.offline
 
 import android.content.Context
 import androidx.work.Configuration
+import androidx.work.NetworkType
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.testing.SynchronousExecutor
 import androidx.work.testing.WorkManagerTestInitHelper
@@ -23,6 +25,7 @@ import java.nio.file.Files
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.TimeZone
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -515,6 +518,140 @@ class OfflineStoreTest {
     }
 
     @Test
+    fun automaticUpdatesAreOffByDefaultAndScheduledOnlyWhileOn() = runBlocking<Unit> {
+        val context: Context = RuntimeEnvironment.getApplication()
+        WorkManagerTestInitHelper.initializeTestWorkManager(
+            context,
+            Configuration.Builder().setExecutor(SynchronousExecutor()).build(),
+        )
+        fun work() =
+            WorkManager.getInstance(context)
+                .getWorkInfosForUniqueWork(OfflineWorkUpdateScheduler.NAME)
+                .get()
+        val service = OfflineServiceStub()
+        val store = store(service, scheduler = OfflineWorkUpdateScheduler(context))
+        assertFalse(store.isAutomaticUpdatesEnabled())
+        assertTrue(work().isEmpty())
+
+        store.setAutomaticUpdates(true)
+        assertTrue(store.isAutomaticUpdatesEnabled())
+        val scheduled = work().single()
+        assertEquals(WorkInfo.State.ENQUEUED, scheduled.state)
+        assertEquals(NetworkType.UNMETERED, scheduled.constraints.requiredNetworkType)
+        assertTrue(scheduled.constraints.requiresBatteryNotLow())
+        assertEquals(TimeUnit.DAYS.toMillis(1), scheduled.periodicityInfo?.repeatIntervalMillis)
+        // Until the constraints are met, as on cellular, the work never runs.
+        assertEquals(0, service.creations.get())
+        // The choice is kept across launches.
+        assertTrue(store(service).isAutomaticUpdatesEnabled())
+
+        // Turning them off cancels the scheduled work.
+        store.setAutomaticUpdates(false)
+        assertFalse(store.isAutomaticUpdatesEnabled())
+        assertEquals(WorkInfo.State.CANCELLED, work().single().state)
+    }
+
+    @Test
+    fun automaticUpdatesDownloadOnlyOnUnmeteredNetworksAndSwapAtomically() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val conditions = AtomicReference(OfflineUpdateConditions(isUnmetered = true, isLowPower = false))
+        val index = OfflineServingIndex()
+        var runner: RecordingRunner? = null
+        val store =
+            store(
+                service,
+                index = index,
+                conditions = conditions,
+                runner = { RecordingRunner(it).also { recording -> runner = recording } },
+            )
+        val events = CopyOnWriteArrayList<TileflowOfflineRegionEvent>()
+        val subscription = store.subscribe { events.add(it) }
+        store.loadRegion("madrid", madrid())
+        waitFor(store, "madrid") { it.state == COMPLETE }
+        val oldTile = service.tileUrl(service.changedTile)
+        service.publish()
+        service.clock.addAndGet(86_401_000)
+        service.revalidationState = "update_available"
+
+        // Off by default: the network returning only revalidates.
+        store.core.networkDidConnect()
+        assertEquals(
+            TileflowOfflineRegion.UpdateState.UpdateAvailable,
+            store.region("madrid")!!.updateState,
+        )
+        assertEquals(1, service.creations.get())
+
+        // On, but on a metered network or saving battery, nothing runs.
+        store.setAutomaticUpdates(true)
+        for (blocked in
+            listOf(
+                OfflineUpdateConditions(isUnmetered = false, isLowPower = false),
+                OfflineUpdateConditions(isUnmetered = true, isLowPower = true),
+            ))
+            assertEquals(emptyList<String>(), store.core.updateAutomatically(blocked))
+        assertEquals(1, service.creations.get())
+
+        // On Wi-Fi the region updates by itself, only on unmetered networks, and the stored
+        // version serves until the update is complete.
+        val before = service.downloads.size
+        service.freezeAfter = before + 3
+        store.core.networkDidConnect()
+        waitUntil { service.downloads.size >= before + 3 }
+        assertEquals(2, service.creations.get())
+        assertEquals(TileflowOfflineNetworkRestriction.DISALLOW_EXPENSIVE, runner!!.restrictions.last())
+        val updating = store.region("madrid")!!
+        assertEquals(TileflowOfflineRegion.DownloadState.DOWNLOADING, updating.state)
+        assertTrue(updating.isAvailable)
+        assertTrue(
+            index.resource(service.key(oldTile), cache)!!
+                .body
+                .contentEquals("tile ${service.changedTile.name}#1".toByteArray())
+        )
+        service.freezeAfter = null
+        store.pauseRegion("madrid")
+        store.resumeRegion("madrid")
+        assertEquals(TileflowOfflineNetworkRestriction.DISALLOW_EXPENSIVE, runner!!.restrictions.last())
+        val done =
+            waitFor(store, "madrid") {
+                it.state == COMPLETE &&
+                    it.updateState == TileflowOfflineRegion.UpdateState.Current
+            }
+        assertTrue(done.isAvailable)
+        assertTrue(
+            index.resource(service.key(service.tileUrl(service.changedTile)), cache)!!
+                .body
+                .contentEquals("tile ${service.changedTile.name}#2".toByteArray())
+        )
+        // Events report the update as for a manual one.
+        assertTrue(
+            events.any {
+                it is TileflowOfflineRegionEvent.Changed &&
+                    it.region.state == TileflowOfflineRegion.DownloadState.DOWNLOADING
+            }
+        )
+
+        // Loading the region while an automatic update downloads makes it the application's.
+        service.deploy()
+        service.clock.addAndGet(86_401_000)
+        service.revalidationState = "update_available"
+        val next = service.downloads.size
+        service.freezeAfter = next + 1
+        store.core.networkDidConnect()
+        waitUntil { service.downloads.size >= next + 1 }
+        assertEquals(TileflowOfflineNetworkRestriction.DISALLOW_EXPENSIVE, runner!!.restrictions.last())
+        store.loadRegion("madrid", madrid())
+        assertEquals(TileflowOfflineNetworkRestriction.NONE, runner!!.restrictions.last())
+        service.freezeAfter = null
+        store.pauseRegion("madrid")
+        store.resumeRegion("madrid")
+        assertEquals(TileflowOfflineNetworkRestriction.NONE, runner!!.restrictions.last())
+        waitFor(store, "madrid") {
+            it.state == COMPLETE && it.updateState == TileflowOfflineRegion.UpdateState.Current
+        }
+        subscription.cancel()
+    }
+
+    @Test
     fun selfHostedRegionDownloadsItsManifestStylesFontsSpritesGlyphsAndTiles() = runBlocking<Unit> {
         val service = OfflineServiceStub()
         val store = store(service)
@@ -710,7 +847,7 @@ class OfflineStoreTest {
         assertEquals(9L, done.requiredPackCount)
         assertEquals(9L, done.completedPackCount)
         assertEquals(25L, done.requiredResourceCount)
-        assertEquals(23L, done.billableResourceCount)
+        assertEquals("Only tiles are billable", 16L, done.billableResourceCount)
         assertEquals("Nine packs, discovery", 10, service.downloads.count { it.status == 200 })
 
         // Every entry of every pack answers as the route serves it, decoded.
@@ -791,6 +928,8 @@ class OfflineStoreTest {
         runner: ((OfflineStoreCore) -> OfflineRunner)? = null,
         index: OfflineServingIndex? = null,
         available: (() -> Long?)? = null,
+        scheduler: OfflineUpdateScheduler? = null,
+        conditions: AtomicReference<OfflineUpdateConditions>? = null,
     ): OfflineStoreCore {
         val cache =
             if (root == "offline") cache
@@ -814,6 +953,8 @@ class OfflineStoreTest {
             concurrency = concurrency,
             now = { service.clock.get() },
             sleep = { sleeps?.add(it); delay(2) },
+            scheduler = scheduler,
+            conditions = { conditions?.get() ?: OfflineUpdateConditions.UNAVAILABLE },
         )
     }
 
@@ -826,6 +967,9 @@ class OfflineStoreTest {
         fetcher: OfflineResourceFetching? = null,
         index: OfflineServingIndex? = null,
         available: (() -> Long?)? = null,
+        scheduler: OfflineUpdateScheduler? = null,
+        conditions: AtomicReference<OfflineUpdateConditions>? = null,
+        runner: ((OfflineStoreCore) -> OfflineRunner)? = null,
     ): TileflowOfflineStore {
         val subscribers = OfflineSubscribers()
         return TileflowOfflineStore(
@@ -837,11 +981,28 @@ class OfflineStoreTest {
                 sleeps,
                 concurrency,
                 fetcher,
+                runner = runner,
                 index = index,
                 available = available,
+                scheduler = scheduler,
+                conditions = conditions,
             ),
             subscribers,
         )
+    }
+
+    /** Runs downloads in the process and records the network each one may use. */
+    private inner class RecordingRunner(core: OfflineStoreCore) : OfflineRunner {
+        private val base =
+            OfflineScopeRunner(core, CoroutineScope(SupervisorJob() + Dispatchers.IO).also(scopes::add))
+        val restrictions = CopyOnWriteArrayList<TileflowOfflineNetworkRestriction>()
+
+        override fun start(id: String, restriction: TileflowOfflineNetworkRestriction) {
+            restrictions.add(restriction)
+            base.start(id, restriction)
+        }
+
+        override fun stop(id: String) = base.stop(id)
     }
 
     private fun madrid(east: Double = -3.69) =

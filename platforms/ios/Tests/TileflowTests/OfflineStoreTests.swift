@@ -449,6 +449,135 @@ final class OfflineStoreTests: XCTestCase {
     }
   }
 
+  func testAutomaticUpdatesAreOffByDefaultAndScheduledOnlyWhileOn() async throws {
+    let service = OfflineServiceStub()
+    let scheduler = OfflineSchedulerStub()
+    let conditions = LockedValue(OfflineUpdateConditions(isUnmetered: true, isLowPower: false))
+    let store = makeStore(service, scheduler: scheduler, conditions: conditions)
+    let initially = await store.automaticUpdatesEnabled
+    XCTAssertFalse(initially)
+    XCTAssertTrue(scheduler.requests.isEmpty)
+
+    try await store.setAutomaticUpdates(true)
+    let enabled = await store.automaticUpdatesEnabled
+    XCTAssertTrue(enabled)
+    XCTAssertEqual(scheduler.requests, [service.now], "The first run may start at once")
+    // The choice is kept across launches.
+    let relaunched = await makeStore(service, scheduler: scheduler).automaticUpdatesEnabled
+    XCTAssertTrue(relaunched)
+    // A run asks for the next one a day later; a run the network or power held back, an hour later.
+    await store.core.runScheduledUpdates()
+    XCTAssertEqual(scheduler.requests.last, service.now.addingTimeInterval(86_400))
+    conditions.withLock { $0.isUnmetered = false }
+    service.clock.withLock { $0 += 86_400 }
+    await store.core.runScheduledUpdates()
+    XCTAssertEqual(scheduler.requests.last, service.now.addingTimeInterval(3_600))
+
+    // Turning them off cancels the scheduled run.
+    try await store.setAutomaticUpdates(false)
+    let disabled = await store.automaticUpdatesEnabled
+    XCTAssertFalse(disabled)
+    XCTAssertEqual(scheduler.cancellations, 1)
+
+    // An app that does not permit the background task changes nothing.
+    scheduler.refuses = true
+    do {
+      try await store.setAutomaticUpdates(true)
+      XCTFail("The task is not permitted")
+    } catch let error as TileflowOfflineError {
+      XCTAssertEqual(error.code, .invalidConfiguration)
+      XCTAssertEqual(error.context.reason, "backgroundTaskNotPermitted")
+    }
+    let unchanged = await store.automaticUpdatesEnabled
+    XCTAssertFalse(unchanged)
+  }
+
+  func testAutomaticUpdatesDownloadOnlyOnUnmeteredNetworksAndSwapAtomically() async throws {
+    let service = OfflineServiceStub()
+    let conditions = LockedValue(OfflineUpdateConditions(isUnmetered: true, isLowPower: false))
+    let index = OfflineServingIndex()
+    let store = makeStore(
+      service, index: index, scheduler: OfflineSchedulerStub(), conditions: conditions)
+    let events = LockedValue<[TileflowOfflineRegionEvent]>([])
+    let subscription = store.subscribe { event in events.withLock { $0.append(event) } }
+    defer { subscription.cancel() }
+    try await store.loadRegion(id: "madrid", options: madrid())
+    _ = try await waitFor(store, "madrid") { $0.state == .complete }
+    let oldTile = service.tileURL(service.changedTile)
+    service.publish()
+    service.clock.withLock { $0 += 86_401 }
+    service.revalidationState = "update_available"
+
+    // Off by default: the network returning only revalidates.
+    await store.core.networkDidConnect()
+    let checked = try await XCTUnwrapAsync(await store.region(id: "madrid"))
+    XCTAssertEqual(checked.updateState, .updateAvailable)
+    XCTAssertEqual(service.creations, 1)
+
+    // On, but on cellular or in Low Power Mode, nothing runs.
+    try await store.setAutomaticUpdates(true)
+    for blocked in [
+      OfflineUpdateConditions(isUnmetered: false, isLowPower: false),
+      OfflineUpdateConditions(isUnmetered: true, isLowPower: true),
+    ] {
+      let started = await store.core.updateAutomatically(blocked)
+      XCTAssertEqual(started, [])
+    }
+    XCTAssertEqual(service.creations, 1)
+
+    // On Wi-Fi the region updates by itself, only on unmetered networks, and the stored version
+    // serves until the update is complete.
+    let before = service.downloads.count
+    service.freezeAfter = before + 3
+    await store.core.networkDidConnect()
+    try await waitUntil { service.downloads.count >= before + 3 }
+    XCTAssertEqual(service.creations, 2)
+    let updating = try await XCTUnwrapAsync(await store.region(id: "madrid"))
+    XCTAssertEqual(updating.state, .downloading)
+    XCTAssertTrue(updating.isAvailable)
+    let stale = await index.resource(service.key(oldTile), cache: cache)
+    XCTAssertEqual(stale?.body, Data("tile \(service.changedTile.name)#1".utf8))
+    service.freezeAfter = nil
+    try await store.pauseRegion(id: "madrid")
+    try await store.resumeRegion(id: "madrid")
+    let done = try await waitFor(store, "madrid") {
+      $0.state == .complete && $0.updateState == .current
+    }
+    XCTAssertTrue(done.isAvailable)
+    let update = service.downloads.dropFirst(before)
+    XCTAssertFalse(update.isEmpty)
+    XCTAssertTrue(update.allSatisfy(\.unmeteredOnly), "Automatic updates stay off cellular")
+    let fresh = await index.resource(
+      service.key(service.tileURL(service.changedTile)), cache: cache)
+    XCTAssertEqual(fresh?.body, Data("tile \(service.changedTile.name)#2".utf8))
+    // Events report the update as for a manual one.
+    XCTAssertTrue(
+      events.withLock { list in
+        list.contains {
+          if case .changed(let region) = $0 { region.state == .downloading } else { false }
+        }
+      })
+
+    // Loading the region while an automatic update downloads makes it the application's.
+    service.deploy()
+    service.clock.withLock { $0 += 86_401 }
+    service.revalidationState = "update_available"
+    let next = service.downloads.count
+    service.freezeAfter = next + 1
+    await store.core.networkDidConnect()
+    try await waitUntil { service.downloads.count >= next + 1 }
+    try await store.loadRegion(id: "madrid", options: madrid())
+    let takenOver = service.downloads.count
+    service.freezeAfter = nil
+    try await store.pauseRegion(id: "madrid")
+    try await store.resumeRegion(id: "madrid")
+    _ = try await waitFor(store, "madrid") { $0.state == .complete && $0.updateState == .current }
+    XCTAssertGreaterThan(service.downloads.count, takenOver)
+    XCTAssertFalse(
+      service.downloads.dropFirst(takenOver).contains(where: \.unmeteredOnly),
+      "The application's load uses any allowed network")
+  }
+
   func testSelfHostedRegionDownloadsItsManifestStylesFontsSpritesGlyphsAndTiles() async throws {
     let service = OfflineServiceStub()
     let store = makeStore(service)
@@ -608,7 +737,8 @@ final class OfflineStoreTests: XCTestCase {
     _ service: OfflineServiceStub, root: String = "offline", space: LockedValue<Int64?>? = nil,
     sleeps: LockedValue<[TimeInterval]>? = nil, concurrency: Int = 8,
     fetcher: (any OfflineResourceFetching)? = nil, index: OfflineServingIndex? = nil,
-    available: (@Sendable () -> Int64?)? = nil
+    available: (@Sendable () -> Int64?)? = nil, scheduler: OfflineSchedulerStub? = nil,
+    conditions: LockedValue<OfflineUpdateConditions>? = nil
   ) -> TileflowOfflineStore {
     let cache =
       root == "offline"
@@ -636,7 +766,8 @@ final class OfflineStoreTests: XCTestCase {
         sleep: { delay in
           sleeps?.withLock { $0.append(delay) }
           try await Task.sleep(nanoseconds: 2_000_000)
-        }))
+        }, scheduler: scheduler,
+        conditions: { conditions?.withLock { $0 } ?? .unavailable }))
   }
 
   private func madrid(east: Double = -3.69) -> TileflowOfflineRegionLoadOptions {
@@ -688,6 +819,8 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
     let url: String
     let headers: [String: String]
     let status: Int
+    /// The request stayed off expensive and constrained networks.
+    var unmeteredOnly = false
   }
 
   let clock = LockedValue<TimeInterval>(1_793_188_800)  // 2026-10-28T12:00:00Z
@@ -783,6 +916,8 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
   static func template(_ release: Int) -> String {
     "\(origin)/tiles/world/r\(release)/{z}/{x}/{y}.pbf?map=\(mapID)"
   }
+
+  var now: Date { Date(timeIntervalSince1970: clock.withLock { $0 }) }
 
   func tileURL(_ tile: OfflineTileID) -> String {
     OfflineTileTemplate(template)!.url(tile)!.absoluteString
@@ -898,14 +1033,16 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
     var bodies: [String: Data] = [:]
     func pack(
       _ id: String, _ kind: OfflinePackKind, _ url: String, _ entries: [OfflinePackBuilder.Entry],
-      billable: Int, extra: [String: Any] = [:]
+      extra: [String: Any] = [:]
     ) {
       let data = OfflinePackBuilder.build(kind, entries)
       bodies[url] = data
       packs.append(
         [
           "id": id, "kind": kind == .tiles ? "tiles" : "documents", "url": url,
-          "bytes": data.count, "resources": entries.count, "billableResources": billable,
+          "bytes": data.count, "resources": entries.count,
+          // Only tiles are billable.
+          "billableResources": kind == .tiles ? entries.count : 0,
         ].merging(extra) { a, _ in a })
     }
     let template = Self.template(state.release)
@@ -922,7 +1059,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
           name: "\(Self.origin)/tiles/world/tiles.json?map=\(Self.mapID)",
           contentType: "application/json", encoding: nil,
           body: Data(#"{"tilejson":"3.0.0","tiles":["\#(template)"]}"#.utf8)))
-      pack("style", .documents, "\(packOrigin)/documents/style.tfpack", styles, billable: styles.count)
+      pack("style", .documents, "\(packOrigin)/documents/style.tfpack", styles)
       pack(
         "glyphs/Noto Sans Regular/0", .documents,
         "\(packOrigin)/documents/glyphs/Noto%20Sans%20Regular/0.tfpack",
@@ -930,7 +1067,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
           .init(
             name: "\(Self.origin)/fonts/Noto%20Sans%20Regular/0-255.pbf",
             contentType: "application/x-protobuf", encoding: nil, body: Data("glyphs".utf8))
-        ], billable: 1)
+        ])
     }
 
     var anchors: [OfflineTileID: [OfflineTileID]] = [:]
@@ -959,7 +1096,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
           .init(
             name: $0.name, contentType: "application/x-protobuf", encoding: "gzip",
             body: OfflinePackBuilder.gzip(self.tile($0, state: state)))
-        }, billable: tiles.count,
+        },
         extra: ["source": "world", "anchor": [anchor.z, anchor.x, anchor.y], "zooms": [zooms.lowerBound, zooms.upperBound]])
     }
     let billable = packs.reduce(0) { $0 + ($1["billableResources"] as! Int) }
@@ -1041,7 +1178,10 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
       let count = state.downloads.count + 1
       func record(_ response: OfflineFetchResponse) -> Action {
         state.downloads.append(
-          Download(url: url, headers: request.headers, status: response.status))
+          Download(
+            url: url, headers: request.headers, status: response.status,
+            unmeteredOnly: !request.allowsExpensiveNetworkAccess
+              && !request.allowsConstrainedNetworkAccess))
         state.onDownload?(count)
         return .respond(response)
       }
@@ -1214,4 +1354,28 @@ final class OfflineURLProtocolStub: URLProtocol {
   }
 
   override func stopLoading() {}
+}
+
+/// Records what the store asks the system to schedule.
+final class OfflineSchedulerStub: OfflineUpdateScheduling, @unchecked Sendable {
+  private let state = LockedValue((requests: [Date](), cancellations: 0, refuses: false))
+
+  var requests: [Date] { state.withLock { $0.requests } }
+  var cancellations: Int { state.withLock { $0.cancellations } }
+  var refuses: Bool {
+    get { state.withLock { $0.refuses } }
+    set { state.withLock { $0.refuses = newValue } }
+  }
+
+  func schedule(earliest: Date) throws {
+    try state.withLock { state in
+      guard !state.refuses else {
+        throw TileflowOfflineError(
+          .invalidConfiguration, context: .init(reason: "backgroundTaskNotPermitted"))
+      }
+      state.requests.append(earliest)
+    }
+  }
+
+  func cancel() { state.withLock { $0.cancellations += 1 } }
 }

@@ -458,6 +458,8 @@ internal object OfflinePackContract {
             "OFFLINE_PACKS_DISABLED" to (503 to TileflowOfflineErrorCode.UNAVAILABLE),
             "OFFLINE_PACKS_UNAVAILABLE" to (503 to TileflowOfflineErrorCode.UNAVAILABLE),
             "OFFLINE_PACK_GRANT_UNAVAILABLE" to (503 to TileflowOfflineErrorCode.UNAVAILABLE),
+            // Downloads stopped for now: the device keeps what it holds and tries again later.
+            "OFFLINE_DOWNLOADS_STOPPED" to (503 to TileflowOfflineErrorCode.UNAVAILABLE),
         )
 
     /**

@@ -86,6 +86,10 @@ internal class OfflineStoreCore(
     private val packConcurrency: Int = 4,
     private val now: () -> Long = System::currentTimeMillis,
     private val sleep: suspend (Long) -> Unit = { delay(it) },
+    /** Asks the system to run automatic updates in the background; null for none. */
+    private val scheduler: OfflineUpdateScheduler? = null,
+    /** Whether the device may update regions by itself now. */
+    private val conditions: () -> OfflineUpdateConditions = { OfflineUpdateConditions.UNAVAILABLE },
 ) {
     private val runner = runner(this)
     private val lock = Mutex()
@@ -101,6 +105,7 @@ internal class OfflineStoreCore(
     private val created = HashMap<OfflinePackRequest, OfflineDownload>()
     /** Packs an earlier pass of a pending version held before its download was created again. */
     private val candidates = HashMap<String, Map<String, OfflinePreviousPack>>()
+    private var settings = OfflineSettings()
 
     // Opening.
 
@@ -110,6 +115,7 @@ internal class OfflineStoreCore(
     private fun openLocked() {
         if (isOpen) return
         isOpen = true
+        settings = OfflineSettings.read(layout.settings)
         for (directory in layout.regions.listFiles().orEmpty()) {
             val record = OfflineRegionRecord.read(File(directory, "region.json"))
             if (record == null) {
@@ -309,7 +315,15 @@ internal class OfflineStoreCore(
     // Loading.
 
     /** Creates the region, resumes its unfinished download, or downloads a new version of it. */
-    suspend fun load(id: String, options: TileflowOfflineRegionLoadOptions): TileflowOfflineRegion {
+    /**
+     * Creates the region, resumes its unfinished download, or downloads a new version of it. An
+     * [automatic] version is an update the store started by itself.
+     */
+    suspend fun load(
+        id: String,
+        options: TileflowOfflineRegionLoadOptions,
+        automatic: Boolean = false,
+    ): TileflowOfflineRegion {
         open()
         if (id.isEmpty() || id.toByteArray().size > 256)
             throw TileflowOfflineException.options("invalidRegionID")
@@ -329,7 +343,11 @@ internal class OfflineStoreCore(
                 if (current.metadata != options.metadata)
                     save(replacingMetadata(record, options.metadata))
                 val latest = records.getValue(id)
-                if (pending.state != OfflineVersionRecord.State.DOWNLOADING)
+                // Loading an automatic update makes it the application's: it may use any allowed
+                // network.
+                val takenOver = !automatic && pending.automatic == true
+                if (takenOver) runner.stop(id)
+                if (pending.state != OfflineVersionRecord.State.DOWNLOADING || takenOver)
                     save(
                         latest.copy(
                             pending =
@@ -337,10 +355,11 @@ internal class OfflineStoreCore(
                                     state = OfflineVersionRecord.State.DOWNLOADING,
                                     error = null,
                                     retryAt = null,
+                                    automatic = if (automatic) true else null,
                                 )
                         )
                     )
-                start(id, pending)
+                start(id, records.getValue(id).pending!!)
                 return snapshot(records.getValue(id))!!
             }
         }
@@ -396,6 +415,7 @@ internal class OfflineStoreCore(
                     plan.bytes,
                     OfflineVersionRecord.State.DOWNLOADING,
                     createdAt = time,
+                    automatic = if (automatic) true else null,
                 )
             save(record.copy(pending = pending))
             plans[planKey(id, number)] = plan
@@ -570,15 +590,89 @@ internal class OfflineStoreCore(
             }
         }
         checkForUpdates()
+        if (lock.withLock { settings.automaticUpdates }) updateAutomatically(conditions())
+    }
+
+    // Automatic updates.
+
+    suspend fun automaticUpdatesEnabled(): Boolean =
+        lock.withLock {
+            openLocked()
+            settings.automaticUpdates
+        }
+
+    /**
+     * Turns automatic updates on or off, and asks the system to run them, or stops asking. Nothing
+     * changes when the system refuses to schedule them.
+     */
+    suspend fun setAutomaticUpdates(enabled: Boolean) =
+        lock.withLock {
+            openLocked()
+            if (enabled) scheduler?.schedule() else scheduler?.cancel()
+            val next = settings.copy(automaticUpdates = enabled)
+            next.write(layout.settings)
+            settings = next
+        }
+
+    /**
+     * One automatic update pass: when automatic updates are on and [conditions] allow them, due
+     * regions are revalidated and each Hosted region with an update available downloads it, exactly
+     * as loading it again would, but only on unmetered networks. The stored version serves until
+     * the update completes. Returns the regions whose update started.
+     */
+    suspend fun updateAutomatically(conditions: OfflineUpdateConditions): List<String> {
+        val enabled =
+            lock.withLock {
+                openLocked()
+                if (!settings.automaticUpdates || !conditions.allowsUpdates) return@withLock false
+                val next = settings.copy(lastAutomaticUpdate = now())
+                runCatching { next.write(layout.settings) }
+                settings = next
+                true
+            }
+        if (!enabled) return emptyList()
+        checkForUpdates()
+        val due =
+            lock.withLock {
+                records.values
+                    .filter { record ->
+                        val active = record.active
+                        settings.automaticUpdates &&
+                            !record.removing &&
+                            record.pending == null &&
+                            active != null &&
+                            active.downloads > 0 &&
+                            record.check?.state == "update_available"
+                    }
+                    .mapNotNull { record ->
+                        offlineOptions(record.active!!.options)?.let { record.id to it }
+                    }
+                    .sortedBy { it.first }
+            }
+        val started = ArrayList<String>()
+        for ((id, options) in due) {
+            try {
+                load(id, options, automatic = true)
+                started += id
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                // A refusal leaves the stored version as it is; the next pass tries again.
+            }
+        }
+        return started
     }
 
     // Downloading.
 
+    /** Starts the version's download; an automatic update only on unmetered networks. */
     private fun start(id: String, pending: OfflineVersionRecord) =
         runner.start(
             id,
-            offlineOptions(pending.options)?.networkRestriction
-                ?: TileflowOfflineNetworkRestriction.NONE,
+            if (pending.automatic == true) TileflowOfflineNetworkRestriction.DISALLOW_EXPENSIVE
+            else
+                offlineOptions(pending.options)?.networkRestriction
+                    ?: TileflowOfflineNetworkRestriction.NONE,
         )
 
     /**

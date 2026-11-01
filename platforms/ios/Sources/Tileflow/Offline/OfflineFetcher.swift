@@ -7,6 +7,8 @@ struct OfflineFetchRequest: Sendable {
   let url: URL
   let headers: [String: String]
   let allowsExpensiveNetworkAccess: Bool
+  /// False keeps the transfer off networks in Low Data Mode.
+  var allowsConstrainedNetworkAccess = true
   /// When set, a successful body is written to this file instead of returned, and a transfer of
   /// the same identifier that ended part-way resumes where it stopped. The response then answers
   /// 200 for the whole body.
@@ -143,6 +145,7 @@ final class OfflineURLSessionFetcher: NSObject, OfflineResourceFetching, URLSess
             var urlRequest = URLRequest(url: request.url)
             urlRequest.httpShouldHandleCookies = false
             urlRequest.allowsExpensiveNetworkAccess = request.allowsExpensiveNetworkAccess
+            urlRequest.allowsConstrainedNetworkAccess = request.allowsConstrainedNetworkAccess
             for (name, value) in request.headers {
               urlRequest.setValue(value, forHTTPHeaderField: name)
             }

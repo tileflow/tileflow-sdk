@@ -169,6 +169,20 @@ struct OfflineDownloadJob: Sendable {
   let staging: URL
   let packs: OfflinePackStore
   let restriction: TileflowOfflineNetworkRestriction
+  /// Only on networks that are neither expensive nor constrained, as automatic updates download.
+  var unmeteredOnly = false
+
+  /// The request for one transfer of the job, on the networks it may use.
+  func request(id: String, url: URL, headers: [String: String], destination: URL? = nil)
+    -> OfflineFetchRequest
+  {
+    var request = OfflineFetchRequest(
+      id: id, url: url, headers: headers,
+      allowsExpensiveNetworkAccess: restriction == .none && !unmeteredOnly,
+      destination: destination)
+    request.allowsConstrainedNetworkAccess = !unmeteredOnly
+    return request
+  }
 }
 
 /// Downloads and verifies a version's packs into the pack store and its resources into the
@@ -344,9 +358,7 @@ struct OfflineDownloader: Sendable {
     let response: OfflineFetchResponse
     do {
       response = try await fetcher.fetch(
-        OfflineFetchRequest(
-          id: id, url: pack.url, headers: headers,
-          allowsExpensiveNetworkAccess: job.restriction == .none, destination: destination))
+        job.request(id: id, url: pack.url, headers: headers, destination: destination))
     } catch {
       return .outcome(transferFailure(error))
     }
@@ -431,9 +443,7 @@ struct OfflineDownloader: Sendable {
     let response: OfflineFetchResponse
     do {
       response = try await fetcher.fetch(
-        OfflineFetchRequest(
-          id: job.prefix + resource.key.digest, url: resource.url, headers: headers,
-          allowsExpensiveNetworkAccess: job.restriction == .none))
+        job.request(id: job.prefix + resource.key.digest, url: resource.url, headers: headers))
     } catch {
       return .outcome(transferFailure(error))
     }

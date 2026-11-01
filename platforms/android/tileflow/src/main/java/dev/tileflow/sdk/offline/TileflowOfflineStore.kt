@@ -45,8 +45,8 @@ import kotlinx.coroutines.runBlocking
  * Downloads run as WorkManager work on an allowed network and continue after the process ends.
  * Recoverable failures wait and continue by themselves, and stored Hosted regions are checked for
  * updates when the network returns and at most once per the service's interval. Loading a region
- * again downloads only what changed. Access ending stops updates; it never deletes or locks what
- * the device holds.
+ * again downloads only what changed, and [setAutomaticUpdates] lets the store do so by itself on
+ * unmetered networks. Access ending stops updates; it never deletes or locks what the device holds.
  */
 public class TileflowOfflineStore
 internal constructor(
@@ -113,6 +113,26 @@ internal constructor(
         handler: (TileflowOfflineRegionEvent) -> Unit
     ): TileflowOfflineSubscription = subscribers.add(handler)
 
+    /**
+     * Whether stored Hosted regions update by themselves. Off unless turned on with
+     * [setAutomaticUpdates]; the choice is kept across launches.
+     */
+    public suspend fun isAutomaticUpdatesEnabled(): Boolean = core.automaticUpdatesEnabled()
+
+    /**
+     * Turns automatic updates on or off for every stored Hosted region.
+     *
+     * Updates are manual by default, as with Mapbox: loading a region again downloads what changed.
+     * Turned on, the store revalidates stored regions about once a day, as unique periodic
+     * WorkManager work that runs only on an unmetered network while the battery is not low, and
+     * downloads each update the service reports, as loading the region again would, but only on
+     * unmetered networks and not in battery saver. Only changed packs download, the stored version
+     * keeps serving until the update is complete, and region events and progress report the update
+     * as for a manual one. Each automatic update is billed like a manual one: map views for the
+     * billable resources of the changed packs. Turning them off cancels the periodic work.
+     */
+    public suspend fun setAutomaticUpdates(enabled: Boolean): Unit = core.setAutomaticUpdates(enabled)
+
     /** The network was switched on again: waiting downloads continue and regions are checked. */
     internal fun reconnected() {
         scope.launch { core.networkDidConnect() }
@@ -153,6 +173,8 @@ internal constructor(
                                     subscribers,
                                     OfflineServingIndex.shared,
                                     { OfflineWorkRunner(application) },
+                                    scheduler = OfflineWorkUpdateScheduler(application),
+                                    conditions = { OfflineUpdateConditions.current(application) },
                                 )
                             TileflowOfflineStore(core, subscribers).also { store ->
                                 instance = store

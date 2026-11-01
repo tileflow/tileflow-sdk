@@ -149,7 +149,7 @@ final class OfflinePackTests: XCTestCase {
     XCTAssertEqual(done.requiredPackCount, 9)
     XCTAssertEqual(done.completedPackCount, 9)
     XCTAssertEqual(done.requiredResourceCount, 25)
-    XCTAssertEqual(done.billableResourceCount, 23)
+    XCTAssertEqual(done.billableResourceCount, 16, "Only tiles are billable")
     XCTAssertEqual(service.downloads.filter { $0.status == 200 }.count, 10, "Nine packs, discovery")
 
     // Every entry of every pack answers as the route serves it, decoded.

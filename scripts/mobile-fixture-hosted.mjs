@@ -283,7 +283,8 @@ export function createHostedFixture({base, tile, center}) {
         url: `${base}${path}`,
         bytes: bytes.length,
         resources: entries.length,
-        billableResources: entries.length,
+        // Only tiles are billable.
+        billableResources: kind === 'tiles' ? entries.length : 0,
         ...extra,
       });
     };

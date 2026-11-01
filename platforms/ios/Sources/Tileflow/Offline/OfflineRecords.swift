@@ -2,6 +2,7 @@ import Foundation
 
 /// Where the offline store keeps its records, beside the resource cache's durable root:
 ///
+///     settings.json                           the store's settings, replaced atomically
 ///     regions/<sha256(id)>/region.json        the region record, replaced atomically
 ///     regions/<sha256(id)>/v<n>/request-<i>.json, download-<i>.json
 ///                                             a Hosted version's requests and created downloads
@@ -30,6 +31,7 @@ struct OfflineLayout: Sendable {
 
   var regions: URL { root.appendingPathComponent("regions", isDirectory: true) }
   var downloads: URL { root.appendingPathComponent("downloads", isDirectory: true) }
+  var settings: URL { root.appendingPathComponent("settings.json") }
   var packs: OfflinePackStore {
     OfflinePackStore(directory: root.appendingPathComponent("packs", isDirectory: true))
   }
@@ -239,6 +241,8 @@ struct OfflineVersionRecord: Codable, Sendable {
   /// Resources and bytes the version's download transferred, kept once it completes.
   var loaded: Int?
   var loadedBytes: Int64?
+  /// An update the store started by itself, which downloads only on unmetered networks.
+  var automatic: Bool?
 }
 
 /// What the last revalidation of a region found.

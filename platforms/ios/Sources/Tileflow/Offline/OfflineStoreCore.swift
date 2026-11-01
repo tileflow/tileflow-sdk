@@ -48,7 +48,16 @@ actor OfflineStoreCore {
     var sleep: @Sendable (TimeInterval) async throws -> Void = {
       try await Task.sleep(nanoseconds: UInt64(max(0, $0) * 1_000_000_000))
     }
+    /// Asks the system to run automatic updates in the background; nil for none.
+    var scheduler: (any OfflineUpdateScheduling)? = nil
+    /// Whether the device may update regions by itself now.
+    var conditions: @Sendable () -> OfflineUpdateConditions = { .unavailable }
   }
+
+  /// Automatic updates run about this often: the service's revalidation interval.
+  static let automaticUpdateInterval: TimeInterval = 86_400
+  /// A run the network or power held back is tried again after this long.
+  static let automaticUpdateRetry: TimeInterval = 3_600
 
   /// A download an estimate created is reused by the next load while at least this much of its
   /// window remains.
@@ -72,6 +81,7 @@ actor OfflineStoreCore {
   private var servedSets: [String: [String: OfflineServedPacks]] = [:]
   private var creditSets: [String: [String: [OfflineCredit]]] = [:]
   private var created: [OfflinePackRequest: OfflineDownload] = [:]
+  private var settings = OfflineSettings()
   /// Packs an earlier pass of a pending version held before its download was created again.
   private var candidates: [String: [String: OfflinePreviousPack]] = [:]
 
@@ -87,6 +97,7 @@ actor OfflineStoreCore {
     guard !isOpen else { return }
     isOpen = true
     layout.excludeFromBackup()
+    settings = OfflineSettings.read(layout.settings)
     let files = FileManager.default
     for name in (try? files.contentsOfDirectory(atPath: layout.regions.path)) ?? [] {
       let directory = layout.regions.appendingPathComponent(name, isDirectory: true)
@@ -266,9 +277,10 @@ actor OfflineStoreCore {
 
   // MARK: Loading
 
-  /// Creates the region, resumes its unfinished download, or downloads a new version of it.
-  func load(_ id: String, _ options: TileflowOfflineRegionLoadOptions) async throws
-    -> TileflowOfflineRegion
+  /// Creates the region, resumes its unfinished download, or downloads a new version of it. An
+  /// `automatic` version is an update the store started by itself.
+  func load(_ id: String, _ options: TileflowOfflineRegionLoadOptions, automatic: Bool = false)
+    async throws -> TileflowOfflineRegion
   {
     open()
     guard !id.isEmpty, id.utf8.count <= 256 else {
@@ -286,10 +298,14 @@ actor OfflineStoreCore {
         pending = record.pending!
         try save(record)
       }
-      if pending.state != .downloading {
+      // Loading an automatic update makes it the application's: it may use any allowed network.
+      let takenOver = !automatic && pending.automatic == true
+      if pending.state != .downloading || takenOver {
+        if takenOver { stopRun(id, pending, cancelTransfers: false) }
         pending.state = .downloading
         pending.error = nil
         pending.retryAt = nil
+        pending.automatic = automatic ? true : nil
         record.pending = pending
         try save(record)
       }
@@ -335,7 +351,7 @@ actor OfflineStoreCore {
       downloads: plan.downloads.count, packs: plan.packs.count, resources: plan.resourceCount,
       billable: plan.billable, bytes: plan.bytes,
       state: .downloading, error: nil, retryAt: nil, createdAt: now.offlineMilliseconds,
-      completedAt: nil)
+      completedAt: nil, automatic: automatic ? true : nil)
     try save(record)
     plans[planKey(id, number)] = plan
     progress[id] = OfflineProgress()
@@ -475,6 +491,80 @@ actor OfflineStoreCore {
       }
     }
     await checkForUpdates()
+    if settings.automaticUpdates { await updateAutomatically(dependencies.conditions()) }
+  }
+
+  // MARK: Automatic updates
+
+  func automaticUpdatesEnabled() -> Bool {
+    open()
+    return settings.automaticUpdates
+  }
+
+  /// Turns automatic updates on or off, and asks the system to run them, or stops asking. Nothing
+  /// changes when the system refuses to schedule them.
+  func setAutomaticUpdates(_ enabled: Bool) throws {
+    open()
+    if enabled {
+      try dependencies.scheduler?.schedule(earliest: nextAutomaticUpdate())
+    } else {
+      dependencies.scheduler?.cancel()
+    }
+    var next = settings
+    next.automaticUpdates = enabled
+    try next.write(layout.settings)
+    settings = next
+  }
+
+  /// When the system should next run automatic updates: a day after the last run, or now.
+  private func nextAutomaticUpdate() -> Date {
+    let now = dependencies.now()
+    guard let last = settings.lastAutomaticUpdate else { return now }
+    return max(
+      now, Date(offlineMilliseconds: last).addingTimeInterval(Self.automaticUpdateInterval))
+  }
+
+  /// One automatic update pass: when automatic updates are on and `conditions` allow them, due
+  /// regions are revalidated and each Hosted region with an update available downloads it, exactly
+  /// as loading it again would, but only on unmetered networks. The stored version serves until
+  /// the update completes. Returns the regions whose update started.
+  @discardableResult
+  func updateAutomatically(_ conditions: OfflineUpdateConditions) async -> [String] {
+    open()
+    guard settings.automaticUpdates, conditions.allowsUpdates else { return [] }
+    var next = settings
+    next.lastAutomaticUpdate = dependencies.now().offlineMilliseconds
+    try? next.write(layout.settings)
+    settings = next
+    await checkForUpdates()
+    var started: [String] = []
+    for id in records.keys.sorted() {
+      guard settings.automaticUpdates, let record = records[id], !record.removing,
+        record.pending == nil, let active = record.active, active.downloads > 0,
+        record.check?.state == "update_available",
+        let options = TileflowOfflineRegionLoadOptions(json: active.options)
+      else { continue }
+      do {
+        _ = try await load(id, options, automatic: true)
+        started.append(id)
+      } catch {
+        // A refusal leaves the stored version as it is; the next pass tries again.
+        continue
+      }
+    }
+    return started
+  }
+
+  /// A scheduled run: one pass, then the next request, a day later, or an hour later when the
+  /// network or power held the pass back.
+  func runScheduledUpdates() async {
+    let last = settings.lastAutomaticUpdate
+    await updateAutomatically(dependencies.conditions())
+    guard settings.automaticUpdates else { return }
+    let earliest =
+      settings.lastAutomaticUpdate == last
+      ? dependencies.now().addingTimeInterval(Self.automaticUpdateRetry) : nextAutomaticUpdate()
+    try? dependencies.scheduler?.schedule(earliest: earliest)
   }
 
   // MARK: Downloading
@@ -580,7 +670,7 @@ actor OfflineStoreCore {
         prefix: transferPrefix(id, pending.number), plan: plan, pending: remaining,
         pendingPacks: remainingPacks, previous: previousPacks(id, plan),
         activePaths: activePaths(), staging: layout.staging(id, pending.number), packs: packs,
-        restriction: options?.networkRestriction ?? .none)
+        restriction: options?.networkRestriction ?? .none, unmeteredOnly: pending.automatic == true)
       let log = OfflineProgressLog(layout.progress(id, pending.number))
       let outcome = await downloader.run(job, log: log) { [weak self] entries in
         await self?.didStore(id, entries)

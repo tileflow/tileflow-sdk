@@ -241,18 +241,24 @@ final class OfflineServingIndex: Sendable {
 }
 
 /// Whether the device has a usable network path, as the system reports it. Until the first
-/// report arrives, the network is assumed reachable, so a map starts its session as usual.
+/// report arrives, the network is assumed reachable, so a map starts its session as usual, and
+/// metered, so nothing updates by itself.
 final class OfflineReachability: Sendable {
   static let shared = OfflineReachability()
 
-  private let satisfied = LockedValue(true)
+  private let state = LockedValue((satisfied: true, unmetered: false))
   private let monitor = NWPathMonitor()
 
   private init() {
-    let satisfied = satisfied
-    monitor.pathUpdateHandler = { path in satisfied.withLock { $0 = path.status == .satisfied } }
+    let state = state
+    monitor.pathUpdateHandler = { path in
+      let satisfied = path.status == .satisfied
+      state.withLock { $0 = (satisfied, satisfied && !path.isExpensive && !path.isConstrained) }
+    }
     monitor.start(queue: DispatchQueue(label: "dev.tileflow.reachability", qos: .utility))
   }
 
-  var isReachable: Bool { satisfied.withLock { $0 } }
+  var isReachable: Bool { state.withLock { $0.satisfied } }
+  /// A path that is neither expensive, such as cellular, nor constrained by Low Data Mode.
+  var isUnmetered: Bool { state.withLock { $0.unmetered } }
 }

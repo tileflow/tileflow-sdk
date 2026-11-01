@@ -4,6 +4,8 @@ import dev.tileflow.configuration.TileflowBoundingBox
 import dev.tileflow.configuration.TileflowConfiguration
 import dev.tileflow.configuration.TileflowCredential
 import dev.tileflow.configuration.TileflowPosition
+import dev.tileflow.sdk.TileflowCoordinate
+import dev.tileflow.sdk.TileflowGeometry
 import dev.tileflow.sdk.transport.NativeHTTPTransporting
 import dev.tileflow.sdk.transport.ResourcePayload
 import java.net.URI
@@ -521,33 +523,51 @@ class OfflineTest {
             TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(-180.0, -90.0, 180.0, 90.0))
         assertEquals(64L, world.tileCount(3))
         val open =
-            TileflowOfflineGeometry.Polygon(
-                listOf(
-                    TileflowPosition(-3.75, 40.38),
-                    TileflowPosition(-3.62, 40.36),
-                    TileflowPosition(-3.6, 40.47),
-                    TileflowPosition(-3.72, 40.5),
+            TileflowOfflineGeometry.Geometry(
+                TileflowGeometry.Polygon(
+                    listOf(
+                        listOf(
+                            TileflowCoordinate(-3.75, 40.38),
+                            TileflowCoordinate(-3.62, 40.36),
+                            TileflowCoordinate(-3.6, 40.47),
+                            TileflowCoordinate(-3.72, 40.5),
+                        )
+                    )
                 )
             )
         val polygon = contract().getJSONArray("coverage").getJSONObject(0).getJSONArray("counts")
         assertEquals(polygon.getLong(16), open.tileCount(16))
         assertEquals(196L + 715L, open.tileCount(15..16))
 
+        fun geometry(value: TileflowGeometry) = TileflowOfflineGeometry.Geometry(value)
+        fun point(longitude: Double, latitude: Double) = TileflowCoordinate(longitude, latitude)
+        val square = listOf(point(0.0, 0.0), point(1.0, 0.0), point(1.0, 1.0), point(0.0, 0.0))
         val invalid =
             listOf(
-                TileflowOfflineGeometry.Polygon(
-                    listOf(TileflowPosition(0.0, 0.0), TileflowPosition(1.0, 1.0))
-                ) to "tooFewPositions",
-                TileflowOfflineGeometry.Polygon(
-                    listOf(
-                        TileflowPosition(0.0, 0.0),
-                        TileflowPosition(1.0, 1.0),
-                        TileflowPosition(2.0, 2.0),
+                geometry(TileflowGeometry.Polygon(listOf(listOf(point(0.0, 0.0), point(1.0, 1.0))))) to
+                    "tooFewPositions",
+                geometry(
+                    TileflowGeometry.Polygon(
+                        listOf(listOf(point(0.0, 0.0), point(1.0, 1.0), point(2.0, 2.0)))
                     )
                 ) to "emptyArea",
-                TileflowOfflineGeometry.Polygon(
-                    (0 until 256).map { TileflowPosition(it / 1000.0, sin(it.toDouble())) }
+                geometry(
+                    TileflowGeometry.Polygon(
+                        listOf((0 until 256).map { point(it / 1000.0, sin(it.toDouble())) })
+                    )
                 ) to "tooManyPositions",
+                geometry(TileflowGeometry.LineString(listOf(point(0.0, 0.0)))) to "tooFewPositions",
+                geometry(TileflowGeometry.MultiPoint(emptyList())) to "tooFewPositions",
+                geometry(TileflowGeometry.LineString(listOf(point(179.0, 0.0), point(-179.0, 0.0)))) to
+                    "crossesAntimeridian",
+                geometry(TileflowGeometry.Polygon(List(17) { square })) to "tooManyRings",
+                geometry(TileflowGeometry.MultiPolygon(List(65) { listOf(square) })) to
+                    "tooManyGeometries",
+                TileflowOfflineGeometry.GeometryCollection(
+                    List(65) { TileflowGeometry.Point(point(0.0, 0.0)) }
+                ) to "tooManyGeometries",
+                TileflowOfflineGeometry.GeometryCollection(emptyList()) to "tooFewPositions",
+                geometry(TileflowGeometry.Point(point(181.0, 0.0))) to "invalidPosition",
                 TileflowOfflineGeometry.Corridor(
                     listOf(TileflowPosition(179.0, 0.0), TileflowPosition(-179.0, 0.0)),
                     100.0,
@@ -574,6 +594,104 @@ class OfflineTest {
                 (failure as TileflowOfflineException).code,
             )
             assertEquals(reason, failure.context.reason)
+        }
+    }
+
+    @Test
+    fun geoJsonCoverMatchesTheService() {
+        val fixture = JSONObject(resource("geometry-cover.json"))
+        val covers = fixture.getJSONArray("covers")
+        for (index in 0 until covers.length()) {
+            val item = covers.getJSONObject(index)
+            val name = item.getString("name")
+            val request = item.getJSONObject("request")
+            val geometry =
+                if (request.getString("type") == "bbox") {
+                    val box = request.getJSONArray("bbox")
+                    TileflowOfflineGeometry.BoundingBox(
+                        TileflowBoundingBox(
+                            box.getDouble(0),
+                            box.getDouble(1),
+                            box.getDouble(2),
+                            box.getDouble(3),
+                        )
+                    )
+                } else TileflowOfflineGeometry.fromGeoJson(request.toString())
+            val region = OfflinePackRegion.fromJson(item.getJSONObject("region"))
+            assertNotNull(name, region)
+            assertEquals(name, listOf(region), geometry.packRegions())
+            assertJson(name, item.getJSONObject("region"), region!!.toJson())
+            val byZoom = item.getJSONObject("cover")
+            for (zoom in byZoom.keys()) {
+                val expected = byZoom.getJSONArray(zoom)
+                val cover = OfflineTileCover(region, zoom.toInt())
+                val rows =
+                    cover.rows?.flatMap { y -> cover.row(y).map { listOf(y, it.first, it.last) } }
+                        ?: emptyList()
+                assertEquals(
+                    "$name z$zoom",
+                    (0 until expected.length()).map { row ->
+                        expected.getJSONArray(row).let { listOf(it.getInt(0), it.getInt(1), it.getInt(2)) }
+                    },
+                    rows,
+                )
+                assertEquals(
+                    "$name z$zoom",
+                    rows.sumOf { (it[2] - it[1] + 1).toLong() },
+                    geometry.tileCount(zoom.toInt()),
+                )
+            }
+        }
+        // What the service refuses is never read back as its answer.
+        val refused = fixture.getJSONArray("refused")
+        for (index in 0 until refused.length()) {
+            val region = refused.getJSONObject(index).get("region")
+            assertNull(region.toString(), OfflinePackRegion.fromJson(region))
+        }
+    }
+
+    @Test
+    fun geoJsonGeometriesAreReadAndKeptMapboxStyle() {
+        val text =
+            """
+            {"type": "GeometryCollection", "geometries": [
+              {"type": "Polygon", "coordinates": [[[-3.72, 40.4], [-3.68, 40.4], [-3.68, 40.43],
+                [-3.72, 40.43]]]},
+              {"type": "LineString", "coordinates": [[-3.75, 40.38, 650], [-3.6, 40.5]]},
+              {"type": "Point", "coordinates": [-3.7, 89]}
+            ]}
+            """
+        val geometry = TileflowOfflineGeometry.fromGeoJson(text)
+        val parts = (geometry as TileflowOfflineGeometry.GeometryCollection).geometries
+        assertEquals(3, parts.size)
+        // The open ring is closed, the altitude dropped and the latitude clamped to the map's.
+        val regions = geometry.packRegions()
+        val expected =
+            JSONObject(
+                """
+                {"type": "GeometryCollection", "geometries": [
+                  {"type": "Polygon", "coordinates": [[[-3.72, 40.4], [-3.68, 40.4], [-3.68, 40.43],
+                    [-3.72, 40.43], [-3.72, 40.4]]]},
+                  {"type": "LineString", "coordinates": [[-3.75, 40.38], [-3.6, 40.5]]},
+                  {"type": "Point", "coordinates": [-3.7, 85.051129]}
+                ]}
+                """
+            )
+        assertEquals(1, regions.size)
+        assertJson("canonical", expected, regions[0].toJson())
+        assertEquals(regions[0], OfflinePackRegion.fromJson(expected))
+        // Kept with the region exactly as given.
+        val options =
+            TileflowOfflineRegionLoadOptions(
+                geometry,
+                TileflowOfflineContent.Hosted("map_offlineofflineof", listOf("light")),
+            )
+        assertEquals(options, offlineOptions(options.toJson()))
+        val nested =
+            """{"type": "GeometryCollection", "geometries": [{"type": "GeometryCollection", "geometries": []}]}"""
+        for (invalid in listOf("", "{}", """{"type": "Feature", "geometry": null}""", "[1, 2]", nested)) {
+            val failure = runCatching { TileflowOfflineGeometry.fromGeoJson(invalid) }.exceptionOrNull()
+            assertEquals(invalid, "invalidGeoJSON", (failure as TileflowOfflineException).context.reason)
         }
     }
 

@@ -137,7 +137,7 @@ public struct TileflowMapOptions: Equatable, Sendable {
   }
 }
 
-public struct TileflowCoordinate: Codable, Equatable, Sendable {
+public struct TileflowCoordinate: Codable, Hashable, Sendable {
   public var longitude: Double
   public var latitude: Double
   public init(longitude: Double, latitude: Double) {

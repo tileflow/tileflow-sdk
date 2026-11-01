@@ -56,7 +56,7 @@ public enum TileflowJSON: Sendable, Equatable, ExpressibleByStringLiteral,
 }
 
 /// A GeoJSON geometry, with positions as coordinates; altitudes are not kept.
-public enum TileflowGeometry: Sendable, Equatable {
+public enum TileflowGeometry: Sendable, Hashable {
   case point(TileflowCoordinate)
   case multiPoint([TileflowCoordinate])
   case lineString([TileflowCoordinate])

@@ -836,6 +836,52 @@ class OfflineStoreTest {
     }
 
     @Test
+    fun geoJsonRegionsDownloadAndServeTheTilesTheirPartsTouch() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val index = OfflineServingIndex()
+        val store = store(service, index = index)
+        val geometry =
+            TileflowOfflineGeometry.fromGeoJson(
+                """
+                {"type": "GeometryCollection", "geometries": [
+                  {"type": "LineString", "coordinates": [[-3.75, 40.38], [-3.6, 40.5]]},
+                  {"type": "Point", "coordinates": [-3.5, 40.6]}
+                ]}
+                """
+            )
+        val options =
+            TileflowOfflineRegionLoadOptions(
+                geometry,
+                TileflowOfflineContent.Hosted(MAP_ID, listOf("light")),
+                minZoom = 12,
+                maxZoom = 14,
+            )
+        store.loadRegion("route", options)
+        val done = waitFor(store, "route") { it.state == COMPLETE }
+        assertTrue(done.isAvailable)
+        assertEquals("One download for every part", 1, service.creations.get())
+        val region = geometry.packRegions().first()
+        var touched = 0L
+        for (zoom in 12..14) {
+            val cover = OfflineTileCover(region, zoom)
+            for (y in cover.rows!!) {
+                for (x in cover.row(y).flatMap { it.toList() }) {
+                    touched += 1
+                    val tile = index.resource(service.key(service.tileUrl(OfflineTileId(zoom, x, y))), cache)
+                    assertEquals("$zoom/$x/$y", 200, tile?.metadata?.status)
+                }
+            }
+        }
+        assertEquals(geometry.tileCount(12..14), touched)
+        // A tile inside the line's bounds that the line does not pass through is not in the region.
+        val cover = OfflineTileCover(region, 14)
+        val top = cover.rows!!.first
+        val west = cover.rows!!.mapNotNull { cover.row(it).firstOrNull()?.first }.min()
+        assertFalse(cover.contains(west, top))
+        assertNull(index.resource(service.key(service.tileUrl(OfflineTileId(14, west, top))), cache))
+    }
+
+    @Test
     fun backgroundWorkDownloadsTheRegion() = runBlocking<Unit> {
         val context: Context = RuntimeEnvironment.getApplication()
         WorkManagerTestInitHelper.initializeTestWorkManager(

@@ -1,13 +1,14 @@
 package dev.tileflow.sdk.offline
 
 import dev.tileflow.configuration.TileflowPosition
+import kotlin.math.ceil
 import kotlin.math.floor
 import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * The region of one Hosted pack in the service's canonical form: a box or one closed ring of
- * WGS84 positions rounded to six decimals, never crossing the antimeridian.
+ * The region of one Hosted download in the service's canonical form: a box, one closed ring or a
+ * GeoJSON geometry, with WGS84 positions rounded to six decimals, never crossing the antimeridian.
  */
 internal sealed class OfflinePackRegion {
     data class Bbox(val west: Double, val south: Double, val east: Double, val north: Double) :
@@ -15,6 +16,8 @@ internal sealed class OfflinePackRegion {
 
     /** A closed ring: its last position repeats the first. */
     data class Polygon(val ring: List<TileflowPosition>) : OfflinePackRegion()
+
+    data class Geometry(val shape: OfflineRegionShape) : OfflinePackRegion()
 
     fun toJson(): JSONObject =
         when (this) {
@@ -33,21 +36,30 @@ internal sealed class OfflinePackRegion {
                             }
                         },
                     )
+            is Geometry -> shape.toJson()
         }
 
-    /** The ring the cover follows: a box is its four corners. */
-    val positions: List<TileflowPosition>
+    /** The parts the cover follows: a box is the ring of its four corners. */
+    val parts: List<OfflineCoverPart>
         get() =
             when (this) {
                 is Bbox ->
                     listOf(
-                        TileflowPosition(west, south),
-                        TileflowPosition(east, south),
-                        TileflowPosition(east, north),
-                        TileflowPosition(west, north),
-                        TileflowPosition(west, south),
+                        OfflineCoverPart(
+                            listOf(
+                                listOf(
+                                    TileflowPosition(west, south),
+                                    TileflowPosition(east, south),
+                                    TileflowPosition(east, north),
+                                    TileflowPosition(west, north),
+                                    TileflowPosition(west, south),
+                                )
+                            ),
+                            true,
+                        )
                     )
-                is Polygon -> ring
+                is Polygon -> listOf(OfflineCoverPart(listOf(ring), true))
+                is Geometry -> shape.parts
             }
 
     companion object {
@@ -107,7 +119,12 @@ internal sealed class OfflinePackRegion {
                         }
                     canonical(ring)?.takeIf { it == Polygon(ring) }
                 }
-                else -> null
+                else -> {
+                    val shape = OfflineRegionShape.fromJson(value) ?: return null
+                    val canonical =
+                        runCatching { OfflineRegionShape.canonical(shape) }.getOrNull()
+                    if (canonical == shape) Geometry(shape) else null
+                }
             }
         }
 
@@ -138,27 +155,52 @@ internal sealed class OfflinePackRegion {
 }
 
 /**
+ * One part of a region's cover: paths whose segments it touches, a single position touching the
+ * tile it lies in, and, for a polygon, whether the area its rings enclose (even-odd) is covered.
+ */
+internal data class OfflineCoverPart(val paths: List<List<TileflowPosition>>, val isFilled: Boolean)
+
+/**
  * The tiles of one zoom that a pack region covers, exactly as the service plans and admits them.
  *
- * Edges are straight lines in Web Mercator. A tile belongs to the region when an edge passes
- * through it (closed tile bounds) or its row's center line lies inside the ring (even-odd).
+ * Edges are straight lines in Web Mercator. A tile belongs to the region when a part's edge or
+ * position touches it (closed tile bounds) or its row's center line lies inside a polygon part
+ * (even-odd over that polygon's rings). Parts form a union.
  */
 internal class OfflineTileCover(region: OfflinePackRegion, val zoom: Int) {
     private val limit = (1 shl zoom) - 1
-    private val xs: DoubleArray
-    private val ys: DoubleArray
+
+    /** Each part's paths as x and y arrays in fractional tile units, and whether it is filled. */
+    private class Part(val paths: List<Pair<DoubleArray, DoubleArray>>, val isFilled: Boolean)
+
+    private val parts: List<Part>
 
     init {
         val scale = (1 shl zoom).toDouble()
-        val ring = region.positions.map { mercator(it, scale) }
-        xs = DoubleArray(ring.size) { ring[it].first }
-        ys = DoubleArray(ring.size) { ring[it].second }
+        parts =
+            region.parts.map { part ->
+                Part(
+                    part.paths.map { path ->
+                        val points = path.map { mercator(it, scale) }
+                        Pair(
+                            DoubleArray(points.size) { points[it].first },
+                            DoubleArray(points.size) { points[it].second },
+                        )
+                    },
+                    part.isFilled,
+                )
+            }
     }
 
-    /** The rows the region can touch; null when it touches none. */
+    /**
+     * The rows the region can touch; null when it touches none. Row bounds are closed, so a region
+     * whose top lies exactly on a row edge also touches the row above it.
+     */
     val rows: IntRange?
         get() {
-            val first = maxOf(0, floor(ys.min()).toInt())
+            val ys = parts.flatMap { part -> part.paths.flatMap { it.second.asList() } }
+            if (ys.isEmpty()) return null
+            val first = maxOf(0, ceil(ys.min()).toInt() - 1)
             val last = minOf(limit, floor(ys.max()).toInt())
             return if (first <= last) first..last else null
         }
@@ -173,35 +215,34 @@ internal class OfflineTileCover(region: OfflinePackRegion, val zoom: Int) {
             val end = minOf(limit.toDouble(), floor(maxOf(from, to)))
             if (start <= end) ranges.add(start.toInt()..end.toInt())
         }
-        for (index in 1 until xs.size) {
-            val px = xs[index - 1]
-            val py = ys[index - 1]
-            val qx = xs[index]
-            val qy = ys[index]
-            if (maxOf(py, qy) < row || minOf(py, qy) > row + 1) continue
-            if (py == qy) {
-                add(px, qx)
-                continue
-            }
-            val t0 = maxOf(0.0, minOf(1.0, (row - py) / (qy - py)))
-            val t1 = maxOf(0.0, minOf(1.0, (row + 1 - py) / (qy - py)))
-            add(px + minOf(t0, t1) * (qx - px), px + maxOf(t0, t1) * (qx - px))
-        }
         val center = row + 0.5
-        val crossings = mutableListOf<Double>()
-        for (index in 1 until xs.size) {
-            val px = xs[index - 1]
-            val py = ys[index - 1]
-            val qx = xs[index]
-            val qy = ys[index]
-            if ((py <= center) != (qy <= center))
-                crossings.add(px + ((center - py) / (qy - py)) * (qx - px))
-        }
-        crossings.sort()
-        var index = 0
-        while (index + 1 < crossings.size) {
-            add(crossings[index], crossings[index + 1])
-            index += 2
+        for (part in parts) {
+            val crossings = mutableListOf<Double>()
+            for ((xs, ys) in part.paths) {
+                // A single position is a segment of no length.
+                for (index in (if (xs.size > 1) 1 else 0) until xs.size) {
+                    val px = xs[maxOf(0, index - 1)]
+                    val py = ys[maxOf(0, index - 1)]
+                    val qx = xs[index]
+                    val qy = ys[index]
+                    if (part.isFilled && (py <= center) != (qy <= center))
+                        crossings.add(px + ((center - py) / (qy - py)) * (qx - px))
+                    if (maxOf(py, qy) < row || minOf(py, qy) > row + 1) continue
+                    if (py == qy) {
+                        add(px, qx)
+                        continue
+                    }
+                    val t0 = maxOf(0.0, minOf(1.0, (row - py) / (qy - py)))
+                    val t1 = maxOf(0.0, minOf(1.0, (row + 1 - py) / (qy - py)))
+                    add(px + minOf(t0, t1) * (qx - px), px + maxOf(t0, t1) * (qx - px))
+                }
+            }
+            crossings.sort()
+            var index = 0
+            while (index + 1 < crossings.size) {
+                add(crossings[index], crossings[index + 1])
+                index += 2
+            }
         }
         return merged(ranges)
     }

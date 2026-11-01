@@ -8,6 +8,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 import org.json.JSONArray
+import org.json.JSONException
 import org.json.JSONObject
 
 /**
@@ -407,8 +408,11 @@ internal fun TileflowOfflineRegionLoadOptions.toJson(): JSONObject {
                             .put(value.box.east)
                             .put(value.box.north),
                     )
-            is TileflowOfflineGeometry.Polygon ->
-                JSONObject().put("type", "polygon").put("coordinates", positions(value.ring))
+            is TileflowOfflineGeometry.Geometry,
+            is TileflowOfflineGeometry.GeometryCollection ->
+                JSONObject()
+                    .put("type", "geojson")
+                    .put("geometry", TileflowOfflineGeometry.geoJson(value))
             is TileflowOfflineGeometry.Corridor ->
                 JSONObject()
                     .put("type", "corridor")
@@ -471,10 +475,9 @@ internal fun offlineOptions(value: JSONObject): TileflowOfflineRegionLoadOptions
                             )
                         )
                     }
-                    "polygon" ->
-                        TileflowOfflineGeometry.Polygon(
-                            positions(shape.getJSONArray("coordinates"))
-                        )
+                    "geojson" ->
+                        TileflowOfflineGeometry.of(shape.getJSONObject("geometry"))
+                            ?: throw JSONException("geometry")
                     else ->
                         TileflowOfflineGeometry.Corridor(
                             positions(shape.getJSONArray("line")),

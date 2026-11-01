@@ -318,29 +318,55 @@ final class OfflineTests: XCTestCase {
     let world = TileflowOfflineGeometry.boundingBox(
       TileflowBoundingBox(west: -180, south: -90, east: 180, north: 90))
     XCTAssertEqual(try world.tileCount(zoom: 3), 64)
-    let open = TileflowOfflineGeometry.polygon([
-      .init(longitude: -3.75, latitude: 40.38), .init(longitude: -3.62, latitude: 40.36),
-      .init(longitude: -3.6, latitude: 40.47), .init(longitude: -3.72, latitude: 40.5),
-    ])
+    let open = TileflowOfflineGeometry.geometry(
+      .polygon([[
+        .init(longitude: -3.75, latitude: 40.38), .init(longitude: -3.62, latitude: 40.36),
+        .init(longitude: -3.6, latitude: 40.47), .init(longitude: -3.72, latitude: 40.5),
+      ]]))
     let polygon = try contract()["coverage"] as! [[String: Any]]
     XCTAssertEqual(try open.tileCount(zoom: 16), (polygon[0]["counts"] as! [Int])[16])
     XCTAssertEqual(try open.tileCount(zoomRange: 15...16), 196 + 715)
 
+    let square: [TileflowCoordinate] = [
+      .init(longitude: 0, latitude: 0), .init(longitude: 1, latitude: 0),
+      .init(longitude: 1, latitude: 1), .init(longitude: 0, latitude: 0),
+    ]
     let invalid: [(TileflowOfflineGeometry, String)] = [
       (
-        .polygon([.init(longitude: 0, latitude: 0), .init(longitude: 1, latitude: 1)]),
+        .geometry(.polygon([[.init(longitude: 0, latitude: 0), .init(longitude: 1, latitude: 1)]])),
         "tooFewPositions"
       ),
       (
-        .polygon([
-          .init(longitude: 0, latitude: 0), .init(longitude: 1, latitude: 1),
-          .init(longitude: 2, latitude: 2),
-        ]), "emptyArea"
+        .geometry(
+          .polygon([[
+            .init(longitude: 0, latitude: 0), .init(longitude: 1, latitude: 1),
+            .init(longitude: 2, latitude: 2),
+          ]])), "emptyArea"
       ),
       (
-        .polygon((0..<256).map { .init(longitude: Double($0) / 1000, latitude: sin(Double($0))) }),
+        .geometry(
+          .polygon([
+            (0..<256).map { .init(longitude: Double($0) / 1000, latitude: sin(Double($0))) }
+          ])),
         "tooManyPositions"
       ),
+      (.geometry(.lineString([.init(longitude: 0, latitude: 0)])), "tooFewPositions"),
+      (.geometry(.multiPoint([])), "tooFewPositions"),
+      (
+        .geometry(
+          .lineString([.init(longitude: 179, latitude: 0), .init(longitude: -179, latitude: 0)])),
+        "crossesAntimeridian"
+      ),
+      (.geometry(.polygon(Array(repeating: square, count: 17))), "tooManyRings"),
+      (
+        .geometry(.multiPolygon(Array(repeating: [square], count: 65))), "tooManyGeometries"
+      ),
+      (
+        .geometryCollection(Array(repeating: .point(.init(longitude: 0, latitude: 0)), count: 65)),
+        "tooManyGeometries"
+      ),
+      (.geometryCollection([]), "tooFewPositions"),
+      (.geometry(.point(.init(longitude: 181, latitude: 0))), "invalidPosition"),
       (
         .corridor(
           line: [.init(longitude: 179, latitude: 0), .init(longitude: -179, latitude: 0)],
@@ -366,6 +392,80 @@ final class OfflineTests: XCTestCase {
       XCTAssertThrowsError(try geometry.validate(), reason) {
         XCTAssertEqual(($0 as? TileflowOfflineError)?.code, .invalidRegion)
         XCTAssertEqual(($0 as? TileflowOfflineError)?.context.reason, reason)
+      }
+    }
+  }
+
+  func testGeoJSONCoverMatchesTheService() throws {
+    let fixture = try fixture("geometry-cover") as! [String: Any]
+    for item in fixture["covers"] as! [[String: Any]] {
+      let name = item["name"] as! String
+      let request = item["request"] as! [String: Any]
+      let geometry: TileflowOfflineGeometry
+      if request["type"] as! String == "bbox" {
+        let box = request["bbox"] as! [Double]
+        geometry = .boundingBox(
+          TileflowBoundingBox(west: box[0], south: box[1], east: box[2], north: box[3]))
+      } else {
+        let text = String(
+          decoding: try JSONSerialization.data(withJSONObject: request), as: UTF8.self)
+        geometry = try TileflowOfflineGeometry(geoJSON: text)
+      }
+      let region = try XCTUnwrap(OfflinePackRegion(json: json(item["region"]!)), name)
+      XCTAssertEqual(try geometry.packRegions(), [region], name)
+      XCTAssertEqual(try object(region.json), item["region"] as! NSDictionary, name)
+      for (zoom, expected) in item["cover"] as! [String: [[Int]]] {
+        let cover = OfflineTileCover(region, zoom: Int(zoom)!)
+        let rows = cover.rows.map { rows in
+          rows.flatMap { y in cover.row(y).map { [y, $0.lowerBound, $0.upperBound] } }
+        }
+        XCTAssertEqual(rows ?? [], expected, "\(name) z\(zoom)")
+        XCTAssertEqual(
+          try geometry.tileCount(zoom: Int(zoom)!),
+          expected.reduce(0) { $0 + $1[2] - $1[1] + 1 }, "\(name) z\(zoom)")
+      }
+    }
+    // What the service refuses is never read back as its answer.
+    for item in fixture["refused"] as! [[String: Any]] {
+      XCTAssertNil(OfflinePackRegion(json: try json(item["region"]!)), "\(item["region"]!)")
+    }
+  }
+
+  func testGeoJSONGeometriesAreReadAndKeptMapboxStyle() throws {
+    let text = """
+      {"type": "GeometryCollection", "geometries": [
+        {"type": "Polygon", "coordinates": [[[-3.72, 40.4], [-3.68, 40.4], [-3.68, 40.43],
+          [-3.72, 40.43]]]},
+        {"type": "LineString", "coordinates": [[-3.75, 40.38, 650], [-3.6, 40.5]]},
+        {"type": "Point", "coordinates": [-3.7, 89]}
+      ]}
+      """
+    let geometry = try TileflowOfflineGeometry(geoJSON: text)
+    guard case .geometryCollection(let parts) = geometry else { return XCTFail("\(geometry)") }
+    XCTAssertEqual(parts.count, 3)
+    // The open ring is closed, the altitude dropped and the latitude clamped to the map's.
+    let regions = try geometry.packRegions()
+    let expected = try json([
+      "type": "GeometryCollection",
+      "geometries": [
+        [
+          "type": "Polygon",
+          "coordinates": [[[-3.72, 40.4], [-3.68, 40.4], [-3.68, 40.43], [-3.72, 40.43], [-3.72, 40.4]]],
+        ],
+        ["type": "LineString", "coordinates": [[-3.75, 40.38], [-3.6, 40.5]]],
+        ["type": "Point", "coordinates": [-3.7, 85.051129]],
+      ],
+    ])
+    XCTAssertEqual(regions.map(\.json), [expected])
+    XCTAssertEqual(OfflinePackRegion(json: expected), regions.first)
+    // Kept with the region exactly as given.
+    let options = TileflowOfflineRegionLoadOptions(
+      geometry: geometry, content: .hosted(mapID: "map_offlineofflineof", themes: ["light"]))
+    XCTAssertEqual(TileflowOfflineRegionLoadOptions(json: options.json), options)
+    let nested = #"{"type": "GeometryCollection", "geometries": [{"type": "GeometryCollection", "geometries": []}]}"#
+    for invalid in ["", "{}", #"{"type": "Feature", "geometry": null}"#, "[1, 2]", nested] {
+      XCTAssertThrowsError(try TileflowOfflineGeometry(geoJSON: invalid), invalid) {
+        XCTAssertEqual(($0 as? TileflowOfflineError)?.context.reason, "invalidGeoJSON")
       }
     }
   }

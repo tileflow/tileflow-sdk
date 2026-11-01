@@ -759,6 +759,48 @@ final class OfflineStoreTests: XCTestCase {
       try FileManager.default.contentsOfDirectory(atPath: layout.packs.directory.path).isEmpty)
   }
 
+  func testGeoJSONRegionsDownloadAndServeTheTilesTheirPartsTouch() async throws {
+    let service = OfflineServiceStub()
+    let index = OfflineServingIndex()
+    let store = makeStore(service, index: index)
+    let geometry = try TileflowOfflineGeometry(
+      geoJSON: """
+        {"type": "GeometryCollection", "geometries": [
+          {"type": "LineString", "coordinates": [[-3.75, 40.38], [-3.6, 40.5]]},
+          {"type": "Point", "coordinates": [-3.5, 40.6]}
+        ]}
+        """)
+    let options = TileflowOfflineRegionLoadOptions(
+      geometry: geometry, content: .hosted(mapID: OfflineServiceStub.mapID, themes: ["light"]),
+      minZoom: 12, maxZoom: 14)
+    try await store.loadRegion(id: "route", options: options)
+    let done = try await waitFor(store, "route") { $0.state == .complete }
+    XCTAssertTrue(done.isAvailable)
+    XCTAssertEqual(service.creations, 1, "One download for every part")
+    let region = try XCTUnwrap(try geometry.packRegions().first)
+    var touched = 0
+    for zoom in 12...14 {
+      let cover = OfflineTileCover(region, zoom: zoom)
+      for y in try XCTUnwrap(cover.rows) {
+        for x in cover.row(y).flatMap({ Array($0) }) {
+          touched += 1
+          let tile = await index.resource(
+            service.key(service.tileURL(OfflineTileID(z: zoom, x: x, y: y))), cache: cache)
+          XCTAssertEqual(tile?.metadata.status, 200, "\(zoom)/\(x)/\(y)")
+        }
+      }
+    }
+    XCTAssertEqual(touched, try geometry.tileCount(zoomRange: 12...14))
+    // A tile inside the line's bounds that the line does not pass through is not in the region.
+    let cover = OfflineTileCover(region, zoom: 14)
+    let top = try XCTUnwrap(cover.rows).lowerBound
+    let west = try XCTUnwrap(cover.rows).compactMap { cover.row($0).first?.lowerBound }.min()!
+    XCTAssertFalse(cover.contains(x: west, y: top))
+    let beside = await index.resource(
+      service.key(service.tileURL(OfflineTileID(z: 14, x: west, y: top))), cache: cache)
+    XCTAssertNil(beside)
+  }
+
   func testBackgroundFetcherSendsOnlyTheRequestHeadersAndRefusesRedirects() async throws {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [OfflineURLProtocolStub.self]

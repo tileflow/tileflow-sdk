@@ -1,11 +1,13 @@
 import Foundation
 
-/// The region of one Hosted pack in the service's canonical form: a box or one closed ring of
-/// WGS84 positions rounded to six decimals, never crossing the antimeridian.
+/// The region of one Hosted download in the service's canonical form: a box, one closed ring or a
+/// GeoJSON geometry, with WGS84 positions rounded to six decimals, never crossing the
+/// antimeridian.
 enum OfflinePackRegion: Hashable, Sendable {
   case bbox(west: Double, south: Double, east: Double, north: Double)
   /// A closed ring: its last position repeats the first.
   case polygon([TileflowPosition])
+  case geometry(OfflineRegionShape)
 
   static let maximumLatitude = 85.051129
   static let positions = 4...256
@@ -61,7 +63,10 @@ enum OfflinePackRegion: Hashable, Sendable {
       else { return nil }
       self = region
     default:
-      return nil
+      guard let shape = OfflineRegionShape(json: value),
+        (try? OfflineRegionShape.canonical(shape)) == shape
+      else { return nil }
+      self = .geometry(shape)
     }
   }
 
@@ -78,19 +83,23 @@ enum OfflinePackRegion: Hashable, Sendable {
         "coordinates": .array(
           ring.map { .array([.number($0.longitude), .number($0.latitude)]) }),
       ])
+    case .geometry(let shape):
+      return shape.json
     }
   }
 
-  /// The ring the cover follows: a box is its four corners.
-  var ring: [TileflowPosition] {
+  /// The parts the cover follows: a box is the ring of its four corners.
+  var parts: [OfflineCoverPart] {
     switch self {
     case .bbox(let west, let south, let east, let north):
-      return [
+      let ring: [TileflowPosition] = [
         .init(longitude: west, latitude: south), .init(longitude: east, latitude: south),
         .init(longitude: east, latitude: north), .init(longitude: west, latitude: north),
         .init(longitude: west, latitude: south),
       ]
-    case .polygon(let ring): return ring
+      return [OfflineCoverPart(paths: [ring], isFilled: true)]
+    case .polygon(let ring): return [OfflineCoverPart(paths: [ring], isFilled: true)]
+    case .geometry(let shape): return shape.parts
     }
   }
 
@@ -117,27 +126,39 @@ enum OfflinePackRegion: Hashable, Sendable {
   }
 }
 
+/// One part of a region's cover: paths whose segments it touches, a single position touching the
+/// tile it lies in, and, for a polygon, whether the area its rings enclose (even-odd) is covered.
+struct OfflineCoverPart: Hashable, Sendable {
+  var paths: [[TileflowPosition]]
+  var isFilled: Bool
+}
+
 /// The tiles of one zoom that a pack region covers, exactly as the service plans and admits them.
 ///
-/// Edges are straight lines in Web Mercator. A tile belongs to the region when an edge passes
-/// through it (closed tile bounds) or its row's center line lies inside the ring (even-odd).
+/// Edges are straight lines in Web Mercator. A tile belongs to the region when a part's edge or
+/// position touches it (closed tile bounds) or its row's center line lies inside a polygon part
+/// (even-odd over that polygon's rings). Parts form a union.
 struct OfflineTileCover: Sendable {
   let zoom: Int
-  private let ring: [(x: Double, y: Double)]
+  private let parts: [(paths: [[(x: Double, y: Double)]], isFilled: Bool)]
   private let limit: Int
 
   init(_ region: OfflinePackRegion, zoom: Int) {
     self.zoom = zoom
     let scale = Double(1 << zoom)
-    ring = region.ring.map { Self.mercator($0, scale: scale) }
+    parts = region.parts.map { part in
+      (part.paths.map { $0.map { Self.mercator($0, scale: scale) } }, part.isFilled)
+    }
     limit = (1 << zoom) - 1
   }
 
-  /// The rows the region can touch; empty when it touches none.
+  /// The rows the region can touch; empty when it touches none. Row bounds are closed, so a
+  /// region whose top lies exactly on a row edge also touches the row above it.
   var rows: ClosedRange<Int>? {
-    let ys = ring.map(\.y)
-    let first = max(0, Int(ys.min()!.rounded(.down)))
-    let last = min(limit, Int(ys.max()!.rounded(.down)))
+    let ys = parts.flatMap { $0.paths.flatMap { $0.map(\.y) } }
+    guard let low = ys.min(), let high = ys.max() else { return nil }
+    let first = max(0, Int(low.rounded(.up)) - 1)
+    let last = min(limit, Int(high.rounded(.down)))
     return first <= last ? first...last : nil
   }
 
@@ -151,30 +172,32 @@ struct OfflineTileCover: Sendable {
       let end = min(Double(limit), max(from, to).rounded(.down))
       if start <= end { ranges.append(Int(start)...Int(end)) }
     }
-    for index in ring.indices.dropFirst() {
-      let (p, q) = (ring[index - 1], ring[index])
-      if max(p.y, q.y) < row || min(p.y, q.y) > row + 1 { continue }
-      if p.y == q.y {
-        add(p.x, q.x)
-        continue
-      }
-      let t0 = max(0, min(1, (row - p.y) / (q.y - p.y)))
-      let t1 = max(0, min(1, (row + 1 - p.y) / (q.y - p.y)))
-      add(p.x + min(t0, t1) * (q.x - p.x), p.x + max(t0, t1) * (q.x - p.x))
-    }
     let center = row + 0.5
-    var crossings: [Double] = []
-    for index in ring.indices.dropFirst() {
-      let (p, q) = (ring[index - 1], ring[index])
-      if (p.y <= center) != (q.y <= center) {
-        crossings.append(p.x + ((center - p.y) / (q.y - p.y)) * (q.x - p.x))
+    for part in parts {
+      var crossings: [Double] = []
+      for path in part.paths {
+        // A single position is a segment of no length.
+        for index in path.indices.dropFirst(path.count > 1 ? 1 : 0) {
+          let (p, q) = (path[max(0, index - 1)], path[index])
+          if part.isFilled, (p.y <= center) != (q.y <= center) {
+            crossings.append(p.x + ((center - p.y) / (q.y - p.y)) * (q.x - p.x))
+          }
+          if max(p.y, q.y) < row || min(p.y, q.y) > row + 1 { continue }
+          if p.y == q.y {
+            add(p.x, q.x)
+            continue
+          }
+          let t0 = max(0, min(1, (row - p.y) / (q.y - p.y)))
+          let t1 = max(0, min(1, (row + 1 - p.y) / (q.y - p.y)))
+          add(p.x + min(t0, t1) * (q.x - p.x), p.x + max(t0, t1) * (q.x - p.x))
+        }
       }
-    }
-    crossings.sort()
-    var index = 0
-    while index + 1 < crossings.count {
-      add(crossings[index], crossings[index + 1])
-      index += 2
+      crossings.sort()
+      var index = 0
+      while index + 1 < crossings.count {
+        add(crossings[index], crossings[index + 1])
+        index += 2
+      }
     }
     return Self.merged(ranges)
   }

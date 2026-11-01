@@ -318,8 +318,8 @@ extension TileflowOfflineRegionLoadOptions {
         "type": .string("bbox"),
         "bbox": .array([box.west, box.south, box.east, box.north].map(JSONValue.number)),
       ])
-    case .polygon(let ring):
-      geometry = .object(["type": .string("polygon"), "coordinates": positions(ring)])
+    case .geometry, .geometryCollection:
+      geometry = .object(["type": .string("geojson"), "geometry": self.geometry.geoJSON ?? .null])
     case .corridor(let line, let width):
       geometry = .object([
         "type": .string("corridor"), "line": positions(line), "width": .number(width),
@@ -373,9 +373,11 @@ extension TileflowOfflineRegionLoadOptions {
         let w = box[0].number, let s = box[1].number, let e = box[2].number, let n = box[3].number
       else { return nil }
       geometry = .boundingBox(TileflowBoundingBox(west: w, south: s, east: e, north: n))
-    case "polygon":
-      guard let ring = positions(value["geometry"]?["coordinates"]) else { return nil }
-      geometry = .polygon(ring)
+    case "geojson":
+      guard let value = value["geometry"]?["geometry"],
+        let shape = TileflowOfflineGeometry(geoJSON: value)
+      else { return nil }
+      geometry = shape
     case "corridor":
       guard let line = positions(value["geometry"]?["line"]),
         let width = value["geometry"]?["width"]?.number

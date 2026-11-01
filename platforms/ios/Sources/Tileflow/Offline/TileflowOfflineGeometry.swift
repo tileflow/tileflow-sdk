@@ -2,30 +2,79 @@ import Foundation
 
 /// The area of an offline region, in WGS84 positions.
 ///
-/// Like the geometry of Mapbox's tile region load options, it describes the area only; zooms and
-/// content are chosen separately. A region covers the same tiles at every zoom as the Hosted pack
-/// that downloads it: a tile belongs to the region when the region's outline passes through it or
-/// the middle of its row lies inside the region, with outlines drawn as straight lines on the Web
-/// Mercator map. Latitudes beyond ±85.051129°, which the map cannot show, are clamped.
+/// Like the geometry of Mapbox's tile region load options, it describes the area only, and zooms
+/// and content are chosen separately; it takes any GeoJSON geometry, a box or a corridor. A region
+/// covers the same tiles at every zoom as the Hosted download: the union of the tiles each of its
+/// parts touches, counted once. A point covers the tile it lies in, a line every tile it passes
+/// through, and a polygon every tile one of its rings passes through or whose row's middle lies
+/// inside it, holes excluded. Lines and rings are straight on the Web Mercator map, and tile bounds
+/// are closed: a position on a tile's top or bottom edge touches the tiles on both sides of it.
+/// Latitudes beyond ±85.051129°, which the map cannot show, are clamped.
 public enum TileflowOfflineGeometry: Sendable, Hashable {
   /// A box between two meridians and two parallels. A box whose west edge is greater than its
   /// east edge crosses the antimeridian, as in GeoJSON, and downloads as two packs.
   case boundingBox(TileflowBoundingBox)
-  /// One ring of 3 to 255 distinct positions, open or closed, without holes. A ring that crosses
-  /// itself covers the areas an even number of its edges enclose, as GeoJSON renderers draw it.
-  case polygon([TileflowPosition])
+  /// A GeoJSON geometry, as Mapbox's tile region load options take: a point, a line or a polygon,
+  /// or their multi-part forms. A polygon's first ring is its outline and the others are holes;
+  /// rings may be open or closed. A ring that crosses itself covers the areas an even number of
+  /// its edges enclose, as GeoJSON renderers draw it. Parts may overlap.
+  ///
+  /// The geometry has at most 256 positions, closing positions included, a polygon at most 16
+  /// rings and a multi-polygon at most 64 polygons. No line or ring may cross the antimeridian:
+  /// give each side as its own part.
+  case geometry(TileflowGeometry)
+  /// A GeoJSON geometry collection: up to 64 geometries, which together have at most 256
+  /// positions.
+  case geometryCollection([TileflowGeometry])
   /// The area within half of `width` metres of a line, such as a route. The line has 2 to 10,000
   /// positions and `width` is 1 to 100,000 metres. A Hosted corridor downloads as one pack for each
   /// stretch whose convex outline stays close to the corridor, so a winding line covers somewhat
   /// more than the corridor itself.
   case corridor(line: [TileflowPosition], width: Double)
 
+  /// A GeoJSON geometry object, such as `{"type": "Polygon", "coordinates": […]}`, or a
+  /// geometry collection. Altitudes are not kept.
+  ///
+  /// - Throws: ``TileflowOfflineError`` with code `invalidRegion` and reason `invalidGeoJSON`
+  ///   when the text is not a GeoJSON geometry, or is a collection inside another.
+  public init(geoJSON: String) throws {
+    guard let value = try? JSONDecoder().decode(JSONValue.self, from: Data(geoJSON.utf8)),
+      let geometry = Self(geoJSON: value)
+    else { throw TileflowOfflineError.region("invalidGeoJSON") }
+    self = geometry
+  }
+
+  init?(geoJSON value: JSONValue) {
+    if value["type"]?.string == "GeometryCollection" {
+      guard case .array(let items) = value["geometries"] else { return nil }
+      let geometries = items.compactMap(TileflowGeometry.init)
+      guard geometries.count == items.count else { return nil }
+      self = .geometryCollection(geometries)
+    } else {
+      guard let geometry = TileflowGeometry(value) else { return nil }
+      self = .geometry(geometry)
+    }
+  }
+
+  /// The GeoJSON object of a geometry or a collection; nil for a box or a corridor.
+  var geoJSON: JSONValue? {
+    switch self {
+    case .geometry(let geometry): geometry.wireValue
+    case .geometryCollection(let geometries):
+      .object([
+        "type": .string("GeometryCollection"), "geometries": .array(geometries.map(\.wireValue)),
+      ])
+    case .boundingBox, .corridor: nil
+    }
+  }
+
   /// Checks the geometry without planning it.
   ///
   /// - Throws: ``TileflowOfflineError`` with code `invalidRegion` and one of these reasons:
   ///   `invalidPosition` (not finite, or beyond ±180° or ±90°), `tooFewPositions`,
-  ///   `tooManyPositions`, `emptyArea`, `crossesAntimeridian` (consecutive positions more than
-  ///   180° of longitude apart; split the region) or `invalidWidth`.
+  ///   `tooManyPositions`, `tooManyRings`, `tooManyGeometries`, `emptyArea` (a ring whose
+  ///   positions all lie on one line), `crossesAntimeridian` (consecutive positions more than 180°
+  ///   of longitude apart; split the region) or `invalidWidth`.
   public func validate() throws {
     _ = try packRegions()
   }
@@ -58,17 +107,11 @@ public enum TileflowOfflineGeometry: Sendable, Hashable {
       let regions = spans.compactMap { OfflinePackRegion.canonical($0.0, south, $0.1, north) }
       guard !regions.isEmpty else { throw TileflowOfflineError.region("emptyArea") }
       return regions
-    case .polygon(let positions):
-      var ring = try Self.validated(positions)
-      if ring.count > 1, ring.first == ring.last { ring.removeLast() }
-      guard ring.count >= 3 else { throw TileflowOfflineError.region("tooFewPositions") }
-      guard ring.count < OfflinePackRegion.positions.upperBound else {
-        throw TileflowOfflineError.region("tooManyPositions")
-      }
-      guard let region = OfflinePackRegion.canonical(ring + [ring[0]]) else {
-        throw TileflowOfflineError.region("emptyArea")
-      }
-      return [region]
+    case .geometry(let geometry):
+      return [.geometry(try OfflineRegionShape.canonical(OfflineRegionShape(geometry)))]
+    case .geometryCollection(let geometries):
+      let shape = OfflineRegionShape.geometryCollection(geometries.map(OfflineRegionShape.init))
+      return [.geometry(try OfflineRegionShape.canonical(shape))]
     case .corridor(let line, let width):
       guard width.isFinite, OfflineCorridor.widths.contains(width) else {
         throw TileflowOfflineError.region("invalidWidth")
@@ -100,9 +143,9 @@ public enum TileflowOfflineGeometry: Sendable, Hashable {
     }
   }
 
-  private static func isLongitude(_ value: Double) -> Bool { value.isFinite && abs(value) <= 180 }
-  private static func isLatitude(_ value: Double) -> Bool { value.isFinite && abs(value) <= 90 }
-  private static func clamped(_ latitude: Double) -> Double {
+  static func isLongitude(_ value: Double) -> Bool { value.isFinite && abs(value) <= 180 }
+  static func isLatitude(_ value: Double) -> Bool { value.isFinite && abs(value) <= 90 }
+  static func clamped(_ latitude: Double) -> Double {
     min(max(latitude, -OfflinePackRegion.maximumLatitude), OfflinePackRegion.maximumLatitude)
   }
 }

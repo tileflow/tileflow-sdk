@@ -74,7 +74,7 @@ final class OfflineServingTests: XCTestCase {
   func testWithTheNetworkOffOnlyStoredEntriesAnswerAndMissesAnswerAtOnce() async throws {
     var packs = try storedPacks()
     let landmarkBody = pin(landmarks, scope: .shared)
-    // Stored, but no available region holds it, as after access to its region ended.
+    // Stored, but no available region holds it, as while its region still downloads.
     let hiddenTiles = packs.tiles.removeValue(forKey: template.text)
     let (loader, sessions, resources) = try makeLoader(
       packs: packs, reachable: true, networkEnabled: false)

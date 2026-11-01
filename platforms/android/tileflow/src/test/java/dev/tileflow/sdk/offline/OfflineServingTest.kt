@@ -96,7 +96,7 @@ class OfflineServingTest {
     fun withTheNetworkOffOnlyStoredEntriesAnswerAndMissesAnswerAtOnce() {
         val packs = storedPacks()
         val landmarkBody = pin(landmarks, ResourceCacheScope.Shared)
-        // Stored, but no available region holds it, as after access to its region ended.
+        // Stored, but no available region holds it, as while its region still downloads.
         val (loader, sessions, resources) =
             loader(packs.copy(tiles = emptyMap()), reachable = true, networkEnabled = false)
         val started = System.nanoTime()

@@ -12,9 +12,10 @@ enum OfflineServingRule {
     !networkEnabled || !reachable
   }
 
-  /// Whether a region whose access ended (`not_updatable`) is still served. Off: its files stay on
-  /// the device, untouched, and maps stop using them.
-  static let servesRegionsAfterAccessEnds = false
+  /// Whether a region whose access ended (`not_updatable`) is still served. On: the device keeps
+  /// using what it downloaded, as the data's licences require, and the region only stops updating.
+  /// Off: its files stay on the device, untouched, and maps stop using them.
+  static let servesRegionsAfterAccessEnds = true
 }
 
 /// A regional credit of a stored release: shown while one of its boxes is in view.

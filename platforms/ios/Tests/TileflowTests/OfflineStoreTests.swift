@@ -308,7 +308,7 @@ final class OfflineStoreTests: XCTestCase {
     }
   }
 
-  func testAccessEndingStopsUpdatesWithoutRemovingTheRegion() async throws {
+  func testAccessEndingStopsUpdatesAndKeepsTheRegionInUse() async throws {
     let service = OfflineServiceStub()
     let store = makeStore(service)
     try await store.loadRegion(id: "madrid", options: madrid())
@@ -318,7 +318,8 @@ final class OfflineStoreTests: XCTestCase {
     await store.core.checkForUpdates()
     let region = try await XCTUnwrapAsync(await store.region(id: "madrid"))
     XCTAssertEqual(region.updateState, .notUpdatable(reason: "credential_revoked"))
-    XCTAssertFalse(region.isAvailable, "Maps stop using it")
+    XCTAssertTrue(region.isAvailable, "Maps keep using it")
+    XCTAssertEqual(region.state, .complete)
     service.clock.withLock { $0 += 10 * 86_400 }
     await store.core.checkForUpdates()
     XCTAssertEqual(service.revalidations, 1)
@@ -481,7 +482,7 @@ final class OfflineStoreTests: XCTestCase {
     XCTAssertTrue(done.completedResourceBytes > 0)
   }
 
-  func testMapsUseAvailableRegionsAndStopUsingOnesWhoseAccessEnded() async throws {
+  func testMapsUseAvailableRegionsAlsoAfterAccessEnds() async throws {
     let service = OfflineServiceStub()
     let index = OfflineServingIndex()
     let store = makeStore(service, index: index)
@@ -516,14 +517,17 @@ final class OfflineStoreTests: XCTestCase {
     try await store.cancelRegion(id: "madrid")
     service.freezeAfter = nil
 
-    // Access ends: maps stop using the region; its files stay on the device.
+    // Access ends: the region stops updating, and maps keep using what the device holds.
     service.clock.withLock { $0 += 86_401 }
     service.revalidationState = "not_updatable"
     await store.core.checkForUpdates()
     let region = try await XCTUnwrapAsync(await store.region(id: "madrid"))
-    XCTAssertFalse(region.isAvailable)
-    let hidden = await index.resource(style, cache: cache)
-    XCTAssertNil(hidden)
+    XCTAssertTrue(region.isAvailable)
+    XCTAssertEqual(region.updateState, .notUpdatable(reason: "credential_revoked"))
+    let kept = await index.resource(style, cache: cache)
+    XCTAssertEqual(kept?.metadata.status, 200)
+    let keptCredits = await index.credits(for: scope)
+    XCTAssertEqual(keptCredits.map(\.id), ["es-ign"])
     XCTAssertFalse(
       try FileManager.default.contentsOfDirectory(atPath: layout.packs.directory.path).isEmpty)
   }

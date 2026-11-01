@@ -32,10 +32,11 @@ internal object OfflineServingRule {
         !networkEnabled || !reachable
 
     /**
-     * Whether a region whose access ended (`not_updatable`) is still served. Off: its files stay on
-     * the device, untouched, and maps stop using them.
+     * Whether a region whose access ended (`not_updatable`) is still served. On: the device keeps
+     * using what it downloaded, as the data's licences require, and the region only stops updating.
+     * Off: its files stay on the device, untouched, and maps stop using them.
      */
-    const val SERVES_REGIONS_AFTER_ACCESS_ENDS = false
+    const val SERVES_REGIONS_AFTER_ACCESS_ENDS = true
 }
 
 /** A regional credit of a stored release: shown while one of its boxes is in view. */

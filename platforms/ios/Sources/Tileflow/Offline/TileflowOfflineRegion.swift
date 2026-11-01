@@ -104,7 +104,8 @@ public struct TileflowOfflineRegion: Sendable, Hashable, Identifiable {
     /// The Map changed. Loading the region again downloads only what changed.
     case updateAvailable
     /// Access ended, for the service's `reason`, such as `credential_revoked` or
-    /// `map_unavailable`. The region stays on the device as it is and is no longer updated.
+    /// `map_unavailable`. The region stays on the device as it is, maps keep using it, and it is no
+    /// longer updated: an application can tell its users so.
     case notUpdatable(reason: String)
   }
 
@@ -112,9 +113,9 @@ public struct TileflowOfflineRegion: Sendable, Hashable, Identifiable {
   /// The options of the version downloading, or else of the stored version.
   public let options: TileflowOfflineRegionLoadOptions
   public let state: DownloadState
-  /// A complete version is stored and maps use it without a network. False once access to a
-  /// Hosted region ended (``UpdateState/notUpdatable(reason:)``): its files stay on the device,
-  /// and maps stop using them.
+  /// A complete version is stored and maps use it without a network. It stays available once
+  /// access to a Hosted region ended (``UpdateState/notUpdatable(reason:)``): the region only stops
+  /// updating.
   public let isAvailable: Bool
   /// Hosted packs: a source's tiles under one anchor tile, or the styles, assets and glyphs. Zero
   /// for self-hosted content, which downloads resource by resource.

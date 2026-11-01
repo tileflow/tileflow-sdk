@@ -87,9 +87,9 @@ constructor(
  * verified. Access ending never removes what the device holds.
  *
  * @property options The options of the version downloading, or else of the stored version.
- * @property isAvailable A complete version is stored and maps use it without a network. False
- *   once access to a Hosted region ended ([UpdateState.NotUpdatable]): its files stay on the
- *   device, and maps stop using them.
+ * @property isAvailable A complete version is stored and maps use it without a network. It stays
+ *   available once access to a Hosted region ended ([UpdateState.NotUpdatable]): the region only
+ *   stops updating.
  * @property requiredPackCount Hosted packs: a source's tiles under one anchor tile, or the styles,
  *   assets and glyphs. Zero for self-hosted content, which downloads resource by resource.
  * @property requiredResourceBytes Bytes on the wire; null for self-hosted content until it is
@@ -154,7 +154,8 @@ public data class TileflowOfflineRegion(
 
         /**
          * Access ended, for the service's [reason], such as `credential_revoked` or
-         * `map_unavailable`. The region stays on the device as it is and is no longer updated.
+         * `map_unavailable`. The region stays on the device as it is, maps keep using it, and it is
+         * no longer updated: an application can tell its users so.
          */
         public data class NotUpdatable(public val reason: String) : UpdateState()
     }

@@ -376,7 +376,7 @@ class OfflineStoreTest {
     }
 
     @Test
-    fun accessEndingStopsUpdatesWithoutRemovingTheRegion() = runBlocking<Unit> {
+    fun accessEndingStopsUpdatesAndKeepsTheRegionInUse() = runBlocking<Unit> {
         val service = OfflineServiceStub()
         val store = store(service)
         store.loadRegion("madrid", madrid())
@@ -389,7 +389,8 @@ class OfflineStoreTest {
             TileflowOfflineRegion.UpdateState.NotUpdatable("credential_revoked"),
             region.updateState,
         )
-        assertFalse("Maps stop using it", region.isAvailable)
+        assertTrue("Maps keep using it", region.isAvailable)
+        assertEquals(COMPLETE, region.state)
         service.clock.addAndGet(10 * 86_400_000L)
         store.core.checkForUpdates()
         assertEquals(1, service.revalidations.get())
@@ -554,7 +555,7 @@ class OfflineStoreTest {
     }
 
     @Test
-    fun mapsUseAvailableRegionsAndStopUsingOnesWhoseAccessEnded() = runBlocking<Unit> {
+    fun mapsUseAvailableRegionsAlsoAfterAccessEnds() = runBlocking<Unit> {
         val service = OfflineServiceStub()
         val index = OfflineServingIndex()
         val store = store(service, index = index)
@@ -581,13 +582,21 @@ class OfflineStoreTest {
         store.cancelRegion("madrid")
         service.freezeAfter = null
 
-        // Access ends: maps stop using the region; its files stay on the device.
+        // Access ends: the region stops updating, and maps keep using what the device holds.
         service.clock.addAndGet(86_401_000)
         service.revalidationState = "not_updatable"
         store.core.checkForUpdates()
-        assertFalse(store.region("madrid")!!.isAvailable)
-        assertNull(index.resource(style, cache))
-        assertTrue(storedPacks().isNotEmpty())
+        val region = store.region("madrid")!!
+        assertTrue(region.isAvailable)
+        assertEquals(
+            TileflowOfflineRegion.UpdateState.NotUpdatable("credential_revoked"),
+            region.updateState,
+        )
+        assertEquals(200, index.resource(style, cache)?.metadata?.status)
+        assertEquals(
+            listOf("es-ign"),
+            index.credits(ResourceCacheScope.grant(URI(ORIGIN), MAP_ID)).map { it.id },
+        )
     }
 
     @Test

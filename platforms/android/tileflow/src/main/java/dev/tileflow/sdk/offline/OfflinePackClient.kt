@@ -7,6 +7,7 @@ import dev.tileflow.configuration.TileflowCredential
 import dev.tileflow.configuration.internal.TileflowInternalApi
 import dev.tileflow.configuration.internal.credentialHeader
 import dev.tileflow.configuration.internal.tileflowApiOrigin
+import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.hosted.HostedContract
 import dev.tileflow.sdk.transport.NativeHTTPTransport
 import dev.tileflow.sdk.transport.NativeHTTPTransporting
@@ -70,48 +71,54 @@ internal data class OfflinePackRequest(
     val profile: String,
     /** Distinct and sorted, as the service returns them. */
     val themes: List<String>,
-    val region: OfflinePackRegion,
+    /** The tile packs the download needs, computed here from the region. */
+    val cover: OfflineCover,
     val minZoom: Int,
     val maxZoom: Int,
     val terrainMaxZoom: Int,
 ) {
+    fun toJson(): JSONObject =
+        JSONObject()
+            .put("mapId", mapId)
+            .put("profile", profile)
+            .put("themes", JSONArray(themes))
+            .put("cover", cover.toJson())
+            .put("minZoom", minZoom)
+            .put("maxZoom", maxZoom)
+            .put("terrainMaxZoom", terrainMaxZoom)
+
     val body: ByteArray
-        get() =
-            JSONObject()
-                .put("mapId", mapId)
-                .put("profile", profile)
-                .put("themes", JSONArray(themes))
-                .put("region", region.toJson())
-                .put("minZoom", minZoom)
-                .put("maxZoom", maxZoom)
-                .put("terrainMaxZoom", terrainMaxZoom)
-                .toString()
-                .toByteArray()
+        get() = toJson().toString().toByteArray()
 
     companion object {
-        const val MAXIMUM_BODY_BYTES = 65_536
+        const val MAXIMUM_BODY_BYTES = 262_144
 
-        /**
-         * One request for each pack the options need: a corridor or a box across the antimeridian
-         * downloads as several packs.
-         */
-        /** Reads a body this SDK wrote with [body]. */
+        /** Reads a body this SDK wrote with [body], or one the service would accept. */
         fun fromJson(bytes: ByteArray): OfflinePackRequest? =
             runCatching {
                     val value = JSONObject(String(bytes, Charsets.UTF_8))
                     val themes = value.getJSONArray("themes")
+                    val minZoom = value.getInt("minZoom")
+                    val maxZoom = value.getInt("maxZoom")
                     OfflinePackRequest(
                         value.getString("mapId"),
                         value.getString("profile"),
                         List(themes.length()) { themes.getString(it) },
-                        OfflinePackRegion.fromJson(value.getJSONObject("region"))!!,
-                        value.getInt("minZoom"),
-                        value.getInt("maxZoom"),
+                        OfflineCover.fromJson(value.opt("cover"), minZoom, maxZoom)!!,
+                        minZoom,
+                        maxZoom,
                         value.getInt("terrainMaxZoom"),
                     )
                 }
                 .getOrNull()
 
+        /**
+         * The request of a region's download: one for any region, its cover the union of its
+         * parts.
+         *
+         * @throws TileflowOfflineException `REGION_TOO_COMPLEX` before anything is sent when the
+         *   cover lists more packs, or the body holds more bytes, than the service accepts.
+         */
         fun requests(
             mapId: String,
             themes: List<String>,
@@ -128,21 +135,28 @@ internal data class OfflinePackRequest(
                     sorted.any { !Regex("^[A-Za-z][A-Za-z0-9_-]{0,63}$").matches(it) }
             )
                 throw TileflowOfflineException.options("invalidThemes")
-            return geometry.packRegions().map {
+            val cover = OfflineCover.of(geometry.packRegions(), zooms.range.first, zooms.range.last)
+            val request =
                 OfflinePackRequest(
-                        mapId,
-                        profile.wireName,
-                        sorted,
-                        it,
-                        zooms.range.first,
-                        zooms.range.last,
-                        zooms.terrainMaximum,
-                    )
-                    .also { request ->
-                        if (request.body.size > MAXIMUM_BODY_BYTES)
-                            throw TileflowOfflineException.region("tooManyPositions")
-                    }
-            }
+                    mapId,
+                    profile.wireName,
+                    sorted,
+                    cover,
+                    zooms.range.first,
+                    zooms.range.last,
+                    zooms.terrainMaximum,
+                )
+            val bytes = request.body.size
+            if (bytes > MAXIMUM_BODY_BYTES)
+                throw TileflowOfflineException(
+                    TileflowOfflineErrorCode.REGION_TOO_COMPLEX,
+                    TileflowErrorContext(
+                        reason = "bodyTooLarge",
+                        limit = MAXIMUM_BODY_BYTES,
+                        count = bytes,
+                    ),
+                )
+            return listOf(request)
         }
     }
 }

@@ -96,7 +96,8 @@ internal class OfflineDownloadManifest(
     val profile: String,
     val deploymentVersion: Long,
     val themes: List<String>,
-    val region: OfflinePackRegion,
+    /** The cover the download was created with, whose digest the service signed. */
+    val cover: OfflineCover,
     val minZoom: Int,
     val maxZoom: Int,
     val terrainMaxZoom: Int,
@@ -204,8 +205,7 @@ internal object OfflinePackContract {
         val deploymentVersion = integer(value.opt("deploymentVersion"), 1)!!
         val themes = value.getJSONArray("themes")
         require((0 until themes.length()).map { themes.opt(it) } == request.themes)
-        val region = OfflinePackRegion.fromJson(value.opt("region"))!!
-        require(region == request.region)
+        require(value.opt("coverSha256") == request.cover.sha256)
         require(integer(value.opt("minZoom"), 0) == request.minZoom.toLong())
         require(integer(value.opt("maxZoom"), 0) == request.maxZoom.toLong())
         require(integer(value.opt("terrainMaxZoom"), 0) == request.terrainMaxZoom.toLong())
@@ -278,7 +278,6 @@ internal object OfflinePackContract {
 
         val packValues = value.getJSONArray("packs")
         val ids = mutableSetOf<String>()
-        val covers = mutableMapOf<Int, OfflineTileCover>()
         val packs =
             (0 until packValues.length()).map { index ->
                 val item = packValues.getJSONObject(index)
@@ -313,9 +312,9 @@ internal object OfflinePackContract {
                         require(range.first in band && range.last in band)
                         val held = declared.zooms!!
                         require(range.first in held && range.last in held)
-                        // The anchor is covered at its zoom, which is exactly what the grant
+                        // Every tile pack is one of the cover's, which is exactly what the grant
                         // admits.
-                        require(covers.getOrPut(z) { OfflineTileCover(region, z) }.contains(x, y))
+                        require(request.cover.entry(OfflineTileId(z, x, y)) != null)
                         OfflineDownloadPack(
                             id,
                             kind,
@@ -377,7 +376,7 @@ internal object OfflinePackContract {
             profile = request.profile,
             deploymentVersion = deploymentVersion,
             themes = request.themes,
-            region = region,
+            cover = request.cover,
             minZoom = request.minZoom,
             maxZoom = request.maxZoom,
             terrainMaxZoom = request.terrainMaxZoom,
@@ -477,7 +476,7 @@ internal object OfflinePackContract {
     ): TileflowOfflineException {
         val serverCode = HostedContract.errorCode(body)
         val known = serverCode?.let(codes::get)?.takeIf { it.first == status }?.second
-        val code =
+        var code =
             known
                 ?: when (status) {
                     401 ->
@@ -493,11 +492,30 @@ internal object OfflinePackContract {
                     in 400..499 -> TileflowOfflineErrorCode.REJECTED
                     else -> TileflowOfflineErrorCode.INVALID_RESPONSE
                 }
-        val limit =
-            if (code == TileflowOfflineErrorCode.PACK_TOO_LARGE && body.size <= 4096)
-                runCatching { integer(json(body).opt("limit"), 1, Int.MAX_VALUE.toLong())?.toInt() }
+        var limit: Int? = null
+        if (
+            (code == TileflowOfflineErrorCode.PACK_TOO_LARGE ||
+                code == TileflowOfflineErrorCode.REJECTED) && body.size <= 4096
+        ) {
+            val value = runCatching { json(body) }.getOrNull()
+            fun detail(name: String) =
+                runCatching { integer(value?.opt(name), 1, Int.MAX_VALUE.toLong())?.toInt() }
                     .getOrNull()
-            else null
+            // A cover with more packs, or a body with more bytes, than the service takes.
+            val entries = detail("maxCoverEntries")
+            val bytes = detail("maxBodyBytes")
+            if (code == TileflowOfflineErrorCode.PACK_TOO_LARGE && entries != null) {
+                code = TileflowOfflineErrorCode.REGION_TOO_COMPLEX
+                limit = entries
+            } else if (
+                serverCode == "OFFLINE_PACK_BODY_TOO_LARGE" && status == 413 && bytes != null
+            ) {
+                code = TileflowOfflineErrorCode.REGION_TOO_COMPLEX
+                limit = bytes
+            } else if (code == TileflowOfflineErrorCode.PACK_TOO_LARGE) {
+                limit = detail("limit")
+            }
+        }
         val waits =
             setOf(
                 TileflowOfflineErrorCode.DAILY_LIMIT_REACHED,

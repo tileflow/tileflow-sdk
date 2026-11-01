@@ -1,0 +1,13 @@
+{
+  "mapId": "map_offlinefixture00",
+  "profile": "webview-v1",
+  "themes": ["default"],
+  "cover": [
+    [7, 62, 48, "AAAgAAAAAAA"],
+    [11, 1002, 772, "AICAAAAAAAA"],
+    [11, 1003, 772, "AAEBAAAAAAA"]
+  ],
+  "minZoom": 10,
+  "maxZoom": 14,
+  "terrainMaxZoom": 12
+}

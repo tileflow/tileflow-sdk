@@ -73,7 +73,8 @@ struct OfflineDownloadManifest: Sendable {
   let profile: String
   let deploymentVersion: Int
   let themes: [String]
-  let region: OfflinePackRegion
+  /// The cover the download was created with, whose digest the service signed.
+  let cover: OfflineCover
   let minZoom: Int
   let maxZoom: Int
   let terrainMaxZoom: Int
@@ -172,7 +173,7 @@ enum OfflinePackContract {
       let deploymentVersion = integer(value["deploymentVersion"], 1...),
       case .array(let themeValues) = value["themes"],
       themeValues.compactMap(\.string) == request.themes,
-      let region = OfflinePackRegion(json: value["region"]), region == request.region,
+      value["coverSha256"]?.string == request.cover.sha256,
       integer(value["minZoom"], 0...) == request.minZoom,
       integer(value["maxZoom"], 0...) == request.maxZoom,
       integer(value["terrainMaxZoom"], 0...) == request.terrainMaxZoom,
@@ -239,7 +240,6 @@ enum OfflinePackContract {
 
     var packs: [OfflineDownloadPack] = []
     var ids = Set<String>()
-    var covers: [Int: OfflineTileCover] = [:]
     for item in packValues {
       guard let id = item["id"]?.string, id.utf8.count <= 512, ids.insert(id).inserted,
         let kind = OfflinePackKind(manifest: item["kind"]?.string),
@@ -269,10 +269,8 @@ enum OfflinePackContract {
           band.contains(range.upperBound), let held = declared.zooms,
           held.contains(range.lowerBound), held.contains(range.upperBound)
         else { throw invalid }
-        // The anchor is covered at its zoom, which is exactly what the grant admits.
-        let cover = covers[z] ?? OfflineTileCover(region, zoom: z)
-        covers[z] = cover
-        guard cover.contains(x: x, y: y) else { throw invalid }
+        // Every tile pack is one of the cover's, which is exactly what the grant admits.
+        guard request.cover.entry(OfflineTileID(z: z, x: x, y: y)) != nil else { throw invalid }
         source = name
         anchor = OfflineTileID(z: z, x: x, y: y)
         zooms = range
@@ -320,7 +318,7 @@ enum OfflinePackContract {
 
     return OfflineDownloadManifest(
       downloadID: downloadID, mapID: request.mapID, profile: request.profile,
-      deploymentVersion: deploymentVersion, themes: request.themes, region: region,
+      deploymentVersion: deploymentVersion, themes: request.themes, cover: request.cover,
       minZoom: request.minZoom, maxZoom: request.maxZoom, terrainMaxZoom: request.terrainMaxZoom,
       createdAt: createdAt, sources: sources, packs: packs, publicResources: publicResources,
       origins: origins, excluded: excluded, resourceCount: resourceCount,
@@ -402,7 +400,7 @@ enum OfflinePackContract {
     status: Int, body: Data, retryAfter header: String?, operation: Operation, now: Date
   ) -> TileflowOfflineError {
     let serverCode = HostedContract.errorCode(body)
-    let code: TileflowOfflineError.Code
+    var code: TileflowOfflineError.Code
     if let serverCode, let known = codes[serverCode], known.status == status {
       code = known.code
     } else {
@@ -418,10 +416,21 @@ enum OfflinePackContract {
       }
     }
     var limit: Int?
-    if code == .packTooLarge, body.count <= 4096,
+    if [.packTooLarge, .rejected].contains(code), body.count <= 4096,
       let value = try? JSONDecoder().decode(JSONValue.self, from: body)
     {
-      limit = integer(value["limit"], 1...)
+      // A cover with more packs, or a body with more bytes, than the service takes.
+      if code == .packTooLarge, let entries = integer(value["maxCoverEntries"], 1...) {
+        code = .regionTooComplex
+        limit = entries
+      } else if serverCode == "OFFLINE_PACK_BODY_TOO_LARGE", status == 413,
+        let bytes = integer(value["maxBodyBytes"], 1...)
+      {
+        code = .regionTooComplex
+        limit = bytes
+      } else if code == .packTooLarge {
+        limit = integer(value["limit"], 1...)
+      }
     }
     let waits: Set<TileflowOfflineError.Code> = [.dailyLimitReached, .rateLimited, .unavailable]
     return TileflowOfflineError(

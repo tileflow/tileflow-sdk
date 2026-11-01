@@ -252,19 +252,43 @@ export function createHostedFixture({base, tile, center}) {
     else response.end(bytes);
     return 'whole';
   };
-  // The tiles of a box at a zoom, a subset of the service's row cover: the box's own tile range.
-  const project = (longitude, latitude, zoom) => {
-    const scale = 2 ** zoom;
-    const radians = (latitude * Math.PI) / 180;
-    return [
-      Math.floor(((longitude + 180) / 360) * scale),
-      Math.floor(((1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2) * scale),
-    ];
+  // Zoom bands: an anchor zoom and its deepest zoom.
+  const bands = [
+    [0, 6],
+    [7, 10],
+    [11, 15],
+    [16, 20],
+    [21, 22],
+  ];
+  /**
+   * The tiles a download's cover holds, as the service plans them: each entry's covered tiles at
+   * its mask zoom (its band's deepest within the download's zooms) and their ancestors, each with
+   * its entry's anchor.
+   */
+  const coverTiles = (request) => {
+    const tiles = [];
+    for (const [z, x, y, mask] of request.cover) {
+      const maskZoom = Math.min(bands.find(([anchor]) => anchor === z)[1], request.maxZoom);
+      const side = 2 ** (maskZoom - z);
+      const bits = mask === undefined ? null : Buffer.from(mask, 'base64url');
+      const seen = new Set();
+      for (let index = 0; index < side * side; index += 1) {
+        if (bits && !(bits[index >> 3] & (1 << (index & 7)))) continue;
+        const leaf = [x * side + (index % side), y * side + Math.floor(index / side)];
+        for (let tz = Math.max(z, request.minZoom); tz <= maskZoom; tz += 1) {
+          const tile = [tz, leaf[0] >> (maskZoom - tz), leaf[1] >> (maskZoom - tz)];
+          if (seen.has(tile.join('/'))) continue;
+          seen.add(tile.join('/'));
+          tiles.push({tile, anchor: [z, x, y]});
+        }
+      }
+    }
+    return tiles;
   };
 
   /** A download's manifest; its packs are assembled into `files` by path. */
   function manifest(request, now, files) {
-    const [west, south, east, north] = request.region.bbox;
+    const covered = coverTiles(request);
     const publicResource = (kind, url) => {
       const bytes = body(url);
       return {kind, url, bytes: bytes.length, sha256: sha(bytes)};
@@ -325,7 +349,6 @@ export function createHostedFixture({base, tile, center}) {
         : []),
     ];
     const sources = [];
-    const bands = [0, 7, 11, 16, 21];
     for (const source of tileSources) {
       const low = Math.max(request.minZoom, source.zooms[0]);
       const high = Math.min(request.maxZoom, source.zooms[1]);
@@ -338,23 +361,17 @@ export function createHostedFixture({base, tile, center}) {
         contentEncoding: source.contentEncoding,
         absentStatus: 404,
       });
-      // The tiles of a box at a zoom are its row cover: the box's own tile range.
+      // The cover's tiles at the source's zooms, by the pack of their entry's anchor.
       const anchors = new Map();
-      for (let z = low; z <= high; z += 1) {
-        const anchor = bands.filter((band) => band <= z).at(-1);
-        const [x0, y0] = project(west, north, z);
-        const [x1, y1] = project(east, south, z);
-        for (let y = y0; y <= y1; y += 1)
-          for (let x = x0; x <= x1; x += 1) {
-            const shift = z - anchor;
-            const key = `${anchor}/${x >> shift}/${y >> shift}`;
-            if (!anchors.has(key)) anchors.set(key, []);
-            anchors.get(key).push([z, x, y]);
-          }
+      for (const {tile, anchor} of covered) {
+        if (tile[0] < low || tile[0] > high) continue;
+        const key = anchor.join('/');
+        if (!anchors.has(key)) anchors.set(key, []);
+        anchors.get(key).push(tile);
       }
       for (const [key, tiles] of anchors) {
         const [z, x, y] = key.split('/').map(Number);
-        const end = bands[bands.indexOf(z) + 1] - 1;
+        const end = bands.find(([anchor]) => anchor === z)[1];
         add(
           `tiles/${source.source}/${key}`,
           'tiles',
@@ -382,7 +399,7 @@ export function createHostedFixture({base, tile, center}) {
       profile: request.profile,
       deploymentVersion: 1,
       themes: request.themes,
-      region: request.region,
+      coverSha256: sha(JSON.stringify(request.cover)),
       minZoom: request.minZoom,
       maxZoom: request.maxZoom,
       terrainMaxZoom: request.terrainMaxZoom,

@@ -408,17 +408,10 @@ struct OfflineDownloader: Sendable {
       guard let anchor = pack.anchor, let zooms = pack.zooms else {
         throw OfflinePackFormat.invalid
       }
-      var covers: [Int: OfflineTileCover] = [:]
-      var rows: [Int: [Int: [ClosedRange<Int>]]] = [:]
       for name in index.entries.keys {
         guard let tile = OfflineTileID(name: name), zooms.contains(tile.z),
-          tile.ancestor(at: anchor.z) == anchor
+          tile.ancestor(at: anchor.z) == anchor, manifest.cover.contains(tile)
         else { throw OfflinePackFormat.invalid }
-        let cover = covers[tile.z] ?? OfflineTileCover(manifest.region, zoom: tile.z)
-        covers[tile.z] = cover
-        let row = rows[tile.z]?[tile.y] ?? cover.row(tile.y)
-        rows[tile.z, default: [:]][tile.y] = row
-        guard row.contains(where: { $0.contains(tile.x) }) else { throw OfflinePackFormat.invalid }
       }
     case .documents:
       for name in index.entries.keys {

@@ -293,14 +293,12 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
 
         val anchors = LinkedHashMap<OfflineTileId, MutableList<OfflineTileId>>()
         var count = 0
-        zooms@ for (zoom in request.minZoom..request.maxZoom) {
-            val cover = OfflineTileCover(request.region, zoom)
-            val rows = cover.rows ?: continue
-            for (y in rows) for (xs in cover.row(y)) for (x in xs) {
-                if (tileLimit?.let { count >= it } == true) break@zooms
-                val tile = OfflineTileId(zoom, x, y)
-                anchors.getOrPut(tile.ancestor(OfflinePackBand.anchor(zoom))) { mutableListOf() }
-                    .add(tile)
+        // The cover's tiles, as the service plans them: each entry's tiles at the download's zooms.
+        entries@ for (entry in request.cover.entries) {
+            val tiles = request.cover.tiles(entry, request.minZoom..request.maxZoom)
+            for (zoom in tiles.keys.sorted()) for (tile in tiles.getValue(zoom)) {
+                if (tileLimit?.let { count >= it } == true) break@entries
+                anchors.getOrPut(entry.anchor) { mutableListOf() }.add(tile)
                 count += 1
             }
         }
@@ -345,7 +343,7 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
                 .put("profile", request.profile)
                 .put("deploymentVersion", deployment)
                 .put("themes", JSONArray(request.themes))
-                .put("region", request.region.toJson())
+                .put("coverSha256", request.cover.sha256)
                 .put("minZoom", request.minZoom)
                 .put("maxZoom", request.maxZoom)
                 .put("terrainMaxZoom", request.terrainMaxZoom)

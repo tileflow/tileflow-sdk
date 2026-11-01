@@ -125,7 +125,7 @@ internal data class OfflineServedTiles(
     val template: OfflineTileTemplate,
     val zooms: IntRange,
     val absentStatus: Int,
-    val regions: List<OfflinePackRegion> = emptyList(),
+    val covers: List<OfflineCover> = emptyList(),
     val anchors: Map<OfflineTileId, List<java.io.File>> = emptyMap(),
 ) {
     fun merging(other: OfflineServedTiles): OfflineServedTiles {
@@ -134,7 +134,7 @@ internal data class OfflineServedTiles(
             files[anchor] = (files[anchor].orEmpty() + list).distinct()
         return copy(
             zooms = minOf(zooms.first, other.zooms.first)..maxOf(zooms.last, other.zooms.last),
-            regions = (regions + other.regions).distinct(),
+            covers = (covers + other.covers).distinct(),
             anchors = files,
         )
     }
@@ -145,8 +145,7 @@ internal data class OfflineServedTiles(
      */
     fun covers(tile: OfflineTileId): Boolean {
         val held = if (tile.z > zooms.last) tile.ancestor(zooms.last) else tile
-        return held.z in zooms &&
-            regions.any { OfflineTileCover(it, held.z).contains(held.x, held.y) }
+        return held.z in zooms && covers.any { it.contains(held) }
     }
 }
 

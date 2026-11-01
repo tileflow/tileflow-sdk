@@ -145,11 +145,12 @@ class OfflineTest {
                 )
             }
             if (item.has("canonical")) {
-                assertJson(
-                    name,
-                    item.getJSONObject("canonical"),
-                    JSONObject(String(built.getOrThrow()[0].body)),
-                )
+                // Everything but the area, which the service now takes as the cover.
+                val sent = JSONObject(String(built.getOrThrow()[0].body))
+                val expected = JSONObject(item.getJSONObject("canonical").toString())
+                assertNotNull(name, sent.remove("cover"))
+                expected.remove("region")
+                assertJson(name, expected, sent)
             } else {
                 assertEquals(
                     name,
@@ -202,7 +203,7 @@ class OfflineTest {
         assertEquals("Discovery", 1, plan.resources.size)
         assertEquals(mapOf("terrain" to 5L, "world" to 11L), plan.tileCounts)
         // Every tile pack's anchor starts its band; tiles the archive does not store are left out.
-        val cover = (10..14).sumOf { OfflineTileCover(manifest.region, it).count.toLong() }
+        val cover = (10..14).sumOf { covered(manifest.cover, it).size.toLong() }
         assertTrue(plan.tileCounts.getValue("world") < cover)
         for (planned in plan.packs.filter { it.pack.kind == OfflinePackKind.TILES }) {
             assertTrue(planned.pack.anchor!!.z in OfflinePackBand.anchors)
@@ -267,14 +268,14 @@ class OfflineTest {
                     { manifest -> pack(manifest) { it.put("billableResources", 1_000_000) } },
                 "an unknown kind" to { manifest -> pack(manifest) { it.put("kind", "models") } },
                 "format 1" to { it.put("version", 1) },
-                "another region" to
-                    {
-                        it.put(
-                            "region",
-                            JSONObject()
-                                .put("type", "bbox")
-                                .put("bbox", JSONArray(listOf(-3.71, 40.41, -3.69, 40.43))),
-                        )
+                "another cover" to { it.put("coverSha256", "0".repeat(64)) },
+                "no cover" to { it.remove("coverSha256") },
+                "a tile pack the cover does not list" to
+                    { manifest ->
+                        pack(manifest) {
+                            it.put("anchor", JSONArray(listOf(11, 1004, 772)))
+                            it.put("id", "tiles/world/11/1004/772")
+                        }
                     },
                 "over the plan" to
                     { manifest ->
@@ -486,6 +487,12 @@ class OfflineTest {
         assertEquals(credential, create.header("X-Tileflow-Mobile-Client"))
         assertEquals("application/json", create.body!!.contentType().toString())
         assertJson("create", JSONObject(String(createdRequest().body)), body(create))
+        // The body the service's own fixture was created from, cover included.
+        assertJson(
+            "create",
+            JSONObject(resource("packs-v2/release-1/create-request.json")),
+            body(create),
+        )
         assertEquals(
             "https://api.tileflow.test/v1/offline/packs/revalidate",
             revalidate.url.toString(),
@@ -542,6 +549,14 @@ class OfflineTest {
         fun geometry(value: TileflowGeometry) = TileflowOfflineGeometry.Geometry(value)
         fun point(longitude: Double, latitude: Double) = TileflowCoordinate(longitude, latitude)
         val square = listOf(point(0.0, 0.0), point(1.0, 0.0), point(1.0, 1.0), point(0.0, 0.0))
+        // Regions have no limit on their positions, rings or parts.
+        geometry(TileflowGeometry.Polygon(List(17) { square })).validate()
+        TileflowOfflineGeometry.GeometryCollection(
+                List(65) { TileflowGeometry.Point(point(0.0, 0.0)) }
+            )
+            .validate()
+        geometry(TileflowGeometry.LineString((0 until 3_000).map { point(it / 1000.0, 0.0) }))
+            .validate()
         val invalid =
             listOf(
                 geometry(TileflowGeometry.Polygon(listOf(listOf(point(0.0, 0.0), point(1.0, 1.0))))) to
@@ -551,21 +566,10 @@ class OfflineTest {
                         listOf(listOf(point(0.0, 0.0), point(1.0, 1.0), point(2.0, 2.0)))
                     )
                 ) to "emptyArea",
-                geometry(
-                    TileflowGeometry.Polygon(
-                        listOf((0 until 256).map { point(it / 1000.0, sin(it.toDouble())) })
-                    )
-                ) to "tooManyPositions",
                 geometry(TileflowGeometry.LineString(listOf(point(0.0, 0.0)))) to "tooFewPositions",
                 geometry(TileflowGeometry.MultiPoint(emptyList())) to "tooFewPositions",
                 geometry(TileflowGeometry.LineString(listOf(point(179.0, 0.0), point(-179.0, 0.0)))) to
                     "crossesAntimeridian",
-                geometry(TileflowGeometry.Polygon(List(17) { square })) to "tooManyRings",
-                geometry(TileflowGeometry.MultiPolygon(List(65) { listOf(square) })) to
-                    "tooManyGeometries",
-                TileflowOfflineGeometry.GeometryCollection(
-                    List(65) { TileflowGeometry.Point(point(0.0, 0.0)) }
-                ) to "tooManyGeometries",
                 TileflowOfflineGeometry.GeometryCollection(emptyList()) to "tooFewPositions",
                 geometry(TileflowGeometry.Point(point(181.0, 0.0))) to "invalidPosition",
                 TileflowOfflineGeometry.Corridor(
@@ -642,12 +646,162 @@ class OfflineTest {
                 )
             }
         }
-        // What the service refuses is never read back as its answer.
+    }
+
+    @Test
+    fun coversMatchTheService() {
+        val fixture = JSONObject(resource("pack-lists.json"))
+        assertEquals(OfflineCover.MAXIMUM_ENTRIES, fixture.getInt("maxCoverEntries"))
+        assertEquals(OfflinePackRequest.MAXIMUM_BODY_BYTES, fixture.getInt("maxBodyBytes"))
+        val cases = fixture.getJSONArray("cases")
+        for (index in 0 until cases.length()) {
+            val item = cases.getJSONObject(index)
+            val name = item.getString("name")
+            val region = item.getJSONObject("region")
+            val geometry =
+                if (region.getString("type") == "bbox") {
+                    val box = region.getJSONArray("bbox")
+                    TileflowOfflineGeometry.BoundingBox(
+                        TileflowBoundingBox(
+                            box.getDouble(0),
+                            box.getDouble(1),
+                            box.getDouble(2),
+                            box.getDouble(3),
+                        )
+                    )
+                } else TileflowOfflineGeometry.fromGeoJson(region.toString())
+            val minZoom = item.getInt("minZoom")
+            val maxZoom = item.getInt("maxZoom")
+            val cover = OfflineCover.of(geometry.packRegions(), minZoom, maxZoom)
+            assertJson(name, item.getJSONArray("cover"), cover.toJson())
+            assertEquals(name, item.getString("coverSha256"), cover.sha256)
+            assertEquals(name, item.getInt("coverBytes"), cover.text.toByteArray().size)
+            // Read back as the service reads it, the cover is unchanged.
+            assertEquals(name, cover, OfflineCover.fromJson(cover.toJson(), minZoom, maxZoom))
+            val packs = item.getJSONArray("packs")
+            assertEquals(name, packs.length(), cover.entries.size)
+            var total = 0L
+            for ((offset, entry) in cover.entries.withIndex()) {
+                val pack = packs.getJSONObject(offset)
+                val anchor = pack.getJSONArray("anchor")
+                assertEquals(
+                    name,
+                    listOf(anchor.getInt(0), anchor.getInt(1), anchor.getInt(2)),
+                    listOf(entry.anchor.z, entry.anchor.x, entry.anchor.y),
+                )
+                assertEquals(
+                    name,
+                    pack.getInt("maskZoom"),
+                    OfflineCover.maskZoom(entry.anchor.z, maxZoom),
+                )
+                val zooms = pack.getJSONArray("zooms")
+                val tiles = cover.tiles(entry, zooms.getInt(0)..zooms.getInt(1))
+                val byZoom = pack.getJSONObject("tilesByZoom")
+                assertEquals(
+                    "$name $anchor",
+                    byZoom.keys().asSequence().associate { it.toInt() to byZoom.getInt(it) },
+                    tiles.mapValues { it.value.size },
+                )
+                // Every tile of the pack, and nothing beside it, is in the download.
+                for ((zoom, list) in tiles) assertTrue("$name z$zoom", list.all(cover::contains))
+                total += tiles.values.sumOf { it.size }
+            }
+            assertEquals(name, item.getJSONObject("totals").getLong("tiles"), total)
+            // The cover holds exactly the region's tiles at every zoom.
+            for (zoom in minZoom..maxZoom)
+                assertEquals(
+                    "$name z$zoom",
+                    geometry.tileCount(zoom),
+                    covered(cover, zoom).size.toLong(),
+                )
+        }
+        val canonicalized = fixture.getJSONArray("canonicalized")
+        for (index in 0 until canonicalized.length()) {
+            val item = canonicalized.getJSONObject(index)
+            val cover =
+                OfflineCover.fromJson(
+                    item.getJSONArray("cover"),
+                    item.getInt("minZoom"),
+                    item.getInt("maxZoom"),
+                )!!
+            assertJson("canonical", item.getJSONArray("canonical"), cover.toJson())
+            assertEquals(item.getString("coverSha256"), cover.sha256)
+        }
         val refused = fixture.getJSONArray("refused")
         for (index in 0 until refused.length()) {
-            val region = refused.getJSONObject(index).get("region")
-            assertNull(region.toString(), OfflinePackRegion.fromJson(region))
+            val item = refused.getJSONObject(index)
+            if (!item.has("cover")) continue
+            assertNull(
+                item.getString("reason"),
+                OfflineCover.fromJson(item.get("cover"), item.getInt("minZoom"), item.getInt("maxZoom")),
+            )
         }
+    }
+
+    @Test
+    fun regionsTooComplexAreRefusedBeforeAnyRequest() {
+        fun refusal(geometry: TileflowOfflineGeometry, maxZoom: Int): TileflowOfflineException =
+            runCatching {
+                    OfflinePackRequest.requests(
+                        "map_offlinefixture00",
+                        listOf("default"),
+                        geometry,
+                        OfflineZooms(0..maxZoom),
+                    )
+                }
+                .exceptionOrNull() as? TileflowOfflineException ?: throw AssertionError("Not refused")
+        // Greater London to z16 lists one pack per z16 tile: more than a download may.
+        val london =
+            TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(-0.51, 51.29, 0.33, 51.69))
+        assertEquals(
+            23,
+            OfflinePackRequest.requests(
+                    "map_offlinefixture00",
+                    listOf("default"),
+                    london,
+                    OfflineZooms(0..15),
+                )[0]
+                .cover
+                .entries
+                .size,
+        )
+        val packs = refusal(london, 16)
+        assertEquals(TileflowOfflineErrorCode.REGION_TOO_COMPLEX, packs.code)
+        assertEquals("tooManyPacks", packs.context.reason)
+        assertEquals(16_384, packs.context.limit)
+        assertEquals(18_195, packs.context.count)
+        // Thousands of scattered points each need a pack with a mask: a body larger than allowed.
+        val points =
+            (0 until 4_900).map {
+                TileflowCoordinate((it % 70) * 0.2, 40 + (it / 70) * 0.15)
+            }
+        val bytes =
+            refusal(TileflowOfflineGeometry.Geometry(TileflowGeometry.MultiPoint(points)), 15)
+        assertEquals(TileflowOfflineErrorCode.REGION_TOO_COMPLEX, bytes.code)
+        assertEquals("bodyTooLarge", bytes.context.reason)
+        assertEquals(262_144, bytes.context.limit)
+        assertTrue((bytes.context.count ?: 0) > 262_144)
+        // The service's own refusals of size read the same way.
+        val tooMany =
+            OfflinePackContract.failure(
+                422,
+                """{"code":"OFFLINE_PACK_TOO_LARGE","maxCoverEntries":16384}""".toByteArray(),
+                null,
+                OfflinePackContract.Operation.CREATE,
+                0,
+            )
+        assertEquals(TileflowOfflineErrorCode.REGION_TOO_COMPLEX, tooMany.code)
+        assertEquals(16_384, tooMany.context.limit)
+        val tooLarge =
+            OfflinePackContract.failure(
+                413,
+                """{"code":"OFFLINE_PACK_BODY_TOO_LARGE","maxBodyBytes":262144}""".toByteArray(),
+                null,
+                OfflinePackContract.Operation.CREATE,
+                0,
+            )
+        assertEquals(TileflowOfflineErrorCode.REGION_TOO_COMPLEX, tooLarge.code)
+        assertEquals(262_144, tooLarge.context.limit)
     }
 
     @Test
@@ -840,6 +994,12 @@ class OfflineTest {
 
     /** The service's creation answer, generated by its own code (`packs-v2/release-1`). */
     private fun createdResponse() = JSONObject(resource("packs-v2/release-1/create-response.json"))
+
+    /** The tiles a cover holds at [zoom]. */
+    private fun covered(cover: OfflineCover, zoom: Int): List<OfflineTileId> =
+        cover.entries
+            .flatMap { cover.tiles(it, zoom..zoom)[zoom].orEmpty() }
+            .sortedWith(compareBy({ it.y }, { it.x }))
 
     private fun createdRequest() =
         OfflinePackRequest.requests(

@@ -1021,14 +1021,13 @@ class OfflineStoreTest {
         // the download stops at, answer as online; outside the region nothing is known.
         val world = manifest.source("world")!!
         val terrain = manifest.source("terrain")!!
-        val cover = OfflineTileCover(manifest.region, 13)
-        val unstored =
-            cover.rows!!.flatMap { y ->
-                cover.row(y).flatMap { xs -> xs.map { OfflineTileId(13, it, y) } }
-            }.filter { "world/${it.name}" !in held }
+        fun covered(zoom: Int) =
+            manifest.cover.entries
+                .flatMap { manifest.cover.tiles(it, zoom..zoom)[zoom].orEmpty() }
+                .sortedWith(compareBy({ it.y }, { it.x }))
+        val unstored = covered(13).filter { "world/${it.name}" !in held }
         assertTrue("The archive does not store every covered tile", unstored.isNotEmpty())
-        val deep = OfflineTileCover(manifest.region, 14)
-        val inside = OfflineTileId(14, deep.row(deep.rows!!.first)[0].first, deep.rows!!.first)
+        val inside = covered(14).first()
         for (url in listOf(world.template.url(unstored[0]), terrain.template.url(inside))) {
             val answer = index.resource(ResourceCacheKey(url, scopeOfMap), cache)
             assertEquals(url.toString(), 404, answer?.metadata?.status)

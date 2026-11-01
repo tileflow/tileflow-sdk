@@ -11,9 +11,10 @@ import org.json.JSONObject
  * The area of an offline region, in WGS84 positions.
  *
  * Like the geometry of Mapbox's tile region load options, it describes the area only, and zooms and
- * content are chosen separately; it takes any GeoJSON geometry, a box or a corridor. A region
- * covers the same tiles at every zoom as the Hosted download: the union of the tiles each of its
- * parts touches, counted once. A point covers the tile it lies in, a line every tile it passes
+ * content are chosen separately; it takes any GeoJSON geometry, a box or a corridor, with no limit
+ * on its positions. As Mapbox computes tile regions, the SDK turns a Hosted region into the list of
+ * tile packs it needs, which is what it sends: one download whose tiles at every zoom are the union
+ * of the tiles each of its parts touches, counted once. A point covers the tile it lies in, a line every tile it passes
  * through, and a polygon every tile one of its rings passes through or whose row's middle lies
  * inside it, holes excluded. Lines and rings are straight on the Web Mercator map, and tile bounds
  * are closed: a position on a tile's top or bottom edge touches the tiles on both sides of it.
@@ -22,7 +23,7 @@ import org.json.JSONObject
 public sealed class TileflowOfflineGeometry {
     /**
      * A box between two meridians and two parallels. A box whose west edge is greater than its east
-     * edge crosses the antimeridian, as in GeoJSON, and downloads as two packs.
+     * edge crosses the antimeridian, as in GeoJSON, and covers both sides.
      */
     public data class BoundingBox(public val box: TileflowBoundingBox) : TileflowOfflineGeometry()
 
@@ -32,24 +33,19 @@ public sealed class TileflowOfflineGeometry {
      * rings may be open or closed. A ring that crosses itself covers the areas an even number of its
      * edges enclose, as GeoJSON renderers draw it. Parts may overlap.
      *
-     * The geometry has at most 256 positions, closing positions included, a polygon at most 16
-     * rings and a multi-polygon at most 64 polygons. No line or ring may cross the antimeridian:
-     * give each side as its own part.
+     * No line or ring may cross the antimeridian: give each side as its own part.
      */
     public data class Geometry(public val geometry: TileflowGeometry) : TileflowOfflineGeometry()
 
-    /**
-     * A GeoJSON geometry collection: up to 64 geometries, which together have at most 256
-     * positions.
-     */
+    /** A GeoJSON geometry collection. */
     public data class GeometryCollection(public val geometries: List<TileflowGeometry>) :
         TileflowOfflineGeometry()
 
     /**
      * The area within half of [width] metres of a line, such as a route. The line has 2 to 10,000
-     * positions and [width] is 1 to 100,000 metres. A Hosted corridor downloads as one pack for
-     * each stretch whose convex outline stays close to the corridor, so a winding line covers
-     * somewhat more than the corridor itself.
+     * positions and [width] is 1 to 100,000 metres. It covers the convex outlines of consecutive
+     * stretches that stay close to the corridor, so a winding line covers somewhat more than the
+     * corridor itself.
      */
     public data class Corridor(public val line: List<TileflowPosition>, public val width: Double) :
         TileflowOfflineGeometry()
@@ -59,9 +55,10 @@ public sealed class TileflowOfflineGeometry {
      *
      * @throws TileflowOfflineException with [TileflowOfflineErrorCode.INVALID_REGION] and one of
      *   these reasons: `invalidPosition` (not finite, or beyond ±180° or ±90°),
-     *   `tooFewPositions`, `tooManyPositions`, `tooManyRings`, `tooManyGeometries`, `emptyArea` (a
-     *   ring whose positions all lie on one line), `crossesAntimeridian` (consecutive positions
-     *   more than 180° of longitude apart; split the region) or `invalidWidth`.
+     *   `tooFewPositions`, `tooManyPositions` (a corridor's line), `emptyArea` (a ring whose
+     *   positions all lie on one line), `crossesAntimeridian` (consecutive positions more than 180°
+     *   of longitude apart; split the region) or `invalidWidth`. A Hosted region too large to list
+     *   as packs is `REGION_TOO_COMPLEX` when it is loaded or estimated.
      */
     public fun validate() {
         packRegions()
@@ -79,7 +76,7 @@ public sealed class TileflowOfflineGeometry {
     /** The number of tiles the region covers over a range of zooms. */
     public fun tileCount(zoomRange: IntRange): Long = zoomRange.sumOf { tileCount(it) }
 
-    /** The canonical regions of the packs that download this geometry. */
+    /** The canonical parts whose tiles together form the region's cover. */
     internal fun packRegions(): List<OfflinePackRegion> =
         when (this) {
             is BoundingBox -> {

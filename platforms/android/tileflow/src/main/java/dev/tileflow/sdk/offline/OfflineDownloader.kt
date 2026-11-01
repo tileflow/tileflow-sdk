@@ -619,15 +619,14 @@ internal class OfflineDownloader(
                 OfflinePackKind.TILES -> {
                     val anchor = pack.anchor ?: throw OfflinePackFormat.invalid()
                     val zooms = pack.zooms ?: throw OfflinePackFormat.invalid()
-                    val covers = HashMap<Int, OfflineTileCover>()
-                    val rows = HashMap<Pair<Int, Int>, List<IntRange>>()
                     for (name in index.entries.keys) {
                         val tile = OfflineTileId.ofName(name) ?: throw OfflinePackFormat.invalid()
-                        if (tile.z !in zooms || tile.ancestor(anchor.z) != anchor)
+                        if (
+                            tile.z !in zooms ||
+                                tile.ancestor(anchor.z) != anchor ||
+                                !manifest.cover.contains(tile)
+                        )
                             throw OfflinePackFormat.invalid()
-                        val cover = covers.getOrPut(tile.z) { OfflineTileCover(manifest.region, tile.z) }
-                        val row = rows.getOrPut(tile.z to tile.y) { cover.row(tile.y) }
-                        if (row.none { tile.x in it }) throw OfflinePackFormat.invalid()
                     }
                 }
                 OfflinePackKind.DOCUMENTS ->

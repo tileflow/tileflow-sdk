@@ -30,6 +30,10 @@ public struct TileflowOfflineError: Error, Hashable, Sendable, CustomStringConve
     /// The pack has more billable resources than the plan allows, given as the `limit`. Choose a
     /// smaller region or fewer zooms.
     case packTooLarge
+    /// The region needs more tile packs than one download may list, or its cover is larger than
+    /// a request may carry: the context's `count` is how many, and `limit` the most allowed.
+    /// Split the region, or lower its deepest zoom.
+    case regionTooComplex
     /// Nothing in the region can be downloaded.
     case notDownloadable
     /// The device would hold more billable resources than the plan allows, given as the `limit`.

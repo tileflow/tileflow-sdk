@@ -147,7 +147,7 @@ final class OfflineServingTests: XCTestCase {
     var packs = OfflineServedPacks()
     packs.documents[style.absoluteString] = (documents, documentIndex.entries[style.absoluteString]!)
     var served = OfflineServedTiles(template: template, zooms: 0...2, absentStatus: 404)
-    served.regions = [OfflinePackRegion.canonical(-170, 1, -10, 80)!]
+    served.covers = [try OfflineCover.of([OfflinePackRegion.canonical(-170, 1, -10, 80)!], minZoom: 0, maxZoom: 2)]
     served.anchors[OfflineTileID(z: 0, x: 0, y: 0)] = [tiles]
     packs.tiles[template.text] = served
     return packs

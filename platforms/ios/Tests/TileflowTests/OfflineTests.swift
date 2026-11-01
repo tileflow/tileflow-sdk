@@ -70,8 +70,14 @@ final class OfflineTests: XCTestCase {
       }
       switch (item["canonical"], name) {
       case (let canonical?, _):
+        // Everything but the area, which the service now takes as the cover.
         let request = try XCTUnwrap(try built.get().first, name)
-        XCTAssertEqual(try object(request.body), canonical as! NSDictionary, name)
+        let sent = try object(request.body).mutableCopy() as! NSMutableDictionary
+        let expected = (canonical as! NSDictionary).mutableCopy() as! NSMutableDictionary
+        XCTAssertNotNil(sent.object(forKey: "cover"), name)
+        sent.removeObject(forKey: "cover")
+        expected.removeObject(forKey: "region")
+        XCTAssertEqual(sent, expected, name)
       case (nil, "inverted-zooms"):
         // A Swift range cannot be inverted; the zooms above are the nearest valid ones.
         continue
@@ -114,7 +120,7 @@ final class OfflineTests: XCTestCase {
     XCTAssertEqual(plan.tileCounts, ["terrain": 5, "world": 11])
     // Every tile pack's anchor starts its band; tiles the archive does not store are left out.
     var cover = 0
-    for zoom in 10...14 { cover += OfflineTileCover(manifest.region, zoom: zoom).count }
+    for zoom in 10...14 { cover += covered(manifest.cover, zoom: zoom).count }
     XCTAssertLessThan(plan.tileCounts["world"]!, cover)
     for planned in plan.packs where planned.pack.kind == .tiles {
       let anchor = try XCTUnwrap(planned.pack.anchor)
@@ -154,9 +160,11 @@ final class OfflineTests: XCTestCase {
       ("more billable than resources", { pack(&$0) { $0["billableResources"] = 1_000_000 } }),
       ("an unknown kind", { pack(&$0) { $0["kind"] = "models" } }),
       ("format 1", { $0["version"] = 1 }),
+      ("another cover", { $0["coverSha256"] = String(repeating: "0", count: 64) }),
+      ("no cover", { $0["coverSha256"] = nil }),
       (
-        "another region",
-        { $0["region"] = ["type": "bbox", "bbox": [-3.71, 40.41, -3.69, 40.43]] }
+        "a tile pack the cover does not list",
+        { pack(&$0) { $0["anchor"] = [11, 1004, 772]; $0["id"] = "tiles/world/11/1004/772" } }
       ),
       (
         "over the plan",
@@ -287,6 +295,10 @@ final class OfflineTests: XCTestCase {
       create.allHTTPHeaderFields,
       ["Content-Type": "application/json", "X-Tileflow-Mobile-Client": credential])
     XCTAssertEqual(try object(create.httpBody!), try object(createdRequest().body))
+    // The body the service's own fixture was created from, cover included.
+    XCTAssertEqual(
+      try object(create.httpBody!),
+      try object(Data(contentsOf: packFixture("release-1/create-request.json"))))
     XCTAssertEqual(
       revalidate.url?.absoluteString, "https://api.tileflow.test/v1/offline/packs/revalidate")
     XCTAssertEqual(revalidate.allHTTPHeaderFields, ["Content-Type": "application/json"])
@@ -327,10 +339,20 @@ final class OfflineTests: XCTestCase {
     XCTAssertEqual(try open.tileCount(zoom: 16), (polygon[0]["counts"] as! [Int])[16])
     XCTAssertEqual(try open.tileCount(zoomRange: 15...16), 196 + 715)
 
+    // Regions have no limit on their positions, rings or parts.
     let square: [TileflowCoordinate] = [
       .init(longitude: 0, latitude: 0), .init(longitude: 1, latitude: 0),
       .init(longitude: 1, latitude: 1), .init(longitude: 0, latitude: 0),
     ]
+    XCTAssertNoThrow(try TileflowOfflineGeometry.geometry(.polygon(Array(repeating: square, count: 17))).validate())
+    XCTAssertNoThrow(
+      try TileflowOfflineGeometry.geometryCollection(
+        Array(repeating: .point(.init(longitude: 0, latitude: 0)), count: 65)
+      ).validate())
+    XCTAssertNoThrow(
+      try TileflowOfflineGeometry.geometry(
+        .lineString((0..<3_000).map { .init(longitude: Double($0) / 1000, latitude: 0) })
+      ).validate())
     let invalid: [(TileflowOfflineGeometry, String)] = [
       (
         .geometry(.polygon([[.init(longitude: 0, latitude: 0), .init(longitude: 1, latitude: 1)]])),
@@ -343,27 +365,13 @@ final class OfflineTests: XCTestCase {
             .init(longitude: 2, latitude: 2),
           ]])), "emptyArea"
       ),
-      (
-        .geometry(
-          .polygon([
-            (0..<256).map { .init(longitude: Double($0) / 1000, latitude: sin(Double($0))) }
-          ])),
-        "tooManyPositions"
-      ),
+
       (.geometry(.lineString([.init(longitude: 0, latitude: 0)])), "tooFewPositions"),
       (.geometry(.multiPoint([])), "tooFewPositions"),
       (
         .geometry(
           .lineString([.init(longitude: 179, latitude: 0), .init(longitude: -179, latitude: 0)])),
         "crossesAntimeridian"
-      ),
-      (.geometry(.polygon(Array(repeating: square, count: 17))), "tooManyRings"),
-      (
-        .geometry(.multiPolygon(Array(repeating: [square], count: 65))), "tooManyGeometries"
-      ),
-      (
-        .geometryCollection(Array(repeating: .point(.init(longitude: 0, latitude: 0)), count: 65)),
-        "tooManyGeometries"
       ),
       (.geometryCollection([]), "tooFewPositions"),
       (.geometry(.point(.init(longitude: 181, latitude: 0))), "invalidPosition"),
@@ -425,10 +433,114 @@ final class OfflineTests: XCTestCase {
           expected.reduce(0) { $0 + $1[2] - $1[1] + 1 }, "\(name) z\(zoom)")
       }
     }
-    // What the service refuses is never read back as its answer.
-    for item in fixture["refused"] as! [[String: Any]] {
-      XCTAssertNil(OfflinePackRegion(json: try json(item["region"]!)), "\(item["region"]!)")
+  }
+
+  func testCoversMatchTheService() throws {
+    let fixture = try fixture("pack-lists") as! [String: Any]
+    XCTAssertEqual(fixture["maxCoverEntries"] as? Int, OfflineCover.maximumEntries)
+    XCTAssertEqual(fixture["maxBodyBytes"] as? Int, OfflinePackRequest.maximumBodyBytes)
+    for item in fixture["cases"] as! [[String: Any]] {
+      let name = item["name"] as! String
+      let region = item["region"] as! [String: Any]
+      let geometry: TileflowOfflineGeometry
+      if region["type"] as! String == "bbox" {
+        let box = region["bbox"] as! [Double]
+        geometry = .boundingBox(
+          TileflowBoundingBox(west: box[0], south: box[1], east: box[2], north: box[3]))
+      } else {
+        geometry = try TileflowOfflineGeometry(
+          geoJSON: String(decoding: try JSONSerialization.data(withJSONObject: region), as: UTF8.self))
+      }
+      let (minZoom, maxZoom) = (item["minZoom"] as! Int, item["maxZoom"] as! Int)
+      let cover = try OfflineCover.of(geometry.packRegions(), minZoom: minZoom, maxZoom: maxZoom)
+      XCTAssertEqual(try json(item["cover"]!), cover.json, name)
+      XCTAssertEqual(cover.sha256, item["coverSha256"] as? String, name)
+      XCTAssertEqual(cover.text.utf8.count, item["coverBytes"] as? Int, name)
+      // Read back as the service reads it, the cover is unchanged.
+      XCTAssertEqual(OfflineCover(json: cover.json, minZoom: minZoom, maxZoom: maxZoom), cover, name)
+      let packs = item["packs"] as! [[String: Any]]
+      XCTAssertEqual(packs.count, cover.entries.count, name)
+      var total = 0
+      for (pack, entry) in zip(packs, cover.entries) {
+        let anchor = pack["anchor"] as! [Int]
+        XCTAssertEqual([entry.anchor.z, entry.anchor.x, entry.anchor.y], anchor, name)
+        XCTAssertEqual(
+          OfflineCover.maskZoom(anchor: entry.anchor.z, maxZoom: maxZoom), pack["maskZoom"] as? Int,
+          name)
+        let zooms = pack["zooms"] as! [Int]
+        let tiles = cover.tiles(entry, zooms: zooms[0]...zooms[1])
+        let byZoom = pack["tilesByZoom"] as! [String: Int]
+        XCTAssertEqual(tiles.mapValues(\.count), Dictionary(uniqueKeysWithValues: byZoom.map { (Int($0)!, $1) }), "\(name) \(anchor)")
+        // Every tile of the pack, and nothing beside it, is in the download.
+        for (zoom, list) in tiles {
+          XCTAssertTrue(list.allSatisfy(cover.contains), "\(name) z\(zoom)")
+        }
+        total += tiles.values.reduce(0) { $0 + $1.count }
+      }
+      XCTAssertEqual(total, (item["totals"] as! [String: Int])["tiles"], name)
+      // The cover holds exactly the region's tiles at every zoom.
+      for zoom in minZoom...maxZoom {
+        XCTAssertEqual(covered(cover, zoom: zoom).count, try geometry.tileCount(zoom: zoom), "\(name) z\(zoom)")
+      }
     }
+    for item in fixture["canonicalized"] as! [[String: Any]] {
+      let (minZoom, maxZoom) = (item["minZoom"] as! Int, item["maxZoom"] as! Int)
+      let cover = try XCTUnwrap(
+        OfflineCover(json: try json(item["cover"]!), minZoom: minZoom, maxZoom: maxZoom))
+      XCTAssertEqual(cover.json, try json(item["canonical"]!))
+      XCTAssertEqual(cover.sha256, item["coverSha256"] as? String)
+    }
+    for item in fixture["refused"] as! [[String: Any]] where item["cover"] != nil {
+      XCTAssertNil(
+        OfflineCover(
+          json: try json(item["cover"]!), minZoom: item["minZoom"] as! Int,
+          maxZoom: item["maxZoom"] as! Int), item["reason"] as! String)
+    }
+  }
+
+  func testRegionsTooComplexAreRefusedBeforeAnyRequest() throws {
+    func refusal(_ geometry: TileflowOfflineGeometry, maxZoom: Int) throws -> TileflowOfflineError {
+      do {
+        _ = try OfflinePackRequest.requests(
+          mapID: "map_offlinefixture00", themes: ["default"], geometry: geometry,
+          zooms: OfflineZooms(range: 0...maxZoom))
+      } catch let error as TileflowOfflineError {
+        return error
+      }
+      XCTFail("Not refused")
+      throw CancellationError()
+    }
+    // Greater London to z16 lists one pack per z16 tile: more than a download may.
+    let london = TileflowOfflineGeometry.boundingBox(
+      TileflowBoundingBox(west: -0.51, south: 51.29, east: 0.33, north: 51.69))
+    XCTAssertEqual(try OfflinePackRequest.requests(
+      mapID: "map_offlinefixture00", themes: ["default"], geometry: london,
+      zooms: OfflineZooms(range: 0...15))[0].cover.entries.count, 23)
+    let packs = try refusal(london, maxZoom: 16)
+    XCTAssertEqual(packs.code, .regionTooComplex)
+    XCTAssertEqual(packs.context.reason, "tooManyPacks")
+    XCTAssertEqual(packs.context.limit, 16_384)
+    XCTAssertEqual(packs.context.count, 18_195)
+    // Thousands of scattered points each need a pack with a mask: a body larger than allowed.
+    let points = (0..<4_900).map {
+      TileflowCoordinate(longitude: Double($0 % 70) * 0.2, latitude: 40 + Double($0 / 70) * 0.15)
+    }
+    let bytes = try refusal(.geometry(.multiPoint(points)), maxZoom: 15)
+    XCTAssertEqual(bytes.code, .regionTooComplex)
+    XCTAssertEqual(bytes.context.reason, "bodyTooLarge")
+    XCTAssertEqual(bytes.context.limit, 262_144)
+    XCTAssertGreaterThan(bytes.context.count ?? 0, 262_144)
+    // The service's own refusals of size read the same way.
+    let tooMany = OfflinePackContract.failure(
+      status: 422, body: Data(#"{"code":"OFFLINE_PACK_TOO_LARGE","maxCoverEntries":16384}"#.utf8),
+      retryAfter: nil, operation: .create, now: Date())
+    XCTAssertEqual(tooMany.code, .regionTooComplex)
+    XCTAssertEqual(tooMany.context.limit, 16_384)
+    let tooLarge = OfflinePackContract.failure(
+      status: 413, body: Data(#"{"code":"OFFLINE_PACK_BODY_TOO_LARGE","maxBodyBytes":262144}"#.utf8),
+      retryAfter: nil, operation: .create, now: Date())
+    XCTAssertEqual(tooLarge.code, .regionTooComplex)
+    XCTAssertEqual(tooLarge.context.limit, 262_144)
   }
 
   func testGeoJSONGeometriesAreReadAndKeptMapboxStyle() throws {
@@ -604,6 +716,12 @@ private func object(_ data: Data) throws -> NSDictionary {
 private func createdResponse() throws -> [String: Any] {
   try JSONSerialization.jsonObject(with: Data(contentsOf: packFixture("release-1/create-response.json")))
     as! [String: Any]
+}
+
+/// The tiles a cover holds at `zoom`.
+func covered(_ cover: OfflineCover, zoom: Int) -> [OfflineTileID] {
+  cover.entries.flatMap { cover.tiles($0, zooms: zoom...zoom)[zoom] ?? [] }
+    .sorted { ($0.y, $0.x) < ($1.y, $1.x) }
 }
 
 private func createdRequest() throws -> OfflinePackRequest {

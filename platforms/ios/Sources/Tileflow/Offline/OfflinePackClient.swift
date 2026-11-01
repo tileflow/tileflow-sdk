@@ -47,15 +47,18 @@ struct OfflinePackRequest: Sendable, Hashable {
   let profile: String
   /// Distinct and sorted, as the service returns them.
   let themes: [String]
-  let region: OfflinePackRegion
+  /// The tile packs the download needs, computed here from the region.
+  let cover: OfflineCover
   let minZoom: Int
   let maxZoom: Int
   let terrainMaxZoom: Int
 
-  static let maximumBodyBytes = 65_536
+  static let maximumBodyBytes = 262_144
 
-  /// One request for each download a region needs: a corridor or a box across the antimeridian
-  /// downloads as several.
+  /// The request of a region's download: one for any region, its cover the union of its parts.
+  ///
+  /// - Throws: `regionTooComplex` before anything is sent when the cover lists more packs, or the
+  ///   body holds more bytes, than the service accepts.
   static func requests(
     mapID: String, themes requested: [String], geometry: TileflowOfflineGeometry,
     zooms: OfflineZooms, profile: OfflinePackProfile = .webView
@@ -67,28 +70,61 @@ struct OfflinePackRequest: Sendable, Hashable {
     guard (1...4).contains(requested.count), themes.count == requested.count,
       themes.allSatisfy({ HostedContract.matches($0, #"^[A-Za-z][A-Za-z0-9_-]{0,63}$"#) })
     else { throw TileflowOfflineError.options("invalidThemes") }
-    return try geometry.packRegions().map { region in
-      let request = OfflinePackRequest(
-        mapID: mapID, profile: profile.rawValue, themes: themes, region: region,
-        minZoom: zooms.range.lowerBound, maxZoom: zooms.range.upperBound,
-        terrainMaxZoom: zooms.terrainMaximum)
-      guard request.body.count <= maximumBodyBytes else {
-        throw TileflowOfflineError.region("tooManyPositions")
-      }
-      return request
+    let cover = try OfflineCover.of(
+      geometry.packRegions(), minZoom: zooms.range.lowerBound, maxZoom: zooms.range.upperBound)
+    let request = OfflinePackRequest(
+      mapID: mapID, profile: profile.rawValue, themes: themes, cover: cover,
+      minZoom: zooms.range.lowerBound, maxZoom: zooms.range.upperBound,
+      terrainMaxZoom: zooms.terrainMaximum)
+    let bytes = request.body.count
+    guard bytes <= maximumBodyBytes else {
+      throw TileflowOfflineError(
+        .regionTooComplex,
+        context: .init(reason: "bodyTooLarge", limit: maximumBodyBytes, count: bytes))
     }
+    return [request]
   }
 
-  var body: Data {
-    let value: JSONValue = .object([
+  init(
+    mapID: String, profile: String, themes: [String], cover: OfflineCover, minZoom: Int,
+    maxZoom: Int, terrainMaxZoom: Int
+  ) {
+    self.mapID = mapID
+    self.profile = profile
+    self.themes = themes
+    self.cover = cover
+    self.minZoom = minZoom
+    self.maxZoom = maxZoom
+    self.terrainMaxZoom = terrainMaxZoom
+  }
+
+  /// A body as the service reads one; nil when it would refuse it.
+  init?(json value: JSONValue) {
+    guard let mapID = value["mapId"]?.string, let profile = value["profile"]?.string,
+      case .array(let themes) = value["themes"],
+      let minZoom = value["minZoom"]?.number.flatMap({ Int(exactly: $0) }),
+      let maxZoom = value["maxZoom"]?.number.flatMap({ Int(exactly: $0) }),
+      let terrainMaxZoom = value["terrainMaxZoom"]?.number.flatMap({ Int(exactly: $0) }),
+      let cover = OfflineCover(json: value["cover"], minZoom: minZoom, maxZoom: maxZoom)
+    else { return nil }
+    self.init(
+      mapID: mapID, profile: profile, themes: themes.compactMap(\.string), cover: cover,
+      minZoom: minZoom, maxZoom: maxZoom, terrainMaxZoom: terrainMaxZoom)
+  }
+
+  var json: JSONValue {
+    .object([
       "mapId": .string(mapID), "profile": .string(profile),
-      "themes": .array(themes.map(JSONValue.string)), "region": region.json,
+      "themes": .array(themes.map(JSONValue.string)), "cover": cover.json,
       "minZoom": .number(Double(minZoom)), "maxZoom": .number(Double(maxZoom)),
       "terrainMaxZoom": .number(Double(terrainMaxZoom)),
     ])
+  }
+
+  var body: Data {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
-    return (try? encoder.encode(value)) ?? Data()
+    return (try? encoder.encode(json)) ?? Data()
   }
 }
 

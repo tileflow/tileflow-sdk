@@ -185,18 +185,11 @@ final class OfflinePackTests: XCTestCase {
     // download stops at, answer as online; outside the region nothing is known.
     let world = try XCTUnwrap(manifest.source("world"))
     let terrain = try XCTUnwrap(manifest.source("terrain"))
-    let cover = OfflineTileCover(manifest.region, zoom: 13)
-    var unstored: [OfflineTileID] = []
-    for y in cover.rows! {
-      for xs in cover.row(y) {
-        for x in xs where !held.contains("world/13/\(x)/\(y)") {
-          unstored.append(OfflineTileID(z: 13, x: x, y: y))
-        }
-      }
+    let unstored = covered(manifest.cover, zoom: 13).filter {
+      !held.contains("world/13/\($0.x)/\($0.y)")
     }
     XCTAssertFalse(unstored.isEmpty, "The archive does not store every covered tile")
-    let deep = OfflineTileCover(manifest.region, zoom: 14)
-    let inside = OfflineTileID(z: 14, x: deep.row(deep.rows!.lowerBound)[0].lowerBound, y: deep.rows!.lowerBound)
+    let inside = try XCTUnwrap(covered(manifest.cover, zoom: 14).first)
     for url in [world.template.url(unstored[0])!, terrain.template.url(inside)!] {
       let answer = await index.resource(ResourceCacheKey(url: url, scope: scope), cache: cache)
       XCTAssertEqual(answer?.metadata.status, 404, url.absoluteString)

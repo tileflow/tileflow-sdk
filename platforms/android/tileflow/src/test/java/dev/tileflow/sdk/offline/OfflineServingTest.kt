@@ -160,7 +160,13 @@ class OfflineServingTest {
                         template,
                         0..2,
                         404,
-                        listOf(OfflinePackRegion.canonical(-170.0, 1.0, -10.0, 80.0)!!),
+                        listOf(
+                            OfflineCover.of(
+                                listOf(OfflinePackRegion.canonical(-170.0, 1.0, -10.0, 80.0)!!),
+                                0,
+                                2,
+                            )
+                        ),
                         mapOf(OfflineTileId(0, 0, 0) to listOf(tiles)),
                     )
             ),

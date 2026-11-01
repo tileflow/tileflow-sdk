@@ -8,8 +8,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * A GeoJSON region of a Hosted download. [canonical] gives the service's form: latitudes clamped to
- * the map's, positions rounded to six decimals and rings closed.
+ * A GeoJSON region of a download. [canonical] gives the form whose cover the service plans:
+ * latitudes clamped to the map's, positions rounded to six decimals and rings closed.
  */
 internal sealed class OfflineRegionShape {
     data class Point(val position: TileflowPosition) : OfflineRegionShape()
@@ -65,11 +65,6 @@ internal sealed class OfflineRegionShape {
     }
 
     companion object {
-        /** Positions in the whole region, closing positions included. */
-        const val MAXIMUM_POSITIONS = 256
-        const val MAXIMUM_RINGS = 16
-        const val MAXIMUM_GEOMETRIES = 64
-
         fun of(geometry: TileflowGeometry): OfflineRegionShape {
             fun position(coordinate: TileflowCoordinate) =
                 TileflowPosition(coordinate.longitude, coordinate.latitude)
@@ -85,9 +80,8 @@ internal sealed class OfflineRegionShape {
             }
         }
 
-        /** The service's canonical form of [shape], or the reason the service would refuse it. */
+        /** The canonical form of [shape], or why it has no cover. */
         fun canonical(shape: OfflineRegionShape): OfflineRegionShape {
-            var count = 0
             fun refuse(reason: String) = TileflowOfflineException.region(reason)
             fun path(positions: List<TileflowPosition>): List<TileflowPosition> {
                 if (
@@ -101,7 +95,6 @@ internal sealed class OfflineRegionShape {
                     if (abs(positions[index].longitude - positions[index - 1].longitude) > 180)
                         throw refuse("crossesAntimeridian")
                 }
-                count += positions.size
                 return positions.map {
                     TileflowPosition(
                         OfflinePackRegion.round(it.longitude),
@@ -121,7 +114,6 @@ internal sealed class OfflineRegionShape {
                     if (abs(positions.last().longitude - positions.first().longitude) > 180)
                         throw refuse("crossesAntimeridian")
                     ring.add(ring.first())
-                    count += 1
                 }
                 if (ring.size < 4) throw refuse("tooFewPositions")
                 if (OfflinePackRegion.isCollinear(ring)) throw refuse("emptyArea")
@@ -129,7 +121,6 @@ internal sealed class OfflineRegionShape {
             }
             fun polygon(rings: List<List<TileflowPosition>>): List<List<TileflowPosition>> {
                 if (rings.isEmpty()) throw refuse("tooFewPositions")
-                if (rings.size > MAXIMUM_RINGS) throw refuse("tooManyRings")
                 return rings.map(::ring)
             }
             fun <T> parts(parts: List<T>, part: (T) -> T): List<T> {
@@ -143,21 +134,12 @@ internal sealed class OfflineRegionShape {
                     is LineString -> LineString(line(shape.positions))
                     is MultiLineString -> MultiLineString(parts(shape.lines, ::line))
                     is Polygon -> Polygon(polygon(shape.rings))
-                    is MultiPolygon -> {
-                        if (shape.polygons.size > MAXIMUM_GEOMETRIES)
-                            throw refuse("tooManyGeometries")
-                        MultiPolygon(parts(shape.polygons, ::polygon))
-                    }
+                    is MultiPolygon -> MultiPolygon(parts(shape.polygons, ::polygon))
                     is GeometryCollection -> throw refuse("nestedCollection")
                 }
-            val result =
-                if (shape is GeometryCollection) {
-                    if (shape.geometries.size > MAXIMUM_GEOMETRIES)
-                        throw refuse("tooManyGeometries")
-                    GeometryCollection(parts(shape.geometries, ::single))
-                } else single(shape)
-            if (count > MAXIMUM_POSITIONS) throw refuse("tooManyPositions")
-            return result
+            return if (shape is GeometryCollection)
+                GeometryCollection(parts(shape.geometries, ::single))
+            else single(shape)
         }
 
         /**

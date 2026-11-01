@@ -34,6 +34,12 @@ public enum class TileflowOfflineErrorCode {
      * smaller region or fewer zooms.
      */
     PACK_TOO_LARGE,
+    /**
+     * The region needs more tile packs than one download may list, or its cover is larger than a
+     * request may carry: the context's `count` is how many, and `limit` the most allowed. Split the
+     * region, or lower its deepest zoom.
+     */
+    REGION_TOO_COMPLEX,
     /** Nothing in the region can be downloaded. */
     NOT_DOWNLOADABLE,
     /** The device would hold more billable resources than the plan allows, given as the `limit`. */

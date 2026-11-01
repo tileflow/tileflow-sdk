@@ -1,17 +1,16 @@
 import Foundation
 
-/// Turns a corridor into the convex rings Hosted packs accept.
+/// Turns a corridor into the convex rings whose tiles form its cover.
 ///
-/// A Hosted pack covers one simple ring of at most 256 positions, while a buffered route is
-/// neither small nor, in general, simple. The line is simplified, then cut into consecutive pieces
-/// whose convex hull stays close to the corridor's own area; each piece becomes one ring.
+/// A buffered route is neither small nor, in general, simple. The line is simplified, then cut into
+/// consecutive pieces whose convex hull stays close to the corridor's own area; each piece becomes
+/// one simple ring of at most 256 positions, and the corridor covers the union of their tiles.
 ///
 /// Distances use the Web Mercator scale at the piece's highest latitude, so the rings always
 /// contain every point within the corridor's half width of the line. They cover more where the
 /// line bends: a hull may cover up to ``maximumExcess`` times the area of the corridor it holds, or
 /// more when the extra area is at most ``maximumExtraTiles`` tiles of World's deepest zoom. More
-/// area means more tiles; more pieces mean more packs, each of which rounds its billing up to a
-/// whole map view.
+/// area means more tiles, each of them billed.
 enum OfflineCorridor {
   static let widths: ClosedRange<Double> = 1...100_000
   static let maximumPositions = 10_000
@@ -20,7 +19,7 @@ enum OfflineCorridor {
   /// Tiles per world unit of area at World's deepest zoom, 15.
   static let tilesPerArea = Double(1 << 30)
   /// Line positions per ring. With the eight sides of each position's octagon and the four sides
-  /// clipping can add, a ring stays well within the service's 256 positions.
+  /// clipping can add, a ring stays well within 256 positions.
   static let maximumPiecePositions = 200
   /// Simplification moves the line by at most this share of the half width, which the rings add.
   static let simplification = 0.1

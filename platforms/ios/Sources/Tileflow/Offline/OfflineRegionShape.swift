@@ -1,7 +1,7 @@
 import Foundation
 
-/// A GeoJSON region of a Hosted download. ``canonical(_:)`` gives the service's form: latitudes
-/// clamped to the map's, positions rounded to six decimals and rings closed.
+/// A GeoJSON region of a download. ``canonical(_:)`` gives the form whose cover the service plans:
+/// latitudes clamped to the map's, positions rounded to six decimals and rings closed.
 indirect enum OfflineRegionShape: Hashable, Sendable {
   case point(TileflowPosition)
   case multiPoint([TileflowPosition])
@@ -12,11 +12,6 @@ indirect enum OfflineRegionShape: Hashable, Sendable {
   case multiPolygon([[[TileflowPosition]]])
   /// Geometries of any type but another collection.
   case geometryCollection([OfflineRegionShape])
-
-  /// Positions in the whole region, closing positions included.
-  static let maximumPositions = 256
-  static let maximumRings = 16
-  static let maximumGeometries = 64
 
   init(_ geometry: TileflowGeometry) {
     func position(_ coordinate: TileflowCoordinate) -> TileflowPosition {
@@ -33,9 +28,8 @@ indirect enum OfflineRegionShape: Hashable, Sendable {
     }
   }
 
-  /// The service's canonical form of `shape`, or the reason the service would refuse it.
+  /// The canonical form of `shape`, or why it has no cover.
   static func canonical(_ shape: OfflineRegionShape) throws -> OfflineRegionShape {
-    var count = 0
     func refuse(_ reason: String) -> TileflowOfflineError { .region(reason) }
     func path(_ positions: [TileflowPosition]) throws -> [TileflowPosition] {
       guard
@@ -48,7 +42,6 @@ indirect enum OfflineRegionShape: Hashable, Sendable {
       where abs(positions[index].longitude - positions[index - 1].longitude) > 180 {
         throw refuse("crossesAntimeridian")
       }
-      count += positions.count
       return positions.map {
         TileflowPosition(
           longitude: OfflinePackRegion.round($0.longitude),
@@ -70,7 +63,6 @@ indirect enum OfflineRegionShape: Hashable, Sendable {
           throw refuse("crossesAntimeridian")
         }
         ring.append(ring[0])
-        count += 1
       }
       guard ring.count >= 4 else { throw refuse("tooFewPositions") }
       guard !OfflinePackRegion.isCollinear(ring) else { throw refuse("emptyArea") }
@@ -78,7 +70,6 @@ indirect enum OfflineRegionShape: Hashable, Sendable {
     }
     func polygon(_ rings: [[TileflowPosition]]) throws -> [[TileflowPosition]] {
       guard !rings.isEmpty else { throw refuse("tooFewPositions") }
-      guard rings.count <= maximumRings else { throw refuse("tooManyRings") }
       return try rings.map(ring)
     }
     func parts<T>(_ parts: [T], _ part: (T) throws -> T) throws -> [T] {
@@ -92,21 +83,14 @@ indirect enum OfflineRegionShape: Hashable, Sendable {
       case .lineString(let positions): return .lineString(try line(positions))
       case .multiLineString(let lines): return .multiLineString(try parts(lines, line))
       case .polygon(let rings): return .polygon(try polygon(rings))
-      case .multiPolygon(let polygons):
-        guard polygons.count <= maximumGeometries else { throw refuse("tooManyGeometries") }
-        return .multiPolygon(try parts(polygons, polygon))
+      case .multiPolygon(let polygons): return .multiPolygon(try parts(polygons, polygon))
       case .geometryCollection: throw refuse("nestedCollection")
       }
     }
-    let result: OfflineRegionShape
     if case .geometryCollection(let geometries) = shape {
-      guard geometries.count <= maximumGeometries else { throw refuse("tooManyGeometries") }
-      result = .geometryCollection(try parts(geometries, single))
-    } else {
-      result = try single(shape)
+      return .geometryCollection(try parts(geometries, single))
     }
-    guard count <= maximumPositions else { throw refuse("tooManyPositions") }
-    return result
+    return try single(shape)
   }
 
   /// The parts the cover follows: each polygon on its own, so overlapping polygons form a union.

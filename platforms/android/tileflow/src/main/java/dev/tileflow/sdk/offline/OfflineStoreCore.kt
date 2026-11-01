@@ -220,7 +220,7 @@ internal class OfflineStoreCore(
                     bySource[source.template.text]
                         ?: OfflineServedTiles(source.template, zooms, source.absentStatus)
                 bySource[source.template.text] =
-                    served.copy(regions = (served.regions + download.manifest.region).distinct())
+                    served.copy(covers = (served.covers + download.manifest.cover).distinct())
             }
         }
         for (planned in plan.packs) {

@@ -39,18 +39,21 @@ public struct TileflowErrorContext: Hashable, Sendable, CustomStringConvertible 
   public var status: Int?
   /// The limit that was exceeded, in bytes or items.
   public var limit: Int?
+  /// How many bytes or items there were when ``limit`` was exceeded, when known.
+  public var count: Int?
   /// A developer-facing explanation in English. Not for display to people using the app.
   public var message: String?
 
   public init(
     reason: String? = nil, resource: TileflowResourceKind? = nil, origin: String? = nil,
-    status: Int? = nil, limit: Int? = nil, message: String? = nil
+    status: Int? = nil, limit: Int? = nil, count: Int? = nil, message: String? = nil
   ) {
     self.reason = reason
     self.resource = resource
     self.origin = origin
     self.status = status
     self.limit = limit
+    self.count = count
     self.message = message
   }
 
@@ -61,6 +64,7 @@ public struct TileflowErrorContext: Hashable, Sendable, CustomStringConvertible 
     if let origin { parts.append("origin: \(origin)") }
     if let status { parts.append("status: \(status)") }
     if let limit { parts.append("limit: \(limit)") }
+    if let count { parts.append("count: \(count)") }
     if let message { parts.append(message) }
     return parts.joined(separator: ", ")
   }

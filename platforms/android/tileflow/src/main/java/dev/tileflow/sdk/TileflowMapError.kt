@@ -16,6 +16,7 @@ import org.json.JSONObject
  * @property limit The limit that was exceeded, in bytes or items.
  * @property message A developer-facing explanation in English. Not for display to people using
  *   the app.
+ * @property count How many bytes or items there were when [limit] was exceeded, when known.
  */
 public data class TileflowErrorContext(
     val reason: String? = null,
@@ -24,6 +25,7 @@ public data class TileflowErrorContext(
     val status: Int? = null,
     val limit: Int? = null,
     val message: String? = null,
+    val count: Int? = null,
 ) {
     override fun toString(): String =
         listOfNotNull(
@@ -32,6 +34,7 @@ public data class TileflowErrorContext(
                 origin?.let { "origin: $it" },
                 status?.let { "status: $it" },
                 limit?.let { "limit: $it" },
+                count?.let { "count: $it" },
                 message,
             )
             .joinToString(", ")

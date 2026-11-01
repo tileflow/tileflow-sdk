@@ -427,18 +427,8 @@ extension TileflowOfflineRegionLoadOptions {
 extension OfflinePackRequest {
   /// Reads a body this SDK wrote with ``body``.
   init?(json data: Data) {
-    guard let value = try? JSONDecoder().decode(JSONValue.self, from: data),
-      let mapID = value["mapId"]?.string, let profile = value["profile"]?.string,
-      case .array(let themes) = value["themes"],
-      let region = OfflinePackRegion(json: value["region"]),
-      let minZoom = OfflinePackContract.integer(value["minZoom"], 0...OfflineZooms.maximum),
-      let maxZoom = OfflinePackContract.integer(value["maxZoom"], 0...OfflineZooms.maximum),
-      let terrain = OfflinePackContract.integer(
-        value["terrainMaxZoom"], 0...OfflineZooms.maximum)
-    else { return nil }
-    self.init(
-      mapID: mapID, profile: profile, themes: themes.compactMap(\.string), region: region,
-      minZoom: minZoom, maxZoom: maxZoom, terrainMaxZoom: terrain)
+    guard let value = try? JSONDecoder().decode(JSONValue.self, from: data) else { return nil }
+    self.init(json: value)
   }
 }
 

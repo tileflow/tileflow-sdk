@@ -102,13 +102,13 @@ struct OfflineServedTiles: Sendable {
   let template: OfflineTileTemplate
   var zooms: ClosedRange<Int>
   let absentStatus: Int
-  var regions: [OfflinePackRegion] = []
+  var covers: [OfflineCover] = []
   var anchors: [OfflineTileID: [URL]] = [:]
 
   mutating func merge(_ other: OfflineServedTiles) {
     zooms = min(zooms.lowerBound, other.zooms.lowerBound)...max(
       zooms.upperBound, other.zooms.upperBound)
-    for region in other.regions where !regions.contains(region) { regions.append(region) }
+    for cover in other.covers where !covers.contains(cover) { covers.append(cover) }
     for (anchor, files) in other.anchors {
       anchors[anchor, default: []] += files.filter { !(anchors[anchor] ?? []).contains($0) }
     }
@@ -118,8 +118,7 @@ struct OfflineServedTiles: Sendable {
   /// whose ancestor at the deepest one it downloaded.
   func covers(_ tile: OfflineTileID) -> Bool {
     let tile = tile.z > zooms.upperBound ? tile.ancestor(at: zooms.upperBound) : tile
-    return zooms.contains(tile.z)
-      && regions.contains { OfflineTileCover($0, zoom: tile.z).contains(x: tile.x, y: tile.y) }
+    return zooms.contains(tile.z) && covers.contains { $0.contains(tile) }
   }
 }
 

@@ -1212,17 +1212,14 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
 
     var anchors: [OfflineTileID: [OfflineTileID]] = [:]
     var count = 0
-    zooms: for zoom in request.minZoom...request.maxZoom {
-      let cover = OfflineTileCover(request.region, zoom: zoom)
-      guard let rows = cover.rows else { continue }
-      for y in rows {
-        for xs in cover.row(y) {
-          for x in xs {
-            if let limit = state.tileLimit, count >= limit { break zooms }
-            let tile = OfflineTileID(z: zoom, x: x, y: y)
-            anchors[tile.ancestor(at: OfflinePackBand.anchor(of: zoom)), default: []].append(tile)
-            count += 1
-          }
+    // The cover's tiles, as the service plans them: each entry's tiles at the download's zooms.
+    entries: for entry in request.cover.entries {
+      let tiles = request.cover.tiles(entry, zooms: request.minZoom...request.maxZoom)
+      for zoom in tiles.keys.sorted() {
+        for tile in tiles[zoom]! {
+          if let limit = state.tileLimit, count >= limit { break entries }
+          anchors[entry.anchor, default: []].append(tile)
+          count += 1
         }
       }
     }
@@ -1253,8 +1250,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
       "version": 2, "downloadId": "odl_" + String(format: "%022d", state.creations),
       "mapId": request.mapID, "profile": request.profile, "deploymentVersion": state.deployment,
       "themes": request.themes,
-      "region": try! JSONSerialization.jsonObject(
-        with: JSONEncoder().encode(request.region.json)),
+      "coverSha256": request.cover.sha256,
       "minZoom": request.minZoom, "maxZoom": request.maxZoom,
       "terrainMaxZoom": request.terrainMaxZoom, "createdAt": Self.date(now),
       "sources": [

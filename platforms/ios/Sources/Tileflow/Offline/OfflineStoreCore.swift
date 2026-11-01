@@ -223,7 +223,7 @@ actor OfflineStoreCore {
           served.tiles[source.template.text]
           ?? OfflineServedTiles(
             template: source.template, zooms: zooms, absentStatus: source.absentStatus)
-        if !tiles.regions.contains(manifest.region) { tiles.regions.append(manifest.region) }
+        if !tiles.covers.contains(manifest.cover) { tiles.covers.append(manifest.cover) }
         tiles.anchors[anchor, default: []].append(file)
         served.tiles[source.template.text] = tiles
       }
@@ -240,8 +240,8 @@ actor OfflineStoreCore {
           served.tiles[source.template.text]
           ?? OfflineServedTiles(
             template: source.template, zooms: zooms, absentStatus: source.absentStatus)
-        if !tiles.regions.contains(download.manifest.region) {
-          tiles.regions.append(download.manifest.region)
+        if !tiles.covers.contains(download.manifest.cover) {
+          tiles.covers.append(download.manifest.cover)
         }
         served.tiles[source.template.text] = tiles
         result[scope] = served

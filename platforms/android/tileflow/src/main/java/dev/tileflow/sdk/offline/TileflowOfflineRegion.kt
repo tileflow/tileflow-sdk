@@ -84,12 +84,14 @@ constructor(
  *
  * A region is usable offline once a download completes: [isAvailable] stays true while a later
  * update downloads, and the stored version is replaced only when the update is complete and
- * verified. Access ending never removes what the device holds.
+ * verified. A Hosted region expires 30 days after the service last confirmed access to it, by a
+ * download or a revalidation, and maps stop using it after a 7-day grace period; its files stay
+ * until it is removed. Revalidating needs only a network: it is free and runs by itself.
  *
  * @property options The options of the version downloading, or else of the stored version.
- * @property isAvailable A complete version is stored and maps use it without a network. It stays
- *   available once access to a Hosted region ended ([UpdateState.NotUpdatable]): the region only
- *   stops updating.
+ * @property isAvailable A complete version is stored and maps use it without a network. A Hosted
+ *   region stays available through its grace period, also once access ended
+ *   ([UpdateState.NotUpdatable]), and is not available once [ExpiryState.Expired].
  * @property requiredPackCount Hosted packs: a source's tiles under one anchor tile, or the styles,
  *   assets and glyphs. Zero for self-hosted content, which downloads resource by resource.
  * @property requiredResourceBytes Bytes on the wire; null for self-hosted content until it is
@@ -103,6 +105,9 @@ constructor(
  * @property retryAtMillis When a waiting download continues, when the service asked for a wait.
  * @property completedAtMillis When the stored version completed.
  * @property updateState Null until a Hosted region is first checked, and for self-hosted content.
+ * @property expiresAtMillis When a Hosted region expires unless it is revalidated first: 30 days
+ *   after the service last confirmed access. Null for self-hosted content, which never expires.
+ * @property expiryState Null for self-hosted content.
  */
 public data class TileflowOfflineRegion(
     public val id: String,
@@ -123,6 +128,8 @@ public data class TileflowOfflineRegion(
     public val completedAtMillis: Long?,
     public val updateState: UpdateState?,
     public val checkedAtMillis: Long?,
+    public val expiresAtMillis: Long?,
+    public val expiryState: ExpiryState?,
 ) {
     public enum class DownloadState {
         /** Resources are downloading. */
@@ -154,16 +161,42 @@ public data class TileflowOfflineRegion(
 
         /**
          * Access ended, for the service's [reason], such as `credential_revoked` or
-         * `map_unavailable`. The region stays on the device as it is, maps keep using it, and it is
-         * no longer updated: an application can tell its users so.
+         * `map_unavailable`. The region stays on the device as it is and is no longer revalidated
+         * or updated: maps keep using it until it expires and its grace period ends.
          */
         public data class NotUpdatable(public val reason: String) : UpdateState()
+    }
+
+    /** Where a Hosted region is in its validity window. */
+    public sealed class ExpiryState {
+        /**
+         * Access was confirmed within the last 30 days: the region serves until
+         * [TileflowOfflineRegion.expiresAtMillis].
+         */
+        public object Valid : ExpiryState()
+
+        /**
+         * [TileflowOfflineRegion.expiresAtMillis] passed without a successful revalidation. Maps
+         * keep using the region until [endsAtMillis]; an application can ask its users to connect,
+         * which revalidates it.
+         */
+        public data class GracePeriod(public val endsAtMillis: Long) : ExpiryState()
+
+        /**
+         * The grace period ended: maps no longer use the region. Its files stay until it is
+         * removed, and a successful revalidation or a new download makes it available again.
+         */
+        public object Expired : ExpiryState()
     }
 }
 
 /** A change to the store's regions. */
 public sealed class TileflowOfflineRegionEvent {
-    /** A region was created, progressed or changed state. */
+    /**
+     * A region was created, progressed or changed state, including its
+     * [TileflowOfflineRegion.expiryState]: an application can prompt its users when a region enters
+     * its grace period.
+     */
     public data class Changed(public val region: TileflowOfflineRegion) :
         TileflowOfflineRegionEvent()
 

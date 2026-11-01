@@ -379,25 +379,124 @@ class OfflineStoreTest {
     }
 
     @Test
-    fun accessEndingStopsUpdatesAndKeepsTheRegionInUse() = runBlocking<Unit> {
+    fun accessEndingStopsRevalidationAndTheRegionLapsesAfterItsGracePeriod() = runBlocking<Unit> {
         val service = OfflineServiceStub()
         val store = store(service)
         store.loadRegion("madrid", madrid())
         val done = waitFor(store, "madrid") { it.state == COMPLETE }
+        val validated = service.clock.get()
+        assertEquals(validated + 30 * DAY, done.expiresAtMillis)
+        assertEquals(TileflowOfflineRegion.ExpiryState.Valid, done.expiryState)
         service.clock.addAndGet(86_401_000)
         service.revalidationState = "not_updatable"
         store.core.checkForUpdates()
-        val region = store.region("madrid")!!
+        var region = store.region("madrid")!!
         assertEquals(
             TileflowOfflineRegion.UpdateState.NotUpdatable("credential_revoked"),
             region.updateState,
         )
-        assertTrue("Maps keep using it", region.isAvailable)
+        assertTrue("Maps keep using it until it expires", region.isAvailable)
         assertEquals(COMPLETE, region.state)
-        service.clock.addAndGet(10 * 86_400_000L)
+        assertEquals("Counted from the last success", validated + 30 * DAY, region.expiresAtMillis)
+
+        // Never revalidated again, it lapses 30 days after its last success and 7 of grace.
+        service.clock.set(validated + 30 * DAY)
         store.core.checkForUpdates()
+        region = store.region("madrid")!!
+        assertEquals(
+            TileflowOfflineRegion.ExpiryState.GracePeriod(validated + 37 * DAY),
+            region.expiryState,
+        )
+        assertTrue(region.isAvailable)
+        service.clock.set(validated + 37 * DAY)
+        store.core.checkForUpdates()
+        region = store.region("madrid")!!
+        assertEquals(TileflowOfflineRegion.ExpiryState.Expired, region.expiryState)
+        assertFalse(region.isAvailable)
         assertEquals(1, service.revalidations.get())
-        assertEquals(done.requiredPackCount, storedPacks().size.toLong())
+        assertEquals("Its files stay", done.requiredPackCount, storedPacks().size.toLong())
+    }
+
+    @Test
+    fun regionsExpireWithoutRevalidationAndARevalidationRestoresThem() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val index = OfflineServingIndex()
+        val store = store(service, index = index)
+        val expiries = CopyOnWriteArrayList<TileflowOfflineRegion.ExpiryState?>()
+        val subscription =
+            store.subscribe { event ->
+                if (event is TileflowOfflineRegionEvent.Changed && event.region.state == COMPLETE)
+                    expiries.add(event.region.expiryState)
+            }
+        val style = service.key(service.styleUrl)
+        store.loadRegion("madrid", madrid())
+        waitFor(store, "madrid") { it.state == COMPLETE }
+        val validated = service.clock.get()
+        val downloads = service.downloads.size
+        assertFalse(store.isAutomaticUpdatesEnabled())
+
+        // Without a network for 30 days, the region enters its grace period and maps keep using it.
+        service.online = false
+        service.clock.set(validated + 30 * DAY)
+        store.core.checkForUpdates()
+        var region = store.region("madrid")!!
+        val graceEnd = validated + 37 * DAY
+        assertEquals(TileflowOfflineRegion.ExpiryState.GracePeriod(graceEnd), region.expiryState)
+        assertTrue(region.isAvailable)
+        assertEquals(200, index.resource(style, cache)?.metadata?.status)
+
+        // The grace period ends: maps stop using the region, and its files stay.
+        service.clock.addAndGet(7 * DAY)
+        region = store.region("madrid")!!
+        assertEquals(TileflowOfflineRegion.ExpiryState.Expired, region.expiryState)
+        assertFalse(region.isAvailable)
+        assertNull(index.resource(style, cache))
+        assertTrue(storedPacks().isNotEmpty())
+
+        // With the network back, a free revalidation restores it without downloading anything,
+        // with automatic updates off.
+        service.online = true
+        store.core.networkDidConnect()
+        region = store.region("madrid")!!
+        assertEquals(TileflowOfflineRegion.ExpiryState.Valid, region.expiryState)
+        assertEquals(service.clock.get() + 30 * DAY, region.expiresAtMillis)
+        assertTrue(region.isAvailable)
+        assertEquals(200, index.resource(style, cache)?.metadata?.status)
+        assertEquals(1, service.revalidations.get())
+        assertEquals(downloads, service.downloads.size)
+        // Each change is reported once, so an application can prompt its users.
+        val reported =
+            listOf(
+                TileflowOfflineRegion.ExpiryState.Valid,
+                TileflowOfflineRegion.ExpiryState.GracePeriod(graceEnd),
+                TileflowOfflineRegion.ExpiryState.Expired,
+                TileflowOfflineRegion.ExpiryState.Valid,
+            )
+        runCatching { waitUntil(5_000) { expiries.takeLast(4) == reported } }
+        assertEquals(reported, expiries.takeLast(4))
+        subscription.cancel()
+    }
+
+    @Test
+    fun theStoreWakesWhenARegionIsDueExpiresOrEndsItsGracePeriod() = runBlocking<Unit> {
+        val service = OfflineServiceStub()
+        val store = store(service)
+        store.loadRegion("madrid", madrid())
+        waitFor(store, "madrid") { it.state == COMPLETE }
+        val validated = service.clock.get()
+        assertEquals(
+            "At least hourly while the app runs",
+            OfflineStoreCore.WAKE_LIMIT,
+            store.core.nextWakeMillis(),
+        )
+        service.clock.set(validated + DAY - 60_000)
+        assertEquals("Due for revalidation", 60_000L, store.core.nextWakeMillis())
+        service.clock.set(validated + 30 * DAY - 30_000)
+        assertEquals("Expires", 30_000L, store.core.nextWakeMillis())
+        service.clock.set(validated + 37 * DAY - 20_000)
+        assertEquals("The grace period ends", 20_000L, store.core.nextWakeMillis())
+        service.clock.set(validated + 40 * DAY)
+        assertEquals(OfflineStoreCore.WAKE_LIMIT, store.core.nextWakeMillis())
     }
 
     @Test
@@ -719,7 +818,7 @@ class OfflineStoreTest {
         store.cancelRegion("madrid")
         service.freezeAfter = null
 
-        // Access ends: the region stops updating, and maps keep using what the device holds.
+        // Access ends: the region stops updating, and maps keep using it until it expires.
         service.clock.addAndGet(86_401_000)
         service.revalidationState = "not_updatable"
         store.core.checkForUpdates()
@@ -1059,3 +1158,5 @@ class OfflineStoreTest {
         val FAILED = TileflowOfflineRegion.DownloadState.FAILED
     }
 }
+
+private const val DAY = 86_400_000L

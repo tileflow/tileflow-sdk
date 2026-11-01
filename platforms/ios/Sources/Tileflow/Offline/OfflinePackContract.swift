@@ -116,7 +116,7 @@ enum OfflinePackRevalidation: Sendable, Equatable {
   /// Access continues but the Map changed: create the same download again and request each pack
   /// of a changed source or document with `If-None-Match`, so only changed packs are counted.
   case updateAvailable(checkedAt: Date, interval: TimeInterval)
-  /// Access ended. The download stays usable as it is and is no longer updated.
+  /// Access ended. The download stays usable as it is until it expires and is no longer updated.
   case notUpdatable(reason: Reason, checkedAt: Date)
 
   /// Why access ended. The service may add reasons.

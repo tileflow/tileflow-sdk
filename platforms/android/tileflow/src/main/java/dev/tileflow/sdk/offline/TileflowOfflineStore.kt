@@ -1,8 +1,11 @@
 package dev.tileflow.sdk.offline
 
+import android.app.Activity
+import android.app.Application
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
+import android.os.Bundle
 import android.os.storage.StorageManager
 import androidx.work.Constraints
 import androidx.work.CoroutineWorker
@@ -24,6 +27,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
@@ -43,10 +48,13 @@ import kotlinx.coroutines.runBlocking
  * until the new one is complete.
  *
  * Downloads run as WorkManager work on an allowed network and continue after the process ends.
- * Recoverable failures wait and continue by themselves, and stored Hosted regions are checked for
- * updates when the network returns and at most once per the service's interval. Loading a region
- * again downloads only what changed, and [setAutomaticUpdates] lets the store do so by itself on
- * unmetered networks. Access ending stops updates; it never deletes or locks what the device holds.
+ * Recoverable failures wait and continue by themselves, and stored Hosted regions are revalidated,
+ * for free, at most once per the service's interval while the app runs with a network: at launch,
+ * when the network returns, when the app returns to the foreground and while it stays in use.
+ * Loading a region again downloads only what changed, and [setAutomaticUpdates] lets the store do
+ * so by itself on unmetered networks. A Hosted region expires 30 days after the service last
+ * confirmed access and maps stop using it after 7 more days of grace, so a region whose access ended
+ * lapses then; its files stay until it is removed, and a successful revalidation restores it.
  */
 public class TileflowOfflineStore
 internal constructor(
@@ -182,10 +190,46 @@ internal constructor(
                                     runBlocking { core.open() }
                                 }
                                 scope.launch { core.open() }
+                                scope.launch {
+                                    while (isActive) {
+                                        delay(maxOf(1_000L, core.nextWakeMillis()))
+                                        core.checkForUpdates()
+                                    }
+                                }
                                 watchNetwork(application, core)
+                                watchForeground(application, core)
                             }
                         }
                 }
+
+        /** Revalidates due regions when the app returns to the foreground. */
+        private fun watchForeground(context: Context, core: OfflineStoreCore) {
+            val application = context as? Application ?: return
+            application.registerActivityLifecycleCallbacks(
+                object : Application.ActivityLifecycleCallbacks {
+                    private var started = 0
+
+                    override fun onActivityStarted(activity: Activity) {
+                        if (started++ == 0) scope.launch { core.checkForUpdates() }
+                    }
+
+                    override fun onActivityStopped(activity: Activity) {
+                        started = maxOf(0, started - 1)
+                    }
+
+                    override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit
+
+                    override fun onActivityResumed(activity: Activity) = Unit
+
+                    override fun onActivityPaused(activity: Activity) = Unit
+
+                    override fun onActivitySaveInstanceState(activity: Activity, state: Bundle) =
+                        Unit
+
+                    override fun onActivityDestroyed(activity: Activity) = Unit
+                }
+            )
+        }
 
         private fun watchNetwork(context: Context, core: OfflineStoreCore) {
             val manager = context.getSystemService(ConnectivityManager::class.java) ?: return

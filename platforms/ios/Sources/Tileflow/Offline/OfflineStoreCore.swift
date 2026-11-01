@@ -58,6 +58,9 @@ actor OfflineStoreCore {
   static let automaticUpdateInterval: TimeInterval = 86_400
   /// A run the network or power held back is tried again after this long.
   static let automaticUpdateRetry: TimeInterval = 3_600
+  /// While the app runs, the store looks again at least this often, so a timer the system held
+  /// while the app was suspended never keeps an expired region in use for longer.
+  static let wakeLimit: TimeInterval = 3_600
 
   /// A download an estimate created is reused by the next load while at least this much of its
   /// window remains.
@@ -82,6 +85,8 @@ actor OfflineStoreCore {
   private var creditSets: [String: [String: [OfflineCredit]]] = [:]
   private var created: [OfflinePackRequest: OfflineDownload] = [:]
   private var settings = OfflineSettings()
+  /// Each Hosted region's expiry phase as last reported, so a change is reported once.
+  private var phases: [String: OfflineExpiryPhase] = [:]
   /// Packs an earlier pass of a pending version held before its download was created again.
   private var candidates: [String: [String: OfflinePreviousPack]] = [:]
 
@@ -121,6 +126,8 @@ actor OfflineStoreCore {
         if [.downloading, .waiting].contains(pending.state) { startRun(id) }
       }
     }
+    let now = dependencies.now()
+    phases = records.compactMapValues { expiryPhase($0, at: now) }
     publishServing()
   }
 
@@ -128,6 +135,20 @@ actor OfflineStoreCore {
   private func isServed(_ record: OfflineRegionRecord) -> Bool {
     record.active != nil && !record.removing
       && (record.check?.state != "not_updatable" || OfflineServingRule.servesRegionsAfterAccessEnds)
+      && expiryPhase(record, at: dependencies.now()) != .expired
+  }
+
+  /// When the service last confirmed access to a Hosted region's stored version; nil for
+  /// self-hosted content, which never expires.
+  private func validatedAt(_ record: OfflineRegionRecord) -> Date? {
+    guard let active = record.active, active.downloads > 0,
+      let validated = record.check?.validatedAt ?? active.completedAt
+    else { return nil }
+    return Date(offlineMilliseconds: validated)
+  }
+
+  private func expiryPhase(_ record: OfflineRegionRecord, at now: Date) -> OfflineExpiryPhase? {
+    validatedAt(record).map { OfflineServingRule.expiry.phase($0, at: now) }
   }
 
   /// Tells maps which stored packs, resources and regional credits they may use without a
@@ -234,12 +255,14 @@ actor OfflineStoreCore {
 
   func regions() -> [TileflowOfflineRegion] {
     open()
+    refreshExpiry()
     return records.values.filter { !$0.removing }
       .sorted { ($0.createdAt, $0.id) < ($1.createdAt, $1.id) }.compactMap(snapshot)
   }
 
   func region(_ id: String) -> TileflowOfflineRegion? {
     open()
+    refreshExpiry()
     return records[id].flatMap(snapshot)
   }
 
@@ -433,9 +456,12 @@ actor OfflineStoreCore {
   // MARK: Updates
 
   /// Revalidates stored Hosted regions that are due: never checked, or checked longer ago than
-  /// the service's interval. Access ending stops further checks; nothing is removed.
+  /// the service's interval. A revalidation is free and only checks; it downloads nothing, and one
+  /// that finds access confirmed restarts the region's validity window, restoring an expired
+  /// region. Access ending stops further checks; nothing is removed.
   func checkForUpdates() async {
     open()
+    defer { refreshExpiry() }
     guard let client = try? dependencies.client() else { return }
     let now = dependencies.now()
     for id in records.keys.sorted() {
@@ -472,6 +498,9 @@ actor OfflineStoreCore {
           check.checkedAt = checkedAt.offlineMilliseconds
         }
       }
+      check.validatedAt =
+        check.state == "not_updatable"
+        ? current.check?.validatedAt ?? active.completedAt : check.checkedAt
       current.check = check
       try? save(current)
       publishServing()
@@ -492,6 +521,42 @@ actor OfflineStoreCore {
     }
     await checkForUpdates()
     if settings.automaticUpdates { await updateAutomatically(dependencies.conditions()) }
+  }
+
+  // MARK: Expiry
+
+  /// Reports what time changed since the last look: maps stop using a region whose grace period
+  /// ended, and each region that entered its grace period or expired is reported as changed.
+  private func refreshExpiry() {
+    let now = dependencies.now()
+    let changed = records.keys.sorted().filter { id in
+      guard let record = records[id], !record.removing else { return false }
+      return expiryPhase(record, at: now) != phases[id]
+    }
+    guard !changed.isEmpty else { return }
+    publishServing()
+    for id in changed { emitChanged(id) }
+  }
+
+  /// How long until the store should look again: when a region is due for revalidation, expires
+  /// or ends its grace period, and at most ``wakeLimit``. A region already due waits for the next
+  /// look or for the network to return.
+  func nextWake() -> TimeInterval {
+    open()
+    let now = dependencies.now()
+    var next = now.addingTimeInterval(Self.wakeLimit)
+    for record in records.values where !record.removing {
+      guard let validated = validatedAt(record) else { continue }
+      var times = [
+        OfflineServingRule.expiry.expiresAt(validated),
+        OfflineServingRule.expiry.gracePeriodEndsAt(validated),
+      ]
+      if let check = record.check, check.state != "not_updatable" {
+        times.append(Date(offlineMilliseconds: check.checkedAt + Int64(check.interval * 1000)))
+      }
+      for time in times where time > now { next = min(next, time) }
+    }
+    return next.timeIntervalSince(now)
   }
 
   // MARK: Automatic updates
@@ -862,7 +927,8 @@ actor OfflineStoreCore {
     if plan.isHosted {
       let interval = plan.downloads.map(\.manifest.revalidationInterval).min() ?? 86_400
       record.check = OfflineCheckRecord(
-        state: "current", reason: nil, checkedAt: now.offlineMilliseconds, interval: interval)
+        state: "current", reason: nil, checkedAt: now.offlineMilliseconds, interval: interval,
+        validatedAt: now.offlineMilliseconds)
     }
     do { try save(record) } catch { return }
     try? FileManager.default.removeItem(at: staging)
@@ -1131,7 +1197,9 @@ actor OfflineStoreCore {
   }
 
   private func emitChanged(_ id: String) {
-    if let region = records[id].flatMap(snapshot) { subscribers.emit(.changed(region)) }
+    guard let record = records[id], let region = snapshot(record) else { return }
+    phases[id] = expiryPhase(record, at: dependencies.now())
+    subscribers.emit(.changed(region))
   }
 
   private func storedProgress(_ id: String, _ version: OfflineVersionRecord) -> OfflineProgress {
@@ -1196,6 +1264,15 @@ actor OfflineStoreCore {
     case "not_updatable": update = .notUpdatable(reason: record.check?.reason ?? "")
     default: update = nil
     }
+    let window = OfflineServingRule.expiry
+    let validated = validatedAt(record)
+    let expiry: TileflowOfflineRegion.ExpiryState? = validated.map { validated in
+      switch window.phase(validated, at: dependencies.now()) {
+      case .valid: .valid
+      case .gracePeriod: .gracePeriod(endsAt: window.gracePeriodEndsAt(validated))
+      case .expired: .expired
+      }
+    }
     return TileflowOfflineRegion(
       id: record.id, options: options, state: state, isAvailable: isServed(record),
       requiredPackCount: version.packs, completedPackCount: min(done.packs, version.packs),
@@ -1206,7 +1283,8 @@ actor OfflineStoreCore {
       billableResourceCount: version.billable, error: version.error?.error,
       retryDate: version.retryAt.map { Date(offlineMilliseconds: $0) },
       completedAt: record.active?.completedAt.map { Date(offlineMilliseconds: $0) },
-      updateState: update, checkedAt: record.check.map { Date(offlineMilliseconds: $0.checkedAt) })
+      updateState: update, checkedAt: record.check.map { Date(offlineMilliseconds: $0.checkedAt) },
+      expiresAt: validated.map(window.expiresAt), expiryState: expiry)
   }
 }
 

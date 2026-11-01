@@ -13,9 +13,38 @@ enum OfflineServingRule {
   }
 
   /// Whether a region whose access ended (`not_updatable`) is still served. On: the device keeps
-  /// using what it downloaded, as the data's licences require, and the region only stops updating.
-  /// Off: its files stay on the device, untouched, and maps stop using them.
+  /// using what it downloaded until the region expires, and the region only stops updating. Off:
+  /// its files stay on the device, untouched, and maps stop using them at once.
   static let servesRegionsAfterAccessEnds = true
+
+  /// How long a Hosted region serves after the service last confirmed access to it, after Mapbox
+  /// and MapTiler: it expires 30 days later and maps keep using it for 7 more days of grace. Only a
+  /// successful revalidation or a new download confirms access, so a region whose access ended
+  /// lapses this long after its last success. Self-hosted regions never expire.
+  static let expiry = OfflineExpiryWindow(validity: 30 * 86_400, grace: 7 * 86_400)
+}
+
+/// A Hosted region's validity window, counted from the last time the service confirmed access.
+struct OfflineExpiryWindow: Sendable, Hashable {
+  var validity: TimeInterval
+  var grace: TimeInterval
+
+  func expiresAt(_ validatedAt: Date) -> Date { validatedAt.addingTimeInterval(validity) }
+
+  func gracePeriodEndsAt(_ validatedAt: Date) -> Date {
+    validatedAt.addingTimeInterval(validity + grace)
+  }
+
+  func phase(_ validatedAt: Date, at now: Date) -> OfflineExpiryPhase {
+    if now < expiresAt(validatedAt) { return .valid }
+    return now < gracePeriodEndsAt(validatedAt) ? .gracePeriod : .expired
+  }
+}
+
+enum OfflineExpiryPhase: Sendable, Hashable {
+  case valid
+  case gracePeriod
+  case expired
 }
 
 /// A regional credit of a stored release: shown while one of its boxes is in view.

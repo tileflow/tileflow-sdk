@@ -252,6 +252,9 @@ struct OfflineCheckRecord: Codable, Hashable, Sendable {
   var reason: String?
   var checkedAt: Int64
   var interval: Double
+  /// When the service last confirmed access: the version's download or a revalidation that found
+  /// it current or with an update available. The region expires counting from here.
+  var validatedAt: Int64?
 }
 
 /// A region's record. `active` is the version the region serves, `pending` the one downloading and

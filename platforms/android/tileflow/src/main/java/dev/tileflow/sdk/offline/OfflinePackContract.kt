@@ -148,7 +148,9 @@ internal sealed class OfflinePackRevalidation {
     data class UpdateAvailable(override val checkedAtMillis: Long, val intervalMillis: Long) :
         OfflinePackRevalidation()
 
-    /** Access ended. The download stays usable as it is and is no longer updated. */
+    /**
+     * Access ended. The download stays usable as it is until it expires and is no longer updated.
+     */
     data class NotUpdatable(
         /**
          * `credential_revoked`, `map_unavailable`, `plan_unavailable`, `downloads_disabled`,

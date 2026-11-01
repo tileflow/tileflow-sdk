@@ -106,6 +106,8 @@ internal class OfflineStoreCore(
     /** Packs an earlier pass of a pending version held before its download was created again. */
     private val candidates = HashMap<String, Map<String, OfflinePreviousPack>>()
     private var settings = OfflineSettings()
+    /** Each Hosted region's expiry phase as last reported, so a change is reported once. */
+    private val phases = HashMap<String, OfflineExpiryPhase>()
 
     // Opening.
 
@@ -140,6 +142,8 @@ internal class OfflineStoreCore(
             )
                 start(id, pending)
         }
+        val time = now()
+        for ((id, record) in records) expiryPhase(record, time)?.let { phases[id] = it }
         publishServing()
     }
 
@@ -148,7 +152,21 @@ internal class OfflineStoreCore(
         record.active != null &&
             !record.removing &&
             (record.check?.state != "not_updatable" ||
-                OfflineServingRule.SERVES_REGIONS_AFTER_ACCESS_ENDS)
+                OfflineServingRule.SERVES_REGIONS_AFTER_ACCESS_ENDS) &&
+            expiryPhase(record, now()) != OfflineExpiryPhase.EXPIRED
+
+    /**
+     * When the service last confirmed access to a Hosted region's stored version; null for
+     * self-hosted content, which never expires.
+     */
+    private fun validatedAt(record: OfflineRegionRecord): Long? {
+        val active = record.active ?: return null
+        if (active.downloads == 0) return null
+        return record.check?.validatedAt ?: active.completedAt
+    }
+
+    private fun expiryPhase(record: OfflineRegionRecord, time: Long): OfflineExpiryPhase? =
+        validatedAt(record)?.let { OfflineServingRule.EXPIRY.phase(it, time) }
 
     /**
      * Tells maps which stored packs, resources and regional credits they may use without a
@@ -261,6 +279,7 @@ internal class OfflineStoreCore(
     suspend fun regions(): List<TileflowOfflineRegion> =
         lock.withLock {
             openLocked()
+            refreshExpiry()
             records.values
                 .filter { !it.removing }
                 .sortedWith(compareBy({ it.createdAt }, { it.id }))
@@ -270,6 +289,7 @@ internal class OfflineStoreCore(
     suspend fun region(id: String): TileflowOfflineRegion? =
         lock.withLock {
             openLocked()
+            refreshExpiry()
             records[id]?.let(::snapshot)
         }
 
@@ -502,10 +522,20 @@ internal class OfflineStoreCore(
 
     /**
      * Revalidates stored Hosted regions that are due: never checked, or checked longer ago than
-     * the service's interval. Access ending stops further checks; nothing is removed.
+     * the service's interval. A revalidation is free and only checks; it downloads nothing, and one
+     * that finds access confirmed restarts the region's validity window, restoring an expired
+     * region. Access ending stops further checks; nothing is removed.
      */
     suspend fun checkForUpdates() {
         open()
+        try {
+            revalidate()
+        } finally {
+            withContext(NonCancellable) { lock.withLock { refreshExpiry() } }
+        }
+    }
+
+    private suspend fun revalidate() {
         val client = runCatching { client() }.getOrNull() ?: return
         val due =
             lock.withLock {
@@ -566,12 +596,60 @@ internal class OfflineStoreCore(
             }
             lock.withLock {
                 val current = records[id]?.takeIf { !it.removing } ?: return@withLock
-                save(current.copy(check = check))
+                val validatedAt =
+                    if (check.state == "not_updatable")
+                        current.check?.validatedAt ?: current.active?.completedAt
+                    else check.checkedAt
+                save(current.copy(check = check.copy(validatedAt = validatedAt)))
                 publishServing()
                 emitChanged(id)
             }
         }
     }
+
+    // Expiry.
+
+    /**
+     * Reports what time changed since the last look: maps stop using a region whose grace period
+     * ended, and each region that entered its grace period or expired is reported as changed.
+     */
+    private fun refreshExpiry() {
+        val time = now()
+        val changed =
+            records.keys.sorted().filter { id ->
+                val record = records[id]
+                record != null && !record.removing && expiryPhase(record, time) != phases[id]
+            }
+        if (changed.isEmpty()) return
+        publishServing()
+        for (id in changed) emitChanged(id)
+    }
+
+    /**
+     * How long until the store should look again: when a region is due for revalidation, expires
+     * or ends its grace period, and at most [WAKE_LIMIT]. A region already due waits for the next
+     * look or for the network to return.
+     */
+    suspend fun nextWakeMillis(): Long =
+        lock.withLock {
+            openLocked()
+            val time = now()
+            var next = time + WAKE_LIMIT
+            for (record in records.values) {
+                if (record.removing) continue
+                val validated = validatedAt(record) ?: continue
+                val times =
+                    mutableListOf(
+                        OfflineServingRule.EXPIRY.expiresAt(validated),
+                        OfflineServingRule.EXPIRY.gracePeriodEndsAt(validated),
+                    )
+                val check = record.check
+                if (check != null && check.state != "not_updatable")
+                    times += check.checkedAt + check.intervalMillis
+                for (instant in times) if (instant > time) next = minOf(next, instant)
+            }
+            next - time
+        }
 
     /** The network returned: waiting downloads try again now and due regions are revalidated. */
     suspend fun networkDidConnect() {
@@ -1024,6 +1102,7 @@ internal class OfflineStoreCore(
                     null,
                     time,
                     plan.downloads.minOf { it.manifest.revalidationIntervalMillis },
+                    validatedAt = time,
                 )
             else record.check
         runCatching {
@@ -1337,9 +1416,10 @@ internal class OfflineStoreCore(
     }
 
     private fun emitChanged(id: String) {
-        records[id]?.let(::snapshot)?.let {
-            subscribers.emit(TileflowOfflineRegionEvent.Changed(it))
-        }
+        val record = records[id] ?: return
+        val region = snapshot(record) ?: return
+        expiryPhase(record, now())?.let { phases[id] = it } ?: phases.remove(id)
+        subscribers.emit(TileflowOfflineRegionEvent.Changed(region))
     }
 
     private fun storedProgress(id: String, version: OfflineVersionRecord): OfflineProgress =
@@ -1402,6 +1482,17 @@ internal class OfflineStoreCore(
                     TileflowOfflineRegion.UpdateState.NotUpdatable(record.check.reason ?: "")
                 else -> null
             }
+        val window = OfflineServingRule.EXPIRY
+        val validated = validatedAt(record)
+        val expiry =
+            validated?.let {
+                when (window.phase(it, now())) {
+                    OfflineExpiryPhase.VALID -> TileflowOfflineRegion.ExpiryState.Valid
+                    OfflineExpiryPhase.GRACE_PERIOD ->
+                        TileflowOfflineRegion.ExpiryState.GracePeriod(window.gracePeriodEndsAt(it))
+                    OfflineExpiryPhase.EXPIRED -> TileflowOfflineRegion.ExpiryState.Expired
+                }
+            }
         return TileflowOfflineRegion(
             record.id,
             options,
@@ -1421,6 +1512,8 @@ internal class OfflineStoreCore(
             record.active?.completedAt,
             update,
             record.check?.checkedAt,
+            validated?.let(window::expiresAt),
+            expiry,
         )
     }
 
@@ -1435,5 +1528,11 @@ internal class OfflineStoreCore(
         const val RENEWAL_MARGIN = 300_000L
         const val MAXIMUM_BACKOFF = 300_000L
         const val MAXIMUM_RENEWALS = 3
+
+        /**
+         * While the app runs, the store looks again at least this often, so a timer the system held
+         * while the process was frozen never keeps an expired region in use for longer.
+         */
+        const val WAKE_LIMIT = 3_600_000L
     }
 }

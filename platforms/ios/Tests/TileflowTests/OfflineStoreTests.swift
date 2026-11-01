@@ -308,23 +308,121 @@ final class OfflineStoreTests: XCTestCase {
     }
   }
 
-  func testAccessEndingStopsUpdatesAndKeepsTheRegionInUse() async throws {
+  func testAccessEndingStopsRevalidationAndTheRegionLapsesAfterItsGracePeriod() async throws {
     let service = OfflineServiceStub()
     let store = makeStore(service)
     try await store.loadRegion(id: "madrid", options: madrid())
     let done = try await waitFor(store, "madrid") { $0.state == .complete }
+    let validated = service.now
+    XCTAssertEqual(done.expiresAt, validated.addingTimeInterval(30 * 86_400))
+    XCTAssertEqual(done.expiryState, .valid)
     service.clock.withLock { $0 += 86_401 }
     service.revalidationState = "not_updatable"
     await store.core.checkForUpdates()
-    let region = try await XCTUnwrapAsync(await store.region(id: "madrid"))
+    var region = try await XCTUnwrapAsync(await store.region(id: "madrid"))
     XCTAssertEqual(region.updateState, .notUpdatable(reason: "credential_revoked"))
-    XCTAssertTrue(region.isAvailable, "Maps keep using it")
+    XCTAssertTrue(region.isAvailable, "Maps keep using it until it expires")
     XCTAssertEqual(region.state, .complete)
-    service.clock.withLock { $0 += 10 * 86_400 }
+    XCTAssertEqual(
+      region.expiresAt, validated.addingTimeInterval(30 * 86_400), "Counted from the last success")
+
+    // Never revalidated again, it lapses 30 days after its last success and 7 of grace.
+    service.clock.withLock { $0 = validated.timeIntervalSince1970 + 30 * 86_400 }
     await store.core.checkForUpdates()
+    region = try await XCTUnwrapAsync(await store.region(id: "madrid"))
+    XCTAssertEqual(
+      region.expiryState, .gracePeriod(endsAt: validated.addingTimeInterval(37 * 86_400)))
+    XCTAssertTrue(region.isAvailable)
+    service.clock.withLock { $0 = validated.timeIntervalSince1970 + 37 * 86_400 }
+    await store.core.checkForUpdates()
+    region = try await XCTUnwrapAsync(await store.region(id: "madrid"))
+    XCTAssertEqual(region.expiryState, .expired)
+    XCTAssertFalse(region.isAvailable)
     XCTAssertEqual(service.revalidations, 1)
     let files = try FileManager.default.contentsOfDirectory(atPath: layout.packs.directory.path)
-    XCTAssertEqual(Set(files).subtracting(["incoming"]).count, done.requiredPackCount)
+    XCTAssertEqual(
+      Set(files).subtracting(["incoming"]).count, done.requiredPackCount, "Its files stay")
+  }
+
+  func testRegionsExpireWithoutRevalidationAndARevalidationRestoresThem() async throws {
+    let service = OfflineServiceStub()
+    let index = OfflineServingIndex()
+    let store = makeStore(service, index: index)
+    let expiries = LockedValue<[TileflowOfflineRegion.ExpiryState?]>([])
+    let subscription = store.subscribe { event in
+      guard case .changed(let region) = event, region.state == .complete else { return }
+      expiries.withLock { $0.append(region.expiryState) }
+    }
+    defer { subscription.cancel() }
+    let style = service.key(service.styleURL)
+    try await store.loadRegion(id: "madrid", options: madrid())
+    _ = try await waitFor(store, "madrid") { $0.state == .complete }
+    let validated = service.now
+    let downloads = service.downloads.count
+    let automatic = await store.automaticUpdatesEnabled
+    XCTAssertFalse(automatic)
+
+    // Without a network for 30 days, the region enters its grace period and maps keep using it.
+    service.isOnline = false
+    service.clock.withLock { $0 = validated.timeIntervalSince1970 + 30 * 86_400 }
+    await store.core.checkForUpdates()
+    var region = try await XCTUnwrapAsync(await store.region(id: "madrid"))
+    let graceEnd = validated.addingTimeInterval(37 * 86_400)
+    XCTAssertEqual(region.expiryState, .gracePeriod(endsAt: graceEnd))
+    XCTAssertTrue(region.isAvailable)
+    let inGrace = await index.resource(style, cache: cache)
+    XCTAssertEqual(inGrace?.metadata.status, 200)
+
+    // The grace period ends: maps stop using the region, and its files stay.
+    service.clock.withLock { $0 += 7 * 86_400 }
+    region = try await XCTUnwrapAsync(await store.region(id: "madrid"))
+    XCTAssertEqual(region.expiryState, .expired)
+    XCTAssertFalse(region.isAvailable)
+    let expired = await index.resource(style, cache: cache)
+    XCTAssertNil(expired)
+    let files = try FileManager.default.contentsOfDirectory(atPath: layout.packs.directory.path)
+    XCTAssertFalse(Set(files).subtracting(["incoming"]).isEmpty)
+
+    // With the network back, a free revalidation restores it without downloading anything, with
+    // automatic updates off.
+    service.isOnline = true
+    await store.core.networkDidConnect()
+    region = try await XCTUnwrapAsync(await store.region(id: "madrid"))
+    XCTAssertEqual(region.expiryState, .valid)
+    XCTAssertEqual(region.expiresAt, service.now.addingTimeInterval(30 * 86_400))
+    XCTAssertTrue(region.isAvailable)
+    let restored = await index.resource(style, cache: cache)
+    XCTAssertEqual(restored?.metadata.status, 200)
+    XCTAssertEqual(service.revalidations, 1)
+    XCTAssertEqual(service.downloads.count, downloads)
+    // Each change is reported once, so an application can prompt its users.
+    let reported: [TileflowOfflineRegion.ExpiryState?] = [
+      .valid, .gracePeriod(endsAt: graceEnd), .expired, .valid,
+    ]
+    try? await waitUntil(timeout: 5) { expiries.withLock { Array($0.suffix(4)) } == reported }
+    XCTAssertEqual(expiries.withLock { Array($0.suffix(4)) }, reported)
+  }
+
+  func testTheStoreWakesWhenARegionIsDueExpiresOrEndsItsGracePeriod() async throws {
+    let service = OfflineServiceStub()
+    let store = makeStore(service)
+    try await store.loadRegion(id: "madrid", options: madrid())
+    _ = try await waitFor(store, "madrid") { $0.state == .complete }
+    let validated = service.now.timeIntervalSince1970
+    var wake = await store.core.nextWake()
+    XCTAssertEqual(wake, OfflineStoreCore.wakeLimit, "At least hourly while the app runs")
+    service.clock.withLock { $0 = validated + 86_400 - 60 }
+    wake = await store.core.nextWake()
+    XCTAssertEqual(wake, 60, accuracy: 0.001, "Due for revalidation")
+    service.clock.withLock { $0 = validated + 30 * 86_400 - 30 }
+    wake = await store.core.nextWake()
+    XCTAssertEqual(wake, 30, accuracy: 0.001, "Expires")
+    service.clock.withLock { $0 = validated + 37 * 86_400 - 20 }
+    wake = await store.core.nextWake()
+    XCTAssertEqual(wake, 20, accuracy: 0.001, "The grace period ends")
+    service.clock.withLock { $0 = validated + 40 * 86_400 }
+    wake = await store.core.nextWake()
+    XCTAssertEqual(wake, OfflineStoreCore.wakeLimit)
   }
 
   func testExpiredOrOverusedGrantsCreateTheDownloadAgain() async throws {
@@ -646,7 +744,7 @@ final class OfflineStoreTests: XCTestCase {
     try await store.cancelRegion(id: "madrid")
     service.freezeAfter = nil
 
-    // Access ends: the region stops updating, and maps keep using what the device holds.
+    // Access ends: the region stops updating, and maps keep using it until it expires.
     service.clock.withLock { $0 += 86_401 }
     service.revalidationState = "not_updatable"
     await store.core.checkForUpdates()

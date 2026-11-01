@@ -1,5 +1,6 @@
 import Foundation
 import Network
+import UIKit
 
 #if canImport(BackgroundTasks)
   import BackgroundTasks
@@ -23,10 +24,13 @@ import Network
 /// application delegate's background events with
 /// ``handleEventsForBackgroundURLSession(identifier:completionHandler:)``. Unfinished downloads
 /// resume when the store is first used after launch, recoverable failures wait and continue by
-/// themselves, and stored Hosted regions are checked for updates when the network returns and
-/// at most once per the service's interval. Loading a region again downloads only what changed,
-/// and ``setAutomaticUpdates(_:)`` lets the store do so by itself on unmetered networks. Access
-/// ending stops updates; it never deletes or locks what the device holds.
+/// themselves, and stored Hosted regions are revalidated, for free, at most once per the
+/// service's interval while the app runs with a network: at launch, when the network returns,
+/// when the app returns to the foreground and while it stays in use. Loading a region again
+/// downloads only what changed, and ``setAutomaticUpdates(_:)`` lets the store do so by itself on
+/// unmetered networks. A Hosted region expires 30 days after the service last confirmed access
+/// and maps stop using it after 7 more days of grace, so a region whose access ended lapses then;
+/// its files stay until it is removed, and a successful revalidation restores it.
 public final class TileflowOfflineStore: Sendable {
   /// The process's store, using ``Tileflow/configuration()`` for Hosted content.
   public static let shared: TileflowOfflineStore = TileflowOfflineStore(
@@ -46,6 +50,8 @@ public final class TileflowOfflineStore: Sendable {
   let core: OfflineStoreCore
   private let subscribers: OfflineSubscribers
   private let monitor: NWPathMonitor?
+  /// Looks again whenever a region is due for revalidation, expires or ends its grace period.
+  private let wakes: Task<Void, Never>?
 
   init(dependencies: OfflineStoreCore.Dependencies, monitorsNetwork: Bool = false) {
     let subscribers = OfflineSubscribers()
@@ -53,6 +59,7 @@ public final class TileflowOfflineStore: Sendable {
     core = OfflineStoreCore(dependencies, subscribers: subscribers)
     guard monitorsNetwork else {
       monitor = nil
+      wakes = nil
       return
     }
     let monitor = NWPathMonitor()
@@ -68,9 +75,24 @@ public final class TileflowOfflineStore: Sendable {
     }
     monitor.start(queue: DispatchQueue(label: "dev.tileflow.offline.network", qos: .utility))
     self.monitor = monitor
+    wakes = Task { [core] in
+      while !Task.isCancelled {
+        let delay = await core.nextWake()
+        try? await Task.sleep(nanoseconds: UInt64(max(1, delay) * 1_000_000_000))
+        guard !Task.isCancelled else { return }
+        await core.checkForUpdates()
+      }
+    }
+    // The process's store lives as long as the app: the observer is never removed.
+    _ = NotificationCenter.default.addObserver(
+      forName: UIApplication.willEnterForegroundNotification, object: nil, queue: nil
+    ) { _ in Task { await core.checkForUpdates() } }
   }
 
-  deinit { monitor?.cancel() }
+  deinit {
+    monitor?.cancel()
+    wakes?.cancel()
+  }
 
   /// What downloading the region would hold and cost. Hosted content creates its packs, which is
   /// free, and loading the same region soon after reuses them.

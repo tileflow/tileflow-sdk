@@ -306,12 +306,16 @@ internal data class OfflineVersionRecord(
 
 /**
  * What the last revalidation of a region found: `current`, `update_available` or `not_updatable`.
+ * [validatedAt] is when the service last confirmed access: the version's download or a
+ * revalidation that found it current or with an update available. The region expires counting
+ * from there.
  */
 internal data class OfflineCheckRecord(
     val state: String,
     val reason: String?,
     val checkedAt: Long,
     val intervalMillis: Long,
+    val validatedAt: Long? = null,
 )
 
 /**
@@ -352,6 +356,7 @@ internal data class OfflineRegionRecord(
                             .putOpt("reason", it.reason)
                             .put("checkedAt", it.checkedAt)
                             .put("interval", it.intervalMillis / 1000.0)
+                            .putOpt("validatedAt", it.validatedAt)
                     },
                 )
         OfflineLayout.write(value.toString().toByteArray(), file)
@@ -375,6 +380,7 @@ internal data class OfflineRegionRecord(
                                 it.optString("reason").takeIf { _ -> it.has("reason") },
                                 it.getLong("checkedAt"),
                                 (it.getDouble("interval") * 1000).toLong(),
+                                if (it.has("validatedAt")) it.getLong("validatedAt") else null,
                             )
                         },
                     )

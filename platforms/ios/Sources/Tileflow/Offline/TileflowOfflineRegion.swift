@@ -81,7 +81,9 @@ public struct TileflowOfflineRegionLoadOptions: Sendable, Hashable {
 ///
 /// A region is usable offline once a download completes: ``isAvailable`` stays true while a later
 /// update downloads, and the stored version is replaced only when the update is complete and
-/// verified. Access ending never removes what the device holds.
+/// verified. A Hosted region expires 30 days after the service last confirmed access to it, by a
+/// download or a revalidation, and maps stop using it after a 7-day grace period; its files stay
+/// until it is removed. Revalidating needs only a network: it is free and runs by itself.
 public struct TileflowOfflineRegion: Sendable, Hashable, Identifiable {
   public enum DownloadState: String, Sendable, Hashable {
     /// Resources are downloading.
@@ -104,18 +106,32 @@ public struct TileflowOfflineRegion: Sendable, Hashable, Identifiable {
     /// The Map changed. Loading the region again downloads only what changed.
     case updateAvailable
     /// Access ended, for the service's `reason`, such as `credential_revoked` or
-    /// `map_unavailable`. The region stays on the device as it is, maps keep using it, and it is no
-    /// longer updated: an application can tell its users so.
+    /// `map_unavailable`. The region stays on the device as it is and is no longer revalidated or
+    /// updated: maps keep using it until it expires and its grace period ends.
     case notUpdatable(reason: String)
+  }
+
+  /// Where a Hosted region is in its validity window.
+  public enum ExpiryState: Sendable, Hashable {
+    /// Access was confirmed within the last 30 days: the region serves until
+    /// ``TileflowOfflineRegion/expiresAt``.
+    case valid
+    /// ``TileflowOfflineRegion/expiresAt`` passed without a successful revalidation. Maps keep
+    /// using the region until `endsAt`; an application can ask its users to connect, which
+    /// revalidates it.
+    case gracePeriod(endsAt: Date)
+    /// The grace period ended: maps no longer use the region. Its files stay until it is removed,
+    /// and a successful revalidation or a new download makes it available again.
+    case expired
   }
 
   public let id: String
   /// The options of the version downloading, or else of the stored version.
   public let options: TileflowOfflineRegionLoadOptions
   public let state: DownloadState
-  /// A complete version is stored and maps use it without a network. It stays available once
-  /// access to a Hosted region ended (``UpdateState/notUpdatable(reason:)``): the region only stops
-  /// updating.
+  /// A complete version is stored and maps use it without a network. A Hosted region stays
+  /// available through its grace period, also once access ended
+  /// (``UpdateState/notUpdatable(reason:)``), and is not available once ``ExpiryState/expired``.
   public let isAvailable: Bool
   /// Hosted packs: a source's tiles under one anchor tile, or the styles, assets and glyphs. Zero
   /// for self-hosted content, which downloads resource by resource.
@@ -143,11 +159,18 @@ public struct TileflowOfflineRegion: Sendable, Hashable, Identifiable {
   /// Nil until a Hosted region is first checked, and for self-hosted content.
   public let updateState: UpdateState?
   public let checkedAt: Date?
+  /// When a Hosted region expires unless it is revalidated first: 30 days after the service last
+  /// confirmed access. Nil for self-hosted content, which never expires.
+  public let expiresAt: Date?
+  /// Nil for self-hosted content.
+  public let expiryState: ExpiryState?
 }
 
 /// A change to the store's regions.
 public enum TileflowOfflineRegionEvent: Sendable, Hashable {
-  /// A region was created, progressed or changed state.
+  /// A region was created, progressed or changed state, including its
+  /// ``TileflowOfflineRegion/expiryState``: an application can prompt its users when a region
+  /// enters its grace period.
   case changed(TileflowOfflineRegion)
   case removed(id: String)
 }

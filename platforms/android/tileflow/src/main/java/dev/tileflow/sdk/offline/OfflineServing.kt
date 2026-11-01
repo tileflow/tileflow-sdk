@@ -33,10 +33,39 @@ internal object OfflineServingRule {
 
     /**
      * Whether a region whose access ended (`not_updatable`) is still served. On: the device keeps
-     * using what it downloaded, as the data's licences require, and the region only stops updating.
-     * Off: its files stay on the device, untouched, and maps stop using them.
+     * using what it downloaded until the region expires, and the region only stops updating. Off:
+     * its files stay on the device, untouched, and maps stop using them at once.
      */
     const val SERVES_REGIONS_AFTER_ACCESS_ENDS = true
+
+    /**
+     * How long a Hosted region serves after the service last confirmed access to it, after Mapbox
+     * and MapTiler: it expires 30 days later and maps keep using it for 7 more days of grace. Only
+     * a successful revalidation or a new download confirms access, so a region whose access ended
+     * lapses this long after its last success. Self-hosted regions never expire.
+     */
+    val EXPIRY =
+        OfflineExpiryWindow(validityMillis = 30L * 86_400_000, graceMillis = 7L * 86_400_000)
+}
+
+/** A Hosted region's validity window, counted from the last time the service confirmed access. */
+internal data class OfflineExpiryWindow(val validityMillis: Long, val graceMillis: Long) {
+    fun expiresAt(validatedAt: Long): Long = validatedAt + validityMillis
+
+    fun gracePeriodEndsAt(validatedAt: Long): Long = validatedAt + validityMillis + graceMillis
+
+    fun phase(validatedAt: Long, now: Long): OfflineExpiryPhase =
+        when {
+            now < expiresAt(validatedAt) -> OfflineExpiryPhase.VALID
+            now < gracePeriodEndsAt(validatedAt) -> OfflineExpiryPhase.GRACE_PERIOD
+            else -> OfflineExpiryPhase.EXPIRED
+        }
+}
+
+internal enum class OfflineExpiryPhase {
+    VALID,
+    GRACE_PERIOD,
+    EXPIRED,
 }
 
 /** A regional credit of a stored release: shown while one of its boxes is in view. */

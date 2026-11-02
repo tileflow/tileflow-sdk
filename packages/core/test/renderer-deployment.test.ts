@@ -245,6 +245,32 @@ test('renderer envelope rejects absent renderers, extra fields, theme and author
   }
 });
 
+test("Team sources never name Tileflow's own tilesets", () => {
+  assert.equal(
+    tileflowRendererDeploymentArtifactSchema.safeParse({
+      ...artifact(),
+      teamSources: {places: {tileset: 'places', type: 'vector'}},
+    }).success,
+    true,
+  );
+  for (const tileset of [
+    'world',
+    'terrain',
+    'boundaries',
+    'bathymetry',
+    'bathymetry-dem',
+    'nautical',
+  ])
+    assert.equal(
+      tileflowRendererDeploymentArtifactSchema.safeParse({
+        ...artifact(),
+        teamSources: {places: {tileset, type: 'vector'}},
+      }).success,
+      false,
+      tileset,
+    );
+});
+
 test('renderer hashes bind web input, native output and its complete build record', async () => {
   for (const change of [
     (value: ReturnType<typeof artifact>) => {

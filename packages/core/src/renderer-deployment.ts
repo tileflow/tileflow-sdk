@@ -140,6 +140,15 @@ const familyShape = {
   buildManifest: buildManifestSchema,
   styles: z.record(tileflowThemeNameSchema, recordSchema),
 };
+/** Tileflow's own tilesets, which a Team source can never name. */
+const platformTilesets = new Set([
+  'bathymetry',
+  'bathymetry-dem',
+  'boundaries',
+  'nautical',
+  'terrain',
+  'world',
+]);
 const teamSourcesSchema = z
   .record(
     tileflowPortableIdSchema,
@@ -162,7 +171,7 @@ const teamSourcesSchema = z
       if (
         id === 'tileflow' ||
         id.startsWith('tileflow-') ||
-        ['world', 'terrain'].includes(value.tileset) ||
+        platformTilesets.has(value.tileset) ||
         tilesets.has(value.tileset)
       )
         context.addIssue({code: 'custom', message: 'Invalid logical Team source binding'});

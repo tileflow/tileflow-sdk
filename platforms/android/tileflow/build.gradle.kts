@@ -56,6 +56,8 @@ dependencies {
     androidTestImplementation("androidx.test:runner:1.6.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.activity:activity:1.10.1")
+    // Native engine feasibility checks: MapLibre Native, OpenGL ES variant, exact version.
+    androidTestImplementation("org.maplibre.gl:android-sdk-opengl:13.7.1")
 }
 
 // Coordinates, POM and the local candidate repository: platforms/native-release.json.

@@ -347,9 +347,28 @@ const sceneStyle = (dark) => ({
 });
 // A Hosted map with sessions and offline packs, drawn from the city tiles.
 const hosted = createHostedFixture({base, tile: buildingTile, center: sceneCenter});
+// Native artifacts written by `tileflow build --renderer native`, served as they are.
+const nativeArtifacts = process.env.TILEFLOW_NATIVE_ARTIFACTS;
+const nativeTypes = {json: 'application/json', png: 'image/png', ttf: 'font/ttf', otf: 'font/otf'};
 const server = createServer((request, response) => {
   response.setHeader('Access-Control-Allow-Origin', '*');
   if (hosted(request, response)) return;
+  if (nativeArtifacts && request.url.startsWith('/native-artifacts/')) {
+    const root = resolve(nativeArtifacts);
+    const file = resolve(root, decodeURIComponent(request.url.slice(18).split('?')[0]));
+    response.setHeader('Cache-Control', 'no-store');
+    readFile(file)
+      .then((bytes) => {
+        if (!file.startsWith(`${root}/`)) throw new Error('outside');
+        response.setHeader('Content-Type', nativeTypes[file.split('.').pop()] ?? 'text/plain');
+        response.end(bytes);
+      })
+      .catch(() => {
+        response.statusCode = 404;
+        response.end();
+      });
+    return;
+  }
   const cached = request.url.startsWith(`${cachedPrefix}/`);
   const path = cached ? request.url.slice(cachedPrefix.length) : request.url;
   const root = cached ? `${base}${cachedPrefix}` : base;

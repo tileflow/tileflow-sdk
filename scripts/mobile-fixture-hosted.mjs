@@ -28,7 +28,13 @@ export function createHostedFixture({base, tile, center}) {
     terrainStyle: `${base}${mapPath}/webview-v1/v1/terrain.json`,
     terrainTilejson: `${base}/tiles/terrain/tiles.json?map=${hostedMapId}`,
     terrainTemplate: `${base}/tiles/terrain/1/{z}/{x}/{y}.png?map=${hostedMapId}`,
+    sprite: `${base}/sprites/fixture/sprite?map=${hostedMapId}`,
+    glyphs: `${base}/fonts/{fontstack}/{range}.pbf?map=${hostedMapId}`,
   };
+  // The sprite and glyph files a renderer derives from those templates.
+  const spriteUrl = (ratio, extension) =>
+    `${base}/sprites/fixture/sprite${ratio === 2 ? '@2x' : ''}.${extension}?map=${hostedMapId}`;
+  const glyphUrl = (range) => `${base}/fonts/Noto%20Sans%20Regular/${range}.pbf?map=${hostedMapId}`;
   // Terrain stops at z14 online; a download stops at its terrainMaxZoom.
   const terrainZooms = [0, 14];
   const resumable = Buffer.alloc(2 * 1024 * 1024, 0);
@@ -57,6 +63,8 @@ export function createHostedFixture({base, tile, center}) {
     },
     [urls.style]: {
       version: 8,
+      sprite: urls.sprite,
+      glyphs: urls.glyphs,
       sources: {world: {type: 'vector', url: urls.tilejson}},
       layers: [
         {id: 'ground', type: 'background', paint: {'background-color': '#ece6da'}},
@@ -66,6 +74,22 @@ export function createHostedFixture({base, tile, center}) {
           source: 'world',
           'source-layer': 'building',
           paint: {'fill-color': '#d6ccb8'},
+        },
+        {
+          id: 'markers',
+          type: 'symbol',
+          source: 'world',
+          'source-layer': 'building',
+          layout: {
+            'icon-image': 'marker',
+            'icon-allow-overlap': true,
+            'text-field': 'B',
+            'text-font': ['Noto Sans Regular'],
+            'text-size': 16,
+            'text-offset': [0, 1.2],
+            'text-allow-overlap': true,
+          },
+          paint: {'text-color': '#1d3c8f'},
         },
       ],
     },
@@ -139,10 +163,104 @@ export function createHostedFixture({base, tile, center}) {
     });
   const body = (url) => {
     if (documents[url]) return Buffer.from(JSON.stringify(documents[url]));
+    for (const ratio of [1, 2]) {
+      if (url === spriteUrl(ratio, 'json'))
+        return Buffer.from(
+          JSON.stringify({marker: {x: 0, y: 0, width: 16 * ratio, height: 16 * ratio, pixelRatio: ratio}}),
+        );
+      if (url === spriteUrl(ratio, 'png')) return png(16 * ratio, 16 * ratio, [224, 33, 138, 255]);
+    }
+    const glyphRange = /\/fonts\/Noto%20Sans%20Regular\/(\d+)-(\d+)\.pbf\?map=/u.exec(url);
+    if (glyphRange) return glyphs(Number(glyphRange[1]), Number(glyphRange[2]));
     const match = /\/tiles\/world\/1\/(\d+)\/(\d+)\/(\d+)\.pbf\?map=/u.exec(url);
     if (match) return storedTile(...match.slice(1).map(Number));
     const terrain = /\/tiles\/terrain\/1\/(\d+)\/\d+\/\d+\.png\?map=/u.exec(url);
     return terrain && Number(terrain[1]) <= terrainZooms[1] ? elevation : null;
+  };
+  /** A solid RGBA PNG. */
+  const png = (width, height, rgba) => {
+    const crc = (bytes) => {
+      let value = 0xffffffff;
+      for (const byte of bytes) {
+        value ^= byte;
+        for (let bit = 0; bit < 8; bit += 1)
+          value = value & 1 ? (value >>> 1) ^ 0xedb88320 : value >>> 1;
+      }
+      return (value ^ 0xffffffff) >>> 0;
+    };
+    const chunk = (type, data) => {
+      const head = Buffer.alloc(8);
+      head.writeUInt32BE(data.length, 0);
+      head.write(type, 4, 'ascii');
+      const tail = Buffer.alloc(4);
+      tail.writeUInt32BE(crc(Buffer.concat([Buffer.from(type, 'ascii'), data])), 0);
+      return Buffer.concat([head, data, tail]);
+    };
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(width, 0);
+    header.writeUInt32BE(height, 4);
+    header[8] = 8;
+    header[9] = 6; // RGBA
+    const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array(width).fill(rgba).flat())]);
+    return Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk('IHDR', header),
+      chunk('IDAT', deflateSync(Buffer.concat(Array(height).fill(row)))),
+      chunk('IEND', Buffer.alloc(0)),
+    ]);
+  };
+  /**
+   * A glyph range of `Noto Sans Regular` in the renderer's protobuf: every printable ASCII glyph is
+   * a filled block, as a signed distance field, so labels draw without a font rasterizer.
+   */
+  const glyphs = (start, end) => {
+    const varint = (value) => {
+      const bytes = [];
+      let rest = value;
+      while (rest > 127) {
+        bytes.push((rest & 127) | 128);
+        rest = Math.floor(rest / 128);
+      }
+      bytes.push(rest);
+      return bytes;
+    };
+    const field = (number, wire, payload) => [
+      ...varint(number * 8 + wire),
+      ...(wire === 2 ? varint(payload.length) : []),
+      ...payload,
+    ];
+    const zigzag = (value) => (value << 1) ^ (value >> 31);
+    const [width, height, buffer] = [10, 14, 3];
+    const bitmap = [];
+    for (let y = 0; y < height + 2 * buffer; y += 1)
+      for (let x = 0; x < width + 2 * buffer; x += 1) {
+        const dx = Math.max(buffer - x, x - (buffer + width - 1), 0);
+        const dy = Math.max(buffer - y, y - (buffer + height - 1), 0);
+        const inside = dx === 0 && dy === 0;
+        const distance = inside
+          ? -Math.min(x - buffer, buffer + width - 1 - x, y - buffer, buffer + height - 1 - y) - 0.5
+          : Math.hypot(dx, dy) - 0.5;
+        bitmap.push(Math.max(0, Math.min(255, Math.round(255 - 255 * (distance / 8 + 0.25)))));
+      }
+    const glyphList = [];
+    for (let id = Math.max(start, 33); id <= Math.min(end, 126); id += 1)
+      glyphList.push(
+        field(3, 2, [
+          ...field(1, 0, varint(id)),
+          ...field(2, 2, bitmap),
+          ...field(3, 0, varint(width)),
+          ...field(4, 0, varint(height)),
+          ...field(5, 0, varint(zigzag(1))),
+          ...field(6, 0, varint(zigzag(-4))),
+          ...field(7, 0, varint(width + 2)),
+        ]),
+      );
+    const stack = [
+      ...field(1, 2, [...Buffer.from('Noto Sans Regular')]),
+      ...field(2, 2, [...Buffer.from(`${start}-${end}`)]),
+      ...glyphList.flat(),
+    ];
+    return Buffer.from(field(1, 2, stack));
   };
   /** A 256-pixel elevation tile at 650 m everywhere, in Mapbox's RGB encoding. */
   const elevation = (() => {
@@ -320,12 +438,19 @@ export function createHostedFixture({base, tile, center}) {
       urls.tilejson,
       ...(terrainTheme ? [urls.terrainTilejson] : []),
     ];
-    add(
-      'style',
-      'documents',
-      '/v1/offline/documents/style.tfpack',
-      documentUrls.map((url) => ({name: url, contentType: 'application/json', body: body(url)})),
-    );
+    const assetUrls = request.themes.includes('day')
+      ? [
+          [spriteUrl(1, 'json'), 'application/json'],
+          [spriteUrl(1, 'png'), 'image/png'],
+          [spriteUrl(2, 'json'), 'application/json'],
+          [spriteUrl(2, 'png'), 'image/png'],
+          [glyphUrl('0-255'), 'application/x-protobuf'],
+        ]
+      : [];
+    add('style', 'documents', '/v1/offline/documents/style.tfpack', [
+      ...documentUrls.map((url) => ({name: url, contentType: 'application/json', body: body(url)})),
+      ...assetUrls.map(([url, contentType]) => ({name: url, contentType, body: body(url)})),
+    ]);
     const tileSources = [
       {
         source: 'world',
@@ -487,7 +612,7 @@ export function createHostedFixture({base, tile, center}) {
           meterMode: 'disabled',
           disposition: 'unmetered',
           resourceOrigins: [base],
-          resourceScopes: ['style', 'tilejson', 'tile'],
+          resourceScopes: ['style', 'tilejson', 'tile', 'sprite', 'glyph'],
           tilesetIds: ['world', 'terrain'],
         });
       });
@@ -575,14 +700,17 @@ export function createHostedFixture({base, tile, center}) {
       }
     }
     // Vector tiles travel as stored to clients that accept gzip, and decoded to the others.
-    const gzip = url.includes('.pbf') && /\bgzip\b/u.test(request.headers['accept-encoding'] ?? '');
+    const world = url.includes('/tiles/world/1/');
+    const gzip = world && /\bgzip\b/u.test(request.headers['accept-encoding'] ?? '');
     const outcome = serve(
       request,
       response,
-      url.includes('.pbf') && !gzip ? gunzipSync(bytes) : bytes,
+      world && !gzip ? gunzipSync(bytes) : bytes,
       {
         'Cache-Control': 'private, no-cache',
-        'Content-Type': url.includes('.pbf')
+        'Content-Type': url.includes('/fonts/')
+          ? 'application/x-protobuf'
+          : url.includes('.pbf')
           ? 'application/vnd.mapbox-vector-tile'
           : url.includes('.png')
             ? 'image/png'

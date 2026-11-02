@@ -94,11 +94,14 @@ final class OfflineTests: XCTestCase {
     let manifest = download.manifest
     XCTAssertEqual(manifest.themes, ["default"])
     XCTAssertEqual(manifest.maximumPackResources, 10_000)
-    XCTAssertEqual(manifest.excluded.map(\.source), ["nautical"])
-    XCTAssertEqual(manifest.sources.map(\.source), ["terrain", "world"])
-    XCTAssertEqual(manifest.sources.map(\.zooms), [10...12, 10...14])
-    XCTAssertEqual(manifest.sources.map(\.absentStatus), [404, 404])
-    XCTAssertEqual(manifest.sources.map(\.contentEncoding), [nil, "gzip"])
+    XCTAssertEqual(manifest.excluded.map(\.source), ["boundaries"])
+    XCTAssertEqual(
+      manifest.sources.map(\.source), ["bathymetry", "bathymetry-dem", "nautical", "terrain", "world"])
+    // The elevation model's base-zoom parents and Bathymetry's deepest zoom lie below the
+    // download's first zoom, in bands the cover holds.
+    XCTAssertEqual(manifest.sources.map(\.zooms), [9...9, 8...9, 10...14, 10...12, 10...14])
+    XCTAssertEqual(manifest.sources.map(\.absentStatus), [204, 204, 204, 404, 404])
+    XCTAssertEqual(manifest.sources.map(\.contentEncoding), ["gzip", nil, "gzip", nil, "gzip"])
     XCTAssertEqual(manifest.origins, ["https://api.tileflow.test"])
     // The zoom policy plans the same source zooms the service did.
     let zooms = try OfflineZooms(range: 10...14)
@@ -108,16 +111,20 @@ final class OfflineTests: XCTestCase {
 
     let plan = OfflineVersionPlan.hosted(downloads: [download], requests: [try createdRequest()])
     XCTAssertEqual(plan.packs.map(\.pack.id), [
-      "style", "assets", "glyphs/Noto Sans Regular/0", "tiles/terrain/7/62/48",
+      "style", "assets", "glyphs/Noto Sans Regular/0", "tiles/bathymetry/7/62/48",
+      "tiles/bathymetry-dem/7/62/48", "tiles/nautical/7/62/48", "tiles/nautical/11/1002/772",
+      "tiles/nautical/11/1003/772", "tiles/terrain/7/62/48",
       "tiles/terrain/11/1002/772", "tiles/terrain/11/1003/772", "tiles/world/7/62/48",
       "tiles/world/11/1002/772", "tiles/world/11/1003/772",
     ])
-    XCTAssertEqual(plan.resourceCount, 25)
-    XCTAssertEqual(plan.billable, 16, "Only tiles are billable")
+    XCTAssertEqual(plan.resourceCount, 44)
+    XCTAssertEqual(plan.billable, 32, "Only tiles are billable")
     XCTAssertTrue(plan.packs.filter { $0.pack.kind == .documents }.allSatisfy { $0.pack.billableResources == 0 })
-    XCTAssertEqual(plan.bytes, 4_149)
+    XCTAssertEqual(plan.bytes, 8_224)
     XCTAssertEqual(plan.resources.count, 1, "Discovery")
-    XCTAssertEqual(plan.tileCounts, ["terrain": 5, "world": 11])
+    XCTAssertEqual(
+      plan.tileCounts,
+      ["bathymetry": 1, "bathymetry-dem": 2, "nautical": 13, "terrain": 5, "world": 11])
     // Every tile pack's anchor starts its band; tiles the archive does not store are left out.
     var cover = 0
     for zoom in 10...14 { cover += covered(manifest.cover, zoom: zoom).count }
@@ -125,7 +132,7 @@ final class OfflineTests: XCTestCase {
     for planned in plan.packs where planned.pack.kind == .tiles {
       let anchor = try XCTUnwrap(planned.pack.anchor)
       XCTAssertTrue(OfflinePackBand.anchors.contains(anchor.z))
-      XCTAssertEqual(planned.release, planned.pack.source == "world" ? "2026-10-01" : "2026-10")
+      XCTAssertEqual(planned.release, manifest.source(planned.pack.source!)?.version)
     }
   }
 
@@ -153,7 +160,7 @@ final class OfflineTests: XCTestCase {
       } }),
       ("zooms outside the band", { pack(&$0) { $0["zooms"] = [12, 16] } }),
       ("an id that is not its anchor", { pack(&$0) { $0["id"] = "tiles/world/11/1/1" } }),
-      ("an unknown source", { pack(&$0) { $0["source"] = "bathymetry" } }),
+      ("an unknown source", { pack(&$0) { $0["source"] = "boundaries" } }),
       ("another origin", { pack(&$0) { $0["url"] = "https://elsewhere.test/v1/offline/p.tfpack" } }),
       ("plain HTTP", { pack(&$0) { $0["url"] = "http://api.tileflow.test/v1/offline/p.tfpack" } }),
       ("larger than a pack can be", { pack(&$0) { $0["bytes"] = 33 * 1024 * 1024 } }),
@@ -458,10 +465,14 @@ final class OfflineTests: XCTestCase {
       XCTAssertEqual(cover.text.utf8.count, item["coverBytes"] as? Int, name)
       // Read back as the service reads it, the cover is unchanged.
       XCTAssertEqual(OfflineCover(json: cover.json, minZoom: minZoom, maxZoom: maxZoom), cover, name)
+      // Packs plan only from the entries whose band reaches the download's zooms.
       let packs = item["packs"] as! [[String: Any]]
-      XCTAssertEqual(packs.count, cover.entries.count, name)
+      let planned = cover.entries.filter {
+        OfflinePackBand.zooms(anchor: $0.anchor.z)!.upperBound >= minZoom
+      }
+      XCTAssertEqual(packs.count, planned.count, name)
       var total = 0
-      for (pack, entry) in zip(packs, cover.entries) {
+      for (pack, entry) in zip(packs, planned) {
         let anchor = pack["anchor"] as! [Int]
         XCTAssertEqual([entry.anchor.z, entry.anchor.x, entry.anchor.y], anchor, name)
         XCTAssertEqual(
@@ -478,8 +489,8 @@ final class OfflineTests: XCTestCase {
         total += tiles.values.reduce(0) { $0 + $1.count }
       }
       XCTAssertEqual(total, (item["totals"] as! [String: Int])["tiles"], name)
-      // The cover holds exactly the region's tiles at every zoom.
-      for zoom in minZoom...maxZoom {
+      // The cover holds exactly the region's tiles at every zoom, also below the first.
+      for zoom in 0...maxZoom {
         XCTAssertEqual(covered(cover, zoom: zoom).count, try geometry.tileCount(zoom: zoom), "\(name) z\(zoom)")
       }
     }

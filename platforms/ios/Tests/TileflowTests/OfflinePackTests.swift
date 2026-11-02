@@ -146,11 +146,12 @@ final class OfflinePackTests: XCTestCase {
       maxZoom: 14)
     try await store.loadRegion(id: "fixture", options: options)
     let done = try await waitFor(store, "fixture") { $0.state == .complete }
-    XCTAssertEqual(done.requiredPackCount, 9)
-    XCTAssertEqual(done.completedPackCount, 9)
-    XCTAssertEqual(done.requiredResourceCount, 25)
-    XCTAssertEqual(done.billableResourceCount, 16, "Only tiles are billable")
-    XCTAssertEqual(service.downloads.filter { $0.status == 200 }.count, 10, "Nine packs, discovery")
+    XCTAssertEqual(done.requiredPackCount, 14)
+    XCTAssertEqual(done.completedPackCount, 14)
+    XCTAssertEqual(done.requiredResourceCount, 44)
+    XCTAssertEqual(done.billableResourceCount, 32, "Only tiles are billable")
+    XCTAssertEqual(
+      service.downloads.filter { $0.status == 200 }.count, 15, "Fourteen packs, discovery")
 
     // Every entry of every pack answers as the route serves it, decoded.
     let scope = ResourceCacheScope.grant(
@@ -200,17 +201,19 @@ final class OfflinePackTests: XCTestCase {
       cache: cache)
     XCTAssertNil(outside)
 
-    // A new World release: Terrain's packs are kept without asking, every other pack is asked for
-    // with its digest, and only the changed ones transfer.
+    // A new World release: the packs of sources whose release did not change are kept without
+    // asking, every other pack is asked for with its digest, and only the changed ones transfer.
     let before = service.downloads.count
     service.release = 2
     try await store.loadRegion(id: "fixture", options: options)
     let updated = try await waitFor(store, "fixture") {
       $0.state == .complete && $0.loadedResourceCount < $0.requiredResourceCount
     }
-    XCTAssertEqual(updated.completedPackCount, 9)
+    XCTAssertEqual(updated.completedPackCount, 14)
     let asked = service.downloads.dropFirst(before).filter { $0.url.hasSuffix(".tfpack") }
-    XCTAssertFalse(asked.contains { $0.url.contains("/tiles/terrain/") }, "Terrain did not change")
+    for source in ["terrain", "nautical", "bathymetry", "bathymetry-dem"] {
+      XCTAssertFalse(asked.contains { $0.url.contains("/tiles/\(source)/") }, "\(source) did not change")
+    }
     let first = Dictionary(try service.packs(release: 1).map { ($0.id, $0.etag) }) { a, _ in a }
     var changed = Set<String>()
     for pack in try service.packs(release: 2) where first[pack.id] != pack.etag {

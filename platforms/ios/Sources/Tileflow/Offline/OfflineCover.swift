@@ -6,9 +6,11 @@ import Foundation
 ///
 /// Each entry is one anchor tile of a zoom band, with a bit mask of the tiles it covers at its mask
 /// zoom, the band's deepest zoom within the download's zooms; the tiles at shallower zooms of the
-/// band are their ancestors. Without a mask the whole anchor is covered. For every band the
-/// download's zooms reach, the cover lists each anchor the region covers at the anchor zoom, so the
-/// tiles of each zoom are exactly the region's.
+/// band are their ancestors. Without a mask the whole anchor is covered. For every band that starts
+/// at or before the download's deepest zoom, the cover lists each anchor the region covers at the
+/// anchor zoom, so the tiles of each zoom are exactly the region's. Bands wholly below the
+/// download's first zoom are included: a source whose zooms end before it, or the Bathymetry
+/// elevation model's base-zoom parents, download tiles there.
 struct OfflineCover: Hashable, Sendable {
   struct Entry: Hashable, Sendable {
     let anchor: OfflineTileID
@@ -30,7 +32,8 @@ struct OfflineCover: Hashable, Sendable {
     min(OfflinePackBand.zooms(anchor: anchor)?.upperBound ?? anchor, maxZoom)
   }
 
-  /// The cover of `regions` together at `minZoom...maxZoom`: their union, each tile once.
+  /// The cover of `regions` together for a download of `minZoom...maxZoom`: their union, each tile
+  /// once.
   ///
   /// - Throws: `regionTooComplex` when it would list more than ``maximumEntries`` packs.
   static func of(_ regions: [OfflinePackRegion], minZoom: Int, maxZoom: Int) throws
@@ -38,8 +41,7 @@ struct OfflineCover: Hashable, Sendable {
   {
     var entries: [Entry] = []
     for anchorZoom in OfflinePackBand.anchors {
-      guard let band = OfflinePackBand.zooms(anchor: anchorZoom),
-        band.upperBound >= minZoom, band.lowerBound <= maxZoom
+      guard let band = OfflinePackBand.zooms(anchor: anchorZoom), band.lowerBound <= maxZoom
       else { continue }
       let maskZoom = Self.maskZoom(anchor: anchorZoom, maxZoom: maxZoom)
       let shift = maskZoom - anchorZoom
@@ -97,7 +99,7 @@ struct OfflineCover: Hashable, Sendable {
     for item in items {
       guard case .array(let parts) = item, parts.count == 3 || parts.count == 4,
         let z = Self.integer(parts[0]), let band = OfflinePackBand.zooms(anchor: z),
-        band.upperBound >= minZoom, band.lowerBound <= maxZoom,
+        band.lowerBound <= maxZoom,
         let x = Self.integer(parts[1]), let y = Self.integer(parts[2]),
         (0..<(1 << z)).contains(x), (0..<(1 << z)).contains(y)
       else { return nil }
@@ -162,10 +164,10 @@ struct OfflineCover: Hashable, Sendable {
     return low < entries.count && entries[low].anchor == anchor ? entries[low] : nil
   }
 
-  /// Whether the download holds `tile`: a covered tile at its mask zoom, or an ancestor of one
-  /// within its band.
+  /// Whether the download's cover holds `tile`: a covered tile at its mask zoom, or an ancestor of
+  /// one within its band, also below the download's first zoom.
   func contains(_ tile: OfflineTileID) -> Bool {
-    guard (minZoom...maxZoom).contains(tile.z) else { return false }
+    guard (0...maxZoom).contains(tile.z) else { return false }
     let anchorZoom = OfflinePackBand.anchor(of: tile.z)
     let maskZoom = Self.maskZoom(anchor: anchorZoom, maxZoom: maxZoom)
     guard tile.z <= maskZoom, let entry = entry(tile.ancestor(at: anchorZoom)) else {

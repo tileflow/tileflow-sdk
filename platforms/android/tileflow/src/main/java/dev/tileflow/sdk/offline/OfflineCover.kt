@@ -12,9 +12,11 @@ import org.json.JSONArray
  *
  * Each entry is one anchor tile of a zoom band, with a bit mask of the tiles it covers at its mask
  * zoom, the band's deepest zoom within the download's zooms; the tiles at shallower zooms of the
- * band are their ancestors. Without a mask the whole anchor is covered. For every band the
- * download's zooms reach, the cover lists each anchor the region covers at the anchor zoom, so the
- * tiles of each zoom are exactly the region's.
+ * band are their ancestors. Without a mask the whole anchor is covered. For every band that starts
+ * at or before the download's deepest zoom, the cover lists each anchor the region covers at the
+ * anchor zoom, so the tiles of each zoom are exactly the region's. Bands wholly below the
+ * download's first zoom are included: a source whose zooms end before it, or the Bathymetry
+ * elevation model's base-zoom parents, download tiles there.
  */
 internal data class OfflineCover(
     val minZoom: Int,
@@ -73,11 +75,11 @@ internal data class OfflineCover(
     }
 
     /**
-     * Whether the download holds [tile]: a covered tile at its mask zoom, or an ancestor of one
-     * within its band.
+     * Whether the download's cover holds [tile]: a covered tile at its mask zoom, or an ancestor
+     * of one within its band, also below the download's first zoom.
      */
     fun contains(tile: OfflineTileId): Boolean {
-        if (tile.z !in minZoom..maxZoom) return false
+        if (tile.z !in 0..maxZoom) return false
         val anchorZoom = OfflinePackBand.anchor(tile.z)
         val maskZoom = maskZoom(anchorZoom, maxZoom)
         if (tile.z > maskZoom) return false
@@ -133,7 +135,8 @@ internal data class OfflineCover(
             minOf(OfflinePackBand.zooms(anchor)?.last ?: anchor, maxZoom)
 
         /**
-         * The cover of [regions] together at [minZoom]..[maxZoom]: their union, each tile once.
+         * The cover of [regions] together for a download of [minZoom]..[maxZoom]: their union,
+         * each tile once.
          *
          * @throws TileflowOfflineException `REGION_TOO_COMPLEX` when it would list more than
          *   [MAXIMUM_ENTRIES] packs.
@@ -142,7 +145,7 @@ internal data class OfflineCover(
             val entries = ArrayList<Entry>()
             for (anchorZoom in OfflinePackBand.anchors) {
                 val band = OfflinePackBand.zooms(anchorZoom) ?: continue
-                if (band.last < minZoom || band.first > maxZoom) continue
+                if (band.first > maxZoom) continue
                 val maskZoom = maskZoom(anchorZoom, maxZoom)
                 val shift = maskZoom - anchorZoom
                 val side = 1 shl shift
@@ -205,7 +208,7 @@ internal data class OfflineCover(
                 if (item.length() != 3 && item.length() != 4) return null
                 val z = integer(item.opt(0)) ?: return null
                 val band = OfflinePackBand.zooms(z) ?: return null
-                if (band.last < minZoom || band.first > maxZoom) return null
+                if (band.first > maxZoom) return null
                 val x = integer(item.opt(1)) ?: return null
                 val y = integer(item.opt(2)) ?: return null
                 if (x !in 0 until (1 shl z) || y !in 0 until (1 shl z)) return null

@@ -283,12 +283,13 @@ jobs:
           xcrun simctl bootstatus "$udid" -b > /dev/null
           curl --retry 30 --retry-all-errors --retry-delay 1 --fail http://127.0.0.1:18645/manifest.json > /dev/null
           "$XCODEGEN" generate --quiet --spec "$consumers/ios-integration/project.yml"
-          # As in CI, the web runtime's WebGL rendering suite cannot run on a hosted simulator.
+          # As in CI, the suites the web runtime draws with WebGL cannot run on a hosted simulator.
           xcodebuild test \
             -project "$consumers/ios-integration/TileflowIntegration.xcodeproj" \
             -scheme TileflowIntegration \
             -destination "platform=iOS Simulator,id=$udid,arch=arm64" \
             -skip-testing:TileflowTests/MapIntegrationTests \
+            -skip-testing:TileflowTests/MapStyleIntegrationTests \
             -derivedDataPath "$RUNNER_TEMP/native-verify/integration-derived" \
             | tee "$RUNNER_TEMP/native-verify/swift-integration.log"
           ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/native-verify/swift-integration.log"

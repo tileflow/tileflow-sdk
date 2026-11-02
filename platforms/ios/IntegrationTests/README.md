@@ -27,9 +27,10 @@ with iOS 26.5. It exercises iOS WebKit, the `tileflow:` scheme transport, sessio
 offline serving and the maps MapLibre Native draws with Metal, which the hosted simulator renders.
 Hosted iOS simulators crash their GPU process during WebGL draws on both ARM and Intel runners,
 with iOS 18.5 and 26 (rechecked with iOS 26.2 and 26.5 in October 2026); the macOS 26 crash report
-identifies `SimMetalHost` inside `AppleParavirtGPUMetalIOGPUFamily`. The CI run therefore skips
-only `MapIntegrationTests`, which draws the map with the web runtime. Run the command above on a
-local Mac to render it on iOS itself. On failure, Xcode results are retained in the
+identifies `SimMetalHost` inside `AppleParavirtGPUMetalIOGPUFamily`, and the crash also ends the
+maps drawn after it. The CI run therefore skips only `MapIntegrationTests` and
+`MapStyleIntegrationTests`, which draw the map with the web runtime. Run the command above on a
+local Mac to render them on iOS itself. On failure, Xcode results are retained in the
 `swift-integration-results` artifact.
 
 MapLibre Native ships no Mac Catalyst slice, so neither the package nor these tests build for Mac

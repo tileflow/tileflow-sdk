@@ -34,6 +34,9 @@ public class CachedMapHostActivity : ComponentActivity() {
         map =
             TileflowMapView(this).apply {
                 engineKind = Companion.kind
+                // The tests query the middle of the view, where the camera's centre is drawn; the
+                // system bars and a display cutout would move it.
+                automaticallyAdjustsContentPadding = false
                 onEvent = {
                     when (it) {
                         TileflowMapEvent.ContentReady -> loaded.countDown()

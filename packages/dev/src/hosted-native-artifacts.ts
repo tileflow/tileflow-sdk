@@ -1,5 +1,5 @@
 import {createHash} from 'node:crypto';
-import {serializeCanonicalJson, type MapLibreStyle, type TileflowViewConfig} from '@tileflow/core';
+import {type MapLibreStyle, serializeCanonicalJson, type TileflowViewConfig} from '@tileflow/core';
 import {
   inferTileflowDataRequirements,
   inferTileflowSourceRequirements,
@@ -9,9 +9,9 @@ import {
 } from '@tileflow/core/build';
 import {
   createTileflowNativeBuildRecord,
+  createTileflowNativeDiagnostic,
   createTileflowNativeFamily,
   TileflowNativeCompatibilityError,
-  createTileflowNativeDiagnostic,
 } from '@tileflow/core/native-profile';
 import type {TileflowBuildAsset} from './icons';
 import {lowerTileflowNativeCompiledStyles, prepareTileflowNativeStyles} from './native-artifacts';
@@ -25,6 +25,11 @@ type Input = Readonly<{
   view?: TileflowViewConfig;
   /** The map's theme names in declared order, for the family document; sorted when omitted. */
   themes?: readonly string[];
+  /**
+   * An exact HTTP origin the styles may reference, for local development of the API on the
+   * developer's own machine. Hosted publication itself accepts only HTTPS.
+   */
+  developmentOrigin?: string;
 }>;
 const digest = (value: unknown) =>
   createHash('sha256').update(serializeCanonicalJson(value)).digest('hex');
@@ -60,8 +65,9 @@ export async function prepareTileflowHostedNativeDeployment(
     }
   }
   // Lowering already rebinds POI priorities and overlay anchors, exactly as for local artifacts.
-  const lowered = lowerTileflowNativeCompiledStyles({[input.mapId]: validationStyles});
-  const projected = prepareTileflowNativeStyles(lowered.styles, input.assets)[input.mapId]!;
+  const policy = input.developmentOrigin ? {developmentOrigin: input.developmentOrigin} : {};
+  const lowered = lowerTileflowNativeCompiledStyles({[input.mapId]: validationStyles}, policy);
+  const projected = prepareTileflowNativeStyles(lowered.styles, input.assets, policy)[input.mapId]!;
   for (const [name, style] of Object.entries(projected)) {
     for (const sourceId of Object.keys(input.teamSources)) {
       const source = style.sources[sourceId];
@@ -99,22 +105,25 @@ export async function prepareTileflowHostedNativeDeployment(
     }),
   }));
   const themes = input.themes ?? Object.keys(projected).sort();
-  return parseTileflowRendererDeploymentArtifact({
-    kind: 'tileflow-map-deployment',
-    schemaVersion: 2,
-    mapId: input.mapId,
-    teamSources: input.teamSources,
-    ...(input.view ? {view: input.view} : {}),
-    renderers: {
-      web: {buildManifest: input.buildManifest, styles: webStyles},
-      native: {
-        buildManifest: nativeBuild,
-        buildRecord: createTileflowNativeBuildRecord(digest(nativeBuild), transformations),
-        family: createTileflowNativeFamily({map: input.mapId, themes, styles: projected}),
-        styles: projected,
+  return parseTileflowRendererDeploymentArtifact(
+    {
+      kind: 'tileflow-map-deployment',
+      schemaVersion: 2,
+      mapId: input.mapId,
+      teamSources: input.teamSources,
+      ...(input.view ? {view: input.view} : {}),
+      renderers: {
+        web: {buildManifest: input.buildManifest, styles: webStyles},
+        native: {
+          buildManifest: nativeBuild,
+          buildRecord: createTileflowNativeBuildRecord(digest(nativeBuild), transformations),
+          family: createTileflowNativeFamily({map: input.mapId, themes, styles: projected}),
+          styles: projected,
+        },
       },
     },
-  });
+    policy,
+  );
 }
 
 /** The web style's sources that a native style still draws. */

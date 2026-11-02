@@ -1384,13 +1384,12 @@ test('Streets keeps ferries subordinate and limits attributed hillshade to regio
     const source = style.sources['tileflow-terrain'] as Record<string, unknown>;
     assert.equal(source.type, 'raster-dem');
     assert.equal(source.encoding, 'terrarium');
-    assert.equal(source.url, undefined);
-    assert.deepEqual(source.tiles, [
-      'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png',
-    ]);
-    assert.equal(source.maxzoom, 12);
-    assert.equal(source.tileSize, 256);
-    assert.match(String(source.attribution), /tilezen\/joerd/u);
+    // Tileflow Terrain, which Hosted binds to the Map; 512-pixel tiles at the engines' default.
+    assert.match(String(source.url), /^https:\/\/[^/]+\/tiles\/terrain\/tiles\.json$/u);
+    assert.equal(source.tiles, undefined);
+    assert.equal(source.maxzoom, 11);
+    assert.equal(source.tileSize, undefined);
+    assert.match(String(source.attribution), /mapterhorn\.com\/attribution/u);
     assert.equal(style.terrain, undefined);
     const ferry = style.layers.find(({id}) => id.includes('ferry') && !id.includes('label'));
     assert.ok(ferry);

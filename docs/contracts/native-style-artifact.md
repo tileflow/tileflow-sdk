@@ -202,9 +202,18 @@ mix with `mixTileflowSunPresets` (the azimuth turns the short way round) and rou
 - Local builds (`renderer: 'native'`) write `styles/<map>/<theme>.json`, `families/<map>.json`
   and `native-build.json`, and the same files under each `generations/<generation>/` directory.
   From a generation's style, the family document is `../../families/<map>.json`.
-- Hosted deployments carry `renderers.native.family` beside `styles` and `buildRecord`. The parser
-  recomputes the family from the native styles and rejects a document that differs. Native styles
-  may leave out only sources their degradations name.
+- A whole Hosted deployment (`parseTileflowRendererDeploymentArtifact`, schema 2) carries
+  `renderers.native.family` beside `styles` and `buildRecord`. The parser recomputes the family
+  from the native styles and rejects a document that differs. Native styles may leave out only
+  sources their degradations name.
+- It travels split (`splitTileflowRendererDeployment`): the request (schema 3) carries the web
+  family plus the native build manifest, build record and `documents`, the SHA-256 and size of
+  each native style and of the family document with its theme order; each document is then
+  uploaded on its own as the exact canonical JSON the index names. Budgets are measured on those
+  decoded bytes: 16 MiB for the request, 8 MiB for each document and 32 MiB for every native
+  style plus the family document. `tileflowRendererDeploymentResponseSchema` (schema 3, with the
+  family document's address and revision), `tileflowRendererDeploymentPendingSchema` (the
+  documents still missing) and `tileflowNativeDocumentReceiptSchema` describe the answers.
 - An offline style pack that holds a map's native theme styles also holds its family document.
 
 ## Evaluator fixtures

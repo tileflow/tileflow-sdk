@@ -229,13 +229,17 @@ npx tileflow status --map-id map_AbCdEfGhIjKlMnOp
 
 Without `--map-id`, a logged-in `deploy` first creates the Map in the Team you administer (it asks,
 or takes `--team @team`, when several qualify) with the browser access you choose: exact origins
-with `--origin`, or `--any-website`. It prints the Map ID to use for later deploys;
+with `--origin` (websites, or an app's WebView origin such as `myapp://app`), or `--any-website`.
+It prints the Map ID to use for later deploys;
 `tileflow maps create` creates the Map without deploying. The Map ID is a public identifier, not a
 credential or the portable `id` in your config. CI always deploys an existing Map with a deploy key
 for that destination. `logout` removes the saved personal session.
 
-Deploy publishes the compiled concrete-theme family and managed icon assets; it does not ask the
-server to compile TypeScript. Repeating an unchanged deployment reuses its version. Build writers
+Deploy publishes the compiled concrete-theme family for web and native apps, with its managed
+icon, font and model assets; it does not ask the server to compile TypeScript. Native styles leave
+out what MapLibre Native cannot draw, and deploy lists those differences without blocking. An
+interrupted deploy resumes when run again, and repeating an unchanged deployment reuses its
+version ([publication protocol](docs/native-artifacts.md#publish-to-hosted-for-web-and-native-apps)). Build writers
 refuse to overwrite hosted manifests by default, and deploy refuses to replace a self-hosted
 manifest without explicit authorization. Keep separate outputs, or use the documented overwrite
 option only for an intentional migration.

@@ -278,3 +278,72 @@ test('Hosted native styles leave out browser contours, add building extrusions a
   // The web family keeps every source and layer.
   assert.equal((parsed.renderers.web.styles.light as MapLibreStyle).layers.length, 3);
 });
+
+/** A map of `themes` whose native styles together outgrow one document, with its tree models. */
+function largeFixture(themes: readonly string[], padding: number) {
+  const input = fixture();
+  const styles: Record<string, MapLibreStyle> = {};
+  const builds: TileflowMapBuildManifestV1['maps'][string]['themes'] = {};
+  for (const theme of themes) {
+    const style = structuredClone(input.styles.light);
+    style.metadata = {
+      ...style.metadata,
+      'tileflow:theme': theme,
+      'example:notes': 'x'.repeat(padding),
+    };
+    styles[theme] = style;
+    builds[theme] = {
+      colorScheme: 'light',
+      dataRequirements: inferTileflowDataRequirements(style),
+      sourceRequirements: inferTileflowSourceRequirements(style),
+      styleSha256: digest(style),
+      themeId: theme,
+      themeVersion: 1,
+    };
+  }
+  const map = input.buildManifest.maps.main!;
+  map.defaultTheme = themes[0]!;
+  map.themes = builds;
+  map.sourceAssets = {
+    ...map.sourceAssets,
+    models: [
+      {id: 'street-tree', level: 'far', sha256: 'c'.repeat(64)},
+      {id: 'street-tree', level: 'near', sha256: 'd'.repeat(64)},
+    ],
+  };
+  return {...input, styles, themes};
+}
+
+test('a map whose native styles outgrow one document prepares within the per-document budgets', async () => {
+  // Three themes of 3 MiB each: past one 8 MiB document together, within 32 MiB.
+  const input = largeFixture(['dawn', 'dusk', 'light'], 3 * 1024 * 1024);
+  const prepared = await prepareTileflowHostedNativeDeployment(input);
+  const sizes = Object.values(prepared.renderers.native.styles).map((style) =>
+    Buffer.byteLength(serializeCanonicalJson(style)),
+  );
+  assert.ok(sizes.reduce((total, size) => total + size, 0) > 8 * 1024 * 1024);
+  assert.deepEqual(
+    prepared.renderers.native.family.themes.map(({name}) => name),
+    ['dawn', 'dusk', 'light'],
+  );
+  assert.equal(prepared.renderers.web.buildManifest.maps.main!.sourceAssets.models?.length, 2);
+});
+
+test('a loopback HTTP API is accepted only as an explicit development origin', async () => {
+  const input = fixture();
+  input.styles.light.sources.tileflow = {
+    type: 'vector',
+    url: 'http://127.0.0.1:8787/tiles/world/tiles.json',
+  };
+  input.buildManifest.maps.main!.themes.light!.styleSha256 = digest(input.styles.light);
+  await assert.rejects(prepareTileflowHostedNativeDeployment(input));
+  const prepared = await prepareTileflowHostedNativeDeployment({
+    ...input,
+    developmentOrigin: 'http://127.0.0.1:8787',
+  });
+  assert.equal(
+    prepared.renderers.native.styles.light!.sources.tileflow?.url,
+    'http://127.0.0.1:8787/tiles/world/tiles.json',
+  );
+  await assert.rejects(parseTileflowRendererDeploymentArtifact(prepared));
+});

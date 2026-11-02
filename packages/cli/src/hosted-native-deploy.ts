@@ -7,12 +7,20 @@ import {
 } from '@tileflow/core';
 import {
   createTileflowMapBuildManifest,
-  parseTileflowRendererDeploymentArtifact,
+  splitTileflowRendererDeployment,
   type TileflowBuildCatalog,
   type TileflowRendererDeploymentArtifact,
-  tileflowRendererDeploymentResponseSchema,
+  type TileflowRendererDeploymentResponse,
 } from '@tileflow/core/build';
-import {parseTileflowRuntimeManifest, type TileflowRuntimeManifest} from '@tileflow/core/manifest';
+import {
+  parseTileflowRuntimeManifest,
+  type TileflowRuntimeManifest,
+  type TileflowRuntimeManifestMapEntry,
+} from '@tileflow/core/manifest';
+import {
+  type TileflowNativeCapability,
+  type TileflowNativeFamily,
+} from '@tileflow/core/native-profile';
 import {
   createTileflowBuildProvenance,
   createTileflowStyles,
@@ -20,172 +28,172 @@ import {
   prepareTileflowLocalTilesets,
 } from '@tileflow/dev/artifacts';
 import {
-  assertValidTileflowConfig,
-  getTileflowMapNames,
-  loadTileflowConfigWithInputs,
-} from '@tileflow/dev/config';
-import {prepareTileflowStyleFonts} from '@tileflow/dev/fonts';
-import {type CompiledTileflowIconPackage, compileTileflowIconPackages} from '@tileflow/dev/icons';
+  bindTileflowStyleFontBundle,
+  type CompiledTileflowFontBundle,
+  prepareTileflowStyleFonts,
+} from '@tileflow/dev/fonts';
+import {
+  type CompiledTileflowIconPackage,
+  compileTileflowIconPackages,
+  type TileflowIconResolutionOptions,
+} from '@tileflow/dev/icons';
 import {normalizeApiOrigin} from './account-session';
-import {withTileflowConfigSecretsHidden} from './config-execution';
 import type {DeploySource} from './deploy-source';
 import {
   type HostedApi,
+  HostedDeploymentError,
+  type HostedRendererDeploymentEvent,
   type HostedRequestOptions,
-  requestHostedJson,
+  publishHostedRendererDeployment,
+  uploadHostedFontBundle,
   uploadHostedIconPackage,
 } from './hosted-client';
 import {
   inspectTileflowHostedCompatibility,
   prepareTileflowHostedThemeFamily,
 } from './hosted-preflight';
-import {prepareModelAssets} from './model-assets';
+import {
+  compiledMapAssets,
+  hostedModelSourceIdentities,
+  mapAssetsWithBuildingModels,
+  prepareModelAssets,
+  teamModelSources,
+} from './model-assets';
+
+export {HostedDeploymentError} from './hosted-client';
 
 type IconCompilation = Awaited<ReturnType<typeof compileTileflowIconPackages>>;
-export type NativeHostedDeployOptions = Readonly<{
-  apiUrl: string;
-  config: string;
-  manifest: string;
-  mapId?: string;
-  map?: string;
-  cacheDir?: string;
-  offline?: boolean;
-  overwriteSelfHostedManifest?: boolean;
-}>;
-export type PreparedNativeDeploy = Readonly<{
+type TeamModelSources = NonNullable<ReturnType<typeof teamModelSources>>;
+
+/** Hosted publication could not start: the local config is not Hosted-compatible. */
+export class HostedCompatibilityError extends Error {
+  readonly issues: readonly string[];
+  constructor(issues: readonly string[]) {
+    super('Tileflow config is not Hosted-compatible.');
+    this.name = 'HostedCompatibilityError';
+    this.issues = issues;
+  }
+}
+
+/** True for an API origin a Hosted deploy may publish to: HTTPS, or HTTP on a loopback host. */
+export function isHostedDeployOrigin(origin: string): boolean {
+  const url = new URL(origin);
+  return (
+    url.protocol === 'https:' ||
+    (url.protocol === 'http:' && ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname))
+  );
+}
+
+export type HostedDeployPreparationInput = Readonly<{
+  project: TileflowBuildCatalog;
+  configFile: string;
   mapName: string;
-  artifact: TileflowRendererDeploymentArtifact;
+  /** The normalized API origin; preflight asset addresses use it. */
+  apiUrl: string;
+  icons?: TileflowIconResolutionOptions;
+}>;
+
+/** Everything a Hosted deploy prepares before any credential or network request. */
+export type PreparedHostedDeploy = Readonly<{
+  mapName: string;
+  /** Both renderer families with preflight asset addresses. It is never published. */
+  preflight: TileflowRendererDeploymentArtifact;
   packages: readonly CompiledTileflowIconPackage[];
   iconBinding?: IconCompilation['bindings'][number];
   iconComposition?: IconCompilation['compositions'][string];
-  retarget(sprites: ReadonlyMap<string, string>): Promise<TileflowRendererDeploymentArtifact>;
+  fontBundle?: CompiledTileflowFontBundle;
+  /** The glTF binaries each placed building model was prepared from, for the server to compare. */
+  teamModelSources?: TeamModelSources;
+  /**
+   * Both renderer families bound to the uploaded sprite and font files. The frozen compiled styles
+   * are reused: the config is not evaluated again and only these asset addresses change.
+   */
+  retarget(
+    assets: Readonly<{sprite?: string; fontBaseUrl?: string}>,
+  ): Promise<TileflowRendererDeploymentArtifact>;
   dispose(): Promise<void>;
 }>;
-type Ports = Readonly<{
-  source: DeploySource;
-  resolveApi(mapName: string): Promise<HostedApi | null>;
-  loadManifest(
-    path: string,
-    options: {overwriteSelfHosted: boolean},
-  ): Promise<TileflowRuntimeManifest | null>;
-  writeManifest(path: string, manifest: TileflowRuntimeManifest): Promise<string>;
-  prepare?(options: NativeHostedDeployOptions): Promise<PreparedNativeDeploy>;
-  uploadIcon?: typeof uploadHostedIconPackage;
-  request?: HostedRequestOptions;
-}>;
 
-function failure(message: string): Error {
-  return Object.assign(new Error(message), {code: 'TF_NATIVE_DEPLOYMENT_INVALID'});
-}
-function requireNativeTarget(options: NativeHostedDeployOptions): {
-  apiOrigin: string;
-  mapId: string;
-} {
-  if (!options.mapId || !/^map_[A-Za-z0-9_-]{16}$/u.test(options.mapId))
-    throw failure('--with-native requires one valid --map-id.');
-  const apiOrigin = normalizeApiOrigin(options.apiUrl);
-  if (!apiOrigin.startsWith('https://'))
-    throw failure('Hosted Native deployment requires an HTTPS API origin.');
-  return {apiOrigin, mapId: options.mapId};
-}
-
-/** Config and both renderer preflights complete without an authenticated remote-write capability. */
-export async function prepareNativeHostedDeploy(
-  options: NativeHostedDeployOptions,
-): Promise<PreparedNativeDeploy> {
-  const {apiOrigin} = requireNativeTarget(options);
-  const loaded = await withTileflowConfigSecretsHidden(() =>
-    loadTileflowConfigWithInputs(options.config),
-  );
-  assertValidTileflowConfig(loaded.project);
-  const names = getTileflowMapNames(loaded.project);
-  const mapName = options.map ?? (names.length === 1 ? names[0] : undefined);
-  if (!mapName || !names.includes(mapName))
-    throw failure('Select one configured map with --map for this Native deployment.');
-  const map = loaded.project.maps[mapName]!;
-  const project: TileflowBuildCatalog = {...loaded.project, maps: {[mapName]: map}};
-  const baseDirectory = dirname(loaded.configFile);
+/**
+ * Compile one map for Hosted publication and prepare both renderer families from it: the web
+ * family and the native family MapLibre Native draws on iOS and Android. Native preparation leaves
+ * out and records what native maps cannot draw; it fails only for a theme it cannot prepare at all.
+ * Nothing here authenticates or touches the network.
+ */
+export async function prepareHostedDeploy(
+  input: HostedDeployPreparationInput,
+): Promise<PreparedHostedDeploy> {
+  const {mapName, apiUrl} = input;
+  const map = input.project.maps[mapName];
+  if (!map) throw new Error(`Unknown Tileflow map: ${mapName}.`);
+  const project: TileflowBuildCatalog = {...input.project, maps: {[mapName]: map}};
+  const baseDirectory = dirname(input.configFile);
+  const cwd = process.cwd();
   const compiledIcons = await compileTileflowIconPackages(project, {
     baseDirectory,
-    cwd: process.cwd(),
+    cwd,
     target: 'hosted',
-    icons: {
-      ...(options.cacheDir ? {cacheRoot: options.cacheDir} : {}),
-      ...(options.offline ? {offline: true} : {}),
-    },
+    ...(input.icons ? {icons: input.icons} : {}),
   });
   const binding = compiledIcons.bindings.find((entry) => entry.mapName === mapName);
   const iconPackage = binding
     ? compiledIcons.packages.find((entry) => entry.contentHash === binding.packageHash)
     : undefined;
-  const sprite = binding
-    ? `${apiOrigin}/sprites/preflight/${binding.packageHash}/sprite`
-    : undefined;
+  const preflightSprite = (packageHash: string) =>
+    `${apiUrl}/sprites/preflight/${packageHash}/sprite`;
   const modelAssets = await prepareModelAssets(project, {baseDirectory, target: 'hosted'});
-  // Native styles leave building models out and record it, but a renderer deployment does not
-  // bind the web family's Team 3D models yet.
-  if (modelAssets.buildings[mapName])
-    throw failure(
-      "A deployment with --with-native does not bind a map's own 3D building models yet. Deploy without --with-native, or remove them from the map's models directories.",
-    );
-  const mapAssets = {
-    ...modelAssets.assets,
-    ...Object.fromEntries(
-      compiledIcons.bindings.map((entry) => [
-        entry.mapName,
-        {
-          ...modelAssets.assets[entry.mapName],
-          icons: {
-            ids: entry.iconIds,
-            sprite: `${apiOrigin}/sprites/preflight/${entry.packageHash}/sprite`,
-          },
-        },
-      ]),
+  const styles = createTileflowStyles(project, {
+    apiBaseUrl: apiUrl,
+    mapAssets: compiledMapAssets(
+      compiledIcons,
+      (entry) => preflightSprite(entry.packageHash),
+      mapAssetsWithBuildingModels(modelAssets, {hosted: true}),
     ),
-  };
-  const styles = createTileflowStyles(project, {apiBaseUrl: apiOrigin, mapAssets});
+  });
   const local = await prepareTileflowLocalTilesets(project, styles, {
-    assetBaseUrl: apiOrigin,
+    assetBaseUrl: apiUrl,
     baseDirectory,
-    cwd: process.cwd(),
+    cwd,
   });
   try {
     const fonts = await prepareTileflowStyleFonts(project, local.styles, {
-      assetBaseUrl: `${apiOrigin}/fonts/preflight`,
+      assetBaseUrl: `${apiUrl}/font-bundles/preflight`,
       baseDirectory,
-      cwd: process.cwd(),
+      cwd,
       target: 'hosted',
     });
-    if (inspectTileflowHostedCompatibility(project, fonts.styles).length)
-      throw failure('Hosted renderer deployment requires compatible Tileflow World sources.');
-    // Preserve the existing Hosted web-font limitation; --with-native cannot bypass it.
-    if (Object.keys(fonts.bundles).length)
-      throw failure(
-        'Hosted deploy does not yet support package-owned web fonts. Use an explicit public glyph provider.',
-      );
-    const assets = (iconPackage?.files ?? []).map((file) => ({
-      contentType: file.contentType,
-      fileName: `icons/${mapName}/${file.fileName}`,
-      source: file.source,
-    }));
-    const provenance = await createTileflowBuildProvenance(process.cwd());
+    const issues = inspectTileflowHostedCompatibility(project, fonts.styles);
+    if (issues.length) throw new HostedCompatibilityError(issues.map(({message}) => message));
+    const fontBundle = fonts.bundles[mapName];
+    const assets = [
+      ...(iconPackage?.files ?? []).map((file) => ({
+        contentType: file.contentType,
+        fileName: `icons/${mapName}/${file.fileName}`,
+        source: file.source,
+      })),
+      ...(fontBundle?.files ?? []),
+    ];
+    const models = hostedModelSourceIdentities(modelAssets, mapName);
+    const provenance = await createTileflowBuildProvenance(cwd);
     const resolved = parseResolvedTileflowMap(map);
-    const inputStyles: Record<string, MapLibreStyle> = JSON.parse(
+    const compiled: Record<string, MapLibreStyle> = JSON.parse(
       serializeCanonicalJson(fonts.styles[mapName]!),
     );
-    const createArtifact = async (selectedSprite: string | undefined) => {
-      const selected: Record<string, MapLibreStyle> = JSON.parse(
-        serializeCanonicalJson(inputStyles),
-      );
-      if (binding) {
-        if (!sprite || !selectedSprite) throw failure('Missing confirmed sprite binding.');
-        for (const style of Object.values(selected)) {
-          if (style.sprite !== sprite)
-            throw failure('Compiled sprite identity changed before publication.');
-          style.sprite = selectedSprite;
+    const sprite = binding ? preflightSprite(binding.packageHash) : undefined;
+    const createArtifact = async (selected: Readonly<{sprite?: string; fontBaseUrl?: string}>) => {
+      const themeStyles: Record<string, MapLibreStyle> = {};
+      for (const [theme, source] of Object.entries(compiled)) {
+        let style: MapLibreStyle = JSON.parse(serializeCanonicalJson(source));
+        if (binding) {
+          if (!selected.sprite || style.sprite !== sprite)
+            throw new HostedDeploymentError('The compiled sprite changed before publication.');
+          style.sprite = selected.sprite;
         }
+        if (fontBundle && selected.fontBaseUrl)
+          style = bindTileflowStyleFontBundle(style, fontBundle, selected.fontBaseUrl);
+        themeStyles[theme] = style;
       }
-      const family = prepareTileflowHostedThemeFamily(mapName, map, selected);
+      const family = prepareTileflowHostedThemeFamily(mapName, map, themeStyles);
       const buildManifest = await createTileflowMapBuildManifest(
         {
           [mapName]: {
@@ -200,6 +208,7 @@ export async function prepareNativeHostedDeploy(
               ...(compiledIcons.compositions[mapName]
                 ? {iconComposition: compiledIcons.compositions[mapName]}
                 : {}),
+              ...(models ? {models} : {}),
             },
             styles: family.styles,
           },
@@ -214,21 +223,23 @@ export async function prepareNativeHostedDeploy(
         assets,
         themes: Object.keys(resolved.themes),
         ...(resolved.view ? {view: resolved.view} : {}),
+        // A loopback HTTP API serves local development; Hosted itself accepts only HTTPS.
+        ...(apiUrl.startsWith('http:') ? {developmentOrigin: apiUrl} : {}),
       });
     };
-    const artifact = await createArtifact(sprite);
+    const preflight = await createArtifact(sprite ? {sprite} : {});
+    const placed = teamModelSources(modelAssets, mapName);
     return {
       mapName,
-      artifact,
+      preflight,
       packages: compiledIcons.packages,
       ...(binding ? {iconBinding: binding} : {}),
       ...(compiledIcons.compositions[mapName]
         ? {iconComposition: compiledIcons.compositions[mapName]}
         : {}),
-      async retarget(sprites) {
-        // Same frozen compiled input, not another config evaluation. Only an owned sprite URL changes.
-        return binding ? createArtifact(sprites.get(binding.packageHash)) : artifact;
-      },
+      ...(fontBundle ? {fontBundle} : {}),
+      ...(placed ? {teamModelSources: placed} : {}),
+      retarget: createArtifact,
       dispose: local.dispose,
     };
   } catch (error) {
@@ -237,160 +248,281 @@ export async function prepareNativeHostedDeploy(
   }
 }
 
-/** An opt-in sibling of schema-1 deploy, reusing its authorization, transport and atomic file ports. */
-export async function runHostedNativeDeploy(options: NativeHostedDeployOptions, ports: Ports) {
-  const {apiOrigin, mapId} = requireNativeTarget(options);
-  const prepared = await (ports.prepare ?? prepareNativeHostedDeploy)({
-    ...options,
-    apiUrl: apiOrigin,
-  });
+/** What a Hosted deploy reports while it publishes. */
+export type HostedDeployEvent =
+  | Readonly<{
+      kind: 'icon-package';
+      label: string;
+      icons: number;
+      bytes: number;
+      contentHash: string;
+      changed: boolean;
+    }>
+  | Readonly<{
+      kind: 'font-bundle';
+      faces: number;
+      bytes: number;
+      contentHash: string;
+      changed: boolean;
+    }>
+  | Readonly<{kind: 'publishing'; mapName: string; themes: number; bytes: number}>
+  | HostedRendererDeploymentEvent;
+
+export type HostedDeployOptions = Readonly<{
+  /** The normalized API origin. */
+  apiUrl: string;
+  manifest: string;
+  overwriteSelfHostedManifest?: boolean;
+}>;
+
+export type HostedDeployPorts = Readonly<{
+  source: DeploySource;
+  loadManifest(
+    path: string,
+    options: {overwriteSelfHosted: boolean},
+  ): Promise<TileflowRuntimeManifest | null>;
+  /**
+   * The managed Map and a credential for it, after every local check: an existing `--map-id`, or a
+   * Map created for this deploy. `null` after the port has said why there is none.
+   */
+  resolveTarget(
+    input: Readonly<{mapName: string; existing: TileflowRuntimeManifest | null}>,
+  ): Promise<HostedApi | null>;
+  writeManifest(path: string, manifest: TileflowRuntimeManifest): Promise<string>;
+  progress?(event: HostedDeployEvent): void;
+  uploadIcon?: typeof uploadHostedIconPackage;
+  uploadFont?: typeof uploadHostedFontBundle;
+  request?: HostedRequestOptions;
+  sleep?(milliseconds: number): Promise<unknown>;
+}>;
+
+/** One way native apps draw a map differently from the web, over the themes it applies to. */
+export type NativeDifference = Readonly<{
+  capability: TileflowNativeCapability;
+  fallback: string;
+  /** The affected themes, in declared order; every theme of the map when `all`. */
+  themes: readonly string[];
+  all: boolean;
+}>;
+
+export type HostedDeployResult = Readonly<{
+  manifestPath: string;
+  mapName: string;
+  mapId: string;
+  deploymentId: string;
+  version: number;
+  changed: boolean;
+  entry: TileflowRuntimeManifestMapEntry;
+  nativeManifestUrl: string;
+  nativeDifferences: readonly NativeDifference[];
+  teamModels: NonNullable<TileflowRendererDeploymentResponse['teamModels']>;
+}>;
+
+/**
+ * Publish a prepared map to its managed Map with both renderer families, then write the frontend
+ * manifest. Existing-manifest checks run before the target is resolved, uploads run only after
+ * it, and a failure leaves the previous manifest in place. Repeating the same deploy resumes an
+ * interrupted publication.
+ */
+export async function runHostedDeploy(
+  prepared: PreparedHostedDeploy,
+  options: HostedDeployOptions,
+  ports: HostedDeployPorts,
+): Promise<HostedDeployResult | null> {
   try {
-    // Validate injected and production preparations identically before authentication or uploads.
-    const preflight = await parseTileflowRendererDeploymentArtifact(prepared.artifact);
-    if (preflight.mapId !== prepared.mapName)
-      throw failure('The prepared map does not match its artifact.');
-    const existing = await ports.loadManifest(options.manifest, {
-      overwriteSelfHosted: options.overwriteSelfHostedManifest === true,
-    });
+    const apiOrigin = normalizeApiOrigin(options.apiUrl);
+    let existing: TileflowRuntimeManifest | null;
+    try {
+      existing = await ports.loadManifest(options.manifest, {
+        overwriteSelfHosted: options.overwriteSelfHostedManifest === true,
+      });
+    } catch (error) {
+      throw new HostedDeploymentError(
+        error instanceof Error ? error.message : 'Existing manifest is invalid.',
+      );
+    }
     const previousOrigin =
       existing?.apiUrl ?? (existing ? Object.values(existing.maps)[0]?.apiUrl : undefined);
     if (previousOrigin !== undefined && normalizeApiOrigin(previousOrigin) !== apiOrigin)
-      throw failure('Existing manifest belongs to a different Tileflow API origin.');
-    const api = await ports.resolveApi(prepared.mapName);
+      throw new HostedDeploymentError(
+        'Existing manifest belongs to a different Tileflow API origin.',
+      );
+    const api = await ports.resolveTarget({mapName: prepared.mapName, existing});
     if (!api) return null;
     if (
-      api.apiUrl !== apiOrigin ||
-      api.mapId !== mapId ||
+      normalizeApiOrigin(api.apiUrl) !== apiOrigin ||
+      !api.mapId ||
+      !/^map_[A-Za-z0-9_-]{16}$/u.test(api.mapId) ||
       !api.apiKey ||
       api.apiKey.length > 8192 ||
       /[\p{Cc}]/u.test(api.apiKey)
     )
-      throw failure('Authorization did not confirm the requested API and Map.');
+      throw new HostedDeploymentError('Authorization did not confirm the requested API and Map.');
+    const mapId = api.mapId;
+
     const sprites = new Map<string, string>();
     for (const icon of prepared.packages) {
       if (sprites.has(icon.contentHash)) continue;
-      let uploaded;
-      try {
-        uploaded = await (ports.uploadIcon ?? uploadHostedIconPackage)(api, icon, ports.request);
-      } catch {
-        throw failure('Native deployment icon upload failed. The local manifest was preserved.');
-      }
+      const uploaded = await transferred('Icon package upload', () =>
+        (ports.uploadIcon ?? uploadHostedIconPackage)(api, icon, ports.request),
+      );
       if (!uploaded.ok)
-        throw failure('Native deployment icon upload failed. Retry the same artifact.');
+        throw new HostedDeploymentError(`Icon package upload failed: ${uploaded.status}.`, {
+          resumable: uploaded.status >= 500,
+          status: uploaded.status,
+        });
       const expected = `${apiOrigin}/sprites/${uploaded.value.id}/sprite`;
       if (uploaded.value.contentHash !== icon.contentHash || uploaded.value.spriteUrl !== expected)
-        throw failure('Icon publication did not confirm the owned resource and origin.');
+        throw new HostedDeploymentError(
+          'Icon publication did not confirm the owned resource and origin.',
+        );
+      ports.progress?.({
+        kind: 'icon-package',
+        label:
+          prepared.iconBinding?.packageHash === icon.contentHash
+            ? prepared.iconBinding.label
+            : 'Icons',
+        icons: icon.manifest.iconNames.length,
+        bytes: icon.manifest.files.reduce((total, file) => total + file.byteLength, 0),
+        contentHash: icon.contentHash,
+        changed: uploaded.value.changed !== false,
+      });
       sprites.set(icon.contentHash, expected);
     }
-    const artifact = await parseTileflowRendererDeploymentArtifact(
-      await prepared.retarget(sprites),
-    );
-    if (
-      artifact.mapId !== preflight.mapId ||
-      artifact.renderers.web.buildManifest.maps[artifact.mapId]!.mapRevisionSha256 !==
-        preflight.renderers.web.buildManifest.maps[preflight.mapId]!.mapRevisionSha256
-    )
-      throw failure('Authored map identity changed after preflight.');
+    let fontBaseUrl: string | undefined;
+    if (prepared.fontBundle) {
+      const bundle = prepared.fontBundle;
+      const uploaded = await transferred('Font bundle upload', () =>
+        (ports.uploadFont ?? uploadHostedFontBundle)(api, bundle, ports.request),
+      );
+      if (!uploaded.ok)
+        throw new HostedDeploymentError(`Font bundle upload failed: ${uploaded.status}.`, {
+          resumable: uploaded.status >= 500,
+          status: uploaded.status,
+        });
+      if (new URL(uploaded.value.baseUrl).origin !== apiOrigin)
+        throw new HostedDeploymentError(
+          'Font bundle publication did not confirm the owned resource and origin.',
+        );
+      ports.progress?.({
+        kind: 'font-bundle',
+        faces: bundle.manifest.fontFaces.length,
+        bytes: uploaded.value.totalBytes,
+        contentHash: bundle.contentHash,
+        changed: uploaded.value.changed !== false,
+      });
+      fontBaseUrl = uploaded.value.baseUrl;
+    }
+
     const iconPackage = prepared.iconBinding
       ? prepared.packages.find((entry) => entry.contentHash === prepared.iconBinding!.packageHash)
       : undefined;
+    const sprite = iconPackage ? sprites.get(iconPackage.contentHash) : undefined;
+    const artifact = await prepared.retarget({
+      ...(sprite ? {sprite} : {}),
+      ...(fontBaseUrl ? {fontBaseUrl} : {}),
+    });
+    const preflightMap = prepared.preflight.renderers.web.buildManifest.maps[prepared.mapName];
+    const build = artifact.renderers.web.buildManifest.maps[artifact.mapId];
+    if (
+      artifact.mapId !== prepared.mapName ||
+      !build ||
+      build.mapRevisionSha256 !== preflightMap?.mapRevisionSha256
+    )
+      throw new HostedDeploymentError('Authored map identity changed after preflight.');
     if (
       prepared.iconComposition &&
       prepared.iconComposition.packageHash !== iconPackage?.contentHash
     )
-      throw failure('Icon composition does not match the confirmed effective package.');
-    let response;
-    try {
-      response = await requestHostedJson(
-        apiOrigin,
-        '/v1/styles',
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${api.apiKey}`,
-            'X-Tileflow-Map-Id': mapId,
-            'Content-Type': 'application/json',
-          },
-          body: serializeCanonicalJson({
-            artifact,
-            environment: prepared.mapName,
-            managedMapId: mapId,
-            usageMode: 'session',
-            source: ports.source,
-            ...(iconPackage && prepared.iconBinding
-              ? {
-                  iconPackage: {
-                    contentHash: iconPackage.contentHash,
-                    label: prepared.iconBinding.label,
-                  },
-                }
-              : {}),
-            ...(prepared.iconComposition ? {iconComposition: prepared.iconComposition} : {}),
-          }),
-        },
-        ports.request,
+      throw new HostedDeploymentError(
+        'Icon composition does not match the confirmed effective package.',
       );
+    let split;
+    try {
+      split = await splitTileflowRendererDeployment(artifact);
     } catch {
-      throw failure(
-        'Renderer deployment response was unavailable. Retry the same artifact; the local manifest was preserved.',
+      throw new HostedDeploymentError(
+        'The map exceeds a Hosted deployment budget: 16 MiB for the web request, 8 MiB for each native document or 32 MiB for the native family.',
       );
     }
-    if (!response.ok || !response.json)
-      throw failure('Renderer deployment failed. The local manifest was preserved.');
-    const parsed = tileflowRendererDeploymentResponseSchema.safeParse(response.body);
-    if (!parsed.success)
-      throw failure('Invalid renderer deployment response. The local manifest was preserved.');
-    const result = parsed.data;
+    const body = {
+      artifact: split.artifact,
+      environment: prepared.mapName,
+      managedMapId: mapId,
+      usageMode: 'session',
+      source: ports.source,
+      ...(iconPackage && prepared.iconBinding
+        ? {iconPackage: {contentHash: iconPackage.contentHash, label: prepared.iconBinding.label}}
+        : {}),
+      ...(prepared.iconComposition ? {iconComposition: prepared.iconComposition} : {}),
+      ...(prepared.fontBundle ? {fontBundle: {contentHash: prepared.fontBundle.contentHash}} : {}),
+      ...(prepared.teamModelSources ? {teamModelSources: prepared.teamModelSources} : {}),
+    };
     const names = Object.keys(artifact.renderers.web.styles).sort();
-    const expectedManifestUrl = `${apiOrigin}/maps/${mapId}/native/manifest.json`;
+    ports.progress?.({
+      kind: 'publishing',
+      mapName: prepared.mapName,
+      themes: names.length,
+      bytes: new TextEncoder().encode(serializeCanonicalJson(body)).byteLength,
+    });
+    const result = await publishHostedRendererDeployment(
+      api,
+      {body, split},
+      {
+        ...(ports.request ? {request: ports.request} : {}),
+        ...(ports.progress ? {onProgress: ports.progress} : {}),
+        ...(ports.sleep ? {sleep: ports.sleep} : {}),
+      },
+    );
+
+    const nativeManifestUrl = `${apiOrigin}/maps/${mapId}/native/manifest.json`;
     if (
       result.mapId !== mapId ||
-      result.renderers.native.manifestUrl !== expectedManifestUrl ||
-      names.join('\0') !== Object.keys(result.renderers.web.themes).sort().join('\0') ||
-      names.join('\0') !== Object.keys(result.renderers.native.themes).sort().join('\0')
+      result.renderers.native.manifestUrl !== nativeManifestUrl ||
+      names.join('\0') !== Object.keys(result.renderers.web.themes).sort().join('\0')
     )
-      throw failure(
-        'Renderer deployment did not confirm the requested Map and complete theme families.',
+      throw new HostedDeploymentError(
+        'The deployment did not confirm the requested Map and its complete theme family.',
       );
     for (const name of names) {
-      if (
-        result.renderers.web.themes[name]!.styleUrl !== `${apiOrigin}/maps/${mapId}/${name}.json` ||
-        result.renderers.native.themes[name]!.styleUrl !==
-          `${apiOrigin}/maps/${mapId}/native/v${result.version}/${name}.json`
-      )
-        throw failure('Renderer deployment returned an unexpected delivery route.');
+      if (result.renderers.web.themes[name]!.styleUrl !== `${apiOrigin}/maps/${mapId}/${name}.json`)
+        throw new HostedDeploymentError('The deployment returned an unexpected delivery route.');
     }
-    const build = artifact.renderers.web.buildManifest.maps[artifact.mapId]!;
+
+    const entry: TileflowRuntimeManifestMapEntry = {
+      defaultTheme: build.defaultTheme,
+      environment: prepared.mapName,
+      mapId,
+      ...(build.systemThemes ? {systemThemes: build.systemThemes} : {}),
+      ...(build.timeOfDay && Object.keys(build.timeOfDay).length
+        ? {timeOfDay: build.timeOfDay}
+        : {}),
+      themes: Object.fromEntries(
+        names.map((name) => {
+          const deployed = result.renderers.web.themes[name]!;
+          return [
+            name,
+            {
+              colorScheme: build.themes[name]!.colorScheme,
+              fontFaces: getTileflowStyleFontFaces(
+                artifact.renderers.web.styles[name] as MapLibreStyle,
+              ),
+              revision: build.themes[name]!.styleSha256,
+              ...(deployed.styleId ? {styleId: deployed.styleId} : {}),
+              styleUrl: deployed.styleUrl,
+            },
+          ];
+        }),
+      ),
+      ...(artifact.view ? {view: artifact.view} : {}),
+      usageMode: 'session',
+      worldGeneration: 'v1',
+    };
+    const maps = {...(existing?.maps ?? {}), [prepared.mapName]: entry};
     const manifest = parseTileflowRuntimeManifest({
       apiUrl: apiOrigin,
-      version:
-        build.timeOfDay || Object.values(existing?.maps ?? {}).some((map) => map.timeOfDay) ? 2 : 1,
-      maps: {
-        ...(existing?.maps ?? {}),
-        [prepared.mapName]: {
-          defaultTheme: build.defaultTheme,
-          environment: prepared.mapName,
-          mapId,
-          ...(build.systemThemes ? {systemThemes: build.systemThemes} : {}),
-          ...(build.timeOfDay ? {timeOfDay: build.timeOfDay} : {}),
-          ...(artifact.view ? {view: artifact.view} : {}),
-          usageMode: 'session',
-          worldGeneration: 'v1',
-          themes: Object.fromEntries(
-            names.map((name) => [
-              name,
-              {
-                colorScheme: build.themes[name]!.colorScheme,
-                fontFaces: getTileflowStyleFontFaces(
-                  artifact.renderers.web.styles[name] as MapLibreStyle,
-                ),
-                revision: build.themes[name]!.styleSha256,
-                ...result.renderers.web.themes[name],
-              },
-            ]),
-          ),
-        },
-      },
+      maps,
+      version: Object.values(maps).some((value) => value.timeOfDay) ? 2 : 1,
     });
     const manifestPath = await ports.writeManifest(options.manifest, manifest);
     return Object.freeze({
@@ -400,9 +532,83 @@ export async function runHostedNativeDeploy(options: NativeHostedDeployOptions, 
       deploymentId: result.deploymentId,
       version: result.version,
       changed: result.changed,
-      nativeManifestUrl: expectedManifestUrl,
+      entry,
+      nativeManifestUrl,
+      nativeDifferences: summarizeNativeDifferences(artifact.renderers.native.family),
+      teamModels: result.teamModels ?? [],
     });
   } finally {
     await prepared.dispose();
+  }
+}
+
+/** An upload whose request did not complete can be repeated by running the same deploy. */
+async function transferred<T>(label: string, upload: () => Promise<T>): Promise<T> {
+  try {
+    return await upload();
+  } catch (error) {
+    if (error instanceof HostedDeploymentError) throw error;
+    const confirmed = error instanceof Error && /did not confirm/u.test(error.message);
+    throw new HostedDeploymentError(confirmed ? error.message : `${label} did not complete.`, {
+      resumable: !confirmed,
+    });
+  }
+}
+
+/** Each recorded native degradation once, with the themes it applies to, in first-seen order. */
+export function summarizeNativeDifferences(family: TileflowNativeFamily): NativeDifference[] {
+  const names = family.themes.map((theme) => theme.name);
+  const byKey = new Map<
+    string,
+    {capability: TileflowNativeCapability; fallback: string; themes: string[]}
+  >();
+  for (const theme of family.themes) {
+    for (const record of theme.degradations) {
+      const key = `${record.feature}\0${record.fallback}`;
+      const entry = byKey.get(key) ?? {
+        capability: record.feature,
+        fallback: record.fallback,
+        themes: [],
+      };
+      if (!entry.themes.includes(theme.name)) entry.themes.push(theme.name);
+      byKey.set(key, entry);
+    }
+  }
+  return [...byKey.values()].map((entry) => ({
+    ...entry,
+    themes: names.filter((name) => entry.themes.includes(name)),
+    all: entry.themes.length === names.length,
+  }));
+}
+
+/** A short, plain description of what native apps show for one difference. */
+export function describeNativeDifference(difference: NativeDifference): string {
+  switch (difference.capability) {
+    case 'scene3d':
+      return '3D building scene: drawn as plain building extrusions';
+    case 'models3d':
+      return 'Landmarks and building models: not drawn';
+    case 'trees3d':
+      return difference.fallback === 'flat'
+        ? '3D trees: drawn as flat trees'
+        : '3D trees: not drawn';
+    case 'streetLights':
+      return 'Street lights: not drawn';
+    case 'terrain3d':
+      return '3D terrain: drawn flat, with hillshading';
+    case 'globe':
+      return 'Globe: drawn in Web Mercator';
+    case 'sky':
+      return 'Sky, atmosphere and fog: not drawn';
+    case 'deviceContours':
+      return 'Contour lines and labels: not drawn';
+    case 'nauticalLightRhythm':
+      return 'Nautical light rhythms: lights shine steadily';
+    case 'symbolOverlap':
+      return 'Cooperative label overlap: drawn with allowed overlap';
+    case 'reliefResampling':
+      return "Relief resampling: the engine's default";
+    case 'pitchAbove60':
+      return 'Camera pitch: capped by the engine';
   }
 }

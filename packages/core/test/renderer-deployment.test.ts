@@ -6,7 +6,11 @@ import {createTileflowNativeBuildRecord} from '../src/native-build-record';
 import {createTileflowNativeFamily} from '../src/native-profile-family';
 import {
   parseTileflowRendererDeploymentArtifact,
+  splitTileflowRendererDeployment,
+  tileflowNativeDocumentReceiptSchema,
   tileflowRendererDeploymentArtifactSchema,
+  tileflowRendererDeploymentPendingSchema,
+  tileflowRendererDeploymentRequestArtifactSchema,
   tileflowRendererDeploymentResponseSchema,
 } from '../src/renderer-deployment';
 
@@ -134,6 +138,57 @@ function degradedArtifact() {
     styles: {light: native as never},
   });
   return value;
+}
+
+/** One map whose themes are the same style; each native style carries `padding` extra bytes. */
+function paddedArtifact(themes: readonly string[], padding: number) {
+  const base = artifact();
+  const webStyles: Record<string, any> = {};
+  const nativeStyles: Record<string, any> = {};
+  const themeBuilds: Record<string, any> = {};
+  const nativeBuilds: Record<string, any> = {};
+  for (const theme of themes) {
+    const web = structuredClone(base.renderers.web.styles.light) as Record<string, any>;
+    web.metadata['tileflow:theme'] = theme;
+    const native = structuredClone(web);
+    native.metadata['tileflow:padding'] = 'x'.repeat(padding);
+    webStyles[theme] = web;
+    nativeStyles[theme] = native;
+    const build = base.renderers.web.buildManifest.maps.streets.themes.light;
+    themeBuilds[theme] = {...build, themeId: theme, styleSha256: hash(web)};
+    nativeBuilds[theme] = {...build, themeId: theme, styleSha256: hash(native)};
+  }
+  const manifest = (builds: Record<string, any>) => ({
+    ...base.renderers.web.buildManifest,
+    maps: {
+      streets: {
+        ...base.renderers.web.buildManifest.maps.streets,
+        defaultTheme: themes[0]!,
+        themes: builds,
+      },
+    },
+  });
+  const nativeManifest = manifest(nativeBuilds);
+  return {
+    ...base,
+    renderers: {
+      web: {buildManifest: manifest(themeBuilds), styles: webStyles},
+      native: {
+        buildManifest: nativeManifest,
+        styles: nativeStyles,
+        buildRecord: createTileflowNativeBuildRecord(
+          hash(nativeManifest),
+          themes.map((theme) => ({
+            ...base.renderers.native.buildRecord.transformations[0]!,
+            theme,
+            inputStyleSha256: hash(webStyles[theme]),
+            loweredStyleSha256: hash(nativeStyles[theme]),
+          })),
+        ),
+        family: createTileflowNativeFamily({map: 'streets', themes, styles: nativeStyles}),
+      },
+    },
+  };
 }
 
 test('renderer deployment v2 binds one complete web and native family without widening v1', async () => {
@@ -295,16 +350,20 @@ test('renderer response has exact versioned Native routes and no credential or u
   const mapId = 'map_abcdefghijklmnop';
   const response = {
     kind: 'tileflow-map-deployment-result',
-    schemaVersion: 2,
+    schemaVersion: 3,
     changed: true,
     mapId,
-    deploymentId: 'dpl_example',
+    deploymentId: 'dep_example',
     version: 7,
     renderers: {
       web: {themes: {light: {styleUrl: `https://api.example/maps/${mapId}/light.json`}}},
       native: {
         profile: 'native-v1',
         manifestUrl: `https://api.example/maps/${mapId}/native/manifest.json`,
+        family: {
+          url: `https://api.example/maps/${mapId}/native/family/v7.json`,
+          revision: 'b'.repeat(64),
+        },
         themes: {
           light: {
             styleUrl: `https://api.example/maps/${mapId}/native/v7/light.json`,
@@ -315,22 +374,233 @@ test('renderer response has exact versioned Native routes and no credential or u
     },
   };
   assert.equal(tileflowRendererDeploymentResponseSchema.safeParse(response).success, true);
+  assert.equal(
+    tileflowRendererDeploymentResponseSchema.safeParse({
+      ...response,
+      teamModels: [{model: 'clock-tower', version: 3, sources: 'differ'}],
+    }).success,
+    true,
+  );
+  const native = response.renderers.native;
   for (const value of [
     {...response, grant: 'must-not-be-accepted'},
+    {...response, schemaVersion: 2},
     {...response, version: 8},
     {...response, mapId: 'map_ponmlkjihgfedcba'},
+    {...response, teamModels: [{model: 'Clock Tower', version: 3, sources: 'differ'}]},
+    {
+      ...response,
+      renderers: {
+        ...response.renderers,
+        native: {...native, manifestUrl: `${native.manifestUrl}?credential=unexpected`},
+      },
+    },
+    {
+      ...response,
+      renderers: {
+        ...response.renderers,
+        native: {...native, family: {...native.family, url: native.family.url.replace('v7', 'v6')}},
+      },
+    },
+    {
+      ...response,
+      renderers: {...response.renderers, native: {...native, family: undefined}},
+    },
     {
       ...response,
       renderers: {
         ...response.renderers,
         native: {
-          ...response.renderers.native,
-          manifestUrl: `${response.renderers.native.manifestUrl}?credential=unexpected`,
+          ...native,
+          manifestUrl: `http://api.example/maps/${mapId}/native/manifest.json`,
         },
       },
     },
   ])
     assert.equal(tileflowRendererDeploymentResponseSchema.safeParse(value).success, false);
+});
+
+test('a pending deployment lists each missing document once at its upload route, family last', () => {
+  const origin = 'https://api.example';
+  const base = `${origin}/v1/styles/deployments/dep_example/native`;
+  const pending = {
+    kind: 'tileflow-map-deployment-pending',
+    schemaVersion: 1,
+    mapId: 'map_abcdefghijklmnop',
+    deploymentId: 'dep_example',
+    version: 4,
+    native: {
+      documents: [
+        {
+          document: 'style',
+          theme: 'dark',
+          sha256: 'a'.repeat(64),
+          bytes: 120,
+          method: 'PUT',
+          url: `${base}/styles/dark.json`,
+        },
+        {
+          document: 'family',
+          sha256: 'b'.repeat(64),
+          bytes: 80,
+          method: 'PUT',
+          url: `${base}/family.json`,
+        },
+      ],
+    },
+  };
+  assert.equal(tileflowRendererDeploymentPendingSchema.safeParse(pending).success, true);
+  const [style, family] = pending.native.documents;
+  for (const documents of [
+    [family, style],
+    [style, style, family],
+    [{...style, url: `${base}/styles/light.json`}],
+    [
+      style,
+      {
+        ...family,
+        url: `https://other.example/v1/styles/deployments/dep_example/native/family.json`,
+      },
+    ],
+    [{...style, method: 'POST'}],
+    [{...style, bytes: 9 * 1024 * 1024}],
+    [],
+  ])
+    assert.equal(
+      tileflowRendererDeploymentPendingSchema.safeParse({...pending, native: {documents}}).success,
+      false,
+    );
+  assert.equal(
+    tileflowRendererDeploymentPendingSchema.safeParse({...pending, deploymentId: 'other'}).success,
+    false,
+  );
+  // The client binds the origin to the API it called; the reply binds every route to one origin.
+  // Loopback HTTP serves local development of the API.
+  const local = JSON.parse(
+    JSON.stringify(pending).replaceAll('https://api.example', 'http://127.0.0.1:8787'),
+  );
+  assert.equal(tileflowRendererDeploymentPendingSchema.safeParse(local).success, true);
+});
+
+test('a document receipt names its theme only for a style', () => {
+  const receipt = {
+    kind: 'tileflow-native-document-receipt',
+    schemaVersion: 1,
+    deploymentId: 'dep_example',
+    version: 4,
+    document: 'style',
+    theme: 'dark',
+    sha256: 'a'.repeat(64),
+    bytes: 120,
+  };
+  assert.equal(tileflowNativeDocumentReceiptSchema.safeParse(receipt).success, true);
+  const {theme: _theme, ...family} = receipt;
+  assert.equal(
+    tileflowNativeDocumentReceiptSchema.safeParse({...family, document: 'family'}).success,
+    true,
+  );
+  assert.equal(tileflowNativeDocumentReceiptSchema.safeParse(family).success, false);
+  assert.equal(
+    tileflowNativeDocumentReceiptSchema.safeParse({...receipt, document: 'family'}).success,
+    false,
+  );
+});
+
+test('split carries the web family in the request and each native document as canonical bytes', async () => {
+  const value = await parseTileflowRendererDeploymentArtifact(artifact());
+  const split = await splitTileflowRendererDeployment(value);
+  assert.equal(split.artifact.schemaVersion, 3);
+  assert.deepEqual(split.artifact.renderers.web, value.renderers.web);
+  assert.deepEqual(Object.keys(split.artifact.renderers.native).sort(), [
+    'buildManifest',
+    'buildRecord',
+    'documents',
+  ]);
+  const {documents} = split.artifact.renderers.native;
+  const styleText = serializeCanonicalJson(value.renderers.native.styles.light);
+  assert.equal(split.documents.styles.light, styleText);
+  assert.deepEqual(documents.styles.light, {
+    sha256: createHash('sha256').update(styleText).digest('hex'),
+    bytes: Buffer.byteLength(styleText),
+  });
+  assert.equal(
+    documents.styles.light!.sha256,
+    value.renderers.native.buildManifest.maps.streets!.themes.light!.styleSha256,
+  );
+  assert.equal(split.documents.family, serializeCanonicalJson(value.renderers.native.family));
+  assert.deepEqual(documents.family, {
+    sha256: createHash('sha256').update(split.documents.family).digest('hex'),
+    bytes: Buffer.byteLength(split.documents.family),
+    themes: ['light'],
+  });
+  assert.equal(
+    tileflowRendererDeploymentRequestArtifactSchema.safeParse(split.artifact).success,
+    true,
+  );
+  for (const change of [
+    (request: Record<string, any>) => {
+      request.renderers.native.documents.styles.light.sha256 = 'c'.repeat(64);
+    },
+    (request: Record<string, any>) => {
+      request.renderers.native.documents.family.themes = ['light', 'light'];
+    },
+    (request: Record<string, any>) => {
+      request.renderers.native.documents.styles.dark = {sha256: 'c'.repeat(64), bytes: 10};
+    },
+    (request: Record<string, any>) => {
+      request.renderers.native.styles = value.renderers.native.styles;
+    },
+  ]) {
+    const request = structuredClone(split.artifact) as Record<string, any>;
+    change(request);
+    assert.equal(tileflowRendererDeploymentRequestArtifactSchema.safeParse(request).success, false);
+  }
+});
+
+test('budgets apply per native document and per family, not to the whole artifact', async () => {
+  // Three themes whose native styles hold 3 MiB each: over one document's worth together, but each
+  // document and the family stay within their budgets.
+  const themes = ['dark', 'dusk', 'light'];
+  const padded = paddedArtifact(themes, 3 * 1024 * 1024);
+  const parsed = await parseTileflowRendererDeploymentArtifact(padded);
+  const split = await splitTileflowRendererDeployment(parsed);
+  assert.deepEqual(Object.keys(split.documents.styles), themes);
+  for (const document of Object.values(split.artifact.renderers.native.documents.styles))
+    assert.ok(document.bytes > 3 * 1024 * 1024);
+  // One document over 8 MiB is refused.
+  await assert.rejects(
+    parseTileflowRendererDeploymentArtifact(paddedArtifact(['light'], 8 * 1024 * 1024 + 1)),
+    {code: 'RENDERER_DEPLOYMENT_INVALID'},
+  );
+  await assert.rejects(
+    splitTileflowRendererDeployment(
+      paddedArtifact(['light'], 8 * 1024 * 1024 + 1) as unknown as typeof parsed,
+    ),
+    {code: 'RENDERER_DEPLOYMENT_INVALID'},
+  );
+});
+
+test("a map's own tree model identities are part of its build manifest", async () => {
+  const value = artifact();
+  const models = [
+    {id: 'streets-tree-open', level: 'far', sha256: 'c'.repeat(64)},
+    {id: 'streets-tree-open', level: 'near', sha256: 'd'.repeat(64)},
+  ];
+  for (const family of [value.renderers.web, value.renderers.native])
+    Object.assign(family.buildManifest.maps.streets.sourceAssets, {models});
+  value.renderers.native.buildRecord.buildManifestSha256 = hash(
+    value.renderers.native.buildManifest,
+  );
+  const parsed = await parseTileflowRendererDeploymentArtifact(value);
+  assert.deepEqual(parsed.renderers.web.buildManifest.maps.streets?.sourceAssets.models, models);
+  for (const family of [value.renderers.web, value.renderers.native])
+    Object.assign(family.buildManifest.maps.streets.sourceAssets, {
+      models: [{id: 'Open Tree', level: 'far', sha256: 'c'.repeat(64)}],
+    });
+  value.renderers.native.buildRecord.buildManifestSha256 = hash(
+    value.renderers.native.buildManifest,
+  );
+  await assert.rejects(parseTileflowRendererDeploymentArtifact(value));
 });
 
 test('renderer families preserve a matching valid time-of-day catalog and reject dangling targets', async () => {

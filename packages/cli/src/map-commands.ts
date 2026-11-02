@@ -73,7 +73,7 @@ export function addMapSetupOptions(command: Command) {
     .option('--team <team>', 'Team that owns a new Map, as @team')
     .option(
       '--origin <origin>',
-      'exact website origin that may load a new Map (repeatable)',
+      'exact website or app origin that may load a new Map (repeatable)',
       (value: string, previous: string[] = []) => [...previous, value],
     )
     .option('--any-website', 'let any website load a new Map')

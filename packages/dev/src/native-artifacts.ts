@@ -1,17 +1,16 @@
-import {createHash} from 'node:crypto';
 import {
   convertFilter,
-  validateStyleMin,
   type FilterSpecification,
+  validateStyleMin,
 } from '@maplibre/maplibre-gl-style-spec';
+import {createHash} from 'node:crypto';
 import {
   getTileflowStyleFontFaces,
-  serializeCanonicalJson,
-  steadyTileflowNauticalLights,
   type MapLibreStyle,
-  tileflowStyleFontFacesMetadataKey,
+  serializeCanonicalJson,
   tileflowIconIdPattern,
   tileflowIconPackageLimits,
+  tileflowStyleFontFacesMetadataKey,
 } from '@tileflow/core';
 import type {TileflowBuildCatalog, TileflowBuildStyles} from '@tileflow/core/build';
 import {
@@ -20,10 +19,16 @@ import {
   TileflowNativeCompatibilityError,
   type TileflowNativeDiagnostic,
   tileflowNativeProfileLimits,
-  validateTileflowNativeStyle,
   validateTileflowNativePreparedStyle,
+  validateTileflowNativeStyle,
 } from '@tileflow/core/native-profile';
 import type {TileflowBuildAsset} from './icons';
+import {
+  degradeTileflowNativeStyle,
+  NativeDegradationError,
+  type NativeDegradedStyle,
+} from './native-degradations';
+import {tileflowNativeFontUnicodeRanges} from './native-font-ranges';
 import {rebindNativeLayerReferences} from './native-layer-references';
 import {lowerNativeStyleRepresentation, NativeLoweringError} from './native-lowering';
 
@@ -60,7 +65,9 @@ function withContext(
 
 /**
  * Lower only the native representation; shared compilation and authored map identity stay intact.
- * Local artifacts and Hosted publication both receive styles whose layer references are rebound.
+ * What native maps cannot draw is left out or replaced and recorded first (see
+ * `degradeTileflowNativeStyle`); every other unsupported value still fails. Local artifacts and
+ * Hosted publication both receive styles whose layer references are rebound.
  */
 export function lowerTileflowNativeCompiledStyles(
   input: TileflowBuildStyles,
@@ -75,9 +82,13 @@ export function lowerTileflowNativeCompiledStyles(
     styles[map] = {};
     for (const theme of Object.keys(input[map]!).sort()) {
       const web = input[map]![theme]!;
-      // Native renderers have no feature state, so Nautical lights show steadily there.
-      const original = steadyTileflowNauticalLights(web);
+      let degraded: NativeDegradedStyle | undefined;
+      // Diagnostics name the web style's layers, not the degraded style's positions.
+      const context = (issue: TileflowNativeDiagnostic) =>
+        withContext(webLayerPath(issue, degraded), map, theme);
       try {
+        degraded = degradeTileflowNativeStyle(web);
+        const original = degraded.style;
         const options = {...urlOptions(map, theme, policy), deferFontClosure: true};
         const pending = validateTileflowNativeStyle(original, options);
         // Only these representation-level diagnostics may be deferred. Bounds, source protocols,
@@ -94,10 +105,7 @@ export function lowerTileflowNativeCompiledStyles(
               /^\/layers\/\d+\/layout\/(?:icon|text)-overlap$/u.test(issue.path)
             ),
         );
-        if (blockers.length)
-          throw new TileflowNativeCompatibilityError(
-            blockers.map((issue) => withContext(issue, map, theme)),
-          );
+        if (blockers.length) throw new TileflowNativeCompatibilityError(blockers.map(context));
         const syntax = validateStyleMin(JSON.parse(serializeCanonicalJson(original)));
         if (syntax.length)
           throw new TileflowNativeCompatibilityError(
@@ -111,11 +119,7 @@ export function lowerTileflowNativeCompiledStyles(
                 : issue.message.startsWith('projection')
                   ? '/projection'
                   : '';
-              return withContext(
-                createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE', path),
-                map,
-                theme,
-              );
+              return context(createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE', path));
             }),
           );
         const lowered = lowerNativeStyleRepresentation(original, (filter) =>
@@ -143,11 +147,14 @@ export function lowerTileflowNativeCompiledStyles(
             ),
           ]);
         const issues = validateTileflowNativePreparedStyle(style, options);
-        if (issues.length)
-          throw new TileflowNativeCompatibilityError(
-            issues.map((issue) => withContext(issue, map, theme)),
-          );
+        if (issues.length) throw new TileflowNativeCompatibilityError(issues.map(context));
         styles[map]![theme] = style;
+        // Spans name web input layers and native output layers.
+        const inputIndexes = degraded.inputIndexes;
+        const added = (before: number) =>
+          lowered.layers
+            .filter((span) => span.inputLayer < before)
+            .reduce((total, span) => total + span.outputCount - 1, 0);
         transformations.push({
           map,
           theme,
@@ -155,35 +162,66 @@ export function lowerTileflowNativeCompiledStyles(
           loweredStyleSha256: createHash('sha256')
             .update(serializeCanonicalJson(style))
             .digest('hex'),
-          inputLayers: lowered.inputLayers,
+          inputLayers: web.layers.length,
           outputLayers: lowered.outputLayers,
           projection: lowered.projection,
           ...(lowered.sky ? {sky: lowered.sky} : {}),
-          layers: lowered.layers,
-          symbolOverlap: lowered.symbolOverlap,
+          removedLayers: degraded.removedLayers,
+          insertedLayers: inputIndexes.flatMap((index, position) =>
+            index < 0 ? [position + added(position)] : [],
+          ),
+          layers: lowered.layers.map((span) => ({
+            ...span,
+            inputLayer: inputIndexes[span.inputLayer]!,
+          })),
+          symbolOverlap: lowered.symbolOverlap.map((entry) => ({
+            ...entry,
+            inputLayer: inputIndexes[entry.inputLayer]!,
+          })),
+          degradations: degraded.degradations.map((record) => record.id),
         });
       } catch (error) {
+        if (error instanceof NativeDegradationError)
+          throw new TileflowNativeCompatibilityError([
+            withContext(
+              {
+                ...createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE', error.path),
+                message: error.message,
+                suggestion:
+                  'Keep POI layers on sources native maps can draw, or select web for this map.',
+              },
+              map,
+              theme,
+            ),
+          ]);
         if (!(error instanceof NativeLoweringError)) throw error;
         throw new TileflowNativeCompatibilityError([
-          withContext(
-            {
-              ...createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE', error.path),
-              message: error.message,
-              suggestion:
-                error.reason === 'budget'
-                  ? 'Reduce the decision expansion or style size; native lowering never raises its resource limits automatically.'
-                  : error.path === '/projection'
-                    ? 'Use a fixed globe or Mercator projection for native-v1; adaptive projections are not supported.'
-                    : 'Use finite case/match/step decisions with constant leaves and supported scalar predicates, or select web.',
-            },
-            map,
-            theme,
-          ),
+          context({
+            ...createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE', error.path),
+            message: error.message,
+            suggestion:
+              error.reason === 'budget'
+                ? 'Reduce the decision expansion or style size; native lowering never raises its resource limits automatically.'
+                : error.path === '/projection'
+                  ? 'Use a fixed globe or Mercator projection for native-v1; adaptive projections are not supported.'
+                  : 'Use finite case/match/step decisions with constant leaves and supported scalar predicates, or select web.',
+          }),
         ]);
       }
     }
   }
   return {styles, transformations};
+}
+
+/** A diagnostic on a degraded style's layer, pointed at the same layer of the web style. */
+function webLayerPath(
+  issue: TileflowNativeDiagnostic,
+  degraded: NativeDegradedStyle | undefined,
+): TileflowNativeDiagnostic {
+  const match = /^\/layers\/(\d+)(?=\/|$)/u.exec(issue.path);
+  const index = match && degraded ? degraded.inputIndexes[Number(match[1])] : undefined;
+  if (!match || index === undefined || index < 0) return issue;
+  return {...issue, path: `/layers/${index}${issue.path.slice(match[0].length)}`};
 }
 
 /** Check lowered compiler output before local snapshots. Raw inputs are gated before lowering. */
@@ -214,6 +252,7 @@ export function prepareTileflowNativeStyles(
 ): TileflowBuildStyles {
   const issues: TileflowNativeDiagnostic[] = [];
   const result: TileflowBuildStyles = {};
+  const fontRanges = new Map<string, string[]>();
   for (const map of Object.keys(input).sort()) {
     result[map] = {};
     if (!validNativeSprites(map, assets)) {
@@ -234,7 +273,7 @@ export function prepareTileflowNativeStyles(
       }
       const metadata = {...original.metadata};
       const faces = getTileflowStyleFontFaces(original);
-      const nativeFaces: Record<string, string> = {};
+      const nativeFaces: Record<string, TileflowNativeFontFile[]> = {};
       for (const face of faces) {
         const asset = assets.find(
           (item) =>
@@ -261,7 +300,28 @@ export function prepareTileflowNativeStyles(
           );
           continue;
         }
-        Object.defineProperty(nativeFaces, face.family, {value: face.source, enumerable: true});
+        // Each face claims only the characters its file draws, so MapLibre Native moves on to the
+        // next font of a `text-font` list for the rest instead of drawing nothing.
+        let ranges: string[];
+        try {
+          // Asset names are content-addressed, so every theme reuses one file's ranges.
+          ranges =
+            fontRanges.get(asset.fileName) ?? tileflowNativeFontUnicodeRanges(fontBytes(asset));
+          fontRanges.set(asset.fileName, ranges);
+        } catch {
+          issues.push(
+            withContext(
+              createTileflowNativeDiagnostic('NATIVE_FONT_UNAVAILABLE', '/font-faces'),
+              map,
+              theme,
+            ),
+          );
+          continue;
+        }
+        Object.defineProperty(nativeFaces, face.family, {
+          value: [{url: face.source, 'unicode-range': ranges}],
+          enumerable: true,
+        });
       }
       delete metadata[tileflowStyleFontFacesMetadataKey];
       // Native's fixed Mercator projection has no GL JS projection controller to configure.
@@ -283,8 +343,15 @@ export function prepareTileflowNativeStyles(
   return result;
 }
 
+/** One font file of a native `font-faces` entry. */
+export type TileflowNativeFontFile = {url: string; 'unicode-range'?: string[]};
+
+function fontBytes(asset: TileflowBuildAsset): Uint8Array {
+  return typeof asset.source === 'string' ? Buffer.from(asset.source) : asset.source;
+}
+
 function isNativeFontAsset(asset: TileflowBuildAsset): boolean {
-  const bytes = typeof asset.source === 'string' ? Buffer.from(asset.source) : asset.source;
+  const bytes = fontBytes(asset);
   if (bytes.byteLength < 12 || bytes.byteLength > tileflowNativeProfileLimits.maximumFontBytes)
     return false;
   const signature = Buffer.from(bytes.subarray(0, 4)).toString('hex');
@@ -314,12 +381,19 @@ export function replaceTileflowNativeFontSources(
   style: MapLibreStyle,
   replace: (source: string) => string,
 ): MapLibreStyle {
-  const faces = (style as MapLibreStyle & {'font-faces'?: Record<string, string>})['font-faces'];
+  const faces = (
+    style as MapLibreStyle & {'font-faces'?: Record<string, string | TileflowNativeFontFile[]>}
+  )['font-faces'];
   if (!faces) return style;
   return {
     ...style,
     'font-faces': Object.fromEntries(
-      Object.entries(faces).map(([name, source]) => [name, replace(source)]),
+      Object.entries(faces).map(([name, files]) => [
+        name,
+        typeof files === 'string'
+          ? replace(files)
+          : files.map((file) => ({...file, url: replace(file.url)})),
+      ]),
     ),
   } as MapLibreStyle;
 }

@@ -77,8 +77,8 @@ test('Native incompatibility is detected before credential discovery or manifest
     join(cwd, 'tileflow.config.ts'),
     `import {defineMap} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
-export default defineMap({id:'main', version:1, extends:streets, terrain:'3d',
-  glyphs: {kind:'url', url:'https://fonts.example.test/{fontstack}/{range}.pbf',
+export default defineMap({id:'main', version:1, extends:streets,
+  glyphs: {kind:'url', url:'http://fonts.example.test/{fontstack}/{range}.pbf',
     fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic',
       'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']}
 });

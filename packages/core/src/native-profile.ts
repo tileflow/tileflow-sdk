@@ -141,6 +141,21 @@ const expressionDefinitions = (
     expression_name?: {values?: Record<string, SpecProperty>};
   }
 ).expression_name?.values;
+/**
+ * Native support that the compiler's Style Spec tables predate. Entries come from Style Spec
+ * 26.5.1's `sdk-support` tables and the pinned engines' release notes, and only widen support to
+ * releases at or below the profile's engines.
+ */
+const nativeSupportAdditions: Readonly<Record<string, Readonly<{android: string; ios: string}>>> =
+  Object.freeze({
+    // Root `state` and `global-state`: maplibre-native#4516 (Android 13.7.1, iOS 7.0.0).
+    'global-state': Object.freeze({android: '13.7.1', ios: '7.0.0'}),
+    // maplibre-native#4463 (Android 13.5.0, iOS 6.29.0).
+    split: Object.freeze({android: '13.5.0', ios: '6.29.0'}),
+    // maplibre-native#4668 (Android 13.7.1, iOS 7.0.0). Style Spec 26.5.1 still links #2784.
+    'interpolate-hcl': Object.freeze({android: '13.7.1', ios: '7.0.0'}),
+    'interpolate-lab': Object.freeze({android: '13.7.1', ios: '7.0.0'}),
+  });
 const sourceKinds = new Set(['vector', 'raster', 'raster-dem', 'geojson', 'image']);
 const layerKinds = new Set([
   'background',
@@ -152,8 +167,9 @@ const layerKinds = new Set([
   'fill-extrusion',
   'heatmap',
   'hillshade',
+  'color-relief',
 ]);
-const unsupportedRoots = new Set(['terrain', 'sky', 'state', 'roll', 'centerAltitude']);
+const unsupportedRoots = new Set(['terrain', 'sky', 'roll', 'centerAltitude']);
 const rootStructure = new Set([
   'version',
   'name',
@@ -162,6 +178,7 @@ const rootStructure = new Set([
   'zoom',
   'bearing',
   'pitch',
+  'state',
   'sources',
   'layers',
   'sprite',
@@ -220,6 +237,7 @@ function validateNativeStyle(
       add('NATIVE_UNSUPPORTED_STYLE', pointer('', key));
     }
   }
+  if (style.state !== undefined && !record(style.state)) add('NATIVE_UNSUPPORTED_STYLE', '/state');
   if (
     style.pitch !== undefined &&
     (typeof style.pitch !== 'number' || style.pitch < 0 || style.pitch > 85)
@@ -352,11 +370,34 @@ function validateNativeStyle(
     } else {
       for (const name of Object.keys(faces).sort()) {
         const path = pointer('/font-faces', name);
-        const url = faces[name];
-        // This artifact profile emits one complete sfnt face per exact OpenType full name.
-        if (typeof url !== 'string' || !/\.(?:ttf|otf)(?:\?[^#]*)?$/iu.test(url)) {
+        const value = faces[name];
+        // One complete sfnt face per exact OpenType full name: a URL, or font files that each
+        // claim the characters they draw with `unicode-range`.
+        const files = typeof value === 'string' ? [{url: value}] : value;
+        if (
+          !Array.isArray(files) ||
+          !files.length ||
+          files.length > tileflowNativeProfileLimits.maximumFontFilesPerFace
+        ) {
           add('NATIVE_FONT_UNAVAILABLE', path);
-        } else checkUrl(url, path);
+          continue;
+        }
+        files.forEach((file: unknown, index: number) => {
+          const filePath = typeof value === 'string' ? path : `${path}/${index}`;
+          if (
+            !record(file) ||
+            Object.keys(file).some((key) => key !== 'url' && key !== 'unicode-range')
+          ) {
+            add('NATIVE_FONT_UNAVAILABLE', filePath);
+            return;
+          }
+          const urlPath = typeof value === 'string' ? path : `${filePath}/url`;
+          if (typeof file.url !== 'string' || !/\.(?:ttf|otf)(?:\?[^#]*)?$/iu.test(file.url))
+            add('NATIVE_FONT_UNAVAILABLE', urlPath);
+          else checkUrl(file.url, urlPath);
+          if (file['unicode-range'] !== undefined && !unicodeRanges(file['unicode-range']))
+            add('NATIVE_FONT_UNAVAILABLE', `${filePath}/unicode-range`);
+        });
       }
     }
   }
@@ -474,7 +515,9 @@ function supportsBoth(support: Record<string, unknown>): boolean {
 function expressions(value: unknown, path: string, add: AddDiagnostic): void {
   if (!Array.isArray(value) || !isExpression(value)) return;
   const operator = value[0] as string;
-  const support = expressionDefinitions?.[operator]?.['sdk-support']?.['basic functionality'];
+  const support = Object.hasOwn(nativeSupportAdditions, operator)
+    ? nativeSupportAdditions[operator]
+    : expressionDefinitions?.[operator]?.['sdk-support']?.['basic functionality'];
   if (!support || !supportsBoth(support)) add('NATIVE_UNSUPPORTED_STYLE', `${path}/0`);
   if (operator === 'literal') return;
   value.forEach((child, index) => {
@@ -485,6 +528,24 @@ function expressions(value: unknown, path: string, add: AddDiagnostic): void {
       for (const key of Object.keys(child).sort())
         expressions(child[key], pointer(`${path}/${index}`, key), add);
     } else expressions(child, `${path}/${index}`, add);
+  });
+}
+
+/** Ranges in the only form native engines read, `U+start-end`, ascending within the Unicode space. */
+function unicodeRanges(value: unknown): boolean {
+  if (
+    !Array.isArray(value) ||
+    !value.length ||
+    value.length > tileflowNativeProfileLimits.maximumFontRanges
+  )
+    return false;
+  return value.every((range) => {
+    const match =
+      typeof range === 'string' ? /^U\+([0-9A-F]{1,6})-([0-9A-F]{1,6})$/iu.exec(range) : null;
+    if (!match) return false;
+    const start = Number.parseInt(match[1]!, 16);
+    const end = Number.parseInt(match[2]!, 16);
+    return start <= end && end <= 0x10ffff;
   });
 }
 
@@ -592,6 +653,47 @@ export function assertTileflowNativeStyle(
   const issues = validateTileflowNativeStyle(style, options);
   if (issues.length) throw new TileflowNativeCompatibilityError(issues);
 }
+
+export {
+  createTileflowNativeDegradation,
+  normalizeTileflowNativeDegradations,
+  readTileflowNativeDegradations,
+  tileflowNativeCapabilities,
+  tileflowNativeCapabilitySchema,
+  tileflowNativeDegradationLimits,
+  tileflowNativeDegradationReasonSchema,
+  tileflowNativeDegradationSchema,
+  tileflowNativeDegradationsMetadataKey,
+  tileflowNativeDegradationsSchema,
+  tileflowNativeFallbackSchema,
+} from './native-capabilities';
+export type {TileflowNativeCapability, TileflowNativeDegradation} from './native-capabilities';
+
+export {
+  createTileflowNativeFamily,
+  emphasizeTileflowNativeValue,
+  fillTileflowNativeTemplate,
+  mixTileflowNativeColours,
+  mixTileflowNativeLeaf,
+  mixTileflowRouteInks,
+  mixTileflowSunPresets,
+  parseTileflowNativeFamily,
+  tileflowNativeBlendLayers,
+  tileflowNativeBlendOptions,
+  tileflowNativeFamilyFileName,
+  tileflowNativeFamilyLimits,
+  tileflowNativeFamilySchema,
+  tileflowNativeLeafKey,
+  tileflowNativeLeafValues,
+} from './native-profile-family';
+export type {
+  CreateTileflowNativeFamilyInput,
+  TileflowNativeBlendGroup,
+  TileflowNativeEmphasisTarget,
+  TileflowNativeFamily,
+  TileflowNativeFamilyTheme,
+  TileflowNativeFillOptions,
+} from './native-profile-family';
 
 export {
   createTileflowNativeBuildRecord,

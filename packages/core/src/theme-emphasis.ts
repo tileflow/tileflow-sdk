@@ -194,6 +194,25 @@ export function emphasizeTileflowValue(
 }
 
 /**
+ * A target's value as designed and at full strength with an amount of 1, in the same shape, so a
+ * renderer can show any strength by mixing the two leaf by leaf: numbers linearly and colours in
+ * OKLab, `amount × strength` of the way. Opacities that are expressions keep their factor as the
+ * leaf (`['*', value, 1]` to `['*', value, 0]`). Undefined for a colour without a ground colour,
+ * which stays as designed.
+ */
+export function tileflowEmphasisRange(
+  target: Pick<TileflowEmphasisTarget, 'kind'>,
+  value: unknown,
+  ground: string | undefined,
+): Readonly<{design: unknown; retracted: unknown}> | undefined {
+  if (target.kind === 'colour') {
+    if (ground === undefined) return undefined;
+    return {design: value, retracted: mixColours(value, ground, 1)};
+  }
+  return {design: scaleOpacity(value, 1), retracted: scaleOpacity(value, 0)};
+}
+
+/**
  * The ground colour of a style's layers: the background layer's colour, or the first colour in it
  * when it is an expression.
  */

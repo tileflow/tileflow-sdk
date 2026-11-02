@@ -2,7 +2,9 @@ import {createHash} from 'node:crypto';
 import {parseTileflowMap, serializeCanonicalJson} from '@tileflow/core';
 import {collectTileflowMapBuildLineage} from '@tileflow/core/build';
 import {
+  readTileflowNativeDegradations,
   TileflowNativeCompatibilityError,
+  type TileflowNativeDegradation,
   type TileflowNativeDiagnostic,
   tileflowNativeProfile,
 } from '@tileflow/core/native-profile';
@@ -26,6 +28,15 @@ export type NativeCatalogRow = {
   status: 'compatible-artifacts' | 'incompatible';
   styleSha256?: string;
   diagnostics: readonly TileflowNativeDiagnostic[];
+  /** What the native artifact leaves out or draws differently; empty when incompatible. */
+  degradations: readonly TileflowNativeDegradation[];
+};
+
+/** Per map, the degradation IDs of all its themes; information for the compatibility table. */
+export type NativeCatalogMap = {
+  map: string;
+  degradations: readonly string[];
+  incompatibleThemes: readonly string[];
 };
 
 /** Replays individual themes through the ordinary compiler and artifact preparation path. */
@@ -60,28 +71,47 @@ export async function evaluateNativeCatalog(cwd: string) {
           styleBaseUrl: '.',
         });
         try {
+          const style = artifacts.styles[map.id]![theme]!;
           rows.push({
             map: map.id,
             theme,
             status: 'compatible-artifacts',
             diagnostics: [],
-            styleSha256: createHash('sha256')
-              .update(serializeCanonicalJson(artifacts.styles[map.id]![theme]!))
-              .digest('hex'),
+            degradations: readTileflowNativeDegradations(style.metadata),
+            styleSha256: createHash('sha256').update(serializeCanonicalJson(style)).digest('hex'),
           });
         } finally {
           await disposeTileflowBuildArtifacts(artifacts);
         }
       } catch (error) {
         if (!(error instanceof TileflowNativeCompatibilityError)) throw error;
-        rows.push({map: map.id, theme, status: 'incompatible', diagnostics: error.issues});
+        rows.push({
+          map: map.id,
+          theme,
+          status: 'incompatible',
+          diagnostics: error.issues,
+          degradations: [],
+        });
       }
     }
   }
+  const maps: NativeCatalogMap[] = [...new Set(rows.map((row) => row.map))].map((map) => {
+    const themes = rows.filter((row) => row.map === map);
+    return {
+      map,
+      degradations: [
+        ...new Set(themes.flatMap((row) => row.degradations.map(({id}) => id))),
+      ].sort(),
+      incompatibleThemes: themes
+        .filter((row) => row.status === 'incompatible')
+        .map((row) => row.theme),
+    };
+  });
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     profile: tileflowNativeProfile,
     scope: 'individual-theme-static-artifacts',
+    maps,
     rows,
   };
 }

@@ -22,7 +22,7 @@ function paddedStyle(maximum: number, above = false) {
 const budgetIssue = [createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE')];
 
 test('raw style validation cannot opt into the prepared style budget', () => {
-  const input = paddedStyle(160_000, true);
+  const input = paddedStyle(320_000, true);
   assert.deepEqual(validateTileflowNativeStyle(input), budgetIssue);
   assert.deepEqual(validateTileflowNativePreparedStyle(input), []);
   // @ts-expect-error The raw validator has no stage override in its public options.
@@ -30,7 +30,7 @@ test('raw style validation cannot opt into the prepared style budget', () => {
 });
 
 test('prepared validation applies its fixed boundary and reports the same safe root pointer', () => {
-  assert.equal(tileflowNativeProfileLimits.maximumNodes, 160_000);
+  assert.equal(tileflowNativeProfileLimits.maximumNodes, 320_000);
   assert.equal(tileflowNativePreparedStyleLimits.maximumNodes, 540_000);
   assert.deepEqual(validateTileflowNativePreparedStyle(paddedStyle(540_000)), []);
   assert.deepEqual(validateTileflowNativePreparedStyle(paddedStyle(540_000, true)), budgetIssue);

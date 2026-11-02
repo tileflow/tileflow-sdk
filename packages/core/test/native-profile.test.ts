@@ -4,8 +4,8 @@ import {
   assertTileflowNativeStyle,
   createTileflowNativeBuildRecord,
   resolveTileflowRenderer,
-  TileflowNativeCompatibilityError,
   tileflowNativeBuildRecordSchema,
+  TileflowNativeCompatibilityError,
   tileflowNativeDiagnosticSchema,
   tileflowNativeProfile,
   tileflowNativeProfileLimits,
@@ -60,7 +60,11 @@ test('defines one strict, immutable static native profile and a separate build r
   const record = createTileflowNativeBuildRecord('a'.repeat(64));
   assert.equal(record.profile, 'native-v1');
   assert.equal(record.validation, 'static-artifacts');
-  assert.deepEqual(record.engines, {android: '13.2.0', ios: '6.26.0'});
+  assert.deepEqual(record.engines, {android: '13.7.1', ios: '7.0.0'});
+  assert.deepEqual(
+    {android: tileflowNativeProfile.android, ios: tileflowNativeProfile.ios},
+    record.engines,
+  );
   assert.equal(
     tileflowNativeBuildRecordSchema.safeParse({...record, available: true}).success,
     false,
@@ -122,11 +126,86 @@ test('accepts fixed Mercator, hillshade and building extrusion independently of 
   assert.deepEqual(validateTileflowNativeStyle(style), []);
 });
 
-for (const root of ['terrain', 'sky', 'state', 'roll', 'centerAltitude']) {
+for (const root of ['terrain', 'sky', 'roll', 'centerAltitude']) {
   test(`rejects unsupported native root ${root}`, () => {
     hasIssue({...background(), [root]: {}}, 'NATIVE_UNSUPPORTED_STYLE', `/${root}`);
   });
 }
+
+test('accepts global state and the expressions the pinned engines added', () => {
+  const style = labels();
+  const state = {name: {default: 'fallback'}};
+  for (const field of [
+    ['coalesce', ['global-state', 'name'], 'fallback'],
+    ['to-string', ['at', 0, ['split', ['get', 'name'], ' ']]],
+  ]) {
+    style.layers[0]!.layout['text-field'] = field;
+    assert.deepEqual(validateTileflowNativeStyle({...style, state}), []);
+  }
+  for (const operator of ['interpolate-hcl', 'interpolate-lab'])
+    assert.deepEqual(
+      validateTileflowNativeStyle({
+        ...background(),
+        layers: [
+          {
+            id: 'background',
+            type: 'background',
+            paint: {
+              'background-color': [operator, ['linear'], ['zoom'], 0, '#ffffff', 10, '#000000'],
+            },
+          },
+        ],
+      }),
+      [],
+    );
+  hasIssue({...background(), state: []}, 'NATIVE_UNSUPPORTED_STYLE', '/state');
+  // The Style Spec marks number-format as supported by every native release.
+  style.layers[0]!.layout['text-field'] = ['number-format', ['get', 'ele'], {}];
+  assert.deepEqual(validateTileflowNativeStyle(style), []);
+});
+
+test('accepts colour relief and still rejects relief resampling', () => {
+  const relief = {
+    ...background(),
+    sources: {
+      elevation: {
+        type: 'raster-dem',
+        tiles: ['https://maps.example.test/{z}/{x}/{y}.png'],
+        encoding: 'terrarium',
+      },
+    },
+    layers: [
+      {
+        id: 'relief',
+        type: 'color-relief',
+        source: 'elevation',
+        paint: {
+          'color-relief-color': [
+            'interpolate',
+            ['linear'],
+            ['elevation'],
+            0,
+            '#000000',
+            1000,
+            '#ffffff',
+          ],
+          'color-relief-opacity': 0.5,
+        },
+      },
+    ],
+  };
+  assert.deepEqual(validateTileflowNativeStyle(relief), []);
+  hasIssue(
+    {
+      ...relief,
+      layers: [
+        {id: 'shade', type: 'hillshade', source: 'elevation', paint: {resampling: 'linear'}},
+      ],
+    },
+    'NATIVE_UNSUPPORTED_STYLE',
+    '/layers/0/paint/resampling',
+  );
+});
 
 test('rejects globe and retains the existing style-spec pitch range', () => {
   hasIssue(
@@ -140,17 +219,17 @@ test('rejects globe and retains the existing style-spec pitch range', () => {
 
 test('checks nested expression support without interpreting literal data or match labels', () => {
   const style = labels();
-  style.layers[0]!.layout['text-field'] = ['coalesce', ['global-state', 'name'], 'fallback'];
+  style.layers[0]!.layout['text-field'] = ['coalesce', ['feature-state', 'name'], 'fallback'];
   hasIssue(style, 'NATIVE_UNSUPPORTED_STYLE', '/layers/0/layout/text-field/1/0');
   style.layers[0]!.layout['text-field'] = [
     'match',
     ['get', 'kind'],
-    ['global-state', 'water'],
+    ['feature-state', 'water'],
     'name',
     'fallback',
   ];
   assert.deepEqual(validateTileflowNativeStyle(style), []);
-  style.layers[0]!.layout['text-font'] = ['literal', ['global-state']];
+  style.layers[0]!.layout['text-font'] = ['literal', ['feature-state']];
   assert.deepEqual(validateTileflowNativeStyle(style), []);
 });
 
@@ -225,6 +304,43 @@ test('requires a complete native font provider instead of browser metadata or a 
   );
   hasIssue(
     {...style, 'font-faces': {'Noto Sans Regular': 'https://maps.example.test/font.woff2'}},
+    'NATIVE_FONT_UNAVAILABLE',
+    '/font-faces/Noto Sans Regular',
+  );
+  // Font files may claim the characters they draw, in the `U+start-end` form native engines read.
+  const ranged = (file: Record<string, unknown>) => ({
+    ...style,
+    'font-faces': {'Noto Sans Regular': [file]},
+  });
+  const url = 'https://maps.example.test/latin.ttf';
+  assert.deepEqual(
+    validateTileflowNativeStyle(ranged({url, 'unicode-range': ['U+0000-024F', 'U+2000-206f']})),
+    [],
+  );
+  assert.deepEqual(validateTileflowNativeStyle(ranged({url})), []);
+  for (const range of ['U+0041', 'U+0050-0041', 'U+0000-110000', '0041-0050', 'U+00G1-0050'])
+    hasIssue(
+      ranged({url, 'unicode-range': [range]}),
+      'NATIVE_FONT_UNAVAILABLE',
+      '/font-faces/Noto Sans Regular/0/unicode-range',
+    );
+  hasIssue(
+    ranged({url, 'unicode-range': []}),
+    'NATIVE_FONT_UNAVAILABLE',
+    '/font-faces/Noto Sans Regular/0/unicode-range',
+  );
+  hasIssue(
+    ranged({url: 'https://maps.example.test/latin.woff2'}),
+    'NATIVE_FONT_UNAVAILABLE',
+    '/font-faces/Noto Sans Regular/0/url',
+  );
+  hasIssue(
+    ranged({url, weight: 400}),
+    'NATIVE_FONT_UNAVAILABLE',
+    '/font-faces/Noto Sans Regular/0',
+  );
+  hasIssue(
+    {...style, 'font-faces': {'Noto Sans Regular': []}},
     'NATIVE_FONT_UNAVAILABLE',
     '/font-faces/Noto Sans Regular',
   );

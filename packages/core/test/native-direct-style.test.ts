@@ -119,7 +119,7 @@ test('rejects cycles and prototype-mutating keys at every depth, but permits sha
 
 test('applies the existing raw style node ceiling, not the prepared-output allowance', () => {
   const maximum = tileflowNativeProfileLimits.maximumNodes;
-  assert.equal(maximum, 160_000);
+  assert.equal(maximum, 320_000);
   // A record with one array property visits root, key, array, then index/value pairs.
   const inside = {metadata: Array((maximum - 4) / 2).fill(0)};
   const outside = {metadata: Array((maximum - 2) / 2).fill(0)};

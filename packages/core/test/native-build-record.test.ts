@@ -15,21 +15,39 @@ function transformation(theme = 'light'): TileflowNativeStyleTransformation {
     inputLayers: 3,
     outputLayers: 4,
     projection: 'globe-to-mercator',
+    removedLayers: [],
+    insertedLayers: [],
     layers: [{inputLayer: 1, outputStart: 1, outputCount: 2, properties: ['line-cap']}],
     symbolOverlap: [{inputLayer: 2, properties: ['icon-overlap', 'text-overlap']}],
+    degradations: ['globe', 'sky'],
   };
 }
 
-test('binds the native-v1 preparation ABI and exact transformation scope in a strict v2 record', () => {
+/** Layer 0 removed, a layer inserted first, layer 1 split in two: 4 inputs become 5 outputs. */
+function degraded(): TileflowNativeStyleTransformation {
+  return {
+    ...transformation(),
+    inputLayers: 4,
+    outputLayers: 5,
+    removedLayers: [0],
+    insertedLayers: [0],
+    layers: [{inputLayer: 1, outputStart: 1, outputCount: 2, properties: ['line-dasharray']}],
+    symbolOverlap: [{inputLayer: 3, properties: ['text-overlap']}],
+    degradations: ['deviceContours:contours', 'scene3d'],
+  };
+}
+
+test('binds the native-v1 preparation ABI and exact transformation scope in a strict v3 record', () => {
   const record = createTileflowNativeBuildRecord('c'.repeat(64), [transformation()]);
-  assert.equal(record.schemaVersion, 2);
-  assert.equal(record.preparationVersion, 'native-lowering-v1');
+  assert.equal(record.schemaVersion, 3);
+  assert.equal(record.preparationVersion, 'native-lowering-v2');
+  assert.deepEqual(record.engines, {android: '13.7.1', ios: '7.0.0'});
   assert.equal(record.validation, 'static-artifacts');
   assert.deepEqual(record.transformations, [transformation()]);
   assert.deepEqual(tileflowNativeBuildRecordSchema.parse(record), record);
   for (const invalid of [
-    {...record, schemaVersion: 1},
-    {...record, preparationVersion: 'unknown'},
+    {...record, schemaVersion: 2},
+    {...record, preparationVersion: 'native-lowering-v1'},
     {...record, rendererExecuted: true},
     {...record, transformations: [{...transformation(), outputLayers: 5}]},
     {...record, transformations: [{...transformation(), projection: 'adaptive'}]},
@@ -55,6 +73,20 @@ test('binds the native-v1 preparation ABI and exact transformation scope in a st
     },
     {...record, transformations: [transformation(), transformation()]},
     {...record, transformations: [{...transformation(), symbolOverlap: undefined}]},
+    {...record, transformations: [{...transformation(), degradations: ['sky', 'globe']}]},
+    {...record, transformations: [{...transformation(), removedLayers: undefined}]},
+    // A removed layer cannot also be split, and spans follow removed and inserted layers.
+    {...record, transformations: [{...degraded(), removedLayers: [1]}]},
+    {...record, transformations: [{...degraded(), insertedLayers: [1]}]},
+    {...record, transformations: [{...degraded(), insertedLayers: []}]},
+    {...record, transformations: [{...degraded(), removedLayers: [0, 0]}]},
+    {...record, transformations: [{...degraded(), insertedLayers: [5]}]},
+    {
+      ...record,
+      transformations: [
+        {...degraded(), symbolOverlap: [{inputLayer: 0, properties: ['text-overlap']}]},
+      ],
+    },
     ...[
       // Unordered, outside the style, on a partitioned line layer, or with unknown properties.
       [
@@ -71,6 +103,8 @@ test('binds the native-v1 preparation ABI and exact transformation scope in a st
     })),
   ])
     assert.equal(tileflowNativeBuildRecordSchema.safeParse(invalid).success, false);
+  const removedAndInserted = createTileflowNativeBuildRecord('c'.repeat(64), [degraded()]);
+  assert.deepEqual(removedAndInserted.transformations, [degraded()]);
 });
 
 test('orders style receipts deterministically without mutating callers or conflating hashes', () => {

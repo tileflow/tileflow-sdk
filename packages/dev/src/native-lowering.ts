@@ -1,5 +1,5 @@
 /** Finite decision lowering for native-v1. This module performs no I/O or style compilation. */
-export const nativeLoweringVersion = 'native-lowering-v1' as const;
+export const nativeLoweringVersion = 'native-lowering-v2' as const;
 export const nativeLoweringLimits = Object.freeze({
   maximumDecisionDepth: 16,
   maximumDecisionNodes: 512,

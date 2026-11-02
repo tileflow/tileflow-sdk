@@ -41,9 +41,11 @@ import {parseTileflowRuntimeManifest, type TileflowRuntimeManifest} from '@tilef
 import {
   createTileflowNativeBuildRecord,
   createTileflowNativeDiagnostic,
+  createTileflowNativeFamily,
   resolveTileflowRenderer,
   type TileflowNativeBuildRecord,
   tileflowNativeBuildRecordFileName,
+  type TileflowNativeFamily,
   TileflowNativeCompatibilityError,
   type TileflowRenderer,
 } from '@tileflow/core/native-profile';
@@ -189,6 +191,8 @@ export type TileflowBuildArtifacts = {
   buildManifest: TileflowMapBuildManifestV1;
   /** Present only for native artifact preparation; never part of the runtime manifest. */
   nativeBuild?: TileflowNativeBuildRecord;
+  /** Native preparation only: each map's family document, written to `families/<map>.json`. */
+  nativeFamilies?: Readonly<Record<string, TileflowNativeFamily>>;
   /** Releases local immutable snapshot references owned by this artifact generation. */
   dispose?: () => Promise<void>;
   manifest: TileflowRuntimeManifest;
@@ -433,6 +437,22 @@ export async function createTileflowArtifactPlan(
       renderer === 'native'
         ? prepareTileflowNativeStyles(preparedFonts.styles, assets, nativeUrls)
         : lineBackgroundGlyphs.styles;
+    // Blend plans, emphasis tables and appearance per theme, from the final native styles.
+    const nativeFamilies =
+      renderer === 'native'
+        ? Object.fromEntries(
+            Object.keys(prepared.project.maps)
+              .sort(compareCodeUnits)
+              .map((mapName) => [
+                mapName,
+                createTileflowNativeFamily({
+                  map: mapName,
+                  themes: Object.keys(prepared.project.maps[mapName]!.themes),
+                  styles: styles[mapName]!,
+                }),
+              ]),
+          )
+        : undefined;
     const provenance = await createTileflowBuildProvenance(prepared.cwd);
     const buildManifest = await createTileflowMapBuildManifest(
       Object.fromEntries(
@@ -499,6 +519,7 @@ export async function createTileflowArtifactPlan(
               hashBytes(serializeCanonicalJson(buildManifest)),
               nativeLowering!.transformations,
             ),
+            nativeFamilies: nativeFamilies!,
           }
         : {}),
       dispose: localTilesets.dispose,
@@ -592,6 +613,7 @@ function getStableTileflowArtifactFiles(artifacts: TileflowBuildArtifacts): Tile
           },
         ]
       : []),
+    ...nativeFamilyFiles(artifacts),
   ];
   return validateArtifactFiles(files);
 }
@@ -700,8 +722,26 @@ function createGenerationArtifactFiles(
     ...asset,
     fileName: `${prefix}/${asset.fileName}`,
   }));
+  // Each generation keeps its family documents beside its styles: `../../families/<map>.json`.
+  const immutableFamilies = nativeFamilyFiles(artifacts).map((file) => ({
+    ...file,
+    fileName: `${prefix}/${file.fileName}`,
+  }));
 
-  return validateArtifactFiles([...stableFiles, ...immutableStyles, ...immutableAssets]);
+  return validateArtifactFiles([
+    ...stableFiles,
+    ...immutableStyles,
+    ...immutableAssets,
+    ...immutableFamilies,
+  ]);
+}
+
+function nativeFamilyFiles(artifacts: TileflowBuildArtifacts): TileflowArtifactFile[] {
+  return Object.entries(artifacts.nativeFamilies ?? {}).map(([mapName, family]) => ({
+    contentType: 'application/json; charset=utf-8',
+    fileName: `families/${mapName}.json`,
+    source: `${serializeCanonicalJson(family)}\n`,
+  }));
 }
 
 function createFontAwareManifest(
@@ -1372,6 +1412,7 @@ function assertTileflowArtifactFileName(fileName: string): void {
   assertSafeManagedFileName(fileName);
   const logicalName = fileName.replace(/^generations\/[a-f0-9]{64}\//, '');
   const styleMatch = /^styles\/([^/]+)\/([^/]+)\.json$/u.exec(logicalName);
+  const familyMatch = /^families\/([^/]+)\.json$/u.exec(logicalName);
   const iconMatch = /^icons\/([^/]+)\/sprite(?:@2x)?\.(?:json|png)$/u.exec(logicalName);
   // A map's building models, named by their id and the start of their SHA-256.
   const modelMatch = /^models\/([^/]+)\/[a-z0-9]+(?:-[a-z0-9]+)*-[a-f0-9]{16}\.glb$/u.exec(
@@ -1384,6 +1425,7 @@ function assertTileflowArtifactFileName(fileName: string): void {
     (styleMatch &&
       tileflowMapIdSchema.safeParse(styleMatch[1]).success &&
       tileflowThemeNameSchema.safeParse(styleMatch[2]).success) ||
+    (familyMatch && tileflowMapIdSchema.safeParse(familyMatch[1]).success) ||
     (iconMatch && tileflowMapIdSchema.safeParse(iconMatch[1]).success) ||
     (modelMatch && tileflowMapIdSchema.safeParse(modelMatch[1]).success) ||
     /^tilesets\/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.pmtiles$/u.test(logicalName) ||

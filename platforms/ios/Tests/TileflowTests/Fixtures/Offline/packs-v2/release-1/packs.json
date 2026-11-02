@@ -4,8 +4,8 @@
       "id": "style",
       "url": "https://api.tileflow.test/v1/offline/documents/style.tfpack",
       "file": "release-1/packs/style.tfpack",
-      "bytes": 1440,
-      "etag": "\"9f2d7e2c6ce84928ece04bec77f067bdda2e92cfa63385cd4514611605d1799f\""
+      "bytes": 3421,
+      "etag": "\"be5db9bba45f3a3a8c801281b38992d8d2f8c0527028717cc782953b24bd4953\""
     },
     {
       "id": "assets",
@@ -22,46 +22,81 @@
       "etag": "\"55874c9cee1bae901f795d1da7391bbce77501c852ca8303277d0bb76880340d\""
     },
     {
+      "id": "tiles/bathymetry/7/62/48",
+      "url": "https://api.tileflow.test/v1/offline/tiles/bathymetry/bathymetry-v1-20261021-fixture/7/62/48.tfpack",
+      "file": "release-1/packs/tiles/bathymetry/7/62/48.tfpack",
+      "bytes": 171,
+      "etag": "\"569fdb5c368507201291732f7d7838bd9c7718238e10ed5c996e7329cf17c964\""
+    },
+    {
+      "id": "tiles/bathymetry-dem/7/62/48",
+      "url": "https://api.tileflow.test/v1/offline/tiles/bathymetry-dem/bathymetry-v1-20261021-fixture/7/62/48.tfpack",
+      "file": "release-1/packs/tiles/bathymetry-dem/7/62/48.tfpack",
+      "bytes": 190,
+      "etag": "\"d8623b0d7a166a5d63bd7699466635c11473437c14f50f9a87ac7212910a45b3\""
+    },
+    {
+      "id": "tiles/nautical/7/62/48",
+      "url": "https://api.tileflow.test/v1/offline/tiles/nautical/nautical-v1-20261020-fixture/7/62/48.tfpack",
+      "file": "release-1/packs/tiles/nautical/7/62/48.tfpack",
+      "bytes": 171,
+      "etag": "\"980f103186fb255a3a47db70dc2a8154c37806e3a7c3de26f114822c41baae00\""
+    },
+    {
+      "id": "tiles/nautical/11/1002/772",
+      "url": "https://api.tileflow.test/v1/offline/tiles/nautical/nautical-v1-20261020-fixture/11/1002/772.tfpack",
+      "file": "release-1/packs/tiles/nautical/11/1002/772.tfpack",
+      "bytes": 728,
+      "etag": "\"58ca83fd1956f9a11e716f0518bd4f833b37fc671bde901170d167cfaf56ef33\""
+    },
+    {
+      "id": "tiles/nautical/11/1003/772",
+      "url": "https://api.tileflow.test/v1/offline/tiles/nautical/nautical-v1-20261020-fixture/11/1003/772.tfpack",
+      "file": "release-1/packs/tiles/nautical/11/1003/772.tfpack",
+      "bytes": 728,
+      "etag": "\"c9596e65ca2f50e89f6ac77c019ef9691d11b75596c95832f610e279ad6e01fa\""
+    },
+    {
       "id": "tiles/terrain/7/62/48",
       "url": "https://api.tileflow.test/v1/offline/tiles/terrain/2026-10/7/62/48.tfpack",
       "file": "release-1/packs/tiles/terrain/7/62/48.tfpack",
-      "bytes": 115,
-      "etag": "\"f9f306c8d40b3fc957787464ad2b66b027aae2a6dd660be952f36392ff9c0a82\""
+      "bytes": 123,
+      "etag": "\"da473b8fba9b2e145b53f7e059fe486edc75ee25dad3aa0063cd950a4333d8fb\""
     },
     {
       "id": "tiles/terrain/11/1002/772",
       "url": "https://api.tileflow.test/v1/offline/tiles/terrain/2026-10/11/1002/772.tfpack",
       "file": "release-1/packs/tiles/terrain/11/1002/772.tfpack",
-      "bytes": 172,
-      "etag": "\"260cd6125b72d2773defd1a8f3c0c7d231b2a8b9ce617b69c1298172bce3b0ec\""
+      "bytes": 188,
+      "etag": "\"2bdab8edf5772045088ccbe5453f8d4b182a465205029ab110552f535c331714\""
     },
     {
       "id": "tiles/terrain/11/1003/772",
       "url": "https://api.tileflow.test/v1/offline/tiles/terrain/2026-10/11/1003/772.tfpack",
       "file": "release-1/packs/tiles/terrain/11/1003/772.tfpack",
-      "bytes": 172,
-      "etag": "\"f5dcbbf156bc91226faaf41981f80332bd307d4190d25ce72a515e4d2ae55b93\""
+      "bytes": 188,
+      "etag": "\"2916a9b2a5a3a89caa24c5d43b144554bb82fd576abf4687ec2a934692bccf6b\""
     },
     {
       "id": "tiles/world/7/62/48",
       "url": "https://api.tileflow.test/v1/offline/tiles/world/2026-10-01/7/62/48.tfpack",
       "file": "release-1/packs/tiles/world/7/62/48.tfpack",
-      "bytes": 162,
-      "etag": "\"1dc2a53eba9057960d76dc513791c47d5c7dbdfedeb0c403b489a912000b2b2a\""
+      "bytes": 168,
+      "etag": "\"698840d501dd8949f61f5b2035837a7bd763537a6e48564433dcd3145f27e22d\""
     },
     {
       "id": "tiles/world/11/1002/772",
       "url": "https://api.tileflow.test/v1/offline/tiles/world/2026-10-01/11/1002/772.tfpack",
       "file": "release-1/packs/tiles/world/11/1002/772.tfpack",
-      "bytes": 470,
-      "etag": "\"6e255100887e56efacd6de16b82e117308c3440d726a3701213a92c2b58aa984\""
+      "bytes": 494,
+      "etag": "\"605f24caca30e726d34ecf5a735f1b13b97b95d9fcb20b1a881f7cc6f8401c30\""
     },
     {
       "id": "tiles/world/11/1003/772",
       "url": "https://api.tileflow.test/v1/offline/tiles/world/2026-10-01/11/1003/772.tfpack",
       "file": "release-1/packs/tiles/world/11/1003/772.tfpack",
-      "bytes": 674,
-      "etag": "\"774d46b4938badbbc44d7ec52515a50750b7b6e72fea703674dfbd34ddc58834\""
+      "bytes": 710,
+      "etag": "\"0c97f0b428df75eb53f4804ffcbfdf7b12d21044aefe78d4b90649159e915ae3\""
     }
   ]
 }

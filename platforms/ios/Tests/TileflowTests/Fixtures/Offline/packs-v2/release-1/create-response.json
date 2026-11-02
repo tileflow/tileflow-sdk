@@ -1,7 +1,7 @@
 {
   "version": 2,
   "kind": "offline_download",
-  "grant": "tf_offline_v2.eyJ2ZXJzaW9uIjoyLCJhdWRpZW5jZSI6InRpbGVmbG93Om9mZmxpbmUtcGFjayIsImRvd25sb2FkSWQiOiJvZGxfRklYVFVSRU9ORURPV05MT0FEMDAwMCIsImNyZWRlbnRpYWxJZCI6ImtleV9vZmZsaW5lX2ZpeHR1cmUiLCJjcmVkZW50aWFsUmV2aXNpb24iOjEsIm9yZ2FuaXphdGlvbklkIjoib3JnX29mZmxpbmVfZml4dHVyZSIsInByb2plY3RJZCI6InByal9vZmZsaW5lX2ZpeHR1cmUiLCJtYXBJZCI6Im1hcF9vZmZsaW5lZml4dHVyZTAwIiwiZGVsaXZlcnlQb2xpY3lSZXZpc2lvbiI6MSwiZGVwbG95bWVudFZlcnNpb24iOjEsInByb2ZpbGUiOiJ3ZWJ2aWV3LXYxIiwidGhlbWVzIjpbeyJuYW1lIjoiZGVmYXVsdCIsInNoYTI1NiI6IjM0ZTYyNTk0ZjY2ZWVkNjc0ZDAxYzQ1ZDY5NDc2MjhiNGRjYWM4ODllZDQ1ZTU1OTZjODUzMzVjYWU0NTU5YzkifV0sImNvdmVyU2hhMjU2IjoiZmZhOWRiZmVmYTEwOWVkZmZlZDk1NTUxNjQ1NDUxODE0MTJjYmNiYjI1MDZlMzRiOWMxMDU5YmExYjEyZDdiMyIsIm1pblpvb20iOjEwLCJtYXhab29tIjoxNCwidGVycmFpbk1heFpvb20iOjEyLCJzb3VyY2VzIjpbeyJpZCI6InRlcnJhaW4iLCJ2ZXJzaW9uIjoiMjAyNi0xMCIsImRlc2NyaXB0b3JTaGEyNTYiOm51bGwsInpvb21zIjpbMTAsMTJdLCJ0aWxlSnNvblNoYTI1NiI6IjQ0OGQ3NGI4OGVkMzM5Nzk4Y2UyN2M5NTAyOWRmYjk5YWFlMjNkMjY1ZTY2YzU4YTQwNWU0OTA5NTBlMjc3NDIifSx7ImlkIjoid29ybGQiLCJ2ZXJzaW9uIjoiMjAyNi0xMC0wMSIsImRlc2NyaXB0b3JTaGEyNTYiOiJkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkIiwiem9vbXMiOlsxMCwxNF0sInRpbGVKc29uU2hhMjU2IjoiYzJkNDA2OWE2YTIwMzk4NzVjYmY1MGRkOTcwOWNkYWRkNzA5YmIxMTY0NDdiYjcyZTY1MTgwZTljNDU5M2JhOSJ9XSwiZG9jdW1lbnRzIjpbeyJpZCI6InN0eWxlIiwic2hhMjU2IjoiZTA1ZTU1NjI5NmQ4YTMyZDJlOTZiYmNjN2U3YThhODYyYTUyMGNmMTUwMGQ5YTE1OTU2NmU4MWUzYjQ3ZGQ0MiJ9LHsiaWQiOiJhc3NldHMiLCJzaGEyNTYiOiI0MTM5ZGM0NjBhZTljMTgxMzljZGYwMzU4ZDM4ODllYWYwMTQ2MmVmOTdhNmRjMDhmN2Y2NzMxNDVmNGE1OTVhIn0seyJpZCI6ImdseXBocy9Ob3RvIFNhbnMgUmVndWxhci8wIiwic2hhMjU2IjoiZjk4ZjQyY2JhYWIzZDFlNTk3YzYyYTI3YTkyODJhOGIxZjBlOTVkNTU3M2FkNmZkYWI0ODY1ZWRkODdlNzJjYSJ9XSwicmVzb3VyY2VzIjoxNiwibWFuaWZlc3RTaGEyNTYiOiIxMDk5MjJlMWQ1NjNhYzdiYzI5ZTliMjk1YmEzMWRkNzBhYzVmNGMyNzU4MzY3OTNlNWRjNjBlMTQ2NzNlZDUyIiwiaXNzdWVkQXQiOjE3OTMzNjE2MDAsImV4cGlyZXNBdCI6MTc5MzQ0ODAwMH0.XAJTXhxp3SwezirWc7yaw4VVgLhPEU7FWchBd94jjkA",
+  "grant": "tf_offline_v2.eyJ2ZXJzaW9uIjoyLCJhdWRpZW5jZSI6InRpbGVmbG93Om9mZmxpbmUtcGFjayIsImRvd25sb2FkSWQiOiJvZGxfRklYVFVSRU9ORURPV05MT0FEMDAwMCIsImNyZWRlbnRpYWxJZCI6ImtleV9vZmZsaW5lX2ZpeHR1cmUiLCJjcmVkZW50aWFsUmV2aXNpb24iOjEsIm9yZ2FuaXphdGlvbklkIjoib3JnX29mZmxpbmVfZml4dHVyZSIsInByb2plY3RJZCI6InByal9vZmZsaW5lX2ZpeHR1cmUiLCJtYXBJZCI6Im1hcF9vZmZsaW5lZml4dHVyZTAwIiwiZGVsaXZlcnlQb2xpY3lSZXZpc2lvbiI6MSwiZGVwbG95bWVudFZlcnNpb24iOjEsInByb2ZpbGUiOiJ3ZWJ2aWV3LXYxIiwidGhlbWVzIjpbeyJuYW1lIjoiZGVmYXVsdCIsInNoYTI1NiI6ImQ0MjQ2Yzc3NzI1ZTM3NTFlYjE3MzRiMzdhZTI3MDAwMzE5MzA1MGY4ZDhhMGY4OWQ1YTcwZDQ3MWRiYWM1MjkifV0sImNvdmVyU2hhMjU2IjoiMWMyZjIyZjc1ZmM4MTA4N2I3NTZkYWE1YjFmY2QwNzllZjMxZTYwMmZkNmE0NTc3NzE1ZjhiZmE2OTdhNzMyZiIsIm1pblpvb20iOjEwLCJtYXhab29tIjoxNCwidGVycmFpbk1heFpvb20iOjEyLCJzb3VyY2VzIjpbeyJpZCI6ImJhdGh5bWV0cnkiLCJ2ZXJzaW9uIjoiYmF0aHltZXRyeS12MS0yMDI2MTAyMS1maXh0dXJlIiwiZGVzY3JpcHRvclNoYTI1NiI6bnVsbCwiem9vbXMiOls5LDldLCJ0aWxlSnNvblNoYTI1NiI6ImM0NDdhNDc0ODc1NDAwMDE5NjliM2ZkMTFmMGQ2MzUzMmQyNWRlNWE4NjEzYzIwMzFmNzJhZWRmMzdjMWEzMzIifSx7ImlkIjoiYmF0aHltZXRyeS1kZW0iLCJ2ZXJzaW9uIjoiYmF0aHltZXRyeS12MS0yMDI2MTAyMS1maXh0dXJlIiwiZGVzY3JpcHRvclNoYTI1NiI6bnVsbCwiem9vbXMiOls4LDldLCJ0aWxlSnNvblNoYTI1NiI6ImVhMjU2NTIzMzBmYWZiMjNiMDJmOTJhNmMyOGE3YThiNWI5ZGMyMWEyMGFlZmFjMDExNWJlZDJhMDg4MmQ5NTYifSx7ImlkIjoibmF1dGljYWwiLCJ2ZXJzaW9uIjoibmF1dGljYWwtdjEtMjAyNjEwMjAtZml4dHVyZSIsImRlc2NyaXB0b3JTaGEyNTYiOm51bGwsInpvb21zIjpbMTAsMTRdLCJ0aWxlSnNvblNoYTI1NiI6Ijc3YWVmNmZiZjI5YjlmYmZjZmIxZWVjOWY3ZjAxYWNiMWEzMDk2NzQzYTA1MzBhNzgxZGRlNGY0ZWZlYzc4NTQifSx7ImlkIjoidGVycmFpbiIsInZlcnNpb24iOiIyMDI2LTEwIiwiZGVzY3JpcHRvclNoYTI1NiI6bnVsbCwiem9vbXMiOlsxMCwxMl0sInRpbGVKc29uU2hhMjU2IjoiNDQ4ZDc0Yjg4ZWQzMzk3OThjZTI3Yzk1MDI5ZGZiOTlhYWUyM2QyNjVlNjZjNThhNDA1ZTQ5MDk1MGUyNzc0MiJ9LHsiaWQiOiJ3b3JsZCIsInZlcnNpb24iOiIyMDI2LTEwLTAxIiwiZGVzY3JpcHRvclNoYTI1NiI6ImRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGRkZGQiLCJ6b29tcyI6WzEwLDE0XSwidGlsZUpzb25TaGEyNTYiOiJjMmQ0MDY5YTZhMjAzOTg3NWNiZjUwZGQ5NzA5Y2RhZGQ3MDliYjExNjQ0N2JiNzJlNjUxODBlOWM0NTkzYmE5In1dLCJkb2N1bWVudHMiOlt7ImlkIjoic3R5bGUiLCJzaGEyNTYiOiI5Yzk4MGE2MzU4MzkxNTUyZDAwNjg0NzYwNDAzMDFkMGViNmIxZjhmODVlMzMxY2U4Zjk3MzZiYmM2YTMxYTgzIn0seyJpZCI6ImFzc2V0cyIsInNoYTI1NiI6IjQxMzlkYzQ2MGFlOWMxODEzOWNkZjAzNThkMzg4OWVhZjAxNDYyZWY5N2E2ZGMwOGY3ZjY3MzE0NWY0YTU5NWEifSx7ImlkIjoiZ2x5cGhzL05vdG8gU2FucyBSZWd1bGFyLzAiLCJzaGEyNTYiOiJmOThmNDJjYmFhYjNkMWU1OTdjNjJhMjdhOTI4MmE4YjFmMGU5NWQ1NTczYWQ2ZmRhYjQ4NjVlZGQ4N2U3MmNhIn1dLCJyZXNvdXJjZXMiOjMyLCJtYW5pZmVzdFNoYTI1NiI6IjJlZWE5ZTY3MTIzOTIwNTk2ZGM1NGM2NTUzNDk4YWViMmJjNGVhNTk3YTI5NzYyZmNjMTJiNjIyYWZiY2IyZGUiLCJpc3N1ZWRBdCI6MTc5MzM2MTYwMCwiZXhwaXJlc0F0IjoxNzkzNDQ4MDAwfQ.ifw4UORuDibC6cia6RE1cxgNHqAle43k7rle3Bj9DUU",
   "manifest": {
     "version": 2,
     "downloadId": "odl_FIXTUREONEDOWNLOAD0000",
@@ -9,12 +9,39 @@
     "profile": "webview-v1",
     "deploymentVersion": 1,
     "themes": ["default"],
-    "coverSha256": "ffa9dbfefa109edffed9555164545181412cbcbb2506e34b9c1059ba1b12d7b3",
+    "coverSha256": "1c2f22f75fc81087b756daa5b1fcd079ef31e602fd6a4577715f8bfa697a732f",
     "minZoom": 10,
     "maxZoom": 14,
     "terrainMaxZoom": 12,
     "createdAt": "2026-10-30T12:00:00.000Z",
     "sources": [
+      {
+        "source": "bathymetry",
+        "version": "bathymetry-v1-20261021-fixture",
+        "template": "https://api.tileflow.test/tiles/bathymetry/bathymetry-v1-20261021-fixture/{z}/{x}/{y}.pbf?map=map_offlinefixture00",
+        "zooms": [9, 9],
+        "contentType": "application/vnd.mapbox-vector-tile",
+        "contentEncoding": "gzip",
+        "absentStatus": 204
+      },
+      {
+        "source": "bathymetry-dem",
+        "version": "bathymetry-v1-20261021-fixture",
+        "template": "https://api.tileflow.test/tiles/bathymetry/dem/bathymetry-v1-20261021-fixture/{z}/{x}/{y}.webp?map=map_offlinefixture00",
+        "zooms": [8, 9],
+        "contentType": "image/webp",
+        "contentEncoding": null,
+        "absentStatus": 204
+      },
+      {
+        "source": "nautical",
+        "version": "nautical-v1-20261020-fixture",
+        "template": "https://api.tileflow.test/tiles/nautical/nautical-v1-20261020-fixture/{z}/{x}/{y}.pbf?map=map_offlinefixture00",
+        "zooms": [10, 14],
+        "contentType": "application/vnd.mapbox-vector-tile",
+        "contentEncoding": "gzip",
+        "absentStatus": 204
+      },
       {
         "source": "terrain",
         "version": "2026-10",
@@ -39,8 +66,8 @@
         "id": "style",
         "kind": "documents",
         "url": "https://api.tileflow.test/v1/offline/documents/style.tfpack",
-        "bytes": 1440,
-        "resources": 3,
+        "bytes": 3421,
+        "resources": 6,
         "billableResources": 0
       },
       {
@@ -60,10 +87,65 @@
         "billableResources": 0
       },
       {
+        "id": "tiles/bathymetry/7/62/48",
+        "kind": "tiles",
+        "url": "https://api.tileflow.test/v1/offline/tiles/bathymetry/bathymetry-v1-20261021-fixture/7/62/48.tfpack",
+        "bytes": 171,
+        "resources": 1,
+        "billableResources": 1,
+        "source": "bathymetry",
+        "anchor": [7, 62, 48],
+        "zooms": [9, 9]
+      },
+      {
+        "id": "tiles/bathymetry-dem/7/62/48",
+        "kind": "tiles",
+        "url": "https://api.tileflow.test/v1/offline/tiles/bathymetry-dem/bathymetry-v1-20261021-fixture/7/62/48.tfpack",
+        "bytes": 190,
+        "resources": 2,
+        "billableResources": 2,
+        "source": "bathymetry-dem",
+        "anchor": [7, 62, 48],
+        "zooms": [8, 9]
+      },
+      {
+        "id": "tiles/nautical/7/62/48",
+        "kind": "tiles",
+        "url": "https://api.tileflow.test/v1/offline/tiles/nautical/nautical-v1-20261020-fixture/7/62/48.tfpack",
+        "bytes": 171,
+        "resources": 1,
+        "billableResources": 1,
+        "source": "nautical",
+        "anchor": [7, 62, 48],
+        "zooms": [10, 10]
+      },
+      {
+        "id": "tiles/nautical/11/1002/772",
+        "kind": "tiles",
+        "url": "https://api.tileflow.test/v1/offline/tiles/nautical/nautical-v1-20261020-fixture/11/1002/772.tfpack",
+        "bytes": 728,
+        "resources": 6,
+        "billableResources": 6,
+        "source": "nautical",
+        "anchor": [11, 1002, 772],
+        "zooms": [11, 14]
+      },
+      {
+        "id": "tiles/nautical/11/1003/772",
+        "kind": "tiles",
+        "url": "https://api.tileflow.test/v1/offline/tiles/nautical/nautical-v1-20261020-fixture/11/1003/772.tfpack",
+        "bytes": 728,
+        "resources": 6,
+        "billableResources": 6,
+        "source": "nautical",
+        "anchor": [11, 1003, 772],
+        "zooms": [11, 14]
+      },
+      {
         "id": "tiles/terrain/7/62/48",
         "kind": "tiles",
         "url": "https://api.tileflow.test/v1/offline/tiles/terrain/2026-10/7/62/48.tfpack",
-        "bytes": 115,
+        "bytes": 123,
         "resources": 1,
         "billableResources": 1,
         "source": "terrain",
@@ -74,7 +156,7 @@
         "id": "tiles/terrain/11/1002/772",
         "kind": "tiles",
         "url": "https://api.tileflow.test/v1/offline/tiles/terrain/2026-10/11/1002/772.tfpack",
-        "bytes": 172,
+        "bytes": 188,
         "resources": 2,
         "billableResources": 2,
         "source": "terrain",
@@ -85,7 +167,7 @@
         "id": "tiles/terrain/11/1003/772",
         "kind": "tiles",
         "url": "https://api.tileflow.test/v1/offline/tiles/terrain/2026-10/11/1003/772.tfpack",
-        "bytes": 172,
+        "bytes": 188,
         "resources": 2,
         "billableResources": 2,
         "source": "terrain",
@@ -96,7 +178,7 @@
         "id": "tiles/world/7/62/48",
         "kind": "tiles",
         "url": "https://api.tileflow.test/v1/offline/tiles/world/2026-10-01/7/62/48.tfpack",
-        "bytes": 162,
+        "bytes": 168,
         "resources": 1,
         "billableResources": 1,
         "source": "world",
@@ -107,7 +189,7 @@
         "id": "tiles/world/11/1002/772",
         "kind": "tiles",
         "url": "https://api.tileflow.test/v1/offline/tiles/world/2026-10-01/11/1002/772.tfpack",
-        "bytes": 470,
+        "bytes": 494,
         "resources": 4,
         "billableResources": 4,
         "source": "world",
@@ -118,7 +200,7 @@
         "id": "tiles/world/11/1003/772",
         "kind": "tiles",
         "url": "https://api.tileflow.test/v1/offline/tiles/world/2026-10-01/11/1003/772.tfpack",
-        "bytes": 674,
+        "bytes": 710,
         "resources": 6,
         "billableResources": 6,
         "source": "world",
@@ -135,10 +217,84 @@
       }
     ],
     "origins": ["https://api.tileflow.test"],
-    "excluded": [{"source": "nautical", "reason": "legal_review"}],
-    "totals": {"packs": 9, "resources": 25, "billableResources": 16, "bytes": 4149},
+    "excluded": [{"source": "boundaries", "reason": "not_authorized"}],
+    "totals": {"packs": 14, "resources": 44, "billableResources": 32, "bytes": 8224},
     "attribution": {
       "sources": [
+        {
+          "source": "bathymetry",
+          "release": "bathymetry-v1-20261021-fixture",
+          "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#bathymetry\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+          "obligations": [
+            {
+              "id": "bathymetry-not-for-navigation",
+              "exact": "Not for navigation. Tileflow Bathymetry is a visualization; its depths mix vertical references."
+            },
+            {
+              "id": "gebco",
+              "exact": "GEBCO Grid, GEBCO Bathymetric Compilation Group: public domain under the GEBCO terms of use. Not endorsed by GEBCO, the IHO or the IOC, and not for navigation or any other purpose involving safety at sea."
+            }
+          ],
+          "regionalObligations": [
+            {
+              "id": "emodnet",
+              "exact": "EMODnet Digital Bathymetry (DTM 2024), EMODnet Bathymetry Consortium: created by EMODnet, owned by the EU and licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); modified. Not for navigation.",
+              "href": "https://emodnet.ec.europa.eu/en/bathymetry",
+              "regions": [[-36, 15, 43, 90]]
+            }
+          ],
+          "page": {
+            "exact": "Tileflow Bathymetry sources and notices",
+            "href": "https://tileflow.dev/copyright#bathymetry"
+          }
+        },
+        {
+          "source": "bathymetry-dem",
+          "release": "bathymetry-v1-20261021-fixture",
+          "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#bathymetry\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+          "obligations": [
+            {
+              "id": "bathymetry-not-for-navigation",
+              "exact": "Not for navigation. Tileflow Bathymetry is a visualization; its depths mix vertical references."
+            },
+            {
+              "id": "gebco",
+              "exact": "GEBCO Grid, GEBCO Bathymetric Compilation Group: public domain under the GEBCO terms of use. Not endorsed by GEBCO, the IHO or the IOC, and not for navigation or any other purpose involving safety at sea."
+            }
+          ],
+          "regionalObligations": [
+            {
+              "id": "emodnet",
+              "exact": "EMODnet Digital Bathymetry (DTM 2024), EMODnet Bathymetry Consortium: created by EMODnet, owned by the EU and licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); modified. Not for navigation.",
+              "href": "https://emodnet.ec.europa.eu/en/bathymetry",
+              "regions": [[-36, 15, 43, 90]]
+            }
+          ],
+          "page": {
+            "exact": "Tileflow Bathymetry sources and notices",
+            "href": "https://tileflow.dev/copyright#bathymetry"
+          }
+        },
+        {
+          "source": "nautical",
+          "release": "nautical-v1-20261020-fixture",
+          "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#nautical\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+          "obligations": [
+            {
+              "id": "nautical-not-for-navigation",
+              "exact": "Not for navigation. Tileflow Nautical is a derived visualization of OpenStreetMap seamarks and NGA publications; it is not an official chart."
+            },
+            {
+              "id": "nga",
+              "exact": "List of Lights (Pub. 110–116) and World Port Index (Pub. 150), courtesy of the U.S. National Geospatial-Intelligence Agency. This reproduction, partial or complete, of any National Geospatial-Intelligence Agency (NGA), National Imagery and Mapping Agency (NIMA) or Defense Mapping Agency (DMA) product, information or data is not approved, authorized or endorsed by the Secretary of Defense, the Director of National Intelligence, the Director, NGA or any other element of the US Government. The US Government and NGA accept no liability for the accuracy or quality of this reproduction or the use of any NGA, NIMA or DMA products, information or data."
+            }
+          ],
+          "regionalObligations": [],
+          "page": {
+            "exact": "Tileflow Nautical sources and notices",
+            "href": "https://tileflow.dev/copyright#nautical"
+          }
+        },
         {"source": "terrain", "text": "© Mapterhorn"},
         {"source": "world", "text": "© OpenStreetMap contributors"}
       ]

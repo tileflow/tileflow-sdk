@@ -35,7 +35,7 @@
     "build": "tsup --config tsup.build.config.ts && tsup --config tsup.native-profile.config.ts && tsup --config tsup.browser.config.ts && tsup --config tsup.native.config.ts && cp ../../docs/modules-api-reference.json dist/config-reference.json",
     "reference:check": "tsx scripts/generate-config-reference.ts --check",
     "reference:generate": "tsx scripts/generate-config-reference.ts --write",
-    "verify": "pnpm run build && tsx --test test/*.test.ts",
+    "verify": "pnpm run build && node ../../scripts/native-golden-generate.mjs --check && tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.contract.json",
     "lint": "tsc -p tsconfig.json --noEmit"
   },

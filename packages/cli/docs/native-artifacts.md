@@ -13,8 +13,8 @@ npx tileflow build --renderer native --target local --out public/tileflow --json
 
 `validate` prepares and checks the complete theme family without writing production output.
 `build` writes the checked generation beneath `public/tileflow/native`, including a strict version-1
-runtime manifest and a separate schema-v2 `native-build.json` record. Serve the complete renderer
-directory, not just the style. A failed compatibility check leaves existing output unchanged.
+runtime manifest, a separate schema-3 `native-build.json` record and a family document per map
+(`families/<map>.json`). Serve the complete renderer directory, not just the style. A failed compatibility check leaves existing output unchanged.
 
 Both commands accept `--renderer web|native`; omission means `web`. Renderer selection is separate
 from `--target local|hosted`. Existing `validate --target hosted` continues to perform web Hosted
@@ -82,10 +82,16 @@ Browser-only selections fail before config execution in native mode. In particul
 compiler-inspection sidecars, or the dev handler's status/event control routes. Use ordinary/default
 web preview for those workflows.
 
-The `native-lowering-v1` preparation policy records fixed globe-to-Mercator normalization, removal
-of a browser sky and finite cap/dash layer partitioning in `native-build.json`; it does not change web artifacts.
-Native preparation rejects adaptive/unknown projections, terrain, browser PMTiles/contour protocols,
-missing text providers and unsupported style values rather than degrading them silently. It preserves
+The `native-lowering-v2` preparation policy records fixed globe-to-Mercator normalization, removal
+of a browser sky, finite cap/dash layer partitioning and every degradation in `native-build.json`;
+it does not change web artifacts. Native maps leave out or replace what MapLibre Native cannot draw
+(browser contours, the 3D scene except building extrusions, terrain displacement, relief
+resampling), and each style lists those changes in `metadata['tileflow:nativeDegradations']`.
+Degradations are information and never block a map. Native preparation still
+rejects adaptive/unknown projections, browser PMTiles protocols, missing text providers and other
+unsupported style values. See the
+[native style artifact contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/native-style-artifact.md)
+for the degradation vocabulary and the family document. It preserves
 shared icon inheritance and independent sprite densities, and maps verified licensed TTF/OTF faces
 into native style declarations. See the
 [profile contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-artifact-profile.md)
@@ -109,8 +115,10 @@ credentials in mobile application configuration.
 Before authentication, upload or publication, the command loads the trusted config once, prepares
 its icon closure, compiles all web themes and lowers all Native themes from that same compiled
 input. It validates profile `native-v1`, hashes, authored identity, source ownership declarations,
-semantic POI provenance and overlay boundaries. Native incompatibility rejects the entire request;
-it cannot publish a new web family alone. Existing Hosted restrictions still apply, including the
+semantic POI provenance and overlay boundaries, and computes the map's family document from the
+Native themes. Native incompatibility rejects the entire request; it cannot publish a new web
+family alone. A map that places its own Team 3D building models is rejected: native styles leave
+the models out, but a renderer deployment does not bind the web family's Team models yet. Existing Hosted restrictions still apply, including the
 current rejection of package-owned web font bundles. This opt-in does not bypass those restrictions;
 use an explicitly configured glyph provider for this Hosted path.
 

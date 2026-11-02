@@ -8,6 +8,7 @@
 - [SDK responsibility and delivery contract](contracts/sdk-responsibilities.md)
 - [Mobile host and renderer protocol contract](contracts/mobile-protocol.md)
 - [Mobile transport and resource cache contract](contracts/mobile-transport-cache.md)
+- [Native style artifact contract](contracts/native-style-artifact.md)
 - [Camera, gestures and controls in the Swift and Kotlin map SDKs](../platforms/native-map-camera.md)
 - [The person's location in the Swift and Kotlin map SDKs](../platforms/native-location.md)
 - [Native Search, Routing, Elevation and GeoIP clients](../platforms/native-services.md)

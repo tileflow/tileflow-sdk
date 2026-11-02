@@ -66,6 +66,14 @@ export type TileflowThemeBlendPlan = Readonly<{
     switchedLayers: number;
     switchedValues: number;
   }>;
+  /**
+   * The planned layers before filling: the first theme's layers, split or copied where values read
+   * feature data, with a template wherever a paint value follows the blend. Read templates with
+   * `tileflowThemeBlendLeafValues`.
+   */
+  layers: readonly Readonly<Record<string, unknown>>[];
+  /** The first theme's metadata with layer references moved to the planned layers, if any moved. */
+  metadata?: unknown;
   /** The style at a blend position: every template filled, every switch at the nearest theme. */
   styleAt(position: number): MapLibreStyle;
 }>;
@@ -167,6 +175,8 @@ export function planTileflowThemeBlend(
     ...(sky === undefined ? {} : {sky}),
     ...(light === undefined ? {} : {light}),
     summary: {splitLayers, copiedLayers, switchedLayers, switchedValues: switches.length},
+    layers,
+    ...(metadata === undefined ? {} : {metadata}),
     styleAt(position) {
       const at = clampPosition(position, styles.length);
       const dominant = Math.round(at);
@@ -379,6 +389,22 @@ export function planTileflowThemeBlend(
 /** Fills one blend template for a position. Plain values pass through unchanged. */
 export function fillTileflowThemeBlendTemplate(template: unknown, position: number): unknown {
   return fillTemplate(template, position);
+}
+
+/** A template leaf's values, one per blended theme in blend order; undefined for anything else. */
+export function tileflowThemeBlendLeafValues(
+  node: unknown,
+): readonly (number | string)[] | undefined {
+  return node instanceof BlendLeaf ? node.values : undefined;
+}
+
+/**
+ * One value across themes as a blend template, by the rule a plan applies to every paint value:
+ * numbers and colours that differ become leaves, anything else must match. Undefined when the
+ * values cannot be mixed.
+ */
+export function createTileflowThemeBlendTemplate(values: readonly unknown[]): unknown {
+  return values.length ? tryMixTemplate(values) : undefined;
 }
 
 /** Two CSS colours mixed in OKLab, `t` of the way from the first; undefined unless both parse. */

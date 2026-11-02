@@ -167,11 +167,19 @@ class OfflineTest {
         val manifest = download.manifest
         assertEquals(listOf("default"), manifest.themes)
         assertEquals(10_000L, manifest.maximumPackResources)
-        assertEquals(listOf("nautical"), manifest.excluded.map { it.source })
-        assertEquals(listOf("terrain", "world"), manifest.sources.map { it.source })
-        assertEquals(listOf(10..12, 10..14), manifest.sources.map { it.zooms })
-        assertEquals(listOf(404, 404), manifest.sources.map { it.absentStatus })
-        assertEquals(listOf(null, "gzip"), manifest.sources.map { it.contentEncoding })
+        assertEquals(listOf("boundaries"), manifest.excluded.map { it.source })
+        assertEquals(
+            listOf("bathymetry", "bathymetry-dem", "nautical", "terrain", "world"),
+            manifest.sources.map { it.source },
+        )
+        // The elevation model's base-zoom parents and Bathymetry's deepest zoom lie below the
+        // download's first zoom, in bands the cover holds.
+        assertEquals(listOf(9..9, 8..9, 10..14, 10..12, 10..14), manifest.sources.map { it.zooms })
+        assertEquals(listOf(204, 204, 204, 404, 404), manifest.sources.map { it.absentStatus })
+        assertEquals(
+            listOf("gzip", null, "gzip", null, "gzip"),
+            manifest.sources.map { it.contentEncoding },
+        )
         assertEquals(setOf("https://api.tileflow.test"), manifest.origins)
         // The zoom policy plans the same source zooms the service did.
         val zooms = OfflineZooms(10..14)
@@ -184,6 +192,11 @@ class OfflineTest {
                 "style",
                 "assets",
                 "glyphs/Noto Sans Regular/0",
+                "tiles/bathymetry/7/62/48",
+                "tiles/bathymetry-dem/7/62/48",
+                "tiles/nautical/7/62/48",
+                "tiles/nautical/11/1002/772",
+                "tiles/nautical/11/1003/772",
                 "tiles/terrain/7/62/48",
                 "tiles/terrain/11/1002/772",
                 "tiles/terrain/11/1003/772",
@@ -193,22 +206,31 @@ class OfflineTest {
             ),
             plan.packs.map { it.pack.id },
         )
-        assertEquals(25L, plan.resourceCount)
-        assertEquals("Only tiles are billable", 16L, plan.billable)
+        assertEquals(44L, plan.resourceCount)
+        assertEquals("Only tiles are billable", 32L, plan.billable)
         assertTrue(
             plan.packs.filter { it.pack.kind == OfflinePackKind.DOCUMENTS }
                 .all { it.pack.billableResources == 0 }
         )
-        assertEquals(4_149L, plan.bytes)
+        assertEquals(8_224L, plan.bytes)
         assertEquals("Discovery", 1, plan.resources.size)
-        assertEquals(mapOf("terrain" to 5L, "world" to 11L), plan.tileCounts)
+        assertEquals(
+            mapOf(
+                "bathymetry" to 1L,
+                "bathymetry-dem" to 2L,
+                "nautical" to 13L,
+                "terrain" to 5L,
+                "world" to 11L,
+            ),
+            plan.tileCounts,
+        )
         // Every tile pack's anchor starts its band; tiles the archive does not store are left out.
         val cover = (10..14).sumOf { covered(manifest.cover, it).size.toLong() }
         assertTrue(plan.tileCounts.getValue("world") < cover)
         for (planned in plan.packs.filter { it.pack.kind == OfflinePackKind.TILES }) {
             assertTrue(planned.pack.anchor!!.z in OfflinePackBand.anchors)
             assertEquals(
-                if (planned.pack.source == "world") "2026-10-01" else "2026-10",
+                manifest.source(planned.pack.source!!)!!.version,
                 planned.release,
             )
         }
@@ -253,7 +275,7 @@ class OfflineTest {
                 "an id that is not its anchor" to
                     { manifest -> pack(manifest) { it.put("id", "tiles/world/11/1/1") } },
                 "an unknown source" to
-                    { manifest -> pack(manifest) { it.put("source", "bathymetry") } },
+                    { manifest -> pack(manifest) { it.put("source", "boundaries") } },
                 "another origin" to
                     { manifest ->
                         pack(manifest) { it.put("url", "https://elsewhere.test/v1/offline/p.tfpack") }
@@ -678,10 +700,12 @@ class OfflineTest {
             assertEquals(name, item.getInt("coverBytes"), cover.text.toByteArray().size)
             // Read back as the service reads it, the cover is unchanged.
             assertEquals(name, cover, OfflineCover.fromJson(cover.toJson(), minZoom, maxZoom))
+            // Packs plan only from the entries whose band reaches the download's zooms.
             val packs = item.getJSONArray("packs")
-            assertEquals(name, packs.length(), cover.entries.size)
+            val planned = cover.entries.filter { OfflinePackBand.zooms(it.anchor.z)!!.last >= minZoom }
+            assertEquals(name, packs.length(), planned.size)
             var total = 0L
-            for ((offset, entry) in cover.entries.withIndex()) {
+            for ((offset, entry) in planned.withIndex()) {
                 val pack = packs.getJSONObject(offset)
                 val anchor = pack.getJSONArray("anchor")
                 assertEquals(
@@ -707,8 +731,8 @@ class OfflineTest {
                 total += tiles.values.sumOf { it.size }
             }
             assertEquals(name, item.getJSONObject("totals").getLong("tiles"), total)
-            // The cover holds exactly the region's tiles at every zoom.
-            for (zoom in minZoom..maxZoom)
+            // The cover holds exactly the region's tiles at every zoom, also below the first.
+            for (zoom in 0..maxZoom)
                 assertEquals(
                     "$name z$zoom",
                     geometry.tileCount(zoom),

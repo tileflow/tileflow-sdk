@@ -173,6 +173,29 @@ public enum TileflowOfflineRegionEvent: Sendable, Hashable {
   /// enters its grace period.
   case changed(TileflowOfflineRegion)
   case removed(id: String)
+  /// Something about how downloads run that the developer should know, reported once.
+  case warning(TileflowOfflineWarning)
+}
+
+/// A warning about how the store's downloads run. Downloads continue: nothing failed.
+public struct TileflowOfflineWarning: Sendable, Hashable, CustomStringConvertible {
+  public enum Code: String, Sendable, Hashable {
+    /// The system's background transfer service never started a download in this build, as
+    /// happens when the app is not signed. Downloads run in the foreground instead and stop while
+    /// the app is suspended; signed builds download in the background.
+    case backgroundTransferUnavailable
+  }
+
+  public let code: Code
+  /// A developer-facing explanation in English. Not for display to people using the app.
+  public let message: String
+
+  init(_ code: Code, message: String) {
+    self.code = code
+    self.message = message
+  }
+
+  public var description: String { "TileflowOfflineWarning.\(code.rawValue): \(message)" }
 }
 
 /// A subscription to region events. Cancelling it, or releasing it, stops the events.

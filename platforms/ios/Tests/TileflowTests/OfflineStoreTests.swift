@@ -827,6 +827,109 @@ final class OfflineStoreTests: XCTestCase {
     XCTAssertEqual(OfflineURLProtocolStub.requests.withLock { $0.count }, 2)
   }
 
+  func testDownloadsMoveToTheForegroundWhenBackgroundTransfersNeverStart() async throws {
+    OfflineURLProtocolStub.requests.withLock { $0 = [] }
+    let activity = OfflineActivityStub()
+    let clock = OfflineWatchClock()
+    let fetcher = watchedFetcher(background: OfflineNeverStartingProtocol.self, activity, clock)
+    let warnings = LockedValue<[TileflowOfflineWarning]>([])
+    fetcher.onWarning { warning in warnings.withLock { $0.append(warning) } }
+
+    let request = styleRequest("a/1/x")
+    async let response = fetcher.fetch(request)
+    // The background task never starts and nothing fails: the transfer just waits.
+    await clock.waiting()
+    XCTAssertTrue(warnings.withLock { $0.isEmpty })
+    XCTAssertEqual(OfflineURLProtocolStub.requests.withLock { $0.count }, 0)
+    await clock.pass()
+    let moved = try await response
+    XCTAssertEqual(moved.status, 200)
+    XCTAssertEqual(moved.body, Data("style".utf8))
+    XCTAssertEqual(warnings.withLock { $0.map(\.code) }, [.backgroundTransferUnavailable])
+
+    // Later transfers run in the foreground at once, and the warning is not repeated.
+    let next = try await fetcher.fetch(styleRequest("a/1/y"))
+    XCTAssertEqual(next.status, 200)
+    XCTAssertEqual(OfflineURLProtocolStub.requests.withLock { $0.count }, 2)
+    XCTAssertEqual(warnings.withLock { $0.count }, 1)
+  }
+
+  func testTheFallbackWaitsForAWholePeriodInTheForegroundOnANetworkTheTransferMayUse() async throws {
+    OfflineURLProtocolStub.requests.withLock { $0 = [] }
+    let activity = OfflineActivityStub()
+    activity.enterBackground()
+    let network = LockedValue((reachable: true, unmetered: false))
+    let clock = OfflineWatchClock()
+    let fetcher = watchedFetcher(
+      background: OfflineNeverStartingProtocol.self, activity, clock,
+      network: { network.withLock { $0 } })
+    let warnings = LockedValue<[TileflowOfflineWarning]>([])
+    fetcher.onWarning { warning in warnings.withLock { $0.append(warning) } }
+
+    // In the background, where the system may defer background transfers, it never decides.
+    let request = styleRequest("a/1/x")
+    async let response = fetcher.fetch(request)
+    await clock.waiting()
+    await clock.pass()
+    await clock.waiting()
+    // A period that began in the background does not count either.
+    activity.enterForeground()
+    await clock.pass()
+    await clock.waiting()
+    // An unmetered-only transfer on a metered network waits in any build.
+    let unmeteredRequest = styleRequest("a/1/u", unmeteredOnly: true)
+    let unmetered = Task { try await fetcher.fetch(unmeteredRequest) }
+    network.withLock { $0.reachable = false }
+    await clock.pass()
+    await clock.waiting()
+    // Without a network, background transfers wait for one in any build.
+    await clock.pass()
+    await clock.waiting()
+    XCTAssertTrue(warnings.withLock { $0.isEmpty })
+    XCTAssertEqual(OfflineURLProtocolStub.requests.withLock { $0.count }, 0)
+
+    // A whole period in the foreground with a network the first transfer may use decides.
+    network.withLock { $0.reachable = true }
+    await clock.pass()
+    await clock.waiting()
+    await clock.pass()
+    let moved = try await response
+    XCTAssertEqual(moved.status, 200)
+    XCTAssertEqual(warnings.withLock { $0.map(\.code) }, [.backgroundTransferUnavailable])
+    // The waiting unmetered-only transfer moves too, keeping its restriction.
+    _ = try await unmetered.value
+    let sent = OfflineURLProtocolStub.requests.withLock { $0 }
+    XCTAssertEqual(sent.count, 2)
+    XCTAssertEqual(sent.filter { !$0.allowsExpensiveNetworkAccess }.count, 1)
+  }
+
+  func testBackgroundTransfersThatStartNeverFallBack() async throws {
+    let activity = OfflineActivityStub()
+    let clock = OfflineWatchClock()
+    let fetcher = watchedFetcher(background: OfflineURLProtocolStub.self, activity, clock)
+    let warnings = LockedValue<[TileflowOfflineWarning]>([])
+    fetcher.onWarning { warning in warnings.withLock { $0.append(warning) } }
+    let response = try await fetcher.fetch(styleRequest("a/1/x"))
+    XCTAssertEqual(response.status, 200)
+    // The watch sees the background task started and ends without a warning.
+    await clock.waiting()
+    await clock.pass()
+    _ = try await fetcher.fetch(styleRequest("a/1/y"))
+    XCTAssertTrue(warnings.withLock { $0.isEmpty })
+  }
+
+  func testStoreReportsTransferWarningsAsEvents() async throws {
+    let service = OfflineServiceStub()
+    let fetcher = OfflineWarningFetcher(service)
+    let store = makeStore(service, fetcher: fetcher)
+    let events = LockedValue<[TileflowOfflineRegionEvent]>([])
+    let subscription = store.subscribe { event in events.withLock { $0.append(event) } }
+    defer { subscription.cancel() }
+    let warning = TileflowOfflineWarning(.backgroundTransferUnavailable, message: "m")
+    fetcher.warn(warning)
+    try await waitUntil { events.withLock { $0.contains(.warning(warning)) } }
+  }
+
   func testVerificationAcceptsTheWireOrTheDecodedBody() {
     let body = Data("tile".utf8)
     let digest = DataChannel.digest(body)
@@ -908,6 +1011,27 @@ final class OfflineStoreTests: XCTestCase {
           try await Task.sleep(nanoseconds: 2_000_000)
         }, scheduler: scheduler,
         conditions: { conditions?.withLock { $0 } ?? .unavailable }))
+  }
+
+  private func watchedFetcher(
+    background: AnyClass, _ activity: OfflineActivityStub, _ clock: OfflineWatchClock,
+    network: @escaping @Sendable () -> (reachable: Bool, unmetered: Bool) = { (true, true) }
+  ) -> OfflineURLSessionFetcher {
+    let backgroundConfiguration = URLSessionConfiguration.ephemeral
+    backgroundConfiguration.protocolClasses = [background]
+    let foregroundConfiguration = URLSessionConfiguration.ephemeral
+    foregroundConfiguration.protocolClasses = [OfflineURLProtocolStub.self]
+    return OfflineURLSessionFetcher(
+      configuration: backgroundConfiguration,
+      directory: directory.appendingPathComponent("downloads", isDirectory: true),
+      fallbackConfiguration: foregroundConfiguration, activity: activity, network: network,
+      wait: { _ in await clock.period() })
+  }
+
+  private func styleRequest(_ id: String, unmeteredOnly: Bool = false) -> OfflineFetchRequest {
+    OfflineFetchRequest(
+      id: id, url: URL(string: "https://api.tileflow.test/style.json")!, headers: [:],
+      allowsExpensiveNetworkAccess: !unmeteredOnly)
   }
 
   private func madrid(east: Double = -3.69) -> TileflowOfflineRegionLoadOptions {
@@ -1459,6 +1583,103 @@ final class OfflineFreezingFetcher: OfflineResourceFetching, @unchecked Sendable
   }
 
   func cancel(prefix: String) {}
+}
+
+/// A transfer service that takes requests and never starts them, as the system's background
+/// transfer service behaves for a build it does not accept.
+final class OfflineNeverStartingProtocol: URLProtocol {
+  override class func canInit(with request: URLRequest) -> Bool { true }
+  override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+  override func startLoading() {}
+  override func stopLoading() {}
+}
+
+/// The app's activity, as a test sets it.
+final class OfflineActivityStub: OfflineAppActivity {
+  private let state = LockedValue((foreground: true, entries: 0))
+  var isForeground: Bool { state.withLock { $0.foreground } }
+  var backgroundEntries: Int { state.withLock { $0.entries } }
+
+  func enterBackground() {
+    state.withLock {
+      $0.foreground = false
+      $0.entries += 1
+    }
+  }
+
+  func enterForeground() { state.withLock { $0.foreground = true } }
+}
+
+/// The fetcher's watch periods, which end only when a test ends them.
+actor OfflineWatchClock {
+  private var periods: [CheckedContinuation<Void, Never>] = []
+  private var listeners: [UUID: CheckedContinuation<Bool, Never>] = [:]
+
+  /// A period: returns when the test ends it.
+  func period() async {
+    await withCheckedContinuation { continuation in
+      periods.append(continuation)
+      let listeners = listeners
+      self.listeners = [:]
+      for listener in listeners.values { listener.resume(returning: true) }
+    }
+  }
+
+  /// Returns once the watch is in a period. A watch that ended never waits again: after ten
+  /// seconds this fails the test instead of hanging it.
+  func waiting(file: StaticString = #filePath, line: UInt = #line) async {
+    guard periods.isEmpty else { return }
+    let id = UUID()
+    let waiting = await withTaskGroup(of: Bool.self) { group in
+      group.addTask { await self.listen(id) }
+      group.addTask {
+        try? await Task.sleep(nanoseconds: 10_000_000_000)
+        await self.stopListening(id)
+        return false
+      }
+      let first = await group.next() ?? false
+      group.cancelAll()
+      return first
+    }
+    if !waiting { XCTFail("The watch is not waiting", file: file, line: line) }
+  }
+
+  private func listen(_ id: UUID) async -> Bool {
+    // The watch may have entered a period since `waiting()` looked.
+    guard periods.isEmpty else { return true }
+    return await withCheckedContinuation { listeners[id] = $0 }
+  }
+
+  private func stopListening(_ id: UUID) {
+    listeners.removeValue(forKey: id)?.resume(returning: false)
+  }
+
+  /// Ends the current period.
+  func pass() {
+    let periods = periods
+    self.periods = []
+    for period in periods { period.resume() }
+  }
+}
+
+/// Fetches from the service and passes on the warnings a test gives it.
+final class OfflineWarningFetcher: OfflineResourceFetching, @unchecked Sendable {
+  private let base: OfflineServiceStub
+  private let handler = LockedValue<(@Sendable (TileflowOfflineWarning) -> Void)?>(nil)
+
+  init(_ base: OfflineServiceStub) { self.base = base }
+
+  func fetch(_ request: OfflineFetchRequest) async throws -> OfflineFetchResponse {
+    try await base.fetch(request)
+  }
+
+  func cancel(prefix: String) { base.cancel(prefix: prefix) }
+
+  func onWarning(_ handler: @escaping @Sendable (TileflowOfflineWarning) -> Void) {
+    self.handler.withLock { $0 = handler }
+  }
+
+  func warn(_ warning: TileflowOfflineWarning) { handler.withLock { $0 }?(warning) }
 }
 
 final class OfflineURLProtocolStub: URLProtocol {

@@ -108,6 +108,12 @@ internal class OfflineStoreCore(
     private var settings = OfflineSettings()
     /** Each Hosted region's expiry phase as last reported, so a change is reported once. */
     private val phases = HashMap<String, OfflineExpiryPhase>()
+    /**
+     * Held by a region's drive while it runs, so only one drive of a region runs at a time and a
+     * stop can wait until a stopped drive has settled: a stopped drive still finishes the pack it
+     * was storing and records it.
+     */
+    private val drives = ConcurrentHashMap<String, Mutex>()
 
     // Opening.
 
@@ -415,6 +421,9 @@ internal class OfflineStoreCore(
                 )
             }
         }
+        // A pending version this one replaces stops first, so nothing it was storing lands after
+        // its files are released.
+        if (lock.withLock { records[id]?.pending?.also { runner.stop(id) } != null }) settle(id)
         return lock.withLock {
             if (records[id]?.pending != null) discardPending(id)
             val time = now()
@@ -449,7 +458,8 @@ internal class OfflineStoreCore(
 
     // Controlling.
 
-    suspend fun pause(id: String) =
+    /** Pauses the download and returns once it has stopped: nothing it transfers lands later. */
+    suspend fun pause(id: String) {
         lock.withLock {
             openLocked()
             val record = existing(id)
@@ -464,6 +474,8 @@ internal class OfflineStoreCore(
             )
             emitChanged(id)
         }
+        settle(id)
+    }
 
     suspend fun resume(id: String) =
         lock.withLock {
@@ -489,30 +501,61 @@ internal class OfflineStoreCore(
 
     /**
      * Stops the download. A region never completed is removed; an update is abandoned and the
-     * stored version kept.
+     * stored version kept. Files are released only once the download has stopped, so nothing it
+     * was storing is left behind.
      */
-    suspend fun cancel(id: String) =
+    suspend fun cancel(id: String) {
+        val removal =
+            lock.withLock {
+                openLocked()
+                val record = existing(id)
+                val pending = record.pending
+                when {
+                    record.active == null -> beginRemoval(id)
+                    pending == null -> return
+                    else -> {
+                        runner.stop(id)
+                        // Nothing starts it again before it is discarded.
+                        save(
+                            record.copy(
+                                pending = pending.copy(state = OfflineVersionRecord.State.PAUSED)
+                            )
+                        )
+                    }
+                }
+                record.active == null
+            }
+        settle(id)
+        lock.withLock {
+            if (removal) finishRemoval(id)
+            else if (records[id]?.pending != null) {
+                discardPending(id)
+                emitChanged(id)
+            }
+        }
+    }
+
+    suspend fun remove(id: String) {
         lock.withLock {
             openLocked()
-            val record = existing(id)
-            if (record.active == null) return@withLock removeLocked(id)
-            if (record.pending == null) return@withLock
-            discardPending(id)
-            emitChanged(id)
+            beginRemoval(id)
         }
+        settle(id)
+        lock.withLock { finishRemoval(id) }
+    }
 
-    suspend fun remove(id: String) =
-        lock.withLock {
-            openLocked()
-            removeLocked(id)
-        }
-
-    private fun removeLocked(id: String) {
+    /** Marks the removal, which finishes once the download has stopped, or when the store opens. */
+    private fun beginRemoval(id: String) {
         val record = existing(id)
         runner.stop(id)
         save(record.copy(removing = true))
-        finishRemoval(id)
     }
+
+    /**
+     * Waits until a stopped drive of the region has settled. Never called holding [lock], which the
+     * drive needs to settle.
+     */
+    private suspend fun settle(id: String) = drives.getOrPut(id) { Mutex() }.withLock {}
 
     private fun existing(id: String): OfflineRegionRecord =
         records[id]?.takeIf { !it.removing }
@@ -757,7 +800,10 @@ internal class OfflineStoreCore(
      * Downloads the region's pending version until it completes, fails, pauses or is stopped.
      * Waits longer than [maximumWaitMillis] end the drive with the time to continue.
      */
-    suspend fun drive(id: String, maximumWaitMillis: Long = Long.MAX_VALUE): OfflineDriveResult {
+    suspend fun drive(id: String, maximumWaitMillis: Long = Long.MAX_VALUE): OfflineDriveResult =
+        drives.getOrPut(id) { Mutex() }.withLock { driving(id, maximumWaitMillis) }
+
+    private suspend fun driving(id: String, maximumWaitMillis: Long): OfflineDriveResult {
         open()
         var renewals = 0
         var attempt = 0
@@ -1408,9 +1454,18 @@ internal class OfflineStoreCore(
         records[record.id] = record
     }
 
+    /**
+     * Changes the pending version a download is working on. One that was paused, failed or is
+     * being removed is left as it is: a stopped download never overwrites what stopped it.
+     */
     private fun update(id: String, change: (OfflineVersionRecord) -> OfflineVersionRecord) {
-        val record = records[id] ?: return
+        val record = records[id]?.takeIf { !it.removing } ?: return
         val pending = record.pending ?: return
+        if (
+            pending.state != OfflineVersionRecord.State.DOWNLOADING &&
+                pending.state != OfflineVersionRecord.State.WAITING
+        )
+            return
         runCatching { save(record.copy(pending = change(pending))) }
         emitChanged(id)
     }

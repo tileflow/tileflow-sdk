@@ -7,7 +7,6 @@ import {
 import {
   getTileflowStyleFontFaces,
   serializeCanonicalJson,
-  steadyTileflowNauticalLights,
   type MapLibreStyle,
   tileflowStyleFontFacesMetadataKey,
   tileflowIconIdPattern,
@@ -24,6 +23,11 @@ import {
   validateTileflowNativePreparedStyle,
 } from '@tileflow/core/native-profile';
 import type {TileflowBuildAsset} from './icons';
+import {
+  degradeTileflowNativeStyle,
+  NativeDegradationError,
+  type NativeDegradedStyle,
+} from './native-degradations';
 import {rebindNativeLayerReferences} from './native-layer-references';
 import {lowerNativeStyleRepresentation, NativeLoweringError} from './native-lowering';
 
@@ -60,7 +64,9 @@ function withContext(
 
 /**
  * Lower only the native representation; shared compilation and authored map identity stay intact.
- * Local artifacts and Hosted publication both receive styles whose layer references are rebound.
+ * What native maps cannot draw is left out or replaced and recorded first (see
+ * `degradeTileflowNativeStyle`); every other unsupported value still fails. Local artifacts and
+ * Hosted publication both receive styles whose layer references are rebound.
  */
 export function lowerTileflowNativeCompiledStyles(
   input: TileflowBuildStyles,
@@ -75,9 +81,13 @@ export function lowerTileflowNativeCompiledStyles(
     styles[map] = {};
     for (const theme of Object.keys(input[map]!).sort()) {
       const web = input[map]![theme]!;
-      // Native renderers have no feature state, so Nautical lights show steadily there.
-      const original = steadyTileflowNauticalLights(web);
+      let degraded: NativeDegradedStyle | undefined;
+      // Diagnostics name the web style's layers, not the degraded style's positions.
+      const context = (issue: TileflowNativeDiagnostic) =>
+        withContext(webLayerPath(issue, degraded), map, theme);
       try {
+        degraded = degradeTileflowNativeStyle(web);
+        const original = degraded.style;
         const options = {...urlOptions(map, theme, policy), deferFontClosure: true};
         const pending = validateTileflowNativeStyle(original, options);
         // Only these representation-level diagnostics may be deferred. Bounds, source protocols,
@@ -94,10 +104,7 @@ export function lowerTileflowNativeCompiledStyles(
               /^\/layers\/\d+\/layout\/(?:icon|text)-overlap$/u.test(issue.path)
             ),
         );
-        if (blockers.length)
-          throw new TileflowNativeCompatibilityError(
-            blockers.map((issue) => withContext(issue, map, theme)),
-          );
+        if (blockers.length) throw new TileflowNativeCompatibilityError(blockers.map(context));
         const syntax = validateStyleMin(JSON.parse(serializeCanonicalJson(original)));
         if (syntax.length)
           throw new TileflowNativeCompatibilityError(
@@ -111,11 +118,7 @@ export function lowerTileflowNativeCompiledStyles(
                 : issue.message.startsWith('projection')
                   ? '/projection'
                   : '';
-              return withContext(
-                createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE', path),
-                map,
-                theme,
-              );
+              return context(createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE', path));
             }),
           );
         const lowered = lowerNativeStyleRepresentation(original, (filter) =>
@@ -143,11 +146,14 @@ export function lowerTileflowNativeCompiledStyles(
             ),
           ]);
         const issues = validateTileflowNativePreparedStyle(style, options);
-        if (issues.length)
-          throw new TileflowNativeCompatibilityError(
-            issues.map((issue) => withContext(issue, map, theme)),
-          );
+        if (issues.length) throw new TileflowNativeCompatibilityError(issues.map(context));
         styles[map]![theme] = style;
+        // Spans name web input layers and native output layers.
+        const inputIndexes = degraded.inputIndexes;
+        const added = (before: number) =>
+          lowered.layers
+            .filter((span) => span.inputLayer < before)
+            .reduce((total, span) => total + span.outputCount - 1, 0);
         transformations.push({
           map,
           theme,
@@ -155,35 +161,66 @@ export function lowerTileflowNativeCompiledStyles(
           loweredStyleSha256: createHash('sha256')
             .update(serializeCanonicalJson(style))
             .digest('hex'),
-          inputLayers: lowered.inputLayers,
+          inputLayers: web.layers.length,
           outputLayers: lowered.outputLayers,
           projection: lowered.projection,
           ...(lowered.sky ? {sky: lowered.sky} : {}),
-          layers: lowered.layers,
-          symbolOverlap: lowered.symbolOverlap,
+          removedLayers: degraded.removedLayers,
+          insertedLayers: inputIndexes.flatMap((index, position) =>
+            index < 0 ? [position + added(position)] : [],
+          ),
+          layers: lowered.layers.map((span) => ({
+            ...span,
+            inputLayer: inputIndexes[span.inputLayer]!,
+          })),
+          symbolOverlap: lowered.symbolOverlap.map((entry) => ({
+            ...entry,
+            inputLayer: inputIndexes[entry.inputLayer]!,
+          })),
+          degradations: degraded.degradations.map((record) => record.id),
         });
       } catch (error) {
+        if (error instanceof NativeDegradationError)
+          throw new TileflowNativeCompatibilityError([
+            withContext(
+              {
+                ...createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE', error.path),
+                message: error.message,
+                suggestion:
+                  'Keep POI layers on sources native maps can draw, or select web for this map.',
+              },
+              map,
+              theme,
+            ),
+          ]);
         if (!(error instanceof NativeLoweringError)) throw error;
         throw new TileflowNativeCompatibilityError([
-          withContext(
-            {
-              ...createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE', error.path),
-              message: error.message,
-              suggestion:
-                error.reason === 'budget'
-                  ? 'Reduce the decision expansion or style size; native lowering never raises its resource limits automatically.'
-                  : error.path === '/projection'
-                    ? 'Use a fixed globe or Mercator projection for native-v1; adaptive projections are not supported.'
-                    : 'Use finite case/match/step decisions with constant leaves and supported scalar predicates, or select web.',
-            },
-            map,
-            theme,
-          ),
+          context({
+            ...createTileflowNativeDiagnostic('NATIVE_UNSUPPORTED_STYLE', error.path),
+            message: error.message,
+            suggestion:
+              error.reason === 'budget'
+                ? 'Reduce the decision expansion or style size; native lowering never raises its resource limits automatically.'
+                : error.path === '/projection'
+                  ? 'Use a fixed globe or Mercator projection for native-v1; adaptive projections are not supported.'
+                  : 'Use finite case/match/step decisions with constant leaves and supported scalar predicates, or select web.',
+          }),
         ]);
       }
     }
   }
   return {styles, transformations};
+}
+
+/** A diagnostic on a degraded style's layer, pointed at the same layer of the web style. */
+function webLayerPath(
+  issue: TileflowNativeDiagnostic,
+  degraded: NativeDegradedStyle | undefined,
+): TileflowNativeDiagnostic {
+  const match = /^\/layers\/(\d+)(?=\/|$)/u.exec(issue.path);
+  const index = match && degraded ? degraded.inputIndexes[Number(match[1])] : undefined;
+  if (!match || index === undefined || index < 0) return issue;
+  return {...issue, path: `/layers/${index}${issue.path.slice(match[0].length)}`};
 }
 
 /** Check lowered compiler output before local snapshots. Raw inputs are gated before lowering. */

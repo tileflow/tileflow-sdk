@@ -122,10 +122,11 @@ export async function prepareNativeHostedDeploy(
     ? `${apiOrigin}/sprites/preflight/${binding.packageHash}/sprite`
     : undefined;
   const modelAssets = await prepareModelAssets(project, {baseDirectory, target: 'hosted'});
-  // MapLibre Native draws no models, so a renderer collection does not place Team 3D models.
+  // Native styles leave building models out and record it, but a renderer deployment does not
+  // bind the web family's Team 3D models yet.
   if (modelAssets.buildings[mapName])
     throw failure(
-      "A deployment with --with-native does not take a map's own 3D building models yet. Deploy without --with-native, or remove them from the map's models directories.",
+      "A deployment with --with-native does not bind a map's own 3D building models yet. Deploy without --with-native, or remove them from the map's models directories.",
     );
   const mapAssets = {
     ...modelAssets.assets,
@@ -211,6 +212,7 @@ export async function prepareNativeHostedDeploy(
         styles: family.styles,
         teamSources: family.teamSources,
         assets,
+        themes: Object.keys(resolved.themes),
         ...(resolved.view ? {view: resolved.view} : {}),
       });
     };

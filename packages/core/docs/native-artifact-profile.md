@@ -37,22 +37,25 @@ preparing the referenced resources.
 
 ## Profile and metadata
 
-The exported `tileflowNativeProfile` targets MapLibre React Native 11.3.10 with Native Android 13.2.0
-and iOS 6.26.0. These are static compatibility targets, not a supported application dependency matrix.
-The application integration uses MapLibre React Native 11.5.0 with Android 13.6.1 and iOS 6.31.0.
-The artifact profile retains its earlier validation targets and build-record engine values, keeping
-prepared artifacts compatible with existing Hosted validators. New application dependencies do not
-expand the accepted style vocabulary.
+The exported `tileflowNativeProfile` targets MapLibre Native Android 13.7.1 and iOS 7.0.0, the
+engines the Swift and Kotlin SDKs ship. These are static compatibility targets, not a supported
+application dependency matrix. The React Native package's current wrapper (MapLibre React Native
+11.5.0, Android 13.6.1, iOS 6.31.0) predates them: a style that uses root `state`,
+`global-state`, `interpolate-hcl` or `interpolate-lab` needs the native SDK engines.
 
-The wrapper's Style Spec version is 26.2.1. Tileflow retains its existing compiler and parser at
-24.8.5: `native-v1` checks that compiler's vocabulary and the intersection of its recorded Android
-and iOS support. It does not expose every feature of Style Spec 26.2.1 or upgrade the web compiler.
+Tileflow retains its existing compiler and parser at Style Spec 24.8.5 (`validatorStyleSpec`):
+`native-v1` checks that compiler's vocabulary and the intersection of the recorded Android and
+iOS support. Where those tables predate the pinned engines, support comes from Style Spec 26.5.1
+(`supportStyleSpec`) and the engines' release notes: root `state` and `global-state`, `split`,
+`interpolate-hcl` and `interpolate-lab`. `color-relief` layers and multidirectional hillshade are
+supported by both engines. The [native style artifact contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/native-style-artifact.md)
+lists each entry with its source.
 
 The checker reads the full `sdk-support` and expression metadata from the pinned Style Spec
 package's `dist/latest.json`. Its minified JavaScript exports omit that information. A missing
 expression-support entry, issue link or required native version newer than either selected engine
-is not evidence of support. The metadata source is the
-[pinned specification](https://github.com/maplibre/maplibre-style-spec/blob/v24.8.5/src/reference/v8.json).
+is not evidence of support; an entry of `supported` is support in every release. The metadata
+source is the [pinned specification](https://github.com/maplibre/maplibre-style-spec/blob/v24.8.5/src/reference/v8.json).
 
 `tileflowNativeProfileSchema`, `tileflowNativeDiagnosticSchema`, `tileflowRendererSchema` and
 `tileflowNativeBuildRecordSchema` are strict canonical Zod schemas. The map authoring grammar and
@@ -65,15 +68,20 @@ hillshade and building extrusions, one effective sprite, glyph URLs and complete
 faces. Paint, layout and expression values must also pass the pinned semantic parser and native
 support metadata. Hillshade and building extrusions do not establish 3D terrain support.
 
-The raw style validator rejects globe or adaptive projection, terrain displacement, sky and global-state extensions,
-unsupported source/layer/property values, legacy stop-function objects, browser contour and PMTiles protocols, local file URLs,
-multiple sprite providers. The existing portable camera/view bounds are preserved; an artifact
+The raw style validator rejects globe or adaptive projection, terrain displacement, sky,
+unsupported source/layer/property values (including `resampling` on hillshade and colour relief),
+legacy stop-function objects, browser contour and PMTiles protocols, local file URLs and multiple
+sprite providers. The existing portable camera/view bounds are preserved; an artifact
 does not configure a native map instance's camera constraints. It does not silently remove
 an unsupported feature or replace a font. An explicit fixed-Mercator property can be omitted in the
 native representation because Native has no GL JS projection controller; this does not change the
 logical map revision.
 
-Dev's `native-lowering-v1` preparation policy explicitly converts a fixed `{type: 'globe'}`
+Dev's `native-lowering-v2` preparation first leaves out or replaces what native maps cannot draw
+(browser contours, the 3D scene except building extrusions, terrain displacement, relief
+resampling) and records each change as a degradation from `tileflowNativeCapabilities`; see the
+[artifact contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/native-style-artifact.md)
+for the vocabulary and the rule that marks a map web only. It converts a fixed `{type: 'globe'}`
 projection to Native's implicit Mercator and removes a browser `sky` before this validator runs. This is a recorded projection
 change, not globe support or visual equivalence. One authored map serves web and native preparation;
 no native-specific Streets definition is used. Preparation adapts only finite `line-cap` and
@@ -86,10 +94,17 @@ per-feature selection and cap/dash values, not global feature draw order. A copi
 cannot preserve ordering between simultaneous physical branches; overlapping features may produce
 a different composition even when every property value is retained.
 
-`native-build.json` uses strict schema version 2 and `preparationVersion: 'native-lowering-v1'`.
+`native-build.json` uses strict schema version 3 and `preparationVersion: 'native-lowering-v2'`.
 Its `transformations` array is ordered by map/theme and binds the input/lowered style hashes,
-projection policy, an optional `sky: 'removed'`, physical layer spans and symbol overlap replacements. The runtime manifest remains version 1. An old v1
-build-record decoder must reject v2 rather than silently ignore the preparation evidence.
+projection policy, an optional `sky: 'removed'`, removed and inserted layers, physical layer spans,
+symbol overlap replacements and the style's degradation IDs. The runtime manifest remains version
+
+1. An older build-record decoder must reject version 3 rather than silently ignore the preparation
+   evidence.
+
+The same entry point computes and checks the per-map family document (`createTileflowNativeFamily`,
+`tileflowNativeFamilySchema`) and exports the reference evaluators that the native SDKs reproduce
+(`fillTileflowNativeTemplate`, `tileflowNativeBlendLayers`, `emphasizeTileflowNativeValue`).
 
 Text must use a valid glyph template containing `{fontstack}` and `{range}`, or a complete static
 font stack backed by prepared faces. Native preparation maps each exact OpenType full name to its
@@ -105,7 +120,7 @@ after preparation; external callers must not present a preflight result as a com
 ## Input and prepared-style budgets
 
 `tileflowNativeProfileLimits` and `validateTileflowNativeStyle()` keep untrusted compiler input at
-**160,000 visited JSON nodes**. Dev applies this gate before lowering. The raw validator has no
+**320,000 visited JSON nodes**; the largest official map, Map 1777, holds about 245,000. Dev applies this gate before lowering. The raw validator has no
 option to borrow the output allowance, and preparation never retries rejected input with a larger
 budget. Exceeding the input bound remains `NATIVE_UNSUPPORTED_STYLE` at the root style pointer.
 
@@ -122,10 +137,10 @@ faces and 32 returned errors**. Cycles, getters, sparse arrays, non-JSON values 
 remain invalid. The prepared budget changes only the node allowance; per-decision and per-layer
 expansion limits also remain mandatory.
 
-The measured full Streets family expands from 122,253 to 513,321 nodes for dark and from 122,163 to
-513,231 for light. The 540,000-node ceiling leaves 26,679/26,769 nodes (about 5.2%) of headroom rather
-than multiplying the raw allowance arbitrarily. This accommodates the bounded prepared
-representation, not unbounded growth of custom styles. Prepared font bytes retain the existing
+The 540,000-node ceiling was set when the full Streets family lowered to about 513,000 nodes per
+theme. Streets now lowers from about 136,000 to 208,000 nodes per theme, and Map 1777, which needs
+no lowering, holds about 245,000. The ceiling accommodates the bounded prepared representation,
+not unbounded growth of custom styles. Prepared font bytes retain the existing
 1 MiB per-face bound; URL, icon and sprite limits retain their owning pipelines' bounds. These are
 validation-work limits, not download, GPU-memory or billing limits.
 

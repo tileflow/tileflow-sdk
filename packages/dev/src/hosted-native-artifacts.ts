@@ -9,6 +9,7 @@ import {
 } from '@tileflow/core/build';
 import {
   createTileflowNativeBuildRecord,
+  createTileflowNativeFamily,
   TileflowNativeCompatibilityError,
   createTileflowNativeDiagnostic,
 } from '@tileflow/core/native-profile';
@@ -22,6 +23,8 @@ type Input = Readonly<{
   teamSources: Readonly<Record<string, Readonly<{tileset: string; type: 'raster' | 'vector'}>>>;
   assets: readonly TileflowBuildAsset[];
   view?: TileflowViewConfig;
+  /** The map's theme names in declared order, for the family document; sorted when omitted. */
+  themes?: readonly string[];
 }>;
 const digest = (value: unknown) =>
   createHash('sha256').update(serializeCanonicalJson(value)).digest('hex');
@@ -65,7 +68,11 @@ export async function prepareTileflowHostedNativeDeployment(
       if (!source) throw invalidSource();
       source.url = `tileflow://hosted-sources/${sourceId}`;
     }
-    if (serializeCanonicalJson(style.sources) !== serializeCanonicalJson(webStyles[name]!.sources))
+    // A native style keeps the web sources it draws, unchanged; it may only leave some out.
+    if (
+      serializeCanonicalJson(style.sources) !==
+      serializeCanonicalJson(retainedSources(webStyles[name]!, style))
+    )
       throw invalidSource();
   }
   const nativeBuild: TileflowMapBuildManifestV1 = JSON.parse(
@@ -88,9 +95,10 @@ export async function prepareTileflowHostedNativeDeployment(
     inputStyleSha256: digest(webStyles[item.theme]!),
     loweredStyleSha256: digest({
       ...lowered.styles[input.mapId]![item.theme]!,
-      sources: webStyles[item.theme]!.sources,
+      sources: retainedSources(webStyles[item.theme]!, projected[item.theme]!),
     }),
   }));
+  const themes = input.themes ?? Object.keys(projected).sort();
   return parseTileflowRendererDeploymentArtifact({
     kind: 'tileflow-map-deployment',
     schemaVersion: 2,
@@ -102,8 +110,16 @@ export async function prepareTileflowHostedNativeDeployment(
       native: {
         buildManifest: nativeBuild,
         buildRecord: createTileflowNativeBuildRecord(digest(nativeBuild), transformations),
+        family: createTileflowNativeFamily({map: input.mapId, themes, styles: projected}),
         styles: projected,
       },
     },
   });
+}
+
+/** The web style's sources that a native style still draws. */
+function retainedSources(web: MapLibreStyle, native: MapLibreStyle): MapLibreStyle['sources'] {
+  return Object.fromEntries(
+    Object.entries(web.sources).filter(([id]) => Object.hasOwn(native.sources, id)),
+  );
 }

@@ -142,10 +142,12 @@ test('runs the repository native catalog report through the real tsx loader', as
   });
   assert.equal(result.stderr, '');
   const report = JSON.parse(result.stdout) as {
+    maps: Array<{map: string; status: string}>;
     rows: Array<{map: string; theme: string}>;
     schemaVersion: number;
   };
-  assert.equal(report.schemaVersion, 1);
+  assert.equal(report.schemaVersion, 2);
+  assert.equal(report.maps.length, 6);
   assert.equal(new Set(report.rows.map(({map}) => map)).size, 6);
   assert.ok(report.rows.every(({map, theme}) => Boolean(map && theme)));
 });

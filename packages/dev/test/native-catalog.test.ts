@@ -4,11 +4,14 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {parseTileflowMap, serializeCanonicalJson} from '@tileflow/core';
-import {tileflowNativeDiagnosticSchema} from '@tileflow/core/native-profile';
+import {
+  tileflowNativeDegradationsSchema,
+  tileflowNativeDiagnosticSchema,
+} from '@tileflow/core/native-profile';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {evaluateNativeCatalog, nativeCatalogMaps} from './native-catalog-fixture';
 
-test('records every official map/theme deterministically and requires Streets to pass', async (t) => {
+test('prepares every official theme and marks each map mobile compatible or web only', async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-native-catalog-'));
   t.after(() => rm(cwd, {recursive: true, force: true}));
   await linkWorkspacePackages(cwd, ['core', 'maps']);
@@ -22,23 +25,52 @@ test('records every official map/theme deterministically and requires Streets to
     )
     .sort();
   assert.deepEqual(first.rows.map(({map, theme}) => `${map}/${theme}`).sort(), expected);
-  const streets = first.rows.filter(({map}) => map === 'streets');
-  assert.ok(streets.length > 0);
-  assert.ok(
-    streets.every(({status}) => status === 'compatible-artifacts'),
-    JSON.stringify(streets),
-  );
+  // Every theme of every official map has a native artifact; what it leaves out is recorded.
   for (const row of first.rows) {
-    if (row.status === 'compatible-artifacts') {
-      assert.match(row.styleSha256 ?? '', /^[a-f0-9]{64}$/u);
-      assert.deepEqual(row.diagnostics, []);
-    } else {
-      assert.ok(row.diagnostics.length > 0);
-      assert.equal(row.styleSha256, undefined);
-      for (const diagnostic of row.diagnostics) {
-        assert.equal(tileflowNativeDiagnosticSchema.safeParse(diagnostic).success, true);
-      }
-    }
+    assert.equal(row.status, 'compatible-artifacts', JSON.stringify(row.diagnostics));
+    assert.match(row.styleSha256 ?? '', /^[a-f0-9]{64}$/u);
+    assert.deepEqual(row.diagnostics, []);
+    assert.equal(tileflowNativeDegradationsSchema.safeParse(row.degradations).success, true);
+    for (const diagnostic of row.diagnostics)
+      assert.equal(tileflowNativeDiagnosticSchema.safeParse(diagnostic).success, true);
   }
+  assert.deepEqual(
+    first.maps.map(({map, status, compatibility}) => [
+      map,
+      status,
+      compatibility?.reasons.map(({feature, ids}) => [feature, ids]),
+    ]),
+    [
+      ['baedeker', 'web-only', [['deviceContours', ['deviceContours:baedeker-contours']]]],
+      ['blueprint', 'web-only', [['deviceContours', ['deviceContours:blueprint-contours']]]],
+      ['map-1777', 'mobile-compatible', []],
+      ['siegfried', 'web-only', [['deviceContours', ['deviceContours:siegfried-contours']]]],
+      ['soundings', 'mobile-compatible', []],
+      ['streets', 'mobile-compatible', []],
+    ],
+  );
+  const degradations = (map: string) => [
+    ...new Set(
+      first.rows
+        .filter((row) => row.map === map)
+        .flatMap((row) => row.degradations.map(({id, fallback}) => `${id}:${fallback}`)),
+    ),
+  ];
+  assert.deepEqual(degradations('streets'), [
+    'globe:mercator',
+    'models3d:extrusions',
+    'scene3d:extrusions',
+    'sky:none',
+    'trees3d:none',
+  ]);
+  assert.deepEqual(degradations('map-1777'), [
+    'models3d:extrusions',
+    'scene3d:extrusions',
+    'trees3d:flat',
+  ]);
+  assert.deepEqual(degradations('soundings'), [
+    'nauticalLightRhythm:steady',
+    'reliefResampling:engine-default',
+  ]);
   assert.equal(serializeCanonicalJson(first).includes(cwd), false);
 });

@@ -231,3 +231,48 @@ test('fresh hashes cannot authorize stale priorities or a per-layer POI category
     });
   }
 });
+
+test('Hosted native styles leave out browser contours, add building extrusions and carry the family', async () => {
+  const input = fixture();
+  const style = input.styles.light;
+  style.sources.tileflow = {type: 'vector', url: 'https://tiles.example/tiles/world/tiles.json'};
+  style.sources.contours = {
+    type: 'vector',
+    tiles: ['tileflow-contour://tiles/{z}/{x}/{y}.pbf?demUrl=https%3A%2F%2Fdem.example'],
+  };
+  style.layers.push(
+    {id: 'buildings', type: 'fill', source: 'tileflow', 'source-layer': 'building'},
+    {id: 'contours', type: 'line', source: 'contours', 'source-layer': 'contours'},
+  );
+  style.metadata!['tileflow:buildings'] = {
+    version: 1,
+    source: 'tileflow',
+    layers: {building: 'building'},
+    color: '#d8d0c0',
+  };
+  input.buildManifest.maps.main!.themes.light = {
+    ...input.buildManifest.maps.main!.themes.light!,
+    dataRequirements: inferTileflowDataRequirements(style),
+    sourceRequirements: inferTileflowSourceRequirements(style),
+    styleSha256: digest(style),
+  };
+  const artifact = await prepareTileflowHostedNativeDeployment({...input, themes: ['light']});
+  const parsed = await parseTileflowRendererDeploymentArtifact(artifact);
+  const native = parsed.renderers.native.styles.light as MapLibreStyle;
+  assert.deepEqual(Object.keys(native.sources), ['tileflow']);
+  assert.deepEqual(
+    native.layers.map((layer) => layer.id),
+    ['background', 'buildings', 'tileflow-buildings-native-extrusion'],
+  );
+  const receipt = parsed.renderers.native.buildRecord.transformations[0]!;
+  assert.deepEqual(receipt.removedLayers, [2]);
+  assert.deepEqual(receipt.insertedLayers, [2]);
+  assert.deepEqual(receipt.degradations, ['deviceContours:contours', 'scene3d']);
+  assert.equal(parsed.renderers.native.family.compatibility.status, 'web-only');
+  assert.deepEqual(
+    parsed.renderers.native.family.themes.map(({name}) => name),
+    ['light'],
+  );
+  // The web family keeps every source and layer.
+  assert.equal((parsed.renderers.web.styles.light as MapLibreStyle).layers.length, 3);
+});

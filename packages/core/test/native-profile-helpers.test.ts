@@ -18,6 +18,8 @@ for (const [name, support, expected] of [
   ['boolean', {android: true, ios: true}, false],
   ['range', {android: '>=1.0.0', ios: '6.0.0'}, false],
   ['prerelease', {android: '13.2.0-rc.1', ios: '6.0.0'}, false],
+  ['supported by every release', {android: 'supported', ios: 'supported'}, true],
+  ['supported on one platform only', {android: 'supported', ios: '6.27.0'}, false],
 ] as const) {
   test(`checks version evidence: ${name}`, () => {
     assert.equal(supportsNativeVersions(support, engines), expected);

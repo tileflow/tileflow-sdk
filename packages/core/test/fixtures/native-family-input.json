@@ -1,0 +1,593 @@
+{
+  "themes": ["day", "dusk", "night", "mono"],
+  "styles": {
+    "day": {
+      "version": 8,
+      "name": "day",
+      "light": {
+        "anchor": "map",
+        "color": "#ffffff",
+        "intensity": 0.4
+      },
+      "sources": {
+        "world": {
+          "type": "vector",
+          "url": "https://example.com/world.json"
+        }
+      },
+      "layers": [
+        {
+          "id": "background",
+          "type": "background",
+          "paint": {
+            "background-color": "#f4f0ef"
+          },
+          "metadata": {
+            "tileflow:domain": "land"
+          }
+        },
+        {
+          "id": "landcover",
+          "type": "fill",
+          "source": "world",
+          "source-layer": "landcover",
+          "paint": {
+            "fill-color": [
+              "match",
+              ["get", "class"],
+              "grass",
+              "#cfe3b4",
+              "wood",
+              "#a9c98f",
+              "#e6e2d8"
+            ],
+            "fill-opacity": 0.9
+          },
+          "metadata": {
+            "tileflow:domain": "land"
+          }
+        },
+        {
+          "id": "water",
+          "type": "fill",
+          "source": "world",
+          "source-layer": "water",
+          "paint": {
+            "fill-pattern": "water-day",
+            "fill-opacity": 1
+          },
+          "metadata": {
+            "tileflow:domain": "water"
+          }
+        },
+        {
+          "id": "roads",
+          "type": "line",
+          "source": "world",
+          "source-layer": "transportation",
+          "paint": {
+            "line-color": ["interpolate", ["linear"], ["zoom"], 10, "#f2d9a6", 16, "#ffffff"],
+            "line-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.45, 16, 1],
+            "line-width": 2
+          },
+          "metadata": {
+            "tileflow:domain": "roads"
+          }
+        },
+        {
+          "id": "places",
+          "type": "circle",
+          "source": "world",
+          "source-layer": "poi",
+          "paint": {
+            "circle-radius": ["*", ["get", "rank"], 2],
+            "circle-color": "#ffffff"
+          },
+          "metadata": {
+            "tileflow:domain": "poi"
+          }
+        },
+        {
+          "id": "labels",
+          "type": "symbol",
+          "source": "world",
+          "source-layer": "place",
+          "layout": {
+            "text-field": ["get", "name"],
+            "icon-image": "pin-day"
+          },
+          "paint": {
+            "text-color": "#1f2933",
+            "text-halo-color": "#ffffff",
+            "text-opacity": 1
+          },
+          "metadata": {
+            "tileflow:domain": "labels"
+          }
+        }
+      ],
+      "metadata": {
+        "tileflow:colorScheme": "light",
+        "tileflow:sun": {
+          "version": 1,
+          "azimuth": 350,
+          "altitude": 60,
+          "color": "#ffffff",
+          "intensity": 0.5,
+          "shadowIntensity": 0.6,
+          "ambient": {
+            "color": "#dfe8ff",
+            "intensity": 0.5
+          }
+        },
+        "tileflow:route": {
+          "version": 1,
+          "line": "#2563eb",
+          "casing": "#1e3a8a",
+          "core": "#eff6ff",
+          "glow": "#2563eb",
+          "alternative": "#64748b",
+          "glowOpacity": 0.16,
+          "coreOpacity": 0
+        },
+        "tileflow:notices": [
+          {
+            "id": "not-for-navigation",
+            "sources": ["world"],
+            "text": "Not for navigation"
+          }
+        ],
+        "tileflow:nativeDegradations": [
+          {
+            "id": "globe",
+            "feature": "globe",
+            "reason": "engine-unsupported",
+            "fallback": "mercator",
+            "layers": []
+          }
+        ]
+      }
+    },
+    "dusk": {
+      "version": 8,
+      "name": "dusk",
+      "light": {
+        "anchor": "map",
+        "color": "#ffffff",
+        "intensity": 0.4
+      },
+      "sources": {
+        "world": {
+          "type": "vector",
+          "url": "https://example.com/world.json"
+        }
+      },
+      "layers": [
+        {
+          "id": "background",
+          "type": "background",
+          "paint": {
+            "background-color": "#e8d0c0"
+          },
+          "metadata": {
+            "tileflow:domain": "land"
+          }
+        },
+        {
+          "id": "landcover",
+          "type": "fill",
+          "source": "world",
+          "source-layer": "landcover",
+          "paint": {
+            "fill-color": [
+              "match",
+              ["get", "class"],
+              "grass",
+              "#b7c79a",
+              "wood",
+              "#8fa877",
+              "#d9c4b2"
+            ],
+            "fill-opacity": 0.8
+          },
+          "metadata": {
+            "tileflow:domain": "land"
+          }
+        },
+        {
+          "id": "water",
+          "type": "fill",
+          "source": "world",
+          "source-layer": "water",
+          "paint": {
+            "fill-pattern": "water-dusk",
+            "fill-opacity": 1
+          },
+          "metadata": {
+            "tileflow:domain": "water"
+          }
+        },
+        {
+          "id": "roads",
+          "type": "line",
+          "source": "world",
+          "source-layer": "transportation",
+          "paint": {
+            "line-color": ["interpolate", ["linear"], ["zoom"], 10, "#d99a6c", 16, "#f7e1c8"],
+            "line-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.4, 16, 1],
+            "line-width": 2
+          },
+          "metadata": {
+            "tileflow:domain": "roads"
+          }
+        },
+        {
+          "id": "places",
+          "type": "circle",
+          "source": "world",
+          "source-layer": "poi",
+          "paint": {
+            "circle-radius": ["*", ["get", "rank"], 3],
+            "circle-color": "#f7e1c8"
+          },
+          "metadata": {
+            "tileflow:domain": "poi"
+          }
+        },
+        {
+          "id": "labels",
+          "type": "symbol",
+          "source": "world",
+          "source-layer": "place",
+          "layout": {
+            "text-field": ["get", "name"],
+            "icon-image": "pin-dusk"
+          },
+          "paint": {
+            "text-color": "#2d1f33",
+            "text-halo-color": "#f6e7da",
+            "text-opacity": 1
+          },
+          "metadata": {
+            "tileflow:domain": "labels"
+          }
+        }
+      ],
+      "metadata": {
+        "tileflow:colorScheme": "light",
+        "tileflow:sun": {
+          "version": 1,
+          "azimuth": 20,
+          "altitude": 8,
+          "color": "#ffb070",
+          "intensity": 0.3,
+          "shadowIntensity": 0.4,
+          "ambient": {
+            "color": "#806070",
+            "intensity": 0.4
+          }
+        },
+        "tileflow:route": {
+          "version": 1,
+          "line": "#2563eb",
+          "casing": "#1e3a8a",
+          "core": "#eff6ff",
+          "glow": "#2563eb",
+          "alternative": "#64748b",
+          "glowOpacity": 0.16,
+          "coreOpacity": 0
+        },
+        "tileflow:notices": [
+          {
+            "id": "not-for-navigation",
+            "sources": ["world"],
+            "text": "Not for navigation"
+          }
+        ],
+        "tileflow:nativeDegradations": [
+          {
+            "id": "globe",
+            "feature": "globe",
+            "reason": "engine-unsupported",
+            "fallback": "mercator",
+            "layers": []
+          }
+        ]
+      }
+    },
+    "night": {
+      "version": 8,
+      "name": "night",
+      "light": {
+        "anchor": "map",
+        "color": "#8090c0",
+        "intensity": 0.2
+      },
+      "sources": {
+        "world": {
+          "type": "vector",
+          "url": "https://example.com/world.json"
+        }
+      },
+      "layers": [
+        {
+          "id": "background",
+          "type": "background",
+          "paint": {
+            "background-color": "#0b1020"
+          },
+          "metadata": {
+            "tileflow:domain": "land"
+          }
+        },
+        {
+          "id": "landcover",
+          "type": "fill",
+          "source": "world",
+          "source-layer": "landcover",
+          "paint": {
+            "fill-color": [
+              "match",
+              ["get", "class"],
+              "grass",
+              "#1d2b22",
+              "wood",
+              "#14211a",
+              "#121828"
+            ],
+            "fill-opacity": 0.7
+          },
+          "metadata": {
+            "tileflow:domain": "land"
+          }
+        },
+        {
+          "id": "water",
+          "type": "fill",
+          "source": "world",
+          "source-layer": "water",
+          "paint": {
+            "fill-pattern": "water-night",
+            "fill-opacity": 1
+          },
+          "metadata": {
+            "tileflow:domain": "water"
+          }
+        },
+        {
+          "id": "roads",
+          "type": "line",
+          "source": "world",
+          "source-layer": "transportation",
+          "paint": {
+            "line-color": ["interpolate", ["linear"], ["zoom"], 10, "#5b4a3a", 16, "#3a4560"],
+            "line-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.35, 16, 1],
+            "line-width": 2
+          },
+          "metadata": {
+            "tileflow:domain": "roads"
+          }
+        },
+        {
+          "id": "places",
+          "type": "circle",
+          "source": "world",
+          "source-layer": "poi",
+          "paint": {
+            "circle-radius": ["*", ["get", "rank"], 4],
+            "circle-color": "#3a4560"
+          },
+          "metadata": {
+            "tileflow:domain": "poi"
+          }
+        },
+        {
+          "id": "labels",
+          "type": "symbol",
+          "source": "world",
+          "source-layer": "place",
+          "layout": {
+            "text-field": ["get", "name"],
+            "icon-image": "pin-night"
+          },
+          "paint": {
+            "text-color": "rgba(230, 236, 255, 0.95)",
+            "text-halo-color": "hsl(225, 40%, 10%)",
+            "text-opacity": 1
+          },
+          "metadata": {
+            "tileflow:domain": "labels"
+          }
+        }
+      ],
+      "metadata": {
+        "tileflow:colorScheme": "dark",
+        "tileflow:sun": {
+          "version": 1,
+          "azimuth": 180,
+          "altitude": -30,
+          "color": "#203060",
+          "intensity": 0,
+          "shadowIntensity": 0,
+          "ambient": {
+            "color": "#101830",
+            "intensity": 0.2
+          }
+        },
+        "tileflow:route": {
+          "version": 1,
+          "line": "#60a5fa",
+          "casing": "#0b1220",
+          "core": "#eff6ff",
+          "glow": "#60a5fa",
+          "alternative": "#64748b",
+          "glowOpacity": 0.4,
+          "coreOpacity": 0.7
+        },
+        "tileflow:notices": [
+          {
+            "id": "not-for-navigation",
+            "sources": ["world"],
+            "text": "Not for navigation"
+          }
+        ],
+        "tileflow:nativeDegradations": [
+          {
+            "id": "globe",
+            "feature": "globe",
+            "reason": "engine-unsupported",
+            "fallback": "mercator",
+            "layers": []
+          }
+        ]
+      }
+    },
+    "mono": {
+      "version": 8,
+      "name": "mono",
+      "light": {
+        "anchor": "map",
+        "color": "#ffffff",
+        "intensity": 0.4
+      },
+      "sources": {
+        "world": {
+          "type": "vector",
+          "url": "https://example.com/world.json"
+        }
+      },
+      "layers": [
+        {
+          "id": "background",
+          "type": "background",
+          "paint": {
+            "background-color": "#f0f0f0"
+          },
+          "metadata": {
+            "tileflow:domain": "land"
+          }
+        },
+        {
+          "id": "landcover",
+          "type": "fill",
+          "source": "world",
+          "source-layer": "landcover",
+          "paint": {
+            "fill-color": [
+              "match",
+              ["get", "class"],
+              "grass",
+              "#d0d0d0",
+              "wood",
+              "#b0b0b0",
+              "#e6e2d8"
+            ],
+            "fill-opacity": 0.9
+          },
+          "metadata": {
+            "tileflow:domain": "land"
+          }
+        },
+        {
+          "id": "water",
+          "type": "fill",
+          "source": "world",
+          "source-layer": "water",
+          "paint": {
+            "fill-pattern": "water-day",
+            "fill-opacity": 1
+          },
+          "metadata": {
+            "tileflow:domain": "water"
+          }
+        },
+        {
+          "id": "roads",
+          "type": "line",
+          "source": "world",
+          "source-layer": "transportation",
+          "paint": {
+            "line-color": ["interpolate", ["linear"], ["zoom"], 10, "#f2d9a6", 16, "#ffffff"],
+            "line-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.45, 16, 1],
+            "line-width": 2
+          },
+          "metadata": {
+            "tileflow:domain": "roads"
+          }
+        },
+        {
+          "id": "outlines",
+          "type": "line",
+          "source": "world",
+          "source-layer": "landcover",
+          "paint": {
+            "line-color": "#999999"
+          },
+          "metadata": {
+            "tileflow:domain": "land"
+          }
+        },
+        {
+          "id": "places",
+          "type": "circle",
+          "source": "world",
+          "source-layer": "poi",
+          "paint": {
+            "circle-radius": ["*", ["get", "rank"], 2],
+            "circle-color": "#ffffff"
+          },
+          "metadata": {
+            "tileflow:domain": "poi"
+          }
+        },
+        {
+          "id": "labels",
+          "type": "symbol",
+          "source": "world",
+          "source-layer": "place",
+          "layout": {
+            "text-field": ["get", "name"],
+            "icon-image": "pin-day"
+          },
+          "paint": {
+            "text-color": "#1f2933",
+            "text-halo-color": "#ffffff",
+            "text-opacity": 1
+          },
+          "metadata": {
+            "tileflow:domain": "labels"
+          }
+        }
+      ],
+      "metadata": {
+        "tileflow:colorScheme": "light",
+        "tileflow:route": {
+          "version": 1,
+          "line": "#2563eb",
+          "casing": "#1e3a8a",
+          "core": "#eff6ff",
+          "glow": "#2563eb",
+          "alternative": "#64748b",
+          "glowOpacity": 0.16,
+          "coreOpacity": 0
+        },
+        "tileflow:notices": [
+          {
+            "id": "not-for-navigation",
+            "sources": ["world"],
+            "text": "Not for navigation"
+          }
+        ],
+        "tileflow:nativeDegradations": [
+          {
+            "id": "globe",
+            "feature": "globe",
+            "reason": "engine-unsupported",
+            "fallback": "mercator",
+            "layers": []
+          }
+        ]
+      }
+    }
+  }
+}

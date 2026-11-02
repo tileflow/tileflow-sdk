@@ -45,8 +45,8 @@ test('rejects pitch 86 at the exact native root pointer while accepting 85', () 
   );
 });
 
-test('keeps a deterministic 160k-node validation budget with a tested boundary', () => {
-  assert.equal(tileflowNativeProfileLimits.maximumNodes, 160_000);
+test('keeps a deterministic 320k-node validation budget with a tested boundary', () => {
+  assert.equal(tileflowNativeProfileLimits.maximumNodes, 320_000);
   const within = new Array((tileflowNativeProfileLimits.maximumNodes - 2) / 2).fill(0);
   const over = new Array(tileflowNativeProfileLimits.maximumNodes / 2).fill(0);
   assert.equal(isBoundedNativeJson(within), true);

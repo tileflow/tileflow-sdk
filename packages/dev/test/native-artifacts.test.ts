@@ -12,6 +12,7 @@ import {
   tileflowNativeBuildRecordSchema,
   TileflowNativeCompatibilityError,
   validateTileflowNativePreparedStyle,
+  readTileflowNativeDegradations,
 } from '@tileflow/core/native-profile';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
@@ -285,8 +286,31 @@ export default defineMap({id:'main',version:1,extends:streets,themes,fonts:['./f
   );
 });
 
+// HTTP glyphs compile for the web, but native maps require HTTPS resources: not degradable.
+const insecureGlyphs = `glyphs: {kind:'url', url:'http://fonts.example.test/{fontstack}/{range}.pbf',
+  fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic',
+    'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']},`;
+
+test('records terrain displacement as a degradation instead of failing', async (t) => {
+  const cwd = await fixture(t);
+  await writeFile(join(cwd, 'tileflow.config.ts'), config("terrain:'3d',"));
+  const native = await createTileflowBuildArtifacts({cwd, renderer: 'native'});
+  try {
+    for (const [theme, style] of Object.entries(native.styles.main!)) {
+      assert.equal(Object.hasOwn(style, 'terrain'), false, theme);
+      const ids = readTileflowNativeDegradations(style.metadata).map(({id}) => id);
+      assert.ok(ids.includes('terrain3d'), `${theme}: ${ids.join()}`);
+      const receipt = native.nativeBuild!.transformations.find((item) => item.theme === theme)!;
+      assert.deepEqual(receipt.degradations, ids);
+    }
+    assert.equal(native.nativeFamilies?.main?.compatibility.status, 'compatible');
+  } finally {
+    await disposeTileflowBuildArtifacts(native);
+  }
+});
+
 for (const [label, extra, expectedPath] of [
-  ['terrain displacement', "terrain:'3d',", '/terrain'],
+  ['an insecure glyph origin', insecureGlyphs, '/glyphs'],
 ] as const) {
   test(`rejects ${label} before replacing an existing native output`, async (t) => {
     const cwd = await fixture(t);
@@ -322,7 +346,7 @@ test('forwards the renderer into watched generations and retains the last valid 
     session.subscribe((state) => {
       if (state.status === 'ready') readyEvents++;
     });
-    await writeFile(join(cwd, 'tileflow.config.ts'), config("terrain:'3d',"));
+    await writeFile(join(cwd, 'tileflow.config.ts'), config(insecureGlyphs));
     const deadline = Date.now() + 10_000;
     while (session.getState().status !== 'invalid' && Date.now() < deadline) await delay(25);
     const invalid = session.getState();

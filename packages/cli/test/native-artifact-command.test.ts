@@ -126,8 +126,11 @@ test('native build writes a separate strict v1 manifest and renderer record', as
   assert.equal(manifest.renderer, undefined);
   const record = JSON.parse(await readFile(join(cwd, 'output/native/native-build.json'), 'utf8'));
   assert.equal(record.validation, 'static-artifacts');
-  assert.equal(record.schemaVersion, 2);
-  assert.equal(record.preparationVersion, 'native-lowering-v1');
+  assert.equal(record.schemaVersion, 3);
+  assert.equal(record.preparationVersion, 'native-lowering-v2');
+  const family = JSON.parse(await readFile(join(cwd, 'output/native/families/main.json'), 'utf8'));
+  assert.equal(family.kind, 'tileflow-native-family');
+  assert.equal(family.compatibility.status, 'compatible');
   assert.ok(
     record.transformations.every(
       ({projection}: {projection: string}) => projection === 'globe-to-mercator',
@@ -168,13 +171,19 @@ test('an incompatible native style fails without creating an output directory', 
   const cwd = await fixture(t);
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
-    tileflowMapFixture({id: 'main', fields: "terrain: '3d'"}),
+    // Native maps leave terrain displacement out, but they cannot load HTTP glyphs.
+    tileflowMapFixture({
+      id: 'main',
+      fields: `glyphs: {kind:'url', url:'http://fonts.example.test/{fontstack}/{range}.pbf',
+  fontStacks: ['Noto Sans Regular', 'Noto Sans Bold', 'Noto Sans Italic',
+    'DINish Medium,Noto Sans Regular', 'DINish Bold,Noto Sans Regular']}`,
+    }),
   );
   const result = await run(cwd, ['build', '--renderer', 'native', '--out', 'output', '--json']);
   assert.equal(result.code, 1);
   const body = JSON.parse(result.stderr);
   assert.equal(body.profile, 'native-v1');
-  assert.ok(body.diagnostics.some(({path}: {path: string}) => path.endsWith('/terrain')));
+  assert.ok(body.diagnostics.some(({path}: {path: string}) => path.endsWith('/glyphs')));
   await assert.rejects(access(join(cwd, 'output')));
 });
 

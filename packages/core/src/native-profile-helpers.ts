@@ -2,8 +2,9 @@
 export const tileflowNativeProfileLimits = Object.freeze({
   maximumStyleBytes: 8 * 1024 * 1024,
   maximumDepth: 64,
-  // Streets currently traverses ~122k values; 160k keeps ~30% deterministic headroom.
-  maximumNodes: 160_000,
+  // Map 1777, the largest official map, traverses ~245k values (one data-driven road layer holds
+  // ~87k); 320k keeps ~30% deterministic headroom. Streets traverses ~136k.
+  maximumNodes: 320_000,
   maximumSources: 128,
   maximumLayers: 4_096,
   maximumIssues: 32,
@@ -14,19 +15,23 @@ export const tileflowNativeProfileLimits = Object.freeze({
 /** Fixed output budget for a prepared native-v1 style, never a raw input allowance. */
 export const tileflowNativePreparedStyleLimits = Object.freeze({
   ...tileflowNativeProfileLimits,
-  // Full Streets themes lower to 513321/513231 nodes. 540k leaves 5.20%/5.22% headroom.
+  // Set for full Streets themes at ~513k nodes; they now lower to ~208k and Map 1777 holds ~245k.
   maximumNodes: 540_000,
 });
 
 type NativeJsonStage = 'input' | 'prepared';
 
-/** Issue links and missing support entries are not released SDK version evidence. */
+/**
+ * Issue links and missing support entries are not released SDK version evidence. `supported` is
+ * the Style Spec's statement that every release supports the entry.
+ */
 export function supportsNativeVersions(
   support: Readonly<Record<string, unknown>>,
   engines: Readonly<{android: string; ios: string}>,
 ): boolean {
   return (['android', 'ios'] as const).every((platform) => {
     const since = support[platform];
+    if (since === 'supported') return true;
     if (typeof since !== 'string' || !/^\d+\.\d+\.\d+$/u.test(since)) return false;
     const wanted = since.split('.').map(Number);
     const actual = engines[platform].split('.').map(Number);

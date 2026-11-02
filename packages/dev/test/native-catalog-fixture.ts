@@ -2,7 +2,11 @@ import {createHash} from 'node:crypto';
 import {parseTileflowMap, serializeCanonicalJson} from '@tileflow/core';
 import {collectTileflowMapBuildLineage} from '@tileflow/core/build';
 import {
+  readTileflowNativeDegradations,
+  resolveTileflowNativeCompatibility,
   TileflowNativeCompatibilityError,
+  type TileflowNativeCompatibility,
+  type TileflowNativeDegradation,
   type TileflowNativeDiagnostic,
   tileflowNativeProfile,
 } from '@tileflow/core/native-profile';
@@ -26,6 +30,19 @@ export type NativeCatalogRow = {
   status: 'compatible-artifacts' | 'incompatible';
   styleSha256?: string;
   diagnostics: readonly TileflowNativeDiagnostic[];
+  /** What the native artifact leaves out or draws differently; empty when incompatible. */
+  degradations: readonly TileflowNativeDegradation[];
+};
+
+/**
+ * A map is `mobile-compatible` when every theme prepares and loses no content; `web-only` maps
+ * either fail preparation (`diagnostics`) or lose content (`compatibility.reasons`).
+ */
+export type NativeCatalogMap = {
+  map: string;
+  status: 'mobile-compatible' | 'web-only';
+  compatibility?: TileflowNativeCompatibility;
+  incompatibleThemes: readonly string[];
 };
 
 /** Replays individual themes through the ordinary compiler and artifact preparation path. */
@@ -60,28 +77,51 @@ export async function evaluateNativeCatalog(cwd: string) {
           styleBaseUrl: '.',
         });
         try {
+          const style = artifacts.styles[map.id]![theme]!;
           rows.push({
             map: map.id,
             theme,
             status: 'compatible-artifacts',
             diagnostics: [],
-            styleSha256: createHash('sha256')
-              .update(serializeCanonicalJson(artifacts.styles[map.id]![theme]!))
-              .digest('hex'),
+            degradations: readTileflowNativeDegradations(style.metadata),
+            styleSha256: createHash('sha256').update(serializeCanonicalJson(style)).digest('hex'),
           });
         } finally {
           await disposeTileflowBuildArtifacts(artifacts);
         }
       } catch (error) {
         if (!(error instanceof TileflowNativeCompatibilityError)) throw error;
-        rows.push({map: map.id, theme, status: 'incompatible', diagnostics: error.issues});
+        rows.push({
+          map: map.id,
+          theme,
+          status: 'incompatible',
+          diagnostics: error.issues,
+          degradations: [],
+        });
       }
     }
   }
+  const maps: NativeCatalogMap[] = [...new Set(rows.map((row) => row.map))].map((map) => {
+    const themes = rows.filter((row) => row.map === map);
+    const incompatibleThemes = themes
+      .filter((row) => row.status === 'incompatible')
+      .map((row) => row.theme);
+    if (incompatibleThemes.length) return {map, status: 'web-only', incompatibleThemes};
+    const compatibility = resolveTileflowNativeCompatibility(
+      Object.fromEntries(themes.map((row) => [row.theme, row.degradations])),
+    );
+    return {
+      map,
+      status: compatibility.status === 'compatible' ? 'mobile-compatible' : 'web-only',
+      compatibility,
+      incompatibleThemes,
+    };
+  });
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     profile: tileflowNativeProfile,
     scope: 'individual-theme-static-artifacts',
+    maps,
     rows,
   };
 }

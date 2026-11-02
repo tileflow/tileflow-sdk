@@ -7,11 +7,11 @@ function boundary(maximum: number, above = false): number[] {
   return new Array(Math.floor((maximum - 1) / 2) + Number(above)).fill(0);
 }
 
-test('keeps untrusted input at 160000 nodes independently of the prepared budget', () => {
-  assert.equal(budgets.tileflowNativeProfileLimits.maximumNodes, 160_000);
-  assert.equal(budgets.isBoundedNativeJson(boundary(160_000)), true);
-  assert.equal(budgets.isBoundedNativeJson(boundary(160_000, true)), false);
-  assert.equal(budgets.isBoundedNativeJson(boundary(160_000, true), 'input'), false);
+test('keeps untrusted input at 320000 nodes independently of the prepared budget', () => {
+  assert.equal(budgets.tileflowNativeProfileLimits.maximumNodes, 320_000);
+  assert.equal(budgets.isBoundedNativeJson(boundary(320_000)), true);
+  assert.equal(budgets.isBoundedNativeJson(boundary(320_000, true)), false);
+  assert.equal(budgets.isBoundedNativeJson(boundary(320_000, true), 'input'), false);
 });
 
 test('admits measured prepared expansion with a fixed 540000-node ceiling', () => {

@@ -29,8 +29,10 @@ try {
 ```
 
 The pipeline checks every concrete theme. A rejected theme fails the complete generation before
-production output is written. Native preparation applies the versioned transformations below;
-other unsupported layers, fonts or protocols are not silently removed.
+production output is written. Native preparation applies the versioned transformations below,
+which leave out or replace only what the
+[native style artifact contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/native-style-artifact.md)
+lists as degradable, and records each change; other unsupported layers, fonts or protocols fail.
 Local PMTiles are rejected before creating archive snapshots. URL checks do not fetch remote
 TileJSON, glyphs or tiles and do not prove their content or availability.
 
@@ -41,9 +43,21 @@ metadata or claim a system font is equivalent. Sprites keep the original indepen
 
 ## Versioned native lowering
 
-Selecting `renderer: 'native'` applies `native-lowering-v1` after shared semantic compilation and
+Selecting `renderer: 'native'` applies `native-lowering-v2` after shared semantic compilation and
 before final native validation. It never edits the authored map, the official map definitions or
 the shared compiler. Web output is not lowered.
+
+The first step records degradations. Contour sources generated in the browser
+(`tileflow-contour://`) are removed with every layer that draws them. A map's building extrusion
+pass (grouped under `metadata['tileflow:3d-toggle'] = 'building'`) is shown; a map that declares
+3D buildings without one gets a `fill-extrusion` layer from its buildings design (source, colour,
+vertical gradient and entrance zooms, with World's `render_height`, `render_min_height` and
+`hide_3d` fields), above its own building layers and below their labels. Landmarks, building
+models, 3D trees and street lights are recorded, and the browser 3D runtime's metadata is dropped.
+Terrain displacement is removed, `resampling` is removed from hillshade and colour-relief layers,
+Nautical lights shine steadily, and a sky, a globe projection and cooperative symbol overlap are
+recorded. Each style lists its records in `metadata['tileflow:nativeDegradations']`. A POI layer
+cannot be removed: a map whose POI layer draws a removed source fails at `/metadata`.
 
 A browser `sky` is removed, because Native draws no sky, and the entry records `sky: 'removed'`.
 A fixed `projection: {type: 'globe'}` is explicitly normalized to Native's implicit Mercator. This
@@ -93,15 +107,15 @@ property pointer.
 
 Work is bounded per property by depth 16, 512 decision visits, 64 decision paths, 16 distinct
 outcomes and 64 dash elements; the product is limited to 32 physical layers and 32 zoom intervals
-per logical layer. Raw compiler input must fit 160,000 JSON nodes before any lowering. Its expanded
+per logical layer. Raw compiler input must fit 320,000 JSON nodes before any lowering. Its expanded
 native representation has a separate fixed 540,000-node ceiling, checked after lowering, after
 font preparation and after generation URL retargeting. Both stages retain 4,096 layers, depth 64
 and 8 MiB. No caller option raises either budget and no rejected input is retried under the output
 allowance. A failure occurs before output writes and leaves the previous valid generation intact.
 
-This is one shared authored map, not a second mobile catalog: the native-v1 representation adapts
-only finite `line-cap`/`line-dasharray` decisions and constant symbol overlap modes, together with
-its explicit fixed-projection policy. Unsupported advanced expressions or other properties fail
+This is one shared authored map, not a second mobile catalog: beyond the recorded degradations,
+the native-v1 representation adapts only finite `line-cap`/`line-dasharray` decisions and constant
+symbol overlap modes, together with its explicit fixed-projection policy. Unsupported advanced expressions or other properties fail
 with their native diagnostic and JSON Pointer; their web behavior is unchanged. The raw and
 prepared validators share their semantic checks and bounded traversal. See the
 [Core budget contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-artifact-profile.md#input-and-prepared-style-budgets)
@@ -114,7 +128,7 @@ the second, the physical layers draw them as 1 then 0 instead of 0 then 1. Both 
 mutually exclusive filters yet have overlapping geometry. The resulting composition can differ,
 not merely its antialiasing. Even without a sort key, partitioning can change source feature order.
 
-The native-lowering-v1 policy permits these bounded partitions without promising identical global
+The native lowering policy permits these bounded partitions without promising identical global
 feature order. Applications requiring exact overlapping-feature order must not treat such an
 artifact as order-equivalent to its web style. Automated checks establish feature selection,
 cap/dash values, zoom ranges, determinism and resource bounds, not pixel equivalence.
@@ -138,8 +152,12 @@ await writeTileflowBuildArtifacts({
 });
 ```
 
-This writes `public/tileflow/native/manifest.json`, `build-manifest.json`, `native-build.json` and
-the complete style/asset generation beneath `public/tileflow/native`. The writer adds `native` once
+This writes `public/tileflow/native/manifest.json`, `build-manifest.json`, `native-build.json`,
+one family document per map at `families/<map>.json` and the complete style/asset generation
+beneath `public/tileflow/native`. Each generation directory holds its own copy of the family
+documents, at `../../families/<map>.json` from its styles. A family document holds each theme's
+appearance, emphasis table and degradations, the blend plans of the whole family and whether the
+map is mobile compatible or web only; see the artifact contract for its format. The writer adds `native` once
 beneath `outDir`; pass the output parent, not an already renderer-qualified directory. The native
 subdirectory owns a separate inventory. A web build at the parent neither replaces its manifest nor
 collects the native generation, and vice versa.
@@ -148,11 +166,12 @@ The runtime manifest remains strict version 1 with the same map/theme shape. No 
 field is added to it. Native font declarations live in the native styles, not a web font loader.
 `native-build.json` is a separate strict build record that identifies the renderer, profile, selected
 engines, `validation: 'static-artifacts'` and the canonical `build-manifest.json` SHA-256. Its
-schema version is 2 and its `preparationVersion` is `native-lowering-v1`.
+schema version is 3 and its `preparationVersion` is `native-lowering-v2`.
 
 The `transformations` array is sorted uniquely by map/theme. Each entry records input and lowered
 style SHA-256 values, input/output layer counts, projection normalization and, when present, sky
-removal. `layers` lists the
+removal. `removedLayers` lists the input ordinals a degradation left out, `insertedLayers` the
+output ordinals preparation added and `degradations` the style's degradation IDs. `layers` lists the
 input ordinal, output start/count and affected properties of each partitioned line layer;
 `symbolOverlap` lists the input ordinal and replaced properties of each symbol layer whose overlap
 modes became `*-allow-overlap` values. Ordinals refer to the complete style layer arrays, including
@@ -161,8 +180,8 @@ physical IDs traceable without duplicating layer definitions in the receipt. The
 compiler output; the lowered hash includes the rebound layer references and precedes native font
 preparation and generation URL retargeting.
 The build-manifest hash separately binds the final prepared styles and assets. All styles receive
-an entry, including styles for which no lowering was needed. Schema v1 build records do not imply
-this preparation policy and are not parsed as v2.
+an entry, including styles for which no lowering was needed. Earlier build-record schemas do not
+imply this preparation policy and are not parsed as version 3.
 
 The existing logical map revision remains based on resolved cartography and source asset identity.
 Representation changes, such as native font mapping, change the style hash rather than inventing
@@ -235,8 +254,8 @@ pnpm exec tsx scripts/native-lowering-audit.ts > /tmp/native-lowering-audit.json
 ```
 
 The output root is `packages/dev/output/native-streets/native`. It contains
-`styles/streets/dark.json`, `styles/streets/light.json`, their shared sprite/font assets, a version-1
-`manifest.json` and the version-2 `native-build.json` receipt. Keep the complete directory together.
+`styles/streets/dark.json`, `styles/streets/light.json`, `families/streets.json`, their shared
+sprite/font assets, a version-1 `manifest.json` and the version-3 `native-build.json` receipt. Keep the complete directory together.
 The manifest points to the content-addressed generation; use those URLs for an actual render.
 Do not copy only the two style files and leave their relative assets behind. Record the checkout
 SHA, both prepared style hashes, engine versions and the resource origin used for the check.

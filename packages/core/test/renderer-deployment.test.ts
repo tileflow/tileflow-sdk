@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto';
 import test from 'node:test';
 import {serializeCanonicalJson} from '../src/icon-package';
 import {createTileflowNativeBuildRecord} from '../src/native-build-record';
+import {createTileflowNativeFamily} from '../src/native-profile-family';
 import {
   parseTileflowRendererDeploymentArtifact,
   tileflowRendererDeploymentArtifactSchema,
@@ -74,13 +75,65 @@ function artifact() {
             inputLayers: 1,
             outputLayers: 1,
             projection: 'none',
+            removedLayers: [],
+            insertedLayers: [],
             layers: [],
             symbolOverlap: [],
+            degradations: [],
           },
         ]),
+        family: createTileflowNativeFamily({
+          map: 'streets',
+          themes: ['light'],
+          styles: {light: structuredClone(style) as never},
+        }),
       },
     },
   };
+}
+
+/** The web style draws browser contours; its native style leaves them out and records it. */
+function degradedArtifact() {
+  const value = artifact();
+  const web = value.renderers.web.styles.light as Record<string, any>;
+  web.sources.contours = {
+    type: 'vector',
+    tiles: ['tileflow-contour://tiles/{z}/{x}/{y}.pbf'],
+  };
+  web.layers.push({id: 'contours', type: 'line', source: 'contours', 'source-layer': 'contours'});
+  const native = value.renderers.native.styles.light as Record<string, any>;
+  native.metadata['tileflow:nativeDegradations'] = [
+    {
+      id: 'deviceContours:contours',
+      feature: 'deviceContours',
+      reason: 'web-runtime',
+      fallback: 'none',
+      layers: ['contours'],
+    },
+  ];
+  for (const family of [value.renderers.web, value.renderers.native])
+    family.buildManifest.maps.streets.themes.light.styleSha256 = hash(
+      family === value.renderers.web ? web : native,
+    );
+  value.renderers.native.buildRecord = createTileflowNativeBuildRecord(
+    hash(value.renderers.native.buildManifest),
+    [
+      {
+        ...value.renderers.native.buildRecord.transformations[0]!,
+        inputStyleSha256: hash(web),
+        loweredStyleSha256: hash(native),
+        inputLayers: 2,
+        removedLayers: [1],
+        degradations: ['deviceContours:contours'],
+      },
+    ],
+  );
+  value.renderers.native.family = createTileflowNativeFamily({
+    map: 'streets',
+    themes: ['light'],
+    styles: {light: native as never},
+  });
+  return value;
 }
 
 test('renderer deployment v2 binds one complete web and native family without widening v1', async () => {
@@ -126,7 +179,7 @@ test('renderer envelope rejects absent renderers, extra fields, theme and author
       value.renderers.native.buildManifest.maps.streets.defaultTheme = 'dark';
     },
     (value: ReturnType<typeof artifact>) => {
-      value.renderers.native.buildRecord.engines.ios = '0.0.0' as '6.26.0';
+      value.renderers.native.buildRecord.engines.ios = '0.0.0' as '7.0.0';
     },
   ]) {
     const value = artifact();
@@ -153,6 +206,68 @@ test('renderer hashes bind web input, native output and its complete build recor
     },
   ]) {
     const value = artifact();
+    change(value);
+    await assert.rejects(parseTileflowRendererDeploymentArtifact(value), {
+      code: 'RENDERER_DEPLOYMENT_INVALID',
+    });
+  }
+});
+
+test('the family document is the one Core computes from the native styles', async () => {
+  const parsed = await parseTileflowRendererDeploymentArtifact(artifact());
+  assert.equal(parsed.renderers.native.family.compatibility.status, 'compatible');
+  for (const change of [
+    (value: ReturnType<typeof artifact>) => {
+      value.renderers.native.family.themes[0]!.sun.azimuth = 10;
+    },
+    (value: ReturnType<typeof artifact>) => {
+      value.renderers.native.family.map = 'other';
+    },
+    (value: ReturnType<typeof artifact>) => {
+      Reflect.deleteProperty(value.renderers.native, 'family');
+    },
+  ]) {
+    const value = artifact();
+    change(value);
+    await assert.rejects(parseTileflowRendererDeploymentArtifact(value), {
+      code: 'RENDERER_DEPLOYMENT_INVALID',
+    });
+  }
+});
+
+test('a native style leaves out only the sources its degradations name', async () => {
+  const parsed = await parseTileflowRendererDeploymentArtifact(degradedArtifact());
+  assert.equal(parsed.renderers.native.family.compatibility.status, 'web-only');
+  assert.deepEqual(parsed.renderers.native.family.compatibility.reasons[0]?.ids, [
+    'deviceContours:contours',
+  ]);
+  for (const change of [
+    (value: ReturnType<typeof degradedArtifact>) => {
+      value.renderers.native.buildRecord.transformations[0]!.degradations = [];
+    },
+    (value: ReturnType<typeof degradedArtifact>) => {
+      // The record is gone, so the omitted source is unexplained.
+      const native = value.renderers.native.styles.light as Record<string, any>;
+      native.metadata['tileflow:nativeDegradations'] = [];
+      value.renderers.native.buildManifest.maps.streets.themes.light.styleSha256 = hash(native);
+      value.renderers.native.buildRecord = createTileflowNativeBuildRecord(
+        hash(value.renderers.native.buildManifest),
+        [
+          {
+            ...value.renderers.native.buildRecord.transformations[0]!,
+            loweredStyleSha256: hash(native),
+            degradations: [],
+          },
+        ],
+      );
+      value.renderers.native.family = createTileflowNativeFamily({
+        map: 'streets',
+        themes: ['light'],
+        styles: {light: native as never},
+      });
+    },
+  ]) {
+    const value = degradedArtifact();
     change(value);
     await assert.rejects(parseTileflowRendererDeploymentArtifact(value), {
       code: 'RENDERER_DEPLOYMENT_INVALID',

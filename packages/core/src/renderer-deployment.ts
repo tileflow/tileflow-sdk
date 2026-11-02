@@ -12,7 +12,9 @@ import {
 } from './icon-composition';
 import {serializeCanonicalJson, sha256Hex} from './icon-package';
 import {tileflowNativeBuildRecordSchema} from './native-build-record';
+import {readTileflowNativeDegradations} from './native-capabilities';
 import {validateTileflowNativePreparedStyle} from './native-profile';
+import {createTileflowNativeFamily, tileflowNativeFamilySchema} from './native-profile-family';
 import {tileflowNativeProfileLimits} from './native-profile-helpers';
 import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
 import {tileflowMaxPitch} from './camera-limits';
@@ -166,7 +168,13 @@ export const tileflowRendererDeploymentArtifactSchema = z
     renderers: z
       .object({
         web: z.object(familyShape).strict(),
-        native: z.object({...familyShape, buildRecord: tileflowNativeBuildRecordSchema}).strict(),
+        native: z
+          .object({
+            ...familyShape,
+            buildRecord: tileflowNativeBuildRecordSchema,
+            family: tileflowNativeFamilySchema,
+          })
+          .strict(),
       })
       .strict(),
   })
@@ -279,10 +287,30 @@ export async function parseTileflowRendererDeploymentArtifact(
         ).length
       )
         throw new Error();
-      // Representation lowering cannot introduce a different delivery graph or attribution.
-      for (const field of ['sources', 'sprite', 'glyphs']) {
+      // Representation lowering cannot introduce a different delivery graph or attribution. It
+      // may only leave out a source whose recorded degradation names it.
+      for (const field of ['sprite', 'glyphs']) {
         if (!equal(webStyle[field], nativeStyle[field])) throw new Error();
       }
+      const webSources = object(webStyle.sources);
+      const nativeSources = object(nativeStyle.sources);
+      const degradations = readTileflowNativeDegradations(nativeStyle.metadata);
+      if (!webSources || !nativeSources) throw new Error();
+      for (const [id, source] of Object.entries(nativeSources))
+        if (!equal(webSources[id], source)) throw new Error();
+      for (const id of Object.keys(webSources))
+        if (
+          !Object.hasOwn(nativeSources, id) &&
+          !degradations.some((record) => record.id === `deviceContours:${id}`)
+        )
+          throw new Error();
+      if (
+        !equal(
+          transformation.degradations,
+          degradations.map((record) => record.id),
+        )
+      )
+        throw new Error();
       for (const style of [webStyle, nativeStyle]) {
         const metadata = object(style.metadata);
         if (
@@ -302,6 +330,21 @@ export async function parseTileflowRendererDeploymentArtifact(
       }
       if (!equal(semanticIdentity(webStyle), semanticIdentity(nativeStyle))) throw new Error();
     }
+    // The family document is exactly the one Core computes from these styles in its theme order.
+    const family = native.family;
+    if (
+      family.map !== artifact.mapId ||
+      !equal(family.themes.map((theme) => theme.name).sort(), names) ||
+      !equal(
+        createTileflowNativeFamily({
+          map: artifact.mapId,
+          themes: family.themes.map((theme) => theme.name),
+          styles: native.styles as never,
+        }),
+        family,
+      )
+    )
+      throw new Error();
     return artifact;
   } catch {
     throw new TileflowRendererDeploymentError();
@@ -338,7 +381,14 @@ function authoredIdentity(manifest: z.infer<typeof buildManifestSchema>) {
           ...map,
           themes: Object.fromEntries(
             Object.entries(map.themes).map(([theme, value]) => {
-              const {styleSha256: _hash, ...identity} = value;
+              // Hashes and data requirements describe each renderer's own styles: a native style
+              // may read other fields (building extrusions) or leave a degraded source out.
+              const {
+                styleSha256: _hash,
+                dataRequirements: _data,
+                sourceRequirements: _sources,
+                ...identity
+              } = value;
               return [theme, identity];
             }),
           ),

@@ -46,8 +46,8 @@ function expectNativeIssue(path: string) {
   };
 }
 
-test('prepared growth above 160k survives lowering, font preparation and final generation checks', () => {
-  const input = style(45_000);
+test('prepared growth above the raw budget survives lowering, font preparation and final generation checks', () => {
+  const input = style(85_000);
   const before = serializeCanonicalJson(input);
   const result = lowerTileflowNativeCompiledStyles({main: {light: input}});
   const lowered = result.styles.main!.light!;
@@ -63,7 +63,7 @@ test('prepared growth above 160k survives lowering, font preparation and final g
 });
 
 test('the compiler input cannot borrow the output budget even when no lowering is needed', () => {
-  const input = style(81_000);
+  const input = style(165_000);
   (input.layers[0] as any).layout = {'line-cap': 'round'};
   assert.ok(measureNativeJson(input).nodes > tileflowNativeProfileLimits.maximumNodes);
   assert.ok(measureNativeJson(input).nodes < tileflowNativePreparedStyleLimits.maximumNodes);

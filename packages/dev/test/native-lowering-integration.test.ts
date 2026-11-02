@@ -20,6 +20,7 @@ import {
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {createTileflowBuildArtifacts, disposeTileflowBuildArtifacts} from '../src/artifacts';
 import {lowerTileflowNativeCompiledStyles} from '../src/native-artifacts';
+import {degradeTileflowNativeStyle} from '../src/native-degradations';
 import {lowerNativeStyleRepresentation, nativeLoweringVersion} from '../src/native-lowering';
 import {auditNativeLowering, measureNativeJson as footprint} from './native-lowering-audit-fixture';
 
@@ -183,13 +184,12 @@ test('prepares symbol overlap modes as their allow-overlap fallback for native a
   assert.equal(serializeCanonicalJson(original), before);
 });
 
-test('does not defer unsafe source, terrain or unknown projection semantics to lowering', () => {
+test('does not defer unsafe source or unknown projection semantics to lowering', () => {
   for (const [change, path] of [
     [
       {sources: {world: {type: 'vector', url: 'pmtiles://https://example.test/file.pmtiles'}}},
       '/sources/world/url',
     ],
-    [{terrain: {source: 'world'}}, '/terrain'],
     [{projection: {type: ['step', ['zoom'], 'globe', 10, 'mercator']}}, '/projection'],
   ] as const) {
     assert.throws(
@@ -258,10 +258,7 @@ test('Streets themes retain identity and audited native transformation spans', a
       item.before.nodes <= tileflowNativeProfileLimits.maximumNodes,
       JSON.stringify(measured),
     );
-    assert.ok(
-      item.after.nodes > tileflowNativeProfileLimits.maximumNodes,
-      JSON.stringify(measured),
-    );
+    assert.ok(item.after.nodes > item.before.nodes, JSON.stringify(measured));
     assert.ok(
       item.after.nodes <= tileflowNativePreparedStyleLimits.maximumNodes,
       JSON.stringify(measured),
@@ -282,7 +279,7 @@ test('Streets themes retain identity and audited native transformation spans', a
   const native = await createTileflowBuildArtifacts({cwd, styleBaseUrl: '.', renderer: 'native'});
   t.after(() => disposeTileflowBuildArtifacts(native));
   const record = tileflowNativeBuildRecordSchema.parse(native.nativeBuild);
-  assert.equal(record.schemaVersion, 2);
+  assert.equal(record.schemaVersion, 3);
   assert.equal(record.preparationVersion, nativeLoweringVersion);
   assert.deepEqual(
     record.transformations.map(({theme}) => theme),
@@ -311,8 +308,10 @@ test('Streets themes retain identity and audited native transformation spans', a
       }),
       [],
     );
-    const independentlyLowered = lowerNativeStyleRepresentation(original, (filter) =>
-      convertFilter(structuredClone(filter) as any),
+    // Streets degrades without removing or adding layers, so spans keep the web indexes.
+    const independentlyLowered = lowerNativeStyleRepresentation(
+      degradeTileflowNativeStyle(original).style,
+      (filter) => convertFilter(structuredClone(filter) as any),
     );
     // Font/sprite URL preparation is renderer-owned; structural layer data is unchanged except for lowering.
     assert.deepEqual(output.layers, independentlyLowered.style.layers);
@@ -409,7 +408,7 @@ test('runs the complete Streets-theme lowering audit through the workspace tsx l
   const report = JSON.parse(stdout);
   assert.equal(report.scope, 'static-lowering-size-and-order-audit');
   assert.equal(report.nativeVisualQualification, 'pending');
-  assert.equal(report.limits.maximumNodes, 160_000);
+  assert.equal(report.limits.maximumNodes, 320_000);
   assert.equal(report.preparedLimits.maximumNodes, 540_000);
   assert.deepEqual(
     report.themes.map((row: {theme: string}) => row.theme),

@@ -141,6 +141,21 @@ const expressionDefinitions = (
     expression_name?: {values?: Record<string, SpecProperty>};
   }
 ).expression_name?.values;
+/**
+ * Native support that the compiler's Style Spec tables predate. Entries come from Style Spec
+ * 26.5.1's `sdk-support` tables and the pinned engines' release notes, and only widen support to
+ * releases at or below the profile's engines.
+ */
+const nativeSupportAdditions: Readonly<Record<string, Readonly<{android: string; ios: string}>>> =
+  Object.freeze({
+    // Root `state` and `global-state`: maplibre-native#4516 (Android 13.7.1, iOS 7.0.0).
+    'global-state': Object.freeze({android: '13.7.1', ios: '7.0.0'}),
+    // maplibre-native#4463 (Android 13.5.0, iOS 6.29.0).
+    split: Object.freeze({android: '13.5.0', ios: '6.29.0'}),
+    // maplibre-native#4668 (Android 13.7.1, iOS 7.0.0). Style Spec 26.5.1 still links #2784.
+    'interpolate-hcl': Object.freeze({android: '13.7.1', ios: '7.0.0'}),
+    'interpolate-lab': Object.freeze({android: '13.7.1', ios: '7.0.0'}),
+  });
 const sourceKinds = new Set(['vector', 'raster', 'raster-dem', 'geojson', 'image']);
 const layerKinds = new Set([
   'background',
@@ -152,8 +167,9 @@ const layerKinds = new Set([
   'fill-extrusion',
   'heatmap',
   'hillshade',
+  'color-relief',
 ]);
-const unsupportedRoots = new Set(['terrain', 'sky', 'state', 'roll', 'centerAltitude']);
+const unsupportedRoots = new Set(['terrain', 'sky', 'roll', 'centerAltitude']);
 const rootStructure = new Set([
   'version',
   'name',
@@ -162,6 +178,7 @@ const rootStructure = new Set([
   'zoom',
   'bearing',
   'pitch',
+  'state',
   'sources',
   'layers',
   'sprite',
@@ -220,6 +237,7 @@ function validateNativeStyle(
       add('NATIVE_UNSUPPORTED_STYLE', pointer('', key));
     }
   }
+  if (style.state !== undefined && !record(style.state)) add('NATIVE_UNSUPPORTED_STYLE', '/state');
   if (
     style.pitch !== undefined &&
     (typeof style.pitch !== 'number' || style.pitch < 0 || style.pitch > 85)
@@ -474,7 +492,9 @@ function supportsBoth(support: Record<string, unknown>): boolean {
 function expressions(value: unknown, path: string, add: AddDiagnostic): void {
   if (!Array.isArray(value) || !isExpression(value)) return;
   const operator = value[0] as string;
-  const support = expressionDefinitions?.[operator]?.['sdk-support']?.['basic functionality'];
+  const support = Object.hasOwn(nativeSupportAdditions, operator)
+    ? nativeSupportAdditions[operator]
+    : expressionDefinitions?.[operator]?.['sdk-support']?.['basic functionality'];
   if (!support || !supportsBoth(support)) add('NATIVE_UNSUPPORTED_STYLE', `${path}/0`);
   if (operator === 'literal') return;
   value.forEach((child, index) => {
@@ -592,6 +612,54 @@ export function assertTileflowNativeStyle(
   const issues = validateTileflowNativeStyle(style, options);
   if (issues.length) throw new TileflowNativeCompatibilityError(issues);
 }
+
+export {
+  createTileflowNativeDegradation,
+  normalizeTileflowNativeDegradations,
+  readTileflowNativeDegradations,
+  resolveTileflowNativeCompatibility,
+  tileflowNativeCapabilities,
+  tileflowNativeCapabilitySchema,
+  tileflowNativeCompatibilityReasonSchema,
+  tileflowNativeCompatibilitySchema,
+  tileflowNativeDegradationLimits,
+  tileflowNativeDegradationReasonSchema,
+  tileflowNativeDegradationSchema,
+  tileflowNativeDegradationsMetadataKey,
+  tileflowNativeDegradationsSchema,
+  tileflowNativeFallbackSchema,
+} from './native-capabilities';
+export type {
+  TileflowNativeCapability,
+  TileflowNativeCompatibility,
+  TileflowNativeDegradation,
+} from './native-capabilities';
+
+export {
+  createTileflowNativeFamily,
+  emphasizeTileflowNativeValue,
+  fillTileflowNativeTemplate,
+  mixTileflowNativeColours,
+  mixTileflowNativeLeaf,
+  mixTileflowRouteInks,
+  mixTileflowSunPresets,
+  parseTileflowNativeFamily,
+  tileflowNativeBlendLayers,
+  tileflowNativeBlendOptions,
+  tileflowNativeFamilyFileName,
+  tileflowNativeFamilyLimits,
+  tileflowNativeFamilySchema,
+  tileflowNativeLeafKey,
+  tileflowNativeLeafValues,
+} from './native-profile-family';
+export type {
+  CreateTileflowNativeFamilyInput,
+  TileflowNativeBlendGroup,
+  TileflowNativeEmphasisTarget,
+  TileflowNativeFamily,
+  TileflowNativeFamilyTheme,
+  TileflowNativeFillOptions,
+} from './native-profile-family';
 
 export {
   createTileflowNativeBuildRecord,

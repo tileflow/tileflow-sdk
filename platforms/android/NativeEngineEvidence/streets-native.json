@@ -16,7 +16,7 @@
       "render": {
         "styleLoaded": true,
         "idle": true,
-        "millis": 152,
+        "millis": 1251,
         "fullyRendered": 1,
         "failures": [],
         "picture": "streets-dark.png"
@@ -50,8 +50,7 @@
       "delegated": 0,
       "failedRequests": [],
       "logs": [
-        "I/Mbgl-EGLConfigChooser: In emulator: false",
-        "I/Mbgl: {RenderThread 65}[General]: GPU Identifier: Android Emulator OpenGL ES Translator (ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver-5.0.0))"
+        "I/Mbgl-EGLConfigChooser: In emulator: false"
       ]
     },
     "dark-faded": {
@@ -69,7 +68,7 @@
       "render": {
         "styleLoaded": true,
         "idle": true,
-        "millis": 464,
+        "millis": 476,
         "fullyRendered": 1,
         "failures": [],
         "picture": "streets-dark-faded.png"
@@ -97,8 +96,8 @@
         "noto-sans-bold-c976e4b1b 200"
       ],
       "sprites": [
-        "sprite@2x.png 200",
-        "sprite@2x.json 200"
+        "sprite@2x.json 200",
+        "sprite@2x.png 200"
       ],
       "delegated": 0,
       "failedRequests": [],
@@ -121,7 +120,7 @@
       "render": {
         "styleLoaded": true,
         "idle": true,
-        "millis": 258,
+        "millis": 155,
         "fullyRendered": 1,
         "failures": [],
         "picture": "streets-dark-monochrome.png"
@@ -173,7 +172,7 @@
       "render": {
         "styleLoaded": true,
         "idle": true,
-        "millis": 204,
+        "millis": 263,
         "fullyRendered": 1,
         "failures": [],
         "picture": "streets-dawn.png"
@@ -277,7 +276,7 @@
       "render": {
         "styleLoaded": true,
         "idle": true,
-        "millis": 202,
+        "millis": 542,
         "fullyRendered": 1,
         "failures": [],
         "picture": "streets-dawn-monochrome.png"
@@ -301,8 +300,8 @@
         "tf-probe"
       ],
       "fonts": [
-        "noto-sans-bold-c976e4b1b 200",
-        "dinish-medium-38f559a314 200"
+        "dinish-medium-38f559a314 200",
+        "noto-sans-bold-c976e4b1b 200"
       ],
       "sprites": [
         "sprite@2x.json 200",
@@ -329,7 +328,7 @@
       "render": {
         "styleLoaded": true,
         "idle": true,
-        "millis": 205,
+        "millis": 154,
         "fullyRendered": 1,
         "failures": [],
         "picture": "streets-dusk.png"
@@ -337,14 +336,14 @@
       "probeRed": 0.0062743055555555555,
       "stackGreen": 0.0035895061728395063,
       "probeRedAfterState": 0,
-      "probeBlueAfterState": 0.006280478395061728,
+      "probeBlueAfterState": 0.006280092592592592,
       "globalState": "{\"tfProbe\":false}",
       "features": {
         "tf-probe": {
           "count": 1
         }
       },
-      "distinctColours": 988,
+      "distinctColours": 987,
       "renderedLayers": [
         "tileflow-buildings-render-flatShadow",
         "tileflow-buildings-fill",
@@ -353,8 +352,8 @@
         "tf-probe"
       ],
       "fonts": [
-        "dinish-medium-38f559a314 200",
-        "noto-sans-bold-c976e4b1b 200"
+        "noto-sans-bold-c976e4b1b 200",
+        "dinish-medium-38f559a314 200"
       ],
       "sprites": [
         "sprite@2x.png 200",
@@ -381,7 +380,7 @@
       "render": {
         "styleLoaded": true,
         "idle": true,
-        "millis": 156,
+        "millis": 565,
         "fullyRendered": 1,
         "failures": [],
         "picture": "streets-dusk-faded.png"
@@ -433,7 +432,7 @@
       "render": {
         "styleLoaded": true,
         "idle": true,
-        "millis": 204,
+        "millis": 312,
         "fullyRendered": 1,
         "failures": [],
         "picture": "streets-dusk-monochrome.png"
@@ -485,7 +484,7 @@
       "render": {
         "styleLoaded": true,
         "idle": true,
-        "millis": 261,
+        "millis": 465,
         "fullyRendered": 1,
         "failures": [],
         "picture": "streets-faded.png"
@@ -537,7 +536,7 @@
       "render": {
         "styleLoaded": true,
         "idle": true,
-        "millis": 203,
+        "millis": 383,
         "fullyRendered": 1,
         "failures": [],
         "picture": "streets-light.png"
@@ -589,7 +588,7 @@
       "render": {
         "styleLoaded": true,
         "idle": true,
-        "millis": 0,
+        "millis": 723,
         "fullyRendered": 1,
         "failures": [],
         "picture": "streets-monochrome.png"
@@ -604,7 +603,7 @@
           "count": 1
         }
       },
-      "distinctColours": 1029,
+      "distinctColours": 1030,
       "renderedLayers": [
         "tileflow-buildings-render-flatShadow",
         "tileflow-buildings-fill",
@@ -613,8 +612,8 @@
         "tf-probe"
       ],
       "fonts": [
-        "noto-sans-bold-c976e4b1b 200",
-        "dinish-medium-38f559a314 200"
+        "dinish-medium-38f559a314 200",
+        "noto-sans-bold-c976e4b1b 200"
       ],
       "sprites": [
         "sprite@2x.json 200",
@@ -627,7 +626,7 @@
       ]
     }
   },
-  "date": "2026-11-02T14:26:17.645741Z",
+  "date": "2026-11-02T14:40:54.231074Z",
   "engine": "org.maplibre.gl:android-sdk-opengl:13.7.1",
   "device": "unknown Android SDK built for arm64 API 36 arm64-v8a",
   "fingerprint": "Android/sdk_phone64_arm64/emu64a:16/BE2A.250530.026.D1/13818094:userdebug/test-keys"

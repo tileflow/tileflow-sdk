@@ -15,7 +15,7 @@
         "encoding": "terrarium",
         "tileSize": 512,
         "tiles": [
-          "https://tileflow.invalid/ec34b729b29347ef/aHR0cHM6Ly9hcGkudGlsZWZsb3cudGVzdA/tiles/bathymetry/dem/bathymetry-v1-20261021-fixture/{z}/{x}/{y}.webp?map=map_offlinefixture00"
+          "https://tileflow.invalid/223123cdb3ff434b/aHR0cHM6Ly9hcGkudGlsZWZsb3cudGVzdA/tiles/bathymetry/dem/bathymetry-v1-20261021-fixture/{z}/{x}/{y}.webp?map=map_offlinefixture00"
         ],
         "minzoom": 0,
         "maxzoom": 9
@@ -57,7 +57,7 @@
     "render": {
       "styleLoaded": true,
       "idle": true,
-      "millis": 429,
+      "millis": 270,
       "fullyRendered": 1,
       "failures": [],
       "picture": "dem-parent-stored-z9.5.png"
@@ -94,7 +94,7 @@
     "render": {
       "styleLoaded": true,
       "idle": true,
-      "millis": 51,
+      "millis": 201,
       "fullyRendered": 1,
       "failures": [],
       "picture": "dem-parent-stored-z10.5.png"
@@ -115,17 +115,17 @@
     ],
     "logs": [
       "I/Mbgl-EGLConfigChooser: In emulator: false",
-      "E/Mbgl: {RenderThread 83}[Style]: Failed to load tile 7/62/48=>7 for source depths: HTTP status code 504",
-      "E/Mbgl: {RenderThread 83}[Style]: Failed to load tile 6/31/24=>6 for source depths: HTTP status code 504",
-      "E/Mbgl: {RenderThread 83}[Style]: Failed to load tile 5/15/12=>5 for source depths: HTTP status code 504",
-      "E/Mbgl: {RenderThread 83}[Style]: Failed to load tile 4/7/6=>4 for source depths: HTTP status code 504",
-      "E/Mbgl: {RenderThread 83}[Style]: Failed to load tile 3/3/3=>3 for source depths: HTTP status code 504",
-      "E/Mbgl: {RenderThread 83}[Style]: Failed to load tile 2/1/1=>2 for source depths: HTTP status code 504",
-      "E/Mbgl: {RenderThread 83}[Style]: Failed to load tile 1/0/0=>1 for source depths: HTTP status code 504",
-      "E/Mbgl: {RenderThread 83}[Style]: Failed to load tile 0/0/0=>0 for source depths: HTTP status code 504"
+      "E/Mbgl: {RenderThread 84}[Style]: Failed to load tile 7/62/48=>7 for source depths: HTTP status code 504",
+      "E/Mbgl: {RenderThread 84}[Style]: Failed to load tile 6/31/24=>6 for source depths: HTTP status code 504",
+      "E/Mbgl: {RenderThread 84}[Style]: Failed to load tile 5/15/12=>5 for source depths: HTTP status code 504",
+      "E/Mbgl: {RenderThread 84}[Style]: Failed to load tile 4/7/6=>4 for source depths: HTTP status code 504",
+      "E/Mbgl: {RenderThread 84}[Style]: Failed to load tile 3/3/3=>3 for source depths: HTTP status code 504",
+      "E/Mbgl: {RenderThread 84}[Style]: Failed to load tile 2/1/1=>2 for source depths: HTTP status code 504",
+      "E/Mbgl: {RenderThread 84}[Style]: Failed to load tile 1/0/0=>1 for source depths: HTTP status code 504",
+      "E/Mbgl: {RenderThread 84}[Style]: Failed to load tile 0/0/0=>0 for source depths: HTTP status code 504"
     ]
   },
-  "date": "2026-11-02T14:22:47.200575Z",
+  "date": "2026-11-02T14:40:11.532498Z",
   "engine": "org.maplibre.gl:android-sdk-opengl:13.7.1",
   "device": "unknown Android SDK built for arm64 API 36 arm64-v8a",
   "fingerprint": "Android/sdk_phone64_arm64/emu64a:16/BE2A.250530.026.D1/13818094:userdebug/test-keys"

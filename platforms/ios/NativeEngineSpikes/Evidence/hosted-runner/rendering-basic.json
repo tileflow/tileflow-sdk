@@ -1,0 +1,13 @@
+{
+  "center" : "#e03020",
+  "corner" : "#2040a0",
+  "date" : "2026-11-02T14:40:19Z",
+  "device" : "iPhone18,3, Native engine, iOS 26.5",
+  "fillPixels" : 3249,
+  "frames" : 8,
+  "fullyRendered" : true,
+  "maplibre" : "7.0.0",
+  "metalApple7" : false,
+  "metalDevice" : "Apple iOS simulator GPU",
+  "metalMac2" : false
+}

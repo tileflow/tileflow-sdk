@@ -8,5 +8,6 @@
         <activity android:name="dev.tileflow.sdk.OfflineMapHostActivity" android:exported="false" />
         <activity android:name="dev.tileflow.sdk.NativeMapHostActivity" android:exported="false" />
         <activity android:name="dev.tileflow.sdk.NativeStyleHostActivity" android:exported="false" />
+        <activity android:name="dev.tileflow.sdk.NativeViewHostActivity" android:exported="false" />
     </application>
 </manifest>

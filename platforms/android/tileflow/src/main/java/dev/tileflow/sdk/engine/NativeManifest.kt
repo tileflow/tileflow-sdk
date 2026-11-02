@@ -8,6 +8,7 @@ import dev.tileflow.sdk.TileflowResourceKind
 import dev.tileflow.sdk.transport.MapResourceAddress
 import dev.tileflow.sdk.transport.ResourcePolicy
 import java.net.URI
+import java.net.URLEncoder
 import org.json.JSONObject
 
 /** The theme of a map that a renderer draws, from the map's manifest. */
@@ -20,72 +21,190 @@ internal class NativeMapDocument(
     val view: TileflowCamera?,
 )
 
-/**
- * Reads a map's manifest and selects its theme. A self-hosted source's address is its manifest. A
- * Hosted source's address is its mobile discovery document, which names the Map and the manifest
- * of each delivery profile.
- */
-internal object NativeManifest {
-    /** The delivery profile read from Hosted discovery. */
-    private const val PROFILE = "webview-v1"
+/** Where a map's documents come from. */
+internal enum class NativeRepresentation(val wireName: String) {
+    NATIVE("native-v1"),
+    WEB_VIEW("webview-v1"),
+    SELF_HOSTED("selfHosted"),
+}
+
+/** A map's entry in its manifest: its themes, its view and where its family document is. */
+internal class NativeMapManifest(
+    val map: String,
+    val representation: NativeRepresentation,
+    val catalog: NativeEvaluators.ThemeCatalog,
+    /** Each theme's style address, by name. */
+    val styles: Map<String, String>,
+    val view: TileflowCamera?,
+    /** A Hosted deployment's family document and its SHA-256 revision, from discovery. */
+    val family: Pair<String, String?>? = null,
+    private val manifestUrl: String,
+) {
+    /** The style of a theme the catalog resolved. */
+    fun theme(name: String): NativeMapDocument =
+        NativeMapDocument(
+            styles[name]
+                ?: throw NativeManifest.failure(
+                    manifestUrl,
+                    TileflowResourceKind.STYLE,
+                    message = "The map has no theme named $name.",
+                ),
+            name,
+            view,
+        )
 
     /**
-     * The document of [source] (`{map, manifestUrl, discoveryMapId?}`, as the view sends it) for
-     * [theme]: null selects the map's default, `system` its theme for [colorScheme]. [load] reads
-     * a document through the map's transport and throws unless it answered 200.
+     * The theme a selection shows: null for the default, `system` by [colorScheme], and the
+     * variant of a [timeOfDay]. Unknown themes fail with `resourceFailed`.
+     */
+    fun resolve(selection: String?, colorScheme: String, timeOfDay: String? = null) =
+        try {
+            theme(NativeEvaluators.theme(catalog, selection, colorScheme, timeOfDay))
+        } catch (error: NativeEvaluators.Failure) {
+            throw NativeManifest.failure(
+                manifestUrl,
+                TileflowResourceKind.STYLE,
+                message = error.message,
+            )
+        }
+
+    /**
+     * The map's family document: the one Hosted discovery names, or the `families/<map>.json` a
+     * native build writes two levels above its styles.
+     */
+    fun familyUrl(styleUrl: String): String? =
+        when (representation) {
+            NativeRepresentation.NATIVE -> family?.first
+            NativeRepresentation.SELF_HOSTED ->
+                MapResourceAddress.resolve(
+                    styleUrl,
+                    "../../families/${URLEncoder.encode(map, "UTF-8").replace("+", "%20")}.json",
+                )
+            NativeRepresentation.WEB_VIEW -> null
+        }
+}
+
+/**
+ * Reads a map's manifest. A self-hosted source's address is its manifest, normally the
+ * `manifest.json` that `tileflow build --renderer native` writes. A Hosted source's address is its
+ * mobile discovery document, whose `native-v1` representation names the native manifest and the
+ * deployment's family document. While Hosted deployments and downloaded regions may still hold only
+ * the WebView profile, the reader takes `webview-v1` when discovery announces no native
+ * representation, or when a map that opens from its downloaded regions finds no native manifest
+ * there.
+ */
+internal object NativeManifest {
+    /**
+     * The manifest of [source] (`{map, manifestUrl, discoveryMapId?}`, as the view sends it).
+     * [load] reads a document through the map's transport and throws unless it answered 200;
+     * [fromPacks] says the map opens from its downloaded regions.
+     */
+    fun read(
+        source: JSONObject,
+        load: (URI) -> ByteArray,
+        fromPacks: Boolean = false,
+    ): NativeMapManifest {
+        val manifestUrl = source.getString("manifestUrl")
+        val map = source.getString("map")
+        val discoveryMapId =
+            source.optString("discoveryMapId").takeIf { it.isNotEmpty() }
+                ?: return parse(
+                    document(manifestUrl, load),
+                    map,
+                    manifestUrl,
+                    NativeRepresentation.SELF_HOSTED,
+                )
+        val discovery = document(manifestUrl, load)
+        val representations = discovery.optJSONObject("representations")
+        if (discovery.optString("mapId") != discoveryMapId || representations == null)
+            throw failure(manifestUrl, message = "The Map's discovery document is not valid.")
+        fun profile(representation: NativeRepresentation): String? =
+            representations
+                .optJSONObject(representation.wireName)
+                ?.optString("manifestUrl")
+                ?.takeIf { it.isNotEmpty() }
+                ?.let { MapResourceAddress.resolve(manifestUrl, it) }
+        profile(NativeRepresentation.NATIVE)?.let { native ->
+            try {
+                val family =
+                    representations
+                        .optJSONObject(NativeRepresentation.NATIVE.wireName)
+                        ?.optJSONObject("family")
+                val familyUrl =
+                    family?.optString("url")?.takeIf { it.isNotEmpty() }?.let {
+                        MapResourceAddress.resolve(manifestUrl, it)
+                    }
+                return parse(
+                    document(native, load),
+                    map,
+                    native,
+                    NativeRepresentation.NATIVE,
+                    familyUrl?.let { it to family.optString("revision").ifEmpty { null } },
+                )
+            } catch (error: TileflowMapException) {
+                // Downloaded regions may hold the WebView profile only.
+                if (!fromPacks || profile(NativeRepresentation.WEB_VIEW) == null) throw error
+            }
+        }
+        val webView =
+            profile(NativeRepresentation.WEB_VIEW)
+                ?: throw failure(manifestUrl, message = "This Map has no native representation.")
+        return parse(document(webView, load), map, webView, NativeRepresentation.WEB_VIEW)
+    }
+
+    /**
+     * The document of [source] for [theme]: null selects the map's default, `system` its theme for
+     * [colorScheme].
      */
     fun resolve(
         source: JSONObject,
         theme: String?,
         colorScheme: String,
         load: (URI) -> ByteArray,
-    ): NativeMapDocument {
-        var manifestUrl = source.getString("manifestUrl")
-        val discoveryMapId = source.optString("discoveryMapId").takeIf { it.isNotEmpty() }
-        if (discoveryMapId != null) {
-            val discovery = document(manifestUrl, load)
-            val representation =
-                discovery.optJSONObject("representations")?.optJSONObject(PROFILE)
-            val next = representation?.optString("manifestUrl")?.takeIf { it.isNotEmpty() }
-            if (discovery.optString("mapId") != discoveryMapId || next == null)
-                throw failure(manifestUrl, message = "The Map has no delivery profile to draw.")
-            manifestUrl = MapResourceAddress.resolve(manifestUrl, next)
-        }
-        val manifest = document(manifestUrl, load)
-        val map =
-            manifest.optJSONObject("maps")?.optJSONObject(source.getString("map"))
-                ?: throw failure(manifestUrl, message = "The map is not in its manifest.")
+    ): NativeMapDocument = read(source, load).resolve(theme, colorScheme)
+
+    private fun parse(
+        manifest: JSONObject,
+        map: String,
+        url: String,
+        representation: NativeRepresentation,
+        family: Pair<String, String?>? = null,
+    ): NativeMapManifest {
+        val entry =
+            manifest.optJSONObject("maps")?.optJSONObject(map)
+                ?: throw failure(url, message = "The map is not in its manifest.")
         val themes =
-            map.optJSONObject("themes")
-                ?: throw failure(manifestUrl, message = "The map has no themes.")
-        val name =
-            when (theme) {
-                null ->
-                    map.optString("defaultTheme").ifEmpty {
-                        themes.keys().asSequence().firstOrNull()
-                    }
-                "system" ->
-                    map.optJSONObject("systemThemes")?.optString(colorScheme)?.ifEmpty { null }
-                        ?: themes.keys().asSequence().firstOrNull {
-                            themes.optJSONObject(it)?.optString("colorScheme") == colorScheme
-                        }
-                        ?: map.optString("defaultTheme")
-                else -> theme
+            entry.optJSONObject("themes") ?: throw failure(url, message = "The map has no themes.")
+        val styles = LinkedHashMap<String, String>()
+        for (name in themes.keys()) {
+            val style = themes.optJSONObject(name)?.optString("styleUrl")?.takeIf { it.isNotEmpty() }
+            if (style != null) styles[name] = MapResourceAddress.resolve(url, style)
+        }
+        fun strings(value: JSONObject?): Map<String, String>? =
+            value?.let { item ->
+                item.keys().asSequence().associateWith { item.optString(it) }.filterValues {
+                    it.isNotEmpty()
+                }
             }
-        val styleUrl =
-            name
-                ?.let { themes.optJSONObject(it) }
-                ?.optString("styleUrl")
-                ?.takeIf { it.isNotEmpty() }
-                ?: throw failure(
-                    manifestUrl,
-                    resource = TileflowResourceKind.STYLE,
-                    message = "The map has no theme named ${name ?: "default"}.",
-                )
-        return NativeMapDocument(
-            MapResourceAddress.resolve(manifestUrl, styleUrl),
-            name,
-            map.optJSONObject("view")?.let(::view),
+        val timeOfDay =
+            entry.optJSONObject("timeOfDay")?.let { families ->
+                families.keys().asSequence().associateWith {
+                    strings(families.optJSONObject(it)).orEmpty()
+                }
+            }
+        return NativeMapManifest(
+            map,
+            representation,
+            NativeEvaluators.ThemeCatalog(
+                entry.optString("defaultTheme").ifEmpty { styles.keys.firstOrNull() ?: "" },
+                strings(entry.optJSONObject("systemThemes")),
+                timeOfDay,
+                styles.keys,
+            ),
+            styles,
+            entry.optJSONObject("view")?.let(::view),
+            family,
+            url,
         )
     }
 
@@ -122,7 +241,7 @@ internal object NativeManifest {
         }
     }
 
-    private fun failure(
+    fun failure(
         url: String,
         resource: TileflowResourceKind = TileflowResourceKind.MANIFEST,
         status: Int? = null,

@@ -2,6 +2,7 @@ package dev.tileflow.sdk
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -133,8 +134,13 @@ public class NativeMapEngineIntegrationTest {
             runBlocking {
                 withContext(Dispatchers.Main) {
                     val map = activity.map
+                    // The engine's view holds MapLibre's view, and an image of it during a change.
                     val engines =
-                        (0 until map.childCount).map(map::getChildAt).filterIsInstance<MapView>()
+                        (0 until map.childCount)
+                            .map(map::getChildAt)
+                            .filterIsInstance<ViewGroup>()
+                            .flatMap { group -> (0 until group.childCount).map(group::getChildAt) }
+                            .filterIsInstance<MapView>()
                     assertEquals("One MapLibre view draws the map", 1, engines.size)
                     val camera = map.camera()
                     assertEquals(-3.70, camera.longitude, 0.0001)

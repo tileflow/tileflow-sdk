@@ -161,6 +161,7 @@ export const protocol = {
     'invalidImage',
     'unknownLayer',
     'unknownSource',
+    'featureUnavailable',
   ],
   errors: {
     invalidSource: {

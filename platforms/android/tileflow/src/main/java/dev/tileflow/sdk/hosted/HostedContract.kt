@@ -259,14 +259,15 @@ internal object HostedContract {
         require(path.none { it.code < 32 || it.code == 127 || it == '\\' })
         val style =
             Regex(
-                    "^/maps/(map_[A-Za-z0-9_-]{16})/mobile/webview-v1/v([1-9][0-9]{0,15})/[A-Za-z][A-Za-z0-9_-]{0,63}\\.json$"
+                    "^/maps/(map_[A-Za-z0-9_-]{16})/(?:(?:mobile/webview-v1|native)/v([1-9][0-9]{0,15})/[A-Za-z][A-Za-z0-9_-]{0,63}|native/family/v([1-9][0-9]{0,15}))\\.json$"
                 )
                 .matchEntire(path)
         if (style != null)
             return@runCatching raw == path &&
                 url.rawQuery == null &&
                 style.groupValues[1] == mapId &&
-                (style.groupValues[2].toLongOrNull() ?: Long.MAX_VALUE) <= 9_007_199_254_740_991 &&
+                (style.groupValues[2].ifEmpty { style.groupValues[3] }.toLongOrNull()
+                    ?: Long.MAX_VALUE) <= 9_007_199_254_740_991 &&
                 "style" in authority.scopes
         val tileset =
             when {
@@ -329,7 +330,10 @@ internal object HostedContract {
     }
         .getOrNull()
 
-    /** A Map deployment's versioned WebView style, which a later deployment supersedes. */
+    /**
+     * A Map deployment's versioned WebView or native style, or its native family document, which a
+     * later deployment supersedes.
+     */
     fun isVersionedStyle(url: URI): Boolean = versionedStyle.matches(url.rawPath ?: "")
 
     /** The `code` of a delivery failure body, when it has a well-formed one. */
@@ -385,7 +389,7 @@ internal object HostedContract {
         )
     private val versionedStyle =
         Regex(
-            "^/maps/map_[A-Za-z0-9_-]{16}/mobile/webview-v1/v[1-9][0-9]{0,15}/[A-Za-z][A-Za-z0-9_-]{0,63}\\.json$"
+            "^/maps/map_[A-Za-z0-9_-]{16}/(?:(?:mobile/webview-v1|native)/v[1-9][0-9]{0,15}/[A-Za-z][A-Za-z0-9_-]{0,63}|native/family/v[1-9][0-9]{0,15})\\.json$"
         )
     private val currentModel = Regex("^/team-models/(tmd_[A-Za-z0-9_-]{16,76})/current\\.glb$")
     private val modelVersion =

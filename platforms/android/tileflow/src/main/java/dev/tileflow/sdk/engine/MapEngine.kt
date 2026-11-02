@@ -31,8 +31,11 @@ internal class MapEngineCallbacks(
     val loadFailed: (MapEngine, TileflowMapException) -> Unit,
     /** A person activated a link the map shows. */
     val externalLink: (URI) -> Unit,
-    /** The system ended the engine's renderer process; the view decides how to recover. */
-    val rendererGone: (MapEngine) -> Unit,
+    /**
+     * The system ended the engine's renderer process (`processTerminated`), or the renderer lost
+     * its graphics context (`graphicsContextLost`); the view decides how to recover.
+     */
+    val rendererGone: (MapEngine, ProtocolContract.ErrorReason) -> Unit,
 )
 
 /**
@@ -86,6 +89,15 @@ internal interface MapEngine {
 
     /** Whether the map is on screen; a hidden engine stops drawing. */
     fun setVisible(visible: Boolean)
+
+    /**
+     * The host's lifecycle: whether its activity or fragment is started and resumed. An engine
+     * that draws in a native view forwards it to that view.
+     */
+    fun hostLifecycle(started: Boolean, resumed: Boolean) {}
+
+    /** The system is low on memory; the engine releases what it can. */
+    fun lowMemory() {}
 
     /** Pending calls fail with [code]: cancelled when replaced, disposed when destroyed. */
     fun retire(code: TileflowErrorCode)

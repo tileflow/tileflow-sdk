@@ -1,5 +1,6 @@
 package dev.tileflow.sdk
 
+import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.res.Configuration
 import android.os.Parcel
@@ -225,22 +226,57 @@ constructor(
     private val lifecycleObserver =
         object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
+                forwardLifecycle()
                 updateVisibility()
             }
 
             override fun onStop(owner: LifecycleOwner) {
+                forwardLifecycle()
                 updateVisibility()
             }
 
             // Access granted in a system dialog arrives while the activity resumes.
             override fun onResume(owner: LifecycleOwner) {
+                forwardLifecycle()
                 refreshLocation()
+            }
+
+            override fun onPause(owner: LifecycleOwner) {
+                forwardLifecycle()
             }
 
             override fun onDestroy(owner: LifecycleOwner) {
                 destroy()
             }
         }
+
+    /** The system is low on memory: the engine releases what it can. */
+    private val memoryCallbacks =
+        object : ComponentCallbacks2 {
+            override fun onConfigurationChanged(newConfig: Configuration) = Unit
+
+            @Deprecated("Deprecated in Java")
+            override fun onLowMemory() {
+                engine?.lowMemory()
+            }
+
+            override fun onTrimMemory(level: Int) {
+                @Suppress("DEPRECATION")
+                if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) engine?.lowMemory()
+            }
+        }
+
+    /**
+     * Gives the engine the host's lifecycle, from an activity or fragment, or from the Compose
+     * hierarchy that hosts the view. Without a lifecycle owner the host counts as resumed.
+     */
+    private fun forwardLifecycle() {
+        val state = lifecycleOwner?.lifecycle?.currentState
+        engine?.hostLifecycle(
+            started = state?.isAtLeast(Lifecycle.State.STARTED) != false,
+            resumed = state?.isAtLeast(Lifecycle.State.RESUMED) != false,
+        )
+    }
 
     init {
         // A layout selects a Hosted map with `app:tileflowMapId`; an invalid value fails inflation.
@@ -404,8 +440,14 @@ constructor(
                     JSONObject().put("layers", JSONArray(layers)),
                 )
                 if (this@TileflowMapView.engine === engine) annotationLayersSent = layers
-            } catch (_: TileflowMapException) {
-                // A new renderer receives the layers when it is ready.
+            } catch (error: TileflowMapException) {
+                // A new renderer receives the layers when it is ready. Layers an engine refuses are
+                // not sent to it again until they change.
+                if (
+                    error.code == TileflowErrorCode.INVALID_REQUEST &&
+                        this@TileflowMapView.engine === engine
+                )
+                    annotationLayersSent = layers
             } finally {
                 annotationLayersSending = false
             }
@@ -1024,12 +1066,15 @@ constructor(
         attached = true
         lifecycleOwner = findViewTreeLifecycleOwner()
         lifecycleOwner?.lifecycle?.addObserver(lifecycleObserver)
+        context.applicationContext.registerComponentCallbacks(memoryCallbacks)
         if (engine == null && source != null && !destroyed && !pendingRemount) mount()
+        forwardLifecycle()
         updateVisibility()
     }
 
     override fun onDetachedFromWindow() {
         attached = false
+        context.applicationContext.unregisterComponentCallbacks(memoryCallbacks)
         lifecycleOwner?.lifecycle?.removeObserver(lifecycleObserver)
         lifecycleOwner = null
         super.onDetachedFromWindow()
@@ -1252,9 +1297,10 @@ constructor(
                         if (!destroyed && generation == current)
                             onEvent(TileflowMapEvent.ExternalLinkRequested(it))
                     },
-                    rendererGone = { gone ->
-                        // The system may end a hidden renderer to reclaim memory. Replace it once
-                        // visible; a renderer that ends again before its content loads is reported.
+                    rendererGone = { gone, reason ->
+                        // The system may end a hidden renderer to reclaim memory, or a renderer may
+                        // lose its graphics context. Replace it once visible; a renderer that ends
+                        // again before its content loads is reported.
                         if (engine === gone && !destroyed) {
                             if (recoveries++ < 1) remount()
                             else {
@@ -1262,9 +1308,7 @@ constructor(
                                 onEvent(
                                     TileflowMapEvent.Failed(
                                         TileflowErrorCode.RENDERER_FAILED,
-                                        TileflowErrorContext.of(
-                                            ProtocolContract.ErrorReason.PROCESS_TERMINATED
-                                        ),
+                                        TileflowErrorContext.of(reason),
                                     )
                                 )
                             }
@@ -1291,6 +1335,7 @@ constructor(
                 0,
                 LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
             )
+            forwardLifecycle()
             created.start()
             updateVisibility()
         } catch (error: Exception) {
@@ -1352,16 +1397,16 @@ constructor(
                 initialized = true
                 rendererInsets = startingInsets
                 updateInsets()
-                send(content, readyEngine)
-                if (appearance != null) applyAppearance()
-                else if (theme != startingTheme) setTheme(theme)
+                replay { send(content, readyEngine) }
+                if (appearance != null) replay { applyAppearance() }
+                else if (theme != startingTheme) replay { setTheme(theme) }
                 if (options != startingOptions)
                     sendOptions(events = subscriptions != startingSubscriptions)
                 // Only a camera the application asked for meanwhile moves again.
                 requestedCamera?.takeIf { it.second != startingRequest }?.let { move(it.first) }
-                replayScene(readyEngine)
-                replayStyle(readyEngine)
-                replayLocation(readyEngine)
+                replay { replayScene(readyEngine) }
+                replay { replayStyle(readyEngine) }
+                replay { replayLocation(readyEngine) }
                 annotationLayersSent = null
                 sendAnnotationLayers()
                 annotationOverlay.rendererReady()
@@ -1383,6 +1428,19 @@ constructor(
                     (error as? TileflowMapException)?.context ?: TileflowErrorContext.NONE,
                 )
             }
+        }
+    }
+
+    /**
+     * Gives a new engine part of what the application asked for. An engine that cannot draw it yet
+     * (`invalidRequest`) leaves the rest of the map loading, and the application gets a warning.
+     */
+    private suspend fun replay(work: suspend () -> Unit) {
+        try {
+            work()
+        } catch (error: TileflowMapException) {
+            if (error.code != TileflowErrorCode.INVALID_REQUEST || destroyed) throw error
+            onEvent(TileflowMapEvent.Warning(error.code, error.context, 1))
         }
     }
 

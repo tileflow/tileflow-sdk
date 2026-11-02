@@ -8,8 +8,8 @@ import org.json.JSONObject
  * credential; a resource is identified by its kind and origin only.
  *
  * @property reason A stable identifier for the cause within the code, for example
- *   `protocolVersion`, `dataTooLarge`, `dataIntegrity`, `invalidGeoJSON` or
- *   `graphicsContextLost`.
+ *   `protocolVersion`, `dataTooLarge`, `dataIntegrity`, `invalidGeoJSON`, `graphicsContextLost`
+ *   or `featureUnavailable`.
  * @property origin The scheme, host and port of the resource, for example
  *   `https://tiles.example.com`.
  * @property status The HTTP status of the resource's answer.
@@ -17,6 +17,8 @@ import org.json.JSONObject
  * @property message A developer-facing explanation in English. Not for display to people using
  *   the app.
  * @property count How many bytes or items there were when [limit] was exceeded, when known.
+ * @property feature The capability the map holds and this renderer does not draw, with the reason
+ *   `featureUnavailable`: for example `scene3d`, `terrain3d` or `pitchAbove60`.
  */
 public data class TileflowErrorContext(
     val reason: String? = null,
@@ -26,10 +28,12 @@ public data class TileflowErrorContext(
     val limit: Int? = null,
     val message: String? = null,
     val count: Int? = null,
+    val feature: String? = null,
 ) {
     override fun toString(): String =
         listOfNotNull(
                 reason?.let { "reason: $it" },
+                feature?.let { "feature: $it" },
                 resource?.let { "resource: ${it.wireName}" },
                 origin?.let { "origin: $it" },
                 status?.let { "status: $it" },
@@ -86,6 +90,7 @@ public constructor(
                     status = integer("status"),
                     limit = integer("limit"),
                     message = text(value, "message")?.take(512),
+                    feature = text(context, "feature")?.take(64),
                 ),
             )
         }

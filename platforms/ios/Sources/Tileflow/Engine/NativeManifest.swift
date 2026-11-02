@@ -1,54 +1,134 @@
 import Foundation
 
-/// The map document a native engine draws: the map's entry in its manifest and the theme to show.
+/// The map document a native engine draws: the map's entry in its manifest, its themes and where
+/// its family document is.
 ///
-/// A self-hosted source names its manifest. A Hosted source names its mobile discovery document,
-/// whose representation names the profile manifest.
+/// A self-hosted source names its manifest, normally the `manifest.json` that
+/// `tileflow build --renderer native` writes, and its family document is the build's
+/// `families/<map>.json`. A Hosted source names its mobile discovery document, whose `native-v1`
+/// representation names the native manifest and the deployment's family document with its
+/// revision. While Hosted deployments and downloaded regions may still hold only the WebView
+/// profile, the engine reads `webview-v1` when discovery announces no native representation, or
+/// when a map that opens from its downloaded regions finds no native manifest there.
 struct NativeManifest: Sendable {
   struct Theme: Sendable {
     let name: String
     let styleURL: URL
   }
 
-  let theme: Theme
+  /// Where the map's documents come from.
+  enum Representation: String, Sendable {
+    case native = "native-v1"
+    case webView = "webview-v1"
+    case selfHosted
+  }
+
+  let map: String
+  let representation: Representation
+  /// A Hosted deployment's family document and its SHA-256 revision, from discovery.
+  var family: (url: URL, revision: String?)?
+  let catalog: NativeEvaluators.ThemeCatalog
+  /// Each theme's style, by name.
+  let styles: [String: URL]
   /// The map's authored view, used when the application gives no camera.
   let view: TileflowCamera
 
-  /// The representation a Hosted map is read from. The fixture and the service announce the
-  /// WebView profile today; the native profile replaces it once its artifacts are delivered.
-  static let hostedProfile = "webview-v1"
+  /// The style of a theme the catalog resolved.
+  func theme(_ name: String) throws -> Theme {
+    guard let url = styles[name] else { throw Self.failure("The map has no theme \(name).", .style) }
+    return Theme(name: name, styleURL: url)
+  }
 
+  /// The theme a selection shows: nil for the default, `system` by colour scheme, and a time of
+  /// day's variant. Unknown themes fail with `resourceFailed`.
+  func resolve(_ selection: String?, colorScheme: String, timeOfDay: String? = nil) throws -> Theme {
+    do {
+      return try theme(
+        NativeEvaluators.theme(
+          catalog, selection: selection, colorScheme: colorScheme, timeOfDay: timeOfDay))
+    } catch let failure as NativeEvaluators.Failure {
+      throw Self.failure(failure.message, .style)
+    }
+  }
+
+  /// The map's family document: the one Hosted discovery names, or the `families/<map>.json` a
+  /// native build writes two levels above its styles.
+  func familyURL(styleURL: URL) -> URL? {
+    switch representation {
+    case .native: return family?.url
+    case .selfHosted:
+      guard let name = map.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+        return nil
+      }
+      return URL(string: "../../families/\(name).json", relativeTo: styleURL)?.absoluteURL
+    case .webView: return nil
+    }
+  }
+
+  /// Reads the map's manifest. `fromPacks` says the map opens from its downloaded regions.
   static func load(
-    map: String, manifestURL: URL, discoveryMapID: String?, theme requested: String?,
-    colorScheme: String, read: (URL, TileflowResourceKind) async throws -> [String: Any]
+    map: String, manifestURL: URL, discoveryMapID: String?, fromPacks: Bool = false,
+    read: (URL, TileflowResourceKind) async throws -> [String: Any]
   ) async throws -> NativeManifest {
-    var url = manifestURL
-    if let discoveryMapID {
-      let discovery = try await read(manifestURL, .manifest)
-      guard discovery["mapId"] as? String == discoveryMapID,
-        let representations = discovery["representations"] as? [String: Any],
-        let profile = representations[hostedProfile] as? [String: Any],
-        let profileURL = (profile["manifestUrl"] as? String).flatMap(URL.init(string:))
-      else { throw failure("This Map has no \(hostedProfile) representation.", .manifest) }
-      url = profileURL
+    guard let discoveryMapID else {
+      return try parse(
+        try await read(manifestURL, .manifest), map: map, url: manifestURL,
+        representation: .selfHosted)
     }
-    let manifest = try await read(url, .manifest)
+    let discovery = try await read(manifestURL, .manifest)
+    guard discovery["mapId"] as? String == discoveryMapID,
+      let representations = discovery["representations"] as? [String: Any]
+    else { throw failure("The Map's discovery document is not valid.", .manifest) }
+    func profileURL(_ representation: Representation) -> URL? {
+      ((representations[representation.rawValue] as? [String: Any])?["manifestUrl"] as? String)
+        .flatMap(URL.init(string:))
+    }
+    if let native = profileURL(.native) {
+      do {
+        var manifest = try parse(
+          try await read(native, .manifest), map: map, url: native, representation: .native)
+        let family = (representations[Representation.native.rawValue] as? [String: Any])?["family"]
+          as? [String: Any]
+        if let url = (family?["url"] as? String).flatMap(URL.init(string:)) {
+          manifest.family = (url, family?["revision"] as? String)
+        }
+        return manifest
+      } catch {
+        // Downloaded regions may hold the WebView profile only.
+        guard fromPacks, profileURL(.webView) != nil else { throw error }
+      }
+    }
+    guard let webView = profileURL(.webView) else {
+      throw failure("This Map has no native representation.", .manifest)
+    }
+    return try parse(
+      try await read(webView, .manifest), map: map, url: webView, representation: .webView)
+  }
+
+  static func parse(
+    _ manifest: [String: Any], map: String, url: URL, representation: Representation
+  ) throws -> NativeManifest {
     guard let maps = manifest["maps"] as? [String: Any], let entry = maps[map] as? [String: Any],
-      let themes = entry["themes"] as? [String: Any]
+      let themes = entry["themes"] as? [String: Any],
+      let defaultTheme = entry["defaultTheme"] as? String
     else { throw failure("The map is not in the manifest.", .manifest) }
-    let name: String?
-    switch requested {
-    case nil: name = entry["defaultTheme"] as? String
-    case "system": name = (entry["systemThemes"] as? [String: Any])?[colorScheme] as? String
-    case let theme?: name = theme
-    }
-    guard let name, let theme = themes[name] as? [String: Any],
-      let styleURL = (theme["styleUrl"] as? String).flatMap({
+    var styles: [String: URL] = [:]
+    for (name, value) in themes {
+      guard let styleURL = ((value as? [String: Any])?["styleUrl"] as? String).flatMap({
         URL(string: $0, relativeTo: url)?.absoluteURL
-      })
-    else { throw failure("The map has no usable theme.", .style) }
+      }) else { continue }
+      styles[name] = styleURL
+    }
+    let strings = { (value: Any?) -> [String: String]? in
+      (value as? [String: Any])?.compactMapValues { $0 as? String }
+    }
+    let timeOfDay = (entry["timeOfDay"] as? [String: Any])?.compactMapValues(strings)
     return NativeManifest(
-      theme: Theme(name: name, styleURL: styleURL), view: Self.view(entry["view"]))
+      map: map, representation: representation,
+      catalog: .init(
+        defaultTheme: defaultTheme, systemThemes: strings(entry["systemThemes"]),
+        timeOfDay: timeOfDay, themes: Set(styles.keys)),
+      styles: styles, view: Self.view(entry["view"]))
   }
 
   /// The authored view, or the whole world when the map declares none.
@@ -64,8 +144,7 @@ struct NativeManifest: Sendable {
       ? camera : TileflowCamera(longitude: 0, latitude: 0, zoom: 0)
   }
 
-  private static func failure(_ message: String, _ kind: TileflowResourceKind) -> TileflowMapError
-  {
+  static func failure(_ message: String, _ kind: TileflowResourceKind) -> TileflowMapError {
     TileflowMapError(.resourceFailed, context: .init(resource: kind, message: message))
   }
 }

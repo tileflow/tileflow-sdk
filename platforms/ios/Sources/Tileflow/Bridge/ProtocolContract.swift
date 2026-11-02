@@ -132,6 +132,7 @@ enum ProtocolContract {
     case invalidImage
     case unknownLayer
     case unknownSource
+    case featureUnavailable
   }
 
   /// Error codes the renderer may send. Any other code from the renderer is a protocol fault.

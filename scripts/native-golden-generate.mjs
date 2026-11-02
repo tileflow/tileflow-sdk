@@ -11,6 +11,8 @@ import {format, resolveConfig} from 'prettier';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const source = 'packages/core/test/fixtures/native-family-input.json';
 const target = 'packages/core/test/fixtures/native-evaluators.json';
+// The Swift and Kotlin tests read the same bytes; Android's unit tests share the iOS fixtures.
+const copies = ['platforms/ios/Tests/TileflowTests/Fixtures/Native/native-evaluators.json'];
 const core = (entry) => import(pathToFileURL(resolve(root, `packages/core/dist/${entry}.js`)).href);
 const profile = await core('native-profile');
 const {resolveTileflowRuntimeTheme} = await core('index');
@@ -182,11 +184,14 @@ const content = await format(JSON.stringify(fixture, null, 2), {
   ...(await resolveConfig(path)),
   parser: 'json',
 });
-if (process.argv.includes('--check')) {
-  const current = await readFile(path, 'utf8').catch(() => undefined);
-  if (current !== content)
-    throw new Error(`Regenerate with node scripts/native-golden-generate.mjs:\n${target}`);
-} else {
-  await mkdir(dirname(path), {recursive: true});
-  await writeFile(path, content);
+for (const file of [target, ...copies]) {
+  const output = resolve(root, file);
+  if (process.argv.includes('--check')) {
+    const current = await readFile(output, 'utf8').catch(() => undefined);
+    if (current !== content)
+      throw new Error(`Regenerate with node scripts/native-golden-generate.mjs:\n${file}`);
+  } else {
+    await mkdir(dirname(output), {recursive: true});
+    await writeFile(output, content);
+  }
 }

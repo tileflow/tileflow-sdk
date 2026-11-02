@@ -115,6 +115,7 @@ public struct TileflowMapSource: Equatable, Sendable {
       hosted = endpoint
       manifestURL = endpoint.manifestURL(mapID: mapID)
       publicMetadataURLs.insert(endpoint.discoveryURL(mapID: mapID))
+      publicMetadataURLs.insert(endpoint.nativeManifestURL(mapID: mapID))
     }
     guard let manifestURL else { throw TileflowMapError.invalidSource }
     publicMetadataURLs.insert(manifestURL)

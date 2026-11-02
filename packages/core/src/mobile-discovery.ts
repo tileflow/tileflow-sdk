@@ -1,12 +1,20 @@
 import {parseNativeUrl} from './native-url-provider';
 
+/** The address and SHA-256 revision of a deployment's native family document. */
+export type TileflowMobileDiscoveryFamily = Readonly<{url: string; revision: string}>;
+
 /** Public selectors only; authority is acquired separately for each protected resource. */
 export type TileflowMobileDiscovery = Readonly<{
   version: 1;
   mapId: string;
   deploymentVersion: number;
   representations: Readonly<
-    Partial<Record<'native-v1' | 'webview-v1', Readonly<{manifestUrl: string}>>>
+    Partial<
+      Record<
+        'native-v1' | 'webview-v1',
+        Readonly<{manifestUrl: string; family?: TileflowMobileDiscoveryFamily}>
+      >
+    >
   >;
 }>;
 
@@ -43,17 +51,38 @@ export function parseTileflowMobileDiscovery(
     !record(value.representations)
   )
     return fail();
-  const representations: Partial<Record<'native-v1' | 'webview-v1', {manifestUrl: string}>> = {};
+  const representations: Partial<
+    Record<
+      'native-v1' | 'webview-v1',
+      {manifestUrl: string; family?: TileflowMobileDiscoveryFamily}
+    >
+  > = {};
   const entries = Object.entries(value.representations);
   if (!entries.length || entries.length > 2) fail();
   for (const [profile, representation] of entries) {
     if (profile !== 'native-v1' && profile !== 'webview-v1') return fail();
-    if (!record(representation) || Object.keys(representation).join(',') !== 'manifestUrl')
+    // The native representation also names its family document.
+    const keys = profile === 'native-v1' ? ['family,manifestUrl', 'manifestUrl'] : ['manifestUrl'];
+    if (!record(representation) || !keys.includes(Object.keys(representation).sort().join(',')))
       return fail();
     const path = profile === 'native-v1' ? 'native' : 'mobile/webview-v1';
     const expected = `${url.origin}/maps/${value.mapId}/${path}/manifest.json`;
     if (representation.manifestUrl !== expected) fail();
-    representations[profile] = Object.freeze({manifestUrl: expected});
+    let family: TileflowMobileDiscoveryFamily | undefined;
+    if (representation.family !== undefined) {
+      const declared = representation.family;
+      if (
+        !record(declared) ||
+        Object.keys(declared).sort().join(',') !== 'revision,url' ||
+        declared.url !==
+          `${url.origin}/maps/${value.mapId}/native/family/v${Number(value.deploymentVersion)}.json` ||
+        typeof declared.revision !== 'string' ||
+        !/^[0-9a-f]{64}$/u.test(declared.revision)
+      )
+        return fail();
+      family = Object.freeze({url: declared.url, revision: declared.revision});
+    }
+    representations[profile] = Object.freeze({manifestUrl: expected, ...(family ? {family} : {})});
   }
   return Object.freeze({
     version: 1,

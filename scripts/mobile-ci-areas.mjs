@@ -16,17 +16,21 @@ const runtimeInputs = [
   'packages/mobile-runtime/',
   'scripts/mobile-',
 ];
+// The fixture server builds its native map with @tileflow/dev from an official map.
+const nativeFixtureInputs = ['packages/dev/', 'packages/maps/'];
 const areaInputs = {
   runtime: runtimeInputs,
-  ios: [...runtimeInputs, 'platforms/ios/'],
+  ios: [...runtimeInputs, ...nativeFixtureInputs, 'platforms/ios/'],
   // The Maven publication reads its coordinates and POM metadata from the native release catalog.
-  // The Kotlin tests read the offline and marine fixtures the Swift tests own.
+  // The Kotlin tests read the offline, marine and native evaluator fixtures the Swift tests own.
   android: [
     ...runtimeInputs,
+    ...nativeFixtureInputs,
     'platforms/android/',
     'platforms/native-release.json',
     'platforms/ios/Tests/TileflowTests/Fixtures/Offline/',
     'platforms/ios/Tests/TileflowTests/Fixtures/Marine/',
+    'platforms/ios/Tests/TileflowTests/Fixtures/Native/',
   ],
   reactNative: [
     '.github/workflows/ci.yml',

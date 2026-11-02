@@ -113,6 +113,7 @@ internal object ProtocolContract {
         INVALID_IMAGE("invalidImage"),
         UNKNOWN_LAYER("unknownLayer"),
         UNKNOWN_SOURCE("unknownSource"),
+        FEATURE_UNAVAILABLE("featureUnavailable"),
     }
 
     /** Error codes the renderer may send. Any other code from the renderer is a protocol fault. */

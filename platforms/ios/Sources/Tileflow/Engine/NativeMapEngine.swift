@@ -1,5 +1,7 @@
+import CryptoKit
 import Foundation
 import MapLibre
+import OSLog
 import UIKit
 
 /// The map drawn by MapLibre Native in an `MLNMapView`.
@@ -12,42 +14,74 @@ import UIKit
 ///
 /// The map view is created only after MapLibre's network setup (``MapLibreNetwork``), and always
 /// with an inline style: created without one, MapLibre requests its demo style from the network.
-/// The engine answers the commands it implements and rejects the others with `invalidRequest`, so a
-/// view never believes a request took effect.
+/// Themes, blends and emphasis come from the map's family document and the native evaluators
+/// (``NativeEvaluators``). The engine answers the commands it implements and rejects the others
+/// with `invalidRequest`, so a view never believes a request took effect.
 @MainActor
 final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   /// A style with nothing to draw, which needs no resource.
   static let emptyStyle = #"{"version":8,"sources":{},"layers":[]}"#
+  static let log = Logger(subsystem: "dev.tileflow", category: "map")
 
   var onReady: (() -> Void)?
   var onEvent: ((String, JSONValue) -> Void)?
   var onFailure: ((TileflowMapError) -> Void)?
   var onLoadFailure: ((TileflowMapError) -> Void)?
   var onExternalLink: ((URL) -> Void)?
-  var onRendererTerminated: (() -> Void)?
+  var onRendererTerminated: ((ProtocolContract.ErrorReason) -> Void)?
 
   let data = DataChannel()
-  private let container = UIView()
+  let container = UIView()
   private(set) var mapView: MLNMapView?
-  private let loader: any ResourceLoading
+  let loader: any ResourceLoading
   private let grantScope: ResourceCacheScope?
   private let offline: OfflineServingIndex
   /// The map's context in MapLibre's requests, while it is registered.
-  private var context: String?
+  private(set) var context: String?
   private let projection = LockedValue<ProjectedStyle?>(nil)
-  private lazy var warnings = MapWarningAggregator { [weak self] warning in
+  lazy var warnings = MapWarningAggregator { [weak self] warning in
     self?.onEvent?("warning", warning)
   }
-  private var retired = false
+  private(set) var retired = false
   private var initialized = false
   /// Whether the map's own style finished loading; the initial empty style does not count.
-  private var styleLoaded = false
+  var styleLoaded = false
   private var styleRequested = false
   /// Whether `contentReady` waits for the map's style to finish drawing.
   private var contentPending = false
   /// The attribution model, and the entries it gives for the current view.
   private(set) var attribution = MapAttribution()
   private(set) var attributionEntries: [MapAttributionEntry] = []
+
+  // MARK: Appearance state, kept in NativeMapEngine+Appearance.swift
+
+  /// The map's manifest, family document and the colour scheme the view reported.
+  var manifest: NativeManifest?
+  var family: NativeFamily?
+  var colorScheme = "light"
+  var storedZooms: NativeStyleDocument.StoredZooms?
+  /// What the map shows: one theme, or a blend.
+  var shown: NativeAppearance?
+  /// The style document MapLibre loads or shows, with what the engine reads from it.
+  var document: NativeStyleDocument.Shown?
+  var appearanceRevision = 0
+  var viewMode = "2d"
+  var viewModeMotion: Task<Void, Never>?
+  var emphasis = NativeEmphasis()
+  /// Degradations already reported for this map, by record ID.
+  var reportedFeatures: Set<String> = []
+  /// Calls waiting for a style to load and draw.
+  var styleWaiters: [CheckedContinuation<Void, any Error>] = []
+  var renderWaiters: [CheckedContinuation<Void, Never>] = []
+
+  // MARK: Camera state, kept in NativeMapEngine+Camera.swift
+
+  /// The movement the application asked for, until MapLibre finishes it.
+  var movement: NativeCameraMovement?
+  var cameraMoving = false
+
+  /// How many times the view sent each command, for diagnostics.
+  private(set) var received: [MapEngineCommand: Int] = [:]
 
   var view: UIView { container }
 
@@ -81,6 +115,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       mapView.attributionButton.isHidden = true
       mapView.automaticallyAdjustsContentInset = false
       mapView.contentInset = .zero
+      // MapLibre iOS draws steep cameras up to the pitch the SDK's camera API allows.
+      mapView.maximumPitch = TileflowCameraLimits.maximumPitch
       self.container.addSubview(mapView)
       self.mapView = mapView
       self.onReady?()
@@ -93,6 +129,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     defer { self.data.release(data) }
     guard !retired else { throw TileflowMapError.disposed }
     guard let mapView else { throw TileflowMapError.notReady }
+    received[command, default: 0] += 1
     switch command {
     case .initialize:
       try await initialize(payload)
@@ -119,7 +156,34 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       mapView.contentInset = UIEdgeInsets(
         top: value("top"), left: value("left"), bottom: value("bottom"), right: value("right"))
       return .null
-    case .setVisibility, .setEvents, .setOptions:
+    case .setVisibility, .setEvents:
+      return .null
+    case .setOptions:
+      if let mode = payload["viewMode"]?.string { setViewMode(mode, duration: 0) }
+      return .null
+    case .moveCamera:
+      return try await moveCamera(payload)
+    case .stopCamera:
+      stopCamera()
+      return .null
+    case .cameraForBounds:
+      return try cameraForBounds(payload)
+    case .visibleBounds:
+      guard let bounds = visibleBounds else { throw TileflowMapError.notReady }
+      return try bounds.wireValue()
+    case .setTheme:
+      return try await setTheme(payload)
+    case .setBlend:
+      return try await setBlend(payload)
+    case .getRouteInks:
+      return routeInks
+    case .setEmphasis:
+      return try await setEmphasis(payload)
+    case .setViewMode:
+      guard let mode = payload["viewMode"]?.string, ["2d", "3d"].contains(mode) else {
+        throw TileflowMapError.invalidRequest
+      }
+      setViewMode(mode, duration: (payload["duration"]?.number ?? 0) / 1000)
       return .null
     case .setContent:
       guard payload["annotations"]?.array?.isEmpty != false,
@@ -150,6 +214,13 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     if let context { MapResourceContexts.shared.retire(context) }
     context = nil
     warnings.retire()
+    emphasis.motion?.cancel()
+    viewModeMotion?.cancel()
+    finishMovement(.cancelled)
+    for waiter in styleWaiters { waiter.resume(throwing: error) }
+    styleWaiters.removeAll()
+    for waiter in renderWaiters { waiter.resume() }
+    renderWaiters.removeAll()
     data.retire()
     loader.close()
     mapView?.delegate = nil
@@ -160,6 +231,13 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     onLoadFailure = nil
     onExternalLink = nil
     onRendererTerminated = nil
+  }
+
+  /// MapLibre lost the graphics resources it draws with. The view replaces the engine: at once
+  /// while it is visible, otherwise when it is next shown.
+  func graphicsContextLost() {
+    guard !retired else { return }
+    onRendererTerminated?(.graphicsContextLost)
   }
 
   // MARK: Loading
@@ -180,50 +258,119 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
         }))
     self.context = context
     attribution.credits = payload["credits"]?.array?.compactMap(MapAttributionCredit.init) ?? []
+    colorScheme = payload["colorScheme"]?.string ?? "light"
+    viewMode = payload["options"]?["viewMode"]?.string ?? "2d"
 
-    var storedZooms: NativeStyleDocument.StoredZooms?
-    if let grantScope,
-      OfflineServingRule.hostedUsesPacks(
+    let fromPacks =
+      grantScope != nil
+      && OfflineServingRule.hostedUsesPacks(
         networkEnabled: TileflowHTTPClient.shared.isNetworkEnabled,
         reachable: OfflineReachability.shared.isReachable)
-    {
+    if let grantScope, fromPacks {
       let offline = self.offline
       storedZooms = { template in await offline.storedZooms(template: template, scope: grantScope) }
     }
-    let (manifest, projected) = try await Self.load(
+    let manifest = try await Self.manifest(
       map: map, manifestURL: manifestURL,
-      discoveryMapID: payload["source"]?["discoveryMapId"]?.string,
-      theme: payload["theme"]?.string, colorScheme: payload["colorScheme"]?.string ?? "light",
-      context: context, loader: loader, storedZooms: storedZooms)
+      discoveryMapID: payload["source"]?["discoveryMapId"]?.string, fromPacks: fromPacks,
+      loader: loader)
+    self.manifest = manifest
+    let theme = try manifest.resolve(payload["theme"]?.string, colorScheme: colorScheme)
+    let (document, projected) = try await loadStyle(theme.styleURL)
+    family = await loadFamily(styleURL: theme.styleURL)
     guard !retired, let mapView else { throw TileflowMapError.cancelled }
-    projection.withLock { $0 = projected }
-    attribution.sources = projected.attributions
+    shown = .theme(theme.name)
     apply(TileflowCamera(wire: payload["camera"]) ?? manifest.view)
     styleRequested = true
     contentPending = true
+    show(document, projected: projected)
+  }
+
+  /// Reads a theme's style through the map's transport and projects it for this map.
+  func loadStyle(_ url: URL) async throws -> ([String: Any], ProjectedStyle) {
+    guard let context else { throw TileflowMapError.notReady }
+    let style = try await Self.read(url, kind: .style, loader: loader)
+    let projected = try await Self.project(
+      style, styleURL: url, context: context, loader: loader, storedZooms: storedZooms)
+    return (style.value, projected)
+  }
+
+  func project(_ style: [String: Any], styleURL: URL, context: String) async throws -> ProjectedStyle
+  {
+    try await Self.project(
+      StyleJSON(value: style), styleURL: styleURL, context: context, loader: loader,
+      storedZooms: storedZooms)
+  }
+
+  /// A JSON document read off the main actor. Foundation's JSON values are not `Sendable`; each
+  /// document has one owner at a time.
+  struct StyleJSON: @unchecked Sendable {
+    let value: [String: Any]
+  }
+
+  private nonisolated static func manifest(
+    map: String, manifestURL: URL, discoveryMapID: String?, fromPacks: Bool,
+    loader: any ResourceLoading
+  ) async throws -> NativeManifest {
+    try await NativeManifest.load(
+      map: map, manifestURL: manifestURL, discoveryMapID: discoveryMapID, fromPacks: fromPacks,
+      read: { url, kind in try await document(url, kind: kind, loader: loader) })
+  }
+
+  nonisolated static func read(_ url: URL, kind: TileflowResourceKind, loader: any ResourceLoading)
+    async throws -> StyleJSON
+  {
+    StyleJSON(value: try await document(url, kind: kind, loader: loader))
+  }
+
+  private nonisolated static func project(
+    _ style: StyleJSON, styleURL: URL, context: String, loader: any ResourceLoading,
+    storedZooms: NativeStyleDocument.StoredZooms?
+  ) async throws -> ProjectedStyle {
+    try await NativeStyleDocument.project(
+      style.value, styleURL: styleURL, context: context,
+      load: { url, kind in try await document(url, kind: kind, loader: loader) },
+      storedZooms: storedZooms)
+  }
+
+  /// Reads the map's family document, if it has one, and checks a Hosted document against the
+  /// revision discovery gave. A map without it draws its themes but cannot blend them or apply an
+  /// emphasis.
+  private func loadFamily(styleURL: URL) async -> NativeFamily? {
+    guard let url = manifest?.familyURL(styleURL: styleURL),
+      let payload = try? await loader.load(URLRequest(url: url)), payload.status == 200
+    else { return nil }
+    if let revision = manifest?.family?.revision,
+      SHA256.hash(data: payload.bytes).map({ String(format: "%02x", $0) }).joined() != revision
+    {
+      warnings.warn(
+        .object([
+          "code": .string("resourceFailed"),
+          "message": .string("The map's family document does not match its revision."),
+          "context": .object([
+            "resource": .string("style"), "origin": .string(ResourcePolicy.origin(url)),
+          ]),
+        ]))
+      return nil
+    }
+    guard let document = try? JSONDecoder().decode(JSONValue.self, from: payload.bytes) else {
+      return nil
+    }
+    return NativeFamily(document)
+  }
+
+  /// Gives MapLibre a projected style. What the engine reads from it applies once it loads.
+  func show(_ style: [String: Any], projected: ProjectedStyle) {
+    guard let mapView else { return }
+    projection.withLock { $0 = projected }
+    attribution.sources = projected.attributions
+    document = NativeStyleDocument.Shown(style, omitted: projected.omitted)
+    styleLoaded = false
     mapView.styleJSON = projected.json
   }
 
-  /// Reads the map's manifest and theme style through its transport and projects the style.
-  private nonisolated static func load(
-    map: String, manifestURL: URL, discoveryMapID: String?, theme: String?, colorScheme: String,
-    context: String, loader: any ResourceLoading, storedZooms: NativeStyleDocument.StoredZooms?
-  ) async throws -> (NativeManifest, ProjectedStyle) {
-    let read = { (url: URL, kind: TileflowResourceKind) in
-      try await document(url, kind: kind, loader: loader)
-    }
-    let manifest = try await NativeManifest.load(
-      map: map, manifestURL: manifestURL, discoveryMapID: discoveryMapID, theme: theme,
-      colorScheme: colorScheme, read: read)
-    let style = try await read(manifest.theme.styleURL, .style)
-    let projected = try await NativeStyleDocument.project(
-      style, styleURL: manifest.theme.styleURL, context: context, load: read,
-      storedZooms: storedZooms)
-    return (manifest, projected)
-  }
-
   /// Reads a JSON document of the map through its transport.
-  private nonisolated static func document(
+  nonisolated static func document(
     _ url: URL, kind: TileflowResourceKind, loader: any ResourceLoading
   ) async throws -> [String: Any] {
     let payload = try await loader.load(URLRequest(url: url))
@@ -270,38 +417,6 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     onEvent?("contentReady", .object(["camera": cameraWire]))
   }
 
-  // MARK: Camera
-
-  /// The camera in the SDK's form. MapLibre's direction runs from 0 to 360; the SDK's bearing
-  /// runs from -180 to 180, as on the web.
-  var cameraWire: JSONValue {
-    guard let mapView else { return .null }
-    let center = mapView.centerCoordinate
-    var bearing = mapView.direction.truncatingRemainder(dividingBy: 360)
-    if bearing > 180 { bearing -= 360 }
-    if bearing <= -180 { bearing += 360 }
-    return .object([
-      "longitude": .number(Self.wrap(center.longitude)), "latitude": .number(center.latitude),
-      "zoom": .number(mapView.zoomLevel), "bearing": .number(bearing),
-      "pitch": .number(Double(mapView.camera.pitch)),
-    ])
-  }
-
-  func apply(_ camera: TileflowCamera) {
-    guard let mapView else { return }
-    let center = CLLocationCoordinate2D(latitude: camera.latitude, longitude: camera.longitude)
-    let size = mapView.bounds.size
-    guard size.width > 0, size.height > 0 else {
-      mapView.setCenter(center, zoomLevel: camera.zoom, direction: camera.bearing, animated: false)
-      return
-    }
-    let altitude = MLNAltitudeForZoomLevel(camera.zoom, camera.pitch, camera.latitude, size)
-    mapView.setCamera(
-      MLNMapCamera(
-        lookingAtCenter: center, altitude: altitude, pitch: camera.pitch, heading: camera.bearing),
-      animated: false)
-  }
-
   /// The view's bounds as longitudes and latitudes. A view across the antimeridian has an east
   /// edge past 180°, as the credits' boxes expect.
   var visibleBounds: TileflowBounds? {
@@ -313,7 +428,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       west: bounds.sw.longitude, south: bounds.sw.latitude, east: east, north: bounds.ne.latitude)
   }
 
-  private func updateAttribution() {
+  func updateAttribution() {
     guard let view = visibleBounds else { return }
     attributionEntries = attribution.entries(in: view)
   }
@@ -326,7 +441,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     guard let mapView, let layers = mapView.style?.layers else { return [] }
     var result: [JSONValue] = []
     for layer in layers.reversed() {
-      guard let vector = layer as? MLNVectorStyleLayer else { continue }
+      guard let vector = layer as? MLNVectorStyleLayer, layer.isVisible else { continue }
       let features = mapView.visibleFeatures(
         at: point, styleLayerIdentifiers: [layer.identifier])
       for feature in features {
@@ -346,14 +461,14 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     return result
   }
 
-  private static func point(_ payload: JSONValue) throws -> CGPoint {
+  static func point(_ payload: JSONValue) throws -> CGPoint {
     guard let x = payload["x"]?.number, let y = payload["y"]?.number else {
       throw TileflowMapError.invalidRequest
     }
     return CGPoint(x: x, y: y)
   }
 
-  private static func wrap(_ longitude: Double) -> Double {
+  static func wrap(_ longitude: Double) -> Double {
     guard longitude < -180 || longitude > 180 else { return longitude }
     let wrapped = (longitude + 180).truncatingRemainder(dividingBy: 360)
     return (wrapped < 0 ? wrapped + 360 : wrapped) - 180
@@ -363,37 +478,69 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   nonisolated func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
     MainActor.assumeIsolated {
-      guard styleRequested else { return }
+      guard styleRequested, !retired else { return }
       styleLoaded = true
+      styleDidLoad()
+      for waiter in styleWaiters { waiter.resume() }
+      styleWaiters.removeAll()
     }
   }
 
   nonisolated func mapViewDidFinishLoadingMap(_ mapView: MLNMapView) {
-    MainActor.assumeIsolated { contentLoaded() }
+    MainActor.assumeIsolated {
+      contentLoaded()
+      rendered()
+    }
   }
 
   nonisolated func mapViewDidFinishRenderingMap(_ mapView: MLNMapView, fullyRendered: Bool) {
     guard fullyRendered else { return }
-    MainActor.assumeIsolated { contentLoaded() }
+    MainActor.assumeIsolated {
+      contentLoaded()
+      rendered()
+    }
   }
 
   nonisolated func mapViewDidFinishRenderingFrame(_ mapView: MLNMapView, fullyRendered: Bool) {
     guard fullyRendered else { return }
-    MainActor.assumeIsolated { contentLoaded() }
+    MainActor.assumeIsolated {
+      contentLoaded()
+      rendered()
+    }
   }
 
   nonisolated func mapViewDidFailLoadingMap(_ mapView: MLNMapView, withError error: any Error) {
     MainActor.assumeIsolated {
       guard styleRequested, !styleLoaded, !retired else { return }
-      onFailure?(
-        TileflowMapError(
-          .resourceFailed,
-          context: .init(resource: .style, message: "MapLibre could not load the map's style.")))
+      let failure = TileflowMapError(
+        .resourceFailed,
+        context: .init(resource: .style, message: "MapLibre could not load the map's style."))
+      // A theme change waits for its style and reports the failure itself.
+      guard styleWaiters.isEmpty else {
+        for waiter in styleWaiters { waiter.resume(throwing: failure) }
+        styleWaiters.removeAll()
+        return
+      }
+      onFailure?(failure)
     }
   }
 
-  nonisolated func mapView(_ mapView: MLNMapView, regionDidChangeAnimated animated: Bool) {
+  nonisolated func mapView(
+    _ mapView: MLNMapView, regionWillChangeWith reason: MLNCameraChangeReason, animated: Bool
+  ) {
+    MainActor.assumeIsolated { cameraWillMove(reason) }
+  }
+
+  nonisolated func mapView(_ mapView: MLNMapView, regionIsChangingWith reason: MLNCameraChangeReason)
+  {
+    MainActor.assumeIsolated { cameraIsMoving(reason) }
+  }
+
+  nonisolated func mapView(
+    _ mapView: MLNMapView, regionDidChangeWith reason: MLNCameraChangeReason, animated: Bool
+  ) {
     MainActor.assumeIsolated {
+      cameraDidMove(reason)
       guard !contentPending, styleLoaded else { return }
       updateAttribution()
     }
@@ -414,8 +561,9 @@ final class MapWarningAggregator {
   func warn(_ warning: JSONValue) {
     let context = warning["context"]
     let key = [
-      warning["code"]?.string, context?["reason"]?.string, context?["resource"]?.string,
-      context?["origin"]?.string, context?["status"]?.number.map { String($0) },
+      warning["code"]?.string, context?["reason"]?.string, context?["feature"]?.string,
+      context?["resource"]?.string, context?["origin"]?.string,
+      context?["status"]?.number.map { String($0) },
     ].map { $0 ?? "" }.joined(separator: "\n")
     if var window = windows[key] {
       window.warning = warning

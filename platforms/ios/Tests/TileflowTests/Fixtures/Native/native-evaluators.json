@@ -1,0 +1,2294 @@
+{
+  "kind": "tileflow-native-evaluator-fixtures",
+  "schemaVersion": 1,
+  "profile": "native-v1",
+  "catalog": {
+    "defaultTheme": "day",
+    "systemThemes": {
+      "light": "day",
+      "dark": "night"
+    },
+    "timeOfDay": {
+      "day": {
+        "day": "day",
+        "dusk": "dusk",
+        "night": "night"
+      }
+    },
+    "themes": ["day", "dusk", "night", "mono"]
+  },
+  "family": {
+    "kind": "tileflow-native-family",
+    "schemaVersion": 1,
+    "profile": "native-v1",
+    "map": "evaluators",
+    "themes": [
+      {
+        "name": "day",
+        "colorScheme": "light",
+        "sun": {
+          "azimuth": 350,
+          "altitude": 60,
+          "color": "#ffffff",
+          "intensity": 0.5,
+          "shadowIntensity": 0.6,
+          "ambient": {
+            "color": "#dfe8ff",
+            "intensity": 0.5
+          }
+        },
+        "sunPublished": true,
+        "routeInks": {
+          "line": "#2563eb",
+          "casing": "#1e3a8a",
+          "core": "#eff6ff",
+          "glow": "#2563eb",
+          "alternative": "#64748b",
+          "glowOpacity": 0.16,
+          "coreOpacity": 0
+        },
+        "notices": [
+          {
+            "id": "not-for-navigation",
+            "sources": ["world"],
+            "text": "Not for navigation"
+          }
+        ],
+        "degradations": [
+          {
+            "id": "globe",
+            "feature": "globe",
+            "reason": "engine-unsupported",
+            "fallback": "mercator",
+            "layers": []
+          }
+        ],
+        "emphasis": {
+          "ground": "#f4f0ef",
+          "targets": [
+            {
+              "layer": "landcover",
+              "property": "fill-color",
+              "kind": "colour",
+              "domain": "land",
+              "featureData": true,
+              "value": [
+                "match",
+                ["get", "class"],
+                "grass",
+                {
+                  "tileflow:leaf": ["#cfe3b4", "rgba(244, 240, 239, 1)"]
+                },
+                "wood",
+                {
+                  "tileflow:leaf": ["#a9c98f", "rgba(244, 240, 239, 1)"]
+                },
+                {
+                  "tileflow:leaf": ["#e6e2d8", "rgba(244, 240, 239, 1)"]
+                }
+              ]
+            },
+            {
+              "layer": "water",
+              "property": "fill-opacity",
+              "kind": "fade",
+              "domain": "water",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": [1, 0]
+              }
+            },
+            {
+              "layer": "roads",
+              "property": "line-color",
+              "kind": "colour",
+              "domain": "roads",
+              "featureData": false,
+              "value": [
+                "interpolate",
+                ["linear"],
+                ["zoom"],
+                10,
+                {
+                  "tileflow:leaf": ["#f2d9a6", "rgba(244, 240, 239, 1)"]
+                },
+                16,
+                {
+                  "tileflow:leaf": ["#ffffff", "rgba(244, 240, 239, 1)"]
+                }
+              ]
+            },
+            {
+              "layer": "places",
+              "property": "circle-color",
+              "kind": "colour",
+              "domain": "poi",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": ["#ffffff", "rgba(244, 240, 239, 1)"]
+              }
+            },
+            {
+              "layer": "labels",
+              "property": "text-opacity",
+              "kind": "label",
+              "domain": "labels",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": [1, 0]
+              }
+            },
+            {
+              "layer": "labels",
+              "property": "icon-opacity",
+              "kind": "label",
+              "domain": "labels",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": [1, 0]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "dusk",
+        "colorScheme": "light",
+        "sun": {
+          "azimuth": 20,
+          "altitude": 8,
+          "color": "#ffb070",
+          "intensity": 0.3,
+          "shadowIntensity": 0.4,
+          "ambient": {
+            "color": "#806070",
+            "intensity": 0.4
+          }
+        },
+        "sunPublished": true,
+        "routeInks": {
+          "line": "#2563eb",
+          "casing": "#1e3a8a",
+          "core": "#eff6ff",
+          "glow": "#2563eb",
+          "alternative": "#64748b",
+          "glowOpacity": 0.16,
+          "coreOpacity": 0
+        },
+        "notices": [
+          {
+            "id": "not-for-navigation",
+            "sources": ["world"],
+            "text": "Not for navigation"
+          }
+        ],
+        "degradations": [
+          {
+            "id": "globe",
+            "feature": "globe",
+            "reason": "engine-unsupported",
+            "fallback": "mercator",
+            "layers": []
+          }
+        ],
+        "emphasis": {
+          "ground": "#e8d0c0",
+          "targets": [
+            {
+              "layer": "landcover",
+              "property": "fill-color",
+              "kind": "colour",
+              "domain": "land",
+              "featureData": true,
+              "value": [
+                "match",
+                ["get", "class"],
+                "grass",
+                {
+                  "tileflow:leaf": ["#b7c79a", "rgba(232, 208, 192, 1)"]
+                },
+                "wood",
+                {
+                  "tileflow:leaf": ["#8fa877", "rgba(232, 208, 192, 1)"]
+                },
+                {
+                  "tileflow:leaf": ["#d9c4b2", "rgba(232, 208, 192, 1)"]
+                }
+              ]
+            },
+            {
+              "layer": "water",
+              "property": "fill-opacity",
+              "kind": "fade",
+              "domain": "water",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": [1, 0]
+              }
+            },
+            {
+              "layer": "roads",
+              "property": "line-color",
+              "kind": "colour",
+              "domain": "roads",
+              "featureData": false,
+              "value": [
+                "interpolate",
+                ["linear"],
+                ["zoom"],
+                10,
+                {
+                  "tileflow:leaf": ["#d99a6c", "rgba(232, 208, 192, 1)"]
+                },
+                16,
+                {
+                  "tileflow:leaf": ["#f7e1c8", "rgba(232, 208, 192, 1)"]
+                }
+              ]
+            },
+            {
+              "layer": "places",
+              "property": "circle-color",
+              "kind": "colour",
+              "domain": "poi",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": ["#f7e1c8", "rgba(232, 208, 192, 1)"]
+              }
+            },
+            {
+              "layer": "labels",
+              "property": "text-opacity",
+              "kind": "label",
+              "domain": "labels",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": [1, 0]
+              }
+            },
+            {
+              "layer": "labels",
+              "property": "icon-opacity",
+              "kind": "label",
+              "domain": "labels",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": [1, 0]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "night",
+        "colorScheme": "dark",
+        "sun": {
+          "azimuth": 180,
+          "altitude": -30,
+          "color": "#203060",
+          "intensity": 0,
+          "shadowIntensity": 0,
+          "ambient": {
+            "color": "#101830",
+            "intensity": 0.2
+          }
+        },
+        "sunPublished": true,
+        "routeInks": {
+          "line": "#60a5fa",
+          "casing": "#0b1220",
+          "core": "#eff6ff",
+          "glow": "#60a5fa",
+          "alternative": "#64748b",
+          "glowOpacity": 0.4,
+          "coreOpacity": 0.7
+        },
+        "notices": [
+          {
+            "id": "not-for-navigation",
+            "sources": ["world"],
+            "text": "Not for navigation"
+          }
+        ],
+        "degradations": [
+          {
+            "id": "globe",
+            "feature": "globe",
+            "reason": "engine-unsupported",
+            "fallback": "mercator",
+            "layers": []
+          }
+        ],
+        "emphasis": {
+          "ground": "#0b1020",
+          "targets": [
+            {
+              "layer": "landcover",
+              "property": "fill-color",
+              "kind": "colour",
+              "domain": "land",
+              "featureData": true,
+              "value": [
+                "match",
+                ["get", "class"],
+                "grass",
+                {
+                  "tileflow:leaf": ["#1d2b22", "rgba(11, 16, 32, 1)"]
+                },
+                "wood",
+                {
+                  "tileflow:leaf": ["#14211a", "rgba(11, 16, 32, 1)"]
+                },
+                {
+                  "tileflow:leaf": ["#121828", "rgba(11, 16, 32, 1)"]
+                }
+              ]
+            },
+            {
+              "layer": "water",
+              "property": "fill-opacity",
+              "kind": "fade",
+              "domain": "water",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": [1, 0]
+              }
+            },
+            {
+              "layer": "roads",
+              "property": "line-color",
+              "kind": "colour",
+              "domain": "roads",
+              "featureData": false,
+              "value": [
+                "interpolate",
+                ["linear"],
+                ["zoom"],
+                10,
+                {
+                  "tileflow:leaf": ["#5b4a3a", "rgba(11, 16, 32, 1)"]
+                },
+                16,
+                {
+                  "tileflow:leaf": ["#3a4560", "rgba(11, 16, 32, 1)"]
+                }
+              ]
+            },
+            {
+              "layer": "places",
+              "property": "circle-color",
+              "kind": "colour",
+              "domain": "poi",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": ["#3a4560", "rgba(11, 16, 32, 1)"]
+              }
+            },
+            {
+              "layer": "labels",
+              "property": "text-opacity",
+              "kind": "label",
+              "domain": "labels",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": [1, 0]
+              }
+            },
+            {
+              "layer": "labels",
+              "property": "icon-opacity",
+              "kind": "label",
+              "domain": "labels",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": [1, 0]
+              }
+            }
+          ]
+        }
+      },
+      {
+        "name": "mono",
+        "colorScheme": "light",
+        "sun": {
+          "azimuth": 210,
+          "altitude": 60,
+          "color": "#ffffff",
+          "intensity": 0.2,
+          "shadowIntensity": 1,
+          "ambient": {
+            "color": "#ffffff",
+            "intensity": 0.8
+          }
+        },
+        "sunPublished": false,
+        "routeInks": {
+          "line": "#2563eb",
+          "casing": "#1e3a8a",
+          "core": "#eff6ff",
+          "glow": "#2563eb",
+          "alternative": "#64748b",
+          "glowOpacity": 0.16,
+          "coreOpacity": 0
+        },
+        "notices": [
+          {
+            "id": "not-for-navigation",
+            "sources": ["world"],
+            "text": "Not for navigation"
+          }
+        ],
+        "degradations": [
+          {
+            "id": "globe",
+            "feature": "globe",
+            "reason": "engine-unsupported",
+            "fallback": "mercator",
+            "layers": []
+          }
+        ],
+        "emphasis": {
+          "ground": "#f0f0f0",
+          "targets": [
+            {
+              "layer": "landcover",
+              "property": "fill-color",
+              "kind": "colour",
+              "domain": "land",
+              "featureData": true,
+              "value": [
+                "match",
+                ["get", "class"],
+                "grass",
+                {
+                  "tileflow:leaf": ["#d0d0d0", "rgba(240, 240, 240, 1)"]
+                },
+                "wood",
+                {
+                  "tileflow:leaf": ["#b0b0b0", "rgba(240, 240, 240, 1)"]
+                },
+                {
+                  "tileflow:leaf": ["#e6e2d8", "rgba(240, 240, 240, 1)"]
+                }
+              ]
+            },
+            {
+              "layer": "water",
+              "property": "fill-opacity",
+              "kind": "fade",
+              "domain": "water",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": [1, 0]
+              }
+            },
+            {
+              "layer": "roads",
+              "property": "line-color",
+              "kind": "colour",
+              "domain": "roads",
+              "featureData": false,
+              "value": [
+                "interpolate",
+                ["linear"],
+                ["zoom"],
+                10,
+                {
+                  "tileflow:leaf": ["#f2d9a6", "rgba(240, 240, 240, 1)"]
+                },
+                16,
+                {
+                  "tileflow:leaf": ["#ffffff", "rgba(240, 240, 240, 1)"]
+                }
+              ]
+            },
+            {
+              "layer": "outlines",
+              "property": "line-color",
+              "kind": "colour",
+              "domain": "land",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": ["#999999", "rgba(240, 240, 240, 1)"]
+              }
+            },
+            {
+              "layer": "places",
+              "property": "circle-color",
+              "kind": "colour",
+              "domain": "poi",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": ["#ffffff", "rgba(240, 240, 240, 1)"]
+              }
+            },
+            {
+              "layer": "labels",
+              "property": "text-opacity",
+              "kind": "label",
+              "domain": "labels",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": [1, 0]
+              }
+            },
+            {
+              "layer": "labels",
+              "property": "icon-opacity",
+              "kind": "label",
+              "domain": "labels",
+              "featureData": false,
+              "value": {
+                "tileflow:leaf": [1, 0]
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "blend": {
+      "options": {
+        "featureSwitches": "layers",
+        "iconImages": "switch"
+      },
+      "groups": [
+        {
+          "themes": [0, 1, 2],
+          "layers": [
+            {
+              "id": "background",
+              "layout": {},
+              "metadata": {
+                "tileflow:domain": "land"
+              },
+              "paint": {
+                "background-color": {
+                  "tileflow:leaf": ["#f4f0ef", "#e8d0c0", "#0b1020"]
+                }
+              },
+              "type": "background"
+            },
+            {
+              "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 0],
+              "id": "landcover::branch-0",
+              "layout": {},
+              "metadata": {
+                "tileflow:domain": "land"
+              },
+              "paint": {
+                "fill-color": {
+                  "tileflow:leaf": ["#cfe3b4", "#b7c79a", "#1d2b22"]
+                },
+                "fill-opacity": {
+                  "tileflow:leaf": [0.9, 0.8, 0.7]
+                }
+              },
+              "source": "world",
+              "source-layer": "landcover",
+              "type": "fill"
+            },
+            {
+              "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 1],
+              "id": "landcover::branch-1",
+              "layout": {},
+              "metadata": {
+                "tileflow:domain": "land"
+              },
+              "paint": {
+                "fill-color": {
+                  "tileflow:leaf": ["#a9c98f", "#8fa877", "#14211a"]
+                },
+                "fill-opacity": {
+                  "tileflow:leaf": [0.9, 0.8, 0.7]
+                }
+              },
+              "source": "world",
+              "source-layer": "landcover",
+              "type": "fill"
+            },
+            {
+              "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 2],
+              "id": "landcover::branch-2",
+              "layout": {},
+              "metadata": {
+                "tileflow:domain": "land"
+              },
+              "paint": {
+                "fill-color": {
+                  "tileflow:leaf": ["#e6e2d8", "#d9c4b2", "#121828"]
+                },
+                "fill-opacity": {
+                  "tileflow:leaf": [0.9, 0.8, 0.7]
+                }
+              },
+              "source": "world",
+              "source-layer": "landcover",
+              "type": "fill"
+            },
+            {
+              "id": "water",
+              "layout": {},
+              "metadata": {
+                "tileflow:domain": "water"
+              },
+              "paint": {
+                "fill-opacity": 1,
+                "fill-pattern": "water-day"
+              },
+              "source": "world",
+              "source-layer": "water",
+              "type": "fill"
+            },
+            {
+              "id": "roads",
+              "layout": {},
+              "metadata": {
+                "tileflow:domain": "roads"
+              },
+              "paint": {
+                "line-color": [
+                  "interpolate",
+                  ["linear"],
+                  ["zoom"],
+                  10,
+                  {
+                    "tileflow:leaf": ["#f2d9a6", "#d99a6c", "#5b4a3a"]
+                  },
+                  16,
+                  {
+                    "tileflow:leaf": ["#ffffff", "#f7e1c8", "#3a4560"]
+                  }
+                ],
+                "line-opacity": [
+                  "interpolate",
+                  ["linear"],
+                  ["zoom"],
+                  10,
+                  {
+                    "tileflow:leaf": [0.45, 0.4, 0.35]
+                  },
+                  16,
+                  1
+                ],
+                "line-width": 2
+              },
+              "source": "world",
+              "source-layer": "transportation",
+              "type": "line"
+            },
+            {
+              "id": "places::theme-0",
+              "layout": {},
+              "metadata": {
+                "tileflow:domain": "poi"
+              },
+              "paint": {
+                "circle-color": {
+                  "tileflow:leaf": ["#ffffff", "#f7e1c8", "#3a4560"]
+                },
+                "circle-opacity": {
+                  "tileflow:leaf": [1, 0, 0]
+                },
+                "circle-radius": ["*", ["get", "rank"], 2]
+              },
+              "source": "world",
+              "source-layer": "poi",
+              "type": "circle"
+            },
+            {
+              "id": "places::theme-1",
+              "layout": {},
+              "metadata": {
+                "tileflow:domain": "poi"
+              },
+              "paint": {
+                "circle-color": {
+                  "tileflow:leaf": ["#ffffff", "#f7e1c8", "#3a4560"]
+                },
+                "circle-opacity": {
+                  "tileflow:leaf": [0, 1, 0]
+                },
+                "circle-radius": ["*", ["get", "rank"], 3]
+              },
+              "source": "world",
+              "source-layer": "poi",
+              "type": "circle"
+            },
+            {
+              "id": "places::theme-2",
+              "layout": {},
+              "metadata": {
+                "tileflow:domain": "poi"
+              },
+              "paint": {
+                "circle-color": {
+                  "tileflow:leaf": ["#ffffff", "#f7e1c8", "#3a4560"]
+                },
+                "circle-opacity": {
+                  "tileflow:leaf": [0, 0, 1]
+                },
+                "circle-radius": ["*", ["get", "rank"], 4]
+              },
+              "source": "world",
+              "source-layer": "poi",
+              "type": "circle"
+            },
+            {
+              "id": "labels",
+              "layout": {
+                "icon-image": "pin-day",
+                "text-field": ["get", "name"]
+              },
+              "metadata": {
+                "tileflow:domain": "labels"
+              },
+              "paint": {
+                "text-color": {
+                  "tileflow:leaf": ["#1f2933", "#2d1f33", "rgba(230, 236, 255, 0.95)"]
+                },
+                "text-halo-color": {
+                  "tileflow:leaf": ["#ffffff", "#f6e7da", "hsl(225, 40%, 10%)"]
+                },
+                "text-opacity": 1
+              },
+              "source": "world",
+              "source-layer": "place",
+              "type": "symbol"
+            }
+          ],
+          "paints": [
+            {
+              "layer": "background",
+              "property": "background-color",
+              "follows": "position"
+            },
+            {
+              "layer": "landcover::branch-0",
+              "property": "fill-opacity",
+              "follows": "position"
+            },
+            {
+              "layer": "landcover::branch-0",
+              "property": "fill-color",
+              "follows": "position"
+            },
+            {
+              "layer": "landcover::branch-1",
+              "property": "fill-opacity",
+              "follows": "position"
+            },
+            {
+              "layer": "landcover::branch-1",
+              "property": "fill-color",
+              "follows": "position"
+            },
+            {
+              "layer": "landcover::branch-2",
+              "property": "fill-opacity",
+              "follows": "position"
+            },
+            {
+              "layer": "landcover::branch-2",
+              "property": "fill-color",
+              "follows": "position"
+            },
+            {
+              "layer": "roads",
+              "property": "line-color",
+              "follows": "position"
+            },
+            {
+              "layer": "roads",
+              "property": "line-opacity",
+              "follows": "position"
+            },
+            {
+              "layer": "places::theme-0",
+              "property": "circle-color",
+              "follows": "position"
+            },
+            {
+              "layer": "places::theme-0",
+              "property": "circle-opacity",
+              "follows": "position"
+            },
+            {
+              "layer": "places::theme-1",
+              "property": "circle-color",
+              "follows": "position"
+            },
+            {
+              "layer": "places::theme-1",
+              "property": "circle-opacity",
+              "follows": "position"
+            },
+            {
+              "layer": "places::theme-2",
+              "property": "circle-color",
+              "follows": "position"
+            },
+            {
+              "layer": "places::theme-2",
+              "property": "circle-opacity",
+              "follows": "position"
+            },
+            {
+              "layer": "labels",
+              "property": "text-color",
+              "follows": "dominant"
+            },
+            {
+              "layer": "labels",
+              "property": "text-halo-color",
+              "follows": "dominant"
+            }
+          ],
+          "switches": [
+            {
+              "layer": "labels",
+              "group": "layout",
+              "property": "icon-image",
+              "values": ["pin-day", "pin-dusk", "pin-night"]
+            }
+          ],
+          "images": [
+            {
+              "names": ["water-day", "water-dusk", "water-night"],
+              "follows": "position"
+            }
+          ],
+          "light": {
+            "anchor": "map",
+            "color": {
+              "tileflow:leaf": ["#ffffff", "#ffffff", "#8090c0"]
+            },
+            "intensity": {
+              "tileflow:leaf": [0.4, 0.4, 0.2]
+            }
+          },
+          "summary": {
+            "splitLayers": 3,
+            "copiedLayers": 3,
+            "switchedLayers": 0,
+            "switchedValues": 1
+          }
+        }
+      ]
+    }
+  },
+  "colours": [
+    {
+      "from": "#ff0000",
+      "to": "#0000ff",
+      "t": 0.5,
+      "mixed": "rgba(140, 83, 162, 1)"
+    },
+    {
+      "from": "#fff",
+      "to": "#000",
+      "t": 0.25,
+      "mixed": "rgba(174, 174, 174, 1)"
+    },
+    {
+      "from": "#11223344",
+      "to": "#aabbccdd",
+      "t": 0.4,
+      "mixed": "rgba(73, 90, 108, 0.507)"
+    },
+    {
+      "from": "rgba(0, 128, 255, 0.5)",
+      "to": "hsl(120, 50%, 50%)",
+      "t": 0.75,
+      "mixed": "rgba(36, 180, 130, 0.875)"
+    },
+    {
+      "from": "rgb(10%, 20%, 30%)",
+      "to": "#000000",
+      "t": 0.5,
+      "mixed": "rgba(4, 13, 24, 1)"
+    },
+    {
+      "from": "hsla(300, 100%, 25%, 0.2)",
+      "to": "rgb(255 255 0)",
+      "t": 0.6,
+      "mixed": "rgba(205, 166, 115, 0.68)"
+    },
+    {
+      "from": "#f00",
+      "to": "#f00",
+      "t": 0.3,
+      "mixed": "rgba(255, 0, 0, 1)"
+    },
+    {
+      "from": "#f00",
+      "to": "#00f",
+      "t": 0,
+      "mixed": "rgba(255, 0, 0, 1)"
+    },
+    {
+      "from": "#f00",
+      "to": "#00f",
+      "t": 1,
+      "mixed": "rgba(0, 0, 255, 1)"
+    },
+    {
+      "from": "#f00",
+      "to": "red",
+      "t": 0.5,
+      "mixed": null
+    }
+  ],
+  "leaves": [
+    {
+      "values": [0, 10, 20],
+      "position": 0.5,
+      "filled": 5
+    },
+    {
+      "values": [0, 10, 20],
+      "position": 1.25,
+      "filled": 12.5
+    },
+    {
+      "values": [0, 10, 20],
+      "position": 2,
+      "filled": 20
+    },
+    {
+      "values": [0, 10, 20],
+      "position": 3,
+      "filled": 20
+    },
+    {
+      "values": [0, 10, 20],
+      "position": -1,
+      "filled": 0
+    },
+    {
+      "values": [0, 10, 20],
+      "position": 0.5,
+      "select": [2, 0],
+      "filled": 10
+    },
+    {
+      "values": ["#f4f0ef", "#e8d0c0", "#0b1020"],
+      "position": 0.3,
+      "filled": "rgba(241, 230, 225, 1)"
+    },
+    {
+      "values": ["#f4f0ef", "#e8d0c0", "#0b1020"],
+      "position": 1.6,
+      "filled": "rgba(89, 85, 92, 1)"
+    },
+    {
+      "values": ["#f4f0ef", "#e8d0c0", "#0b1020"],
+      "position": 0.75,
+      "select": [2, 1],
+      "filled": "rgba(169, 155, 149, 1)"
+    },
+    {
+      "values": ["#ffffff", "rgba(255, 255, 255, 0)"],
+      "position": 0.5,
+      "filled": "rgba(255, 255, 255, 0.5)"
+    },
+    {
+      "values": [5, 5, 5],
+      "position": 0.5,
+      "filled": 5
+    }
+  ],
+  "blends": [
+    {
+      "group": 0,
+      "selection": [0, 1, 2],
+      "position": 0.4,
+      "layers": [
+        {
+          "id": "background",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "background-color": "rgba(239, 227, 220, 1)"
+          },
+          "type": "background"
+        },
+        {
+          "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 0],
+          "id": "landcover::branch-0",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "fill-color": "rgba(197, 216, 170, 1)",
+            "fill-opacity": 0.86
+          },
+          "source": "world",
+          "source-layer": "landcover",
+          "type": "fill"
+        },
+        {
+          "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 1],
+          "id": "landcover::branch-1",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "fill-color": "rgba(159, 188, 133, 1)",
+            "fill-opacity": 0.86
+          },
+          "source": "world",
+          "source-layer": "landcover",
+          "type": "fill"
+        },
+        {
+          "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 2],
+          "id": "landcover::branch-2",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "fill-color": "rgba(225, 214, 201, 1)",
+            "fill-opacity": 0.86
+          },
+          "source": "world",
+          "source-layer": "landcover",
+          "type": "fill"
+        },
+        {
+          "id": "water",
+          "metadata": {
+            "tileflow:domain": "water"
+          },
+          "paint": {
+            "fill-opacity": 1,
+            "fill-pattern": "water-day"
+          },
+          "source": "world",
+          "source-layer": "water",
+          "type": "fill"
+        },
+        {
+          "id": "roads",
+          "metadata": {
+            "tileflow:domain": "roads"
+          },
+          "paint": {
+            "line-color": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              10,
+              "rgba(233, 192, 143, 1)",
+              16,
+              "rgba(252, 243, 233, 1)"
+            ],
+            "line-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.43, 16, 1],
+            "line-width": 2
+          },
+          "source": "world",
+          "source-layer": "transportation",
+          "type": "line"
+        },
+        {
+          "id": "places::theme-0",
+          "metadata": {
+            "tileflow:domain": "poi"
+          },
+          "paint": {
+            "circle-color": "rgba(252, 243, 233, 1)",
+            "circle-opacity": 0.6,
+            "circle-radius": ["*", ["get", "rank"], 2]
+          },
+          "source": "world",
+          "source-layer": "poi",
+          "type": "circle"
+        },
+        {
+          "id": "places::theme-1",
+          "metadata": {
+            "tileflow:domain": "poi"
+          },
+          "paint": {
+            "circle-color": "rgba(252, 243, 233, 1)",
+            "circle-opacity": 0.4,
+            "circle-radius": ["*", ["get", "rank"], 3]
+          },
+          "source": "world",
+          "source-layer": "poi",
+          "type": "circle"
+        },
+        {
+          "id": "places::theme-2",
+          "metadata": {
+            "tileflow:domain": "poi"
+          },
+          "paint": {
+            "circle-color": "rgba(252, 243, 233, 1)",
+            "circle-opacity": 0,
+            "circle-radius": ["*", ["get", "rank"], 4]
+          },
+          "source": "world",
+          "source-layer": "poi",
+          "type": "circle"
+        },
+        {
+          "id": "labels",
+          "layout": {
+            "icon-image": "pin-day",
+            "text-field": ["get", "name"]
+          },
+          "metadata": {
+            "tileflow:domain": "labels"
+          },
+          "paint": {
+            "text-color": "#1f2933",
+            "text-halo-color": "#ffffff",
+            "text-opacity": 1
+          },
+          "source": "world",
+          "source-layer": "place",
+          "type": "symbol"
+        }
+      ],
+      "light": {
+        "anchor": "map",
+        "color": "#ffffff",
+        "intensity": 0.4
+      }
+    },
+    {
+      "group": 0,
+      "selection": [0, 1, 2],
+      "position": 1.5,
+      "layers": [
+        {
+          "id": "background",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "background-color": "rgba(111, 104, 108, 1)"
+          },
+          "type": "background"
+        },
+        {
+          "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 0],
+          "id": "landcover::branch-0",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "fill-color": "rgba(101, 116, 90, 1)",
+            "fill-opacity": 0.75
+          },
+          "source": "world",
+          "source-layer": "landcover",
+          "type": "fill"
+        },
+        {
+          "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 1],
+          "id": "landcover::branch-1",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "fill-color": "rgba(77, 96, 70, 1)",
+            "fill-opacity": 0.75
+          },
+          "source": "world",
+          "source-layer": "landcover",
+          "type": "fill"
+        },
+        {
+          "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 2],
+          "id": "landcover::branch-2",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "fill-color": "rgba(109, 104, 106, 1)",
+            "fill-opacity": 0.75
+          },
+          "source": "world",
+          "source-layer": "landcover",
+          "type": "fill"
+        },
+        {
+          "id": "water",
+          "metadata": {
+            "tileflow:domain": "water"
+          },
+          "paint": {
+            "fill-opacity": 1,
+            "fill-pattern": "water-day"
+          },
+          "source": "world",
+          "source-layer": "water",
+          "type": "fill"
+        },
+        {
+          "id": "roads",
+          "metadata": {
+            "tileflow:domain": "roads"
+          },
+          "paint": {
+            "line-color": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              10,
+              "rgba(152, 113, 83, 1)",
+              16,
+              "rgba(147, 144, 148, 1)"
+            ],
+            "line-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.375, 16, 1],
+            "line-width": 2
+          },
+          "source": "world",
+          "source-layer": "transportation",
+          "type": "line"
+        },
+        {
+          "id": "places::theme-0",
+          "metadata": {
+            "tileflow:domain": "poi"
+          },
+          "paint": {
+            "circle-color": "rgba(147, 144, 148, 1)",
+            "circle-opacity": 0,
+            "circle-radius": ["*", ["get", "rank"], 2]
+          },
+          "source": "world",
+          "source-layer": "poi",
+          "type": "circle"
+        },
+        {
+          "id": "places::theme-1",
+          "metadata": {
+            "tileflow:domain": "poi"
+          },
+          "paint": {
+            "circle-color": "rgba(147, 144, 148, 1)",
+            "circle-opacity": 0.5,
+            "circle-radius": ["*", ["get", "rank"], 3]
+          },
+          "source": "world",
+          "source-layer": "poi",
+          "type": "circle"
+        },
+        {
+          "id": "places::theme-2",
+          "metadata": {
+            "tileflow:domain": "poi"
+          },
+          "paint": {
+            "circle-color": "rgba(147, 144, 148, 1)",
+            "circle-opacity": 0.5,
+            "circle-radius": ["*", ["get", "rank"], 4]
+          },
+          "source": "world",
+          "source-layer": "poi",
+          "type": "circle"
+        },
+        {
+          "id": "labels",
+          "layout": {
+            "icon-image": "pin-night",
+            "text-field": ["get", "name"]
+          },
+          "metadata": {
+            "tileflow:domain": "labels"
+          },
+          "paint": {
+            "text-color": "rgba(230, 236, 255, 0.95)",
+            "text-halo-color": "hsl(225, 40%, 10%)",
+            "text-opacity": 1
+          },
+          "source": "world",
+          "source-layer": "place",
+          "type": "symbol"
+        }
+      ],
+      "light": {
+        "anchor": "map",
+        "color": "rgba(190, 199, 224, 1)",
+        "intensity": 0.30000000000000004
+      }
+    },
+    {
+      "group": 0,
+      "selection": [2, 0],
+      "position": 0.6,
+      "layers": [
+        {
+          "id": "background",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "background-color": "rgba(140, 141, 149, 1)"
+          },
+          "type": "background"
+        },
+        {
+          "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 0],
+          "id": "landcover::branch-0",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "fill-color": "rgba(130, 148, 117, 1)",
+            "fill-opacity": 0.82
+          },
+          "source": "world",
+          "source-layer": "landcover",
+          "type": "fill"
+        },
+        {
+          "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 1],
+          "id": "landcover::branch-1",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "fill-color": "rgba(104, 128, 93, 1)",
+            "fill-opacity": 0.82
+          },
+          "source": "world",
+          "source-layer": "landcover",
+          "type": "fill"
+        },
+        {
+          "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 2],
+          "id": "landcover::branch-2",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "fill-color": "rgba(136, 138, 141, 1)",
+            "fill-opacity": 0.82
+          },
+          "source": "world",
+          "source-layer": "landcover",
+          "type": "fill"
+        },
+        {
+          "id": "water",
+          "metadata": {
+            "tileflow:domain": "water"
+          },
+          "paint": {
+            "fill-opacity": 1,
+            "fill-pattern": "water-day"
+          },
+          "source": "world",
+          "source-layer": "water",
+          "type": "fill"
+        },
+        {
+          "id": "roads",
+          "metadata": {
+            "tileflow:domain": "roads"
+          },
+          "paint": {
+            "line-color": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              10,
+              "rgba(179, 157, 121, 1)",
+              16,
+              "rgba(171, 176, 189, 1)"
+            ],
+            "line-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.41, 16, 1],
+            "line-width": 2
+          },
+          "source": "world",
+          "source-layer": "transportation",
+          "type": "line"
+        },
+        {
+          "id": "places::theme-0",
+          "metadata": {
+            "tileflow:domain": "poi"
+          },
+          "paint": {
+            "circle-color": "rgba(171, 176, 189, 1)",
+            "circle-opacity": 0.6,
+            "circle-radius": ["*", ["get", "rank"], 2]
+          },
+          "source": "world",
+          "source-layer": "poi",
+          "type": "circle"
+        },
+        {
+          "id": "places::theme-1",
+          "metadata": {
+            "tileflow:domain": "poi"
+          },
+          "paint": {
+            "circle-color": "rgba(171, 176, 189, 1)",
+            "circle-opacity": 0,
+            "circle-radius": ["*", ["get", "rank"], 3]
+          },
+          "source": "world",
+          "source-layer": "poi",
+          "type": "circle"
+        },
+        {
+          "id": "places::theme-2",
+          "metadata": {
+            "tileflow:domain": "poi"
+          },
+          "paint": {
+            "circle-color": "rgba(171, 176, 189, 1)",
+            "circle-opacity": 0.4,
+            "circle-radius": ["*", ["get", "rank"], 4]
+          },
+          "source": "world",
+          "source-layer": "poi",
+          "type": "circle"
+        },
+        {
+          "id": "labels",
+          "layout": {
+            "icon-image": "pin-day",
+            "text-field": ["get", "name"]
+          },
+          "metadata": {
+            "tileflow:domain": "labels"
+          },
+          "paint": {
+            "text-color": "#1f2933",
+            "text-halo-color": "#ffffff",
+            "text-opacity": 1
+          },
+          "source": "world",
+          "source-layer": "place",
+          "type": "symbol"
+        }
+      ],
+      "light": {
+        "anchor": "map",
+        "color": "rgba(202, 210, 230, 1)",
+        "intensity": 0.32
+      }
+    },
+    {
+      "group": 0,
+      "selection": [1, 2],
+      "position": 0.5,
+      "layers": [
+        {
+          "id": "background",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "background-color": "rgba(111, 104, 108, 1)"
+          },
+          "type": "background"
+        },
+        {
+          "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 0],
+          "id": "landcover::branch-0",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "fill-color": "rgba(101, 116, 90, 1)",
+            "fill-opacity": 0.75
+          },
+          "source": "world",
+          "source-layer": "landcover",
+          "type": "fill"
+        },
+        {
+          "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 1],
+          "id": "landcover::branch-1",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "fill-color": "rgba(77, 96, 70, 1)",
+            "fill-opacity": 0.75
+          },
+          "source": "world",
+          "source-layer": "landcover",
+          "type": "fill"
+        },
+        {
+          "filter": ["==", ["match", ["get", "class"], "grass", 0, "wood", 1, 2], 2],
+          "id": "landcover::branch-2",
+          "metadata": {
+            "tileflow:domain": "land"
+          },
+          "paint": {
+            "fill-color": "rgba(109, 104, 106, 1)",
+            "fill-opacity": 0.75
+          },
+          "source": "world",
+          "source-layer": "landcover",
+          "type": "fill"
+        },
+        {
+          "id": "water",
+          "metadata": {
+            "tileflow:domain": "water"
+          },
+          "paint": {
+            "fill-opacity": 1,
+            "fill-pattern": "water-day"
+          },
+          "source": "world",
+          "source-layer": "water",
+          "type": "fill"
+        },
+        {
+          "id": "roads",
+          "metadata": {
+            "tileflow:domain": "roads"
+          },
+          "paint": {
+            "line-color": [
+              "interpolate",
+              ["linear"],
+              ["zoom"],
+              10,
+              "rgba(152, 113, 83, 1)",
+              16,
+              "rgba(147, 144, 148, 1)"
+            ],
+            "line-opacity": ["interpolate", ["linear"], ["zoom"], 10, 0.375, 16, 1],
+            "line-width": 2
+          },
+          "source": "world",
+          "source-layer": "transportation",
+          "type": "line"
+        },
+        {
+          "id": "places::theme-0",
+          "metadata": {
+            "tileflow:domain": "poi"
+          },
+          "paint": {
+            "circle-color": "rgba(147, 144, 148, 1)",
+            "circle-opacity": 0,
+            "circle-radius": ["*", ["get", "rank"], 2]
+          },
+          "source": "world",
+          "source-layer": "poi",
+          "type": "circle"
+        },
+        {
+          "id": "places::theme-1",
+          "metadata": {
+            "tileflow:domain": "poi"
+          },
+          "paint": {
+            "circle-color": "rgba(147, 144, 148, 1)",
+            "circle-opacity": 0.5,
+            "circle-radius": ["*", ["get", "rank"], 3]
+          },
+          "source": "world",
+          "source-layer": "poi",
+          "type": "circle"
+        },
+        {
+          "id": "places::theme-2",
+          "metadata": {
+            "tileflow:domain": "poi"
+          },
+          "paint": {
+            "circle-color": "rgba(147, 144, 148, 1)",
+            "circle-opacity": 0.5,
+            "circle-radius": ["*", ["get", "rank"], 4]
+          },
+          "source": "world",
+          "source-layer": "poi",
+          "type": "circle"
+        },
+        {
+          "id": "labels",
+          "layout": {
+            "icon-image": "pin-night",
+            "text-field": ["get", "name"]
+          },
+          "metadata": {
+            "tileflow:domain": "labels"
+          },
+          "paint": {
+            "text-color": "rgba(230, 236, 255, 0.95)",
+            "text-halo-color": "hsl(225, 40%, 10%)",
+            "text-opacity": 1
+          },
+          "source": "world",
+          "source-layer": "place",
+          "type": "symbol"
+        }
+      ],
+      "light": {
+        "anchor": "map",
+        "color": "rgba(190, 199, 224, 1)",
+        "intensity": 0.30000000000000004
+      }
+    }
+  ],
+  "emphasis": [
+    {
+      "theme": 0,
+      "target": 0,
+      "t": 0,
+      "value": ["match", ["get", "class"], "grass", "#cfe3b4", "wood", "#a9c98f", "#e6e2d8"]
+    },
+    {
+      "theme": 0,
+      "target": 0,
+      "t": 0.5,
+      "value": [
+        "match",
+        ["get", "class"],
+        "grass",
+        "rgba(225, 234, 210, 1)",
+        "wood",
+        "rgba(206, 221, 191, 1)",
+        "rgba(237, 233, 227, 1)"
+      ]
+    },
+    {
+      "theme": 0,
+      "target": 0,
+      "t": 1,
+      "value": [
+        "match",
+        ["get", "class"],
+        "grass",
+        "rgba(244, 240, 239, 1)",
+        "wood",
+        "rgba(244, 240, 239, 1)",
+        "rgba(244, 240, 239, 1)"
+      ]
+    },
+    {
+      "theme": 0,
+      "target": 1,
+      "t": 0,
+      "value": 1
+    },
+    {
+      "theme": 0,
+      "target": 1,
+      "t": 0.5,
+      "value": 0.5
+    },
+    {
+      "theme": 0,
+      "target": 1,
+      "t": 1,
+      "value": 0
+    },
+    {
+      "theme": 0,
+      "target": 2,
+      "t": 0,
+      "value": ["interpolate", ["linear"], ["zoom"], 10, "#f2d9a6", 16, "#ffffff"]
+    },
+    {
+      "theme": 0,
+      "target": 2,
+      "t": 0.5,
+      "value": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        10,
+        "rgba(243, 229, 203, 1)",
+        16,
+        "rgba(249, 247, 247, 1)"
+      ]
+    },
+    {
+      "theme": 0,
+      "target": 2,
+      "t": 1,
+      "value": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        10,
+        "rgba(244, 240, 239, 1)",
+        16,
+        "rgba(244, 240, 239, 1)"
+      ]
+    },
+    {
+      "theme": 0,
+      "target": 3,
+      "t": 0,
+      "value": "#ffffff"
+    },
+    {
+      "theme": 0,
+      "target": 3,
+      "t": 0.5,
+      "value": "rgba(249, 247, 247, 1)"
+    },
+    {
+      "theme": 0,
+      "target": 3,
+      "t": 1,
+      "value": "rgba(244, 240, 239, 1)"
+    },
+    {
+      "theme": 0,
+      "target": 4,
+      "t": 0,
+      "value": 1
+    },
+    {
+      "theme": 0,
+      "target": 4,
+      "t": 0.5,
+      "value": 0.5
+    },
+    {
+      "theme": 0,
+      "target": 4,
+      "t": 1,
+      "value": 0
+    },
+    {
+      "theme": 0,
+      "target": 4,
+      "t": 0.5,
+      "keep": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, 1],
+            [0, 0]
+          ]
+        ]
+      },
+      "value": [
+        "case",
+        [
+          "within",
+          {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [0, 0],
+                [1, 0],
+                [1, 1],
+                [0, 1],
+                [0, 0]
+              ]
+            ]
+          }
+        ],
+        1,
+        0.5
+      ]
+    },
+    {
+      "theme": 0,
+      "target": 5,
+      "t": 0,
+      "value": 1
+    },
+    {
+      "theme": 0,
+      "target": 5,
+      "t": 0.5,
+      "value": 0.5
+    },
+    {
+      "theme": 0,
+      "target": 5,
+      "t": 1,
+      "value": 0
+    },
+    {
+      "theme": 0,
+      "target": 5,
+      "t": 0.5,
+      "keep": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, 1],
+            [0, 0]
+          ]
+        ]
+      },
+      "value": [
+        "case",
+        [
+          "within",
+          {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [0, 0],
+                [1, 0],
+                [1, 1],
+                [0, 1],
+                [0, 0]
+              ]
+            ]
+          }
+        ],
+        1,
+        0.5
+      ]
+    },
+    {
+      "theme": 2,
+      "target": 0,
+      "t": 0,
+      "value": ["match", ["get", "class"], "grass", "#1d2b22", "wood", "#14211a", "#121828"]
+    },
+    {
+      "theme": 2,
+      "target": 0,
+      "t": 0.5,
+      "value": [
+        "match",
+        ["get", "class"],
+        "grass",
+        "rgba(19, 30, 34, 1)",
+        "wood",
+        "rgba(15, 25, 30, 1)",
+        "rgba(14, 20, 36, 1)"
+      ]
+    },
+    {
+      "theme": 2,
+      "target": 0,
+      "t": 1,
+      "value": [
+        "match",
+        ["get", "class"],
+        "grass",
+        "rgba(11, 16, 32, 1)",
+        "wood",
+        "rgba(11, 16, 32, 1)",
+        "rgba(11, 16, 32, 1)"
+      ]
+    },
+    {
+      "theme": 2,
+      "target": 1,
+      "t": 0,
+      "value": 1
+    },
+    {
+      "theme": 2,
+      "target": 1,
+      "t": 0.5,
+      "value": 0.5
+    },
+    {
+      "theme": 2,
+      "target": 1,
+      "t": 1,
+      "value": 0
+    },
+    {
+      "theme": 2,
+      "target": 2,
+      "t": 0,
+      "value": ["interpolate", ["linear"], ["zoom"], 10, "#5b4a3a", 16, "#3a4560"]
+    },
+    {
+      "theme": 2,
+      "target": 2,
+      "t": 0.5,
+      "value": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        10,
+        "rgba(49, 44, 46, 1)",
+        16,
+        "rgba(33, 41, 63, 1)"
+      ]
+    },
+    {
+      "theme": 2,
+      "target": 2,
+      "t": 1,
+      "value": [
+        "interpolate",
+        ["linear"],
+        ["zoom"],
+        10,
+        "rgba(11, 16, 32, 1)",
+        16,
+        "rgba(11, 16, 32, 1)"
+      ]
+    },
+    {
+      "theme": 2,
+      "target": 3,
+      "t": 0,
+      "value": "#3a4560"
+    },
+    {
+      "theme": 2,
+      "target": 3,
+      "t": 0.5,
+      "value": "rgba(33, 41, 63, 1)"
+    },
+    {
+      "theme": 2,
+      "target": 3,
+      "t": 1,
+      "value": "rgba(11, 16, 32, 1)"
+    },
+    {
+      "theme": 2,
+      "target": 4,
+      "t": 0,
+      "value": 1
+    },
+    {
+      "theme": 2,
+      "target": 4,
+      "t": 0.5,
+      "value": 0.5
+    },
+    {
+      "theme": 2,
+      "target": 4,
+      "t": 1,
+      "value": 0
+    },
+    {
+      "theme": 2,
+      "target": 4,
+      "t": 0.5,
+      "keep": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, 1],
+            [0, 0]
+          ]
+        ]
+      },
+      "value": [
+        "case",
+        [
+          "within",
+          {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [0, 0],
+                [1, 0],
+                [1, 1],
+                [0, 1],
+                [0, 0]
+              ]
+            ]
+          }
+        ],
+        1,
+        0.5
+      ]
+    },
+    {
+      "theme": 2,
+      "target": 5,
+      "t": 0,
+      "value": 1
+    },
+    {
+      "theme": 2,
+      "target": 5,
+      "t": 0.5,
+      "value": 0.5
+    },
+    {
+      "theme": 2,
+      "target": 5,
+      "t": 1,
+      "value": 0
+    },
+    {
+      "theme": 2,
+      "target": 5,
+      "t": 0.5,
+      "keep": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [0, 0],
+            [1, 0],
+            [1, 1],
+            [0, 1],
+            [0, 0]
+          ]
+        ]
+      },
+      "value": [
+        "case",
+        [
+          "within",
+          {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [0, 0],
+                [1, 0],
+                [1, 1],
+                [0, 1],
+                [0, 0]
+              ]
+            ]
+          }
+        ],
+        1,
+        0.5
+      ]
+    }
+  ],
+  "themeSelections": [
+    {
+      "theme": "day"
+    },
+    {
+      "selection": "system",
+      "colorScheme": "light",
+      "theme": "day"
+    },
+    {
+      "selection": "system",
+      "colorScheme": "dark",
+      "theme": "night"
+    },
+    {
+      "selection": "day",
+      "timeOfDay": "dusk",
+      "theme": "dusk"
+    },
+    {
+      "selection": "day",
+      "timeOfDay": "night",
+      "theme": "night"
+    },
+    {
+      "selection": "dusk",
+      "timeOfDay": "day",
+      "theme": "day"
+    },
+    {
+      "selection": "mono",
+      "timeOfDay": "night",
+      "theme": "mono"
+    },
+    {
+      "selection": "system",
+      "colorScheme": "dark",
+      "timeOfDay": "dusk",
+      "theme": "dusk"
+    },
+    {
+      "selection": "day",
+      "timeOfDay": "dawn",
+      "theme": null
+    },
+    {
+      "selection": "unknown",
+      "theme": null
+    },
+    {
+      "selection": "system",
+      "theme": null
+    }
+  ],
+  "suns": [
+    {
+      "from": {
+        "azimuth": 350,
+        "altitude": 60,
+        "color": "#ffffff",
+        "intensity": 0.5,
+        "shadowIntensity": 0.6,
+        "ambient": {
+          "color": "#dfe8ff",
+          "intensity": 0.5
+        }
+      },
+      "to": {
+        "azimuth": 20,
+        "altitude": 8,
+        "color": "#ffb070",
+        "intensity": 0.3,
+        "shadowIntensity": 0.4,
+        "ambient": {
+          "color": "#806070",
+          "intensity": 0.4
+        }
+      },
+      "t": 0.5,
+      "mixed": {
+        "azimuth": 5,
+        "altitude": 34,
+        "color": "rgba(255, 216, 185, 1)",
+        "intensity": 0.4,
+        "shadowIntensity": 0.5,
+        "ambient": {
+          "color": "rgba(175, 162, 181, 1)",
+          "intensity": 0.45
+        }
+      }
+    },
+    {
+      "from": {
+        "azimuth": 20,
+        "altitude": 8,
+        "color": "#ffb070",
+        "intensity": 0.3,
+        "shadowIntensity": 0.4,
+        "ambient": {
+          "color": "#806070",
+          "intensity": 0.4
+        }
+      },
+      "to": {
+        "azimuth": 180,
+        "altitude": -30,
+        "color": "#203060",
+        "intensity": 0,
+        "shadowIntensity": 0,
+        "ambient": {
+          "color": "#101830",
+          "intensity": 0.2
+        }
+      },
+      "t": 0.25,
+      "mixed": {
+        "azimuth": 60,
+        "altitude": -1.5,
+        "color": "rgba(195, 144, 116, 1)",
+        "intensity": 0.22499999999999998,
+        "shadowIntensity": 0.30000000000000004,
+        "ambient": {
+          "color": "rgba(98, 77, 96, 1)",
+          "intensity": 0.35000000000000003
+        }
+      }
+    },
+    {
+      "from": {
+        "azimuth": 350,
+        "altitude": 60,
+        "color": "#ffffff",
+        "intensity": 0.5,
+        "shadowIntensity": 0.6,
+        "ambient": {
+          "color": "#dfe8ff",
+          "intensity": 0.5
+        }
+      },
+      "to": {
+        "azimuth": 180,
+        "altitude": -30,
+        "color": "#203060",
+        "intensity": 0,
+        "shadowIntensity": 0,
+        "ambient": {
+          "color": "#101830",
+          "intensity": 0.2
+        }
+      },
+      "t": 1,
+      "mixed": {
+        "azimuth": 180,
+        "altitude": -30,
+        "color": "#203060",
+        "intensity": 0,
+        "shadowIntensity": 0,
+        "ambient": {
+          "color": "#101830",
+          "intensity": 0.2
+        }
+      }
+    }
+  ],
+  "routeInks": [
+    {
+      "from": {
+        "line": "#2563eb",
+        "casing": "#1e3a8a",
+        "core": "#eff6ff",
+        "glow": "#2563eb",
+        "alternative": "#64748b",
+        "glowOpacity": 0.16,
+        "coreOpacity": 0
+      },
+      "to": {
+        "line": "#60a5fa",
+        "casing": "#0b1220",
+        "core": "#eff6ff",
+        "glow": "#60a5fa",
+        "alternative": "#64748b",
+        "glowOpacity": 0.4,
+        "coreOpacity": 0.7
+      },
+      "t": 0.5,
+      "mixed": {
+        "line": "rgba(65, 133, 243, 1)",
+        "casing": "rgba(20, 38, 82, 1)",
+        "core": "rgba(239, 246, 255, 1)",
+        "glow": "rgba(65, 133, 243, 1)",
+        "alternative": "rgba(100, 116, 139, 1)",
+        "glowOpacity": 0.28,
+        "coreOpacity": 0.35
+      }
+    },
+    {
+      "from": {
+        "line": "#60a5fa",
+        "casing": "#0b1220",
+        "core": "#eff6ff",
+        "glow": "#60a5fa",
+        "alternative": "#64748b",
+        "glowOpacity": 0.4,
+        "coreOpacity": 0.7
+      },
+      "to": {
+        "line": "#2563eb",
+        "casing": "#1e3a8a",
+        "core": "#eff6ff",
+        "glow": "#2563eb",
+        "alternative": "#64748b",
+        "glowOpacity": 0.16,
+        "coreOpacity": 0
+      },
+      "t": 0.2,
+      "mixed": {
+        "line": "rgba(83, 152, 247, 1)",
+        "casing": "rgba(15, 26, 51, 1)",
+        "core": "rgba(239, 246, 255, 1)",
+        "glow": "rgba(83, 152, 247, 1)",
+        "alternative": "rgba(100, 116, 139, 1)",
+        "glowOpacity": 0.35200000000000004,
+        "coreOpacity": 0.5599999999999999
+      }
+    }
+  ]
+}

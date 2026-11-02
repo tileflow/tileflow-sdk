@@ -327,6 +327,8 @@ jobs:
           corepack prepare pnpm@11.13.1 --activate
           pnpm install --frozen-lockfile
           pnpm native:runtime
+          # The fixture server builds its self-hosted native map with these packages.
+          pnpm exec turbo build --filter=@tileflow/dev --filter=@tileflow/maps
       - name: Start fixture map server and pinned iPhone simulator
         run: |
           nohup node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
@@ -441,6 +443,8 @@ jobs:
           corepack prepare pnpm@11.13.1 --activate
           pnpm install --frozen-lockfile
           pnpm native:runtime
+          # The fixture server builds its self-hosted native map with these packages.
+          pnpm exec turbo build --filter=@tileflow/dev --filter=@tileflow/maps
       - name: Cache Gradle dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:

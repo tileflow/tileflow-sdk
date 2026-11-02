@@ -229,10 +229,11 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
                             ),
                         ),
                 )
-            } catch (_: TileflowMapException) {
-                // A replaced renderer receives the points again when it is ready.
+            } catch (error: TileflowMapException) {
+                // A replaced renderer receives the points again when it is ready. Points an engine
+                // refuses are not sent to it again until they change.
                 if (map.readyEngine !== engine) return@launchOnView
-                sentPoints = null
+                if (error.code != TileflowErrorCode.INVALID_REQUEST) sentPoints = null
             } finally {
                 sending = false
             }

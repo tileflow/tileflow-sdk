@@ -666,7 +666,8 @@ final class HostedSessionTests: XCTestCase {
     request.setValue("untrusted", forHTTPHeaderField: "X-Tileflow-Native-Grant")
     _ = try await loader.load(request)
     XCTAssertEqual(sessionTransport.requests.count, 1)
-    XCTAssertEqual(resourceTransport.requests.count, 4)
+    // Discovery, both profile manifests, the style and the public tile.
+    XCTAssertEqual(resourceTransport.requests.count, 5)
     for request in resourceTransport.requests {
       XCTAssertNil(request.value(forHTTPHeaderField: "Authorization"))
       XCTAssertNil(request.value(forHTTPHeaderField: "X-Tileflow-Mobile-Client"))
@@ -682,7 +683,7 @@ final class HostedSessionTests: XCTestCase {
         XCTFail("Invalid authority reached transport")
       } catch {}
     }
-    XCTAssertEqual(resourceTransport.requests.count, 4)
+    XCTAssertEqual(resourceTransport.requests.count, 5)
   }
 
   private let mapCredential = "tf_public_" + String(repeating: "a", count: 48)

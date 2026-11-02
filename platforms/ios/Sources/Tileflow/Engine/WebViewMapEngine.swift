@@ -12,7 +12,7 @@ final class WebViewMapEngine: NSObject, MapEngine, WKNavigationDelegate, WKUIDel
   var onFailure: ((TileflowMapError) -> Void)?
   var onLoadFailure: ((TileflowMapError) -> Void)?
   var onExternalLink: ((URL) -> Void)?
-  var onRendererTerminated: (() -> Void)?
+  var onRendererTerminated: ((ProtocolContract.ErrorReason) -> Void)?
 
   private let webView: WKWebView
   private let bridge: MapBridge
@@ -155,6 +155,6 @@ final class WebViewMapEngine: NSObject, MapEngine, WKNavigationDelegate, WKUIDel
   /// The system may end a hidden renderer to reclaim memory; the view decides what follows.
   func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
     guard webView === self.webView, !retired else { return }
-    onRendererTerminated?()
+    onRendererTerminated?(.processTerminated)
   }
 }

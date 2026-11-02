@@ -989,11 +989,11 @@ class OfflineStoreTest {
             )
         store.loadRegion("fixture", options)
         val done = waitFor(store, "fixture") { it.state == COMPLETE }
-        assertEquals(9L, done.requiredPackCount)
-        assertEquals(9L, done.completedPackCount)
-        assertEquals(25L, done.requiredResourceCount)
-        assertEquals("Only tiles are billable", 16L, done.billableResourceCount)
-        assertEquals("Nine packs, discovery", 10, service.downloads.count { it.status == 200 })
+        assertEquals(14L, done.requiredPackCount)
+        assertEquals(14L, done.completedPackCount)
+        assertEquals(44L, done.requiredResourceCount)
+        assertEquals("Only tiles are billable", 32L, done.billableResourceCount)
+        assertEquals("Fourteen packs, discovery", 15, service.downloads.count { it.status == 200 })
 
         // Every entry of every pack answers as the route serves it, decoded.
         val scopeOfMap = ResourceCacheScope.grant(URI(ORIGIN), OfflinePlatformFixture.MAP_ID)
@@ -1035,8 +1035,9 @@ class OfflineStoreTest {
         }
         assertNull(index.resource(ResourceCacheKey(terrain.template.url(OfflineTileId(14, 0, 0)), scopeOfMap), cache))
 
-        // A new World release: Terrain's packs are kept without asking, every other pack is asked
-        // for with its digest, and only the changed ones transfer.
+        // A new World release: the packs of sources whose release did not change are kept without
+        // asking, every other pack is asked for with its digest, and only the changed ones
+        // transfer.
         val before = service.downloads.size
         service.release = 2
         store.loadRegion("fixture", options)
@@ -1044,9 +1045,10 @@ class OfflineStoreTest {
             waitFor(store, "fixture") {
                 it.state == COMPLETE && it.loadedResourceCount < it.requiredResourceCount
             }
-        assertEquals(9L, updated.completedPackCount)
+        assertEquals(14L, updated.completedPackCount)
         val asked = service.downloads.drop(before).filter { it.url.endsWith(".tfpack") }
-        assertFalse("Terrain did not change", asked.any { "/tiles/terrain/" in it.url })
+        for (source in listOf("terrain", "nautical", "bathymetry", "bathymetry-dem"))
+            assertFalse("$source did not change", asked.any { "/tiles/$source/" in it.url })
         val first = service.packs(1).associate { it.id to it.etag }
         val changed = service.packs(2).filter { first[it.id] != it.etag }.map { it.url }.toSet()
         assertTrue(changed.isNotEmpty())

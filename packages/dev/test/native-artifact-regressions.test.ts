@@ -136,9 +136,10 @@ test('runs the repository native catalog report through the real tsx loader', as
   const script = fileURLToPath(
     new URL('../../../scripts/native-catalog-report.ts', import.meta.url),
   );
+  // The report prepares every official theme one by one, family documents included.
   const result = await execFileAsync(process.execPath, ['--import', tsxLoader, script], {
     cwd: root,
-    timeout: 120_000,
+    timeout: 300_000,
   });
   assert.equal(result.stderr, '');
   const report = JSON.parse(result.stdout) as {

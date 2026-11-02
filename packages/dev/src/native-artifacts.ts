@@ -252,6 +252,7 @@ export function prepareTileflowNativeStyles(
 ): TileflowBuildStyles {
   const issues: TileflowNativeDiagnostic[] = [];
   const result: TileflowBuildStyles = {};
+  const fontRanges = new Map<string, string[]>();
   for (const map of Object.keys(input).sort()) {
     result[map] = {};
     if (!validNativeSprites(map, assets)) {
@@ -303,7 +304,10 @@ export function prepareTileflowNativeStyles(
         // next font of a `text-font` list for the rest instead of drawing nothing.
         let ranges: string[];
         try {
-          ranges = tileflowNativeFontUnicodeRanges(fontBytes(asset));
+          // Asset names are content-addressed, so every theme reuses one file's ranges.
+          ranges =
+            fontRanges.get(asset.fileName) ?? tileflowNativeFontUnicodeRanges(fontBytes(asset));
+          fontRanges.set(asset.fileName, ranges);
         } catch {
           issues.push(
             withContext(

@@ -276,6 +276,34 @@ public class NativeEngineFeasibilityTest {
         assertTrue(EngineTransport.records.any { it.address == "tileflow://resource/data.json" })
     }
 
+    /** Sprite and glyph suffixes with a query, and how the engine escapes a font stack. */
+    @Test
+    public fun suffixesGoBeforeTheQuery() {
+        requireFixture()
+        val loader = ResourceLoader(ResourcePolicy(setOf(ORIGIN), allowsLoopbackHttp = true))
+        val engineContext = EngineTransport.register(loader)
+        val style =
+            JSONObject(
+                """{"version":8,"sprite":"$ORIGIN/sprites/fixture/sprite?release=1","glyphs":"$ORIGIN/fonts/{fontstack}/{range}.pbf?release=1","sources":{"point":{"type":"geojson","data":{"type":"Point","coordinates":[0,0]}}},"layers":[{"id":"background","type":"background","paint":{"background-color":"#ffffff"}},{"id":"label","type":"symbol","source":"point","layout":{"text-field":"A","text-font":["Fixture Sans","Bold"]}}]}"""
+            )
+        val receipt = JSONObject().put("check", "suffixes")
+        try {
+            val projected = EngineStyleProjection.project(style, "$ORIGIN/style.json", engineContext, { null })
+            val activity = show(projected.style, camera(0.0, 0.0, 3.0))
+            try {
+                assertTrue(activity.styleLoaded.await(30, TimeUnit.SECONDS))
+                activity.awaitIdle(0, 15_000)
+            } finally {
+                finish(activity)
+            }
+        } finally {
+            EngineTransport.retire(engineContext)
+            loader.close()
+        }
+        receipt.put("requests", requests())
+        write("suffixes", receipt)
+    }
+
     // Raster-dem offline: an absent tile answered 204 draws its stored parent.
 
     @Test

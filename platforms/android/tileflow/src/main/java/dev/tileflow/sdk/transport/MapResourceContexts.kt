@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import androidx.annotation.MainThread
 import dev.tileflow.sdk.TileflowResourceKind
+import dev.tileflow.sdk.attribution.MapFairUseSignal
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
 import org.maplibre.android.MapLibre
@@ -19,6 +20,8 @@ internal class MapResourceOutcome(
     val status: Int?,
     /** Why the SDK could not answer, when it could not. */
     val error: Throwable? = null,
+    /** What a World tile's response says about fair use. */
+    val fairUse: MapFairUseSignal? = null,
 )
 
 /** How a mounted map answers MapLibre's requests for its resources. */

@@ -97,12 +97,14 @@ internal object NativeManifest {
     /**
      * The manifest of [source] (`{map, manifestUrl, discoveryMapId?}`, as the view sends it).
      * [load] reads a document through the map's transport and throws unless it answered 200;
-     * [fromPacks] says the map opens from its downloaded regions.
+     * [fromPacks] says the map opens from its downloaded regions; [allowsNative] false reads the
+     * WebView profile even when discovery announces the native one.
      */
     fun read(
         source: JSONObject,
         load: (URI) -> ByteArray,
         fromPacks: Boolean = false,
+        allowsNative: Boolean = true,
     ): NativeMapManifest {
         val manifestUrl = source.getString("manifestUrl")
         val map = source.getString("map")
@@ -124,7 +126,7 @@ internal object NativeManifest {
                 ?.optString("manifestUrl")
                 ?.takeIf { it.isNotEmpty() }
                 ?.let { MapResourceAddress.resolve(manifestUrl, it) }
-        profile(NativeRepresentation.NATIVE)?.let { native ->
+        profile(NativeRepresentation.NATIVE)?.takeIf { allowsNative }?.let { native ->
             try {
                 val family =
                     representations

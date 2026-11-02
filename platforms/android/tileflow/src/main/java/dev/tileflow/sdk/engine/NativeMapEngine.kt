@@ -14,9 +14,7 @@ import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.TileflowResourceKind
-import dev.tileflow.sdk.attribution.MapAttribution
-import dev.tileflow.sdk.attribution.MapAttributionEntry
-import dev.tileflow.sdk.attribution.MapCredit
+import dev.tileflow.sdk.attribution.MapAttributionControl
 import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.ProtocolContract
 import dev.tileflow.sdk.offline.OfflineReachability
@@ -101,7 +99,13 @@ internal class NativeMapEngine(
     private var contentStyleLoaded = false
     /** Whether the view initialized this engine and waits for its content. */
     private var awaitingContent = false
-    private var attributionModel = MapAttribution()
+    /** The attribution the map shows, in the SDK's own control. */
+    internal val attribution = MapAttributionControl(context)
+    /** Reads the downloaded regions' credits off the main thread, which the index may block. */
+    private val creditReader =
+        java.util.concurrent.Executors.newSingleThreadExecutor { work ->
+            Thread(work, "tileflow-attribution").apply { isDaemon = true }
+        }
     private val warnings =
         MapWarnings(
             report = { warning -> if (!retired) callbacks.event("warning", warning) },
@@ -145,10 +149,6 @@ internal class NativeMapEngine(
     /** How many times the view sent each command, for diagnostics. */
     internal val received = HashMap<ProtocolContract.Method, Int>()
 
-    /** What the map's attribution shows for the current view; empty before the content is ready. */
-    internal var attribution: List<MapAttributionEntry> = emptyList()
-        private set
-
     override val view: FrameLayout
         get() = container
 
@@ -165,6 +165,17 @@ internal class NativeMapEngine(
                 ViewGroup.LayoutParams.MATCH_PARENT,
             ),
         )
+        // The SDK's attribution, over the map and any image of it during a change.
+        container.addView(
+            attribution.view,
+            FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        attribution.onLink = { url ->
+            if (!retired) runCatching { URI(url) }.getOrNull()?.let(callbacks.externalLink)
+        }
         mapView.addOnWillStartLoadingMapListener { loaded = false }
         mapView.addOnDidFinishLoadingMapListener {
             if (retired) return@addOnDidFinishLoadingMapListener
@@ -274,11 +285,13 @@ internal class NativeMapEngine(
                 ProtocolContract.Method.QUERY_AT_POINT -> query(map, point(request))
                 ProtocolContract.Method.SET_INSETS -> {
                     pad(map, request ?: invalid())
+                    attribution.place(null, request)
                     JSONObject.NULL
                 }
                 ProtocolContract.Method.SET_VISIBILITY,
                 ProtocolContract.Method.SET_EVENTS -> JSONObject.NULL
                 ProtocolContract.Method.SET_OPTIONS -> {
+                    attribution.place(request?.optString("attribution"), null)
                     request?.optString("viewMode")?.takeIf { it.isNotEmpty() }?.let {
                         setViewMode(it, 0.0)
                     }
@@ -326,7 +339,10 @@ internal class NativeMapEngine(
         val theme = if (options.isNull("theme")) null else options.optString("theme")
         colorScheme = options.optString("colorScheme", "light")
         viewMode = options.optJSONObject("options")?.optString("viewMode")?.ifEmpty { null } ?: "2d"
-        val credits = MapCredit.list(options.optJSONArray("credits"))
+        attribution.place(
+            options.optJSONObject("options")?.optString("attribution"),
+            options.optJSONObject("insets"),
+        )
         // A Hosted map without a usable network opens from its downloaded regions.
         val fromPacks =
             grantScope != null &&
@@ -340,15 +356,33 @@ internal class NativeMapEngine(
                 val lookup: (String) -> IntRange? = { index.storedZooms(scope, it) }
                 lookup
             }
-        val read = withContext(Dispatchers.IO) { NativeManifest.read(source, ::load, fromPacks) }
+        var read = withContext(Dispatchers.IO) { NativeManifest.read(source, ::load, fromPacks) }
         if (retired) throw TileflowMapException(retiredCode)
+        var document = read.resolve(theme, colorScheme)
+        val (style, projected) =
+            try {
+                loadStyle(document.styleUrl)
+            } catch (error: TileflowMapException) {
+                if (!fromPacks || read.representation != NativeRepresentation.NATIVE) throw error
+                // An earlier session can leave the native manifest in the cache while the regions
+                // hold only the WebView profile's styles.
+                read =
+                    withContext(Dispatchers.IO) {
+                        NativeManifest.read(source, ::load, fromPacks = true, allowsNative = false)
+                    }
+                document = read.resolve(theme, colorScheme)
+                loadStyle(document.styleUrl)
+            }
         manifest = read
-        val document = read.resolve(theme, colorScheme)
-        val (style, projected) = loadStyle(document.styleUrl)
         family = loadFamily(document.styleUrl)
         if (retired) throw TileflowMapException(retiredCode)
         shownTheme = document.theme
-        attributionModel = MapAttribution(projected.attributions, credits)
+        grantScope?.let { scope ->
+            val index = OfflineServingIndex.shared(application)
+            val (obligations, regional) =
+                withContext(Dispatchers.IO) { index.obligations(scope) to index.credits(scope) }
+            attribution.setDownloaded(obligations, regional)
+        }
         options.optJSONObject("insets")?.let { pad(map, it) }
         (options.optJSONObject("camera") ?: document.view?.let(::cameraJson))?.let {
             move(map, it)
@@ -413,7 +447,7 @@ internal class NativeMapEngine(
     /** Gives MapLibre a projected style; what the engine reads from it applies once it loads. */
     private fun show(map: MapLibreMap, style: JSONObject, projected: NativeStyleProjection) {
         projection = projected
-        attributionModel = MapAttribution(projected.attributions, attributionModel.credits)
+        attribution.setStyle(style, projected.attributions)
         read(style, projected.omitted)
         contentStyleLoaded = false
         map.setStyle(Style.Builder().fromJson(projected.style.toString())) {
@@ -536,6 +570,7 @@ internal class NativeMapEngine(
         awaitingContent = false
         main.removeCallbacksAndMessages(null)
         warnings.retire()
+        creditReader.shutdownNow()
         finishMovement("cancelled")
         val failure = TileflowMapException(code)
         styleWaiters.toList().also { styleWaiters.clear() }.forEach { it.resume(failure) }
@@ -554,6 +589,7 @@ internal class NativeMapEngine(
     /** A request this map's style made has been answered or has failed. */
     private fun received(outcome: MapResourceOutcome) {
         if (retired) return
+        attribution.received(outcome.fairUse)
         warnings.resource(outcome)
         // A refused session ends the map, as it does for the web engine.
         (outcome.error as? TileflowMapException)?.let(callbacks.failed)
@@ -567,6 +603,12 @@ internal class NativeMapEngine(
         callbacks.event("contentReady", JSONObject().put("camera", camera(map)))
     }
 
+    /**
+     * Checks the regional credits against the view, at the end of each camera movement and when the
+     * content loads, and reads the downloaded credits again, which a region downloaded or removed
+     * meanwhile changes. The map shows them online as well as offline: online its tiles may come
+     * from those regions too.
+     */
     private fun updateAttribution() {
         val map = map ?: return
         if (retired || projection == null) return
@@ -579,7 +621,16 @@ internal class NativeMapEngine(
         var east = right.maxOf { it.longitude }
         // A view across the antimeridian has its east edge west of its west edge.
         if (east < west) east += 360
-        attribution = attributionModel.entries(west, latitudes.min(), east, latitudes.max())
+        attribution.update(doubleArrayOf(west, latitudes.min(), east, latitudes.max()))
+        val scope = grantScope ?: return
+        val index = OfflineServingIndex.shared(application)
+        runCatching {
+            creditReader.execute {
+                val obligations = index.obligations(scope)
+                val regional = index.credits(scope)
+                main.post { if (!retired) attribution.setDownloaded(obligations, regional) }
+            }
+        }
     }
 
     // Style changes
@@ -601,8 +652,10 @@ internal class NativeMapEngine(
                 ImageView(container.context).apply {
                     setImageBitmap(it)
                     scaleType = ImageView.ScaleType.FIT_XY
+                    // Over the map and under the attribution, which stays shown.
                     container.addView(
                         this,
+                        container.indexOfChild(mapView) + 1,
                         FrameLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
                             ViewGroup.LayoutParams.MATCH_PARENT,

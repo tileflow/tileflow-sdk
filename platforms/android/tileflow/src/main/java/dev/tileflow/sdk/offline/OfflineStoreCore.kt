@@ -101,7 +101,7 @@ internal class OfflineStoreCore(
     private val unitSets = HashMap<String, Map<String, Long>>()
     private val digestSets = HashMap<String, Set<String>>()
     private val servedSets = HashMap<String, Map<String, OfflineServedPacks>>()
-    private val creditSets = HashMap<String, Map<String, List<OfflineCredit>>>()
+    private val creditSets = HashMap<String, Map<String, OfflineSourceCredits>>()
     private val created = HashMap<OfflinePackRequest, OfflineDownload>()
     /** Packs an earlier pass of a pending version held before its download was created again. */
     private val candidates = HashMap<String, Map<String, OfflinePreviousPack>>()
@@ -176,7 +176,7 @@ internal class OfflineStoreCore(
         val index = index ?: return
         val paths = HashSet<String>()
         val packs = HashMap<String, OfflineServedPacks>()
-        val credits = HashMap<String, MutableList<OfflineCredit>>()
+        val credits = HashMap<String, OfflineSourceCredits>()
         for ((id, record) in records) {
             if (!isServed(record)) continue
             val active = record.active ?: continue
@@ -185,12 +185,18 @@ internal class OfflineStoreCore(
             if (active.downloads == 0) continue
             for ((scope, served) in served(id, active, origin))
                 packs[scope] = packs[scope]?.merging(served) ?: served
-            for ((scope, list) in credits(id, active, origin)) {
-                val merged = credits.getOrPut(scope) { mutableListOf() }
-                for (credit in list) if (merged.none { it.id == credit.id }) merged.add(credit)
-            }
+            for ((scope, each) in credits(id, active, origin))
+                credits[scope] = credits[scope]?.merging(each) ?: each
         }
-        index.publish(OfflineServingSnapshot(paths, packs, credits), this)
+        index.publish(
+            OfflineServingSnapshot(
+                paths,
+                packs,
+                credits.mapValues { it.value.regional },
+                credits.mapValues { it.value.obligations },
+            ),
+            this,
+        )
     }
 
     /**
@@ -254,22 +260,22 @@ internal class OfflineStoreCore(
         return result.also { servedSets[key] = it }
     }
 
-    /** The regional credits of a Hosted version's downloads, by the cache scope of their Map. */
+    /** The credits of a Hosted version's downloads, by the cache scope of their Map. */
     private fun credits(
         id: String,
         version: OfflineVersionRecord,
         apiOrigin: URI,
-    ): Map<String, List<OfflineCredit>> {
+    ): Map<String, OfflineSourceCredits> {
         val key = planKey(id, version.number)
         creditSets[key]?.let {
             return it
         }
         val plan = runCatching { plan(id, version) }.getOrNull() ?: return emptyMap()
-        val result = HashMap<String, List<OfflineCredit>>()
+        val result = HashMap<String, OfflineSourceCredits>()
         for (download in plan.downloads) {
             val scope = ResourceCacheScope.grant(apiOrigin, download.manifest.mapId).directory
-            result[scope] =
-                result[scope].orEmpty() + OfflineCredit.credits(download.manifest.attribution)
+            val each = OfflineSourceCredits.of(download.manifest.attribution)
+            result[scope] = result[scope]?.merging(each) ?: each
         }
         return result.also { creditSets[key] = it }
     }

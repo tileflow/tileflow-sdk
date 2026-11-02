@@ -515,6 +515,63 @@ public class NativeEngineFeasibilityTest {
         }
     }
 
+    /**
+     * A face declared with the Unicode ranges its file covers lets the next face of a `text-font`
+     * stack draw the rest: the light theme with DINish Medium limited to Latin.
+     */
+    @Test
+    public fun fontFaceRangesFallBackAlongTheStack() {
+        requireFixture("$ORIGIN/native-artifacts/manifest.json")
+        val loader = ResourceLoader(ResourcePolicy(setOf(ORIGIN), allowsLoopbackHttp = true))
+        val engineContext = EngineTransport.register(loader)
+        val receipt = JSONObject().put("check", "font-face-ranges")
+        try {
+            for (ranged in listOf(false, true)) {
+                EngineTransport.records.clear()
+                val styleUrl = "$ORIGIN/native-artifacts/styles/streets/light.json"
+                val style = JSONObject(String(loader.load(URI(styleUrl)).bytes))
+                val faces = style.getJSONObject("font-faces")
+                if (ranged)
+                    faces.put(
+                        "DINish Medium",
+                        JSONArray().put(
+                            JSONObject()
+                                .put("url", faces.getString("DINish Medium"))
+                                .put("unicode-range", JSONArray(listOf("U+0000-024F", "U+2000-206F")))
+                        ),
+                    )
+                style.put("layers", JSONArray().put(JSONObject("""{"id":"background","type":"background","paint":{"background-color":"#ffffff"}}""")))
+                style.put("sources", JSONObject().put("probe", JSONObject("""{"type":"geojson","data":{"type":"Point","coordinates":[-3.7,40.42]}}""")))
+                style.getJSONArray("layers").put(
+                    JSONObject(
+                        """{"id":"probe","type":"symbol","source":"probe","layout":{"text-field":"Madrid Ωμέγα","text-font":["DINish Medium","Noto Sans Regular"],"text-size":40,"text-allow-overlap":true},"paint":{"text-color":"#00c000"}}"""
+                    )
+                )
+                val projected =
+                    EngineStyleProjection.project(style, styleUrl, engineContext, { url ->
+                        loader.load(url).takeIf { it.status == 200 }?.bytes
+                    })
+                val activity = show(projected.style, camera(-3.7, 40.42, 16.0))
+                val result = JSONObject().put("fontFaces", projected.style.getJSONObject("font-faces").toString().replace(Regex("https://tileflow\\.invalid/[^\"]*/fonts/"), ".../fonts/"))
+                try {
+                    val bitmap = draw(activity, if (ranged) "font-face-ranges" else "font-face-whole", receipt = result)
+                    result.put("textShare", bitmap?.let { share(it, 0x00c000, 60) } ?: 0.0)
+                } finally {
+                    finish(activity)
+                }
+                result.put(
+                    "fonts",
+                    JSONArray(EngineTransport.records.filter { it.remote?.contains(".ttf") == true }.map { "${it.remote!!.substringAfterLast('/').take(24)} ${it.status}" }),
+                )
+                receipt.put(if (ranged) "ranged" else "whole", result)
+            }
+        } finally {
+            EngineTransport.retire(engineContext)
+            loader.close()
+        }
+        write("font-face-ranges", receipt)
+    }
+
     // Helpers.
 
     private class Hosted(val loader: ResourceLoader, val session: HostedSession) {

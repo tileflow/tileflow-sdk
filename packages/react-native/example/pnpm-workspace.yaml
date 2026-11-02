@@ -1,0 +1,3 @@
+# The example installs on its own, outside the repository's workspace, with the flat layout
+# React Native and Expo tooling expect.
+nodeLinker: hoisted

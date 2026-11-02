@@ -172,7 +172,14 @@ export async function mobileFileIdentity(root, path, name) {
 export async function createMobileContext(root, options = {}) {
   const inherited = options.environment ?? process.env;
   const env = {};
-  for (const key of ['PATH', 'JAVA_HOME', 'ANDROID_HOME', 'ANDROID_SDK_ROOT', 'DEVELOPER_DIR']) {
+  for (const key of [
+    'PATH',
+    'JAVA_HOME',
+    'ANDROID_HOME',
+    'ANDROID_SDK_ROOT',
+    'DEVELOPER_DIR',
+    'TILEFLOW_NATIVE_CANDIDATE',
+  ]) {
     if (inherited[key]) env[key] = inherited[key];
   }
   for (const directory of ['home', 'tmp', 'logs', 'cache', 'gradle'])

@@ -4,6 +4,7 @@ import {createRequire} from 'node:module';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {nativePackageFiles} from './native-admission-pack-files';
+import {publicManifestExports} from './public-runtime';
 
 const root = new URL('../', import.meta.url);
 const text = (path: string) => readFile(new URL(path, root), 'utf8');
@@ -12,8 +13,16 @@ test('native build metadata is explicit, pinned, and does not activate networkin
   const manifest = JSON.parse(await text('package.json'));
   assert.deepEqual(manifest.files, nativePackageFiles);
   assert.equal(manifest.private, undefined);
-  assert.deepEqual(Object.keys(manifest.exports), ['.']);
-  assert.equal(manifest.codegenConfig, undefined);
+  assert.deepEqual(Object.keys(manifest.exports), publicManifestExports);
+  assert.deepEqual(manifest.codegenConfig, {
+    name: 'TileflowReactNativeSpec',
+    type: 'modules',
+    jsSrcsDir: 'src/specs',
+    android: {javaPackageName: 'dev.tileflow.reactnative'},
+    ios: {
+      modulesProvider: {TileflowServices: 'TileflowServices', TileflowOffline: 'TileflowOffline'},
+    },
+  });
   const config = createRequire(import.meta.url)(
     fileURLToPath(new URL('react-native.config.cjs', root)),
   );
@@ -22,11 +31,11 @@ test('native build metadata is explicit, pinned, and does not activate networkin
   assert.equal(config.dependency.platforms.android.sourceDir, 'android');
   assert.equal(
     config.dependency.platforms.android.packageImportPath,
-    'import dev.tileflow.reactnative.TileflowNativeAdmissionPackage;',
+    'import dev.tileflow.reactnative.TileflowReactNativePackage;',
   );
   assert.equal(
     config.dependency.platforms.android.packageInstance,
-    'new TileflowNativeAdmissionPackage()',
+    'new TileflowReactNativePackage()',
   );
   const gradle = await text('android/build.gradle');
   for (const pin of ['0.83.10', '13.6.1', '4.12.0']) assert.ok(gradle.includes(pin), pin);
@@ -36,14 +45,14 @@ test('native build metadata is explicit, pinned, and does not activate networkin
     await text('android/src/main/AndroidManifest.xml'),
     /android\.permission\.INTERNET/u,
   );
-  const podspec = await text('TileflowNativeAdmission.podspec');
+  const podspec = await text('TileflowReactNative.podspec');
   assert.match(podspec, /delete_suffix\(['"]-development['"]\)/u);
-  assert.match(podspec, /platforms\s*=\s*\{\s*:ios\s*=>\s*['"]15\.1['"]\s*\}/u);
-  assert.match(podspec, /MapLibreReactNative['"],\s*['"]11\.5\.0/u);
+  assert.match(podspec, /platforms\s*=\s*\{\s*:ios\s*=>\s*['"]16\.0['"]\s*\}/u);
+  assert.doesNotMatch(podspec, /dependency\s+['"]MapLibreReactNative['"]/u);
   assert.match(podspec, /React-Core['"],\s*['"]0\.83\.10/u);
   assert.doesNotMatch(podspec, /dependency\s+['"]MapLibre['"]/u);
   assert.match(podspec, /install_modules_dependencies/u);
-  const spm = await text('ios/tileflow_native_admission.rb');
+  const spm = await text('ios/tileflow_post_install.rb');
   assert.match(spm, /6\.31\.0/u);
   assert.match(spm, /exactVersion/u);
   assert.match(spm, /package_product_dependencies/u);

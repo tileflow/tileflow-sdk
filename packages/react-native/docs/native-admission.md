@@ -8,16 +8,16 @@ The mounted owner prepares a **bounded Style/TileJSON resource closure** before 
 
 The source targets React 19.2.0, React Native 0.83.10, MapLibre React Native 11.5.0, MapLibre Native Android 13.6.1 and MapLibre Native iOS 6.31.0. Android's HTTP dependency is OkHttp 4.12.0. These pins and the existence of source tests are **not evidence** of a successful build, device run, Hosted service or app-store acceptance; qualify the exact revision in the intended host.
 
-Android's library build uses the host's Android Gradle/Kotlin plugins and SDK settings. `react-native.config.cjs` autolinks `TileflowNativeAdmissionPackage`, which registers the private admission, document, configuration and surface modules. The library depends on the autolinked `:maplibre_maplibre-react-native` project and rejects conflicting MapLibre Native versions rather than selecting another version silently.
+Android's library build uses the host's Android Gradle/Kotlin plugins and SDK settings. `react-native.config.cjs` autolinks `TileflowReactNativePackage`, which registers the private admission, document, configuration and surface modules beside the offline and service TurboModules. The library depends on the autolinked `:maplibre_maplibre-react-native` project and rejects conflicting MapLibre Native versions rather than selecting another version silently.
 
-On iOS, the `TileflowNativeAdmission` pod depends on the exact React and MapLibre React Native pods. MapLibre Native itself is the existing pinned Swift Package Manager product, not a second MapLibre CocoaPod. Retain the host's React Native post-install work and MapLibre setup, then invoke:
+On iOS, the `TileflowReactNative` pod uses the headers of the exact MapLibre React Native pod the app installs. MapLibre Native itself is the existing pinned Swift Package Manager product, not a second MapLibre CocoaPod. Retain the host's React Native post-install work and MapLibre setup, then invoke:
 
 ```ruby
 $MLRN.post_install(installer)
-tileflow_native_admission_post_install(installer)
+tileflow_post_install(installer)
 ```
 
-The helper requires the MapLibre distribution reference with `exactVersion` 6.31.0 and reuses that product for the Tileflow pod/test targets. It does not add another SDK or change the pin.
+The hook also links the Tileflow Swift package. It requires the MapLibre distribution reference with `exactVersion` 6.31.0 and reuses that product for the Tileflow pod/test targets. It does not add another SDK or change the pin.
 
 ## Installation ownership
 

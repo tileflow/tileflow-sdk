@@ -350,6 +350,7 @@ test('package checks accept the materialized Native release without relaxing sou
     'packages/react-native/test/package.test.ts',
     'packages/react-native/test/native-admission-pack-files.ts',
     'packages/react-native/test/native-interaction-package.test.ts',
+    'packages/react-native/test/public-runtime.ts',
     'packages/react-native/src',
     'packages/react-native/tsup.config.ts',
     'packages/react-native/tsconfig.contract.json',

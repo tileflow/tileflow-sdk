@@ -243,16 +243,41 @@ Service outages, timeouts and rate limiting are not session errors. The map keep
 
 ## Native integration
 
-Autolinking registers the private Android/iOS modules used by the mounted lifecycle. Android depends on the exact MapLibre React Native project and MapLibre Native 13.6.1. iOS uses the existing MapLibre React Native CocoaPod plus the exact MapLibre Native 6.31.0 Swift Package Manager product.
+The package needs the Tileflow Swift and Android SDKs, which it pins to one exact version
+(`tileflow.nativeVersion` in its `package.json`). Apps need iOS 16 and Android API 26 or later, and
+the New Architecture, which React Native 0.83 always uses. Expo Go does not contain the native
+code: use a development build. Calls that need the native modules then throw
+`TileflowNativeModuleUnavailableError`.
 
-For the iOS post-install integration, retain the host's normal React Native/MapLibre setup and then call:
+With Expo, add the config plugin and run prebuild; it writes everything below:
 
-```ruby
-$MLRN.post_install(installer)
-tileflow_native_admission_post_install(installer)
+```json
+{
+  "expo": {
+    "plugins": [["@tileflow/react-native", {"offline": {"backgroundUpdates": true}}]]
+  }
+}
 ```
 
-Do not add a second MapLibre Native CocoaPod. See [Private native resource admission](./docs/native-admission.md) for installation-order and teardown details.
+Without Expo, call the Podfile hook after React Native's and MapLibre React Native's own hooks. It
+links the pinned Tileflow Swift package and the MapLibre Native product the current `Map` uses:
+
+```ruby
+post_install do |installer|
+  react_native_post_install(installer, config[:reactNativePath])
+  $MLRN.post_install(installer)
+  tileflow_post_install(installer)
+end
+```
+
+Android resolves the Tileflow artifacts from Maven Central. Do not add a second MapLibre Native
+CocoaPod. See [Private native resource admission](./docs/native-admission.md) for the current
+`Map`'s installation-order and teardown details.
+
+The native configuration and credentials, offline regions and the service clients are described in
+[Offline regions, services and native configuration](./docs/offline-and-services.md). Credentials
+never reach JavaScript: the native SDKs read them from the app's Info.plist and string resources,
+which the Expo plugin writes from `TILEFLOW_*_CREDENTIAL` environment variables at prebuild.
 
 ## Source-checkout harness
 
@@ -286,8 +311,10 @@ annotation or POI targets but no popup, callout, tooltip, sheet, panel or modal 
 
 ## Current boundary
 
-The mounted component does not add location, selection-presentation UI, offline product APIs, an
-Expo config plugin, CLI behavior, deployment or publication. The package remains pre-release.
+The mounted component does not add location, selection-presentation UI, CLI behavior, deployment
+or publication, and it does not yet draw from offline regions: the offline store and the service
+clients run on the native SDKs, while the `Map` still renders with MapLibre React Native. The
+package remains pre-release.
 
 Native maps do not draw a map's 3D scene. Core's 3D buildings, Tileflow landmarks, Team building
 models, 3D trees and street lights are WebGL layers for MapLibre GL JS, which the web `Map`

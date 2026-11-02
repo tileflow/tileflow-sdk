@@ -24,9 +24,12 @@
     "ios/*.h",
     "ios/*.mm",
     "ios/*.rb",
-    "TileflowNativeAdmission.podspec",
+    "TileflowReactNative.podspec",
     "react-native.config.cjs",
-    "LICENSE"
+    "LICENSE",
+    "ios/Sources/*.swift",
+    "src/specs",
+    "plugin"
   ],
   "scripts": {
     "prepack": "node ../../scripts/package-license.mjs --prepare",
@@ -42,7 +45,9 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
-    }
+    },
+    "./app.plugin.js": "./plugin/index.cjs",
+    "./package.json": "./package.json"
   },
   "dependencies": {
     "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
@@ -61,5 +66,23 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "codegenConfig": {
+    "name": "TileflowReactNativeSpec",
+    "type": "modules",
+    "jsSrcsDir": "src/specs",
+    "android": {
+      "javaPackageName": "dev.tileflow.reactnative"
+    },
+    "ios": {
+      "modulesProvider": {
+        "TileflowServices": "TileflowServices",
+        "TileflowOffline": "TileflowOffline"
+      }
+    }
+  },
+  "tileflow": {
+    "nativeVersion": "0.1.0-alpha.0",
+    "swiftPackage": "https://github.com/tileflow/tileflow-swift"
   }
 }

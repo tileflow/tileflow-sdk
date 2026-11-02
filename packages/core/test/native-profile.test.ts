@@ -4,8 +4,8 @@ import {
   assertTileflowNativeStyle,
   createTileflowNativeBuildRecord,
   resolveTileflowRenderer,
-  TileflowNativeCompatibilityError,
   tileflowNativeBuildRecordSchema,
+  TileflowNativeCompatibilityError,
   tileflowNativeDiagnosticSchema,
   tileflowNativeProfile,
   tileflowNativeProfileLimits,
@@ -304,6 +304,43 @@ test('requires a complete native font provider instead of browser metadata or a 
   );
   hasIssue(
     {...style, 'font-faces': {'Noto Sans Regular': 'https://maps.example.test/font.woff2'}},
+    'NATIVE_FONT_UNAVAILABLE',
+    '/font-faces/Noto Sans Regular',
+  );
+  // Font files may claim the characters they draw, in the `U+start-end` form native engines read.
+  const ranged = (file: Record<string, unknown>) => ({
+    ...style,
+    'font-faces': {'Noto Sans Regular': [file]},
+  });
+  const url = 'https://maps.example.test/latin.ttf';
+  assert.deepEqual(
+    validateTileflowNativeStyle(ranged({url, 'unicode-range': ['U+0000-024F', 'U+2000-206f']})),
+    [],
+  );
+  assert.deepEqual(validateTileflowNativeStyle(ranged({url})), []);
+  for (const range of ['U+0041', 'U+0050-0041', 'U+0000-110000', '0041-0050', 'U+00G1-0050'])
+    hasIssue(
+      ranged({url, 'unicode-range': [range]}),
+      'NATIVE_FONT_UNAVAILABLE',
+      '/font-faces/Noto Sans Regular/0/unicode-range',
+    );
+  hasIssue(
+    ranged({url, 'unicode-range': []}),
+    'NATIVE_FONT_UNAVAILABLE',
+    '/font-faces/Noto Sans Regular/0/unicode-range',
+  );
+  hasIssue(
+    ranged({url: 'https://maps.example.test/latin.woff2'}),
+    'NATIVE_FONT_UNAVAILABLE',
+    '/font-faces/Noto Sans Regular/0/url',
+  );
+  hasIssue(
+    ranged({url, weight: 400}),
+    'NATIVE_FONT_UNAVAILABLE',
+    '/font-faces/Noto Sans Regular/0',
+  );
+  hasIssue(
+    {...style, 'font-faces': {'Noto Sans Regular': []}},
     'NATIVE_FONT_UNAVAILABLE',
     '/font-faces/Noto Sans Regular',
   );

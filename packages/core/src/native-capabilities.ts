@@ -1,23 +1,18 @@
 import {z} from 'zod';
 import {strictNativeObject} from './native-zod-object';
-import {tileflowThemeNameSchema} from './portable-identity';
 
 /**
  * The parts of a Tileflow map that a native map can show differently from the web, or not at all.
  * Native preparation removes or replaces each one, records it, and keeps drawing the rest of the
- * map. Mobile SDKs warn once per map and theme; Gallery, editor and the public compatibility table
- * read the same records.
+ * map: every map opens in native apps. Mobile SDKs warn once per map and theme; Gallery, editor
+ * and the public compatibility table read the same records. They are information, never a block.
  *
- * `impact` decides compatibility: a `presentation` change still draws every feature the map holds
- * (with a flatter or simpler look), while a `content` change leaves out features the web map draws
- * and the native map has nothing to show in their place. See `resolveTileflowNativeCompatibility`.
- *
+ * `fallback` says what native maps show instead; `none` means they leave the feature out.
  * `detection` says who finds it: `artifact` capabilities are recorded by native preparation in the
  * artifact; `runtime` capabilities depend on the device and are reported by the SDK when they occur.
  */
 export const tileflowNativeCapabilities = Object.freeze({
   scene3d: Object.freeze({
-    impact: 'presentation',
     detection: 'artifact',
     reason: 'web-runtime',
     fallback: 'extrusions',
@@ -25,7 +20,6 @@ export const tileflowNativeCapabilities = Object.freeze({
       'The 3D building scene (roofs, scene lighting, shadows, contact shading and surfaces) is drawn as plain building extrusions.',
   }),
   models3d: Object.freeze({
-    impact: 'presentation',
     detection: 'artifact',
     reason: 'engine-unsupported',
     fallback: 'extrusions',
@@ -33,7 +27,6 @@ export const tileflowNativeCapabilities = Object.freeze({
       'Tileflow landmarks and building models are not drawn; the building extrusions under them remain.',
   }),
   trees3d: Object.freeze({
-    impact: 'presentation',
     detection: 'artifact',
     reason: 'web-runtime',
     // A record states the map's own fallback for maps without 3D: `flat` or `none`.
@@ -42,42 +35,36 @@ export const tileflowNativeCapabilities = Object.freeze({
       "3D trees are not drawn; vegetation shows the map's own fallback for maps without 3D, flat trees or none.",
   }),
   streetLights: Object.freeze({
-    impact: 'presentation',
     detection: 'artifact',
     reason: 'web-runtime',
     fallback: 'none',
     description: 'Street lights are not drawn.',
   }),
   terrain3d: Object.freeze({
-    impact: 'presentation',
     detection: 'artifact',
     reason: 'engine-unsupported',
     fallback: 'flat',
     description: 'The map is drawn flat, without terrain displacement; hillshading remains.',
   }),
   globe: Object.freeze({
-    impact: 'presentation',
     detection: 'artifact',
     reason: 'engine-unsupported',
     fallback: 'mercator',
     description: 'The globe projection is drawn in Web Mercator.',
   }),
   sky: Object.freeze({
-    impact: 'presentation',
     detection: 'artifact',
     reason: 'engine-unsupported',
     fallback: 'none',
     description: 'The sky, atmosphere and fog above the horizon are not drawn.',
   }),
   pitchAbove60: Object.freeze({
-    impact: 'presentation',
     detection: 'runtime',
     reason: 'engine-unsupported',
     fallback: 'capped',
     description: "The camera is tilted no further than the native engine's maximum pitch.",
   }),
   deviceContours: Object.freeze({
-    impact: 'content',
     detection: 'artifact',
     reason: 'web-runtime',
     fallback: 'none',
@@ -85,14 +72,12 @@ export const tileflowNativeCapabilities = Object.freeze({
       'Contour lines and their labels are generated from elevation tiles in the browser; native maps do not draw them.',
   }),
   nauticalLightRhythm: Object.freeze({
-    impact: 'presentation',
     detection: 'artifact',
     reason: 'web-runtime',
     fallback: 'steady',
     description: 'Nautical lights shine steadily instead of flashing in their rhythm.',
   }),
   symbolOverlap: Object.freeze({
-    impact: 'presentation',
     detection: 'artifact',
     reason: 'engine-unsupported',
     fallback: 'allow-overlap',
@@ -100,7 +85,6 @@ export const tileflowNativeCapabilities = Object.freeze({
       'Cooperative label and icon overlap is drawn as allowed overlap, so these symbols no longer give way to others.',
   }),
   reliefResampling: Object.freeze({
-    impact: 'presentation',
     detection: 'artifact',
     reason: 'engine-unsupported',
     fallback: 'engine-default',
@@ -235,65 +219,4 @@ export function readTileflowNativeDegradations(metadata: unknown): TileflowNativ
     (metadata as Record<string, unknown>)[tileflowNativeDegradationsMetadataKey],
   );
   return parsed.success ? parsed.data : [];
-}
-
-/** One reason a map is web only: a capability whose content native maps leave out. */
-export const tileflowNativeCompatibilityReasonSchema = strictNativeObject({
-  feature: tileflowNativeCapabilitySchema,
-  ids: z.array(z.string().min(1).max(160)).min(1).max(64),
-  themes: z.array(tileflowThemeNameSchema).min(1).max(64),
-  layers: z.array(layerIdSchema).max(tileflowNativeDegradationLimits.maximumLayers),
-});
-
-/**
- * `compatible` maps draw every feature on native maps, some of them in a simpler form.
- * `web-only` maps lose a feature with no native stand-in; their native artifacts still load and
- * warn, but Gallery, editor and the compatibility table mark them for the web.
- */
-export const tileflowNativeCompatibilitySchema = strictNativeObject({
-  status: z.enum(['compatible', 'web-only']),
-  reasons: z.array(tileflowNativeCompatibilityReasonSchema).max(16),
-}).superRefine((value, context) => {
-  if ((value.status === 'web-only') !== value.reasons.length > 0)
-    context.addIssue({code: 'custom', message: 'Only web-only maps have reasons'});
-});
-export type TileflowNativeCompatibility = z.infer<typeof tileflowNativeCompatibilitySchema>;
-
-/**
- * The rule that decides whether a map is web only: any theme that loses `content` (features the web
- * map draws, with nothing shown in their place) makes the whole map web only. Presentation changes
- * never do. A theme that cannot be prepared at all has no native artifact; callers report that map
- * as web only with its preparation diagnostics instead.
- */
-export function resolveTileflowNativeCompatibility(
-  degradationsByTheme: Readonly<Record<string, readonly TileflowNativeDegradation[]>>,
-): TileflowNativeCompatibility {
-  const reasons = new Map<
-    TileflowNativeCapability,
-    {ids: Set<string>; themes: Set<string>; layers: Set<string>}
-  >();
-  for (const theme of Object.keys(degradationsByTheme).sort()) {
-    for (const record of degradationsByTheme[theme]!) {
-      if (tileflowNativeCapabilities[record.feature].impact !== 'content') continue;
-      const reason = reasons.get(record.feature) ?? {
-        ids: new Set<string>(),
-        themes: new Set<string>(),
-        layers: new Set<string>(),
-      };
-      reason.ids.add(record.id);
-      reason.themes.add(theme);
-      for (const layer of record.layers) reason.layers.add(layer);
-      reasons.set(record.feature, reason);
-    }
-  }
-  const ordered = [...reasons.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-  return tileflowNativeCompatibilitySchema.parse({
-    status: ordered.length ? 'web-only' : 'compatible',
-    reasons: ordered.map(([feature, reason]) => ({
-      feature,
-      ids: [...reason.ids].sort(),
-      themes: [...reason.themes].sort(),
-      layers: [...reason.layers].sort(),
-    })),
-  });
 }

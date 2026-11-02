@@ -268,10 +268,12 @@ test('Hosted native styles leave out browser contours, add building extrusions a
   assert.deepEqual(receipt.removedLayers, [2]);
   assert.deepEqual(receipt.insertedLayers, [2]);
   assert.deepEqual(receipt.degradations, ['deviceContours:contours', 'scene3d']);
-  assert.equal(parsed.renderers.native.family.compatibility.status, 'web-only');
   assert.deepEqual(
-    parsed.renderers.native.family.themes.map(({name}) => name),
-    ['light'],
+    parsed.renderers.native.family.themes.map(({name, degradations}) => [
+      name,
+      degradations.map(({id}) => id),
+    ]),
+    [['light', ['deviceContours:contours', 'scene3d']]],
   );
   // The web family keeps every source and layer.
   assert.equal((parsed.renderers.web.styles.light as MapLibreStyle).layers.length, 3);

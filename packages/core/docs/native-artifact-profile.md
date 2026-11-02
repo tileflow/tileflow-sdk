@@ -81,7 +81,7 @@ Dev's `native-lowering-v2` preparation first leaves out or replaces what native 
 (browser contours, the 3D scene except building extrusions, terrain displacement, relief
 resampling) and records each change as a degradation from `tileflowNativeCapabilities`; see the
 [artifact contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/native-style-artifact.md)
-for the vocabulary and the rule that marks a map web only. It converts a fixed `{type: 'globe'}`
+for the vocabulary. Degradations are information: they never block a map. It converts a fixed `{type: 'globe'}`
 projection to Native's implicit Mercator and removes a browser `sky` before this validator runs. This is a recorded projection
 change, not globe support or visual equivalence. One authored map serves web and native preparation;
 no native-specific Streets definition is used. Preparation adapts only finite `line-cap` and
@@ -108,8 +108,10 @@ The same entry point computes and checks the per-map family document (`createTil
 
 Text must use a valid glyph template containing `{fontstack}` and `{range}`, or a complete static
 font stack backed by prepared faces. Native preparation maps each exact OpenType full name to its
-verified TTF/OTF URL. WOFF2 conversion, Unicode-range split providers, dynamic font-stack closure and
-implicit system-font fallback are outside this artifact profile. A fallback name without a prepared
+verified TTF/OTF file, with a `unicode-range` read from the file's character map so that characters
+it cannot draw fall through to the next font of the stack. A face is a URL or up to 8 files, each
+with at most 4,096 `U+start-end` ranges. WOFF2 conversion, dynamic font-stack closure and implicit
+system-font fallback are outside this artifact profile. A fallback name without a prepared
 face fails instead of being silently substituted. The existing font pipeline still owns parsing,
 font selection, content hashes and required licenses.
 

@@ -87,7 +87,7 @@ of a browser sky, finite cap/dash layer partitioning and every degradation in `n
 it does not change web artifacts. Native maps leave out or replace what MapLibre Native cannot draw
 (browser contours, the 3D scene except building extrusions, terrain displacement, relief
 resampling), and each style lists those changes in `metadata['tileflow:nativeDegradations']`.
-Each map's family document states whether it is mobile compatible or web only. Native preparation still
+Degradations are information and never block a map. Native preparation still
 rejects adaptive/unknown projections, browser PMTiles protocols, missing text providers and other
 unsupported style values. See the
 [native style artifact contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/native-style-artifact.md)

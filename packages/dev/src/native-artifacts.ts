@@ -1,16 +1,16 @@
-import {createHash} from 'node:crypto';
 import {
   convertFilter,
-  validateStyleMin,
   type FilterSpecification,
+  validateStyleMin,
 } from '@maplibre/maplibre-gl-style-spec';
+import {createHash} from 'node:crypto';
 import {
   getTileflowStyleFontFaces,
-  serializeCanonicalJson,
   type MapLibreStyle,
-  tileflowStyleFontFacesMetadataKey,
+  serializeCanonicalJson,
   tileflowIconIdPattern,
   tileflowIconPackageLimits,
+  tileflowStyleFontFacesMetadataKey,
 } from '@tileflow/core';
 import type {TileflowBuildCatalog, TileflowBuildStyles} from '@tileflow/core/build';
 import {
@@ -19,8 +19,8 @@ import {
   TileflowNativeCompatibilityError,
   type TileflowNativeDiagnostic,
   tileflowNativeProfileLimits,
-  validateTileflowNativeStyle,
   validateTileflowNativePreparedStyle,
+  validateTileflowNativeStyle,
 } from '@tileflow/core/native-profile';
 import type {TileflowBuildAsset} from './icons';
 import {
@@ -28,6 +28,7 @@ import {
   NativeDegradationError,
   type NativeDegradedStyle,
 } from './native-degradations';
+import {tileflowNativeFontUnicodeRanges} from './native-font-ranges';
 import {rebindNativeLayerReferences} from './native-layer-references';
 import {lowerNativeStyleRepresentation, NativeLoweringError} from './native-lowering';
 
@@ -271,7 +272,7 @@ export function prepareTileflowNativeStyles(
       }
       const metadata = {...original.metadata};
       const faces = getTileflowStyleFontFaces(original);
-      const nativeFaces: Record<string, string> = {};
+      const nativeFaces: Record<string, TileflowNativeFontFile[]> = {};
       for (const face of faces) {
         const asset = assets.find(
           (item) =>
@@ -298,7 +299,25 @@ export function prepareTileflowNativeStyles(
           );
           continue;
         }
-        Object.defineProperty(nativeFaces, face.family, {value: face.source, enumerable: true});
+        // Each face claims only the characters its file draws, so MapLibre Native moves on to the
+        // next font of a `text-font` list for the rest instead of drawing nothing.
+        let ranges: string[];
+        try {
+          ranges = tileflowNativeFontUnicodeRanges(fontBytes(asset));
+        } catch {
+          issues.push(
+            withContext(
+              createTileflowNativeDiagnostic('NATIVE_FONT_UNAVAILABLE', '/font-faces'),
+              map,
+              theme,
+            ),
+          );
+          continue;
+        }
+        Object.defineProperty(nativeFaces, face.family, {
+          value: [{url: face.source, 'unicode-range': ranges}],
+          enumerable: true,
+        });
       }
       delete metadata[tileflowStyleFontFacesMetadataKey];
       // Native's fixed Mercator projection has no GL JS projection controller to configure.
@@ -320,8 +339,15 @@ export function prepareTileflowNativeStyles(
   return result;
 }
 
+/** One font file of a native `font-faces` entry. */
+export type TileflowNativeFontFile = {url: string; 'unicode-range'?: string[]};
+
+function fontBytes(asset: TileflowBuildAsset): Uint8Array {
+  return typeof asset.source === 'string' ? Buffer.from(asset.source) : asset.source;
+}
+
 function isNativeFontAsset(asset: TileflowBuildAsset): boolean {
-  const bytes = typeof asset.source === 'string' ? Buffer.from(asset.source) : asset.source;
+  const bytes = fontBytes(asset);
   if (bytes.byteLength < 12 || bytes.byteLength > tileflowNativeProfileLimits.maximumFontBytes)
     return false;
   const signature = Buffer.from(bytes.subarray(0, 4)).toString('hex');
@@ -351,12 +377,19 @@ export function replaceTileflowNativeFontSources(
   style: MapLibreStyle,
   replace: (source: string) => string,
 ): MapLibreStyle {
-  const faces = (style as MapLibreStyle & {'font-faces'?: Record<string, string>})['font-faces'];
+  const faces = (
+    style as MapLibreStyle & {'font-faces'?: Record<string, string | TileflowNativeFontFile[]>}
+  )['font-faces'];
   if (!faces) return style;
   return {
     ...style,
     'font-faces': Object.fromEntries(
-      Object.entries(faces).map(([name, source]) => [name, replace(source)]),
+      Object.entries(faces).map(([name, files]) => [
+        name,
+        typeof files === 'string'
+          ? replace(files)
+          : files.map((file) => ({...file, url: replace(file.url)})),
+      ]),
     ),
   } as MapLibreStyle;
 }

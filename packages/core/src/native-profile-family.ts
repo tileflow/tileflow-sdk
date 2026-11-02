@@ -2,8 +2,6 @@ import {z} from 'zod';
 import {tileflowLayerDomainMetadataKey} from './layer-domain';
 import {
   readTileflowNativeDegradations,
-  resolveTileflowNativeCompatibility,
-  tileflowNativeCompatibilitySchema,
   tileflowNativeDegradationsSchema,
 } from './native-capabilities';
 import {strictNativeObject} from './native-zod-object';
@@ -11,11 +9,6 @@ import {readTileflowNotices} from './notices';
 import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
 import {tileflowStyleRouteInks} from './route-inks';
 import {readTileflowSunPreset, tileflowStyleSunPreset} from './sun';
-
-// Blending suns and route inks needs nothing the family does not hold; native evaluators follow
-// these rules (azimuths the short way round, colours in OKLab, numbers linearly).
-export {mixTileflowRouteInks} from './route-inks';
-export {mixTileflowSunPresets} from './sun';
 import {
   createTileflowThemeBlendTemplate,
   fillTileflowThemeBlendTemplate,
@@ -23,9 +16,9 @@ import {
   planTileflowThemeBlend,
   readsTileflowFeatureData,
   TileflowThemeBlendError,
+  tileflowThemeBlendLeafValues,
   type TileflowThemeBlendOptions,
   type TileflowThemeBlendPlan,
-  tileflowThemeBlendLeafValues,
 } from './theme-blend';
 import {
   planTileflowEmphasis,
@@ -33,6 +26,11 @@ import {
   tileflowEmphasisRange,
 } from './theme-emphasis';
 import type {MapLibreStyle} from './types';
+
+// Blending suns and route inks needs nothing the family does not hold; native evaluators follow
+// these rules (azimuths the short way round, colours in OKLab, numbers linearly).
+export {mixTileflowRouteInks} from './route-inks';
+export {mixTileflowSunPresets} from './sun';
 
 /**
  * A native family document holds what a native map needs to change appearance on the device
@@ -154,7 +152,6 @@ export const tileflowNativeFamilySchema = strictNativeObject({
   schemaVersion: z.literal(1),
   profile: z.literal('native-v1'),
   map: tileflowPortableIdSchema,
-  compatibility: tileflowNativeCompatibilitySchema,
   /** Every theme, in the map's declared order. Indices elsewhere refer to this list. */
   themes: z.array(themeSchema).min(1).max(tileflowNativeFamilyLimits.maximumThemes),
   blend: strictNativeObject({
@@ -195,15 +192,6 @@ export const tileflowNativeFamilySchema = strictNativeObject({
           message: 'Expected one value per group theme',
         });
   }
-  const expected = resolveTileflowNativeCompatibility(
-    Object.fromEntries(family.themes.map((theme) => [theme.name, theme.degradations])),
-  );
-  if (canonical(expected) !== canonical(family.compatibility))
-    context.addIssue({
-      code: 'custom',
-      path: ['compatibility'],
-      message: 'Compatibility must follow the themes’ degradations',
-    });
 });
 export type TileflowNativeFamily = z.infer<typeof tileflowNativeFamilySchema>;
 export type TileflowNativeFamilyTheme = TileflowNativeFamily['themes'][number];
@@ -245,9 +233,6 @@ export function createTileflowNativeFamily(
     schemaVersion: 1,
     profile: 'native-v1',
     map: input.map,
-    compatibility: resolveTileflowNativeCompatibility(
-      Object.fromEntries(themes.map((theme) => [theme.name, theme.degradations])),
-    ),
     themes,
     blend: {
       options: {...tileflowNativeBlendOptions},

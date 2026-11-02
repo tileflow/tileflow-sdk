@@ -9,10 +9,10 @@ import {hostedTileset, type MapLibreStyle, serializeCanonicalJson} from '@tilefl
 import {parseTileflowRuntimeManifest} from '@tileflow/core/manifest';
 import {
   createTileflowNativeDiagnostic,
+  readTileflowNativeDegradations,
   tileflowNativeBuildRecordSchema,
   TileflowNativeCompatibilityError,
   validateTileflowNativePreparedStyle,
-  readTileflowNativeDegradations,
 } from '@tileflow/core/native-profile';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
@@ -32,6 +32,17 @@ import {createTileflowCommandFailureDocument} from '../src/validation';
 const config = (extra = '') => `import {defineMap} from '@tileflow/core';
 import {streets} from '@tileflow/maps';
 export default defineMap({id:'main',version:1,extends:streets,${extra}});\n`;
+
+/** Whether `U+start-end` ranges cover a code point. */
+function covers(ranges: readonly string[], point: number): boolean {
+  return ranges.some((range) => {
+    const [start, end] = range
+      .slice(2)
+      .split('-')
+      .map((value) => Number.parseInt(value, 16));
+    return start! <= point && point <= end!;
+  });
+}
 
 async function fixture(t: {after(callback: () => Promise<void>): void}) {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-native-artifacts-'));
@@ -256,13 +267,15 @@ export default defineMap({id:'main',version:1,extends:streets,themes,fonts:['./f
   );
   for (const theme of Object.keys(native.styles.main!)) {
     const style = native.styles.main![theme]! as MapLibreStyle & {
-      'font-faces': Record<string, string>;
+      'font-faces': Record<string, {url: string; 'unicode-range': string[]}[]>;
     };
     assert.deepEqual(Object.keys(style['font-faces']), ['Oxanium Medium']);
-    assert.match(
-      style['font-faces']['Oxanium Medium']!,
-      /^\/tileflow\/native\/fonts\/oxanium-medium-[a-f0-9]{64}\.ttf$/u,
-    );
+    const [file, ...others] = style['font-faces']['Oxanium Medium']!;
+    assert.deepEqual(others, []);
+    assert.match(file!.url, /^\/tileflow\/native\/fonts\/oxanium-medium-[a-f0-9]{64}\.ttf$/u);
+    // Oxanium draws Latin only: its face claims that, so Greek falls through to the next font.
+    assert.ok(file!['unicode-range'].includes('U+0020-007E'), theme);
+    assert.equal(covers(file!['unicode-range'], 0x3a9), false);
     assert.equal(style.metadata?.['tileflow:fontFaces'], undefined);
     assert.notEqual(
       native.buildManifest.maps.main!.themes[theme]!.styleSha256,
@@ -274,7 +287,16 @@ export default defineMap({id:'main',version:1,extends:streets,themes,fonts:['./f
   );
   assert.ok(immutable);
   const faces = JSON.parse(String(immutable.source))['font-faces'];
-  assert.match(faces['Oxanium Medium'], /^\/tileflow\/native\/generations\/[a-f0-9]{64}\/fonts\//u);
+  assert.match(
+    faces['Oxanium Medium'][0].url,
+    /^\/tileflow\/native\/generations\/[a-f0-9]{64}\/fonts\//u,
+  );
+  assert.deepEqual(
+    faces['Oxanium Medium'][0]['unicode-range'],
+    (native.styles.main!.light! as MapLibreStyle & {'font-faces': Record<string, any>})[
+      'font-faces'
+    ]['Oxanium Medium'][0]['unicode-range'],
+  );
   await rm(join(cwd, 'fonts/LICENSE.txt'));
   await assert.rejects(
     createTileflowBuildArtifacts({cwd, renderer: 'native'}),
@@ -303,7 +325,10 @@ test('records terrain displacement as a degradation instead of failing', async (
       const receipt = native.nativeBuild!.transformations.find((item) => item.theme === theme)!;
       assert.deepEqual(receipt.degradations, ids);
     }
-    assert.equal(native.nativeFamilies?.main?.compatibility.status, 'compatible');
+    assert.deepEqual(
+      native.nativeFamilies?.main?.themes.map(({degradations}) => degradations.map(({id}) => id)),
+      native.nativeBuild!.transformations.map(({degradations}) => degradations),
+    );
   } finally {
     await disposeTileflowBuildArtifacts(native);
   }

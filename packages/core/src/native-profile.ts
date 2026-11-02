@@ -370,11 +370,34 @@ function validateNativeStyle(
     } else {
       for (const name of Object.keys(faces).sort()) {
         const path = pointer('/font-faces', name);
-        const url = faces[name];
-        // This artifact profile emits one complete sfnt face per exact OpenType full name.
-        if (typeof url !== 'string' || !/\.(?:ttf|otf)(?:\?[^#]*)?$/iu.test(url)) {
+        const value = faces[name];
+        // One complete sfnt face per exact OpenType full name: a URL, or font files that each
+        // claim the characters they draw with `unicode-range`.
+        const files = typeof value === 'string' ? [{url: value}] : value;
+        if (
+          !Array.isArray(files) ||
+          !files.length ||
+          files.length > tileflowNativeProfileLimits.maximumFontFilesPerFace
+        ) {
           add('NATIVE_FONT_UNAVAILABLE', path);
-        } else checkUrl(url, path);
+          continue;
+        }
+        files.forEach((file: unknown, index: number) => {
+          const filePath = typeof value === 'string' ? path : `${path}/${index}`;
+          if (
+            !record(file) ||
+            Object.keys(file).some((key) => key !== 'url' && key !== 'unicode-range')
+          ) {
+            add('NATIVE_FONT_UNAVAILABLE', filePath);
+            return;
+          }
+          const urlPath = typeof value === 'string' ? path : `${filePath}/url`;
+          if (typeof file.url !== 'string' || !/\.(?:ttf|otf)(?:\?[^#]*)?$/iu.test(file.url))
+            add('NATIVE_FONT_UNAVAILABLE', urlPath);
+          else checkUrl(file.url, urlPath);
+          if (file['unicode-range'] !== undefined && !unicodeRanges(file['unicode-range']))
+            add('NATIVE_FONT_UNAVAILABLE', `${filePath}/unicode-range`);
+        });
       }
     }
   }
@@ -508,6 +531,24 @@ function expressions(value: unknown, path: string, add: AddDiagnostic): void {
   });
 }
 
+/** Ranges in the only form native engines read, `U+start-end`, ascending within the Unicode space. */
+function unicodeRanges(value: unknown): boolean {
+  if (
+    !Array.isArray(value) ||
+    !value.length ||
+    value.length > tileflowNativeProfileLimits.maximumFontRanges
+  )
+    return false;
+  return value.every((range) => {
+    const match =
+      typeof range === 'string' ? /^U\+([0-9A-F]{1,6})-([0-9A-F]{1,6})$/iu.exec(range) : null;
+    if (!match) return false;
+    const start = Number.parseInt(match[1]!, 16);
+    const end = Number.parseInt(match[2]!, 16);
+    return start <= end && end <= 0x10ffff;
+  });
+}
+
 function fontStackAvailable(value: unknown, faces: unknown): boolean {
   const stack =
     Array.isArray(value) && value.length === 2 && value[0] === 'literal' ? value[1] : value;
@@ -617,11 +658,8 @@ export {
   createTileflowNativeDegradation,
   normalizeTileflowNativeDegradations,
   readTileflowNativeDegradations,
-  resolveTileflowNativeCompatibility,
   tileflowNativeCapabilities,
   tileflowNativeCapabilitySchema,
-  tileflowNativeCompatibilityReasonSchema,
-  tileflowNativeCompatibilitySchema,
   tileflowNativeDegradationLimits,
   tileflowNativeDegradationReasonSchema,
   tileflowNativeDegradationSchema,
@@ -629,11 +667,7 @@ export {
   tileflowNativeDegradationsSchema,
   tileflowNativeFallbackSchema,
 } from './native-capabilities';
-export type {
-  TileflowNativeCapability,
-  TileflowNativeCompatibility,
-  TileflowNativeDegradation,
-} from './native-capabilities';
+export type {TileflowNativeCapability, TileflowNativeDegradation} from './native-capabilities';
 
 export {
   createTileflowNativeFamily,

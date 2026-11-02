@@ -11,7 +11,7 @@ import {
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {evaluateNativeCatalog, nativeCatalogMaps} from './native-catalog-fixture';
 
-test('prepares every official theme and marks each map mobile compatible or web only', async (t) => {
+test('prepares every official theme, recording what each native artifact draws differently', async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), 'tileflow-native-catalog-'));
   t.after(() => rm(cwd, {recursive: true, force: true}));
   await linkWorkspacePackages(cwd, ['core', 'maps']);
@@ -34,19 +34,20 @@ test('prepares every official theme and marks each map mobile compatible or web 
     for (const diagnostic of row.diagnostics)
       assert.equal(tileflowNativeDiagnosticSchema.safeParse(diagnostic).success, true);
   }
+  // Every official map opens in native apps; degradations are information, never a block.
   assert.deepEqual(
-    first.maps.map(({map, status, compatibility}) => [
+    first.maps.map(({map, degradations, incompatibleThemes}) => [
       map,
-      status,
-      compatibility?.reasons.map(({feature, ids}) => [feature, ids]),
+      degradations.filter((id) => id.startsWith('deviceContours')),
+      incompatibleThemes,
     ]),
     [
-      ['baedeker', 'web-only', [['deviceContours', ['deviceContours:baedeker-contours']]]],
-      ['blueprint', 'web-only', [['deviceContours', ['deviceContours:blueprint-contours']]]],
-      ['map-1777', 'mobile-compatible', []],
-      ['siegfried', 'web-only', [['deviceContours', ['deviceContours:siegfried-contours']]]],
-      ['soundings', 'mobile-compatible', []],
-      ['streets', 'mobile-compatible', []],
+      ['baedeker', ['deviceContours:baedeker-contours'], []],
+      ['blueprint', ['deviceContours:blueprint-contours'], []],
+      ['map-1777', [], []],
+      ['siegfried', ['deviceContours:siegfried-contours'], []],
+      ['soundings', [], []],
+      ['streets', [], []],
     ],
   );
   const degradations = (map: string) => [

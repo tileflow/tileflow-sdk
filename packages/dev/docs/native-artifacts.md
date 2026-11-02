@@ -37,7 +37,9 @@ Local PMTiles are rejected before creating archive snapshots. URL checks do not 
 TileJSON, glyphs or tiles and do not prove their content or availability.
 
 Font preparation verifies the same licensed source bytes as web preparation, then maps exact full
-names into Native's `font-faces` root property. It does not retain browser `tileflow:fontFaces`
+names into Native's `font-faces` root property. Each face lists its file with a `unicode-range`
+of the characters its character map draws: MapLibre Native does not fall back along a `text-font`
+list by itself, and the ranges let characters a font lacks reach the next font. It does not retain browser `tileflow:fontFaces`
 metadata or claim a system font is equivalent. Sprites keep the original independently generated
 1x and 2x bytes; the native check verifies their pair, dimensions, IDs and existing size limits.
 
@@ -156,8 +158,8 @@ This writes `public/tileflow/native/manifest.json`, `build-manifest.json`, `nati
 one family document per map at `families/<map>.json` and the complete style/asset generation
 beneath `public/tileflow/native`. Each generation directory holds its own copy of the family
 documents, at `../../families/<map>.json` from its styles. A family document holds each theme's
-appearance, emphasis table and degradations, the blend plans of the whole family and whether the
-map is mobile compatible or web only; see the artifact contract for its format. The writer adds `native` once
+appearance, emphasis table and degradations and the blend plans of the whole family; see the
+artifact contract for its format. The writer adds `native` once
 beneath `outDir`; pass the output parent, not an already renderer-qualified directory. The native
 subdirectory owns a separate inventory. A web build at the parent neither replaces its manifest nor
 collects the native generation, and vice versa.

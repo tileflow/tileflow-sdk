@@ -9,6 +9,8 @@ export const tileflowNativeProfileLimits = Object.freeze({
   maximumLayers: 4_096,
   maximumIssues: 32,
   maximumFontFaces: 16,
+  maximumFontFilesPerFace: 8,
+  maximumFontRanges: 4096,
   maximumFontBytes: 1024 * 1024,
 });
 

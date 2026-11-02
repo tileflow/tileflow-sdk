@@ -130,7 +130,10 @@ test('native build writes a separate strict v1 manifest and renderer record', as
   assert.equal(record.preparationVersion, 'native-lowering-v2');
   const family = JSON.parse(await readFile(join(cwd, 'output/native/families/main.json'), 'utf8'));
   assert.equal(family.kind, 'tileflow-native-family');
-  assert.equal(family.compatibility.status, 'compatible');
+  assert.deepEqual(
+    family.themes.map(({name}: {name: string}) => name).sort(),
+    Object.keys(manifest.maps.main.themes).sort(),
+  );
   assert.ok(
     record.transformations.every(
       ({projection}: {projection: string}) => projection === 'globe-to-mercator',

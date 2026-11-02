@@ -51,7 +51,25 @@ longer carries the browser 3D runtime's metadata (`tileflow:buildings`, `tileflo
 `tileflow:street-lights`, `tileflow:sky`). Building extrusions that stand in for the 3D scene carry
 `metadata['tileflow:3d-toggle'] = 'building'`, so an SDK can switch them for a 2D view.
 
-## Degradations
+### Font faces
+
+Each `font-faces` entry holds one prepared TTF or OTF file with the characters it draws:
+
+```json
+{
+  "DINish Medium": [
+    {"url": "fonts/dinish-medium-<sha256>.ttf", "unicode-range": ["U+0000-0000", "U+0020-007E"]}
+  ]
+}
+```
+
+MapLibre Native picks a font for each character among the faces whose ranges cover it and does not
+fall back along a layer's `text-font` list on its own: a face without ranges claims every
+character, so a Latin font listed first leaves Greek or Cyrillic undrawn. Preparation reads each
+file's character map (cmap) and writes every code point that maps to a glyph as ascending
+`U+start-end` runs, the only form the engines read (a single character repeats its code point).
+Characters a file maps to its missing glyph are not claimed. A face holds at most 8 files and a
+file at most 4,096 ranges.
 
 `tileflowNativeCapabilities` is the stable vocabulary. Each degradation record is:
 
@@ -75,38 +93,28 @@ has no equivalent) or `web-runtime` (Tileflow's browser runtime draws it). `fall
 native map shows instead. `layers` lists the web style's layer IDs that the native style leaves out
 or draws differently, in style order; capabilities drawn outside the style's layers list none.
 
-| Capability            | Impact       | Fallback         | What native maps show                                                    |
-| --------------------- | ------------ | ---------------- | ------------------------------------------------------------------------ |
-| `scene3d`             | presentation | `extrusions`     | Plain building extrusions: the map's own pass, or one from its design.   |
-| `models3d`            | presentation | `extrusions`     | No landmarks or building models; the extrusions under them remain.       |
-| `trees3d`             | presentation | `flat` or `none` | The map's own vegetation fallback for maps without 3D.                   |
-| `streetLights`        | presentation | `none`           | No street lights.                                                        |
-| `terrain3d`           | presentation | `flat`           | A flat map; hillshading remains.                                         |
-| `globe`               | presentation | `mercator`       | Web Mercator.                                                            |
-| `sky`                 | presentation | `none`           | No sky, atmosphere or fog.                                               |
-| `nauticalLightRhythm` | presentation | `steady`         | Nautical lights that shine steadily.                                     |
-| `symbolOverlap`       | presentation | `allow-overlap`  | Cooperative symbols drawn with allowed overlap.                          |
-| `reliefResampling`    | presentation | `engine-default` | Hillshade and colour relief with the engine's resampling.                |
-| `deviceContours`      | content      | `none`           | No contour lines or labels: they are generated in the browser.           |
-| `pitchAbove60`        | presentation | `capped`         | Reported by the SDK at run time when the engine caps the camera's pitch. |
+| Capability            | Fallback         | What native maps show                                                    |
+| --------------------- | ---------------- | ------------------------------------------------------------------------ |
+| `scene3d`             | `extrusions`     | Plain building extrusions: the map's own pass, or one from its design.   |
+| `models3d`            | `extrusions`     | No landmarks or building models; the extrusions under them remain.       |
+| `trees3d`             | `flat` or `none` | The map's own vegetation fallback for maps without 3D.                   |
+| `streetLights`        | `none`           | No street lights.                                                        |
+| `terrain3d`           | `flat`           | A flat map; hillshading remains.                                         |
+| `globe`               | `mercator`       | Web Mercator.                                                            |
+| `sky`                 | `none`           | No sky, atmosphere or fog.                                               |
+| `nauticalLightRhythm` | `steady`         | Nautical lights that shine steadily.                                     |
+| `symbolOverlap`       | `allow-overlap`  | Cooperative symbols drawn with allowed overlap.                          |
+| `reliefResampling`    | `engine-default` | Hillshade and colour relief with the engine's resampling.                |
+| `deviceContours`      | `none`           | No contour lines or labels: they are generated in the browser.           |
+| `pitchAbove60`        | `capped`         | Reported by the SDK at run time when the engine caps the camera's pitch. |
 
-The SDKs warn once per map and theme for each record.
+## Degradations are information
 
-## Compatibility: mobile compatible or web only
-
-`resolveTileflowNativeCompatibility` decides it from the records of every theme:
-
-- A map is **mobile compatible** when every theme prepares and every degradation is a
-  presentation change. Native maps then draw every feature the map holds, some in a simpler form.
-- A map is **web only** when a theme cannot be prepared (it has no native artifact; the build
-  reports its diagnostics), or when any theme loses content: a degradation whose capability has
-  `content` impact, which leaves out features the web map draws with nothing in their place.
-  Its native artifacts are still prepared and load with warnings; `compatibility.reasons` names
-  each capability, record, theme and layer.
-
-Presentation changes never make a map web only, so a map does not lose its mark for 3D, terrain,
-globe or sky. Losing whole features, such as the contours of a relief map, does. Gallery, editor
-and the public compatibility table read the same records and the same rule.
+Every map that prepares opens in native apps. Degradations never block a map or mark it as web
+only: the SDKs warn once per map and theme for each record, and Gallery, editor and the public
+compatibility table list the records to say what native maps draw differently. A record whose
+`fallback` is `none` names a feature native maps leave out. A theme that cannot be prepared at all
+fails the build with its diagnostics and has no native artifact.
 
 ## Build record
 
@@ -127,12 +135,11 @@ One document per map, `kind: 'tileflow-native-family'`, `schemaVersion: 1`. Core
 the prepared native styles with `createTileflowNativeFamily`, using the planners the browser uses,
 and validates it with `tileflowNativeFamilySchema` (8 MiB at most).
 
-| Field           | Content                                                                |
-| --------------- | ---------------------------------------------------------------------- |
-| `map`           | The map's ID.                                                          |
-| `compatibility` | `{status: 'compatible' \| 'web-only', reasons}`, by the rule above.    |
-| `themes`        | Every theme in the map's declared order; other fields index this list. |
-| `blend`         | `{options, groups}`: blend plans for the whole family.                 |
+| Field    | Content                                                                |
+| -------- | ---------------------------------------------------------------------- |
+| `map`    | The map's ID.                                                          |
+| `themes` | Every theme in the map's declared order; other fields index this list. |
+| `blend`  | `{options, groups}`: blend plans for the whole family.                 |
 
 Each theme holds `name`, `colorScheme`, `sun` (a resolved preset; `sunPublished` says whether the
 theme describes it), `routeInks`, `notices`, `degradations` and `emphasis`.
@@ -211,6 +218,5 @@ Evaluators compare numbers within 1e-9 and strings exactly.
 
 ## Change this contract
 
-Any change to the record, family or template shapes, the capability vocabulary, its impacts or the
-compatibility rule increments the owning version (`schemaVersion`, `preparationVersion` or the
+Any change to the record, family or template shapes or the capability vocabulary increments the owning version (`schemaVersion`, `preparationVersion` or the
 family `schemaVersion`), regenerates the evaluator fixtures, and updates this document.

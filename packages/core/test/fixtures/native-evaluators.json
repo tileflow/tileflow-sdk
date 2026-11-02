@@ -22,10 +22,6 @@
     "schemaVersion": 1,
     "profile": "native-v1",
     "map": "evaluators",
-    "compatibility": {
-      "status": "compatible",
-      "reasons": []
-    },
     "themes": [
       {
         "name": "day",

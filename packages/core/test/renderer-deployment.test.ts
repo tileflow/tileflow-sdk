@@ -215,7 +215,7 @@ test('renderer hashes bind web input, native output and its complete build recor
 
 test('the family document is the one Core computes from the native styles', async () => {
   const parsed = await parseTileflowRendererDeploymentArtifact(artifact());
-  assert.equal(parsed.renderers.native.family.compatibility.status, 'compatible');
+  assert.deepEqual(parsed.renderers.native.family.themes[0]!.degradations, []);
   for (const change of [
     (value: ReturnType<typeof artifact>) => {
       value.renderers.native.family.themes[0]!.sun.azimuth = 10;
@@ -237,10 +237,10 @@ test('the family document is the one Core computes from the native styles', asyn
 
 test('a native style leaves out only the sources its degradations name', async () => {
   const parsed = await parseTileflowRendererDeploymentArtifact(degradedArtifact());
-  assert.equal(parsed.renderers.native.family.compatibility.status, 'web-only');
-  assert.deepEqual(parsed.renderers.native.family.compatibility.reasons[0]?.ids, [
-    'deviceContours:contours',
-  ]);
+  assert.deepEqual(
+    parsed.renderers.native.family.themes[0]!.degradations.map(({id}) => id),
+    ['deviceContours:contours'],
+  );
   for (const change of [
     (value: ReturnType<typeof degradedArtifact>) => {
       value.renderers.native.buildRecord.transformations[0]!.degradations = [];

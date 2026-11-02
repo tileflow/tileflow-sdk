@@ -68,7 +68,6 @@ test('groups themes that blend, normalizes appearance and keeps degradations per
     [[0, 1, 2]],
   );
   assert.deepEqual(family.blend.options, tileflowNativeBlendOptions);
-  assert.deepEqual(family.compatibility, {status: 'compatible', reasons: []});
   assert.deepEqual(
     family.themes[0]!.degradations.map(({id}) => id),
     ['globe'],
@@ -199,14 +198,14 @@ test('leaves are exactly one key holding numbers or strings', () => {
   );
 });
 
-test('family documents reject inconsistent groups, compatibility and oversized content', () => {
+test('family documents reject inconsistent groups and oversized content', () => {
   const copy = (): TileflowNativeFamily => JSON.parse(JSON.stringify(family));
   for (const change of [
     (value: TileflowNativeFamily) => {
       value.themes[1]!.name = 'day';
     },
     (value: TileflowNativeFamily) => {
-      value.compatibility = {status: 'web-only', reasons: value.compatibility.reasons};
+      Object.assign(value, {compatibility: {status: 'web-only', reasons: []}});
     },
     (value: TileflowNativeFamily) => {
       value.blend.groups[0]!.themes = [0, 1, 4];

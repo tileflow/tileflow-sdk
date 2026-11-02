@@ -3,9 +3,7 @@ import {parseTileflowMap, serializeCanonicalJson} from '@tileflow/core';
 import {collectTileflowMapBuildLineage} from '@tileflow/core/build';
 import {
   readTileflowNativeDegradations,
-  resolveTileflowNativeCompatibility,
   TileflowNativeCompatibilityError,
-  type TileflowNativeCompatibility,
   type TileflowNativeDegradation,
   type TileflowNativeDiagnostic,
   tileflowNativeProfile,
@@ -34,14 +32,10 @@ export type NativeCatalogRow = {
   degradations: readonly TileflowNativeDegradation[];
 };
 
-/**
- * A map is `mobile-compatible` when every theme prepares and loses no content; `web-only` maps
- * either fail preparation (`diagnostics`) or lose content (`compatibility.reasons`).
- */
+/** Per map, the degradation IDs of all its themes; information for the compatibility table. */
 export type NativeCatalogMap = {
   map: string;
-  status: 'mobile-compatible' | 'web-only';
-  compatibility?: TileflowNativeCompatibility;
+  degradations: readonly string[];
   incompatibleThemes: readonly string[];
 };
 
@@ -103,18 +97,14 @@ export async function evaluateNativeCatalog(cwd: string) {
   }
   const maps: NativeCatalogMap[] = [...new Set(rows.map((row) => row.map))].map((map) => {
     const themes = rows.filter((row) => row.map === map);
-    const incompatibleThemes = themes
-      .filter((row) => row.status === 'incompatible')
-      .map((row) => row.theme);
-    if (incompatibleThemes.length) return {map, status: 'web-only', incompatibleThemes};
-    const compatibility = resolveTileflowNativeCompatibility(
-      Object.fromEntries(themes.map((row) => [row.theme, row.degradations])),
-    );
     return {
       map,
-      status: compatibility.status === 'compatible' ? 'mobile-compatible' : 'web-only',
-      compatibility,
-      incompatibleThemes,
+      degradations: [
+        ...new Set(themes.flatMap((row) => row.degradations.map(({id}) => id))),
+      ].sort(),
+      incompatibleThemes: themes
+        .filter((row) => row.status === 'incompatible')
+        .map((row) => row.theme),
     };
   });
   return {

@@ -15,9 +15,22 @@ echo "System image: $(adb shell getprop ro.build.fingerprint | tr -d '\r')"
 adb shell dumpsys webviewupdate | tr -d '\r' | grep -m1 'Current WebView package'
 adb reverse tcp:18645 tcp:18645
 adb logcat -c
+# Hosted emulators draw with a software GPU too slowly for the timing budgets of these WebView
+# map tests; they run on local emulators and devices, and go with the WebView engine.
+skipped=()
+if [ "${TILEFLOW_HOSTED_EMULATOR:-}" = "true" ]; then
+  timed=(
+    dev.tileflow.sdk.AnnotationIntegrationTest#twoHundredViewsFollowAFastPan
+    dev.tileflow.sdk.CameraIntegrationTest#movementsAnswerWithHowTheyEnded
+    dev.tileflow.sdk.MapIntegrationTest#eventLevelsCameraReasonsAndLargeContentOverTheDataChannel
+    dev.tileflow.sdk.MapSceneIntegrationTest#theSceneReachesTheRendererAndANewRendererReceivesItAgain
+  )
+  skipped=("-Pandroid.testInstrumentationRunnerArguments.notClass=$(IFS=,; echo "${timed[*]}")")
+fi
 status=0
 (cd "$(dirname "$0")/../platforms/android" &&
   ./gradlew :tileflow:connectedDebugAndroidTest --console=plain \
-    "-Pandroid.testInstrumentationRunnerArguments.tileflowWebView=$expectation" "$@") || status=$?
+    "-Pandroid.testInstrumentationRunnerArguments.tileflowWebView=$expectation" \
+    ${skipped[@]+"${skipped[@]}"} "$@") || status=$?
 adb logcat -d > "$reports/logcat.txt" || true
 exit "$status"

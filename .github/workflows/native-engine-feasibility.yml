@@ -1,0 +1,89 @@
+name: Native engine feasibility
+
+# Runs only when this file changes on the feasibility branch.
+on:
+  push:
+    branches:
+      - na/native-engine-spikes-android
+    paths:
+      - .github/workflows/native-engine-feasibility.yml
+
+permissions:
+  contents: read
+
+jobs:
+  android-emulator:
+    name: MapLibre Native on the Android emulator (API ${{ matrix.api }}, x86_64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [35, 36]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Install
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+          pnpm install --frozen-lockfile
+      - name: Cache Gradle dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('platforms/android/**/*.gradle.kts', 'platforms/android/gradle/wrapper/gradle-wrapper.properties') }}
+      - name: Build instrumented test APKs
+        working-directory: platforms/android
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          ./gradlew :tileflow:assembleDebugAndroidTest --console=plain
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Start fixture map server
+        run: |
+          TILEFLOW_FIXTURE_PORT=18682 nohup node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
+          curl --retry 30 --retry-all-errors --retry-delay 1 --fail http://127.0.0.1:18682/manifest.json > /dev/null
+      - name: Run the checks
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        env:
+          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
+        with:
+          api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disk-size: 6000M
+          disable-animations: true
+          script: bash scripts/native-engine-feasibility.sh
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: native-engine-android-${{ matrix.api }}
+          path: |
+            ${{ runner.temp }}/native-engine
+            platforms/android/tileflow/build/reports/androidTests
+            ${{ runner.temp }}/map-fixture.log
+          retention-days: 7
+
+  macos-accelerator:
+    name: Android emulator acceleration on the hosted macOS runner
+    runs-on: macos-15
+    timeout-minutes: 10
+    steps:
+      - name: Check
+        run: |
+          uname -m
+          sysctl kern.hv_support || true
+          ls "$ANDROID_HOME/emulator" || true
+          "$ANDROID_HOME/emulator/emulator" -accel-check || true

@@ -160,6 +160,27 @@ internal data class OfflineServedPacks(
             merged[template] = merged[template]?.merging(served) ?: served
         return OfflineServedPacks(other.documents + documents, merged)
     }
+
+    /** [documents] by address with each percent-escape in upper case, built when first needed. */
+    private val normalizedDocuments by lazy {
+        documents.entries.associate { (url, entry) -> normalizedEscapes(url) to entry }
+    }
+
+    /**
+     * The document stored for [url]. Addresses match exactly, except for the case of their
+     * percent-escapes, which are equivalent: MapLibre Native writes a font stack's comma as `%2c`
+     * where the service names the entry with `%2C`.
+     */
+    fun document(url: String): Pair<java.io.File, OfflinePackEntry>? =
+        documents[url] ?: normalizedDocuments[normalizedEscapes(url)]
+
+    companion object {
+        private val escape = Regex("%[0-9A-Fa-f]{2}")
+
+        /** [url] with the hexadecimal digits of every percent-escape in upper case. */
+        fun normalizedEscapes(url: String): String =
+            if ('%' !in url) url else escape.replace(url) { it.value.uppercase() }
+    }
 }
 
 /**
@@ -235,7 +256,7 @@ internal class OfflineServingIndex {
             return cache.read(key, ResourceCacheRetention.PINNED)
         val packs = snapshot.packs[key.scope.directory] ?: return null
         val url = key.url.toASCIIString()
-        packs.documents[url]?.let { (file, entry) ->
+        packs.document(url)?.let { (file, entry) ->
             return stored(entry, file, key.url)
         }
         for (tiles in packs.tiles.values) {
@@ -305,6 +326,15 @@ internal class OfflineServingIndex {
 
     fun credits(scope: ResourceCacheScope): List<OfflineCredit> =
         snapshot().credits[scope.directory].orEmpty()
+
+    /**
+     * The zooms the regions [scope]'s Map may use store for the source whose tile template is
+     * [template], or null when none stores it. A map opened from its packs starts an elevation
+     * source at the lowest of them, so the renderer never asks for ancestors no region holds.
+     * Blocks a resource thread, as [snapshot] does.
+     */
+    fun storedZooms(scope: ResourceCacheScope, template: String): IntRange? =
+        snapshot().packs[scope.directory]?.tiles?.get(template)?.zooms
 
     companion object {
         val shared = OfflineServingIndex()

@@ -122,13 +122,49 @@ struct OfflineServedTiles: Sendable {
   }
 }
 
+/// Document pack entries by address. Addresses compare with their percent-escapes in upper case:
+/// MapLibre Native escapes a font stack's comma as `%2c`, while the platform names glyph entries
+/// with `%2C`. Nothing else about an address is normalised.
+struct OfflineServedDocuments: Sendable {
+  private var entries: [String: (file: URL, entry: OfflinePackEntry)] = [:]
+
+  subscript(url: String) -> (file: URL, entry: OfflinePackEntry)? {
+    get { entries[Self.key(url)] }
+    set { entries[Self.key(url)] = newValue }
+  }
+
+  var isEmpty: Bool { entries.isEmpty }
+
+  mutating func merge(_ other: OfflineServedDocuments) {
+    entries.merge(other.entries) { current, _ in current }
+  }
+
+  /// `url` with the hexadecimal digits of every percent-escape in upper case.
+  static func key(_ url: String) -> String {
+    guard url.contains("%") else { return url }
+    var result = ""
+    result.reserveCapacity(url.utf8.count)
+    var characters = url[...]
+    while let first = characters.first {
+      characters = characters.dropFirst()
+      result.append(first)
+      guard first == "%", characters.count >= 2 else { continue }
+      let digits = characters.prefix(2)
+      guard digits.allSatisfy(\.isHexDigit) else { continue }
+      result += digits.uppercased()
+      characters = characters.dropFirst(2)
+    }
+    return result
+  }
+}
+
 /// A Map's stored packs: its documents by address and its sources' tiles by template.
 struct OfflineServedPacks: Sendable {
-  var documents: [String: (file: URL, entry: OfflinePackEntry)] = [:]
+  var documents = OfflineServedDocuments()
   var tiles: [String: OfflineServedTiles] = [:]
 
   mutating func merge(_ other: OfflineServedPacks) {
-    documents.merge(other.documents) { current, _ in current }
+    documents.merge(other.documents)
     for (template, served) in other.tiles {
       if tiles[template] == nil { tiles[template] = served } else { tiles[template]!.merge(served) }
     }
@@ -265,6 +301,13 @@ final class OfflineServingIndex: Sendable {
 
   func credits(for scope: ResourceCacheScope) async -> [OfflineCredit] {
     await snapshot().credits[scope.directory] ?? []
+  }
+
+  /// The zooms the regions a map may use store for the tile source with `template`, or nil when
+  /// they store none. A map that opens from its packs starts a raster-dem source at the lowest of
+  /// them, so the renderer asks for no ancestor tile the regions cannot hold.
+  func storedZooms(template: String, scope: ResourceCacheScope) async -> ClosedRange<Int>? {
+    await snapshot().packs[scope.directory]?.tiles[template]?.zooms
   }
 }
 

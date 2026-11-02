@@ -20,12 +20,13 @@ const areaInputs = {
   runtime: runtimeInputs,
   ios: [...runtimeInputs, 'platforms/ios/'],
   // The Maven publication reads its coordinates and POM metadata from the native release catalog.
-  // The Kotlin offline tests read the offline fixtures the Swift tests own.
+  // The Kotlin tests read the offline and marine fixtures the Swift tests own.
   android: [
     ...runtimeInputs,
     'platforms/android/',
     'platforms/native-release.json',
     'platforms/ios/Tests/TileflowTests/Fixtures/Offline/',
+    'platforms/ios/Tests/TileflowTests/Fixtures/Marine/',
   ],
   reactNative: [
     '.github/workflows/ci.yml',

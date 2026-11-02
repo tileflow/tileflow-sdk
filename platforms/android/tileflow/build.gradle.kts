@@ -23,8 +23,11 @@ android {
         targetSdk = 36
         unitTests.isIncludeAndroidResources = true
     }
-    // The offline fixtures are shared with the Swift tests.
+    // The offline and marine fixtures are shared with the Swift tests.
     sourceSets["test"].resources.srcDir("../../ios/Tests/TileflowTests/Fixtures/Offline")
+    sourceSets["test"].resources.srcDir("../../ios/Tests/TileflowTests/Fixtures/Marine")
+    sourceSets["androidTest"].assets.srcDir("../../ios/Tests/TileflowTests/Fixtures/Offline")
+    sourceSets["androidTest"].assets.srcDir("../../ios/Tests/TileflowTests/Fixtures/Marine")
     publishing { singleVariant("release") { withSourcesJar() } }
 }
 

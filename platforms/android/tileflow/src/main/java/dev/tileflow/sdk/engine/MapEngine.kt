@@ -44,17 +44,20 @@ internal class MapEngineCallbacks(
  * view already validated, so every engine reads the same request and the same results. The
  * commands fall into these areas:
  *
- * | Area | Commands |
- * | --- | --- |
- * | Load | `initialize`, `dispose`, `cancel`, `readResult` |
- * | Theme | `setTheme`, `setBlend` |
- * | Options and events | `setOptions`, `setEvents`, `setInsets`, `setVisibility` |
- * | Camera | `moveCamera`, `stopCamera`, `getCamera`, `cameraForBounds`, `visibleBounds`, `project`, `unproject` |
- * | Content | `setContent`, `queryAtPoint` |
- * | Scene | `setViewMode`, `setSun`, `setEmphasis`, `setStyleState`, `getRouteInks`, `setBoundaryValues`, `setImages`, `setDepthMarkers`, `animateLineProgress`, `playShot`, `stopAnimation` |
- * | Style | `addSource`, `removeSource`, `setGeoJSONSourceData`, `updateGeoJSONSource`, `addLayer`, `updateLayer`, `moveLayer`, `removeLayer`, `setFeatureState`, `getFeatureState`, `removeFeatureState`, `queryRenderedFeatures`, `querySourceFeatures`, `queryCluster` |
- * | Location | `updateLocation`, `setFollowMode` |
- * | Annotations | `setAnnotationLayers`, `setTrackedPoints` |
+ * - Load: `initialize`, `dispose`, `cancel`, `readResult`.
+ * - Theme: `setTheme`, `setBlend`.
+ * - Options and events: `setOptions`, `setEvents`, `setInsets`, `setVisibility`.
+ * - Camera: `moveCamera`, `stopCamera`, `getCamera`, `cameraForBounds`, `visibleBounds`,
+ *   `project`, `unproject`.
+ * - Content: `setContent`, `queryAtPoint`.
+ * - Scene: `setViewMode`, `setSun`, `setEmphasis`, `setStyleState`, `getRouteInks`,
+ *   `setBoundaryValues`, `setImages`, `setDepthMarkers`, `animateLineProgress`, `playShot`,
+ *   `stopAnimation`.
+ * - Style: `addSource`, `removeSource`, `setGeoJSONSourceData`, `updateGeoJSONSource`,
+ *   `addLayer`, `updateLayer`, `moveLayer`, `removeLayer`, `setFeatureState`, `getFeatureState`,
+ *   `removeFeatureState`, `queryRenderedFeatures`, `querySourceFeatures`, `queryCluster`.
+ * - Location: `updateLocation`, `setFollowMode`.
+ * - Annotations: `setAnnotationLayers`, `setTrackedPoints`.
  *
  * [MapEngineArea] names each command's area.
  */

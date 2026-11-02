@@ -28,6 +28,10 @@ export function createHostedFixture({base, tile, center}) {
     terrainStyle: `${base}${mapPath}/webview-v1/v1/terrain.json`,
     terrainTilejson: `${base}/tiles/terrain/tiles.json?map=${hostedMapId}`,
     terrainTemplate: `${base}/tiles/terrain/1/{z}/{x}/{y}.png?map=${hostedMapId}`,
+    // A theme with a sprite and glyphs, so a renderer requests both with its own suffixes.
+    labelsStyle: `${base}${mapPath}/webview-v1/v1/labels.json`,
+    sprite: `${base}/sprites/fixture/sprite`,
+    glyphs: `${base}/fonts/{fontstack}/{range}.pbf`,
   };
   // Terrain stops at z14 online; a download stops at its terrainMaxZoom.
   const terrainZooms = [0, 14];
@@ -51,6 +55,7 @@ export function createHostedFixture({base, tile, center}) {
           themes: {
             day: {styleUrl: urls.style, colorScheme: 'light'},
             terrain: {styleUrl: urls.terrainStyle, colorScheme: 'light'},
+            labels: {styleUrl: urls.labelsStyle, colorScheme: 'light'},
           },
         },
       },
@@ -84,6 +89,36 @@ export function createHostedFixture({base, tile, center}) {
           source: 'world',
           'source-layer': 'building',
           paint: {'fill-color': '#d6ccb8'},
+        },
+      ],
+    },
+    [urls.labelsStyle]: {
+      version: 8,
+      sprite: urls.sprite,
+      glyphs: urls.glyphs,
+      sources: {world: {type: 'vector', url: urls.tilejson}},
+      layers: [
+        {id: 'ground', type: 'background', paint: {'background-color': '#ece6da'}},
+        {
+          id: 'buildings',
+          type: 'fill',
+          source: 'world',
+          'source-layer': 'building',
+          paint: {'fill-color': '#d6ccb8'},
+        },
+        {
+          id: 'marks',
+          type: 'symbol',
+          source: 'world',
+          'source-layer': 'building',
+          layout: {
+            'icon-image': 'dot',
+            'icon-allow-overlap': true,
+            'text-field': 'Tileflow',
+            'text-font': ['Noto Sans Regular'],
+            'text-allow-overlap': true,
+            'text-offset': [0, 1],
+          },
         },
       ],
     },
@@ -137,8 +172,59 @@ export function createHostedFixture({base, tile, center}) {
       request.on('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
       request.on('error', reject);
     });
+  /** An RGB PNG of `width` × `height` pixels of one colour. */
+  const png = (width, height, rgb) => {
+    const crc = (bytes) => {
+      let value = 0xffffffff;
+      for (const byte of bytes) {
+        value ^= byte;
+        for (let bit = 0; bit < 8; bit += 1)
+          value = value & 1 ? (value >>> 1) ^ 0xedb88320 : value >>> 1;
+      }
+      return (value ^ 0xffffffff) >>> 0;
+    };
+    const chunk = (type, data) => {
+      const head = Buffer.alloc(8);
+      head.writeUInt32BE(data.length, 0);
+      head.write(type, 4, 'ascii');
+      const tail = Buffer.alloc(4);
+      tail.writeUInt32BE(crc(Buffer.concat([Buffer.from(type, 'ascii'), data])), 0);
+      return Buffer.concat([head, data, tail]);
+    };
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(width, 0);
+    header.writeUInt32BE(height, 4);
+    header[8] = 8;
+    header[9] = 2;
+    const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array(width).fill(rgb).flat())]);
+    return Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk('IHDR', header),
+      chunk('IDAT', deflateSync(Buffer.concat(Array(height).fill(row)))),
+      chunk('IEND', Buffer.alloc(0)),
+    ]);
+  };
+  const spriteBodies = {
+    [`${urls.sprite}.json`]: JSON.stringify({
+      dot: {x: 0, y: 0, width: 8, height: 8, pixelRatio: 1},
+    }),
+    [`${urls.sprite}@2x.json`]: JSON.stringify({
+      dot: {x: 0, y: 0, width: 16, height: 16, pixelRatio: 2},
+    }),
+    [`${urls.sprite}.png`]: png(8, 8, [0xe0, 0x30, 0x20]),
+    [`${urls.sprite}@2x.png`]: png(16, 16, [0xe0, 0x30, 0x20]),
+  };
+  /** A glyph range of a font stack, with no glyphs: enough for a renderer to accept the range. */
+  const glyphRange = (stack, range) => {
+    const bytes = (value) => [...Buffer.from(value)];
+    const field = (number, payload) => [number * 8 + 2, payload.length, ...payload];
+    return Buffer.from(field(1, [...field(1, bytes(stack)), ...field(2, bytes(range))]));
+  };
   const body = (url) => {
     if (documents[url]) return Buffer.from(JSON.stringify(documents[url]));
+    if (spriteBodies[url]) return Buffer.from(spriteBodies[url]);
+    const glyphs = /\/fonts\/([^/]+)\/(\d+-\d+)\.pbf$/u.exec(url);
+    if (glyphs) return glyphRange(decodeURIComponent(glyphs[1]), glyphs[2]);
     const match = /\/tiles\/world\/1\/(\d+)\/(\d+)\/(\d+)\.pbf\?map=/u.exec(url);
     if (match) return storedTile(...match.slice(1).map(Number));
     const terrain = /\/tiles\/terrain\/1\/(\d+)\/\d+\/\d+\.png\?map=/u.exec(url);
@@ -314,8 +400,10 @@ export function createHostedFixture({base, tile, center}) {
     };
     // The style pack holds the requested themes' styles and the TileJSONs they use.
     const terrainTheme = request.themes.includes('terrain');
+    const labelsTheme = request.themes.includes('labels');
     const documentUrls = [
       ...(request.themes.includes('day') ? [urls.style] : []),
+      ...(labelsTheme ? [urls.labelsStyle] : []),
       ...(terrainTheme ? [urls.terrainStyle] : []),
       urls.tilejson,
       ...(terrainTheme ? [urls.terrainTilejson] : []),
@@ -326,6 +414,31 @@ export function createHostedFixture({base, tile, center}) {
       '/v1/offline/documents/style.tfpack',
       documentUrls.map((url) => ({name: url, contentType: 'application/json', body: body(url)})),
     );
+    if (labelsTheme) {
+      add(
+        'assets',
+        'documents',
+        '/v1/offline/documents/assets.tfpack',
+        Object.keys(spriteBodies).map((url) => ({
+          name: url,
+          contentType: url.endsWith('.png') ? 'image/png' : 'application/json',
+          body: body(url),
+        })),
+      );
+      const stack = 'Noto Sans Regular';
+      const glyphUrl = (range) =>
+        urls.glyphs.replace('{fontstack}', encodeURIComponent(stack)).replace('{range}', range);
+      add(
+        `glyphs/${stack}/0`,
+        'documents',
+        `/v1/offline/documents/glyphs/${encodeURIComponent(stack)}/0.tfpack`,
+        ['0-255', '256-511'].map((range) => ({
+          name: glyphUrl(range),
+          contentType: 'application/x-protobuf',
+          body: body(glyphUrl(range)),
+        })),
+      );
+    }
     const tileSources = [
       {
         source: 'world',
@@ -487,7 +600,7 @@ export function createHostedFixture({base, tile, center}) {
           meterMode: 'disabled',
           disposition: 'unmetered',
           resourceOrigins: [base],
-          resourceScopes: ['style', 'tilejson', 'tile'],
+          resourceScopes: ['style', 'tilejson', 'tile', 'sprite', 'glyph'],
           tilesetIds: ['world', 'terrain'],
         });
       });
@@ -575,21 +688,19 @@ export function createHostedFixture({base, tile, center}) {
       }
     }
     // Vector tiles travel as stored to clients that accept gzip, and decoded to the others.
-    const gzip = url.includes('.pbf') && /\bgzip\b/u.test(request.headers['accept-encoding'] ?? '');
-    const outcome = serve(
-      request,
-      response,
-      url.includes('.pbf') && !gzip ? gunzipSync(bytes) : bytes,
-      {
-        'Cache-Control': 'private, no-cache',
-        'Content-Type': url.includes('.pbf')
-          ? 'application/vnd.mapbox-vector-tile'
+    const tile = /\/tiles\/world\/1\/.*\.pbf/u.test(url);
+    const gzip = tile && /\bgzip\b/u.test(request.headers['accept-encoding'] ?? '');
+    const outcome = serve(request, response, tile && !gzip ? gunzipSync(bytes) : bytes, {
+      'Cache-Control': 'private, no-cache',
+      'Content-Type': tile
+        ? 'application/vnd.mapbox-vector-tile'
+        : url.includes('.pbf')
+          ? 'application/x-protobuf'
           : url.includes('.png')
             ? 'image/png'
             : 'application/json',
-        ...(gzip ? {'Content-Encoding': 'gzip'} : {}),
-      },
-    );
+      ...(gzip ? {'Content-Encoding': 'gzip'} : {}),
+    });
     if (outcome === 'not-modified') count.notModified += 1;
     else count.downloads += 1;
     return true;

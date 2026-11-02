@@ -516,7 +516,7 @@ public final class TileflowMapView: UIView {
         runtime: runtime, instanceID: instanceID, generation: current, loader: loader,
         frame: bounds)
     } else {
-      engine = NativeMapEngine(frame: bounds)
+      engine = NativeMapEngine(frame: bounds, loader: loader, grantScope: loadable.grantScope)
     }
     engine.onFailure = { [weak self] error in
       self?.report(error, generation: current)

@@ -1282,7 +1282,8 @@ constructor(
                             resourceLoader,
                             callbacks,
                         )
-                    MapEngineKind.NATIVE -> NativeMapEngine(context, resourceLoader, callbacks)
+                    MapEngineKind.NATIVE ->
+                        NativeMapEngine(context, resourceLoader, loadable.grantScope, callbacks)
                 }
             engine = created
             addView(

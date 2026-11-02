@@ -1,0 +1,213 @@
+package dev.tileflow.sdk.engine
+
+import dev.tileflow.sdk.TileflowErrorCode
+import dev.tileflow.sdk.TileflowMapException
+import dev.tileflow.sdk.TileflowResourceKind
+import dev.tileflow.sdk.transport.MapResourceAddress
+import java.net.URI
+import org.json.JSONObject
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.fail
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+
+/** MapLibre receives the style itself, with every address it requests owned by the map. */
+@RunWith(RobolectricTestRunner::class)
+@Config(manifest = Config.NONE, sdk = [34])
+class NativeStyleDocumentTest {
+    private val context = "BBBBBBBBBBBBBBBBBBBBBB"
+    private val api = "https://api.tileflow.test"
+    private val styleUrl = "$api/maps/m/mobile/webview-v1/v1/day.json"
+    private val documents =
+        mapOf(
+            "$api/tiles/world/tiles.json?map=m" to
+                """
+                {"tiles": ["$api/tiles/world/1/{z}/{x}/{y}.pbf?map=m"],
+                 "minzoom": 0, "maxzoom": 15, "attribution": "© World",
+                 "vector_layers": [{"id": "building"}]}
+                """,
+            "$api/tiles/dem/tiles.json?map=m" to
+                """
+                {"tiles": ["dem/{z}/{x}/{y}.webp?map=m"], "minzoom": 0, "maxzoom": 9,
+                 "attribution": "© Depths", "encoding": "mapbox"}
+                """,
+        )
+    private val loads = mutableListOf<URI>()
+
+    private fun load(url: URI): ByteArray {
+        loads += url
+        return documents[url.toString()]?.toByteArray() ?: throw NativeResourceStatus(404)
+    }
+
+    private val style =
+        JSONObject(
+            """
+            {"version":8,
+             "sprite":"../../../../../sprites/fixture/sprite",
+             "glyphs":"$api/fonts/{fontstack}/{range}.pbf",
+             "font-faces":{"Noto Sans Regular":"../fonts/noto.ttf",
+               "DINish":[{"url":"https://cdn.test/dinish.ttf","unicode-range":["U+0000-024F"]}]},
+             "sources":{
+               "world":{"type":"vector","url":"$api/tiles/world/tiles.json?map=m"},
+               "depths":{"type":"raster-dem","url":"$api/tiles/dem/tiles.json?map=m",
+                 "encoding":"terrarium","tileSize":512},
+               "places":{"type":"geojson","data":"./data.json"},
+               "inline":{"type":"geojson","data":{"type":"FeatureCollection","features":[]}},
+               "photo":{"type":"image","url":"photo.png","coordinates":[[0,1],[1,1],[1,0],[0,0]]},
+               "archive":{"type":"vector","url":"pmtiles://https://cdn.test/a.pmtiles"},
+               "again":{"type":"vector","tiles":["https://x.test/{z}/{x}/{y}.pbf"],
+                 "attribution":"© World"}
+             },
+             "layers":[
+               {"id":"background","type":"background"},
+               {"id":"buildings","type":"fill","source":"world","source-layer":"building"},
+               {"id":"relief","type":"hillshade","source":"depths"},
+               {"id":"poi","type":"circle","source":"places"}
+             ]}
+            """
+        )
+
+    private fun address(remote: String) = MapResourceAddress.encode(remote, context)!!
+
+    private fun minzoom(projection: NativeStyleProjection, source: String) =
+        projection.style.getJSONObject("sources").getJSONObject(source).getInt("minzoom")
+
+    @Test
+    fun everyAddressBecomesATransportAddressOfTheMap() {
+        val projected = NativeStyleDocument.project(style, styleUrl, context, ::load)
+        val out = projected.style
+        assertEquals(address("$api/sprites/fixture/sprite"), out.getString("sprite"))
+        assertEquals(
+            address("https://api.tileflow.test/fonts/{fontstack}/{range}.pbf"),
+            out.getString("glyphs"),
+        )
+        val faces = out.getJSONObject("font-faces")
+        assertEquals(
+            address("https://api.tileflow.test/maps/m/mobile/webview-v1/fonts/noto.ttf"),
+            faces.getString("Noto Sans Regular"),
+        )
+        val dinish = faces.getJSONArray("DINish").getJSONObject(0)
+        assertEquals(address("https://cdn.test/dinish.ttf"), dinish.getString("url"))
+        assertEquals("U+0000-024F", dinish.getJSONArray("unicode-range").getString(0))
+        val sources = out.getJSONObject("sources")
+        val world = sources.getJSONObject("world")
+        assertFalse("TileJSON is embedded", world.has("url"))
+        assertEquals(
+            address("https://api.tileflow.test/tiles/world/1/{z}/{x}/{y}.pbf?map=m"),
+            world.getJSONArray("tiles").getString(0),
+        )
+        assertEquals(15, world.getInt("maxzoom"))
+        val layer = world.getJSONArray("vector_layers").getJSONObject(0)
+        assertEquals("building", layer.getString("id"))
+        val depths = sources.getJSONObject("depths")
+        // Tiles resolve against their TileJSON; the style's own values win over the TileJSON's.
+        assertEquals(
+            address("https://api.tileflow.test/tiles/dem/dem/{z}/{x}/{y}.webp?map=m"),
+            depths.getJSONArray("tiles").getString(0),
+        )
+        assertEquals("terrarium", depths.getString("encoding"))
+        assertEquals(0, depths.getInt("minzoom"))
+        assertEquals(
+            address("https://api.tileflow.test/maps/m/mobile/webview-v1/v1/data.json"),
+            sources.getJSONObject("places").getString("data"),
+        )
+        val inline = sources.getJSONObject("inline").getJSONObject("data")
+        assertEquals("FeatureCollection", inline.getString("type"))
+        assertEquals(
+            address("https://api.tileflow.test/maps/m/mobile/webview-v1/v1/photo.png"),
+            sources.getJSONObject("photo").getString("url"),
+        )
+        assertEquals(
+            "pmtiles://" + address("https://cdn.test/a.pmtiles"),
+            sources.getJSONObject("archive").getString("url"),
+        )
+        assertFalse(
+            "Nothing the engine requests leaves the transport",
+            out.toString().contains("api.tileflow.test"),
+        )
+        assertEquals(
+            listOf(
+                URI("https://api.tileflow.test/tiles/world/tiles.json?map=m"),
+                URI("https://api.tileflow.test/tiles/dem/tiles.json?map=m"),
+            ),
+            loads,
+        )
+        assertEquals(listOf("© World", "© Depths"), projected.attributions)
+        assertEquals(
+            listOf("buildings" to "world", "relief" to "depths", "poi" to "places"),
+            projected.layerSources.toList(),
+        )
+    }
+
+    @Test
+    fun requestsAreClassifiedByTheStyleThatMadeThem() {
+        val projected = NativeStyleDocument.project(style, styleUrl, context, ::load)
+        fun kind(url: String) = projected.classify(URI(url))
+        assertEquals(TileflowResourceKind.TILE, kind("$api/tiles/world/1/15/1/2.pbf?map=m"))
+        assertEquals(TileflowResourceKind.SPRITE, kind("$api/sprites/fixture/sprite@2x.png"))
+        assertEquals(TileflowResourceKind.GLYPHS, kind("$api/fonts/Noto%20Sans/0-255.pbf"))
+        assertEquals(TileflowResourceKind.FONT, kind("https://cdn.test/dinish.ttf"))
+        assertEquals(TileflowResourceKind.DATA, kind("$api/maps/m/mobile/webview-v1/v1/data.json"))
+        assertEquals(TileflowResourceKind.OTHER, kind("https://elsewhere.test/a"))
+    }
+
+    @Test
+    fun anElevationSourceStartsAtItsLowestStoredZoomOnlyWhenTheMapOpensFromPacks() {
+        val template = "https://api.tileflow.test/tiles/dem/dem/{z}/{x}/{y}.webp?map=m"
+        val asked = mutableListOf<String>()
+        val offline =
+            NativeStyleDocument.project(style, styleUrl, context, ::load) {
+                asked += it
+                if (it == template) 8..9 else null
+            }
+        assertEquals(8, minzoom(offline, "depths"))
+        // Only elevation sources ask; vector sources keep their zooms.
+        assertEquals(listOf(template), asked)
+        assertEquals(0, minzoom(offline, "world"))
+        val online = NativeStyleDocument.project(style, styleUrl, context, ::load)
+        assertEquals(0, minzoom(online, "depths"))
+        // A higher declared minimum stays.
+        style.getJSONObject("sources").getJSONObject("depths").put("minzoom", 10)
+        val declared = NativeStyleDocument.project(style, styleUrl, context, ::load) { 8..9 }
+        assertEquals(10, minzoom(declared, "depths"))
+    }
+
+    @Test
+    fun labelsWithoutGlyphsOrFontFacesDrawNoText() {
+        val projected = NativeStyleDocument.project(style, styleUrl, context, ::load)
+        assertEquals(emptyList<String>(), projected.omitted)
+        val labelled =
+            JSONObject(
+                """{"version":8,"sources":{"places":{"type":"geojson","data":"./data.json"}},
+                    "layers":[{"id":"label","type":"symbol","source":"places",
+                    "layout":{"text-field":["get","name"],"text-font":["Noto Sans"],
+                              "icon-image":"dot"}}]}"""
+            )
+        val textless = NativeStyleDocument.project(labelled, styleUrl, context, ::load)
+        assertEquals(listOf("text"), textless.omitted)
+        val layout = textless.style.getJSONArray("layers").getJSONObject(0).getJSONObject("layout")
+        assertFalse(layout.has("text-field"))
+        assertEquals("dot", layout.getString("icon-image"))
+        labelled.put("glyphs", "https://api.tileflow.test/fonts/{fontstack}/{range}.pbf")
+        val withGlyphs = NativeStyleDocument.project(labelled, styleUrl, context, ::load)
+        assertEquals(emptyList<String>(), withGlyphs.omitted)
+    }
+
+    @Test
+    fun aMissingSourceDescriptionFailsTheMapWithItsOrigin() {
+        style.getJSONObject("sources")
+            .put("broken", JSONObject("""{"type":"vector","url":"$api/missing.json"}"""))
+        try {
+            NativeStyleDocument.project(style, styleUrl, context, ::load)
+            fail("A source without its description cannot draw")
+        } catch (error: TileflowMapException) {
+            assertEquals(TileflowErrorCode.RESOURCE_FAILED, error.code)
+            assertEquals(TileflowResourceKind.SOURCE, error.context.resource)
+            assertEquals("https://api.tileflow.test", error.context.origin)
+            assertEquals(404, error.context.status)
+        }
+    }
+}

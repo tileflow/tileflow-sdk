@@ -113,6 +113,46 @@ final class OfflineServingTests: XCTestCase {
     XCTAssertEqual(deeperOutside.status, 504)
   }
 
+  /// MapLibre Native escapes the comma of a font stack as `%2c`; the platform names the glyph
+  /// entry with `%2C`. Either finds the entry, while anything else about the address must match.
+  func testDocumentAddressesMatchWhateverTheCaseOfTheirPercentEscapes() async throws {
+    let glyphs = "https://api.tileflow.test/fonts/Fixture%20Sans%2C%20Bold/0-255.pbf"
+    let body = Data("glyphs".utf8)
+    let data = OfflinePackBuilder.build(
+      .documents,
+      [.init(name: glyphs, contentType: "application/x-protobuf", encoding: nil, body: body)])
+    let file = directory.appendingPathComponent("glyphs.tfpack")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try data.write(to: file)
+    let index = try OfflinePackFormat.verify(file, bytes: data.count, kind: .documents).index
+    var packs = OfflineServedPacks()
+    packs.documents[glyphs] = (file, index.entries[glyphs]!)
+    let (loader, _, _) = try makeLoader(packs: packs, reachable: true, networkEnabled: false)
+    for address in [
+      glyphs, "https://api.tileflow.test/fonts/Fixture%20Sans%2c%20Bold/0-255.pbf",
+      "https://api.tileflow.test/fonts/Fixture%20sans%2c%20Bold/0-255.pbf",
+    ] {
+      let response = try await loader.load(URLRequest(url: URL(string: address)!))
+      let expected = address.contains("Fixture%20Sans") ? 200 : 504
+      XCTAssertEqual(response.status, expected, address)
+    }
+    XCTAssertEqual(
+      OfflineServedDocuments.key("https://a.test/x%2c%2C%e2%82%ac%zz%2"),
+      "https://a.test/x%2C%2C%E2%82%AC%zz%2")
+  }
+
+  func testTheStoredZoomsOfATileSourceAreTheRegionsDownloadedZooms() async throws {
+    let index = OfflineServingIndex()
+    index.publish(OfflineServingSnapshot(packs: [scope.directory: try storedPacks()]), from: self)
+    let zooms = await index.storedZooms(template: template.text, scope: scope)
+    XCTAssertEqual(zooms, 0...2)
+    let other = await index.storedZooms(
+      template: "https://tiles.tileflow.test/tiles/other/{z}/{x}/{y}.pbf", scope: scope)
+    XCTAssertNil(other)
+    let shared = await index.storedZooms(template: template.text, scope: .shared)
+    XCTAssertNil(shared)
+  }
+
   // MARK: Helpers
 
   private var styleBody: Data { Data(#"{"version":8}"#.utf8) }

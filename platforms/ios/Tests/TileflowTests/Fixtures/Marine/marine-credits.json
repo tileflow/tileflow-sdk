@@ -1,0 +1,383 @@
+{
+  "cases": [
+    {
+      "place": "miami",
+      "bounds": [-80.3, 25.7, -80.1, 25.9],
+      "source": "nautical",
+      "attribution": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#nautical\">NOAA ENC 2026-10-20 — not official, not for navigation</a> <a href=\"https://tileflow.dev/copyright#nautical\">USACE IENC 2026-10-18 — not official, not for navigation</a>",
+      "credit": {
+        "source": "nautical",
+        "release": "release-1",
+        "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#nautical\">NOAA ENC 2026-10-20 — not official, not for navigation</a> <a href=\"https://tileflow.dev/copyright#nautical\">USACE IENC 2026-10-18 — not official, not for navigation</a>",
+        "obligations": [
+          {
+            "id": "nautical-not-for-navigation",
+            "exact": "Not for navigation. Tileflow Nautical is a derived visualization of OpenStreetMap seamarks and NGA publications; it is not an official chart."
+          },
+          {
+            "id": "nga",
+            "exact": "List of Lights (Pub. 110–116) and World Port Index (Pub. 150), courtesy of the U.S. National Geospatial-Intelligence Agency. This reproduction, partial or complete, of any National Geospatial-Intelligence Agency (NGA), National Imagery and Mapping Agency (NIMA) or Defense Mapping Agency (DMA) product, information or data is not approved, authorized or endorsed by the Secretary of Defense, the Director of National Intelligence, the Director, NGA or any other element of the US Government. The US Government and NGA accept no liability for the accuracy or quality of this reproduction or the use of any NGA, NIMA or DMA products, information or data."
+          }
+        ],
+        "regionalObligations": [
+          {
+            "id": "noaa-enc",
+            "exact": "NOAA ENC 2026-10-20: NOAA ENC® data, Office of Coast Survey, National Oceanic and Atmospheric Administration. Tileflow Nautical is not an official or certified NOAA ENC and is not certified for chart carriage or navigation.",
+            "href": "https://tileflow.dev/copyright#nautical",
+            "regions": [[-131, 23, -64, 50]]
+          },
+          {
+            "id": "usace-ienc",
+            "exact": "USACE IENC 2026-10-18: Inland ENC data courtesy of the U.S. Army Corps of Engineers. Tileflow Nautical is not an official Inland ENC and is not suitable for navigation.",
+            "href": "https://tileflow.dev/copyright#nautical",
+            "regions": [[-125, 24, -66, 49.5]]
+          }
+        ],
+        "page": {
+          "exact": "Tileflow Nautical sources and notices",
+          "href": "https://tileflow.dev/copyright#nautical"
+        }
+      }
+    },
+    {
+      "place": "miami",
+      "bounds": [-80.3, 25.7, -80.1, 25.9],
+      "source": "nautical",
+      "attribution": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a>",
+      "credit": {
+        "source": "nautical",
+        "release": "release-1",
+        "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a>",
+        "obligations": [
+          {
+            "id": "nautical-not-for-navigation",
+            "exact": "Not for navigation. Tileflow Nautical is a derived visualization of OpenStreetMap seamarks and NGA publications; it is not an official chart."
+          },
+          {
+            "id": "nga",
+            "exact": "List of Lights (Pub. 110–116) and World Port Index (Pub. 150), courtesy of the U.S. National Geospatial-Intelligence Agency. This reproduction, partial or complete, of any National Geospatial-Intelligence Agency (NGA), National Imagery and Mapping Agency (NIMA) or Defense Mapping Agency (DMA) product, information or data is not approved, authorized or endorsed by the Secretary of Defense, the Director of National Intelligence, the Director, NGA or any other element of the US Government. The US Government and NGA accept no liability for the accuracy or quality of this reproduction or the use of any NGA, NIMA or DMA products, information or data."
+          }
+        ],
+        "regionalObligations": [],
+        "page": {
+          "exact": "Tileflow Nautical sources and notices",
+          "href": "https://tileflow.dev/copyright#nautical"
+        }
+      }
+    },
+    {
+      "place": "miami",
+      "bounds": [-80.3, 25.7, -80.1, 25.9],
+      "source": "bathymetry",
+      "attribution": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#bathymetry\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+      "credit": {
+        "source": "bathymetry",
+        "release": "release-1",
+        "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#bathymetry\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+        "obligations": [
+          {
+            "id": "bathymetry-not-for-navigation",
+            "exact": "Not for navigation. Tileflow Bathymetry is a visualization; its depths mix vertical references."
+          },
+          {
+            "id": "gebco",
+            "exact": "GEBCO Grid, GEBCO Bathymetric Compilation Group: public domain under the GEBCO terms of use. Not endorsed by GEBCO, the IHO or the IOC, and not for navigation or any other purpose involving safety at sea."
+          }
+        ],
+        "regionalObligations": [
+          {
+            "id": "noaa-enc",
+            "exact": "NOAA ENC 2026-10-20: NOAA ENC® data, Office of Coast Survey, National Oceanic and Atmospheric Administration. Tileflow Bathymetry is not an official or certified NOAA ENC and is not certified for chart carriage or navigation.",
+            "href": "https://tileflow.dev/copyright#bathymetry",
+            "regions": [[-131, 23, -64, 50]]
+          }
+        ],
+        "page": {
+          "exact": "Tileflow Bathymetry sources and notices",
+          "href": "https://tileflow.dev/copyright#bathymetry"
+        }
+      }
+    },
+    {
+      "place": "miami",
+      "bounds": [-80.3, 25.7, -80.1, 25.9],
+      "source": "bathymetry-dem",
+      "attribution": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#bathymetry\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+      "credit": {
+        "source": "bathymetry-dem",
+        "release": "release-1",
+        "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#bathymetry\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+        "obligations": [
+          {
+            "id": "bathymetry-not-for-navigation",
+            "exact": "Not for navigation. Tileflow Bathymetry is a visualization; its depths mix vertical references."
+          },
+          {
+            "id": "gebco",
+            "exact": "GEBCO Grid, GEBCO Bathymetric Compilation Group: public domain under the GEBCO terms of use. Not endorsed by GEBCO, the IHO or the IOC, and not for navigation or any other purpose involving safety at sea."
+          }
+        ],
+        "regionalObligations": [
+          {
+            "id": "noaa-enc",
+            "exact": "NOAA ENC 2026-10-20: NOAA ENC® data, Office of Coast Survey, National Oceanic and Atmospheric Administration. Tileflow Bathymetry is not an official or certified NOAA ENC and is not certified for chart carriage or navigation.",
+            "href": "https://tileflow.dev/copyright#bathymetry",
+            "regions": [[-131, 23, -64, 50]]
+          }
+        ],
+        "page": {
+          "exact": "Tileflow Bathymetry sources and notices",
+          "href": "https://tileflow.dev/copyright#bathymetry"
+        }
+      }
+    },
+    {
+      "place": "oslo",
+      "bounds": [10.5, 59.8, 10.9, 60],
+      "source": "nautical",
+      "attribution": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#nautical\">NOAA ENC 2026-10-20 — not official, not for navigation</a> <a href=\"https://tileflow.dev/copyright#nautical\">USACE IENC 2026-10-18 — not official, not for navigation</a>",
+      "credit": {
+        "source": "nautical",
+        "release": "release-1",
+        "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#nautical\">NOAA ENC 2026-10-20 — not official, not for navigation</a> <a href=\"https://tileflow.dev/copyright#nautical\">USACE IENC 2026-10-18 — not official, not for navigation</a>",
+        "obligations": [
+          {
+            "id": "nautical-not-for-navigation",
+            "exact": "Not for navigation. Tileflow Nautical is a derived visualization of OpenStreetMap seamarks and NGA publications; it is not an official chart."
+          },
+          {
+            "id": "nga",
+            "exact": "List of Lights (Pub. 110–116) and World Port Index (Pub. 150), courtesy of the U.S. National Geospatial-Intelligence Agency. This reproduction, partial or complete, of any National Geospatial-Intelligence Agency (NGA), National Imagery and Mapping Agency (NIMA) or Defense Mapping Agency (DMA) product, information or data is not approved, authorized or endorsed by the Secretary of Defense, the Director of National Intelligence, the Director, NGA or any other element of the US Government. The US Government and NGA accept no liability for the accuracy or quality of this reproduction or the use of any NGA, NIMA or DMA products, information or data."
+          }
+        ],
+        "regionalObligations": [],
+        "page": {
+          "exact": "Tileflow Nautical sources and notices",
+          "href": "https://tileflow.dev/copyright#nautical"
+        }
+      }
+    },
+    {
+      "place": "oslo",
+      "bounds": [10.5, 59.8, 10.9, 60],
+      "source": "nautical",
+      "attribution": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a>",
+      "credit": {
+        "source": "nautical",
+        "release": "release-1",
+        "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a>",
+        "obligations": [
+          {
+            "id": "nautical-not-for-navigation",
+            "exact": "Not for navigation. Tileflow Nautical is a derived visualization of OpenStreetMap seamarks and NGA publications; it is not an official chart."
+          },
+          {
+            "id": "nga",
+            "exact": "List of Lights (Pub. 110–116) and World Port Index (Pub. 150), courtesy of the U.S. National Geospatial-Intelligence Agency. This reproduction, partial or complete, of any National Geospatial-Intelligence Agency (NGA), National Imagery and Mapping Agency (NIMA) or Defense Mapping Agency (DMA) product, information or data is not approved, authorized or endorsed by the Secretary of Defense, the Director of National Intelligence, the Director, NGA or any other element of the US Government. The US Government and NGA accept no liability for the accuracy or quality of this reproduction or the use of any NGA, NIMA or DMA products, information or data."
+          }
+        ],
+        "regionalObligations": [],
+        "page": {
+          "exact": "Tileflow Nautical sources and notices",
+          "href": "https://tileflow.dev/copyright#nautical"
+        }
+      }
+    },
+    {
+      "place": "oslo",
+      "bounds": [10.5, 59.8, 10.9, 60],
+      "source": "bathymetry",
+      "attribution": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#bathymetry\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+      "credit": {
+        "source": "bathymetry",
+        "release": "release-1",
+        "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#bathymetry\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+        "obligations": [
+          {
+            "id": "bathymetry-not-for-navigation",
+            "exact": "Not for navigation. Tileflow Bathymetry is a visualization; its depths mix vertical references."
+          },
+          {
+            "id": "gebco",
+            "exact": "GEBCO Grid, GEBCO Bathymetric Compilation Group: public domain under the GEBCO terms of use. Not endorsed by GEBCO, the IHO or the IOC, and not for navigation or any other purpose involving safety at sea."
+          }
+        ],
+        "regionalObligations": [
+          {
+            "id": "emodnet",
+            "exact": "EMODnet Digital Bathymetry (DTM 2024), EMODnet Bathymetry Consortium: created by EMODnet, owned by the EU and licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); modified. Not for navigation.",
+            "href": "https://emodnet.ec.europa.eu/en/bathymetry",
+            "regions": [[-36, 15, 43, 90]]
+          },
+          {
+            "id": "kartverket",
+            "exact": "© Kartverket, Dybdedata – terrengmodeller 50 meters grid landsdekkende, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); modified. Not for navigation.",
+            "href": "https://kartkatalog.geonorge.no/metadata/bbd687d0-d34f-4d95-9e60-27e330e0f76e",
+            "regions": [[-2, 56, 33, 75]]
+          }
+        ],
+        "page": {
+          "exact": "Tileflow Bathymetry sources and notices",
+          "href": "https://tileflow.dev/copyright#bathymetry"
+        }
+      }
+    },
+    {
+      "place": "oslo",
+      "bounds": [10.5, 59.8, 10.9, 60],
+      "source": "bathymetry-dem",
+      "attribution": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#bathymetry\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+      "credit": {
+        "source": "bathymetry-dem",
+        "release": "release-1",
+        "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#bathymetry\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+        "obligations": [
+          {
+            "id": "bathymetry-not-for-navigation",
+            "exact": "Not for navigation. Tileflow Bathymetry is a visualization; its depths mix vertical references."
+          },
+          {
+            "id": "gebco",
+            "exact": "GEBCO Grid, GEBCO Bathymetric Compilation Group: public domain under the GEBCO terms of use. Not endorsed by GEBCO, the IHO or the IOC, and not for navigation or any other purpose involving safety at sea."
+          }
+        ],
+        "regionalObligations": [
+          {
+            "id": "emodnet",
+            "exact": "EMODnet Digital Bathymetry (DTM 2024), EMODnet Bathymetry Consortium: created by EMODnet, owned by the EU and licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); modified. Not for navigation.",
+            "href": "https://emodnet.ec.europa.eu/en/bathymetry",
+            "regions": [[-36, 15, 43, 90]]
+          },
+          {
+            "id": "kartverket",
+            "exact": "© Kartverket, Dybdedata – terrengmodeller 50 meters grid landsdekkende, CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); modified. Not for navigation.",
+            "href": "https://kartkatalog.geonorge.no/metadata/bbd687d0-d34f-4d95-9e60-27e330e0f76e",
+            "regions": [[-2, 56, 33, 75]]
+          }
+        ],
+        "page": {
+          "exact": "Tileflow Bathymetry sources and notices",
+          "href": "https://tileflow.dev/copyright#bathymetry"
+        }
+      }
+    },
+    {
+      "place": "madrid",
+      "bounds": [-3.72, 40.4, -3.68, 40.43],
+      "source": "nautical",
+      "attribution": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#nautical\">NOAA ENC 2026-10-20 — not official, not for navigation</a> <a href=\"https://tileflow.dev/copyright#nautical\">USACE IENC 2026-10-18 — not official, not for navigation</a>",
+      "credit": {
+        "source": "nautical",
+        "release": "release-1",
+        "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#nautical\">NOAA ENC 2026-10-20 — not official, not for navigation</a> <a href=\"https://tileflow.dev/copyright#nautical\">USACE IENC 2026-10-18 — not official, not for navigation</a>",
+        "obligations": [
+          {
+            "id": "nautical-not-for-navigation",
+            "exact": "Not for navigation. Tileflow Nautical is a derived visualization of OpenStreetMap seamarks and NGA publications; it is not an official chart."
+          },
+          {
+            "id": "nga",
+            "exact": "List of Lights (Pub. 110–116) and World Port Index (Pub. 150), courtesy of the U.S. National Geospatial-Intelligence Agency. This reproduction, partial or complete, of any National Geospatial-Intelligence Agency (NGA), National Imagery and Mapping Agency (NIMA) or Defense Mapping Agency (DMA) product, information or data is not approved, authorized or endorsed by the Secretary of Defense, the Director of National Intelligence, the Director, NGA or any other element of the US Government. The US Government and NGA accept no liability for the accuracy or quality of this reproduction or the use of any NGA, NIMA or DMA products, information or data."
+          }
+        ],
+        "regionalObligations": [],
+        "page": {
+          "exact": "Tileflow Nautical sources and notices",
+          "href": "https://tileflow.dev/copyright#nautical"
+        }
+      }
+    },
+    {
+      "place": "madrid",
+      "bounds": [-3.72, 40.4, -3.68, 40.43],
+      "source": "nautical",
+      "attribution": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a>",
+      "credit": {
+        "source": "nautical",
+        "release": "release-1",
+        "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a>",
+        "obligations": [
+          {
+            "id": "nautical-not-for-navigation",
+            "exact": "Not for navigation. Tileflow Nautical is a derived visualization of OpenStreetMap seamarks and NGA publications; it is not an official chart."
+          },
+          {
+            "id": "nga",
+            "exact": "List of Lights (Pub. 110–116) and World Port Index (Pub. 150), courtesy of the U.S. National Geospatial-Intelligence Agency. This reproduction, partial or complete, of any National Geospatial-Intelligence Agency (NGA), National Imagery and Mapping Agency (NIMA) or Defense Mapping Agency (DMA) product, information or data is not approved, authorized or endorsed by the Secretary of Defense, the Director of National Intelligence, the Director, NGA or any other element of the US Government. The US Government and NGA accept no liability for the accuracy or quality of this reproduction or the use of any NGA, NIMA or DMA products, information or data."
+          }
+        ],
+        "regionalObligations": [],
+        "page": {
+          "exact": "Tileflow Nautical sources and notices",
+          "href": "https://tileflow.dev/copyright#nautical"
+        }
+      }
+    },
+    {
+      "place": "madrid",
+      "bounds": [-3.72, 40.4, -3.68, 40.43],
+      "source": "bathymetry",
+      "attribution": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#bathymetry\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+      "credit": {
+        "source": "bathymetry",
+        "release": "release-1",
+        "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#bathymetry\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+        "obligations": [
+          {
+            "id": "bathymetry-not-for-navigation",
+            "exact": "Not for navigation. Tileflow Bathymetry is a visualization; its depths mix vertical references."
+          },
+          {
+            "id": "gebco",
+            "exact": "GEBCO Grid, GEBCO Bathymetric Compilation Group: public domain under the GEBCO terms of use. Not endorsed by GEBCO, the IHO or the IOC, and not for navigation or any other purpose involving safety at sea."
+          }
+        ],
+        "regionalObligations": [
+          {
+            "id": "emodnet",
+            "exact": "EMODnet Digital Bathymetry (DTM 2024), EMODnet Bathymetry Consortium: created by EMODnet, owned by the EU and licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); modified. Not for navigation.",
+            "href": "https://emodnet.ec.europa.eu/en/bathymetry",
+            "regions": [[-36, 15, 43, 90]]
+          }
+        ],
+        "page": {
+          "exact": "Tileflow Bathymetry sources and notices",
+          "href": "https://tileflow.dev/copyright#bathymetry"
+        }
+      }
+    },
+    {
+      "place": "madrid",
+      "bounds": [-3.72, 40.4, -3.68, 40.43],
+      "source": "bathymetry-dem",
+      "attribution": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#bathymetry\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+      "credit": {
+        "source": "bathymetry-dem",
+        "release": "release-1",
+        "text": "<a href=\"https://tileflow.dev/copyright\">© Tileflow</a> <a href=\"https://www.openstreetmap.org/copyright\">© OpenStreetMap</a> <a href=\"https://tileflow.dev/copyright#bathymetry\">NOAA ENC 2026-10-20 — not official, not for navigation</a>",
+        "obligations": [
+          {
+            "id": "bathymetry-not-for-navigation",
+            "exact": "Not for navigation. Tileflow Bathymetry is a visualization; its depths mix vertical references."
+          },
+          {
+            "id": "gebco",
+            "exact": "GEBCO Grid, GEBCO Bathymetric Compilation Group: public domain under the GEBCO terms of use. Not endorsed by GEBCO, the IHO or the IOC, and not for navigation or any other purpose involving safety at sea."
+          }
+        ],
+        "regionalObligations": [
+          {
+            "id": "emodnet",
+            "exact": "EMODnet Digital Bathymetry (DTM 2024), EMODnet Bathymetry Consortium: created by EMODnet, owned by the EU and licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); modified. Not for navigation.",
+            "href": "https://emodnet.ec.europa.eu/en/bathymetry",
+            "regions": [[-36, 15, 43, 90]]
+          }
+        ],
+        "page": {
+          "exact": "Tileflow Bathymetry sources and notices",
+          "href": "https://tileflow.dev/copyright#bathymetry"
+        }
+      }
+    }
+  ]
+}

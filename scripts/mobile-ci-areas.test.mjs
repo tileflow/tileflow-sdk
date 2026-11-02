@@ -14,10 +14,12 @@ test('selects mobile jobs from the paths that reach the runtime or a native host
     android: true,
   });
   assert.deepEqual(mobileAreas(['platforms/native-release.json']), {...none, android: true});
-  assert.deepEqual(
-    mobileAreas(['platforms/ios/Tests/TileflowTests/Fixtures/Offline/offline-corridors.json']),
-    {...none, ios: true, android: true},
-  );
+  for (const fixture of ['Offline/offline-corridors.json', 'Marine/marine-credits.json'])
+    assert.deepEqual(mobileAreas([`platforms/ios/Tests/TileflowTests/Fixtures/${fixture}`]), {
+      ...none,
+      ios: true,
+      android: true,
+    });
   assert.deepEqual(mobileAreas(['platforms/android/gradlew']), {
     ...none,
     android: true,

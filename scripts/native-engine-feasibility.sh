@@ -2,6 +2,8 @@
 # Runs the native engine feasibility checks on a booted emulator against the fixture map server
 # on port 18682, then copies their receipts and pictures to $NATIVE_ENGINE_RESULTS.
 set -uo pipefail
+# Gradle 8.13 needs JDK 17 to 24; hosted runners default to a newer JDK and expose 17 here.
+if [ -n "${JAVA_HOME_17_X64:-}" ]; then export JAVA_HOME="$JAVA_HOME_17_X64"; fi
 results=${NATIVE_ENGINE_RESULTS:-${RUNNER_TEMP:-/tmp}/native-engine}
 mkdir -p "$results"
 echo "System image: $(adb shell getprop ro.build.fingerprint | tr -d '\r')"

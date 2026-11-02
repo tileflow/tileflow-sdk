@@ -620,21 +620,23 @@ internal class NativeMapEngine(
         }
         withTimeoutOrNull(5_000) { suspendCancellableCoroutine { renderWaiters += it } }
         if (cover == null) return
-        if (duration <= 0 || retired) {
+        // A view off screen does not animate; its image goes at once.
+        if (duration <= 0 || retired || !container.isAttachedToWindow) {
             container.removeView(cover)
             return
         }
-        suspendCancellableCoroutine { done ->
-            cover
-                .animate()
-                .alpha(0f)
-                .setDuration((duration * 1000).roundToInt().toLong())
-                .withEndAction {
-                    container.removeView(cover)
-                    if (done.isActive) done.resume(Unit)
-                }
-                .start()
+        val millis = (duration * 1000).roundToInt().toLong()
+        withTimeoutOrNull(millis + 1_000) {
+            suspendCancellableCoroutine { done ->
+                cover
+                    .animate()
+                    .alpha(0f)
+                    .setDuration(millis)
+                    .withEndAction { if (done.isActive) done.resume(Unit) }
+                    .start()
+            }
         }
+        container.removeView(cover)
     }
 
     /** MapLibre drew the style completely. */

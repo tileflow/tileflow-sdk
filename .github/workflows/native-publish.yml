@@ -277,6 +277,8 @@ jobs:
         run: |
           set -euo pipefail
           consumers="$RUNNER_TEMP/native-verify/consumers"
+          # The fixture server builds its self-hosted native map with these packages.
+          pnpm exec turbo build --filter=@tileflow/dev --filter=@tileflow/maps
           nohup node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
           udid=$(xcrun simctl create "Tileflow release" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-26-5)
           xcrun simctl boot "$udid"

@@ -94,7 +94,8 @@ extension NativeMapEngine {
       let view = UIImageView(image: image)
       view.frame = mapView.frame
       view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-      container.addSubview(view)
+      // Under the attribution, which stays shown through the change.
+      container.insertSubview(view, aboveSubview: mapView)
       cover = view
     }
     defer { if retired { cover?.removeFromSuperview() } }

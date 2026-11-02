@@ -49,9 +49,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   private var styleRequested = false
   /// Whether `contentReady` waits for the map's style to finish drawing.
   private var contentPending = false
-  /// The attribution model, and the entries it gives for the current view.
-  private(set) var attribution = MapAttribution()
-  private(set) var attributionEntries: [MapAttributionEntry] = []
+  /// The attribution the map shows, in the SDK's own control.
+  let attribution = MapAttributionControl()
 
   // MARK: Appearance state, kept in NativeMapEngine+Appearance.swift
 
@@ -118,6 +117,9 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       // MapLibre iOS draws steep cameras up to the pitch the SDK's camera API allows.
       mapView.maximumPitch = TileflowCameraLimits.maximumPitch
       self.container.addSubview(mapView)
+      self.attribution.view.frame = self.container.bounds
+      self.attribution.onLink = { [weak self] url in self?.onExternalLink?(url) }
+      self.container.addSubview(self.attribution.view)
       self.mapView = mapView
       self.onReady?()
     }
@@ -155,11 +157,13 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       let value = { (key: String) in CGFloat(payload[key]?.number ?? 0) }
       mapView.contentInset = UIEdgeInsets(
         top: value("top"), left: value("left"), bottom: value("bottom"), right: value("right"))
+      attribution.place(corner: nil, insets: payload)
       return .null
     case .setVisibility, .setEvents:
       return .null
     case .setOptions:
       if let mode = payload["viewMode"]?.string { setViewMode(mode, duration: 0) }
+      attribution.place(corner: payload["attribution"]?.string, insets: nil)
       return .null
     case .moveCamera:
       return try await moveCamera(payload)
@@ -257,7 +261,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
           Task { @MainActor in self?.received(outcome) }
         }))
     self.context = context
-    attribution.credits = payload["credits"]?.array?.compactMap(MapAttributionCredit.init) ?? []
+    attribution.place(corner: payload["options"]?["attribution"]?.string, insets: payload["insets"])
     colorScheme = payload["colorScheme"]?.string ?? "light"
     viewMode = payload["options"]?["viewMode"]?.string ?? "2d"
 
@@ -270,14 +274,27 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       let offline = self.offline
       storedZooms = { template in await offline.storedZooms(template: template, scope: grantScope) }
     }
-    let manifest = try await Self.manifest(
-      map: map, manifestURL: manifestURL,
-      discoveryMapID: payload["source"]?["discoveryMapId"]?.string, fromPacks: fromPacks,
+    let discoveryMapID = payload["source"]?["discoveryMapId"]?.string
+    var manifest = try await Self.manifest(
+      map: map, manifestURL: manifestURL, discoveryMapID: discoveryMapID, fromPacks: fromPacks,
       loader: loader)
+    var theme = try manifest.resolve(payload["theme"]?.string, colorScheme: colorScheme)
+    let loaded: ([String: Any], ProjectedStyle)
+    do {
+      loaded = try await loadStyle(theme.styleURL)
+    } catch where fromPacks && manifest.representation == .native {
+      // An earlier session can leave the native manifest in the cache while the regions hold
+      // only the WebView profile's styles.
+      manifest = try await Self.manifest(
+        map: map, manifestURL: manifestURL, discoveryMapID: discoveryMapID, fromPacks: true,
+        native: false, loader: loader)
+      theme = try manifest.resolve(payload["theme"]?.string, colorScheme: colorScheme)
+      loaded = try await loadStyle(theme.styleURL)
+    }
     self.manifest = manifest
-    let theme = try manifest.resolve(payload["theme"]?.string, colorScheme: colorScheme)
-    let (document, projected) = try await loadStyle(theme.styleURL)
+    let (document, projected) = loaded
     family = await loadFamily(styleURL: theme.styleURL)
+    await readDownloadedCredits()
     guard !retired, let mapView else { throw TileflowMapError.cancelled }
     shown = .theme(theme.name)
     apply(TileflowCamera(wire: payload["camera"]) ?? manifest.view)
@@ -309,12 +326,12 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   }
 
   private nonisolated static func manifest(
-    map: String, manifestURL: URL, discoveryMapID: String?, fromPacks: Bool,
+    map: String, manifestURL: URL, discoveryMapID: String?, fromPacks: Bool, native: Bool = true,
     loader: any ResourceLoading
   ) async throws -> NativeManifest {
     try await NativeManifest.load(
       map: map, manifestURL: manifestURL, discoveryMapID: discoveryMapID, fromPacks: fromPacks,
-      read: { url, kind in try await document(url, kind: kind, loader: loader) })
+      native: native, read: { url, kind in try await document(url, kind: kind, loader: loader) })
   }
 
   nonisolated static func read(_ url: URL, kind: TileflowResourceKind, loader: any ResourceLoading)
@@ -363,7 +380,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   func show(_ style: [String: Any], projected: ProjectedStyle) {
     guard let mapView else { return }
     projection.withLock { $0 = projected }
-    attribution.sources = projected.attributions
+    attribution.setStyle(style, attributions: projected.attributions)
     document = NativeStyleDocument.Shown(style, omitted: projected.omitted)
     styleLoaded = false
     mapView.styleJSON = projected.json
@@ -390,6 +407,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   /// A failure that ends the map, such as an exhausted quota, is reported as the map's own.
   private func received(_ outcome: MapResourceOutcome) {
     guard !retired else { return }
+    attribution.received(outcome.fairUse)
     if let failure = outcome.failure, failure.code != .cancelled, failure.code != .disposed,
       failure.code != .resourceFailed, failure.code != .timeout
     {
@@ -428,9 +446,22 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       west: bounds.sw.longitude, south: bounds.sw.latitude, east: east, north: bounds.ne.latitude)
   }
 
+  /// Checks the regional credits against the view, at the end of each camera movement and when
+  /// the content loads, and reads the downloaded credits again, which a region downloaded or
+  /// removed meanwhile changes.
   func updateAttribution() {
-    guard let view = visibleBounds else { return }
-    attributionEntries = attribution.entries(in: view)
+    attribution.update(in: visibleBounds)
+    Task { [weak self] in await self?.readDownloadedCredits() }
+  }
+
+  /// The credits of the sources a Hosted map's downloaded regions hold. The map shows them online
+  /// as well as offline: online its tiles may come from those regions too.
+  private func readDownloadedCredits() async {
+    guard let grantScope else { return }
+    let obligations = await offline.obligations(for: grantScope)
+    let credits = await offline.credits(for: grantScope)
+    guard !retired else { return }
+    attribution.setDownloaded(obligations: obligations, credits: credits)
   }
 
   // MARK: Queries

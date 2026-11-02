@@ -1,14 +1,21 @@
 import {createHash, randomUUID} from 'node:crypto';
+import {readFileSync} from 'node:fs';
 import {resolve} from 'node:path';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 import {deflateSync, gunzipSync, gzipSync} from 'node:zlib';
 
+const root = fileURLToPath(new URL('../', import.meta.url));
 // The native representation's family document is computed with Core, as a deployment's is.
 const nativeProfile = await import(
-  pathToFileURL(
-    resolve(fileURLToPath(new URL('../', import.meta.url)), 'packages/core/dist/native-profile.js'),
-  ).href
+  pathToFileURL(resolve(root, 'packages/core/dist/native-profile.js')).href
 );
+// The platform's offline credits of Nautical and Bathymetry for Miami, Oslo and Madrid.
+const marineCredits = JSON.parse(
+  readFileSync(
+    resolve(root, 'platforms/ios/Tests/TileflowTests/Fixtures/Marine/marine-credits.json'),
+    'utf8',
+  ),
+).cases;
 
 /**
  * A minimal Hosted map for the mobile fixture server: session start, discovery and the WebView
@@ -16,9 +23,14 @@ const nativeProfile = await import(
  * model) with their TileJSONs, gzip vector tiles and elevation tiles, Hosted offline downloads in
  * pack format 2 (creation, grant-authorized pack downloads, revalidation) and counters tests read.
  *
+ * A `marine` theme adds the Nautical and Bathymetry sources, whose TileJSONs carry the platform's
+ * map credits, and the notice a Nautical style declares. A download of it carries, in its
+ * manifest's attribution, the platform's credits of those sources for the place the download
+ * covers (`Fixtures/Marine/marine-credits.json`: Miami, Oslo or Madrid).
+ *
  * Discovery also announces the `native-v1` representation: its manifest, native styles for `day`,
- * `night`, `labels` and `terrain` (hillshade instead of 3D terrain, recorded as a degradation), and
- * its family document, `/maps/<map>/native/family/v<version>.json` with its SHA-256 revision. Native
+ * `night`, `labels`, `marine` and `terrain` (hillshade instead of 3D terrain, recorded as a
+ * degradation), and its family document, `/maps/<map>/native/family/v<version>.json` with its SHA-256 revision. Native
  * routes follow the active deployment version: `POST /__fixture/hosted?deployment=2` activates
  * version 2, so version 1's documents answer 409 `NATIVE_DEPLOYMENT_SUPERSEDED`, as the service
  * does.
@@ -47,6 +59,9 @@ export function createHostedFixture({base, tile, center}) {
     // A theme with a sprite and glyphs, so a renderer requests both with its own suffixes.
     labelsStyle: `${base}${mapPath}/webview-v1/v1/labels.json`,
     sprite: `${base}/sprites/fixture/sprite`,
+    marineStyle: `${base}${mapPath}/webview-v1/v1/marine.json`,
+    nauticalTilejson: `${base}/tiles/nautical/tiles.json?map=${hostedMapId}`,
+    bathymetryTilejson: `${base}/tiles/bathymetry/tiles.json?map=${hostedMapId}`,
     glyphs: `${base}/fonts/{fontstack}/{range}.pbf`,
     nativeManifest: `${base}/maps/${hostedMapId}/native/manifest.json`,
     native: (version, name) => `${base}/maps/${hostedMapId}/native/v${version}/${name}.json`,
@@ -57,6 +72,34 @@ export function createHostedFixture({base, tile, center}) {
   const resumable = Buffer.alloc(2 * 1024 * 1024, 0);
   for (let index = 0; index < resumable.length; index += 1) resumable[index] = (index * 31) % 251;
   const zooms = [13, 15];
+  /** A marine source's map credit: the platform's, with the dated chart lines. */
+  const marineText = (source) => marineCredits.find((item) => item.source === source).credit.text;
+  /**
+   * The marine theme. Its Nautical and Bathymetry sources draw nothing here; the map credits them
+   * as it credits any source of its style.
+   */
+  const marineStyle = (metadata = {}) => ({
+    version: 8,
+    metadata: {
+      ...metadata,
+      'tileflow:notices': [{id: 'nautical', sources: ['nautical'], text: 'Not for navigation'}],
+    },
+    sources: {
+      world: {type: 'vector', url: urls.tilejson},
+      nautical: {type: 'vector', url: urls.nauticalTilejson},
+      bathymetry: {type: 'vector', url: urls.bathymetryTilejson},
+    },
+    layers: [
+      {id: 'ground', type: 'background', paint: {'background-color': '#bcd9ea'}},
+      {
+        id: 'buildings',
+        type: 'fill',
+        source: 'world',
+        'source-layer': 'building',
+        paint: {'fill-color': '#d6ccb8'},
+      },
+    ],
+  });
   const documents = {
     [urls.profile]: {
       version: 1,
@@ -69,6 +112,7 @@ export function createHostedFixture({base, tile, center}) {
             day: {styleUrl: urls.style, colorScheme: 'light'},
             terrain: {styleUrl: urls.terrainStyle, colorScheme: 'light'},
             labels: {styleUrl: urls.labelsStyle, colorScheme: 'light'},
+            marine: {styleUrl: urls.marineStyle, colorScheme: 'light'},
           },
         },
       },
@@ -135,6 +179,19 @@ export function createHostedFixture({base, tile, center}) {
         },
       ],
     },
+    [urls.marineStyle]: marineStyle(),
+    ...Object.fromEntries(
+      ['nautical', 'bathymetry'].map((source) => [
+        source === 'nautical' ? urls.nauticalTilejson : urls.bathymetryTilejson,
+        {
+          tilejson: '3.0.0',
+          tiles: [`${base}/tiles/${source}/1/{z}/{x}/{y}.pbf?map=${hostedMapId}`],
+          minzoom: 0,
+          maxzoom: 14,
+          attribution: marineText(source),
+        },
+      ]),
+    ),
     [urls.terrainTilejson]: {
       tilejson: '3.0.0',
       tiles: [urls.terrainTemplate],
@@ -202,6 +259,7 @@ export function createHostedFixture({base, tile, center}) {
       ...documents[urls.labelsStyle],
       metadata: {'tileflow:colorScheme': 'light', 'tileflow:nativeDegradations': []},
     },
+    marine: marineStyle({'tileflow:colorScheme': 'light', 'tileflow:nativeDegradations': []}),
     terrain: {
       version: 8,
       metadata: {
@@ -514,6 +572,38 @@ export function createHostedFixture({base, tile, center}) {
     return tiles;
   };
 
+  /** The `[west, south, east, north]` of tile z/x/y. */
+  const tileBounds = ([z, x, y]) => {
+    const side = 2 ** z;
+    const latitude = (row) =>
+      (Math.atan(Math.sinh(Math.PI * (1 - (2 * row) / side))) * 180) / Math.PI;
+    return [(x / side) * 360 - 180, latitude(y + 1), ((x + 1) / side) * 360 - 180, latitude(y)];
+  };
+  /**
+   * The platform's credits of Nautical, Bathymetry and its DEM for the place a download covers,
+   * as `marine-credits.json` gives them with the dated chart lines: obligations, the regional
+   * credits whose boxes touch the place, and the sources page.
+   */
+  const marineAttribution = (covered) => {
+    const deepest = Math.max(...covered.map(({tile}) => tile[0]));
+    const boxes = covered.filter(({tile}) => tile[0] === deepest).map(({tile}) => tileBounds(tile));
+    const footprint = [
+      Math.min(...boxes.map((box) => box[0])),
+      Math.min(...boxes.map((box) => box[1])),
+      Math.max(...boxes.map((box) => box[2])),
+      Math.max(...boxes.map((box) => box[3])),
+    ];
+    const touches = ([west, south, east, north]) =>
+      west <= footprint[2] &&
+      east >= footprint[0] &&
+      south <= footprint[3] &&
+      north >= footprint[1];
+    return ['nautical', 'bathymetry', 'bathymetry-dem'].flatMap((source) => {
+      const found = marineCredits.find((item) => item.source === source && touches(item.bounds));
+      return found ? [found.credit] : [];
+    });
+  };
+
   /** A download's manifest; its packs are assembled into `files` by path. */
   function manifest(request, now, files) {
     const covered = coverTiles(request);
@@ -543,12 +633,15 @@ export function createHostedFixture({base, tile, center}) {
     // The style pack holds the requested themes' styles and the TileJSONs they use.
     const terrainTheme = request.themes.includes('terrain');
     const labelsTheme = request.themes.includes('labels');
+    const marineTheme = request.themes.includes('marine');
     const documentUrls = [
       ...(request.themes.includes('day') ? [urls.style] : []),
       ...(labelsTheme ? [urls.labelsStyle] : []),
       ...(terrainTheme ? [urls.terrainStyle] : []),
+      ...(marineTheme ? [urls.marineStyle] : []),
       urls.tilejson,
       ...(terrainTheme ? [urls.terrainTilejson] : []),
+      ...(marineTheme ? [urls.nauticalTilejson, urls.bathymetryTilejson] : []),
     ];
     add(
       'style',
@@ -686,6 +779,7 @@ export function createHostedFixture({base, tile, center}) {
               },
             ],
           },
+          ...(marineTheme ? marineAttribution(covered) : []),
         ],
       },
       limits: {
@@ -780,7 +874,7 @@ export function createHostedFixture({base, tile, center}) {
           disposition: 'unmetered',
           resourceOrigins: [base],
           resourceScopes: ['style', 'tilejson', 'tile', 'sprite', 'glyph'],
-          tilesetIds: ['world', 'terrain'],
+          tilesetIds: ['world', 'terrain', 'nautical', 'bathymetry'],
         });
       });
       return true;

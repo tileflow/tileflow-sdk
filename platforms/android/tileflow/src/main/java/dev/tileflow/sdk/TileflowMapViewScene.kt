@@ -1,8 +1,8 @@
 package dev.tileflow.sdk
 
 import dev.tileflow.sdk.bridge.DataChannel
-import dev.tileflow.sdk.bridge.MapBridge
 import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.engine.MapEngine
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellableContinuation
@@ -132,9 +132,9 @@ private fun invalid(): Nothing = throw TileflowMapException(TileflowErrorCode.IN
 private fun transition(durationMillis: Long): Long =
     durationMillis.also { if (it !in 0..5000) invalid() }
 
-private fun TileflowMapView.requireRenderer(): MapBridge {
+private fun TileflowMapView.requireRenderer(): MapEngine {
     if (isDestroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
-    return readyBridge ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
+    return readyEngine ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
 }
 
 /** Keeps a scene request for later renderers and sends it to the current one. */
@@ -145,9 +145,9 @@ private suspend fun TileflowMapView.sendScene(
     if (isDestroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
     val previous = scene.copy()
     scene.keep(command)
-    val bridge = readyBridge ?: return
+    val engine = readyEngine ?: return
     try {
-        bridge.send(command, replaying = false)
+        engine.send(command, replaying = false)
     } catch (error: TileflowMapException) {
         // A request the renderer refuses is not given to the next one either.
         if (error.code == TileflowErrorCode.INVALID_REQUEST) scene.restore(previous)
@@ -155,14 +155,14 @@ private suspend fun TileflowMapView.sendScene(
     }
 }
 
-private suspend fun MapBridge.send(command: SceneCommand, replaying: Boolean) {
+private suspend fun MapEngine.send(command: SceneCommand, replaying: Boolean) {
     val (payload, references) = command.build(data, replaying)
     call(command.method, payload, references)
 }
 
 /** Gives a new renderer the scene the application asked for, at once. */
-internal suspend fun TileflowMapView.replayScene(bridge: MapBridge) {
-    for (command in scene.commands) bridge.send(command, replaying = true)
+internal suspend fun TileflowMapView.replayScene(engine: MapEngine) {
+    for (command in scene.commands) engine.send(command, replaying = true)
 }
 
 /**
@@ -174,7 +174,7 @@ public suspend fun TileflowMapView.setViewMode(mode: TileflowViewMode, durationM
     transition(durationMillis)
     // The view mode is kept with the options, so a new renderer starts in it.
     keepOptions(options.copy(viewMode = mode))
-    readyBridge?.call(
+    readyEngine?.call(
         ProtocolContract.Method.SET_VIEW_MODE,
         JSONObject().put("viewMode", mode.wireName).put("duration", durationMillis),
     )
@@ -418,9 +418,9 @@ public suspend fun TileflowMapView.animateLineProgress(
             durationMillis !in 0..60_000
     )
         invalid()
-    val bridge = requireRenderer()
+    val engine = requireRenderer()
     val started =
-        bridge.call(
+        engine.call(
             ProtocolContract.Method.ANIMATE_LINE_PROGRESS,
             JSONObject()
                 .put("layers", JSONArray(layers))
@@ -429,7 +429,7 @@ public suspend fun TileflowMapView.animateLineProgress(
         )
     // A new renderer draws the lines where the animation leads.
     keepLineProgress(to, layers.toSet())
-    return awaitAnimation(started, bridge, null)
+    return awaitAnimation(started, engine, null)
 }
 
 /**
@@ -442,15 +442,15 @@ public suspend fun TileflowMapView.play(
     onCue: ((String) -> Unit)? = null,
 ): Boolean {
     val payload = shot.json()
-    val bridge = requireRenderer()
+    val engine = requireRenderer()
     endFollowing(dev.tileflow.sdk.location.TileflowFollowModeChangeReason.API)
-    val started = bridge.call(ProtocolContract.Method.PLAY_SHOT, payload)
-    return awaitAnimation(started, bridge, onCue)
+    val started = engine.call(ProtocolContract.Method.PLAY_SHOT, payload)
+    return awaitAnimation(started, engine, onCue)
 }
 
 private suspend fun TileflowMapView.awaitAnimation(
     started: Any,
-    bridge: MapBridge,
+    engine: MapEngine,
     onCue: ((String) -> Unit)?,
 ): Boolean {
     val id =
@@ -462,7 +462,7 @@ private suspend fun TileflowMapView.awaitAnimation(
         // The caller is gone; the animation stops where it is.
         launchOnView {
             try {
-                bridge.call(
+                engine.call(
                     ProtocolContract.Method.STOP_ANIMATION,
                     JSONObject().put("animation", id),
                 )

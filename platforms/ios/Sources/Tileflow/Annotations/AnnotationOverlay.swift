@@ -173,7 +173,7 @@ final class AnnotationOverlay: UIView {
     guard let map, !sending else { return }
     let (keys, points) = desiredTracking()
     map.setTrackingDemand(!keys.isEmpty)
-    guard let bridge = map.readyBridge, points != sentPoints || keys != sentKeys else { return }
+    guard let engine = map.readyEngine, points != sentPoints || keys != sentKeys else { return }
     sending = true
     let revision = tracked.begin(keys)
     sentPoints = points
@@ -182,7 +182,7 @@ final class AnnotationOverlay: UIView {
       "revision": .number(Double(revision)),
       "points": .array(points.map { .array($0.map(JSONValue.number)) }),
     ])
-    _ = try? await bridge.call(.setTrackedPoints, payload: payload)
+    _ = try? await engine.call(.setTrackedPoints, payload: payload)
     sending = false
     let (nextKeys, nextPoints) = desiredTracking()
     if nextPoints != sentPoints || nextKeys != sentKeys { await sendTracking() }

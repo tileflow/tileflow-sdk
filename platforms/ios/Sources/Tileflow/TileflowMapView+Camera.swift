@@ -90,8 +90,8 @@ extension TileflowMapView {
   public func stopCamera() {
     guard !destroyed else { return }
     endFollowing(.api)
-    guard initialized, let bridge else { return }
-    Task { _ = try? await bridge.call(.stopCamera) }
+    guard initialized, let engine else { return }
+    Task { _ = try? await engine.call(.stopCamera) }
   }
 
   /// The camera that frames `bounds` with `padding` points around them, inside the content
@@ -102,8 +102,8 @@ extension TileflowMapView {
   ) async throws -> TileflowCamera? {
     guard !destroyed else { throw TileflowMapError.disposed }
     let fit = try Self.fitValue(bounds, padding: padding, bearing: bearing, pitch: pitch, maxZoom: maxZoom)
-    guard initialized, let bridge else { throw TileflowMapError.notReady }
-    let result = try await bridge.call(.cameraForBounds, payload: fit)
+    guard initialized, let engine else { throw TileflowMapError.notReady }
+    let result = try await engine.call(.cameraForBounds, payload: fit)
     if case .null = result { return nil }
     guard let camera = TileflowCamera(wire: result) else { throw TileflowMapError.rendererFailed }
     return camera
@@ -124,8 +124,8 @@ extension TileflowMapView {
   /// that crosses the antimeridian has an east edge west of its west edge.
   public func visibleBounds() async throws -> TileflowBounds {
     guard !destroyed else { throw TileflowMapError.disposed }
-    guard initialized, let bridge else { throw TileflowMapError.notReady }
-    guard let bounds = TileflowBounds(wire: try await bridge.call(.visibleBounds)) else {
+    guard initialized, let engine else { throw TileflowMapError.notReady }
+    guard let bounds = TileflowBounds(wire: try await engine.call(.visibleBounds)) else {
       throw TileflowMapError.rendererFailed
     }
     return bounds
@@ -153,14 +153,14 @@ extension TileflowMapView {
 
   private func send(_ payload: JSONValue) async throws -> TileflowCameraAnimationResult {
     guard !destroyed else { throw TileflowMapError.disposed }
-    guard initialized, let bridge else { throw TileflowMapError.notReady }
-    let result = try await bridge.call(.moveCamera, payload: payload)
+    guard initialized, let engine else { throw TileflowMapError.notReady }
+    let result = try await engine.call(.moveCamera, payload: payload)
     guard
       let completion = result["completion"]?.string.flatMap(
         TileflowCameraAnimationResult.init(rawValue:)),
       let camera = TileflowCamera(wire: result["camera"])
     else { throw TileflowMapError.rendererFailed }
-    if bridge === self.bridge { observe(camera) }
+    if engine === self.engine { observe(camera) }
     return completion
   }
 

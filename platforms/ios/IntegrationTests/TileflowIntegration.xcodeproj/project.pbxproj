@@ -19,6 +19,7 @@
 		57BC2B5DB43D8CA1B9747503 /* OfflinePackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 927F8C72E0A307CC92921917 /* OfflinePackTests.swift */; };
 		5BA40CEA634DEAE7E688AC83 /* SceneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 113918A3BD759C2E418A20A6 /* SceneTests.swift */; };
 		5E1118CA14E354F3D9A54D25 /* HTTPTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3EAF552BDAD1240BAEC59A0 /* HTTPTransportTests.swift */; };
+		62028ABD75997C1E740722E7 /* NativeMapEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC42FC72087C287C71C2AEA0 /* NativeMapEngineTests.swift */; };
 		64B6202B2A09121D0837BAA4 /* BridgeWebKitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1680DA220D45C59ED79C00C /* BridgeWebKitTests.swift */; };
 		65BCBE913C4CF3F58425C21D /* HostedSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F49D434E75F4048A9225B213 /* HostedSessionTests.swift */; };
 		6635850031DE4A7A64EF79D7 /* ResourcePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 781558E72B328421145D89FD /* ResourcePolicyTests.swift */; };
@@ -75,6 +76,7 @@
 		A09E62F0FBA99F013CD565BC /* ResourceCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceCacheTests.swift; sourceTree = "<group>"; };
 		B7718876CC6A93CE6A5EA82C /* MapIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapIntegrationTests.swift; sourceTree = "<group>"; };
 		C3EAF552BDAD1240BAEC59A0 /* HTTPTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTPTransportTests.swift; sourceTree = "<group>"; };
+		CC42FC72087C287C71C2AEA0 /* NativeMapEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMapEngineTests.swift; sourceTree = "<group>"; };
 		D2D9BCD4B594AC77133EC596 /* TestBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TestBundle.swift; sourceTree = "<group>"; };
 		D737ABB575F1DE63D148934A /* OfflineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineTests.swift; sourceTree = "<group>"; };
 		E1680DA220D45C59ED79C00C /* BridgeWebKitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BridgeWebKitTests.swift; sourceTree = "<group>"; };
@@ -115,6 +117,7 @@
 				675716096CE9326E3BF25189 /* MapOfflineIntegrationTests.swift */,
 				9C5AC78C408492798F46C3C3 /* MapSceneIntegrationTests.swift */,
 				49C06DF5B1D8F32A2B5CFBF2 /* MapStyleIntegrationTests.swift */,
+				CC42FC72087C287C71C2AEA0 /* NativeMapEngineTests.swift */,
 				927F8C72E0A307CC92921917 /* OfflinePackTests.swift */,
 				207B64FB19BDA4FAC6A2A430 /* OfflineServingTests.swift */,
 				7FA53D431BDFC97A1DFB2346 /* OfflineStoreTests.swift */,
@@ -274,6 +277,7 @@
 				ADDA54C087A85A0D385198F9 /* MapOfflineIntegrationTests.swift in Sources */,
 				41044B92E50B41B4E87B91BB /* MapSceneIntegrationTests.swift in Sources */,
 				471C0022F4BE8513D5F01741 /* MapStyleIntegrationTests.swift in Sources */,
+				62028ABD75997C1E740722E7 /* NativeMapEngineTests.swift in Sources */,
 				57BC2B5DB43D8CA1B9747503 /* OfflinePackTests.swift in Sources */,
 				21CA8BBB2F2AFE32B0923BF1 /* OfflineServingTests.swift in Sources */,
 				0F408D6D1ADEDCAC3AA85BE0 /* OfflineStoreTests.swift in Sources */,
@@ -311,8 +315,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = dev.tileflow.tests.TileflowTests;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = YES;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TileflowTestHost.app/TileflowTestHost";
@@ -333,8 +337,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = dev.tileflow.tests.TileflowTestHost;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = YES;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -475,8 +479,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = dev.tileflow.tests.TileflowTests;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = YES;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/TileflowTestHost.app/TileflowTestHost";
@@ -497,8 +501,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = dev.tileflow.tests.TileflowTestHost;
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
-				SUPPORTS_MACCATALYST = YES;
-				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = YES;
 				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = YES;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};

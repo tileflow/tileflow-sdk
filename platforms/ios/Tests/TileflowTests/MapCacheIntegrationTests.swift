@@ -7,7 +7,7 @@ import XCTest
 /// Draws the map, so it belongs to `MapIntegrationTests` and runs where that suite runs.
 extension MapIntegrationTests {
   func testSecondMountShowsCachedPublicResourcesWithoutTheNetwork() async throws {
-    let origin = "http://127.0.0.1:18645"
+    let origin = FixtureServer.origin
     let manifest = URL(string: "\(origin)/cached/manifest.json")!
     do {
       let (_, response) = try await URLSession.shared.data(from: manifest)

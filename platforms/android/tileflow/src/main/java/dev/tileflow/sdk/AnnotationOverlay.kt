@@ -207,7 +207,7 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
     /** Sends the latest points, one request at a time. */
     private fun send() {
         if (sending) return
-        val bridge = map.readyBridge ?: return
+        val engine = map.readyEngine ?: return
         val points = desiredPoints()
         if (points == sentPoints) return
         val current = ++revision
@@ -216,7 +216,7 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
         sending = true
         map.launchOnView {
             try {
-                bridge.call(
+                engine.call(
                     ProtocolContract.Method.SET_TRACKED_POINTS,
                     JSONObject()
                         .put("revision", current)
@@ -231,12 +231,12 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
                 )
             } catch (_: TileflowMapException) {
                 // A replaced renderer receives the points again when it is ready.
-                if (map.readyBridge !== bridge) return@launchOnView
+                if (map.readyEngine !== engine) return@launchOnView
                 sentPoints = null
             } finally {
                 sending = false
             }
-            if (map.readyBridge === bridge) send()
+            if (map.readyEngine === engine) send()
         }
     }
 

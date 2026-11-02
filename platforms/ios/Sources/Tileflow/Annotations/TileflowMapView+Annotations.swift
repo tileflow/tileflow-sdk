@@ -38,18 +38,18 @@ extension TileflowMapView {
   /// The annotation layers changed: tell the renderer which layers people touch and drag.
   func annotationLayersChanged() {
     setAnnotationInteraction(!annotations.isEmpty)
-    guard let bridge = readyBridge else { return }
+    guard let engine = readyEngine else { return }
     let layers = annotations.layerIDs
     Task {
-      _ = try? await bridge.call(
+      _ = try? await engine.call(
         .setAnnotationLayers, payload: .object(["layers": .array(layers.map(JSONValue.string))]))
     }
   }
 
   /// Gives a new renderer the annotation layers and the tracked points.
-  func replayAnnotations(through bridge: MapBridge) async throws {
+  func replayAnnotations(through engine: any MapEngine) async throws {
     if !annotations.isEmpty {
-      _ = try await bridge.call(
+      _ = try await engine.call(
         .setAnnotationLayers,
         payload: .object(["layers": .array(annotations.layerIDs.map(JSONValue.string))]))
     }

@@ -15,7 +15,7 @@ targets:
   TileflowTestHost:
     type: application
     platform: iOS
-    supportedDestinations: [iOS, macCatalyst]
+    supportedDestinations: [iOS]
     sources:
       - AppDelegate.swift
     settings:
@@ -25,7 +25,7 @@ targets:
   TileflowTests:
     type: bundle.unit-test
     platform: iOS
-    supportedDestinations: [iOS, macCatalyst]
+    supportedDestinations: [iOS]
     sources:
       - path: ../Tests/TileflowTests
         excludes:

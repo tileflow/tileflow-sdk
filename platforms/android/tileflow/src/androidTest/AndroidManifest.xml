@@ -6,5 +6,6 @@
         <activity android:name="dev.tileflow.sdk.CameraHostActivity" android:exported="false" />
         <activity android:name="dev.tileflow.sdk.SceneHostActivity" android:exported="false" />
         <activity android:name="dev.tileflow.sdk.OfflineMapHostActivity" android:exported="false" />
+        <activity android:name="dev.tileflow.sdk.NativeMapHostActivity" android:exported="false" />
     </application>
 </manifest>

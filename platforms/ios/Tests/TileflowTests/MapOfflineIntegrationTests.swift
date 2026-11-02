@@ -4,7 +4,7 @@ import XCTest
 
 @testable import Tileflow
 
-private let fixtureOrigin = "http://127.0.0.1:18645"
+private let fixtureOrigin = FixtureServer.origin
 private let hostedMapID = "map_offlinefixture01"
 
 /// Draws the map, so it belongs to `MapIntegrationTests` and runs where that suite runs.

@@ -272,20 +272,24 @@ jobs:
           node scripts/native-release-verify.mjs swift-example --consumers "$consumers" --scheme UIKitExample
           node scripts/native-release-verify.mjs swift-example --consumers "$consumers" --scheme SwiftUIExample
 
-      - name: Run the integration tests from the release tag with Mac Catalyst
+      - name: Run the integration tests from the release tag on iOS Simulator
         shell: bash
         run: |
           set -euo pipefail
           consumers="$RUNNER_TEMP/native-verify/consumers"
           nohup node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
+          udid=$(xcrun simctl create "Tileflow release" com.apple.CoreSimulator.SimDeviceType.iPhone-17 com.apple.CoreSimulator.SimRuntime.iOS-26-5)
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b > /dev/null
           curl --retry 30 --retry-all-errors --retry-delay 1 --fail http://127.0.0.1:18645/manifest.json > /dev/null
           "$XCODEGEN" generate --quiet --spec "$consumers/ios-integration/project.yml"
+          # As in CI, the web runtime's WebGL rendering suite cannot run on a hosted simulator.
           xcodebuild test \
             -project "$consumers/ios-integration/TileflowIntegration.xcodeproj" \
             -scheme TileflowIntegration \
-            -destination 'platform=macOS,variant=Mac Catalyst' \
+            -destination "platform=iOS Simulator,id=$udid,arch=arm64" \
+            -skip-testing:TileflowTests/MapIntegrationTests \
             -derivedDataPath "$RUNNER_TEMP/native-verify/integration-derived" \
-            CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO \
             | tee "$RUNNER_TEMP/native-verify/swift-integration.log"
           ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/native-verify/swift-integration.log"
 

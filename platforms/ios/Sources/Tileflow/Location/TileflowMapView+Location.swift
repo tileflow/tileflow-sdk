@@ -88,15 +88,15 @@ extension TileflowMapView {
   }
 
   /// Gives a new renderer the latest position, heading and follow mode.
-  func replayLocation(through bridge: MapBridge) async throws {
+  func replayLocation(through engine: any MapEngine) async throws {
     if let payload = location.payload(location: true, heading: true) {
-      _ = try await bridge.call(.updateLocation, payload: payload)
+      _ = try await engine.call(.updateLocation, payload: payload)
     }
     if location.follow.mode != .none {
       // A mode set before the first renderer still zooms in as it starts to follow.
       let entering = location.pendingEntry
       location.pendingEntry = false
-      _ = try await bridge.call(
+      _ = try await engine.call(
         .setFollowMode, payload: followPayload(entering: entering, duration: entering ? 1 : 0))
     }
   }
@@ -104,12 +104,12 @@ extension TileflowMapView {
   private func sendFollowMode(entering: Bool, duration: TimeInterval, bearing: Double? = nil) {
     location.revision += 1
     controlsView.followMode = location.follow.mode
-    guard let bridge = readyBridge else {
+    guard let engine = readyEngine else {
       location.pendingEntry = location.follow.mode != .none && (entering || location.pendingEntry)
       return
     }
     let payload = followPayload(entering: entering, duration: duration, bearing: bearing)
-    Task { _ = try? await bridge.call(.setFollowMode, payload: payload) }
+    Task { _ = try? await engine.call(.setFollowMode, payload: payload) }
   }
 
   private func followPayload(entering: Bool, duration: TimeInterval, bearing: Double? = nil)
@@ -176,14 +176,14 @@ final class MapLocation: TileflowLocationConsumer {
 
   /// Sends what changed once the previous update is answered, so updates never queue up.
   func flush() {
-    guard !sending, locationChanged || headingChanged, let bridge = view?.readyBridge,
+    guard !sending, locationChanged || headingChanged, let engine = view?.readyEngine,
       let payload = payload(location: locationChanged, heading: headingChanged)
     else { return }
     locationChanged = false
     headingChanged = false
     sending = true
     Task { [weak self] in
-      _ = try? await bridge.call(.updateLocation, payload: payload)
+      _ = try? await engine.call(.updateLocation, payload: payload)
       guard let self else { return }
       self.sending = false
       self.flush()

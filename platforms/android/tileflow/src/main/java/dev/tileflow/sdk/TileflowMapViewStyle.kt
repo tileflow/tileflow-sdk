@@ -1,8 +1,8 @@
 package dev.tileflow.sdk
 
 import dev.tileflow.sdk.bridge.DataChannel
-import dev.tileflow.sdk.bridge.MapBridge
 import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.engine.MapEngine
 import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -128,9 +128,9 @@ private fun invalid(reason: ProtocolContract.ErrorReason? = null): Nothing =
         reason?.let { TileflowErrorContext.of(it) } ?: TileflowErrorContext(),
     )
 
-private fun TileflowMapView.styleRenderer(): MapBridge {
+private fun TileflowMapView.styleRenderer(): MapEngine {
     if (isDestroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
-    return readyBridge ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
+    return readyEngine ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
 }
 
 /**
@@ -139,14 +139,14 @@ private fun TileflowMapView.styleRenderer(): MapBridge {
  */
 private suspend fun TileflowMapView.changeStyle(
     change: RuntimeStyle.() -> Unit,
-    send: suspend (MapBridge) -> Unit,
+    send: suspend (MapEngine) -> Unit,
 ) {
     if (isDestroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
     val previous = runtimeStyle.copy()
     runtimeStyle.change()
-    val bridge = readyBridge ?: return
+    val engine = readyEngine ?: return
     try {
-        send(bridge)
+        send(engine)
     } catch (error: TileflowMapException) {
         if (error.code == TileflowErrorCode.INVALID_REQUEST) runtimeStyle.restore(previous)
         throw error
@@ -164,7 +164,7 @@ public suspend fun TileflowMapView.addSource(source: TileflowSource) {
     if (!STYLE_ID.matches(source.id) || runtimeStyle.sources.any { it.id == source.id }) invalid()
     val (spec, log) = sourceWire(source)
     val record = RuntimeStyle.Source(source.id, spec, log)
-    changeStyle({ sources += record }) { bridge -> bridge.addSource(record) }
+    changeStyle({ sources += record }) { engine -> engine.addSource(record) }
 }
 
 /** Removes a source no application layer draws. */
@@ -174,8 +174,8 @@ public suspend fun TileflowMapView.removeSource(id: String) {
     changeStyle({
         sources.removeAll { it.id == id }
         states.keys.removeAll { it.startsWith("$id\n") }
-    }) { bridge ->
-        bridge.call(ProtocolContract.Method.REMOVE_SOURCE, JSONObject().put("id", id))
+    }) { engine ->
+        engine.call(ProtocolContract.Method.REMOVE_SOURCE, JSONObject().put("id", id))
     }
 }
 
@@ -190,9 +190,9 @@ public suspend fun TileflowMapView.setGeoJSONSourceData(sourceId: String, data: 
     changeStyle({
         val log = source.geoJSON!!
         source.geoJSON = GeoJSONLog(base, promoteId = log.promoteId, revision = log.revision + 1)
-    }) { bridge ->
-        val (value, references) = geoJSONWire(base, bridge.data)
-        bridge.call(
+    }) { engine ->
+        val (value, references) = geoJSONWire(base, engine.data)
+        engine.call(
             ProtocolContract.Method.SET_GEO_JSON_SOURCE_DATA,
             JSONObject().put("id", sourceId).put("data", value),
             references,
@@ -254,7 +254,7 @@ private suspend fun TileflowMapView.updateFeatures(
                 updateBytes =
                     current.updateBytes + (bytes?.size ?: 0) + remove.sumOf { it.length },
             )
-    }) { bridge -> bridge.sendUpdate(update, sourceId) }
+    }) { engine -> engine.sendUpdate(update, sourceId) }
     compactIfNeeded(source)
 }
 
@@ -279,12 +279,12 @@ public suspend fun TileflowMapView.addLayer(
         invalid(ProtocolContract.ErrorReason.UNKNOWN_SOURCE)
     val (at, slot) = insertion(runtimeStyle.layers, position, layer.slot)
     val record = RuntimeStyle.Layer(layer.id, json, slot)
-    changeStyle({ layers.add(at, record) }) { bridge ->
+    changeStyle({ layers.add(at, record) }) { engine ->
         val payload = JSONObject().put("layer", json)
         if (slot != null && position == TileflowLayerPosition.Default)
             payload.put("slot", slot.wireName)
         position.json()?.let { payload.put("position", it) }
-        bridge.call(ProtocolContract.Method.ADD_LAYER, payload)
+        engine.call(ProtocolContract.Method.ADD_LAYER, payload)
     }
 }
 
@@ -296,10 +296,10 @@ public suspend fun TileflowMapView.updateLayer(layer: TileflowLayer) {
     if (json.has("source") && !sourceExists(json.getString("source")))
         invalid(ProtocolContract.ErrorReason.UNKNOWN_SOURCE)
     val slot = layer.slot
-    changeStyle({ layers[index] = RuntimeStyle.Layer(layer.id, json, slot) }) { bridge ->
+    changeStyle({ layers[index] = RuntimeStyle.Layer(layer.id, json, slot) }) { engine ->
         val payload = JSONObject().put("layer", json)
         slot?.let { payload.put("slot", it.wireName) }
-        bridge.call(ProtocolContract.Method.UPDATE_LAYER, payload)
+        engine.call(ProtocolContract.Method.UPDATE_LAYER, payload)
     }
 }
 
@@ -322,19 +322,19 @@ public suspend fun TileflowMapView.moveLayer(id: String, position: TileflowLayer
     changeStyle({
         layers.removeAt(index)
         layers.add(at, moved)
-    }) { bridge ->
+    }) { engine ->
         val payload = JSONObject().put("id", id)
         val wire = position.json()
         if (wire != null) payload.put("position", wire)
         else slot?.let { payload.put("slot", it.wireName) }
-        bridge.call(ProtocolContract.Method.MOVE_LAYER, payload)
+        engine.call(ProtocolContract.Method.MOVE_LAYER, payload)
     }
 }
 
 public suspend fun TileflowMapView.removeLayer(id: String) {
     if (runtimeStyle.layers.none { it.id == id }) invalid(ProtocolContract.ErrorReason.UNKNOWN_LAYER)
-    changeStyle({ layers.removeAll { it.id == id } }) { bridge ->
-        bridge.call(ProtocolContract.Method.REMOVE_LAYER, JSONObject().put("id", id))
+    changeStyle({ layers.removeAll { it.id == id } }) { engine ->
+        engine.call(ProtocolContract.Method.REMOVE_LAYER, JSONObject().put("id", id))
     }
 }
 
@@ -359,8 +359,8 @@ public suspend fun TileflowMapView.setFeatureState(
     val key = RuntimeStyle.stateKey(sourceId, sourceLayer)
     changeStyle({
         states.getOrPut(key) { mutableMapOf() }.getOrPut(featureId) { mutableMapOf() }.putAll(state)
-    }) { bridge ->
-        bridge.call(
+    }) { engine ->
+        engine.call(
             ProtocolContract.Method.SET_FEATURE_STATE,
             featureTarget(sourceId, sourceLayer, featureId).put("state", wire),
         )
@@ -398,12 +398,12 @@ public suspend fun TileflowMapView.removeFeatureState(
             featureId != null -> states[stateKey]?.remove(featureId)
             else -> states.remove(stateKey)
         }
-    }) { bridge ->
+    }) { engine ->
         val payload = JSONObject().put("source", sourceId)
         sourceLayer?.let { payload.put("sourceLayer", it) }
         featureId?.let { payload.put("id", TileflowFeature.wireId(it)) }
         key?.let { payload.put("key", it) }
-        bridge.call(ProtocolContract.Method.REMOVE_FEATURE_STATE, payload)
+        engine.call(ProtocolContract.Method.REMOVE_FEATURE_STATE, payload)
     }
 }
 
@@ -662,7 +662,7 @@ private fun geoJSONWire(
         }
     }
 
-private suspend fun MapBridge.addSource(record: RuntimeStyle.Source) {
+private suspend fun MapEngine.addSource(record: RuntimeStyle.Source) {
     val spec = JSONObject(record.spec.toString())
     var references = emptyList<DataChannel.Reference>()
     record.geoJSON?.let { log ->
@@ -677,7 +677,7 @@ private suspend fun MapBridge.addSource(record: RuntimeStyle.Source) {
     )
 }
 
-private suspend fun MapBridge.sendUpdate(update: GeoJSONLog.Update, source: String) {
+private suspend fun MapEngine.sendUpdate(update: GeoJSONLog.Update, source: String) {
     val payload = JSONObject().put("id", source)
     val references = mutableListOf<DataChannel.Reference>()
     update.add?.let { bytes ->
@@ -728,16 +728,16 @@ private fun TileflowMapView.compactIfNeeded(source: RuntimeStyle.Source) {
  * Gives a new renderer the application's runtime style: sources and their updates, layers in
  * order, then feature state.
  */
-internal suspend fun TileflowMapView.replayStyle(bridge: MapBridge) {
+internal suspend fun TileflowMapView.replayStyle(engine: MapEngine) {
     val style = runtimeStyle.copy()
     for (source in style.sources) {
-        bridge.addSource(source)
-        source.geoJSON?.updates?.forEach { bridge.sendUpdate(it, source.id) }
+        engine.addSource(source)
+        source.geoJSON?.updates?.forEach { engine.sendUpdate(it, source.id) }
     }
     for (layer in style.layers) {
         val payload = JSONObject().put("layer", layer.json)
         layer.slot?.let { payload.put("slot", it.wireName) }
-        bridge.call(ProtocolContract.Method.ADD_LAYER, payload)
+        engine.call(ProtocolContract.Method.ADD_LAYER, payload)
     }
     val states =
         style.states.flatMap { (key, features) ->
@@ -757,7 +757,7 @@ internal suspend fun TileflowMapView.replayStyle(bridge: MapBridge) {
         coroutineScope {
             group
                 .map { payload ->
-                    async { bridge.call(ProtocolContract.Method.SET_FEATURE_STATE, payload) }
+                    async { engine.call(ProtocolContract.Method.SET_FEATURE_STATE, payload) }
                 }
                 .awaitAll()
         }

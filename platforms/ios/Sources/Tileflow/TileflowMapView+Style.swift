@@ -111,8 +111,8 @@ extension TileflowMapView {
     }
     let (spec, log) = try Self.sourceWire(source)
     let record = RuntimeStyle.Source(id: source.id, spec: spec, geoJSON: log)
-    try await changeStyle({ $0.sources.append(record) }) { bridge in
-      try await self.sendAddSource(record, through: bridge)
+    try await changeStyle({ $0.sources.append(record) }) { engine in
+      try await self.sendAddSource(record, through: engine)
     }
   }
 
@@ -127,8 +127,8 @@ extension TileflowMapView {
     try await changeStyle({ style in
       style.sources.removeAll { $0.id == id }
       style.states = style.states.filter { !$0.key.hasPrefix("\(id)\n") }
-    }) { bridge in
-      _ = try await bridge.call(.removeSource, payload: .object(["id": .string(id)]))
+    }) { engine in
+      _ = try await engine.call(.removeSource, payload: .object(["id": .string(id)]))
     }
   }
 
@@ -146,9 +146,9 @@ extension TileflowMapView {
       let revision = (style.sources[index].geoJSON?.revision ?? 0) + 1
       style.sources[index].geoJSON = GeoJSONLog(
         base: base, promoteId: promoteId, revision: revision)
-    }) { bridge in
-      let (value, references) = try Self.geoJSONWire(base, channel: bridge.data)
-      _ = try await bridge.call(
+    }) { engine in
+      let (value, references) = try Self.geoJSONWire(base, channel: engine.data)
+      _ = try await engine.call(
         .setGeoJSONSourceData, payload: .object(["id": .string(sourceId), "data": value]),
         data: references)
     }
@@ -201,8 +201,8 @@ extension TileflowMapView {
       style.sources[index].geoJSON?.updates.append(update)
       style.sources[index].geoJSON?.updateBytes +=
         (bytes?.count ?? 0) + remove.reduce(0) { $0 + $1.utf8.count }
-    }) { bridge in
-      try await self.sendUpdate(update, source: sourceId, through: bridge)
+    }) { engine in
+      try await self.sendUpdate(update, source: sourceId, through: engine)
     }
     compactIfNeeded(sourceId)
   }
@@ -225,11 +225,11 @@ extension TileflowMapView {
     var record = RuntimeStyle.Layer(id: layer.id, json: json, slot: layer.slot)
     let at = try insertionIndex(for: position, slot: &record.slot)
     let fixed = record
-    try await changeStyle({ $0.layers.insert(fixed, at: at) }) { bridge in
+    try await changeStyle({ $0.layers.insert(fixed, at: at) }) { engine in
       var payload: [String: JSONValue] = ["layer": json]
       if let slot = fixed.slot, position == .default { payload["slot"] = .string(slot.rawValue) }
       if let position = position.wireValue { payload["position"] = position }
-      _ = try await bridge.call(.addLayer, payload: .object(payload))
+      _ = try await engine.call(.addLayer, payload: .object(payload))
     }
   }
 
@@ -244,10 +244,10 @@ extension TileflowMapView {
     }
     let slot = layer.slot
     try await changeStyle({ $0.layers[index] = .init(id: layer.id, json: json, slot: slot) }) {
-      bridge in
+      engine in
       var payload: [String: JSONValue] = ["layer": json]
       if let slot { payload["slot"] = .string(slot.rawValue) }
-      _ = try await bridge.call(.updateLayer, payload: .object(payload))
+      _ = try await engine.call(.updateLayer, payload: .object(payload))
     }
   }
 
@@ -267,14 +267,14 @@ extension TileflowMapView {
     try await changeStyle({ style in
       style.layers.remove(at: index)
       style.layers.insert(moved, at: at)
-    }) { bridge in
+    }) { engine in
       var payload: [String: JSONValue] = ["id": .string(id)]
       if let wire = position.wireValue {
         payload["position"] = wire
       } else if let slot = moved.slot {
         payload["slot"] = .string(slot.rawValue)
       }
-      _ = try await bridge.call(.moveLayer, payload: .object(payload))
+      _ = try await engine.call(.moveLayer, payload: .object(payload))
     }
   }
 
@@ -282,8 +282,8 @@ extension TileflowMapView {
     guard runtimeStyle.layers.contains(where: { $0.id == id }) else {
       throw TileflowMapError(.invalidRequest, reason: .unknownLayer)
     }
-    try await changeStyle({ $0.layers.removeAll { $0.id == id } }) { bridge in
-      _ = try await bridge.call(.removeLayer, payload: .object(["id": .string(id)]))
+    try await changeStyle({ $0.layers.removeAll { $0.id == id } }) { engine in
+      _ = try await engine.call(.removeLayer, payload: .object(["id": .string(id)]))
     }
   }
 
@@ -309,8 +309,8 @@ extension TileflowMapView {
     let key = RuntimeStyle.stateKey(sourceId, sourceLayer)
     try await changeStyle({ style in
       style.states[key, default: [:]][featureId, default: [:]].merge(state) { $1 }
-    }) { bridge in
-      _ = try await bridge.call(
+    }) { engine in
+      _ = try await engine.call(
         .setFeatureState,
         payload: Self.featureTarget(sourceId, sourceLayer, featureId).merging([
           "state": .object(state.mapValues(\.wireValue))
@@ -347,12 +347,12 @@ extension TileflowMapView {
       } else {
         style.states.removeValue(forKey: stateKey)
       }
-    }) { bridge in
+    }) { engine in
       var payload: [String: JSONValue] = ["source": .string(sourceId)]
       if let sourceLayer { payload["sourceLayer"] = .string(sourceLayer) }
       if let featureId { payload["id"] = TileflowFeature.wireID(featureId) }
       if let key { payload["key"] = .string(key) }
-      _ = try await bridge.call(.removeFeatureState, payload: .object(payload))
+      _ = try await engine.call(.removeFeatureState, payload: .object(payload))
     }
   }
 
@@ -439,10 +439,10 @@ extension TileflowMapView {
     return try await styleRenderer().call(.queryCluster, payload: .object(payload))
   }
 
-  private func styleRenderer() throws -> MapBridge {
+  private func styleRenderer() throws -> any MapEngine {
     guard !isDestroyed else { throw TileflowMapError.disposed }
-    guard let bridge = readyBridge else { throw TileflowMapError.notReady }
-    return bridge
+    guard let engine = readyEngine else { throw TileflowMapError.notReady }
+    return engine
   }
 
   private static func features(_ value: JSONValue) throws -> [TileflowQueriedFeature] {
@@ -596,26 +596,26 @@ extension TileflowMapView {
     }
   }
 
-  private func sendAddSource(_ record: RuntimeStyle.Source, through bridge: MapBridge) async throws {
+  private func sendAddSource(_ record: RuntimeStyle.Source, through engine: any MapEngine) async throws {
     var spec = record.spec
     var references: [DataChannel.Reference] = []
     if let log = record.geoJSON {
-      let (value, registered) = try Self.geoJSONWire(log.base, channel: bridge.data)
+      let (value, registered) = try Self.geoJSONWire(log.base, channel: engine.data)
       spec["data"] = value
       references = registered
     }
-    _ = try await bridge.call(
+    _ = try await engine.call(
       .addSource, payload: .object(["id": .string(record.id), "source": .object(spec)]),
       data: references)
   }
 
-  private func sendUpdate(_ update: GeoJSONLog.Update, source: String, through bridge: MapBridge)
+  private func sendUpdate(_ update: GeoJSONLog.Update, source: String, through engine: any MapEngine)
     async throws
   {
     var payload: [String: JSONValue] = ["id": .string(source)]
     var references: [DataChannel.Reference] = []
     if let add = update.add {
-      let reference = try bridge.data.register(
+      let reference = try engine.data.register(
         add, digest: DataChannel.digest(add), contentType: "application/json")
       references.append(reference)
       payload["add"] = reference.wireValue
@@ -623,20 +623,20 @@ extension TileflowMapView {
     if !update.remove.isEmpty {
       payload["remove"] = .array(update.remove.map(TileflowFeature.wireID))
     }
-    _ = try await bridge.call(.updateGeoJSONSource, payload: .object(payload), data: references)
+    _ = try await engine.call(.updateGeoJSONSource, payload: .object(payload), data: references)
   }
 
   /// Keeps a change for later renderers and sends it to the current one. A change the renderer
   /// refuses is not kept.
   private func changeStyle(
-    _ change: (inout RuntimeStyle) -> Void, send: (MapBridge) async throws -> Void
+    _ change: (inout RuntimeStyle) -> Void, send: (any MapEngine) async throws -> Void
   ) async throws {
     guard !isDestroyed else { throw TileflowMapError.disposed }
     let previous = runtimeStyle
     change(&runtimeStyle)
-    guard let bridge = readyBridge else { return }
+    guard let engine = readyEngine else { return }
     do {
-      try await send(bridge)
+      try await send(engine)
     } catch let error as TileflowMapError where error == .invalidRequest {
       runtimeStyle = previous
       throw error
@@ -677,18 +677,18 @@ extension TileflowMapView {
 
   /// Gives a new renderer the application's runtime style: sources and their updates, layers in
   /// order, then feature state.
-  func replayStyle(through bridge: MapBridge) async throws {
+  func replayStyle(through engine: any MapEngine) async throws {
     let style = runtimeStyle
     for source in style.sources {
-      try await sendAddSource(source, through: bridge)
+      try await sendAddSource(source, through: engine)
       for update in source.geoJSON?.updates ?? [] {
-        try await sendUpdate(update, source: source.id, through: bridge)
+        try await sendUpdate(update, source: source.id, through: engine)
       }
     }
     for layer in style.layers {
       var payload: [String: JSONValue] = ["layer": layer.json]
       if let slot = layer.slot { payload["slot"] = .string(slot.rawValue) }
-      _ = try await bridge.call(.addLayer, payload: .object(payload))
+      _ = try await engine.call(.addLayer, payload: .object(payload))
     }
     var states: [JSONValue] = []
     for (key, features) in style.states {
@@ -703,7 +703,7 @@ extension TileflowMapView {
     // Feature state goes in groups of requests in flight, well inside the renderer's budget.
     for start in stride(from: 0, to: states.count, by: 32) {
       let calls = states[start..<min(start + 32, states.count)].map { payload in
-        Task { @MainActor in _ = try await bridge.call(.setFeatureState, payload: payload) }
+        Task { @MainActor in _ = try await engine.call(.setFeatureState, payload: payload) }
       }
       for call in calls { try await call.value }
     }

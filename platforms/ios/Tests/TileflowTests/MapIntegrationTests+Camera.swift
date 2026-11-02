@@ -21,7 +21,7 @@ extension MapIntegrationTests {
     init(options: TileflowMapOptions = .init()) {
       view = TileflowMapView(
         source: TileflowMapSource(
-          map: "fixture", manifestURL: URL(string: "http://127.0.0.1:18645/manifest.json")!,
+          map: "fixture", manifestURL: FixtureServer.manifest,
           allowsLoopbackHTTP: true),
         options: options)
       view.automaticallyAdjustsContentInsets = false
@@ -41,7 +41,7 @@ extension MapIntegrationTests {
   @MainActor
   private func loadedMap(options: TileflowMapOptions = .init()) async throws -> Host {
     do {
-      _ = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:18645/manifest.json")!)
+      _ = try await URLSession.shared.data(from: FixtureServer.manifest)
     } catch {
       throw XCTSkip("Start scripts/mobile-fixture-server.mjs to run online map integration.")
     }
@@ -226,7 +226,7 @@ extension MapIntegrationTests {
 
   func testABoundCameraFollowsTheMapAndMovesItWithoutEchoes() async throws {
     do {
-      _ = try await URLSession.shared.data(from: URL(string: "http://127.0.0.1:18645/manifest.json")!)
+      _ = try await URLSession.shared.data(from: FixtureServer.manifest)
     } catch {
       throw XCTSkip("Start scripts/mobile-fixture-server.mjs to run online map integration.")
     }
@@ -243,7 +243,7 @@ extension MapIntegrationTests {
       var body: some View {
         TileflowMap(
           source: TileflowMapSource(
-            map: "fixture", manifestURL: URL(string: "http://127.0.0.1:18645/manifest.json")!,
+            map: "fixture", manifestURL: FixtureServer.manifest,
             allowsLoopbackHTTP: true),
           camera: Binding(
             get: { model.camera },

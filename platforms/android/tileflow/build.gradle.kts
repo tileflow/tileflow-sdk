@@ -34,6 +34,8 @@ dependencies {
     api(project(":tileflow-configuration"))
     implementation("androidx.webkit:webkit:1.14.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    // MapLibre Native with OpenGL ES, pinned exactly: every upgrade is a reviewed change.
+    implementation("org.maplibre.gl:android-sdk-opengl:13.7.1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     api(platform("androidx.compose:compose-bom:2025.08.01"))
     api("androidx.compose.ui:ui")

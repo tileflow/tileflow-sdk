@@ -13,10 +13,17 @@ let package = Package(
     .library(name: "TileflowGeoIP", targets: ["TileflowGeoIP"]),
     .library(name: "TileflowServiceContent", targets: ["TileflowServiceContent"]),
   ],
+  dependencies: [
+    // MapLibre Native draws maps. The version is exact: each upgrade is a reviewed change.
+    .package(url: "https://github.com/maplibre/maplibre-gl-native-distribution", exact: "7.0.0")
+  ],
   targets: [
     .target(
       name: "Tileflow",
-      dependencies: ["TileflowConfiguration"],
+      dependencies: [
+        "TileflowConfiguration",
+        .product(name: "MapLibre", package: "maplibre-gl-native-distribution"),
+      ],
       path: "Sources/Tileflow",
       resources: [.copy("EmbeddedRuntime")]
     ),

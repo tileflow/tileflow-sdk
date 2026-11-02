@@ -447,8 +447,9 @@ The workflow has no inputs and runs only for the current head of `main`.
    commit and tag on top of the distribution's current `main` as a git bundle. It pushes that commit
    to a local mirror with the same code the publish job uses. Independent consumers then build from
    the release only: the UIKit and SwiftUI examples resolve the package from the mirror at the
-   release tag for the iOS Simulator, the Swift integration tests, including map rendering, run with
-   Mac Catalyst against that same tag, and the Android example resolves `dev.tileflow` only from the
+   release tag for the iOS Simulator, the Swift integration tests run on an iOS Simulator against
+   that same tag (without the web runtime's WebGL rendering suite, which hosted simulators cannot
+   draw), and the Android example resolves `dev.tileflow` only from the
    Maven candidate. Each consumer must carry the candidate's exact runtime bytes. The job uploads
    one bundle, retained for 30 days, and shows its SHA-256, the version, the source SHA, the runtime
    digest, the Swift commit and tree, and the Maven coordinates.

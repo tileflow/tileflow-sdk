@@ -1,8 +1,8 @@
 package dev.tileflow.sdk
 
 import androidx.annotation.MainThread
-import dev.tileflow.sdk.bridge.MapBridge
 import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.engine.MapEngine
 import dev.tileflow.sdk.location.FollowModeState
 import dev.tileflow.sdk.location.TileflowDefaultLocationProvider
 import dev.tileflow.sdk.location.TileflowFollowMode
@@ -73,14 +73,14 @@ internal class MapLocation(private val view: TileflowMapView) : TileflowLocation
     /** Sends what changed once the previous update is answered, so updates never queue up. */
     fun flush() {
         if (sending || !(locationChanged || headingChanged)) return
-        val bridge = view.readyBridge ?: return
+        val engine = view.readyEngine ?: return
         val payload = payload(locationChanged, headingChanged) ?: return
         locationChanged = false
         headingChanged = false
         sending = true
         view.launchOnView {
             try {
-                bridge.call(ProtocolContract.Method.UPDATE_LOCATION, payload)
+                engine.call(ProtocolContract.Method.UPDATE_LOCATION, payload)
             } catch (_: TileflowMapException) {
                 // A new renderer receives the latest values when it starts.
             } finally {
@@ -179,15 +179,15 @@ internal fun TileflowMapView.receiveFollowModeChanged(value: JSONObject) {
 }
 
 /** Gives a new renderer the latest position, heading and follow mode. */
-internal suspend fun TileflowMapView.replayLocation(bridge: MapBridge) {
+internal suspend fun TileflowMapView.replayLocation(engine: MapEngine) {
     location.payload(includeLocation = true, includeHeading = true)?.let {
-        bridge.call(ProtocolContract.Method.UPDATE_LOCATION, it)
+        engine.call(ProtocolContract.Method.UPDATE_LOCATION, it)
     }
     if (location.follow.mode != TileflowFollowMode.NONE) {
         // A mode set before the first renderer still zooms in as it starts to follow.
         val entering = location.pendingEntry
         location.pendingEntry = false
-        bridge.call(
+        engine.call(
             ProtocolContract.Method.SET_FOLLOW_MODE,
             followPayload(entering, if (entering) 1000 else 0),
         )
@@ -201,8 +201,8 @@ private fun TileflowMapView.sendFollowMode(
 ) {
     location.revision += 1
     controlsView.followMode = location.follow.mode
-    val bridge = readyBridge
-    if (bridge == null) {
+    val engine = readyEngine
+    if (engine == null) {
         location.pendingEntry =
             location.follow.mode != TileflowFollowMode.NONE && (entering || location.pendingEntry)
         return
@@ -210,7 +210,7 @@ private fun TileflowMapView.sendFollowMode(
     val payload = followPayload(entering, durationMillis, bearing)
     launchOnView {
         try {
-            bridge.call(ProtocolContract.Method.SET_FOLLOW_MODE, payload)
+            engine.call(ProtocolContract.Method.SET_FOLLOW_MODE, payload)
         } catch (_: TileflowMapException) {
             // A new renderer receives the follow mode when it starts.
         }

@@ -305,7 +305,7 @@ jobs:
         run: node scripts/mobile-runtime-smoke.mjs
 
   swift:
-    name: Swift SDK on iOS Simulator and Mac Catalyst
+    name: Swift SDK on iOS Simulator
     needs: mobile-areas
     if: needs.mobile-areas.outputs.ios == 'true'
     runs-on: macos-26
@@ -338,21 +338,17 @@ jobs:
       - name: Test on iOS Simulator
         run: |
           set -euo pipefail
-          # Hosted simulators crash their GPU process on WebGL draws (see IntegrationTests/README.md),
-          # so the rendering test runs on Mac Catalyst below; everything else runs on iOS WebKit.
+          # MapLibre Native draws with Metal on the hosted simulator, so its map tests run here.
+          # The web runtime's WebGL draws crash the hosted simulator's GPU process (see
+          # IntegrationTests/README.md), so only the WebView rendering suite is skipped.
           xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination "platform=iOS Simulator,id=$SIMULATOR_UDID,arch=arm64" -skip-testing:TileflowTests/MapIntegrationTests -resultBundlePath "$RUNNER_TEMP/TileflowSimulator.xcresult" | tee "$RUNNER_TEMP/swift-simulator-tests.log"
           ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-simulator-tests.log"
-      - name: Test UIKit and WebKit rendering with Mac Catalyst
-        run: |
-          set -euo pipefail
-          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination 'platform=macOS,variant=Mac Catalyst' CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO -resultBundlePath "$RUNNER_TEMP/TileflowCatalyst.xcresult" | tee "$RUNNER_TEMP/swift-catalyst-tests.log"
-          ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-catalyst-tests.log"
-      - name: Test the service clients with Mac Catalyst
+      - name: Test the service clients on iOS Simulator
         working-directory: platforms/ios
         run: |
           set -euo pipefail
           # Contract tests against the shared recorded answers; they make no network requests.
-          xcodebuild test -scheme Tileflow-Package -only-testing:TileflowServiceTests -destination 'platform=macOS,variant=Mac Catalyst' CODE_SIGN_IDENTITY=- CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=NO | tee "$RUNNER_TEMP/swift-service-tests.log"
+          xcodebuild test -scheme Tileflow-Package -only-testing:TileflowServiceTests -destination "platform=iOS Simulator,id=$SIMULATOR_UDID,arch=arm64" | tee "$RUNNER_TEMP/swift-service-tests.log"
           ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-service-tests.log"
       - name: Upload Swift test results
         if: failure()
@@ -361,7 +357,6 @@ jobs:
           name: swift-integration-results
           path: |
             ${{ runner.temp }}/TileflowSimulator.xcresult
-            ${{ runner.temp }}/TileflowCatalyst.xcresult
             ${{ runner.temp }}/swift-*-tests.log
             ${{ runner.temp }}/map-fixture.log
           retention-days: 7
@@ -466,8 +461,6 @@ jobs:
           curl --retry 30 --retry-all-errors --retry-delay 1 --fail http://127.0.0.1:18645/manifest.json > /dev/null
       - name: Run instrumented tests
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
-        env:
-          JAVA_HOME: ${{ env.JAVA_HOME_17_X64 }}
         with:
           api-level: ${{ matrix.api }}
           system-image-api-level: ${{ matrix.image }}

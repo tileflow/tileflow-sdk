@@ -165,13 +165,13 @@ final class MapIntegrationTests: XCTestCase {
 
     // A renderer the system ends while the app is hidden is replaced only once it is visible.
     NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
-    view.webViewWebContentProcessDidTerminate(try renderer(view))
+    try terminateRenderer(of: view)
     XCTAssertFalse(view.subviews.contains { $0 is WKWebView })
     NotificationCenter.default.post(
       name: UIApplication.willEnterForegroundNotification, object: nil)
     await fulfillment(of: [loads[1]], timeout: 30)
     // Loading resets the recovery budget, so a later loss is recovered too.
-    view.webViewWebContentProcessDidTerminate(try renderer(view))
+    try terminateRenderer(of: view)
     await fulfillment(of: [loads[2]], timeout: 30)
     try await assertApplicationLayer(view, layer: "__tileflow_app_bounded")
     XCTAssertTrue(failures.isEmpty, "\(failures)")
@@ -261,6 +261,12 @@ final class MapIntegrationTests: XCTestCase {
 
   func renderer(_ view: TileflowMapView) throws -> WKWebView {
     try XCTUnwrap(view.subviews.compactMap { $0 as? WKWebView }.first)
+  }
+
+  /// Reports the end of the renderer's web content process, as WebKit does.
+  func terminateRenderer(of view: TileflowMapView) throws {
+    let engine = try XCTUnwrap(view.engine as? WebViewMapEngine)
+    engine.webViewWebContentProcessDidTerminate(try renderer(view))
   }
 
   func assertApplicationLayer(

@@ -4,6 +4,9 @@
 # The expectation states whether the image's System WebView meets the SDK minimum; the
 # WebView requirement test fails if the installed provider disagrees.
 set -euo pipefail
+# Gradle needs JDK 17. Hosted runners default to a newer JDK and name 17 in JAVA_HOME_17_X64, a
+# runner variable that the workflow's env context does not carry.
+if [ -n "${JAVA_HOME_17_X64:-}" ]; then export JAVA_HOME="$JAVA_HOME_17_X64"; fi
 expectation=$1
 shift
 reports=${MOBILE_ANDROID_REPORTS:-${RUNNER_TEMP:-/tmp}/android-connected}

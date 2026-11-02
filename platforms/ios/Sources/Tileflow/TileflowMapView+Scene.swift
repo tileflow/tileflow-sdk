@@ -105,8 +105,8 @@ extension TileflowMapView {
     next.viewMode = mode
     // The view mode is kept with the options, so a new renderer starts in it.
     keepOptions(next)
-    guard let bridge = readyBridge else { return }
-    _ = try await bridge.call(
+    guard let engine = readyEngine else { return }
+    _ = try await engine.call(
       .setViewMode,
       payload: .object([
         "viewMode": .string(mode.rawValue), "duration": .number((duration * 1000).rounded()),
@@ -322,8 +322,8 @@ extension TileflowMapView {
       layers.allSatisfy({ HostedContract.matches($0, #"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"#) }),
       (0...60).contains(duration)
     else { throw TileflowMapError.invalidRequest }
-    let bridge = try requireRenderer()
-    let started = try await bridge.call(
+    let engine = try requireRenderer()
+    let started = try await engine.call(
       .animateLineProgress,
       payload: .object([
         "layers": .array(layers.map(JSONValue.string)), "to": progress.stateWireValue,
@@ -331,7 +331,7 @@ extension TileflowMapView {
       ]))
     // A new renderer draws the lines where the animation leads.
     keepLineProgress(progress, for: Set(layers))
-    return try await awaitAnimation(started, on: bridge, onCue: nil)
+    return try await awaitAnimation(started, on: engine, onCue: nil)
   }
 
   /// Plays a camera shot and returns true when it reaches its last keyframe, or false when a
@@ -342,31 +342,31 @@ extension TileflowMapView {
     async throws -> Bool
   {
     let payload = try shot.wireValue()
-    let bridge = try requireRenderer()
+    let engine = try requireRenderer()
     endFollowing(.api)
-    let started = try await bridge.call(.playShot, payload: payload)
-    return try await awaitAnimation(started, on: bridge, onCue: onCue)
+    let started = try await engine.call(.playShot, payload: payload)
+    return try await awaitAnimation(started, on: engine, onCue: onCue)
   }
 
   private func awaitAnimation(
-    _ started: JSONValue, on bridge: MapBridge, onCue: ((String) -> Void)?
+    _ started: JSONValue, on engine: any MapEngine, onCue: ((String) -> Void)?
   ) async throws -> Bool {
     guard let id = started["animation"]?.string else { throw TileflowMapError.rendererFailed }
     let waiters = animations
     return try await withTaskCancellationHandler {
       try await waiters.wait(for: id, onCue: onCue)
     } onCancel: {
-      Task { @MainActor [weak bridge] in
+      Task { @MainActor [weak engine] in
         waiters.abandon(id, with: CancellationError())
-        _ = try? await bridge?.call(.stopAnimation, payload: .object(["animation": .string(id)]))
+        _ = try? await engine?.call(.stopAnimation, payload: .object(["animation": .string(id)]))
       }
     }
   }
 
-  private func requireRenderer() throws -> MapBridge {
+  private func requireRenderer() throws -> any MapEngine {
     guard !isDestroyed else { throw TileflowMapError.disposed }
-    guard let bridge = readyBridge else { throw TileflowMapError.notReady }
-    return bridge
+    guard let engine = readyEngine else { throw TileflowMapError.notReady }
+    return engine
   }
 
   private func milliseconds(_ duration: TimeInterval) throws -> JSONValue {
@@ -381,9 +381,9 @@ extension TileflowMapView {
     guard !isDestroyed else { throw TileflowMapError.disposed }
     let previous = scene
     keep(&scene, command)
-    guard let bridge = readyBridge else { return }
+    guard let engine = readyEngine else { return }
     do {
-      try await send(command, through: bridge, replaying: false)
+      try await send(command, through: engine, replaying: false)
     } catch let error as TileflowMapError where error == .invalidRequest {
       // A request the renderer refuses is not given to the next one either.
       scene = previous
@@ -391,15 +391,15 @@ extension TileflowMapView {
     }
   }
 
-  private func send(_ command: SceneCommand, through bridge: MapBridge, replaying: Bool)
+  private func send(_ command: SceneCommand, through engine: any MapEngine, replaying: Bool)
     async throws
   {
-    let (payload, references) = try command.build(bridge.data, replaying)
-    _ = try await bridge.call(command.method, payload: payload, data: references)
+    let (payload, references) = try command.build(engine.data, replaying)
+    _ = try await engine.call(command.method, payload: payload, data: references)
   }
 
   /// Gives a new renderer the scene the application asked for, at once.
-  func replayScene(through bridge: MapBridge) async throws {
-    for command in scene.commands { try await send(command, through: bridge, replaying: true) }
+  func replayScene(through engine: any MapEngine) async throws {
+    for command in scene.commands { try await send(command, through: engine, replaying: true) }
   }
 }

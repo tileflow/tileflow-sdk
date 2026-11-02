@@ -101,6 +101,8 @@ public class NativeEngineFeasibilityTest {
 
     @Before
     public fun setUp() {
+        EngineTransport.keepAmbientCache =
+            InstrumentationRegistry.getArguments().getString("tileflowAmbientCache") == "default"
         EngineTransport.install(context)
         EngineTransport.records.clear()
         Logger.setLoggerDefinition(CapturingLogger(logs))
@@ -151,7 +153,9 @@ public class NativeEngineFeasibilityTest {
         receipt.put("requests", requests())
         receipt.put("engineDatabase", engineDatabase())
         receipt.put("logs", JSONArray(logs.filter(::relevant)))
-        write("interception-online", receipt)
+        receipt.put("ambientCache", if (EngineTransport.keepAmbientCache) "default" else "0")
+        write(if (EngineTransport.keepAmbientCache) "interception-online-default-cache" else "interception-online", receipt)
+        if (EngineTransport.keepAmbientCache) return
 
         val records = EngineTransport.records.toList()
         assertTrue("MapLibre's own client made requests: $records", records.none { it.delegated })
@@ -246,6 +250,30 @@ public class NativeEngineFeasibilityTest {
         assertEquals("Nothing came from the network", 0, receipt.getInt("sdkCacheEntries"))
         assertEquals(0, receipt.getJSONObject("engineDatabase").getInt("rows"))
         assertTrue(receipt.getJSONObject("features").getJSONObject("buildings").getInt("count") > 0)
+    }
+
+    /** A custom scheme reaches the module provider; MapLibre's own client never completes it. */
+    @Test
+    public fun customSchemeRequestsReachTheModuleProvider() {
+        val style =
+            JSONObject(
+                """{"version":8,"sources":{"custom":{"type":"geojson","data":"tileflow://resource/data.json"}},"layers":[{"id":"background","type":"background","paint":{"background-color":"#dddddd"}},{"id":"custom","type":"circle","source":"custom"}]}"""
+            )
+        val activity = show(style, camera(0.0, 0.0, 3.0))
+        val receipt = JSONObject().put("check", "custom-scheme")
+        try {
+            assertTrue(activity.styleLoaded.await(30, TimeUnit.SECONDS))
+            val idle = activity.awaitIdle(0, 15_000)
+            receipt
+                .put("idleWithin15s", idle)
+                .put("failures", JSONArray(activity.failures))
+                .put("requests", requests())
+                .put("logs", JSONArray(logs.filter(::relevant)))
+            write("custom-scheme", receipt)
+        } finally {
+            finish(activity)
+        }
+        assertTrue(EngineTransport.records.any { it.address == "tileflow://resource/data.json" })
     }
 
     // Raster-dem offline: an absent tile answered 204 draws its stored parent.

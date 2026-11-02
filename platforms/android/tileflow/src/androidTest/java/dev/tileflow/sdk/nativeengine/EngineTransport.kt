@@ -89,6 +89,9 @@ internal object EngineTransport {
     val executor: ExecutorService = Executors.newFixedThreadPool(8)
     @Volatile private var installed = false
 
+    /** Leaves MapLibre's ambient cache at its default size, to compare with the SDK's setting. */
+    var keepAmbientCache = false
+
     fun install(context: Context) {
         if (installed) return
         onMain { MapLibre.getInstance(context.applicationContext) }
@@ -98,6 +101,7 @@ internal object EngineTransport {
             MapLibre.setModuleProvider(EngineModuleProvider(previous))
             installed = true
         }
+        if (keepAmbientCache) return
         // The SDK's cache is the only cache: MapLibre keeps no ambient copies.
         val done = CountDownLatch(1)
         var failure: String? = null

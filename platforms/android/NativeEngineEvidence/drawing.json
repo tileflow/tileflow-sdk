@@ -1,0 +1,19 @@
+{
+  "check": "drawing",
+  "render": {
+    "styleLoaded": true,
+    "idle": true,
+    "millis": 266,
+    "fullyRendered": 1,
+    "failures": [],
+    "picture": "drawing.png"
+  },
+  "center": "#ff7f0e",
+  "corner": "#1f77b4",
+  "squareShare": 0.5091666666666667,
+  "backgroundShare": 0.49,
+  "date": "2026-11-02T14:28:20.228504Z",
+  "engine": "org.maplibre.gl:android-sdk-opengl:13.7.1",
+  "device": "unknown Android SDK built for arm64 API 36 arm64-v8a",
+  "fingerprint": "Android/sdk_phone64_arm64/emu64a:16/BE2A.250530.026.D1/13818094:userdebug/test-keys"
+}

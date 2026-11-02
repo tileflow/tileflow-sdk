@@ -1,0 +1,165 @@
+{
+  "check": "interception-airplane",
+  "systemReachable": false,
+  "followingSystem": {
+    "engineConnected": false,
+    "requests": 0,
+    "idleEvents": 0,
+    "picture": {
+      "file": "interception-airplane-following-system.png",
+      "distinctColours": 1
+    }
+  },
+  "forcedConnected": {
+    "render": {
+      "styleLoaded": true,
+      "idle": true,
+      "millis": 1,
+      "fullyRendered": 1,
+      "failures": [],
+      "picture": "interception-airplane.png"
+    },
+    "buildingShare": 0.12138425925925926,
+    "groundShare": 0.8043051697530864,
+    "markerShare": 0.052104938271604936,
+    "labelShare": 0.012367283950617284
+  },
+  "features": {
+    "buildings": {
+      "count": 90
+    },
+    "markers": {
+      "count": 81
+    }
+  },
+  "fixtureCounters": {
+    "sessions": 0,
+    "packs": 0,
+    "revalidations": 0,
+    "downloads": 0,
+    "notModified": 0,
+    "sessionResources": 0,
+    "packResources": 0,
+    "packNotModified": 0,
+    "ranges": 0,
+    "revalidation": "current"
+  },
+  "requests": [
+    {
+      "remote": "http://127.0.0.1:18682/sprites/fixture/sprite@2x.json?map=map_offlinefixture01",
+      "address": "https://tileflow.invalid/<context>/aHR0cDovLzEyNy4wLjAuMToxODY4Mg/sprites/fixture/sprite@2x.json?map=map_offlinefixture01",
+      "status": 200,
+      "delegated": false,
+      "range": "",
+      "error": null,
+      "millis": 1
+    },
+    {
+      "remote": "http://127.0.0.1:18682/tiles/world/1/15/16046/12355.pbf?map=map_offlinefixture01",
+      "address": "https://tileflow.invalid/<context>/aHR0cDovLzEyNy4wLjAuMToxODY4Mg/tiles/world/1/15/16046/12355.pbf?map=map_offlinefixture01",
+      "status": 200,
+      "delegated": false,
+      "range": "",
+      "error": null,
+      "millis": 2
+    },
+    {
+      "remote": "http://127.0.0.1:18682/tiles/world/1/15/16047/12355.pbf?map=map_offlinefixture01",
+      "address": "https://tileflow.invalid/<context>/aHR0cDovLzEyNy4wLjAuMToxODY4Mg/tiles/world/1/15/16047/12355.pbf?map=map_offlinefixture01",
+      "status": 200,
+      "delegated": false,
+      "range": "",
+      "error": null,
+      "millis": 3
+    },
+    {
+      "remote": "http://127.0.0.1:18682/sprites/fixture/sprite@2x.png?map=map_offlinefixture01",
+      "address": "https://tileflow.invalid/<context>/aHR0cDovLzEyNy4wLjAuMToxODY4Mg/sprites/fixture/sprite@2x.png?map=map_offlinefixture01",
+      "status": 200,
+      "delegated": false,
+      "range": "",
+      "error": null,
+      "millis": 3
+    },
+    {
+      "remote": "http://127.0.0.1:18682/tiles/world/1/15/16047/12354.pbf?map=map_offlinefixture01",
+      "address": "https://tileflow.invalid/<context>/aHR0cDovLzEyNy4wLjAuMToxODY4Mg/tiles/world/1/15/16047/12354.pbf?map=map_offlinefixture01",
+      "status": 200,
+      "delegated": false,
+      "range": "",
+      "error": null,
+      "millis": 1
+    },
+    {
+      "remote": "http://127.0.0.1:18682/tiles/world/1/13/4011/3089.pbf?map=map_offlinefixture01",
+      "address": "https://tileflow.invalid/<context>/aHR0cDovLzEyNy4wLjAuMToxODY4Mg/tiles/world/1/13/4011/3089.pbf?map=map_offlinefixture01",
+      "status": 200,
+      "delegated": false,
+      "range": "",
+      "error": null,
+      "millis": 4
+    },
+    {
+      "remote": "http://127.0.0.1:18682/tiles/world/1/13/4011/3088.pbf?map=map_offlinefixture01",
+      "address": "https://tileflow.invalid/<context>/aHR0cDovLzEyNy4wLjAuMToxODY4Mg/tiles/world/1/13/4011/3088.pbf?map=map_offlinefixture01",
+      "status": 200,
+      "delegated": false,
+      "range": "",
+      "error": null,
+      "millis": 1
+    },
+    {
+      "remote": "http://127.0.0.1:18682/tiles/world/1/15/16046/12356.pbf?map=map_offlinefixture01",
+      "address": "https://tileflow.invalid/<context>/aHR0cDovLzEyNy4wLjAuMToxODY4Mg/tiles/world/1/15/16046/12356.pbf?map=map_offlinefixture01",
+      "status": 200,
+      "delegated": false,
+      "range": "",
+      "error": null,
+      "millis": 1
+    },
+    {
+      "remote": "http://127.0.0.1:18682/tiles/world/1/15/16046/12354.pbf?map=map_offlinefixture01",
+      "address": "https://tileflow.invalid/<context>/aHR0cDovLzEyNy4wLjAuMToxODY4Mg/tiles/world/1/15/16046/12354.pbf?map=map_offlinefixture01",
+      "status": 200,
+      "delegated": false,
+      "range": "",
+      "error": null,
+      "millis": 1
+    },
+    {
+      "remote": "http://127.0.0.1:18682/tiles/world/1/15/16047/12356.pbf?map=map_offlinefixture01",
+      "address": "https://tileflow.invalid/<context>/aHR0cDovLzEyNy4wLjAuMToxODY4Mg/tiles/world/1/15/16047/12356.pbf?map=map_offlinefixture01",
+      "status": 200,
+      "delegated": false,
+      "range": "",
+      "error": null,
+      "millis": 1
+    },
+    {
+      "remote": "http://127.0.0.1:18682/fonts/Noto%20Sans%20Regular/0-255.pbf?map=map_offlinefixture01",
+      "address": "https://tileflow.invalid/<context>/aHR0cDovLzEyNy4wLjAuMToxODY4Mg/fonts/Noto%20Sans%20Regular/0-255.pbf?map=map_offlinefixture01",
+      "status": 200,
+      "delegated": false,
+      "range": "",
+      "error": null,
+      "millis": 5
+    }
+  ],
+  "sdkCacheEntries": 0,
+  "engineDatabase": {
+    "exists": true,
+    "bytes": 65536,
+    "resources": 0,
+    "tiles": 0,
+    "containsGrant": false,
+    "rows": 0
+  },
+  "logs": [
+    "I/Mbgl-EGLConfigChooser: In emulator: false",
+    "I/Mbgl: {RenderThread 78}[General]: GPU Identifier: Android Emulator OpenGL ES Translator (ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver-5.0.0))"
+  ],
+  "date": "2026-11-02T14:28:18.276530Z",
+  "engine": "org.maplibre.gl:android-sdk-opengl:13.7.1",
+  "device": "unknown Android SDK built for arm64 API 36 arm64-v8a",
+  "fingerprint": "Android/sdk_phone64_arm64/emu64a:16/BE2A.250530.026.D1/13818094:userdebug/test-keys"
+}

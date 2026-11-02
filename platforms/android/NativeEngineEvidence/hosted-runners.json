@@ -1,0 +1,21 @@
+{
+  "check": "hosted-runners",
+  "run": "https://github.com/tileflow/tileflow-sdk/actions/runs/41462310172",
+  "date": "2026-11-02",
+  "linux": {
+    "runner": "ubuntu-latest, ReactiveCircus/android-emulator-runner v2.38.0, google_apis x86_64, pixel_6, -gpu swiftshader_indirect",
+    "api36": {
+      "fingerprint": "google/sdk_gphone64_x86_64/emu64xa:16/BE2A.250530.026.F3/13894323:userdebug/dev-keys",
+      "gles": "GLES: Google (Google Inc.), Android Emulator OpenGL ES Translator (Google SwiftShader), OpenGL ES 3.0 (OpenGL ES 3.0 SwiftShader 4.0.0.1)"
+    },
+    "api35": {
+      "fingerprint": "google/sdk_gphone64_x86_64/emu64xa:15/AE3A.240806.043/12960925:userdebug/dev-keys",
+      "gles": "GLES: Google (Google Inc.), Android Emulator OpenGL ES Translator (Google SwiftShader), OpenGL ES 3.0 (OpenGL ES 3.0 SwiftShader 4.0.0.1)"
+    },
+    "result": "Emulators booted (KVM) and the instrumented APK built with JDK 17, but the connected test task failed before any test ran: the emulator step's JAVA_HOME (${{ env.JAVA_HOME_17_X64 }}) is empty, so Gradle 8.13 ran on the runner's default JDK 25.0.5 and stopped with '25.0.5'."
+  },
+  "macos": {
+    "runner": "macos-15 arm64",
+    "emulatorAccelCheck": "accel: 0, Hypervisor.Framework OS X Version 15.8 (exit 0); no emulator was booted"
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "check": "font-face-ranges",
+  "whole": {
+    "fontFaces": "{\"DINish Bold\":\"https:\\/\\/tileflow.invalid\\/a2df8212d9f5466d\\/aHR0cDovLzEyNy4wLjAuMToxODY4Mg\\/native-artifacts\\/fonts\\/dinish-bold-7bf267d086d6dfebeca41c3bfbac91a50c29a7d4aded91da8d2ff5905b06f3e8.ttf\",\"DINish Medium\":\"https:\\/\\/tileflow.invalid\\/a2df8212d9f5466d\\/aHR0cDovLzEyNy4wLjAuMToxODY4Mg\\/native-artifacts\\/fonts\\/dinish-medium-38f559a314c89acf900e390a57c653e079b9e50fb0b184aa819c478fd26652dc.ttf\",\"Noto Sans Bold\":\"https:\\/\\/tileflow.invalid\\/a2df8212d9f5466d\\/aHR0cDovLzEyNy4wLjAuMToxODY4Mg\\/native-artifacts\\/fonts\\/noto-sans-bold-c976e4b1b99edc88775377fcc21692ca4bfa46b6d6ca6522bfda505b28ff9d6a.ttf\",\"Noto Sans Italic\":\"https:\\/\\/tileflow.invalid\\/a2df8212d9f5466d\\/aHR0cDovLzEyNy4wLjAuMToxODY4Mg\\/native-artifacts\\/fonts\\/noto-sans-italic-36cff144df01309dab648bea71baff9bb074026914afe63aeacc8bc90b67a28b.ttf\",\"Noto Sans Regular\":\"https:\\/\\/tileflow.invalid\\/a2df8212d9f5466d\\/aHR0cDovLzEyNy4wLjAuMToxODY4Mg\\/native-artifacts\\/fonts\\/noto-sans-regular-b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5.ttf\"}",
+    "render": {
+      "styleLoaded": true,
+      "idle": true,
+      "millis": 0,
+      "fullyRendered": 1,
+      "failures": [],
+      "picture": "font-face-whole.png"
+    },
+    "textShare": 0.003425925925925926,
+    "fonts": [
+      "dinish-medium-38f559a314 200"
+    ]
+  },
+  "ranged": {
+    "fontFaces": "{\"DINish Bold\":\"https:\\/\\/tileflow.invalid\\/a2df8212d9f5466d\\/aHR0cDovLzEyNy4wLjAuMToxODY4Mg\\/native-artifacts\\/fonts\\/dinish-bold-7bf267d086d6dfebeca41c3bfbac91a50c29a7d4aded91da8d2ff5905b06f3e8.ttf\",\"DINish Medium\":[{\"url\":\"https:\\/\\/tileflow.invalid\\/a2df8212d9f5466d\\/aHR0cDovLzEyNy4wLjAuMToxODY4Mg\\/native-artifacts\\/fonts\\/dinish-medium-38f559a314c89acf900e390a57c653e079b9e50fb0b184aa819c478fd26652dc.ttf\",\"unicode-range\":[\"U+0000-024F\",\"U+2000-206F\"]}],\"Noto Sans Bold\":\"https:\\/\\/tileflow.invalid\\/a2df8212d9f5466d\\/aHR0cDovLzEyNy4wLjAuMToxODY4Mg\\/native-artifacts\\/fonts\\/noto-sans-bold-c976e4b1b99edc88775377fcc21692ca4bfa46b6d6ca6522bfda505b28ff9d6a.ttf\",\"Noto Sans Italic\":\"https:\\/\\/tileflow.invalid\\/a2df8212d9f5466d\\/aHR0cDovLzEyNy4wLjAuMToxODY4Mg\\/native-artifacts\\/fonts\\/noto-sans-italic-36cff144df01309dab648bea71baff9bb074026914afe63aeacc8bc90b67a28b.ttf\",\"Noto Sans Regular\":\"https:\\/\\/tileflow.invalid\\/a2df8212d9f5466d\\/aHR0cDovLzEyNy4wLjAuMToxODY4Mg\\/native-artifacts\\/fonts\\/noto-sans-regular-b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5.ttf\"}",
+    "render": {
+      "styleLoaded": true,
+      "idle": true,
+      "millis": 0,
+      "fullyRendered": 1,
+      "failures": [],
+      "picture": "font-face-ranges.png"
+    },
+    "textShare": 0.0054444444444444445,
+    "fonts": [
+      "dinish-medium-38f559a314 200",
+      "noto-sans-regular-b85c38 200"
+    ]
+  },
+  "date": "2026-11-02T14:32:51.485495Z",
+  "engine": "org.maplibre.gl:android-sdk-opengl:13.7.1",
+  "device": "unknown Android SDK built for arm64 API 36 arm64-v8a",
+  "fingerprint": "Android/sdk_phone64_arm64/emu64a:16/BE2A.250530.026.D1/13818094:userdebug/test-keys"
+}

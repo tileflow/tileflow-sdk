@@ -1,11 +1,26 @@
 import {createHash, randomUUID} from 'node:crypto';
+import {resolve} from 'node:path';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {deflateSync, gunzipSync, gzipSync} from 'node:zlib';
+
+// The native representation's family document is computed with Core, as a deployment's is.
+const nativeProfile = await import(
+  pathToFileURL(
+    resolve(fileURLToPath(new URL('../', import.meta.url)), 'packages/core/dist/native-profile.js'),
+  ).href
+);
 
 /**
  * A minimal Hosted map for the mobile fixture server: session start, discovery and the WebView
  * profile manifest, two versioned themes (`day`, and `terrain` over a constant 650 m elevation
  * model) with their TileJSONs, gzip vector tiles and elevation tiles, Hosted offline downloads in
  * pack format 2 (creation, grant-authorized pack downloads, revalidation) and counters tests read.
+ *
+ * Discovery also announces the `native-v1` representation: its manifest, native styles for `day`,
+ * `night`, `labels` and `terrain` (hillshade instead of 3D terrain, recorded as a degradation) and
+ * the family document beside them, `/maps/<map>/native/v<version>/family.json`. Native routes
+ * follow the active deployment version: `POST /__fixture/hosted?deployment=2` activates version 2,
+ * so version 1's styles answer 409 `NATIVE_DEPLOYMENT_SUPERSEDED`, as the service does.
  *
  * Protected resources answer only a current session grant (`X-Tileflow-Native-Grant`), with a
  * strong `ETag` and `private, no-cache`; `If-None-Match` answers 304. Packs answer only their
@@ -32,6 +47,8 @@ export function createHostedFixture({base, tile, center}) {
     labelsStyle: `${base}${mapPath}/webview-v1/v1/labels.json`,
     sprite: `${base}/sprites/fixture/sprite`,
     glyphs: `${base}/fonts/{fontstack}/{range}.pbf`,
+    nativeManifest: `${base}/maps/${hostedMapId}/native/manifest.json`,
+    native: (version, name) => `${base}/maps/${hostedMapId}/native/v${version}/${name}.json`,
   };
   // Terrain stops at z14 online; a download stops at its terrainMaxZoom.
   const terrainZooms = [0, 14];
@@ -39,12 +56,6 @@ export function createHostedFixture({base, tile, center}) {
   for (let index = 0; index < resumable.length; index += 1) resumable[index] = (index * 31) % 251;
   const zooms = [13, 15];
   const documents = {
-    [urls.discovery]: {
-      version: 1,
-      mapId: hostedMapId,
-      deploymentVersion: 1,
-      representations: {'webview-v1': {manifestUrl: urls.profile}},
-    },
     [urls.profile]: {
       version: 1,
       maps: {
@@ -137,11 +148,138 @@ export function createHostedFixture({base, tile, center}) {
       attribution: 'Fixture World',
     },
   };
-  const publicUrls = new Set([urls.discovery, urls.profile]);
+  // Native styles: the WebView styles prepared as `native-v1` prepares them, with a night theme.
+  const sceneDegradation = {
+    id: 'scene3d',
+    feature: 'scene3d',
+    reason: 'web-runtime',
+    fallback: 'extrusions',
+    layers: ['buildings-3d'],
+  };
+  const extrusion = (color) => ({
+    id: 'buildings-3d',
+    type: 'fill-extrusion',
+    source: 'world',
+    'source-layer': 'building',
+    metadata: {'tileflow:3d-toggle': 'building', 'tileflow:domain': 'buildings'},
+    paint: {
+      'fill-extrusion-color': color,
+      'fill-extrusion-height': ['get', 'render_height'],
+      'fill-extrusion-opacity': 0.9,
+    },
+  });
+  const nativeDay = (dark) => ({
+    version: 8,
+    metadata: {
+      'tileflow:colorScheme': dark ? 'dark' : 'light',
+      'tileflow:nativeDegradations': [sceneDegradation],
+    },
+    sources: {world: {type: 'vector', url: urls.tilejson}},
+    layers: [
+      {
+        id: 'ground',
+        type: 'background',
+        metadata: {'tileflow:domain': 'land'},
+        paint: {'background-color': dark ? '#1c2129' : '#ece6da'},
+      },
+      {
+        id: 'buildings',
+        type: 'fill',
+        source: 'world',
+        'source-layer': 'building',
+        metadata: {'tileflow:domain': 'buildings'},
+        paint: {'fill-color': dark ? '#2a313b' : '#d6ccb8'},
+      },
+      extrusion(dark ? '#6d7684' : '#e3d9c6'),
+    ],
+  });
+  const nativeStyles = {
+    day: nativeDay(false),
+    night: nativeDay(true),
+    labels: {
+      ...documents[urls.labelsStyle],
+      metadata: {'tileflow:colorScheme': 'light', 'tileflow:nativeDegradations': []},
+    },
+    terrain: {
+      version: 8,
+      metadata: {
+        'tileflow:colorScheme': 'light',
+        'tileflow:nativeDegradations': [
+          {
+            id: 'terrain3d',
+            feature: 'terrain3d',
+            reason: 'engine-unsupported',
+            fallback: 'flat',
+            layers: [],
+          },
+        ],
+      },
+      sources: {
+        world: {type: 'vector', url: urls.tilejson},
+        terrain: {type: 'raster-dem', url: urls.terrainTilejson, tileSize: 256, encoding: 'mapbox'},
+      },
+      layers: [
+        {id: 'ground', type: 'background', paint: {'background-color': '#ece6da'}},
+        {id: 'relief', type: 'hillshade', source: 'terrain'},
+        {
+          id: 'buildings',
+          type: 'fill',
+          source: 'world',
+          'source-layer': 'building',
+          paint: {'fill-color': '#d6ccb8'},
+        },
+      ],
+    },
+  };
+  const nativeThemes = Object.keys(nativeStyles);
+  // The family names the map by its key in the one-map manifest.
+  const nativeFamily = nativeProfile.createTileflowNativeFamily({
+    map: 'map',
+    themes: nativeThemes,
+    styles: nativeStyles,
+  });
+  const nativeDocument = (name) =>
+    name === 'family'
+      ? nativeFamily
+      : Object.hasOwn(nativeStyles, name)
+        ? nativeStyles[name]
+        : null;
+  const discovery = () => ({
+    version: 1,
+    mapId: hostedMapId,
+    deploymentVersion: state.deployment,
+    representations: {
+      'webview-v1': {manifestUrl: urls.profile},
+      'native-v1': {manifestUrl: urls.nativeManifest},
+    },
+  });
+  const nativeManifest = () => ({
+    version: 1,
+    maps: {
+      map: {
+        mapId: hostedMapId,
+        usageMode: 'session',
+        defaultTheme: 'day',
+        systemThemes: {light: 'day', dark: 'night'},
+        view: {center, zoom: 15.5, bearing: 0, pitch: 0},
+        themes: Object.fromEntries(
+          nativeThemes.map((name) => [
+            name,
+            {
+              styleUrl: urls.native(state.deployment, name),
+              colorScheme: nativeStyles[name].metadata['tileflow:colorScheme'],
+              revision: sha(JSON.stringify(nativeStyles[name])),
+            },
+          ]),
+        ),
+      },
+    },
+  });
+  const publicUrls = new Set([urls.discovery, urls.profile, urls.nativeManifest]);
   const sessions = new Set();
   /** Each download's packs by path, under its grant. */
   const downloads = new Map();
-  const state = {revalidation: 'current', resumableServed: 0};
+  const state = {revalidation: 'current', resumableServed: 0, deployment: 1};
   const counters = () => ({
     sessions: 0,
     packs: 0,
@@ -221,6 +359,8 @@ export function createHostedFixture({base, tile, center}) {
     return Buffer.from(field(1, [...field(1, bytes(stack)), ...field(2, bytes(range))]));
   };
   const body = (url) => {
+    if (url === urls.discovery) return Buffer.from(JSON.stringify(discovery()));
+    if (url === urls.nativeManifest) return Buffer.from(JSON.stringify(nativeManifest()));
     if (documents[url]) return Buffer.from(JSON.stringify(documents[url]));
     if (spriteBodies[url]) return Buffer.from(spriteBodies[url]);
     const glyphs = /\/fonts\/([^/]+)\/(\d+-\d+)\.pbf$/u.exec(url);
@@ -568,8 +708,43 @@ export function createHostedFixture({base, tile, center}) {
         state.resumableServed = 0;
         const revalidation = new URL(url).searchParams.get('revalidation');
         state.revalidation = revalidation ?? 'current';
+        state.deployment = Number(new URL(url).searchParams.get('deployment') ?? 1);
       }
-      json(response, 200, {...count, revalidation: state.revalidation});
+      json(response, 200, {
+        ...count,
+        revalidation: state.revalidation,
+        deployment: state.deployment,
+      });
+      return true;
+    }
+    // Native styles and the family document of a deployment version: an older version is
+    // superseded (409), a newer one was never announced (403).
+    const native = new RegExp(
+      `^/maps/${hostedMapId}/native/v([1-9][0-9]*)/([A-Za-z][A-Za-z0-9_-]*)\\.json$`,
+      'u',
+    ).exec(path);
+    if (request.method === 'GET' && native) {
+      if (!sessions.has(request.headers['x-tileflow-native-grant'])) {
+        json(response, 401, {code: 'MOBILE_GRANT_INVALID', error: 'refused'});
+        return true;
+      }
+      const version = Number(native[1]);
+      const document = nativeDocument(native[2]);
+      if (version < state.deployment) {
+        json(response, 409, {code: 'NATIVE_DEPLOYMENT_SUPERSEDED', error: 'superseded'});
+        return true;
+      }
+      if (version > state.deployment || !document) {
+        json(response, 403, {code: 'NATIVE_GRANT_RESOURCE_DENIED', error: 'refused'});
+        return true;
+      }
+      count.sessionResources += 1;
+      const outcome = serve(request, response, Buffer.from(JSON.stringify(document)), {
+        'Cache-Control': 'private, no-cache',
+        'Content-Type': 'application/json',
+      });
+      if (outcome === 'not-modified') count.notModified += 1;
+      else count.downloads += 1;
       return true;
     }
     if (request.method === 'POST' && path === '/v1/sessions/start') {

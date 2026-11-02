@@ -3,7 +3,9 @@ import {readFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
 import {createRequire} from 'node:module';
 import {dirname, resolve} from 'node:path';
+import {deflateSync} from 'node:zlib';
 import {createHostedFixture} from './mobile-fixture-hosted.mjs';
+import {createNativeBuildFixture} from './mobile-fixture-native.mjs';
 
 const require = createRequire(import.meta.url);
 const fontRoot = dirname(require.resolve('@fontsource/noto-sans/package.json'));
@@ -347,9 +349,53 @@ const sceneStyle = (dark) => ({
 });
 // A Hosted map with sessions and offline packs, drawn from the city tiles.
 const hosted = createHostedFixture({base, tile: buildingTile, center: sceneCenter});
+/** A 256-pixel elevation tile at 650 m everywhere, in Mapbox's RGB encoding. */
+function elevationTile() {
+  const crc = (bytes) => {
+    let value = 0xffffffff;
+    for (const byte of bytes) {
+      value ^= byte;
+      for (let bit = 0; bit < 8; bit += 1)
+        value = value & 1 ? (value >>> 1) ^ 0xedb88320 : value >>> 1;
+    }
+    return (value ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, data) => {
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(data.length, 0);
+    head.write(type, 4, 'ascii');
+    const tail = Buffer.alloc(4);
+    tail.writeUInt32BE(crc(Buffer.concat([Buffer.from(type, 'ascii'), data])), 0);
+    return Buffer.concat([head, data, tail]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(256, 0);
+  header.writeUInt32BE(256, 4);
+  header[8] = 8;
+  header[9] = 2;
+  const row = Buffer.concat([Buffer.from([0]), Buffer.from(Array(256).fill([1, 160, 4]).flat())]);
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(Buffer.concat(Array(256).fill(row)))),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+// The city map built for the native renderer, under /native/. Its build starts now and is cached.
+const nativeBuild = createNativeBuildFixture({base, elevation: elevationTile()});
+nativeBuild.prepare().catch((error) => console.error(error));
 const server = createServer((request, response) => {
   response.setHeader('Access-Control-Allow-Origin', '*');
   if (hosted(request, response)) return;
+  if (/^\/(?:native|terrain)\//u.test(request.url ?? '')) {
+    response.setHeader('Cache-Control', 'no-store');
+    nativeBuild.handle(request, response).then((handled) => {
+      if (handled) return;
+      response.statusCode = 404;
+      response.end();
+    });
+    return;
+  }
   const cached = request.url.startsWith(`${cachedPrefix}/`);
   const path = cached ? request.url.slice(cachedPrefix.length) : request.url;
   const root = cached ? `${base}${cachedPrefix}` : base;

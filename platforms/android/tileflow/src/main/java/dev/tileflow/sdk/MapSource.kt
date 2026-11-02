@@ -87,6 +87,7 @@ internal constructor(
             hosted = endpoint
             manifest = endpoint.manifestUrl(mapId)
             publicMetadataUrls += endpoint.discoveryUrl(mapId)
+            publicMetadataUrls += endpoint.nativeManifestUrl(mapId)
         }
         val url = requireNotNull(manifest)
         publicMetadataUrls += url

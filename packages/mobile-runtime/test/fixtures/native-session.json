@@ -31,6 +31,8 @@
   },
   "allowedResources": [
     "https://api.tileflow.test/maps/map_0123456789abcdef/mobile/webview-v1/v1/day.json",
+    "https://api.tileflow.test/maps/map_0123456789abcdef/native/v1/day.json",
+    "https://api.tileflow.test/maps/map_0123456789abcdef/native/v1/family.json",
     "https://api.tileflow.test/tiles/world/tiles.json?map=map_0123456789abcdef",
     "https://tiles.tileflow.test/tiles/world/release-1/12/123/456.pbf?map=map_0123456789abcdef",
     "https://tiles.tileflow.test/tiles/terrain/4/5/6.webp",
@@ -50,6 +52,9 @@
     "https://user:password@api.tileflow.test/tiles/world/0/0/0.pbf",
     "https://api.tileflow.test/v1/sessions/start",
     "https://api.tileflow.test/maps/map_1111111111111111/mobile/webview-v1/v1/day.json",
+    "https://api.tileflow.test/maps/map_1111111111111111/native/v1/day.json",
+    "https://api.tileflow.test/maps/map_0123456789abcdef/native/v01/day.json",
+    "https://api.tileflow.test/maps/map_0123456789abcdef/native/day.json",
     "https://api.tileflow.test/maps/map_0123456789abcdef/mobile/webview-v1/v01/day.json",
     "https://api.tileflow.test/maps/map_0123456789abcdef/mobile/webview-v1/v9007199254740992/day.json",
     "https://api.tileflow.test/maps/map_0123456789abcdef/%6dobile/v1/day.json",

@@ -50,6 +50,9 @@ internal class HostedEndpoint(configuration: TileflowConfiguration) {
     fun discoveryUrl(mapId: String): URI =
         apiOrigin.resolve("/maps/$mapId/mobile/webview-v1/manifest.json")
 
+    /** The `native-v1` representation's manifest, public metadata like the WebView profile's. */
+    fun nativeManifestUrl(mapId: String): URI = apiOrigin.resolve("/maps/$mapId/native/manifest.json")
+
     fun sessionRequest(mapId: String, sessionId: String, surfaceId: String): Request {
         val body =
             JSONObject()

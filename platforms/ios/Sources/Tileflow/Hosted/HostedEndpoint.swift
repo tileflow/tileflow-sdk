@@ -38,6 +38,11 @@ struct HostedEndpoint: Sendable, CustomStringConvertible, CustomDebugStringConve
     apiOrigin.appendingPathComponent("maps/\(mapID)/mobile/webview-v1/manifest.json")
   }
 
+  /// The `native-v1` representation's manifest, public metadata like the WebView profile's.
+  func nativeManifestURL(mapID: String) -> URL {
+    apiOrigin.appendingPathComponent("maps/\(mapID)/native/manifest.json")
+  }
+
   func sessionRequest(mapID: String, sessionID: String, surfaceID: String) throws -> URLRequest {
     var request = URLRequest(
       url: apiOrigin.appendingPathComponent("v1/sessions/start"),

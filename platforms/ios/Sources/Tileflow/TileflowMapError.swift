@@ -30,7 +30,8 @@ public struct TileflowMapError: Error, Hashable, Sendable, CustomStringConvertib
 /// a resource is identified by its kind and origin only.
 public struct TileflowErrorContext: Hashable, Sendable, CustomStringConvertible {
   /// A stable identifier for the cause within the code, for example `protocolVersion`,
-  /// `dataTooLarge`, `dataIntegrity`, `invalidGeoJSON` or `graphicsContextLost`.
+  /// `dataTooLarge`, `dataIntegrity`, `invalidGeoJSON`, `graphicsContextLost` or
+  /// `featureUnavailable`.
   public var reason: String?
   public var resource: TileflowResourceKind?
   /// The scheme, host and port of the resource, for example `https://tiles.example.com`.
@@ -43,10 +44,14 @@ public struct TileflowErrorContext: Hashable, Sendable, CustomStringConvertible 
   public var count: Int?
   /// A developer-facing explanation in English. Not for display to people using the app.
   public var message: String?
+  /// The capability the map holds and this renderer does not draw, with the reason
+  /// `featureUnavailable`: for example `scene3d`, `terrain3d` or `pitchAbove60`.
+  public var feature: String?
 
   public init(
     reason: String? = nil, resource: TileflowResourceKind? = nil, origin: String? = nil,
-    status: Int? = nil, limit: Int? = nil, count: Int? = nil, message: String? = nil
+    status: Int? = nil, limit: Int? = nil, count: Int? = nil, message: String? = nil,
+    feature: String? = nil
   ) {
     self.reason = reason
     self.resource = resource
@@ -55,11 +60,13 @@ public struct TileflowErrorContext: Hashable, Sendable, CustomStringConvertible 
     self.limit = limit
     self.count = count
     self.message = message
+    self.feature = feature
   }
 
   public var description: String {
     var parts: [String] = []
     if let reason { parts.append("reason: \(reason)") }
+    if let feature { parts.append("feature: \(feature)") }
     if let resource { parts.append("resource: \(resource.rawValue)") }
     if let origin { parts.append("origin: \(origin)") }
     if let status { parts.append("status: \(status)") }
@@ -92,6 +99,7 @@ extension TileflowMapError {
         reason: context?["reason"]?.string,
         resource: context?["resource"]?.string.flatMap(TileflowResourceKind.init(rawValue:)),
         origin: context?["origin"]?.string, status: status, limit: limit,
-        message: value?["message"]?.string.map { String($0.prefix(512)) }))
+        message: value?["message"]?.string.map { String($0.prefix(512)) },
+        feature: context?["feature"]?.string.map { String($0.prefix(64)) }))
   }
 }

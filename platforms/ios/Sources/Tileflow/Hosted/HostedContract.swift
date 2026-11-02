@@ -186,7 +186,7 @@ enum HostedContract {
     else { return false }
     if let match = capture(
       path,
-      #"^/maps/(map_[A-Za-z0-9_-]{16})/mobile/webview-v1/v([1-9][0-9]{0,15})/[A-Za-z][A-Za-z0-9_-]{0,63}\.json$"#
+      #"^/maps/(map_[A-Za-z0-9_-]{16})/(?:mobile/webview-v1|native)/v([1-9][0-9]{0,15})/[A-Za-z][A-Za-z0-9_-]{0,63}\.json$"#
     ) {
       return raw == path && components.query == nil && match[1] == mapID
         && (Double(match[2]) ?? .infinity) <= 9_007_199_254_740_991
@@ -258,11 +258,12 @@ enum HostedContract {
     return target
   }
 
-  /// A Map deployment's versioned WebView style, which a later deployment supersedes.
+  /// A Map deployment's versioned WebView or native style, or its native family document, which a
+  /// later deployment supersedes.
   static func isVersionedStyle(_ url: URL) -> Bool {
     matches(
       URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath ?? "",
-      #"^/maps/map_[A-Za-z0-9_-]{16}/mobile/webview-v1/v[1-9][0-9]{0,15}/[A-Za-z][A-Za-z0-9_-]{0,63}\.json$"#
+      #"^/maps/map_[A-Za-z0-9_-]{16}/(?:mobile/webview-v1|native)/v[1-9][0-9]{0,15}/[A-Za-z][A-Za-z0-9_-]{0,63}\.json$"#
     )
   }
 

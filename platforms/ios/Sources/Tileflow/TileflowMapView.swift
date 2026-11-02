@@ -532,9 +532,9 @@ public final class TileflowMapView: UIView {
       guard let self, !self.destroyed else { return }
       self.onEvent?(.externalLinkRequested(url))
     }
-    engine.onRendererTerminated = { [weak self, weak engine] in
+    engine.onRendererTerminated = { [weak self, weak engine] reason in
       guard let self, let engine, self.engine === engine else { return }
-      self.rendererTerminated()
+      self.rendererTerminated(reason)
     }
     engine.onReady = { [weak self, weak engine] in
       guard let self, let engine, !self.destroyed, self.generation == current else { return }
@@ -596,11 +596,11 @@ public final class TileflowMapView: UIView {
       initialized = true
       rendererInsets = startingInsets
       updateInsets()
-      try await send(content, through: engine)
+      try await replay { try await self.send(self.content, through: engine) }
       if appearance != nil {
-        try await applyAppearance()
+        try await replay { try await self.applyAppearance() }
       } else if theme != startingTheme {
-        try await setTheme(theme)
+        try await replay { try await self.setTheme(self.theme) }
       }
       if options != startingOptions {
         try await sendOptions(events: subscriptions != startingSubscriptions)
@@ -609,10 +609,10 @@ public final class TileflowMapView: UIView {
       if let request = requestedCamera, request.count != startingRequest {
         try await move(to: request.camera, animation: .none)
       }
-      try await replayScene(through: engine)
-      try await replayStyle(through: engine)
-      try await replayLocation(through: engine)
-      try await replayAnnotations(through: engine)
+      try await replay { try await self.replayScene(through: engine) }
+      try await replay { try await self.replayStyle(through: engine) }
+      try await replay { try await self.replayLocation(through: engine) }
+      try await replay { try await self.replayAnnotations(through: engine) }
       if !rendererVisible {
         _ = try await engine.call(.setVisibility, payload: .object(["visible": .bool(false)]))
       }
@@ -623,6 +623,17 @@ public final class TileflowMapView: UIView {
       }
     } catch {
       report(error as? TileflowMapError ?? .rendererFailed, generation: current)
+    }
+  }
+
+  /// Gives a new engine part of what the application asked for. An engine that cannot draw it yet
+  /// (`invalidRequest`) leaves the rest of the map loading, and the application gets a warning.
+  private func replay(_ work: () async throws -> Void) async throws {
+    do {
+      try await work()
+    } catch let error as TileflowMapError where error.code == .invalidRequest {
+      guard !destroyed else { throw error }
+      onEvent?(.warning(TileflowMapWarning(error: error, occurrences: 1)))
     }
   }
 
@@ -781,13 +792,14 @@ public final class TileflowMapView: UIView {
     }
   }
 
-  /// The system may end a hidden renderer to reclaim memory. Replace it when the view is next
-  /// visible; a renderer that ends again before its content loads is reported instead.
-  private func rendererTerminated() {
+  /// The system may end a hidden renderer to reclaim memory, or a renderer may lose its graphics
+  /// context. Replace it when the view is next visible; a renderer that ends again before its
+  /// content loads is reported instead.
+  private func rendererTerminated(_ reason: ProtocolContract.ErrorReason) {
     guard !destroyed else { return }
     guard recoveryCount < 1 else {
       retireGeneration()
-      onEvent?(.failed(TileflowMapError(.rendererFailed, reason: .processTerminated)))
+      onEvent?(.failed(TileflowMapError(.rendererFailed, reason: reason)))
       return
     }
     recoveryCount += 1

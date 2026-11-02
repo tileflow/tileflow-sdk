@@ -20,6 +20,53 @@ test('mobile discovery preserves explicit profiles and freezes public selectors'
   assert.ok(Object.isFrozen(result.representations['webview-v1']));
 });
 
+test('the native representation may name its family document and revision', () => {
+  const family = {url: `${base}/native/family/v3.json`, revision: 'a'.repeat(64)};
+  const discovery = fixture();
+  const withFamily = {
+    ...discovery,
+    representations: {
+      ...discovery.representations,
+      'native-v1': {...discovery.representations['native-v1'], family},
+    },
+  };
+  const result = parseTileflowMobileDiscovery(withFamily, url);
+  assert.deepEqual(result.representations['native-v1']?.family, family);
+  assert.ok(Object.isFrozen(result.representations['native-v1']?.family));
+  for (const declared of [
+    {...family, url: `${base}/native/family/v2.json`},
+    {...family, url: `${base}/native/v3/family.json`},
+    {...family, revision: 'A'.repeat(64)},
+    {...family, revision: 'a'.repeat(63)},
+    {...family, grant: 'secret'},
+    family.url,
+  ])
+    assert.throws(() =>
+      parseTileflowMobileDiscovery(
+        {
+          ...withFamily,
+          representations: {
+            ...withFamily.representations,
+            'native-v1': {...withFamily.representations['native-v1'], family: declared},
+          },
+        },
+        url,
+      ),
+    );
+  assert.throws(() =>
+    parseTileflowMobileDiscovery(
+      {
+        ...discovery,
+        representations: {
+          ...discovery.representations,
+          'webview-v1': {...discovery.representations['webview-v1'], family},
+        },
+      },
+      url,
+    ),
+  );
+});
+
 test('a local development API may serve discovery over loopback HTTP', () => {
   for (const origin of ['http://127.0.0.1:8787', 'http://localhost:8787']) {
     const local = `${origin}/maps/map_0123456789abcdef`;

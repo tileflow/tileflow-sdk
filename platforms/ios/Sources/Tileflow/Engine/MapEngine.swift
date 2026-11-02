@@ -83,8 +83,9 @@ protocol MapEngine: AnyObject, Sendable {
   var onLoadFailure: ((TileflowMapError) -> Void)? { get set }
   /// A person activated a link the map shows.
   var onExternalLink: ((URL) -> Void)? { get set }
-  /// The renderer's process ended; the view decides whether to replace it.
-  var onRendererTerminated: (() -> Void)? { get set }
+  /// The renderer's process ended (`processTerminated`) or it lost its graphics context
+  /// (`graphicsContextLost`); the view decides whether to replace it.
+  var onRendererTerminated: ((ProtocolContract.ErrorReason) -> Void)? { get set }
 
   /// Starts loading. ``onReady`` follows.
   func start()

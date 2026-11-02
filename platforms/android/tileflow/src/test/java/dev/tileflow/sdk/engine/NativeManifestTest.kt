@@ -24,6 +24,7 @@ class NativeManifestTest {
     private val map =
         """{"mapId":"map_1","defaultTheme":"day","systemThemes":{"light":"day","dark":"night"},
             "view":{"center":[-3.7,40.42],"zoom":15.5,"bearing":10,"pitch":20},
+            "timeOfDay":{"day":{"day":"day","dusk":"dusk","night":"night"}},
             "themes":{"day":{"styleUrl":"v1/day.json","colorScheme":"light"},
                       "night":{"styleUrl":"$origin/maps/map_1/mobile/webview-v1/v1/night.json",
                                "colorScheme":"dark"},
@@ -65,11 +66,49 @@ class NativeManifestTest {
     fun theSystemThemeFollowsTheColorScheme() {
         assertEquals("day", hosted("system", "light").theme)
         assertEquals("night", hosted("system", "dark").theme)
-        // Without declared system themes, the first theme of the scheme answers.
+        assertEquals("dusk", NativeManifest.read(hostedSource(), ::load).resolve("system", "dark", "dusk").theme)
+        // Without declared system themes, `system` names no theme, as on the web.
         documents[profile] =
             """{"version":1,"maps":{"map":${JSONObject(map).apply { remove("systemThemes") }}}}"""
-        assertEquals("night", hosted("system", "dark").theme)
+        try {
+            hosted("system", "dark")
+            fail("A map without system themes resolved one")
+        } catch (error: TileflowMapException) {
+            assertEquals(TileflowResourceKind.STYLE, error.context.resource)
+        }
     }
+
+    @Test
+    fun aHostedMapPrefersItsNativeRepresentationAndItsFamilyDocument() {
+        val native = "$origin/maps/map_1/native/manifest.json"
+        val family = "$origin/maps/map_1/native/family/v1.json"
+        documents[discovery] =
+            """{"version":1,"mapId":"map_1","deploymentVersion":1,"representations":{
+                "webview-v1":{"manifestUrl":"$profile"},
+                "native-v1":{"manifestUrl":"$native","family":{"url":"$family","revision":"abc"}}}}"""
+        documents[native] =
+            """{"version":2,"maps":{"map":${JSONObject(map).put("themes", JSONObject()
+                .put("day", JSONObject().put("styleUrl", "v1/day.json")))}}}"""
+        val manifest = NativeManifest.read(hostedSource(), ::load)
+        assertEquals(NativeRepresentation.NATIVE, manifest.representation)
+        assertEquals("$origin/maps/map_1/native/v1/day.json", manifest.resolve(null, "light").styleUrl)
+        assertEquals(family, manifest.familyUrl("$origin/maps/map_1/native/v1/day.json"))
+        assertEquals("abc", manifest.family?.second)
+        // Downloaded regions that hold only the WebView profile still open the map.
+        documents.remove(native)
+        val packed = NativeManifest.read(hostedSource(), ::load, fromPacks = true)
+        assertEquals(NativeRepresentation.WEB_VIEW, packed.representation)
+        assertEquals(null, packed.familyUrl("$profile"))
+        try {
+            NativeManifest.read(hostedSource(), ::load)
+            fail("A missing native manifest fell back online")
+        } catch (error: TileflowMapException) {
+            assertEquals(404, error.context.status)
+        }
+    }
+
+    private fun hostedSource() =
+        JSONObject().put("map", "map").put("manifestUrl", discovery).put("discoveryMapId", "map_1")
 
     @Test
     fun aSelfHostedSourceIsItsManifest() {
@@ -81,6 +120,12 @@ class NativeManifestTest {
                 ::load,
             )
         assertEquals("https://maps.example.test/v1/dusk.json", document.styleUrl)
+        val manifest =
+            NativeManifest.read(JSONObject().put("map", "city").put("manifestUrl", selfHosted), ::load)
+        assertEquals(
+            "https://maps.example.test/generations/g1/families/city.json",
+            manifest.familyUrl("https://maps.example.test/generations/g1/styles/city/day.json"),
+        )
     }
 
     @Test

@@ -27,6 +27,7 @@ final class MapConfigurationTests: XCTestCase {
       [
         loadable.manifestURL,
         URL(string: "https://own.example.test/maps/\(mapID)/mobile/webview-v1/manifest.json")!,
+        URL(string: "https://own.example.test/maps/\(mapID)/native/manifest.json")!,
       ])
 
     let fromProcess = try TileflowMapSource.hosted(mapID: mapID).loadable {

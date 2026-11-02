@@ -47,6 +47,7 @@ class MapConfigurationTest {
             setOf(
                 own.manifestUrl,
                 URI("https://own.example.test/maps/$mapId/mobile/webview-v1/manifest.json"),
+                URI("https://own.example.test/maps/$mapId/native/manifest.json"),
             ),
             own.publicMetadataUrls,
         )

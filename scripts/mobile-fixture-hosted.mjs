@@ -17,10 +17,11 @@ const nativeProfile = await import(
  * pack format 2 (creation, grant-authorized pack downloads, revalidation) and counters tests read.
  *
  * Discovery also announces the `native-v1` representation: its manifest, native styles for `day`,
- * `night`, `labels` and `terrain` (hillshade instead of 3D terrain, recorded as a degradation) and
- * the family document beside them, `/maps/<map>/native/v<version>/family.json`. Native routes
- * follow the active deployment version: `POST /__fixture/hosted?deployment=2` activates version 2,
- * so version 1's styles answer 409 `NATIVE_DEPLOYMENT_SUPERSEDED`, as the service does.
+ * `night`, `labels` and `terrain` (hillshade instead of 3D terrain, recorded as a degradation), and
+ * its family document, `/maps/<map>/native/family/v<version>.json` with its SHA-256 revision. Native
+ * routes follow the active deployment version: `POST /__fixture/hosted?deployment=2` activates
+ * version 2, so version 1's documents answer 409 `NATIVE_DEPLOYMENT_SUPERSEDED`, as the service
+ * does.
  *
  * Protected resources answer only a current session grant (`X-Tileflow-Native-Grant`), with a
  * strong `ETag` and `private, no-cache`; `If-None-Match` answers 304. Packs answer only their
@@ -49,6 +50,7 @@ export function createHostedFixture({base, tile, center}) {
     glyphs: `${base}/fonts/{fontstack}/{range}.pbf`,
     nativeManifest: `${base}/maps/${hostedMapId}/native/manifest.json`,
     native: (version, name) => `${base}/maps/${hostedMapId}/native/v${version}/${name}.json`,
+    nativeFamily: (version) => `${base}/maps/${hostedMapId}/native/family/v${version}.json`,
   };
   // Terrain stops at z14 online; a download stops at its terrainMaxZoom.
   const terrainZooms = [0, 14];
@@ -238,19 +240,19 @@ export function createHostedFixture({base, tile, center}) {
     themes: nativeThemes,
     styles: nativeStyles,
   });
+  const nativeFamilyBytes = Buffer.from(JSON.stringify(nativeFamily));
   const nativeDocument = (name) =>
-    name === 'family'
-      ? nativeFamily
-      : Object.hasOwn(nativeStyles, name)
-        ? nativeStyles[name]
-        : null;
+    Object.hasOwn(nativeStyles, name) ? Buffer.from(JSON.stringify(nativeStyles[name])) : null;
   const discovery = () => ({
     version: 1,
     mapId: hostedMapId,
     deploymentVersion: state.deployment,
     representations: {
       'webview-v1': {manifestUrl: urls.profile},
-      'native-v1': {manifestUrl: urls.nativeManifest},
+      'native-v1': {
+        manifestUrl: urls.nativeManifest,
+        family: {url: urls.nativeFamily(state.deployment), revision: sha(nativeFamilyBytes)},
+      },
     },
   });
   const nativeManifest = () => ({
@@ -719,17 +721,19 @@ export function createHostedFixture({base, tile, center}) {
     }
     // Native styles and the family document of a deployment version: an older version is
     // superseded (409), a newer one was never announced (403).
-    const native = new RegExp(
-      `^/maps/${hostedMapId}/native/v([1-9][0-9]*)/([A-Za-z][A-Za-z0-9_-]*)\\.json$`,
-      'u',
-    ).exec(path);
+    const native =
+      new RegExp(
+        `^/maps/${hostedMapId}/native/v([1-9][0-9]*)/([A-Za-z][A-Za-z0-9_-]*)\\.json$`,
+        'u',
+      ).exec(path) ??
+      new RegExp(`^/maps/${hostedMapId}/native/family/v([1-9][0-9]*)()\\.json$`, 'u').exec(path);
     if (request.method === 'GET' && native) {
       if (!sessions.has(request.headers['x-tileflow-native-grant'])) {
         json(response, 401, {code: 'MOBILE_GRANT_INVALID', error: 'refused'});
         return true;
       }
       const version = Number(native[1]);
-      const document = nativeDocument(native[2]);
+      const document = native[2] ? nativeDocument(native[2]) : nativeFamilyBytes;
       if (version < state.deployment) {
         json(response, 409, {code: 'NATIVE_DEPLOYMENT_SUPERSEDED', error: 'superseded'});
         return true;
@@ -739,7 +743,7 @@ export function createHostedFixture({base, tile, center}) {
         return true;
       }
       count.sessionResources += 1;
-      const outcome = serve(request, response, Buffer.from(JSON.stringify(document)), {
+      const outcome = serve(request, response, document, {
         'Cache-Control': 'private, no-cache',
         'Content-Type': 'application/json',
       });

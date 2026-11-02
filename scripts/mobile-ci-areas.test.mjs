@@ -37,6 +37,12 @@ test('selects mobile jobs from the paths that reach the runtime or a native host
     'pnpm-lock.yaml',
   ])
     assert.deepEqual(mobileAreas([path]), embedded, path);
+  for (const path of ['packages/dev/src/artifacts.ts', 'packages/maps/src/index.ts'])
+    assert.deepEqual(mobileAreas([path]), {...none, ios: true, android: true}, path);
+  assert.deepEqual(
+    mobileAreas(['platforms/ios/Tests/TileflowTests/Fixtures/Native/native-evaluators.json']),
+    {...none, ios: true, android: true},
+  );
   const all = {...embedded, reactNative: true};
   assert.deepEqual(mobileAreas(['.github/workflows/ci.yml']), all);
   assert.deepEqual(mobileAreas(null), all);

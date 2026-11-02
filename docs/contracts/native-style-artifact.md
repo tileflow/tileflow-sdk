@@ -207,13 +207,39 @@ mix with `mixTileflowSunPresets` (the azimuth turns the short way round) and rou
   may leave out only sources their degradations name.
 - An offline style pack that holds a map's native theme styles also holds its family document.
 
+## How the mobile SDKs read it
+
+The Swift and Kotlin map views draw with MapLibre Native as follows:
+
+- A Hosted map reads mobile discovery and its `native-v1` representation: the native manifest and
+  `family: {url, revision}`, the deployment's family document at
+  `/maps/<map>/native/family/v<version>.json`. The SDK checks the document's SHA-256 against the
+  revision. While deployments and downloaded regions may hold only the WebView profile, a map
+  reads `webview-v1` when discovery announces no native representation, or when it opens from
+  downloaded regions that hold no native manifest; such a map draws its themes but cannot blend
+  them or apply an emphasis.
+- A self-hosted map names the `manifest.json` of its native build; its family document is the
+  build's `families/<map>.json`, two levels above each theme's style.
+- Themes resolve as on the web: the default, `system` by colour scheme, and a time of day's variant.
+  A theme change draws the new style under an image of the map as drawn and fades the image out.
+- Blends load one style with the group's planned layers; later positions of the same blend set the
+  `paints` (and, when the nearest theme changes, the `switches`) on the live style. Emphasis sets
+  each target's filled value. Image mixing (`images`) is not drawn yet.
+- Each degradation record is reported once per map load as a warning with the code
+  `rendererFailed`, the reason `featureUnavailable` and `context.feature`, and in the system log.
+  A style without glyphs or font faces reports `text`; MapLibre Android also reports
+  `pitchAbove60` when a camera asks for more than 60 degrees.
+- The 3D view mode shows the layers that carry `tileflow:3d-toggle`; the flat mode hides them.
+
 ## Evaluator fixtures
 
 `packages/core/test/fixtures/native-evaluators.json` holds the cases native evaluators must
 reproduce: colour mixes, leaves at positions and selections, blend layers, emphasis with and
 without a keep area, theme selection (default, `system` and time of day), and sun and route-ink
 mixes. `node scripts/native-golden-generate.mjs` computes it with Core from
-`native-family-input.json`; `--check` runs in `@tileflow/core`'s `verify` and fails on drift.
+`native-family-input.json` and writes the same bytes to
+`platforms/ios/Tests/TileflowTests/Fixtures/Native/native-evaluators.json`, which the Swift and
+Kotlin unit tests read; `--check` runs in `@tileflow/core`'s `verify` and fails on drift of either.
 Evaluators compare numbers within 1e-9 and strings exactly.
 
 ## Change this contract

@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		00289D1B4C4E5F2D871EB08F /* NativeEvaluatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55EBEAC678E6BCD7405A24C8 /* NativeEvaluatorTests.swift */; };
+		01669A25488FDB843A26B226 /* NativeMapViewIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 808A9F338B0741E97666C63E /* NativeMapViewIntegrationTests.swift */; };
 		0F408D6D1ADEDCAC3AA85BE0 /* OfflineStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FA53D431BDFC97A1DFB2346 /* OfflineStoreTests.swift */; };
 		1858449358C2857350926ACB /* TestBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D9BCD4B594AC77133EC596 /* TestBundle.swift */; };
 		21CA8BBB2F2AFE32B0923BF1 /* OfflineServingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 207B64FB19BDA4FAC6A2A430 /* OfflineServingTests.swift */; };
@@ -75,6 +76,7 @@
 		7BEBE8CB1F75686A0207071F /* CameraTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraTests.swift; sourceTree = "<group>"; };
 		7C3A5AF1F3AF50DEF8B25B27 /* MapIntegrationTests+Location.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "MapIntegrationTests+Location.swift"; sourceTree = "<group>"; };
 		7FA53D431BDFC97A1DFB2346 /* OfflineStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineStoreTests.swift; sourceTree = "<group>"; };
+		808A9F338B0741E97666C63E /* NativeMapViewIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMapViewIntegrationTests.swift; sourceTree = "<group>"; };
 		858DD9300A5AD87990E7E7FC /* MapCacheIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapCacheIntegrationTests.swift; sourceTree = "<group>"; };
 		8971705707273BE7E1E670CB /* MapConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapConfigurationTests.swift; sourceTree = "<group>"; };
 		8D18786EA197852817C88C29 /* LocationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocationTests.swift; sourceTree = "<group>"; };
@@ -131,6 +133,7 @@
 				49C06DF5B1D8F32A2B5CFBF2 /* MapStyleIntegrationTests.swift */,
 				55EBEAC678E6BCD7405A24C8 /* NativeEvaluatorTests.swift */,
 				CC42FC72087C287C71C2AEA0 /* NativeMapEngineTests.swift */,
+				808A9F338B0741E97666C63E /* NativeMapViewIntegrationTests.swift */,
 				ED3D8D4ACF53A2216FF492FF /* NativeOfflineElevationTests.swift */,
 				549BE5C0298FAB0FD00D345B /* NativeStyleDocumentTests.swift */,
 				927F8C72E0A307CC92921917 /* OfflinePackTests.swift */,
@@ -296,6 +299,7 @@
 				471C0022F4BE8513D5F01741 /* MapStyleIntegrationTests.swift in Sources */,
 				00289D1B4C4E5F2D871EB08F /* NativeEvaluatorTests.swift in Sources */,
 				62028ABD75997C1E740722E7 /* NativeMapEngineTests.swift in Sources */,
+				01669A25488FDB843A26B226 /* NativeMapViewIntegrationTests.swift in Sources */,
 				F7E5C8CF191D1976DD97220C /* NativeOfflineElevationTests.swift in Sources */,
 				5F7F4F6802161AC81ABF774D /* NativeStyleDocumentTests.swift in Sources */,
 				57BC2B5DB43D8CA1B9747503 /* OfflinePackTests.swift in Sources */,

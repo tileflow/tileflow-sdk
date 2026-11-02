@@ -105,7 +105,7 @@ internal class WebViewMapEngine(
                 onFailure = callbacks.failed,
                 data = bridge.data,
             ) {
-                if (!retired) callbacks.rendererGone(this)
+                if (!retired) callbacks.rendererGone(this, ProtocolContract.ErrorReason.PROCESS_TERMINATED)
             }
     }
 

@@ -768,7 +768,8 @@ class HostedSessionTest {
                     loader.load(style)
                     loader.load(URI("https://public.example/tile.pbf"))
                     assertEquals(1, sessionTransport.requests.size)
-                    assertEquals(4, resourceTransport.requests.size)
+                    // Discovery, both profile manifests, the style and the public tile.
+                    assertEquals(5, resourceTransport.requests.size)
                     for (request in resourceTransport.requests) {
                         assertNull(request.header("Authorization"))
                         assertNull(request.header("X-Tileflow-Mobile-Client"))
@@ -784,7 +785,7 @@ class HostedSessionTest {
                         )) {
                         assertThrows(Exception::class.java) { loader.load(url) }
                     }
-                    assertEquals(4, resourceTransport.requests.size)
+                    assertEquals(5, resourceTransport.requests.size)
                 }
         }
     }

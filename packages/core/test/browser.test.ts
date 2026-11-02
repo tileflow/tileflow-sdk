@@ -838,6 +838,29 @@ const exactBrowserWorldUrl =
   `worldDescriptorSha256=${'a'.repeat(64)}&map=map_public`;
 const retiredMutableWorldUrl = 'https://world.tileflow.dev/world/v1/0/0/0.pbf';
 
+test('World bridge calls the default browser fetch with its global receiver', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = function (this: unknown, ...args: Parameters<typeof fetch>) {
+    assert.equal(this, globalThis);
+    assert.equal(args[0], exactBrowserWorldUrl);
+    assert.equal(args[1]?.credentials, 'omit');
+    return Promise.resolve(new Response(new Uint8Array([1, 2, 3])));
+  };
+  let bridge: ReturnType<typeof registerTileflowWorldRequestBridge> | undefined;
+  try {
+    const registered = registerTestWorldBridge({});
+    bridge = registered.bridge;
+    const result = await registered.protocolHandler(
+      {url: bridge.rewriteUrl(exactBrowserWorldUrl)},
+      new AbortController(),
+    );
+    assert.equal(result.data.byteLength, 3);
+  } finally {
+    bridge?.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('World bridge follows signed notice activation and shapes an empty tile', async () => {
   const notices: Array<TileflowFairUseNotice | null> = [];
   const requests: Array<{credentials: RequestCredentials | undefined; url: string}> = [];
@@ -1515,7 +1538,7 @@ test('transform request is always installed, a no-op without work, and propagate
 });
 
 function registerTestWorldBridge(input: {
-  fetch: typeof fetch;
+  fetch?: typeof fetch;
   now?: () => number;
   onNotice?: (notice: TileflowFairUseNotice | null) => void;
 }): {

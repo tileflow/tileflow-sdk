@@ -404,6 +404,9 @@ jobs:
     if: needs.mobile-areas.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # Skips the WebView map tests whose timing budgets the hosted emulator cannot meet.
+      TILEFLOW_HOSTED_EMULATOR: 'true'
     strategy:
       fail-fast: false
       matrix:

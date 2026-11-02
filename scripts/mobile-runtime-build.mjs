@@ -4,6 +4,7 @@ import {createRequire} from 'node:module';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {collectRuntimeNotices} from './mobile-runtime-notices.mjs';
+import {isWithin} from './mobile-runtime-paths.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const packageRoot = resolve(root, 'packages/mobile-runtime');
@@ -38,7 +39,7 @@ const coreNativeSource = {
       return {path: resolve(coreSource, 'native.ts')};
     });
     build.onResolve({filter: /^\.\/native-url-provider$/}, (args) => {
-      if (!resolve(args.importer).startsWith(`${coreSource}/`)) return undefined;
+      if (!isWithin(coreSource, resolve(args.importer))) return undefined;
       substituted.add('parser');
       return {path: platformUrl};
     });

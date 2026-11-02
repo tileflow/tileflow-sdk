@@ -1,0 +1,38 @@
+{
+  "bottomInset300" : {
+    "camera" : 85,
+    "centre" : "#2040a0",
+    "fullyRendered" : true,
+    "maximumPitch" : 85,
+    "requested" : 85,
+    "topRow" : "#2040a0"
+  },
+  "date" : "2026-11-02T14:31:29Z",
+  "defaultLimit" : {
+    "camera" : 59.999999999999993,
+    "centre" : "#fbf9f4",
+    "fullyRendered" : true,
+    "maximumPitch" : 59.999999999999993,
+    "requested" : 85,
+    "topRow" : "#2040a0"
+  },
+  "defaultMaximumPitch" : 59.999999999999993,
+  "device" : "iPhone18,1, Tileflow Native Engine Probes, iOS 26.3.1",
+  "maplibre" : "7.0.0",
+  "raised" : {
+    "camera" : 85,
+    "centre" : "#546cb4",
+    "fullyRendered" : true,
+    "maximumPitch" : 85,
+    "requested" : 85,
+    "topRow" : "#2040a0"
+  },
+  "raised89" : {
+    "camera" : 89,
+    "centre" : "#2040a0",
+    "fullyRendered" : true,
+    "maximumPitch" : 89,
+    "requested" : 89,
+    "topRow" : "#2040a0"
+  }
+}

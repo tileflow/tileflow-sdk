@@ -1,0 +1,50 @@
+{
+  "absentStatus" : 204,
+  "date" : "2026-11-02T14:31:24Z",
+  "device" : "iPhone18,1, Tileflow Native Engine Probes, iOS 26.3.1",
+  "escaped" : [
+
+  ],
+  "fullyRendered" : true,
+  "maplibre" : "7.0.0",
+  "packZooms" : [
+    8,
+    9
+  ],
+  "quadrants" : {
+    "north-east (9\/251\/192)" : "#00c080",
+    "north-west (9\/250\/192)" : "#00c080",
+    "south-east (9\/251\/193)" : "#00c080",
+    "south-west (9\/250\/193)" : "#00c080"
+  },
+  "requests" : [
+    "200 54B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/8\/125\/96.webp?map=map_offlinefixture00",
+    "204 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/250\/193.webp?map=map_offlinefixture00",
+    "204 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/250\/192.webp?map=map_offlinefixture00",
+    "204 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/251\/193.webp?map=map_offlinefixture00",
+    "204 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/251\/192.webp?map=map_offlinefixture00",
+    "204 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/250\/193.webp?map=map_offlinefixture00",
+    "204 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/250\/192.webp?map=map_offlinefixture00",
+    "204 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/251\/193.webp?map=map_offlinefixture00",
+    "204 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/251\/192.webp?map=map_offlinefixture00"
+  ],
+  "stored" : [
+    "8\/125\/96"
+  ],
+  "template" : "https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/{z}\/{x}\/{y}.webp?map=map_offlinefixture00",
+  "tileAttempts" : {
+    "8\/125\/96" : 1,
+    "9\/250\/192" : 2,
+    "9\/250\/193" : 2,
+    "9\/251\/192" : 2,
+    "9\/251\/193" : 2
+  },
+  "tileStatuses" : {
+    "8\/125\/96" : 200,
+    "9\/250\/192" : 204,
+    "9\/250\/193" : 204,
+    "9\/251\/192" : 204,
+    "9\/251\/193" : 204
+  },
+  "zoom" : 9.5
+}

@@ -1,0 +1,73 @@
+{
+  "absentStatus" : 204,
+  "date" : "2026-11-02T14:31:29Z",
+  "device" : "iPhone18,1, Tileflow Native Engine Probes, iOS 26.3.1",
+  "escaped" : [
+
+  ],
+  "fullyRendered" : true,
+  "maplibre" : "7.0.0",
+  "packZooms" : [
+    9,
+    9
+  ],
+  "quadrants" : {
+    "north-east (9\/251\/192)" : "#303030",
+    "north-west (9\/250\/192)" : "#303030",
+    "south-east (9\/251\/193)" : "#303030",
+    "south-west (9\/250\/193)" : "#f0a000"
+  },
+  "requests" : [
+    "504 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/6\/31\/24.webp?map=map_offlinefixture00",
+    "200 54B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/250\/193.webp?map=map_offlinefixture00",
+    "204 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/250\/192.webp?map=map_offlinefixture00",
+    "204 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/251\/193.webp?map=map_offlinefixture00",
+    "204 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/251\/192.webp?map=map_offlinefixture00",
+    "504 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/5\/15\/12.webp?map=map_offlinefixture00",
+    "204 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/250\/192.webp?map=map_offlinefixture00",
+    "204 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/251\/193.webp?map=map_offlinefixture00",
+    "204 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/9\/251\/192.webp?map=map_offlinefixture00",
+    "504 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/4\/7\/6.webp?map=map_offlinefixture00",
+    "504 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/8\/125\/96.webp?map=map_offlinefixture00",
+    "504 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/3\/3\/3.webp?map=map_offlinefixture00",
+    "504 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/7\/62\/48.webp?map=map_offlinefixture00",
+    "504 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/2\/1\/1.webp?map=map_offlinefixture00",
+    "504 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/1\/0\/0.webp?map=map_offlinefixture00",
+    "504 0B https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/0\/0\/0.webp?map=map_offlinefixture00"
+  ],
+  "stored" : [
+    "9\/250\/193"
+  ],
+  "template" : "https:\/\/api.tileflow.test\/tiles\/bathymetry\/dem\/bathymetry-v1-20261021-fixture\/{z}\/{x}\/{y}.webp?map=map_offlinefixture00",
+  "tileAttempts" : {
+    "0\/0\/0" : 1,
+    "1\/0\/0" : 1,
+    "2\/1\/1" : 1,
+    "3\/3\/3" : 1,
+    "4\/7\/6" : 1,
+    "5\/15\/12" : 1,
+    "6\/31\/24" : 1,
+    "7\/62\/48" : 1,
+    "8\/125\/96" : 1,
+    "9\/250\/192" : 2,
+    "9\/250\/193" : 1,
+    "9\/251\/192" : 2,
+    "9\/251\/193" : 2
+  },
+  "tileStatuses" : {
+    "0\/0\/0" : 504,
+    "1\/0\/0" : 504,
+    "2\/1\/1" : 504,
+    "3\/3\/3" : 504,
+    "4\/7\/6" : 504,
+    "5\/15\/12" : 504,
+    "6\/31\/24" : 504,
+    "7\/62\/48" : 504,
+    "8\/125\/96" : 504,
+    "9\/250\/192" : 204,
+    "9\/250\/193" : 200,
+    "9\/251\/192" : 204,
+    "9\/251\/193" : 204
+  },
+  "zoom" : 9.5
+}

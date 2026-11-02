@@ -1,0 +1,358 @@
+{
+  "date" : "2026-11-02T14:30:55Z",
+  "device" : "iPhone18,1, Tileflow Native Engine Probes, iOS 26.3.1",
+  "failures" : [
+
+  ],
+  "maplibre" : "7.0.0",
+  "themes" : [
+    {
+      "engineLayers" : 281,
+      "engineWarnings" : [
+
+      ],
+      "escaped" : [
+
+      ],
+      "failedRequests" : [
+
+      ],
+      "fontFaces" : [
+        "200 569208B \/native-build\/fonts\/noto-sans-regular-b85c38ecea8a7cfb39c24e395a4007474fa5a4fc864f6ee33309eb4948d232d5.ttf"
+      ],
+      "fullyRendered" : true,
+      "globalStateAfter" : "#ff0000",
+      "globalStateBefore" : "#00ff00",
+      "labelFeaturesPlaced" : 1,
+      "labelPixels" : 1436,
+      "missingImages" : 0,
+      "sprite" : [
+        "200 27610B \/native-build\/icons\/streets\/sprite@2x.json",
+        "200 380925B \/native-build\/icons\/streets\/sprite@2x.png"
+      ],
+      "styleLayers" : 278,
+      "styleLoadSeconds" : 0.024585962295532227,
+      "theme" : "dark",
+      "tiles" : 3
+    },
+    {
+      "engineLayers" : 281,
+      "engineWarnings" : [
+
+      ],
+      "escaped" : [
+
+      ],
+      "failedRequests" : [
+
+      ],
+      "fontFaces" : [
+
+      ],
+      "fullyRendered" : true,
+      "globalStateAfter" : "#ff0000",
+      "globalStateBefore" : "#00ff00",
+      "labelFeaturesPlaced" : 1,
+      "labelPixels" : 1462,
+      "missingImages" : 0,
+      "sprite" : [
+        "200 27610B \/native-build\/icons\/streets\/sprite@2x.json",
+        "200 380925B \/native-build\/icons\/streets\/sprite@2x.png"
+      ],
+      "styleLayers" : 278,
+      "styleLoadSeconds" : 0.020686030387878418,
+      "theme" : "dark-faded",
+      "tiles" : 0
+    },
+    {
+      "engineLayers" : 282,
+      "engineWarnings" : [
+
+      ],
+      "escaped" : [
+
+      ],
+      "failedRequests" : [
+
+      ],
+      "fontFaces" : [
+
+      ],
+      "fullyRendered" : true,
+      "globalStateAfter" : "#ff0000",
+      "globalStateBefore" : "#00ff00",
+      "labelFeaturesPlaced" : 1,
+      "labelPixels" : 1417,
+      "missingImages" : 0,
+      "sprite" : [
+        "200 27610B \/native-build\/icons\/streets\/sprite@2x.json",
+        "200 380925B \/native-build\/icons\/streets\/sprite@2x.png"
+      ],
+      "styleLayers" : 279,
+      "styleLoadSeconds" : 0.01903998851776123,
+      "theme" : "dark-monochrome",
+      "tiles" : 0
+    },
+    {
+      "engineLayers" : 281,
+      "engineWarnings" : [
+
+      ],
+      "escaped" : [
+
+      ],
+      "failedRequests" : [
+
+      ],
+      "fontFaces" : [
+
+      ],
+      "fullyRendered" : true,
+      "globalStateAfter" : "#ff0000",
+      "globalStateBefore" : "#00ff00",
+      "labelFeaturesPlaced" : 1,
+      "labelPixels" : 1440,
+      "missingImages" : 0,
+      "sprite" : [
+        "200 27610B \/native-build\/icons\/streets\/sprite@2x.json",
+        "200 380925B \/native-build\/icons\/streets\/sprite@2x.png"
+      ],
+      "styleLayers" : 278,
+      "styleLoadSeconds" : 0.018995046615600586,
+      "theme" : "dawn",
+      "tiles" : 0
+    },
+    {
+      "engineLayers" : 281,
+      "engineWarnings" : [
+
+      ],
+      "escaped" : [
+
+      ],
+      "failedRequests" : [
+
+      ],
+      "fontFaces" : [
+
+      ],
+      "fullyRendered" : true,
+      "globalStateAfter" : "#ff0000",
+      "globalStateBefore" : "#00ff00",
+      "labelFeaturesPlaced" : 1,
+      "labelPixels" : 1422,
+      "missingImages" : 0,
+      "sprite" : [
+        "200 27610B \/native-build\/icons\/streets\/sprite@2x.json",
+        "200 380925B \/native-build\/icons\/streets\/sprite@2x.png"
+      ],
+      "styleLayers" : 278,
+      "styleLoadSeconds" : 0.018792033195495605,
+      "theme" : "dawn-faded",
+      "tiles" : 0
+    },
+    {
+      "engineLayers" : 281,
+      "engineWarnings" : [
+
+      ],
+      "escaped" : [
+
+      ],
+      "failedRequests" : [
+
+      ],
+      "fontFaces" : [
+
+      ],
+      "fullyRendered" : true,
+      "globalStateAfter" : "#ff0000",
+      "globalStateBefore" : "#00ff00",
+      "labelFeaturesPlaced" : 1,
+      "labelPixels" : 1426,
+      "missingImages" : 0,
+      "sprite" : [
+        "200 27610B \/native-build\/icons\/streets\/sprite@2x.json",
+        "200 380925B \/native-build\/icons\/streets\/sprite@2x.png"
+      ],
+      "styleLayers" : 278,
+      "styleLoadSeconds" : 0.019524931907653809,
+      "theme" : "dawn-monochrome",
+      "tiles" : 0
+    },
+    {
+      "engineLayers" : 281,
+      "engineWarnings" : [
+
+      ],
+      "escaped" : [
+
+      ],
+      "failedRequests" : [
+
+      ],
+      "fontFaces" : [
+
+      ],
+      "fullyRendered" : true,
+      "globalStateAfter" : "#ff0000",
+      "globalStateBefore" : "#00ff00",
+      "labelFeaturesPlaced" : 1,
+      "labelPixels" : 1455,
+      "missingImages" : 0,
+      "sprite" : [
+        "200 27610B \/native-build\/icons\/streets\/sprite@2x.json",
+        "200 380925B \/native-build\/icons\/streets\/sprite@2x.png"
+      ],
+      "styleLayers" : 278,
+      "styleLoadSeconds" : 0.019032001495361328,
+      "theme" : "dusk",
+      "tiles" : 0
+    },
+    {
+      "engineLayers" : 281,
+      "engineWarnings" : [
+
+      ],
+      "escaped" : [
+
+      ],
+      "failedRequests" : [
+
+      ],
+      "fontFaces" : [
+
+      ],
+      "fullyRendered" : true,
+      "globalStateAfter" : "#ff0000",
+      "globalStateBefore" : "#00ff00",
+      "labelFeaturesPlaced" : 1,
+      "labelPixels" : 1492,
+      "missingImages" : 0,
+      "sprite" : [
+        "200 27610B \/native-build\/icons\/streets\/sprite@2x.json",
+        "200 380925B \/native-build\/icons\/streets\/sprite@2x.png"
+      ],
+      "styleLayers" : 278,
+      "styleLoadSeconds" : 0.018643975257873535,
+      "theme" : "dusk-faded",
+      "tiles" : 0
+    },
+    {
+      "engineLayers" : 281,
+      "engineWarnings" : [
+
+      ],
+      "escaped" : [
+
+      ],
+      "failedRequests" : [
+
+      ],
+      "fontFaces" : [
+
+      ],
+      "fullyRendered" : true,
+      "globalStateAfter" : "#ff0000",
+      "globalStateBefore" : "#00ff00",
+      "labelFeaturesPlaced" : 1,
+      "labelPixels" : 1462,
+      "missingImages" : 0,
+      "sprite" : [
+        "200 27610B \/native-build\/icons\/streets\/sprite@2x.json",
+        "200 380925B \/native-build\/icons\/streets\/sprite@2x.png"
+      ],
+      "styleLayers" : 278,
+      "styleLoadSeconds" : 0.019479990005493164,
+      "theme" : "dusk-monochrome",
+      "tiles" : 0
+    },
+    {
+      "engineLayers" : 281,
+      "engineWarnings" : [
+
+      ],
+      "escaped" : [
+
+      ],
+      "failedRequests" : [
+
+      ],
+      "fontFaces" : [
+
+      ],
+      "fullyRendered" : true,
+      "globalStateAfter" : "#ff0000",
+      "globalStateBefore" : "#00ff00",
+      "labelFeaturesPlaced" : 1,
+      "labelPixels" : 1416,
+      "missingImages" : 0,
+      "sprite" : [
+        "200 27610B \/native-build\/icons\/streets\/sprite@2x.json",
+        "200 380925B \/native-build\/icons\/streets\/sprite@2x.png"
+      ],
+      "styleLayers" : 278,
+      "styleLoadSeconds" : 0.021739959716796875,
+      "theme" : "faded",
+      "tiles" : 0
+    },
+    {
+      "engineLayers" : 281,
+      "engineWarnings" : [
+
+      ],
+      "escaped" : [
+
+      ],
+      "failedRequests" : [
+
+      ],
+      "fontFaces" : [
+
+      ],
+      "fullyRendered" : true,
+      "globalStateAfter" : "#ff0000",
+      "globalStateBefore" : "#00ff00",
+      "labelFeaturesPlaced" : 1,
+      "labelPixels" : 1419,
+      "missingImages" : 0,
+      "sprite" : [
+        "200 27610B \/native-build\/icons\/streets\/sprite@2x.json",
+        "200 380925B \/native-build\/icons\/streets\/sprite@2x.png"
+      ],
+      "styleLayers" : 278,
+      "styleLoadSeconds" : 0.019665956497192383,
+      "theme" : "light",
+      "tiles" : 0
+    },
+    {
+      "engineLayers" : 281,
+      "engineWarnings" : [
+
+      ],
+      "escaped" : [
+
+      ],
+      "failedRequests" : [
+
+      ],
+      "fontFaces" : [
+
+      ],
+      "fullyRendered" : true,
+      "globalStateAfter" : "#ff0000",
+      "globalStateBefore" : "#00ff00",
+      "labelFeaturesPlaced" : 1,
+      "labelPixels" : 1413,
+      "missingImages" : 0,
+      "sprite" : [
+        "200 27610B \/native-build\/icons\/streets\/sprite@2x.json",
+        "200 380925B \/native-build\/icons\/streets\/sprite@2x.png"
+      ],
+      "styleLayers" : 278,
+      "styleLoadSeconds" : 0.018829941749572754,
+      "theme" : "monochrome",
+      "tiles" : 0
+    }
+  ]
+}

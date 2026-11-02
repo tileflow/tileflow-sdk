@@ -9,6 +9,9 @@ const require = createRequire(import.meta.url);
 const fontRoot = dirname(require.resolve('@fontsource/noto-sans/package.json'));
 const font = await readFile(resolve(fontRoot, 'files/noto-sans-latin-400-normal.woff2'));
 const port = Number(process.env.TILEFLOW_FIXTURE_PORT ?? 18645);
+const nativeBuild = process.env.TILEFLOW_NATIVE_BUILD_DIR
+  ? resolve(process.env.TILEFLOW_NATIVE_BUILD_DIR)
+  : null;
 // The origin the manifests advertise. Override it when a device reaches this server through a
 // forwarded port, for example `adb reverse tcp:18645 tcp:<port>`.
 const base = process.env.TILEFLOW_FIXTURE_ORIGIN ?? `http://127.0.0.1:${port}`;
@@ -368,6 +371,27 @@ const server = createServer((request, response) => {
       response.setHeader('Content-Length', length);
       response.end(Buffer.alloc(length));
     }
+    return;
+  }
+  // A local native build (`tileflow build --renderer native` output), when one is given.
+  if (nativeBuild && request.url.startsWith('/native-build/')) {
+    const file = resolve(nativeBuild, `.${decodeURIComponent(request.url.slice(13).split('?')[0])}`);
+    if (!file.startsWith(`${nativeBuild}/`)) {
+      response.statusCode = 404;
+      response.end();
+      return;
+    }
+    readFile(file).then(
+      (bytes) => {
+        const types = {json: 'application/json', png: 'image/png', ttf: 'font/ttf', txt: 'text/plain'};
+        response.setHeader('Content-Type', types[file.split('.').pop()] ?? 'application/octet-stream');
+        response.end(bytes);
+      },
+      () => {
+        response.statusCode = 404;
+        response.end();
+      },
+    );
     return;
   }
   if (request.url === '/redirect') {

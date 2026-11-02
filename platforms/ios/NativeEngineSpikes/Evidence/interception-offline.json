@@ -1,0 +1,135 @@
+{
+  "date" : "2026-11-02T14:32:37Z",
+  "device" : "iPhone18,1, Tileflow Native Engine Probes, iOS 26.3.1",
+  "embeddedTileJSON" : [
+    "http:\/\/127.0.0.1:18681\/tiles\/world\/tiles.json?map=map_offlinefixture01"
+  ],
+  "escaped" : [
+
+  ],
+  "fixtureCounters" : {
+    "downloads" : 0,
+    "notModified" : 0,
+    "packNotModified" : 0,
+    "packResources" : 0,
+    "packs" : 0,
+    "ranges" : 0,
+    "revalidations" : 0,
+    "sessionResources" : 0,
+    "sessions" : 0
+  },
+  "frames" : 22,
+  "fullyRendered" : true,
+  "maplibre" : "7.0.0",
+  "maplibreDatabase" : {
+    "exists" : 1,
+    "regions" : 0,
+    "resources" : 0,
+    "tiles" : 0
+  },
+  "maplibreDatabaseFile" : "cache.db",
+  "maximumConcurrentRequests" : 5,
+  "missingImages" : [
+
+  ],
+  "pixels" : {
+    "building" : 26030,
+    "ground" : 54163,
+    "spriteIcon" : 3214
+  },
+  "requestCount" : 8,
+  "requests" : [
+    {
+      "bytes" : 59,
+      "contentType" : "application\/json",
+      "error" : "",
+      "headersSent" : {
+
+      },
+      "remote" : "http:\/\/127.0.0.1:18681\/sprites\/fixture\/sprite@2x.json",
+      "status" : 200,
+      "transport" : "https:\/\/tileflow.invalid\/0tmAnCk0USDT-lPyw7l3Sg\/aHR0cDovLzEyNy4wLjAuMToxODY4MQ\/sprites\/fixture\/sprite@2x.json"
+    },
+    {
+      "bytes" : 79,
+      "contentType" : "image\/png",
+      "error" : "",
+      "headersSent" : {
+
+      },
+      "remote" : "http:\/\/127.0.0.1:18681\/sprites\/fixture\/sprite@2x.png",
+      "status" : 200,
+      "transport" : "https:\/\/tileflow.invalid\/0tmAnCk0USDT-lPyw7l3Sg\/aHR0cDovLzEyNy4wLjAuMToxODY4MQ\/sprites\/fixture\/sprite@2x.png"
+    },
+    {
+      "bytes" : 2949,
+      "contentType" : "application\/vnd.mapbox-vector-tile",
+      "error" : "",
+      "headersSent" : {
+
+      },
+      "remote" : "http:\/\/127.0.0.1:18681\/tiles\/world\/1\/13\/4011\/3088.pbf?map=map_offlinefixture01",
+      "status" : 200,
+      "transport" : "https:\/\/tileflow.invalid\/0tmAnCk0USDT-lPyw7l3Sg\/aHR0cDovLzEyNy4wLjAuMToxODY4MQ\/tiles\/world\/1\/13\/4011\/3088.pbf?map=map_offlinefixture01"
+    },
+    {
+      "bytes" : 2210,
+      "contentType" : "application\/vnd.mapbox-vector-tile",
+      "error" : "",
+      "headersSent" : {
+
+      },
+      "remote" : "http:\/\/127.0.0.1:18681\/tiles\/world\/1\/15\/16047\/12355.pbf?map=map_offlinefixture01",
+      "status" : 200,
+      "transport" : "https:\/\/tileflow.invalid\/0tmAnCk0USDT-lPyw7l3Sg\/aHR0cDovLzEyNy4wLjAuMToxODY4MQ\/tiles\/world\/1\/15\/16047\/12355.pbf?map=map_offlinefixture01"
+    },
+    {
+      "bytes" : 655,
+      "contentType" : "application\/vnd.mapbox-vector-tile",
+      "error" : "",
+      "headersSent" : {
+
+      },
+      "remote" : "http:\/\/127.0.0.1:18681\/tiles\/world\/1\/15\/16046\/12355.pbf?map=map_offlinefixture01",
+      "status" : 200,
+      "transport" : "https:\/\/tileflow.invalid\/0tmAnCk0USDT-lPyw7l3Sg\/aHR0cDovLzEyNy4wLjAuMToxODY4MQ\/tiles\/world\/1\/15\/16046\/12355.pbf?map=map_offlinefixture01"
+    },
+    {
+      "bytes" : 579,
+      "contentType" : "application\/vnd.mapbox-vector-tile",
+      "error" : "",
+      "headersSent" : {
+
+      },
+      "remote" : "http:\/\/127.0.0.1:18681\/tiles\/world\/1\/15\/16047\/12354.pbf?map=map_offlinefixture01",
+      "status" : 200,
+      "transport" : "https:\/\/tileflow.invalid\/0tmAnCk0USDT-lPyw7l3Sg\/aHR0cDovLzEyNy4wLjAuMToxODY4MQ\/tiles\/world\/1\/15\/16047\/12354.pbf?map=map_offlinefixture01"
+    },
+    {
+      "bytes" : 189,
+      "contentType" : "application\/vnd.mapbox-vector-tile",
+      "error" : "",
+      "headersSent" : {
+
+      },
+      "remote" : "http:\/\/127.0.0.1:18681\/tiles\/world\/1\/15\/16046\/12354.pbf?map=map_offlinefixture01",
+      "status" : 200,
+      "transport" : "https:\/\/tileflow.invalid\/0tmAnCk0USDT-lPyw7l3Sg\/aHR0cDovLzEyNy4wLjAuMToxODY4MQ\/tiles\/world\/1\/15\/16046\/12354.pbf?map=map_offlinefixture01"
+    },
+    {
+      "bytes" : 28,
+      "contentType" : "application\/x-protobuf",
+      "error" : "",
+      "headersSent" : {
+
+      },
+      "remote" : "http:\/\/127.0.0.1:18681\/fonts\/Noto%20Sans%20Regular\/0-255.pbf",
+      "status" : 200,
+      "transport" : "https:\/\/tileflow.invalid\/0tmAnCk0USDT-lPyw7l3Sg\/aHR0cDovLzEyNy4wLjAuMToxODY4MQ\/fonts\/Noto%20Sans%20Regular\/0-255.pbf"
+    }
+  ],
+  "sdkCacheEntries" : 0,
+  "statuses" : {
+    "200" : 8
+  }
+}

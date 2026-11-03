@@ -96,9 +96,9 @@ test('POI categories share one placement layer whose values match each category 
     ['tileflow-poi:poi'],
   );
   const [{layer}] = contributions as [TileflowLayerContribution];
-  const transport = {category: 'transport', filter_rank: 1, name: 'Sol', size_rank: 16};
-  const food = {category: 'food-drink', filter_rank: 3, name: 'Café', size_rank: 16};
-  const landmark = {category: 'landmark', filter_rank: 1, name: 'Arco', size_rank: 4};
+  const transport = {class: 'transport', filterrank: 1, name: 'Sol', sizerank: 16};
+  const food = {class: 'food-drink', filterrank: 3, name: 'Café', sizerank: 16};
+  const landmark = {class: 'landmark', filterrank: 1, name: 'Arco', sizerank: 4};
 
   // Each category keeps its own curve: linear stops are evaluated at the union of all stops.
   for (const [zoomLevel, expected] of [
@@ -124,8 +124,8 @@ test('POI categories share one placement layer whose values match each category 
   // One sort key orders every category: World's filter rank, then physical size.
   assert.deepEqual(layer.layout?.['symbol-sort-key'], [
     '+',
-    ['*', ['to-number', ['get', 'filter_rank'], 6], 17],
-    ['to-number', ['get', 'size_rank'], 17],
+    ['*', ['to-number', ['get', 'filterrank'], 6], 17],
+    ['to-number', ['get', 'sizerank'], 17],
   ]);
   assert.deepEqual(
     validateStyleMin({
@@ -173,8 +173,8 @@ test('exponential and step curves stay exact when categories are combined', () =
     return v0 + ((v1 - v0) * (1.5 ** (at - z0) - 1)) / (1.5 ** (z1 - z0) - 1);
   };
   for (const at of [12, 13, 14.5, 15, 16, 17.25, 18]) {
-    const retail = evaluate(layer, 'layout', 'text-size', at, {category: 'retail'}) as number;
-    const lodging = evaluate(layer, 'layout', 'text-size', at, {category: 'lodging'}) as number;
+    const retail = evaluate(layer, 'layout', 'text-size', at, {class: 'retail'}) as number;
+    const lodging = evaluate(layer, 'layout', 'text-size', at, {class: 'lodging'}) as number;
     assert.ok(
       Math.abs(
         retail -
@@ -235,11 +235,11 @@ test('exponential and step curves stay exact when categories are combined', () =
     [17, 0.1, 0.2],
   ] as const) {
     assert.equal(
-      evaluate(stepped, 'layout', 'text-letter-spacing', at, {category: 'retail'}),
+      evaluate(stepped, 'layout', 'text-letter-spacing', at, {class: 'retail'}),
       retail,
     );
     assert.equal(
-      evaluate(stepped, 'layout', 'text-letter-spacing', at, {category: 'lodging'}),
+      evaluate(stepped, 'layout', 'text-letter-spacing', at, {class: 'lodging'}),
       lodging,
     );
   }
@@ -308,18 +308,18 @@ test('a POI with a pictogram needs a name unless its type explains itself', () =
   const shown = (properties: Record<string, unknown>) =>
     filter.filter({zoom: 17}, {
       type: 1,
-      properties: {filter_rank: 2, size_rank: 16, ...properties},
+      properties: {filterrank: 2, sizerank: 16, ...properties},
     } as never);
 
-  assert.equal(shown({category: 'food-drink', name: 'Café', type: 'cafe'}), true);
-  assert.equal(shown({category: 'food-drink', type: 'cafe'}), false);
-  assert.equal(shown({category: 'visitor-amenity', type: 'parking'}), true);
-  assert.equal(shown({category: 'visitor-amenity', type: 'public_restroom'}), true);
-  assert.equal(shown({category: 'visitor-amenity', type: 'atm'}), false);
+  assert.equal(shown({class: 'food-drink', name: 'Café', type: 'cafe'}), true);
+  assert.equal(shown({class: 'food-drink', type: 'cafe'}), false);
+  assert.equal(shown({class: 'visitor-amenity', type: 'parking'}), true);
+  assert.equal(shown({class: 'visitor-amenity', type: 'public_restroom'}), true);
+  assert.equal(shown({class: 'visitor-amenity', type: 'atm'}), false);
   // A self-explanatory type is drawn as its pictogram alone, even when it has a name.
   assert.equal(
     evaluate(layer, 'layout', 'text-field', 17, {
-      category: 'visitor-amenity',
+      class: 'visitor-amenity',
       name: 'Parking Sol',
       type: 'parking',
     })?.toString(),
@@ -327,7 +327,7 @@ test('a POI with a pictogram needs a name unless its type explains itself', () =
   );
   assert.equal(
     evaluate(layer, 'layout', 'text-field', 17, {
-      category: 'food-drink',
+      class: 'food-drink',
       name: 'Café',
       type: 'cafe',
     })?.toString(),
@@ -353,7 +353,7 @@ test('a POI with a pictogram needs a name unless its type explains itself', () =
   assert.equal(
     customFilter.filter({zoom: 17}, {
       type: 1,
-      properties: {category: 'visitor-amenity', filter_rank: 2, size_rank: 16, type: 'atm'},
+      properties: {class: 'visitor-amenity', filterrank: 2, sizerank: 16, type: 'atm'},
     } as never),
     true,
   );
@@ -381,7 +381,7 @@ test('the prominent tier places the most important ranks before road and place l
     return [0, 1, 2, 3].filter((rank) =>
       filter.filter({zoom: 15}, {
         type: 1,
-        properties: {category: 'landmark', filter_rank: rank, name: 'Arco', size_rank: 4},
+        properties: {class: 'landmark', filterrank: rank, name: 'Arco', sizerank: 4},
       } as never),
     );
   };
@@ -464,7 +464,7 @@ test('category density changes eligibility without replacing cross-category impo
   const accepts = (layer: Layer, category: string, rank: number, zoom: number) =>
     featureFilter(layer.filter as never).filter(
       {zoom},
-      {type: 1, properties: {category, filter_rank: rank, size_rank: 16, name: 'Place'}},
+      {type: 1, properties: {class: category, filterrank: rank, sizerank: 16, name: 'Place'}},
     );
   for (const zoom of [15, 16, 17, 20]) {
     const increment = zoom >= 17 ? 2 : zoom >= 16 ? 1 : 0;
@@ -489,7 +489,7 @@ test('detail zoom can defer the last rank expansion without changing the default
     compilePoi(poi({categories: ['food-drink'], density: 2, detailZoom}), context)[0]!.layer;
   const feature = {
     type: 1,
-    properties: {category: 'food-drink', filter_rank: 4, size_rank: 16, name: 'Cafe'},
+    properties: {class: 'food-drink', filterrank: 4, sizerank: 16, name: 'Cafe'},
   };
   const regular = featureFilter(build().filter as never).filter;
   const delayed = featureFilter(build(18).filter as never).filter;

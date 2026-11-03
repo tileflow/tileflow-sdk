@@ -1048,7 +1048,7 @@ test('rejects wrong theme-token categories in direct and zoom-dependent style va
         land: {
           type: 'land',
           globalLandcover: {
-            color: expr.coalesce(expr.get(field('buildingTone')), token.image('wrong')) as never,
+            color: expr.coalesce(expr.get(field('tone')), token.image('wrong')) as never,
           },
         },
       },
@@ -1327,7 +1327,6 @@ test('accepts semantic path road targets and rejects the old overlapping path ta
             construction: {surface: {fill: {dash: [2, 1], opacity: 0.7}}},
             expressway: {widthScale: 1.1},
             indoor: {surface: {fill: {opacity: 0.4}}},
-            official: {surface: {casing: {color: '#445566'}}},
             ramp: {widthScale: 0.7},
             unpaved: {surface: {fill: {color: '#E9E4DA'}}},
           },

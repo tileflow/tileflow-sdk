@@ -496,7 +496,7 @@ test('colors building tones and use classes without making geometry visibility s
     context.colors.buildings.commercial,
     [
       'match',
-      ['coalesce', ['get', 'class'], ''],
+      ['coalesce', ['get', 'use'], ''],
       'residential',
       context.colors.buildings.residential,
       'commercial',
@@ -1090,7 +1090,7 @@ test('road labels use the same semantic path selectors as road geometry', () => 
   );
 });
 
-test('composes expressway, toll, indoor, official, and mountain-bike intelligence from bound data', () => {
+test('composes expressway, toll, indoor, and mountain-bike intelligence from bound data', () => {
   const data = resolveTileflowData({
     type: 'vector-tiles',
     attribution: '© Test',
@@ -1110,7 +1110,6 @@ test('composes expressway, toll, indoor, official, and mountain-bike intelligenc
     modifiers: {
       expressway: {surface: {fill: {color: '#112233'}}},
       indoor: {surface: {fill: {opacity: 0.35}}},
-      official: {surface: {casing: {color: '#445566'}}},
     },
     mountainBike: {
       '0': {surface: {fill: {color: '#55AA66'}}},
@@ -1122,23 +1121,12 @@ test('composes expressway, toll, indoor, official, and mountain-bike intelligenc
   const serialized = (id: string) => JSON.stringify(layers.find((layer) => layer.id === id));
   const primary = serialized('tileflow-road-surface-primary-fill');
   const pathway = serialized('tileflow-road-surface-pathway-fill');
-  const pathwayCasing = serialized('tileflow-road-surface-pathway-casing');
 
   assert.match(primary, /fast_flag/);
   assert.match(primary, /paid_flag/);
   assert.match(primary, /inside_flag/);
   assert.match(pathway, /trail_grade/);
   assert.match(pathway, /3\+/);
-  // OpenMapTiles has no official-route field, so the modifier has nothing to read there.
-  assert.doesNotMatch(pathwayCasing, /official/);
-  assert.match(
-    JSON.stringify(
-      compileRoads(request, context).find(
-        (entry) => entry.layer.id === 'tileflow-road-surface-pathway-casing',
-      )?.layer,
-    ),
-    /\["get","official"\]/,
-  );
   assert.equal(
     layers.filter((layer) => layer.id.startsWith('tileflow-road-surface-primary-fill')).length,
     1,
@@ -1220,7 +1208,6 @@ test('compiles global road-shield phases and allowlisted visuals without raw IDs
   );
   assert.equal((overview?.layout as Record<string, unknown>)['icon-optional'], false);
   assert.equal((overview?.layout as Record<string, unknown>)['text-optional'], false);
-  assert.match(JSON.stringify(junction?.filter), /motorway_junction/);
   assert.match(JSON.stringify(junction?.filter), /\["get","type"\],"junction"/);
   assert.equal((junction?.paint as Record<string, unknown>)['text-color'], '#556677');
 });

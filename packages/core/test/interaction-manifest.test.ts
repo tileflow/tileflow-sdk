@@ -44,11 +44,11 @@ test('emits a versioned post-planning POI interaction lookup without public phys
     order: 'rendered-topmost',
   });
   assert.deepEqual(manifest.domains.poi?.fields, {
-    category: 'category',
-    filterRank: 'filter_rank',
+    category: 'class',
+    filterRank: 'filterrank',
     icon: 'icon',
     name: 'name',
-    sizeRank: 'size_rank',
+    sizeRank: 'sizerank',
     type: 'type',
   });
   // A layer may draw several categories, so a hit's category comes from the feature itself.
@@ -165,11 +165,11 @@ test('rejects semantic metadata that drifts from its finalized physical layer', 
           representationPriority: ['marker', 'icon', 'combined', 'label'],
         },
         fields: {
-          category: 'category',
-          filterRank: 'filter_rank',
+          category: 'class',
+          filterRank: 'filterrank',
           icon: 'icon',
           name: 'name',
-          sizeRank: 'size_rank',
+          sizeRank: 'sizerank',
           type: 'type',
         },
         hitTesting: {frequency: 'animation-frame', order: 'rendered-topmost'},
@@ -181,7 +181,7 @@ test('rejects semantic metadata that drifts from its finalized physical layer', 
             priority: 1,
             representation: 'icon',
             source: 'expected-source',
-            sourceLayer: 'poi',
+            sourceLayer: 'poi_label',
           },
         ],
       },
@@ -192,7 +192,7 @@ test('rejects semantic metadata that drifts from its finalized physical layer', 
   assert.throws(
     () =>
       assertTileflowInteractionManifestLayers(manifest, [
-        {id: 'poi-food-drink', source: 'different-source', 'source-layer': 'poi'},
+        {id: 'poi-food-drink', source: 'different-source', 'source-layer': 'poi_label'},
       ]),
     /does not match finalized layer/u,
   );
@@ -207,11 +207,11 @@ test('rejects multiple physical POI namespaces that would collide in public feat
           representationPriority: ['marker', 'icon', 'combined', 'label'],
         },
         fields: {
-          category: 'category',
-          filterRank: 'filter_rank',
+          category: 'class',
+          filterRank: 'filterrank',
           icon: 'icon',
           name: 'name',
-          sizeRank: 'size_rank',
+          sizeRank: 'sizerank',
           type: 'type',
         },
         hitTesting: {frequency: 'animation-frame', order: 'rendered-topmost'},
@@ -223,7 +223,7 @@ test('rejects multiple physical POI namespaces that would collide in public feat
             priority: 1,
             representation: 'icon',
             source: 'source-a',
-            sourceLayer: 'poi',
+            sourceLayer: 'poi_label',
           },
           {
             anchor: 'pointer-coordinate',
@@ -231,7 +231,7 @@ test('rejects multiple physical POI namespaces that would collide in public feat
             priority: 2,
             representation: 'label',
             source: 'source-b',
-            sourceLayer: 'poi',
+            sourceLayer: 'poi_label',
           },
         ],
       },
@@ -242,8 +242,8 @@ test('rejects multiple physical POI namespaces that would collide in public feat
   assert.throws(
     () =>
       assertTileflowInteractionManifestLayers(manifest, [
-        {id: 'poi-food-drink', source: 'source-a', 'source-layer': 'poi'},
-        {id: 'poi-retail', source: 'source-b', 'source-layer': 'poi'},
+        {id: 'poi-food-drink', source: 'source-a', 'source-layer': 'poi_label'},
+        {id: 'poi-retail', source: 'source-b', 'source-layer': 'poi_label'},
       ]),
     /one source and source-layer namespace/u,
   );

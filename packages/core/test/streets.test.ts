@@ -309,9 +309,8 @@ test('keeps World selection and glyph delivery explicit and independent', () => 
   assert.deepEqual(first.metadata?.['tileflow:data'], {
     generation: 'v1',
     kind: 'tileflow-world',
-    schema: 'openmaptiles',
+    schema: 'tileflow-world',
     schemaVersion: 1,
-    semantics: {parkLayer: 'protected-only'},
     sourceId: 'tileflow',
     url: 'https://api-one.example.test/tiles/world/tiles.json',
     worldSelection: {kind: 'current', product: 'world-v1'},

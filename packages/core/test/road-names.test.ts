@@ -1,6 +1,7 @@
 import {createPropertyExpression, latest as styleSpec} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {bindSemanticReferences} from '../src/cartography/semantic-bindings';
 import {labels, resolveTileflowData} from '../src/index';
 import {compileLabels} from '../src/modules/labels/compiler';
 import {compactRoadNameExpression} from '../src/modules/labels/road-names';
@@ -59,9 +60,11 @@ test('road-name formatting follows localization, leaves shields alone and honors
     compileLabels(labels(options), undefined, context);
   const roadText = (options: Parameters<typeof labels>[0]) => {
     const layer = compile(options).find(({target}) => target === 'labels.roads.primary')!.layer;
-    return (layer.layout as Record<string, unknown>)['text-field'];
+    return (bindSemanticReferences(layer, context.data).layout as Record<string, unknown>)[
+      'text-field'
+    ];
   };
-  const feature = {name: 'Avenida de América', 'name:en': 'America Avenue', ref: 'A-2'};
+  const feature = {name: 'Avenida de América', name_en: 'America Avenue', ref: 'A-2'};
   assert.equal(textValue(roadText({language: 'local'}), feature), 'Avenida de América');
   assert.equal(
     textValue(roadText({language: 'local', roadNameFormat: 'compact'}), feature),

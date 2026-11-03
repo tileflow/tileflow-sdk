@@ -38,10 +38,10 @@ test('type rank ceilings survive zoom detail, placement order and all POI repres
               {
                 type: 1,
                 properties: {
-                  category: 'park-nature',
+                  class: 'park-nature',
                   type,
-                  filter_rank: rank,
-                  size_rank: 0,
+                  filterrank: rank,
+                  sizerank: 0,
                   name: 'Destination',
                 },
               },

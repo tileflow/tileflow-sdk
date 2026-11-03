@@ -489,7 +489,7 @@ test('current building tones use bound fields and the available semantic theme c
   assert.doesNotMatch(color, /building_kind|has_business/);
   assertValid([buildings]);
 
-  // OpenMapTiles has no tone: its buildings take their colour by class alone.
+  // OpenMapTiles has neither tone nor use: its buildings take the generic theme colour.
   const data = resolveTileflowData(
     vectorTiles({attribution: '© Test', schema: openMapTiles(), url: '/tiles.json'}),
   );
@@ -497,29 +497,28 @@ test('current building tones use bound fields and the available semantic theme c
     compileBuildings(undefined, {...context, data}),
     'tileflow-buildings-fill',
   );
-  const untonedColor = (untoned.layer.paint as Record<string, unknown>)['fill-color'] as unknown[];
-  assert.equal(untonedColor[0], 'match');
-  assert.doesNotMatch(JSON.stringify(untonedColor), /tone/);
+  const untonedColor = (untoned.layer.paint as Record<string, unknown>)['fill-color'];
+  assert.equal(untonedColor, context.colors.buildings.generic);
 });
 
-test('buildings take their theme colour by World class when they have no tone', () => {
+test('buildings take their theme colour by World use when they have no tone', () => {
   const colors = resolveColors();
   const buildings = contribution(compileBuildings(undefined, context), 'tileflow-buildings-fill');
   const color = (buildings.layer.paint as Record<string, unknown>)['fill-color'] as unknown[];
   const colourOf = (properties: Record<string, unknown>) =>
     tileflowFeatureColour(color, properties, tileflowColourChannels);
   const expected = (value: string) => tileflowFeatureColour(value, {}, tileflowColourChannels);
-  assert.deepEqual(colourOf({class: 'residential'}), expected(colors.buildings.residential));
-  assert.deepEqual(colourOf({class: 'commercial'}), expected(colors.buildings.commercial));
+  assert.deepEqual(colourOf({use: 'residential'}), expected(colors.buildings.residential));
+  assert.deepEqual(colourOf({use: 'commercial'}), expected(colors.buildings.commercial));
   for (const value of ['civic', 'education', 'medical', 'religious', 'transportation'])
-    assert.deepEqual(colourOf({class: value}), expected(colors.buildings.civic), value);
+    assert.deepEqual(colourOf({use: value}), expected(colors.buildings.civic), value);
   for (const value of ['industrial', 'agricultural', 'service'])
-    assert.deepEqual(colourOf({class: value}), expected(colors.buildings.industrial), value);
-  for (const properties of [{class: 'outbuilding'}, {class: 'unknown'}, {}])
+    assert.deepEqual(colourOf({use: value}), expected(colors.buildings.industrial), value);
+  for (const properties of [{use: 'outbuilding'}, {use: 'unknown'}, {}])
     assert.deepEqual(colourOf(properties), expected(colors.buildings.generic));
   // A tone, the reason for a building's palette, comes before its use.
   assert.deepEqual(
-    colourOf({class: 'residential', tone: 'destination'}),
+    colourOf({use: 'residential', tone: 'destination'}),
     expected(colors.buildings.destination),
   );
   assertValid([buildings]);

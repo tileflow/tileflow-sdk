@@ -21,19 +21,21 @@ import {
 } from './streets-ground-and-access';
 import {streetsOverviewRoads} from './streets-network-overview';
 
-const visibleBuilding = {
-  kind: 'all',
-  selectors: [
-    {field: 'hide3d', kind: 'compare', operator: 'ne', value: true},
-    {field: 'hide3d', kind: 'compare', operator: 'ne', value: 1},
-    {field: 'hide3d', kind: 'compare', operator: 'ne', value: '1'},
-    {field: 'hide3d', kind: 'compare', operator: 'ne', value: 'true'},
+// A footprint whose building parts draw it says `extrude: false`.
+const activityOpacity = expr.interpolate(
+  {kind: 'linear'},
+  expr.toNumber(expr.coalesce(expr.get(field('activity')), 1), 1),
+  [
+    [1, 0.4],
+    [5, 1],
   ],
-} as const;
+);
+
+const visibleBuilding = {field: 'extrude', kind: 'compare', operator: 'ne', value: false} as const;
 
 function buildingColor(outline = false, raised = false) {
   return expr.match(
-    expr.get(field('buildingTone')),
+    expr.get(field('tone')),
     [
       {
         labels: ['commercial', 'active'],
@@ -119,17 +121,19 @@ export function withStreetsCartography(base: TileflowMap) {
         },
         {
           ...landStack,
-          businessArea: renderPass({
+          // Where shops, food, services and offices concentrate: stronger with the area's
+          // activity level, from 1 to 5, until buildings take over.
+          activityAreas: renderPass({
             placement: {above: 'land.landuse.residential.fill'},
-            feature: 'landuse',
+            feature: 'landuseOverlay',
             renderer: 'fill',
-            selector: {field: 'class', kind: 'compare', operator: 'eq', value: 'business_area'},
+            selector: {field: 'class', kind: 'compare', operator: 'eq', value: 'activity_area'},
             style: {
-              color: token.color('landuse.businessCorridor'),
+              color: token.color('landuse.activity'),
               minZoom: 11,
-              opacity: zoom.linear([
-                [15, 1],
-                [15.5, 0.75],
+              opacity: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+                [15, activityOpacity],
+                [15.5, expr.multiply(activityOpacity, 0.75)],
                 [16.25, 0],
               ]),
             },

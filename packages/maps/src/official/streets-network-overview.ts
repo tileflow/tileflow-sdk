@@ -37,7 +37,7 @@ function overviewWidth(width: TileflowLineStyle['width'], local: boolean) {
             : 1;
     if (factor !== 1) {
       const authored = value[i + 1];
-      value[i + 1] = ['case', ['==', ['get', field('ramp')], 1], authored, ['*', authored, factor]];
+      value[i + 1] = ['case', ['==', ['get', field('link')], true], authored, ['*', authored, factor]];
     }
   }
   return {...width, value} as typeof width;
@@ -117,7 +117,7 @@ export function streetsOverviewRoads(roads: TileflowRoadsModuleConfig | undefine
           selectors: [
             {kind: 'geometry', geometry: 'line'},
             {kind: 'in', field: 'class', values: ['motorway', 'trunk']},
-            {kind: 'compare', field: 'brunnel', operator: 'ne', value: 'tunnel'},
+            {kind: 'compare', field: 'structure', operator: 'ne', value: 'tunnel'},
           ],
         },
         style: {

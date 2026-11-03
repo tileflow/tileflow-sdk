@@ -375,7 +375,7 @@ export function openMapTilesAdapter(schema: OpenMapTilesSchema): {
   const naturalLabelPartitions: TileflowDataLayerPartition[] = [
     {
       layer: l.mountainPeak,
-      classes: ['peak', 'volcano'],
+      classes: ['peak', 'volcano', 'saddle', 'ridge', 'cliff', 'arete'],
       fields: {filterrank: f.rank, sizerank: f.rank},
     },
     {
@@ -489,6 +489,7 @@ export function openMapTilesAdapter(schema: OpenMapTilesSchema): {
       minHeight: f.renderMinHeight,
       mtbScale: f.mtbScale,
       name: f.name,
+      nameEn: f.nameEnglish,
       nameLatin: f.nameLatin,
       network: f.network,
       oneway: f.oneway,

@@ -32,8 +32,6 @@ const streetsLightColors = {
   'boundaries.maritime': '#648AA4',
   'boundaries.regional': '#CE9698',
   'buildings.active': '#EFEADD',
-  'buildings.businessCorridor': '#F4E6D8',
-  'buildings.businessCorridorOutline': '#DCCFC3',
   'buildings.civic': '#EFEADD',
   'buildings.commercial': '#EFEADD',
   'buildings.destination': '#EFEADD',
@@ -106,8 +104,8 @@ const streetsLightColors = {
   'landcover.villageGreen': '#C2E7B5',
   'landcover.wetland': '#D7E9DE',
   'landcover.wood': '#A7DFA0',
-  'landuse.businessCorridor': '#FBEDE2',
-  'landuse.businessCorridorOutline': '#E6D8CA',
+  'landuse.activity': '#FBEDE2',
+  'landuse.activityOutline': '#E6D8CA',
   'landuse.cemetery': '#CCE5C6',
   'landuse.civic': '#F5F1F0',
   'landuse.commercial': '#FBEDE2',
@@ -201,8 +199,6 @@ const streetsDarkColors = {
   'boundaries.maritime': '#8192B3',
   'boundaries.regional': '#76586D',
   'buildings.active': '#373743',
-  'buildings.businessCorridor': '#45424E',
-  'buildings.businessCorridorOutline': '#56515A',
   'buildings.civic': '#2C2E3D',
   'buildings.commercial': '#2C2E3D',
   'buildings.destination': '#3A3947',
@@ -270,8 +266,8 @@ const streetsDarkColors = {
   'landcover.villageGreen': '#46564D',
   'landcover.wetland': '#33474A',
   'landcover.wood': '#34453F',
-  'landuse.businessCorridor': '#45424E',
-  'landuse.businessCorridorOutline': '#5A5561',
+  'landuse.activity': '#45424E',
+  'landuse.activityOutline': '#5A5561',
   'landuse.cemetery': '#45534D',
   'landuse.civic': '#2D3043',
   'landuse.commercial': '#45424E',
@@ -472,8 +468,6 @@ function calibratedStreetsColors(
     }
     if (role === 'buildings.extrusion')
       return {...parseStreetsColor(profile.extrusion), a: color.a};
-    if (role.startsWith('buildings.businessCorridor'))
-      return shift(base['landuse.commercial'], profile.commercial);
     if (role.startsWith('buildings.') || role === 'surface.building')
       return shift(base['buildings.fill'], profile.building);
     if (role === 'labels.ferryHalo') return water();
@@ -519,7 +513,7 @@ function calibratedStreetsColors(
     if (role.startsWith('roads.')) return shift(base['roads.default'], profile.road);
     if (role.startsWith('landuse.recreation'))
       return shift(base['landuse.recreation'], profile.sport);
-    if (role.startsWith('landuse.businessCorridor') || role === 'landuse.commercial')
+    if (role.startsWith('landuse.activity') || role === 'landuse.commercial')
       return shift(base['landuse.commercial'], profile.commercial);
     const green =
       role.startsWith('landcover.') && !/(?:^|\.)(?:barren|ice|rock|sand|snow|urban)$/.test(role);
@@ -792,8 +786,8 @@ export const streetsVisual = {
   ),
   landuse: Object.fromEntries(
     [
-      'businessCorridor',
-      'businessCorridorOutline',
+      'activity',
+      'activityOutline',
       'cemetery',
       'civic',
       'commercial',

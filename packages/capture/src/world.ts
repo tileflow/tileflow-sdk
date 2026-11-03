@@ -8,7 +8,6 @@ import type {TileflowCaptureAsset} from './assets';
 import {TileflowCaptureError} from './errors';
 import type {
   TileflowCaptureDataInput,
-  TileflowCaptureDataSemantics,
   TileflowCaptureWorldIdentity,
 } from './receipt';
 
@@ -24,7 +23,7 @@ type FetchTileJson = (
 export type TileflowCaptureResolvedWorldV1 = Readonly<{
   identity: Omit<
     TileflowCaptureWorldIdentity,
-    'kind' | 'schema' | 'schemaVersion' | 'semantics' | 'sourceId'
+    'kind' | 'schema' | 'schemaVersion' | 'sourceId'
   >;
   tileJsonUrl: string;
   tileJson: string;
@@ -62,9 +61,8 @@ export class TileflowCaptureWorldSession {
     const data: TileflowCaptureWorldIdentity = {
       ...resolution.identity,
       kind: 'tileflow-world',
-      schema: requireLiteral(metadata.schema, 'openmaptiles', 'schema'),
+      schema: requireLiteral(metadata.schema, 'tileflow-world', 'schema'),
       schemaVersion: requirePositiveInteger(metadata.schemaVersion, 'schemaVersion'),
-      semantics: validateSemantics(metadata.semantics),
       sourceId: requireLiteral(metadata.sourceId, 'tileflow', 'sourceId'),
     };
     const {tiles: _mutableTiles, url: _mutableUrl, ...sourceWithoutSelector} = source;
@@ -295,15 +293,6 @@ function validateExactTileTemplate(
     );
   }
   return value;
-}
-
-function validateSemantics(value: unknown): TileflowCaptureDataSemantics {
-  const semantics = requireRecord(value, 'data semantics');
-  requireExactKeys(semantics, ['parkLayer']);
-  if (semantics.parkLayer !== 'mixed' && semantics.parkLayer !== 'protected-only') {
-    throw worldResolutionError('The compiled style has invalid park semantics.');
-  }
-  return {parkLayer: semantics.parkLayer};
 }
 
 function requireRecord(value: unknown, field: string): Record<string, unknown> {

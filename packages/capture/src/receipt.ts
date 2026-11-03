@@ -12,21 +12,13 @@ import {
 import {TileflowCaptureError} from './errors';
 import type {TileflowCaptureRendererIdentity} from './metadata';
 
-export const tileflowCaptureReceiptSchemaVersion = 4 as const;
+export const tileflowCaptureReceiptSchemaVersion = 5 as const;
 export const tileflowCaptureReceiptLimits = Object.freeze({maximumBytes: 64 * 1024});
 const maximumReceiptBindingEntries = 128;
 
 export type TileflowCaptureDataBindings = {
   fields: Record<string, string>;
   layers: Record<string, string>;
-};
-
-export type TileflowCaptureDataCapabilities = {
-  businessCorridor: boolean;
-  bathymetry: boolean;
-  canopy: boolean;
-  globalLandcover: boolean;
-  tree: boolean;
 };
 
 export type TileflowCaptureDataSource = {
@@ -48,25 +40,28 @@ export type TileflowCaptureWorldIdentity = {
   kind: 'tileflow-world';
   product: 'world-v1';
   releaseId: string;
-  schema: 'openmaptiles';
+  schema: 'tileflow-world';
   schemaVersion: number;
-  semantics: TileflowCaptureDataSemantics;
   sourceId: 'tileflow';
 };
 
 /** External vector-tile identity. Its endpoint is recorded only as a safe fingerprint. */
 export type TileflowCaptureVectorIdentity = {
-  bindings: TileflowCaptureDataBindings;
-  capabilities: TileflowCaptureDataCapabilities;
   kind: 'vector-tiles';
   /** Explicit revision supplied by the data configuration. */
   revision?: string;
-  schema: 'openmaptiles';
   schemaVersion: number;
-  semantics: TileflowCaptureDataSemantics;
   source: TileflowCaptureDataSource;
   sourceId: 'tileflow';
-};
+} & (
+  | {schema: 'tileflow-world'}
+  | {
+      /** The source names of OpenMapTiles tiles' layers and fields. */
+      bindings: TileflowCaptureDataBindings;
+      schema: 'openmaptiles';
+      semantics: TileflowCaptureDataSemantics;
+    }
+);
 
 /** Durable data identity owned by capture rather than the live core authoring API. */
 export type TileflowCaptureDataIdentity =
@@ -77,7 +72,12 @@ export type TileflowCaptureDataIdentity =
  * it is converted to `source` and never returned or serialized.
  */
 export type TileflowCaptureDataInput =
-  (Omit<TileflowCaptureVectorIdentity, 'source'> & {url: string}) | TileflowCaptureWorldIdentity;
+  | (TileflowCaptureVectorIdentity extends infer TIdentity
+      ? TIdentity extends unknown
+        ? Omit<TIdentity, 'source'> & {url: string}
+        : never
+      : never)
+  | TileflowCaptureWorldIdentity;
 
 export type TileflowCaptureVerification = {
   data: 'expected-unverified' | 'rendered';
@@ -606,12 +606,11 @@ function validateDataIdentity(value: unknown): TileflowCaptureDataIdentity {
       'releaseId',
       'schema',
       'schemaVersion',
-      'semantics',
       'sourceId',
     ]);
     if (
       data.product !== 'world-v1' ||
-      data.schema !== 'openmaptiles' ||
+      data.schema !== 'tileflow-world' ||
       data.sourceId !== 'tileflow'
     ) {
       throw invalidReceipt('The baseline receipt has an unsupported World data contract.');
@@ -624,46 +623,49 @@ function validateDataIdentity(value: unknown): TileflowCaptureDataIdentity {
       kind: 'tileflow-world',
       product: 'world-v1',
       releaseId: requireWorldReleaseId(data.releaseId),
-      schema: 'openmaptiles',
+      schema: 'tileflow-world',
       schemaVersion: requirePositiveInteger(data.schemaVersion, 'data.schemaVersion'),
-      semantics: validateDataSemantics(data.semantics, 'data.semantics'),
       sourceId: 'tileflow',
     };
   }
   if (data.kind !== 'vector-tiles') {
     throw invalidReceipt('The baseline receipt has an invalid data.kind.');
   }
+  const openMapTiles = data.schema === 'openmaptiles';
   requireExactKeys(data, [
-    'bindings',
-    'capabilities',
+    ...(openMapTiles ? ['bindings'] : []),
     'kind',
     ...(data.revision === undefined ? [] : ['revision']),
     'schema',
     'schemaVersion',
-    'semantics',
+    ...(openMapTiles ? ['semantics'] : []),
     'source',
     'sourceId',
   ]);
-  if (data.schema !== 'openmaptiles' || data.sourceId !== 'tileflow') {
+  if ((!openMapTiles && data.schema !== 'tileflow-world') || data.sourceId !== 'tileflow') {
     throw invalidReceipt('The baseline receipt has an unsupported data contract.');
   }
-  return {
-    bindings: validateDataBindings(data.bindings, 'data.bindings'),
-    capabilities: validateDataCapabilities(data.capabilities, 'data.capabilities'),
-    kind: 'vector-tiles',
+  const common = {
+    kind: 'vector-tiles' as const,
     ...(data.revision === undefined ? {} : {revision: requireSourceRevision(data.revision)}),
-    schema: 'openmaptiles',
     schemaVersion: requirePositiveInteger(data.schemaVersion, 'data.schemaVersion'),
-    semantics: validateDataSemantics(data.semantics, 'data.semantics'),
     source: validateDataSource(data.source, 'data.source'),
-    sourceId: 'tileflow',
+    sourceId: 'tileflow' as const,
   };
+  return openMapTiles
+    ? {
+        ...common,
+        bindings: validateDataBindings(data.bindings, 'data.bindings'),
+        schema: 'openmaptiles',
+        semantics: validateDataSemantics(data.semantics, 'data.semantics'),
+      }
+    : {...common, schema: 'tileflow-world'};
 }
 
 function normalizeCaptureDataInput(input: TileflowCaptureDataInput): TileflowCaptureDataIdentity {
   if (input.kind === 'tileflow-world') return input;
   const {url, ...identity} = input;
-  return {...identity, source: fingerprintDataUrl(url)};
+  return {...identity, source: fingerprintDataUrl(url)} as TileflowCaptureVectorIdentity;
 }
 
 function validateDataSemantics(value: unknown, field: string): TileflowCaptureDataSemantics {
@@ -712,33 +714,6 @@ function requireBindingValue(value: unknown, field: string): string {
     throw invalidReceipt(`The baseline receipt has an invalid ${field}.`);
   }
   return value;
-}
-
-function validateDataCapabilities(value: unknown, field: string): TileflowCaptureDataCapabilities {
-  const capabilities = requireRecord(value, field);
-  requireExactKeys(capabilities, [
-    'businessCorridor',
-    'bathymetry',
-    'canopy',
-    'globalLandcover',
-    'tree',
-  ]);
-  if (
-    typeof capabilities.businessCorridor !== 'boolean' ||
-    typeof capabilities.bathymetry !== 'boolean' ||
-    typeof capabilities.canopy !== 'boolean' ||
-    typeof capabilities.globalLandcover !== 'boolean' ||
-    typeof capabilities.tree !== 'boolean'
-  ) {
-    throw invalidReceipt(`The baseline receipt has an invalid ${field} object.`);
-  }
-  return {
-    businessCorridor: capabilities.businessCorridor,
-    bathymetry: capabilities.bathymetry,
-    canopy: capabilities.canopy,
-    globalLandcover: capabilities.globalLandcover,
-    tree: capabilities.tree,
-  };
 }
 
 function validateDataSource(value: unknown, field: string): TileflowCaptureDataSource {

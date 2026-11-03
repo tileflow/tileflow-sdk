@@ -132,6 +132,7 @@ export const tileflowCoreDataFields = [
   'minHeight',
   'mtbScale',
   'name',
+  'nameEn',
   'nameLatin',
   'network',
   'oneway',

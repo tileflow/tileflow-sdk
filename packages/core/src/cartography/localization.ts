@@ -27,7 +27,7 @@ export function labelFieldExpression(
   context: TileflowDomainCompileContext,
 ): readonly unknown[] {
   const fields = context.data.schema.fields;
-  const english = nameField('en');
+  const english = fields.nameEn;
   if (language === 'local') {
     return ['coalesce', ['get', fields.name], ['get', fields.nameLatin], ['get', english]];
   }
@@ -36,7 +36,7 @@ export function labelFieldExpression(
   }
   return [
     'coalesce',
-    ['get', nameField(language)],
+    ['get', language === 'en' ? english : nameField(language)],
     ['get', fields.nameLatin],
     ['get', fields.name],
   ];

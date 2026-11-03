@@ -9,7 +9,12 @@ import {
 import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../boundary-areas/compile';
 import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
 import {tileflowCameraMetadataKey} from '../camera';
-import {resolveTileflowData, tileflowWorldFields} from '../data';
+import {
+  resolveTileflowData,
+  tileflowWorldDetailLayers,
+  tileflowWorldFields,
+  tileflowWorldLayers,
+} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
 import {type ResolvedMarine, resolveMarine, tileflowNauticalV1Schema} from '../marine';
@@ -124,6 +129,10 @@ import {tileflowBuildings3DDesignOf, tileflowStreetLightsDesignOf} from './scene
 import {bindSemanticReferences, createSemanticDataView} from './semantic-bindings';
 import {tileflowSemanticCompilerIdentity} from './semantic-compiler';
 
+
+const tileflowWorldDetailSourceLayers: ReadonlySet<string> = new Set(
+  tileflowWorldDetailLayers.map((name) => tileflowWorldLayers[name]),
+);
 export type TileflowSemanticMapConfig = ResolvedTileflowMap;
 
 export type TileflowPreparedMapAssets = {
@@ -559,9 +568,21 @@ function compileSemanticStyleInternal(
   const glyphs = runCompilationPhase('assets', () => resolveGlyphs(config));
   const sprite = options.preparedAssets?.icons?.sprite;
 
+  // World's detail layers load only when the map draws one: from their own source, or from the
+  // primary source's composite TileJSON.
+  const detail = data.detail;
+  const drawsDetail =
+    detail !== undefined &&
+    layers.some(
+      (layer) =>
+        layer.source ===
+          (detail.delivery === 'separate' ? detail.sourceId : data.sourceId) &&
+        tileflowWorldDetailSourceLayers.has(String(layer['source-layer'])),
+    );
+  const primaryUrl = drawsDetail && detail.delivery === 'composite' ? detail.url : data.url;
   const primarySource: Record<string, unknown> = {
     type: 'vector',
-    ...(data.url !== undefined ? {url: data.url} : {tiles: data.tiles}),
+    ...(primaryUrl !== undefined ? {url: primaryUrl} : {tiles: data.tiles}),
     attribution: [
       data.attribution,
       ...(modules.land?.globalLandcoverUnderlay
@@ -582,6 +603,9 @@ function compileSemanticStyleInternal(
 
   const sources: MapLibreStyle['sources'] = {
     [data.sourceId]: primarySource,
+    ...(drawsDetail && detail.delivery === 'separate'
+      ? {[detail.sourceId]: {type: 'vector', url: detail.url, attribution: data.attribution}}
+      : {}),
     ...(pathGround.active
       ? {
           [tileflowPathGroundSource]: {
@@ -615,7 +639,12 @@ function compileSemanticStyleInternal(
     ...hostedSources.definitions,
   };
   const sourceIdentities = {
-    [data.sourceId]: data.identity,
+    [data.sourceId]: drawsDetail && detail.delivery === 'composite'
+      ? {...data.identity, url: detail.url}
+      : data.identity,
+    ...(drawsDetail && detail.delivery === 'separate'
+      ? {[detail.sourceId]: {...data.identity, url: detail.url}}
+      : {}),
     ...(marine?.bathymetry?.vector
       ? {[marine.bathymetry.vector.sourceId]: marine.bathymetry.vector.identity}
       : {}),

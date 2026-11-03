@@ -52,7 +52,6 @@ export {
 export type {
   CreateTileflowCaptureReceiptInput,
   TileflowCaptureDataBindings,
-  TileflowCaptureDataCapabilities,
   TileflowCaptureDataIdentity,
   CreateTileflowShotReceiptInput,
   TileflowCaptureDataInput,

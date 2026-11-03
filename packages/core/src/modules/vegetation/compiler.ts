@@ -123,7 +123,7 @@ export function tileflowVegetationDescription(
       canopyRank: field('canopyRank', tileflowWorldTreeFields.canopyRank),
       canopyClearance: field('canopyClearanceAtZoom15', tileflowWorldTreeFields.canopyClearance),
       canopyCover: field('canopyCoverPercent', tileflowWorldTreeFields.canopyCover),
-      subclass: field('subclass', tileflowWorldTreeFields.subclass),
+      subclass: field('type', tileflowWorldTreeFields.subclass),
       hedge: field('hedge', tileflowWorldTreeFields.hedge),
     },
     colors: {

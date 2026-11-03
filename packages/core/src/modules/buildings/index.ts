@@ -151,7 +151,6 @@ export type TileflowBuildingModelPlacementConfig = {
 };
 
 export type TileflowBuildingsModuleOptions = {
-  businessCorridor?: TileflowAreaStyle;
   extrusion?: TileflowExtrusionStyle;
   flat?: TileflowAreaStyle;
   mode?: TileflowBuildingMode;

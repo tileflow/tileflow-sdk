@@ -144,7 +144,7 @@ export function compileRoads(
         'all',
         ['==', ['geometry-type'], 'LineString'],
         tileflowRoadClassFilter(schema.fields, roadClass),
-        structureFilter(schema.fields.brunnel, structure),
+        structureFilter(schema.fields.structure, structure),
       ];
       for (const [phaseIndex, phase] of (['shadow', 'casing', 'fill'] as const).entries()) {
         const style = structureConfig[phase];
@@ -206,7 +206,7 @@ export function compileRoads(
         ) {
           // Links meet their receiving roads in the same structural band. Paint their
           // fills first so darker links cannot leave rounded patches over a junction.
-          const rampFilter = flagFilter(schema.fields.ramp);
+          const rampFilter = flagFilter(schema.fields.link);
           contributions.push({
             ...contribution,
             family: {
@@ -405,10 +405,10 @@ export function compileRoads(
       // data, the outline strokes only them.
       const {filter: _polygonFilter, ...unfiltered} = area.layer;
       const outline =
-        area.phase === 'outline' && schema.layers.transportationOutline
+        area.phase === 'outline' && schema.layers.roadOutline
           ? {
               ...unfiltered,
-              'source-layer': schema.layers.transportationOutline,
+              'source-layer': schema.layers.roadOutline,
               ...(target.kind ? {filter: target.kind} : {}),
             }
           : area.layer;
@@ -439,7 +439,7 @@ export function compileRoads(
         filter: [
           'all',
           ['==', ['geometry-type'], 'LineString'],
-          ['match', ['get', schema.fields.oneway], [1, -1], true, false],
+          ['==', ['get', schema.fields.oneway], true],
           [
             'any',
             ...roadClassOrder
@@ -450,7 +450,8 @@ export function compileRoads(
         layout: {
           'symbol-placement': 'line',
           'symbol-spacing': 120,
-          'text-field': ['case', ['==', ['get', schema.fields.oneway], -1], '‹', '›'],
+          // World orients one-way geometry in the direction of travel.
+          'text-field': '›',
           'text-font': textFont(context.typography, 'roads'),
           // Directional glyphs must follow the encoded line direction. The
           // MapLibre default keeps line text upright by rotating it 180°, which
@@ -622,7 +623,7 @@ function compileCrossings(
         filter: [
           'all',
           ['==', ['geometry-type'], 'Point'],
-          ['==', ['get', fields.subclass], 'crossing'],
+          ['==', ['get', fields.type], 'crossing'],
           ['!=', ['get', fields.crossing], 'no'],
           ['has', fields.markings],
           ['match', ['get', fields.markings], ['no', 'none', 'unmarked'], false, true],
@@ -759,10 +760,10 @@ function resolveRoadTreatments(
   add(request?.restrictions?.access, restrictedAccessFilter(fields.access));
   add(request?.restrictions?.toll, flagFilter(fields.toll));
   add(request?.modifiers?.expressway, flagFilter(fields.expressway));
-  add(request?.modifiers?.ramp, flagFilter(fields.ramp));
+  add(request?.modifiers?.ramp, flagFilter(fields.link));
   add(request?.modifiers?.unpaved, ['==', ['get', fields.surface], 'unpaved']);
   add(request?.modifiers?.indoor, flagFilter(fields.indoor));
-  add(request?.modifiers?.official, flagFilter(fields.official));
+  if (fields.official) add(request?.modifiers?.official, flagFilter(fields.official));
 
   // Mountain-bike difficulty describes trails: paths and tracks. Leaving it off the other classes
   // keeps their layers solid, and so on MapLibre's solid-line shader.
@@ -1089,7 +1090,7 @@ function restrictedAccessFilter(field: string): unknown[] {
 }
 
 function flagFilter(field: string): unknown[] {
-  return ['==', ['get', field], 1];
+  return ['==', ['get', field], true];
 }
 
 function defaultClassStyles(

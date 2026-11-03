@@ -67,6 +67,8 @@ export type TileflowPoiColorConfig = Partial<Record<TileflowPoiCategory, Tileflo
 };
 
 export type TileflowLanduseColorConfig = {
+  activity?: TileflowColor;
+  activityOutline?: TileflowColor;
   cemetery?: TileflowColor;
   civic?: TileflowColor;
   commercial?: TileflowColor;
@@ -107,8 +109,6 @@ export type TileflowHydroColorConfig = {
 
 export type TileflowBuildingColorConfig = {
   active?: TileflowColor;
-  businessCorridor?: TileflowColor;
-  businessCorridorOutline?: TileflowColor;
   civic?: TileflowColor;
   commercial?: TileflowColor;
   destination?: TileflowColor;

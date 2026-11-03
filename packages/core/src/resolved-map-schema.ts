@@ -23,9 +23,12 @@ import {
 } from './cartography/semantic-bindings';
 import {tileflowThemeTokenCategories} from './cartography/values';
 import {
+  canonicalOpenMapTilesFields,
+  canonicalOpenMapTilesLayers,
   openMapTiles,
   openMapTilesContractVersion,
   tileflowWorldGeneration,
+  tileflowWorldSchemaVersion,
   validatePublicVectorUrl,
 } from './data';
 import {tileflowWorldReleaseIdSchema} from './data/world-release-id';
@@ -1101,6 +1104,7 @@ const barrierStyleSchema = z
 const landModuleSchema = z
   .object({
     type: z.literal('land'),
+    activityAreas: areaStyleSchema.optional(),
     background: backgroundStyleSchema.optional(),
     barriers: z
       .object({
@@ -1250,7 +1254,6 @@ const modelRoleLightingSchema = z
 const buildingsModuleSchema = z
   .object({
     type: z.literal('buildings'),
-    businessCorridor: areaStyleSchema.optional(),
     enabled: z.boolean().optional(),
     extrusion: extrusionStyleSchema.optional(),
     flat: areaStyleSchema.optional(),
@@ -1916,120 +1919,20 @@ const modulesSchema = z
   })
   .strict();
 
+const bindingNameSchema = z.string().trim().min(1);
 const layerBindingsSchema = z
-  .object({
-    aerodromeLabel: z.string().trim().min(1),
-    aeroway: z.string().trim().min(1),
-    boundary: z.string().trim().min(1),
-    building: z.string().trim().min(1),
-    bathymetry: z.string().trim().min(1).optional(),
-    businessCorridor: z.string().trim().min(1).optional(),
-    canopy: z.string().trim().min(1).optional(),
-    circularFeature: z.string().trim().min(1).optional(),
-    globalLandcover: z.string().trim().min(1).optional(),
-    houseNumber: z.string().trim().min(1),
-    landcover: z.string().trim().min(1),
-    landuse: z.string().trim().min(1),
-    mountainPeak: z.string().trim().min(1),
-    park: z.string().trim().min(1),
-    place: z.string().trim().min(1),
-    poi: z.string().trim().min(1),
-    road: z.string().trim().min(1),
-    roadName: z.string().trim().min(1),
-    roadShield: z.string().trim().min(1).optional(),
-    sidewalk: z.string().trim().min(1).optional(),
-    streetFurniture: z.string().trim().min(1).optional(),
-    trafficControl: z.string().trim().min(1).optional(),
-    tree: z.string().trim().min(1).optional(),
-    transportationOutline: z.string().trim().min(1).optional(),
-    water: z.string().trim().min(1),
-    waterName: z.string().trim().min(1),
-    waterway: z.string().trim().min(1),
-  })
+  .object(
+    Object.fromEntries(
+      Object.keys(canonicalOpenMapTilesLayers).map((key) => [key, bindingNameSchema]),
+    ) as Record<keyof typeof canonicalOpenMapTilesLayers, typeof bindingNameSchema>,
+  )
   .strict();
 const fieldBindingsSchema = z
-  .object({
-    access: z.string().trim().min(1),
-    activityScore: z.string().trim().min(1),
-    adminLevel: z.string().trim().min(1),
-    bicycle: z.string().trim().min(1),
-    bathymetryMinDepth: z.string().trim().min(1).optional(),
-    bathymetrySortKey: z.string().trim().min(1).optional(),
-    brunnel: z.string().trim().min(1),
-    buildingTone: z.string().trim().min(1),
-    canopyClearanceAtZoom15: z.string().trim().min(1),
-    canopyCoverPercent: z.string().trim().min(1),
-    canopyRank: z.string().trim().min(1),
-    capital: z.string().trim().min(1),
-    circularClearanceExtraAtZoom15: z.string().trim().min(1),
-    circularKind: z.string().trim().min(1),
-    circularRadiusAtZoom15: z.string().trim().min(1),
-    circularRadiusMeters: z.string().trim().min(1),
-    circularInnerRadiusMeters: z.string().trim().min(1),
-    circularOuterRadiusMeters: z.string().trim().min(1),
-    class: z.string().trim().min(1),
-    crossing: z.string().trim().min(1),
-    confidence: z.string().trim().min(1),
-    circumference: z.string().trim().min(1),
-    diameterCrown: z.string().trim().min(1),
-    disputed: z.string().trim().min(1),
-    direction: z.string().trim().min(1),
-    elevation: z.string().trim().min(1),
-    elevationFeet: z.string().trim().min(1),
-    expressway: z.string().trim().min(1),
-    foot: z.string().trim().min(1),
-    hedge: z.string().trim().min(1).optional(),
-    height: z.string().trim().min(1),
-    hasParts: z.string().trim().min(1),
-    hide3d: z.string().trim().min(1),
-    horse: z.string().trim().min(1),
-    houseNumber: z.string().trim().min(1),
-    importanceTier: z.string().trim().min(1),
-    iata: z.string().trim().min(1),
-    icao: z.string().trim().min(1),
-    indoor: z.string().trim().min(1),
-    intermittent: z.string().trim().min(1),
-    genus: z.string().trim().min(1),
-    layer: z.string().trim().min(1),
-    leafCycle: z.string().trim().min(1),
-    leafType: z.string().trim().min(1),
-    level: z.string().trim().min(1),
-    maritime: z.string().trim().min(1),
-    markings: z.string().trim().min(1),
-    minHeight: z.string().trim().min(1),
-    minZoom: z.string().trim().min(1),
-    mode: z.string().trim().min(1),
-    mtbScale: z.string().trim().min(1),
-    name: z.string().trim().min(1),
-    nameEnglish: z.string().trim().min(1),
-    nameLatin: z.string().trim().min(1),
-    network: z.string().trim().min(1),
-    official: z.string().trim().min(1),
-    oneway: z.string().trim().min(1),
-    poiCategory: z.string().trim().min(1),
-    poiFilterRank: z.string().trim().min(1),
-    poiIcon: z.string().trim().min(1),
-    poiSizeRank: z.string().trim().min(1),
-    poiType: z.string().trim().min(1),
-    ramp: z.string().trim().min(1),
-    rank: z.string().trim().min(1),
-    ref: z.string().trim().min(1),
-    refLength: z.string().trim().min(1),
-    renderHeight: z.string().trim().min(1),
-    renderMinHeight: z.string().trim().min(1),
-    shieldKind: z.string().trim().min(1).optional(),
-    shieldLineLengthMeters: z.string().trim().min(1).optional(),
-    shieldNetwork: z.string().trim().min(1).optional(),
-    shieldRank: z.string().trim().min(1).optional(),
-    shieldText: z.string().trim().min(1).optional(),
-    shieldTextColor: z.string().trim().min(1).optional(),
-    service: z.string().trim().min(1),
-    species: z.string().trim().min(1),
-    speciesWikidata: z.string().trim().min(1),
-    subclass: z.string().trim().min(1),
-    surface: z.string().trim().min(1),
-    toll: z.string().trim().min(1),
-  })
+  .object(
+    Object.fromEntries(
+      Object.keys(canonicalOpenMapTilesFields).map((key) => [key, bindingNameSchema]),
+    ) as Record<keyof typeof canonicalOpenMapTilesFields, typeof bindingNameSchema>,
+  )
   .strict();
 const openMapTilesSchema = z
   .object({
@@ -2044,27 +1947,16 @@ const openMapTilesSchema = z
   })
   .strict()
   .transform((schema) =>
-    openMapTiles({
-      capabilities:
-        schema.layers === undefined
-          ? undefined
-          : {
-              businessCorridor: schema.layers.businessCorridor !== undefined,
-              bathymetry: schema.layers.bathymetry !== undefined,
-              canopy: schema.layers.canopy !== undefined,
-              globalLandcover: schema.layers.globalLandcover !== undefined,
-              tree: schema.layers.tree !== undefined,
-            },
-      fields: schema.fields,
-      layers: schema.layers,
-      semantics: schema.semantics,
-    }),
+    openMapTiles({fields: schema.fields, layers: schema.layers, semantics: schema.semantics}),
   );
+const tileflowWorldDataSchema = z
+  .object({type: z.literal('tileflow-world'), version: z.literal(tileflowWorldSchemaVersion)})
+  .strict();
 const vectorDataShape = {
   type: z.literal('vector-tiles'),
   attribution: z.string().trim().min(1),
   revision: revisionSchema.optional(),
-  schema: openMapTilesSchema,
+  schema: z.union([openMapTilesSchema, tileflowWorldDataSchema]),
 };
 const publicVectorUrlSchema = z
   .string()

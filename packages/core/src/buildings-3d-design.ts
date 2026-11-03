@@ -95,7 +95,7 @@ export type TileflowBuildingModelPlacement = Readonly<{
 /** The 3D buildings of a style compiled without this description. */
 export const tileflowDefaultBuildings3DDesign = Object.freeze({
   source: 'tileflow',
-  layers: Object.freeze({building: 'building', places: 'poi'}),
+  layers: Object.freeze({building: 'building', places: 'poi_label'}),
   color: '#d8d0c0',
   edges: 0,
   edgeRadius: 0.8,

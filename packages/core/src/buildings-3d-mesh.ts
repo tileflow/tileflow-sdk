@@ -14,7 +14,7 @@ export const tileflowBuildingExtent = 8192;
 /** Bytes per vertex; see `meshTileflowBuildings` for the layout. */
 export const tileflowBuildingVertexBytes = 28;
 
-/** World's `building_tone`, which the renderer uses to choose the buildings it flood-lights. */
+/** World's `tone`, which the renderer uses to choose the buildings it flood-lights. */
 const tones: Readonly<Record<string, number>> = {commercial: 1, active: 2, destination: 3};
 /**
  * World's `class`, the building's use, as the renderer groups it for its windows: 1 housing, 2 a
@@ -136,7 +136,8 @@ export type TileflowBuildingMesh = Readonly<{
 
 /**
  * Meshes the buildings of one decoded tile layer, or returns undefined when it has none. It reads
- * World's `render_height`, `render_min_height`, `hide_3d`, `building_tone`, `class` and `night_use`.
+ * World's `height`, `min_height`, `extrude`, `tone`, `class` and `night_use`, or OpenMapTiles'
+ * `render_height`, `render_min_height` and `hide_3d`.
  * Vertex layout:
  * 0 position in the tile, 0 to 8192 (uint16 ×2); 4 base and top in decimetres (uint16 ×2); 8 the
  * wall's outward normal (int8 ×2, normalised); 10 raised to the top, part of a wall (uint8 ×2);
@@ -174,11 +175,16 @@ export function meshTileflowBuildings(
   for (const [featureIndex, feature] of layer.features.entries()) {
     if (feature.type !== 'Polygon' || features.length >= 65535) continue;
     const properties = feature.properties;
-    const hidden = properties.hide_3d;
-    if (hidden === true || hidden === 1 || hidden === '1' || hidden === 'true') continue;
-    const height = Math.min(6000, positive(properties.render_height) ?? fallback);
-    const base = Math.min(height, positive(properties.render_min_height) ?? 0);
-    const tone = tones[String(properties.building_tone ?? '')] ?? 0;
+    if (drawnByParts(properties)) continue;
+    const height = Math.min(
+      6000,
+      positive(properties.height) ?? positive(properties.render_height) ?? fallback,
+    );
+    const base = Math.min(
+      height,
+      positive(properties.min_height) ?? positive(properties.render_min_height) ?? 0,
+    );
+    const tone = tones[String(properties.tone ?? '')] ?? 0;
     const group = classGroups[String(properties.class ?? '')] ?? 0;
     const use = uses.get(featureIndex) ?? 0;
     const index = features.length;
@@ -716,8 +722,7 @@ function nightUsesOf(
   const shapes: {index: number; rings: readonly (readonly number[])[]; box: number[]}[] = [];
   for (const [index, feature] of layer.features.entries()) {
     if (feature.type !== 'Polygon') continue;
-    const hidden = feature.properties.hide_3d;
-    if (hidden === true || hidden === 1 || hidden === '1' || hidden === 'true') continue;
+    if (drawnByParts(feature.properties)) continue;
     const box = [Infinity, Infinity, -Infinity, -Infinity];
     for (const ring of feature.geometry)
       for (let at = 0; at + 1 < ring.length; at += 2) {
@@ -734,7 +739,6 @@ function nightUsesOf(
     const properties = place.properties;
     const use =
       placeNightUses[String(properties.type ?? '')] ??
-      placeNightUses[String(properties.subclass ?? '')] ??
       placeNightUses[String(properties.class ?? '')];
     if (!use) continue;
     for (const points of place.geometry)
@@ -884,4 +888,16 @@ function clip(ring: readonly number[]): number[] {
 function hash(value: number): number {
   const s = Math.sin(value * 12.9898 + 78.233) * 43758.5453;
   return s - Math.floor(s);
+}
+
+/** A footprint its building parts draw in 3D: World's `extrude: false`, OpenMapTiles' `hide_3d`. */
+function drawnByParts(properties: Readonly<Record<string, string | number | boolean>>): boolean {
+  const hidden = properties.hide_3d;
+  return (
+    properties.extrude === false ||
+    hidden === true ||
+    hidden === 1 ||
+    hidden === '1' ||
+    hidden === 'true'
+  );
 }

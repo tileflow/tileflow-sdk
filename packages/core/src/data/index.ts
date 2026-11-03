@@ -1,6 +1,63 @@
-import {tileflowWorldGeneration} from './world-generation';
+import type {TileflowDataAdapter} from './binding';
+import {
+  openMapTiles,
+  openMapTilesAdapter,
+  openMapTilesContractVersion,
+  type OpenMapTilesSchema,
+} from './openmaptiles';
+import {
+  tileflowWorldDetailLayers,
+  tileflowWorldFields,
+  type TileflowWorldFieldName,
+  type TileflowWorldLayerName,
+  tileflowWorldLayers,
+  tileflowWorldNameLanguagePrefix,
+  tileflowWorldSchemaVersion,
+} from './tileflow-world-schema';
+import {
+  tileflowWorldDetailTileJsonPath,
+  tileflowWorldGeneration,
+  tileflowWorldTileJsonPath,
+} from './world-generation';
 import {isTileflowWorldReleaseId} from './world-release-id';
 
+export type {
+  TileflowDataAdapter,
+  TileflowDataFieldAccessor,
+  TileflowDataLayerPartition,
+} from './binding';
+export {
+  canonicalOpenMapTilesFields,
+  canonicalOpenMapTilesLayers,
+  isCanonicalOpenMapTilesSchema,
+  openMapTiles,
+  openMapTilesContractVersion,
+} from './openmaptiles';
+export type {
+  OpenMapTilesFieldBindings,
+  OpenMapTilesLayerBindings,
+  OpenMapTilesSchema,
+  OpenMapTilesSchemaOptions,
+  ParkLayerSemantics,
+} from './openmaptiles';
+export {
+  tileflowWorldAllLanguagesMinZoom,
+  tileflowWorldDetailLayers,
+  tileflowWorldFields,
+  tileflowWorldLayers,
+  tileflowWorldNameLanguagePrefix,
+  tileflowWorldNaturalLanduseClasses,
+  tileflowWorldOverviewLanguages,
+  tileflowWorldSchemaVersion,
+  tileflowWorldTilesetOf,
+  tileflowWorldTilesets,
+  tileflowWorldVocabularies,
+} from './tileflow-world-schema';
+export type {
+  TileflowWorldFieldName,
+  TileflowWorldLayerName,
+  TileflowWorldTileset,
+} from './tileflow-world-schema';
 export {
   isTileflowWorldReleaseId,
   tileflowWorldReleaseIdMaximumLength,
@@ -11,232 +68,108 @@ export {
 } from './world-release-id';
 
 export const tileflowPrimarySourceId = 'tileflow';
-export const openMapTilesContractVersion = 1;
+/** The style source of `world-detail` while World serves it apart from `world`. */
+export const tileflowDetailSourceId = 'tileflow-detail';
 
-export type ParkLayerSemantics = 'mixed' | 'protected-only';
+/** Tiles following the Tileflow World schema: Tileflow World itself or tiles made to it. */
+export type TileflowWorldSchema = Readonly<{
+  type: 'tileflow-world';
+  version: typeof tileflowWorldSchemaVersion;
+}>;
 
-export type OpenMapTilesLayerBindings = {
-  aerodromeLabel: string;
-  aeroway: string;
-  boundary: string;
-  building: string;
-  /** Required low-zoom GEBCO extension in the Tileflow World V1 schema. */
-  bathymetry?: string;
-  /** Optional derived commercial-activity polygons rendered below buildings. */
-  businessCorridor?: string;
-  /**
-   * Optional decorative points inside parks and gardens, where measured tree canopy covers the
-   * ground. Each point tells how much room a drawn grove of tree crowns has. The points are not
-   * surveyed trees and are unrelated to `tree`.
-   */
-  canopy?: string;
-  /** Optional generated circle centers used for detailed roundabout rendering. */
-  circularFeature?: string;
-  /** Optional low-zoom global land-cover extension. Defaults to `globallandcover`. */
-  globalLandcover?: string;
-  houseNumber: string;
-  landcover: string;
-  landuse: string;
-  mountainPeak: string;
-  park: string;
-  place: string;
-  poi: string;
-  road: string;
-  roadName: string;
-  /** Optional generalized low-zoom route-shield points. Required by Tileflow World V1. */
-  roadShield?: string;
-  /** Optional detailed pedestrian-surface polygons. */
-  sidewalk?: string;
-  /** Optional point features such as pedestrian crossings. */
-  streetFurniture?: string;
-  /**
-   * Optional barriers and traffic calming at native zoom 15: hedges, fences, walls, kerbs and
-   * guard rails as lines, and hedges mapped as areas of their own as polygons.
-   */
-  trafficControl?: string;
-  /** Optional individual-tree point extension used by the vegetation module. */
-  tree?: string;
-  /**
-   * Optional outer boundaries of `road` areas, as lines. When bound, area outlines are drawn from
-   * it, so the holes of an area (tree pits, planting beds) are never stroked.
-   */
-  transportationOutline?: string;
-  water: string;
-  waterName: string;
-  waterway: string;
-};
+export function tileflowWorldSchema(): TileflowWorldSchema {
+  return {type: 'tileflow-world', version: tileflowWorldSchemaVersion};
+}
 
-export type OpenMapTilesFieldBindings = {
-  access: string;
-  activityScore: string;
-  adminLevel: string;
-  bicycle: string;
-  /** GEBCO depth-band upper boundary in metres. */
-  bathymetryMinDepth?: string;
-  /** Stable shallow-to-deep ordering for GEBCO bands. */
-  bathymetrySortKey?: string;
-  brunnel: string;
-  buildingTone: string;
-  /**
-   * Lower bound of the distance from a canopy point to the nearest edge a crown must not cover,
-   * in pixels of a 512-pixel tile at zoom 15: one of 4, 6, 8, 12, 16, or 24. A grove fits at zoom
-   * `z` when its reach in screen pixels is at most this value × 2^(z − 15).
-   */
-  canopyClearanceAtZoom15: string;
-  /**
-   * Lower bound, in percent, of canopy taller than 3 m within 10 m of a canopy point: 3, 30, or
-   * 60. Absent where no measurement exists; treat absence as a middle density.
-   */
-  canopyCoverPercent: string;
-  /** Stable integer from 0 through 15 per canopy point. Lower ranks appear first by zoom. */
-  canopyRank: string;
-  capital: string;
-  /** Roundabout geometry kind in the optional circular-feature layer. */
-  circularKind: string;
-  /** Precomputed roundabout radius in pixels at zoom 15. */
-  circularRadiusAtZoom15: string;
-  /** Extra precomputed clearance on road approaches to a circular road at zoom 15. */
-  circularClearanceExtraAtZoom15: string;
-  /** Roundabout radius in metres. */
-  circularRadiusMeters: string;
-  /** Roundabout inner radius in metres. */
-  circularInnerRadiusMeters: string;
-  /** Roundabout outer radius in metres. */
-  circularOuterRadiusMeters: string;
-  class: string;
-  /** Crossing control classification on street-furniture points. */
-  crossing: string;
-  circumference: string;
-  confidence: string;
-  diameterCrown: string;
-  disputed: string;
-  /** Direction in degrees for oriented street-furniture symbols. */
-  direction: string;
-  elevation: string;
-  elevationFeet: string;
-  expressway: string;
-  foot: string;
-  /** Optional kind of a barrier hedge: `hedge_bank` when it stands on an earth bank. */
-  hedge?: string;
-  height: string;
-  hide3d: string;
-  /** Whether a building footprint owns separately materialized building parts. */
-  hasParts: string;
-  horse: string;
-  houseNumber: string;
-  /** Sparse 1–4 semantic and locally normalized urban-importance tier. */
-  importanceTier: string;
-  iata: string;
-  icao: string;
-  indoor: string;
-  intermittent: string;
-  genus: string;
-  layer: string;
-  leafCycle: string;
-  leafType: string;
-  level: string;
-  maritime: string;
-  /** Physical crossing-marking classification on street-furniture points. */
-  markings: string;
-  minHeight: string;
-  minZoom: string;
-  /**
-   * Transport mode of World transit POIs and lines: `subway`, `train`, `light_rail`, `tram`,
-   * `monorail`, `funicular`, `bus`, `ferry` or `aerialway`.
-   */
-  mode: string;
-  mtbScale: string;
-  name: string;
-  nameEnglish: string;
-  nameLatin: string;
-  network: string;
-  official: string;
-  oneway: string;
-  /** Canonical editorial POI category. Never aliases OpenMapTiles `class`. */
-  poiCategory: string;
-  /** Per-zoom POI density tier from 0 (most selective) through 5. */
-  poiFilterRank: string;
-  /** Producer-selected POI icon key. */
-  poiIcon: string;
-  /** Physical-size tier from 0 (largest) through 16 (point-sized). */
-  poiSizeRank: string;
-  /** Canonical specific POI type. Never aliases OpenMapTiles `subclass`. */
-  poiType: string;
-  ramp: string;
-  rank: string;
-  ref: string;
-  refLength: string;
-  renderHeight: string;
-  renderMinHeight: string;
-  /** Optional producer-normalized route-shield family. Required by Tileflow World V1. */
-  shieldKind?: string;
-  /** Optional merged line length used to bound detailed route-shield repetition. */
-  shieldLineLengthMeters?: string;
-  /** Optional producer-normalized route network identifier. */
-  shieldNetwork?: string;
-  /** Optional producer-normalized route-shield collision rank. */
-  shieldRank?: string;
-  /** Optional producer-normalized route-shield text. */
-  shieldText?: string;
-  /** Optional producer-normalized route-shield ink role. Required by Tileflow World V1. */
-  shieldTextColor?: string;
-  service: string;
-  species: string;
-  speciesWikidata: string;
-  subclass: string;
-  surface: string;
-  toll: string;
-};
+/** The schema vector tiles follow. */
+export type TileflowDataSchema = OpenMapTilesSchema | TileflowWorldSchema;
 
-export type OpenMapTilesSchemaOptions = {
-  capabilities?: {
-    businessCorridor?: boolean;
-    bathymetry?: boolean;
-    canopy?: boolean;
-    globalLandcover?: boolean;
-    tree?: boolean;
-  };
-  fields?: Partial<OpenMapTilesFieldBindings>;
-  layers?: Partial<OpenMapTilesLayerBindings>;
-  semantics?: {
-    /** Whether the bound park layer mixes ordinary parks with protected areas. */
-    parkLayer?: ParkLayerSemantics;
-  };
-};
+/** World layers every supported schema provides; the others are optional. */
+export const tileflowCoreDataLayers = [
+  'admin',
+  'aeroway',
+  'airportLabel',
+  'building',
+  'housenumLabel',
+  'landuse',
+  'landuseOverlay',
+  'naturalLabel',
+  'placeLabel',
+  'poiLabel',
+  'road',
+  'roadLabel',
+  'water',
+  'waterway',
+] as const satisfies readonly TileflowWorldLayerName[];
+export type TileflowCoreDataLayerName = (typeof tileflowCoreDataLayers)[number];
 
-export type OpenMapTilesSchema = {
-  type: 'openmaptiles';
-  contractVersion: typeof openMapTilesContractVersion;
-  fields: OpenMapTilesFieldBindings;
-  layers: OpenMapTilesLayerBindings;
-  semantics: {
-    parkLayer: ParkLayerSemantics;
-  };
-};
+/** World fields every supported schema provides; the others are optional. */
+export const tileflowCoreDataFields = [
+  'access',
+  'adminLevel',
+  'bicycle',
+  'capital',
+  'claimedBy',
+  'class',
+  'disputed',
+  'elevation',
+  'expressway',
+  'extrude',
+  'filterrank',
+  'foot',
+  'height',
+  'horse',
+  'houseNum',
+  'iata',
+  'icao',
+  'indoor',
+  'intermittent',
+  'iso31661',
+  'layer',
+  'level',
+  'link',
+  'maritime',
+  'minHeight',
+  'mtbScale',
+  'name',
+  'nameLatin',
+  'network',
+  'oneway',
+  'ref',
+  'reflen',
+  'service',
+  'sizerank',
+  'structure',
+  'surface',
+  'symbolrank',
+  'toll',
+  'type',
+] as const satisfies readonly TileflowWorldFieldName[];
+export type TileflowCoreDataFieldName = (typeof tileflowCoreDataFields)[number];
 
-export type TileflowWorldV1Schema = Omit<OpenMapTilesSchema, 'fields' | 'layers'> & {
-  fields: OpenMapTilesFieldBindings & {
-    bathymetryMinDepth: string;
-    bathymetrySortKey: string;
-    hedge: string;
-    shieldKind: string;
-    shieldLineLengthMeters: string;
-    shieldNetwork: string;
-    shieldRank: string;
-    shieldText: string;
-    shieldTextColor: string;
-  };
-  layers: OpenMapTilesLayerBindings & {
-    bathymetry: string;
-    circularFeature: string;
-    globalLandcover: string;
-    sidewalk: string;
-    streetFurniture: string;
-    roadShield: string;
-    trafficControl: string;
-    transportationOutline: string;
-  };
-};
+/** The source layer of each World layer the data provides. */
+export type TileflowDataLayerBindings = Record<TileflowCoreDataLayerName, string> &
+  Partial<Record<Exclude<TileflowWorldLayerName, TileflowCoreDataLayerName>, string>>;
+/**
+ * The property of each World field the data provides. A field another schema computes from its
+ * own properties names the property it reads; the adapter's layers translate its values.
+ */
+export type TileflowDataFieldBindings = Record<TileflowCoreDataFieldName, string> &
+  Partial<Record<Exclude<TileflowWorldFieldName, TileflowCoreDataFieldName>, string>>;
+
+/**
+ * How the SDK reads the data: World's layers and fields, the source layers and properties that
+ * hold them, and, for other schemas, how their tiles translate to World's.
+ */
+export type TileflowDataBinding = Readonly<{
+  type: TileflowDataSchema['type'];
+  version: number;
+  adapter?: TileflowDataAdapter;
+  fields: TileflowDataFieldBindings;
+  layers: TileflowDataLayerBindings;
+  /** Prefix of the language name fields: `name_` in World, `name:` in OpenMapTiles. */
+  nameLanguagePrefix: string;
+}>;
 
 export type TileflowWorldReleaseReference = Readonly<{
   descriptorSha256: string;
@@ -261,7 +194,7 @@ type VectorTilesDataCommon = {
   type: 'vector-tiles';
   attribution: string;
   revision?: string;
-  schema: OpenMapTilesSchema;
+  schema: TileflowDataSchema;
 };
 
 export type VectorTilesData = VectorTilesDataCommon &
@@ -285,447 +218,228 @@ export type VectorTilesData = VectorTilesDataCommon &
 export type TileflowDataConfig = TileflowWorldData | VectorTilesData;
 
 export type TileflowDataIdentity = {
+  /** The OpenMapTiles bindings of vector tiles in that schema. */
   bindings?: {
-    fields: OpenMapTilesFieldBindings;
-    layers: OpenMapTilesLayerBindings;
-  };
-  capabilities?: {
-    businessCorridor: boolean;
-    bathymetry: boolean;
-    canopy: boolean;
-    globalLandcover: boolean;
-    tree: boolean;
+    fields: Record<string, string>;
+    layers: Record<string, string>;
   };
   generation?: typeof tileflowWorldGeneration;
   kind: TileflowDataConfig['type'];
   /** External fixture identity. */
   revision?: string;
-  schema: OpenMapTilesSchema['type'];
+  schema: TileflowDataSchema['type'];
   schemaVersion: number;
-  semantics: OpenMapTilesSchema['semantics'];
+  /** The park semantics of OpenMapTiles tiles. */
+  semantics?: OpenMapTilesSchema['semantics'];
   sourceId: typeof tileflowPrimarySourceId;
   url?: string;
   worldSelection?: TileflowWorldSelection;
 };
 
+/**
+ * How World serves `world-detail`: its own TileJSON in its own style source (`separate`), or one
+ * TileJSON that serves both tilesets in the primary source (`composite`). A map loads either only
+ * when it draws a `world-detail` layer.
+ */
+export type TileflowWorldDetailDelivery = 'composite' | 'separate';
+export const tileflowWorldDetailDelivery: TileflowWorldDetailDelivery = 'separate';
+
+export type ResolvedTileflowWorldDetail =
+  | Readonly<{delivery: 'separate'; sourceId: typeof tileflowDetailSourceId; url: string}>
+  /** `url` replaces the primary source's URL when the map draws a `world-detail` layer. */
+  | Readonly<{delivery: 'composite'; url: string}>;
+
 export type ResolvedTileflowData = {
   attribution: string;
   bounds?: [number, number, number, number];
+  /** Where Tileflow World's detail layers come from; without it they are in the primary source. */
+  detail?: ResolvedTileflowWorldDetail;
   generation?: typeof tileflowWorldGeneration;
   identity: TileflowDataIdentity;
   kind: TileflowDataConfig['type'];
   maxzoom?: number;
   minzoom?: number;
   revision?: string;
-  schema: OpenMapTilesSchema;
+  schema: TileflowDataBinding;
   sourceId: typeof tileflowPrimarySourceId;
   tiles?: string[];
   url?: string;
 };
 
-const canonicalLayers = {
-  aerodromeLabel: 'aerodrome_label',
-  aeroway: 'aeroway',
-  boundary: 'boundary',
-  building: 'building',
-  businessCorridor: 'business_corridor',
-  canopy: 'canopy',
-  globalLandcover: 'globallandcover',
-  houseNumber: 'housenumber',
-  landcover: 'landcover',
-  landuse: 'landuse',
-  mountainPeak: 'mountain_peak',
-  park: 'park',
-  place: 'place',
-  poi: 'poi',
-  road: 'transportation',
-  roadName: 'transportation_name',
-  tree: 'tree',
-  water: 'water',
-  waterName: 'water_name',
-  waterway: 'waterway',
-} as const satisfies OpenMapTilesLayerBindings;
-
-const canonicalFields = {
-  access: 'access',
-  activityScore: 'activity_score',
-  adminLevel: 'admin_level',
-  bicycle: 'bicycle',
-  brunnel: 'brunnel',
-  buildingTone: 'building_tone',
-  canopyClearanceAtZoom15: 'clearance_px_z15',
-  canopyCoverPercent: 'cover_pct',
-  canopyRank: 'rank',
-  capital: 'capital',
-  circularClearanceExtraAtZoom15: 'clearance_extra_px_z15',
-  circularInnerRadiusMeters: 'inner_radius_m',
-  circularKind: 'circle_kind',
-  circularOuterRadiusMeters: 'outer_radius_m',
-  circularRadiusAtZoom15: 'radius_px_z15',
-  circularRadiusMeters: 'radius_m',
-  class: 'class',
-  crossing: 'crossing',
-  circumference: 'circumference',
-  confidence: 'confidence',
-  diameterCrown: 'diameter_crown',
-  direction: 'direction',
-  disputed: 'disputed',
-  elevation: 'ele',
-  elevationFeet: 'ele_ft',
-  expressway: 'expressway',
-  foot: 'foot',
-  height: 'height',
-  hide3d: 'hide_3d',
-  hasParts: 'has_parts',
-  horse: 'horse',
-  houseNumber: 'housenumber',
-  importanceTier: 'importance_tier',
-  iata: 'iata',
-  icao: 'icao',
-  indoor: 'indoor',
-  intermittent: 'intermittent',
-  genus: 'genus',
-  layer: 'layer',
-  leafCycle: 'leaf_cycle',
-  leafType: 'leaf_type',
-  level: 'level',
-  maritime: 'maritime',
-  markings: 'markings',
-  minHeight: 'min_height',
-  minZoom: 'min_zoom',
-  mode: 'mode',
-  mtbScale: 'mtb_scale',
-  name: 'name',
-  nameEnglish: 'name:en',
-  nameLatin: 'name:latin',
-  network: 'network',
-  official: 'official',
-  oneway: 'oneway',
-  poiCategory: 'category',
-  poiFilterRank: 'filter_rank',
-  poiIcon: 'icon',
-  poiSizeRank: 'size_rank',
-  poiType: 'type',
-  ramp: 'ramp',
-  rank: 'rank',
-  ref: 'ref',
-  refLength: 'ref_length',
-  renderHeight: 'render_height',
-  renderMinHeight: 'render_min_height',
-  service: 'service',
-  species: 'species',
-  speciesWikidata: 'species:wikidata',
-  subclass: 'subclass',
-  surface: 'surface',
-  toll: 'toll',
-} as const satisfies OpenMapTilesFieldBindings;
-
-const worldAttribution =
+export const tileflowWorldAttribution =
   '<a href="https://tileflow.dev/copyright">© Tileflow</a> ' +
-  '<a href="https://www.openmaptiles.org/">© OpenMapTiles</a> ' +
   '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a>';
 
-export function openMapTiles(options: OpenMapTilesSchemaOptions = {}): OpenMapTilesSchema {
-  const layers: OpenMapTilesLayerBindings = {...canonicalLayers, ...options.layers};
-  const fields: OpenMapTilesFieldBindings = {...canonicalFields, ...options.fields};
-  if (options.capabilities?.businessCorridor === false) delete layers.businessCorridor;
-  if (options.capabilities?.bathymetry === true) {
-    layers.bathymetry ??= 'bathymetry';
-    fields.bathymetryMinDepth ??= 'min_depth';
-    fields.bathymetrySortKey ??= 'sort_key';
-  } else {
-    delete layers.bathymetry;
-    delete fields.bathymetryMinDepth;
-    delete fields.bathymetrySortKey;
+/** How the SDK reads a schema's tiles. */
+export function tileflowDataBinding(schema: TileflowDataSchema): TileflowDataBinding {
+  if (schema.type === 'tileflow-world') {
+    return {
+      type: 'tileflow-world',
+      version: tileflowWorldSchemaVersion,
+      fields: {...tileflowWorldFields},
+      layers: {...tileflowWorldLayers},
+      nameLanguagePrefix: tileflowWorldNameLanguagePrefix,
+    };
   }
-  if (options.capabilities?.canopy === false) delete layers.canopy;
-  if (options.capabilities?.globalLandcover === false) delete layers.globalLandcover;
-  if (options.capabilities?.tree === false) delete layers.tree;
+  const {adapter, fields, layers} = openMapTilesAdapter(schema);
   return {
     type: 'openmaptiles',
-    contractVersion: openMapTilesContractVersion,
+    version: schema.contractVersion,
+    adapter,
     fields,
     layers,
-    semantics: {
-      parkLayer: options.semantics?.parkLayer ?? 'mixed',
-    },
+    nameLanguagePrefix: 'name:',
   };
 }
 
-/** OpenMapTiles plus the required typed extensions emitted by Tileflow World V1. */
-export function tileflowWorldV1Schema(
-  options: OpenMapTilesSchemaOptions = {},
-): TileflowWorldV1Schema {
-  return openMapTiles({
-    ...options,
-    capabilities: {...options.capabilities, bathymetry: true, globalLandcover: true},
-    fields: {
-      hedge: 'hedge',
-      shieldKind: 'shield_kind',
-      shieldLineLengthMeters: 'shield_line_length_m',
-      shieldNetwork: 'shield_network',
-      shieldRank: 'shield_rank',
-      shieldText: 'shield_text',
-      shieldTextColor: 'shield_text_color',
-      ...options.fields,
-    },
-    layers: {
-      circularFeature: 'circular_feature',
-      roadShield: 'transportation_shield',
-      sidewalk: 'sidewalk',
-      streetFurniture: 'street_furniture',
-      trafficControl: 'traffic_control',
-      transportationOutline: 'transportation_outline',
-      ...options.layers,
-    },
-    semantics: {...options.semantics, parkLayer: 'protected-only'},
-  }) as TileflowWorldV1Schema;
+export function isTileflowWorldDetailLayer(layer: string): layer is TileflowWorldLayerName {
+  return (tileflowWorldDetailLayers as readonly string[]).includes(layer);
 }
 
-export function validateTileflowWorldV1Tilejson(
+/** Problems with a Tileflow World TileJSON's `vector_layers`, or none. */
+export function validateTileflowWorldTilejson(
   tilejson: {vector_layers?: readonly unknown[]} | null | undefined,
-  schema: TileflowWorldV1Schema = tileflowWorldV1Schema(),
+  tileset: 'world' | 'world-detail' = 'world',
 ): string[] {
   const layers = Array.isArray(tilejson?.vector_layers) ? tilejson.vector_layers : [];
   const issues: string[] = [];
-  const bathymetry = requireTilejsonLayer(layers, schema.layers.bathymetry, issues);
-  const globalLandcover = requireTilejsonLayer(layers, schema.layers.globalLandcover, issues);
-  const circularFeature = requireTilejsonLayer(layers, schema.layers.circularFeature, issues);
-  const sidewalk = requireTilejsonLayer(layers, schema.layers.sidewalk, issues);
-  const streetFurniture = requireTilejsonLayer(layers, schema.layers.streetFurniture, issues);
-  const poi = requireTilejsonLayer(layers, schema.layers.poi, issues);
-  const road = requireTilejsonLayer(layers, schema.layers.road, issues);
-  const roadName = requireTilejsonLayer(layers, schema.layers.roadName, issues);
-  const roadShield = requireTilejsonLayer(layers, schema.layers.roadShield, issues);
-  const canopy = optionalTilejsonLayer(layers, schema.layers.canopy, issues);
-  const trafficControl = optionalTilejsonLayer(layers, schema.layers.trafficControl, issues);
-  const transportationOutline = requireTilejsonLayer(
-    layers,
-    schema.layers.transportationOutline,
-    issues,
+  const l = tileflowWorldLayers;
+  const require = (name: TileflowWorldLayerName) =>
+    requireTilejsonLayer(layers, tileflowWorldLayers[name], issues);
+  const field = (
+    layer: TilejsonVectorLayer | undefined,
+    name: TileflowWorldLayerName,
+    fields: readonly TileflowWorldFieldName[],
+    types: readonly string[],
+  ) => {
+    if (!layer) return;
+    for (const key of fields) {
+      requireTilejsonField(layer, tileflowWorldLayers[name], tileflowWorldFields[key], types, issues);
+    }
+  };
+  const zooms = (
+    layer: TilejsonVectorLayer | undefined,
+    name: TileflowWorldLayerName,
+    minzoom: number,
+    maxzoom: number,
+  ) => {
+    if (layer && (layer.minzoom !== minzoom || layer.maxzoom !== maxzoom)) {
+      issues.push(
+        minzoom === maxzoom
+          ? `Tileflow World ${tileflowWorldLayers[name]} must declare native z${minzoom}.`
+          : `Tileflow World ${tileflowWorldLayers[name]} must declare z${minzoom}-z${maxzoom}.`,
+      );
+    }
+  };
+
+  if (tileset === 'world-detail') {
+    for (const name of tileflowWorldDetailLayers) require(name);
+    for (const name of Object.keys(l) as TileflowWorldLayerName[]) {
+      if (!isTileflowWorldDetailLayer(name)) forbidTilejsonLayer(layers, l[name], tileset, issues);
+    }
+    return issues;
+  }
+  for (const name of tileflowWorldDetailLayers) {
+    forbidTilejsonLayer(layers, l[name], tileset, issues);
+  }
+
+  for (const name of [
+    'admin',
+    'aeroway',
+    'airportLabel',
+    'building',
+    'housenumLabel',
+    'landuse',
+    'landuseOverlay',
+    'naturalLabel',
+    'placeLabel',
+    'water',
+    'waterway',
+  ] as const) {
+    field(require(name), name, name === 'admin' || name === 'housenumLabel' ? [] : ['class'], [
+      'String',
+    ]);
+  }
+
+  const bathymetry = require('bathymetry');
+  zooms(bathymetry, 'bathymetry', 0, 9);
+  field(bathymetry, 'bathymetry', ['bathymetryMinDepth', 'bathymetrySortKey'], ['Number']);
+
+  const landcover = require('landcover');
+  zooms(landcover, 'landcover', 0, 10);
+  field(landcover, 'landcover', ['class'], ['String']);
+
+  const poi = require('poiLabel');
+  zooms(poi, 'poiLabel', 12, 15);
+  field(poi, 'poiLabel', ['class', 'icon', 'type'], ['String']);
+  field(poi, 'poiLabel', ['filterrank', 'minZoom', 'sizerank'], ['Number']);
+
+  const circularFeature = require('circularFeature');
+  zooms(circularFeature, 'circularFeature', 15, 15);
+  field(circularFeature, 'circularFeature', ['class', 'circularKind'], ['String']);
+  field(
+    circularFeature,
+    'circularFeature',
+    [
+      'circularRadiusAtZoom15',
+      'circularRadiusMeters',
+      'circularOuterRadiusMeters',
+      'circularInnerRadiusMeters',
+    ],
+    ['Number'],
   );
 
-  if (bathymetry) {
-    if (bathymetry.minzoom !== 0 || bathymetry.maxzoom !== 9) {
-      issues.push(`Tileflow World V1 ${schema.layers.bathymetry} must declare z0-z9.`);
-    }
-    requireTilejsonField(
-      bathymetry,
-      schema.layers.bathymetry,
-      schema.fields.bathymetryMinDepth,
-      ['Number'],
-      issues,
-    );
-    requireTilejsonField(
-      bathymetry,
-      schema.layers.bathymetry,
-      schema.fields.bathymetrySortKey,
-      ['Number'],
-      issues,
-    );
-  }
+  const sidewalk = require('sidewalk');
+  zooms(sidewalk, 'sidewalk', 15, 15);
+  field(sidewalk, 'sidewalk', ['class', 'type'], ['String']);
 
-  if (globalLandcover) {
-    if (globalLandcover.minzoom !== 0 || globalLandcover.maxzoom !== 10) {
-      issues.push(`Tileflow World V1 ${schema.layers.globalLandcover} must declare z0-z10.`);
-    }
-    requireTilejsonField(
-      globalLandcover,
-      schema.layers.globalLandcover,
-      schema.fields.class,
-      ['String'],
-      issues,
-    );
-  }
+  const streetFurniture = require('streetFurniture');
+  zooms(streetFurniture, 'streetFurniture', 15, 15);
+  field(streetFurniture, 'streetFurniture', ['class', 'type', 'crossing', 'markings'], ['String']);
+  field(streetFurniture, 'streetFurniture', ['direction'], ['Number', 'String']);
 
-  if (poi) {
-    if (poi.minzoom !== 12 || poi.maxzoom !== 15) {
-      issues.push(`Tileflow World V1 ${schema.layers.poi} must declare z12-z15.`);
-    }
-    for (const field of [schema.fields.poiCategory, schema.fields.poiIcon, schema.fields.poiType]) {
-      requireTilejsonField(poi, schema.layers.poi, field, ['String'], issues);
-    }
-    for (const field of [
-      schema.fields.poiFilterRank,
-      schema.fields.minZoom,
-      schema.fields.poiSizeRank,
-    ]) {
-      requireTilejsonField(poi, schema.layers.poi, field, ['Number'], issues);
-    }
-  }
+  const trafficControl = optionalTilejsonLayer(layers, l.trafficControl, issues);
+  zooms(trafficControl, 'trafficControl', 15, 15);
+  field(trafficControl, 'trafficControl', ['class', 'type'], ['String']);
 
-  if (circularFeature) {
-    requireNativeZoom15(circularFeature, schema.layers.circularFeature, issues);
-    requireTilejsonField(
-      circularFeature,
-      schema.layers.circularFeature,
-      schema.fields.class,
-      ['String'],
-      issues,
-    );
-    requireTilejsonField(
-      circularFeature,
-      schema.layers.circularFeature,
-      schema.fields.circularKind,
-      ['String'],
-      issues,
-    );
-    for (const field of [
-      schema.fields.circularRadiusAtZoom15,
-      schema.fields.circularRadiusMeters,
-      schema.fields.circularOuterRadiusMeters,
-      schema.fields.circularInnerRadiusMeters,
-    ]) {
-      requireTilejsonField(
-        circularFeature,
-        schema.layers.circularFeature,
-        field,
-        ['Number'],
-        issues,
-      );
-    }
-  }
+  const road = require('road');
+  field(road, 'road', ['class'], ['String']);
+  field(road, 'road', ['circularClearanceExtraAtZoom15'], ['Number']);
 
-  if (sidewalk) {
-    requireNativeZoom15(sidewalk, schema.layers.sidewalk, issues);
-    requireTilejsonField(sidewalk, schema.layers.sidewalk, schema.fields.class, ['String'], issues);
-    requireTilejsonField(
-      sidewalk,
-      schema.layers.sidewalk,
-      schema.fields.subclass,
-      ['String'],
-      issues,
-    );
-  }
+  const roadLabel = require('roadLabel');
+  field(
+    roadLabel,
+    'roadLabel',
+    ['class', 'ref', 'shieldKind', 'shieldNetwork', 'shieldText', 'shieldTextColor'],
+    ['String'],
+  );
+  field(roadLabel, 'roadLabel', ['reflen', 'shieldLineLengthMeters', 'shieldRank'], ['Number']);
 
-  if (streetFurniture) {
-    requireNativeZoom15(streetFurniture, schema.layers.streetFurniture, issues);
-    requireTilejsonField(
-      streetFurniture,
-      schema.layers.streetFurniture,
-      schema.fields.class,
-      ['String'],
-      issues,
-    );
-    requireTilejsonField(
-      streetFurniture,
-      schema.layers.streetFurniture,
-      schema.fields.subclass,
-      ['String'],
-      issues,
-    );
-    requireTilejsonField(
-      streetFurniture,
-      schema.layers.streetFurniture,
-      schema.fields.direction,
-      ['Number', 'String'],
-      issues,
-    );
-    requireTilejsonField(
-      streetFurniture,
-      schema.layers.streetFurniture,
-      schema.fields.crossing,
-      ['String'],
-      issues,
-    );
-    requireTilejsonField(
-      streetFurniture,
-      schema.layers.streetFurniture,
-      schema.fields.markings,
-      ['String'],
-      issues,
-    );
-  }
+  const roadShield = require('roadShield');
+  zooms(roadShield, 'roadShield', 6, 10);
+  field(
+    roadShield,
+    'roadShield',
+    ['class', 'ref', 'shieldKind', 'shieldNetwork', 'shieldText', 'shieldTextColor'],
+    ['String'],
+  );
+  field(roadShield, 'roadShield', ['reflen', 'shieldRank'], ['Number']);
 
-  if (trafficControl) {
-    requireNativeZoom15(trafficControl, schema.layers.trafficControl, issues);
-    for (const field of [schema.fields.class, schema.fields.subclass]) {
-      requireTilejsonField(trafficControl, schema.layers.trafficControl, field, ['String'], issues);
-    }
-  }
+  // z15 holds every point; z14 repeats the lower ranks at the same positions.
+  const canopy = optionalTilejsonLayer(layers, l.canopy, issues);
+  zooms(canopy, 'canopy', 14, 15);
+  field(
+    canopy,
+    'canopy',
+    ['canopyRank', 'canopyClearanceAtZoom15', 'canopyCoverPercent'],
+    ['Number'],
+  );
 
-  if (road) {
-    requireTilejsonField(
-      road,
-      schema.layers.road,
-      schema.fields.circularClearanceExtraAtZoom15,
-      ['Number'],
-      issues,
-    );
-  }
-  if (roadName) {
-    for (const field of [
-      schema.fields.class,
-      schema.fields.ref,
-      schema.fields.shieldKind,
-      schema.fields.shieldNetwork,
-      schema.fields.shieldText,
-      schema.fields.shieldTextColor,
-    ]) {
-      requireTilejsonField(roadName, schema.layers.roadName, field, ['String'], issues);
-    }
-    for (const field of [
-      schema.fields.refLength,
-      schema.fields.shieldLineLengthMeters,
-      schema.fields.shieldRank,
-    ]) {
-      requireTilejsonField(roadName, schema.layers.roadName, field, ['Number'], issues);
-    }
-  }
-  if (roadShield) {
-    if (roadShield.minzoom !== 6 || roadShield.maxzoom !== 10) {
-      issues.push(`Tileflow World V1 ${schema.layers.roadShield} must declare z6-z10.`);
-    }
-    for (const field of [
-      schema.fields.class,
-      schema.fields.ref,
-      schema.fields.shieldKind,
-      schema.fields.shieldNetwork,
-      schema.fields.shieldText,
-      schema.fields.shieldTextColor,
-    ]) {
-      requireTilejsonField(roadShield, schema.layers.roadShield, field, ['String'], issues);
-    }
-    for (const field of [schema.fields.refLength, schema.fields.shieldRank]) {
-      requireTilejsonField(roadShield, schema.layers.roadShield, field, ['Number'], issues);
-    }
-  }
-  if (canopy && schema.layers.canopy) {
-    // z15 holds every point; z14 repeats the lower ranks at the same positions.
-    if (canopy.minzoom !== 14 || canopy.maxzoom !== 15) {
-      issues.push(`Tileflow World V1 ${schema.layers.canopy} must declare native z14-z15.`);
-    }
-    for (const field of [
-      schema.fields.canopyRank,
-      schema.fields.canopyClearanceAtZoom15,
-      schema.fields.canopyCoverPercent,
-    ]) {
-      requireTilejsonField(canopy, schema.layers.canopy, field, ['Number'], issues);
-    }
-  }
+  // The outer rings of the `road` areas, which exist from z13.
+  const roadOutline = require('roadOutline');
+  zooms(roadOutline, 'roadOutline', 13, 15);
+  field(roadOutline, 'roadOutline', ['class', 'type'], ['String']);
 
-  if (transportationOutline) {
-    // The outer rings of the `road` areas, which exist from z13.
-    if (transportationOutline.minzoom !== 13 || transportationOutline.maxzoom !== 15) {
-      issues.push(
-        `Tileflow World V1 ${schema.layers.transportationOutline} must declare native z13-z15.`,
-      );
-    }
-    requireTilejsonField(
-      transportationOutline,
-      schema.layers.transportationOutline,
-      schema.fields.class,
-      ['String'],
-      issues,
-    );
-    requireTilejsonField(
-      transportationOutline,
-      schema.layers.transportationOutline,
-      schema.fields.subclass,
-      ['String'],
-      issues,
-    );
-  }
   return issues;
 }
 
@@ -746,23 +460,22 @@ function requireTilejsonLayer(
       typeof layer === 'object' && layer !== null && (layer as TilejsonVectorLayer).id === id,
   );
   if (matches.length === 0) {
-    issues.push(`Tileflow World V1 requires ${id}.`);
+    issues.push(`Tileflow World requires ${id}.`);
     return undefined;
   }
   if (matches.length !== 1) {
-    issues.push(`Tileflow World V1 requires exactly one ${id} layer.`);
+    issues.push(`Tileflow World requires exactly one ${id} layer.`);
     return undefined;
   }
   return matches[0];
 }
 
-/** An optional extension may be absent; once declared, it must occur exactly once. */
+/** An optional layer may be absent; once declared, it must occur exactly once. */
 function optionalTilejsonLayer(
   layers: readonly unknown[],
-  id: string | undefined,
+  id: string,
   issues: string[],
 ): TilejsonVectorLayer | undefined {
-  if (id === undefined) return undefined;
   const declared = layers.some(
     (layer) =>
       typeof layer === 'object' && layer !== null && (layer as TilejsonVectorLayer).id === id,
@@ -770,9 +483,19 @@ function optionalTilejsonLayer(
   return declared ? requireTilejsonLayer(layers, id, issues) : undefined;
 }
 
-function requireNativeZoom15(layer: TilejsonVectorLayer, layerId: string, issues: string[]): void {
-  if (layer.minzoom !== 15 || layer.maxzoom !== 15) {
-    issues.push(`Tileflow World V1 ${layerId} must declare native z15.`);
+function forbidTilejsonLayer(
+  layers: readonly unknown[],
+  id: string,
+  tileset: string,
+  issues: string[],
+): void {
+  if (
+    layers.some(
+      (layer) =>
+        typeof layer === 'object' && layer !== null && (layer as TilejsonVectorLayer).id === id,
+    )
+  ) {
+    issues.push(`Tileflow World ${tileset} must not declare ${id}.`);
   }
 }
 
@@ -788,7 +511,7 @@ function requireTilejsonField(
       ? layer.fields
       : undefined;
   if (!acceptedTypes.includes(String(fields?.[field] ?? ''))) {
-    issues.push(`Tileflow World V1 requires ${acceptedTypes.join(' or ')} ${field} on ${layerId}.`);
+    issues.push(`Tileflow World requires ${acceptedTypes.join(' or ')} ${field} on ${layerId}.`);
   }
 }
 
@@ -814,7 +537,7 @@ export function vectorTiles(options: {
   maxzoom?: number;
   minzoom?: number;
   revision?: string;
-  schema: OpenMapTilesSchema;
+  schema: TileflowDataSchema;
   tiles?: readonly [string, ...string[]];
   url?: string;
 }): VectorTilesData {
@@ -836,7 +559,7 @@ export function vectorTiles(options: {
     type: 'vector-tiles',
     attribution,
     ...(options.revision ? {revision: validateRevision(options.revision)} : {}),
-    schema: validateOpenMapTilesSchema(options.schema),
+    schema: validateDataSchema(options.schema),
   };
 
   if (options.url !== undefined) {
@@ -853,7 +576,7 @@ export function vectorTiles(options: {
 
 export function resolveTileflowData(
   data: TileflowDataConfig | undefined,
-  options: {apiBaseUrl?: string} = {},
+  options: {apiBaseUrl?: string; worldDetail?: TileflowWorldDetailDelivery} = {},
 ): ResolvedTileflowData {
   const descriptor = data ?? tileflowWorld();
 
@@ -861,18 +584,28 @@ export function resolveTileflowData(
     if (descriptor.generation !== tileflowWorldGeneration) {
       throw new Error(`Tileflow World generation must be ${tileflowWorldGeneration}.`);
     }
-    const schema = tileflowWorldV1Schema();
-    const selectorUrl = new URL('/tiles/world/tiles.json', normalizeApiBaseUrl(options.apiBaseUrl));
-    if (descriptor.selection.kind === 'release') {
-      selectorUrl.searchParams.set('worldReleaseId', descriptor.selection.release.releaseId);
-      selectorUrl.searchParams.set(
-        'worldDescriptorSha256',
-        descriptor.selection.release.descriptorSha256,
-      );
-    }
+    const schema = tileflowWorldSchema();
+    const selector = (path: string) => {
+      const url = new URL(path, normalizeApiBaseUrl(options.apiBaseUrl));
+      if (descriptor.selection.kind === 'release') {
+        url.searchParams.set('worldReleaseId', descriptor.selection.release.releaseId);
+        url.searchParams.set('worldDescriptorSha256', descriptor.selection.release.descriptorSha256);
+      }
+      return url.toString();
+    };
+    const selectorUrl = selector(tileflowWorldTileJsonPath);
+    const delivery = options.worldDetail ?? tileflowWorldDetailDelivery;
 
     return {
-      attribution: worldAttribution,
+      attribution: tileflowWorldAttribution,
+      detail:
+        delivery === 'separate'
+          ? {
+              delivery,
+              sourceId: tileflowDetailSourceId,
+              url: selector(tileflowWorldDetailTileJsonPath),
+            }
+          : {delivery, url: selector(tileflowWorldCompositeTileJsonPath)},
       generation: descriptor.generation,
       identity: dataIdentity(
         descriptor.type,
@@ -881,16 +614,16 @@ export function resolveTileflowData(
           generation: descriptor.generation,
           worldSelection: descriptor.selection,
         },
-        selectorUrl.toString(),
+        selectorUrl,
       ),
       kind: descriptor.type,
-      schema,
+      schema: tileflowDataBinding(schema),
       sourceId: tileflowPrimarySourceId,
-      url: selectorUrl.toString(),
+      url: selectorUrl,
     };
   }
 
-  const schema = validateOpenMapTilesSchema(descriptor.schema);
+  const schema = validateDataSchema(descriptor.schema);
 
   return {
     attribution: descriptor.attribution,
@@ -905,7 +638,7 @@ export function resolveTileflowData(
     ...(descriptor.maxzoom === undefined ? {} : {maxzoom: descriptor.maxzoom}),
     ...(descriptor.minzoom === undefined ? {} : {minzoom: descriptor.minzoom}),
     ...(descriptor.revision ? {revision: descriptor.revision} : {}),
-    schema,
+    schema: tileflowDataBinding(schema),
     sourceId: tileflowPrimarySourceId,
     ...(descriptor.url !== undefined
       ? {url: validatePublicVectorUrl(descriptor.url)}
@@ -913,21 +646,12 @@ export function resolveTileflowData(
   };
 }
 
-export function isCanonicalOpenMapTilesSchema(schema: OpenMapTilesSchema): boolean {
-  return (
-    schema.semantics.parkLayer === 'mixed' &&
-    Object.entries(canonicalLayers).every(
-      ([key, value]) => schema.layers[key as keyof typeof canonicalLayers] === value,
-    ) &&
-    Object.entries(canonicalFields).every(
-      ([key, value]) => schema.fields[key as keyof typeof canonicalFields] === value,
-    )
-  );
-}
+/** The composite TileJSON that serves `world` and `world-detail` together. */
+const tileflowWorldCompositeTileJsonPath = '/tiles/world,world-detail/tiles.json';
 
 function dataIdentity(
   kind: TileflowDataConfig['type'],
-  schema: OpenMapTilesSchema,
+  schema: TileflowDataSchema,
   version: {
     generation?: typeof tileflowWorldGeneration;
     revision?: string;
@@ -940,26 +664,14 @@ function dataIdentity(
     ...('worldSelection' in version && version.worldSelection
       ? {worldSelection: version.worldSelection}
       : {}),
-    ...(kind === 'vector-tiles'
-      ? {
-          bindings: {
-            fields: {...schema.fields},
-            layers: {...schema.layers},
-          },
-          capabilities: {
-            businessCorridor: Boolean(schema.layers.businessCorridor),
-            bathymetry: Boolean(schema.layers.bathymetry),
-            canopy: Boolean(schema.layers.canopy),
-            globalLandcover: Boolean(schema.layers.globalLandcover),
-            tree: Boolean(schema.layers.tree),
-          },
-        }
+    ...(schema.type === 'openmaptiles'
+      ? {bindings: {fields: {...schema.fields}, layers: {...schema.layers}}}
       : {}),
     kind,
     ...(version.revision ? {revision: version.revision} : {}),
     schema: schema.type,
-    schemaVersion: schema.contractVersion,
-    semantics: {...schema.semantics},
+    schemaVersion: schema.type === 'openmaptiles' ? schema.contractVersion : schema.version,
+    ...(schema.type === 'openmaptiles' ? {semantics: {...schema.semantics}} : {}),
     sourceId: tileflowPrimarySourceId,
     ...(url ? {url: validatePublicVectorUrl(url)} : {}),
   };
@@ -1138,7 +850,14 @@ function isLoopbackVectorHostname(value: string): boolean {
   );
 }
 
-function validateOpenMapTilesSchema(schema: OpenMapTilesSchema): OpenMapTilesSchema {
+
+function validateDataSchema(schema: TileflowDataSchema): TileflowDataSchema {
+  if (schema.type === 'tileflow-world') {
+    if (schema.version !== tileflowWorldSchemaVersion) {
+      throw new Error(`Tileflow World schema version must be ${tileflowWorldSchemaVersion}.`);
+    }
+    return tileflowWorldSchema();
+  }
   if (schema.type !== 'openmaptiles' || schema.contractVersion !== openMapTilesContractVersion) {
     throw new Error(
       `Tileflow requires OpenMapTiles contract version ${openMapTilesContractVersion}.`,
@@ -1150,23 +869,22 @@ function validateOpenMapTilesSchema(schema: OpenMapTilesSchema): OpenMapTilesSch
     throw new Error('Tileflow OpenMapTiles semantics.parkLayer is invalid.');
   }
 
+  const validated = openMapTiles({
+    fields: schema.fields,
+    layers: schema.layers,
+    semantics: {parkLayer},
+  });
   for (const [group, bindings] of [
-    ['layers', schema.layers],
-    ['fields', schema.fields],
+    ['layers', validated.layers],
+    ['fields', validated.fields],
   ] as const) {
     for (const [name, value] of Object.entries(bindings)) {
-      if (!value.trim()) {
+      if (typeof value !== 'string' || !value.trim()) {
         throw new Error(`Tileflow OpenMapTiles ${group}.${name} must not be empty.`);
       }
     }
   }
-
-  return {
-    ...schema,
-    fields: {...schema.fields},
-    layers: {...schema.layers},
-    semantics: {parkLayer},
-  };
+  return validated;
 }
 
 function validateRevision(value: string): string {
@@ -1213,4 +931,8 @@ function validateBounds(value: [number, number, number, number]): [number, numbe
   return [...value];
 }
 
-export {tileflowWorldGeneration, tileflowWorldTileJsonUrl} from './world-generation';
+export {
+  tileflowWorldDetailTileJsonUrl,
+  tileflowWorldGeneration,
+  tileflowWorldTileJsonUrl,
+} from './world-generation';

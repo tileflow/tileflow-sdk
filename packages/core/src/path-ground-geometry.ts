@@ -2,16 +2,35 @@ import {decodeTileflowVectorTile, type TileflowTileFeature} from './vector-tile-
 
 export type PathGroundBindings = {
   road: string;
-  landcover: string;
-  landuse: string;
+  /** The source layers with ground areas. */
+  ground: readonly string[];
   class: string;
-  subclass: string;
-  brunnel: string;
+  type: string;
+  structure: string;
 };
 type Point = readonly [number, number];
 type Polygon = {rings: readonly (readonly number[])[]; bounds: readonly number[]};
-const coverClasses = new Set(['grass', 'wood', 'forest', 'wetland']);
-const useClasses = new Set(['cemetery', 'pitch', 'track', 'playground', 'zoo']);
+// World ground classes, and the OpenMapTiles classes of the same ground.
+const greenClasses = new Set([
+  'cemetery',
+  'flowerbed',
+  'forest',
+  'garden',
+  'grass',
+  'heath',
+  'meadow',
+  'orchard',
+  'park',
+  'pitch',
+  'playground',
+  'recreation_ground',
+  'scrub',
+  'track',
+  'village_green',
+  'wetland',
+  'wood',
+  'zoo',
+]);
 const pathClasses = new Set([
   'footway',
   'path',
@@ -28,22 +47,20 @@ export function deriveTileflowGreenPaths(
   bindings: PathGroundBindings,
 ): Uint8Array {
   const tile = decodeTileflowVectorTile(bytes, {
-    layers: [bindings.road, bindings.landcover, bindings.landuse],
+    layers: [bindings.road, ...bindings.ground],
   });
   const road = tile[bindings.road];
   if (!road) return encodeLines(bindings.road, 4096, []);
   const polygons: Polygon[] = [];
-  for (const name of [bindings.landcover, bindings.landuse]) {
+  for (const name of new Set(bindings.ground)) {
     const layer = tile[name];
     if (!layer) continue;
     for (const feature of layer.features) {
       const kind = String(feature.properties[bindings.class]);
-      const subclass = String(feature.properties[bindings.subclass]);
+      const type = String(feature.properties[bindings.type]);
       const green =
-        name === bindings.landcover
-          ? coverClasses.has(kind) ||
-            (kind === 'farmland' && ['orchard', 'plant_nursery'].includes(subclass))
-          : useClasses.has(kind);
+        greenClasses.has(kind) ||
+        (kind === 'farmland' && ['orchard', 'plant_nursery'].includes(type));
       if (feature.type !== 'Polygon' || !green) continue;
       let current: number[][] | undefined;
       for (const raw of feature.geometry) {
@@ -62,9 +79,11 @@ export function deriveTileflowGreenPaths(
     const p = feature.properties;
     if (
       feature.type !== 'LineString' ||
-      !['path', 'path_construction'].includes(String(p[bindings.class])) ||
-      !pathClasses.has(String(p[bindings.subclass])) ||
-      ['bridge', 'tunnel'].includes(String(p[bindings.brunnel]))
+      !['path', 'pedestrian', 'construction', 'path_construction'].includes(
+        String(p[bindings.class]),
+      ) ||
+      !pathClasses.has(String(p[bindings.type])) ||
+      ['bridge', 'tunnel'].includes(String(p[bindings.structure]))
     )
       continue;
     const geometry = feature.geometry.flatMap((line) => clipLineToGreen(line, polygons));

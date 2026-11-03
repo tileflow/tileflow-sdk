@@ -20,7 +20,7 @@ export const tileflowRoadClasses = [
   ...tileflowPathRoadClasses,
 ] as const satisfies readonly TileflowRoadClass[];
 
-const pathSubclasses: Record<(typeof tileflowPathRoadClasses)[number], readonly string[]> = {
+const pathTypes: Record<(typeof tileflowPathRoadClasses)[number], readonly string[]> = {
   pathway: ['path', 'bridleway', 'corridor'],
   footway: ['footway'],
   cycleway: ['cycleway'],
@@ -28,33 +28,44 @@ const pathSubclasses: Record<(typeof tileflowPathRoadClasses)[number], readonly 
   pedestrian: ['pedestrian'],
 };
 
-const constructionClasses: Record<TileflowRoadClass, readonly string[]> = {
-  motorway: ['motorway_construction'],
-  trunk: ['trunk_construction'],
-  primary: ['primary_construction'],
-  secondary: ['secondary_construction'],
-  tertiary: ['tertiary_construction'],
-  minor: ['minor_construction'],
-  service: ['service_construction'],
-  track: ['track_construction', 'raceway_construction'],
-  pathway: ['path_construction'],
-  footway: ['path_construction'],
-  cycleway: ['path_construction'],
-  steps: ['path_construction'],
-  pedestrian: ['path_construction'],
+// The road classes of World that draw as each Tileflow road class. World's vocabulary is larger:
+// busways draw as service roads and raceways as tracks.
+const roadClassValues: Record<TileflowRoadClass, readonly string[]> = {
+  motorway: ['motorway'],
+  trunk: ['trunk'],
+  primary: ['primary'],
+  secondary: ['secondary'],
+  tertiary: ['tertiary'],
+  minor: ['street'],
+  service: ['service', 'busway'],
+  track: ['track', 'raceway'],
+  pathway: ['path'],
+  footway: ['path'],
+  cycleway: ['path'],
+  steps: ['path'],
+  pedestrian: ['pedestrian'],
 };
 
-// OpenMapTiles exposes these road-like classes separately, while Tileflow's
-// public road vocabulary intentionally stays smaller. Keep the mapping here so
-// geometry and labels share one disjoint semantic selector.
-const compatibleRoadClasses: Partial<Record<TileflowRoadClass, readonly string[]>> = {
-  service: ['busway', 'bus_guideway'],
-  track: ['raceway'],
+// A road under construction has `class: construction` and the road it becomes as its `type`:
+// a World class, or the OpenStreetMap value of its `construction` tag.
+const constructionTypes: Record<TileflowRoadClass, readonly string[]> = {
+  motorway: ['motorway', 'motorway_link'],
+  trunk: ['trunk', 'trunk_link'],
+  primary: ['primary', 'primary_link'],
+  secondary: ['secondary', 'secondary_link'],
+  tertiary: ['tertiary', 'tertiary_link'],
+  minor: ['street', 'residential', 'unclassified', 'living_street', 'road'],
+  service: ['service', 'busway'],
+  track: ['track', 'raceway'],
+  pathway: ['path', 'bridleway', 'corridor'],
+  footway: ['footway'],
+  cycleway: ['cycleway'],
+  steps: ['steps'],
+  pedestrian: ['pedestrian'],
 };
 
-export const tileflowRoadConstructionClasses = [
-  ...new Set(Object.values(constructionClasses).flat()),
-] as readonly string[];
+/** World's class of roads under construction. */
+export const tileflowRoadConstructionClasses = ['construction'] as const;
 
 export function isTileflowPathRoadClass(
   roadClass: TileflowRoadClass,
@@ -63,26 +74,29 @@ export function isTileflowPathRoadClass(
 }
 
 export function tileflowRoadClassFilter(
-  fields: {class: string; subclass: string},
+  fields: {class: string; type: string},
   roadClass: TileflowRoadClass,
 ): unknown[] {
-  const classes = tileflowRoadClassValues(roadClass);
-  if (isTileflowPathRoadClass(roadClass)) {
-    return [
+  const built =
+    isTileflowPathRoadClass(roadClass) && roadClass !== 'pedestrian'
+      ? [
+          'all',
+          ['==', ['get', fields.class], 'path'],
+          ['match', ['get', fields.type], pathTypes[roadClass], true, false],
+        ]
+      : ['match', ['get', fields.class], roadClassValues[roadClass], true, false];
+  return [
+    'any',
+    built,
+    [
       'all',
-      ['match', ['get', fields.class], classes, true, false],
-      ['match', ['get', fields.subclass], pathSubclasses[roadClass], true, false],
-    ];
-  }
-  return ['match', ['get', fields.class], classes, true, false];
+      ['==', ['get', fields.class], 'construction'],
+      ['match', ['get', fields.type], constructionTypes[roadClass], true, false],
+    ],
+  ];
 }
 
 /** The values of the `class` field a road class draws. */
 export function tileflowRoadClassValues(roadClass: TileflowRoadClass): string[] {
-  if (isTileflowPathRoadClass(roadClass)) return ['path', ...constructionClasses[roadClass]];
-  return [
-    ...(roadClass === 'minor' ? ['minor', 'residential', 'unclassified'] : [roadClass]),
-    ...(compatibleRoadClasses[roadClass] ?? []),
-    ...constructionClasses[roadClass],
-  ];
+  return [...roadClassValues[roadClass], ...tileflowRoadConstructionClasses];
 }

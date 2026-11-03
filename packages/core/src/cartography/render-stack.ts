@@ -1,9 +1,5 @@
 import {roadLabelPlacementKey} from './label-placement';
-import type {
-  OpenMapTilesFieldBindings,
-  OpenMapTilesLayerBindings,
-  ResolvedTileflowData,
-} from '../data';
+import type {ResolvedTileflowData, TileflowWorldFieldName, TileflowWorldLayerName} from '../data';
 import {
   type TileflowBandPlacement,
   tileflowBandPlacementIndex,
@@ -84,8 +80,8 @@ export type TileflowRenderPlacement =
   | {readonly above: string; readonly below?: never}
   | {readonly above?: never; readonly below: string};
 export type TileflowRenderStackRenderer = (typeof tileflowRenderStackRenderers)[number];
-export type TileflowRenderFeature = keyof OpenMapTilesLayerBindings;
-export type TileflowRenderField = keyof OpenMapTilesFieldBindings;
+export type TileflowRenderFeature = TileflowWorldLayerName;
+export type TileflowRenderField = TileflowWorldFieldName;
 export type TileflowRenderScalar = boolean | number | string;
 export type TileflowRenderGeometry = (typeof tileflowRenderSelectorGeometries)[number];
 export type TileflowRenderComparison = (typeof tileflowRenderSelectorComparisons)[number];
@@ -580,7 +576,7 @@ export function compileRenderStacks(
     .map((operation, order) => ({...operation, order}));
 }
 
-/** Lower a closed semantic selector through the active OpenMapTiles field bindings. */
+/** Lower a closed semantic selector through the active data schema's field bindings. */
 export function compileRenderSelector(
   selector: TileflowRenderSelector,
   data: ResolvedTileflowData,

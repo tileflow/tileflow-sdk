@@ -50,7 +50,7 @@ export function compileLandforms(
       {
         minZoom,
         placement: 'point',
-        priority: expression<number>(['-', 100, ['to-number', ['get', schema.fields.rank], 99]]),
+        priority: expression<number>(['-', 100, ['to-number', ['get', schema.fields.filterrank], 99]]),
         text: {
           allowOverlap: false,
           color: context.colors.labels.muted,
@@ -83,7 +83,7 @@ export function compileLandforms(
             id: 'tileflow-landforms',
             type: 'symbol',
             source,
-            'source-layer': schema.layers.mountainPeak,
+            'source-layer': schema.layers.naturalLabel,
             filter: landformFilter(schema.fields, tileflowLandformClasses),
           },
           style,
@@ -109,7 +109,7 @@ export function compileLandforms(
             id: `tileflow-landform-${landformClass}`,
             type: 'symbol',
             source,
-            'source-layer': schema.layers.mountainPeak,
+            'source-layer': schema.layers.naturalLabel,
             filter: landformFilter(schema.fields, [landformClass]),
           },
           style,
@@ -146,7 +146,7 @@ function landformFilter(
     ['has', fields.name],
     classFilter,
     classZoom,
-    ['<=', ['to-number', ['get', fields.rank], 99], ['step', ['zoom'], 3, 12, 10, 14, 99]],
+    ['<=', ['to-number', ['get', fields.filterrank], 99], ['step', ['zoom'], 3, 12, 10, 14, 99]],
   ];
 }
 

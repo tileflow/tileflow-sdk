@@ -20,27 +20,6 @@ export function compileBuildings(
     {
       type: 'buildings',
       enabled: true,
-      businessCorridor: {
-        fill: {
-          color: colors.buildings.businessCorridor,
-          minZoom: 12,
-          opacity: expression<number>([
-            'interpolate',
-            ['linear'],
-            ['to-number', ['coalesce', ['get', context.data.schema.fields.activityScore], 0], 0],
-            0.32,
-            0.08,
-            1,
-            0.22,
-          ]),
-        },
-        outline: {
-          color: colors.buildings.businessCorridorOutline,
-          minZoom: 14,
-          opacity: 0.16,
-          width: 0.5,
-        },
-      },
       mode: 'flat',
       flat: {
         fill: {color: semanticColor, minZoom: 15, opacity: 0.5},
@@ -63,29 +42,6 @@ export function compileBuildings(
   const visibilityFilter = buildingVisibilityFilter();
   const contributions: TileflowLayerContribution[] = [];
 
-  const corridorLayer = context.data.schema.layers.businessCorridor;
-  if (corridorLayer && config.businessCorridor) {
-    for (const area of createAreaLayers(
-      {
-        id: 'tileflow-business-corridor',
-        type: 'fill',
-        source,
-        'source-layer': corridorLayer,
-        filter: businessCorridorVisibilityFilter(context),
-      },
-      config.businessCorridor,
-    )) {
-      contributions.push({
-        kind: 'layer',
-        layer: area.layer,
-        localOrder: area.phase === 'fill' ? -20 : -19,
-        owner: 'buildings',
-        slot: 'building-areas',
-        target: `buildings.businessCorridor.${area.phase}`,
-      });
-    }
-  }
-
   if (config.mode === '3d') {
     const style = config.extrusion ?? {};
     contributions.push({
@@ -96,13 +52,8 @@ export function compileBuildings(
           type: 'fill-extrusion',
           source,
           'source-layer': sourceLayer,
-          filter: [
-            'all',
-            visibilityFilter,
-            ['!=', ['get', context.data.schema.fields.hide3d], true],
-            ['!=', ['get', context.data.schema.fields.hide3d], 1],
-            ['!=', ['get', context.data.schema.fields.hide3d], '1'],
-          ],
+          // A footprint whose parts draw it in 3D says `extrude: false`.
+          filter: ['all', visibilityFilter, ['!=', ['get', context.data.schema.fields.extrude], false]],
         },
         style,
       ),
@@ -137,7 +88,7 @@ export function compileBuildings(
   return contributions;
 }
 
-/** The semantic targets each mode draws; the businessCorridor targets belong to every mode. */
+/** The semantic targets each mode draws. */
 const buildingTargetsByMode = {
   flat: ['buildings.flat.fill', 'buildings.flat.outline'],
   '3d': ['buildings.extrusion'],
@@ -161,29 +112,31 @@ export function buildingTargetsOfOtherModes(
 function buildingColorExpression(context: TileflowDomainCompileContext): unknown[] {
   const fields = context.data.schema.fields;
   const colors = context.colors.buildings;
+  // Without a tone, World's use class: housing, shops and offices, public buildings and works
+  // each take their theme colour; a shed, a garage or an unknown use the generic one.
+  const byClass = [
+    'match',
+    ['coalesce', ['get', fields.class], ''],
+    'residential',
+    colors.residential,
+    'commercial',
+    colors.commercial,
+    ['civic', 'education', 'entertainment', 'medical', 'military', 'religious', 'transportation'],
+    colors.civic,
+    ['agricultural', 'industrial', 'service'],
+    colors.industrial,
+    colors.generic,
+  ];
+  if (!fields.tone) return byClass;
   return [
     'case',
-    ['==', ['coalesce', ['get', fields.buildingTone], ''], 'active'],
+    ['==', ['coalesce', ['get', fields.tone], ''], 'active'],
     colors.active,
-    ['==', ['coalesce', ['get', fields.buildingTone], ''], 'destination'],
+    ['==', ['coalesce', ['get', fields.tone], ''], 'destination'],
     colors.destination,
-    ['==', ['coalesce', ['get', fields.buildingTone], ''], 'commercial'],
+    ['==', ['coalesce', ['get', fields.tone], ''], 'commercial'],
     colors.commercial,
-    // Without a tone, World's use class: housing, shops and offices, public buildings and works
-    // each take their theme colour; a shed, a garage or an unknown use the generic one.
-    [
-      'match',
-      ['coalesce', ['get', fields.class], ''],
-      'residential',
-      colors.residential,
-      'commercial',
-      colors.commercial,
-      ['civic', 'education', 'entertainment', 'medical', 'military', 'religious', 'transportation'],
-      colors.civic,
-      ['agricultural', 'industrial', 'service'],
-      colors.industrial,
-      colors.generic,
-    ],
+    byClass,
   ];
 }
 
@@ -191,14 +144,6 @@ function buildingVisibilityFilter(): unknown[] {
   // Building existence is geometric, not semantic. Layer minzoom and this fixed guard stay in
   // sync even when a compatible archive has no optional classification fields.
   return ['>=', ['zoom'], 15];
-}
-
-function businessCorridorVisibilityFilter(context: TileflowDomainCompileContext): unknown[] {
-  return [
-    '>=',
-    ['zoom'],
-    ['to-number', ['coalesce', ['get', context.data.schema.fields.minZoom], 12], 12],
-  ];
 }
 
 function buildingHeightExpression(context: TileflowDomainCompileContext): unknown[] {
@@ -210,7 +155,7 @@ function buildingHeightExpression(context: TileflowDomainCompileContext): unknow
       'to-number',
       [
         'coalesce',
-        ['get', fields.renderHeight],
+        ['get', fields.height],
         // V8.14 materializes this fallback in the tile. Keep the defensive
         // value only for malformed or legacy third-party sources.
         5,
@@ -228,6 +173,6 @@ function buildingBaseExpression(
   return [
     'max',
     0,
-    ['min', ['to-number', ['coalesce', ['get', fields.renderMinHeight], 0], 0], height],
+    ['min', ['to-number', ['coalesce', ['get', fields.minHeight], 0], 0], height],
   ];
 }

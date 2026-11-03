@@ -70,7 +70,8 @@ export const tileflowWorldTreeFields: TileflowTreeFields = Object.freeze({
   canopyClearance: 'clearance_px_z15',
   canopyCover: 'cover_pct',
   canopyHeight: 'height_m',
-  subclass: 'subclass',
+  // The barrier kind: World's `type`.
+  subclass: 'type',
   hedge: 'hedge',
 });
 

@@ -1,5 +1,6 @@
 import type {TileflowLabelLanguage} from '../types';
 import type {TileflowDomainCompileContext} from './context';
+import {nameField} from './semantic-bindings';
 import {expression} from './values';
 
 /** Resolve the shared language policy for every label-bearing cartographic domain. */
@@ -17,27 +18,26 @@ export function labelNameFields(
     .map((entry) => (entry as readonly [string, string])[1]);
 }
 
+/**
+ * A label's name in the requested language, then its Latin-script name, then its local name.
+ * World publishes fewer languages below z12, where the label falls back to those names.
+ */
 export function labelFieldExpression(
   language: TileflowLabelLanguage,
   context: TileflowDomainCompileContext,
 ): readonly unknown[] {
   const fields = context.data.schema.fields;
+  const english = nameField('en');
   if (language === 'local') {
-    return [
-      'coalesce',
-      ['get', fields.name],
-      ['get', fields.nameLatin],
-      ['get', fields.nameEnglish],
-    ];
+    return ['coalesce', ['get', fields.name], ['get', fields.nameLatin], ['get', english]];
   }
   if (language === 'auto') {
-    return [
-      'coalesce',
-      ['get', fields.nameLatin],
-      ['get', fields.name],
-      ['get', fields.nameEnglish],
-    ];
+    return ['coalesce', ['get', fields.nameLatin], ['get', fields.name], ['get', english]];
   }
-  const requestedField = language === 'en' ? fields.nameEnglish : `name:${language}`;
-  return ['coalesce', ['get', requestedField], ['get', fields.nameLatin], ['get', fields.name]];
+  return [
+    'coalesce',
+    ['get', nameField(language)],
+    ['get', fields.nameLatin],
+    ['get', fields.name],
+  ];
 }

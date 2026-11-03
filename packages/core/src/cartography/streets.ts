@@ -9,7 +9,7 @@ import {
 import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../boundary-areas/compile';
 import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
 import {tileflowCameraMetadataKey} from '../camera';
-import {resolveTileflowData} from '../data';
+import {resolveTileflowData, tileflowWorldFields} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
 import {type ResolvedMarine, resolveMarine, tileflowNauticalV1Schema} from '../marine';
@@ -525,12 +525,13 @@ function compileSemanticStyleInternal(
   onReport?.(partialReport);
   const interactionManifest = runCompilationPhase('finalization', () =>
     createTileflowInteractionManifest(plannedLayers, {
-      category: data.schema.fields.poiCategory,
-      filterRank: data.schema.fields.poiFilterRank,
-      icon: data.schema.fields.poiIcon,
+      category: data.schema.fields.class,
+      filterRank: data.schema.fields.filterrank,
+      // OpenMapTiles has no icon key; the property is then absent.
+      icon: data.schema.fields.icon ?? tileflowWorldFields.icon,
       name: data.schema.fields.name,
-      sizeRank: data.schema.fields.poiSizeRank,
-      type: data.schema.fields.poiType,
+      sizeRank: data.schema.fields.sizerank,
+      type: data.schema.fields.type,
     }),
   );
   const overlayPlacementManifest = runCompilationPhase('finalization', () =>
@@ -591,7 +592,7 @@ function compileSemanticStyleInternal(
       : {}),
     ...(modules.land?.enabled !== false &&
     modules.land?.globalLandcoverUnderlay &&
-    data.schema.layers.globalLandcover &&
+    data.schema.layers.landcover &&
     modules.land.globalLandcover?.visible !== false
       ? {
           'tileflow-landcover-underlay': {

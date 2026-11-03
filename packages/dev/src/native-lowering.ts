@@ -487,6 +487,29 @@ class Decisions {
   }
 }
 
+/**
+ * The expression with its `let` bindings inlined: each `var` becomes the expression it names.
+ * Core shares repeated parts of a decision this way; lowering needs the decision itself, and an
+ * expression evaluates the same with its bindings in place. A binding's value reads the scope
+ * around its `let`, as the style specification evaluates it. Unknown names are left for lowering
+ * to reject.
+ */
+function inlineBindings(value: unknown, scope: ReadonlyMap<string, unknown> = new Map()): unknown {
+  if (!Array.isArray(value) || value[0] === 'literal') return value;
+  if (operation(value, 'var', 2) && typeof value[1] === 'string' && scope.has(value[1]))
+    return scope.get(value[1]);
+  if (operation(value, 'let') && value.length >= 4 && value.length % 2 === 0) {
+    const inner = new Map(scope);
+    for (let index = 1; index < value.length - 1; index += 2) {
+      const name = value[index];
+      if (typeof name !== 'string') return value;
+      inner.set(name, inlineBindings(value[index + 1], scope));
+    }
+    return inlineBindings(value.at(-1), inner);
+  }
+  return value.map((child) => inlineBindings(child, scope));
+}
+
 function isConstant(value: unknown, property: Property): boolean {
   return (
     value === undefined ||
@@ -509,7 +532,7 @@ function lowerLayer(
     ['layout', 'line-cap'],
     ['paint', 'line-dasharray'],
   ] as const) {
-    const value = layer[group]?.[property];
+    const value = inlineBindings(layer[group]?.[property]);
     if (isConstant(value, property)) continue;
     const decisions = new Decisions(`/layers/${index}/${group}/${property}`, vector);
     const tree = decisions.tree(value, property);

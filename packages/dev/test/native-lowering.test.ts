@@ -204,6 +204,51 @@ test('partitions feature cases and the product of cap and dash without changing 
   assert.equal(JSON.stringify(original), before);
 });
 
+test('lowers a decision whose shared parts the compiler bound with let as the decision itself', () => {
+  const primary = ['match', ['get', 'kind'], ['primary', 'bridge'], true, false];
+  const compact = line(
+    {
+      'line-cap': [
+        'let',
+        'primary',
+        primary,
+        ['let', 'other', ['!', ['var', 'primary']], ['case', ['var', 'other'], 'round', 'butt']],
+      ],
+    },
+    {
+      'line-dasharray': [
+        'let',
+        'primary',
+        primary,
+        [
+          'case',
+          ['var', 'primary'],
+          ['literal', [2, 1]],
+          ['==', ['get', 'access'], 'private'],
+          ['literal', [1, 1]],
+          ['literal', [3, 2]],
+        ],
+      ],
+    },
+  );
+  const expanded = line(
+    {'line-cap': ['case', ['!', primary], 'round', 'butt']},
+    {
+      'line-dasharray': [
+        'case',
+        primary,
+        ['literal', [2, 1]],
+        ['==', ['get', 'access'], 'private'],
+        ['literal', [1, 1]],
+        ['literal', [3, 2]],
+      ],
+    },
+  );
+  const lowered = lowerNativeStyleRepresentation(style(compact)).style.layers;
+  assert.deepEqual(lowered, lowerNativeStyleRepresentation(style(expanded)).style.layers);
+  assertEquivalent(expanded, lowered);
+});
+
 test('preserves exact min/max ranges and integer camera sampling at fractional step stops', () => {
   const original = {
     ...line(

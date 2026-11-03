@@ -75,10 +75,10 @@ test('surface code has private build wiring without widening peers or publishing
   const gradle = await source('android/build.gradle');
   assert.match(gradle, /implementation project\(':maplibre_maplibre-react-native'\)/u);
   const registration = await source(
-    'android/src/main/java/dev/tileflow/reactnative/TileflowNativeAdmissionPackage.kt',
+    'android/src/main/java/dev/tileflow/reactnative/TileflowReactNativePackage.kt',
   );
-  assert.match(registration, /TileflowNativeSurfaceModule\(context\)/u);
-  const podspec = await source('TileflowNativeAdmission.podspec');
+  assert.match(registration, /TileflowNativeSurfaceModule\(reactContext\)/u);
+  const podspec = await source('TileflowReactNative.podspec');
   assert.match(podspec, /private_header_files = 'ios\/\*\.h'/u);
   assert.match(podspec, /Headers\/Private\/MapLibreReactNative/u);
   assert.doesNotMatch(podspec, /public_header_files/u);

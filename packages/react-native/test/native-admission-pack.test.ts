@@ -6,6 +6,7 @@ import {join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
+import {publicManifestExports} from './public-runtime';
 
 const root = new URL('../', import.meta.url);
 const exec = promisify(execFile);
@@ -37,8 +38,11 @@ test('the public archive contains native runtime sources without development tes
   const native = [
     ...(await files('android/src/main')),
     ...ios,
+    ...(await files('ios/Sources')),
+    ...(await files('src/specs')),
+    ...(await files('plugin')),
     'android/build.gradle',
-    'TileflowNativeAdmission.podspec',
+    'TileflowReactNative.podspec',
     'react-native.config.cjs',
   ];
   const documentation = ['README.md', ...(await files('docs'))];
@@ -86,7 +90,7 @@ test('the public archive contains native runtime sources without development tes
   assert.doesNotMatch(manifestText, /tf_public_[0-9a-f]{48}/u);
   const manifest = JSON.parse(manifestText);
   assert.equal(manifest.private, undefined);
-  assert.deepEqual(Object.keys(manifest.exports), ['.']);
+  assert.deepEqual(Object.keys(manifest.exports), publicManifestExports);
   const {stdout: runtime} = await exec('tar', ['-xOzf', archive, 'package/dist/index.js']);
   assert.match(runtime, /@maplibre\/maplibre-react-native/u);
   assert.match(runtime, /react-native/u);

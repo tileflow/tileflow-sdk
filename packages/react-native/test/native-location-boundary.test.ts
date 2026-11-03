@@ -45,7 +45,7 @@ test('package dependencies and native metadata stay location-provider and permis
   const [manifest, androidManifest, podspec, nativeConfig] = await Promise.all([
     readFile(new URL('package.json', root), 'utf8').then((value) => JSON.parse(value)),
     readFile(new URL('android/src/main/AndroidManifest.xml', root), 'utf8'),
-    readFile(new URL('TileflowNativeAdmission.podspec', root), 'utf8'),
+    readFile(new URL('TileflowReactNative.podspec', root), 'utf8'),
     readFile(new URL('react-native.config.cjs', root), 'utf8'),
   ]);
   for (const group of ['dependencies', 'devDependencies', 'peerDependencies'] as const) {

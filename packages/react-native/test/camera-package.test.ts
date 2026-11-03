@@ -6,11 +6,15 @@ import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import ts from 'typescript';
 import {inspectPublicMapRuntime} from './map-runtime-fixture';
+import {publicManifestExports, publicRuntimeNames} from './public-runtime';
 
 const root = new URL('../', import.meta.url);
 
 test('private built camera runs with global traps and package import does not mount or acquire', async () => {
-  assert.deepEqual(await inspectPublicMapRuntime(), {exports: ['Map'], callable: 'function'});
+  assert.deepEqual(await inspectPublicMapRuntime(), {
+    exports: publicRuntimeNames,
+    callable: 'function',
+  });
 
   const script = `
 		import assert from 'node:assert/strict';
@@ -70,7 +74,7 @@ test('private built camera runs with global traps and package import does not mo
 test('camera internals stay private while the root exports the mounted Map and public types', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
   assert.equal(manifest.private, undefined);
-  assert.deepEqual(Object.keys(manifest.exports), ['.']);
+  assert.deepEqual(Object.keys(manifest.exports), publicManifestExports);
   const code = await readFile(new URL('dist/internal/camera.js', root), 'utf8');
   const imports: string[] = [];
   function visit(node: ts.Node): void {

@@ -50,6 +50,8 @@ test('is publishable with exact native peers and one ordinary public root', asyn
   ]);
   assert.deepEqual(manifest.exports, {
     '.': {types: './dist/index.d.ts', import: './dist/index.js', default: './dist/index.js'},
+    './app.plugin.js': './plugin/index.cjs',
+    './package.json': './package.json',
   });
   assert.deepEqual(manifest.files, nativePackageFiles);
   assert.equal(manifest.scripts.prepack, 'node ../../scripts/package-license.mjs --prepare');

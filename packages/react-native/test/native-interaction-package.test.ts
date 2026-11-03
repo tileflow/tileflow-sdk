@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {assertPublicWorkspaceManifest} from '../../../test-support/public-workspace-manifest.mjs';
 import {createNativeInteractionOwner} from '../src/native-interaction-owner';
+import {publicManifestExports} from './public-runtime';
 
 const root = new URL('../', import.meta.url);
 const modules = ['native-interaction-input', 'native-interaction-poi', 'native-interaction-owner'];
@@ -51,7 +52,7 @@ test('mounted public types do not export native handles, private ports or select
   assert.equal(manifest.dependencies['maplibre-gl'], undefined);
   assert.equal(manifest.peerDependencies['maplibre-gl'], undefined);
   assert.equal(manifest.private, undefined);
-  assert.deepEqual(Object.keys(manifest.exports), ['.']);
+  assert.deepEqual(Object.keys(manifest.exports), publicManifestExports);
   assert.ok(manifest.files.includes('docs'));
   const lock = await readFile(new URL('../../pnpm-lock.yaml', root), 'utf8');
   const importer = lock.split('  packages/react-native:\n')[1]?.split('\n  packages/')[0];

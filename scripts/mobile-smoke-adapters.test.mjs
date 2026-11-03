@@ -8,6 +8,7 @@ import {buildMobileAndroid, buildMobileIos} from './mobile-smoke-native.mjs';
 import {packMobilePackages} from './mobile-smoke-pack.mjs';
 import {
   createMobileContext,
+  readMobileFile,
   withMobileWorkspace,
   writeMobileFile,
   writeMobileJson,
@@ -19,8 +20,8 @@ const nativeConfig = {
     platforms: {
       android: {
         sourceDir: 'android',
-        packageImportPath: 'import dev.tileflow.reactnative.TileflowNativeAdmissionPackage;',
-        packageInstance: 'new TileflowNativeAdmissionPackage()',
+        packageImportPath: 'import dev.tileflow.reactnative.TileflowReactNativePackage;',
+        packageInstance: 'new TileflowReactNativePackage()',
       },
       ios: {},
     },
@@ -65,9 +66,12 @@ test('staged build and pack adapters use pnpm, fresh output and license inputs w
     'react-native.config.cjs',
     'android/build.gradle',
     'android/src/main/java/Fixture.kt',
-    'ios/tileflow_native_admission.rb',
+    'ios/tileflow_post_install.rb',
     'ios/Fixture.mm',
-    'TileflowNativeAdmission.podspec',
+    'ios/Sources/Fixture.swift',
+    'src/specs/NativeFixture.ts',
+    'plugin/index.cjs',
+    'TileflowReactNative.podspec',
   ];
   for (const name of mobilePackages) {
     const manifest = {
@@ -189,6 +193,23 @@ test('staged build and pack adapters use pnpm, fresh output and license inputs w
   }
 });
 
+/** A native candidate as scripts/native-release-prepare.mjs writes it, with no real artifacts. */
+async function nativeCandidate(root) {
+  const directory = join(root, 'candidate');
+  await writeMobileJson(root, join(directory, 'candidate.json'), {
+    schemaVersion: 1,
+    version: '0.0.0-local.1',
+    swift: {path: 'swift'},
+  });
+  await writeMobileFile(root, join(directory, 'swift', 'Package.swift'), '// Fixture.\n');
+  await writeMobileFile(
+    root,
+    join(directory, 'maven/dev/tileflow/tileflow-sdk/0.0.0-local.1/tileflow-sdk-0.0.0-local.1.pom'),
+    '<project/>\n',
+  );
+  return directory;
+}
+
 for (const kind of ['expo', 'bare']) {
   test(`${kind} Android adapter checks Release APK metadata and embedded Hermes`, async (t) => {
     const parent = await fixtureParent(t);
@@ -201,8 +222,15 @@ for (const kind of ['expo', 'bare']) {
           join(android, 'gradle', 'wrapper', 'gradle-wrapper.properties'),
           'distributionUrl=https\\://services.gradle.org/distributions/gradle-9.0.0-bin.zip\n',
         );
+        await writeMobileFile(root, join(android, 'gradle.properties'), 'hermesEnabled=true\n');
+        await writeMobileFile(
+          root,
+          join(android, 'build.gradle'),
+          'buildscript {\n  ext {\n    minSdkVersion = 24\n  }\n}\n',
+        );
         let bundle = bytecode();
         const context = await createMobileContext(root, {
+          environment: {TILEFLOW_NATIVE_CANDIDATE: await nativeCandidate(root)},
           run: async (command, args) => {
             if (command === 'unzip') {
               assert.equal(args[2], 'assets/index.android.bundle');
@@ -225,6 +253,18 @@ for (const kind of ['expo', 'bare']) {
         });
         const receipt = await buildMobileAndroid(context, consumer);
         assert.equal(receipt.configuration, 'Release');
+        assert.equal(receipt.nativeCandidate, '0.0.0-local.1');
+        const properties = (
+          await readMobileFile(root, join(android, 'gradle.properties'))
+        ).toString();
+        assert.match(properties, /^tileflowNativeVersion=0\.0\.0-local\.1$/mu);
+        assert.match(properties, /^android\.minSdkVersion=26$/mu);
+        const build = (await readMobileFile(root, join(android, 'build.gradle'))).toString();
+        assert.match(build, /minSdkVersion = 26/u);
+        assert.match(
+          build,
+          /allprojects \{\n {2}repositories \{\n {4}maven \{ url = uri\(".*candidate\/maven"\) \}/u,
+        );
         assert.equal(receipt.files[0].hermes.version, 96);
         assert.equal(receipt.files[0].name, `${kind}/app-release.apk`);
         assert.equal(JSON.stringify(receipt).includes(root), false);
@@ -246,15 +286,29 @@ for (const kind of ['expo', 'bare']) {
         };
         const productDirectory = join(root, `derived-${kind}`, 'nonstandard', 'Products');
         const wrapper = `${consumer.scheme}.app`;
+        const ios = join(consumer.directory, 'ios');
+        await writeMobileFile(
+          root,
+          join(ios, 'Podfile'),
+          'platform :ios, min_ios_version_supported\n',
+        );
+        await writeMobileFile(
+          root,
+          join(ios, `${consumer.scheme}.xcodeproj`, 'project.pbxproj'),
+          'IPHONEOS_DEPLOYMENT_TARGET = 15.1;\n',
+        );
+        const candidate = await nativeCandidate(root);
         let bundle = bytecode();
         const context = await createMobileContext(root, {
-          run: async (command, args) => {
+          environment: {TILEFLOW_NATIVE_CANDIDATE: candidate},
+          run: async (command, args, options) => {
             if (command === 'pod') {
               assert.deepEqual(args, ['install']);
+              assert.equal(options.env.TILEFLOW_SWIFT_PACKAGE_PATH, join(candidate, 'swift'));
               await writeMobileFile(
                 root,
                 join(consumer.directory, 'ios', 'Podfile.lock'),
-                'TileflowNativeAdmission (0.1.0-alpha.16)\nMapLibreReactNative (11.5.0)\n',
+                'TileflowReactNative (0.1.0-alpha.16)\nMapLibreReactNative (11.5.0)\n',
               );
               return output();
             }
@@ -287,6 +341,11 @@ for (const kind of ['expo', 'bare']) {
         });
         const receipt = await buildMobileIos(context, consumer);
         assert.equal(receipt.destination, 'simulator');
+        assert.equal(receipt.nativeCandidate, '0.0.0-local.1');
+        assert.equal(
+          (await readMobileFile(root, join(ios, 'Podfile'))).toString(),
+          "platform :ios, '16.0'\n",
+        );
         assert.equal(receipt.hermes.version, 96);
         assert.equal(receipt.files[1].name, `${kind}/${wrapper}/main.jsbundle`);
         assert.equal(JSON.stringify(receipt).includes(root), false);

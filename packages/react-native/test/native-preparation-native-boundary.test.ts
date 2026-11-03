@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
+import {publicManifestExports} from './public-runtime';
 
 const root = new URL('../', import.meta.url);
 const read = (path: string) => readFile(new URL(path, root), 'utf8');
@@ -39,10 +40,10 @@ test('native document modules carry no grant or application-configuration input'
 
 test('native document and catalog sources use the existing package globs and installation package', async () => {
   const android = await read(
-    'android/src/main/java/dev/tileflow/reactnative/TileflowNativeAdmissionPackage.kt',
+    'android/src/main/java/dev/tileflow/reactnative/TileflowReactNativePackage.kt',
   );
-  assert.match(android, /TileflowNativeDocumentsModule\(context\)/u);
-  const pod = await read('TileflowNativeAdmission.podspec');
+  assert.match(android, /TileflowNativeDocumentsModule\(reactContext\)/u);
+  const pod = await read('TileflowReactNative.podspec');
   assert.match(pod, /source_files\s*=\s*'ios\/\*\.\{h,mm\}'/u);
   assert.match(pod, /private_header_files\s*=\s*'ios\/\*\.h'/u);
   const module = await read('ios/TileflowNativeDocuments.mm');
@@ -53,7 +54,7 @@ test('native document and catalog sources use the existing package globs and ins
   assert.match(contract, /operations: 16/u);
   const manifest = JSON.parse(await read('package.json'));
   assert.equal(manifest.private, undefined);
-  assert.deepEqual(Object.keys(manifest.exports), ['.']);
+  assert.deepEqual(Object.keys(manifest.exports), publicManifestExports);
   assert.deepEqual(manifest.peerDependencies, {
     '@maplibre/maplibre-react-native': '11.5.0',
     react: '19.2.0',

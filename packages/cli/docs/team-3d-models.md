@@ -30,7 +30,8 @@ placeholder `tileflow://team-models/<name>`, which Hosted replaces with the mode
 map's Team; a model the Team has not published fails the deploy, and the deploy warns when a placed
 model's published version was prepared from other files than the map's. Models are served publicly
 and may be cached, so they must not hold secrets or restricted personal data. MapLibre Native draws
-no models, so a deploy with `--with-native` does not take them.
+no models: the deploy's native styles leave them out and record it, and the map still opens in
+native apps.
 
 See [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/buildings-3d.md#building-models)
 for how to prepare a model.

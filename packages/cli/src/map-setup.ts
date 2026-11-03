@@ -54,7 +54,55 @@ export type TeamResolution =
   | {kind: 'selected'; team: MapSetupTeam};
 
 const maximumOrigins = 20;
+const maximumOriginLength = 253;
 const exactHost = /^(?:[a-z0-9-]+(?:\.[a-z0-9-]+)*|\[[0-9a-f:.]+\])$/u;
+// `scheme://host[:port]` after lowercasing: an RFC 3986 scheme, the website host grammar and an
+// optional canonical decimal port. Nothing may follow, not even `/`.
+const appOrigin =
+  /^([a-z][a-z0-9+.-]*):\/\/((?:[a-z0-9-]+(?:\.[a-z0-9-]+)*)|\[[0-9a-f:.]+\])(?::(0|[1-9][0-9]{0,4}))?$/u;
+const leadingScheme = /^([a-z][a-z0-9+.-]*):/u;
+/**
+ * Android's default WebViewAssetLoader host is shared by every app that keeps it, so it names no
+ * single app under any scheme.
+ */
+const sharedAndroidWebViewHost = 'appassets.androidplatform.net';
+/**
+ * Schemes an app origin never uses: `http` and `https` follow the website rules; the others are
+ * special or local schemes with opaque, inherited or shared origins, and browser, extension or
+ * platform schemes that name privileged or foreign contexts rather than an app's own page.
+ */
+const reservedOriginSchemes = new Set([
+  'http',
+  'https',
+  'ws',
+  'wss',
+  'ftp',
+  'file',
+  'about',
+  'blob',
+  'data',
+  'filesystem',
+  'javascript',
+  'view-source',
+  'brave',
+  'chrome',
+  'chrome-search',
+  'chrome-untrusted',
+  'devtools',
+  'edge',
+  'opera',
+  'resource',
+  'vivaldi',
+  'chrome-extension',
+  'extension',
+  'moz-extension',
+  'ms-browser-extension',
+  'safari-extension',
+  'safari-web-extension',
+  'android-app',
+  'content',
+  'intent',
+]);
 const teamReference = /^@([A-Za-z0-9][A-Za-z0-9._-]{0,127})$/u;
 const setupKeyPattern = /^[\x21-\x7e]{8,128}$/u;
 
@@ -79,8 +127,26 @@ export function resolveMapSetupTeam(
     : {kind: 'none'};
 }
 
-/** Exact lowercase HTTP(S) origin, or null for paths, wildcards, credentials and bare hosts. */
+/**
+ * One exact lowercase origin that may load a Map, or null. A website origin is an HTTP(S) origin
+ * without a path; an app origin is the `scheme://host[:port]` of an app's WebView page served under
+ * its own custom scheme, such as `myapp://app`. Paths (even `/`), wildcards, credentials, bare hosts,
+ * `null`, reserved schemes and Android's shared WebView host are rejected.
+ */
 export function normalizeBrowserOrigin(value: string): string | null {
+  if (value !== value.trim() || value.length > maximumOriginLength) return null;
+  const lowered = value.toLowerCase();
+  const scheme = leadingScheme.exec(lowered)?.[1];
+  if (!scheme || lowered === 'null') return null;
+  if (scheme === 'http' || scheme === 'https') return normalizeWebsiteOrigin(value);
+  if (reservedOriginSchemes.has(scheme)) return null;
+  const match = appOrigin.exec(lowered);
+  if (!match || Number(match[3] ?? 0) > 65_535 || match[2] === sharedAndroidWebViewHost)
+    return null;
+  return lowered;
+}
+
+function normalizeWebsiteOrigin(value: string): string | null {
   let url: URL;
   try {
     url = new URL(value);
@@ -95,6 +161,7 @@ export function normalizeBrowserOrigin(value: string): string | null {
     url.search ||
     url.hash ||
     !exactHost.test(url.hostname) ||
+    url.hostname === sharedAndroidWebViewHost ||
     value.toLowerCase() !== url.origin.toLowerCase()
   ) {
     return null;
@@ -123,14 +190,14 @@ export function parseOriginList(
     const origin = normalizeBrowserOrigin(value.trim());
     if (!origin) {
       return {
-        error: `${JSON.stringify(value)} is not an exact website origin such as https://example.com (no path or wildcard).`,
+        error: `${JSON.stringify(value)} is not an exact website origin such as https://example.com or app origin such as myapp://app (no path or wildcard).`,
         ok: false,
       };
     }
     origins.add(origin);
   }
   if (origins.size === 0 || origins.size > maximumOrigins) {
-    return {error: `Enter between 1 and ${maximumOrigins} website origins.`, ok: false};
+    return {error: `Enter between 1 and ${maximumOrigins} origins.`, ok: false};
   }
   return {ok: true, value: {kind: 'selected', origins: [...origins].sort()}};
 }
@@ -272,7 +339,7 @@ export function createTerminalPrompts(json = false): MapSetupPrompts | null {
       );
       if (mode === null) return null;
       if (mode === 'any') return {kind: 'any'};
-      return ask('Website origins, separated by spaces (https://example.com)', (value) => {
+      return ask('Origins, separated by spaces (https://example.com, myapp://app)', (value) => {
         const parsed = parseOriginList(value.split(/[\s,]+/u).filter(Boolean));
         if (!parsed.ok) console.log(`  ${pc.yellow(parsed.error)}`);
         return parsed.ok ? parsed.value : null;

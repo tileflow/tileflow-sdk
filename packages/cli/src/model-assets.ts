@@ -5,6 +5,7 @@ import type {
   TileflowPreparedMapAssets,
 } from '@tileflow/core/build';
 import {
+  type compileTileflowIconPackages,
   type PreparedTileflowBuildingModel,
   prepareTileflowMapTreeModels,
 } from '@tileflow/dev/icons';
@@ -87,4 +88,30 @@ export function teamModelSources(
   return buildings.length > 0
     ? Object.fromEntries(buildings.map(([id, model]) => [id, model.sources]))
     : undefined;
+}
+
+type CompiledProjectIcons = Awaited<ReturnType<typeof compileTileflowIconPackages>>;
+
+/** Each map's prepared assets with its compiled icon package bound at `resolveSprite`. */
+export function compiledMapAssets(
+  compiled: CompiledProjectIcons,
+  resolveSprite: (binding: CompiledProjectIcons['bindings'][number]) => string,
+  modelAssets: Record<string, TileflowPreparedMapAssets>,
+): Record<string, TileflowPreparedMapAssets> {
+  return {
+    ...modelAssets,
+    ...Object.fromEntries(
+      compiled.bindings.map((binding) => [
+        binding.mapName,
+        {
+          ...modelAssets[binding.mapName],
+          icons: {
+            ids: binding.iconIds,
+            sprite: resolveSprite(binding),
+            ...(binding.appearances ? {appearances: binding.appearances} : {}),
+          },
+        },
+      ]),
+    ),
+  };
 }

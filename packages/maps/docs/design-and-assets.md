@@ -196,8 +196,8 @@ through a `poi.pictogram.<id>` image token and each category's default pictogram
 default pictogram. The pictograms keep the CC0 Maki provenance documented in
 `THIRD_PARTY_NOTICES.md`.
 
-Regional hillshade uses the public Mapterhorn TileJSON endpoint with Terrarium encoding, from
-z5 to before z14. Day and night use separate highlight, accent, and shadow tokens. The DEM is a
+Regional hillshade uses Tileflow Terrain (Mapterhorn data, Terrarium encoding) from z5 to before
+z14, reading its tiles no deeper than z11. Day and night use separate highlight, accent, and shadow tokens. The DEM is a
 remote runtime dependency with its own attribution, and `terrain: 'none'` removes it. The layer
 adds shaded relief without displacing geometry. Flat building footprints, runtime-toggle
 extrusions, and the existing vegetation renderer remain separate from the hillshade.

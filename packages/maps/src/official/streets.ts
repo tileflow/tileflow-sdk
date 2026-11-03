@@ -1556,16 +1556,14 @@ export const streets = bindOfficialMapTheme(
     },
     icons: [streetsIcons],
     models: [streetsModels],
-    // Global regional relief: native resolution is capped independently of visibility.
-    // Higher zooms reuse z12 DEM tiles instead of requesting unavailable local detail.
+    // Global regional relief from Tileflow Terrain: native resolution is capped independently of
+    // visibility. Its 512-pixel tiles to z11 hold the ground resolution of 256-pixel tiles to z12;
+    // higher zooms reuse them instead of requesting local detail.
     terrain: {
       mode: 'hillshade',
       encoding: 'terrarium',
-      tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      maxZoom: 12,
-      attribution:
-        'Terrain: <a href="https://github.com/tilezen/joerd/blob/master/docs/attribution.md">© Mapzen, data sources</a>',
+      maxZoom: 11,
+      attribution: 'Terrain: <a href="https://mapterhorn.com/attribution">© Mapterhorn</a>',
       hillshade: {
         minZoom: 5,
         maxZoom: 14,

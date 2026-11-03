@@ -18,16 +18,19 @@ jobs:
         api: [35, 36]
         trial: [1]
         configuration:
+          - name: lavapipe-one-thread
+            gpu: lavapipe
+            threads: 1
           - name: lavapipe-two-threads
             gpu: lavapipe
             threads: 2
-          - name: mesa-host-two-threads
+          - name: mesa-host-two-threads-no-vulkan
             gpu: host
             threads: 2
+            options: -feature -Vulkan
     env:
       TILEFLOW_PROBE_DISPLAY: native
       LP_NUM_THREADS: ${{ matrix.configuration.threads }}
-      DISPLAY: ':99'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -64,6 +67,7 @@ jobs:
         if: matrix.configuration.gpu == 'host'
         run: |
           Xvfb :99 -screen 0 360x800x24 -ac > "$RUNNER_TEMP/xvfb.log" 2>&1 &
+          echo 'DISPLAY=:99' >> "$GITHUB_ENV"
       - name: Start fixture map server
         run: |
           nohup node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
@@ -79,7 +83,7 @@ jobs:
           cores: 2
           ram-size: 4096M
           disk-size: 6000M
-          emulator-options: -no-window -gpu ${{ matrix.configuration.gpu }} -no-snapshot -noaudio -no-boot-anim
+          emulator-options: -no-window -gpu ${{ matrix.configuration.gpu }} -no-snapshot -noaudio -no-boot-anim ${{ matrix.configuration.options }}
           pre-emulator-launch-script: python3 scripts/mobile-emulator-screen-probe.py
           # Camera, annotation and shot tests require motion; disabling it also requests reduced motion in WebView.
           disable-animations: false

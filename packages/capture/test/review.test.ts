@@ -30,10 +30,17 @@ const dataIdentity: TileflowCaptureDataInput = {
   kind: 'tileflow-world',
   product: 'world-v1',
   releaseId: 'world-v1-review-fixture',
-  schema: 'openmaptiles',
+  schema: 'tileflow-world',
   schemaVersion: 1,
-  semantics: {parkLayer: 'protected-only'},
   sourceId: 'tileflow',
+  sources: [
+    {
+      archiveSha256: '1'.repeat(64),
+      contractSha256: '2'.repeat(64),
+      dataContractSha256: '3'.repeat(64),
+      id: 'world',
+    },
+  ],
 };
 
 test('compares deliberate map, theme, and style variants without creating baseline semantics', async () => {
@@ -162,7 +169,7 @@ test('reports right-minus-left appearance metrics for one physical review region
   );
 });
 
-test('rejects definitions, PNG bytes, and capture metadata that do not match schema-v4 receipts', async () => {
+test('rejects definitions, PNG bytes, and capture metadata that do not match schema-v5 receipts', async () => {
   const left = await createReviewCapture({
     color: [10, 20, 30, 255],
     definition: mapDefinition('left-map', 'day'),

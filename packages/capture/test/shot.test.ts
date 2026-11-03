@@ -41,16 +41,9 @@ const style: MapLibreStyle = {version: 8, name: 'Shot fixture', sources: {}, lay
 const styles = {dark: {...style, name: 'Dark fixture'}, light: style};
 const data = {
   bindings: {fields: {class: 'class'}, layers: {road: 'transportation'}},
-  capabilities: {
-    businessCorridor: false,
-    bathymetry: false,
-    canopy: false,
-    globalLandcover: false,
-    tree: false,
-  },
   kind: 'vector-tiles',
   schema: 'openmaptiles',
-  schemaVersion: 1,
+  schemaVersion: 2,
   semantics: {parkLayer: 'mixed'},
   sourceId: 'tileflow',
   url: '/tiles.json',

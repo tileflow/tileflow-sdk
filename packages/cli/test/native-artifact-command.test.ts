@@ -9,8 +9,20 @@ import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {tileflowMapFixture} from './map-fixture';
 
-const completeStreetsConfig =
-  "import {defineMap} from '@tileflow/core';import {streets} from '@tileflow/maps';export default defineMap({id:'main',version:1,extends:streets});\n";
+// Image extraction is a generic native capability. Its fixture must declare an
+// image explicitly instead of depending on Streets' optional climate artwork.
+const completeStreetsConfig = `
+import {defineMap, land} from '@tileflow/core';
+import {streets} from '@tileflow/maps';
+export default defineMap({
+  id: 'main', version: 1, extends: streets,
+  modules: {land: land({globalLandcoverUnderlay: {
+    url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGP4DwQACfsD/fteaysAAAAASUVORK5CYII=',
+    coordinates: [[-180, 85], [180, 85], [180, -85], [-180, -85]],
+    attribution: 'Native image fixture',
+  }})},
+});
+`;
 
 async function fixture(
   t: {after(callback: () => Promise<void>): void},

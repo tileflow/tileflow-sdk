@@ -17,6 +17,7 @@ import {
   tileflowMapIdSchema,
 } from '@tileflow/core';
 import {
+  compactTileflowDeploymentArtifact,
   createTileflowMapBuildManifest,
   type TileflowBuildCatalog,
   type TileflowPreparedMapAssets,
@@ -98,6 +99,7 @@ import {
 import {registerFeatureInspectCommand} from './feature-inspect-command';
 import {
   apiProfileCanTargetMap,
+  assertHostedStyleBudget,
   fetchHostedMapStatus,
   pollDeviceToken,
   publishHostedStyle,
@@ -1046,6 +1048,7 @@ addMapSetupOptions(
         mapAssetsWithBuildingModels(modelAssets, {hosted: true}),
       );
       const compiledPreflightStyles = createTileflowStyles(deploymentProject, {
+        runtimeColors: true,
         apiBaseUrl: apiUrl,
         mapAssets: preflightMapAssets,
       });
@@ -1079,6 +1082,69 @@ addMapSetupOptions(
         printNextSteps(['Use self-hosted delivery or an explicit public glyph provider.']);
         process.exitCode = 1;
         return;
+      }
+
+      // Count the complete compact web envelope before creating a Map or uploading resources.
+      // Preflight resource URLs are conservative; final confirmed URLs are checked again.
+      for (const mapName of mapNames) {
+        const map = deploymentProject.maps[mapName]!;
+        const family = prepareTileflowHostedThemeFamily(
+          mapName,
+          map,
+          preflightFonts.styles[mapName]!,
+        );
+        const binding = bindingsByMap.get(mapName);
+        const iconPackage = binding && packagesByHash.get(binding.packageHash);
+        const manifest = await createTileflowMapBuildManifest(
+          {
+            [mapName]: {
+              map,
+              lineage: deploymentProject.mapMetadata?.[mapName]?.lineage ?? [
+                {id: map.id, mapVersion: map.version},
+              ],
+              assets: (iconPackage?.files ?? []).map((file) => ({
+                contentType: file.contentType,
+                fileName: `icons/${mapName}/${file.fileName}`,
+                source: file.source,
+              })),
+              sourceAssets: {
+                fonts: preflightFonts.sourceIdentities[mapName] ?? [],
+                icons: compiledIcons.sourceIdentities[mapName] ?? [],
+                ...(compiledIcons.compositions[mapName]
+                  ? {iconComposition: compiledIcons.compositions[mapName]}
+                  : {}),
+                ...(hostedModelSourceIdentities(modelAssets, mapName)
+                  ? {models: hostedModelSourceIdentities(modelAssets, mapName)}
+                  : {}),
+              },
+              styles: family.styles,
+            },
+          },
+          {provenance: await createTileflowBuildProvenance(process.cwd())},
+        );
+        assertHostedStyleBudget({
+          artifact: compactTileflowDeploymentArtifact({
+            kind: 'tileflow-map-deployment',
+            schemaVersion: 1,
+            mapId: mapName,
+            buildManifest: manifest,
+            styles: family.styles,
+            teamSources: family.teamSources,
+          }),
+          environment: mapName,
+          managedMapId: options.mapId ?? 'map_preflight0000000',
+          usageMode: 'session',
+          source,
+          ...(iconPackage
+            ? {iconPackage: {contentHash: iconPackage.contentHash, label: binding!.label}}
+            : {}),
+          ...(compiledIcons.compositions[mapName]
+            ? {iconComposition: compiledIcons.compositions[mapName]}
+            : {}),
+          ...(teamModelSources(modelAssets, mapName)
+            ? {teamModelSources: teamModelSources(modelAssets, mapName)}
+            : {}),
+        });
       }
 
       let outputManifest: DeployedManifest | null = null;
@@ -1157,6 +1223,7 @@ addMapSetupOptions(
         mapAssetsWithBuildingModels(modelAssets, {hosted: true}),
       );
       const compiledHostedStyles = createTileflowStyles(deploymentProject, {
+        runtimeColors: true,
         apiBaseUrl: api.apiUrl,
         mapAssets: hostedMapAssets,
       });
@@ -1385,6 +1452,7 @@ addMapSetupOptions(
           environment: mapName,
           mapId: body.mapId,
           ...(resolvedMap.systemThemes ? {systemThemes: resolvedMap.systemThemes} : {}),
+          ...(body.familyUrl ? {familyUrl: body.familyUrl} : {}),
           ...(resolvedMap.timeOfDay && Object.keys(resolvedMap.timeOfDay).length
             ? {timeOfDay: resolvedMap.timeOfDay}
             : {}),
@@ -1428,10 +1496,12 @@ addMapSetupOptions(
         apiUrl: api.apiUrl,
         maps: {...(existingManifest?.maps ?? {}), ...deployedMaps},
         version: Object.values({...existingManifest?.maps, ...deployedMaps}).some(
-          (map) => map.timeOfDay,
+          (map) => map.familyUrl,
         )
-          ? 2
-          : 1,
+          ? 3
+          : Object.values({...existingManifest?.maps, ...deployedMaps}).some((map) => map.timeOfDay)
+            ? 2
+            : 1,
       });
 
       logSuccess('Deployed Tileflow maps.');

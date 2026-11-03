@@ -883,7 +883,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           initialRuntimeStyle.theme === undefined
             ? undefined
             : createTileflowThemeController({
-                initial: initialRuntimeStyle,
+                initial: prepared.family ? prepared : initialRuntimeStyle,
                 initialStyle: prepared.style,
                 styleLoadOptions,
                 map,

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {createTileflowThemeController, loadTileflowRuntimeStyle} from '../src/browser';
+import {createTileflowStyleFamily, materializeTileflowStyleFamily} from '../src/style-family';
 import type {MapLibreStyle} from '../src/types';
 
 const documentUrl = 'https://maps.example/app/generations/123/styles/city/light.json';
@@ -189,6 +190,122 @@ test('keeps signed absolute URLs and protocol-owned source documents unchanged',
   assert.deepEqual(loaded.style.sources, input.sources);
 });
 
+test('prepares family resources with the request policy and reuses them for appearances and rebuilds', async () => {
+  const variant = (color: string): MapLibreStyle => ({
+    ...emptyStyle(),
+    sprite: './icons/sprite',
+    glyphs: './fonts/{fontstack}/{range}.pbf',
+    'font-faces': {Sans: './fonts/sans.woff2'},
+    sources: {world: {type: 'vector', url: './data/world.json'}},
+    metadata: {'tileflow:vegetation': {models: [{url: './models/tree.glb'}]}},
+    layers: [{id: 'background', type: 'background', paint: {'background-color': color}}],
+  });
+  const family = createTileflowStyleFamily({light: variant('#ffffff'), dark: variant('#000000')});
+  const before = JSON.stringify(family);
+  const requests: string[] = [];
+  const prepared = await loadTileflowRuntimeStyle(
+    {theme: 'light', style: documentUrl, familyUrl: '/family.json'},
+    {
+      baseUrl: 'https://app.example/nested/page',
+      transformRequest: (url, type) => ({
+        url: type === 'Style' ? 'https://cdn.example/published/family.json' : url,
+        headers: {Authorization: 'family-token'},
+      }),
+      fetch: async (url, init) => {
+        assert.deepEqual(init?.headers, {Authorization: 'family-token'});
+        requests.push(String(url));
+        return json(requests.length === 1 ? family : {tiles: ['./tiles/{z}/{x}/{y}.pbf']});
+      },
+    },
+  );
+  assert.deepEqual(requests, [
+    'https://cdn.example/published/family.json',
+    'https://cdn.example/published/data/world.json',
+  ]);
+  assert.equal(prepared.style.sprite, 'https://cdn.example/published/icons/sprite');
+  assert.equal(
+    prepared.style.glyphs,
+    'https://cdn.example/published/fonts/{fontstack}/{range}.pbf',
+  );
+  assert.deepEqual(prepared.style['font-faces'], {
+    Sans: 'https://cdn.example/published/fonts/sans.woff2',
+  });
+  assert.deepEqual(prepared.style.metadata!['tileflow:vegetation'], {
+    models: [{url: 'https://cdn.example/published/models/tree.glb'}],
+  });
+  assert.equal(JSON.stringify(family), before);
+  const listeners = new Map<string, Set<() => void>>();
+  const applied: MapLibreStyle[] = [];
+  const controller = createTileflowThemeController({
+    initial: prepared,
+    loadFonts: async () => {},
+    styleLoadOptions: {fetch: async () => assert.fail('a prepared family must be reused')},
+    map: {
+      on(type, handler) {
+        const handlers = listeners.get(type) ?? new Set();
+        handlers.add(handler);
+        listeners.set(type, handlers);
+      },
+      off(type, handler) {
+        listeners.get(type)?.delete(handler);
+      },
+      setPaintProperty() {},
+      setStyle(style) {
+        applied.push(style as MapLibreStyle);
+        queueMicrotask(() => {
+          for (const handler of listeners.get('style.load') ?? []) handler();
+        });
+      },
+    },
+  });
+  const target = {theme: 'dark', familyUrl: '/family.json', style: documentUrl};
+  assert.equal((await controller.setTheme(target, {transition: {duration: 0}})).status, 'applied');
+  assert.equal(applied.length, 0, 'appearance changes retain the map sources');
+  assert.equal(
+    (await controller.setTheme(target, {rebuild: true, transition: {duration: 0}})).status,
+    'applied',
+  );
+  assert.equal(applied.length, 1);
+  assert.equal(applied[0]!.sources.world!.url, undefined);
+  assert.deepEqual(applied[0]!.sources.world!.tiles, [
+    'https://cdn.example/published/data/tiles/{z}/{x}/{y}.pbf',
+  ]);
+  assert.equal(applied[0]!.sprite, prepared.style.sprite);
+  controller.dispose();
+});
+
+test('prepares structural family variants without fetching a shared TileJSON twice', async () => {
+  const variant = (sprite: string): MapLibreStyle => ({
+    ...emptyStyle(),
+    sprite,
+    sources: {world: {type: 'vector', url: './world.json'}},
+  });
+  const family = createTileflowStyleFamily({
+    light: variant('./light/sprite'),
+    dark: variant('./dark/sprite'),
+  });
+  assert.equal(family.updates.appearanceOnly, false);
+  const requests: string[] = [];
+  const prepared = await loadTileflowRuntimeStyle(
+    {theme: 'light', style: documentUrl, familyUrl: 'https://maps.example/family.json'},
+    {
+      fetch: async (url) => {
+        requests.push(String(url));
+        return json(
+          String(url).endsWith('/family.json') ? family : {tiles: ['./tiles/{z}/{x}/{y}.pbf']},
+        );
+      },
+    },
+  );
+  assert.deepEqual(requests, [
+    'https://maps.example/family.json',
+    'https://maps.example/world.json',
+  ]);
+  const dark = materializeTileflowStyleFamily(prepared.family!, 'dark');
+  assert.equal(dark.sprite, 'https://maps.example/dark/sprite');
+  assert.deepEqual(dark.sources.world!.tiles, ['https://maps.example/tiles/{z}/{x}/{y}.pbf']);
+});
+
 test('uses the fetched style document location and requires an explicit base outside a browser', async () => {
   const loaded = await loadTileflowRuntimeStyle(
     {style: '/light.json'},
@@ -317,35 +434,41 @@ test('theme changes prepare relative sprites and rollback uses the last prepared
   controller.dispose();
 });
 
-test('disposing a theme controller aborts preparation without applying the late result', async () => {
-  let started!: () => void;
-  const ready = new Promise<void>((resolve) => {
-    started = resolve;
-  });
-  let signal: AbortSignal | undefined;
-  const controller = createTileflowThemeController({
-    initial: {theme: 'light', style: emptyStyle()},
-    map: {
-      on() {},
-      off() {},
-      setStyle() {
-        assert.fail('disposed controller applied a style');
+for (const resource of ['style', 'family']) {
+  test(`disposing a theme controller aborts ${resource} preparation without applying the late result`, async () => {
+    let started!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      started = resolve;
+    });
+    let signal: AbortSignal | undefined;
+    const controller = createTileflowThemeController({
+      initial: {theme: 'light', style: emptyStyle()},
+      map: {
+        on() {},
+        off() {},
+        setStyle() {
+          assert.fail('disposed controller applied a style');
+        },
       },
-    },
-    loadFonts: async () => {},
-    styleLoadOptions: {
-      fetch: async (_url, init) => {
-        signal = init!.signal!;
-        started();
-        return new Promise((_resolve, reject) =>
-          signal!.addEventListener('abort', () => reject(signal!.reason), {once: true}),
-        );
+      loadFonts: async () => {},
+      styleLoadOptions: {
+        fetch: async (_url, init) => {
+          signal = init!.signal!;
+          started();
+          return new Promise((_resolve, reject) =>
+            signal!.addEventListener('abort', () => reject(signal!.reason), {once: true}),
+          );
+        },
       },
-    },
+    });
+    const change = controller.setTheme({
+      theme: 'dark',
+      style: documentUrl,
+      ...(resource === 'family' ? {familyUrl: 'https://maps.example/family.json'} : {}),
+    });
+    await ready;
+    controller.dispose();
+    assert.equal(signal?.aborted, true);
+    assert.equal((await change).status, 'superseded');
   });
-  const change = controller.setTheme({theme: 'dark', style: documentUrl});
-  await ready;
-  controller.dispose();
-  assert.equal(signal?.aborted, true);
-  assert.equal((await change).status, 'superseded');
-});
+}

@@ -1,5 +1,15 @@
 import {readBoundedTileflowBrowserResource} from './browser-resource';
 import type {TileflowRuntimeStyle} from './runtime';
+import {
+  createTileflowStyleFamily,
+  expandTileflowFamilyTemplate,
+  expandTileflowStyleFamily,
+  materializeTileflowStyleFamily,
+  parseTileflowStyleFamily,
+  type TileflowStyleFamily,
+  withTileflowFamilyTemplate,
+} from './style-family';
+import {prepareTileflowStyleFamilyForRendering} from './style-family-render';
 import type {MapLibreStyle} from './types';
 
 /** Request options understood by both fetch and MapLibre's transformRequest. */
@@ -34,6 +44,48 @@ export type TileflowLoadedRuntimeStyle = TileflowRuntimeStyle & {style: MapLibre
 export async function loadTileflowRuntimeStyle(
   runtime: TileflowRuntimeStyle,
   options: TileflowRuntimeStyleLoadOptions = {},
+): Promise<TileflowLoadedRuntimeStyle> {
+  options.signal?.throwIfAborted();
+  if (runtime.familyUrl && runtime.theme && !runtime.family) {
+    const family = await loadTileflowRuntimeStyleFamily(runtime.familyUrl, options);
+    runtime = {...runtime, family, style: materializeTileflowStyleFamily(family, runtime.theme)};
+  }
+  return prepareRuntimeStyle(runtime, options);
+}
+
+/** Prepare every family variant once so appearance changes and rebuilds share resolved resources. */
+export async function loadTileflowRuntimeStyleFamily(
+  url: string,
+  options: TileflowRuntimeStyleLoadOptions = {},
+): Promise<TileflowStyleFamily> {
+  const owner = options.baseUrl ?? globalThis.document?.baseURI;
+  const document = await loadDocument(resolveResource(url, owner), 'Style', options);
+  const family = parseTileflowStyleFamily(document.value);
+  const tileJSON = new Map<string, ReturnType<typeof loadDocument>>();
+  const prepare = async (style: MapLibreStyle) =>
+    (await prepareRuntimeStyle({style}, {...options, baseUrl: document.url}, tileJSON)).style;
+  const resolved = family.updates.appearanceOnly
+    ? withTileflowFamilyTemplate(
+        family,
+        await prepare(expandTileflowFamilyTemplate(family) as unknown as MapLibreStyle),
+      )
+    : createTileflowStyleFamily(
+        Object.fromEntries(
+          await Promise.all(
+            Object.entries(expandTileflowStyleFamily(family)).map(async ([theme, style]) => [
+              theme,
+              await prepare(style),
+            ]),
+          ),
+        ),
+      );
+  return prepareTileflowStyleFamilyForRendering(resolved);
+}
+
+async function prepareRuntimeStyle(
+  runtime: TileflowRuntimeStyle,
+  options: TileflowRuntimeStyleLoadOptions,
+  tileJSON = new Map<string, ReturnType<typeof loadDocument>>(),
 ): Promise<TileflowLoadedRuntimeStyle> {
   options.signal?.throwIfAborted();
   let owner = options.baseUrl ?? globalThis.document?.baseURI;
@@ -76,21 +128,21 @@ export async function loadTileflowRuntimeStyle(
           ? {...face, source: resolve(face.source)}
           : face,
       );
-    const buildings = style.metadata['tileflow:buildings'];
-    if (isRecord(buildings)) {
-      const resolved = {...buildings};
-      if (Array.isArray(buildings.models))
-        resolved.models = buildings.models.map((model: unknown) =>
+    for (const key of ['tileflow:buildings', 'tileflow:vegetation']) {
+      const descriptor = style.metadata[key];
+      if (!isRecord(descriptor)) continue;
+      const resolved = {...descriptor};
+      if (Array.isArray(descriptor.models))
+        resolved.models = descriptor.models.map((model: unknown) =>
           isRecord(model) && typeof model.url === 'string'
             ? {...model, url: resolve(model.url)}
             : model,
         );
-      if (isRecord(buildings.landmarks) && typeof buildings.landmarks.url === 'string')
-        resolved.landmarks = {...buildings.landmarks, url: resolve(buildings.landmarks.url)};
-      style.metadata['tileflow:buildings'] = resolved;
+      if (isRecord(descriptor.landmarks) && typeof descriptor.landmarks.url === 'string')
+        resolved.landmarks = {...descriptor.landmarks, url: resolve(descriptor.landmarks.url)};
+      style.metadata[key] = resolved;
     }
   }
-  const tileJSON = new Map<string, ReturnType<typeof loadDocument>>();
   await Promise.all(
     Object.entries(style.sources).map(async ([id, original]) => {
       let source = {...original};

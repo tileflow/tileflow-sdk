@@ -163,6 +163,11 @@ public class AnnotationIntegrationTest {
 
     @Test
     public fun twoHundredViewsFollowAFastPan() {
+        val performanceMode =
+            InstrumentationRegistry.getArguments().getString("tileflowAnnotationPerformance", "strict")
+        require(performanceMode == "strict" || performanceMode == "report") {
+            "tileflowAnnotationPerformance must be strict or report"
+        }
         val activity = show()
         onMap(activity) { map ->
             map.jump(TileflowCamera(centre.longitude, centre.latitude, 13.0))
@@ -266,7 +271,8 @@ public class AnnotationIntegrationTest {
                     )
             )
             assertTrue("Too few position updates: ${lag.count}", lag.count >= 30)
-            assertTrue("Lag p95 $p95 ms", p95 < 100)
+            println("Tileflow: annotation performance mode $performanceMode; p95 budget <100 ms")
+            if (performanceMode == "strict") assertTrue("Lag p95 $p95 ms", p95 < 100)
             map.viewAnnotationManager.removeAllViewAnnotations()
             assertTrue(views.all { it.first.parent == null })
         }

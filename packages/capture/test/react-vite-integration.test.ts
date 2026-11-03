@@ -32,7 +32,7 @@ test(
       ),
       writeFile(join(cwd, 'main.tsx'), applicationSource),
       writeFile(join(cwd, 'tileflow.config.ts'), applicationConfig),
-      writeFrameworkMapFixture(cwd),
+      writeFrameworkMapFixture(cwd, undefined, {family: true}),
     ]);
     const vite = await createViteServer({
       cacheDir: join(cwd, '.vite-cache'),
@@ -54,7 +54,7 @@ test(
     const manifestResponse = await fetch(`${appOrigin}/tileflow/manifest.json`);
     const manifestBody = await manifestResponse.text();
     assert.equal(manifestResponse.status, 200, manifestBody);
-    assert.equal((JSON.parse(manifestBody) as {version?: unknown}).version, 2);
+    assert.equal((JSON.parse(manifestBody) as {version?: unknown}).version, 3);
     const originalListen = Server.prototype.listen;
     let additionalListeners = 0;
     Server.prototype.listen = function forbiddenAdditionalListener() {
@@ -136,7 +136,7 @@ test(
       ),
       writeFile(join(cwd, 'main.tsx'), builtApplicationSource),
       writeFile(join(cwd, 'tileflow.config.ts'), builtApplicationConfig),
-      writeFrameworkMapFixture(cwd),
+      writeFrameworkMapFixture(cwd, undefined, {family: true}),
     ]);
     await buildVite({
       base: '/app/',
@@ -222,7 +222,7 @@ test(
       ),
       writeFile(join(cwd, 'main.tsx'), minimumApplicationSource),
       writeFile(join(cwd, 'tileflow.config.ts'), minimumApplicationConfig),
-      writeFrameworkMapFixture(cwd),
+      writeFrameworkMapFixture(cwd, undefined, {family: true}),
     ]);
     const vite = await createViteServer({
       cacheDir: join(cwd, '.vite-cache'),

@@ -31,6 +31,25 @@ const validManifest = {
   version: 1,
 } as const satisfies TileflowRuntimeManifest;
 
+test('version 3 carries the shared family through load, map selection and runtime style resolution', async () => {
+  const manifestUrl = 'https://maps.example.test/maps/manifest.json';
+  const input = {
+    ...validManifest,
+    version: 3,
+    maps: {main: {...validManifest.maps.main, familyUrl: './families/main.json'}},
+  };
+  const manifest = await loadTileflowManifest(manifestUrl, {
+    fetch: async () => new Response(JSON.stringify(input)),
+  });
+  assert.ok(manifest);
+  const manifestMap = resolveTileflowManifestMap(manifest, 'main');
+  assert.ok(manifestMap);
+  const runtime = resolveTileflowRuntimeStyle({source: {map: 'main', manifestUrl}, manifestMap});
+  assert.equal(runtime?.familyUrl, 'https://maps.example.test/maps/families/main.json');
+  assert.equal(runtime?.style, 'https://maps.example.test/maps/styles/main/light.json');
+  clearTileflowManifestCache();
+});
+
 test('creates one multi-theme manifest and transports configured views', () => {
   const manifest = createManifest(
     {
@@ -155,7 +174,7 @@ test('canonical schema rejects drift, unsafe resources, and invalid theme relati
     tileflowRuntimeManifestSchema.safeParse({...validManifest, extra: true}).success,
     false,
   );
-  assert.throws(() => parseTileflowRuntimeManifest({...validManifest, version: 3}));
+  assert.throws(() => parseTileflowRuntimeManifest({...validManifest, version: 4}));
   assert.throws(() =>
     parseTileflowRuntimeManifest({
       ...validManifest,

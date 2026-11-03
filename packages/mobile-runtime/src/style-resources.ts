@@ -1,4 +1,12 @@
-import type {TileflowRuntimeStyle} from '@tileflow/core/runtime';
+import {
+  expandTileflowFamilyTemplate,
+  loadTileflowStyleFamily,
+  materializeTileflowStyleFamily,
+  prepareTileflowStyleFamilyForRendering,
+  type TileflowRuntimeStyle,
+  type TileflowStyleFamily,
+  withTileflowFamilyTemplate,
+} from '@tileflow/core/runtime';
 import {ProtocolError} from './protocol';
 
 type Style = Exclude<TileflowRuntimeStyle['style'], string>;
@@ -26,6 +34,7 @@ export function absoluteResource(value: string, document: string): string {
 export function createStyleResourceLoader(fetchResource: typeof fetch, signal: AbortSignal) {
   const styles = new Map<string, Promise<Style>>();
   const tilejson = new Map<string, Promise<RecordValue>>();
+  const families = new Map<string, Promise<TileflowStyleFamily>>();
   const read = async (url: string): Promise<RecordValue> => {
     const response = await fetchResource(url, {signal});
     if (!response.ok)
@@ -48,8 +57,8 @@ export function createStyleResourceLoader(fetchResource: typeof fetch, signal: A
     }
     return pending;
   };
-  const loadDocument = async (url: string): Promise<Style> => {
-    const style = structuredClone(await read(url));
+  const loadDocument = async (url: string, input?: RecordValue): Promise<Style> => {
+    const style = structuredClone(input ?? (await read(url)));
     if (
       style.version !== 8 ||
       !record(style.sources) ||
@@ -152,6 +161,38 @@ export function createStyleResourceLoader(fetchResource: typeof fetch, signal: A
   return {
     load,
     async prepare(style: TileflowRuntimeStyle): Promise<TileflowRuntimeStyle> {
+      if (style.familyUrl && style.theme) {
+        let pending = families.get(style.familyUrl);
+        if (!pending) {
+          const url = style.familyUrl;
+          pending = loadTileflowStyleFamily(url, {fetch: fetchResource, signal})
+            .then(async (family) => {
+              if (!family.updates.appearanceOnly) return family;
+              const template = await loadDocument(
+                url,
+                expandTileflowFamilyTemplate(family) as RecordValue,
+              );
+              return prepareTileflowStyleFamilyForRendering(
+                withTileflowFamilyTemplate(family, template),
+              );
+            })
+            .catch((error: unknown) => {
+              families.delete(url);
+              throw error;
+            });
+          families.set(url, pending);
+          if (families.size > 4) families.delete(families.keys().next().value!);
+        }
+        const family = await pending;
+        if (family.updates.appearanceOnly)
+          return {...style, family, style: materializeTileflowStyleFamily(family, style.theme)};
+        // Native transport preparation remains authoritative for structural alternatives.
+        return {
+          ...style,
+          familyUrl: undefined,
+          style: typeof style.style === 'string' ? await load(style.style) : style.style,
+        };
+      }
       return typeof style.style === 'string' ? {...style, style: await load(style.style)} : style;
     },
   };

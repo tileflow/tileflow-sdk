@@ -61,6 +61,9 @@ export async function loadMobileManifest(
     if (
       !map ||
       map.mapId !== source.discoveryMapId ||
+      (map.familyUrl !== undefined &&
+        map.familyUrl !==
+          `${new URL(manifestUrl).origin}/maps/${source.discoveryMapId}/mobile/webview-v1/family/v${deploymentVersion}.json`) ||
       Object.entries(map.themes).some(([name, theme]) => theme.styleUrl !== `${prefix}${name}.json`)
     ) {
       throw new ProtocolError(

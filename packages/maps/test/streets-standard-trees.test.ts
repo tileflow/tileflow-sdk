@@ -10,6 +10,7 @@ import {
   resolveTileflowTheme,
 } from '@tileflow/core';
 import {streets, streetsThemes} from '../src';
+import {streetsTreeProfiles} from '../src/official/streets-tree-colors';
 import {streetsPreparedModels} from './streets-assets';
 import {standardTreeReference as reference} from './streets-standard-tree-fixture';
 
@@ -97,12 +98,20 @@ for (const [referenceName, theme] of Object.entries(themes)) {
       assert.equal(vegetation.colors.bark, '#C6B493');
       assert.equal(vegetation.colors.bark, colors['buildings.modelWood']);
     } else {
-      guardObservedMaterial(vegetation.colors.bark, observed.bark, `${theme} bark`);
+      guardObservedMaterial(
+        streetsTreeProfiles[referenceName as keyof typeof themes].bark,
+        observed.bark,
+        `${theme} reference bark`,
+      );
     }
     if (theme === 'light') {
       assert.deepEqual(vegetation.colors.broadleaf, ['#87BFA8', '#9CD1B0', '#ABDDA9', '#B8E6C4']);
     } else {
-      guardObservedMaterial(vegetation.colors.broadleaf[1], observed.crown, `${theme} crown`);
+      guardObservedMaterial(
+        streetsTreeProfiles[referenceName as keyof typeof themes].crown,
+        observed.crown,
+        `${theme} reference crown`,
+      );
     }
 
     for (const [kind, palette] of Object.entries(vegetation.colors)) {

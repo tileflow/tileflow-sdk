@@ -649,7 +649,7 @@
       runtime.theme === undefined
         ? null
         : createTileflowThemeController({
-            initial: runtime,
+            initial: prepared.family ? prepared : runtime,
             initialStyle: prepared.style,
             styleLoadOptions,
             map: maplibreMap,

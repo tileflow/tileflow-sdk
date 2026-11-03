@@ -75,3 +75,28 @@ test('discovery rejects oversized bodies, missing profiles and deployment races 
   );
   assert.deepEqual(calls, [source.manifestUrl, profileUrl]);
 });
+
+test('a Hosted family must belong to the discovered Map and deployment', async () => {
+  for (const familyUrl of [
+    `${base}/mobile/webview-v1/family/v3.json`,
+    `${base}/mobile/webview-v1/family/v4.json`,
+    'https://foreign.test/family.json',
+  ]) {
+    const document = manifest();
+    const familyManifest = {
+      ...document,
+      version: 3,
+      maps: {map: {...document.maps.map, familyUrl}},
+    };
+    const loading = loadMobileManifest(
+      source,
+      (async (url) =>
+        Response.json(
+          String(url) === source.manifestUrl ? discovery : familyManifest,
+        )) as typeof fetch,
+      new AbortController().signal,
+    );
+    if (familyUrl.endsWith('/v3.json')) assert.ok(await loading);
+    else await assert.rejects(loading, /deployment changed/u);
+  }
+});

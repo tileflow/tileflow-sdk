@@ -15,6 +15,22 @@ import type {TileflowInspectedStyle} from './style-inspection';
 import type {MapLibreStyle} from './types';
 
 export {
+  expandTileflowFamilyTemplate,
+  withTileflowFamilyTemplate,
+  createTileflowStyleFamily,
+  expandTileflowStyleFamily,
+  materializeTileflowStyleFamily,
+  parseTileflowStyleFamily,
+  tileflowStyleFamilyLimits,
+} from './style-family';
+export type {TileflowStyleFamily} from './style-family';
+export {
+  compactTileflowDeploymentArtifact,
+  expandTileflowDeploymentArtifact,
+  tileflowDeploymentWebBytes,
+} from './family-deployment';
+
+export {
   inferTileflowDataRequirements,
   inferTileflowSourceRequirements,
   validateTileflowDataCompatibility,
@@ -208,7 +224,7 @@ export function createStylesFromCatalogWithInspection(
 
 export function createManifest(
   catalog: TileflowBuildCatalog,
-  options: {styleBaseUrl?: string; manifestVersion?: 1 | 2} = {},
+  options: {styleBaseUrl?: string; manifestVersion?: 1 | 2 | 3; families?: boolean} = {},
 ): TileflowRuntimeManifest {
   const styleBaseUrl = (options.styleBaseUrl ?? '').replace(/\/+$/u, '');
   const maps = Object.fromEntries(
@@ -233,6 +249,7 @@ export function createManifest(
           mapName,
           {
             defaultTheme: resolved.defaultTheme,
+            ...(options.families ? {familyUrl: `${styleBaseUrl}/families/${mapName}.json`} : {}),
             ...(resolved.systemThemes ? {systemThemes: resolved.systemThemes} : {}),
             themes,
             ...(options.manifestVersion !== 1 &&
@@ -250,7 +267,11 @@ export function createManifest(
     maps,
     version:
       options.manifestVersion ??
-      (Object.values(maps).some((map) => map.timeOfDay) ? 2 : tileflowRuntimeManifestVersion),
+      (options.families
+        ? 3
+        : Object.values(maps).some((map) => map.timeOfDay)
+          ? 2
+          : tileflowRuntimeManifestVersion),
   };
   return parseTileflowRuntimeManifest(manifest);
 }

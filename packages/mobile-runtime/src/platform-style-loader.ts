@@ -7,3 +7,7 @@ export const loadTileflowRuntimeStyle: typeof import('@tileflow/core/browser').l
   async () => {
     throw new ProtocolError('resourceFailed', 'Theme resources require the native transport.');
   };
+
+export const loadTileflowRuntimeStyleFamily = async (): Promise<never> => {
+  throw new ProtocolError('resourceFailed', 'Theme resources require the native transport.');
+};

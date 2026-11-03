@@ -633,6 +633,8 @@ test('compiled buildings inherit the shared finish and retain independent overri
     {occlusion: false},
     {lighting: 'style', edgeRadius: 0, shadows: false, occlusion: false},
     {entrance: {buildings: [15.5, 16] as const, models: [14, 14.5] as const}},
+    {entrance: false},
+    {entrance: {buildings: [14.25, 14.25] as const, models: [14.25, 14.25] as const}},
   ]) {
     const result = tileflowBuildings3DDesignOf({threeDimensional: override}, context, layers)!;
     assert.deepEqual(result, {...plain, ...override});

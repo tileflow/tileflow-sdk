@@ -151,24 +151,20 @@ export default defineMap({
 receipts must use a concrete theme such as `light` or `dark`.
 
 Theme and `timeOfDay` changes animate over 450 ms by default, respecting reduced motion.
-Prepared web builds use a version-3 runtime manifest with `familyUrl`, pointing to one version-1
-`tileflow-style-family` document. It shares JSON structure and variant parameters while retaining
-flat `styleUrl` exports. `createTileflowStyleFamily` from `@tileflow/core/build` factors compiled
-styles; `parseTileflowStyleFamily` and `materializeTileflowStyleFamily` from `@tileflow/core/runtime`
-validate and export a concrete variant. Limits cover document size, depth, layers and expansion.
-The browser theme controller loads a family once and applies compatible appearances through its
-prepared paint plan, preserving sources and application layers. Metadata endpoints stay stable
-through a blend so 3D renderers can reuse palettes. Structural alternatives retain style switching.
-Parameter columns describe storage, not semantic tokens.
-Build preparation splits feature-dependent colours once; remaining feature-dependent
-values switch once rather than rebuilding tiles every animation frame. RGBA icon palettes switch
-at the dominant theme, retaining symbol layout. Device-specific profiling remains necessary.
+Web manifests (v3) declare `familyUrl`: a bounded `tileflow-style-family` v1 document sharing
+structure and parameters, with flat `styleUrl` exports retained. `createTileflowStyleFamily`
+(`@tileflow/core/build`) factors styles; `parseTileflowStyleFamily` and
+`materializeTileflowStyleFamily` (`@tileflow/core/runtime`) validate and expand them.
+The controller loads each family once, preserving sources and application layers for compatible
+appearances. Stable metadata endpoints let 3D palettes be reused. Structural variants still swap
+styles. Feature-dependent branches are prepared once; remaining discrete values and RGBA icons
+switch at the dominant theme, preserving symbol layout. Parameter columns are not semantic tokens.
 `loadTileflowRuntimeAppearance()` prepares the initial style for direct MapLibre integrations.
-Web builds preserve explicit colour bindings. Use `controller.setColors({'surface.water': '#008800'})`
-with the map's token names; `{}` restores authored colours. Dependencies follow their tokens;
-fixed colours and application layers remain unchanged. Direct `createStyle` calls opt in with
-`runtimeColors: true`. `createTileflowAppearanceController()` adds author-owned `fixed`, `system`
-or local `clock` selection through `set()`, with no UI or location request.
+Web builds retain token bindings: `controller.setColors({'surface.water': '#008800'})` overrides
+named tokens; `{}` restores authored colours. Fixed colours and application layers are preserved.
+Direct `createStyle` calls opt in with `runtimeColors: true`.
+`createTileflowAppearanceController().set()` selects author-owned `fixed`, `system` or local
+`clock` behaviour without UI or a location request. Profile performance on the target device.
 The same controller can make chosen modules recede and the map's labels fade so an application's
 own content reads first.
 It also sets the style-wide states that themes read with `expr.globalState`, easing numbers so the

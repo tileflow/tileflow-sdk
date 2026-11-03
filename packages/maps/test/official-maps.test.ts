@@ -872,15 +872,7 @@ test('official road maps avoid seam-prone caps on ordinary surface and bridge se
 test('official maps compile against generic OpenMapTiles without optional capabilities', () => {
   const data = vectorTiles({
     attribution: 'Fixture data',
-    schema: openMapTiles({
-      capabilities: {
-        bathymetry: false,
-        businessCorridor: false,
-        canopy: false,
-        globalLandcover: false,
-        tree: false,
-      },
-    }),
+    schema: openMapTiles(),
     tiles: ['https://tiles.example.test/{z}/{x}/{y}.pbf'],
   });
 

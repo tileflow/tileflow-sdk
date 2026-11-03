@@ -88,8 +88,8 @@ for (const [profile, theme] of Object.entries(themes)) {
       theme,
       preparedAssets: {models: streetsPreparedModels, icons: {ids, sprite: '/test/sprite'}},
     });
-    const casing = (structure: string, roadClass: string, zoom: number, subclass?: string) => {
-      const properties = {class: roadClass, brunnel: structure, ...(subclass ? {subclass} : {})};
+    const casing = (structure: string, roadClass: string, zoom: number, type?: string) => {
+      const properties = {class: roadClass, structure, ...(type ? {type} : {})};
       const layers = style.layers.filter(
         (layer): layer is LineLayerSpecification =>
           layer.type === 'line' &&
@@ -109,7 +109,7 @@ for (const [profile, theme] of Object.entries(themes)) {
         'primary',
         'secondary',
         'tertiary',
-        'minor',
+        'street',
         'service',
         'track',
       ]) {
@@ -121,11 +121,17 @@ for (const [profile, theme] of Object.entries(themes)) {
           );
         }
       }
-      for (const subclass of ['path', 'footway', 'cycleway', 'pedestrian', 'steps']) {
+      for (const [roadClass, type] of [
+        ['path', 'path'],
+        ['path', 'footway'],
+        ['path', 'cycleway'],
+        ['pedestrian', undefined],
+        ['path', 'steps'],
+      ] as const) {
         closeColor(
-          casing(structure, 'path', 18, subclass),
+          casing(structure, roadClass, 18, type),
           expected.path.unshadowedRGB,
-          `${theme} ${structure} ${subclass}`,
+          `${theme} ${structure} ${type ?? roadClass}`,
         );
       }
     }
@@ -177,7 +183,7 @@ for (const [profile, theme] of Object.entries(themes)) {
         const metric = {
           type: 1,
           properties: {
-            class: 'minor',
+            class: 'street',
             radius_px_z15: 10.458,
             radius_m: 18.9,
             inner_radius_m: 16.2,
@@ -196,7 +202,7 @@ for (const [profile, theme] of Object.entries(themes)) {
           Math.abs(inner + stroke - (21 * scale + border)) < 1e-8,
           `${theme} ${phase} metric outer z${level}`,
         );
-        const fallback = {type: 1, properties: {class: 'minor', radius_px_z15: 20}};
+        const fallback = {type: 1, properties: {class: 'street', radius_px_z15: 20}};
         const lower = Math.floor(level);
         const widthAtLower = fallbackWidthAt(lower);
         const fallbackWidth =

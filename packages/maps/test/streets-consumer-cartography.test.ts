@@ -41,9 +41,9 @@ test('a consumer inherits the reviewed day palette and building contours without
     Color.parse('#B9CED5'),
   );
   assert.deepEqual(color('tileflow-road-surface-minor-casing', 16), Color.parse('#8AA7B0'));
-  for (const building_tone of ['neutral', 'commercial'])
+  for (const tone of ['neutral', 'commercial'])
     assert.deepEqual(
-      color('tileflow-buildings-fill-outline', 18, {building_tone}),
+      color('tileflow-buildings-fill-outline', 18, {tone}),
       Color.parse('#B9BFBA'),
     );
   const outline = style.layers.find((entry) => entry.id === 'tileflow-buildings-fill-outline');

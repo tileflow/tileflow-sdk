@@ -80,7 +80,7 @@ for (const [name, theme] of Object.entries(themes)) {
     assert.equal(buildings.modelColors!.surface, colors['buildings.raised.neutral']);
     assert.deepEqual(buildings.color, [
       'match',
-      ['get', 'building_tone'],
+      ['get', 'tone'],
       ['commercial', 'active'],
       colors['buildings.flat.active'],
       colors['buildings.raised.neutral'],

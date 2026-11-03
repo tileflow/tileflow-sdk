@@ -14,11 +14,11 @@ import {
   land,
   landforms,
   nautical,
+  openMapTiles,
   poi,
   resolveMap,
   roads,
   type TileflowAuthoringModules,
-  tileflowWorldV1Schema,
   transit,
   vectorTiles,
   vegetation,
@@ -262,7 +262,7 @@ test('Streets plazas retain their ground ordering without depending on a private
   };
   const plaza = position('roads.areas.pedestrian.fill');
   assert.ok(position('land.landuse.residential.fill') < plaza);
-  assert.ok(position('land.render.businessArea') < plaza);
+  assert.ok(position('land.render.activityAreas') < plaza);
   for (const target of [
     'land.landuse.recreation.fill',
     'land.landcover.grass.fill',
@@ -361,14 +361,14 @@ for (const [mapName, parent] of Object.entries(officialMaps)) {
   });
 
   test(`${mapName}: all official contributions bind through a complete data schema remap`, () => {
-    const canonical = tileflowWorldV1Schema();
+    const canonical = openMapTiles();
     const fields = Object.fromEntries(
       Object.keys(canonical.fields).map((name) => [name, `remapped_field_${name}`]),
     ) as typeof canonical.fields;
     const layers = Object.fromEntries(
       Object.keys(canonical.layers).map((name) => [name, `remapped_layer_${name}`]),
     ) as typeof canonical.layers;
-    const schema = tileflowWorldV1Schema({fields, layers});
+    const schema = openMapTiles({fields, layers});
     const child = defineMap({
       id: `${mapName}-remapped`,
       version: 1,

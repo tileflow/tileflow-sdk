@@ -253,15 +253,7 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
 test('Soundings degrades cleanly on generic OpenMapTiles without bathymetry', () => {
   const data = vectorTiles({
     attribution: 'Generic OpenMapTiles fixture',
-    schema: openMapTiles({
-      capabilities: {
-        bathymetry: false,
-        businessCorridor: false,
-        canopy: false,
-        globalLandcover: false,
-        tree: false,
-      },
-    }),
+    schema: openMapTiles(),
     tiles: ['https://tiles.example.test/{z}/{x}/{y}.pbf'],
   });
   const generic = defineMap({

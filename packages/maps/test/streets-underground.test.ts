@@ -34,12 +34,15 @@ test('Streets omits underground footprints without rejecting ordinary buildings 
     const layer = style.layers.find((entry) => entry.id === id);
     assert.ok(layer);
     const accepts = featureFilter(layer.filter as never).filter;
-    assert.equal(accepts({zoom: 19}, {type: 3, properties: {render_height: 3}} as never), true);
+    assert.equal(accepts({zoom: 19}, {type: 3, properties: {height: 3}} as never), true);
     assert.equal(accepts({zoom: 19}, {type: 3, properties: {}} as never), true);
-    for (const hide_3d of [true, 1, '1', 'true'])
-      assert.equal(
-        accepts({zoom: 19}, {type: 3, properties: {render_height: 5, hide_3d}} as never),
-        false,
-      );
+    assert.equal(
+      accepts({zoom: 19}, {type: 3, properties: {height: 5, extrude: true}} as never),
+      true,
+    );
+    assert.equal(
+      accepts({zoom: 19}, {type: 3, properties: {height: 5, extrude: false}} as never),
+      false,
+    );
   }
 });

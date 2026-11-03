@@ -34,15 +34,15 @@ for (const theme of Object.keys(streetsThemes)) {
         ['EMT Madrid', 'transit-madrid-emt', 'bus'],
       ]) {
         // The pinned World release carries network even where mode is absent.
-        assert.equal(evaluate({category: 'transport', network: network!}), symbol);
-        assert.equal(evaluate({category: 'transport', network: network!, mode: mode!}), symbol);
+        assert.equal(evaluate({class: 'transport', network: network!}), symbol);
+        assert.equal(evaluate({class: 'transport', network: network!, mode: mode!}), symbol);
       }
-      const generic = {category: 'transport', mode: 'subway', type: 'public_transit_facility'};
+      const generic = {class: 'transport', mode: 'subway', type: 'public_transit_facility'};
       for (const network of ['Metro de Barcelona', 'Metro', 'EMT', 'Cercanías Málaga', '']) {
         assert.equal(evaluate({...generic, network}), evaluate(generic));
       }
       assert.equal(evaluate({...generic, name: 'Metro de Madrid'}), evaluate(generic));
-      const cafe = {category: 'food-drink', type: 'cafe'};
+      const cafe = {class: 'food-drink', type: 'cafe'};
       assert.equal(evaluate({...cafe, network: 'Metro de Madrid'}), evaluate(cafe));
     }
   });

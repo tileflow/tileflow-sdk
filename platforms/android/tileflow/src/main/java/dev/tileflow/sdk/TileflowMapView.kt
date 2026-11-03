@@ -103,7 +103,7 @@ constructor(
      * Which engine draws the map. Internal: applications always use the default. Changing it
      * replaces the current renderer.
      */
-    internal var engineKind: MapEngineKind = MapEngineKind.WEB_VIEW
+    internal var engineKind: MapEngineKind = defaultEngineKind
         set(value) {
             if (field == value) return
             field = value
@@ -1557,6 +1557,9 @@ constructor(
     }
 
     public companion object {
+        /** The engine new map views use. Internal: tests set it for the maps Compose creates. */
+        @Volatile internal var defaultEngineKind: MapEngineKind = MapEngineKind.WEB_VIEW
+
         /**
          * Prepares what every map needs before the first one is shown: verifies the embedded
          * renderer, reads the device profile, opens the shared HTTP client and resource cache, and

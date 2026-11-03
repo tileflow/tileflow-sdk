@@ -10,6 +10,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import dev.tileflow.sdk.TileflowCamera
+import dev.tileflow.sdk.TileflowCoordinate
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
@@ -41,10 +42,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 import org.maplibre.android.MapLibre
-import org.maplibre.android.camera.CameraPosition
-import org.maplibre.android.camera.CameraUpdateFactory
-import org.maplibre.android.geometry.LatLng
-import org.maplibre.android.geometry.LatLngBounds
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
@@ -136,11 +133,12 @@ internal class NativeMapEngine(
     private val styleWaiters = mutableListOf<CancellableContinuation<Throwable?>>()
     private val renderWaiters = mutableListOf<CancellableContinuation<Unit>>()
 
-    // Camera: the movement the view asked for, until MapLibre finishes it.
-    private var movement: Pair<Int, CancellableContinuation<String>>? = null
-    private var movements = 0
-    private var moveReason: String? = null
-    private var cameraMoving = false
+    /** The camera and the gestures, once MapLibre's map is ready. */
+    internal var camera: NativeCamera? = null
+        private set
+
+    internal var gestures: NativeGestures? = null
+        private set
 
     /** How many times the view sent each command, for diagnostics. */
     internal val received = HashMap<ProtocolContract.Method, Int>()
@@ -231,12 +229,8 @@ internal class NativeMapEngine(
                 map = ready
                 ready.uiSettings.isLogoEnabled = false
                 ready.uiSettings.isAttributionEnabled = false
-                ready.addOnCameraMoveStartedListener { reason -> cameraStarted(reason) }
-                ready.addOnCameraMoveListener { cameraEvent("cameraMoved") }
-                ready.addOnCameraIdleListener {
-                    cameraEnded()
-                    updateAttribution()
-                }
+                prepareCamera(ready)
+                ready.addOnCameraIdleListener { updateAttribution() }
                 // No style until the map initializes: MapLibre draws and requests nothing, and its
                 // first load is the map's own style.
                 callbacks.ready(this)
@@ -256,43 +250,16 @@ internal class NativeMapEngine(
             val request = payload as? JSONObject
             return when (method) {
                 ProtocolContract.Method.INITIALIZE -> initialize(map, request ?: invalid())
-                ProtocolContract.Method.GET_CAMERA -> camera(map)
-                ProtocolContract.Method.PROJECT -> {
-                    val request = request ?: invalid()
-                    val point =
-                        map.projection.toScreenLocation(
-                            LatLng(request.getDouble("latitude"), request.getDouble("longitude"))
-                        )
-                    JSONObject().put("x", point.x / density).put("y", point.y / density)
-                }
-                ProtocolContract.Method.UNPROJECT -> {
-                    val coordinate = map.projection.fromScreenLocation(point(request)).wrap()
-                    JSONObject()
-                        .put("longitude", coordinate.longitude)
-                        .put("latitude", coordinate.latitude)
-                }
                 ProtocolContract.Method.QUERY_AT_POINT -> query(map, point(request))
-                ProtocolContract.Method.SET_INSETS -> {
-                    pad(map, request ?: invalid())
-                    JSONObject.NULL
-                }
-                ProtocolContract.Method.SET_VISIBILITY,
-                ProtocolContract.Method.SET_EVENTS -> JSONObject.NULL
+                ProtocolContract.Method.SET_VISIBILITY -> JSONObject.NULL
                 ProtocolContract.Method.SET_OPTIONS -> {
                     request?.optString("viewMode")?.takeIf { it.isNotEmpty() }?.let {
                         setViewMode(it, 0.0)
                     }
+                    applyCameraOptions(request)
                     JSONObject.NULL
                 }
-                ProtocolContract.Method.MOVE_CAMERA -> moveCamera(map, request ?: invalid())
-                ProtocolContract.Method.STOP_CAMERA -> {
-                    map.cancelTransitions()
-                    finishMovement("cancelled")
-                    JSONObject.NULL
-                }
-                ProtocolContract.Method.CAMERA_FOR_BOUNDS ->
-                    fitted(map, request ?: invalid())?.let(::cameraJson) ?: JSONObject.NULL
-                ProtocolContract.Method.VISIBLE_BOUNDS -> visibleBounds(map)
+                in CAMERA_COMMANDS -> cameraCommand(method, request)
                 ProtocolContract.Method.SET_THEME -> setTheme(request ?: invalid())
                 ProtocolContract.Method.SET_BLEND -> setBlend(request ?: invalid())
                 ProtocolContract.Method.GET_ROUTE_INKS -> routeInks()
@@ -349,10 +316,10 @@ internal class NativeMapEngine(
         if (retired) throw TileflowMapException(retiredCode)
         shownTheme = document.theme
         attributionModel = MapAttribution(projected.attributions, credits)
-        options.optJSONObject("insets")?.let { pad(map, it) }
-        (options.optJSONObject("camera") ?: document.view?.let(::cameraJson))?.let {
-            move(map, it)
-        }
+        configureCamera(options)
+        val start =
+            options.optJSONObject("camera")?.let(::cameraOrNull) ?: document.view
+        start?.let { camera?.jump(it) }
         awaitingContent = true
         contentStyleLoaded = false
         loaded = false
@@ -536,7 +503,8 @@ internal class NativeMapEngine(
         awaitingContent = false
         main.removeCallbacksAndMessages(null)
         warnings.retire()
-        finishMovement("cancelled")
+        camera?.retire(code)
+        gestures?.retire()
         val failure = TileflowMapException(code)
         styleWaiters.toList().also { styleWaiters.clear() }.forEach { it.resume(failure) }
         renderWaiters.toList().also { renderWaiters.clear() }.forEach { it.resume(Unit) }
@@ -564,7 +532,7 @@ internal class NativeMapEngine(
         if (retired || !awaitingContent || !contentStyleLoaded || !loaded) return
         awaitingContent = false
         updateAttribution()
-        callbacks.event("contentReady", JSONObject().put("camera", camera(map)))
+        callbacks.event("contentReady", JSONObject().put("camera", camera?.json ?: JSONObject()))
     }
 
     private fun updateAttribution() {
@@ -1047,70 +1015,75 @@ internal class NativeMapEngine(
 
     // Camera
 
-    private suspend fun moveCamera(map: MapLibreMap, payload: JSONObject): JSONObject {
-        val current = map.cameraPosition
-        // MapLibre caps the pitch while it builds a camera; the request says what was asked for.
-        payload.optJSONObject("fit")?.optDouble("pitch")?.let(::warnPitch)
-        payload.optJSONObject("target")?.optDouble("pitch")?.let(::warnPitch)
-        val target: CameraPosition =
-            payload.optJSONObject("fit")?.let { fitted(map, it) }?.let(::position)
-                ?: run {
-                    if (payload.has("fit")) invalid()
-                    val update = payload.optJSONObject("target") ?: JSONObject()
-                    val center = update.optJSONObject("center")
-                    CameraPosition.Builder()
-                        .target(
-                            center?.let {
-                                LatLng(it.getDouble("latitude"), it.getDouble("longitude"))
-                            } ?: current.target
-                        )
-                        .zoom(update.optDouble("zoom", current.zoom))
-                        .bearing(update.optDouble("bearing", current.bearing))
-                        .tilt(update.optDouble("pitch", current.tilt))
-                        .build()
-                }
-        finishMovement("cancelled")
-        val animation = payload.optJSONObject("animation")
-        val type = animation?.optString("type") ?: "jump"
-        val duration = animation?.optDouble("duration", Double.NaN) ?: Double.NaN
-        movements += 1
-        val id = movements
-        moveReason = payload.optString("reason").ifEmpty { "api" }
-        val completion = suspendCancellableCoroutine { waiter ->
-            movement = id to waiter
-            val update = CameraUpdateFactory.newCameraPosition(target)
-            val callback =
-                object : MapLibreMap.CancelableCallback {
-                    override fun onFinish() {
-                        if (movement?.first == id) finishMovement("finished")
-                    }
-
-                    override fun onCancel() {
-                        if (movement?.first == id) finishMovement("cancelled")
-                    }
-                }
-            when {
-                type == "ease" && duration > 0 ->
-                    map.easeCamera(update, duration.roundToInt(), true, callback)
-                type == "fly" ->
-                    map.animateCamera(
-                        update,
-                        if (duration.isNaN()) 1_500 else duration.roundToInt(),
-                        callback,
-                    )
-                else -> {
-                    map.moveCamera(update)
-                    finishMovement("finished")
-                }
-            }
+    /** Creates the camera and the gestures. MapLibre's own compass stays hidden: the SDK draws it. */
+    private fun prepareCamera(map: MapLibreMap) {
+        map.uiSettings.isCompassEnabled = false
+        val emit: (String, JSONObject) -> Unit = { event, value ->
+            if (!retired) callbacks.event(event, value)
         }
-        return JSONObject().put("completion", completion).put("camera", camera(map))
+        val camera = NativeCamera(map, mapView, density, emit, ::warnPitch)
+        this.camera = camera
+        gestures = NativeGestures(container.context, map, mapView, container, camera, density, emit)
     }
 
-    private fun finishMovement(outcome: String) {
-        val (_, waiter) = movement ?: return
-        movement = null
-        if (waiter.isActive) waiter.resume(outcome)
+    /**
+     * Applies what `initialize` carries for the camera before the map's first camera: the events
+     * the view follows, limits, gestures and padding.
+     */
+    private fun configureCamera(options: JSONObject) {
+        options.optJSONObject("events")?.let(::setEvents)
+        applyCameraOptions(options.optJSONObject("options"))
+        options.optJSONObject("insets")?.let { camera?.setPadding(it) }
+    }
+
+    private fun applyCameraOptions(options: JSONObject?) {
+        options ?: return
+        gestures?.apply(options.optJSONObject("gestures"))
+        camera?.setLimits(options.optJSONObject("limits"))
+    }
+
+    /** The view follows the camera frame by frame only when it subscribes to `cameraMoved`. */
+    private fun setEvents(events: JSONObject) {
+        camera?.followsFrames = events.has(ProtocolContract.Event.CAMERA_MOVED.wireName)
+    }
+
+    private suspend fun cameraCommand(method: ProtocolContract.Method, request: JSONObject?): Any {
+        val camera = camera ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
+        return when (method) {
+            ProtocolContract.Method.GET_CAMERA -> camera.json
+            ProtocolContract.Method.MOVE_CAMERA -> camera.move(request ?: invalid())
+            ProtocolContract.Method.STOP_CAMERA -> {
+                camera.stop()
+                JSONObject.NULL
+            }
+            ProtocolContract.Method.CAMERA_FOR_BOUNDS ->
+                camera.fitted(request ?: invalid())?.let(NativeCamera::json) ?: JSONObject.NULL
+            ProtocolContract.Method.VISIBLE_BOUNDS -> camera.visibleBounds()
+            ProtocolContract.Method.PROJECT -> {
+                val request = request ?: invalid()
+                val point =
+                    camera.project(
+                        TileflowCoordinate(request.getDouble("longitude"), request.getDouble("latitude"))
+                    )
+                JSONObject().put("x", point.x.toDouble()).put("y", point.y.toDouble())
+            }
+            ProtocolContract.Method.UNPROJECT -> {
+                val request = request ?: invalid()
+                val coordinate = camera.unproject(request.getDouble("x"), request.getDouble("y"))
+                JSONObject()
+                    .put("longitude", coordinate.longitude)
+                    .put("latitude", coordinate.latitude)
+            }
+            ProtocolContract.Method.SET_INSETS -> {
+                camera.setPadding(request ?: invalid())
+                JSONObject.NULL
+            }
+            ProtocolContract.Method.SET_EVENTS -> {
+                request?.optJSONObject("events")?.let(::setEvents)
+                JSONObject.NULL
+            }
+            else -> unsupported(method)
+        }
     }
 
     /** MapLibre Android draws at most 60 degrees of pitch; a steeper camera is capped once. */
@@ -1123,84 +1096,18 @@ internal class NativeMapEngine(
             )
     }
 
-    private fun cameraStarted(reason: Int) {
-        // A person's gesture interrupts the movement the application asked for.
-        if (reason == MapLibreMap.OnCameraMoveStartedListener.REASON_API_GESTURE) {
-            if (movement != null) finishMovement("interrupted")
-            moveReason = "gesture"
+    private fun cameraOrNull(value: JSONObject): TileflowCamera? =
+        try {
+            TileflowCamera(
+                value.getDouble("longitude"),
+                value.getDouble("latitude"),
+                value.getDouble("zoom"),
+                value.optDouble("bearing", 0.0),
+                value.optDouble("pitch", 0.0),
+            )
+        } catch (_: org.json.JSONException) {
+            null
         }
-        cameraMoving = true
-        cameraEvent("cameraMoveStarted")
-    }
-
-    private fun cameraEnded() {
-        if (!cameraMoving) return
-        cameraMoving = false
-        cameraEvent("cameraMoveEnded")
-        if (movement == null) moveReason = null
-    }
-
-    private fun cameraEvent(event: String) {
-        val map = map ?: return
-        if (retired) return
-        callbacks.event(
-            event,
-            JSONObject().put("camera", camera(map)).put("reason", moveReason ?: "api"),
-        )
-    }
-
-    /** The camera that frames bounds with padding inside the insets; null when there is no room. */
-    private fun fitted(map: MapLibreMap, fit: JSONObject): TileflowCamera? {
-        val bounds = fit.optJSONObject("bounds") ?: return null
-        val padding = fit.optJSONObject("padding") ?: JSONObject()
-        val edges =
-            listOf("left", "top", "right", "bottom").map {
-                (padding.optDouble(it, 0.0) * density).roundToInt()
-            }
-        val insets = map.padding
-        if (
-            mapView.width - edges[0] - edges[2] - insets[0] - insets[2] <= 0 ||
-                mapView.height - edges[1] - edges[3] - insets[1] - insets[3] <= 0
-        )
-            return null
-        var east = bounds.getDouble("east")
-        val west = bounds.getDouble("west")
-        if (east < west) east += 360
-        val position =
-            map.getCameraForLatLngBounds(
-                LatLngBounds.from(bounds.getDouble("north"), east, bounds.getDouble("south"), west),
-                edges.toIntArray(),
-                fit.optDouble("bearing", map.cameraPosition.bearing),
-                fit.optDouble("pitch", map.cameraPosition.tilt),
-            ) ?: return null
-        val target = position.target ?: return null
-        var zoom = position.zoom
-        if (fit.has("maxZoom")) zoom = minOf(zoom, fit.getDouble("maxZoom"))
-        return TileflowCamera(
-            target.wrap().longitude,
-            target.latitude,
-            zoom.coerceIn(0.0, 24.0),
-            normalizedBearing(position.bearing),
-            position.tilt,
-        )
-    }
-
-    private fun position(camera: TileflowCamera): CameraPosition =
-        CameraPosition.Builder()
-            .target(LatLng(camera.latitude, camera.longitude))
-            .zoom(camera.zoom)
-            .bearing(camera.bearing)
-            .tilt(camera.pitch)
-            .build()
-
-    private fun visibleBounds(map: MapLibreMap): JSONObject {
-        val bounds = map.projection.visibleRegion.latLngBounds
-        return JSONObject()
-            .put("west", bounds.longitudeWest)
-            .put("south", bounds.latitudeSouth)
-            .put("east", bounds.longitudeEast)
-            .put("north", bounds.latitudeNorth)
-    }
 
     /** Rendered features at a point, topmost layer first: MapLibre's features carry no layer. */
     private fun query(map: MapLibreMap, point: PointF): JSONArray {
@@ -1230,51 +1137,6 @@ internal class NativeMapEngine(
         )
     }
 
-    private fun pad(map: MapLibreMap, insets: JSONObject) {
-        map.moveCamera(
-            CameraUpdateFactory.paddingTo(
-                insets.optDouble("left", 0.0) * density,
-                insets.optDouble("top", 0.0) * density,
-                insets.optDouble("right", 0.0) * density,
-                insets.optDouble("bottom", 0.0) * density,
-            )
-        )
-    }
-
-    private fun move(map: MapLibreMap, camera: JSONObject) {
-        val pitch = camera.optDouble("pitch", 0.0)
-        warnPitch(pitch)
-        map.moveCamera(
-            CameraUpdateFactory.newCameraPosition(
-                CameraPosition.Builder()
-                    .target(LatLng(camera.getDouble("latitude"), camera.getDouble("longitude")))
-                    .zoom(camera.getDouble("zoom"))
-                    .bearing(camera.optDouble("bearing", 0.0))
-                    .tilt(pitch)
-                    .build()
-            )
-        )
-    }
-
-    private fun camera(map: MapLibreMap): JSONObject {
-        val position = map.cameraPosition
-        val target = position.target ?: LatLng(0.0, 0.0)
-        return JSONObject()
-            .put("longitude", target.wrap().longitude)
-            .put("latitude", target.latitude)
-            .put("zoom", position.zoom)
-            .put("bearing", normalizedBearing(position.bearing))
-            .put("pitch", position.tilt)
-    }
-
-    private fun cameraJson(camera: TileflowCamera): JSONObject =
-        JSONObject()
-            .put("longitude", camera.longitude)
-            .put("latitude", camera.latitude)
-            .put("zoom", camera.zoom)
-            .put("bearing", camera.bearing)
-            .put("pitch", camera.pitch)
-
     /** Whether every list [keys] names in the request is empty or absent. */
     private fun isEmpty(payload: Any, vararg keys: String): Boolean {
         val request = payload as? JSONObject ?: return false
@@ -1294,13 +1156,23 @@ internal class NativeMapEngine(
     internal companion object {
         const val TAG = "Tileflow"
         /** The steepest pitch MapLibre Android draws. */
-        const val MAXIMUM_PITCH = 60.0
+        const val MAXIMUM_PITCH = NativeCamera.MAXIMUM_PITCH
+
+        /** The commands the camera answers. */
+        val CAMERA_COMMANDS =
+            setOf(
+                ProtocolContract.Method.GET_CAMERA,
+                ProtocolContract.Method.MOVE_CAMERA,
+                ProtocolContract.Method.STOP_CAMERA,
+                ProtocolContract.Method.CAMERA_FOR_BOUNDS,
+                ProtocolContract.Method.VISIBLE_BOUNDS,
+                ProtocolContract.Method.PROJECT,
+                ProtocolContract.Method.UNPROJECT,
+                ProtocolContract.Method.SET_INSETS,
+                ProtocolContract.Method.SET_EVENTS,
+            )
         const val TEXT_OMITTED =
             "This map's labels have no glyphs or font faces native maps can draw, so they are left out."
-
-        /** MapLibre reports bearings in [0, 360); the SDK's cameras use (-180, 180]. */
-        fun normalizedBearing(bearing: Double): Double =
-            if (bearing > 180) bearing - 360 else bearing
 
         fun degradationMessage(feature: String, fallback: String?): String {
             val instead =

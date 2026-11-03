@@ -76,9 +76,9 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   // MARK: Camera state, kept in NativeMapEngine+Camera.swift
 
-  /// The movement the application asked for, until MapLibre finishes it.
-  var movement: NativeCameraMovement?
-  var cameraMoving = false
+  /// The camera and the gestures, once MapLibre's view exists.
+  var camera: NativeCamera?
+  var gestures: NativeGestures?
 
   /// How many times the view sent each command, for diagnostics.
   private(set) var received: [MapEngineCommand: Int] = [:]
@@ -119,6 +119,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       mapView.maximumPitch = TileflowCameraLimits.maximumPitch
       self.container.addSubview(mapView)
       self.mapView = mapView
+      self.prepareCamera(mapView)
       self.onReady?()
     }
   }
@@ -128,49 +129,21 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   {
     defer { self.data.release(data) }
     guard !retired else { throw TileflowMapError.disposed }
-    guard let mapView else { throw TileflowMapError.notReady }
+    guard mapView != nil else { throw TileflowMapError.notReady }
     received[command, default: 0] += 1
+    if let result = try await cameraCommand(command, payload: payload) { return result }
     switch command {
     case .initialize:
       try await initialize(payload)
       return .null
-    case .getCamera:
-      return cameraWire
-    case .project:
-      guard let longitude = payload["longitude"]?.number, let latitude = payload["latitude"]?.number
-      else { throw TileflowMapError.invalidRequest }
-      let point = mapView.convert(
-        CLLocationCoordinate2D(latitude: latitude, longitude: longitude), toPointTo: mapView)
-      return .object(["x": .number(point.x), "y": .number(point.y)])
-    case .unproject:
-      let point = try Self.point(payload)
-      let coordinate = mapView.convert(point, toCoordinateFrom: mapView)
-      return .object([
-        "longitude": .number(Self.wrap(coordinate.longitude)),
-        "latitude": .number(coordinate.latitude),
-      ])
     case .queryAtPoint:
       return .array(features(at: try Self.point(payload)))
-    case .setInsets:
-      let value = { (key: String) in CGFloat(payload[key]?.number ?? 0) }
-      mapView.contentInset = UIEdgeInsets(
-        top: value("top"), left: value("left"), bottom: value("bottom"), right: value("right"))
-      return .null
-    case .setVisibility, .setEvents:
+    case .setVisibility:
       return .null
     case .setOptions:
       if let mode = payload["viewMode"]?.string { setViewMode(mode, duration: 0) }
+      applyCameraOptions(payload)
       return .null
-    case .moveCamera:
-      return try await moveCamera(payload)
-    case .stopCamera:
-      stopCamera()
-      return .null
-    case .cameraForBounds:
-      return try cameraForBounds(payload)
-    case .visibleBounds:
-      guard let bounds = visibleBounds else { throw TileflowMapError.notReady }
-      return try bounds.wireValue()
     case .setTheme:
       return try await setTheme(payload)
     case .setBlend:
@@ -216,7 +189,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     warnings.retire()
     emphasis.motion?.cancel()
     viewModeMotion?.cancel()
-    finishMovement(.cancelled)
+    camera?.retire(error)
+    gestures?.retire()
     for waiter in styleWaiters { waiter.resume(throwing: error) }
     styleWaiters.removeAll()
     for waiter in renderWaiters { waiter.resume() }
@@ -278,9 +252,10 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     let theme = try manifest.resolve(payload["theme"]?.string, colorScheme: colorScheme)
     let (document, projected) = try await loadStyle(theme.styleURL)
     family = await loadFamily(styleURL: theme.styleURL)
-    guard !retired, let mapView else { throw TileflowMapError.cancelled }
+    guard !retired, mapView != nil else { throw TileflowMapError.cancelled }
     shown = .theme(theme.name)
-    apply(TileflowCamera(wire: payload["camera"]) ?? manifest.view)
+    configureCamera(payload)
+    camera?.jump(to: TileflowCamera(wire: payload["camera"]) ?? manifest.view)
     styleRequested = true
     contentPending = true
     show(document, projected: projected)
@@ -528,19 +503,19 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   nonisolated func mapView(
     _ mapView: MLNMapView, regionWillChangeWith reason: MLNCameraChangeReason, animated: Bool
   ) {
-    MainActor.assumeIsolated { cameraWillMove(reason) }
+    MainActor.assumeIsolated { camera?.willChange(reason) }
   }
 
   nonisolated func mapView(_ mapView: MLNMapView, regionIsChangingWith reason: MLNCameraChangeReason)
   {
-    MainActor.assumeIsolated { cameraIsMoving(reason) }
+    MainActor.assumeIsolated { camera?.isChanging(reason) }
   }
 
   nonisolated func mapView(
     _ mapView: MLNMapView, regionDidChangeWith reason: MLNCameraChangeReason, animated: Bool
   ) {
     MainActor.assumeIsolated {
-      cameraDidMove(reason)
+      camera?.didChange(reason)
       guard !contentPending, styleLoaded else { return }
       updateAttribution()
     }

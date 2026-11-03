@@ -133,7 +133,10 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     _ = try await view.unproject(CGPoint(x: -40, y: -40))
     _ = try await view.query(at: CGPoint(x: -40, y: 5_000))
     XCTAssertLessThan(started.duration(to: .now), .seconds(5))
-    // iOS draws the steepest pitch the camera API allows.
+    // iOS draws the steepest pitch the camera API allows. MapLibre lowers it while the top inset
+    // exceeds the bottom one, as the safe area does, so the camera's centre stays in view.
+    view.automaticallyAdjustsContentInsets = false
+    try await waitUntil { (view.engine as? NativeMapEngine)?.mapView?.contentInset == .zero }
     try await view.setCamera(TileflowCamera(longitude: -3.7, latitude: 40.42, zoom: 16, pitch: 85))
     let steep = try await view.camera()
     XCTAssertEqual(steep.pitch, 85, accuracy: 0.5)

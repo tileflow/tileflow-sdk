@@ -18,7 +18,7 @@ import {
   field,
 } from '../src/cartography/semantic-bindings';
 import {fixed, token} from '../src/cartography/values';
-import {openMapTiles, resolveTileflowData, tileflowWorldV1Schema, vectorTiles} from '../src/data';
+import {openMapTiles, resolveTileflowData, tileflowWorldSchema, vectorTiles} from '../src/data';
 import {createStyle} from '../src/map';
 import {buildings} from '../src/modules/buildings';
 import {labels} from '../src/modules/labels';
@@ -34,9 +34,9 @@ const data = resolveTileflowData({
     fields: {
       capital: 'capital_fixture',
       class: 'class_fixture',
-      height: 'height_fixture',
       name: 'name_fixture',
       rank: 'rank_fixture',
+      renderHeight: 'height_fixture',
     },
     layers: {building: 'building_fixture'},
   }),
@@ -162,7 +162,7 @@ test('closed selectors cover geometry, normalization, match, composition, and zo
             selector: {
               coerce: 'number',
               fallback: 99,
-              field: 'rank',
+              field: 'symbolrank',
               kind: 'compare',
               operator: 'lte',
               value: 6,
@@ -689,43 +689,41 @@ test('symbol passes bind the optional canopy layer and its fields, or fail witho
     }),
   });
 
-  for (const schema of [tileflowWorldV1Schema(), openMapTiles()]) {
-    const canopyData = resolveTileflowData(
-      vectorTiles({attribution: 'Canopy fixture', schema, url: '/canopy.json'}),
-    );
-    const [compiled] = bindSemanticReferences(
-      compileRenderStack(groves, createSemanticDataView(canopyData)),
-      canopyData,
-    );
-    assert.equal(compiled?.kind, 'layer');
-    if (!compiled || compiled.kind !== 'layer') return;
-    assert.equal(compiled.target, 'vegetation.render.groves');
-    assert.equal(compiled.template.feature?.dataLayer, 'canopy');
-    assert.deepEqual(compiled.template.selector, ['<', ['get', 'rank'], 8]);
-    assert.equal(compiled.template.range?.minZoom, 14);
-    assert.deepEqual(compiled.template.style.placement, {
-      'icon-image': 'grove',
-      'icon-overlap': 'always',
-      'icon-size': ['*', ['get', 'clearance_px_z15'], 0.05],
-      'text-field': 'o',
-      'text-font': ['Noto Sans Regular'],
-      'text-overlap': 'cooperative',
-      'text-size': ['match', ['to-number', ['get', 'cover_pct'], 30], 60, 9, 7],
-    });
-  }
+  const canopyData = resolveTileflowData(
+    vectorTiles({
+      attribution: 'Canopy fixture',
+      schema: tileflowWorldSchema(),
+      url: '/canopy.json',
+    }),
+  );
+  const [compiled] = bindSemanticReferences(
+    compileRenderStack(groves, createSemanticDataView(canopyData)),
+    canopyData,
+  );
+  assert.equal(compiled?.kind, 'layer');
+  if (!compiled || compiled.kind !== 'layer') return;
+  assert.equal(compiled.target, 'vegetation.render.groves');
+  assert.equal(compiled.template.feature?.dataLayer, 'canopy');
+  assert.deepEqual(compiled.template.selector, ['<', ['get', 'rank'], 8]);
+  assert.equal(compiled.template.range?.minZoom, 14);
+  assert.deepEqual(compiled.template.style.placement, {
+    'icon-image': 'grove',
+    'icon-overlap': 'always',
+    'icon-size': ['*', ['get', 'clearance_px_z15'], 0.05],
+    'text-field': 'o',
+    'text-font': ['Noto Sans Regular'],
+    'text-overlap': 'cooperative',
+    'text-size': ['match', ['to-number', ['get', 'cover_pct'], 30], 60, 9, 7],
+  });
 
-  for (const schema of [
-    tileflowWorldV1Schema({capabilities: {canopy: false}}),
-    openMapTiles({capabilities: {canopy: false}}),
-  ]) {
-    const withoutCanopy = resolveTileflowData(
-      vectorTiles({attribution: 'Canopy fixture', schema, url: '/canopy.json'}),
-    );
-    assert.throws(() => compileRenderStack(groves, createSemanticDataView(withoutCanopy)), {
-      code: 'missing-feature-binding',
-      message: 'Tileflow data schema does not provide feature canopy.',
-    });
-  }
+  // OpenMapTiles has no canopy layer.
+  const withoutCanopy = resolveTileflowData(
+    vectorTiles({attribution: 'Canopy fixture', schema: openMapTiles(), url: '/canopy.json'}),
+  );
+  assert.throws(() => compileRenderStack(groves, createSemanticDataView(withoutCanopy)), {
+    code: 'missing-feature-binding',
+    message: 'Tileflow data schema does not provide feature canopy.',
+  });
 });
 
 test('refinements leave a governing overlap mode without a redundant allow-overlap', () => {

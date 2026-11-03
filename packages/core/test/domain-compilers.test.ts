@@ -12,6 +12,8 @@ import {
   water,
   zoom,
 } from '../src';
+import type {TileflowLayerContribution} from '../src/cartography/contributions';
+import {createSemanticDataView} from '../src/cartography/semantic-bindings';
 import {expression} from '../src/cartography/values';
 import {compileAeroways} from '../src/modules/aeroways/compiler';
 import {compileBoundaries} from '../src/modules/boundaries/compiler';
@@ -40,6 +42,70 @@ const context = {
   },
 };
 
+/** Compile against other data as a map does: through World names, lowered by the data's adapter. */
+function compileThrough(
+  data: ReturnType<typeof resolveTileflowData>,
+  compile: (context: ReturnType<typeof contextWith>) => readonly TileflowLayerContribution[],
+) {
+  return assembleTileflowLayers(compile(contextWith(createSemanticDataView(data))), data);
+}
+
+function contextWith(data: ReturnType<typeof resolveTileflowData>) {
+  return {...context, data};
+}
+
+const openMapTilesConstruction = [
+  'motorway',
+  'trunk',
+  'primary',
+  'secondary',
+  'tertiary',
+  'minor',
+  'service',
+  'track',
+  'path',
+  'raceway',
+].map((value) => `${value}_construction`);
+
+/** The World road `class` the OpenMapTiles adapter reads from `class` and `subclass`. */
+function openMapTilesRoadClass(classField: string, subclassField: string): unknown[] {
+  return [
+    'match',
+    ['get', classField],
+    'minor',
+    'street',
+    openMapTilesConstruction,
+    'construction',
+    'bus_guideway',
+    'busway',
+    'path',
+    ['match', ['get', subclassField], 'pedestrian', 'pedestrian', 'path'],
+    ['to-string', ['get', classField]],
+  ];
+}
+
+/** The World road `type`: the subclass, or the class a road under construction becomes. */
+function openMapTilesRoadType(classField: string, subclassField: string): unknown[] {
+  return [
+    'match',
+    ['get', classField],
+    openMapTilesConstruction,
+    [
+      'match',
+      ['get', classField],
+      'minor_construction',
+      'street',
+      [
+        'slice',
+        ['to-string', ['get', classField]],
+        0,
+        ['index-of', '_construction', ['get', classField]],
+      ],
+    ],
+    ['get', subclassField],
+  ];
+}
+
 test('compiles complete land and water domains into stable direct layers', () => {
   const layers = assembleTileflowLayers([
     ...compileLand(undefined, context),
@@ -55,18 +121,33 @@ test('compiles complete land and water domains into stable direct layers', () =>
   assert.ok(ids.includes('tileflow-landuse-medical'));
   assert.ok(ids.includes('tileflow-landuse-parking'));
   assert.ok(ids.includes('tileflow-landcover-wood'));
+  assert.ok(ids.includes('tileflow-activity-areas'));
   assert.ok(ids.includes('tileflow-water'));
   assert.ok(ids.includes('tileflow-waterway-river-intermittent'));
   assert.equal(new Set(ids).size, ids.length);
   assert.ok(layers.every((layer) => !String(layer.id).startsWith('landuse-')));
 
   const commercial = layers.find((layer) => layer.id === 'tileflow-landuse-commercial');
+  assert.equal(commercial?.['source-layer'], 'landuse');
   assert.deepEqual(commercial?.filter, [
     'match',
     ['get', 'class'],
-    ['commercial', 'retail', 'business_area'],
+    ['commercial', 'retail'],
     true,
     false,
+  ]);
+  // World's activity areas take their opacity from their activity level.
+  const activity = layers.find((layer) => layer.id === 'tileflow-activity-areas');
+  assert.equal(activity?.['source-layer'], 'landuse_overlay');
+  assert.deepEqual(activity?.filter, ['==', ['get', 'class'], 'activity_area']);
+  assert.deepEqual((activity?.paint as Record<string, unknown>)['fill-opacity'], [
+    'interpolate',
+    ['linear'],
+    ['to-number', ['coalesce', ['get', 'activity'], 1], 1],
+    1,
+    0.08,
+    5,
+    0.24,
   ]);
 });
 
@@ -81,7 +162,7 @@ test('renders the seven global land-cover classes below OSM and fades them out a
   const osmLandcover = contributions.find((entry) => entry.layer.id === 'tileflow-landcover-wood')!;
   const paint = globalLandcover.layer.paint as Record<string, unknown>;
 
-  assert.equal(globalLandcover.layer['source-layer'], 'globallandcover');
+  assert.equal(globalLandcover.layer['source-layer'], 'landcover');
   assert.equal(globalLandcover.layer.minzoom, 0);
   assert.equal(globalLandcover.layer.maxzoom, 8);
   assert.deepEqual(paint['fill-color'], [
@@ -150,10 +231,10 @@ test('land draws only the barriers a map styles, from the barrier layer, hedge a
     ],
   );
   assert.ok(layers.every((layer) => layer['source-layer'] === 'traffic_control'));
-  const matches = (id: string, type: 2 | 3, subclass: string) =>
+  const matches = (id: string, type: 2 | 3, kind: string) =>
     featureFilter(layers.find((layer) => layer.id === id)?.filter as never).filter({zoom: 17}, {
       type,
-      properties: {class: 'barrier', subclass},
+      properties: {class: 'barrier', type: kind},
     } as never);
   assert.equal(matches('tileflow-barrier-hedge-area', 3, 'hedge'), true);
   assert.equal(matches('tileflow-barrier-hedge-area', 2, 'hedge'), false);
@@ -172,27 +253,23 @@ test('land draws only the barriers a map styles, from the barrier layer, hedge a
   );
 });
 
-test('remaps the global land-cover source-layer and class field', () => {
+test('draws global land cover only from data that has it', () => {
+  // OpenMapTiles has no global land cover.
   const data = resolveTileflowData({
     type: 'vector-tiles',
     attribution: '© Test',
-    schema: openMapTiles({
-      fields: {class: 'kind'},
-      layers: {globalLandcover: 'worldcover_lowzoom'},
-    }),
+    schema: openMapTiles({fields: {class: 'kind'}}),
     url: '/tiles.json',
   });
-  const globalLandcover = compileLand(undefined, {...context, data}).find(
-    (entry) => entry.layer.id === 'tileflow-global-landcover',
-  )!;
-
-  assert.equal(globalLandcover.layer['source-layer'], 'worldcover_lowzoom');
-  assert.deepEqual(
-    ((globalLandcover.layer.paint as Record<string, unknown>)['fill-color'] as unknown[]).slice(
-      0,
-      2,
+  assert.equal(
+    compileLand(undefined, {...context, data}).some(
+      (entry) => entry.layer.id === 'tileflow-global-landcover',
     ),
-    ['match', ['get', 'kind']],
+    false,
+  );
+  assert.equal(
+    compileLand(undefined, context).some((entry) => entry.layer.id === 'tileflow-global-landcover'),
+    true,
   );
 });
 
@@ -396,7 +473,6 @@ test('compiles buildings, boundaries, aeroways, and transit without shared layer
   const ids = layers.map((layer) => layer.id);
 
   assert.ok(ids.includes('tileflow-buildings-fill'));
-  assert.ok(ids.includes('tileflow-business-corridor'));
   assert.ok(ids.includes('tileflow-boundary-admin2'));
   assert.ok(ids.includes('tileflow-aeroway-runway-fill'));
   assert.ok(ids.includes('tileflow-transit-rail-surface'));
@@ -405,19 +481,18 @@ test('compiles buildings, boundaries, aeroways, and transit without shared layer
 
 test('colors building tones and use classes without making geometry visibility semantic', () => {
   const contributions = compileBuildings(undefined, context);
-  const corridor = contributions.find((entry) => entry.layer.id === 'tileflow-business-corridor')!;
   const buildings = contributions.find((entry) => entry.layer.id === 'tileflow-buildings-fill')!;
   const paint = buildings.layer.paint as Record<string, unknown>;
 
-  assert.equal(corridor.layer['source-layer'], 'business_corridor');
+  assert.equal(buildings.layer['source-layer'], 'building');
   assert.deepEqual(buildings.layer.filter, ['>=', ['zoom'], 15]);
   assert.deepEqual(paint['fill-color'], [
     'case',
-    ['==', ['coalesce', ['get', 'building_tone'], ''], 'active'],
+    ['==', ['coalesce', ['get', 'tone'], ''], 'active'],
     context.colors.buildings.active,
-    ['==', ['coalesce', ['get', 'building_tone'], ''], 'destination'],
+    ['==', ['coalesce', ['get', 'tone'], ''], 'destination'],
     context.colors.buildings.destination,
-    ['==', ['coalesce', ['get', 'building_tone'], ''], 'commercial'],
+    ['==', ['coalesce', ['get', 'tone'], ''], 'commercial'],
     context.colors.buildings.commercial,
     [
       'match',
@@ -575,18 +650,14 @@ test('one-way markers use the resolved road font instead of MapLibre glyph defau
 });
 
 test('compiles disjoint semantic path families across structures and remapped fields', () => {
-  const data = resolveTileflowData({
+  const request = roads({detail: 'all', extras: {paths: true}});
+  const remapped = resolveTileflowData({
     type: 'vector-tiles',
     attribution: '© Test',
     schema: openMapTiles({fields: {class: 'kind', subclass: 'kind_detail'}}),
     url: '/tiles.json',
   });
-  const contributions = compileRoads(roads({detail: 'all', extras: {paths: true}}), {
-    ...context,
-    data,
-  });
-
-  const expectedSubclasses = {
+  const expectedTypes = {
     pathway: ['path', 'bridleway', 'corridor'],
     footway: ['footway'],
     cycleway: ['cycleway'],
@@ -594,32 +665,49 @@ test('compiles disjoint semantic path families across structures and remapped fi
     pedestrian: ['pedestrian'],
   } as const;
 
-  for (const [roadClass, subclasses] of Object.entries(expectedSubclasses)) {
-    for (const structure of ['surface', 'tunnel', 'bridge']) {
-      const layer = contributions.find(
-        (entry) => entry.layer.id === `tileflow-road-${structure}-${roadClass}-fill`,
-      )?.layer;
-      assert.ok(layer, `${roadClass} ${structure} fill must exist`);
-      assert.deepEqual(layer.filter, [
-        'all',
-        ['==', ['geometry-type'], 'LineString'],
-        [
+  for (const {layers, roadClass, roadType, structureField} of [
+    {
+      layers: assembleTileflowLayers(compileRoads(request, context)),
+      roadClass: ['get', 'class'],
+      roadType: ['get', 'type'],
+      structureField: 'structure',
+    },
+    {
+      layers: compileThrough(remapped, (remappedContext) => compileRoads(request, remappedContext)),
+      roadClass: openMapTilesRoadClass('kind', 'kind_detail'),
+      roadType: openMapTilesRoadType('kind', 'kind_detail'),
+      structureField: 'brunnel',
+    },
+  ]) {
+    for (const [pathClass, types] of Object.entries(expectedTypes)) {
+      for (const structure of ['surface', 'tunnel', 'bridge']) {
+        const layer = layers.find(
+          (entry) => entry.id === `tileflow-road-${structure}-${pathClass}-fill`,
+        );
+        assert.ok(layer, `${pathClass} ${structure} fill must exist`);
+        assert.deepEqual(layer.filter, [
           'all',
-          ['match', ['get', 'kind'], ['path', 'path_construction'], true, false],
-          ['match', ['get', 'kind_detail'], subclasses, true, false],
-        ],
-        structure === 'surface'
-          ? ['match', ['get', 'brunnel'], ['tunnel', 'bridge'], false, true]
-          : ['==', ['get', 'brunnel'], structure],
-      ]);
+          ['==', ['geometry-type'], 'LineString'],
+          [
+            'any',
+            pathClass === 'pedestrian'
+              ? ['match', roadClass, ['pedestrian'], true, false]
+              : ['all', ['==', roadClass, 'path'], ['match', roadType, types, true, false]],
+            ['all', ['==', roadClass, 'construction'], ['match', roadType, types, true, false]],
+          ],
+          structure === 'surface'
+            ? ['match', ['get', structureField], ['tunnel', 'bridge'], false, true]
+            : ['==', ['get', structureField], structure],
+        ]);
+      }
     }
-  }
 
-  assert.equal(
-    contributions.some((entry) => entry.layer.id.includes('-path-')),
-    false,
-    'the old overlapping path target must not be emitted',
-  );
+    assert.equal(
+      layers.some((entry) => entry.id.includes('-path-')),
+      false,
+      'the old overlapping path target must not be emitted',
+    );
+  }
 });
 
 test('composes remapping-aware road treatments without multiplying generated layers', () => {
@@ -641,36 +729,35 @@ test('composes remapping-aware road treatments without multiplying generated lay
     }),
     url: '/tiles.json',
   });
-  const contributions = compileRoads(
-    roads({
-      classes: {
-        primary: {surface: {fill: {color: '#AABBCC', opacity: 1, width: 10}}},
-        service: {surface: {fill: {color: '#F5F5F5', opacity: 1, width: 8}}},
-      },
-      detail: 'all',
-      modifiers: {
-        construction: {surface: {fill: {color: '#DDEEFF'}}},
-        ramp: {widthScale: 0.5},
-        unpaved: {surface: {fill: {dash: [2, 1]}}},
-      },
-      restrictions: {
-        access: {surface: {fill: {opacity: 0.4}}},
-        bicycle: {surface: {fill: {color: '#778899'}}},
-      },
-      serviceTypes: {driveway: {widthScale: 0.6}},
-    }),
-    {...context, data},
+  const layers = compileThrough(data, (remappedContext) =>
+    compileRoads(
+      roads({
+        classes: {
+          primary: {surface: {fill: {color: '#AABBCC', opacity: 1, width: 10}}},
+          service: {surface: {fill: {color: '#F5F5F5', opacity: 1, width: 8}}},
+        },
+        detail: 'all',
+        modifiers: {
+          construction: {surface: {fill: {color: '#DDEEFF'}}},
+          ramp: {widthScale: 0.5},
+          unpaved: {surface: {fill: {dash: [2, 1]}}},
+        },
+        restrictions: {
+          access: {surface: {fill: {opacity: 0.4}}},
+          bicycle: {surface: {fill: {color: '#778899'}}},
+        },
+        serviceTypes: {driveway: {widthScale: 0.6}},
+      }),
+      remappedContext,
+    ),
   );
-  const primary = contributions.find(
-    (entry) => entry.layer.id === 'tileflow-road-surface-primary-fill',
-  )!;
-  const service = contributions.find(
-    (entry) => entry.layer.id === 'tileflow-road-surface-service-fill',
-  )!;
-  const primaryPaint = primary.layer.paint as Record<string, unknown>;
-  const serializedPrimary = JSON.stringify(primary.layer);
-  const serializedService = JSON.stringify(service.layer);
+  const primary = layers.find((layer) => layer.id === 'tileflow-road-surface-primary-fill')!;
+  const service = layers.find((layer) => layer.id === 'tileflow-road-surface-service-fill')!;
+  const primaryPaint = primary.paint as Record<string, unknown>;
+  const serializedPrimary = JSON.stringify(primary);
+  const serializedService = JSON.stringify(service);
 
+  // OpenMapTiles' `primary_construction` reads as World's construction class.
   assert.match(serializedPrimary, /primary_construction/);
   assert.match(serializedPrimary, /ramp_flag/);
   assert.match(serializedPrimary, /pavement/);
@@ -678,14 +765,15 @@ test('composes remapping-aware road treatments without multiplying generated lay
   assert.match(serializedPrimary, /bike_permission/);
   assert.match(serializedService, /service_kind/);
   assert.match(serializedService, /driveway/);
-  assert.deepEqual(primary.layer.layout, {
+  assert.deepEqual(primary.layout, {
     'line-sort-key': ['coalesce', ['get', 'stack_order'], ['get', 'floor_level'], 0],
     'line-cap': 'round',
     'line-join': 'round',
   });
+  // OpenMapTiles' `ramp: 1` is World's `link: true`.
   assert.deepEqual(primaryPaint['line-width'], [
     'case',
-    ['==', ['get', 'ramp_flag'], 1],
+    ['==', ['==', ['to-number', ['get', 'ramp_flag'], 0], 1], true],
     ['*', 10, 0.5],
     10,
   ]);
@@ -696,7 +784,7 @@ test('composes remapping-aware road treatments without multiplying generated lay
     ['literal', [1, 0]],
   ]);
   assert.equal(
-    contributions.filter((entry) => entry.layer.id === primary.layer.id).length,
+    layers.filter((layer) => layer.id.startsWith(primary.id)).length,
     1,
     'treatments must remain data-driven instead of duplicating semantic class layers',
   );
@@ -716,7 +804,7 @@ test('keeps zoom interpolation at the expression root when treatments refine wid
                 10,
                 2,
                 16,
-                ['match', ['get', 'oneway'], [1, -1], 8, 12],
+                ['case', ['==', ['get', 'oneway'], true], 8, 12],
               ]),
             },
           },
@@ -731,7 +819,7 @@ test('keeps zoom interpolation at the expression root when treatments refine wid
 
   assert.equal(width[0], 'interpolate');
   assert.deepEqual(width.slice(0, 4), ['interpolate', ['linear'], ['zoom'], 10]);
-  assert.match(JSON.stringify(width), /"ramp"/);
+  assert.match(JSON.stringify(width), /"link"/);
   assert.match(JSON.stringify(width), /"oneway"/);
   assert.equal(JSON.stringify(width).match(/"oneway"/g)?.length, 1);
   assert.match(JSON.stringify(width), /"let","__tileflow_road_base"/);
@@ -783,38 +871,42 @@ test('compiles pedestrian polygons as a semantic road area even without line cla
       },
       detail: 'none',
     }),
-    {...context, data},
+    contextWith(createSemanticDataView(data)),
   );
-  const pedestrianArea = contributions.find(
-    (entry) => entry.layer.id === 'tileflow-road-pedestrian-area',
-  );
+  const layers = assembleTileflowLayers(contributions, data);
+  const pedestrianArea = layers.find((layer) => layer.id === 'tileflow-road-pedestrian-area');
+  const roadClass = openMapTilesRoadClass('kind', 'kind_detail');
 
   assert.ok(pedestrianArea);
-  assert.deepEqual(pedestrianArea.layer.filter, [
+  assert.deepEqual(pedestrianArea.filter, [
     'all',
     ['==', ['geometry-type'], 'Polygon'],
     [
-      'all',
-      ['match', ['get', 'kind'], ['path', 'path_construction'], true, false],
-      ['match', ['get', 'kind_detail'], ['pedestrian'], true, false],
+      'any',
+      ['match', roadClass, ['pedestrian'], true, false],
+      [
+        'all',
+        ['==', roadClass, 'construction'],
+        ['match', openMapTilesRoadType('kind', 'kind_detail'), ['pedestrian'], true, false],
+      ],
     ],
   ]);
-  assert.deepEqual(pedestrianArea.layer.paint, {
+  assert.deepEqual(pedestrianArea.paint, {
     'fill-color': '#F1F3F5',
     'fill-opacity': 1,
   });
-  const pedestrianOutline = contributions.find(
-    (entry) => entry.layer.id === 'tileflow-road-pedestrian-area-outline',
+  const pedestrianOutline = layers.find(
+    (layer) => layer.id === 'tileflow-road-pedestrian-area-outline',
   );
+  assert.equal((pedestrianOutline?.paint as Record<string, unknown>)['line-color'], '#D5DCE3');
   assert.equal(
-    (pedestrianOutline?.layer.paint as Record<string, unknown>)['line-color'],
-    '#D5DCE3',
-  );
-  assert.equal(
-    contributions.some((entry) => entry.layer.id.includes('surface-pedestrian')),
+    layers.some((layer) => layer.id.includes('surface-pedestrian')),
     false,
   );
-  assert.equal(pedestrianArea.slot, 'transport-areas');
+  assert.equal(
+    contributions.find((entry) => entry.layer.id === 'tileflow-road-pedestrian-area')?.slot,
+    'transport-areas',
+  );
 });
 
 test('orders road areas below every generated road line stack', () => {
@@ -870,11 +962,12 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
     poiContributions.map((entry) => entry.layer.id),
     ['tileflow-poi'],
   );
-  assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /filter_rank/);
-  assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /size_rank/);
+  assert.equal(poiContributions[0]?.layer['source-layer'], 'poi_label');
+  assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /"filterrank"/);
+  assert.match(JSON.stringify(poiContributions[0]?.layer.filter), /"sizerank"/);
   assert.deepEqual((poiContributions[0]?.layer.filter as unknown[])[1], [
     'match',
-    ['get', 'category'],
+    ['get', 'class'],
     ['food-drink', 'transport'],
     true,
     false,
@@ -882,12 +975,12 @@ test('coordinates label eligibility with roads and compiles exact label and POI 
   // The density threshold rises one rank at z16 and two from z17, past World's last POI zoom.
   assert.deepEqual((poiContributions[0]?.layer.filter as unknown[])[4], [
     '<=',
-    ['to-number', ['get', 'filter_rank'], 6],
+    ['to-number', ['get', 'filterrank'], 6],
     ['+', ['step', ['zoom'], 0, 16, 1, 17, 2], 3],
   ]);
   assert.deepEqual((poiContributions[0]?.layer.paint as Record<string, unknown>)['text-color'], [
     'match',
-    ['get', 'category'],
+    ['get', 'class'],
     'transport',
     (context.colors.poi as Record<string, string>).label,
     '#AA4422',
@@ -904,7 +997,7 @@ test('POI density shows more ranks as the camera passes World’s last POI zoom'
     [0, 1, 2, 3, 4, 5].filter((rank) =>
       filter.filter({zoom}, {
         type: 1,
-        properties: {category: 'food-drink', filter_rank: rank, name: 'Café', size_rank: 16},
+        properties: {class: 'food-drink', filterrank: rank, name: 'Café', sizerank: 16},
       } as never),
     );
   assert.deepEqual(shownRanks(15), [0, 1, 2, 3]);
@@ -972,7 +1065,7 @@ test('road labels use the same semantic path selectors as road geometry', () => 
     context,
   );
 
-  const subclasses = new Set<string>();
+  const types = new Set<string>();
   for (const roadClass of ['pedestrian', 'footway', 'cycleway', 'steps', 'pathway']) {
     const layer = labelContributions.find(
       (entry) => entry.layer.id === `tileflow-label-road-${roadClass}`,
@@ -980,12 +1073,12 @@ test('road labels use the same semantic path selectors as road geometry', () => 
     assert.ok(layer, `${roadClass} label must exist`);
     const serialized = JSON.stringify(layer.filter);
     assert.match(serialized, /"class"/);
-    assert.match(serialized, /"subclass"/);
+    assert.match(serialized, /"type"/);
     for (const value of ['pedestrian', 'footway', 'cycleway', 'steps']) {
-      if (serialized.includes(`"${value}"`)) subclasses.add(value);
+      if (serialized.includes(`"${value}"`)) types.add(value);
     }
   }
-  assert.deepEqual([...subclasses].sort(), ['cycleway', 'footway', 'pedestrian', 'steps']);
+  assert.deepEqual([...types].sort(), ['cycleway', 'footway', 'pedestrian', 'steps']);
   assert.deepEqual(
     compileLabels(
       labels({roadClasses: [...selectedRoadClasses].reverse(), roads: 'all'}),
@@ -1006,72 +1099,53 @@ test('composes expressway, toll, indoor, official, and mountain-bike intelligenc
         expressway: 'fast_flag',
         indoor: 'inside_flag',
         mtbScale: 'trail_grade',
-        official: 'official_flag',
         toll: 'paid_flag',
       },
     }),
     url: '/tiles.json',
   });
-  const contributions = compileRoads(
-    roads({
-      detail: 'all',
-      extras: {paths: true},
-      modifiers: {
-        expressway: {surface: {fill: {color: '#112233'}}},
-        indoor: {surface: {fill: {opacity: 0.35}}},
-        official: {surface: {casing: {color: '#445566'}}},
-      },
-      mountainBike: {
-        '0': {surface: {fill: {color: '#55AA66'}}},
-        '3+': {surface: {fill: {color: '#AA5544'}}},
-      },
-      restrictions: {toll: {surface: {fill: {dash: [3, 1]}}}},
-    }),
-    {...context, data},
-  );
-  const primary = JSON.stringify(
-    contributions.find((entry) => entry.layer.id === 'tileflow-road-surface-primary-fill')?.layer,
-  );
-  const pathway = JSON.stringify(
-    contributions.find((entry) => entry.layer.id === 'tileflow-road-surface-pathway-fill')?.layer,
-  );
-  const pathwayCasing = JSON.stringify(
-    contributions.find((entry) => entry.layer.id === 'tileflow-road-surface-pathway-casing')?.layer,
-  );
+  const request = roads({
+    detail: 'all',
+    extras: {paths: true},
+    modifiers: {
+      expressway: {surface: {fill: {color: '#112233'}}},
+      indoor: {surface: {fill: {opacity: 0.35}}},
+      official: {surface: {casing: {color: '#445566'}}},
+    },
+    mountainBike: {
+      '0': {surface: {fill: {color: '#55AA66'}}},
+      '3+': {surface: {fill: {color: '#AA5544'}}},
+    },
+    restrictions: {toll: {surface: {fill: {dash: [3, 1]}}}},
+  });
+  const layers = compileThrough(data, (remappedContext) => compileRoads(request, remappedContext));
+  const serialized = (id: string) => JSON.stringify(layers.find((layer) => layer.id === id));
+  const primary = serialized('tileflow-road-surface-primary-fill');
+  const pathway = serialized('tileflow-road-surface-pathway-fill');
+  const pathwayCasing = serialized('tileflow-road-surface-pathway-casing');
 
   assert.match(primary, /fast_flag/);
   assert.match(primary, /paid_flag/);
   assert.match(primary, /inside_flag/);
   assert.match(pathway, /trail_grade/);
   assert.match(pathway, /3\+/);
-  assert.match(pathwayCasing, /official_flag/);
+  // OpenMapTiles has no official-route field, so the modifier has nothing to read there.
+  assert.doesNotMatch(pathwayCasing, /official/);
+  assert.match(
+    JSON.stringify(
+      compileRoads(request, context).find(
+        (entry) => entry.layer.id === 'tileflow-road-surface-pathway-casing',
+      )?.layer,
+    ),
+    /\["get","official"\]/,
+  );
   assert.equal(
-    contributions.filter((entry) => entry.layer.id === 'tileflow-road-surface-primary-fill').length,
+    layers.filter((layer) => layer.id.startsWith('tileflow-road-surface-primary-fill')).length,
     1,
   );
 });
 
 test('compiles global road-shield phases and allowlisted visuals without raw IDs', () => {
-  const data = resolveTileflowData({
-    type: 'vector-tiles',
-    attribution: '© Test',
-    schema: openMapTiles({
-      fields: {
-        class: 'kind',
-        name: 'label',
-        ref: 'route_ref',
-        refLength: 'route_ref_length',
-        shieldKind: 'shield_family',
-        shieldLineLengthMeters: 'shield_line_length',
-        shieldRank: 'shield_rank',
-        shieldText: 'shield_text',
-        shieldTextColor: 'shield_ink',
-        subclass: 'detail',
-      },
-      layers: {roadName: 'road_labels', roadShield: 'road_shields'},
-    }),
-    url: '/tiles.json',
-  });
   const contributions = compileLabels(
     labels({
       junctions: true,
@@ -1097,7 +1171,7 @@ test('compiles global road-shield phases and allowlisted visuals without raw IDs
       },
     }),
     roads({detail: 'all'}),
-    {...context, data},
+    context,
   );
   const overview = contributions.find(
     (entry) => entry.layer.id === 'tileflow-label-road-shield-overview',
@@ -1109,29 +1183,29 @@ test('compiles global road-shield phases and allowlisted visuals without raw IDs
     (entry) => entry.layer.id === 'tileflow-label-road-junction',
   )?.layer;
 
-  assert.equal(overview?.['source-layer'], 'road_shields');
-  assert.equal(detail?.['source-layer'], 'road_labels');
+  assert.equal(overview?.['source-layer'], 'road_shield');
+  assert.equal(detail?.['source-layer'], 'road_label');
   assert.equal(overview?.minzoom, 6);
   assert.equal(overview?.maxzoom, 11);
   assert.equal(detail?.minzoom, 11);
   assert.match(JSON.stringify(overview?.filter), /Point/);
   assert.match(
     JSON.stringify(overview?.filter),
-    /\[">=",\["to-number",\["get","route_ref_length"\],0\],1\]/u,
+    /\[">=",\["to-number",\["get","reflen"\],0\],1\]/u,
   );
   assert.doesNotMatch(
     JSON.stringify(overview?.filter),
-    /\[">=",\["to-number",\["get","route_ref_length"\],0\],2\]/u,
+    /\[">=",\["to-number",\["get","reflen"\],0\],2\]/u,
   );
   assert.match(JSON.stringify(detail?.filter), /LineString/);
-  assert.match(JSON.stringify(overview?.filter), /shield_family/);
-  assert.match(JSON.stringify(detail?.filter), /route_ref_length/);
-  assert.match(JSON.stringify(detail?.filter), /shield_line_length/);
-  assert.match(JSON.stringify(detail?.layout), /shield_text/);
+  assert.match(JSON.stringify(overview?.filter), /"shield_kind"/);
+  assert.match(JSON.stringify(detail?.filter), /"reflen"/);
+  assert.match(JSON.stringify(detail?.filter), /"shield_line_length_m"/);
+  assert.match(JSON.stringify(detail?.layout), /"shield_text"/);
   assert.match(JSON.stringify(detail?.layout?.['symbol-sort-key']), /shield_rank/);
   assert.match(JSON.stringify(detail?.layout?.['icon-image']), /route-shield-blue/);
-  assert.match(JSON.stringify(detail?.layout?.['icon-image']), /shield_family/);
-  assert.match(JSON.stringify(detail?.paint?.['text-color']), /shield_ink/);
+  assert.match(JSON.stringify(detail?.layout?.['icon-image']), /"shield_kind"/);
+  assert.match(JSON.stringify(detail?.paint?.['text-color']), /"shield_text_color"/);
   assert.equal(overview?.layout?.['symbol-placement'], 'point');
   assert.equal(detail?.layout?.['symbol-placement'], 'line');
   assert.equal(overview?.layout?.['icon-rotation-alignment'], 'viewport');
@@ -1147,20 +1221,11 @@ test('compiles global road-shield phases and allowlisted visuals without raw IDs
   assert.equal((overview?.layout as Record<string, unknown>)['icon-optional'], false);
   assert.equal((overview?.layout as Record<string, unknown>)['text-optional'], false);
   assert.match(JSON.stringify(junction?.filter), /motorway_junction/);
-  assert.match(JSON.stringify(junction?.filter), /detail/);
+  assert.match(JSON.stringify(junction?.filter), /\["get","type"\],"junction"/);
   assert.equal((junction?.paint as Record<string, unknown>)['text-color'], '#556677');
 });
 
 test('road names, shields and junctions draw above ground layers under every collision policy', () => {
-  const data = resolveTileflowData({
-    type: 'vector-tiles',
-    attribution: '© Test',
-    schema: openMapTiles({
-      fields: {shieldKind: 'shield_kind'},
-      layers: {roadShield: 'transportation_shield'},
-    }),
-    url: '/tiles.json',
-  });
   const routeReferences = [
     'tileflow-label-road-shield-overview',
     'tileflow-label-road-shield-detail',
@@ -1168,13 +1233,13 @@ test('road names, shields and junctions draw above ground layers under every col
   ];
   const layerIds = (collisionPriority: 'balanced' | 'navigation') =>
     assembleTileflowLayers([
-      ...compileBoundaries(undefined, {...context, data}),
-      ...compileBuildings(undefined, {...context, data}),
-      ...compileVegetation(undefined, {...context, data}),
+      ...compileBoundaries(undefined, context),
+      ...compileBuildings(undefined, context),
+      ...compileVegetation(undefined, context),
       ...compileLabels(
         labels({collisionPriority, junctions: true, roads: 'all', shields: 'all'}),
         roads({detail: 'all'}),
-        {...context, data},
+        context,
       ),
     ]).map((layer) => String(layer.id));
   const isRoadName = (id: string) =>
@@ -1264,7 +1329,7 @@ test('POI numeric density and coupling change emitted layers', () => {
     uncoupled.map((entry) => entry.layer.id),
     ['tileflow-poi-icon', 'tileflow-poi-label'],
   );
-  assert.match(JSON.stringify(uncoupled[0]?.layer.filter), /filter_rank/);
+  assert.match(JSON.stringify(uncoupled[0]?.layer.filter), /"filterrank"/);
   assert.match(JSON.stringify(uncoupled[0]?.layer.filter), /,5\]/);
   assert.deepEqual(
     coupled.map((entry) => entry.layer.id),
@@ -1323,7 +1388,7 @@ test('POI categories with their own zoom ranges need the category placement orde
   assert.ok(culture!.localOrder > food!.localOrder);
 });
 
-test('POI categories are exact and never fall back to class or subclass', () => {
+test('POI categories are exact World classes and never fall back to the OSM type', () => {
   const contributions = compilePoi(
     poi({
       categories: ['transport'],
@@ -1335,9 +1400,13 @@ test('POI categories are exact and never fall back to class or subclass', () => 
   );
   const serializedFilter = JSON.stringify(contributions[0]?.layer.filter);
 
-  assert.match(serializedFilter, /"category"/u);
-  assert.match(serializedFilter, /"transport"/u);
-  assert.doesNotMatch(serializedFilter, /"class"|"subclass"|"rank"/u);
+  // World's POI `class` is the Tileflow category; the OSM value is its `type`.
+  assert.deepEqual((contributions[0]?.layer.filter as unknown[])[1], [
+    '==',
+    ['get', 'class'],
+    'transport',
+  ]);
+  assert.doesNotMatch(serializedFilter, /"type"|"subclass"|"category"|"rank"/u);
 });
 
 test('POI placement orders by filter rank and then physical size rank', () => {
@@ -1348,8 +1417,8 @@ test('POI placement orders by filter rank and then physical size rank', () => {
 
   assert.deepEqual(layer?.layer.layout?.['symbol-sort-key'], [
     '+',
-    ['*', ['to-number', ['get', 'filter_rank'], 6], 17],
-    ['to-number', ['get', 'size_rank'], 17],
+    ['*', ['to-number', ['get', 'filterrank'], 6], 17],
+    ['to-number', ['get', 'sizerank'], 17],
   ]);
   assert.match(JSON.stringify(layer?.layer.layout?.['icon-image']), /"icon"/u);
   assert.match(JSON.stringify(layer?.layer.layout?.['icon-image']), /"culture"/u);

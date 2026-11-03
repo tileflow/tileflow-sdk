@@ -34,7 +34,7 @@
     "prepack": "node ../../scripts/package-license.mjs --prepare",
     "postpack": "node ../../scripts/package-license.mjs --clean",
     "build": "tsup src/artifacts.ts src/config.ts src/fonts.ts src/icons.ts src/inspect.ts src/preview.ts src/server.ts src/tilesets.ts src/validation.ts --format esm --dts --clean --platform node --external sharp && tsup --config tsup.inspector.config.ts",
-    "test": "tsx --test test/*.test.ts",
+    "test": "tsx --test --test-concurrency=2 test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
     "verify": "pnpm run typecheck && pnpm run test"

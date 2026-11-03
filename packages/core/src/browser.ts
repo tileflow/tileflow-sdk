@@ -1,3 +1,4 @@
+import {readBoundedTileflowBrowserResource} from './browser-resource';
 import type {TileflowColorOverrides} from './color-program-runtime';
 import {
   createTileflowDynamicImageRegistry,
@@ -28,9 +29,13 @@ import {
   parseTileflowStyleFamily,
 } from './style-family';
 import {createTileflowFamilyAnimator, mixTileflowFamilyValues} from './style-family-browser';
-import {loadTileflowStyleFamily} from './style-family-loader';
 import {prepareTileflowStyleFamilyForRendering} from './style-family-render';
 import {resolveTileflowFamilyResourceUrls} from './style-family-runtime';
+import {
+  loadTileflowRuntimeStyle,
+  loadTileflowRuntimeStyleFamily,
+  type TileflowRuntimeStyleLoadOptions,
+} from './style-resources-browser';
 import {
   mixTileflowAzimuths,
   readTileflowSunPreset,
@@ -75,6 +80,12 @@ import type {MapLibreStyle} from './types';
 export type {TileflowColorOverrides} from './color-program-runtime';
 
 export {loadTileflowRuntimeAppearance} from './style-family-runtime';
+
+export {
+  loadTileflowRuntimeStyle,
+  type TileflowLoadedRuntimeStyle,
+  type TileflowRuntimeStyleLoadOptions,
+} from './style-resources-browser';
 
 export {
   attachTileflowAtmosphere,
@@ -594,7 +605,6 @@ const maximumTransitionMs = 5_000;
 const defaultThemeTransitionMs = 450;
 /** Labels and icons cross-fade this long when the nearest theme of a blend changes. */
 const blendLabelFadeMs = 450;
-const maximumTileflowBlendStyleBytes = 16 * 1024 * 1024;
 
 type ActiveBlend = {
   blender: TileflowThemeBlender;
@@ -619,7 +629,7 @@ type StyleState = {
   value: TileflowStyleStateValue;
 };
 type Target =
-  | {kind: 'theme'; style: TileflowRuntimeStyle; transition: number}
+  | {kind: 'theme'; style: TileflowRuntimeStyle; prepared: MapLibreStyle; transition: number}
   | {
       kind: 'blend';
       key: string;
@@ -644,13 +654,18 @@ function validateStyleState(name: unknown, value: unknown): TypeError | undefine
 
 /**
  * Transactionally changes a MapLibre style while preserving the map instance and camera.
- * Independent font preloads start immediately; style application is serialized and last request wins.
+ * Themes preload their documents and fonts independently; style application is serialized and
+ * the last request wins.
  */
 export function createTileflowThemeController(options: {
   initial: TileflowRuntimeStyle;
+  /** The prepared initial document already given to the map, when initial.style is a URL. */
+  initialStyle?: MapLibreStyle;
   loadFonts?: (style: TileflowRuntimeStyle) => Promise<void>;
-  /** Loads a theme's style document for a blend; defaults to a same-origin-credentials fetch. */
+  /** Override document preparation, for example for a native resource transport. */
   loadStyle?: (url: string) => Promise<MapLibreStyle>;
+  /** Request policy used for style and TileJSON preparation, including theme changes and blends. */
+  styleLoadOptions?: TileflowRuntimeStyleLoadOptions;
   loadFamily?: (url: string) => Promise<TileflowStyleFamily>;
   map: TileflowStyleSwitchMap;
   onTransition?: (transition: TileflowThemeTransition) => void;
@@ -659,31 +674,74 @@ export function createTileflowThemeController(options: {
   transition?: TileflowThemeTransitionOptions;
 }): TileflowThemeController {
   assertConcreteRuntimeTheme(options.initial, 'initial');
+  const timeoutMs = normalizeThemeTransitionTimeout(options.timeoutMs);
+  const defaultTransition = normalizeThemeTransitionDuration(options.transition);
+  const defaultThemeTransition = normalizeThemeTransitionDuration(
+    options.transition,
+    defaultThemeTransitionMs,
+  );
   const loadFonts =
     options.loadFonts ??
     ((runtimeStyle: TileflowRuntimeStyle) =>
       loadTileflowStyleFonts(runtimeStyle.style, {fontFaces: runtimeStyle.fontFaces}));
-  const loadStyle = options.loadStyle ?? loadTileflowBlendStyle;
+  const lifetime = new AbortController();
+  const abort = () => lifetime.abort();
+  const parentSignal = options.styleLoadOptions?.signal;
+  if (parentSignal?.aborted) abort();
+  else parentSignal?.addEventListener('abort', abort, {once: true});
+  const styleLoadOptions = {...options.styleLoadOptions, signal: lifetime.signal};
+  const preparedStyles = new WeakMap<
+    TileflowRuntimeStyle,
+    Promise<TileflowRuntimeStyle & {style: MapLibreStyle}>
+  >();
+  if (options.initialStyle)
+    preparedStyles.set(
+      options.initial,
+      Promise.resolve({...options.initial, style: options.initialStyle}),
+    );
+  function prepareStyle(
+    theme: TileflowRuntimeStyle,
+  ): Promise<TileflowRuntimeStyle & {style: MapLibreStyle}> {
+    let pending = preparedStyles.get(theme);
+    if (!pending) {
+      // Inline documents may already belong to a native transport. Their owner cannot be inferred.
+      pending =
+        typeof theme.style !== 'string'
+          ? Promise.resolve({...theme, style: theme.style})
+          : options.loadStyle
+            ? options.loadStyle(theme.style).then((style) => ({...theme, style}))
+            : loadTileflowRuntimeStyle(theme, styleLoadOptions);
+      preparedStyles.set(theme, pending);
+      pending.catch(() => preparedStyles.delete(theme));
+    }
+    return pending;
+  }
+  const loadStyle = async (url: string) => (await prepareStyle({style: url})).style;
+  async function prepareTheme(theme: TileflowRuntimeStyle): Promise<MapLibreStyle> {
+    const prepared = await prepareStyle(theme);
+    await loadFonts(prepared);
+    return prepared.style;
+  }
   const familyCache = new Map<string, Promise<TileflowStyleFamily>>();
   if (options.initial.familyUrl && options.initial.family)
     familyCache.set(options.initial.familyUrl, Promise.resolve(options.initial.family));
-  const familyAbort = new AbortController();
-  const loadFamily =
-    options.loadFamily ??
-    ((url: string) => loadTileflowStyleFamily(url, {signal: familyAbort.signal}));
+  const loadFamily = (url: string) =>
+    options.loadFamily
+      ? options
+          .loadFamily(url)
+          .then(parseTileflowStyleFamily)
+          .then((family) => resolveTileflowFamilyResourceUrls(family, url))
+          .then(prepareTileflowStyleFamilyForRendering)
+      : loadTileflowRuntimeStyleFamily(url, styleLoadOptions);
   const resolveFamily = async (style: TileflowRuntimeStyle): Promise<TileflowRuntimeStyle> => {
     if (!style.familyUrl || style.family) return style;
     let pending = familyCache.get(style.familyUrl);
     if (!pending) {
       const url = style.familyUrl;
-      pending = loadFamily(url)
-        .then(parseTileflowStyleFamily)
-        .then((family) => resolveTileflowFamilyResourceUrls(family, url))
-        .then(prepareTileflowStyleFamilyForRendering)
-        .catch((error: unknown) => {
-          familyCache.delete(url);
-          throw error;
-        });
+      pending = loadFamily(url).catch((error: unknown) => {
+        familyCache.delete(url);
+        throw error;
+      });
       familyCache.set(url, pending);
       if (familyCache.size > 4) familyCache.delete(familyCache.keys().next().value!);
     }
@@ -697,12 +755,6 @@ export function createTileflowThemeController(options: {
           : materializeTileflowStyleFamily(family, style.theme!),
     };
   };
-  const timeoutMs = normalizeThemeTransitionTimeout(options.timeoutMs);
-  const defaultTransition = normalizeThemeTransitionDuration(options.transition);
-  const defaultThemeTransition = normalizeThemeTransitionDuration(
-    options.transition,
-    defaultThemeTransitionMs,
-  );
   const styleIdentities = new WeakMap<object, number>();
   // The route inks of each blended theme, in blend order, by the blend's plan.
   const blendRouteInks = new WeakMap<TileflowThemeBlendPlan, readonly TileflowRouteInks[]>();
@@ -725,7 +777,7 @@ export function createTileflowThemeController(options: {
   options.map.on('styledata', invalidateMetadata);
   options.map.on('style.load', invalidateMetadata);
   options.map.on('remove', releaseMetadata);
-  let shown: Shown = {style: options.initial.style};
+  let shown: Shown = {style: options.initialStyle ?? options.initial.style};
   let activeBlend: ActiveBlend | undefined;
   let pendingBlend: PendingBlend | undefined;
   let stopThemeMotion: (() => void) | undefined;
@@ -734,7 +786,7 @@ export function createTileflowThemeController(options: {
   let applyQueue: Promise<void> = Promise.resolve();
   // The layers of the style the map shows, as they were applied, for emphasis.
   let shownLayers: readonly unknown[] | undefined =
-    typeof options.initial.style === 'string' ? undefined : options.initial.style.layers;
+    typeof shown.style === 'string' ? undefined : shown.style.layers;
   // Emphasis: the latest request, the request whose values are on the map (kept while it eases
   // out), its eased strength and goal, and the values it changes in the shown style.
   let emphasis: TileflowEmphasis | undefined;
@@ -893,10 +945,11 @@ export function createTileflowThemeController(options: {
   const controller: TileflowThemeController = {
     dispose() {
       options.map.off('styledata', syncFamilyImages);
-      familyAbort.abort();
       familyCache.clear();
       familyAnimator?.dispose();
       disposed = true;
+      lifetime.abort();
+      parentSignal?.removeEventListener('abort', abort);
       stopThemeMotion?.();
       releaseMetadata();
       images?.dispose();
@@ -1192,14 +1245,14 @@ export function createTileflowThemeController(options: {
         phase: 'preloading',
         targetTheme: style.theme,
       });
-      let preloaded: Promise<void>;
+      let preloaded: Promise<MapLibreStyle>;
       try {
-        preloaded = loadFonts(style);
+        preloaded = prepareTheme(style);
       } catch (error) {
         return Promise.resolve(handlePreloadFailure(runId, style.theme, error));
       }
       return preloaded.then(
-        () => enqueue(runId, {kind: 'theme', style, transition}),
+        (prepared) => enqueue(runId, {kind: 'theme', style, prepared, transition}),
         (error: unknown) => handlePreloadFailure(runId, style.theme, error),
       );
     },
@@ -1275,14 +1328,7 @@ export function createTileflowThemeController(options: {
     if (!canBlendTileflowThemes(options.map)) {
       throw new TypeError('Tileflow theme blends require a MapLibre GL JS map.');
     }
-    const [styles] = await Promise.all([
-      Promise.all(
-        themes.map((theme) =>
-          typeof theme.style === 'string' ? loadStyle(theme.style) : Promise.resolve(theme.style),
-        ),
-      ),
-      Promise.all(themes.map((theme) => loadFonts(theme))),
-    ]);
+    const styles = await Promise.all(themes.map(prepareTheme));
     const plan = planTileflowThemeBlend(styles);
     images?.assertBlend(plan.images);
     blendMetadata.set(
@@ -1334,7 +1380,7 @@ export function createTileflowThemeController(options: {
     options.onTransition?.({currentTheme: previous.current.theme, phase: 'applying', targetTheme});
     let cover: ReturnType<typeof beginTileflowStyleCrossfade>;
     const styleInput =
-      target.kind === 'theme' ? target.style.style : target.plan.styleAt(target.position());
+      target.kind === 'theme' ? target.prepared : target.plan.styleAt(target.position());
 
     try {
       let liveTransition = false;
@@ -1564,9 +1610,13 @@ export function createTileflowThemeController(options: {
       shown = {blend: activeBlend, style};
       shownLayers = style.layers;
     } else {
-      await applyMapStyle(options.map, previous.shown.style, timeoutMs);
-      shown = previous.shown;
-      shownLayers = typeof shown.style === 'string' ? undefined : shown.style.layers;
+      const style =
+        typeof previous.shown.style === 'string'
+          ? (await prepareStyle(previous.current)).style
+          : previous.shown.style;
+      await applyMapStyle(options.map, style, timeoutMs);
+      shown = {style};
+      shownLayers = style.layers;
     }
     current = previous.current;
     installFamily(previous.current);
@@ -2244,26 +2294,6 @@ function normalizeThemeTransitionDuration(
   return Math.round(duration);
 }
 
-/** Fetches a theme's style document with the same request policy as style font metadata. */
-async function loadTileflowBlendStyle(url: string): Promise<MapLibreStyle> {
-  const response = await globalThis.fetch(resolveTileflowBrowserResourceUrl(url), {
-    cache: 'default',
-    credentials: 'same-origin',
-    redirect: 'error',
-  });
-  if (!response.ok) throw new Error(`Tileflow theme style failed: ${response.status}`);
-  const bytes = await readBoundedTileflowBrowserResource(
-    response,
-    maximumTileflowBlendStyleBytes,
-    'Tileflow theme style',
-  );
-  const style: unknown = JSON.parse(new TextDecoder().decode(bytes));
-  if (!style || typeof style !== 'object' || !Array.isArray((style as MapLibreStyle).layers)) {
-    throw new Error('Tileflow theme style is not a MapLibre style document.');
-  }
-  return style as MapLibreStyle;
-}
-
 function assertConcreteRuntimeTheme(style: TileflowRuntimeStyle, role: 'initial' | 'target'): void {
   const error = validateConcreteRuntimeTheme(style, role);
   if (error) throw error;
@@ -2537,44 +2567,6 @@ async function loadTileflowFontFace(
   });
   await fontFace.load();
   fontSet.add(fontFace);
-}
-
-async function readBoundedTileflowBrowserResource(
-  response: Response,
-  maximumBytes: number,
-  label: string,
-): Promise<Uint8Array> {
-  const contentLength = response.headers.get('content-length');
-  if (contentLength && /^\d+$/u.test(contentLength) && Number(contentLength) > maximumBytes) {
-    await response.body?.cancel().catch(() => undefined);
-    throw new Error(`${label} exceeds the maximum response size.`);
-  }
-  if (!response.body) return new Uint8Array();
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let byteLength = 0;
-  try {
-    while (true) {
-      const {done, value} = await reader.read();
-      if (done) break;
-      if (!value) continue;
-      byteLength += value.byteLength;
-      if (byteLength > maximumBytes) {
-        await reader.cancel().catch(() => undefined);
-        throw new Error(`${label} exceeds the maximum response size.`);
-      }
-      chunks.push(value);
-    }
-  } finally {
-    reader.releaseLock();
-  }
-  const bytes = new Uint8Array(byteLength);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return bytes;
 }
 
 function resolveTileflowBrowserResourceUrl(value: string, baseUrl?: string): string {

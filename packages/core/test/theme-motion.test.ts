@@ -107,6 +107,60 @@ function controllerFor(map: FakeMap, loaded: Record<string, MapLibreStyle> = {})
   return {controller, loads, transitions};
 }
 
+test('the default blend loader prepares portable resources before fonts and style application', async () => {
+  const map = new FakeMap();
+  const requests: string[] = [];
+  const fonts: unknown[] = [];
+  const controller = createTileflowThemeController({
+    initial: theme('day', day),
+    map,
+    loadFonts: async (loaded) => {
+      fonts.push((loaded.style as MapLibreStyle).sprite);
+    },
+    styleLoadOptions: {
+      baseUrl: 'https://maps.example/app/',
+      fetch: async (url) => {
+        requests.push(String(url));
+        return Response.json({
+          version: 8,
+          name: 'portable',
+          sprite: '../sprites/shared',
+          glyphs: '../fonts/{fontstack}/{range}.pbf',
+          sources: {},
+          layers: [
+            {
+              id: 'ground',
+              type: 'background',
+              paint: {'background-color': String(url).includes('night') ? '#000000' : '#ffffff'},
+            },
+          ],
+        });
+      },
+    },
+  });
+  assert.equal(
+    (
+      await controller.setBlend({
+        position: 0.5,
+        themes: [theme('night', './themes/night.json'), theme('day', './themes/day.json')],
+      })
+    ).status,
+    'applied',
+  );
+  assert.deepEqual(requests.sort(), [
+    'https://maps.example/app/themes/day.json',
+    'https://maps.example/app/themes/night.json',
+  ]);
+  assert.deepEqual(fonts, [
+    'https://maps.example/app/sprites/shared',
+    'https://maps.example/app/sprites/shared',
+  ]);
+  const applied = map.styles[0] as MapLibreStyle;
+  assert.equal(applied.sprite, 'https://maps.example/app/sprites/shared');
+  assert.equal(applied.glyphs, 'https://maps.example/app/fonts/{fontstack}/{range}.pbf');
+  controller.dispose();
+});
+
 test('a blend loads every theme once and applies one style that holds all of them', async () => {
   const map = new FakeMap();
   for (const [name, value] of [

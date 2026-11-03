@@ -27,8 +27,8 @@ const worker = await build({
 });
 const hashPlaceholder = 'TILEFLOW_RUNTIME_CONTENT_HASH_PLACEHOLDER';
 // Read workspace entries from source so shared modules are bundled once and unused modules drop out.
-// Replace Core's bundled URL parser, which carries IDNA tables for engines without a conforming URL, with
-// the WebView's own. Nothing else in Core changes.
+// Use the WebView's URL parser instead of Core's IDNA tables. Mobile supplies its own style loader;
+// exclude the web loader and reject any accidental fallback that would bypass the native host.
 const coreSource = resolve(root, 'packages/core/src');
 const cameraWorker = await build({
   absWorkingDir: packageRoot,
@@ -43,6 +43,8 @@ const cameraWorker = await build({
   metafile: true,
 });
 const platformUrl = resolve(packageRoot, 'src/platform-url.ts');
+const platformStyleLoader = resolve(packageRoot, 'src/platform-style-loader.ts');
+const webStyleLoader = resolve(coreSource, 'style-resources-browser.ts');
 const substituted = new Set();
 const coreSourceEntries = {
   name: 'tileflow-workspace-source-entries',
@@ -63,6 +65,11 @@ const coreSourceEntries = {
       if (!resolve(args.importer).startsWith(`${coreSource}${sep}`)) return undefined;
       substituted.add('parser');
       return {path: platformUrl};
+    });
+    build.onResolve({filter: /^\.\/style-resources-browser$/}, (args) => {
+      if (!resolve(args.importer).startsWith(`${coreSource}${sep}`)) return undefined;
+      substituted.add('web-style-loader');
+      return {path: platformStyleLoader};
     });
   },
 };
@@ -86,12 +93,18 @@ const result = await build({
   },
   plugins: [coreSourceEntries],
 });
-if (!['native', 'browser', 'runtime', 'parser'].every((entry) => substituted.has(entry)))
-  throw new Error('The runtime no longer reads Core entries from source with the platform URL.');
-const forbidden = Object.keys(result.metafile.inputs).filter((path) =>
-  /\/(?:react|react-dom|react-native|packages\/(?:cli|dev|capture)|whatwg-url|tr46|punycode)\//u.test(
-    path.replaceAll('\\', '/'),
-  ),
+if (
+  !['native', 'browser', 'runtime', 'parser', 'web-style-loader'].every((entry) =>
+    substituted.has(entry),
+  )
+)
+  throw new Error('The runtime no longer reads Core entries with the native resource boundary.');
+const forbidden = Object.keys(result.metafile.inputs).filter(
+  (path) =>
+    resolve(packageRoot, path) === webStyleLoader ||
+    /\/(?:react|react-dom|react-native|packages\/(?:cli|dev|capture)|whatwg-url|tr46|punycode)\//u.test(
+      path.replaceAll('\\', '/'),
+    ),
 );
 if (forbidden.length)
   throw new Error(`Unexpected dependencies in mobile runtime: ${forbidden.join(', ')}`);

@@ -1,3 +1,4 @@
+import {readBoundedTileflowBrowserResource} from './browser-resource';
 import {
   createTileflowDynamicImageRegistry,
   type TileflowDynamicImage,
@@ -22,7 +23,6 @@ import {
 import {readTileflowSky, tileflowSkyAtSun, tileflowSkyMetadataKey, tileflowSkySunKey} from './sky';
 import {
   loadTileflowRuntimeStyle,
-  readBoundedTileflowBrowserResource,
   type TileflowRuntimeStyleLoadOptions,
 } from './style-resources-browser';
 import {

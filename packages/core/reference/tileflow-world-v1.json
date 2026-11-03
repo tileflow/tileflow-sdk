@@ -43,11 +43,16 @@
       "fields": {
         "admin_level": {"type": "Number", "required": true},
         "claimed_by": {"type": "String"},
+        "class": {"type": "String"},
         "country_left": {"type": "String"},
         "country_right": {"type": "String"},
         "disputed": {"type": "Boolean"},
-        "maritime": {"type": "Boolean"}
-      }
+        "maritime": {"type": "Boolean"},
+        "name": {"type": "String"},
+        "name_<lang>": {"type": "String"},
+        "name_latin": {"type": "String"}
+      },
+      "values": {"class": ["territory"]}
     },
     "aeroway": {
       "tileset": "world",
@@ -118,12 +123,17 @@
         "circle_kind": {"type": "String", "required": true},
         "class": {"type": "String"},
         "covered": {"type": "Boolean"},
+        "expressway": {"type": "Boolean"},
         "foot": {"type": "String"},
+        "horse": {"type": "String"},
+        "indoor": {"type": "Boolean"},
         "inner_radius_m": {"type": "Number", "required": true},
         "junction": {"type": "String"},
         "lanes": {"type": "Number"},
         "layer": {"type": "Number"},
+        "link": {"type": "Boolean"},
         "lit": {"type": "Boolean"},
+        "mtb_scale": {"type": "String"},
         "name": {"type": "String"},
         "name_<lang>": {"type": "String"},
         "name_latin": {"type": "String"},
@@ -134,8 +144,32 @@
         "service": {"type": "String"},
         "structure": {"type": "String"},
         "surface": {"type": "String"},
+        "toll": {"type": "Boolean"},
         "type": {"type": "String"},
         "underground": {"type": "Boolean"}
+      },
+      "values": {
+        "class": [
+          "motorway",
+          "trunk",
+          "primary",
+          "secondary",
+          "tertiary",
+          "street",
+          "service",
+          "track",
+          "path",
+          "pedestrian",
+          "busway",
+          "raceway",
+          "construction",
+          "rail",
+          "transit",
+          "aerialway",
+          "ferry",
+          "bridge",
+          "pier"
+        ]
       }
     },
     "housenum_label": {
@@ -283,6 +317,7 @@
         "access": {"type": "String"},
         "bicycle": {"type": "String"},
         "class": {"type": "String", "required": true},
+        "clearance_extra_px_z15": {"type": "Number"},
         "covered": {"type": "Boolean"},
         "expressway": {"type": "Boolean"},
         "foot": {"type": "String"},
@@ -353,6 +388,29 @@
         "structure": {"type": "String"},
         "type": {"type": "String"},
         "underground": {"type": "Boolean"}
+      },
+      "values": {
+        "class": [
+          "motorway",
+          "trunk",
+          "primary",
+          "secondary",
+          "tertiary",
+          "street",
+          "service",
+          "track",
+          "path",
+          "pedestrian",
+          "busway",
+          "raceway",
+          "construction",
+          "rail",
+          "transit",
+          "aerialway",
+          "ferry",
+          "bridge",
+          "pier"
+        ]
       }
     },
     "road_outline": {
@@ -364,6 +422,29 @@
         "structure": {"type": "String"},
         "type": {"type": "String"},
         "underground": {"type": "Boolean"}
+      },
+      "values": {
+        "class": [
+          "motorway",
+          "trunk",
+          "primary",
+          "secondary",
+          "tertiary",
+          "street",
+          "service",
+          "track",
+          "path",
+          "pedestrian",
+          "busway",
+          "raceway",
+          "construction",
+          "rail",
+          "transit",
+          "aerialway",
+          "ferry",
+          "bridge",
+          "pier"
+        ]
       }
     },
     "road_shield": {

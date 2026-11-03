@@ -593,6 +593,20 @@ test('purge requires the exact confirmation and an explicit unknown-lock acknowl
 });
 
 test('account sessions exchange for a Team capability carrying only Icon Set scopes', async (t) => {
+  for (const variable of [
+    'CI',
+    'GITHUB_ACTIONS',
+    'GITLAB_CI',
+    'TILEFLOW_API_KEY',
+    'TILEFLOW_API_URL',
+  ]) {
+    const original = process.env[variable];
+    delete process.env[variable];
+    t.after(() => {
+      if (original === undefined) delete process.env[variable];
+      else process.env[variable] = original;
+    });
+  }
   const output = captureOutput(t);
   const captured: CapturedRequest[] = [];
   const command = program(

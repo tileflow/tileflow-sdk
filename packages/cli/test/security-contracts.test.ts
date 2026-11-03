@@ -407,7 +407,14 @@ function runCli(
   overrides: NodeJS.ProcessEnv,
 ): Promise<{code: number | null; stderr: string; stdout: string}> {
   const environment: NodeJS.ProcessEnv = {...process.env};
-  delete environment.TILEFLOW_API_KEY;
+  for (const variable of [
+    'CI',
+    'GITHUB_ACTIONS',
+    'GITLAB_CI',
+    'TILEFLOW_API_KEY',
+    'TILEFLOW_API_URL',
+  ])
+    delete environment[variable];
   Object.assign(environment, overrides, {HOME: cwd, NO_COLOR: '1', USERPROFILE: cwd});
 
   return new Promise((resolve, reject) => {

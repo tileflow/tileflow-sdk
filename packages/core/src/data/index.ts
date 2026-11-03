@@ -238,12 +238,13 @@ export type TileflowDataIdentity = {
 };
 
 /**
- * How World serves `world-detail`: its own TileJSON in its own style source (`separate`), or one
- * TileJSON that serves both tilesets in the primary source (`composite`). A map loads either only
- * when it draws a `world-detail` layer.
+ * How World serves `world-detail`: one TileJSON that serves both tilesets in the primary source
+ * (`composite`, the default: one request per tile and one release resolution), or its own TileJSON
+ * in its own style source (`separate`). A map loads `world-detail` only when it draws one of its
+ * layers.
  */
 export type TileflowWorldDetailDelivery = 'composite' | 'separate';
-export const tileflowWorldDetailDelivery: TileflowWorldDetailDelivery = 'separate';
+export const tileflowWorldDetailDelivery: TileflowWorldDetailDelivery = 'composite';
 
 export type ResolvedTileflowWorldDetail =
   | Readonly<{delivery: 'separate'; sourceId: typeof tileflowDetailSourceId; url: string}>

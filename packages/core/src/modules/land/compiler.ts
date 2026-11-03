@@ -23,47 +23,58 @@ const barrierClasses = [
   'hedge',
 ] as const satisfies readonly TileflowBarrierClass[];
 
-// World's ground classes drawn as each Tileflow land use.
-const landuseClasses: Record<TileflowLanduseClass, readonly string[]> = {
-  cemetery: ['cemetery'],
-  civic: ['civic', 'religious'],
-  commercial: ['commercial', 'retail'],
-  education: ['education'],
-  government: ['government'],
-  industrial: ['industrial'],
-  medical: ['hospital'],
-  military: ['military'],
-  parking: ['parking'],
-  railway: ['railway'],
-  recreation: ['pitch', 'playground', 'sports', 'zoo'],
-  residential: ['residential'],
+/** World ground areas drawn as one Tileflow land class: by `class`, optionally narrowed by `type`. */
+type TileflowGroundMatch = {
+  class: readonly string[];
+  excludeType?: readonly string[];
+  layer?: 'landuse' | 'landuseOverlay';
+  type?: readonly string[];
 };
 
-/** The World layer and classes each Tileflow land cover draws. */
-type TileflowLandcoverClassMatch = {
-  class: readonly string[];
-  layer: 'landuse' | 'landuseOverlay';
+// World's ground classes drawn as each Tileflow land use. World has no civic or government
+// ground class; those styles draw only data that publishes one.
+const landuseClasses: Record<TileflowLanduseClass, readonly TileflowGroundMatch[]> = {
+  cemetery: [{class: ['cemetery']}],
+  civic: [{class: ['civic']}],
+  commercial: [{class: ['commercial', 'retail']}],
+  education: [{class: ['education']}],
+  government: [{class: ['government']}],
+  industrial: [{class: ['industrial']}],
+  medical: [{class: ['hospital']}],
+  military: [{class: ['military']}],
+  parking: [{class: ['parking']}],
+  railway: [{class: ['railway']}],
+  recreation: [{class: ['pitch', 'playground']}, {class: ['park'], type: ['zoo']}],
+  residential: [{class: ['residential']}],
 };
+
+const parkDetails = ['recreation_ground', 'village_green', 'zoo'];
 
 // Broad physical cover is followed by protection/park surfaces, then explicitly mapped
 // ground details. Keep the latter above park fills without covering pitches/playgrounds.
 // This order is independent of config key order and remains replaceable by render targets.
 const landcoverClasses = [
-  ['farmland', {class: ['farmland', 'orchard', 'vineyard'], layer: 'landuse'}],
-  ['ice', {class: ['ice'], layer: 'landuse'}],
-  ['rock', {class: ['rock'], layer: 'landuse'}],
-  ['sand', {class: ['sand', 'beach'], layer: 'landuse'}],
-  ['wetland', {class: ['wetland'], layer: 'landuseOverlay'}],
-  ['wood', {class: ['wood'], layer: 'landuse'}],
-  ['protected', {class: ['protected_area'], layer: 'landuseOverlay'}],
-  ['urbanPark', {class: ['park', 'garden'], layer: 'landuse'}],
-  ['recreationGround', {class: ['recreation_ground'], layer: 'landuse'}],
-  ['villageGreen', {class: ['village_green'], layer: 'landuse'}],
-  ['grass', {class: ['grass', 'golf'], layer: 'landuse'}],
-  ['meadow', {class: ['meadow'], layer: 'landuse'}],
-  ['scrub', {class: ['scrub', 'heath'], layer: 'landuse'}],
-  ['flowerbed', {class: ['flowerbed'], layer: 'landuse'}],
-] as const satisfies readonly (readonly [TileflowLandcoverClass, TileflowLandcoverClassMatch])[];
+  ['farmland', [{class: ['farmland', 'orchard', 'vineyard']}]],
+  ['ice', [{class: ['ice']}]],
+  ['rock', [{class: ['rock']}]],
+  ['sand', [{class: ['sand']}]],
+  ['wetland', [{class: ['wetland'], layer: 'landuseOverlay'}]],
+  ['wood', [{class: ['wood']}]],
+  ['protected', [{class: ['protected_area'], layer: 'landuseOverlay'}]],
+  [
+    'urbanPark',
+    [
+      {class: ['park'], excludeType: parkDetails},
+      {class: ['garden'], excludeType: ['flowerbed']},
+    ],
+  ],
+  ['recreationGround', [{class: ['park'], type: ['recreation_ground']}]],
+  ['villageGreen', [{class: ['park'], type: ['village_green']}]],
+  ['grass', [{class: ['grass'], excludeType: ['meadow']}, {class: ['golf']}]],
+  ['meadow', [{class: ['grass'], type: ['meadow']}]],
+  ['scrub', [{class: ['scrub']}]],
+  ['flowerbed', [{class: ['garden'], type: ['flowerbed']}]],
+] as const satisfies readonly (readonly [TileflowLandcoverClass, readonly TileflowGroundMatch[]])[];
 
 const detailedLandcover = new Set<TileflowLandcoverClass>([
   'grass',
@@ -247,7 +258,7 @@ export function compileLand(
   }
 
   let localOrder = 100;
-  const appendLanduse = (name: TileflowLanduseClass, classes: readonly string[]) => {
+  const appendLanduse = (name: TileflowLanduseClass, matches: readonly TileflowGroundMatch[]) => {
     const style = config.landuse?.[name];
     if (!style) return;
     for (const area of createAreaLayers(
@@ -256,7 +267,7 @@ export function compileLand(
         type: 'fill',
         source,
         'source-layer': schema.layers.landuse,
-        filter: classFilter(classField, classes),
+        filter: groundFilter(classField, typeField, matches),
       },
       style,
     )) {
@@ -281,14 +292,14 @@ export function compileLand(
     }
   };
 
-  for (const [name, classes] of Object.entries(landuseClasses) as Array<
-    [TileflowLanduseClass, readonly string[]]
+  for (const [name, matches] of Object.entries(landuseClasses) as Array<
+    [TileflowLanduseClass, readonly TileflowGroundMatch[]]
   >) {
     if (name === 'recreation' || name === 'parking') continue;
-    appendLanduse(name, classes);
+    appendLanduse(name, matches);
   }
 
-  const appendLandcover = (name: TileflowLandcoverClass, match: TileflowLandcoverClassMatch) => {
+  const appendLandcover = (name: TileflowLandcoverClass, matches: readonly TileflowGroundMatch[]) => {
     const style = config.landcover?.[name];
     if (!style) return;
     for (const area of createAreaLayers(
@@ -296,8 +307,8 @@ export function compileLand(
         id: `tileflow-landcover-${name}`,
         type: 'fill',
         source,
-        'source-layer': schema.layers[match.layer],
-        filter: classFilter(classField, match.class),
+        'source-layer': schema.layers[matches[0]!.layer ?? 'landuse'],
+        filter: groundFilter(classField, typeField, matches),
       },
       style,
     )) {
@@ -322,12 +333,12 @@ export function compileLand(
     }
   };
 
-  for (const [name, match] of landcoverClasses) {
-    if (!detailedLandcover.has(name)) appendLandcover(name, match);
+  for (const [name, matches] of landcoverClasses) {
+    if (!detailedLandcover.has(name)) appendLandcover(name, matches);
   }
 
-  for (const [name, match] of landcoverClasses) {
-    if (detailedLandcover.has(name)) appendLandcover(name, match);
+  for (const [name, matches] of landcoverClasses) {
+    if (detailedLandcover.has(name)) appendLandcover(name, matches);
   }
 
   // Mapped paved surfaces remain legible inside broad park/forest polygons. Recreation
@@ -411,4 +422,18 @@ export function compileLand(
 
 function classFilter(field: string, classes: readonly string[]): unknown[] {
   return ['match', ['get', field], classes, true, false];
+}
+
+function groundFilter(
+  classField: string,
+  typeField: string,
+  matches: readonly TileflowGroundMatch[],
+): unknown[] {
+  const filters = matches.map((match) => {
+    const classes = classFilter(classField, match.class);
+    if (match.type) return ['all', classes, classFilter(typeField, match.type)];
+    if (match.excludeType) return ['all', classes, ['!', classFilter(typeField, match.excludeType)]];
+    return classes;
+  });
+  return filters.length === 1 ? filters[0]! : ['any', ...filters];
 }

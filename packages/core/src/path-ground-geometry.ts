@@ -16,6 +16,7 @@ const greenClasses = new Set([
   'flowerbed',
   'forest',
   'garden',
+  'golf',
   'grass',
   'heath',
   'meadow',

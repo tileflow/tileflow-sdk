@@ -95,7 +95,7 @@ At regional scales, the daylight appearance draws an attributed climate image to
 and dry regions. It fades out by zoom 11, where mapped land cover and land use supply local detail,
 and renderers fetch the image only below that zoom. Climate is broad context, not a claim of
 surveyed vegetation at a specific site. The other appearances keep the image clear and use their
-authored land-cover palettes. Urban and education
+authored land-cover palettes; framework maps also hide it there, so they never fetch it. Urban and education
 areas use neutral surfaces; farmland stays pale, while mapped orchards and nurseries remain
 green. Activity areas, where shops, food, services and offices concentrate, tint the ground by
 their activity level until buildings take over. Footprints drawn by their building parts

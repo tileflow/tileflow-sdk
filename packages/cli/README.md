@@ -211,6 +211,30 @@ for CI, provide an appropriately scoped key through the secret environment varia
 `TILEFLOW_API_KEY`. CI does not fall back to a saved personal login. Never put a key in a config,
 browser bundle, copied prompt, or command-line argument.
 
+If `login` finds the older local file containing an API key and API URL, it replaces that file only
+after a new account login succeeds. The old API key is not converted into an account session.
+Unrecognized local files are left untouched and stop login before authorization begins.
+
+For commands accepting an API key, `--api-key` takes precedence over `TILEFLOW_API_KEY`;
+only an absent key allows a saved personal session. An empty, invalid, expired or revoked key
+fails without switching identities. `--api-url` takes precedence over `TILEFLOW_API_URL`.
+This selection also applies to `models`, `tileset`, Icon Set commands and Map status. Keys
+never appear in help output. When a personal account can manage several Teams, pass an
+explicit `--team @team`; a Team key already selects its Team.
+
+`login` always authorizes a personal session through the dashboard, even when an API key is
+configured. `--no-browser` prints the URL without prompting to open it. Polling retries temporary
+connection/server failures with bounded backoff and honors rate-limit waits until the authorization
+expires. Denied or invalid authorizations stop immediately. A new session is validated and saved
+before the previous session for that API origin is revoked. Failed validation or persistence
+attempts to revoke the newly issued session and preserves the saved login. If cleanup cannot
+reach the server, the CLI explains that the session must be revoked in Dashboard settings.
+
+`logout` revokes only the saved personal session for the selected API origin. If server revocation
+fails, local access is preserved so logout can be retried. API keys remain independent: an API key
+in the environment still authorizes resource commands after logout. Personal session tokens stay
+in the local auth file with restricted permissions; this CLI does not use an OS credential store.
+
 ```sh
 npx tileflow login
 npx tileflow whoami --json

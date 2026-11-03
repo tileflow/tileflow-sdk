@@ -22,6 +22,7 @@ import {
 } from '@tileflow/dev/icons';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 import {requestHostedJson} from './hosted-client';
+import {hostedApiKeyOption, hostedApiUrlOption} from './hosted-options';
 import {writeIconDiffReport} from './icon-diff-report';
 
 const environmentSchema = tileflowMapIdSchema;
@@ -150,8 +151,8 @@ export function registerIconDiffCommand(
     .description('Preview a local icon package against an active hosted revision')
     .requiredOption('--against <environment>', 'named map environment to compare')
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
-    .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
-    .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
+    .addOption(hostedApiUrlOption())
+    .addOption(hostedApiKeyOption('Tileflow API key'))
     .requiredOption('--map-id <id>', 'managed Map destination')
     .option('--json', 'print deterministic schema-version-1 JSON')
     .option('--cache-dir <path>', 'verified Icon Set artifact cache root')

@@ -92,6 +92,7 @@ export type HostedJsonResponse = {
   json: boolean;
   ok: boolean;
   status: number;
+  retryAfterMs?: number;
 };
 
 export async function requestHostedJson(
@@ -101,17 +102,28 @@ export async function requestHostedJson(
   options: HostedRequestOptions = {},
 ): Promise<HostedJsonResponse> {
   return withHostedResponse(apiUrl, path, init, options, async (response) => {
+    const retryAfter = response.headers.get('retry-after');
+    const retryAfterMs =
+      retryAfter === null
+        ? undefined
+        : /^\d+$/u.test(retryAfter)
+          ? Number(retryAfter) * 1000
+          : Math.max(0, Date.parse(retryAfter) - Date.now());
+    const metadata = {
+      ok: response.ok,
+      status: response.status,
+      ...(Number.isFinite(retryAfterMs) ? {retryAfterMs} : {}),
+    };
     const source = await readBoundedResponseText(response, 'Hosted API');
-    if (!source) return {body: null, json: true, ok: response.ok, status: response.status};
+    if (!source) return {body: null, json: true, ...metadata};
     try {
       return {
         body: JSON.parse(source) as unknown,
         json: true,
-        ok: response.ok,
-        status: response.status,
+        ...metadata,
       };
     } catch {
-      return {body: null, json: false, ok: response.ok, status: response.status};
+      return {body: null, json: false, ...metadata};
     }
   });
 }
@@ -146,30 +158,71 @@ export async function startDeviceAuthorization(
 export async function pollDeviceToken(
   appUrl: string,
   authorization: DeviceAuthorization,
-  input: {codeVerifier: string; sleep?: (milliseconds: number) => Promise<unknown>},
+  input: {
+    codeVerifier: string;
+    expiresAt?: number;
+    now?: () => number;
+    sleep?: (milliseconds: number) => Promise<unknown>;
+  },
   options: HostedRequestOptions = {},
 ): Promise<DeviceToken> {
-  const expiresAt = Date.now() + authorization.expiresIn * 1000;
-  const intervalMs = Math.max(authorization.interval, 1) * 1000;
+  const now = input.now ?? Date.now;
+  const expiresAt = input.expiresAt ?? now() + authorization.expiresIn * 1000;
+  let intervalMs = Math.max(authorization.interval, 1) * 1000;
+  let delayMs = intervalMs;
   const wait =
     input.sleep ??
     ((milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
 
-  while (Date.now() < expiresAt) {
-    await wait(intervalMs);
-    const response = await requestHostedJson(
-      appUrl,
-      '/api/cli/device/token',
-      jsonRequest('POST', {
-        codeVerifier: input.codeVerifier,
-        deviceCode: authorization.deviceCode,
-      }),
-      options,
-    );
+  while (now() < expiresAt) {
+    options.signal?.throwIfAborted();
+    await wait(Math.min(delayMs, expiresAt - now()));
+    options.signal?.throwIfAborted();
+    if (now() >= expiresAt) break;
+    let response: HostedJsonResponse;
+    try {
+      response = await requestHostedJson(
+        appUrl,
+        '/api/cli/device/token',
+        jsonRequest('POST', {
+          codeVerifier: input.codeVerifier,
+          deviceCode: authorization.deviceCode,
+        }),
+        {
+          ...options,
+          timeoutMs: Math.min(
+            options.timeoutMs ?? defaultHostedRequestTimeoutMs,
+            expiresAt - now(),
+          ),
+        },
+      );
+    } catch (error) {
+      options.signal?.throwIfAborted();
+      if (
+        !(error instanceof TypeError) &&
+        !(error instanceof Error && error.name === 'TimeoutError')
+      )
+        throw error;
+      delayMs = Math.min(Math.max(delayMs * 2, intervalMs), 60_000);
+      continue;
+    }
     if (response.ok && isDeviceToken(response.body)) return response.body;
     const error = asRecord(response.body).error;
-    if (error === 'authorization_pending') continue;
     if (error === 'access_denied') throw new Error('CLI authorization was denied.');
+    if (error === 'expired_token') break;
+    if (error === 'slow_down' || response.status === 429) {
+      intervalMs += 5_000;
+      delayMs = Math.max(intervalMs, response.retryAfterMs ?? 0);
+      continue;
+    }
+    if (error === 'authorization_pending') {
+      delayMs = intervalMs;
+      continue;
+    }
+    if ([408, 500, 502, 503, 504].includes(response.status)) {
+      delayMs = Math.max(Math.min(delayMs * 2, 60_000), response.retryAfterMs ?? 0);
+      continue;
+    }
     throw new Error(`CLI authorization failed (${response.status}).`);
   }
 

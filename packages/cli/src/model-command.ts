@@ -16,6 +16,7 @@ import {
 } from '@tileflow/dev/icons';
 import type {AuthConfig} from './account-session';
 import {withTileflowConfigSecretsHidden} from './config-execution';
+import {hostedApiKeyOption, hostedApiUrlOption} from './hosted-options';
 import {
   authorizedTeamRequest,
   emitFailure,
@@ -301,8 +302,8 @@ export function registerModelCommands(
 function withTeamOptions(command: Command): Command {
   return command
     .option('--team <team>', 'Team, as @team, when the account has several')
-    .option('--api-key <key>', 'Team data API key with the 3D models permission')
-    .option('--api-url <url>', 'Tileflow API origin')
+    .addOption(hostedApiKeyOption('Team data API key with the 3D models permission'))
+    .addOption(hostedApiUrlOption())
     .option('--json', 'machine-readable output');
 }
 

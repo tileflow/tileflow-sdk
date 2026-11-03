@@ -8,6 +8,7 @@ import {
   emptyAuthConfig,
   installAccountSession,
   loadAuthConfig,
+  prepareAccountLogin,
   readAuthFile,
   removeAccountSession,
   resolveAccountSession,
@@ -63,22 +64,37 @@ test('sessions are selected only by normalized origin and expiry', async () => {
   assert.deepEqual(Object.keys(removed.config.sessions), [second.apiOrigin]);
 });
 
-test('an unrecognized saved login is invalid and is never replaced or modified', async (t) => {
+test('the known old API key file is replaced only after a new login is installed', async (t) => {
   const fixture = await createFixture(t);
-  const unrecognized = `${JSON.stringify({
+  const legacy = `${JSON.stringify({
     apiKey: `tf_cli_${'z'.repeat(48)}`,
     apiUrl: 'https://api.example.test',
   })}\n`;
-  await writeFile(fixture.authPath, unrecognized, {mode: 0o600});
+  await writeFile(fixture.authPath, legacy, {mode: 0o600});
+
+  assert.equal((await prepareAccountLogin(fixture.authPath)).kind, 'legacy');
+  assert.equal(await readFile(fixture.authPath, 'utf8'), legacy);
+  await assert.rejects(loadAuthConfig(fixture.authPath), /older format.*tileflow login/);
+  await installAccountSession(session(), fixture.authPath);
+  const state = await readAuthFile(fixture.authPath);
+  assert.equal(state.kind, 'sessions');
+  assert.doesNotMatch(await readFile(fixture.authPath, 'utf8'), /apiKey/);
+});
+
+test('unrecognized saved login is rejected before authorization and preserved', async (t) => {
+  const fixture = await createFixture(t);
+  const unknown = `${JSON.stringify({apiKey: 'secret', apiUrl: 'https://api.example.test', extra: true})}\n`;
+  await writeFile(fixture.authPath, unknown, {mode: 0o600});
 
   assert.equal((await readAuthFile(fixture.authPath)).kind, 'invalid');
-  await assert.rejects(loadAuthConfig(fixture.authPath), /auth state is invalid/);
+  await assert.rejects(prepareAccountLogin(fixture.authPath), /no changes were made/);
   await assert.rejects(installAccountSession(session(), fixture.authPath), /no changes were made/);
-  assert.equal(await readFile(fixture.authPath, 'utf8'), unrecognized);
+  assert.equal(await readFile(fixture.authPath, 'utf8'), unknown);
 });
 
 test('empty account state remains a valid bounded document', async (t) => {
   const fixture = await createFixture(t);
+  assert.equal((await prepareAccountLogin(fixture.authPath)).kind, 'empty');
   await writeAuthFileAtomic(emptyAuthConfig(), fixture.authPath);
   assert.deepEqual(await loadAuthConfig(fixture.authPath), emptyAuthConfig());
 });

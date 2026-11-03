@@ -118,7 +118,7 @@ test('an owner made only of render passes satisfies requirements', () => {
   const {ids} = compile({
     poi: withRenderStack(poi({categories: [], icons: false, labels: false}), {
       blip: renderPass({
-        feature: 'poi',
+        feature: 'poiLabel',
         placement: 'below-labels',
         renderer: 'circle',
         style: {radius: 3},

@@ -372,7 +372,6 @@ test('fails closed on malformed or duplicate Tileflow World detail layers', () =
       'Tileflow World requires String crossing on street_furniture.',
       'Tileflow World requires String markings on street_furniture.',
       'Tileflow World requires Number or String direction on street_furniture.',
-      'Tileflow World requires Number clearance_extra_px_z15 on road.',
     ],
   );
 

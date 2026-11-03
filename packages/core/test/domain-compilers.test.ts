@@ -117,7 +117,8 @@ test('compiles complete land and water domains into stable direct layers', () =>
   assert.ok(ids.includes('tileflow-global-landcover'));
   assert.ok(ids.includes('tileflow-landuse-commercial'));
   assert.ok(ids.includes('tileflow-landuse-education'));
-  assert.ok(ids.includes('tileflow-landuse-government'));
+  // World has no government ground class, so that land use draws nothing.
+  assert.ok(!ids.includes('tileflow-landuse-government'));
   assert.ok(ids.includes('tileflow-landuse-medical'));
   assert.ok(ids.includes('tileflow-landuse-parking'));
   assert.ok(ids.includes('tileflow-landcover-wood'));
@@ -459,7 +460,7 @@ test('compilers honor remapped OpenMapTiles layers and fields', () => {
   assert.deepEqual(river.layer.filter, [
     'all',
     ['match', ['get', 'kind'], ['river'], true, false],
-    ['!=', ['get', 'intermittent'], 1],
+    ['!=', ['get', 'intermittent'], true],
   ]);
 });
 

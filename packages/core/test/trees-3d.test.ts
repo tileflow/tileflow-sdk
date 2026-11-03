@@ -255,13 +255,13 @@ test('a row of trees in the tree layer stands a tree every few metres along its 
     features: [
       {
         type: 'LineString',
-        properties: {genus: 'Platanus', height: 18, subclass: 'tree_row'},
+        properties: {genus: 'Platanus', height: 18, type: 'tree_row'},
         // 100 m east, then 40 m south, then out of the tile.
         geometry: [[1000, 1000, 1100, 1000, 1100, 1040, 1100, 5000]],
       },
       {
         type: 'Point',
-        properties: {leaf_type: 'needleleaved', height: 9, subclass: 'tree'},
+        properties: {leaf_type: 'needleleaved', height: 9, type: 'tree'},
         geometry: [[3000, 3000]],
       },
     ],
@@ -306,7 +306,7 @@ test('hedges stand as pieces along their lines and round their areas, a metre hi
     features: [
       {
         type: 'LineString',
-        properties: {class: 'barrier', subclass: 'hedge'},
+        properties: {class: 'barrier', type: 'hedge'},
         // 12 m east, then on out of the tile.
         geometry: [
           [1000, 1000, 1012, 1000],
@@ -315,19 +315,19 @@ test('hedges stand as pieces along their lines and round their areas, a metre hi
       },
       {
         type: 'LineString',
-        properties: {class: 'barrier', subclass: 'hedge', height: 2, hedge: 'hedge_bank'},
+        properties: {class: 'barrier', type: 'hedge', height: 2, hedge: 'hedge_bank'},
         // 6 m north.
         geometry: [[2000, 2006, 2000, 2000]],
       },
       {
         type: 'Polygon',
-        properties: {class: 'barrier', subclass: 'hedge', height: 0.8},
+        properties: {class: 'barrier', type: 'hedge', height: 0.8},
         // A closed square of 6 m sides.
         geometry: [[3000, 3000, 3006, 3000, 3006, 3006, 3000, 3006, 3000, 3000]],
       },
       {
         type: 'LineString',
-        properties: {class: 'barrier', subclass: 'fence'},
+        properties: {class: 'barrier', type: 'fence'},
         geometry: [[500, 500, 600, 500]],
       },
     ],

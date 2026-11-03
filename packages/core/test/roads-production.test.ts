@@ -11,6 +11,7 @@ import {tileflowCompilerMetadataKeys} from '../src/cartography/contributions';
 import {createTileflowLayerFamilyIR, lowerTileflowDomainIR} from '../src/cartography/domain-ir';
 import {assembleTileflowLayerFamilies} from '../src/cartography/graph';
 import {planTileflowLayerFamilies} from '../src/cartography/physical-planner';
+import {createSemanticDataView} from '../src/cartography/semantic-bindings';
 import {expression} from '../src/cartography/values';
 import {roadClassesForDetail} from '../src/modules/roads';
 import {compileRoads} from '../src/modules/roads/compiler';
@@ -22,7 +23,7 @@ import {assembleTileflowLayers, planTileflowLayers} from './layer-ir-fixture';
 type Layer = Record<string, unknown> & {id: string; type: string};
 
 const source = 'tileflow';
-const sourceLayer = 'transportation';
+const sourceLayer = 'road';
 const context = {
   colors: resolveColors(),
   data: resolveTileflowData(undefined),
@@ -35,6 +36,14 @@ const context = {
     poi: {font: 'Noto Sans Regular'},
   },
 };
+
+/** Compile against the semantic view and lower to the data's own layers and properties. */
+function compileLowered(config: Parameters<typeof roads>[0], data: typeof context.data): Layer[] {
+  return assembleTileflowLayers(
+    compileRoads(roads(config), {...context, data: createSemanticDataView(data)}),
+    data,
+  );
+}
 
 test('green path overlays lower to distinct physical layers beside their ground paths', () => {
   const contributions = compileRoads(
@@ -126,7 +135,7 @@ test('width treatments keep hollow road casings aligned with their fill at fract
   for (const kind of ['surface', 'bridge', 'tunnel']) {
     const fill = layers.find(({id}) => id === `tileflow-road-${kind}-primary-fill`)!;
     const casing = layers.find(({id}) => id === `tileflow-road-${kind}-primary-casing`)!;
-    for (const properties of [{}, {expressway: 1}, {ramp: 1}]) {
+    for (const properties of [{}, {expressway: true}, {link: true}]) {
       for (const zoomLevel of [12, 15.25, 17.97, 18.1, 20.5, 22]) {
         const evaluate = (layer: typeof fill, property: 'line-width' | 'line-gap-width') =>
           evaluateProperty(
@@ -171,14 +180,14 @@ test('solid road treatments avoid the dash shader while preserving real dash pat
     } else {
       assert.deepEqual(
         evaluateProperty(paint['line-dasharray'], mapLibreStyleSpec.paint_line['line-dasharray'], {
-          indoor: 1,
+          indoor: true,
         }),
         dash,
       );
     }
     assert.equal(
       evaluateProperty(paint['line-opacity'], mapLibreStyleSpec.paint_line['line-opacity'], {
-        indoor: 1,
+        indoor: true,
       }),
       0.8,
     );
@@ -229,7 +238,7 @@ test('road treatments materialize absent phases with theme-derived semantic pain
       classes: {service: {}},
       detail: 'none',
       modifiers: {
-        official: {
+        indoor: {
           surface: {
             casing: {color: '#345678'},
             shadow: {color: '#123456'},
@@ -250,20 +259,20 @@ test('road treatments materialize absent phases with theme-derived semantic pain
 
   assert.ok(casing, 'a treatment must be able to create a casing when outline is none');
   assert.ok(shadow, 'a treatment must be able to create a shadow');
-  assert.equal(matchesFilter(casing.filter, {class: 'service', official: 1}), true);
-  assert.equal(matchesFilter(casing.filter, {class: 'service', official: 0}), false);
-  assert.equal(matchesFilter(shadow.filter, {class: 'service', official: 1, toll: 0}), true);
-  assert.equal(matchesFilter(shadow.filter, {class: 'service', official: 0, toll: 1}), true);
-  assert.equal(matchesFilter(shadow.filter, {class: 'service', official: 0, toll: 0}), false);
+  assert.equal(matchesFilter(casing.filter, {class: 'service', indoor: true}), true);
+  assert.equal(matchesFilter(casing.filter, {class: 'service', indoor: false}), false);
+  assert.equal(matchesFilter(shadow.filter, {class: 'service', indoor: true, toll: false}), true);
+  assert.equal(matchesFilter(shadow.filter, {class: 'service', indoor: false, toll: true}), true);
+  assert.equal(matchesFilter(shadow.filter, {class: 'service', indoor: false, toll: false}), false);
 
   const paint = shadow.paint as Record<string, unknown>;
   assert.deepEqual(paint['line-color'], [
     'case',
-    ['==', ['get', 'official'], 1],
+    ['==', ['get', 'indoor'], true],
     '#123456',
     context.colors.roads.casing,
   ]);
-  assert.deepEqual(paint['line-width'], ['case', ['==', ['get', 'toll'], 1], 4, 1]);
+  assert.deepEqual(paint['line-width'], ['case', ['==', ['get', 'toll'], true], 4, 1]);
   assert.equal(paint['line-opacity'], 0.24);
 });
 
@@ -273,7 +282,7 @@ test('visible false remains authoritative when a treatment targets the same road
       classes: {service: {}},
       detail: 'none',
       modifiers: {
-        official: {
+        indoor: {
           surface: {
             fill: {color: '#123456'},
             shadow: {color: '#123456'},
@@ -295,52 +304,60 @@ test('visible false remains authoritative when a treatment targets the same road
   assert.equal(ids.includes('tileflow-road-surface-service-shadow'), false);
 });
 
-test('official OpenMapTiles road values map to disjoint existing semantics and ford stays surface', () => {
-  const fields = {class: 'kind', subclass: 'kind_detail'};
+test('World and OpenMapTiles road values map to disjoint semantics and ford stays surface', () => {
+  const fields = {class: 'kind', type: 'kind_detail'};
   const serviceFilter = tileflowRoadClassFilter(fields, 'service');
   const trackFilter = tileflowRoadClassFilter(fields, 'track');
 
-  for (const kind of ['busway', 'bus_guideway']) {
-    assert.equal(matchesFilter(serviceFilter, {kind}), true, `${kind} must map to service`);
-    assert.equal(matchesFilter(trackFilter, {kind}), false, `${kind} must remain disjoint`);
+  // Built, or under construction with the road it becomes as its type.
+  for (const properties of [{kind: 'busway'}, {kind: 'construction', kind_detail: 'busway'}]) {
+    const label = JSON.stringify(properties);
+    assert.equal(matchesFilter(serviceFilter, properties), true, `${label} must map to service`);
+    assert.equal(matchesFilter(trackFilter, properties), false, `${label} must remain disjoint`);
   }
-  for (const kind of ['raceway', 'raceway_construction']) {
-    assert.equal(matchesFilter(trackFilter, {kind}), true, `${kind} must map to track`);
-    assert.equal(matchesFilter(serviceFilter, {kind}), false, `${kind} must remain disjoint`);
+  for (const properties of [{kind: 'raceway'}, {kind: 'construction', kind_detail: 'raceway'}]) {
+    const label = JSON.stringify(properties);
+    assert.equal(matchesFilter(trackFilter, properties), true, `${label} must map to track`);
+    assert.equal(matchesFilter(serviceFilter, properties), false, `${label} must remain disjoint`);
   }
 
+  // OpenMapTiles' own values reach the same classes through its adapter.
   const data = resolveTileflowData({
     type: 'vector-tiles',
     attribution: 'Test',
     schema: openMapTiles({fields: {brunnel: 'crossing_kind', class: 'kind'}}),
     url: '/tiles.json',
   });
-  const contributions = compileRoads(roads({classes: {service: {}, track: {}}, detail: 'none'}), {
-    ...context,
-    data,
-  });
-  const serviceSurface = contributions.find(
-    ({layer}) => layer.id === 'tileflow-road-surface-service-fill',
-  )?.layer;
-  const serviceTunnel = contributions.find(
-    ({layer}) => layer.id === 'tileflow-road-tunnel-service-fill',
-  )?.layer;
+  const layers = compileLowered({classes: {service: {}, track: {}}, detail: 'none'}, data);
+  const byId = (id: string) => layers.find((layer) => layer.id === id)!;
+  const serviceSurface = byId('tileflow-road-surface-service-fill');
+  const trackSurface = byId('tileflow-road-surface-track-fill');
+  const serviceTunnel = byId('tileflow-road-tunnel-service-fill');
 
   assert.ok(serviceSurface);
+  assert.ok(trackSurface);
   assert.ok(serviceTunnel);
+  assert.equal(serviceSurface['source-layer'], 'transportation');
+  for (const kind of ['busway', 'bus_guideway']) {
+    assert.equal(matchesFilter(serviceSurface.filter, {kind}), true, `${kind} must map to service`);
+    assert.equal(matchesFilter(trackSurface.filter, {kind}), false, `${kind} must remain disjoint`);
+  }
+  for (const kind of ['raceway', 'raceway_construction']) {
+    assert.equal(matchesFilter(trackSurface.filter, {kind}), true, `${kind} must map to track`);
+    assert.equal(
+      matchesFilter(serviceSurface.filter, {kind}),
+      false,
+      `${kind} must remain disjoint`,
+    );
+  }
   assert.equal(matchesFilter(serviceSurface.filter, {crossing_kind: 'ford', kind: 'busway'}), true);
   assert.equal(matchesFilter(serviceTunnel.filter, {crossing_kind: 'ford', kind: 'busway'}), false);
+  assert.deepEqual(styleErrors(layers), []);
 });
 
 test('sidewalks take the pedestrian area colour, opaque, unless their surface is configured', () => {
-  const data = resolveTileflowData({
-    type: 'vector-tiles',
-    attribution: 'Test',
-    schema: openMapTiles({layers: {sidewalk: 'pedestrian_surfaces'}}),
-    url: '/tiles.json',
-  });
   const surfacePaint = (config: Parameters<typeof roads>[0]) =>
-    compileRoads(roads(config), {...context, data}).find(
+    compileRoads(roads(config), context).find(
       ({layer}) => layer.id === 'tileflow-sidewalk-surface',
     )!.layer.paint as Record<string, unknown>;
 
@@ -360,31 +377,7 @@ test('sidewalks take the pedestrian area colour, opaque, unless their surface is
   assert.equal(configured['fill-opacity'], 0.5);
 });
 
-test('detailed road extensions compile through remappable semantic contracts', () => {
-  const data = resolveTileflowData({
-    type: 'vector-tiles',
-    attribution: 'Test',
-    schema: openMapTiles({
-      fields: {
-        circularInnerRadiusMeters: 'ring_inner_m',
-        circularKind: 'ring_kind',
-        circularOuterRadiusMeters: 'ring_outer_m',
-        circularRadiusAtZoom15: 'ring_radius_z15',
-        circularRadiusMeters: 'ring_radius_m',
-        class: 'kind',
-        crossing: 'crossing_status',
-        direction: 'bearing',
-        markings: 'crossing_markings',
-        subclass: 'detail',
-      },
-      layers: {
-        circularFeature: 'road_circles',
-        sidewalk: 'pedestrian_surfaces',
-        streetFurniture: 'road_furniture',
-      },
-    }),
-    url: '/tiles.json',
-  });
+test('detailed road extensions compile from World layers and fields', () => {
   const contributions = compileRoads(
     roads({
       crossings: {image: 'crosswalk'},
@@ -396,7 +389,7 @@ test('detailed road extensions compile through remappable semantic contracts', (
         surface: {color: '#234567'},
       },
     }),
-    {...context, data},
+    context,
   );
   const byId = (id: string) => contributions.find(({layer}) => layer.id === id)!;
   const sidewalkSurface = byId('tileflow-sidewalk-surface');
@@ -406,37 +399,29 @@ test('detailed road extensions compile through remappable semantic contracts', (
   const roundaboutFill = byId('tileflow-road-circular-fill');
   const crossing = byId('tileflow-road-crossing');
 
-  assert.equal(sidewalkSurface.layer['source-layer'], 'pedestrian_surfaces');
+  assert.equal(sidewalkSurface.layer['source-layer'], 'sidewalk');
   assert.equal(sidewalkSurface.slot, 'transport-pedestrian-areas');
-  assert.match(JSON.stringify(sidewalkSurface.layer.filter), /kind/);
+  assert.equal(matchesFilter(sidewalkSurface.layer.filter, {class: 'sidewalk'}, 'Polygon'), true);
   assert.equal((sidewalkSurface.layer.paint as Record<string, unknown>)['fill-color'], '#234567');
   assert.equal(
     (sidewalkPattern.layer.paint as Record<string, unknown>)['fill-pattern'],
     'sidewalk-dot',
   );
   assert.equal((sidewalkOutline.layer.paint as Record<string, unknown>)['line-color'], '#345678');
-  assert.equal(roundaboutCasing.layer['source-layer'], 'road_circles');
-  assert.match(JSON.stringify(roundaboutCasing.layer), /ring_radius_z15/);
-  assert.match(JSON.stringify(roundaboutCasing.layer), /ring_inner_m/);
+  assert.equal(roundaboutCasing.layer['source-layer'], 'circular_feature');
+  assert.match(JSON.stringify(roundaboutCasing.layer), /radius_px_z15/);
+  assert.match(JSON.stringify(roundaboutCasing.layer), /inner_radius_m/);
   assert.equal(
     (roundaboutFill.layer.paint as Record<string, unknown>)['circle-stroke-color'],
     '#123456',
   );
-  assert.equal(crossing.layer['source-layer'], 'road_furniture');
+  assert.equal(crossing.layer['source-layer'], 'street_furniture');
   assert.equal(crossing.layer.minzoom, 15);
-  assert.match(JSON.stringify(crossing.layer.filter), /detail/);
-  assert.match(JSON.stringify(crossing.layer.filter), /crossing_status/);
-  assert.match(JSON.stringify(crossing.layer.filter), /crossing_markings/);
-  assert.match(JSON.stringify(crossing.layer.layout), /bearing/);
+  assert.match(JSON.stringify(crossing.layer.layout), /direction/);
   assert.equal(
     matchesFilter(
       crossing.layer.filter,
-      {
-        bearing: 134.3,
-        crossing_markings: 'zebra',
-        crossing_status: 'uncontrolled',
-        detail: 'crossing',
-      },
+      {direction: 134.3, markings: 'zebra', crossing: 'uncontrolled', type: 'crossing'},
       'Point',
     ),
     true,
@@ -444,7 +429,7 @@ test('detailed road extensions compile through remappable semantic contracts', (
   assert.equal(
     matchesFilter(
       crossing.layer.filter,
-      {bearing: 134.3, crossing_markings: 'no', crossing_status: 'no', detail: 'crossing'},
+      {direction: 134.3, markings: 'no', crossing: 'no', type: 'crossing'},
       'Point',
     ),
     false,
@@ -452,7 +437,7 @@ test('detailed road extensions compile through remappable semantic contracts', (
   assert.equal(
     matchesFilter(
       crossing.layer.filter,
-      {bearing: 134.3, crossing_status: 'uncontrolled', detail: 'crossing'},
+      {direction: 134.3, crossing: 'uncontrolled', type: 'crossing'},
       'Point',
     ),
     false,
@@ -469,6 +454,7 @@ test('detailed road extensions compile through remappable semantic contracts', (
   ]);
   assert.deepEqual(styleErrors(assembleTileflowLayers(contributions)), []);
 
+  // OpenMapTiles has none of these layers.
   const portableData = resolveTileflowData({
     type: 'vector-tiles',
     attribution: 'Test',
@@ -484,59 +470,37 @@ test('detailed road extensions compile through remappable semantic contracts', (
   assert.equal(portableIds.includes('tileflow-road-crossing'), false);
 });
 
-test('crossings hide unresolved footway points and preserve valid road bearings across schemas', () => {
-  const remapped = resolveTileflowData({
-    type: 'vector-tiles',
-    attribution: 'Test',
-    schema: openMapTiles({
-      fields: {crossing: 'control', direction: 'bearing', markings: 'paint', subclass: 'kind'},
-      layers: {streetFurniture: 'furniture'},
-    }),
-    url: '/tiles.json',
-  });
-  for (const data of [context.data, remapped]) {
-    const {fields} = data.schema;
-    const contributions = compileRoads(roads({crossings: {image: 'crosswalk'}}), {
-      ...context,
-      data,
-    });
-    const layer = contributions.find(({layer}) => layer.id === 'tileflow-road-crossing')!.layer;
-    // Avenue Joseph Bouvard: adjoining footway nodes carry these markings but
-    // no direction; the actual minor-road crossing also carries direction=134.3.
-    const footway = {
-      [fields.subclass]: 'crossing',
-      [fields.crossing]: 'uncontrolled',
-      [fields.markings]: 'zebra',
-    };
-    assert.equal(matchesFilter(layer.filter, footway, 'Point'), false);
-    for (const direction of [null, '', 'unknown', 'north', true, false, -1, 361, '-1', '361']) {
-      assert.equal(
-        matchesFilter(layer.filter, {...footway, [fields.direction]: direction}, 'Point'),
-        false,
-        `invalid direction ${JSON.stringify(direction)}`,
-      );
-    }
-    for (const direction of [0, 90, 134.3, 360, '0', '134.3', '360']) {
-      const road = {...footway, [fields.direction]: direction};
-      assert.equal(matchesFilter(layer.filter, road, 'Point'), true);
-      assert.equal(
-        evaluateProperty(
-          (layer.layout as Record<string, unknown>)['icon-rotate'],
-          mapLibreStyleSpec.layout_symbol['icon-rotate'],
-          road,
-        ),
-        Number(direction) + 90,
-      );
-      assert.equal(matchesFilter(layer.filter, {...road, [fields.crossing]: 'no'}, 'Point'), false);
-      for (const markings of ['no', 'none', 'unmarked']) {
-        assert.equal(
-          matchesFilter(layer.filter, {...road, [fields.markings]: markings}, 'Point'),
-          false,
-        );
-      }
-    }
-    assert.deepEqual(styleErrors(assembleTileflowLayers(contributions)), []);
+test('crossings hide unresolved footway points and preserve valid road bearings', () => {
+  const contributions = compileRoads(roads({crossings: {image: 'crosswalk'}}), context);
+  const layer = contributions.find(({layer}) => layer.id === 'tileflow-road-crossing')!.layer;
+  // Avenue Joseph Bouvard: adjoining footway nodes carry these markings but
+  // no direction; the actual street crossing also carries direction=134.3.
+  const footway = {type: 'crossing', crossing: 'uncontrolled', markings: 'zebra'};
+  assert.equal(matchesFilter(layer.filter, footway, 'Point'), false);
+  for (const direction of [null, '', 'unknown', 'north', true, false, -1, 361, '-1', '361']) {
+    assert.equal(
+      matchesFilter(layer.filter, {...footway, direction}, 'Point'),
+      false,
+      `invalid direction ${JSON.stringify(direction)}`,
+    );
   }
+  for (const direction of [0, 90, 134.3, 360, '0', '134.3', '360']) {
+    const road = {...footway, direction};
+    assert.equal(matchesFilter(layer.filter, road, 'Point'), true);
+    assert.equal(
+      evaluateProperty(
+        (layer.layout as Record<string, unknown>)['icon-rotate'],
+        mapLibreStyleSpec.layout_symbol['icon-rotate'],
+        road,
+      ),
+      Number(direction) + 90,
+    );
+    assert.equal(matchesFilter(layer.filter, {...road, crossing: 'no'}, 'Point'), false);
+    for (const markings of ['no', 'none', 'unmarked']) {
+      assert.equal(matchesFilter(layer.filter, {...road, markings}, 'Point'), false);
+    }
+  }
+  assert.deepEqual(styleErrors(assembleTileflowLayers(contributions)), []);
 });
 
 test('metric roundabouts stay anchored to geographic distances at fractional and maximum zooms', () => {
@@ -546,7 +510,7 @@ test('metric roundabouts stay anchored to geographic distances at fractional and
   const fill = layers.find(({id}) => id === 'tileflow-road-circular-fill')!;
   const casing = layers.find(({id}) => id === 'tileflow-road-circular-casing')!;
   const properties = {
-    class: 'minor',
+    class: 'street',
     radius_px_z15: 10.458,
     radius_m: 18.9,
     inner_radius_m: 16.2,
@@ -664,7 +628,7 @@ test('roundabout fallbacks follow resolved road widths and hollow borders', () =
     const fill = layers.find(({id}) => id === 'tileflow-road-circular-fill')!;
     const casing = layers.find(({id}) => id === 'tileflow-road-circular-casing')!;
     for (const level of [15, 15.25, 17.75, 22, 24]) {
-      const properties = {class: 'minor', radius_px_z15: 20};
+      const properties = {class: 'street', radius_px_z15: 20};
       const value = (layer: Layer, property: keyof typeof mapLibreStyleSpec.paint_circle) =>
         evaluateProperty(
           (layer.paint as Record<string, unknown>)[property],
@@ -696,12 +660,12 @@ test('a dash for other road classes, or a solid one, leaves a road on the solid-
       extras: {paths: true},
       classes: {motorway: {tunnel: {fill: {dash: [1, 0]}}}},
       modifiers: {
-        construction: {
+        unpaved: {
           surface: {
             fill: {
               dash: expression<readonly number[]>([
                 'case',
-                ['==', ['get', 'class'], 'path_construction'],
+                ['==', ['get', 'class'], 'path'],
                 ['literal', [1.5, 1]],
                 ['literal', [1, 0]],
               ]),
@@ -716,12 +680,13 @@ test('a dash for other road classes, or a solid one, leaves a road on the solid-
     layers.find((layer) => layer.id === id)!.paint as Record<string, unknown>;
   assert.equal(paintOf('tileflow-road-surface-motorway-fill')['line-dasharray'], undefined);
   assert.equal(paintOf('tileflow-road-tunnel-motorway-fill')['line-dasharray'], undefined);
-  // Construction paths are footways' own class: their layer keeps the dash.
+  // Unpaved paths are footways' own class: their layer keeps the dash.
   const footway = paintOf('tileflow-road-surface-footway-fill')['line-dasharray'];
   assert.deepEqual(
     evaluateProperty(footway, mapLibreStyleSpec.paint_line['line-dasharray'], {
-      class: 'path_construction',
-      subclass: 'footway',
+      class: 'path',
+      type: 'footway',
+      surface: 'unpaved',
     }),
     [1.5, 1],
   );
@@ -741,7 +706,7 @@ test('mountain-bike difficulty dashes trails and tracks, and leaves other roads 
   for (const roadClass of ['motorway', 'primary', 'minor', 'service'])
     assert.equal(dash(`tileflow-road-surface-${roadClass}-fill`), undefined, roadClass);
   for (const [roadClass, properties] of [
-    ['footway', {class: 'path', subclass: 'footway', mtb_scale: 5}],
+    ['footway', {class: 'path', type: 'footway', mtb_scale: 5}],
     ['track', {class: 'track', mtb_scale: 5}],
   ] as const)
     assert.deepEqual(
@@ -756,15 +721,15 @@ test('mountain-bike difficulty dashes trails and tracks, and leaves other roads 
 });
 
 test('roundabout widths between authored stops are stated per zoom as MapLibre evaluates them', () => {
-  // A width that changes between its stops and with the feature, as a road's ramps and access do.
+  // A width that changes between its stops and with the feature, as a road's links and access do.
   const width = expression<number>([
     'interpolate',
     ['exponential', 1.5],
     ['zoom'],
     12,
-    ['case', ['==', ['get', 'ramp'], 1], ['*', 1, 0.72], ['*', 1, 1]],
+    ['case', ['==', ['get', 'link'], true], ['*', 1, 0.72], ['*', 1, 1]],
     18,
-    ['case', ['==', ['get', 'ramp'], 1], ['*', 9, 0.72], ['*', 9, 1]],
+    ['case', ['==', ['get', 'link'], true], ['*', 9, 0.72], ['*', 9, 1]],
   ]);
   const layers = compileRoads(
     roads({detail: 'none', classes: {minor: {surface: {fill: {width}, casing: {width: 1}}}}}),
@@ -779,9 +744,9 @@ test('roundabout widths between authored stops are stated per zoom as MapLibre e
     'no curve at a known zoom',
   );
   assert.equal((radius as unknown[])[0], 'let', 'repeated feature expressions are stated once');
-  for (const ramp of [0, 1])
+  for (const link of [false, true])
     for (const level of [15, 16, 17, 18]) {
-      const properties = {class: 'minor', radius_px_z15: 20, ramp};
+      const properties = {class: 'street', radius_px_z15: 20, link};
       const expected =
         20 * 2 ** (level - 15) -
         (evaluateProperty(
@@ -797,7 +762,7 @@ test('roundabout widths between authored stops are stated per zoom as MapLibre e
         properties,
         level,
       ) as number;
-      assert.ok(Math.abs(actual - expected) < 1e-9, `ramp ${ramp} at z${level}`);
+      assert.ok(Math.abs(actual - expected) < 1e-9, `link ${link} at z${level}`);
     }
   assert.deepEqual(styleErrors(layers), []);
 });
@@ -822,7 +787,7 @@ test('roundabouts follow enabled classes, phase visibility, zoom ranges and data
   );
   const fill = contributions.find(({target}) => target === 'roads.roundabouts.fill')!.layer;
   const casing = contributions.find(({target}) => target === 'roads.roundabouts.casing')!.layer;
-  for (const roadClass of ['motorway', 'minor']) {
+  for (const roadClass of ['motorway', 'street']) {
     assert.equal(
       matchesFilter(fill.filter, {class: roadClass, circle_kind: 'road_ring'}, 'Point'),
       false,
@@ -926,11 +891,11 @@ test('ramps precede receiving fills within each structure and can keep class ord
       assert.ok(
         ramps.every((ramp) => fills.every((fill) => layers.indexOf(ramp) < layers.indexOf(fill))),
       );
-      for (const roadClass of ['minor', 'motorway']) {
+      for (const roadClass of ['street', 'motorway']) {
         const properties = {
           class: roadClass,
-          ramp: 1,
-          ...(structure === 'surface' ? {} : {brunnel: structure}),
+          link: true,
+          ...(structure === 'surface' ? {} : {structure}),
         };
         assert.equal(ramps.filter((layer) => matchesFilter(layer.filter, properties)).length, 1);
         assert.equal(fills.filter((layer) => matchesFilter(layer.filter, properties)).length, 0);
@@ -944,7 +909,7 @@ test('ramps precede receiving fills within each structure and can keep class ord
     false,
   );
   const fill = classic.find(({target}) => target === 'roads.classes.motorway.surface.fill')!.layer;
-  assert.equal(matchesFilter(fill.filter, {class: 'motorway', ramp: 1}), true);
+  assert.equal(matchesFilter(fill.filter, {class: 'motorway', link: true}), true);
 });
 
 test('an authored fallback curve preserves ring geometry at fractional and overzoom levels', () => {
@@ -964,7 +929,7 @@ test('an authored fallback curve preserves ring geometry at fractional and overz
     const upper = Math.min(lower + 1, 24);
     const width = widthAt(lower) + (widthAt(upper) - widthAt(lower)) * (2 ** (level - lower) - 1);
     const radius = 20 * 2 ** (level - 15) - width / 2;
-    const properties = {class: 'minor', radius_px_z15: 20};
+    const properties = {class: 'street', radius_px_z15: 20};
     for (const [layer, expectedRadius, expectedWidth] of [
       [fill, radius, width],
       [casing, radius - 0.5, width + 1],
@@ -1036,7 +1001,7 @@ test('mixed road color curves do not alter explicit roundabout appearance', () =
   const expected = ['interpolate', ['exponential', 1.5], ['zoom'], 15, '#102030', 22, '#d0c0b0'];
   assert.deepEqual((fill.paint as Record<string, unknown>)['circle-stroke-color'], expected);
   for (const level of [15, 16.9, 17.24, 17.25, 18.7, 22]) {
-    for (const roadClass of ['minor', 'primary']) {
+    for (const roadClass of ['street', 'primary']) {
       assert.equal(
         evaluateProperty(
           (fill.paint as Record<string, unknown>)['circle-stroke-opacity'],
@@ -1195,18 +1160,9 @@ test('roundabout sampling limits non-base-two width error with bounded default g
 });
 
 test('feature-dependent ring widths preserve data and authored stops without dense sampling', () => {
-  const data = resolveTileflowData({
-    type: 'vector-tiles',
-    attribution: 'Test',
-    url: '/tiles.json',
-    schema: openMapTiles({
-      fields: {class: 'kind', circularKind: 'ring_kind', circularRadiusAtZoom15: 'ring_z15'},
-      layers: {circularFeature: 'road_circles'},
-    }),
-  });
   const output = (scale: number) => [
     'case',
-    ['==', ['get', 'expressway'], 1],
+    ['==', ['get', 'expressway'], true],
     ['*', ['to-number', ['get', 'lanes'], 1], scale],
     scale / 2,
   ];
@@ -1226,7 +1182,7 @@ test('feature-dependent ring widths preserve data and authored stops without den
     ['zoom'],
     1,
     17.75,
-    ['case', ['==', ['get', 'kind'], 'primary'], 5, 2],
+    ['case', ['==', ['get', 'class'], 'primary'], 5, 2],
   ]);
   const layers = compileRoads(
     roads({
@@ -1234,9 +1190,10 @@ test('feature-dependent ring widths preserve data and authored stops without den
       classes: {primary: {surface: {fill: {width}}}, minor: {surface: {fill: {width: 3}}}},
       roundabouts: {borderWidth},
     }),
-    {...context, data},
+    context,
   ).map(({layer}) => layer);
   const rings = layers.filter(({id}) => id.startsWith('tileflow-road-circular-'));
+  assert.equal(rings.length, 2);
   assert.deepEqual(styleErrors(layers), []);
   assert.ok(
     JSON.stringify(rings).length < 100_000,
@@ -1245,16 +1202,19 @@ test('feature-dependent ring widths preserve data and authored stops without den
   for (const ring of rings) {
     const radius = curveOf((ring.paint as Record<string, unknown>)['circle-radius']);
     assert.equal((radius.length - 3) / 2, 15);
-    assert.equal(ring['source-layer'], 'road_circles');
+    assert.equal(ring['source-layer'], 'circular_feature');
   }
-  for (const roadClass of ['primary', 'minor']) {
+  for (const [roadClass, value] of [
+    ['primary', 'primary'],
+    ['minor', 'street'],
+  ] as const) {
     const road = layers.find(({id}) => id === `tileflow-road-surface-${roadClass}-fill`)!;
-    for (const expressway of [0, 1])
+    for (const expressway of [false, true])
       for (const lanes of [1, 3]) {
         const properties = {
-          kind: roadClass,
-          ring_kind: 'road_ring',
-          ring_z15: 100,
+          class: value,
+          circle_kind: 'road_ring',
+          radius_px_z15: 100,
           expressway,
           lanes,
         };
@@ -1297,10 +1257,8 @@ test('feature-dependent ring widths preserve data and authored stops without den
 });
 
 test('strokes only the outer boundary of road areas when the data publishes it', () => {
-  const style = roads({
-    areas: {pier: {outline: {color: '#112233', width: 1}}},
-    detail: 'none',
-  });
+  const config = {areas: {pier: {outline: {color: '#112233', width: 1}}}, detail: 'none' as const};
+  const style = roads(config);
   const byId = (contributions: ReturnType<typeof compileRoads>, id: string) =>
     contributions.find(({layer}) => layer.id === id)!.layer as Layer;
 
@@ -1310,30 +1268,33 @@ test('strokes only the outer boundary of road areas when the data publishes it',
   const pedestrianOutline = byId(world, 'tileflow-road-pedestrian-area-outline');
   const pierOutline = byId(world, 'tileflow-road-pier-area-outline');
   assert.equal(pedestrianFill['source-layer'], sourceLayer);
-  assert.equal(pedestrianOutline['source-layer'], 'transportation_outline');
-  assert.equal(pierOutline['source-layer'], 'transportation_outline');
+  assert.equal(pedestrianOutline['source-layer'], 'road_outline');
+  assert.equal(pierOutline['source-layer'], 'road_outline');
   assert.deepEqual(
     pedestrianOutline.filter,
     tileflowRoadClassFilter(context.data.schema.fields, 'pedestrian'),
   );
-  assert.ok(matchesFilter(pedestrianOutline.filter, {class: 'path', subclass: 'pedestrian'}));
+  assert.ok(matchesFilter(pedestrianOutline.filter, {class: 'pedestrian'}));
   assert.ok(!matchesFilter(pedestrianOutline.filter, {class: 'pier'}));
   assert.ok(matchesFilter(pierOutline.filter, {class: 'pier'}));
-  assert.ok(!matchesFilter(pierOutline.filter, {class: 'path', subclass: 'pedestrian'}));
+  assert.ok(!matchesFilter(pierOutline.filter, {class: 'pedestrian'}));
 
-  // Other OpenMapTiles data has no such layer: the outline strokes the polygons.
-  const generic = compileRoads(style, {
-    ...context,
-    data: resolveTileflowData(
+  // OpenMapTiles has no such layer: the outline strokes the polygons.
+  const generic = compileLowered(
+    config,
+    resolveTileflowData(
       vectorTiles({attribution: '© Example', schema: openMapTiles(), url: '/tiles.json'}),
     ),
-  });
-  const genericOutline = byId(generic, 'tileflow-road-pedestrian-area-outline');
-  assert.equal(genericOutline['source-layer'], sourceLayer);
+  );
+  const genericOutline = generic.find(
+    (layer) => layer.id === 'tileflow-road-pedestrian-area-outline',
+  )!;
+  assert.equal(genericOutline['source-layer'], 'transportation');
   assert.ok(
     matchesFilter(genericOutline.filter, {class: 'path', subclass: 'pedestrian'}, 'Polygon'),
   );
   assert.ok(
     !matchesFilter(genericOutline.filter, {class: 'path', subclass: 'pedestrian'}, 'LineString'),
   );
+  assert.ok(!matchesFilter(genericOutline.filter, {class: 'path', subclass: 'footway'}, 'Polygon'));
 });

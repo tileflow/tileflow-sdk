@@ -404,7 +404,12 @@ for (const [mapName, parent] of Object.entries(officialMaps)) {
 
 function collectExpressionFields(value: unknown, output = new Set<string>()): Set<string> {
   if (Array.isArray(value)) {
-    if ((value[0] === 'get' || value[0] === 'has') && typeof value[1] === 'string') {
+    // A three-argument get or has reads an object, such as an absent World field, not the feature.
+    if (
+      (value[0] === 'get' || value[0] === 'has') &&
+      value.length === 2 &&
+      typeof value[1] === 'string'
+    ) {
       output.add(value[1]);
     }
     for (const item of value) collectExpressionFields(item, output);

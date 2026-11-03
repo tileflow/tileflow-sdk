@@ -4,8 +4,8 @@ import {
   type TileflowDataBinding,
   type TileflowDataFieldAccessor,
   type TileflowDataLayerPartition,
-  tileflowWorldFields,
   type TileflowWorldFieldName,
+  tileflowWorldFields,
   type TileflowWorldLayerName,
   tileflowWorldLayers,
 } from '../data';
@@ -220,6 +220,7 @@ function detailSourceId(data: ResolvedTileflowData): string {
   return data.detail?.delivery === 'separate' ? data.detail.sourceId : data.sourceId;
 }
 
+
 type BindingContext = Readonly<{
   data: ResolvedTileflowData;
   partition?: TileflowDataLayerPartition;
@@ -270,11 +271,15 @@ function fieldAccessor(
     return auxiliaryFieldBindings[reference.name as keyof typeof auxiliaryFieldBindings];
   }
   const name = reference.name as TileflowWorldFieldName;
-  // A World field the data lacks reads as absent, so designs made for World still draw other data.
-  const accessor =
-    context.partition?.fields?.[name] ?? schema.fields[name] ?? tileflowWorldFields[name];
-  if (!accessor) throw new Error(`Tileflow data schema does not provide field ${name}.`);
-  return accessor;
+  const accessor = context.partition?.fields?.[name] ?? schema.fields[name];
+  if (accessor) return accessor;
+  // A World field the data lacks reads as absent, so designs made for World still draw other data
+  // without requiring properties it does not publish.
+  // It reads an empty object rather than the feature, so its value is null of any type.
+  if (Object.hasOwn(tileflowWorldFields, name)) {
+    return {expression: ['get', tileflowWorldFields[name], ['literal', {}]]};
+  }
+  throw new Error(`Tileflow data schema does not provide field ${name}.`);
 }
 
 /**

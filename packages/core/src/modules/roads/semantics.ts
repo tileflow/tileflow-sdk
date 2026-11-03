@@ -96,6 +96,11 @@ export function tileflowRoadClassFilter(
   ];
 }
 
+/** World's road classes of the roads in service a Tileflow road class draws. */
+export function tileflowRoadInServiceClasses(roadClass: TileflowRoadClass): readonly string[] {
+  return roadClassValues[roadClass];
+}
+
 /** A kind of feature a road class draws: its `class`, and the `type`s it can have when known. */
 export type TileflowRoadKind = Readonly<{class: string; types?: readonly string[]}>;
 

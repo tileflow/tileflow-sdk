@@ -42,10 +42,7 @@ test('a consumer inherits the reviewed day palette and building contours without
   );
   assert.deepEqual(color('tileflow-road-surface-minor-casing', 16), Color.parse('#8AA7B0'));
   for (const tone of ['neutral', 'commercial'])
-    assert.deepEqual(
-      color('tileflow-buildings-fill-outline', 18, {tone}),
-      Color.parse('#B9BFBA'),
-    );
+    assert.deepEqual(color('tileflow-buildings-fill-outline', 18, {tone}), Color.parse('#B9BFBA'));
   const outline = style.layers.find((entry) => entry.id === 'tileflow-buildings-fill-outline');
   assert.ok(outline?.type === 'line');
   assert.equal(outline.minzoom, 16);
@@ -158,11 +155,11 @@ test('time-of-day buildings retain their material palette across the fractional 
       assert.equal(expression.result, 'success');
       if (expression.result !== 'success') throw new Error('Invalid building color');
       for (const zoom of [15, 15.25, 15.5, 15.75, 16, 18]) {
-        for (const building_tone of ['neutral', 'commercial', 'active']) {
+        for (const tone of ['neutral', 'commercial', 'active']) {
           assert.deepEqual(
-            expression.value.evaluate({zoom}, {type: 3, properties: {building_tone}}),
-            Color.parse(colors[building_tone === 'neutral' ? neutral : 'buildings.flat.active']),
-            `${theme} ${building_tone} at z${zoom}`,
+            expression.value.evaluate({zoom}, {type: 3, properties: {tone}}),
+            Color.parse(colors[tone === 'neutral' ? neutral : 'buildings.flat.active']),
+            `${theme} ${tone} at z${zoom}`,
           );
         }
       }

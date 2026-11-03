@@ -110,6 +110,8 @@ export function withStreetsCartography(base: TileflowMap) {
               [11, 0],
             ]),
           },
+          // Streets draws activity areas in its own pass below, fading them out under buildings.
+          activityAreas: {fill: {visible: false}, outline: {visible: false}},
           background: {...land.background, color: streetsGroundBackground},
           landcover: {
             ...land.landcover,

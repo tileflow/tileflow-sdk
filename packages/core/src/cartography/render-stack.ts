@@ -1,5 +1,9 @@
-import {roadLabelPlacementKey} from './label-placement';
-import type {ResolvedTileflowData, TileflowWorldFieldName, TileflowWorldLayerName} from '../data';
+import {
+  type ResolvedTileflowData,
+  type TileflowWorldFieldName,
+  tileflowWorldFields,
+  type TileflowWorldLayerName,
+} from '../data';
 import {
   type TileflowBandPlacement,
   tileflowBandPlacementIndex,
@@ -18,6 +22,7 @@ import {
   type TileflowLayerTemplateIR,
 } from './domain-ir';
 import {type TileflowLayerDomain, tileflowLayerDomains} from './domains';
+import {roadLabelPlacementKey} from './label-placement';
 import {
   applyBackgroundStyle,
   applyCircleStyle,
@@ -1042,10 +1047,10 @@ function validateNormalization(
 
 function requireFieldBinding(
   fieldName: TileflowRenderField,
-  data: ResolvedTileflowData,
+  _data: ResolvedTileflowData,
 ): ReturnType<typeof field> {
-  const binding = data.schema.fields[fieldName];
-  if (!Object.hasOwn(data.schema.fields, fieldName) || !binding) {
+  // A World field the data lacks is accepted and reads as absent at lowering.
+  if (!Object.hasOwn(tileflowWorldFields, fieldName)) {
     throw renderStackError(
       'missing-field-binding',
       `Tileflow data schema does not provide field ${String(fieldName)}.`,

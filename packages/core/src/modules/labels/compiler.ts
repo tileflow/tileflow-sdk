@@ -23,7 +23,11 @@ import type {
 } from '../../types';
 import type {TileflowResolvedModuleConfig} from '../resolved';
 import {resolveRoads} from '../roads';
-import {tileflowRoadClasses, tileflowRoadClassFilter} from '../roads/semantics';
+import {
+  tileflowRoadClasses,
+  tileflowRoadClassFilter,
+  tileflowRoadInServiceClasses,
+} from '../roads/semantics';
 import {resolveLabels, visibleRoadLabelClasses} from './index';
 import {compactRoadNameExpression} from './road-names';
 
@@ -266,7 +270,12 @@ export function compileLabels(
             filter: [
               'all',
               ['has', schema.fields.name],
-              placeFilter(placeClass, schema.fields, schema.fields.symbolrank, schema.fields.capital),
+              placeFilter(
+                placeClass,
+                schema.fields,
+                schema.fields.symbolrank,
+                schema.fields.capital,
+              ),
             ],
           },
           mergeTileflowDesign(style, {text: {field}}),
@@ -354,7 +363,18 @@ export function compileLabels(
       ...(shieldKindField ? [['has', shieldKindField]] : []),
       ['>=', ['to-number', ['get', schema.fields.reflen], 0], 1],
       ['<=', ['to-number', ['coalesce', ['get', schema.fields.reflen], 99], 99], 6],
-      roadClassesFilter(schema.fields, eligibleShieldRoads as TileflowRoadClass[]),
+      // Shields mark roads in service by class; World's shield points carry no `type`.
+      [
+        'match',
+        ['get', schema.fields.class],
+        [
+          ...new Set(
+            (eligibleShieldRoads as TileflowRoadClass[]).flatMap(tileflowRoadInServiceClasses),
+          ),
+        ],
+        true,
+        false,
+      ],
     ];
     const phases = [
       ...(shieldKindField && schema.layers.roadShield
@@ -788,15 +808,6 @@ function placePriority(
 
 function capitalFilter(capitalField: string): unknown[] {
   return ['>', ['to-number', ['get', capitalField], 0], 0];
-}
-
-function roadClassesFilter(
-  fields: TileflowDomainCompileContext['data']['schema']['fields'],
-  roadClasses: readonly TileflowRoadClass[],
-): unknown[] {
-  return roadClasses.length === 1
-    ? tileflowRoadClassFilter(fields, roadClasses[0]!)
-    : ['any', ...roadClasses.map((roadClass) => tileflowRoadClassFilter(fields, roadClass))];
 }
 
 function symbolContribution(

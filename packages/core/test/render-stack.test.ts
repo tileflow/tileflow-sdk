@@ -374,7 +374,7 @@ test('feature bindings are independent from whether the matching renderer domain
   assert.equal(result.length, 2);
 });
 
-test('builders reject physical layer escape hatches and selectors reject missing bindings', () => {
+test('builders reject physical layer escape hatches and selectors reject unknown fields', () => {
   assert.throws(
     () =>
       renderPass({
@@ -401,7 +401,7 @@ test('builders reject physical layer escape hatches and selectors reject missing
         {
           coerce: 'number',
           fallback: 0,
-          field: 'bathymetryMinDepth',
+          field: 'notAWorldField' as never,
           kind: 'compare',
           operator: 'gte',
           value: 1,
@@ -409,6 +409,20 @@ test('builders reject physical layer escape hatches and selectors reject missing
         data,
       ),
     {code: 'missing-field-binding'},
+  );
+  // A World field the data lacks is accepted; lowering reads it as absent.
+  assert.doesNotThrow(() =>
+    compileRenderSelector(
+      {
+        coerce: 'number',
+        fallback: 0,
+        field: 'bathymetryMinDepth',
+        kind: 'compare',
+        operator: 'gte',
+        value: 1,
+      },
+      data,
+    ),
   );
 });
 

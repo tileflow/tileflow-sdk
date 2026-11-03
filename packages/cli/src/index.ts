@@ -73,6 +73,7 @@ import {
   installAccountSession,
   loadAuthConfig,
   normalizeApiOrigin,
+  prepareAccountLogin,
   removeAccountSession,
   removeAuthFile,
   resolveAccountSession,
@@ -1895,6 +1896,10 @@ async function loginWithDeviceFlow(options: {
   expectedApiUrl: string;
   noBrowser: boolean;
 }) {
+  const authState = await prepareAccountLogin();
+  if (authState.kind === 'legacy') {
+    logWarning('An older Tileflow CLI login will be replaced after authorization.');
+  }
   const codeVerifier = randomBase64Url(32);
   const codeChallenge = createPkceChallenge(codeVerifier);
   printTitle('Tileflow login', 'Authorize this machine from the Tileflow dashboard.');
@@ -1948,7 +1953,14 @@ async function loginWithDeviceFlow(options: {
     throw new Error(profile.error);
   }
 
-  await installAccountSession({...session, account: profile.value.account});
+  try {
+    await installAccountSession({...session, account: profile.value.account});
+  } catch (error) {
+    if (!(await revokeHostedAccountSession(apiUrl, session.accountSession))) {
+      logWarning('Could not revoke the new account session after the local save failed.');
+    }
+    throw error;
+  }
 
   logSuccess('Signed in to Tileflow.');
   printAccountDetails({...session, account: profile.value.account});

@@ -211,6 +211,10 @@ for CI, provide an appropriately scoped key through the secret environment varia
 `TILEFLOW_API_KEY`. CI does not fall back to a saved personal login. Never put a key in a config,
 browser bundle, copied prompt, or command-line argument.
 
+If `login` finds the older local file containing an API key and API URL, it replaces that file only
+after a new account login succeeds. The old API key is not converted into an account session.
+Unrecognized local files are left untouched and stop login before authorization begins.
+
 ```sh
 npx tileflow login
 npx tileflow whoami --json

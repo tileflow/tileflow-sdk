@@ -216,9 +216,151 @@ test('an unrecognized saved login fails closed and remains byte-for-byte intact'
   );
 
   assert.equal(result.code, 1);
-  assert.match(result.stderr, /auth state is invalid/);
+  assert.match(result.stderr, /older format.*tileflow login/);
   const {readFile} = await import('node:fs/promises');
   assert.equal(await readFile(fixture.authPath, 'utf8'), unrecognized);
+});
+
+test('login replaces the old API key file and also works with an empty home', async (t) => {
+  for (const previousFile of ['legacy', 'empty'] as const) {
+    const fixture = await createFixture(t);
+    const account = {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'};
+    const expiresAt = '2026-12-01T00:00:00.000Z';
+    const sessionId = 'cli_session_ada';
+    const requests: string[] = [];
+    let apiUrl = '';
+    const api = await createApi(t, async (request) => {
+      requests.push(request.url ?? '');
+      if (request.url === '/api/cli/device/start') {
+        return json(200, {
+          apiUrl,
+          deviceCode: 'device_test',
+          expiresIn: 60,
+          interval: 1,
+          userCode: 'TESTCODE',
+          verificationUri: `${apiUrl}/activate`,
+          verificationUriComplete: `${apiUrl}/activate?code=TESTCODE`,
+        });
+      }
+      if (request.url === '/api/cli/device/token') {
+        return json(200, {
+          account,
+          accountSession: accountToken,
+          apiUrl,
+          createdAt: '2026-08-15T00:00:00.000Z',
+          expiresAt,
+          sessionId,
+        });
+      }
+      assert.equal(request.url, '/v1/cli/account');
+      assert.equal(request.headers.authorization, `Bearer ${accountToken}`);
+      return json(200, {account, schemaVersion: 1, session: {expiresAt, id: sessionId}});
+    });
+    apiUrl = api.url;
+    if (previousFile === 'legacy') {
+      await writeFile(fixture.authPath, `${JSON.stringify({apiKey: 'old-api-key', apiUrl})}\n`, {
+        mode: 0o600,
+      });
+    }
+
+    const result = await runCli(
+      fixture.projectDirectory,
+      ['login', '--no-browser', '--app-url', apiUrl, '--api-url', apiUrl],
+      fixture.directory,
+    );
+
+    assert.equal(result.code, 0, result.stderr);
+    assert.deepEqual(requests, [
+      '/api/cli/device/start',
+      '/api/cli/device/token',
+      '/v1/cli/account',
+    ]);
+    const {readFile} = await import('node:fs/promises');
+    const saved = JSON.parse(await readFile(fixture.authPath, 'utf8')) as {
+      sessions: Record<string, {accountSession: string}>;
+      version: number;
+    };
+    assert.equal(saved.version, 2);
+    assert.equal(saved.sessions[apiUrl].accountSession, accountToken);
+    assert.equal(Object.hasOwn(saved, 'apiKey'), false);
+  }
+});
+
+test('unknown login file stops before contacting the dashboard', async (t) => {
+  const fixture = await createFixture(t);
+  const unknown = '{"version":99,"sessions":{}}\n';
+  await writeFile(fixture.authPath, unknown, {mode: 0o600});
+  let requests = 0;
+  const api = await createApi(t, async () => {
+    requests += 1;
+    return json(500, {});
+  });
+
+  const result = await runCli(
+    fixture.projectDirectory,
+    ['login', '--no-browser', '--app-url', api.url, '--api-url', api.url],
+    fixture.directory,
+  );
+
+  assert.equal(result.code, 1);
+  assert.match(`${result.stdout}\n${result.stderr}`, /auth state is invalid/);
+  assert.equal(requests, 0);
+  const {readFile} = await import('node:fs/promises');
+  assert.equal(await readFile(fixture.authPath, 'utf8'), unknown);
+});
+
+test('login revokes a new session if local persistence fails after authorization', async (t) => {
+  const fixture = await createFixture(t);
+  const account = {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'};
+  const expiresAt = '2026-12-01T00:00:00.000Z';
+  const sessionId = 'cli_session_ada';
+  const changedFile = '{"version":99,"sessions":{}}\n';
+  let apiUrl = '';
+  let revoked = false;
+  const api = await createApi(t, async (request) => {
+    if (request.url === '/api/cli/device/start') {
+      return json(200, {
+        apiUrl,
+        deviceCode: 'device_test',
+        expiresIn: 60,
+        interval: 1,
+        userCode: 'TESTCODE',
+        verificationUri: `${apiUrl}/activate`,
+        verificationUriComplete: `${apiUrl}/activate?code=TESTCODE`,
+      });
+    }
+    if (request.url === '/api/cli/device/token') {
+      return json(200, {
+        account,
+        accountSession: accountToken,
+        apiUrl,
+        createdAt: '2026-08-15T00:00:00.000Z',
+        expiresAt,
+        sessionId,
+      });
+    }
+    assert.equal(request.headers.authorization, `Bearer ${accountToken}`);
+    if (request.url === '/v1/cli/account') {
+      await writeFile(fixture.authPath, changedFile, {mode: 0o600});
+      return json(200, {account, schemaVersion: 1, session: {expiresAt, id: sessionId}});
+    }
+    assert.equal(request.url, '/v1/cli/account/session');
+    assert.equal(request.method, 'DELETE');
+    revoked = true;
+    return json(204, null);
+  });
+  apiUrl = api.url;
+
+  const result = await runCli(
+    fixture.projectDirectory,
+    ['login', '--no-browser', '--app-url', apiUrl, '--api-url', apiUrl],
+    fixture.directory,
+  );
+
+  assert.equal(result.code, 1);
+  assert.equal(revoked, true);
+  const {readFile} = await import('node:fs/promises');
+  assert.equal(await readFile(fixture.authPath, 'utf8'), changedFile);
 });
 
 test('rejected project-profile commands and selectors are not part of the CLI', async (t) => {

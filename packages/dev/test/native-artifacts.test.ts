@@ -307,6 +307,10 @@ for (const [label, extra, expectedPath] of [
 
 test('forwards the renderer into watched generations and retains the last valid one on failure', async (t) => {
   const cwd = await fixture(t);
+  // Whole Streets families are qualified above. One real variant is sufficient
+  // for this watcher/retention contract, without recompiling twelve themes.
+  const watchedConfig = (extra = '') => config(`themes:{light:streets.themes.light},${extra}`);
+  await writeFile(join(cwd, 'tileflow.config.ts'), watchedConfig());
   const session = await createTileflowArtifactSession({
     cwd,
     renderer: 'native',
@@ -314,7 +318,7 @@ test('forwards the renderer into watched generations and retains the last valid 
     debounceMs: 10,
   });
   try {
-    assert.equal(session.getState().status, 'ready');
+    assert.equal(session.getState().status, 'ready', JSON.stringify(session.getState()));
     const previous = session.getLastGoodArtifacts();
     assert.ok(previous?.nativeBuild);
     const generation = session.getState().generation;
@@ -322,7 +326,7 @@ test('forwards the renderer into watched generations and retains the last valid 
     session.subscribe((state) => {
       if (state.status === 'ready') readyEvents++;
     });
-    await writeFile(join(cwd, 'tileflow.config.ts'), config("terrain:'3d',"));
+    await writeFile(join(cwd, 'tileflow.config.ts'), watchedConfig("terrain:'3d',"));
     const deadline = Date.now() + 10_000;
     while (session.getState().status !== 'invalid' && Date.now() < deadline) await delay(25);
     const invalid = session.getState();

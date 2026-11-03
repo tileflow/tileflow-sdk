@@ -795,7 +795,7 @@ function assertCanonicalReceiptByteLimit(receipt: TileflowCaptureReceipt): void 
   }
 }
 
-/** Shot receipts contain arrays; still receipts never do. */
+/** Shot receipts contain arrays; still receipts only list the World sources a capture read. */
 function assertPlainReceiptData(
   value: unknown,
   path = 'receipt',
@@ -815,7 +815,11 @@ function assertPlainReceiptData(
   ) {
     return;
   }
-  if (typeof value === 'object' && Array.isArray(value) && state.allowArrays) {
+  if (
+    typeof value === 'object' &&
+    Array.isArray(value) &&
+    (state.allowArrays || path.endsWith('.data.sources'))
+  ) {
     assertPlainReceiptArray(value, path, state, depth);
     return;
   }

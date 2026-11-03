@@ -270,7 +270,9 @@ function fieldAccessor(
     return auxiliaryFieldBindings[reference.name as keyof typeof auxiliaryFieldBindings];
   }
   const name = reference.name as TileflowWorldFieldName;
-  const accessor = context.partition?.fields?.[name] ?? schema.fields[name];
+  // A World field the data lacks reads as absent, so designs made for World still draw other data.
+  const accessor =
+    context.partition?.fields?.[name] ?? schema.fields[name] ?? tileflowWorldFields[name];
   if (!accessor) throw new Error(`Tileflow data schema does not provide field ${name}.`);
   return accessor;
 }

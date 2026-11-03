@@ -48,7 +48,7 @@ test('prints deterministic bounded feature JSON without credentials or hidden pr
     type: 'vector-tiles',
     url: 'http://127.0.0.1:${port}/tiles.json?key=PRIVATE',
     attribution: 'Fixture data',
-    schema: {type: 'openmaptiles', contractVersion: 1}
+    schema: {type: 'openmaptiles', contractVersion: 2}
   }`,
     }),
   );

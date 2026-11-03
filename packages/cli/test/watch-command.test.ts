@@ -391,7 +391,7 @@ function createValidConfig(tileOrigin?: string): string {
         bounds: [-180, -85, 180, 85],
         revision: 'fixture_1',
         attribution: 'Fixture data',
-        schema: {type: 'openmaptiles', contractVersion: 1}
+        schema: {type: 'openmaptiles', contractVersion: 2}
       },
 `;
   return tileflowMapFixture({

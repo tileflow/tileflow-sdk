@@ -195,16 +195,16 @@ export default defineMap({
   const disabledLayers =
     disabled.buildManifest.maps.main!.themes.light!.dataRequirements.sourceLayers;
   assert.ok(enabledLayers.some((layer) => layer.id === 'building'));
-  assert.ok(enabledLayers.some((layer) => layer.id === 'poi'));
+  assert.ok(enabledLayers.some((layer) => layer.id === 'poi_label'));
   assert.ok(disabledLayers.some((layer) => layer.id === 'building'));
   assert.equal(
-    disabledLayers.some((layer) => layer.id === 'poi'),
+    disabledLayers.some((layer) => layer.id === 'poi_label'),
     false,
   );
-  const poiFields = enabledLayers.find((layer) => layer.id === 'poi')?.fields ?? [];
+  const poiFields = enabledLayers.find((layer) => layer.id === 'poi_label')?.fields ?? [];
   assert.deepEqual(
     poiFields.map((field) => field.name).sort(),
-    ['category', 'filter_rank', 'name', 'name:en', 'name:latin', 'size_rank'].sort(),
+    ['class', 'filterrank', 'name', 'name_en', 'name_latin', 'sizerank'].sort(),
   );
 });
 

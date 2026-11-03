@@ -36,7 +36,7 @@ test('inspects resolved lineage and merge provenance without source paths or sec
     data: {
       type: 'vector-tiles',
       attribution: 'Fixture',
-      schema: {type: 'openmaptiles', contractVersion: 1},
+      schema: {type: 'openmaptiles', contractVersion: 2},
       url: `https://example.test/data.json?token=${secret}`,
     },
     modules: {

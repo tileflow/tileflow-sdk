@@ -238,7 +238,8 @@ test('operations beside a target of another buildings mode name the mode instead
     }),
   });
   assert.equal(
-    ids.indexOf('tileflow-buildings-native-extrusion') - ids.indexOf('tileflow-buildings-render-shadow'),
+    ids.indexOf('tileflow-buildings-native-extrusion') -
+      ids.indexOf('tileflow-buildings-render-shadow'),
     1,
   );
 });

@@ -1540,7 +1540,7 @@ const streetsBase = bindOfficialMapTheme(
     defaultTheme: 'light',
     systemThemes: {light: 'light', dark: 'dark'},
     projection: 'globe', // 'globe' | 'mercator'. Globe becomes planar at street zooms.
-    camera: {adaptivePerspective: true},
+    camera: {adaptivePerspective: true, pitchLimit: {maxZoom: 15, maxPitch: 38}},
     // Each theme paints the sky seen when the camera tilts up the street; night shows stars.
     sky: {
       color: token.color('sky.color'),
@@ -2325,8 +2325,9 @@ const streetsBase = bindOfficialMapTheme(
           mode: 'flat',
           threeDimensional: {
             flatFootprints: false,
+            entrance: {buildings: [14.25, 14.25], models: [14.25, 14.25]},
             edgeRadius: 1.5,
-            groundOcclusion: 0.07,
+            groundOcclusion: 0.1,
             groundOcclusionRadius: 1.5,
             // Models name pools, planting and timber with these parts to follow the map's colours.
             modelColors: {
@@ -2347,24 +2348,25 @@ const streetsBase = bindOfficialMapTheme(
             modelLighting: {
               wall: {
                 shading: 'map',
-                ambientOcclusion: 0.32,
+                ambientOcclusion: 0.5,
                 color: token.color('buildings.modelSurface'),
                 roughness: 1,
                 metallic: 0,
               },
               roof: {
                 shading: 'map',
-                ambientOcclusion: 0.32,
+                ambientOcclusion: 0.45,
                 color: token.color('buildings.modelRoof'),
                 roughness: 1,
                 metallic: 0,
               },
               window: {
                 shading: 'map',
-                ambientOcclusion: 0.32,
-                color: token.color('buildings.modelSurface'),
-                colorScale: 0.94,
-                partColorMix: 1,
+                ambientOcclusion: 0.4,
+                color: token.color('buildings.modelGlass'),
+                colorScale: 0.96,
+                // Glazing keeps its material even when it shares a named stone part.
+                partColorMix: 0,
                 roughness: 1,
                 metallic: 0,
                 emissiveStrength: 0,
@@ -2375,7 +2377,7 @@ const streetsBase = bindOfficialMapTheme(
                   role,
                   {
                     shading: 'map',
-                    ambientOcclusion: 0.32,
+                    ambientOcclusion: 0.5,
                     color: token.color('buildings.modelSurface'),
                     roughness: 1,
                     metallic: 0,

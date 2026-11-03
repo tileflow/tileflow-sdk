@@ -308,11 +308,50 @@ test('class-match compaction honors remapped schema fields', () => {
   assert.doesNotMatch(JSON.stringify(merged), /"get","class"/);
 });
 
-test('bails out rather than nesting step zoom expressions', () => {
+test('bails out rather than nesting future step zoom expressions', () => {
   const input = [roadLayer('motorway', ['step', ['zoom'], 1, 18, 4]), roadLayer('trunk', 2)];
   const optimized = planTileflowLayers(input);
   assert.deepEqual(optimized, input);
   assert.deepEqual(styleErrors(optimized), []);
+});
+
+test('palette colors do not change road topology when their last camera stop is below the cohort', () => {
+  const compile = (equalColors: boolean) =>
+    planTileflowLayers([
+      roadLayer('motorway', 2, {
+        paint: {'line-width': 2, 'line-color': ['step', ['zoom'], '#111111', 15, '#333333']},
+      }),
+      roadLayer('trunk', 2, {
+        paint: {
+          'line-width': 2,
+          'line-color': ['step', ['zoom'], equalColors ? '#111111' : '#222222', 15, '#333333'],
+        },
+      }),
+    ]);
+  const distinct = compile(false);
+  const equal = compile(true);
+  assert.deepEqual(
+    distinct.map(({id}) => id),
+    equal.map(({id}) => id),
+  );
+  assert.deepEqual(styleErrors(distinct), []);
+  assert.deepEqual(styleErrors(equal), []);
+  for (const styles of [distinct, equal]) {
+    const merged = styles.find(({id}) => id === 'tileflow-road-surface-highzoom-major-fill');
+    assert.ok(merged);
+    for (const roadClass of ['motorway', 'trunk'])
+      assert.deepEqual(
+        evaluateProperty(
+          (merged.paint as Record<string, unknown>)['line-color'],
+          mapLibreStyleSpec.paint_line['line-color'],
+          19,
+          {class: roadClass},
+        ),
+        evaluateProperty('#333333', mapLibreStyleSpec.paint_line['line-color'], 19, {
+          class: roadClass,
+        }),
+      );
+  }
 });
 
 test('merges exponential road cohorts without changing evaluated widths', () => {

@@ -1,3 +1,4 @@
+import {isColorProgramMarker} from './color-program';
 import type {MapLibreStyle} from './types';
 
 /**
@@ -321,12 +322,17 @@ export function planTileflowThemeBlend(
     /** Data-driven values split into one camera-only layer per branch, or undefined. */
     function splitLayer() {
       if (isLegacyFilter(layer.filter)) return undefined;
+      const values = driven.map(
+        (property) =>
+          [
+            property,
+            variants.map((variant) => inlineBranchBindings(paintOf(variant)[property])),
+          ] as const,
+      );
+      if (values.some(([, entries]) => entries.some((entry) => !entry))) return undefined;
       const branches = splitBranches(
         Object.fromEntries(
-          driven.map((property) => [
-            property,
-            variants.map((variant) => paintOf(variant)[property]),
-          ]),
+          values.map(([property, entries]) => [property, entries.map((entry) => entry!.value)]),
         ),
       );
       if (!branches) return undefined;
@@ -822,6 +828,41 @@ function splitBranches(
 
 const isLegacyFilter = (filter: unknown): boolean =>
   Array.isArray(filter) && typeof filter[1] === 'string' && !Array.isArray(filter[1]);
+
+/** A condition moved into a filter must carry its lexical bindings out of the paint expression. */
+function inlineBranchBindings(input: unknown): {value: unknown} | undefined {
+  type Value = {value: unknown; size: number};
+  const limit = 20_000;
+  const visit = (node: unknown, scope: ReadonlyMap<string, Value>, depth: number): Value => {
+    if (depth > 96) throw new RangeError('Expression nesting limit');
+    if (!Array.isArray(node) || node[0] === 'literal' || isColorProgramMarker(node))
+      return {value: node, size: 1};
+    if (node[0] === 'var') {
+      const bound = scope.get(String(node[1]));
+      if (!bound) throw new TypeError('Unbound branch variable');
+      return bound;
+    }
+    if (node[0] === 'let') {
+      const inner = new Map(scope);
+      for (let index = 1; index < node.length - 1; index += 2)
+        inner.set(String(node[index]), visit(node[index + 1], scope, depth + 1));
+      return visit(node.at(-1), inner, depth + 1);
+    }
+    let size = 1;
+    const value = node.map((child) => {
+      const result = visit(child, scope, depth + 1);
+      size += result.size;
+      if (size > limit) throw new RangeError('Expanded branch limit');
+      return result.value;
+    });
+    return {value, size};
+  };
+  try {
+    return {value: visit(input, new Map(), 0).value};
+  } catch {
+    return undefined;
+  }
+}
 
 /** An opacity scaled by a weight; zoom curves stay at the top, so the weight goes inside. */
 function scaleByWeight(opacity: unknown, weight: BlendLeaf): unknown {

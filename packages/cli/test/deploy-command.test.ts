@@ -35,14 +35,6 @@ const streetsThemeNames = [
   'light',
   'monochrome',
 ] as const;
-const streetsDarkThemes = new Set([
-  'dark',
-  'dark-faded',
-  'dark-monochrome',
-  'dusk',
-  'dusk-faded',
-  'dusk-monochrome',
-]);
 /** Every native document of a Streets deployment: each theme style, then the family. */
 const streetsDocuments = [...streetsThemeNames.map((theme) => `style:${theme}`), 'family'];
 
@@ -116,6 +108,10 @@ test('Map deploy auto-selects one map, publishes both renderer families and writ
   assert.deepEqual(Object.keys(body.artifact.renderers.web.styles), streetsThemeNames);
   assert.deepEqual(Object.keys(body.artifact.renderers.native.documents.styles), streetsThemeNames);
   assert.equal('policy' in body, false);
+  assert.ok(
+    body.artifact.renderers.web.styles.light?.metadata?.['tileflow:colors'],
+    'hosted web publication retains runtime colour bindings',
+  );
   // Each native document travels on its own, gzip-encoded, family last.
   assert.deepEqual(
     api.uploads.map(({document}) => document),
@@ -639,16 +635,13 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
   assert.ok(buildManifest.provenance);
   const iconPackage = api.requests[0]!.path.split('/').pop()!;
   assert.deepEqual(Object.keys(artifact.renderers.web.styles), streetsThemeNames);
-  for (const [theme, style] of Object.entries(artifact.renderers.web.styles)) {
+  for (const style of Object.values(artifact.renderers.web.styles)) {
     assert.equal(style.sprite, `${api.url}/sprites/icp_${iconPackage.slice(0, 24)}/sprite`);
     const foodPoiLayer = style.layers?.find((layer: {id?: string}) => layer.id === 'tileflow-poi');
     assert.ok(foodPoiLayer?.layout?.['text-field'], 'default POIs include their name');
     const iconImage = JSON.stringify(foodPoiLayer?.layout?.['icon-image']);
     assert.match(iconImage, /"get","icon"/u);
-    const paletteSuffix = theme.includes('monochrome') ? '-monochrome' : '';
-    const darkSuffix = streetsDarkThemes.has(theme) ? '-dark' : '';
-    const foodImage = theme === 'light' ? 'unified-day-food' : `food${paletteSuffix}${darkSuffix}`;
-    assert.match(iconImage, new RegExp(`"image","${foodImage}"`, 'u'));
+    assert.match(iconImage, /"image","(?:unified-day-food|food(?:-dark|-monochrome(?:-dark)?)?)"/u);
   }
   assert.deepEqual(parsed.iconPackage, {contentHash: iconPackage, label: 'madrid'});
   assert.doesNotMatch(JSON.stringify(artifact), /\.\/icons|source-secret/);

@@ -59,6 +59,9 @@ The artifact plan exposes files and observed inputs from the same generation. St
 `styles[map][theme]`, never as an implicit default-theme alias. Keep that generation alive for the
 whole operation, then release it. Do not reconstruct its asset list from directory guesses.
 
+Generated style files use compact JSON in both stable and immutable generation paths. Their
+parsed contents are unchanged; format the JSON in your editor when inspecting a generated file.
+
 Map-owned tree models are prepared alongside icons and embedded in the styles. Custom tools that
 compile icons separately can use `prepareTileflowMapTreeModels` from `@tileflow/dev/icons` with
 the map's model directories, base directory, working directory, target and diagnostic path. Pass
@@ -82,6 +85,10 @@ await writeTileflowBuildArtifacts({
 
 Serve the complete output. The writer installs immutable generation assets before changing the
 manifest pointer, tracks its own files, and refuses to replace a hosted manifest by default.
+Web output includes `families/<map>.json` and its immutable generation copy. The version-3
+manifest selects that shared document; conventional theme JSON remains available for exports.
+Web artifacts include semantic runtime colour programs. Native artifacts keep concrete styles.
+Changing SDK/map package versions requires rebuilding and publishing the new artifacts.
 Native builds retain embedded PNG image sources as hashed files beside the styles, so their
 resource URLs remain portable without permitting data URLs in the native profile. Hosted native
 styles have no such files: they leave these images out and record an `embeddedImages` degradation.

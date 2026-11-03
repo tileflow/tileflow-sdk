@@ -15,6 +15,7 @@ import {
 import type {TileflowCompiledDomains} from './domain-registry';
 import {tileflowNativeBuildingsLayerId} from '../building-layer-ids';
 import type {TileflowLayerDomain} from './domains';
+import {compactTileflowLayer} from './expression-compaction';
 import type {TileflowCompiledRenderOperation} from './render-stack';
 import {bindSemanticReferences} from './semantic-bindings';
 
@@ -254,7 +255,7 @@ export function lowerTileflowDomainIR(
   resolvePhysicalId: TileflowPhysicalIdResolver = physicalLayerIdForSemanticKey,
 ): TileflowLoweredDomainIR {
   const layers = families.map((family) =>
-    bindSemanticReferences(emitLayer(family, resolvePhysicalId), data),
+    compactTileflowLayer(bindSemanticReferences(emitLayer(family, resolvePhysicalId), data)),
   );
   assertNoSemanticReferences(layers);
   const ids = new Set<string>();

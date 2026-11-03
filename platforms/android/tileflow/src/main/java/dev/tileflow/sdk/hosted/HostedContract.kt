@@ -259,7 +259,7 @@ internal object HostedContract {
         require(path.none { it.code < 32 || it.code == 127 || it == '\\' })
         val style =
             Regex(
-                    "^/maps/(map_[A-Za-z0-9_-]{16})/(?:(?:mobile/webview-v1|native)/v([1-9][0-9]{0,15})/[A-Za-z][A-Za-z0-9_-]{0,63}|native/family/v([1-9][0-9]{0,15}))\\.json$"
+                    "^/maps/(map_[A-Za-z0-9_-]{16})/(?:(?:mobile/webview-v1|native)/v([1-9][0-9]{0,15})/[A-Za-z][A-Za-z0-9_-]{0,63}|(?:mobile/webview-v1|native)/family/v([1-9][0-9]{0,15}))\\.json$"
                 )
                 .matchEntire(path)
         if (style != null)
@@ -389,7 +389,7 @@ internal object HostedContract {
         )
     private val versionedStyle =
         Regex(
-            "^/maps/map_[A-Za-z0-9_-]{16}/(?:(?:mobile/webview-v1|native)/v[1-9][0-9]{0,15}/[A-Za-z][A-Za-z0-9_-]{0,63}|native/family/v[1-9][0-9]{0,15})\\.json$"
+            "^/maps/map_[A-Za-z0-9_-]{16}/(?:(?:mobile/webview-v1|native)/v[1-9][0-9]{0,15}/[A-Za-z][A-Za-z0-9_-]{0,63}|(?:mobile/webview-v1|native)/family/v[1-9][0-9]{0,15})\\.json$"
         )
     private val currentModel = Regex("^/team-models/(tmd_[A-Za-z0-9_-]{16,76})/current\\.glb$")
     private val modelVersion =

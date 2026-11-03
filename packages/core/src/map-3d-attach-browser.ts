@@ -113,7 +113,7 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
           map,
           viewMode,
           vegetation,
-          camera: {adaptivePerspective},
+          camera: {...options.camera, adaptivePerspective},
           ...(onError ? {onError} : {}),
         });
       })

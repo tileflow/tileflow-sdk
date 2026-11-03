@@ -231,6 +231,23 @@ test('generates the building extrusion from the map’s 3D buildings design', ()
     degradeTileflowNativeStyle(plain).style.layers.map((layer) => layer.id),
     ['background', 'tileflow-buildings-native-extrusion', 'labels'],
   );
+  // Without a rising band the buildings stand whole from the band's start, as on the web; an
+  // interpolation with equal stops would be an invalid style.
+  for (const [entrance, minzoom] of [
+    [false, 15],
+    [{buildings: [16, 16]}, 16],
+  ] as const) {
+    const instant = degradeTileflowNativeStyle(
+      style({metadata: {'tileflow:buildings': {...buildings, entrance}}}),
+    ).style.layers[2] as {minzoom?: number; paint?: Record<string, unknown>};
+    assert.equal(instant.minzoom, minzoom);
+    assert.equal(instant.paint?.['fill-extrusion-opacity'], 1);
+    assert.deepEqual(instant.paint?.['fill-extrusion-height'], [
+      'max',
+      0,
+      ['to-number', ['coalesce', ['get', 'render_height'], 5], 5],
+    ]);
+  }
 });
 
 test('shows a map’s own extrusion pass instead of adding one', () => {

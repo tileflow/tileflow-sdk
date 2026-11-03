@@ -721,6 +721,21 @@ function combineConditionalValues(
   if (allEqual(entries.map(({value}) => value))) {
     return {ok: true, value: entries[0]?.value};
   }
+  // A step whose last stop is below this cohort cannot change again. Resolve
+  // only that unreachable camera branch before comparing colors; otherwise two
+  // palettes with the same geometry can acquire different physical layers just
+  // because their low-zoom colors happen to be equal. Future steps stay intact.
+  const atMinimumZoom = (value: unknown) => {
+    if (!isZoomStep(value)) return value;
+    const step = value as unknown[];
+    const lastStop = step[step.length - 2];
+    return typeof lastStop === 'number' && lastStop <= minimumRelevantZoom
+      ? evaluateZoomStep(value, minimumRelevantZoom)
+      : value;
+  };
+  entries = entries.map(({condition, value}) => ({condition, value: atMinimumZoom(value)}));
+  fallback = atMinimumZoom(fallback);
+  if (allEqual(entries.map(({value}) => value))) return {ok: true, value: entries[0]!.value};
   const letValues = entries.map(({value}) =>
     Array.isArray(value) && value.length === 4 && value[0] === 'let' ? value : undefined,
   );
@@ -922,7 +937,11 @@ function classMatchLabelsAreDisjoint(labels: unknown[]): boolean {
 function splitClassMatch(
   condition: unknown[],
 ): {field: unknown; labels: unknown; remainder: unknown[]} | undefined {
-  const parts = condition[0] === 'all' ? condition.slice(1) : [condition];
+  // Selectors acquire nested conjunctions when ramps and structural filters are added.
+  // Flattening preserves their order and lets a cohort carry its class match just once.
+  const conjuncts = (value: unknown): unknown[] =>
+    Array.isArray(value) && value[0] === 'all' ? value.slice(1).flatMap(conjuncts) : [value];
+  const parts = conjuncts(condition);
   const matchIndex = parts.findIndex(
     (part) =>
       Array.isArray(part) &&

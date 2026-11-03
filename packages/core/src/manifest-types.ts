@@ -1,11 +1,12 @@
 import type {TileflowStyleFontFace} from './runtime';
-import type {TileflowViewConfig} from './types';
 import type {TileflowTimeOfDayVariants} from './time-of-day';
+import type {TileflowViewConfig} from './types';
 
 /** The original public multi-theme runtime manifest contract. */
 export const tileflowRuntimeManifestVersion = 1 as const;
 /** V2 adds the optional time-of-day catalog; maps without it still publish V1. */
 export const tileflowTimeOfDayManifestVersion = 2 as const;
+export const tileflowFamilyManifestVersion = 3 as const;
 export const tileflowRuntimeManifestLimits = Object.freeze({maximumBytes: 1024 * 1024});
 
 export type TileflowRuntimeColorScheme = 'dark' | 'light';
@@ -27,6 +28,8 @@ export type TileflowRuntimeSystemThemes = {
 };
 
 export type TileflowRuntimeManifestMapEntry = {
+  /** One shared document for every appearance; styleUrl remains the flat export. */
+  familyUrl?: string;
   apiUrl?: string;
   defaultTheme: string;
   environment?: string;
@@ -48,5 +51,8 @@ export type TileflowRuntimeManifestMapEntry = {
 export type TileflowRuntimeManifest = {
   apiUrl?: string;
   maps: Record<string, TileflowRuntimeManifestMapEntry>;
-  version: typeof tileflowRuntimeManifestVersion | typeof tileflowTimeOfDayManifestVersion;
+  version:
+    | typeof tileflowRuntimeManifestVersion
+    | typeof tileflowTimeOfDayManifestVersion
+    | typeof tileflowFamilyManifestVersion;
 };

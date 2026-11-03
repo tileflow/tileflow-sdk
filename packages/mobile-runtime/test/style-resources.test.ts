@@ -1,6 +1,47 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {createTileflowStyleFamily} from '@tileflow/core/build';
+import {prepareTileflowStyleFamilyForRendering} from '@tileflow/core/runtime';
 import {absoluteResource, createStyleResourceLoader} from '../src/style-resources';
+
+test('WebView resolves and shares a prepared family through the native resource loader', async () => {
+  const style = (color: string) => ({
+    version: 8 as const,
+    sprite: '../sprites/map',
+    sources: {world: {type: 'vector' as const, url: '../tiles.json'}},
+    layers: [{id: 'background', type: 'background' as const, paint: {'background-color': color}}],
+  });
+  const family = prepareTileflowStyleFamilyForRendering(
+    createTileflowStyleFamily({day: style('#ffffff'), night: style('#000000')}),
+  );
+  const calls: string[] = [];
+  const loader = createStyleResourceLoader(async (input) => {
+    const url = String(input);
+    calls.push(url);
+    if (url === 'https://maps.example/families/map.json') return Response.json(family);
+    assert.equal(url, 'https://maps.example/tiles.json');
+    return Response.json({tiles: ['./world/{z}/{x}/{y}.pbf']});
+  }, new AbortController().signal);
+  const runtime = (theme: string) => ({
+    theme,
+    style: `https://maps.example/styles/${theme}.json`,
+    familyUrl: 'https://maps.example/families/map.json',
+  });
+  const day = await loader.prepare(runtime('day'));
+  const night = await loader.prepare(runtime('night'));
+  assert.equal(day.family, night.family);
+  assert.deepEqual(calls, [
+    'https://maps.example/families/map.json',
+    'https://maps.example/tiles.json',
+  ]);
+  assert.notEqual(typeof night.style, 'string');
+  if (typeof night.style === 'string') assert.fail('expected a prepared style');
+  assert.equal(night.style.sprite, 'https://maps.example/sprites/map');
+  assert.deepEqual(night.style.sources.world, {
+    type: 'vector',
+    tiles: ['https://maps.example/world/{z}/{x}/{y}.pbf'],
+  });
+});
 
 test('nested document addresses retain their own base and native fetch is the only network owner', async () => {
   const calls: string[] = [];

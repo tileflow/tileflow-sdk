@@ -30,6 +30,29 @@ function layer(id: string, type: string, paint: Record<string, unknown>, extra =
 }
 
 const byId = (filled: MapLibreStyle) => new Map(filled.layers.map((entry) => [entry.id, entry]));
+
+test('split branch filters retain let bindings, including nested shadowing', () => {
+  const make = (a: string, b: string) =>
+    style([
+      layer('land', 'fill', {
+        'fill-color': [
+          'let',
+          '__tf0',
+          ['get', 'kind'],
+          [
+            'case',
+            ['==', ['var', '__tf0'], 'park'],
+            a,
+            ['let', '__tf0', ['get', 'other'], ['case', ['==', ['var', '__tf0'], 'forest'], b, a]],
+          ],
+        ],
+      }),
+    ]);
+  const plan = planTileflowThemeBlend([make('#ffffff', '#112233'), make('#000000', '#446688')]);
+  assert.ok(plan.summary.splitLayers > 0);
+  for (const position of [0, 0.5, 1])
+    assert.deepEqual(validateStyleMin(plan.styleAt(position) as never), []);
+});
 const paintOf = (entry: Record<string, unknown> | undefined) =>
   (entry?.paint ?? {}) as Record<string, unknown>;
 

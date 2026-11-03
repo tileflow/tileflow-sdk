@@ -204,6 +204,50 @@ function cameraMap(metadata: Record<string, unknown>) {
 }
 const adaptive = {...buildings, 'tileflow:camera': {version: 1, adaptivePerspective: true}};
 
+test('authored pitch caps hold through zoom 15 and release on closer views and style changes', async () => {
+  const limited = {
+    ...buildings,
+    'tileflow:camera': {version: 1, pitchLimit: {maxZoom: 15, maxPitch: 38}},
+  };
+  const map = fakeMap(limited);
+  let zoom = 14;
+  let pitch = 60;
+  let maximum = 85;
+  Object.assign(map, {
+    getZoom: () => zoom,
+    getPitch: () => pitch,
+    getMaxPitch: () => maximum,
+    setMaxPitch(value: number) {
+      maximum = value;
+      pitch = Math.min(pitch, maximum);
+      map.fire('zoom');
+    },
+  });
+  const attachment = attachTileflowMap3D({map, load});
+  await mounted();
+  assert.equal(maximum, 38);
+  assert.equal(pitch, 38, 'an initially steep view is clamped');
+  zoom = 15;
+  map.fire('zoom');
+  assert.equal(maximum, 38, 'the cutoff is inclusive');
+  zoom = 15.01;
+  map.fire('zoom');
+  assert.equal(maximum, 85);
+  assert.equal(pitch, 38, 'releasing the cap does not tilt the view automatically');
+  pitch = 70;
+  zoom = 14.5;
+  map.fire('zoom');
+  assert.equal(maximum, 38);
+  assert.equal(pitch, 38);
+  map.loadStyle(buildings);
+  assert.equal(maximum, 85);
+  maximum = 30;
+  map.loadStyle(limited);
+  assert.equal(maximum, 30, 'a stricter application limit wins');
+  attachment.dispose();
+  assert.equal(maximum, 30);
+});
+
 test('flat footprints remain until the 3D renderer has a drawable frame', async () => {
   const native = {visibility: 'visible'};
   const map = fakeMap({

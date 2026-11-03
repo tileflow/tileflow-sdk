@@ -34,6 +34,7 @@ import {
   createTileflowThemeController,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
+  loadTileflowRuntimeStyle,
   loadTileflowStyleFonts,
   registerTileflowContourProtocol,
   registerTileflowPathGroundProtocol,
@@ -761,13 +762,30 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
     let cancelled = false;
     let disposeMap: (() => void) | undefined;
 
+    const resourceLifetime = new AbortController();
+    const session = createTileflowSessionController({source: 'react'});
+    const resourceTransform = createTileflowTransformRequest({
+      getAnalytics: () => resolvedAnalyticsRef.current,
+      sessionController: session,
+      sessionId: session.sessionId,
+      transformRequest: stableMapOptions?.transformRequest ?? undefined,
+    });
+    const styleLoadOptions = {
+      signal: resourceLifetime.signal,
+      transformRequest: (url: string, type: 'Style' | 'Source') =>
+        resourceTransform(
+          url,
+          type as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
+        ),
+    };
     void Promise.all([
       loadTileflowMapLibre(),
-      loadTileflowStyleFonts(initialRuntimeStyle.style, {
-        fontFaces: initialRuntimeStyle.fontFaces,
+      loadTileflowRuntimeStyle(initialRuntimeStyle, styleLoadOptions).then(async (prepared) => {
+        await loadTileflowStyleFonts(prepared.style, {fontFaces: prepared.fontFaces});
+        return prepared;
       }),
     ])
-      .then(([maplibregl]) => {
+      .then(([maplibregl, prepared]) => {
         if (cancelled || containerRef.current !== container) {
           return;
         }
@@ -808,7 +826,6 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           }
         };
 
-        const session = createTileflowSessionController({source: 'react'});
         const sessionStarter = createTileflowSessionStarter({
           getSessionId: () => session.sessionId,
           sessionId: session.sessionId,
@@ -838,7 +855,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
             stableMapOptions?.canvasContextAttributes,
           ),
           container,
-          style: initialRuntimeStyle.style as StyleSpecification | string,
+          style: prepared.style as StyleSpecification,
           bearing: bearingRef.current,
           center: centerRef.current,
           pitch: pitchRef.current,
@@ -866,7 +883,9 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           initialRuntimeStyle.theme === undefined
             ? undefined
             : createTileflowThemeController({
-                initial: initialRuntimeStyle,
+                initial: prepared.family ? prepared : initialRuntimeStyle,
+                initialStyle: prepared.style,
+                styleLoadOptions,
                 map,
                 onTransition(transition) {
                   onThemeChangeRef.current?.(transition);
@@ -1127,6 +1146,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
         }
       })
       .catch((error: unknown) => {
+        resourceLifetime.abort();
         try {
           disposeMap?.();
         } catch (cleanupError) {
@@ -1140,6 +1160,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
 
     return () => {
       cancelled = true;
+      resourceLifetime.abort();
       readinessRunRef.current += 1;
       disposeMap?.();
     };

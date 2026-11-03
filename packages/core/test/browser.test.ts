@@ -20,6 +20,7 @@ import {
   tileflowPmtilesMaximumDirectoryDepth,
   type TileflowWorldProtocolHandler,
 } from '../src/browser';
+import type {MapLibreStyle} from '../src/types';
 import {createTileflowContourProtocolUrl} from '../src/terrain/contour-protocol';
 
 test('registers only the Tileflow-owned PMTiles protocol once per MapLibre registry', () => {
@@ -295,6 +296,7 @@ test('theme controller preloads in parallel and applies only the latest request'
   });
   const controller = createTileflowThemeController({
     initial: {style: '/light.json', theme: 'light'},
+    loadStyle: async (name) => ({version: 8, name, sources: {}, layers: []}),
     loadFonts: (style) => (style.theme === 'dark' ? darkPreload : Promise.resolve()),
     map,
   });
@@ -318,6 +320,7 @@ test('requesting the current theme supersedes an older pending theme', async () 
   });
   const controller = createTileflowThemeController({
     initial: {style: '/light.json', theme: 'light'},
+    loadStyle: async (name) => ({version: 8, name, sources: {}, layers: []}),
     loadFonts: (style) => (style.theme === 'dark' ? darkPreload : Promise.resolve()),
     map,
   });
@@ -335,6 +338,7 @@ test('a newer preload failure restores an older style that finished applying in 
   const preloadError = new Error('contrast font failed');
   const controller = createTileflowThemeController({
     initial: {style: '/light.json', theme: 'light'},
+    loadStyle: async (name) => ({version: 8, name, sources: {}, layers: []}),
     loadFonts: (style) =>
       style.theme === 'contrast' ? Promise.reject(preloadError) : Promise.resolve(),
     map,
@@ -360,6 +364,7 @@ test('theme controller rolls back a failed style without replacing the map insta
   const transitions: string[] = [];
   const controller = createTileflowThemeController({
     initial: {style: '/light.json', theme: 'light'},
+    loadStyle: async (name) => ({version: 8, name, sources: {}, layers: []}),
     loadFonts: async () => undefined,
     map,
     onTransition: ({phase}) => transitions.push(phase),
@@ -378,6 +383,7 @@ test('theme controller turns synchronous font preload errors into failed transit
   const expected = new Error('font setup failed');
   const controller = createTileflowThemeController({
     initial: {style: '/light.json', theme: 'light'},
+    loadStyle: async (name) => ({version: 8, name, sources: {}, layers: []}),
     loadFonts: () => {
       throw expected;
     },
@@ -404,6 +410,7 @@ test('theme controller accepts only already-resolved concrete portable themes', 
 
   const controller = createTileflowThemeController({
     initial: {style: '/light.json', theme: 'light'},
+    loadStyle: async (name) => ({version: 8, name, sources: {}, layers: []}),
     map,
   });
   for (const theme of ['system', 'CON', undefined]) {
@@ -485,7 +492,8 @@ class FakeStyleSwitchMap {
     this.#listeners.get(event)?.delete(listener);
   }
 
-  setStyle(style: string, options?: unknown) {
+  setStyle(input: string | MapLibreStyle, options?: unknown) {
+    const style = typeof input === 'string' ? input : input.name;
     this.styles.push(style);
     this.styleOptions.push(options);
     queueMicrotask(() => {
@@ -521,7 +529,8 @@ class DelayedStyleSwitchMap {
     this.#listeners.get(event)?.delete(listener);
   }
 
-  setStyle(style: string) {
+  setStyle(input: string | MapLibreStyle) {
+    const style = typeof input === 'string' ? input : input.name;
     this.styles.push(style);
     if (style === this.#delayedStyle) {
       this.#releaseDelayedStyle();

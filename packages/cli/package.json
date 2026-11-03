@@ -37,7 +37,7 @@
     "cli": "tsx src/index.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test test/*.test.ts",
+    "test": "tsx --test --test-concurrency=2 test/*.test.ts",
     "verify": "pnpm run typecheck && pnpm run test"
   },
   "publishConfig": {

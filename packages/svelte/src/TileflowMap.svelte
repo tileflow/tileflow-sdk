@@ -42,6 +42,7 @@
     type TileflowMap3DAttachment,
     createTileflowTransformRequest,
     getTileflowSystemColorScheme,
+    loadTileflowRuntimeStyle,
     loadTileflowStyleFonts,
     registerTileflowContourProtocol,
     registerTileflowPathGroundProtocol,
@@ -166,6 +167,7 @@
   let manifestResolutionKey = '';
   let manifestResolutionState: 'error' | 'loading' | 'ready' = 'loading';
   let mapLoadId = 0;
+  let resourceLifetime: AbortController | undefined;
   let mounted = false;
   let refreshRunId = 0;
   let readinessRunId = 0;
@@ -451,6 +453,8 @@
 
   function destroyMap() {
     mapLoadId += 1;
+    resourceLifetime?.abort();
+    resourceLifetime = undefined;
     readinessRunId += 1;
     const lifecycleAttachment = mapLifecycleAttachment;
     const fairUseNotice = mapFairUseNotice;
@@ -552,15 +556,36 @@
     const loadId = mapLoadId;
     const targetContainer = container;
     const runtime = runtimeStyle;
+    const session = createTileflowSessionController({source: 'svelte'});
+    const lifetime = new AbortController();
+    resourceLifetime = lifetime;
+    const resourceTransform = createTileflowTransformRequest({
+      getAnalytics: () => resolvedAnalytics,
+      sessionController: session,
+      sessionId: session.sessionId,
+      transformRequest: mapOptions?.transformRequest ?? undefined,
+    });
+    const styleLoadOptions = {
+      signal: lifetime.signal,
+      transformRequest: (url: string, type: 'Style' | 'Source') =>
+        resourceTransform(
+          url,
+          type as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
+        ),
+    };
     let maplibregl: Awaited<ReturnType<typeof loadTileflowMapLibre>>;
-
+    let prepared: Awaited<ReturnType<typeof loadTileflowRuntimeStyle>>;
     try {
-      [maplibregl] = await Promise.all([
+      [maplibregl, prepared] = await Promise.all([
         loadTileflowMapLibre(),
-        loadTileflowStyleFonts(runtime.style, {fontFaces: runtime.fontFaces}),
+        loadTileflowRuntimeStyle(runtime, styleLoadOptions).then(async (loaded) => {
+          await loadTileflowStyleFonts(loaded.style, {fontFaces: loaded.fontFaces});
+          return loaded;
+        }),
       ]);
     } catch (error) {
       if (mounted && runId === refreshRunId && loadId === mapLoadId) {
+        lifetime.abort();
         console.error('Failed to load the Tileflow map runtime', error);
         mapCaptureState = 'error';
       }
@@ -577,7 +602,6 @@
       return;
     }
 
-    const session = createTileflowSessionController({source: 'svelte'});
     const sessionStarter = createTileflowSessionStarter({
       getSessionId: () => session.sessionId,
       sessionId: session.sessionId,
@@ -603,7 +627,7 @@
       container: targetContainer,
       interactive: resolvedInteractive,
       pitch: resolvedPitch,
-      style: runtime.style as StyleSpecification | string,
+      style: prepared.style as StyleSpecification,
       transformRequest: createTileflowTransformRequest({
         getAnalytics: () => resolvedAnalytics,
         sessionController: session,
@@ -625,7 +649,9 @@
       runtime.theme === undefined
         ? null
         : createTileflowThemeController({
-            initial: runtime,
+            initial: prepared.family ? prepared : runtime,
+            initialStyle: prepared.style,
+            styleLoadOptions,
             map: maplibreMap,
             onTransition(transition) {
               onThemeChange?.(transition);

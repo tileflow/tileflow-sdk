@@ -1537,6 +1537,23 @@
       "properties": {
         "adaptivePerspective": {
           "type": "boolean"
+        },
+        "pitchLimit": {
+          "type": "object",
+          "properties": {
+            "maxZoom": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 24
+            },
+            "maxPitch": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 85
+            }
+          },
+          "required": ["maxZoom", "maxPitch"],
+          "additionalProperties": false
         }
       },
       "additionalProperties": false
@@ -5117,16 +5134,24 @@
                   "additionalProperties": false
                 },
                 "entrance": {
-                  "type": "object",
-                  "properties": {
-                    "buildings": {
-                      "$ref": "#/$defs/__schema225"
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "buildings": {
+                          "$ref": "#/$defs/__schema225"
+                        },
+                        "models": {
+                          "$ref": "#/$defs/__schema225"
+                        }
+                      },
+                      "additionalProperties": false
                     },
-                    "models": {
-                      "$ref": "#/$defs/__schema225"
+                    {
+                      "type": "boolean",
+                      "const": false
                     }
-                  },
-                  "additionalProperties": false
+                  ]
                 },
                 "flatFootprints": {
                   "type": "boolean"
@@ -29201,16 +29226,24 @@
               "additionalProperties": false
             },
             "entrance": {
-              "type": "object",
-              "properties": {
-                "buildings": {
-                  "$ref": "#/$defs/__schema225"
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "buildings": {
+                      "$ref": "#/$defs/__schema225"
+                    },
+                    "models": {
+                      "$ref": "#/$defs/__schema225"
+                    }
+                  },
+                  "additionalProperties": false
                 },
-                "models": {
-                  "$ref": "#/$defs/__schema225"
+                {
+                  "type": "boolean",
+                  "const": false
                 }
-              },
-              "additionalProperties": false
+              ]
             },
             "flatFootprints": {
               "type": "boolean"
@@ -29963,16 +29996,24 @@
               "additionalProperties": false
             },
             "entrance": {
-              "type": "object",
-              "properties": {
-                "buildings": {
-                  "$ref": "#/$defs/__schema225"
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "buildings": {
+                      "$ref": "#/$defs/__schema225"
+                    },
+                    "models": {
+                      "$ref": "#/$defs/__schema225"
+                    }
+                  },
+                  "additionalProperties": false
                 },
-                "models": {
-                  "$ref": "#/$defs/__schema225"
+                {
+                  "type": "boolean",
+                  "const": false
                 }
-              },
-              "additionalProperties": false
+              ]
             },
             "flatFootprints": {
               "type": "boolean"
@@ -31088,30 +31129,38 @@
                       "$ref": "#/$defs/TileflowReset"
                     },
                     {
-                      "type": "object",
-                      "properties": {
-                        "buildings": {
-                          "oneOf": [
-                            {
-                              "$ref": "#/$defs/TileflowReset"
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "buildings": {
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/TileflowReset"
+                                },
+                                {
+                                  "$ref": "#/$defs/TileflowModulePatchRef137"
+                                }
+                              ]
                             },
-                            {
-                              "$ref": "#/$defs/TileflowModulePatchRef137"
+                            "models": {
+                              "oneOf": [
+                                {
+                                  "$ref": "#/$defs/TileflowReset"
+                                },
+                                {
+                                  "$ref": "#/$defs/TileflowModulePatchRef137"
+                                }
+                              ]
                             }
-                          ]
+                          },
+                          "additionalProperties": false
                         },
-                        "models": {
-                          "oneOf": [
-                            {
-                              "$ref": "#/$defs/TileflowReset"
-                            },
-                            {
-                              "$ref": "#/$defs/TileflowModulePatchRef137"
-                            }
-                          ]
+                        {
+                          "type": "boolean",
+                          "const": false
                         }
-                      },
-                      "additionalProperties": false
+                      ]
                     }
                   ]
                 },

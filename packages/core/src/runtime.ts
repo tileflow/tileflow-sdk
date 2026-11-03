@@ -5,8 +5,29 @@ import type {
   TileflowRuntimeManifestTheme,
 } from './manifest-types';
 import {isTileflowPortableId, isTileflowThemeName} from './portable-identity-rules';
-import {type MapLibreStyle, type TileflowViewConfig} from './types';
+import type {TileflowStyleFamily} from './style-family';
 import {resolveTileflowTimeOfDayTheme, type TileflowTimeOfDay} from './time-of-day';
+import {type MapLibreStyle, type TileflowViewConfig} from './types';
+
+export {
+  expandTileflowFamilyTemplate,
+  withTileflowFamilyTemplate,
+  materializeTileflowStyleFamily,
+  parseTileflowStyleFamily,
+  tileflowStyleFamilyLimits,
+} from './style-family';
+export type {TileflowStyleFamily} from './style-family';
+export {loadTileflowStyleFamily} from './style-family-loader';
+export {applyTileflowColorOverrides} from './color-program-runtime';
+export type {TileflowColorOverrides} from './color-program-runtime';
+export {prepareTileflowStyleFamilyForRendering} from './style-family-render';
+export {
+  loadTileflowRuntimeAppearance,
+  resolveTileflowFamilyResourceUrls,
+  resolveTileflowStyleResourceUrls,
+} from './style-family-runtime';
+export {resolveTileflowAppearance} from './appearance';
+export type {TileflowAppearanceSelection} from './appearance';
 export {isTileflowTimeOfDay, tileflowTimesOfDay} from './time-of-day';
 export type {TileflowTimeOfDay, TileflowTimeOfDayVariants} from './time-of-day';
 
@@ -108,6 +129,9 @@ export type TileflowResolvedRuntimeTheme = TileflowRuntimeManifestTheme & {
 };
 
 export type TileflowRuntimeStyle = {
+  /** Shared validated family used for appearance updates without replacing the style. */
+  family?: TileflowStyleFamily;
+  familyUrl?: string;
   analytics?: TileflowAnalytics;
   colorScheme?: TileflowRuntimeColorScheme;
   /** An explicit empty array means the manifest declares that no web fonts are required. */
@@ -302,6 +326,7 @@ export function resolveTileflowRuntimeStyle(
         styleId: theme.styleId,
       },
       colorScheme: theme.colorScheme,
+      ...(options.manifestMap.familyUrl ? {familyUrl: options.manifestMap.familyUrl} : {}),
       ...(theme.fontFaces === undefined ? {} : {fontFaces: [...theme.fontFaces]}),
       revision: theme.revision,
       style: theme.styleUrl,
@@ -1014,6 +1039,9 @@ function resolveLoadedTileflowManifestUrls(
         mapName,
         {
           ...entry,
+          ...(entry.familyUrl
+            ? {familyUrl: resolveTileflowLoadedResourceUrl(entry.familyUrl, manifestUrl)}
+            : {}),
           themes: Object.fromEntries(
             Object.entries(entry.themes).map(([themeName, theme]) => {
               const styleUrl = resolveTileflowLoadedResourceUrl(theme.styleUrl, manifestUrl);
@@ -1080,6 +1108,7 @@ export function resolveTileflowManifestMap(
     mapId: entry.mapId ?? analytics?.mapId,
     name: mapName,
     defaultTheme: entry.defaultTheme,
+    ...(entry.familyUrl ? {familyUrl: entry.familyUrl} : {}),
     ...(entry.environment ? {environment: entry.environment} : {}),
     ...(entry.systemThemes ? {systemThemes: {...entry.systemThemes}} : {}),
     ...(entry.timeOfDay ? {timeOfDay: entry.timeOfDay} : {}),

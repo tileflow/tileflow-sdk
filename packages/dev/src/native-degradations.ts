@@ -274,13 +274,18 @@ function buildingExtrusion(
   const ids = new Set(layers.map((layer) => layer.id));
   let id = 'tileflow-buildings-native-extrusion';
   for (let suffix = 1; ids.has(id); suffix++) id = `tileflow-buildings-native-extrusion-${suffix}`;
-  const [from, to] = buildings.entrance?.buildings ?? [
+  const entrance = buildings.entrance;
+  const [from, to] = (entrance && entrance.buildings) || [
     defaultSceneMinzoom,
     defaultSceneMinzoom + defaultBuildingEntrance,
   ];
   const height = ['max', 0, ['to-number', ['coalesce', ['get', heightField], 5], 5]];
   const base = ['max', 0, ['min', ['to-number', ['coalesce', ['get', baseField], 0], 0], height]];
-  const rise = (value: unknown) => ['interpolate', ['linear'], ['zoom'], from, 0, to, value];
+  // As on the web: `entrance: false` or an empty band shows the buildings whole from `from`.
+  const rise = (value: unknown) =>
+    entrance !== false && to > from
+      ? ['interpolate', ['linear'], ['zoom'], from, 0, to, value]
+      : value;
   return {
     id,
     type: 'fill-extrusion',

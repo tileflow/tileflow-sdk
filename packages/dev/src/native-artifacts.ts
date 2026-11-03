@@ -324,6 +324,8 @@ export function prepareTileflowNativeStyles(
         });
       }
       delete metadata[tileflowStyleFontFacesMetadataKey];
+      // Web bindings address pre-lowering physical layers; Native does not expose this controller.
+      delete metadata['tileflow:colors'];
       // Native's fixed Mercator projection has no GL JS projection controller to configure.
       const {projection: _projection, ...rest} = original as MapLibreStyle & {projection?: unknown};
       const style = {

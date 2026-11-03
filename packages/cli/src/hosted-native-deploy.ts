@@ -149,6 +149,8 @@ export async function prepareHostedDeploy(
       (entry) => preflightSprite(entry.packageHash),
       mapAssetsWithBuildingModels(modelAssets, {hosted: true}),
     ),
+    // Both renderers share compilation; native preparation drops the web colour bindings.
+    runtimeColors: true,
   });
   const local = await prepareTileflowLocalTilesets(project, styles, {
     assetBaseUrl: apiUrl,
@@ -493,6 +495,7 @@ export async function runHostedDeploy(
       defaultTheme: build.defaultTheme,
       environment: prepared.mapName,
       mapId,
+      ...(result.renderers.web.familyUrl ? {familyUrl: result.renderers.web.familyUrl} : {}),
       ...(build.systemThemes ? {systemThemes: build.systemThemes} : {}),
       ...(build.timeOfDay && Object.keys(build.timeOfDay).length
         ? {timeOfDay: build.timeOfDay}
@@ -522,7 +525,11 @@ export async function runHostedDeploy(
     const manifest = parseTileflowRuntimeManifest({
       apiUrl: apiOrigin,
       maps,
-      version: Object.values(maps).some((value) => value.timeOfDay) ? 2 : 1,
+      version: Object.values(maps).some((value) => value.familyUrl)
+        ? 3
+        : Object.values(maps).some((value) => value.timeOfDay)
+          ? 2
+          : 1,
     });
     const manifestPath = await ports.writeManifest(options.manifest, manifest);
     return Object.freeze({

@@ -781,7 +781,12 @@ export const tileflowRendererDeploymentResponseSchema = z
     worldConversionId: z.string().min(1).max(128).optional(),
     renderers: z
       .object({
-        web: z.object({themes: z.record(tileflowThemeNameSchema, webResponseTheme)}).strict(),
+        web: z
+          .object({
+            themes: z.record(tileflowThemeNameSchema, webResponseTheme),
+            familyUrl: deliveryUrlSchema.optional(),
+          })
+          .strict(),
         native: z
           .object({
             profile: z.literal('native-v1'),
@@ -807,6 +812,9 @@ export const tileflowRendererDeploymentResponseSchema = z
         !equal(names, Object.keys(native.themes).sort()) ||
         native.manifestUrl !== `${base}/manifest.json` ||
         native.family.url !== `${base}/family/v${value.version}.json` ||
+        (value.renderers.web.familyUrl !== undefined &&
+          value.renderers.web.familyUrl !==
+            `${url.origin}/maps/${value.mapId}/family/v${value.version}.json`) ||
         names.some(
           (name) => native.themes[name]!.styleUrl !== `${base}/v${value.version}/${name}.json`,
         )

@@ -57,9 +57,10 @@ export type TileflowBuildings3DDesign = Readonly<{
   /**
    * The zoom bands, `[from, to]`, the buildings and the placed models and landmarks come in over:
    * across its band each fades in and rises from the ground. The renderer's defaults stand for a
-   * band left out.
+   * band left out. False disables zoom-driven growth and fading; equal endpoints choose an instant entrance.
    */
-  entrance?: Readonly<{buildings?: readonly [number, number]; models?: readonly [number, number]}>;
+  entrance?:
+    false | Readonly<{buildings?: readonly [number, number]; models?: readonly [number, number]}>;
   /** Shadows from the sun, and contact shadow at the foot of the walls. */
   shadows: boolean;
   occlusion: boolean;
@@ -84,7 +85,7 @@ export type TileflowBuildings3DDesign = Readonly<{
 export type TileflowBuildingModelPlacement = Readonly<{
   /** The model's id, its file's name in the map's `models` directories. */
   model: string;
-  /** Where the prepared model file is served, absolute or relative to the page. */
+  /** Where the prepared model file is served; the web style loader resolves it against the style. */
   url: string;
   /** Longitude and latitude of the model's origin, where it stands on the ground. */
   at: readonly [number, number];
@@ -179,12 +180,13 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
 export function readTileflowBuildingsEntrance(
   value: unknown,
 ): Pick<TileflowBuildings3DDesign, 'entrance'> {
+  if (value === false) return {entrance: false};
   if (!isRecord(value)) return {};
   const band = (entry: unknown): readonly [number, number] | undefined =>
     Array.isArray(entry) &&
     entry.length === 2 &&
     entry.every((zoom) => typeof zoom === 'number' && zoom >= 0 && zoom <= 24) &&
-    entry[0] < entry[1]
+    entry[0] <= entry[1]
       ? [entry[0], entry[1]]
       : undefined;
   const buildings = band(value.buildings);

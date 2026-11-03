@@ -191,8 +191,8 @@ const blueprintPrimaryPoiLabel = {
   },
 } as const;
 
-const blueprintPoiFilterRank = expr.toNumber(expr.get(field('poiFilterRank')), 6);
-const blueprintPoiSizeRank = expr.toNumber(expr.get(field('poiSizeRank')), 17);
+const blueprintPoiFilterRank = expr.toNumber(expr.get(field('filterrank')), 6);
+const blueprintPoiSizeRank = expr.toNumber(expr.get(field('sizerank')), 17);
 const blueprintPoiPlacementPriority = expr.add(
   expr.multiply(blueprintPoiFilterRank, 17),
   blueprintPoiSizeRank,
@@ -200,7 +200,7 @@ const blueprintPoiPlacementPriority = expr.add(
 const blueprintPoiCalloutName = expr.coalesce(
   expr.get(field('name')),
   expr.get(field('nameLatin')),
-  expr.get(field('nameEnglish')),
+  expr.get(field('nameEn')),
   '',
 );
 
@@ -234,7 +234,7 @@ const prominentBuildingSelector = {
               selectors: [
                 {
                   fallback: '',
-                  field: 'buildingTone',
+                  field: 'tone',
                   kind: 'compare',
                   operator: 'eq',
                   value: 'destination',
@@ -244,14 +244,14 @@ const prominentBuildingSelector = {
                   selectors: [
                     {
                       fallback: '',
-                      field: 'buildingTone',
+                      field: 'tone',
                       kind: 'in',
                       values: ['active', 'commercial'],
                     },
                     {
                       coerce: 'number',
                       fallback: 0,
-                      field: 'renderHeight',
+                      field: 'height',
                       kind: 'compare',
                       operator: 'gte',
                       value: 24,
@@ -269,7 +269,6 @@ const prominentBuildingSelector = {
 
 function technicalLandPattern(
   target: string,
-  feature: 'landcover' | 'landuse',
   pattern: string,
   selector: TileflowRenderSelector,
   minZoom: number,
@@ -277,7 +276,7 @@ function technicalLandPattern(
 ) {
   return renderPass({
     placement: {above: target},
-    feature,
+    feature: 'landuse',
     renderer: 'fill',
     selector,
     style: {
@@ -318,8 +317,6 @@ export const blueprintTheme = defineOfficialTheme({
     },
     buildings: {
       active: blueprintPalette.buildingInk,
-      businessCorridor: blueprintPalette.building,
-      businessCorridorOutline: blueprintPalette.buildingMuted,
       civic: blueprintPalette.buildingInk,
       commercial: blueprintPalette.building,
       destination: blueprintPalette.buildingInk,
@@ -368,6 +365,8 @@ export const blueprintTheme = defineOfficialTheme({
       wood: blueprintPalette.park,
     },
     landuse: {
+      activity: blueprintPalette.building,
+      activityOutline: blueprintPalette.buildingMuted,
       cemetery: blueprintPalette.landDetail,
       civic: blueprintPalette.landDetail,
       commercial: blueprintPalette.landDetail,
@@ -592,10 +591,6 @@ export const blueprint = bindOfficialMapTheme(
       }),
       buildings: withRenderStack(
         buildings({
-          businessCorridor: {
-            fill: {visible: false},
-            outline: {visible: false},
-          },
           flat: {
             fill: {
               color: blueprintPalette.building,
@@ -690,11 +685,11 @@ export const blueprint = bindOfficialMapTheme(
               kind: 'all',
               selectors: [
                 prominentBuildingSelector,
-                {field: 'renderHeight', kind: 'has'},
+                {field: 'height', kind: 'has'},
                 {
                   coerce: 'number',
                   fallback: 0,
-                  field: 'renderHeight',
+                  field: 'height',
                   kind: 'compare',
                   operator: 'gte',
                   value: 24,
@@ -710,7 +705,7 @@ export const blueprint = bindOfficialMapTheme(
                 color: blueprintPalette.annotation,
                 field: expr.concat(
                   'H ≈ ',
-                  expr.toString(expr.toNumber(expr.get(field('renderHeight')), 0)),
+                  expr.toString(expr.toNumber(expr.get(field('height')), 0)),
                   ' M',
                 ),
                 font: 'Noto Sans Regular',
@@ -931,6 +926,10 @@ export const blueprint = bindOfficialMapTheme(
       }),
       land: withRenderStack(
         land({
+          activityAreas: {
+            fill: {visible: false},
+            outline: {visible: false},
+          },
           background: {opacity: 1, pattern: 'blueprint-grid'},
           globalLandcover: {
             color: expr.match(
@@ -1066,36 +1065,56 @@ export const blueprint = bindOfficialMapTheme(
         {
           landscapeHatch: technicalLandPattern(
             'land.landcover.wood.fill',
-            'landcover',
             'blueprint-landscape-hatch',
             {
               fallback: '',
               field: 'class',
               kind: 'in',
-              values: ['wood', 'forest'],
+              values: ['wood'],
             },
             11,
             0.2,
           ),
           parkHatch: technicalLandPattern(
             'land.landcover.urbanPark.fill',
-            'landcover',
             'blueprint-landscape-hatch',
+            // The parks and gardens the land module draws as urban parks.
             {
-              kind: 'all',
+              kind: 'any',
               selectors: [
                 {
-                  fallback: '',
-                  field: 'class',
-                  kind: 'compare',
-                  operator: 'eq',
-                  value: 'grass',
+                  kind: 'all',
+                  selectors: [
+                    {fallback: '', field: 'class', kind: 'compare', operator: 'eq', value: 'park'},
+                    {
+                      kind: 'not',
+                      selector: {
+                        fallback: '',
+                        field: 'type',
+                        kind: 'in',
+                        values: ['recreation_ground', 'village_green', 'zoo'],
+                      },
+                    },
+                  ],
                 },
                 {
-                  fallback: '',
-                  field: 'subclass',
-                  kind: 'in',
-                  values: ['park', 'garden'],
+                  kind: 'all',
+                  selectors: [
+                    {
+                      fallback: '',
+                      field: 'class',
+                      kind: 'compare',
+                      operator: 'eq',
+                      value: 'garden',
+                    },
+                    {
+                      fallback: '',
+                      field: 'type',
+                      kind: 'compare',
+                      operator: 'ne',
+                      value: 'flowerbed',
+                    },
+                  ],
                 },
               ],
             },
@@ -1104,20 +1123,25 @@ export const blueprint = bindOfficialMapTheme(
           ),
           recreationHatch: technicalLandPattern(
             'land.landuse.recreation.fill',
-            'landuse',
             'blueprint-landscape-hatch',
             {
-              fallback: '',
-              field: 'class',
-              kind: 'in',
-              values: ['pitch', 'track', 'playground', 'zoo'],
+              kind: 'any',
+              selectors: [
+                {fallback: '', field: 'class', kind: 'in', values: ['pitch', 'playground']},
+                {
+                  kind: 'all',
+                  selectors: [
+                    {fallback: '', field: 'class', kind: 'compare', operator: 'eq', value: 'park'},
+                    {fallback: '', field: 'type', kind: 'compare', operator: 'eq', value: 'zoo'},
+                  ],
+                },
+              ],
             },
             12,
             0.16,
           ),
           industrialHatch: technicalLandPattern(
             'land.landuse.industrial.fill',
-            'landuse',
             'blueprint-building-hatch',
             {
               fallback: '',
@@ -1246,7 +1270,7 @@ export const blueprint = bindOfficialMapTheme(
           architecturalCallouts: renderPass({
             // Above every POI label: the first category listed is the top POI layer.
             placement: {above: 'poi.transport.label'},
-            feature: 'poi',
+            feature: 'poiLabel',
             renderer: 'symbol',
             selector: {
               kind: 'all',
@@ -1254,7 +1278,7 @@ export const blueprint = bindOfficialMapTheme(
                 {geometry: 'point', kind: 'geometry'},
                 {
                   fallback: '',
-                  field: 'poiCategory',
+                  field: 'class',
                   kind: 'compare',
                   operator: 'eq',
                   value: 'landmark',
@@ -1264,14 +1288,14 @@ export const blueprint = bindOfficialMapTheme(
                   selectors: [
                     {field: 'name', kind: 'has'},
                     {field: 'nameLatin', kind: 'has'},
-                    {field: 'nameEnglish', kind: 'has'},
+                    {field: 'nameEn', kind: 'has'},
                   ],
                 },
-                {field: 'poiFilterRank', kind: 'has'},
+                {field: 'filterrank', kind: 'has'},
                 {
                   coerce: 'number',
                   fallback: 6,
-                  field: 'poiFilterRank',
+                  field: 'filterrank',
                   kind: 'compare',
                   operator: 'gte',
                   value: 0,
@@ -1279,16 +1303,16 @@ export const blueprint = bindOfficialMapTheme(
                 {
                   coerce: 'number',
                   fallback: 6,
-                  field: 'poiFilterRank',
+                  field: 'filterrank',
                   kind: 'compare',
                   operator: 'lte',
                   value: 1,
                 },
-                {field: 'poiSizeRank', kind: 'has'},
+                {field: 'sizerank', kind: 'has'},
                 {
                   coerce: 'number',
                   fallback: 17,
-                  field: 'poiSizeRank',
+                  field: 'sizerank',
                   kind: 'compare',
                   operator: 'gte',
                   value: 0,
@@ -1296,7 +1320,7 @@ export const blueprint = bindOfficialMapTheme(
                 {
                   coerce: 'number',
                   fallback: 17,
-                  field: 'poiSizeRank',
+                  field: 'sizerank',
                   kind: 'compare',
                   operator: 'lte',
                   value: 8,
@@ -1530,14 +1554,14 @@ export const blueprint = bindOfficialMapTheme(
                 },
                 {
                   fallback: '',
-                  field: 'brunnel',
+                  field: 'structure',
                   kind: 'compare',
                   operator: 'ne',
                   value: 'bridge',
                 },
                 {
                   fallback: '',
-                  field: 'brunnel',
+                  field: 'structure',
                   kind: 'compare',
                   operator: 'ne',
                   value: 'tunnel',
@@ -1728,14 +1752,7 @@ export const blueprint = bindOfficialMapTheme(
             placement: {above: 'water.bodies.fill'},
             feature: 'water',
             renderer: 'fill',
-            selector: {
-              coerce: 'number',
-              fallback: 0,
-              field: 'intermittent',
-              kind: 'compare',
-              operator: 'ne',
-              value: 1,
-            },
+            selector: {field: 'intermittent', kind: 'compare', operator: 'ne', value: true},
             style: {
               minZoom: 7,
               opacity: zoom.linear([
@@ -1750,14 +1767,7 @@ export const blueprint = bindOfficialMapTheme(
             placement: {above: 'water.intermittent.bodies.fill'},
             feature: 'water',
             renderer: 'fill',
-            selector: {
-              coerce: 'number',
-              fallback: 0,
-              field: 'intermittent',
-              kind: 'compare',
-              operator: 'eq',
-              value: 1,
-            },
+            selector: {field: 'intermittent', kind: 'compare', operator: 'eq', value: true},
             style: {
               minZoom: 9,
               opacity: 0.2,

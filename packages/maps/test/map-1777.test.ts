@@ -109,7 +109,7 @@ test('1777 water washes cover river axes while retaining small and intermittent 
       );
       assert.ok(lines.length > 0);
       for (const layer of lines) assert.ok(position(layer.id) < body);
-      for (const intermittent of [0, 1]) {
+      for (const intermittent of [false, true]) {
         assert.ok(
           lines.some((layer) =>
             featureFilter(layer.filter).filter(
@@ -133,7 +133,7 @@ test('1777 water washes cover river axes while retaining small and intermittent 
     const bank = selected.layers[wash];
     assert.ok(bank?.type === 'line');
     assert.equal(
-      featureFilter(bank.filter).filter({zoom: 17}, {type: 3, properties: {intermittent: 1}}),
+      featureFilter(bank.filter).filter({zoom: 17}, {type: 3, properties: {intermittent: true}}),
       false,
       'Seasonal water must not acquire a permanent bank wash',
     );
@@ -164,9 +164,8 @@ test('1777 raises opaque red buildings with map-anchored light and shared shadow
   assert.equal(extrusion.layout?.visibility, 'none', 'The printed view remains the initial view');
   assert.equal(extrusion.metadata?.['tileflow:3d-toggle'], 'building');
   const filter = featureFilter(extrusion.filter);
-  for (const hidden of [true, 1, '1']) {
-    assert.equal(filter.filter({zoom: 17}, {type: 3, properties: {hide_3d: hidden}}), false);
-  }
+  assert.equal(filter.filter({zoom: 17}, {type: 3, properties: {extrude: false}}), false);
+  assert.equal(filter.filter({zoom: 17}, {type: 3, properties: {extrude: true}}), true);
   assert.equal(filter.filter({zoom: 17}, {type: 3, properties: {}}), true);
   const height = createPropertyExpression(
     extrusion.paint?.['fill-extrusion-height'],
@@ -181,9 +180,9 @@ test('1777 raises opaque red buildings with map-anchored light and shared shadow
   if (height.result !== 'success' || base.result !== 'success') return;
   for (const [properties, expectedHeight, expectedBase] of [
     [{}, 5, 0],
-    [{render_height: 24, render_min_height: 8}, 24, 8],
-    [{render_height: -2, render_min_height: -4}, 0, 0],
-    [{render_height: 8, render_min_height: 20}, 8, 8],
+    [{height: 24, min_height: 8}, 24, 8],
+    [{height: -2, min_height: -4}, 0, 0],
+    [{height: 8, min_height: 20}, 8, 8],
   ] as const) {
     assert.equal(height.value.evaluate({zoom: 17}, {type: 3, properties}), expectedHeight);
     assert.equal(base.value.evaluate({zoom: 17}, {type: 3, properties}), expectedBase);
@@ -266,10 +265,10 @@ test('1777 keeps small streets and paths continuous with thin dashed tunnel bord
   assert.ok(road);
   for (const zoom of [15, 17, 19]) {
     for (const properties of [
-      {class: 'minor'},
-      {class: 'minor', access: 'no'},
-      {class: 'minor', indoor: 1},
-      {class: 'minor', surface: 'unpaved'},
+      {class: 'street'},
+      {class: 'street', access: 'no'},
+      {class: 'street', indoor: true},
+      {class: 'street', surface: 'unpaved'},
     ]) {
       assert.ok(featureFilter(road.filter).filter({zoom}, {type: 2, properties}));
       const dash = road.paint?.['line-dasharray'];

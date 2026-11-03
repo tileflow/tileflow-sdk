@@ -41,6 +41,12 @@ const carriageways = [
   'service',
   'track',
 ];
+// World's road classes for each Tileflow carriageway class that differs from it.
+const worldClasses: Record<string, readonly string[]> = {
+  minor: ['street'],
+  service: ['service', 'busway'],
+  track: ['track', 'raceway'],
+};
 
 for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
   const style = createStyle(map1777, {theme, preparedAssets});
@@ -102,20 +108,20 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
         }
         assert.deepEqual(works.paint?.['line-dasharray'], [2, 1]);
         assert.equal(works.layout?.['line-cap'], 'square');
-        for (const className of roadClass === 'track' ? ['track', 'raceway'] : [roadClass]) {
-          const open = {class: className, ramp: 0};
-          const closed = {class: `${className}_construction`, access: 'no', indoor: 1};
+        for (const className of worldClasses[roadClass] ?? [roadClass]) {
+          const open = {class: className, link: false};
+          const closed = {class: 'construction', type: className, access: 'no', indoor: true};
           assert.ok(matches(ordinary, open));
           assert.ok(!matches(ordinary, closed));
           assert.ok(matches(works, closed));
           assert.ok(!matches(works, open));
-          for (const brunnel of ['bridge', 'tunnel'])
-            assert.ok(!matches(works, {...closed, brunnel}));
+          for (const structure of ['bridge', 'tunnel'])
+            assert.ok(!matches(works, {...closed, structure}));
           for (const treatment of [
             {},
-            {ramp: 1},
-            {expressway: 1},
-            {ramp: 1, access: 'no'},
+            {link: true},
+            {expressway: true},
+            {link: true, access: 'no'},
             {service: 'driveway'},
             {service: 'parking_aisle'},
           ]) {
@@ -135,12 +141,9 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
         }
       }
     }
-    for (const [roadClass, aliases] of [
-      ['minor', ['residential', 'unclassified']],
-      ['service', ['busway', 'bus_guideway']],
-    ] as const) {
-      for (const alias of aliases)
-        assert.ok(matches(line(`tileflow-road-surface-${roadClass}-fill`), {class: alias}));
+    for (const [roadClass, classes] of Object.entries(worldClasses)) {
+      for (const className of classes)
+        assert.ok(matches(line(`tileflow-road-surface-${roadClass}-fill`), {class: className}));
     }
   });
 
@@ -152,15 +155,15 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
         const casing = line(`tileflow-road-${structure}-${roadClass}-casing`);
         const feature = {
           class: roadClass,
-          ramp: 1,
-          ...(structure === 'bridge' ? {brunnel: 'bridge'} : {}),
+          link: true,
+          ...(structure === 'bridge' ? {structure: 'bridge'} : {}),
         };
         assert.ok(matches(link, feature));
         assert.ok(!matches(ordinary, feature));
         assert.ok(matches(casing, feature));
-        assert.ok(!matches(link, {...feature, ramp: 0}));
-        assert.ok(!matches(link, {...feature, class: `${roadClass}_construction`}));
-        assert.ok(!matches(link, {...feature, brunnel: 'tunnel'}));
+        assert.ok(!matches(link, {...feature, link: false}));
+        assert.ok(!matches(link, {...feature, class: 'construction', type: roadClass}));
+        assert.ok(!matches(link, {...feature, structure: 'tunnel'}));
         assert.ok(style.layers.indexOf(casing) < style.layers.indexOf(link));
         assert.ok(
           style.layers.indexOf(link) <
@@ -174,9 +177,9 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
         for (const treatment of [
           {},
           {access: 'no'},
-          {indoor: 1},
+          {indoor: true},
           {surface: 'unpaved'},
-          {access: 'no', surface: 'unpaved', indoor: 1},
+          {access: 'no', surface: 'unpaved', indoor: true},
         ]) {
           for (const zoom of [13.5, 16, 19]) {
             const properties = {...feature, ...treatment};
@@ -216,8 +219,8 @@ for (const theme of ['light', 'dawn', 'dusk', 'dark']) {
       assert.ok(evaluate(tree.paint?.[property], latest.paint_circle[property], 15.5) > 0);
     }
     const path = line('tileflow-road-surface-footway-fill');
-    assert.equal(paint(path, 'line-opacity', 14, {class: 'path', subclass: 'footway'}), 0);
-    assert.ok(paint(path, 'line-opacity', 14.5, {class: 'path', subclass: 'footway'}) > 0);
+    assert.equal(paint(path, 'line-opacity', 14, {class: 'path', type: 'footway'}), 0);
+    assert.ok(paint(path, 'line-opacity', 14.5, {class: 'path', type: 'footway'}) > 0);
     let previous = -Infinity;
     for (const name of [
       'Motorway',

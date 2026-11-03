@@ -78,7 +78,7 @@ export function registerTileflowWorldRequestBridge(input: {
   const channel = createChannel();
   registrations.set(channel, {
     currentNoticeState: null,
-    fetch: input.fetch ?? globalThis.fetch,
+    fetch: input.fetch ?? globalThis.fetch.bind(globalThis),
     lastNoticeSequence: 0,
     limitedUntil: 0,
     nextRequestSequence: 0,

@@ -55,17 +55,21 @@ test(
     const manifestBody = await manifestResponse.text();
     assert.equal(manifestResponse.status, 200, manifestBody);
     assert.equal((JSON.parse(manifestBody) as {version?: unknown}).version, 3);
-    const originalListen = Server.prototype.listen;
     let additionalListeners = 0;
-    Server.prototype.listen = function forbiddenAdditionalListener() {
-      additionalListeners += 1;
-      throw new Error('Application capture opened a second Node listener.');
-    };
+    const listen = t.mock.method(
+      Server.prototype,
+      'listen',
+      function forbiddenAdditionalListener() {
+        additionalListeners += 1;
+        throw new Error('Application capture opened a second Node listener.');
+      },
+    );
     const session = createTileflowCaptureSession({
       allowBrowserInstall: false,
       appOrigin,
       config: 'tileflow.config.ts',
       cwd,
+      signal: t.signal,
     });
 
     try {
@@ -108,7 +112,7 @@ test(
       t.diagnostic(JSON.stringify(browserFailures));
       throw error;
     } finally {
-      Server.prototype.listen = originalListen;
+      listen.mock.restore();
       await session.close();
       await vite.close();
       await rm(cwd, {force: true, recursive: true});
@@ -181,6 +185,7 @@ test(
       appOrigin: `http://127.0.0.1:${address.port}`,
       config: 'tileflow.config.ts',
       cwd,
+      signal: t.signal,
     });
 
     try {
@@ -241,6 +246,7 @@ test(
       appOrigin: `http://127.0.0.1:${address.port}`,
       config: 'tileflow.config.ts',
       cwd,
+      signal: t.signal,
     });
 
     try {
@@ -309,6 +315,7 @@ export default defineMap({
   id: 'main',
   version: 1,
   extends: streets,
+  themes: {light: streets.themes.light},
   data: vectorTiles({
     attribution: '© Tileflow capture fixture',
     revision: 'capture-fixture-v1',
@@ -381,6 +388,7 @@ export default defineMap({
   id: 'main',
   version: 1,
   extends: streets,
+  themes: {light: streets.themes.light},
   data: vectorTiles({
     attribution: '© Tileflow capture fixture',
     revision: 'capture-fixture-v1',
@@ -423,6 +431,7 @@ export default defineMap({
   id: 'main',
   version: 1,
   extends: streets,
+  themes: {light: streets.themes.light},
   data: vectorTiles({
     attribution: '© Tileflow capture fixture',
     revision: 'capture-fixture-v1',

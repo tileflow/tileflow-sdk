@@ -56,6 +56,7 @@ import {
   getTileflowMapNames,
   loadValidTileflowConfigWithInputs,
 } from './config';
+import {rebaseTileflowFamilyStyle} from './family-style-resources';
 import {
   getTileflowFontWatchPaths,
   prepareTileflowStyleFonts,
@@ -621,7 +622,7 @@ function getStableTileflowArtifactFiles(artifacts: TileflowBuildArtifacts): Tile
       ? Object.entries(artifacts.styles).map(([mapName, styles]) => ({
           contentType: 'application/json; charset=utf-8',
           fileName: `families/${mapName}.json`,
-          source: `${JSON.stringify(prepareTileflowStyleFamilyForRendering(createTileflowStyleFamily(styles)))}\n`,
+          source: `${JSON.stringify(prepareArtifactStyleFamily(mapName, styles))}\n`,
         }))
       : []),
     ...artifacts.assets,
@@ -637,6 +638,22 @@ function getStableTileflowArtifactFiles(artifacts: TileflowBuildArtifacts): Tile
     ...nativeFamilyFiles(artifacts),
   ];
   return validateArtifactFiles(files);
+}
+
+function prepareArtifactStyleFamily(
+  mapName: string,
+  styles: Readonly<Record<string, MapLibreStyle>>,
+) {
+  return prepareTileflowStyleFamilyForRendering(
+    createTileflowStyleFamily(
+      Object.fromEntries(
+        Object.entries(styles).map(([theme, style]) => [
+          theme,
+          rebaseTileflowFamilyStyle(style, mapName, theme),
+        ]),
+      ),
+    ),
+  );
 }
 
 function validateArtifactFiles(files: TileflowArtifactFile[]): TileflowArtifactFile[] {
@@ -763,20 +780,19 @@ function createGenerationArtifactFiles(
         contentType: 'application/json; charset=utf-8',
         fileName: `${prefix}/families/${mapName}.json`,
         source: `${JSON.stringify(
-          prepareTileflowStyleFamilyForRendering(
-            createTileflowStyleFamily(
-              Object.fromEntries(
-                Object.keys(artifacts.styles[mapName]!).map((theme) => [
-                  theme,
-                  JSON.parse(
-                    String(
-                      immutableStyles.find(
-                        (file) => file.fileName === `${prefix}/styles/${mapName}/${theme}.json`,
-                      )!.source,
-                    ),
-                  ) as MapLibreStyle,
-                ]),
-              ),
+          prepareArtifactStyleFamily(
+            mapName,
+            Object.fromEntries(
+              Object.keys(artifacts.styles[mapName]!).map((theme) => [
+                theme,
+                JSON.parse(
+                  String(
+                    immutableStyles.find(
+                      (file) => file.fileName === `${prefix}/styles/${mapName}/${theme}.json`,
+                    )!.source,
+                  ),
+                ) as MapLibreStyle,
+              ]),
             ),
           ),
         )}\n`,

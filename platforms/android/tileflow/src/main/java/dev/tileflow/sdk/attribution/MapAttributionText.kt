@@ -33,6 +33,47 @@ internal object MapAttributionText {
         return groups.mapNotNull(::item)
     }
 
+    private val address = Regex("https://[^\\s()<>\"']+")
+
+    /**
+     * [links] with every `https` address written in [text] opening itself; where a link covers the
+     * address, the address takes that part. Trailing punctuation is not part of an address.
+     */
+    fun linkingAddresses(
+        text: String,
+        links: List<MapAttributionEntry.Link>,
+    ): List<MapAttributionEntry.Link> {
+        val found =
+            address
+                .findAll(text)
+                .mapNotNull { match ->
+                    val value = match.value.trimEnd('.', ',', ';', ':', '!', '?')
+                    val start = match.range.first
+                    if (isPage(value)) MapAttributionEntry.Link(start, start + value.length, value)
+                    else null
+                }
+                .toList()
+        if (found.isEmpty()) return links
+        val pieces =
+            links.flatMap { link ->
+                var parts = listOf(link.start to link.end)
+                for (inside in found) {
+                    parts =
+                        parts.flatMap { (start, end) ->
+                            if (end <= inside.start || start >= inside.end) listOf(start to end)
+                            else
+                                listOf(
+                                        start to maxOf(start, inside.start),
+                                        minOf(end, inside.end) to end,
+                                    )
+                                    .filter { it.first < it.second }
+                        }
+                }
+                parts.map { MapAttributionEntry.Link(it.first, it.second, link.url) }
+            }
+        return (pieces + found).sortedBy { it.start }
+    }
+
     /** Whether [address] is an `https` page. */
     fun isPage(address: String): Boolean =
         runCatching { URI(address) }

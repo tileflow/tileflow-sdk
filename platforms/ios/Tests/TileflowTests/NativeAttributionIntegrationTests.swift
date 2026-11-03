@@ -209,6 +209,22 @@ final class NativeAttributionIntegrationTests: XCTestCase {
         let groups = entries.map(\.kind.order)
         XCTAssertTrue(zip(groups, groups.dropFirst()).allSatisfy { $0 <= $1 }, "\(entries)")
         XCTAssertFalse(control.view.control.isHidden)
+        // On the map itself, every source credit at least starts, and the notice is whole.
+        control.view.layoutIfNeeded()
+        let strip = (control.view.label.text ?? "").components(separatedBy: "\n").flatMap {
+          $0.components(separatedBy: MapAttributionStrip.separator)
+        }
+        for text in sources {
+          XCTAssertTrue(
+            strip.contains { $0 == text || ($0.hasSuffix("…") && text.hasPrefix(String($0.dropLast()))) },
+            "\(mode) \(stop): \(text) on the map, \(strip)")
+        }
+        XCTAssertTrue(strip.contains("Not for navigation"), "\(strip)")
+        // A chart product shows with its qualification or not at all.
+        for piece in strip where piece.contains("ENC") {
+          XCTAssertTrue(piece.contains("not official"), "\(mode) \(stop): \(piece)")
+        }
+        print("Attribution strip, \(mode) \(stop): \(strip)")
       }
       try await check(here, "at \(place)")
       for (coordinate, expected) in stops {
@@ -219,6 +235,17 @@ final class NativeAttributionIntegrationTests: XCTestCase {
       try await map.view.jump(
         to: TileflowCamera(longitude: center.longitude, latitude: center.latitude, zoom: 10))
       try await check(here, "back at \(place)")
+      if online {
+        // A theme without the marine sources keeps the downloaded regions' obligations, and shows
+        // a notice only if its style declares one.
+        try await map.view.setTheme("day")
+        try await waitUntil("\(mode) day") {
+          !control.entries.contains { $0.text.hasPrefix("NOAA ENC 2026-10-20 —") }
+        }
+        XCTAssertEqual(control.entries.filter { $0.kind == .notice }, [])
+        XCTAssertEqual(
+          control.entries.filter { $0.kind == .obligation }.map(\.text), fixture.obligations)
+      }
       XCTAssertTrue(map.failures.isEmpty, "\(mode): \(map.failures)")
     }
   }

@@ -22,6 +22,7 @@ import dev.tileflow.sdk.bridge.EventSubscriptions
 import dev.tileflow.sdk.bridge.ProtocolContract
 import dev.tileflow.sdk.engine.MapEngine
 import dev.tileflow.sdk.engine.MapEngineCallbacks
+import dev.tileflow.sdk.attribution.MapAttributionView
 import dev.tileflow.sdk.engine.MapEngineKind
 import dev.tileflow.sdk.engine.NativeMapEngine
 import dev.tileflow.sdk.engine.WebViewMapEngine
@@ -202,7 +203,7 @@ constructor(
     /**
      * Return false to leave a touch that begins at this point, in pixels relative to the view, to
      * the views behind and around the map; for example over application UI drawn on the map.
-     * Native controls receive their touches regardless.
+     * Native controls and the attribution receive their touches regardless.
      */
     public var touchFilter: ((x: Float, y: Float) -> Boolean)? = null
 
@@ -543,9 +544,11 @@ constructor(
         val gestures = options.gestures
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                // Native controls and the attribution receive their touches regardless.
                 touchOnControl =
-                    controlsView.visibility == VISIBLE &&
-                        controlsView.hasControlAt(event.x, event.y)
+                    (controlsView.visibility == VISIBLE &&
+                        controlsView.hasControlAt(event.x, event.y)) ||
+                        MapAttributionView.claims(this, event.x, event.y)
                 if (!touchOnControl) {
                     if (touchFilter?.invoke(event.x, event.y) == false) return false
                     // Scrolling parents, pagers and sheets leave a drag on the map to the map.

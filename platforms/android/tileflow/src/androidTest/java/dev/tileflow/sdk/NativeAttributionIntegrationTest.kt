@@ -9,6 +9,7 @@ import dev.tileflow.configuration.TileflowConfiguration
 import dev.tileflow.configuration.TileflowCredential
 import dev.tileflow.sdk.attribution.MapAttributionControl
 import dev.tileflow.sdk.attribution.MapAttributionEntry
+import dev.tileflow.sdk.attribution.MapAttributionStrip
 import dev.tileflow.sdk.engine.MapEngineKind
 import dev.tileflow.sdk.engine.NativeMapEngine
 import dev.tileflow.sdk.engine.NativeRepresentation
@@ -314,6 +315,28 @@ public class NativeAttributionIntegrationTest {
                             val groups = entries.map { it.kind.group }
                             assertEquals("$entries", groups.sorted(), groups)
                             assertEquals(View.VISIBLE, control.view.control.visibility)
+                            // On the map itself, every source credit at least starts, the notice
+                            // is whole and a chart product shows with its qualification or not.
+                            waitFor("$mode $stop: the strip laid out") {
+                                !control.view.isLayoutRequested &&
+                                    control.view.label.text.isNotEmpty()
+                            }
+                            val strip =
+                                control.view.label.text.toString().split("\n").flatMap {
+                                    it.split(MapAttributionStrip.SEPARATOR)
+                                }
+                            for (text in sources)
+                                assertTrue(
+                                    "$mode $stop: $text on the map, $strip",
+                                    strip.any {
+                                        it == text ||
+                                            (it.endsWith("…") && text.startsWith(it.dropLast(1)))
+                                    },
+                                )
+                            assertTrue("$strip", "Not for navigation" in strip)
+                            for (piece in strip.filter { "ENC" in it })
+                                assertTrue("$mode $stop: $piece", "not official" in piece)
+                            android.util.Log.i("TileflowTest", "Attribution strip, $mode $stop: $strip")
                         }
                         check(here, "at $place")
                         for ((coordinate, expected) in stops) {
@@ -324,6 +347,28 @@ public class NativeAttributionIntegrationTest {
                         }
                         activity.map.jump(TileflowCamera(center.longitude, center.latitude, 10.0))
                         check(here, "back at $place")
+                        if (online) {
+                            // A theme without the marine sources keeps the downloaded regions'
+                            // obligations, and shows a notice only if its style declares one.
+                            activity.map.setTheme("day")
+                            waitFor("$mode day") {
+                                control.entries.none {
+                                    it.text.startsWith("NOAA ENC 2026-10-20 —")
+                                }
+                            }
+                            assertEquals(
+                                emptyList<MapAttributionEntry>(),
+                                control.entries.filter {
+                                    it.kind == MapAttributionEntry.Kind.NOTICE
+                                },
+                            )
+                            assertEquals(
+                                fixture.obligations,
+                                control.entries
+                                    .filter { it.kind == MapAttributionEntry.Kind.OBLIGATION }
+                                    .map { it.text },
+                            )
+                        }
                         assertTrue("$mode: ${activity.failures}", activity.failures.isEmpty())
                     }
                 }

@@ -7,7 +7,6 @@ import android.graphics.Paint
 import android.graphics.drawable.GradientDrawable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
-import android.text.TextUtils
 import android.text.method.LinkMovementMethod
 import android.text.style.ClickableSpan
 import android.util.TypedValue
@@ -32,14 +31,15 @@ import kotlin.math.roundToInt
  * logo stay disabled.
  *
  * It is always shown while the map has something to credit, in the corner the map's options choose,
- * inside the content padding. Compact, it is one line: a button and the credits that read as a
- * line (the sources' credits, the downloaded sources' pages, the style's notices and World's
- * fair-use notice), ellipsized in the middle so the first credit and the last notice stay legible.
- * The button opens every entry in full, in order, with its links. TalkBack reads the full text of
- * every entry from the compact control and offers each link as an action. Links never open by
- * themselves: they reach the map view, which reports the request.
+ * inside the content padding; padding that leaves it no room is ignored, so no option hides it.
+ * Compact, it is a button and, on one or two lines, every source credit, the style's notices and
+ * World's fair-use notice ([MapAttributionStrip]): a credit that does not fit is shortened, never
+ * left out. The button opens every entry in full, in order, with its links. TalkBack reads the full
+ * text of every entry from the compact control and offers each link as an action. Links never open
+ * by themselves: they reach the map view, which reports the request.
  *
- * The view covers the map; touches reach the map everywhere but on the control and its open list.
+ * The view covers the map; touches reach the map everywhere but on the control and its open list,
+ * and the map view leaves those touches to it whatever the application filters.
  */
 internal class MapAttributionView(context: Context) : ViewGroup(context) {
     private val density = resources.displayMetrics.density
@@ -66,6 +66,8 @@ internal class MapAttributionView(context: Context) : ViewGroup(context) {
     var expanded: Boolean = false
         private set
     private var linkActions: List<Int> = emptyList()
+    /** What the compact control shows: every source credit, then the notices. */
+    private var stripItems: List<MapAttributionStrip.Item> = emptyList()
 
     val control = LinearLayout(context)
     private val icon = InfoIcon(context)
@@ -90,8 +92,11 @@ internal class MapAttributionView(context: Context) : ViewGroup(context) {
         icon.color = withAlpha(foreground, 0.6f)
         label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 11f)
         label.setTextColor(withAlpha(foreground, 0.78f))
-        label.isSingleLine = true
-        label.ellipsize = TextUtils.TruncateAt.MIDDLE
+        label.isSingleLine = false
+        label.maxLines = MapAttributionStrip.MAXIMUM_LINES
+        label.ellipsize = null
+        label.includeFontPadding = false
+        label.setHorizontallyScrolling(false)
         label.textAlignment = TEXT_ALIGNMENT_VIEW_START
         label.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
         icon.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -138,15 +143,7 @@ internal class MapAttributionView(context: Context) : ViewGroup(context) {
     fun show(entries: List<MapAttributionEntry>) {
         if (entries == this.entries) return
         this.entries = entries
-        val compactKinds =
-            setOf(
-                MapAttributionEntry.Kind.SOURCE,
-                MapAttributionEntry.Kind.PAGE,
-                MapAttributionEntry.Kind.NOTICE,
-                MapAttributionEntry.Kind.FAIR_USE,
-            )
-        val compact = entries.filter { it.kind in compactKinds }.ifEmpty { entries }
-        label.text = compact.joinToString(SEPARATOR) { it.text }
+        stripItems = MapAttributionStrip.items(entries)
         control.visibility = if (entries.isEmpty()) GONE else VISIBLE
         control.contentDescription = entries.joinToString("\n") { it.text }
         for (id in linkActions) ViewCompat.removeAccessibilityAction(control, id)
@@ -202,14 +199,24 @@ internal class MapAttributionView(context: Context) : ViewGroup(context) {
 
     // Layout
 
-    /** The rectangle the control may use: the view inside its insets and margins. */
+    /**
+     * The rectangle the control may use: the view inside its insets and margins. Insets that leave
+     * too little room for the control are ignored, so it stays on the map.
+     */
     private fun area(width: Int, height: Int): IntArray {
         val margin = (MARGIN_DP * density).roundToInt()
         val left = insets[0] + margin
         val top = insets[1] + margin
-        val right = max(left, width - insets[2] - margin)
-        val bottom = max(top, height - insets[3] - margin)
-        return intArrayOf(left, top, right, bottom)
+        val right = width - insets[2] - margin
+        val bottom = height - insets[3] - margin
+        if (right - left >= 120 * density && bottom - top >= TWO_LINE_HEIGHT_DP * density)
+            return intArrayOf(left, top, right, bottom)
+        return intArrayOf(
+            margin,
+            margin,
+            max(margin, width - margin),
+            max(margin, height - margin),
+        )
     }
 
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
@@ -219,14 +226,22 @@ internal class MapAttributionView(context: Context) : ViewGroup(context) {
         val area = area(width, height)
         val areaWidth = area[2] - area[0]
         val areaHeight = area[3] - area[1]
+        // Room is left for a control in the other corner of the same edge, such as the scale bar.
         val maximum =
-            max(min(areaWidth * 0.62f, 360 * density), min(areaWidth.toFloat(), 120 * density))
-        val compactHeight = (COMPACT_HEIGHT_DP * density).roundToInt()
-        control.measure(
-            MeasureSpec.makeMeasureSpec(0, MeasureSpec.UNSPECIFIED),
-            MeasureSpec.makeMeasureSpec(compactHeight, MeasureSpec.EXACTLY),
-        )
-        val controlWidth = min(control.measuredWidth, ceil(maximum).toInt())
+            max(min(areaWidth * 0.62f, 360 * density), min(areaWidth.toFloat(), 160 * density))
+        val iconWidth = (20 * density).roundToInt()
+        val spacing = (6 * density).roundToInt()
+        val paint = label.paint
+        val lines =
+            MapAttributionStrip.lines(stripItems, maximum - iconWidth - spacing) {
+                ceil(paint.measureText(it))
+            }
+        val text = lines.joinToString("\n")
+        if (label.text.toString() != text) label.text = text
+        val compactHeight =
+            ((if (lines.size > 1) TWO_LINE_HEIGHT_DP else COMPACT_HEIGHT_DP) * density).roundToInt()
+        val textWidth = lines.maxOfOrNull { ceil(paint.measureText(it)).toInt() } ?: 0
+        val controlWidth = min(textWidth + iconWidth + spacing, ceil(maximum).toInt())
         control.measure(
             MeasureSpec.makeMeasureSpec(controlWidth, MeasureSpec.EXACTLY),
             MeasureSpec.makeMeasureSpec(compactHeight, MeasureSpec.EXACTLY),
@@ -304,13 +319,166 @@ internal class MapAttributionView(context: Context) : ViewGroup(context) {
 
     companion object {
         /**
-         * The compact control's height. It fits the space the map's other controls leave free for
-         * it in its corner (`MapControlsView.ATTRIBUTION_SPACE_DP`).
+         * The compact control's height with one line and with two. Both fit the space the map's
+         * other controls leave free for it in its corner (`MapControlsView.ATTRIBUTION_SPACE_DP`).
          */
         const val COMPACT_HEIGHT_DP: Float = 24f
+        const val TWO_LINE_HEIGHT_DP: Float = 28f
         const val MARGIN_DP: Float = 8f
-        /** Separates the items of the compact line. */
-        const val SEPARATOR: String = " · "
+
+        /**
+         * Whether a point in [root]'s coordinates falls on an attribution control or its open list
+         * inside it, which takes the touch whatever the application filters.
+         */
+        fun claims(root: ViewGroup, x: Float, y: Float): Boolean {
+            for (index in 0 until root.childCount) {
+                val child = root.getChildAt(index)
+                if (child.visibility != VISIBLE) continue
+                val localX = x - child.left + child.scrollX
+                val localY = y - child.top + child.scrollY
+                if (child is MapAttributionView) {
+                    if (
+                        listOf(child.control, child.list).any {
+                            it.visibility == VISIBLE &&
+                                localX >= it.left &&
+                                localX < it.right &&
+                                localY >= it.top &&
+                                localY < it.bottom
+                        }
+                    )
+                        return true
+                } else if (child is ViewGroup && claims(child, localX, localY)) return true
+            }
+            return false
+        }
+    }
+}
+
+/**
+ * What the compact control shows on one or two lines: every source credit in order, then the
+ * style's notices and World's fair-use notice. When they do not fit, the longest credits are
+ * shortened first, to a common length, each keeping at least its first character and an ellipsis;
+ * notices keep their text. Nothing is left out.
+ */
+internal object MapAttributionStrip {
+    data class Item(
+        val text: String,
+        /** Notices keep their text while shortening the credits makes room. */
+        val keepsText: Boolean,
+    )
+
+    const val SEPARATOR: String = " · "
+    const val MAXIMUM_LINES: Int = 2
+    const val ELLIPSIS: String = "…"
+
+    fun items(entries: List<MapAttributionEntry>): List<Item> =
+        entries.mapNotNull {
+            when (it.kind) {
+                MapAttributionEntry.Kind.SOURCE -> Item(it.text, false)
+                MapAttributionEntry.Kind.NOTICE,
+                MapAttributionEntry.Kind.FAIR_USE -> Item(it.text, true)
+                else -> null
+            }
+        }
+
+    /** The lines, each at most [width] wide as [measure] measures text. */
+    fun lines(items: List<Item>, width: Float, measure: (String) -> Float): List<String> {
+        if (items.isEmpty() || width <= 0) return emptyList()
+        wrap(items.map { it.text }, width, measure)?.let {
+            return it
+        }
+        // The longest credits shorten first: find the longest common length that fits.
+        var low = 0f
+        var high = width
+        var best: List<String>? = null
+        repeat(16) {
+            val cap = (low + high) / 2
+            val texts = items.map { shorten(it.text, if (it.keepsText) width else cap, measure) }
+            val lines = wrap(texts, width, measure)
+            if (lines != null) {
+                best = lines
+                low = cap
+            } else high = cap
+        }
+        best?.let {
+            return it
+        }
+        // Too many credits to fit even at a character each: the notices come first and the last
+        // line takes the rest, clipped.
+        val lines = mutableListOf<String>()
+        val ordered = items.filter { it.keepsText } + items.filter { !it.keepsText }
+        for (text in ordered.map { shorten(it.text, if (it.keepsText) width else 0f, measure) }) {
+            val last = lines.lastOrNull()
+            if (
+                last != null &&
+                    (lines.size >= MAXIMUM_LINES || measure(last + SEPARATOR + text) <= width)
+            )
+                lines[lines.size - 1] = last + SEPARATOR + text
+            else lines += text
+        }
+        return lines
+    }
+
+    /** Places whole texts on at most [MAXIMUM_LINES] lines, or null when they do not fit. */
+    private fun wrap(texts: List<String>, width: Float, measure: (String) -> Float): List<String>? {
+        val lines = mutableListOf("")
+        for (text in texts) {
+            val line = lines.last()
+            val joined = if (line.isEmpty()) text else line + SEPARATOR + text
+            if (measure(joined) <= width) {
+                lines[lines.size - 1] = joined
+                continue
+            }
+            if (line.isEmpty() || measure(text) > width || lines.size >= MAXIMUM_LINES) return null
+            lines += text
+        }
+        return lines
+    }
+
+    /**
+     * [text], or its longest start with an ellipsis that is at most [cap] wide; at least its first
+     * character. A credit that qualifies what it names after a dash, such as
+     * "NOAA ENC 2026-10-20 — not official, not for navigation", keeps the qualification's first
+     * clause with the name, or shows only its first word ("NOAA…"): a shortened credit never names
+     * a product without what qualifies it.
+     */
+    fun shorten(text: String, cap: Float, measure: (String) -> Float): String {
+        if (measure(text) <= cap) return text
+        val characters = text.codePoints().toArray()
+        fun candidate(length: Int): String =
+            String(characters, 0, length).trim { it == ' ' || it == '\t' } + ELLIPSIS
+        for (lengths in allowedLengths(characters).reversed()) {
+            if (lengths.isEmpty() || measure(candidate(lengths.first)) > cap) continue
+            var low = lengths.first
+            var high = lengths.last
+            while (low < high) {
+                val middle = (low + high + 1) / 2
+                if (measure(candidate(middle)) <= cap) low = middle else high = middle - 1
+            }
+            return candidate(low)
+        }
+        return candidate(1)
+    }
+
+    /**
+     * The lengths, in code points, a shortened credit may keep: within its first word, and, when a
+     * dash qualifies what it names, from the end of the qualification's first clause.
+     */
+    private fun allowedLengths(characters: IntArray): List<IntRange> {
+        val count = characters.size
+        if (count <= 1) return listOf(1..1)
+        val dash =
+            (1 until count - 1).firstOrNull {
+                (characters[it] == '—'.code || characters[it] == '–'.code) &&
+                    characters[it - 1] == ' '.code &&
+                    characters[it + 1] == ' '.code
+            } ?: return listOf(1..count - 1)
+        val firstWord =
+            (0 until count).firstOrNull { Character.isWhitespace(characters[it]) } ?: count
+        val ranges = mutableListOf(1..maxOf(1, minOf(firstWord, count - 1)))
+        val clause = (dash + 2 until count).firstOrNull { characters[it] == ','.code }
+        if (clause != null) ranges += clause..count - 1
+        return ranges
     }
 }
 

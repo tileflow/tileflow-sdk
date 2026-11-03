@@ -37,6 +37,37 @@ enum MapAttributionText {
     return groups.compactMap(item)
   }
 
+  /// `links` with every `https` address written in `text` opening itself; where a link covers
+  /// the address, the address takes that part. Trailing punctuation is not part of an address.
+  static func linkingAddresses(
+    in text: String, around links: [MapAttributionEntry.Link]
+  ) -> [MapAttributionEntry.Link] {
+    var found: [MapAttributionEntry.Link] = []
+    for match in text.matches(of: #/https://[^\s()<>"']+/#) {
+      var address = String(text[match.range])
+      while let last = address.last, ".,;:!?".contains(last) { address.removeLast() }
+      guard let url = page(address) else { continue }
+      let start = text.utf16.distance(from: text.utf16.startIndex, to: match.range.lowerBound)
+      found.append(.init(range: start..<(start + address.utf16.count), url: url))
+    }
+    guard !found.isEmpty else { return links }
+    var result: [MapAttributionEntry.Link] = []
+    for link in links {
+      var pieces = [link.range]
+      for address in found {
+        pieces = pieces.flatMap { piece -> [Range<Int>] in
+          guard piece.overlaps(address.range) else { return [piece] }
+          return [
+            piece.lowerBound..<max(piece.lowerBound, address.range.lowerBound),
+            min(piece.upperBound, address.range.upperBound)..<piece.upperBound,
+          ].filter { !$0.isEmpty }
+        }
+      }
+      result += pieces.map { .init(range: $0, url: link.url) }
+    }
+    return (result + found).sorted { $0.range.lowerBound < $1.range.lowerBound }
+  }
+
   /// An `https` page address, or nil.
   static func page(_ address: String) -> URL? {
     guard let url = URL(string: address), url.scheme?.lowercased() == "https",

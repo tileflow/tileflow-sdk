@@ -33,10 +33,14 @@ struct MapAttributionEntry: Equatable, Sendable {
     self.links = links
   }
 
-  /// An entry whose whole text opens `url`, when `url` is an `https` page.
+  /// An entry whose whole text opens `url`, when `url` is an `https` page. An `https` address
+  /// written in the text, such as a licence's, opens itself.
   init(_ kind: Kind, _ text: String, link url: String?) {
     let page = url.flatMap(MapAttributionText.page)
-    self.init(kind, text, links: page.map { [Link(range: 0..<text.utf16.count, url: $0)] } ?? [])
+    self.init(
+      kind, text,
+      links: MapAttributionText.linkingAddresses(
+        in: text, around: page.map { [Link(range: 0..<text.utf16.count, url: $0)] } ?? []))
   }
 
   /// The text of the part a link covers.
@@ -106,7 +110,7 @@ struct MapAttributionObligation: Equatable, Sendable {
 ///    (``MapAttributionText``);
 /// 2. the obligations and the page of each source its downloaded regions hold, always;
 /// 3. each regional credit of those sources while one of its boxes is in view;
-/// 4. the notices the style declares;
+/// 4. the notices the style declares, which are the map author's choice;
 /// 5. World's fair-use notice while World asks for one.
 ///
 /// Texts are exact: nothing here rewrites them, and an item whose exact text is already shown is

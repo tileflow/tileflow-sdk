@@ -36,13 +36,19 @@ internal data class MapAttributionEntry(
     fun text(link: Link): String = text.substring(link.start, link.end)
 
     companion object {
-        /** An entry whose whole text opens [url], when [url] is an `https` page. */
+        /**
+         * An entry whose whole text opens [url], when [url] is an `https` page. An `https` address
+         * written in the text, such as a licence's, opens itself.
+         */
         fun linked(kind: Kind, text: String, url: String?): MapAttributionEntry =
             MapAttributionEntry(
                 kind,
                 text,
-                listOfNotNull(
-                    url?.takeIf(MapAttributionText::isPage)?.let { Link(0, text.length, it) }
+                MapAttributionText.linkingAddresses(
+                    text,
+                    listOfNotNull(
+                        url?.takeIf(MapAttributionText::isPage)?.let { Link(0, text.length, it) }
+                    ),
                 ),
             )
     }

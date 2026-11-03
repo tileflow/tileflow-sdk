@@ -1,8 +1,17 @@
 package dev.tileflow.sdk.attribution
 
+import android.app.Activity
+import android.os.SystemClock
+import android.view.MotionEvent
 import android.view.View
+import android.widget.FrameLayout
 import androidx.core.view.ViewCompat
 import androidx.core.view.accessibility.AccessibilityNodeInfoCompat
+import dev.tileflow.sdk.TileflowCompassVisibility
+import dev.tileflow.sdk.TileflowControlPosition
+import dev.tileflow.sdk.TileflowMapControls
+import dev.tileflow.sdk.TileflowMapOptions
+import dev.tileflow.sdk.TileflowMapView
 import dev.tileflow.sdk.offline.OfflineCredit
 import dev.tileflow.sdk.offline.OfflineObligation
 import dev.tileflow.sdk.offline.OfflineServingIndex
@@ -18,9 +27,11 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 
 /**
  * What a map credits in a view: its style's sources, the obligations and pages of its downloaded
@@ -406,7 +417,11 @@ class AttributionTest {
             for (entry in of(MapAttributionEntry.Kind.REGIONAL)) {
                 val match = regional.first { it.text == entry.text }
                 seen += match.id
-                assertEquals(listOf(match.href), entry.links.map { it.url })
+                // The credit opens its page; a licence written in it opens the licence.
+                assertEquals(
+                    setOf(match.href) + listOfNotNull(LICENCE.takeIf { it in match.text }),
+                    entry.links.map { it.url }.toSet(),
+                )
             }
             assertEquals(
                 emptyList<MapAttributionEntry>(),
@@ -506,7 +521,7 @@ class AttributionTest {
         assertTrue(
             view.control.height + margin <= 36 * density + 0.5,
         )
-        assertEquals("© Tileflow Fixture · Not for navigation", view.label.text.toString())
+        assertEquals(listOf("© Tileflow Fixture", "Not for navigation"), pieces(view))
         assertEquals(
             "© Tileflow Fixture\nA long obligation that only the full list and TalkBack show.\nNot for navigation",
             view.control.contentDescription,
@@ -535,5 +550,226 @@ class AttributionTest {
         control.setStyle(JSONObject(), emptyList())
         control.setDownloaded(emptyList(), emptyList())
         assertEquals(View.GONE, view.control.visibility)
+    }
+
+    // Always on the map
+
+    /** The pieces of the compact control's text, line by line. */
+    private fun pieces(view: MapAttributionView): List<String> =
+        view.label.text.toString().split("\n").flatMap { it.split(MapAttributionStrip.SEPARATOR) }
+
+    /** Whether a piece of the compact control shows [text]: whole, or its start and an ellipsis. */
+    private fun shows(piece: String, text: String): Boolean =
+        piece == text ||
+            (piece.endsWith(MapAttributionStrip.ELLIPSIS) &&
+                piece.length >= 2 &&
+                text.startsWith(piece.dropLast(1)))
+
+    private fun layOut(view: View, width: Int, height: Int) {
+        view.measure(
+            View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY),
+        )
+        view.layout(0, 0, width, height)
+    }
+
+    /**
+     * Every source credit stays on the map, shortened when needed and never left out, also with
+     * many sources on a narrow phone; the notice stays whole.
+     */
+    @Test
+    @GraphicsMode(GraphicsMode.Mode.NATIVE)
+    fun everyCreditStaysOnTheStripOfANarrowView() {
+        val context = RuntimeEnvironment.getApplication()
+        val density = context.resources.displayMetrics.density
+        val view = MapAttributionView(context)
+        val credits =
+            listOf(
+                """<a href="https://tileflow.dev/copyright">© Tileflow</a> <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a>""",
+                """© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors""",
+                """<a href="https://tileflow.dev/copyright#nautical">NOAA ENC 2026-10-20 — not official, not for navigation</a> <a href="https://tileflow.dev/copyright#nautical">USACE IENC 2026-10-18 — not official, not for navigation</a>""",
+                "© Mapterhorn",
+                "Fixture World",
+                "© Kartverket",
+            )
+        val entries =
+            MapAttribution(
+                    sources = credits,
+                    obligations = listOf(MapObligation("A long obligation in the full list only.")),
+                    notices = listOf("Not for navigation"),
+                )
+                .entries(null)
+        view.show(entries)
+        layOut(view, (320 * density).toInt(), (568 * density).toInt())
+        val sources = entries.filter { it.kind == MapAttributionEntry.Kind.SOURCE }.map { it.text }
+        assertEquals(8, sources.size)
+        val pieces = pieces(view)
+        for (source in sources) assertTrue("$source in $pieces", pieces.any { shows(it, source) })
+        assertTrue("$pieces", "Not for navigation" in pieces)
+        assertFalse(pieces.any { it.startsWith("A long obligation") })
+        for (piece in pieces.filter { "ENC" in it }) assertTrue(piece, "not official" in piece)
+        val lines = view.label.text.toString().split("\n")
+        assertTrue(lines.size <= 2)
+        for (line in lines) assertTrue(line, view.label.paint.measureText(line) <= view.label.width + 1)
+        assertTrue(view.control.height <= MapAttributionView.TWO_LINE_HEIGHT_DP * density + 1)
+
+        // Ten credits on two lines of 162 units, at 6 a character: each keeps its start.
+        val many = (1..10).map { MapAttributionStrip.Item("Credit number $it", false) }
+        val measure = { text: String -> text.length * 6f }
+        val narrow = MapAttributionStrip.lines(many, 162f, measure)
+        assertEquals(2, narrow.size)
+        assertTrue("$narrow", narrow.all { measure(it) <= 162f })
+        val shortened = narrow.flatMap { it.split(MapAttributionStrip.SEPARATOR) }
+        assertEquals(many.size, shortened.size)
+        assertTrue("$shortened", shortened.zip(many).all { (piece, item) -> shows(piece, item.text) })
+        assertEquals(
+            listOf("Credit number 1 · Credit number 2 · Credit number 3"),
+            MapAttributionStrip.lines(many.take(3), 400f, measure),
+        )
+
+        // A shortened credit never names a chart product without its qualification.
+        val noaa = "NOAA ENC 2026-10-20 — not official, not for navigation"
+        var cap = 0f
+        while (cap <= measure(noaa)) {
+            val short = MapAttributionStrip.shorten(noaa, cap, measure)
+            assertTrue(short, noaa.startsWith(if (short == noaa) short else short.dropLast(1)))
+            if ("ENC" in short) assertTrue(short, "not official" in short)
+            cap += 6f
+        }
+        assertEquals("NOAA…", MapAttributionStrip.shorten(noaa, 120f, measure))
+        assertEquals(
+            "NOAA ENC 2026-10-20 — not official, not…",
+            MapAttributionStrip.shorten(noaa, 240f, measure),
+        )
+        assertEquals(
+            "© OpenStreetMa…",
+            MapAttributionStrip.shorten("© OpenStreetMap contributors", 90f, measure),
+        )
+    }
+
+    /**
+     * NOAA's dated line, NGA's non-endorsement, GEBCO and EMODnet's licence and modification note
+     * are one tap away in the full list and read in full by TalkBack, with the licence a link.
+     */
+    @Test
+    fun theFullListHoldsEveryMarineNotice() {
+        val text = javaClass.classLoader!!.getResource("marine-credits.json")!!.readText()
+        val cases = JSONObject(text).getJSONArray("cases")
+        val credits = (0 until cases.length()).map { cases.getJSONObject(it).getJSONObject("credit") }
+        val control = MapAttributionControl(RuntimeEnvironment.getApplication())
+        val opened = mutableListOf<String>()
+        control.onLink = { opened += it }
+        control.setStyle(JSONObject(), listOf(credits[0].getString("text")))
+        control.setDownloaded(OfflineObligation.obligations(credits), OfflineCredit.credits(credits))
+        control.update(doubleArrayOf(-250.0, -85.0, 250.0, 85.0))
+        val view = control.view
+        view.control.performClick()
+        layOut(view, 400, 800)
+        assertEquals(View.VISIBLE, view.list.visibility)
+        val list = view.listText.text.toString()
+        val spoken = view.control.contentDescription.toString()
+        for (notice in
+            listOf(
+                "NOAA ENC 2026-10-20: NOAA ENC® data, Office of Coast Survey, National Oceanic and Atmospheric Administration. Tileflow Nautical is not an official or certified NOAA ENC",
+                "This reproduction, partial or complete, of any National Geospatial-Intelligence Agency (NGA)",
+                "GEBCO Grid, GEBCO Bathymetric Compilation Group: public domain under the GEBCO terms of use.",
+                "EMODnet Digital Bathymetry (DTM 2024), EMODnet Bathymetry Consortium: created by EMODnet, owned by the EU and licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); modified. Not for navigation.",
+            )) {
+            assertTrue(notice, notice in list)
+            assertTrue(notice, notice in spoken)
+        }
+        val spans = view.listText.text as android.text.Spanned
+        val at = list.indexOf(LICENCE)
+        val licence = spans.getSpans(at, at + 1, android.text.style.ClickableSpan::class.java).single()
+        licence.onClick(view.listText)
+        val page = spans.getSpans(at - 3, at - 2, android.text.style.ClickableSpan::class.java).single()
+        page.onClick(view.listText)
+        assertEquals(listOf(LICENCE, "https://emodnet.ec.europa.eu/en/bathymetry"), opened)
+        val info = AccessibilityNodeInfoCompat.obtain()
+        ViewCompat.onInitializeAccessibilityNodeInfo(view.control, info)
+        assertTrue(info.actionList.any { it.label == "Open $LICENCE" })
+    }
+
+    /**
+     * No public option hides the control or its button: the controls carry only its corner, and
+     * every corner, direction and padding keeps it on the map; the map view leaves its touches to
+     * it whatever the application filters.
+     */
+    @Test
+    fun noOptionHidesTheControl() {
+        val controls = TileflowMapControls::class.java.declaredFields.map { it.name }
+        assertEquals(listOf("attributionPosition"), controls.filter { "attribution" in it.lowercase() })
+        val options = TileflowMapOptions::class.java.declaredFields.map { it.name.lowercase() }
+        assertEquals(
+            emptyList<String>(),
+            options.filter { name -> listOf("attribution", "logo", "credit", "notice").any { it in name } },
+        )
+        val context = RuntimeEnvironment.getApplication()
+        val density = context.resources.displayMetrics.density
+        val width = (390 * density).toInt()
+        val height = (844 * density).toInt()
+        for (position in TileflowControlPosition.entries)
+            for (rightToLeft in listOf(false, true))
+                for (padding in
+                    listOf(
+                        doubleArrayOf(0.0, 0.0, 0.0, 0.0),
+                        doubleArrayOf(0.0, 0.0, 0.0, 844.0),
+                        doubleArrayOf(8192.0, 8192.0, 8192.0, 8192.0),
+                        doubleArrayOf(0.0, 400.0, 300.0, 430.0),
+                    )) {
+                    val control = MapAttributionControl(context)
+                    control.setStyle(JSONObject(), listOf("© Tileflow © OpenStreetMap"))
+                    val corner =
+                        TileflowMapOptions(
+                                controls =
+                                    TileflowMapControls(
+                                        compass = TileflowCompassVisibility.HIDDEN,
+                                        attributionPosition = position,
+                                    )
+                            )
+                            .json(rightToLeft)
+                            .getString("attribution")
+                    control.place(
+                        corner,
+                        JSONObject()
+                            .put("left", padding[0])
+                            .put("top", padding[1])
+                            .put("right", padding[2])
+                            .put("bottom", padding[3]),
+                    )
+                    layOut(control.view, width, height)
+                    val placed = control.view.control
+                    val name = "$position $rightToLeft ${padding.toList()}"
+                    assertEquals(name, View.VISIBLE, placed.visibility)
+                    assertTrue(name, placed.width > 0 && placed.height > 0)
+                    assertTrue(
+                        name,
+                        placed.left >= 0 &&
+                            placed.top >= 0 &&
+                            placed.right <= width &&
+                            placed.bottom <= height,
+                    )
+                }
+
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val map = TileflowMapView(activity)
+        val attribution = MapAttributionView(activity)
+        attribution.show(MapAttribution(sources = listOf("© Tileflow")).entries(null))
+        map.addView(attribution, FrameLayout.LayoutParams(width, height))
+        layOut(map, width, height)
+        map.touchFilter = { _, _ -> false }
+        fun touch(x: Float, y: Float): Boolean {
+            val time = SystemClock.uptimeMillis()
+            val down = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, x, y, 0)
+            return map.dispatchTouchEvent(down).also { down.recycle() }
+        }
+        val placed = attribution.control
+        assertTrue(touch((placed.left + placed.right) / 2f, (placed.top + placed.bottom) / 2f))
+        assertFalse("The application's filter applies elsewhere", touch(20f, 20f))
+        map.destroy()
+    }
+
+    private companion object {
+        const val LICENCE = "https://creativecommons.org/licenses/by/4.0/"
     }
 }

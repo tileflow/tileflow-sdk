@@ -4,22 +4,23 @@ import UIKit
 /// button and logo stay hidden.
 ///
 /// It is always shown while the map has something to credit, in the corner the map's options
-/// choose, inside the content insets. Compact, it is one line: a button and the credits that read
-/// as a line (the sources' credits, the downloaded sources' pages, the style's notices and World's
-/// fair-use notice), truncated in the middle so the first credit and the last notice stay legible.
-/// The button opens every entry in full, in order, with its links. VoiceOver reads the full text
-/// of every entry from the compact control, and offers each link as an action. Links never open by
-/// themselves: they reach the map view, which reports `externalLinkRequested`.
+/// choose, inside the content insets; insets that leave it no room are ignored, so no option hides
+/// it. Compact, it is a button and, on one or two lines, every source credit, the style's notices
+/// and World's fair-use notice (``MapAttributionStrip``): a credit that does not fit is shortened,
+/// never left out. The button opens every entry in full, in order, with its links. VoiceOver reads
+/// the full text of every entry from the compact control, and offers each link as an action. Links
+/// never open by themselves: they reach the map view, which reports `externalLinkRequested`.
 ///
-/// The view covers the map and claims touches only on the control and its open list.
+/// The view covers the map and claims touches only on the control and its open list; the map view
+/// leaves those touches to it whatever the application filters.
 @MainActor
 final class MapAttributionView: UIView, UITextViewDelegate {
-  /// The compact control's height. It fits the space the map's other controls leave free for it
-  /// in its corner (``MapControlsView/attributionSpace``).
+  /// The compact control's height with one line and with two. Both fit the space the map's other
+  /// controls leave free for it in its corner (``MapControlsView/attributionSpace``).
   static let compactHeight: CGFloat = 24
+  static let twoLineHeight: CGFloat = 28
   static let margin: CGFloat = 8
-  /// Separates the items of the compact line.
-  static let separator = " · "
+  static let iconWidth: CGFloat = 20
 
   var onLink: ((URL) -> Void)?
   /// The corner, as the map's options name it once the layout direction is applied:
@@ -33,6 +34,8 @@ final class MapAttributionView: UIView, UITextViewDelegate {
   }
   private(set) var entries: [MapAttributionEntry] = []
   private(set) var isExpanded = false
+  /// What the compact control shows: every source credit, then the notices.
+  private var stripItems: [MapAttributionStrip.Item] = []
 
   let control = UIControl()
   private let icon = UIImageView()
@@ -58,8 +61,8 @@ final class MapAttributionView: UIView, UITextViewDelegate {
     icon.contentMode = .center
     label.font = .systemFont(ofSize: 11)
     label.textColor = .label.withAlphaComponent(0.78)
-    label.numberOfLines = 1
-    label.lineBreakMode = .byTruncatingMiddle
+    label.numberOfLines = 2
+    label.lineBreakMode = .byClipping
     for view in [icon, label] as [UIView] {
       view.isUserInteractionEnabled = false
       control.addSubview(view)
@@ -86,8 +89,7 @@ final class MapAttributionView: UIView, UITextViewDelegate {
   func show(_ entries: [MapAttributionEntry]) {
     guard entries != self.entries else { return }
     self.entries = entries
-    let compact = entries.filter { [.source, .page, .notice, .fairUse].contains($0.kind) }
-    label.text = (compact.isEmpty ? entries : compact).map(\.text).joined(separator: Self.separator)
+    stripItems = MapAttributionStrip.items(entries)
     control.isHidden = entries.isEmpty
     control.accessibilityLabel = entries.map(\.text).joined(separator: "\n")
     var seen: Set<String> = []
@@ -143,37 +145,61 @@ final class MapAttributionView: UIView, UITextViewDelegate {
 
   // MARK: Layout
 
-  /// The rectangle the control may use: the view inside its insets and margins.
+  /// The rectangle the control may use: the view inside its insets and margins. Insets that leave
+  /// too little room for the control are ignored, so it stays on the map.
   static func area(in bounds: CGRect, insets: UIEdgeInsets) -> CGRect {
-    let area = bounds.inset(by: insets).insetBy(dx: margin, dy: margin)
-    return area.width > 0 && area.height > 0 ? area : CGRect(origin: area.origin, size: .zero)
+    let width = bounds.width - insets.left - insets.right - 2 * margin
+    let height = bounds.height - insets.top - insets.bottom - 2 * margin
+    if width >= 120, height >= twoLineHeight {
+      return CGRect(
+        x: bounds.minX + insets.left + margin, y: bounds.minY + insets.top + margin, width: width,
+        height: height)
+    }
+    guard bounds.width > 2 * margin, bounds.height > 2 * margin else {
+      return CGRect(origin: bounds.origin, size: .zero)
+    }
+    return bounds.insetBy(dx: margin, dy: margin)
   }
 
-  /// The compact control's frame for a content width, in its corner of the area.
-  static func compactFrame(width: CGFloat, corner: String, in area: CGRect) -> CGRect {
-    let maximum = max(min(area.width * 0.62, 360), min(area.width, 120))
-    let width = min(width, maximum)
+  /// The widest the compact control may be in an area: it leaves room for a control in the other
+  /// corner of the same edge, such as the scale bar.
+  static func maximumWidth(in area: CGRect) -> CGFloat {
+    max(min(area.width * 0.62, 360), min(area.width, 160))
+  }
+
+  /// The compact control's frame for a content size, in its corner of the area.
+  static func compactFrame(width: CGFloat, height: CGFloat, corner: String, in area: CGRect)
+    -> CGRect
+  {
+    let width = min(width, maximumWidth(in: area))
     let left = corner.hasSuffix("left")
     let top = corner.hasPrefix("top")
     return CGRect(
-      x: left ? area.minX : area.maxX - width,
-      y: top ? area.minY : area.maxY - compactHeight, width: width, height: compactHeight)
+      x: left ? area.minX : area.maxX - width, y: top ? area.minY : area.maxY - height,
+      width: width, height: height)
   }
 
   override func layoutSubviews() {
     super.layoutSubviews()
     let area = Self.area(in: bounds, insets: insets)
-    let iconWidth: CGFloat = 20
-    let text = label.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude, height: 20))
+    let font = label.font ?? .systemFont(ofSize: 11)
+    let measure = { (text: String) in
+      ceil((text as NSString).size(withAttributes: [.font: font]).width)
+    }
+    let lines = MapAttributionStrip.lines(
+      stripItems, width: Self.maximumWidth(in: area) - Self.iconWidth - 6, measure: measure)
+    label.text = lines.joined(separator: "\n")
     let frame = Self.compactFrame(
-      width: ceil(text.width) + iconWidth + 6, corner: corner, in: area)
+      width: (lines.map(measure).max() ?? 0) + Self.iconWidth + 6,
+      height: lines.count > 1 ? Self.twoLineHeight : Self.compactHeight, corner: corner, in: area)
     control.frame = frame
     let rightToLeft = effectiveUserInterfaceLayoutDirection == .rightToLeft
+    let iconWidth = Self.iconWidth
     let labelWidth = max(0, frame.width - iconWidth - 6)
     icon.frame = CGRect(
       x: rightToLeft ? frame.width - iconWidth : 0, y: 0, width: iconWidth, height: frame.height)
     label.frame = CGRect(
-      x: rightToLeft ? 2 : iconWidth, y: 0, width: labelWidth, height: frame.height)
+      x: rightToLeft ? 2 : iconWidth, y: 0, width: labelWidth + 4, height: frame.height)
     label.textAlignment = rightToLeft ? .right : .left
     guard isExpanded else { return }
     let width = min(area.width, 420)
@@ -211,6 +237,127 @@ final class MapAttributionView: UIView, UITextViewDelegate {
   func textView(
     _ textView: UITextView, menuConfigurationFor textItem: UITextItem, defaultMenu: UIMenu
   ) -> UITextItem.MenuConfiguration? { nil }
+}
+
+/// What the compact control shows on one or two lines: every source credit in order, then the
+/// style's notices and World's fair-use notice. When they do not fit, the longest credits are
+/// shortened first, to a common length, each keeping at least its first character and an ellipsis;
+/// notices keep their text. Nothing is left out.
+enum MapAttributionStrip {
+  struct Item: Equatable, Sendable {
+    let text: String
+    /// Notices keep their text while shortening the credits makes room.
+    let keepsText: Bool
+  }
+
+  static let separator = " · "
+  static let maximumLines = 2
+  static let ellipsis = "…"
+
+  static func items(_ entries: [MapAttributionEntry]) -> [Item] {
+    entries.compactMap { entry in
+      switch entry.kind {
+      case .source: Item(text: entry.text, keepsText: false)
+      case .notice, .fairUse: Item(text: entry.text, keepsText: true)
+      case .obligation, .page, .regional: nil
+      }
+    }
+  }
+
+  /// The lines, each at most `width` wide as `measure` measures text.
+  static func lines(_ items: [Item], width: CGFloat, measure: (String) -> CGFloat) -> [String] {
+    guard !items.isEmpty, width > 0 else { return [] }
+    if let lines = wrap(items.map(\.text), width: width, measure: measure) { return lines }
+    // The longest credits shorten first: find the longest common length that fits.
+    var low: CGFloat = 0
+    var high = width
+    var best: [String]?
+    for _ in 0..<16 {
+      let cap = (low + high) / 2
+      let texts = items.map { shorten($0.text, to: $0.keepsText ? width : cap, measure: measure) }
+      if let lines = wrap(texts, width: width, measure: measure) {
+        best = lines
+        low = cap
+      } else {
+        high = cap
+      }
+    }
+    if let best { return best }
+    // Too many credits to fit even at a character each: the notices come first and the last line
+    // takes the rest, clipped.
+    var lines: [String] = []
+    let ordered = items.filter(\.keepsText) + items.filter { !$0.keepsText }
+    for text in ordered.map({ shorten($0.text, to: $0.keepsText ? width : 0, measure: measure) }) {
+      if let last = lines.last,
+        lines.count >= maximumLines || measure(last + separator + text) <= width
+      {
+        lines[lines.count - 1] = last + separator + text
+      } else {
+        lines.append(text)
+      }
+    }
+    return lines
+  }
+
+  /// Places whole texts on at most ``maximumLines`` lines, or nil when they do not fit.
+  private static func wrap(_ texts: [String], width: CGFloat, measure: (String) -> CGFloat)
+    -> [String]?
+  {
+    var lines = [""]
+    for text in texts {
+      let line = lines[lines.count - 1]
+      let joined = line.isEmpty ? text : line + separator + text
+      if measure(joined) <= width {
+        lines[lines.count - 1] = joined
+        continue
+      }
+      guard !line.isEmpty, measure(text) <= width, lines.count < maximumLines else { return nil }
+      lines.append(text)
+    }
+    return lines
+  }
+
+  /// `text`, or its longest start with an ellipsis that is at most `cap` wide; at least its first
+  /// character. A credit that qualifies what it names after a dash, such as
+  /// "NOAA ENC 2026-10-20 — not official, not for navigation", keeps the qualification's first
+  /// clause with the name, or shows only its first word ("NOAA…"): a shortened credit never names
+  /// a product without what qualifies it.
+  static func shorten(_ text: String, to cap: CGFloat, measure: (String) -> CGFloat) -> String {
+    if measure(text) <= cap { return text }
+    let characters = Array(text)
+    func candidate(_ length: Int) -> String {
+      String(characters[..<length]).trimmingCharacters(in: .whitespaces) + ellipsis
+    }
+    for lengths in allowedLengths(characters).reversed() where !lengths.isEmpty {
+      guard measure(candidate(lengths.lowerBound)) <= cap else { continue }
+      var low = lengths.lowerBound
+      var high = lengths.upperBound
+      while low < high {
+        let middle = (low + high + 1) / 2
+        if measure(candidate(middle)) <= cap { low = middle } else { high = middle - 1 }
+      }
+      return candidate(low)
+    }
+    return candidate(1)
+  }
+
+  /// The lengths a shortened credit may keep: within its first word, and, when a dash qualifies
+  /// what it names, from the end of the qualification's first clause.
+  private static func allowedLengths(_ characters: [Character]) -> [ClosedRange<Int>] {
+    let count = characters.count
+    guard count > 1 else { return [1...1] }
+    let dash = characters.indices.first { index in
+      index > 0 && index + 1 < count && ["—", "–"].contains(characters[index])
+        && characters[index - 1] == " " && characters[index + 1] == " "
+    }
+    guard let dash else { return [1...(count - 1)] }
+    let firstWord = characters.firstIndex(where: \.isWhitespace) ?? count
+    var ranges = [1...max(1, min(firstWord, count - 1))]
+    if let clause = characters[(dash + 2)...].firstIndex(of: ","), clause < count {
+      ranges.append(clause...(count - 1))
+    }
+    return ranges
+  }
 }
 
 /// The attribution a map shows and the control that shows it: the model's entries for the current

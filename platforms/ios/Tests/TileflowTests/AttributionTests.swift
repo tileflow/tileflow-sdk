@@ -153,6 +153,12 @@ final class AttributionTests: XCTestCase {
     ]
     XCTAssertEqual(MapAttribution.notices(style), ["Not for navigation", "Depths in metres"])
     XCTAssertEqual(MapAttribution.notices([:]), [])
+    // Notices are the map author's choice: a Nautical source alone adds none.
+    let control = MapAttributionControl()
+    control.setStyle(
+      ["sources": ["nautical": ["type": "vector", "url": "https://api.tileflow.dev/tiles/nautical/tiles.json"]]],
+      attributions: ["© Tileflow"])
+    XCTAssertEqual(control.entries.filter { $0.kind == .notice }, [])
   }
 
   // MARK: Fair use
@@ -293,7 +299,11 @@ final class AttributionTests: XCTestCase {
       for entry in here where entry.kind == .regional {
         let credit = try XCTUnwrap(regional.first { $0.text == entry.text })
         seen.insert(credit.id)
-        XCTAssertEqual(entry.links.map(\.url.absoluteString), [credit.href])
+        // The credit opens its page; a licence written in it opens the licence.
+        let licence = "https://creativecommons.org/licenses/by/4.0/"
+        XCTAssertEqual(
+          Set(entry.links.map(\.url.absoluteString)),
+          Set([credit.href] + (credit.text.contains(licence) ? [licence] : [])))
       }
       XCTAssertEqual(attribution.entries(in: far).filter { $0.kind == .regional }, [])
       XCTAssertEqual(
@@ -352,7 +362,7 @@ final class AttributionTests: XCTestCase {
     XCTAssertEqual(view.control.frame.maxY, 844 - 300 - 8, accuracy: 0.5)
     XCTAssertLessThanOrEqual(
       view.control.frame.height + MapAttributionView.margin, MapControlsView.attributionSpace)
-    XCTAssertEqual(view.label.text, "© Tileflow Fixture · Not for navigation")
+    XCTAssertEqual(pieces(view), ["© Tileflow Fixture", "Not for navigation"])
     XCTAssertEqual(
       view.control.accessibilityLabel,
       "© Tileflow Fixture\nA long obligation that only the full list and VoiceOver show.\nNot for navigation")
@@ -389,5 +399,180 @@ final class AttributionTests: XCTestCase {
     XCTAssertLessThan(view.label.frame.maxX, view.control.bounds.width - 10)
     view.show([])
     XCTAssertTrue(view.control.isHidden)
+  }
+
+  // MARK: Always on the map
+
+  /// The pieces of the compact control's text, line by line.
+  private func pieces(_ view: MapAttributionView) -> [String] {
+    (view.label.text ?? "").components(separatedBy: "\n").flatMap {
+      $0.components(separatedBy: MapAttributionStrip.separator)
+    }
+  }
+
+  /// Whether a piece of the compact control shows `text`: whole, or its start and an ellipsis.
+  private func shows(_ piece: String, _ text: String) -> Bool {
+    piece == text
+      || (piece.hasSuffix(MapAttributionStrip.ellipsis) && piece.count >= 2
+        && text.hasPrefix(String(piece.dropLast())))
+  }
+
+  /// Every source credit stays on the map, shortened when needed and never left out, also with
+  /// many sources on a narrow phone; the notice stays whole.
+  func testEveryCreditStaysOnTheStripOfANarrowView() throws {
+    let view = MapAttributionView(frame: CGRect(x: 0, y: 0, width: 320, height: 568))
+    let credits = [
+      #"<a href="https://tileflow.dev/copyright">© Tileflow</a> <a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a>"#,
+      #"© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors"#,
+      #"<a href="https://tileflow.dev/copyright#nautical">NOAA ENC 2026-10-20 — not official, not for navigation</a> <a href="https://tileflow.dev/copyright#nautical">USACE IENC 2026-10-18 — not official, not for navigation</a>"#,
+      "© Mapterhorn", "Fixture World", "© Kartverket",
+    ]
+    let attribution = MapAttribution(
+      sources: credits, obligations: [.init(text: "A long obligation in the full list only.")],
+      notices: ["Not for navigation"])
+    let entries = attribution.entries(in: nil)
+    view.show(entries)
+    view.layoutIfNeeded()
+    let sources = entries.filter { $0.kind == .source }.map(\.text)
+    XCTAssertEqual(sources.count, 8)
+    let pieces = pieces(view)
+    for source in sources {
+      XCTAssertTrue(pieces.contains { shows($0, source) }, "\(source) in \(pieces)")
+    }
+    XCTAssertTrue(pieces.contains("Not for navigation"), "\(pieces)")
+    XCTAssertFalse(pieces.contains { $0.hasPrefix("A long obligation") })
+    let lines = (view.label.text ?? "").components(separatedBy: "\n")
+    XCTAssertLessThanOrEqual(lines.count, 2)
+    let font = try XCTUnwrap(view.label.font)
+    for line in lines {
+      XCTAssertLessThanOrEqual(
+        (line as NSString).size(withAttributes: [.font: font]).width, view.label.bounds.width,
+        line)
+    }
+    XCTAssertLessThanOrEqual(
+      view.control.frame.height + MapAttributionView.margin, MapControlsView.attributionSpace)
+    XCTAssertGreaterThanOrEqual(view.label.bounds.height, font.lineHeight * CGFloat(lines.count))
+
+    // Ten credits on two lines of 162 points, at 6 points a character: each keeps its start.
+    let many = (1...10).map {
+      MapAttributionStrip.Item(text: "Credit number \($0)", keepsText: false)
+    }
+    let measure = { (text: String) in CGFloat(text.count * 6) }
+    let narrow = MapAttributionStrip.lines(many, width: 162, measure: measure)
+    XCTAssertEqual(narrow.count, 2)
+    XCTAssertTrue(narrow.allSatisfy { measure($0) <= 162 }, "\(narrow)")
+    let shortened = narrow.flatMap { $0.components(separatedBy: MapAttributionStrip.separator) }
+    XCTAssertEqual(shortened.count, many.count)
+    XCTAssertTrue(zip(shortened, many).allSatisfy { shows($0, $1.text) }, "\(shortened)")
+    let roomy = MapAttributionStrip.lines(Array(many.prefix(3)), width: 400, measure: measure)
+    XCTAssertEqual(roomy, ["Credit number 1 · Credit number 2 · Credit number 3"])
+
+    // A shortened credit never names a chart product without its qualification.
+    let noaa = "NOAA ENC 2026-10-20 — not official, not for navigation"
+    for cap in stride(from: CGFloat(0), through: measure(noaa), by: 6) {
+      let short = MapAttributionStrip.shorten(noaa, to: cap, measure: measure)
+      XCTAssertTrue(noaa.hasPrefix(String(short.dropLast(short == noaa ? 0 : 1))), short)
+      if short.contains("ENC") { XCTAssertTrue(short.contains("not official"), short) }
+    }
+    XCTAssertEqual(MapAttributionStrip.shorten(noaa, to: 120, measure: measure), "NOAA…")
+    XCTAssertEqual(
+      MapAttributionStrip.shorten(noaa, to: 240, measure: measure),
+      "NOAA ENC 2026-10-20 — not official, not…")
+    XCTAssertEqual(
+      MapAttributionStrip.shorten("© OpenStreetMap contributors", to: 90, measure: measure),
+      "© OpenStreetMa…")
+  }
+
+  /// NOAA's dated line, NGA's non-endorsement, GEBCO and EMODnet's licence and modification note
+  /// are one tap away in the full list and read in full by VoiceOver, with the licence a link.
+  func testTheFullListHoldsEveryMarineNotice() throws {
+    let url = try XCTUnwrap(
+      Bundle.module.url(
+        forResource: "marine-credits", withExtension: "json", subdirectory: "Fixtures/Marine"))
+    let fixture = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url))
+    let credits = (fixture["cases"]?.array ?? []).compactMap { $0["credit"] }
+    let control = MapAttributionControl()
+    control.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+    control.setStyle([:], attributions: [credits[0]["text"]?.string ?? ""])
+    control.setDownloaded(
+      obligations: OfflineObligation.obligations(credits), credits: OfflineCredit.credits(credits))
+    control.update(in: TileflowBounds(west: -250, south: -85, east: 250, north: 85))
+    let view = control.view
+    view.control.sendActions(for: .primaryActionTriggered)
+    view.layoutIfNeeded()
+    XCTAssertFalse(view.list.isHidden)
+    let list = view.list.text ?? ""
+    let spoken = view.control.accessibilityLabel ?? ""
+    for text in [
+      "NOAA ENC 2026-10-20: NOAA ENC® data, Office of Coast Survey, National Oceanic and Atmospheric Administration. Tileflow Nautical is not an official or certified NOAA ENC",
+      "This reproduction, partial or complete, of any National Geospatial-Intelligence Agency (NGA)",
+      "GEBCO Grid, GEBCO Bathymetric Compilation Group: public domain under the GEBCO terms of use.",
+      "EMODnet Digital Bathymetry (DTM 2024), EMODnet Bathymetry Consortium: created by EMODnet, owned by the EU and licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/); modified. Not for navigation.",
+    ] {
+      XCTAssertTrue(list.contains(text), text)
+      XCTAssertTrue(spoken.contains(text), text)
+    }
+    let licence = URL(string: "https://creativecommons.org/licenses/by/4.0/")!
+    let range = (list as NSString).range(of: licence.absoluteString)
+    XCTAssertEqual(
+      view.list.attributedText.attribute(.link, at: range.location, effectiveRange: nil) as? URL,
+      licence)
+    XCTAssertTrue(
+      view.control.accessibilityCustomActions?.contains { $0.name == "Open \(licence.absoluteString)" }
+        == true)
+    XCTAssertEqual(
+      view.list.attributedText.attribute(.link, at: range.location - 3, effectiveRange: nil) as? URL,
+      URL(string: "https://emodnet.ec.europa.eu/en/bathymetry"))
+  }
+
+  /// No public option hides the control or its button: the controls carry only its corner, and
+  /// every corner, direction and inset keeps it on the map; the map view leaves its touches to it
+  /// whatever the application filters.
+  func testNoOptionHidesTheControl() throws {
+    let controls = Mirror(reflecting: TileflowMapControls()).children.compactMap(\.label)
+    XCTAssertEqual(controls.filter { $0.lowercased().contains("attribution") }, ["attributionPosition"])
+    let options = Mirror(reflecting: TileflowMapOptions()).children.compactMap(\.label)
+    XCTAssertEqual(
+      options.filter { ["attribution", "logo", "credit", "notice"].contains(where: $0.lowercased().contains) },
+      [])
+    let size = CGRect(x: 0, y: 0, width: 390, height: 844)
+    for position in TileflowControlPosition.allCases {
+      for rightToLeft in [false, true] {
+        for insets in [
+          UIEdgeInsets.zero, UIEdgeInsets(top: 0, left: 0, bottom: 844, right: 0),
+          UIEdgeInsets(top: 10_000, left: 10_000, bottom: 10_000, right: 10_000),
+          UIEdgeInsets(top: 400, left: 0, bottom: 430, right: 300),
+        ] {
+          let control = MapAttributionControl()
+          control.view.frame = size
+          control.setStyle([:], attributions: ["© Tileflow © OpenStreetMap"])
+          let options = TileflowMapOptions(controls: .init(compass: .hidden, attributionPosition: position))
+          control.place(
+            corner: try options.wireValue(rightToLeft: rightToLeft)["attribution"]?.string,
+            insets: TileflowMapView.wire(insets))
+          control.view.layoutIfNeeded()
+          let frame = control.view.control.frame
+          let name = "\(position) \(rightToLeft) \(insets)"
+          XCTAssertFalse(control.view.control.isHidden, name)
+          XCTAssertGreaterThan(frame.width, 40, name)
+          XCTAssertGreaterThan(frame.height, 0, name)
+          XCTAssertTrue(size.contains(frame), name)
+        }
+      }
+    }
+
+    let map = TileflowMapView(
+      source: TileflowMapSource(
+        map: "fixture", manifestURL: URL(string: "https://example.com/manifest.json")!))
+    map.frame = size
+    let attribution = MapAttributionView(frame: size)
+    attribution.show(MapAttribution(sources: ["© Tileflow"]).entries(in: nil))
+    map.addSubview(attribution)
+    attribution.layoutIfNeeded()
+    map.shouldReceiveTouch = { _ in false }
+    let hit = map.hitTest(attribution.control.center, with: nil)
+    XCTAssertTrue(hit === attribution.control || hit?.isDescendant(of: attribution.control) == true)
+    XCTAssertNil(map.hitTest(CGPoint(x: 20, y: 20), with: nil), "The application's filter applies elsewhere")
+    map.destroy()
   }
 }

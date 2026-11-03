@@ -142,9 +142,10 @@ Hedges (from z15, shaded from z17), fences and walls (from z16) come from `traff
 Ferry routes fade in from z8, use fine blue dashes from z13, and show uppercase route names
 along the line from z15 when the data includes them. Their labels use a water-colored halo.
 
-Regional hillshade uses [Mapzen Terrain Tiles on AWS](https://registry.opendata.aws/terrain-tiles/)
-from z5 through z13, with source attribution. The 256-pixel Terrarium source is capped at native z12;
-closer views reuse that resolution, avoiding requests for coverage-dependent high-resolution DEM tiles. This is an additional remote data request. To omit
+Regional hillshade uses Tileflow Terrain, which carries [Mapterhorn](https://mapterhorn.com/attribution/)
+data, from z5 through z13, with source attribution. The 512-pixel Terrarium source is capped at
+native z11, the ground resolution of 256-pixel tiles at z12; closer views reuse that resolution
+instead of requesting regional high-resolution tiles. This is an additional remote data request. To omit
 it, set `terrain: 'none'` in a map extending `streets`. Hillshade does not change road geometry or
 raise the terrain. Buildings appear automatically from zoom 15 with an opacity fade through 15.25;
 the preview's **3D** control can hide them, and its **Trees** control enables vegetation.

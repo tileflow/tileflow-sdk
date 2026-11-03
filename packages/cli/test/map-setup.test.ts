@@ -17,6 +17,7 @@ import {
   resolveMapSetupTeam,
   setUpManagedMap,
 } from '../src/map-setup';
+import {requestJson, startFakePlatform} from './hosted-platform-fake';
 import {tileflowMapFixture} from './map-fixture';
 
 const cliEntry = fileURLToPath(new URL('../src/index.ts', import.meta.url));
@@ -50,10 +51,17 @@ test('Team resolution follows the Web entry rule', () => {
   assert.deepEqual(resolveMapSetupTeam([team('acme')], 'other'), {kind: 'not_found'});
 });
 
-test('browser access is explicit and accepts only exact HTTP(S) origins', () => {
+test('browser access is explicit and accepts only exact website and app origins', () => {
   assert.equal(normalizeBrowserOrigin('https://App.Example.com'), 'https://app.example.com');
   assert.equal(normalizeBrowserOrigin('http://localhost:5173'), 'http://localhost:5173');
   assert.equal(normalizeBrowserOrigin('http://[::1]:8080'), 'http://[::1]:8080');
+  // The exact origin of an app's WebView page under its own custom scheme.
+  assert.equal(normalizeBrowserOrigin('MyApp://App'), 'myapp://app');
+  assert.equal(
+    normalizeBrowserOrigin('com.example.maps://host:8080'),
+    'com.example.maps://host:8080',
+  );
+  assert.equal(normalizeBrowserOrigin('my-app+v2://[::1]'), 'my-app+v2://[::1]');
   for (const invalid of [
     'example.com',
     'https://example.com/path',
@@ -61,6 +69,26 @@ test('browser access is explicit and accepts only exact HTTP(S) origins', () => 
     'https://user@example.com',
     'https://example.com?x=1',
     'ftp://example.com',
+    'null',
+    'NULL',
+    'myapp://app/',
+    'myapp://app/index.html',
+    'myapp://*.app',
+    'myapp://user@app',
+    'myapp://app:65536',
+    'myapp://app:080',
+    'myapp:app',
+    '1app://host',
+    ' myapp://app',
+    'myapp://appassets.androidplatform.net',
+    'https://appassets.androidplatform.net',
+    'file://host',
+    'chrome-extension://abcdefghijklmnop',
+    'safari-web-extension://abc',
+    'intent://host',
+    'content://host',
+    'ws://host',
+    `myapp://${'a'.repeat(260)}`,
   ]) {
     assert.equal(normalizeBrowserOrigin(invalid), null, invalid);
   }
@@ -206,30 +234,31 @@ test('deploy without --map-id creates the Map after local preflight and deploys 
   const manifestPath = join(directory, 'manifest.json');
   await writeFile(configPath, tileflowMapFixture({id: 'madrid', fields: `name: 'Madrid'`}));
   const capability = `tf_cap_${'c'.repeat(96)}`;
-  const requests: string[] = [];
-  const api = await createFakeApi(t, async (request) => {
-    requests.push(`${request.method} ${request.url}`);
-    const body = await readBody(request);
-    if (request.url === '/v1/cli/map-setup/teams') {
-      return {schemaVersion: 1, teams: [team('acme')]};
-    }
-    if (request.url === '/v1/cli/maps') {
-      assert.deepEqual(JSON.parse(body).allowedOrigins, []);
-      return createdResponse('acme', []);
-    }
-    if (request.url === '/v1/cli/map-capabilities') {
-      assert.equal(JSON.parse(body).mapId, createdMapId);
-      return {
-        capability,
-        expiresAt: '2026-12-01T00:00:00.000Z',
-        mapId: createdMapId,
-        schemaVersion: 1,
-        scopes: ['styles:write'],
-      };
-    }
-    assert.equal(request.url, '/v1/styles');
-    assert.equal(request.headers.authorization, `Bearer ${capability}`);
-    return deploymentResponse(createdMapId);
+  const api = await startFakePlatform(t, {
+    mapId: createdMapId,
+    intercept(request) {
+      if (request.path === '/v1/cli/map-setup/teams')
+        return {status: 200, body: {schemaVersion: 1, teams: [team('acme')]}};
+      if (request.path === '/v1/cli/maps') {
+        assert.deepEqual(requestJson(request).allowedOrigins, []);
+        return {status: 200, body: createdResponse('acme', [])};
+      }
+      if (request.path === '/v1/cli/map-capabilities') {
+        assert.equal(requestJson(request).mapId, createdMapId);
+        return {
+          status: 200,
+          body: {
+            capability,
+            expiresAt: '2026-12-01T00:00:00.000Z',
+            mapId: createdMapId,
+            schemaVersion: 1,
+            scopes: ['styles:write'],
+          },
+        };
+      }
+      assert.equal(request.headers.authorization, `Bearer ${capability}`);
+      return undefined;
+    },
   });
   await writeAccountSession(directory, api.url);
   const deploy = (extra: string[] = []) =>
@@ -244,15 +273,25 @@ test('deploy without --map-id creates the Map after local preflight and deploys 
       '--any-website',
       ...extra,
     ]);
+  const requests = () =>
+    api.requests.map(
+      (request) =>
+        `${request.method} ${request.path.replace(/\/v1\/styles\/deployments\/.*/u, '/v1/styles/deployments/…')}`,
+    );
 
   const result = await deploy();
   assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
-  assert.deepEqual(requests, [
-    'GET /v1/cli/map-setup/teams',
-    'POST /v1/cli/maps',
-    'POST /v1/cli/map-capabilities',
-    'POST /v1/styles',
-  ]);
+  assert.deepEqual(
+    [...new Set(requests())],
+    [
+      'GET /v1/cli/map-setup/teams',
+      'POST /v1/cli/maps',
+      'POST /v1/cli/map-capabilities',
+      'POST /v1/styles',
+      'PUT /v1/styles/deployments/…',
+    ],
+  );
+  assert.equal(api.activeVersion(), 1);
   assert.match(result.stdout, new RegExp(`tileflow deploy --map-id ${createdMapId}`));
   const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
     maps: Record<string, {mapId: string}>;
@@ -260,11 +299,11 @@ test('deploy without --map-id creates the Map after local preflight and deploys 
   assert.equal(manifest.maps.madrid?.mapId, createdMapId);
 
   // A second deploy without --map-id never creates another Map for the same repository map.
-  requests.length = 0;
+  const before = api.requests.length;
   const repeated = await deploy();
   assert.equal(repeated.code, 1);
   assert.match(repeated.stdout, new RegExp(`already deployed to ${createdMapId}`));
-  assert.deepEqual(requests, []);
+  assert.equal(api.requests.length, before);
 });
 
 test('CI and explicit credentials never create a Map', async (t) => {
@@ -300,35 +339,6 @@ function createdResponse(slug: string, allowedOrigins: string[]) {
     map: {id: createdMapId, name: null, state: 'setup_pending'},
     schemaVersion: 1,
     team: {name: slug.toUpperCase(), slug},
-  };
-}
-
-function deploymentResponse(mapId: string) {
-  const themes = [
-    'dark',
-    'dark-faded',
-    'dark-monochrome',
-    'dawn',
-    'dawn-faded',
-    'dawn-monochrome',
-    'dusk',
-    'dusk-faded',
-    'dusk-monochrome',
-    'faded',
-    'light',
-    'monochrome',
-  ];
-  return {
-    mapId,
-    themes: Object.fromEntries(
-      themes.map((theme) => [
-        theme,
-        {
-          styleId: `${mapId}_${theme}`,
-          styleUrl: `https://api.example.test/maps/${mapId}/${theme}.json`,
-        },
-      ]),
-    ),
   };
 }
 

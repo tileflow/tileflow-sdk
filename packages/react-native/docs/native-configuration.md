@@ -102,8 +102,8 @@ If both root and map-level API declarations are present, they must agree exactly
 
 ## Source-to-session boundary
 
-Use the public Native manifest URL returned by an explicit compatible
-[`deploy --with-native`](../../cli/docs/native-artifacts.md#publish-web-and-native-together):
+Use the public Native manifest URL that a compatible Hosted
+[`deploy`](../../cli/docs/native-artifacts.md#publish-to-hosted-for-web-and-native-apps) prints:
 
 ```text
 https://api.example.test/maps/map_0123456789abcdef/native/manifest.json

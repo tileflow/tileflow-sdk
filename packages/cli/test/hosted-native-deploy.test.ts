@@ -1,34 +1,63 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
 import {createHash} from 'node:crypto';
-import {serializeCanonicalJson, type MapLibreStyle} from '@tileflow/core';
+import test from 'node:test';
+import {type MapLibreStyle, serializeCanonicalJson} from '@tileflow/core';
 import {
   inferTileflowDataRequirements,
   inferTileflowSourceRequirements,
+  splitTileflowRendererDeployment,
   type TileflowMapBuildManifestV1,
+  type TileflowRendererDeploymentArtifact,
 } from '@tileflow/core/build';
-import {prepareTileflowHostedNativeDeployment} from '@tileflow/dev/artifacts';
-import {runHostedNativeDeploy, type PreparedNativeDeploy} from '../src/hosted-native-deploy';
 import type {TileflowRuntimeManifest} from '@tileflow/core/manifest';
+import {prepareTileflowHostedNativeDeployment} from '@tileflow/dev/artifacts';
+import {
+  HostedDeploymentError,
+  type HostedRendererDeploymentEvent,
+  publishHostedRendererDeployment,
+} from '../src/hosted-client';
+import {
+  describeNativeDifference,
+  type HostedDeployEvent,
+  type PreparedHostedDeploy,
+  runHostedDeploy,
+  summarizeNativeDifferences,
+} from '../src/hosted-native-deploy';
+import {failure, requestJson, startFakePlatform} from './hosted-platform-fake';
 
-const apiUrl = 'https://api.example.test';
-const mapId = 'map_0123456789abcdef';
-const options = {config: 'tileflow.config.ts', manifest: 'tileflow.manifest.json', apiUrl, mapId};
+const mapId = 'map_AbCdEfGhIjKlMnOp';
+const apiKey = `tf_cap_${'c'.repeat(64)}`;
 const digest = (value: unknown) =>
   createHash('sha256').update(serializeCanonicalJson(value)).digest('hex');
+const immediately = async () => undefined;
 
-async function prepared(): Promise<PreparedNativeDeploy> {
-  const style: MapLibreStyle = {
+function style(theme: 'dark' | 'light'): MapLibreStyle {
+  return {
     version: 8,
     sources: {},
-    layers: [{id: 'background', type: 'background'}],
+    layers: [
+      {
+        id: 'background',
+        type: 'background',
+        paint: {'background-color': theme === 'dark' ? '#111111' : '#ffffff'},
+      },
+    ],
     metadata: {
       'tileflow:map': 'main',
       'tileflow:mapVersion': 1,
-      'tileflow:theme': 'light',
-      'tileflow:colorScheme': 'light',
+      'tileflow:theme': theme,
+      'tileflow:colorScheme': theme,
+      'tileflow:compiler': 'tileflow-semantic',
+      'tileflow:compilerVersion': 1,
     },
-  };
+    // The dark theme is drawn on a globe, which native maps draw in Web Mercator.
+    ...(theme === 'dark' ? {projection: {type: 'globe'}} : {}),
+  } as MapLibreStyle;
+}
+
+/** Both renderer families of a two-theme map, as the CLI prepares them. */
+async function rendererDeployment(): Promise<TileflowRendererDeploymentArtifact> {
+  const styles = {dark: style('dark'), light: style('light')};
   const buildManifest: TileflowMapBuildManifestV1 = {
     schemaVersion: 1,
     maps: {
@@ -40,260 +69,385 @@ async function prepared(): Promise<PreparedNativeDeploy> {
         mapVersion: 1,
         semanticCompiler: {name: 'tileflow-semantic', version: 1},
         sourceAssets: {fonts: [], icons: []},
-        themes: {
-          light: {
-            colorScheme: 'light',
-            dataRequirements: inferTileflowDataRequirements(style),
-            sourceRequirements: inferTileflowSourceRequirements(style),
-            styleSha256: digest(style),
-            themeId: 'light',
-            themeVersion: 1,
-          },
-        },
+        systemThemes: {dark: 'dark', light: 'light'},
+        themes: Object.fromEntries(
+          (['dark', 'light'] as const).map((theme) => [
+            theme,
+            {
+              colorScheme: theme,
+              dataRequirements: inferTileflowDataRequirements(styles[theme]),
+              sourceRequirements: inferTileflowSourceRequirements(styles[theme]),
+              styleSha256: digest(styles[theme]),
+              themeId: theme,
+              themeVersion: 1,
+            },
+          ]),
+        ),
       },
     },
   };
-  const artifact = await prepareTileflowHostedNativeDeployment({
+  return prepareTileflowHostedNativeDeployment({
     mapId: 'main',
-    styles: {light: style},
+    styles,
     buildManifest,
     assets: [],
     teamSources: {},
+    themes: ['light', 'dark'],
   });
+}
+
+async function body(artifact: TileflowRendererDeploymentArtifact) {
+  const split = await splitTileflowRendererDeployment(artifact);
+  return {
+    split,
+    body: {
+      artifact: split.artifact,
+      environment: 'main',
+      managedMapId: mapId,
+      usageMode: 'session',
+      source: {kind: 'cli'},
+    },
+  };
+}
+
+test('a deployment is reserved, its native documents uploaded family last, then activated', async (t) => {
+  const platform = await startFakePlatform(t, {mapId});
+  const input = await body(await rendererDeployment());
+  const events: HostedRendererDeploymentEvent[] = [];
+  const result = await publishHostedRendererDeployment(
+    {apiKey, apiUrl: platform.url, mapId},
+    input,
+    {onProgress: (event) => events.push(event)},
+  );
+
+  assert.equal(result.changed, true);
+  assert.equal(result.version, 1);
+  assert.equal(
+    result.renderers.native.family.url,
+    `${platform.url}/maps/${mapId}/native/family/v1.json`,
+  );
+  assert.deepEqual(
+    platform.requests.map(
+      (request) => `${request.method} ${request.path.replace(/dep_[^/]+/u, 'dep')}`,
+    ),
+    [
+      'POST /v1/styles',
+      'PUT /v1/styles/deployments/dep/native/styles/dark.json',
+      'PUT /v1/styles/deployments/dep/native/styles/light.json',
+      'PUT /v1/styles/deployments/dep/native/family.json',
+      'POST /v1/styles',
+    ],
+  );
+  // Every request travels gzip-encoded with the credential and the Map; documents are the exact
+  // canonical bytes the request indexed.
+  for (const request of platform.requests) {
+    assert.equal(request.headers['content-encoding'], 'gzip');
+    assert.equal(request.headers.authorization, `Bearer ${apiKey}`);
+    assert.equal(request.headers['x-tileflow-map-id'], mapId);
+  }
+  assert.equal(platform.requests[1]!.body.toString('utf8'), input.split.documents.styles.dark);
+  assert.equal(platform.requests[3]!.body.toString('utf8'), input.split.documents.family);
+  assert.equal(requestJson(platform.requests[0]!).artifact.schemaVersion, 3);
+  assert.equal('styles' in requestJson(platform.requests[0]!).artifact.renderers.native, false);
+  assert.deepEqual(
+    events.map((event) => event.kind),
+    ['reserved', 'uploaded', 'uploaded', 'uploaded', 'activating'],
+  );
+  assert.deepEqual(events[0], {
+    kind: 'reserved',
+    deploymentId: (events[0] as {deploymentId: string}).deploymentId,
+    version: 1,
+    documents: 3,
+    bytes:
+      Buffer.byteLength(input.split.documents.styles.dark!) +
+      Buffer.byteLength(input.split.documents.styles.light!) +
+      Buffer.byteLength(input.split.documents.family),
+    total: 3,
+  });
+});
+
+test('a repeated deploy resumes after a partial upload and is unchanged once published', async (t) => {
+  const platform = await startFakePlatform(t, {mapId});
+  const input = await body(await rendererDeployment());
+  const api = {apiKey, apiUrl: platform.url, mapId};
+
+  platform.failUploadsAfter = 1;
+  await assert.rejects(
+    publishHostedRendererDeployment(api, input, {sleep: immediately}),
+    (error: unknown) =>
+      error instanceof HostedDeploymentError &&
+      error.resumable &&
+      error.code === 'TF_NATIVE_DOCUMENT_UNAVAILABLE',
+  );
+  // The first style was stored; the second was retried and then left for the next run.
+  assert.deepEqual(
+    platform.uploads.map(({document, status}) => `${document} ${status}`),
+    ['style:dark 200', 'style:light 503', 'style:light 503', 'style:light 503'],
+  );
+  assert.equal(platform.activeVersion(), undefined);
+
+  platform.failUploadsAfter = undefined;
+  const events: HostedRendererDeploymentEvent[] = [];
+  const resumed = await publishHostedRendererDeployment(api, input, {
+    onProgress: (event) => events.push(event),
+  });
+  assert.equal(resumed.changed, true);
+  assert.equal(resumed.version, 1, 'the same reservation completes');
+  assert.deepEqual(
+    platform.uploads.slice(4).map(({document}) => document),
+    ['style:light', 'family'],
+  );
+  assert.equal((events[0] as {documents: number}).documents, 2);
+  assert.equal((events[0] as {total: number}).total, 3);
+
+  const before = platform.requests.length;
+  const repeated = await publishHostedRendererDeployment(api, input);
+  assert.equal(repeated.changed, false);
+  assert.equal(repeated.version, 1);
+  assert.deepEqual(
+    platform.requests.slice(before).map((request) => `${request.method} ${request.path}`),
+    ['POST /v1/styles'],
+  );
+});
+
+test('when the server says the deployment moved on, the client asks it what remains', async (t) => {
+  let refused = false;
+  const platform = await startFakePlatform(t, {
+    mapId,
+    intercept(request) {
+      if (refused || !request.path.endsWith('/native/family.json')) return undefined;
+      refused = true;
+      return {
+        status: 409,
+        body: {code: 'TF_NATIVE_DOCUMENTS_INCOMPLETE', error: 'incomplete', missing: ['light']},
+      };
+    },
+  });
+  const input = await body(await rendererDeployment());
+  const result = await publishHostedRendererDeployment(
+    {apiKey, apiUrl: platform.url, mapId},
+    input,
+  );
+  assert.equal(result.changed, true);
+  assert.deepEqual(
+    platform.requests.map((request) => `${request.method} ${request.path.split('/').at(-1)}`),
+    [
+      'POST styles',
+      'PUT dark.json',
+      'PUT light.json',
+      'PUT family.json',
+      'POST styles',
+      'PUT family.json',
+      'POST styles',
+    ],
+  );
+});
+
+test('a pending reply that does not match the local documents or origin uploads nothing', async (t) => {
+  const input = await body(await rendererDeployment());
+  for (const change of [
+    (document: Record<string, unknown>) => ({...document, sha256: 'f'.repeat(64)}),
+    (document: Record<string, unknown>) => ({
+      ...document,
+      url: String(document.url).replace(
+        /^http:\/\/127\.0\.0\.1:\d+/u,
+        'https://other.example.test',
+      ),
+    }),
+  ]) {
+    let pending = true;
+    const platform = await startFakePlatform(t, {
+      mapId,
+      intercept(request, fake) {
+        if (!pending || request.path !== '/v1/styles') return undefined;
+        pending = false;
+        const index = input.split.artifact.renderers.native.documents;
+        const base = `${fake.url}/v1/styles/deployments/dep_fixture/native`;
+        return {
+          status: 202,
+          body: {
+            kind: 'tileflow-map-deployment-pending',
+            schemaVersion: 1,
+            mapId,
+            deploymentId: 'dep_fixture',
+            version: 1,
+            native: {
+              documents: [
+                change({
+                  document: 'style',
+                  theme: 'dark',
+                  ...index.styles.dark,
+                  method: 'PUT',
+                  url: `${base}/styles/dark.json`,
+                }),
+              ],
+            },
+          },
+        };
+      },
+    });
+    await assert.rejects(
+      publishHostedRendererDeployment({apiKey, apiUrl: platform.url, mapId}, input),
+      HostedDeploymentError,
+    );
+    assert.equal(platform.uploads.length, 0);
+    assert.deepEqual(
+      platform.requests.map((request) => request.method),
+      ['POST'],
+    );
+  }
+});
+
+test('a rejected document stops the deployment with the server code', async (t) => {
+  const platform = await startFakePlatform(t, {
+    mapId,
+    intercept: (request) =>
+      request.path.endsWith('/native/family.json')
+        ? failure(400, 'TF_NATIVE_FAMILY_INVALID', 'The family document does not match')
+        : undefined,
+  });
+  const input = await body(await rendererDeployment());
+  await assert.rejects(
+    publishHostedRendererDeployment({apiKey, apiUrl: platform.url, mapId}, input),
+    (error: unknown) =>
+      error instanceof HostedDeploymentError &&
+      !error.resumable &&
+      error.code === 'TF_NATIVE_FAMILY_INVALID' &&
+      /family document/u.test(error.message),
+  );
+  assert.equal(platform.activeVersion(), undefined);
+});
+
+function prepared(
+  artifact: TileflowRendererDeploymentArtifact,
+  events: string[] = [],
+): PreparedHostedDeploy {
   return {
     mapName: 'main',
-    artifact,
+    preflight: artifact,
     packages: [],
     async retarget() {
       return artifact;
     },
-    async dispose() {},
-  };
-}
-function receipt() {
-  return {
-    kind: 'tileflow-map-deployment-result',
-    schemaVersion: 2,
-    changed: true,
-    mapId,
-    deploymentId: 'dep_fixture',
-    version: 7,
-    renderers: {
-      web: {themes: {light: {styleUrl: `${apiUrl}/maps/${mapId}/light.json`}}},
-      native: {
-        profile: 'native-v1',
-        manifestUrl: `${apiUrl}/maps/${mapId}/native/manifest.json`,
-        themes: {
-          light: {
-            styleUrl: `${apiUrl}/maps/${mapId}/native/v7/light.json`,
-            revision: 'a'.repeat(64),
-          },
-        },
-      },
+    async dispose() {
+      events.push('dispose');
     },
   };
 }
 
-test('native selection rejects absent target and unsafe origin before local config or remote work', async () => {
-  for (const patch of [
-    {mapId: undefined},
-    {mapId: 'invalid'},
-    {apiUrl: 'http://api.example.test'},
+test('a Hosted deploy checks the manifest before the target, publishes, then writes the manifest', async (t) => {
+  const platform = await startFakePlatform(t, {mapId});
+  platform.teamModels = [{model: 'tower', version: 2, sources: 'differ'}];
+  const artifact = await rendererDeployment();
+  const events: string[] = [];
+  const progress: HostedDeployEvent[] = [];
+  let written: TileflowRuntimeManifest | undefined;
+  const result = await runHostedDeploy(
+    prepared(artifact, events),
+    {apiUrl: platform.url, manifest: 'tileflow.manifest.json'},
+    {
+      source: {kind: 'cli'},
+      async loadManifest() {
+        events.push('existing');
+        return null;
+      },
+      async resolveTarget({mapName}) {
+        events.push(`target ${mapName}`);
+        return {apiKey, apiUrl: platform.url, mapId};
+      },
+      progress: (event) => progress.push(event),
+      async writeManifest(path, manifest) {
+        events.push(`write ${platform.requests.length}`);
+        written = manifest;
+        return path;
+      },
+    },
+  );
+
+  assert.deepEqual(events, ['existing', 'target main', 'write 5', 'dispose']);
+  assert.equal(result?.changed, true);
+  assert.equal(result?.nativeManifestUrl, `${platform.url}/maps/${mapId}/native/manifest.json`);
+  assert.deepEqual(result?.teamModels, [{model: 'tower', version: 2, sources: 'differ'}]);
+  assert.equal(progress[0]?.kind, 'publishing');
+  const entry = written?.maps.main;
+  assert.equal(written?.apiUrl, platform.url);
+  assert.equal(entry?.mapId, mapId);
+  assert.equal(entry?.usageMode, 'session');
+  assert.equal(entry?.worldGeneration, 'v1');
+  assert.deepEqual(entry?.systemThemes, {dark: 'dark', light: 'light'});
+  assert.equal(entry?.themes.light?.styleUrl, `${platform.url}/maps/${mapId}/light.json`);
+  assert.equal(
+    entry?.themes.dark?.revision,
+    artifact.renderers.web.buildManifest.maps.main!.themes.dark!.styleSha256,
+  );
+  assert.deepEqual(
+    result?.nativeDifferences.map((difference) => [
+      describeNativeDifference(difference),
+      difference.all ? 'all' : difference.themes.join(','),
+    ]),
+    [['Globe: drawn in Web Mercator', 'dark']],
+  );
+});
+
+test('a failed or unconfirmed Hosted deploy preserves the manifest and releases its preparation', async (t) => {
+  const artifact = await rendererDeployment();
+  for (const intercept of [
+    () => failure(503, 'TF_NATIVE_STAGING_UNAVAILABLE'),
+    () => failure(403, 'TF_MAP_FORBIDDEN'),
+    () => ({status: 200, body: {mapId, themes: {}}}),
   ]) {
-    let work = 0;
+    const platform = await startFakePlatform(t, {
+      mapId,
+      intercept: (request) => (request.path === '/v1/styles' ? intercept() : undefined),
+    });
+    const events: string[] = [];
     await assert.rejects(
-      runHostedNativeDeploy(
-        {...options, ...patch},
+      runHostedDeploy(
+        prepared(artifact, events),
+        {apiUrl: platform.url, manifest: 'tileflow.manifest.json'},
         {
           source: {kind: 'cli'},
-          async resolveApi() {
-            work++;
-            return null;
-          },
-          async prepare() {
-            work++;
-            return prepared();
-          },
-          async loadManifest() {
-            work++;
-            return null;
-          },
+          loadManifest: async () => null,
+          resolveTarget: async () => ({apiKey, apiUrl: platform.url, mapId}),
           async writeManifest() {
-            work++;
+            events.push('write');
             return '';
           },
         },
       ),
+      HostedDeploymentError,
     );
-    assert.equal(work, 0);
+    assert.deepEqual(events, ['dispose']);
   }
 });
 
-test('complete preflight and existing-manifest checks precede authentication and schema-2 publication', async () => {
+test('an existing manifest for another API stops the deploy before any target or request', async (t) => {
+  const platform = await startFakePlatform(t, {mapId});
   const events: string[] = [];
-  let written: TileflowRuntimeManifest | undefined;
-  const candidate = await prepared();
-  const before = digest(candidate.artifact);
-  const output = await runHostedNativeDeploy(options, {
-    source: {kind: 'cli'},
-    async prepare() {
-      events.push('preflight');
-      return {
-        ...candidate,
-        async dispose() {
-          events.push('dispose');
-        },
-      };
-    },
-    async loadManifest() {
-      events.push('existing');
-      return null;
-    },
-    async resolveApi() {
-      events.push('auth');
-      return {apiUrl, apiKey: 'tf_cap_fixture', mapId};
-    },
-    request: {
-      fetch: async (url, init) => {
-        events.push('publish');
-        assert.equal(url, `${apiUrl}/v1/styles`);
-        assert.equal(init?.redirect, 'error');
-        assert.equal(new Headers(init?.headers).get('X-Tileflow-Map-Id'), mapId);
-        const body = JSON.parse(String(init?.body));
-        assert.equal(body.artifact.schemaVersion, 2);
-        assert.equal(body.managedMapId, mapId);
-        assert.equal(body.usageMode, 'session');
-        assert.deepEqual(Object.keys(body.artifact.renderers).sort(), ['native', 'web']);
-        return Response.json(receipt());
-      },
-    },
-    async writeManifest(path, value) {
-      events.push('write');
-      written = value;
-      return path;
-    },
-  });
-  assert.deepEqual(events, ['preflight', 'existing', 'auth', 'publish', 'write', 'dispose']);
-  assert.equal(output?.nativeManifestUrl, receipt().renderers.native.manifestUrl);
-  assert.equal(written?.version, 1, 'Existing strict web clients continue to read version 1.');
-  assert.equal(written?.maps.main?.mapId, mapId);
-  assert.equal(Object.hasOwn(written!, 'renderers'), false);
-  assert.equal(digest(candidate.artifact), before);
-});
-
-test('invalid native preflight cannot perform even authentication', async () => {
-  let remote = 0;
   await assert.rejects(
-    runHostedNativeDeploy(options, {
-      source: {kind: 'cli'},
-      async prepare() {
-        throw new Error('Native incompatibility.');
-      },
-      async loadManifest() {
-        return null;
-      },
-      async resolveApi() {
-        remote++;
-        return null;
-      },
-      async writeManifest() {
-        assert.fail('No manifest replacement.');
-      },
-    }),
-  );
-  assert.equal(remote, 0);
-});
-
-test('failed, mismatched or legacy responses preserve the previous manifest and dispose preparation', async () => {
-  for (const reply of [
-    () => new Response('', {status: 503}),
-    () => Response.json({...receipt(), mapId: 'map_abcdefghijklmnop'}),
-    () => Response.json({mapId, themes: receipt().renderers.web.themes}),
-    () =>
-      Response.json({
-        ...receipt(),
-        renderers: {
-          ...receipt().renderers,
-          native: {
-            ...receipt().renderers.native,
-            manifestUrl: 'https://other.example/manifest.json',
-          },
-        },
-      }),
-    () =>
-      Response.json({
-        ...receipt(),
-        renderers: {
-          ...receipt().renderers,
-          native: {
-            ...receipt().renderers.native,
-            themes: {
-              light: {
-                styleUrl: `${apiUrl}/maps/${mapId}/native/v8/light.json`,
-                revision: 'a'.repeat(64),
-              },
-            },
-          },
-        },
-      }),
-  ]) {
-    let writes = 0;
-    let disposed = 0;
-    const candidate = await prepared();
-    await assert.rejects(
-      runHostedNativeDeploy(options, {
+    runHostedDeploy(
+      prepared(await rendererDeployment(), events),
+      {apiUrl: platform.url, manifest: 'tileflow.manifest.json'},
+      {
         source: {kind: 'cli'},
-        async prepare() {
-          return {
-            ...candidate,
-            async dispose() {
-              disposed++;
-            },
-          };
-        },
-        async loadManifest() {
+        loadManifest: async () =>
+          ({apiUrl: 'https://api.example.test', maps: {}, version: 1}) as TileflowRuntimeManifest,
+        async resolveTarget() {
+          events.push('target');
           return null;
         },
-        async resolveApi() {
-          return {apiUrl, apiKey: 'tf_cap_fixture', mapId};
-        },
-        request: {fetch: async () => reply()},
-        async writeManifest() {
-          writes++;
-          return '';
-        },
-      }),
-    );
-    assert.equal(writes, 0);
-    assert.equal(disposed, 1);
-  }
+        writeManifest: async () => '',
+      },
+    ),
+    /different Tileflow API origin/u,
+  );
+  assert.deepEqual(events, ['dispose']);
+  assert.equal(platform.requests.length, 0);
 });
 
-test('an idempotent server retry writes the confirmed manifest without creating another destination', async () => {
-  const candidate = await prepared();
-  let publications = 0;
-  const result = await runHostedNativeDeploy(options, {
-    source: {kind: 'cli'},
-    async prepare() {
-      return candidate;
-    },
-    async loadManifest() {
-      return null;
-    },
-    async resolveApi() {
-      return {apiUrl, apiKey: 'tf_cap_fixture', mapId};
-    },
-    request: {
-      fetch: async () => {
-        publications++;
-        return Response.json({...receipt(), changed: false});
-      },
-    },
-    async writeManifest(path) {
-      return path;
-    },
-  });
-  assert.equal(result?.changed, false);
-  assert.equal(result?.version, 7);
-  assert.equal(publications, 1);
+test('native differences are summarized once each with the themes they apply to', async () => {
+  const family = (await rendererDeployment()).renderers.native.family;
+  assert.deepEqual(summarizeNativeDifferences(family), [
+    {capability: 'globe', fallback: 'mercator', themes: ['dark'], all: false},
+  ]);
 });

@@ -40,38 +40,44 @@ function command(cwd: string, args: string[]) {
   });
 }
 async function fixture(t: {after(callback: () => Promise<void>): void}) {
-  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-dual-deploy-'));
+  const cwd = await mkdtemp(join(tmpdir(), 'tileflow-hosted-deploy-'));
   t.after(() => rm(cwd, {recursive: true, force: true}));
   await linkWorkspacePackages(cwd, ['core', 'maps']);
   await writeFile(join(cwd, 'tileflow.manifest.json'), 'PRESERVE_EXISTING_MANIFEST\n');
   return cwd;
 }
 
-test('deploy exposes explicit opt-in Native publication without widening build targets', async (t) => {
+test('deploy always publishes both renderer families, with no opt-in flag', async (t) => {
   const cwd = await fixture(t);
   const result = await command(cwd, ['deploy', '--help']);
   assert.equal(result.code, 0);
-  assert.match(result.output, /--with-native/u);
+  assert.match(result.output, /web and native apps/u);
   assert.match(result.output, /--map-id/u);
-  assert.doesNotMatch(result.output, /mobile-client|credential-prop|native-provider/u);
+  assert.doesNotMatch(
+    result.output,
+    /--with-native|mobile-client|credential-prop|native-provider/u,
+  );
 });
 
-test('Native deploy requires the managed target before executing repository configuration', async (t) => {
+test('the retired --with-native flag is refused before executing repository configuration', async (t) => {
   const cwd = await fixture(t);
   await writeFile(join(cwd, 'tileflow.config.ts'), "throw new Error('CONFIG_EXECUTED');\n");
-  for (const args of [[], ['--map-id', 'tf_public_do_not_reflect']]) {
-    const result = await command(cwd, ['deploy', '--with-native', ...args]);
-    assert.equal(result.code, 1);
-    assert.match(result.output, /--with-native requires one valid --map-id/u);
-    assert.doesNotMatch(result.output, /CONFIG_EXECUTED|do_not_reflect/u);
-  }
+  const result = await command(cwd, [
+    'deploy',
+    '--with-native',
+    '--map-id',
+    'map_0123456789abcdef',
+  ]);
+  assert.equal(result.code, 1);
+  assert.match(result.output, /unknown option '--with-native'/u);
+  assert.doesNotMatch(result.output, /CONFIG_EXECUTED/u);
   assert.equal(
     await readFile(join(cwd, 'tileflow.manifest.json'), 'utf8'),
     'PRESERVE_EXISTING_MANIFEST\n',
   );
 });
 
-test('Native incompatibility is detected before credential discovery or manifest replacement', async (t) => {
+test('a theme native apps cannot draw stops the deploy before credential discovery', async (t) => {
   const cwd = await fixture(t);
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
@@ -84,17 +90,28 @@ export default defineMap({id:'main', version:1, extends:streets,
 });
 `,
   );
-  const result = await command(cwd, [
-    'deploy',
-    '--with-native',
-    '--map-id',
-    'map_0123456789abcdef',
-  ]);
+  const result = await command(cwd, ['deploy', '--map-id', 'map_0123456789abcdef']);
   assert.equal(result.code, 1);
-  assert.match(result.output, /Native artifact validation failed/u);
+  assert.match(result.output, /A theme cannot be prepared for native apps/u);
+  assert.match(result.output, /glyphs/u);
   assert.doesNotMatch(result.output, /account session|Published|Uploaded|fetch failed/u);
   assert.equal(
     await readFile(join(cwd, 'tileflow.manifest.json'), 'utf8'),
     'PRESERVE_EXISTING_MANIFEST\n',
   );
+});
+
+test('Hosted deploy requires an HTTPS API outside the developer machine', async (t) => {
+  const cwd = await fixture(t);
+  await writeFile(join(cwd, 'tileflow.config.ts'), "throw new Error('CONFIG_EXECUTED');\n");
+  const result = await command(cwd, [
+    'deploy',
+    '--map-id',
+    'map_0123456789abcdef',
+    '--api-url',
+    'http://api.example.test',
+  ]);
+  assert.equal(result.code, 1);
+  assert.match(result.output, /requires an HTTPS Tileflow API URL/u);
+  assert.doesNotMatch(result.output, /CONFIG_EXECUTED/u);
 });

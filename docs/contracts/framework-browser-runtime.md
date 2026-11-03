@@ -195,9 +195,9 @@ sources resolve against their owning Style URL. Importing the browser subpath re
 `document` and `FontFace` are read only when a non-empty face list is loaded after mount.
 
 Standalone capture applies the same metadata before constructing its page-local MapLibre map and
-bounds streamed font bytes. Native renderers do not use this browser contract and require a PBF
-glyph provider. Hosted deploy rejects package-owned web fonts before authentication until managed
-font storage has durable ownership, quota, references, retention, and deletion.
+bounds streamed font bytes. Native renderers do not use this browser contract: native preparation
+names the same prepared TTF or OTF files in the style's `font-faces`. Hosted deploy publishes
+package-owned fonts as a managed font bundle that both renderer families reference.
 
 ## Globe atmosphere
 

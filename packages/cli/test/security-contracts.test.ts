@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {tileflowRendererDeploymentResponseSchema} from '@tileflow/core/build';
 import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {withTileflowConfigSecretsHidden} from '../src/config-execution';
@@ -15,11 +16,7 @@ import {
   tileflowDevOrigin,
 } from '../src/dev-host';
 import {inspectTileflowHostedCompatibility} from '../src/hosted-preflight';
-import {
-  hostedMapStatusSchema,
-  hostedStyleDeploymentResponseSchema,
-  readHostedJson,
-} from '../src/hosted-response';
+import {hostedMapStatusSchema, readHostedJson} from '../src/hosted-response';
 import {tileflowMapFixture} from './map-fixture';
 
 test('config secret scope hides env and both API-key argv forms, then restores exactly', async () => {
@@ -177,30 +174,48 @@ test('one hosted preflight rejects external data for validation and deploy calle
 });
 
 test('hosted success responses validate exact atomic theme families and bounded bodies', async () => {
+  const mapId = 'map_AbCdEfGhIjKlMnOp';
+  const native = `https://api.example.test/maps/${mapId}/native`;
   const deployment = await readHostedJson(
     new Response(
       JSON.stringify({
+        kind: 'tileflow-map-deployment-result',
+        schemaVersion: 3,
         changed: true,
-        mapId: 'map_AbCdEfGhIjKlMnOp',
-        themes: {
-          dark: {
-            styleId: 'sty_test_dark',
-            styleUrl: 'https://api.example.test/maps/map_AbCdEfGhIjKlMnOp/dark.json',
+        mapId,
+        deploymentId: 'dep_test',
+        version: 2,
+        renderers: {
+          web: {
+            themes: {
+              dark: {
+                styleId: 'sty_test_dark',
+                styleUrl: `https://api.example.test/maps/${mapId}/dark.json`,
+              },
+              light: {
+                styleId: 'sty_test_light',
+                styleUrl: `https://api.example.test/maps/${mapId}/light.json`,
+              },
+            },
           },
-          light: {
-            styleId: 'sty_test_light',
-            styleUrl: 'https://api.example.test/maps/map_AbCdEfGhIjKlMnOp/light.json',
+          native: {
+            profile: 'native-v1',
+            manifestUrl: `${native}/manifest.json`,
+            family: {url: `${native}/family/v2.json`, revision: 'a'.repeat(64)},
+            themes: {
+              dark: {styleUrl: `${native}/v2/dark.json`, revision: 'b'.repeat(64)},
+              light: {styleUrl: `${native}/v2/light.json`, revision: 'c'.repeat(64)},
+            },
           },
         },
-        version: 2,
       }),
       {headers: {'Content-Type': 'application/json'}},
     ),
-    hostedStyleDeploymentResponseSchema,
+    tileflowRendererDeploymentResponseSchema,
     'Deploy response',
   );
-  assert.equal(deployment.mapId, 'map_AbCdEfGhIjKlMnOp');
-  assert.deepEqual(Object.keys(deployment.themes), ['dark', 'light']);
+  assert.equal(deployment.mapId, mapId);
+  assert.deepEqual(Object.keys(deployment.renderers.web.themes), ['dark', 'light']);
 
   await assert.rejects(
     () =>
@@ -211,7 +226,7 @@ test('hosted success responses validate exact atomic theme families and bounded 
             additive: true,
           }),
         ),
-        hostedStyleDeploymentResponseSchema,
+        tileflowRendererDeploymentResponseSchema,
         'Deploy response',
       ),
     /invalid response/,
@@ -260,11 +275,19 @@ test('hosted success responses validate exact atomic theme families and bounded 
       readHostedJson(
         new Response(
           JSON.stringify({
-            mapId: 'map_test',
-            themes: {light: {styleUrl: 'javascript:alert(1)'}},
+            ...deployment,
+            renderers: {
+              ...deployment.renderers,
+              web: {
+                themes: {
+                  ...deployment.renderers.web.themes,
+                  light: {styleUrl: 'javascript:alert(1)'},
+                },
+              },
+            },
           }),
         ),
-        hostedStyleDeploymentResponseSchema,
+        tileflowRendererDeploymentResponseSchema,
         'Deploy response',
       ),
     /invalid response/,
@@ -289,7 +312,7 @@ test('hosted success responses validate exact atomic theme families and bounded 
   );
   assert.equal(oversized.headers.has('content-length'), false);
   await assert.rejects(
-    () => readHostedJson(oversized, hostedStyleDeploymentResponseSchema, 'Deploy response'),
+    () => readHostedJson(oversized, tileflowRendererDeploymentResponseSchema, 'Deploy response'),
     /safe size limit/,
   );
   assert.equal(cancelled, true);

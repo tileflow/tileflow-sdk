@@ -234,8 +234,9 @@ with `--origin`, or `--any-website`. It prints the Map ID to use for later deplo
 credential or the portable `id` in your config. CI always deploys an existing Map with a deploy key
 for that destination. `logout` removes the saved personal session.
 
-Deploy publishes the compiled concrete-theme family and managed icon assets; it does not ask the
-server to compile TypeScript. Repeating an unchanged deployment reuses its version. Build writers
+Deploy publishes the compiled themes for web and native apps; the server compiles no TypeScript.
+It reports native differences, resumes interrupted runs and reuses unchanged versions
+([protocol](docs/native-artifacts.md#publish-to-hosted-for-web-and-native-apps)). Build writers
 refuse to overwrite hosted manifests by default, and deploy refuses to replace a self-hosted
 manifest without explicit authorization. Keep separate outputs, or use the documented overwrite
 option only for an intentional migration.

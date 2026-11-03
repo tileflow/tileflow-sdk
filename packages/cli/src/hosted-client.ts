@@ -1,5 +1,15 @@
+import {gzipSync} from 'node:zlib';
 import type {z} from 'zod';
-import {serializeTileflowFontBundleManifest} from '@tileflow/core';
+import {serializeCanonicalJson, serializeTileflowFontBundleManifest} from '@tileflow/core';
+import {
+  tileflowNativeDocumentReceiptSchema,
+  tileflowNativeDocumentUploadPath,
+  tileflowRendererDeploymentLimits,
+  tileflowRendererDeploymentPendingSchema,
+  type TileflowRendererDeploymentResponse,
+  tileflowRendererDeploymentResponseSchema,
+  type TileflowSplitRendererDeployment,
+} from '@tileflow/core/build';
 import type {CompiledTileflowFontBundle} from '@tileflow/dev/fonts';
 import type {CompiledTileflowIconPackage} from '@tileflow/dev/icons';
 import {
@@ -14,7 +24,6 @@ import {
   hostedIconPackageResponseSchema,
   type HostedMapStatus,
   hostedMapStatusSchema,
-  hostedStyleDeploymentResponseSchema,
   readBoundedResponseText,
 } from './hosted-response';
 
@@ -591,29 +600,266 @@ function isMapSetupTeam(value: unknown): value is MapSetupTeam {
   );
 }
 
-export async function publishHostedStyle(
+/** Why a Hosted renderer deployment stopped; `resumable` when the same deploy can continue it. */
+export class HostedDeploymentError extends Error {
+  readonly resumable: boolean;
+  readonly status?: number;
+  readonly code?: string;
+  constructor(
+    message: string,
+    options: {resumable?: boolean; status?: number; code?: string} = {},
+  ) {
+    super(message);
+    this.name = 'HostedDeploymentError';
+    this.resumable = options.resumable === true;
+    if (options.status !== undefined) this.status = options.status;
+    if (options.code !== undefined) this.code = options.code;
+  }
+}
+
+/** What a renderer deployment reports as it travels. */
+export type HostedRendererDeploymentEvent =
+  | Readonly<{
+      kind: 'reserved';
+      deploymentId: string;
+      version: number;
+      /** Native documents still to upload, and their decoded bytes. */
+      documents: number;
+      bytes: number;
+      /** Every native document of the deployment: each theme style and the family. */
+      total: number;
+    }>
+  | Readonly<{
+      kind: 'uploaded';
+      document: 'family' | 'style';
+      theme?: string;
+      bytes: number;
+      position: number;
+      count: number;
+    }>
+  | Readonly<{kind: 'activating'; version: number}>;
+
+const deploymentRequestTimeoutMs = 60_000;
+const maximumDeploymentRounds = 4;
+const maximumDocumentAttempts = 3;
+
+/**
+ * Publish a renderer deployment: post its request, upload every native document the server still
+ * lacks (each theme style, then the family document), and post the request again to activate it.
+ * Every request travels gzip-encoded. Uploads are create-only on the server, so repeating the same
+ * deployment resumes where an interrupted one stopped and a published one answers unchanged.
+ */
+export async function publishHostedRendererDeployment(
   api: HostedApi,
-  body: unknown,
-  responseLabel: string,
-  options: HostedRequestOptions = {},
-): Promise<
-  | {ok: false; status: number}
-  | {ok: true; value: z.infer<typeof hostedStyleDeploymentResponseSchema>}
-> {
-  const response = await requestHostedJson(
-    api.apiUrl,
-    '/v1/styles',
-    {
-      ...jsonRequest('POST', body),
-      headers: {...authorizationHeaders(api.apiKey, api.mapId), 'Content-Type': 'application/json'},
-    },
-    options,
-  );
-  if (!response.ok) return {ok: false, status: response.status};
-  return {
-    ok: true,
-    value: parseResponse(response, hostedStyleDeploymentResponseSchema, responseLabel),
+  input: Readonly<{
+    body: Readonly<Record<string, unknown>>;
+    split: TileflowSplitRendererDeployment;
+  }>,
+  options: Readonly<{
+    request?: HostedRequestOptions;
+    onProgress?(event: HostedRendererDeploymentEvent): void;
+    /** Waits between attempts at one document; tests make it immediate. */
+    sleep?(milliseconds: number): Promise<unknown>;
+  }> = {},
+): Promise<TileflowRendererDeploymentResponse> {
+  const origin = normalizeApiOrigin(api.apiUrl);
+  const mapId = api.mapId;
+  if (!mapId) throw new HostedDeploymentError('Hosted deploy requires a managed Map.');
+  const headers = {
+    ...authorizationHeaders(api.apiKey, mapId),
+    'Content-Encoding': 'gzip',
+    'Content-Type': 'application/json',
   };
+  const request: HostedRequestOptions = {
+    ...options.request,
+    timeoutMs: options.request?.timeoutMs ?? deploymentRequestTimeoutMs,
+  };
+  const sleep =
+    options.sleep ??
+    ((milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds)));
+  const text = serializeCanonicalJson(input.body);
+  const bytes = new TextEncoder().encode(text).byteLength;
+  if (bytes > tileflowRendererDeploymentLimits.maximumWebRequestBytes)
+    throw new HostedDeploymentError(
+      `The deployment request is ${formatMegabytes(bytes)}; Hosted accepts at most ${formatMegabytes(tileflowRendererDeploymentLimits.maximumWebRequestBytes)}.`,
+    );
+  const body = gzipSync(text);
+  const index = input.split.artifact.renderers.native.documents;
+  const total = Object.keys(index.styles).length + 1;
+  let lastVersion: number | undefined;
+  for (let round = 0; round < maximumDeploymentRounds; round += 1) {
+    if (lastVersion !== undefined) options.onProgress?.({kind: 'activating', version: lastVersion});
+    let response: HostedJsonResponse;
+    try {
+      response = await requestHostedJson(
+        origin,
+        '/v1/styles',
+        {body, headers, method: 'POST'},
+        request,
+      );
+    } catch {
+      throw new HostedDeploymentError('The deployment request did not complete.', {
+        resumable: true,
+      });
+    }
+    if (response.status === 200) {
+      const parsed = response.json
+        ? tileflowRendererDeploymentResponseSchema.safeParse(response.body)
+        : undefined;
+      if (!parsed?.success)
+        throw new HostedDeploymentError('The deployment response is invalid.', {status: 200});
+      return parsed.data;
+    }
+    if (response.status === 503 && failureCode(response) === 'TF_NATIVE_STAGING_INCOMPLETE')
+      continue;
+    if (response.status !== 202) throw deploymentFailure(response);
+    const parsed = response.json
+      ? tileflowRendererDeploymentPendingSchema.safeParse(response.body)
+      : undefined;
+    if (!parsed?.success || parsed.data.mapId !== mapId)
+      throw new HostedDeploymentError('The pending deployment response is invalid.', {
+        status: 202,
+      });
+    const pending = parsed.data;
+    lastVersion = pending.version;
+    const documents = pending.native.documents.map((document) => {
+      const expected = document.document === 'family' ? index.family : index.styles[document.theme];
+      const path = tileflowNativeDocumentUploadPath(pending.deploymentId, document);
+      if (
+        !expected ||
+        expected.sha256 !== document.sha256 ||
+        expected.bytes !== document.bytes ||
+        document.url !== `${origin}${path}`
+      )
+        throw new HostedDeploymentError(
+          'The server reserved a deployment that does not match these native documents.',
+          {status: 202},
+        );
+      const text =
+        document.document === 'family'
+          ? input.split.documents.family
+          : input.split.documents.styles[document.theme]!;
+      return {...document, path, text};
+    });
+    options.onProgress?.({
+      kind: 'reserved',
+      deploymentId: pending.deploymentId,
+      version: pending.version,
+      documents: documents.length,
+      bytes: documents.reduce((sum, document) => sum + document.bytes, 0),
+      total,
+    });
+    for (const [position, document] of documents.entries()) {
+      const outcome = await uploadNativeDocument(origin, headers, request, sleep, {
+        ...document,
+        deploymentId: pending.deploymentId,
+        version: pending.version,
+      });
+      // The server answered that the deployment moved on: ask it again what remains.
+      if (outcome === 'retry-deployment') break;
+      options.onProgress?.({
+        kind: 'uploaded',
+        document: document.document,
+        ...(document.document === 'style' ? {theme: document.theme} : {}),
+        bytes: document.bytes,
+        position: position + 1,
+        count: documents.length,
+      });
+    }
+  }
+  throw new HostedDeploymentError('The deployment did not complete after its native uploads.', {
+    resumable: true,
+  });
+}
+
+async function uploadNativeDocument(
+  origin: string,
+  headers: Record<string, string>,
+  request: HostedRequestOptions,
+  sleep: (milliseconds: number) => Promise<unknown>,
+  document: Readonly<{
+    deploymentId: string;
+    version: number;
+    document: 'family' | 'style';
+    theme?: string;
+    sha256: string;
+    bytes: number;
+    path: string;
+    text: string;
+  }>,
+): Promise<'retry-deployment' | 'uploaded'> {
+  const body = gzipSync(document.text);
+  const label =
+    document.document === 'family' ? 'the family document' : `native style ${document.theme}`;
+  let failure: HostedDeploymentError | undefined;
+  for (let attempt = 0; attempt < maximumDocumentAttempts; attempt += 1) {
+    if (attempt > 0) await sleep(500 * attempt);
+    let response: HostedJsonResponse;
+    try {
+      response = await requestHostedJson(
+        origin,
+        document.path,
+        {body, headers, method: 'PUT'},
+        request,
+      );
+    } catch {
+      failure = new HostedDeploymentError(`The upload of ${label} did not complete.`, {
+        resumable: true,
+      });
+      continue;
+    }
+    const code = failureCode(response);
+    if (response.status === 200) {
+      const receipt = response.json
+        ? tileflowNativeDocumentReceiptSchema.safeParse(response.body)
+        : undefined;
+      if (
+        !receipt?.success ||
+        receipt.data.deploymentId !== document.deploymentId ||
+        receipt.data.version !== document.version ||
+        receipt.data.document !== document.document ||
+        receipt.data.theme !== document.theme ||
+        receipt.data.sha256 !== document.sha256 ||
+        receipt.data.bytes !== document.bytes
+      )
+        throw new HostedDeploymentError(`The receipt for ${label} is invalid.`, {status: 200});
+      return 'uploaded';
+    }
+    if (
+      response.status === 409 &&
+      (code === 'TF_NATIVE_DEPLOYMENT_PUBLISHED' || code === 'TF_NATIVE_DOCUMENTS_INCOMPLETE')
+    )
+      return 'retry-deployment';
+    if (response.status >= 500 || response.status === 429) {
+      failure = deploymentFailure(response, `The upload of ${label} failed`, true);
+      continue;
+    }
+    throw deploymentFailure(response, `The upload of ${label} failed`);
+  }
+  throw failure!;
+}
+
+function failureCode(response: HostedJsonResponse): string | undefined {
+  const code = asRecord(response.body).code;
+  return typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/u.test(code) ? code : undefined;
+}
+
+function deploymentFailure(
+  response: HostedJsonResponse,
+  prefix = 'Deploy failed',
+  resumable = response.status >= 500 || response.status === 429,
+): HostedDeploymentError {
+  const code = failureCode(response);
+  const error = asRecord(response.body).error;
+  const detail = safeText(error, 300) && !/[\p{Cf}]|tf_[a-z]+_/u.test(error) ? `: ${error}` : '';
+  return new HostedDeploymentError(
+    `${prefix} (${response.status}${code ? ` ${code}` : ''})${detail}`,
+    {resumable, status: response.status, ...(code ? {code} : {})},
+  );
+}
+
+function formatMegabytes(bytes: number): string {
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MiB`;
 }
 
 export async function uploadHostedIconPackage(

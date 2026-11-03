@@ -269,6 +269,9 @@ and uploads a managed dataset using Team data authority, not a map-only deploy k
 uploads are resumable; a completed version becomes current at stable delivery URLs. Purge is
 explicit, requires confirmation, and can be blocked by retained deployment dependencies.
 
+Administratively disabled uploads return `TF_TILESET_UPLOAD_DISABLED` without retrying.
+Temporary service failures retain bounded retries.
+
 `inspect features` samples bounded vector-source features. `icons list` and `icons diff` inspect
 prepared icon identities; they do not turn package directories into a separate hosted library.
 Use the installed command's help for exact arguments and supported JSON output.

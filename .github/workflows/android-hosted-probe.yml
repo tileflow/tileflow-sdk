@@ -5,30 +5,33 @@ on:
 permissions:
   contents: read
 concurrency:
-  group: android-hosted-probe
+  group: android-hosted-lavapipe
   cancel-in-progress: true
 jobs:
   probe:
-    name: Android ${{ matrix.api }} / ${{ matrix.configuration.name }}
+    name: Android ${{ matrix.api }} / ${{ matrix.configuration.name }} / trial ${{ matrix.trial }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
         api: [35, 36]
+        trial: [1, 2]
         configuration:
-          - name: framebuffer
-            gpu: swiftshader
-            cores: 2
-          - name: four-cores
-            gpu: swiftshader
-            cores: 4
-          - name: swangle
-            gpu: swangle
-            cores: 2
-          - name: lavapipe
+          - name: lavapipe-original
             gpu: lavapipe
             cores: 2
+            screen: original
+          - name: lavapipe-native
+            gpu: lavapipe
+            cores: 2
+            screen: native
+          - name: lavapipe-four-cores
+            gpu: lavapipe
+            cores: 4
+            screen: native
+    env:
+      TILEFLOW_PROBE_DISPLAY: ${{ matrix.configuration.screen }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -91,12 +94,12 @@ jobs:
             adb shell settings put global window_animation_scale 0
             adb shell settings put global transition_animation_scale 0
             adb shell settings put global animator_duration_scale 1
-            bash scripts/mobile-android-connected.sh supported -Pandroid.testInstrumentationRunnerArguments.class=dev.tileflow.sdk.AnnotationIntegrationTest
+            bash scripts/mobile-android-connected.sh supported
       - name: Upload Android test results
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: android-probe-${{ matrix.api }}-${{ matrix.configuration.name }}
+          name: android-probe-${{ matrix.api }}-${{ matrix.configuration.name }}-${{ matrix.trial }}
           path: |
             platforms/android/tileflow/build/reports/androidTests
             platforms/android/tileflow/build/outputs/androidTest-results

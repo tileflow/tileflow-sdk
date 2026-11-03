@@ -1,6 +1,10 @@
 import os
 from pathlib import Path
 
+if os.environ.get("TILEFLOW_PROBE_DISPLAY") == "original":
+    print("Keeping the original Pixel 6 physical display.")
+    raise SystemExit(0)
+
 path = Path(os.environ["ANDROID_AVD_HOME"]) / "test.avd/config.ini"
 settings = {"hw.lcd.width": "360", "hw.lcd.height": "800", "hw.lcd.density": "140"}
 lines = path.read_text().splitlines()

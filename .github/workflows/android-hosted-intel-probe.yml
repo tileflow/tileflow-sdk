@@ -1,0 +1,106 @@
+name: Android hosted Intel probe
+on:
+  push:
+    branches: [codex/sdk-hosted-intel]
+permissions:
+  contents: read
+concurrency:
+  group: android-hosted-intel
+  cancel-in-progress: true
+jobs:
+  probe:
+    name: Android ${{ matrix.api }} / ${{ matrix.configuration.name }} / trial ${{ matrix.trial }}
+    runs-on: macos-15-intel
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        api: [35, 36]
+        trial: [1]
+        configuration:
+          - name: intel-host
+            gpu: host
+    env:
+      TILEFLOW_PROBE_DISPLAY: native
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Prepare embedded runtime
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.13.1 --activate
+          pnpm install --frozen-lockfile
+          pnpm native:runtime
+      - name: Cache Gradle dependencies
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches/modules-2
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('platforms/android/**/*.gradle.kts', 'platforms/android/gradle/wrapper/gradle-wrapper.properties') }}
+      - name: Build instrumented test APKs
+        working-directory: platforms/android
+        run: |
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          echo "JAVA_HOME=$JAVA_HOME" >> "$GITHUB_ENV"
+          ./gradlew :tileflow:assembleDebugAndroidTest --console=plain
+      - name: Enable KVM
+        if: runner.os == 'Linux'
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Start fixture map server
+        run: |
+          nohup node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
+          curl --retry 30 --retry-all-errors --retry-delay 1 --fail http://127.0.0.1:18645/manifest.json > /dev/null
+      - name: Run instrumented tests
+        uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: ${{ matrix.api }}
+          system-image-api-level: ${{ matrix.api }}
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 4096M
+          disk-size: 6000M
+          emulator-options: -no-window -gpu ${{ matrix.configuration.gpu }} -no-snapshot -noaudio -no-boot-anim
+          pre-emulator-launch-script: python3 scripts/mobile-emulator-screen-probe.py
+          # Camera, annotation and shot tests require motion; disabling it also requests reduced motion in WebView.
+          disable-animations: false
+          # Keep the Pixel 6 logical viewport while bounding software-GPU pixel work on hosted runners.
+          # The 200-view workload, animation duration and latency assertions remain unchanged.
+          script: |
+            adb shell wm size
+            adb shell wm density
+            adb shell dumpsys SurfaceFlinger | grep GLES
+            adb shell wm size 360x800
+            adb shell wm density 140
+            adb shell settings put global window_animation_scale 0
+            adb shell settings put global transition_animation_scale 0
+            adb shell settings put global animator_duration_scale 1
+            adb reverse tcp:18645 tcp:18645
+            adb logcat -c
+            cd platforms/android && ./gradlew :tileflow:connectedDebugAndroidTest --console=plain -Pandroid.testInstrumentationRunnerArguments.tileflowWebView=supported
+      - name: Collect Android diagnostics
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/android-connected"
+          adb logcat -d > "$RUNNER_TEMP/android-connected/logcat.txt" || true
+          grep -F 'Tileflow: 200 view annotations,' "$RUNNER_TEMP/android-connected/logcat.txt" || true
+      - name: Upload Android test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: android-probe-${{ matrix.api }}-${{ matrix.configuration.name }}-${{ matrix.trial }}
+          path: |
+            platforms/android/tileflow/build/reports/androidTests
+            platforms/android/tileflow/build/outputs/androidTest-results
+            ${{ runner.temp }}/android-connected
+            ${{ runner.temp }}/map-fixture.log
+          retention-days: 7

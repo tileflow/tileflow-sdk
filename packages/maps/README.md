@@ -91,15 +91,11 @@ colors. All appearances use the daylight map's category-colored POI discs and pi
 Maki pictograms distinguish transport modes and POI types. Scene-sun lighting preserves
 unshadowed roof paint while allowing light color to affect walls.
 
-At regional scales, the daylight appearance draws an attributed climate image to separate humid
-and dry regions. It fades out by zoom 11, where mapped land cover and land use supply local detail,
-and renderers fetch the image only below that zoom. Climate is broad context, not a claim of
-surveyed vegetation at a specific site. The other appearances keep the image clear and use their
-authored land-cover palettes; framework maps also hide it there, so they never fetch it. Urban and education
-areas use neutral surfaces; farmland stays pale, while mapped orchards and nurseries remain
-green. Activity areas, where shops, food, services and offices concentrate, tint the ground by
-their activity level until buildings take over. Footprints drawn by their building parts
-(`extrude: false`) are omitted from the flat building layers. Streets
+Below zoom 11, daylight draws a climate image separating humid and dry regions; it is
+loaded only there and is broad context, not surveyed vegetation. Other appearances keep it clear.
+Urban and education areas use neutral surfaces; farmland stays pale, mapped orchards and nurseries
+green. Activity areas tint the ground by activity until buildings take over. Footprints drawn
+by building parts (`extrude: false`) are omitted from the flat building layers. Streets
 suspends duplicate flat building footprints in 3D so roads remain visible under open landmarks;
 2D mode restores ordinary footprints. Normal 3D buildings keep a small neutral/active tone difference. Authored models use
 the neutral building color and independently configurable window shading.

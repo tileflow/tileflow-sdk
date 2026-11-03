@@ -32,12 +32,35 @@ avoiding a TypeScript loader in each child process. Local tests default to sourc
 the CI path locally, build first, then run `TILEFLOW_TEST_CLI_MODE=built pnpm --filter tileflow test`.
 The built mode never falls back to source when its executable is missing.
 
-Android instrumented tests use a native macOS ARM64 GPU runner when the repository variable
-`ANDROID_GPU_RUNNER` is `true`. It must carry the `tileflow-sdk-android-gpu` label, provide JDK 17
-through `JAVA_HOME` and the Android SDK through `ANDROID_HOME`, and support an ARM64 emulator with
-host graphics. CI verifies the Apple GPU renderer and retains all three Android/WebView cases,
-the 200-annotation workload and the p95 latency budget below 100 ms. Fork pull requests remain on
-GitHub-hosted runners and require the repository's external-contributor approval policy.
+Android instrumented tests run on standard GitHub-hosted Ubuntu runners. All three Android/WebView
+cases and the 200-annotation functional test remain required: positions must match, updates must
+arrive during the pan, and annotation cleanup must work. CI passes
+`tileflowAnnotationPerformance=report` to print p50/p95/max latency without enforcing a hardware
+performance budget on shared software graphics.
+
+The strict annotation benchmark is a local, opt-in check before releases, not an automatic merge
+or publication gate. Use a reviewed checkout, JDK 17, the Android SDK, and a booted Android device
+with a supported WebView or an emulator launched with `-gpu host`. Select the device with
+`ANDROID_SERIAL` if more than one is connected. Use the same reference device and display settings
+when comparing results; the command records the device, WebView, renderer and display settings.
+No GitHub runner registration or production credentials are needed.
+
+Build the embedded runtime and start the fixture server in one terminal:
+
+```sh
+pnpm native:runtime
+node scripts/mobile-fixture-server.mjs
+```
+
+Then, from the repository root in another terminal:
+
+```sh
+pnpm benchmark:android:annotations
+```
+
+This runs the same 200-annotation test, rejects software rendering, and enforces **p95 <100 ms**.
+Stop the fixture server with Ctrl-C afterward. The instrumentation default remains `strict`;
+only an explicit `report` mode disables the latency assertion, and unknown modes fail.
 
 CI shares a temporary Node compile cache between subprocesses in each job. It caches bytecode,
 not test results, and is discarded with the runner. For a local comparison, set `NODE_COMPILE_CACHE`

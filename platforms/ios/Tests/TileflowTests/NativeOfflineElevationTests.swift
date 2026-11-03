@@ -49,7 +49,8 @@ final class NativeOfflineElevationTests: XCTestCase {
     XCTAssertEqual(zooms, [8, 9], "The release stores the elevation model's parents")
     let absentStatus = try XCTUnwrap(source["absentStatus"]?.number.map { Int($0) })
     let credits = OfflineCredit.credits(manifest["attribution"]?["sources"]?.array ?? [])
-    XCTAssertEqual(credits.map(\.id), ["emodnet", "emodnet"], "Bathymetry and its DEM over Madrid")
+    // Bathymetry and its DEM over Madrid share EMODnet's credit, which shows once.
+    XCTAssertEqual(credits.map(\.id), ["emodnet"])
 
     // The style pack's elevation TileJSON, and the tile pack's entry names, as the release has them.
     let styleFile = fixture.appendingPathComponent("release-1/packs/style.tfpack")
@@ -238,17 +239,19 @@ final class NativeOfflineElevationTests: XCTestCase {
 
     // The regional credit of the release shows while its box is in view.
     let emodnet = try XCTUnwrap(credits.first)
-    XCTAssertTrue(engine.attributionEntries.contains { $0.text == emodnet.text })
+    XCTAssertTrue(engine.attribution.entries.contains { $0.text == emodnet.text })
     let moved = expectation(description: "Camera moved away")
     moved.assertForOverFulfill = false
-    let previous = engine.attributionEntries
+    let previous = engine.attribution.entries
     engine.apply(TileflowCamera(longitude: 139.7, latitude: 35.7, zoom: 9.5))
     Task {
-      while engine.attributionEntries == previous { try await Task.sleep(nanoseconds: 50_000_000) }
+      while engine.attribution.entries == previous {
+        try await Task.sleep(nanoseconds: 50_000_000)
+      }
       moved.fulfill()
     }
     await fulfillment(of: [moved], timeout: 10)
-    XCTAssertFalse(engine.attributionEntries.contains { $0.text == emodnet.text })
+    XCTAssertFalse(engine.attribution.entries.contains { $0.text == emodnet.text })
   }
 
   // MARK: Support

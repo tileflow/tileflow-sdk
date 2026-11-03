@@ -66,7 +66,7 @@ public final class TileflowMapView: UIView {
   private var insetsUpdate: Task<Void, Never>?
   /// Return false to leave a touch that begins at this point, in this view's coordinates, to the
   /// views behind and around the map; for example over application UI drawn on the map. Native
-  /// controls receive their touches regardless.
+  /// controls and the attribution receive their touches regardless.
   public var shouldReceiveTouch: ((CGPoint) -> Bool)?
   /// The scene beyond the theme the application asked for, given again to each new renderer.
   var scene = SceneState()
@@ -159,6 +159,12 @@ public final class TileflowMapView: UIView {
     let target = super.hitTest(point, with: event)
     guard let shouldReceiveTouch, target !== controlsView, target?.isDescendant(of: controlsView) != true
     else { return target }
+    // The attribution always receives its touches, as the native controls do.
+    var view = target
+    while let current = view {
+      if current is MapAttributionView { return target }
+      view = current.superview
+    }
     return shouldReceiveTouch(point) ? target : nil
   }
 

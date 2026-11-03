@@ -82,7 +82,7 @@ actor OfflineStoreCore {
   private var unitSets: [String: [String: Int]] = [:]
   private var digestSets: [String: Set<String>] = [:]
   private var servedSets: [String: [String: OfflineServedPacks]] = [:]
-  private var creditSets: [String: [String: [OfflineCredit]]] = [:]
+  private var creditSets: [String: [String: OfflineSourceCredits]] = [:]
   private var created: [OfflinePackRequest: OfflineDownload] = [:]
   private var settings = OfflineSettings()
   /// Each Hosted region's expiry phase as last reported, so a change is reported once.
@@ -166,27 +166,31 @@ actor OfflineStoreCore {
         snapshot.packs[scope, default: .init()].merge(packs)
       }
       for (scope, credits) in credits(id, active, apiOrigin: origin) {
-        var merged = snapshot.credits[scope] ?? []
-        for credit in credits where !merged.contains(where: { $0.id == credit.id }) {
-          merged.append(credit)
-        }
-        snapshot.credits[scope] = merged
+        OfflineCredit.merge(credits.regional, into: &snapshot.credits[scope, default: []])
+        OfflineObligation.merge(
+          credits.obligations, into: &snapshot.obligations[scope, default: []])
       }
     }
     index.publish(snapshot, from: self)
   }
 
-  /// The regional credits of a Hosted version's downloads, by the cache scope of their Map.
+  /// The credits of a Hosted version's downloads, by the cache scope of their Map.
   private func credits(_ id: String, _ version: OfflineVersionRecord, apiOrigin: URL) -> [String:
-    [OfflineCredit]]
+    OfflineSourceCredits]
   {
     let key = planKey(id, version.number)
     if let cached = creditSets[key] { return cached }
     guard let plan = try? plan(id, version) else { return [:] }
-    var result: [String: [OfflineCredit]] = [:]
+    var result: [String: OfflineSourceCredits] = [:]
     for download in plan.downloads {
       let scope = ResourceCacheScope.grant(apiOrigin: apiOrigin, mapID: download.manifest.mapID)
-      result[scope.directory, default: []] += OfflineCredit.credits(download.manifest.attribution)
+      let attribution = download.manifest.attribution
+      OfflineCredit.merge(
+        OfflineCredit.credits(attribution),
+        into: &result[scope.directory, default: .init()].regional)
+      OfflineObligation.merge(
+        OfflineObligation.obligations(attribution),
+        into: &result[scope.directory, default: .init()].obligations)
     }
     creditSets[key] = result
     return result

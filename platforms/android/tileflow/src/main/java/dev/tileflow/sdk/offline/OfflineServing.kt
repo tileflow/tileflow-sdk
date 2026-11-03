@@ -108,12 +108,114 @@ internal data class OfflineCredit(
             return if (regions.isEmpty()) null else OfflineCredit(id, text, href, regions)
         }
 
-        /** The regional credits of a download's World attribution. */
+        /**
+         * The regional credits of a download's attribution, one per credit: the same credit of two
+         * sources or two downloads keeps every box either names.
+         */
         fun credits(attribution: List<JSONObject>): List<OfflineCredit> =
-            attribution.flatMap { source ->
-                val items = source.optJSONArray("regionalObligations") ?: return@flatMap emptyList()
-                (0 until items.length()).mapNotNull { items.optJSONObject(it)?.let(::of) }
+            merging(
+                emptyList(),
+                attribution.flatMap { source ->
+                    val items =
+                        source.optJSONArray("regionalObligations") ?: return@flatMap emptyList()
+                    (0 until items.length()).mapNotNull { items.optJSONObject(it)?.let(::of) }
+                },
+            )
+
+        /**
+         * [list] with [credits] added. A credit is its identifier and its exact text: Nautical's
+         * and Bathymetry's NOAA credits share an identifier and differ in text, and both show.
+         */
+        fun merging(list: List<OfflineCredit>, credits: List<OfflineCredit>): List<OfflineCredit> {
+            val result = list.toMutableList()
+            for (credit in credits) {
+                val index = result.indexOfFirst { it.id == credit.id && it.text == credit.text }
+                if (index < 0) {
+                    result += credit
+                    continue
+                }
+                val current = result[index]
+                val added = credit.regions.filter { it !in current.regions }
+                result[index] = current.copy(regions = current.regions + added)
             }
+            return result
+        }
+    }
+}
+
+/**
+ * A notice of a stored release that maps show wherever its data is: one of a source's
+ * `obligations`, or the source's `page`, which holds its full notices online.
+ */
+internal data class OfflineObligation(
+    val id: String,
+    val text: String,
+    /** The page's address, for a source's page; null for an obligation. */
+    val href: String? = null,
+) {
+    companion object {
+        /** The obligations and then the page of each source of a download's attribution. */
+        fun obligations(attribution: List<JSONObject>): List<OfflineObligation> {
+            var result = emptyList<OfflineObligation>()
+            for (source in attribution) {
+                val items = mutableListOf<OfflineObligation>()
+                val obligations = source.optJSONArray("obligations")
+                for (index in 0 until (obligations?.length() ?: 0)) {
+                    val value = obligations?.optJSONObject(index) ?: continue
+                    val id = value.optString("id").takeIf { it.isNotEmpty() && it.length <= 192 }
+                    val text =
+                        value.optString("exact").takeIf { it.isNotEmpty() && it.length <= 65_536 }
+                    if (id != null && text != null) items += OfflineObligation(id, text)
+                }
+                source.optJSONObject("page")?.let { page ->
+                    val text = page.optString("exact")
+                    val href = page.optString("href")
+                    if (
+                        text.isNotEmpty() &&
+                            text.length <= 65_536 &&
+                            href.startsWith("https://") &&
+                            href.length <= 2048
+                    )
+                        items += OfflineObligation("page", text, href)
+                }
+                result = merging(result, items)
+            }
+            return result
+        }
+
+        /** [list] with [obligations] added, each exact text once. */
+        fun merging(
+            list: List<OfflineObligation>,
+            obligations: List<OfflineObligation>,
+        ): List<OfflineObligation> {
+            val result = list.toMutableList()
+            for (obligation in obligations)
+                if (result.none { it.text == obligation.text }) result += obligation
+            return result
+        }
+    }
+}
+
+/**
+ * The credits a Map's stored releases ask its maps to show: obligations and pages always, regional
+ * credits while one of their boxes is in view.
+ */
+internal data class OfflineSourceCredits(
+    val regional: List<OfflineCredit> = emptyList(),
+    val obligations: List<OfflineObligation> = emptyList(),
+) {
+    fun merging(other: OfflineSourceCredits): OfflineSourceCredits =
+        OfflineSourceCredits(
+            OfflineCredit.merging(regional, other.regional),
+            OfflineObligation.merging(obligations, other.obligations),
+        )
+
+    companion object {
+        fun of(attribution: List<JSONObject>): OfflineSourceCredits =
+            OfflineSourceCredits(
+                OfflineCredit.credits(attribution),
+                OfflineObligation.obligations(attribution),
+            )
     }
 }
 
@@ -185,13 +287,14 @@ internal data class OfflineServedPacks(
 
 /**
  * What stored regions a map may use without a network: the cache paths of every available region's
- * resources, the packs of each Hosted Map and the regional credits of its releases, by the cache
- * scope of the Map.
+ * resources, the packs of each Hosted Map and the credits of its releases (regional credits, and
+ * obligations and pages), by the cache scope of the Map.
  */
 internal data class OfflineServingSnapshot(
     val paths: Set<String> = emptySet(),
     val packs: Map<String, OfflineServedPacks> = emptyMap(),
     val credits: Map<String, List<OfflineCredit>> = emptyMap(),
+    val obligations: Map<String, List<OfflineObligation>> = emptyMap(),
 )
 
 /**
@@ -213,17 +316,18 @@ internal class OfflineServingIndex {
             stores[store] = snapshot
             val paths = HashSet<String>()
             val packs = HashMap<String, OfflineServedPacks>()
-            val credits = HashMap<String, MutableList<OfflineCredit>>()
+            val credits = HashMap<String, List<OfflineCredit>>()
+            val obligations = HashMap<String, List<OfflineObligation>>()
             for (each in stores.values) {
                 paths.addAll(each.paths)
                 for ((scope, served) in each.packs)
                     packs[scope] = packs[scope]?.merging(served) ?: served
-                for ((scope, list) in each.credits) {
-                    val merged = credits.getOrPut(scope) { mutableListOf() }
-                    for (credit in list) if (merged.none { it.id == credit.id }) merged.add(credit)
-                }
+                for ((scope, list) in each.credits)
+                    credits[scope] = OfflineCredit.merging(credits[scope].orEmpty(), list)
+                for ((scope, list) in each.obligations)
+                    obligations[scope] = OfflineObligation.merging(obligations[scope].orEmpty(), list)
             }
-            merged = OfflineServingSnapshot(paths, packs, credits)
+            merged = OfflineServingSnapshot(paths, packs, credits, obligations)
         }
         published.countDown()
     }
@@ -326,6 +430,13 @@ internal class OfflineServingIndex {
 
     fun credits(scope: ResourceCacheScope): List<OfflineCredit> =
         snapshot().credits[scope.directory].orEmpty()
+
+    /**
+     * The obligations and pages of the sources [scope]'s Map's stored regions hold, which its maps
+     * show whatever they look at. Blocks a resource thread, as [snapshot] does.
+     */
+    fun obligations(scope: ResourceCacheScope): List<OfflineObligation> =
+        snapshot().obligations[scope.directory].orEmpty()
 
     /**
      * The zooms the regions [scope]'s Map may use store for the source whose tile template is

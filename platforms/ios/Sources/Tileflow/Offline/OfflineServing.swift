@@ -71,6 +71,10 @@ struct OfflineCredit: Sendable, Hashable {
       regions.append(numbers)
     }
     guard !regions.isEmpty else { return nil }
+    self.init(id: id, text: text, href: href, regions: regions)
+  }
+
+  private init(id: String, text: String, href: String, regions: [[Double]]) {
     self.id = id
     self.text = text
     self.href = href
@@ -85,15 +89,79 @@ struct OfflineCredit: Sendable, Hashable {
     ])
   }
 
-  /// The regional credits of a download's World attribution.
+  /// The regional credits of a download's attribution, one per credit: the same credit of two
+  /// sources or two downloads keeps every box either names.
   static func credits(_ attribution: [JSONValue]) -> [OfflineCredit] {
     var credits: [OfflineCredit] = []
     for source in attribution {
       guard case .array(let items) = source["regionalObligations"] else { continue }
-      credits += items.compactMap(OfflineCredit.init)
+      merge(items.compactMap(OfflineCredit.init), into: &credits)
     }
     return credits
   }
+
+  /// Adds credits to a list. A credit is its identifier and its exact text: Nautical's and
+  /// Bathymetry's NOAA credits share an identifier and differ in text, and both show.
+  static func merge(_ credits: [OfflineCredit], into list: inout [OfflineCredit]) {
+    for credit in credits {
+      guard let index = list.firstIndex(where: { $0.id == credit.id && $0.text == credit.text })
+      else {
+        list.append(credit)
+        continue
+      }
+      let current = list[index]
+      list[index] = OfflineCredit(
+        id: current.id, text: current.text, href: current.href,
+        regions: current.regions + credit.regions.filter { !current.regions.contains($0) })
+    }
+  }
+}
+
+/// A notice of a stored release that maps show wherever its data is: one of a source's
+/// `obligations`, or the source's `page`, which holds its full notices online.
+struct OfflineObligation: Sendable, Hashable {
+  let id: String
+  let text: String
+  /// The page's address, for a source's page; nil for an obligation.
+  let href: String?
+
+  /// The obligations and then the page of each source of a download's attribution, each text
+  /// once.
+  static func obligations(_ attribution: [JSONValue]) -> [OfflineObligation] {
+    var result: [OfflineObligation] = []
+    for source in attribution {
+      var items: [OfflineObligation] = []
+      if case .array(let obligations) = source["obligations"] {
+        for value in obligations {
+          guard let id = value["id"]?.string, !id.isEmpty, id.count <= 192,
+            let text = value["exact"]?.string, !text.isEmpty, text.utf16.count <= 65_536
+          else { continue }
+          items.append(OfflineObligation(id: id, text: text, href: nil))
+        }
+      }
+      if let page = source["page"], let text = page["exact"]?.string, !text.isEmpty,
+        text.utf16.count <= 65_536, let href = page["href"]?.string, href.hasPrefix("https://"),
+        href.count <= 2048
+      {
+        items.append(OfflineObligation(id: "page", text: text, href: href))
+      }
+      merge(items, into: &result)
+    }
+    return result
+  }
+
+  static func merge(_ obligations: [OfflineObligation], into list: inout [OfflineObligation]) {
+    for obligation in obligations where !list.contains(where: { $0.text == obligation.text }) {
+      list.append(obligation)
+    }
+  }
+}
+
+/// The credits a Map's stored releases ask its maps to show: obligations and pages always,
+/// regional credits while one of their boxes is in view.
+struct OfflineSourceCredits: Sendable, Hashable {
+  var regional: [OfflineCredit] = []
+  var obligations: [OfflineObligation] = []
 }
 
 /// A source's stored tiles: the packs under each anchor, and the covers whose tiles a pack would
@@ -172,13 +240,15 @@ struct OfflineServedPacks: Sendable {
 }
 
 /// What stored regions a map may use without a network: the cache paths of every available
-/// region's resources, the packs of each Hosted Map and the regional credits of its releases.
+/// region's resources, the packs of each Hosted Map and the credits of its releases.
 struct OfflineServingSnapshot: Sendable {
   var paths: Set<String> = []
   /// Packs by the cache scope of the Map they belong to.
   var packs: [String: OfflineServedPacks] = [:]
-  /// Credits by the cache scope of the Map they belong to.
+  /// Regional credits by the cache scope of the Map they belong to.
   var credits: [String: [OfflineCredit]] = [:]
+  /// Obligations and pages by the cache scope of the Map they belong to.
+  var obligations: [String: [OfflineObligation]] = [:]
 }
 
 /// The process's view of stored regions for the transport. Each store publishes what it holds
@@ -213,11 +283,10 @@ final class OfflineServingIndex: Sendable {
         merged.paths.formUnion(snapshot.paths)
         for (scope, packs) in snapshot.packs { merged.packs[scope, default: .init()].merge(packs) }
         for (scope, credits) in snapshot.credits {
-          var list = merged.credits[scope] ?? []
-          for credit in credits where !list.contains(where: { $0.id == credit.id }) {
-            list.append(credit)
-          }
-          merged.credits[scope] = list
+          OfflineCredit.merge(credits, into: &merged.credits[scope, default: []])
+        }
+        for (scope, obligations) in snapshot.obligations {
+          OfflineObligation.merge(obligations, into: &merged.obligations[scope, default: []])
         }
       }
       current.merged = merged
@@ -301,6 +370,12 @@ final class OfflineServingIndex: Sendable {
 
   func credits(for scope: ResourceCacheScope) async -> [OfflineCredit] {
     await snapshot().credits[scope.directory] ?? []
+  }
+
+  /// The obligations and pages of the sources a Map's stored regions hold, which its maps show
+  /// whatever they look at.
+  func obligations(for scope: ResourceCacheScope) async -> [OfflineObligation] {
+    await snapshot().obligations[scope.directory] ?? []
   }
 
   /// The zooms the regions a map may use store for the tile source with `template`, or nil when

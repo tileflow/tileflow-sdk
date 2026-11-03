@@ -58,8 +58,19 @@ final class CameraTests: XCTestCase {
     let options = TileflowMapOptions(
       gestures: .init(cooperative: true),
       controls: .init(attributionPosition: .bottomLeading))
-    XCTAssertEqual(try options.wireValue(rightToLeft: false)["attribution"]?.string, "bottom-left")
-    XCTAssertEqual(try options.wireValue(rightToLeft: true)["attribution"]?.string, "bottom-right")
+    // The native control takes the corner the options name once the layout direction applies.
+    let control = MapAttributionControl()
+    control.view.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+    control.setStyle([:], attributions: ["© Tileflow"])
+    for (rightToLeft, left) in [(false, true), (true, false)] {
+      control.place(
+        corner: try options.wireValue(rightToLeft: rightToLeft)["attribution"]?.string,
+        insets: nil)
+      control.view.layoutIfNeeded()
+      let frame = control.view.control.frame
+      XCTAssertEqual(left ? frame.minX : frame.maxX, left ? 8 : 390 - 8, accuracy: 0.5)
+      XCTAssertEqual(frame.maxY, 844 - 8, accuracy: 0.5)
+    }
     XCTAssertEqual(
       try options.wireValue(rightToLeft: false)["gestures"]?["cooperative"]?.bool, true)
     XCTAssertFalse(TileflowGestures.none.movesMap)

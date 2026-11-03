@@ -80,7 +80,9 @@ final class MapLibreResourceProtocol: URLProtocol, @unchecked Sendable {
       guard !loading.isStopped else { return }
       answerObserver?(remote, response.status)
       route.report(
-        MapResourceOutcome(kind: kind, origin: origin, status: response.status, failure: nil))
+        MapResourceOutcome(
+          kind: kind, origin: origin, status: response.status, failure: nil,
+          fairUse: MapFairUseSignal(remote, status: response.status, headers: response.headers)))
       loading.client?.urlProtocolDidFinishLoading(loading)
     } catch {
       guard let loading = owner.value, !loading.isStopped, !Task.isCancelled else { return }

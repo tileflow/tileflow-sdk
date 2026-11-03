@@ -65,10 +65,11 @@ struct NativeManifest: Sendable {
     }
   }
 
-  /// Reads the map's manifest. `fromPacks` says the map opens from its downloaded regions.
+  /// Reads the map's manifest. `fromPacks` says the map opens from its downloaded regions;
+  /// `native` false reads the WebView profile even when discovery announces the native one.
   static func load(
     map: String, manifestURL: URL, discoveryMapID: String?, fromPacks: Bool = false,
-    read: (URL, TileflowResourceKind) async throws -> [String: Any]
+    native allowsNative: Bool = true, read: (URL, TileflowResourceKind) async throws -> [String: Any]
   ) async throws -> NativeManifest {
     guard let discoveryMapID else {
       return try parse(
@@ -83,7 +84,7 @@ struct NativeManifest: Sendable {
       ((representations[representation.rawValue] as? [String: Any])?["manifestUrl"] as? String)
         .flatMap(URL.init(string:))
     }
-    if let native = profileURL(.native) {
+    if allowsNative, let native = profileURL(.native) {
       do {
         var manifest = try parse(
           try await read(native, .manifest), map: map, url: native, representation: .native)

@@ -7,8 +7,10 @@ import android.util.SparseArray
 import android.os.SystemClock
 import android.view.AbsSavedState
 import android.view.MotionEvent
+import android.view.View
 import android.widget.FrameLayout
 import androidx.compose.runtime.saveable.SaverScope
+import dev.tileflow.sdk.attribution.MapAttributionControl
 import java.util.Locale
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.runBlocking
@@ -25,6 +27,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -90,8 +93,22 @@ public class CameraTest {
             )
         val json = options.json()
         assertFalse(json.has("controls"))
-        assertEquals("bottom-left", json.getString("attribution"))
-        assertEquals("bottom-right", options.json(rightToLeft = true).getString("attribution"))
+        // The native control takes the corner the options name once the layout direction applies.
+        val application = RuntimeEnvironment.getApplication()
+        val control = MapAttributionControl(application)
+        control.setStyle(JSONObject(), listOf("© Tileflow"))
+        val margin = (8 * application.resources.displayMetrics.density).toInt()
+        for ((rightToLeft, left) in listOf(false to true, true to false)) {
+            control.place(options.json(rightToLeft).getString("attribution"), null)
+            control.view.measure(
+                View.MeasureSpec.makeMeasureSpec(400, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(800, View.MeasureSpec.EXACTLY),
+            )
+            control.view.layout(0, 0, 400, 800)
+            val placed = control.view.control
+            assertEquals(if (left) margin else 400 - margin, if (left) placed.left else placed.right)
+            assertEquals(800 - margin, placed.bottom)
+        }
         assertEquals(true, json.getJSONObject("gestures").getBoolean("cooperative"))
         assertEquals(2.0, json.getJSONObject("gestures").getDouble("doubleTapZoomDelta"), 0.0)
         assertEquals(24.0, json.getJSONObject("limits").getDouble("maxZoom"), 0.0)

@@ -183,8 +183,8 @@ public class NativeMapEngineIntegrationTest {
                             requests.matching("/sprites/").size >= 2
                     }
                     assertTrue(
-                        "Attribution: ${activity.engine?.attribution}",
-                        activity.engine?.attribution?.any { it.text == "Fixture World" } == true,
+                        "Attribution: ${activity.engine?.attribution?.entries}",
+                        activity.engine?.attribution?.entries?.any { it.text == "Fixture World" } == true,
                     )
                 } finally {
                     finish(activity)

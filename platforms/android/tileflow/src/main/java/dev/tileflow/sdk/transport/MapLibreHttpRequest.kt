@@ -2,6 +2,7 @@ package dev.tileflow.sdk.transport
 
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.TileflowResourceKind
+import dev.tileflow.sdk.attribution.MapFairUseSignal
 import java.io.IOException
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -69,7 +70,15 @@ internal class MapLibreHttpRequest(private val previous: HttpRequest) : HttpRequ
                     val response =
                         route.loader.open(remote, "GET", dataRange.takeIf { it.isNotEmpty() })
                     val body = response.body.use { it.readBytes() }
-                    route.report(MapResourceOutcome(kind, origin, response.status))
+                    route.report(
+                        MapResourceOutcome(
+                            kind,
+                            origin,
+                            response.status,
+                            fairUse =
+                                MapFairUseSignal.of(remote, response.status, response.headers),
+                        )
+                    )
                     MapResourceContexts.onRequest?.invoke(remote, response.status)
                     if (!cancelled.get())
                         responder.onResponse(

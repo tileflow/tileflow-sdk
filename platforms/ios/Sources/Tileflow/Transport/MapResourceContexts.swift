@@ -10,6 +10,8 @@ struct MapResourceOutcome: Sendable {
   let status: Int?
   /// A failure the map reports as its own, such as an exhausted quota.
   let failure: TileflowMapError?
+  /// What a World tile's response says about fair use.
+  var fairUse: MapFairUseSignal? = nil
 }
 
 /// What a mounted native map answers its engine's requests with.

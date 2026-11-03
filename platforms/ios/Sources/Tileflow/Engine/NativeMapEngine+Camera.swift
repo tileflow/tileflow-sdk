@@ -87,6 +87,7 @@ extension NativeMapEngine {
       ])
     case .setInsets:
       camera.setInsets(Self.insets(payload))
+      attribution.place(corner: nil, insets: payload)
       return .null
     case .setEvents:
       setEvents(payload["events"])

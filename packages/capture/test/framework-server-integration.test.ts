@@ -159,7 +159,7 @@ test(
     );
     assert.equal(
       JSON.parse(await readFile(join(outputDirectory, 'tileflow/manifest.json'), 'utf8')).version,
-      2,
+      3,
     );
     const server = createWebpackApplicationServer(outputDirectory, '/');
     server.listen(0, '127.0.0.1');
@@ -390,7 +390,7 @@ async function buildNextFixture(cwd: string, bundler: 'default' | 'webpack'): Pr
   });
   assert.equal(
     JSON.parse(await readFile(join(cwd, 'public/tileflow/manifest.json'), 'utf8')).version,
-    2,
+    3,
   );
 }
 

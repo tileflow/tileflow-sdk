@@ -5,7 +5,7 @@ import {tileflowBuildingFragment} from '../../core/src/buildings-3d-shaders';
 import {launchTileflowCaptureBrowser} from '../src/browser';
 
 test(
-  'facade contact fades up the wall without stacking gradients, dark roofs or raised-part rims',
+  'authored facade gradients and ground contact stay bounded without dark roofs or raised-part rims',
   {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1'},
   async () => {
     const browser = await launchTileflowCaptureBrowser({allowInstall: false});
@@ -101,6 +101,7 @@ void main() {
                 resolution,
                 plain: read(false, false),
                 contact: read(true, false),
+                gradient: read(false, true),
                 combined: read(true, true),
                 corners: read(true, true, {corners: 3}),
                 roof: read(true, true, {wall: 0}),
@@ -120,14 +121,22 @@ void main() {
             const row = Math.min(view.resolution - 1, Math.floor((height / 12) * view.resolution));
             return 1 - pixels[row]! / view.plain[row]!;
           };
-          // Legacy style lighting also changes the whole wall's brightness when its authored
-          // gradient is on. Compare the profile relative to that wall's upper colour.
+          // The authored facade gradient extends beyond ground contact. Enabling it must
+          // select the stronger shade, never multiply both. Legacy style lighting also
+          // changes the wall's overall brightness; normalize with its unaffected upper edge.
           const lightingRatio = view.combined.at(-1)! / view.contact.at(-1)!;
           assert.ok(
             view.contact.every(
-              (pixel, index) => Math.abs(pixel * lightingRatio - view.combined[index]!) <= 2,
+              (pixel, index) =>
+                Math.abs(
+                  Math.min(pixel * lightingRatio, view.gradient[index]!) - view.combined[index]!,
+                ) <= 2,
             ),
-            'vertical gradient must not double the AO',
+            'the combined profile must not accumulate the authored gradient and contact shade',
+          );
+          assert.ok(
+            view.gradient.some((pixel, index) => pixel < view.contact[index]! * lightingRatio - 3),
+            'the authored gradient must remain visible above the contact shade',
           );
           assert.deepEqual(view.roof, view.plainRoof, 'facade AO must not darken roofs');
           assert.ok(strength(view.contact, 0) > 0.12 && strength(view.contact, 0) < 0.15);

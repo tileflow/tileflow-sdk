@@ -1,4 +1,5 @@
 import type {TileflowDomainCompileContext} from '../../cartography/context';
+import {tileflowNativeBuildingsLayerId} from '../../building-layer-ids';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applyExtrusionStyle, createAreaLayers} from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
@@ -91,7 +92,7 @@ export function compileBuildings(
       kind: 'layer',
       layer: applyExtrusionStyle(
         {
-          id: 'tileflow-buildings-3d',
+          id: tileflowNativeBuildingsLayerId,
           type: 'fill-extrusion',
           source,
           'source-layer': sourceLayer,

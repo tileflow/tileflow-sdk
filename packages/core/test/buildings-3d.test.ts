@@ -408,16 +408,16 @@ test('the sun sees nearer points at a smaller depth and holds the whole box', ()
 
 function fakeMap() {
   const listeners = new Map<string, Set<() => void>>();
-  const layers = new Set<string>();
+  const layers = new Map<string, {id: string}>();
   return {
     layers,
     listeners,
     addLayer(layer: {id: string}) {
-      layers.add(layer.id);
+      layers.set(layer.id, layer);
     },
     getBearing: () => 0,
     getCenter: () => ({lat: 25.76, lng: -80.19}),
-    getLayer: (id: string) => (layers.has(id) ? {} : undefined),
+    getLayer: (id: string) => layers.get(id),
     getPaintProperty: () => undefined,
     getPitch: () => 60,
     getSource: () => undefined,
@@ -460,6 +460,15 @@ test('the renderer puts its layer on the map, grows without a renderer and leave
   buildings.dispose();
   assert.equal(map.layers.has(tileflowBuildings3DLayerId), false);
   for (const set of map.listeners.values()) assert.equal(set.size, 0);
+});
+
+test('disposing a renderer leaves a replacement layer from a new style alone', () => {
+  const map = fakeMap();
+  const buildings = createTileflowBuildings3D({map});
+  const replacement = {id: tileflowBuildings3DLayerId};
+  map.layers.set(tileflowBuildings3DLayerId, replacement);
+  buildings.dispose();
+  assert.equal(map.layers.get(tileflowBuildings3DLayerId), replacement);
 });
 
 test('standalone buildings reuse metadata until the style changes', () => {

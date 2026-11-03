@@ -215,7 +215,7 @@ test('administrative, disputed, and maritime boundary filters are disjoint', () 
 
 test('3d buildings use a conservative height and clamp their base to the height', () => {
   const style = styleFor(compileBuildings(buildings({mode: '3d'}), context));
-  const layer = style.layers.find((candidate) => candidate.id === 'tileflow-buildings-3d');
+  const layer = style.layers.find((candidate) => candidate.id === 'tileflow-buildings-native-extrusion');
   const serialized = JSON.stringify(layer);
 
   assert.match(serialized, /fill-extrusion-height/);

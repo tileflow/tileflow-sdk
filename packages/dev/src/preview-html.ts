@@ -1146,7 +1146,7 @@ export function renderTileflowPreviewHtml(
       const runtimeLayerVisibility = {};
       globalThis.__tileflowPreviewScene = coreScene;
       globalThis.__tileflowRuntimeVisibility = (id, visible) => {
-        if (!['tileflow-buildings-3d','tileflow-trees-3d','tileflow-street-lights'].includes(id)) return undefined;
+        if (!['tileflow-buildings-scene-3d','tileflow-trees-3d','tileflow-street-lights'].includes(id)) return undefined;
         const previewMap = globalThis.__tileflowPreviewMap;
         if (typeof visible === 'boolean') {
           runtimeLayerVisibility[id] = visible;
@@ -1160,7 +1160,7 @@ export function renderTileflowPreviewHtml(
       globalThis.__tileflowDescribeRuntimeLayers = () => {
         const {buildings, vegetation, streetLights} = coreScene.scene ?? {};
         return {
-          ...(buildings ? {"tileflow-buildings-3d": {controller:"Buildings 3D", state:{visible:runtimeLayerVisibility["tileflow-buildings-3d"] !== false, shown:coreScene.buildingsShown, scale:buildings.scale}, stats:buildings.stats}} : {}),
+          ...(buildings ? {"tileflow-buildings-scene-3d": {controller:"Buildings 3D", state:{visible:runtimeLayerVisibility["tileflow-buildings-scene-3d"] !== false, shown:coreScene.buildingsShown, scale:buildings.scale}, stats:buildings.stats}} : {}),
           ...(vegetation ? {"tileflow-trees-3d": {controller:"Vegetation", state:{visible:runtimeLayerVisibility["tileflow-trees-3d"] !== false, representation:vegetation.representation}, stats:vegetation.stats}} : {}),
           ...(streetLights ? {"tileflow-street-lights": {controller:"Street lights", state:{visible:runtimeLayerVisibility["tileflow-street-lights"] !== false, mounted:true}, stats:streetLights.stats}} : {})
         };
@@ -1216,7 +1216,7 @@ export function renderTileflowPreviewHtml(
             void (threeDimensionalEnabled ? scene.show({transition: {duration, mode: animation === "fade" ? "fade" : "grow"}}) : scene.hide(instant));
           }
           // The inspector can hide the buildings alone.
-          const showBuildings = threeDimensionalEnabled && runtimeLayerVisibility["tileflow-buildings-3d"] !== false;
+          const showBuildings = threeDimensionalEnabled && runtimeLayerVisibility["tileflow-buildings-scene-3d"] !== false;
           if (scene.buildings && coreScene.buildingsShown !== showBuildings) {
             coreScene.buildingsShown = showBuildings;
             void (showBuildings ? scene.buildings.show(instant) : scene.buildings.hide(instant));
@@ -1278,6 +1278,7 @@ export function renderTileflowPreviewHtml(
             if (toggle !== "building" && toggle !== "landmark") continue;
             // Core's 3D buildings stand in for the compiled extrusion where the style describes them.
             const replaced = toggle === "building" && reads.metadata()?.["tileflow:buildings"];
+            if (replaced) continue; // Core switches the native extrusion only when its scene can draw.
             const visibility = this.enabled && !replaced ? "visible" : "none";
             if (this.map.getLayoutProperty(layer.id, "visibility") !== visibility) {
               this.map.setLayoutProperty(layer.id, "visibility", visibility);
@@ -1476,6 +1477,7 @@ export function renderTileflowPreviewHtml(
           // Core's 3D buildings and trees stand in for compiled extrusions and flat trees.
           const replacedByCore =
             threeDimensionalToggle === "building" && styleMetadata["tileflow:buildings"];
+          if (replacedByCore && !hideLayer) continue;
           const toggleVisibility = replacedByCore
             ? "none"
             : threeDimensionalToggle === "building" || threeDimensionalToggle === "landmark"

@@ -1117,7 +1117,7 @@ test('Streets road labels retain class thresholds and readable text below buildi
       contributions.some(({target}) => target === 'buildings.flat.fill'),
     )!.index;
     const buildingIndex = style.layers.findIndex(
-      ({id}) => id === 'tileflow-buildings-render-extrusion',
+      ({id}) => id === 'tileflow-buildings-native-extrusion',
     );
     const destinationIndex = style.layers.findIndex(({id}) => id === 'tileflow-poi');
     assert.ok(destinationIndex > buildingIndex);
@@ -1316,7 +1316,7 @@ test('Streets keeps its runtime-toggle geometry and business surface in the comp
   // Core's 3D buildings take the colour of Streets' 3D building pass; street lights stay off.
   const buildings3D = readTileflowBuildings3D(style.metadata);
   assert.ok(buildings3D, 'Streets lost its 3D buildings description');
-  const extrusion = byId.get('tileflow-buildings-render-extrusion');
+  const extrusion = byId.get('tileflow-buildings-native-extrusion');
   assert.deepEqual(buildings3D.color, extrusion?.paint?.['fill-extrusion-color']);
   assert.equal(buildings3D.layers.building, extrusion?.['source-layer']);
   assert.equal(buildings3D.windows, false);
@@ -1511,7 +1511,38 @@ test('Streets buildings switch to native extrusions only without the flat render
   const layerIds = compileOfficialMap(extend({mode: '3d', renderStack: reset()}), 'light')
     .layers.map(({id}) => id)
     .filter((id) => id.startsWith('tileflow-buildings'));
-  assert.deepEqual(layerIds, ['tileflow-buildings-3d']);
+  assert.deepEqual(layerIds, ['tileflow-buildings-native-extrusion']);
+});
+
+test('Streets can compile native buildings and placed GLB models with distinct layer IDs', () => {
+  const map = defineMap({
+    id: 'streets-with-model',
+    version: 1,
+    extends: streets,
+    modules: {
+      buildings: refine({
+        mode: '3d',
+        renderStack: reset(),
+        threeDimensional: {
+          models: [
+            {model: 'tower', url: 'https://example.com/models/tower.glb', at: [2.2945, 48.8583]},
+          ],
+        },
+      }),
+    },
+  });
+  const style = compileOfficialMap(map, 'light');
+  assert.ok(
+    style.layers.some(
+      ({id, type}) => id === 'tileflow-buildings-native-extrusion' && type === 'fill-extrusion',
+    ),
+  );
+  assert.equal(
+    style.layers.some(({id}) => id === 'tileflow-buildings-scene-3d'),
+    false,
+  );
+  assert.equal(readTileflowBuildings3D(style.metadata)?.models?.[0]?.model, 'tower');
+  assert.deepEqual(validateStyleMin(style as never), []);
 });
 
 test('Streets colours the water, vegetation and wood parts of models in every theme', () => {

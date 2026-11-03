@@ -157,7 +157,7 @@ test('1777 raises opaque red buildings with map-anchored light and shared shadow
   assert.equal(readTileflowStreetLights(style.metadata), undefined);
 
   const extrusion = style.layers.find(
-    (layer) => layer.id === 'tileflow-buildings-render-extrusion',
+    (layer) => layer.id === 'tileflow-buildings-native-extrusion',
   );
   assert.ok(extrusion?.type === 'fill-extrusion');
   assert.equal(extrusion.paint?.['fill-extrusion-opacity'], 1);
@@ -248,10 +248,10 @@ test('1777 places plazas below garden patterns and keeps transport surfaces off 
   const surface = position('tileflow-road-surface-primary-fill');
   const bridge = position('tileflow-road-bridge-primary-fill');
   assert.ok(tunnel < surface && surface < bridge);
-  assert.ok(bridge < position('tileflow-buildings-render-extrusion'));
+  assert.ok(bridge < position('tileflow-buildings-native-extrusion'));
   assert.ok(
     position('tileflow-labels-render-roadPrimary') <
-      position('tileflow-buildings-render-extrusion'),
+      position('tileflow-buildings-native-extrusion'),
   );
   const roadName = style.layers[position('tileflow-labels-render-roadPrimary')];
   assert.ok(roadName?.type === 'symbol');

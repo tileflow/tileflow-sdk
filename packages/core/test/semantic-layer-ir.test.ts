@@ -87,7 +87,7 @@ test('binds closed semantic keys to the existing physical ID contract only at lo
     'aeroways.runway.fill': 'tileflow-aeroway-runway-fill',
     'boundaries.disputed.maritime': 'tileflow-boundary-disputed-maritime',
     'buildings.businessCorridor.fill': 'tileflow-business-corridor',
-    'buildings.extrusion': 'tileflow-buildings-3d',
+    'buildings.extrusion': 'tileflow-buildings-native-extrusion',
     'labels.cohorts.roads.cohort2': 'tileflow-label-road-cohort-2',
     'labels.places.city': 'tileflow-label-place-city',
     'labels.shields.detail': 'tileflow-label-road-shield-detail',

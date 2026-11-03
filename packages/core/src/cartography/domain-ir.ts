@@ -13,6 +13,7 @@ import {
   type TileflowPhysicalFamilyDeclaration,
 } from './contributions';
 import type {TileflowCompiledDomains} from './domain-registry';
+import {tileflowNativeBuildingsLayerId} from '../building-layer-ids';
 import type {TileflowLayerDomain} from './domains';
 import type {TileflowCompiledRenderOperation} from './render-stack';
 import {bindSemanticReferences} from './semantic-bindings';
@@ -315,6 +316,7 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
   const exact = exactPhysicalLayerIds[semanticKey];
   if (exact) return exact;
 
+  if (semanticKey === 'buildings.render.extrusion') return tileflowNativeBuildingsLayerId;
   let match = /^([A-Za-z0-9_-]+)\.render\.([A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)$/u.exec(
     semanticKey,
   );
@@ -452,7 +454,7 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
 const exactPhysicalLayerIds: Readonly<Record<string, string>> = Object.freeze({
   'addresses.labels': 'tileflow-addresses-labels',
   'aeroways.runwayRef': 'tileflow-aeroway-runway-ref',
-  'buildings.extrusion': 'tileflow-buildings-3d',
+  'buildings.extrusion': tileflowNativeBuildingsLayerId,
   'labels.aerodrome': 'tileflow-label-aerodrome',
   'labels.junctions': 'tileflow-label-road-junction',
   'land.background': 'tileflow-background',

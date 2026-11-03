@@ -595,7 +595,7 @@ function evaluate(value: unknown, properties: Record<string, unknown>): unknown 
 test('compiled buildings inherit the shared finish and retain independent overrides', () => {
   const layers = [
     {
-      id: 'tileflow-buildings-render-extrusion',
+      id: 'tileflow-buildings-native-extrusion',
       paint: {
         'fill-extrusion-color': '#eee4da',
         'fill-extrusion-vertical-gradient': false,

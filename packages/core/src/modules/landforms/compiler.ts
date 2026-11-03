@@ -50,7 +50,7 @@ export function compileLandforms(
       {
         minZoom,
         placement: 'point',
-        priority: expression<number>(['-', 100, ['to-number', ['get', schema.fields.filterrank], 99]]),
+        priority: expression<number>(['-', 100, ['to-number', ['get', schema.fields.filterrank], 5]]),
         text: {
           allowOverlap: false,
           color: context.colors.labels.muted,
@@ -146,7 +146,8 @@ function landformFilter(
     ['has', fields.name],
     classFilter,
     classZoom,
-    ['<=', ['to-number', ['get', fields.filterrank], 99], ['step', ['zoom'], 3, 12, 10, 14, 99]],
+    // World ranks landforms 0 (most important) to 5.
+    ['<=', ['to-number', ['get', fields.filterrank], 5], ['step', ['zoom'], 2, 12, 5]],
   ];
 }
 

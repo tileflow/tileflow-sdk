@@ -136,7 +136,7 @@ export type TileflowBuildingMesh = Readonly<{
 
 /**
  * Meshes the buildings of one decoded tile layer, or returns undefined when it has none. It reads
- * World's `height`, `min_height`, `extrude`, `tone`, `class` and `night_use`, or OpenMapTiles'
+ * World's `height`, `min_height`, `extrude`, `tone`, `use` and `night_use`, or OpenMapTiles'
  * `render_height`, `render_min_height` and `hide_3d`.
  * Vertex layout:
  * 0 position in the tile, 0 to 8192 (uint16 ×2); 4 base and top in decimetres (uint16 ×2); 8 the
@@ -185,7 +185,7 @@ export function meshTileflowBuildings(
       positive(properties.min_height) ?? positive(properties.render_min_height) ?? 0,
     );
     const tone = tones[String(properties.tone ?? '')] ?? 0;
-    const group = classGroups[String(properties.class ?? '')] ?? 0;
+    const group = classGroups[String(properties.use ?? properties.class ?? '')] ?? 0;
     const use = uses.get(featureIndex) ?? 0;
     const index = features.length;
     let used = false;

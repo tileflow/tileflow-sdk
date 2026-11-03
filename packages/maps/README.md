@@ -96,7 +96,9 @@ separate humid and dry regions. It fades out by zoom 11, where mapped land cover
 supply local detail. Climate is broad context, not a claim of surveyed vegetation at a specific
 site. The other themes retain their own authored land-cover palettes. Urban and education
 areas use neutral surfaces; farmland stays pale, while mapped orchards and nurseries remain
-green. Underground footprints flagged `hide_3d` are omitted from the flat building layers. Streets
+green. Activity areas, where shops, food, services and offices concentrate, tint the ground by
+their activity level until buildings take over. Footprints drawn by their building parts
+(`extrude: false`) are omitted from the flat building layers. Streets
 suspends duplicate flat building footprints in 3D so roads remain visible under open landmarks;
 2D mode restores ordinary footprints. Normal 3D buildings keep a small neutral/active tone difference. Authored models use
 the neutral building color and independently configurable window shading.
@@ -206,7 +208,7 @@ export default defineMap({
 
 POIs follow World ranks and category density, with extra detail for parks and transport.
 Generic airport POIs are limited to rank 0 to reduce misplaced business listings; the dedicated
-aerodrome layer continues to label mapped airports. This display policy does not repair source data.
+airport label layer continues to label mapped airports. This display policy does not repair source data.
 Road-reference repetition is reduced at z11–13 and retains its detail interval from z14.
 Gardens stay at ranks 0–1 at every zoom, keeping principal destinations while omitting botanical
 collections and some small independent gardens. Other park and landmark types retain their usual

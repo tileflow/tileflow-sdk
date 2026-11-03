@@ -205,15 +205,12 @@ const omtLanduseClasses = [
   'hospital',
   'industrial',
   'military',
-  'neighbourhood',
   'park',
   'pitch',
   'playground',
-  'quarter',
   'railway',
   'residential',
   'retail',
-  'suburb',
   'transport',
 ];
 const omtLandcoverClasses = [
@@ -373,16 +370,20 @@ export function openMapTilesAdapter(schema: OpenMapTilesSchema): {
     },
   ];
 
+  // OpenMapTiles ranks labels from 1 per tile; World's filter rank runs from 0 to 5.
+  const omtFilterRank = {
+    expression: ['min', ['max', ['-', ['to-number', get(f.rank), 6], 1], 0], 5],
+  };
   const naturalLabelPartitions: TileflowDataLayerPartition[] = [
     {
       layer: l.mountainPeak,
       classes: ['peak', 'volcano', 'saddle', 'ridge', 'cliff', 'arete'],
-      fields: {filterrank: f.rank, sizerank: f.rank},
+      fields: {filterrank: omtFilterRank},
     },
     {
       layer: l.waterName,
       classes: ['ocean', 'sea', 'bay', 'strait', 'lake', 'reservoir', 'river'],
-      fields: {filterrank: f.rank, sizerank: f.rank, intermittent: flag(f.intermittent)},
+      fields: {filterrank: omtFilterRank, intermittent: flag(f.intermittent)},
     },
     {
       layer: l.waterway,
@@ -402,6 +403,8 @@ export function openMapTilesAdapter(schema: OpenMapTilesSchema): {
       'settlement_subdivision',
       'province',
       'state',
+      'aboriginal_lands',
+      'territory',
       ['to-string', get(f.class)],
     ],
   };

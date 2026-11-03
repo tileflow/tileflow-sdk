@@ -7,8 +7,8 @@ import {
 } from './openmaptiles';
 import {
   tileflowWorldDetailLayers,
-  tileflowWorldFields,
   type TileflowWorldFieldName,
+  tileflowWorldFields,
   type TileflowWorldLayerName,
   tileflowWorldLayers,
   tileflowWorldNameLanguagePrefix,
@@ -316,7 +316,13 @@ export function validateTileflowWorldTilejson(
   ) => {
     if (!layer) return;
     for (const key of fields) {
-      requireTilejsonField(layer, tileflowWorldLayers[name], tileflowWorldFields[key], types, issues);
+      requireTilejsonField(
+        layer,
+        tileflowWorldLayers[name],
+        tileflowWorldFields[key],
+        types,
+        issues,
+      );
     }
   };
   const zooms = (
@@ -404,9 +410,7 @@ export function validateTileflowWorldTilejson(
   zooms(trafficControl, 'trafficControl', 15, 15);
   field(trafficControl, 'trafficControl', ['class', 'type'], ['String']);
 
-  const road = require('road');
-  field(road, 'road', ['class'], ['String']);
-  field(road, 'road', ['circularClearanceExtraAtZoom15'], ['Number']);
+  field(require('road'), 'road', ['class'], ['String']);
 
   const roadLabel = require('roadLabel');
   field(
@@ -591,7 +595,10 @@ export function resolveTileflowData(
       const url = new URL(path, normalizeApiBaseUrl(options.apiBaseUrl));
       if (descriptor.selection.kind === 'release') {
         url.searchParams.set('worldReleaseId', descriptor.selection.release.releaseId);
-        url.searchParams.set('worldDescriptorSha256', descriptor.selection.release.descriptorSha256);
+        url.searchParams.set(
+          'worldDescriptorSha256',
+          descriptor.selection.release.descriptorSha256,
+        );
       }
       return url.toString();
     };
@@ -851,7 +858,6 @@ function isLoopbackVectorHostname(value: string): boolean {
     octets.every((part) => /^\d{1,3}$/u.test(part) && Number(part) <= 255)
   );
 }
-
 
 function validateDataSchema(schema: TileflowDataSchema): TileflowDataSchema {
   if (schema.type === 'tileflow-world') {

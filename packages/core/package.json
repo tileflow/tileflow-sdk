@@ -32,8 +32,8 @@
     "prepack": "node ../../scripts/package-license.mjs --prepare",
     "postpack": "node ../../scripts/package-license.mjs --clean",
     "build": "tsup --config tsup.build.config.ts && tsup --config tsup.native-profile.config.ts && tsup --config tsup.browser.config.ts && tsup --config tsup.native.config.ts && cp reference/modules-api-reference.json dist/config-reference.json",
-    "reference:check": "tsx scripts/generate-config-reference.ts --check",
-    "reference:generate": "tsx scripts/generate-config-reference.ts --write",
+    "reference:check": "tsx scripts/generate-config-reference.ts --check && tsx scripts/generate-world-schema.ts --check",
+    "reference:generate": "tsx scripts/generate-config-reference.ts --write && tsx scripts/generate-world-schema.ts --write",
     "verify": "pnpm run build && tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.contract.json",
     "lint": "tsc -p tsconfig.json --noEmit"

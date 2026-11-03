@@ -763,7 +763,6 @@ function resolveRoadTreatments(
   add(request?.modifiers?.ramp, flagFilter(fields.link));
   add(request?.modifiers?.unpaved, ['==', ['get', fields.surface], 'unpaved']);
   add(request?.modifiers?.indoor, flagFilter(fields.indoor));
-  if (fields.official) add(request?.modifiers?.official, flagFilter(fields.official));
 
   // Mountain-bike difficulty describes trails: paths and tracks. Leaving it off the other classes
   // keeps their layers solid, and so on MapLibre's solid-line shader.

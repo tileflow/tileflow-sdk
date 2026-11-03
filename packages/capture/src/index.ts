@@ -56,6 +56,7 @@ export type {
   CreateTileflowShotReceiptInput,
   TileflowCaptureDataInput,
   TileflowCaptureDataSemantics,
+  TileflowCaptureWorldSource,
   TileflowCaptureDataSource,
   TileflowCaptureReceipt,
   TileflowCaptureVerification,

@@ -35,7 +35,7 @@ const placeClasses: Record<
 > = {
   continent: {field: 'class', values: ['continent']},
   country: {field: 'class', values: ['country']},
-  state: {field: 'class', values: ['state']},
+  state: {field: 'class', values: ['state', 'territory']},
   city: {field: 'type', values: ['city']},
   town: {field: 'type', values: ['town']},
   village: {field: 'type', values: ['village']},
@@ -447,11 +447,8 @@ export function compileLabels(
             filter: [
               'all',
               ['==', ['geometry-type'], 'Point'],
-              [
-                'any',
-                ['==', ['get', schema.fields.class], 'motorway_junction'],
-                ['==', ['get', schema.fields.type], 'junction'],
-              ],
+              // A motorway exit: the class of its road and `type: junction`.
+              ['==', ['get', schema.fields.type], 'junction'],
               ['any', ['has', schema.fields.ref], ['has', schema.fields.name]],
             ],
           },

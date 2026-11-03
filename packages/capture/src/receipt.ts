@@ -31,6 +31,14 @@ export type TileflowCaptureDataSemantics = {
   parkLayer: 'mixed' | 'protected-only';
 };
 
+/** One World tileset a capture read, with its archive and data contract digests. */
+export type TileflowCaptureWorldSource = {
+  archiveSha256: string;
+  contractSha256: string;
+  dataContractSha256: string;
+  id: 'world' | 'world-detail';
+};
+
 /** Exact Tileflow World release identity. */
 export type TileflowCaptureWorldIdentity = {
   archiveSha256: string;
@@ -43,6 +51,8 @@ export type TileflowCaptureWorldIdentity = {
   schema: 'tileflow-world';
   schemaVersion: number;
   sourceId: 'tileflow';
+  /** The release's tilesets the map read, `world` and, when it draws them, `world-detail`. */
+  sources: TileflowCaptureWorldSource[];
 };
 
 /** External vector-tile identity. Its endpoint is recorded only as a safe fingerprint. */
@@ -607,6 +617,7 @@ function validateDataIdentity(value: unknown): TileflowCaptureDataIdentity {
       'schema',
       'schemaVersion',
       'sourceId',
+      'sources',
     ]);
     if (
       data.product !== 'world-v1' ||
@@ -626,6 +637,7 @@ function validateDataIdentity(value: unknown): TileflowCaptureDataIdentity {
       schema: 'tileflow-world',
       schemaVersion: requirePositiveInteger(data.schemaVersion, 'data.schemaVersion'),
       sourceId: 'tileflow',
+      sources: validateWorldSources(data.sources),
     };
   }
   if (data.kind !== 'vector-tiles') {
@@ -660,6 +672,32 @@ function validateDataIdentity(value: unknown): TileflowCaptureDataIdentity {
         semantics: validateDataSemantics(data.semantics, 'data.semantics'),
       }
     : {...common, schema: 'tileflow-world'};
+}
+
+function validateWorldSources(value: unknown): TileflowCaptureWorldSource[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 2) {
+    throw invalidReceipt('The baseline receipt has invalid data.sources.');
+  }
+  const sources = value.map((entry, index) => {
+    const source = requireRecord(entry, `data.sources[${index}]`);
+    requireExactKeys(source, ['archiveSha256', 'contractSha256', 'dataContractSha256', 'id']);
+    if (source.id !== 'world' && source.id !== 'world-detail') {
+      throw invalidReceipt('The baseline receipt has an invalid World source.');
+    }
+    return {
+      archiveSha256: requireHash(source.archiveSha256, `data.sources[${index}].archiveSha256`),
+      contractSha256: requireHash(source.contractSha256, `data.sources[${index}].contractSha256`),
+      dataContractSha256: requireHash(
+        source.dataContractSha256,
+        `data.sources[${index}].dataContractSha256`,
+      ),
+      id: source.id,
+    } satisfies TileflowCaptureWorldSource;
+  });
+  if (sources.length === 2 && (sources[0]!.id !== 'world' || sources[1]!.id !== 'world-detail')) {
+    throw invalidReceipt('The baseline receipt has World sources out of order.');
+  }
+  return sources;
 }
 
 function normalizeCaptureDataInput(input: TileflowCaptureDataInput): TileflowCaptureDataIdentity {

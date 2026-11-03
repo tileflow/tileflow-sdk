@@ -1499,7 +1499,6 @@ const roadsModuleSchema = z
         construction: roadTreatmentStyleSchema.optional(),
         expressway: roadTreatmentStyleSchema.optional(),
         indoor: roadTreatmentStyleSchema.optional(),
-        official: roadTreatmentStyleSchema.optional(),
         ramp: roadTreatmentStyleSchema.optional(),
         unpaved: roadTreatmentStyleSchema.optional(),
       })

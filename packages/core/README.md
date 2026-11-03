@@ -244,15 +244,27 @@ package uses this contract for its mounted Map; it is not yet published.
 
 ## Data, terrain, and browser resources
 
-Tileflow World is the hosted primary source. `vectorTiles()` with `openMapTiles()` supports
-external local/self-hosted data; hosted eligibility is separate. `hostedTileset()`, `boundaryAreas`
-and semantic overlays add named sources. Local PMTiles inputs are tooling-only.
+Tileflow World is the hosted primary source. Maps read it through the Tileflow World schema: its
+layers (`road`, `road_label`, `landuse`, `landuse_overlay`, `place_label`, `poi_label`, …), fields
+and values, listed in the machine-readable
+[schema](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/reference/tileflow-world-v1.json).
+The schema is dedicated to the public domain (CC0 1.0); using it needs no attribution. Render stacks,
+`field()` and `dataLayer` names are its camel-case layer and field keys.
+
+A World release has two tilesets. `world` holds what a general map draws. `world-detail` holds
+`transit_line`, `underground` and `building_entrance`, and loads only when a map draws one of them:
+the primary source then reads both through one TileJSON.
+
+`vectorTiles()` takes self-hosted tiles in the World schema (`tileflowWorldSchema()`) or in the
+OpenMapTiles schema (`openMapTiles()`), whose layers and values the SDK reads as World's. Hosted
+eligibility is separate. `hostedTileset()`, `boundaryAreas` and semantic overlays add named sources.
+Local PMTiles inputs are tooling-only.
 
 `bathymetry({vectorLayers: {...}})` declares contour/name layers. `marine: 'nautical'` adds
 navigation marks, flashing lights, and a "Not for navigation" notice.
 
-World attribution links to Tileflow's source notice, OpenMapTiles, and OpenStreetMap. External
-vector data retains the attribution supplied by its owner.
+World attribution links to Tileflow's source notice and OpenStreetMap. External vector data retains
+the attribution supplied by its owner.
 
 `projection` accepts `mercator` or `globe`. Terrain supports `none`, `hillshade`, `3d`, and an object
 form for explicit hillshade and contour configuration. Browser-derived contours require a DEM tile

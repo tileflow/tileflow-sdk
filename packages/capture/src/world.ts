@@ -3,6 +3,8 @@ import {
   isTileflowWorldReleaseId,
   type MapLibreStyle,
   tileflowWorldTileJsonUrl,
+  type TileflowWorldTileset,
+  tileflowWorldTilesets,
 } from '@tileflow/core';
 import type {TileflowCaptureAsset} from './assets';
 import {TileflowCaptureError} from './errors';
@@ -155,6 +157,8 @@ export async function resolveTileflowCaptureWorldTileJson(
     'descriptorSha256',
     'product',
     'releaseId',
+    'releaseSources',
+    'sources',
   ]);
   if (world.product !== 'world-v1') {
     throw worldResolutionError('Tileflow World TileJSON has an unsupported product.');
@@ -171,6 +175,29 @@ export async function resolveTileflowCaptureWorldTileJson(
     );
   }
   const tileTemplate = validateExactTileTemplate(tileJson.tiles[0], releaseId, descriptorSha256);
+  const releaseSources = requireWorldSources(world.releaseSources, 'releaseSources');
+  if (!Array.isArray(world.sources) || world.sources.length === 0) {
+    throw worldResolutionError('Tileflow World TileJSON has no selected sources.');
+  }
+  const sources = world.sources.map((value) => {
+    const source = requireRecord(value, 'TileJSON tileflow.world.sources entry');
+    requireExactKeys(source, ['archiveSha256', 'contractSha256', 'dataContractSha256', 'id']);
+    return {
+      archiveSha256: requireHash(source.archiveSha256, 'sources.archiveSha256'),
+      contractSha256: requireHash(source.contractSha256, 'sources.contractSha256'),
+      dataContractSha256: requireHash(source.dataContractSha256, 'sources.dataContractSha256'),
+      id: requireWorldSources([source.id], 'sources.id')[0]!,
+    };
+  });
+  const ids = sources.map(({id}) => id);
+  const canonical = tileflowWorldTilesets.filter((id) => ids.includes(id));
+  if (
+    new Set(ids).size !== ids.length ||
+    ids.join() !== canonical.join() ||
+    ids.some((id) => !releaseSources.includes(id))
+  ) {
+    throw worldResolutionError('Tileflow World TileJSON sources are not a canonical selection.');
+  }
 
   return {
     identity: {
@@ -180,6 +207,7 @@ export async function resolveTileflowCaptureWorldTileJson(
       descriptorSha256,
       product: 'world-v1',
       releaseId,
+      sources,
     },
     tileJsonUrl: normalizedUrl,
     tileJson: text,
@@ -293,6 +321,18 @@ function validateExactTileTemplate(
     );
   }
   return value;
+}
+
+function requireWorldSources(value: unknown, field: string): TileflowWorldTileset[] {
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.some((id) => !(tileflowWorldTilesets as readonly unknown[]).includes(id)) ||
+    new Set(value).size !== value.length
+  ) {
+    throw worldResolutionError(`Tileflow World TileJSON has invalid ${field}.`);
+  }
+  return value as TileflowWorldTileset[];
 }
 
 function requireRecord(value: unknown, field: string): Record<string, unknown> {

@@ -316,6 +316,7 @@ export {
   tileflowWorldSchema,
   tileflowWorldSchemaVersion,
   tileflowWorldTilesetOf,
+  tileflowWorldTilesets,
   tileflowWorldVocabularies,
   validateTileflowWorldTilejson,
   tileflowWorldGeneration,

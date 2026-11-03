@@ -988,7 +988,7 @@ function streetsLabelRenderStack() {
           {
             field: 'class',
             kind: 'in',
-            values: ['state', 'province', 'aboriginal_lands'],
+            values: ['state', 'territory'],
           },
           {
             fallback: rankAtMost(1),
@@ -1971,7 +1971,7 @@ const streetsBase = bindOfficialMapTheme(
             },
           },
           modifiers: {
-            // Optional keys: construction, expressway, indoor, official, ramp, unpaved.
+            // Optional keys: construction, expressway, indoor, ramp, unpaved.
             // Treatments accept enabled, widthScale, surface, tunnel, and bridge;
             // phases accept color, opacity, dash, blur, gapWidth, offset, and width.
             expressway: {widthScale: expresswayWidthScale}, // Finite number > 0.

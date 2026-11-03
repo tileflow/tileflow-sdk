@@ -15,7 +15,8 @@ export function compileBuildings(
   const {colors} = context;
   const heightOutput = buildingHeightExpression(context);
   const baseOutput = buildingBaseExpression(context, heightOutput);
-  const semanticColor = expression<string>(buildingColorExpression(context));
+  const color = buildingColorExpression(context);
+  const semanticColor = Array.isArray(color) ? expression<string>(color) : (color as string);
   const config = mergeTileflowDesign<TileflowResolvedModuleConfig<TileflowBuildingsModuleConfig>>(
     {
       type: 'buildings',
@@ -109,25 +110,35 @@ export function buildingTargetsOfOtherModes(
   return targets;
 }
 
-function buildingColorExpression(context: TileflowDomainCompileContext): unknown[] {
+function buildingColorExpression(context: TileflowDomainCompileContext): unknown {
   const fields = context.data.schema.fields;
   const colors = context.colors.buildings;
-  // Without a tone, World's use class: housing, shops and offices, public buildings and works
-  // each take their theme colour; a shed, a garage or an unknown use the generic one.
-  const byClass = [
-    'match',
-    ['coalesce', ['get', fields.class], ''],
-    'residential',
-    colors.residential,
-    'commercial',
-    colors.commercial,
-    ['civic', 'education', 'entertainment', 'medical', 'military', 'religious', 'transportation'],
-    colors.civic,
-    ['agricultural', 'industrial', 'service'],
-    colors.industrial,
-    colors.generic,
-  ];
-  if (!fields.tone) return byClass;
+  // Without a tone, World's `use`: housing, shops and offices, public buildings and works each
+  // take their theme colour; a shed, a garage or an unknown use the generic one.
+  const byUse = fields.use
+    ? [
+        'match',
+        ['coalesce', ['get', fields.use], ''],
+        'residential',
+        colors.residential,
+        'commercial',
+        colors.commercial,
+        [
+          'civic',
+          'education',
+          'entertainment',
+          'medical',
+          'military',
+          'religious',
+          'transportation',
+        ],
+        colors.civic,
+        ['agricultural', 'industrial', 'service'],
+        colors.industrial,
+        colors.generic,
+      ]
+    : colors.generic;
+  if (!fields.tone) return byUse;
   return [
     'case',
     ['==', ['coalesce', ['get', fields.tone], ''], 'active'],
@@ -136,7 +147,7 @@ function buildingColorExpression(context: TileflowDomainCompileContext): unknown
     colors.destination,
     ['==', ['coalesce', ['get', fields.tone], ''], 'commercial'],
     colors.commercial,
-    byClass,
+    byUse,
   ];
 }
 

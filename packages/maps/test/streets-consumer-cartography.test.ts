@@ -140,7 +140,7 @@ test('time-of-day buildings retain their material palette across the fractional 
       modelColors: Record<string, string>;
     };
     const flat = style.layers.find((layer) => layer.id === 'tileflow-buildings-fill');
-    const raised = style.layers.find((layer) => layer.id === 'tileflow-buildings-render-extrusion');
+    const raised = style.layers.find((layer) => layer.id === 'tileflow-buildings-native-extrusion');
     assert.ok(flat?.type === 'fill' && raised?.type === 'fill-extrusion');
     assert.deepEqual(buildings.color, raised.paint?.['fill-extrusion-color']);
     assert.equal(buildings.modelColors.surface, colors['buildings.modelSurface']);

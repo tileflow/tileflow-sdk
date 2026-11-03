@@ -5,7 +5,7 @@ import {once} from 'node:events';
 import {copyFile, cp, mkdir, mkdtemp, readFile, rm, symlink, writeFile} from 'node:fs/promises';
 import {createServer, type Server as NodeServer, Server} from 'node:http';
 import {dirname, join, relative, resolve} from 'node:path';
-import test from 'node:test';
+import test, {type TestContext} from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
 import webpack from 'webpack';
@@ -23,7 +23,7 @@ test(
     const browserFailures = observeBrowserFailures(t);
 
     const fixture = await createFrameworkFixture('next');
-    await buildNextFixture(fixture.cwd, 'webpack');
+    await buildNextFixture(fixture.cwd, 'webpack', t.signal);
     const port = await reservePort();
     const application = next({
       dev: false,
@@ -39,6 +39,7 @@ test(
       server.listen(port, '127.0.0.1');
       await once(server, 'listening');
       const capture = await captureFromOnlyApplicationServer(
+        t,
         fixture.cwd,
         `http://127.0.0.1:${port}`,
       );
@@ -62,7 +63,7 @@ test(
   async (t) => {
     const browserFailures = observeBrowserFailures(t);
     const fixture = await createFrameworkFixture('next');
-    await buildNextFixture(fixture.cwd, 'default');
+    await buildNextFixture(fixture.cwd, 'default', t.signal);
     const port = await reservePort();
     const application = next({
       dev: false,
@@ -78,6 +79,7 @@ test(
       server.listen(port, '127.0.0.1');
       await once(server, 'listening');
       const capture = await captureFromOnlyApplicationServer(
+        t,
         fixture.cwd,
         `http://127.0.0.1:${port}`,
       );
@@ -101,7 +103,7 @@ test(
   async (t) => {
     const browserFailures = observeBrowserFailures(t);
     const fixture = await createFrameworkFixture('next', {basePath: '/app'});
-    await buildNextFixture(fixture.cwd, 'default');
+    await buildNextFixture(fixture.cwd, 'default', t.signal);
     const port = await reservePort();
     const application = next({
       dev: false,
@@ -117,6 +119,7 @@ test(
       server.listen(port, '127.0.0.1');
       await once(server, 'listening');
       const capture = await captureFromOnlyApplicationServer(
+        t,
         fixture.cwd,
         `http://127.0.0.1:${port}`,
       );
@@ -169,6 +172,7 @@ test(
 
     try {
       const capture = await captureFromOnlyApplicationServer(
+        t,
         fixture.cwd,
         `http://127.0.0.1:${address.port}`,
       );
@@ -214,6 +218,7 @@ test(
 
     try {
       const capture = await captureFromOnlyApplicationServer(
+        t,
         fixture.cwd,
         `http://127.0.0.1:${address.port}`,
       );
@@ -228,18 +233,18 @@ test(
   },
 );
 
-async function captureFromOnlyApplicationServer(cwd: string, appOrigin: string) {
-  const originalListen = Server.prototype.listen;
+async function captureFromOnlyApplicationServer(t: TestContext, cwd: string, appOrigin: string) {
   let additionalListeners = 0;
-  Server.prototype.listen = function forbiddenAdditionalListener() {
+  const listen = t.mock.method(Server.prototype, 'listen', function forbiddenAdditionalListener() {
     additionalListeners += 1;
     throw new Error('Application capture opened a second Node listener.');
-  };
+  });
   const session = createTileflowCaptureSession({
     allowBrowserInstall: false,
     appOrigin,
     config: 'tileflow.config.ts',
     cwd,
+    signal: t.signal,
   });
 
   try {
@@ -248,7 +253,7 @@ async function captureFromOnlyApplicationServer(cwd: string, appOrigin: string) 
     assert.equal(result.captures.length, 1);
     return result.captures[0]!;
   } finally {
-    Server.prototype.listen = originalListen;
+    listen.mock.restore();
     await session.close();
   }
 }
@@ -340,6 +345,7 @@ export default defineMap({
   id: 'main',
   version: 1,
   extends: streets,
+  themes: {light: streets.themes.light},
   data: vectorTiles({
     attribution: '© Tileflow capture fixture',
     revision: 'capture-fixture-v1',
@@ -379,7 +385,11 @@ function runWebpack(compiler: webpack.Compiler): Promise<void> {
   });
 }
 
-async function buildNextFixture(cwd: string, bundler: 'default' | 'webpack'): Promise<void> {
+async function buildNextFixture(
+  cwd: string,
+  bundler: 'default' | 'webpack',
+  signal: AbortSignal,
+): Promise<void> {
   const nextCli = fileURLToPath(new URL('../node_modules/next/dist/bin/next', import.meta.url));
   const arguments_ = [nextCli, 'build', cwd];
   if (bundler === 'webpack') arguments_.push('--webpack');
@@ -387,6 +397,7 @@ async function buildNextFixture(cwd: string, bundler: 'default' | 'webpack'): Pr
     cwd,
     env: {...process.env, NEXT_TELEMETRY_DISABLED: '1'},
     maxBuffer: 10 * 1024 * 1024,
+    signal,
   });
   assert.equal(
     JSON.parse(await readFile(join(cwd, 'public/tileflow/manifest.json'), 'utf8')).version,

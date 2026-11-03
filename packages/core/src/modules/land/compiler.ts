@@ -15,7 +15,7 @@ import type {
   TileflowLandModuleConfig,
   TileflowLanduseClass,
 } from './index';
-import {isTileflowUnderlayInvisible, tileflowLandcoverUnderlaySourceId} from './underlay';
+import {tileflowLandcoverUnderlaySourceId} from './underlay';
 
 // Hedges last, so a hedge along a wall or fence stays on top.
 const barrierClasses = [
@@ -215,8 +215,7 @@ export function compileLand(
   if (
     config.globalLandcoverUnderlay &&
     schema.layers.landcover &&
-    config.globalLandcover?.visible !== false &&
-    !isTileflowUnderlayInvisible(config.globalLandcoverUnderlay)
+    config.globalLandcover?.visible !== false
   ) {
     const underlay = config.globalLandcoverUnderlay;
     contributions.push({

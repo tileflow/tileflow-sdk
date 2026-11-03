@@ -221,7 +221,7 @@ export function createTileflowThemeBlender(
   const view = viewOf(input);
   const positionPaints = plan.paints.filter((paint) => paint.follows === 'position');
   const dominantPaints = plan.paints.filter((paint) => paint.follows === 'dominant');
-  const pixels = createImageMixer(map, plan.images);
+  const pixels = createTileflowThemeImageMixer(map, plan.images);
   const mixesArtwork = plan.images.some((image) => image.follows === 'position');
   const relayoutAt = relayoutPositions(plan);
   const shownValues = new Map<TileflowThemeBlendPaint, string>();
@@ -383,7 +383,10 @@ export function createTileflowThemeBlender(
  * upload nothing between them, since each upload makes MapLibre lay out every tile that uses the
  * image. Images not yet available are painted when a later call finds them.
  */
-function createImageMixer(map: BlendMap, images: readonly TileflowThemeBlendImage[]) {
+export function createTileflowThemeImageMixer(
+  map: Pick<BlendMap, 'getImage' | 'updateImage'>,
+  images: readonly TileflowThemeBlendImage[],
+) {
   type Art = {data: Uint8Array; height: number; width: number};
   const art = new Map<string, Art>();
   // What each image shows: an original artwork, or the key of a mix.

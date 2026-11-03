@@ -8,6 +8,7 @@ import {readdirSync} from 'node:fs';
 import test from 'node:test';
 import {createStyle, resolveTileflowTheme} from '@tileflow/core';
 import {streets, streetsThemes} from '../src';
+import {streetsCartographyColors} from '../src/official/streets-cartography-colors';
 import {streetsDayColors} from '../src/official/streets-day-colors';
 import {streetsDayGroundColors} from '../src/official/streets-ground-and-access';
 import {streetsNetworkDayColors} from '../src/official/streets-network-overview';
@@ -41,6 +42,8 @@ function color(value: unknown): Color {
 
 // Default day uses its own city hierarchy and detailed carriageway swatches.
 function expectedColor(theme: string, role: string, referenceColor: string): string {
+  if (/^(?:dawn|dusk|dark)(?:-|$)/.test(theme))
+    return resolveTileflowTheme(streetsThemes[theme]).tokens.color[role] ?? referenceColor;
   if (theme !== 'light') return referenceColor;
   const authored: Record<string, string> = {
     ...streetsDayColors,
@@ -66,7 +69,7 @@ function closeToObserved(actual: unknown, expected: string, context: string) {
 }
 
 for (const [referenceName, theme] of Object.entries(themes)) {
-  test(`Streets ${theme} retains calibrated ${referenceName} surfaces and authored road colors`, () => {
+  test(`Streets ${theme} compiles its authored ${referenceName} surfaces across flat and 3D layers`, () => {
     const expected = reference.measurements[referenceName as keyof typeof themes];
     const resolved = resolveTileflowTheme(streetsThemes[theme]);
     const colors = resolved.tokens.color;
@@ -183,22 +186,22 @@ for (const [referenceName, theme] of Object.entries(themes)) {
   });
 }
 
-test('Streets retains reference colors with its default day road palette in all twelve presets', () => {
+test('the reference exposure table retains its independent GPU observations in all twelve presets', () => {
   for (const [name, theme] of Object.entries(themes)) {
     const expected = reference.colors[name as keyof typeof themes];
-    const colors = resolveTileflowTheme(streetsThemes[theme]).tokens.color;
+    const [family, preset] = name.split('-') as [
+      'default' | 'faded' | 'monochrome',
+      'day' | 'dawn' | 'dusk' | 'night',
+    ];
+    const colors = streetsCartographyColors(family, preset);
     for (const [role, sample] of Object.entries(expected)) {
-      assert.equal(colors[role], expectedColor(theme, role, sample), `${theme}: ${role}`);
+      assert.equal(colors[role], sample, `${theme}: ${role}`);
     }
     // Check the reference's actual GPU observations independently of formula rounding.
     for (const sample of reference.gpu[name as keyof typeof themes]) {
       closeToObserved(
         colors[sample.name],
-        expectedColor(
-          theme,
-          sample.name,
-          `#${sample.rgb.map((c) => c.toString(16).padStart(2, '0')).join('')}`,
-        ),
+        `#${sample.rgb.map((c) => c.toString(16).padStart(2, '0')).join('')}`,
         `${theme}: GPU ${sample.name}`,
       );
     }
@@ -286,7 +289,7 @@ test('Streets evaluates water and ground lighting at their independent zoom hand
         ),
         expectedColor(
           theme,
-          theme === 'light' && z === 13 ? 'surface.background' : role,
+          z === 13 && !['faded', 'monochrome'].includes(theme) ? 'surface.background' : role,
           expected[role],
         ),
         `${theme} land z${z}`,

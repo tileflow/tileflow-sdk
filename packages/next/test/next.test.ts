@@ -69,11 +69,18 @@ test('emits production artifacts without adding a webpack config', async () => {
     const manifest = JSON.parse(
       await readFile(join(cwd, 'public/tileflow/manifest.json'), 'utf8'),
     ) as RuntimeManifest;
-    assert.equal(manifest.version, 1);
+    assert.equal(manifest.version, 3);
     assert.equal(Object.hasOwn(manifest, 'kind'), false);
     assert.equal(Object.hasOwn(manifest, 'styles'), false);
     const map = manifest.maps.main;
     assert.ok(map);
+    assert.match(
+      map.familyUrl ?? '',
+      /^\/tileflow\/generations\/[a-f0-9]{64}\/families\/main\.json$/u,
+    );
+    const family = JSON.parse(await readFile(join(cwd, 'public', map.familyUrl!), 'utf8'));
+    assert.equal(family.kind, 'tileflow-style-family');
+    assert.deepEqual([...family.themes].sort(), ['dark', 'light']);
     assert.equal(map.defaultTheme, 'light');
     assert.deepEqual(map.systemThemes, {dark: 'dark', light: 'light'});
     assert.deepEqual(Object.keys(map.themes).sort(), ['dark', 'light']);
@@ -319,7 +326,7 @@ function createHostedManifest(): RuntimeManifest {
 }
 
 function assertLocalManifest(manifest: RuntimeManifest): void {
-  assert.equal(manifest.version, 1);
+  assert.equal(manifest.version, 3);
   assert.equal(manifest.apiUrl, undefined);
   assert.equal(Object.hasOwn(manifest, 'kind'), false);
   assert.equal(Object.hasOwn(manifest, 'styles'), false);
@@ -351,6 +358,7 @@ type RuntimeManifest = {
     string,
     {
       defaultTheme: string;
+      familyUrl?: string;
       environment?: string;
       mapId?: string;
       systemThemes?: {dark: string; light: string};
@@ -364,7 +372,7 @@ type RuntimeManifest = {
       >;
     }
   >;
-  version: 1;
+  version: 1 | 2 | 3;
 };
 
 test('the Next production build and dev route serve the exact locked icon composition', async (t) => {

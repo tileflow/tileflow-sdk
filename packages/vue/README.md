@@ -16,6 +16,12 @@ npm install @tileflow/vue@alpha @tileflow/core@alpha @tileflow/maps@alpha "mapli
 npm install --save-dev --save-exact tileflow@alpha
 ```
 
+Prepared styles may retain relative asset URLs. The component loads them through Core's shared
+resource loader before creating the map and before changing or blending themes. Sprites, fonts,
+data and model resources resolve against their declaring documents. Pending document loads are
+cancelled when the map is replaced or unmounted; `mapOptions.transformRequest` also applies to
+style and HTTP TileJSON requests.
+
 ## Prepare a map
 
 Create `tileflow.config.ts` at the application root:

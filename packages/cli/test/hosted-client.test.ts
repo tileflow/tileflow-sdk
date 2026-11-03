@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {compactTileflowDeploymentArtifact, tileflowDeploymentWebBytes} from '@tileflow/core/build';
 import type {CompiledTileflowIconPackage} from '@tileflow/dev/icons';
 import type {CliAccountSession} from '../src/account-session';
 import {
+  assertHostedStyleBudget,
   pollDeviceToken,
   publishHostedStyle,
   requestHostedJson,
@@ -12,6 +14,38 @@ import {
   validateAccountSession,
   validateApiKey,
 } from '../src/hosted-client';
+
+test('Hosted preflight admits 2 MB of shared web data and rejects the next UTF-8 byte before sending', async () => {
+  const sourceArtifact = {
+    kind: 'tileflow-map-deployment',
+    schemaVersion: 1,
+    mapId: 'main',
+    styles: {day: {version: 8, sources: {}, layers: []}},
+    buildManifest: {maps: {main: {themes: {day: {}}, sourceAssets: {fonts: [], icons: []}}}},
+  };
+  const artifact = compactTileflowDeploymentArtifact(sourceArtifact);
+  const body = {artifact, source: 'é', environment: 'main'};
+  body.source += 'x'.repeat(2_000_000 - tileflowDeploymentWebBytes(body));
+  assert.equal(tileflowDeploymentWebBytes(body), 2_000_000);
+  assert.doesNotThrow(() => assertHostedStyleBudget(body));
+  body.source += 'x';
+  const failure = {
+    code: 'STYLE_DEPLOYMENT_TOO_LARGE',
+    scope: 'web',
+    observedBytes: 2_000_001,
+    limitBytes: 2_000_000,
+  };
+  assert.throws(() => assertHostedStyleBudget(body), failure);
+  await assert.rejects(
+    publishHostedStyle(
+      {apiUrl: 'https://api.example.test', apiKey: 'synthetic-team-key'},
+      {...body, artifact: sourceArtifact},
+      'Deploy',
+      {fetch: (async () => assert.fail('oversized deployments must not be sent')) as typeof fetch},
+    ),
+    failure,
+  );
+});
 
 test('Team credentials validate without a Project and Map operations send the chosen target', async () => {
   const profile = await validateApiKey('https://api.example.test', 'synthetic-team-key', {
@@ -36,7 +70,14 @@ test('Team credentials validate without a Project and Map operations send the ch
       apiUrl: 'https://api.example.test',
       mapId: 'map_AbCdEfGhIjKlMnOp',
     },
-    {},
+    {
+      artifact: {
+        kind: 'tileflow-map-deployment',
+        schemaVersion: 1,
+        styles: {light: {version: 8, sources: {}, layers: []}},
+        buildManifest: {maps: {main: {themes: {light: {}}, sourceAssets: {fonts: [], icons: []}}}},
+      },
+    },
     'Deploy',
     {
       fetch: (async (_url, init) => {

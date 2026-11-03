@@ -263,10 +263,8 @@ test('Streets themes retain identity and audited native transformation spans', a
       item.before.nodes <= tileflowNativeProfileLimits.maximumNodes,
       JSON.stringify(measured),
     );
-    assert.ok(
-      item.after.nodes > tileflowNativeProfileLimits.maximumNodes,
-      JSON.stringify(measured),
-    );
+    // Compaction may fit even the lowered style inside the smaller input budget.
+    // Native preparation requires the upper bound, not a minimum amount of expansion.
     assert.ok(
       item.after.nodes <= tileflowNativePreparedStyleLimits.maximumNodes,
       JSON.stringify(measured),

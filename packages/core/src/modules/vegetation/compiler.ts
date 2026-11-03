@@ -1,3 +1,4 @@
+import {isColorProgramMarker} from '../../color-program';
 import type {TileflowDomainCompileContext} from '../../cartography/context';
 import type {TileflowLayerContribution} from '../../cartography/contributions';
 import {applyCircleStyle} from '../../cartography/layer-style';
@@ -92,10 +93,15 @@ export function tileflowVegetationDescription(
     return undefined;
   const tree = context.colors.vegetation.tree;
   const style = request?.threeDimensional ?? {};
-  const colours = (value: unknown, fallback: readonly string[]) =>
-    Array.isArray(value) && value.length > 0 && value.every((entry) => typeof entry === 'string')
-      ? (value as string[])
+  const colours = (value: unknown, fallback: readonly string[]) => {
+    const values = Array.isArray(value)
+      ? value.map((entry) => toMapLibreStyleValue(entry as never))
+      : [];
+    return values.length &&
+      values.every((entry) => typeof entry === 'string' || isColorProgramMarker(entry))
+      ? (values as unknown as string[])
       : [...fallback];
+  };
   const number = (value: unknown) => {
     const resolved = value === undefined ? undefined : toMapLibreStyleValue(value as never);
     return typeof resolved === 'number' && resolved > 0 ? resolved : 1;
@@ -127,7 +133,12 @@ export function tileflowVegetationDescription(
       hedge: field('hedge', tileflowWorldTreeFields.hedge),
     },
     colors: {
-      bark: typeof style.barkColor === 'string' ? style.barkColor : tree.bark,
+      bark: (() => {
+        const value = toMapLibreStyleValue((style.barkColor ?? tree.bark) as never);
+        return (
+          typeof value === 'string' || isColorProgramMarker(value) ? value : tree.bark
+        ) as string;
+      })(),
       broadleaf: colours(style.broadleafColors, tree.broadleaf),
       conifer: colours(style.coniferColors, tree.conifer),
       palm: colours(style.palmColors, tree.palm),
@@ -176,7 +187,9 @@ export function tileflowVegetationDescription(
     ...(() => {
       const edgeColor =
         style.edgeColor === undefined ? undefined : toMapLibreStyleValue(style.edgeColor as never);
-      return typeof edgeColor === 'string' ? {edgeColor} : {};
+      return typeof edgeColor === 'string' || isColorProgramMarker(edgeColor)
+        ? {edgeColor: edgeColor as unknown as string}
+        : {};
     })(),
     unknownForms: style.unknownForms ?? tileflowDefaultUnknownTreeForms,
     regions: style.regions ?? [],

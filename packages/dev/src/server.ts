@@ -357,6 +357,14 @@ export function createTileflowDevRequestHandler(
         return compactJsonResponse(style);
       }
 
+      if (path.startsWith('/families/')) {
+        const fileName = path.slice(1);
+        const asset = (
+          artifacts as TileflowBuildArtifacts & {files?: TileflowBuildAsset[]}
+        ).files?.find((candidate) => candidate.fileName === fileName);
+        return asset ? assetResponse(asset) : jsonResponse({error: 'Unknown map family.'}, 404);
+      }
+
       if (path.startsWith('/icons/')) {
         const assetName = path.replace(/^\/+/, '');
         const asset = artifacts.assets.find((candidate) => candidate.fileName === assetName);

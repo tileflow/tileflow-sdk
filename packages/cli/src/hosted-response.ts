@@ -36,6 +36,7 @@ export const hostedStyleDeploymentResponseSchema = z
     changed: z.boolean().optional(),
     deploymentId: safeIdentifierSchema.optional(),
     mapId: z.string().regex(/^map_[A-Za-z0-9_-]{16}$/u),
+    familyUrl: publicHttpUrlSchema.optional(),
     themes: z
       .record(
         safeIdentifierSchema,

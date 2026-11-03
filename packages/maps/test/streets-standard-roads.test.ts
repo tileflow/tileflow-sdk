@@ -11,6 +11,7 @@ import test from 'node:test';
 import {resolveTileflowTheme} from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
 import {streets, streetsThemes} from '../src';
+import {streetsRoadCasingProfiles} from '../src/official/streets-road-colors';
 import {streetsPreparedModels} from './streets-assets';
 import {standardRoadReference as reference} from './streets-standard-road-fixture';
 
@@ -60,9 +61,9 @@ function lineColor(
 }
 
 for (const [profile, theme] of Object.entries(themes)) {
-  test(`Streets ${theme} matches independently lit borders and keeps the HD zoom handoff`, () => {
+  test(`Streets ${theme} compiles authored borders and keeps the HD zoom handoff`, () => {
     const measured = reference.profiles[profile as keyof typeof themes].roles;
-    const expected =
+    let expected =
       theme === 'light'
         ? {
             generic: {unshadowedRGB: [141, 176, 188]},
@@ -73,6 +74,27 @@ for (const [profile, theme] of Object.entries(themes)) {
           }
         : measured;
     const colors = resolveTileflowTheme(streetsThemes[theme]).tokens.color;
+    for (const [role, value] of Object.entries(
+      streetsRoadCasingProfiles[profile as keyof typeof themes],
+    ))
+      closeColor(
+        value,
+        measured[role as keyof typeof measured].unshadowedRGB,
+        `${profile} reference ${role}`,
+      );
+    if (/^(?:dawn|dusk|dark)(?:-|$)/.test(theme)) {
+      const sample = (role: string) => {
+        const color = Color.parse(colors[role])!;
+        return {unshadowedRGB: [color.r * 255, color.g * 255, color.b * 255]};
+      };
+      expected = {
+        generic: sample('roads.default.casing'),
+        motorway: sample('roads.motorway.casing'),
+        trunk: sample('roads.trunk.casing'),
+        hd: sample('roads.detail.casing'),
+        path: sample('roads.path.casing'),
+      };
+    }
     for (const [token, role] of [
       ['roads.default.casing', 'generic'],
       ['roads.city.casing', 'generic'],

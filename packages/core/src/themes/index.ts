@@ -1,3 +1,9 @@
+import {
+  colorProgramMarker,
+  colorProgramOf,
+  colorProgramValue,
+  isColorProgramMarker,
+} from '../color-program';
 import type {
   ResolvedTileflowTypography,
   ResolvedTileflowTypographyStyle,
@@ -317,8 +323,23 @@ export type TileflowThemeColorDecision = {
 export function resolveThemeColors(
   theme: TileflowTheme,
   onDecision?: (decision: TileflowThemeColorDecision) => void,
+  preservePrograms = false,
 ): TileflowResolvedColors {
-  const tokens = resolveTileflowTheme(theme).tokens.color;
+  if (onDecision && preservePrograms) {
+    const report = onDecision;
+    onDecision = (decision) =>
+      report({...decision, value: colorProgramValue(decision.value) as string});
+  }
+  const concrete = resolveTileflowTheme(theme).tokens.color;
+  // This internal lowering pass accepts expression-valued colours; the public resolver remains concrete.
+  const tokens = Object.fromEntries(
+    Object.entries(concrete).map(([name, value]) => [
+      name,
+      preservePrograms
+        ? colorProgramMarker(value, {kind: 'theme-token', category: 'color', token: name})
+        : value,
+    ]),
+  ) as Record<string, string>;
   const requireColor = (name: string): string => {
     const value = tokens[name];
     if (value !== undefined) {
@@ -636,11 +657,23 @@ function relativeLuminance(color: string): number {
 }
 
 export function alpha(color: string, opacity: number): string {
+  if (isColorProgramMarker(color))
+    return colorProgramMarker(alpha(colorProgramValue(color) as string, opacity), {
+      kind: 'theme-color',
+      operation: 'alpha',
+      color: colorProgramOf(color),
+      opacity,
+    }) as unknown as string;
   const {a, b, g, r} = hexToRgba(color);
   return `rgba(${r}, ${g}, ${b}, ${roundAlpha(a * opacity)})`;
 }
 
 export function mix(hexA: string, hexB: string, amount: number): `#${string}` {
+  if (isColorProgramMarker(hexA) || isColorProgramMarker(hexB))
+    return colorProgramMarker(
+      mix(colorProgramValue(hexA) as string, colorProgramValue(hexB) as string, amount),
+      ['srgb', colorProgramOf(hexA), colorProgramOf(hexB), amount],
+    ) as unknown as `#${string}`;
   const a = hexToRgb(hexA);
   const b = hexToRgb(hexB);
   const r = Math.round(a.r + (b.r - a.r) * amount);
@@ -662,6 +695,7 @@ function hexToRgba(hex: string): {
   g: number;
   b: number;
 } {
+  hex = colorProgramValue(hex) as string;
   const rgbMatch = hex.match(
     /^rgba?\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)(?:\s*,\s*(\d+(?:\.\d+)?))?\s*\)$/,
   );
@@ -693,6 +727,11 @@ function hexToRgba(hex: string): {
 }
 
 function cssColor(hex: string): string {
+  if (isColorProgramMarker(hex))
+    return colorProgramMarker(
+      cssColor(colorProgramValue(hex) as string),
+      colorProgramOf(hex),
+    ) as unknown as string;
   const value = hex.replace('#', '');
 
   if (value.length !== 4 && value.length !== 8) {

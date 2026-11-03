@@ -76,7 +76,7 @@ import {
   type TileflowSceneReach,
   tileflowSceneShadowFloor,
 } from './scene-3d-browser';
-import {tileflowSceneMinzoom} from './scene-3d-visibility';
+import {tileflowSceneEntrance, tileflowSceneMinzoom} from './scene-3d-visibility';
 import {bindTileflowSkyHaze, type TileflowSkyHazeArgs, tileflowSkyHazeOf} from './sky-haze-browser';
 import {resolveTileflowSun, tileflowStyleSunPreset, type TileflowSun} from './sun';
 import {tileflowColourChannels} from './theme-blend';
@@ -793,7 +793,7 @@ export function createTileflowBuildings3D(
 
   // Zooming in, the placed models and landmarks come in first, then the buildings: each fades in
   // and rises from the ground across its zoom band, and sinks and fades again zooming out. With
-  // reduced motion they only fade. show() and hide() scale both on top of that.
+  // reduced motion they only fade. entrance: false skips both; show() and hide() scale both on top.
   const reducedMotion =
     typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : undefined;
   const defaultEntrance = {
@@ -803,8 +803,9 @@ export function createTileflowBuildings3D(
 
   /** How far one part of the city has come in at the map's zoom, from 0 to 1. */
   function entering(part: keyof typeof defaultEntrance): number {
-    const [from, to] = design().entrance?.[part] ?? defaultEntrance[part];
-    return Math.min(1, Math.max(0, (map.getZoom() - from) / (to - from)));
+    const entrance = design().entrance;
+    const band = (entrance && entrance[part]) || defaultEntrance[part];
+    return tileflowSceneEntrance(map.getZoom(), band, entrance !== false);
   }
 
   /** The buildings' height scale shown now. */
@@ -959,7 +960,13 @@ export function createTileflowBuildings3D(
 
   /** How far a model that has just come to stand has faded in, from 0 to 1. */
   function appearanceOf(model: TileflowPlacedModel, now: number): number {
-    if (model.standingSince === undefined) return 1;
+    const entrance = design().entrance;
+    if (
+      entrance === false ||
+      (entrance?.models && entrance.models[0] === entrance.models[1]) ||
+      model.standingSince === undefined
+    )
+      return 1;
     const reduced =
       typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     return reduced ? 1 : Math.min(1, Math.max(0, (now - model.standingSince) / modelFade));
@@ -1609,9 +1616,10 @@ export function createTileflowBuildings3D(
         context.uniform4f(u.u_ring ?? null, ...ringIn(x, y));
         context.uniform2f(u.u_ring_ahead ?? null, ...ahead);
         context.uniform1i(u.u_ring_directional ?? null, camera.ring()?.fade ? 1 : 0);
+        // A cold/refreshed palette uploads a texture. Keep it off the shadow sampler on unit 0.
+        context.activeTexture(context.TEXTURE1);
         const palette = themes ? paletteOf(context, entry, themes.themes) : undefined;
         context.uniform1f(u.u_palette_on!, palette ? 1 : 0);
-        context.activeTexture(context.TEXTURE1);
         context.bindTexture(context.TEXTURE_2D, palette?.texture ?? blank ?? null);
         context.uniform1i(u.u_palette!, 1);
         if (palette && themes) {

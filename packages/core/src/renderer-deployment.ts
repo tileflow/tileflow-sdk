@@ -1,7 +1,5 @@
-import {classicManifestSchemaOperations} from './manifest-schema-classic';
-import {createTileflowTimeOfDaySchema} from './time-of-day-schema';
-import {validateTileflowTimeOfDayVariants, type TileflowTimeOfDayVariants} from './time-of-day';
 import {z} from 'zod';
+import {tileflowMaxPitch} from './camera-limits';
 import {
   assertTileflowInteractionManifestLayers,
   type TileflowInteractionManifest,
@@ -11,11 +9,13 @@ import {
   tileflowRenderedIconIdentitySchema,
 } from './icon-composition';
 import {serializeCanonicalJson, sha256Hex} from './icon-package';
+import {classicManifestSchemaOperations} from './manifest-schema-classic';
 import {tileflowNativeBuildRecordSchema} from './native-build-record';
 import {validateTileflowNativePreparedStyle} from './native-profile';
 import {tileflowNativeProfileLimits} from './native-profile-helpers';
 import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
-import {tileflowMaxPitch} from './camera-limits';
+import {type TileflowTimeOfDayVariants, validateTileflowTimeOfDayVariants} from './time-of-day';
+import {createTileflowTimeOfDaySchema} from './time-of-day-schema';
 
 /** These are transport/validation bounds, not renderer or commercial quotas. */
 export const tileflowRendererDeploymentLimits = Object.freeze({
@@ -488,7 +488,12 @@ export const tileflowRendererDeploymentResponseSchema = z
     worldConversionId: z.string().min(1).max(128).optional(),
     renderers: z
       .object({
-        web: z.object({themes: z.record(tileflowThemeNameSchema, webResponseTheme)}).strict(),
+        web: z
+          .object({
+            themes: z.record(tileflowThemeNameSchema, webResponseTheme),
+            familyUrl: publicUrlSchema.optional(),
+          })
+          .strict(),
         native: z
           .object({
             profile: z.literal('native-v1'),
@@ -510,6 +515,9 @@ export const tileflowRendererDeploymentResponseSchema = z
         names.length > 64 ||
         !equal(names, Object.keys(native.themes).sort()) ||
         url.pathname !== `/maps/${value.mapId}/native/manifest.json` ||
+        (value.renderers.web.familyUrl !== undefined &&
+          value.renderers.web.familyUrl !==
+            `${url.origin}/maps/${value.mapId}/family/v${value.version}.json`) ||
         names.some(
           (name) =>
             native.themes[name]!.styleUrl !==

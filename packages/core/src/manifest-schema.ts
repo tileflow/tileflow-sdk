@@ -85,6 +85,7 @@ export function createTileflowRuntimeManifestSchema(
       apiUrl: operations.optional(apiOriginSchema),
       defaultTheme: tileflowThemeNameSchema,
       environment: operations.optional(operations.maxLength(safeTextSchema, 128)),
+      familyUrl: operations.optional(publicResourceUrlSchema),
       mapId: operations.optional(operations.maxLength(safeTextSchema, 128)),
       systemThemes: operations.optional(
         operations.object<{dark: string; light: string}>({
@@ -167,11 +168,20 @@ export function createTileflowRuntimeManifestSchema(
       maps: operations.record(tileflowPortableIdSchema, manifestMapSchema),
       version: operations.union(
         operations.literal(tileflowRuntimeManifestVersion),
-        operations.literal(2),
+        operations.union(operations.literal(2), operations.literal(3)),
       ),
     }),
     (manifest, context) => {
       const mapCount = Object.keys(manifest.maps).length;
+      if (manifest.version !== 3)
+        for (const [name, map] of Object.entries(manifest.maps)) {
+          if (map.familyUrl !== undefined)
+            context.addIssue({
+              code: 'custom',
+              message: 'familyUrl requires manifest version 3',
+              path: ['maps', name, 'familyUrl'],
+            });
+        }
       if (manifest.version === 1) {
         for (const [name, map] of Object.entries(manifest.maps)) {
           if (map.timeOfDay !== undefined)

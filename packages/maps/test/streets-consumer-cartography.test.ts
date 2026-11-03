@@ -2,8 +2,8 @@ import {Color, createPropertyExpression, latest} from '@maplibre/maplibre-gl-sty
 import assert from 'node:assert/strict';
 import {readdirSync} from 'node:fs';
 import test from 'node:test';
-import {createStyle, defineMap} from '@tileflow/core';
-import {streets} from '../src';
+import {createStyle, defineMap, resolveTileflowTheme} from '@tileflow/core';
+import {streets, streetsThemes} from '../src';
 import {streetsPreparedModels} from './streets-assets';
 
 const preparedAssets = {
@@ -93,6 +93,8 @@ test('regenerating inherited Streets preserves each overview background and shie
     'dark-monochrome': ['#323232', '#262626'],
   };
   for (const [theme, [overview, detail]] of Object.entries(backgrounds)) {
+    const colors = resolveTileflowTheme(streetsThemes[theme]).tokens.color;
+    const authored = /^(?:dawn|dusk|dark)(?:-|$)/.test(theme);
     const style = createStyle(consumer, {theme, preparedAssets});
     const background = style.layers.find((entry) => entry.type === 'background');
     assert.ok(background?.type === 'background');
@@ -102,29 +104,80 @@ test('regenerating inherited Streets preserves each overview background and shie
     );
     assert.equal(result.result, 'success');
     if (result.result !== 'success') throw new Error('Invalid background');
-    assert.deepEqual(result.value.evaluate({zoom: 8}), Color.parse(overview), theme);
-    assert.deepEqual(result.value.evaluate({zoom: 14}), Color.parse(detail), theme);
+    assert.deepEqual(
+      result.value.evaluate({zoom: 8}),
+      Color.parse(authored ? colors['surface.background.overview'] : overview),
+      theme,
+    );
+    assert.deepEqual(
+      result.value.evaluate({zoom: 14}),
+      Color.parse(authored ? colors['surface.background'] : detail),
+      theme,
+    );
     assert.deepEqual(
       result.value.evaluate({zoom: 13}),
-      Color.parse(theme === 'light' ? detail : overview),
+      Color.parse(
+        authored ? colors['surface.background.transition'] : theme === 'light' ? detail : overview,
+      ),
       theme,
     );
     const shield = style.layers.find((entry) => entry.id === 'tileflow-label-road-shield-detail');
     assert.ok(shield?.type === 'symbol');
     assert.deepEqual(
       shield.layout?.['symbol-spacing'],
-      [
-        'interpolate',
-        ['linear'],
-        ['zoom'],
-        11,
-        theme === 'light' ? 420 : 220,
-        13,
-        theme === 'light' ? 480 : 300,
-        14,
-        600,
-      ],
+      ['interpolate', ['linear'], ['zoom'], 11, 420, 13, 480, 14, 600],
       theme,
     );
+  }
+});
+
+test('time-of-day buildings retain their material palette across the fractional zoom handoff', () => {
+  for (const theme of ['dawn', 'dusk', 'dark', 'dawn-faded', 'dawn-monochrome']) {
+    const style = createStyle(consumer, {theme, preparedAssets});
+    const colors = resolveTileflowTheme(streetsThemes[theme]).tokens.color;
+    const buildings = style.metadata?.['tileflow:buildings'] as {
+      color: unknown;
+      modelColors: Record<string, string>;
+    };
+    const flat = style.layers.find((layer) => layer.id === 'tileflow-buildings-fill');
+    const raised = style.layers.find((layer) => layer.id === 'tileflow-buildings-native-extrusion');
+    assert.ok(flat?.type === 'fill' && raised?.type === 'fill-extrusion');
+    assert.deepEqual(buildings.color, raised.paint?.['fill-extrusion-color']);
+    assert.equal(buildings.modelColors.surface, colors['buildings.modelSurface']);
+    assert.equal(buildings.modelColors.vegetation, colors['vegetation.tree.broadleaf.b']);
+    assert.equal(buildings.modelColors.wood, colors['vegetation.tree.bark']);
+    for (const [paint, property, neutral] of [
+      [flat.paint?.['fill-color'], latest.paint_fill['fill-color'], 'buildings.flat.neutral'],
+      [
+        buildings.color,
+        latest['paint_fill-extrusion']['fill-extrusion-color'],
+        'buildings.raised.neutral',
+      ],
+    ] as const) {
+      const expression = createPropertyExpression(paint, property);
+      assert.equal(expression.result, 'success');
+      if (expression.result !== 'success') throw new Error('Invalid building color');
+      for (const zoom of [15, 15.25, 15.5, 15.75, 16, 18]) {
+        for (const building_tone of ['neutral', 'commercial', 'active']) {
+          assert.deepEqual(
+            expression.value.evaluate({zoom}, {type: 3, properties: {building_tone}}),
+            Color.parse(colors[building_tone === 'neutral' ? neutral : 'buildings.flat.active']),
+            `${theme} ${building_tone} at z${zoom}`,
+          );
+        }
+      }
+    }
+    if (theme === 'dawn' || theme === 'dusk') {
+      for (const role of [
+        'buildings.flat.active',
+        'buildings.raised.neutral',
+        'buildings.modelSurface',
+      ]) {
+        const stone = Color.parse(colors[role])!;
+        assert.ok(stone.r > stone.g && stone.g > stone.b, `${theme}: ${role} lost warm stone`);
+      }
+      const park = Color.parse(colors['surface.park'])!;
+      assert.ok(park.g > park.r && park.g > park.b, `${theme}: vegetation lost its green hue`);
+    }
   }
 });

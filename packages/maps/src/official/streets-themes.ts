@@ -551,7 +551,11 @@ function streetsPaletteColors(preset: StreetsLightPreset, colorTheme: StreetsCol
           ? '#F8E4C4'
           : '#F5CFA8',
     ...streetsModelLighting(preset, colorTheme).colors,
-    ...streetsBuildingColors(palette['buildings.extrusion']!, isDarkStreetsPreset(preset)),
+    ...streetsBuildingColors(
+      palette['buildings.extrusion']!,
+      isDarkStreetsPreset(preset),
+      colorTheme === 'monochrome',
+    ),
     ...streetsSkyTokens(preset, colorTheme).colors,
   };
 }
@@ -627,31 +631,14 @@ const streetsLightTheme = defineTheme({
     position: [1.15, 180, 20],
   },
 });
-const streetsDarkTheme = defineTheme({
+const streetsDarkTheme = defineTheme(streetsLightTheme, {
   id: 'streets-dark',
   version: 1,
   colorScheme: 'dark',
   tokens: {
+    image: {...streetsImages, ...streetsPoiImageTokens('dark')},
     color: streetsPaletteColors('night', 'default'),
     number: streetsLightingNumbers('night', 'default'),
-    font: streetsFonts,
-    image: {
-      ...streetsImages,
-      ...streetsPoiImageTokens('dark'),
-      ...Object.fromEntries(
-        Object.entries(streetsImages)
-          .filter(([role]) => role.startsWith('vegetation.tree.'))
-          .map(([role, image]) => [role, `${image}-dark`]),
-      ),
-      'roads.sidewalkPattern': 'sidewalk-dot-dark',
-    },
-  },
-  typography: {
-    font: token.font('default'),
-    places: {font: token.font('places')},
-    poi: {font: token.font('default')},
-    roads: {font: token.font('default')},
-    water: {font: token.font('default')},
   },
   lighting: {
     ...streetsLighting.default.night,
@@ -670,23 +657,31 @@ function defineStreetsPaletteTheme(
   colorTheme: StreetsColorTheme,
 ) {
   const isDark = isDarkStreetsPreset(preset);
-  const imageVariant =
-    colorTheme === 'monochrome' ? (isDark ? 'monochrome-dark' : 'monochrome') : undefined;
   return defineTheme(isDark ? streetsDarkTheme : streetsLightTheme, {
     id: `streets-${name}`,
     version: 1,
     colorScheme: isDark ? 'dark' : 'light',
     lighting: streetsLighting[colorTheme][preset],
     tokens: {
+      image: {
+        ...streetsImages,
+        ...streetsPoiImageTokens(
+          colorTheme === 'monochrome'
+            ? isDark
+              ? 'monochrome-dark'
+              : 'monochrome'
+            : isDark
+              ? 'dark'
+              : 'light',
+        ),
+      },
       color: streetsPaletteColors(preset, colorTheme),
       number: streetsLightingNumbers(preset, colorTheme),
-      ...(imageVariant ? {image: streetsPoiImageTokens(imageVariant)} : {}),
     },
   });
 }
 
-// Mapbox exposes lighting presets and color themes as independent controls. Tileflow themes are
-// complete snapshots, so include each combination while keeping the familiar light/dark names.
+// Appearance aliases combine palette and time while retaining one shared Streets cartography.
 export const streetsThemes = Object.freeze(
   streetsCartographyThemes({
     light: streetsLightTheme,

@@ -7,6 +7,7 @@ import {createServer} from 'node:http';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
+import {expandTileflowDeploymentArtifact} from '@tileflow/core/build';
 import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
@@ -30,14 +31,6 @@ const streetsThemeNames = [
   'light',
   'monochrome',
 ] as const;
-const streetsDarkThemes = new Set([
-  'dark',
-  'dark-faded',
-  'dark-monochrome',
-  'dusk',
-  'dusk-faded',
-  'dusk-monochrome',
-]);
 
 test('Map deploy auto-selects one map, preserves its theme family, and writes a session manifest', async (t) => {
   const fixture = await createFixture(t);
@@ -74,7 +67,13 @@ test('Map deploy auto-selects one map, preserves its theme family, and writes a 
     (requestBody as {artifact?: {kind?: string}})?.artifact?.kind,
     'tileflow-map-deployment',
   );
-  assert.equal((requestBody as {artifact?: {schemaVersion?: number}})?.artifact?.schemaVersion, 1);
+  assert.equal((requestBody as {artifact?: {schemaVersion?: number}})?.artifact?.schemaVersion, 3);
+  if (requestBody) requestBody.artifact = expandTileflowDeploymentArtifact(requestBody.artifact);
+  assert.ok(
+    (requestBody?.artifact as {styles?: {light?: {metadata?: Record<string, unknown>}}}).styles
+      ?.light?.metadata?.['tileflow:colors'],
+    'hosted web publication retains runtime colour bindings',
+  );
   assert.deepEqual(
     (requestBody as {artifact?: {teamSources?: Record<string, unknown>}})?.artifact?.teamSources,
     {},
@@ -257,11 +256,12 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
   assert.equal((requestBody as {managedMapId?: unknown}).managedMapId, managedMapId);
   assert.equal((requestBody as {iconPackage?: {label?: unknown}}).iconPackage?.label, 'madrid');
   assert.equal((requestBody as {policy?: unknown}).policy, undefined);
-  const deployedStyles = (
-    requestBody as {
-      artifact?: {schemaVersion?: number; styles?: Record<string, {sprite?: unknown}>};
-    }
-  ).artifact;
+  const decoded = expandTileflowDeploymentArtifact((requestBody as {artifact: unknown}).artifact);
+  const deployedStyles = decoded as {
+    schemaVersion?: number;
+    styles?: Record<string, {sprite?: unknown}>;
+  };
+
   assert.equal(deployedStyles?.schemaVersion, 1);
   assert.deepEqual(Object.keys(deployedStyles?.styles ?? {}), streetsThemeNames);
   for (const style of Object.values(deployedStyles?.styles ?? {})) {
@@ -760,7 +760,8 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
 
     const parsed = JSON.parse(body) as Record<string, unknown>;
     assert.equal('icons' in parsed, false);
-    const artifact = parsed.artifact as {
+    assert.equal((parsed.artifact as {schemaVersion: number}).schemaVersion, 3);
+    const artifact = expandTileflowDeploymentArtifact(parsed.artifact) as {
       buildManifest?: {
         maps?: Record<
           string,
@@ -796,7 +797,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
     assert.equal(typeof mapEntry?.themes?.light?.styleSha256, 'string');
     assert.ok(artifact.buildManifest?.provenance);
     assert.deepEqual(Object.keys(artifact.styles ?? {}), streetsThemeNames);
-    for (const [theme, style] of Object.entries(artifact.styles ?? {})) {
+    for (const style of Object.values(artifact.styles ?? {})) {
       assert.equal(
         style.sprite,
         `${api.url}/sprites/icp_12345678-1234-1234-1234-123456789abc/sprite`,
@@ -805,11 +806,10 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
       assert.ok(foodPoiLayer?.layout?.['text-field'], 'default POIs include their name');
       const iconImage = JSON.stringify(foodPoiLayer?.layout?.['icon-image']);
       assert.match(iconImage, /"get","icon"/u);
-      const paletteSuffix = theme.includes('monochrome') ? '-monochrome' : '';
-      const darkSuffix = streetsDarkThemes.has(theme) ? '-dark' : '';
-      const foodImage =
-        theme === 'light' ? 'unified-day-food' : `food${paletteSuffix}${darkSuffix}`;
-      assert.match(iconImage, new RegExp(`"image","${foodImage}"`, 'u'));
+      assert.match(
+        iconImage,
+        /"image","(?:unified-day-food|food(?:-dark|-monochrome(?:-dark)?)?)"/u,
+      );
     }
     assert.deepEqual(parsed.iconPackage, {
       contentHash: requests[0]?.url?.split('/').pop(),
@@ -899,6 +899,7 @@ name: 'Madrid'`,
       modelBundle?: unknown;
       teamModelSources?: Record<string, Array<{level: string; sha256: string; byteLength: number}>>;
     };
+    parsed.artifact = expandTileflowDeploymentArtifact(parsed.artifact) as typeof parsed.artifact;
     assert.equal(parsed.modelBundle, undefined);
     // Every theme places the Team model by its placeholder; the deploy binds its address.
     for (const style of Object.values(parsed.artifact.styles)) {

@@ -1,3 +1,4 @@
+import {tileflowNativeBuildingsLayerId} from '../building-layer-ids';
 import type {ResolvedTileflowData} from '../data';
 import {
   createTileflowCompilerProvenance,
@@ -13,8 +14,8 @@ import {
   type TileflowPhysicalFamilyDeclaration,
 } from './contributions';
 import type {TileflowCompiledDomains} from './domain-registry';
-import {tileflowNativeBuildingsLayerId} from '../building-layer-ids';
 import type {TileflowLayerDomain} from './domains';
+import {compactTileflowLayer} from './expression-compaction';
 import type {TileflowCompiledRenderOperation} from './render-stack';
 import {bindSemanticLayer} from './semantic-bindings';
 
@@ -254,7 +255,7 @@ export function lowerTileflowDomainIR(
   resolvePhysicalId: TileflowPhysicalIdResolver = physicalLayerIdForSemanticKey,
 ): TileflowLoweredDomainIR {
   const layers = families.flatMap((family) =>
-    bindSemanticLayer(emitLayer(family, resolvePhysicalId), data),
+    bindSemanticLayer(emitLayer(family, resolvePhysicalId), data).map(compactTileflowLayer),
   );
   assertNoSemanticReferences(layers);
   const ids = new Set<string>();
@@ -383,10 +384,12 @@ export function physicalLayerIdForSemanticKey(semanticKey: string): string {
   if (match) return `tileflow-waterway-${match[2]}${match[1] ? '-intermittent' : ''}`;
 
   match = /^buildings\.flat\.(fill|outline)$/u.exec(semanticKey);
-  if (match) return match[1] === 'fill' ? 'tileflow-buildings-fill' : 'tileflow-buildings-fill-outline';
+  if (match)
+    return match[1] === 'fill' ? 'tileflow-buildings-fill' : 'tileflow-buildings-fill-outline';
 
   match = /^land\.activityAreas\.(fill|outline)$/u.exec(semanticKey);
-  if (match) return match[1] === 'fill' ? 'tileflow-activity-areas' : 'tileflow-activity-areas-outline';
+  if (match)
+    return match[1] === 'fill' ? 'tileflow-activity-areas' : 'tileflow-activity-areas-outline';
 
   match = /^aeroways\.area\.(fill|outline)$/u.exec(semanticKey);
   if (match) return match[1] === 'fill' ? 'tileflow-aeroway-area' : 'tileflow-aeroway-area-outline';

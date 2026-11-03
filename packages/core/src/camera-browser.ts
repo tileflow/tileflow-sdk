@@ -1,7 +1,11 @@
+import type {TileflowCameraOptions} from './camera';
+
 /** Public camera capabilities; renderers without a field-of-view setter keep their own lens. */
 export type TileflowAdaptiveCameraMap = {
   getPitch(): number;
   getZoom(): number;
+  getMaxPitch?(): number;
+  setMaxPitch?(degrees: number): unknown;
   getCanvas?(): {clientHeight: number};
   getVerticalFieldOfView?(): number;
   setVerticalFieldOfView?(degrees: number): unknown;
@@ -83,4 +87,42 @@ export function createTileflowAdaptiveCamera(map: TileflowAdaptiveCameraMap) {
   map.on('resize', update);
   map.on('remove', onRemove);
   return {setEnabled, dispose};
+}
+
+/** Enforces the map's overview pitch cap, restoring the caller's maximum on release. */
+export function createTileflowPitchLimit(map: TileflowAdaptiveCameraMap) {
+  let limit: TileflowCameraOptions['pitchLimit'];
+  let original: number | undefined;
+  let applying = false;
+  let disposed = false;
+  const update = () => {
+    if (disposed || applying || original === undefined) return;
+    const maximum =
+      limit && map.getZoom() <= limit.maxZoom ? Math.min(original, limit.maxPitch) : original;
+    if (map.getMaxPitch?.() === maximum) return;
+    applying = true;
+    try {
+      map.setMaxPitch?.(maximum);
+    } finally {
+      applying = false;
+    }
+  };
+  const setLimit = (next: TileflowCameraOptions['pitchLimit']) => {
+    if (disposed || !map.getMaxPitch || !map.setMaxPitch) return;
+    limit = next;
+    if (next) original ??= map.getMaxPitch();
+    update();
+    if (!next) original = undefined;
+  };
+  const onRemove = () => dispose(false);
+  function dispose(restore = true) {
+    if (disposed) return;
+    if (restore) setLimit(undefined);
+    disposed = true;
+    map.off('zoom', update);
+    map.off('remove', onRemove);
+  }
+  map.on('zoom', update);
+  map.on('remove', onRemove);
+  return {setLimit, dispose};
 }

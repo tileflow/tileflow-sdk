@@ -19,6 +19,7 @@ import {
   refine,
   reset,
   resolveMap,
+  resolveTileflowTheme,
   vectorTiles,
 } from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
@@ -1075,12 +1076,7 @@ test('Streets road labels retain class thresholds and readable text below buildi
     [...resolved.modules.labels!.roadClasses!].sort(),
     expectations.map(([roadClass]) => roadClass).sort(),
   );
-  for (const [theme, reference] of [
-    ['light', 'default-day'],
-    ['dawn', 'default-dawn'],
-    ['dusk', 'default-dusk'],
-    ['dark', 'default-night'],
-  ] as const) {
+  for (const theme of ['light', 'dawn', 'dusk', 'dark'] as const) {
     const {style, inspection} = createStyleWithInspection(streets, {
       preparedAssets: preparedAssets(streets.id),
       theme,
@@ -1207,11 +1203,15 @@ test('Streets road labels retain class thresholds and readable text below buildi
         assert.equal(evaluate('text-halo-width', 'paint'), 1);
         assert.equal(
           String(evaluate('text-color', 'paint')),
-          String(Color.parse(colorReference.colors[reference]['labels.road'])),
+          String(
+            Color.parse(resolveTileflowTheme(streetsThemes[theme]).tokens.color['labels.road']),
+          ),
         );
         assert.equal(
           String(evaluate('text-halo-color', 'paint')),
-          String(Color.parse(colorReference.colors[reference]['labels.roadHalo'])),
+          String(
+            Color.parse(resolveTileflowTheme(streetsThemes[theme]).tokens.color['labels.roadHalo']),
+          ),
         );
       }
       const construction = {...properties, class: `${sourceClass}_construction`};
@@ -1249,7 +1249,13 @@ test('non-Streets official maps do not use Streets surface colors', () => {
 
     ['blueprint', blueprint, ['#061D35', '#EEF3EA']],
     ['siegfried', siegfried, ['#F0EBE0', '#A96C4D']],
-    ['streets-dark', streets, ['#2B2F43', '#12233B']],
+    [
+      'streets-dark',
+      streets,
+      ['surface.background', 'hydro.water'].map(
+        (role) => resolveTileflowTheme(streetsThemes.dark).tokens.color[role],
+      ),
+    ],
   ] as const) {
     const serialized = JSON.stringify(
       compile(map, id === 'streets-dark' ? 'dark' : undefined),

@@ -506,6 +506,7 @@ export type MapLibreStyle = {
   version: 8;
   name: string;
   glyphs?: string;
+  'font-faces'?: Record<string, string | {url: string; 'unicode-range'?: string[]}>;
   light?: TileflowLight;
   projection?: {type: TileflowProjection};
   sprite?: MapLibreSprite;

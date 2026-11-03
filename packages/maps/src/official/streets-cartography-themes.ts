@@ -1,8 +1,9 @@
-import {defineTheme, type TileflowTheme, token} from '@tileflow/core';
+import {defineTheme, resolveTileflowTheme, type TileflowTheme, token} from '@tileflow/core';
 import {streetsBuildingColors} from './streets-building-colors';
 import {streetsDayColors, streetsDayImages} from './streets-day-colors';
 import {streetsDayGroundColors} from './streets-ground-and-access';
 import {streetsNetworkDayColors} from './streets-network-overview';
+import {streetsTimeColors} from './streets-time-colors';
 
 const palettes = {
   day: ['#E8EAED', '#F3E9DF', '#D5D8DD', '#DDCCC0'],
@@ -37,14 +38,18 @@ function colors(name: string) {
   );
 }
 
+// Daylight owns the cartography. Every appearance uses its fonts, artwork, path
+// visibility and label spacing; only colors and lighting vary. This is a Streets
+// design decision, not a restriction on other maps authored with Tileflow.
 export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
-  return Object.fromEntries(
+  const themes = Object.fromEntries(
     Object.entries(base).map(([name, theme]) => [
       name,
       defineTheme(theme, {
         id: `streets-${name}`,
         version: 1,
         colorScheme: theme.colorScheme,
+        typography: base.light!.typography,
         tokens: {
           color: {
             ...colors(name),
@@ -64,12 +69,13 @@ export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
             'roads.overview.casingClose': token.color('roads.detail.casing'),
             ...(name === 'light' ? streetsDayGroundColors : {}),
             ...(name === 'light' ? streetsNetworkDayColors : {}),
-            // Daylight 3D stone is a soft ivory, still cooler than active buildings.
+            // The ordinary city stays in warm limestone; authored parts add material contrast.
             'buildings.raised.neutral':
-              name === 'light' ? '#EDEDE7' : colors(name)['buildings.flat.neutral'],
+              name === 'light' ? '#ECE8DE' : colors(name)['buildings.flat.neutral'],
             ...streetsBuildingColors(
-              name === 'light' ? '#EDEDE7' : colors(name)['buildings.flat.neutral']!,
+              name === 'light' ? '#EEEAE1' : colors(name)['buildings.flat.neutral']!,
               theme.colorScheme === 'dark',
+              name.includes('monochrome'),
             ),
             ...(name === 'light'
               ? {
@@ -82,11 +88,14 @@ export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
                 }
               : {}),
           },
-          image: name === 'light' ? streetsDayImages : {},
+          font: base.light!.tokens.font,
+          image: {...theme.tokens.image, ...(name === 'light' ? streetsDayImages : {})},
           number: Object.fromEntries([
-            ['roads.path.groundOpacity', name === 'light' ? 1 : 0],
-            ['labels.shield.spacing11', name === 'light' ? 420 : 220],
-            ['labels.shield.spacing13', name === 'light' ? 480 : 300],
+            ['roads.path.groundOpacity', 1],
+            ['labels.shield.spacing11', 420],
+            ['labels.shield.spacing13', 480],
+            // Only daylight shows the climate; the other appearances keep the same layer clear,
+            // so every appearance shares one cartography.
             ...[100, 85, 78, 55, 25].map((value) => [
               `land.climate.opacity${value === 100 ? '' : value}`,
               name === 'light' ? value / 100 : 0,
@@ -96,4 +105,25 @@ export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
       }),
     ]),
   );
+  const day = resolveTileflowTheme(themes.light!).tokens.color;
+  const referenceDay = resolveTileflowTheme(base.light!).tokens.color;
+  for (const [name, theme] of Object.entries(themes)) {
+    if (!/^(?:dawn|dusk|dark)(?:-|$)/.test(name)) continue;
+    const referenceTime = resolveTileflowTheme(base[name]!).tokens.color;
+    themes[name] = defineTheme(theme, {
+      id: `streets-${name}`,
+      version: 1,
+      colorScheme: theme.colorScheme,
+      tokens: {
+        color: streetsTimeColors(
+          {...day, 'landcover.global.crop': streetsDayGroundColors['landcover.global.crop']},
+          referenceDay,
+          referenceTime,
+          name.includes('monochrome'),
+          name.startsWith('dawn') ? 'dawn' : name.startsWith('dusk') ? 'dusk' : 'night',
+        ),
+      },
+    });
+  }
+  return themes;
 }

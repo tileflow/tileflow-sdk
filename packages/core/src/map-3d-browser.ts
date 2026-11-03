@@ -9,7 +9,11 @@ import {
 } from './buildings-3d-browser';
 import {readTileflowBuildings3D, tileflowBuildingsMetadataKey} from './buildings-3d-design';
 import {readTileflowCamera, tileflowCameraMetadataKey, type TileflowCameraOptions} from './camera';
-import {createTileflowAdaptiveCamera, type TileflowAdaptiveCameraMap} from './camera-browser';
+import {
+  createTileflowAdaptiveCamera,
+  createTileflowPitchLimit,
+  type TileflowAdaptiveCameraMap,
+} from './camera-browser';
 import {tileflowMap3DDeclarations} from './map-3d-attach-browser';
 import {tileflowStreetLightsMetadataKey} from './street-lights';
 import {
@@ -79,6 +83,7 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
   let vegetationVisible = options.vegetation;
   let adaptivePerspective = options.camera?.adaptivePerspective;
   const camera = createTileflowAdaptiveCamera(map);
+  const pitchLimit = createTileflowPitchLimit(map);
   let authoredPerspective: boolean | undefined;
   let buildings: TileflowBuildings3D | undefined;
   let vegetation: TileflowVegetationController | undefined;
@@ -120,14 +125,17 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
           : (map.getStyle() as {metadata?: unknown} | undefined)?.metadata;
         const design = readTileflowBuildings3D(metadata);
         footprintLayers = design?.flatLayers ?? [];
-        footprintZoom = design?.entrance?.buildings?.[1] ?? 15.3;
+        footprintZoom =
+          design?.entrance === false ? 15 : (design?.entrance?.buildings?.[1] ?? 15.3);
       }
       if (authoredPerspective === undefined) {
         const themes = controller?.getThemeMetadata?.(tileflowCameraMetadataKey);
         const metadata = themes
           ? {[tileflowCameraMetadataKey]: themes.values[Math.round(themes.position)]}
           : (map.getStyle() as {metadata?: unknown} | undefined)?.metadata;
-        authoredPerspective = readTileflowCamera(metadata).adaptivePerspective ?? false;
+        const policy = readTileflowCamera(metadata);
+        authoredPerspective = policy.adaptivePerspective ?? false;
+        pitchLimit.setLimit(options.camera?.pitchLimit ?? policy.pitchLimit);
       }
       camera.setEnabled(shown && (adaptivePerspective ?? authoredPerspective));
       const declared = (declarations ??= tileflowMap3DDeclarations({
@@ -205,6 +213,7 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
     disposed = true;
     flatBuildings.restore();
     camera.dispose();
+    pitchLimit.dispose();
     map.off('styledata', restyle);
     map.off('style.load', restyle);
     map.off('idle', sync);

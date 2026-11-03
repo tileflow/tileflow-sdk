@@ -721,6 +721,8 @@ test('a design gives the zoom bands the city comes in over, or leaves them to th
   };
   const read = (entrance: unknown) =>
     readTileflowBuildings3D({[tileflowBuildingsMetadataKey]: {...metadata, entrance}})?.entrance;
+  assert.equal(read(false), false);
+  assert.deepEqual(read({buildings: [14.25, 14.25]}), {buildings: [14.25, 14.25]});
   assert.deepEqual(read({buildings: [15.5, 16], models: [14, 14.5]}), {
     buildings: [15.5, 16],
     models: [14, 14.5],

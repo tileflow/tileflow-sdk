@@ -1,7 +1,6 @@
-/** Small tonal variations around the ordinary buildings, shared by every authored model. */
-export function streetsBuildingColors(base: string, dark: boolean) {
+/** A shared stone, smoked-glass and roof palette; the model assigns each material to its parts. */
+export function streetsBuildingColors(base: string, dark: boolean, monochrome = false) {
   const rgb = [1, 3, 5].map((offset) => parseInt(base.slice(offset, offset + 2), 16));
-  const gray = rgb.reduce((sum, value) => sum + value, 0) / 3;
   const hex = (values: number[]) =>
     '#' +
     values
@@ -10,10 +9,13 @@ export function streetsBuildingColors(base: string, dark: boolean) {
       .toUpperCase();
   return {
     'buildings.modelSurface': base,
-    // Temporary glass review tint; use base to restore the neutral finish.
-    'buildings.modelGlass': '#C7DFE9',
-    'buildings.modelSecondary': hex(rgb.map((v) => v + (255 - v) * (dark ? 0.018 : 0.24))),
-    'buildings.modelRoof': hex(rgb.map((v) => (v * 0.8 + gray * 0.2) * 0.97)),
-    'buildings.modelAccent': hex(rgb.map((v) => v + (255 - v) * (dark ? 0.025 : 0.34))),
+    'buildings.modelGlass': hex(
+      rgb.map((v, channel) => v * (monochrome ? 0.86 : [0.78, 0.88, 0.95][channel]!)),
+    ),
+    'buildings.modelSecondary': hex(rgb.map((v) => v + (255 - v) * (dark ? 0.018 : 0.2))),
+    'buildings.modelRoof': hex(
+      rgb.map((v, channel) => v * (monochrome ? 0.92 : [0.94, 0.92, 0.9][channel]!)),
+    ),
+    'buildings.modelAccent': hex(rgb.map((v) => v + (255 - v) * (dark ? 0.025 : 0.4))),
   };
 }

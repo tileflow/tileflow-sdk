@@ -11,9 +11,8 @@ it does not start a server, prepare files on disk, render a browser map, or depl
 npm install @tileflow/core@alpha @tileflow/maps@alpha
 ```
 
-`@tileflow/maps` is needed for the official map used below, not for every Core application. Use
-ES module imports. For config loading and asset preparation, use the Node.js 22+ CLI or a build
-integration. Browser applications should use a framework adapter with prepared assets.
+Use ES modules. `@tileflow/maps` supplies the official map below. Load configs and prepare assets
+with the Node.js 22+ CLI or build integrations; browser adapters consume prepared assets.
 
 ## Define a map
 
@@ -73,33 +72,27 @@ Module object order does not determine rendering order.
 
 ## Team Icon Sets foundations
 
-`iconSet('@team/set')` is an explicit icon contributor alongside local and package-owned directories.
-It performs no I/O. A resolved map accepts at most 32 contributors, and the same set reference may
-appear only once. Shared sets use the same explicit array order and later-wins semantics as ordinary
-icon directories.
+`iconSet('@team/set')` declares a contributor alongside local/package directories, without I/O.
+Maps accept at most 32 contributors; set references must be unique. Explicit array order and
+later-wins icon precedence apply to all contributors.
 
-An exact `tileflow.icons.lock.json` identifies immutable set revisions and generated artifacts. The
-lock parser rejects duplicate JSON keys, stale reference sets, mixed Teams, invalid IDs, floating
-versions, unsafe URLs, and manifest/hash mismatches. Serialization is canonical. Hashes are internal
-integrity machinery, not identifiers that application authors manage.
+`tileflow.icons.lock.json` pins immutable set revisions and artifacts. Its parser rejects duplicate
+keys, stale references, mixed Teams, invalid IDs, floating versions, unsafe URLs and manifest/hash
+mismatches. Serialization is canonical; hashes are internal integrity details.
 
-Shared-set content identifies the effective published artifact. Git owns original artwork history;
-source-only SVG edits producing the same artifact are not shared content changes. No original-source
-hash, source format, or filesystem path is added to a shared package. Local/package originals retain
-their existing source identity. Shared winners use explicit `rendered-icon` identity, while an
-ordered versioned icon-composition receipt records consumed revisions separately, including
-fully shadowed sets and dependency changes that preserve rendered pixels.
+Shared identity follows published artwork, not source-only SVG edits yielding identical artifacts.
+Git retains original artwork history. Shared packages contain no original-source hash, format or
+filesystem path; local/package originals retain source identity. Shared winners use `rendered-icon`
+identity. Ordered, versioned composition receipts record consumed revisions, including shadowed
+sets and dependency changes preserving rendered pixels.
 
-Map revision hashing preserves the existing v1 result for maps without shared sets. Maps with sets
-require a complete receipt and use the domain-separated v2 revision contract. Build-manifest map
-entries identify that contract with `mapRevisionSchemaVersion: 2`; omission means legacy v1. The
-Metadata-free RGBA icon packages retain `tileflow-icon-package-v1` identity. SDF appearance or text-fitting metadata uses
-`tileflow-icon-package-v2` and v2 composition receipts; defaults and layout participate in identity.
+Maps without shared sets retain v1 revision hashing. Shared sets require complete receipts and the
+domain-separated v2 contract, identified by `mapRevisionSchemaVersion: 2`; omission means v1.
+Metadata-free RGBA packages retain `tileflow-icon-package-v1`. SDF appearance or text-fitting
+metadata requires `tileflow-icon-package-v2` and v2 composition receipts, including defaults/layout.
 
-These are portable contracts. `@tileflow/dev` composes declared contributors on its normal
-preparation path, and the `tileflow` CLI owns catalog management and exact lock maintenance.
-Importing `iconSet` adds a declaration; it resolves no revision and does not by itself make a
-Team catalog available to your deployment.
+`@tileflow/dev` prepares declared contributors; the CLI manages catalogs and exact locks.
+Importing `iconSet` neither resolves revisions nor makes a Team catalog available to deployments.
 
 ## Style with themes and semantic modules
 
@@ -150,29 +143,34 @@ export default defineMap({
 `system` is a runtime selection policy, not a stored theme. Builds, captures, static scenes, and
 receipts must use a concrete theme such as `light` or `dark`.
 
-Theme and `timeOfDay` changes animate over 450 ms by default, respecting reduced motion.
-The same controller can make chosen modules recede and the map's labels fade so an application's
-own content reads first.
-It also sets the style-wide states that themes read with `expr.globalState`, easing numbers so the
-values a theme interpolates on them move smoothly.
-For application-drawn RGBA symbols, it also manages fixed-size
-dynamic style images,
-including state refresh, theme changes and restoration without changing layer placement.
-Applications draw their own routes in the theme's inks, read with `getRouteInks()`, and draw them
-on with `createTileflowLineProgress`. `createTileflowGroundLayers` keeps them under 3D buildings,
-which hide them where they stand in front, and can show the hidden stretches faintly.
-A theme can describe its sun and sky light (`lighting.sun`, `lighting.ambient`); the controller
-returns the sun the map shows with `getSun()`, mixed during a blend, for an application's own 3D
-layers, and `setSun()` places it by direction or by the real sun of a date and place.
-`createTileflowBuildings3D` enables worker-meshed buildings rising in at zoom 15–15.3, with scene
-sun, cast/contact shadows and 0.8 m rounded corners. Each effect is independently overridable.
-The compiled `tileflow-buildings-native-extrusion` layer supplies simple 3D buildings while the
-browser scene loads or cannot draw. The scene uses its own `tileflow-buildings-scene-3d` layer and
-replaces the native extrusion only after its visible building tiles have drawn. A failed scene keeps
-the native buildings visible; switching to 2D restores the style's authored visibility.
-Street lights default to off, including in Streets. Set `roads.streetLights.enabled: true` and mount
-`createTileflowStreetLights` to enable them.
-`createTileflowVegetation` controls all trees using the map's `3d`, `flat` or `auto` policy.
+Theme and `timeOfDay` changes animate over 450 ms, respecting reduced motion. Web manifests v3
+add `familyUrl`, a bounded `tileflow-style-family` v1 document sharing structure and parameters;
+flat `styleUrl` exports remain. `createTileflowStyleFamily` (`@tileflow/core/build`) factors styles;
+`parseTileflowStyleFamily` and `materializeTileflowStyleFamily` (`@tileflow/core/runtime`) validate
+and expand them. Controllers load each family once. Compatible appearances preserve sources,
+application layers and 3D palettes; structural variants swap styles. Feature-dependent branches
+prepare once; discrete values and RGBA icons switch at the dominant theme without relayout.
+Parameter columns are not semantic tokens.
+
+`controller.setColors({'surface.water': '#008800'})` overrides named tokens; `{}` restores authored
+colours. Fixed colours and application layers remain. Web builds retain token bindings; direct
+`createStyle` calls opt in with `runtimeColors: true`. `createTileflowAppearanceController().set()`
+selects author-owned `fixed`, `system` or local `clock` behaviour without UI or location requests.
+Profile performance on target devices.
+
+Theme controllers also provide module/label emphasis, eased numeric `expr.globalState` values,
+and fixed-size dynamic RGBA images with state refresh and restoration across theme changes.
+`getRouteInks()` supplies route colours; `createTileflowLineProgress` animates drawing routes.
+`createTileflowGroundLayers` places them under 3D buildings, optionally showing occluded stretches
+faintly. Themes declare `lighting.sun` and `lighting.ambient`; `getSun()` returns the displayed,
+blended sun for application 3D layers. `setSun()` accepts a direction or a date and location.
+
+`createTileflowBuildings3D` enables worker-meshed buildings rising at zoom 15–15.3, scene sun,
+cast/contact shadows and 0.8 m rounded corners; effects are independently overridable. Its
+`tileflow-buildings-scene-3d` layer replaces `tileflow-buildings-native-extrusion` only after visible
+building tiles draw. Failure keeps the native fallback; 2D restores authored visibility.
+Street lights default off, including in Streets: enable `roads.streetLights.enabled` and mount
+`createTileflowStreetLights`. `createTileflowVegetation` follows the map's `3d`, `flat` or `auto` policy.
 
 POI icons and names place together; `placement.coupleIconAndLabel: false` separates them.
 
@@ -191,6 +189,11 @@ semantic target.
 validates the authoring input and throws on failure. `createStyle(map, options)` returns a style or
 throws; `createStyleResult(map, options)` returns structured diagnostics and a compilation report.
 Only a successful result contains `style`.
+
+Compilation compacts redundant expressions and shares repeated predicates and values with
+MapLibre `let` bindings. Themes still produce standalone Style JSON, with the same layer order,
+appearance and assets. Inspect semantic targets rather than depending on the emitted expression
+shape; it may change when the compiler removes repetition.
 
 Maps with package/local icon or font directories need the CLI, a build plugin, or
 [`@tileflow/dev/artifacts`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/README.md)
@@ -272,6 +275,39 @@ template, zoom limits, thresholds, and the Tileflow contour protocol. Framework 
 tooling prepare browser resources; direct MapLibre integrations must register required protocols
 before loading a style.
 
+### Load a portable style in MapLibre
+
+Await `loadTileflowRuntimeStyle` before giving MapLibre a runtime style. React, Vue and Svelte do
+this automatically. The loader prepares flat styles or shared families, resolving sprites, glyphs,
+fonts, sources and model/landmark URLs against their declaring documents. HTTP TileJSON loads once
+per preparation; explicit source options win. Artifacts and input objects remain unchanged.
+
+<!-- docs:check -->
+
+```ts
+import {loadTileflowRuntimeStyle, loadTileflowStyleFonts} from '@tileflow/core/browser';
+import type {TileflowRuntimeStyle} from '@tileflow/core/runtime';
+
+export async function prepareMapStyle(runtime: TileflowRuntimeStyle, signal?: AbortSignal) {
+  const prepared = await loadTileflowRuntimeStyle(runtime, {signal});
+  await loadTileflowStyleFonts(prepared.style, {fontFaces: prepared.fontFaces});
+  return prepared.style; // Use as new maplibregl.Map({container, style}).
+}
+```
+
+Resolve the runtime with `resolveTileflowRuntimeStyle`. For inline styles, `baseUrl` supplies the
+document URL (default: `document.baseURI`). Absolute URLs, signatures, template tokens and
+application data retain their meaning. Custom source protocols remain with MapLibre's handlers.
+
+`fetch`, `signal` and `transformRequest(url, 'Style' | 'Source')` control document requests, including
+families. Defaults use same-origin credentials and reject redirects. Invalid documents, failed
+requests and size limits (style/family: 16 MiB; TileJSON: 1 MiB) reject preparation.
+
+For theme changes, pass `initial: prepared` and `styleLoadOptions` to `createTileflowThemeController`.
+With flat styles, `initialStyle: prepared.style` can instead preserve the original `initial` and
+`getCurrent()` identity. Inline themes and `loadStyle` overrides must already be prepared. Disposal
+aborts pending loads; blends and rollback reuse prepared resources.
+
 With `projection: 'globe'`, `atmosphere: true` adds a halo and stars; an object configures colors, star count and size.
 `sky` follows the sun at street level. Frameworks and capture attach both; direct
 MapLibre consumers call `attachTileflowAtmosphere(map)` from `@tileflow/core/browser`.
@@ -280,18 +316,20 @@ Applications that need the map's data themselves, such as streets to route over 
 under the camera, read chosen layers of a vector source for an area at a fixed zoom with
 `createTileflowTileReader` from `@tileflow/core/browser`, which also runs in a module worker.
 
-Browser 3D scenes support `camera.adaptivePerspective`: caller override,
-map default, then `false`. Streets enables it. Depth markers let buildings
-occlude application markers.
-Custom 3D layers load visible ground from the bottom of the viewport towards the horizon before
-spending tiles offscreen. Buildings fade down at the far boundary, across the view's width, and
-distance haze follows that boundary. Coverage follows the viewport and its projection on resize,
-within each layer's `maxTiles` budget (25 by default); views exceeding that budget still have
-bounded coverage, with the nearest ground taking priority.
-Model roles use `modelLighting` for independent colours and materials. `colorScale` (0–1,
-default 1) subtly darkens a role after recolouring. Map-shaded models share the buildings’
-vertical/contact gradient; physical roles keep their own lighting. Model corner geometry is
-authored in the asset, while ordinary tile corners use `edgeRadius`.
+Browser 3D scenes resolve `camera.adaptivePerspective` from caller override, map default, then
+`false`; Streets enables it. Buildings occlude depth markers. `camera.pitchLimit: {maxZoom, maxPitch}`
+caps inclination through `maxZoom`, respecting stricter application caps. Closer views and disposal
+restore the application's maximum.
+3D layers prioritize visible ground from viewport bottom toward the horizon. Buildings fade across
+the far boundary, followed by haze. Coverage follows resize and projection within each layer's
+`maxTiles` budget (default 25), prioritizing nearest ground.
+Model roles use `modelLighting` for colours/materials and `colorScale` (0–1, default 1) for darkening
+recoloured assets. Ordinary facades use soft daylight and a gradient through their lower 85%, leaving
+roofs and upper edges light. Map-shaded models retain a short base gradient; physical roles retain
+their lighting. Model corners belong to the asset; ordinary buildings use `edgeRadius`.
+`buildings.threeDimensional.entrance: false` shows buildings/models at full height and opacity at
+entrance zooms, without zoom/arrival growth or fading. Equal endpoints such as
+`entrance: {buildings: [14.25, 14.25], models: [14.25, 14.25]}` switch immediately at that zoom.
 
 Text requires exactly one provider. Soundings and Blueprint use URL glyphs; Streets packages DINish
 and Noto Sans; Baedeker, 1777 and Siegfried package Cormorant; Cívica packages its lettering. Hosted

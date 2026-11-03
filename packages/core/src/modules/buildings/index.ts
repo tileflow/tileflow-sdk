@@ -88,8 +88,10 @@ export type TileflowBuildingsThreeDimensionalStyle = {
    * from the ground, and zooming out it sinks and fades again. Defaults to the 0.3 zooms from the
    * renderer's `minzoom` (15) for the buildings, and to the 0.4 zooms from 0.8 before it for the
    * placed models and landmarks, which stand first. With reduced motion they only fade.
+   * False shows each part at full height and opacity as soon as its default entrance zoom is reached.
+   * Equal band endpoints show that part immediately at the chosen zoom.
    */
-  entrance?: {buildings?: readonly [number, number]; models?: readonly [number, number]};
+  entrance?: false | {buildings?: readonly [number, number]; models?: readonly [number, number]};
   /** Contact shadow at the foot of the walls and in tight corners; defaults to true. */
   occlusion?: boolean;
   /** Ground contact shadow strength, from 0 to 1; defaults to 0.16. Facade shading is independent. */

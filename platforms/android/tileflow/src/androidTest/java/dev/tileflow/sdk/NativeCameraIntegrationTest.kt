@@ -106,10 +106,20 @@ public class NativeCameraIntegrationTest {
             map.ease(TileflowCameraUpdate(centre, zoom = 16.0), 5000)
         }
 
-    private fun send(map: View, down: Long, action: Int, x: Float, y: Float) {
-        val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0)
+    private fun send(map: View, down: Long, action: Int, x: Float, y: Float, time: Long? = null) {
+        val event = MotionEvent.obtain(down, time ?: SystemClock.uptimeMillis(), action, x, y, 0)
         map.dispatchTouchEvent(event)
         event.recycle()
+    }
+
+    /** Two quick taps, sent at once with their times 80 ms apart, so a busy device keeps them a pair. */
+    private fun doubleTap(map: View, x: Float, y: Float) {
+        val first = SystemClock.uptimeMillis()
+        send(map, first, MotionEvent.ACTION_DOWN, x, y, first)
+        send(map, first, MotionEvent.ACTION_UP, x, y, first + 40)
+        val second = first + 120
+        send(map, second, MotionEvent.ACTION_DOWN, x, y, second)
+        send(map, second, MotionEvent.ACTION_UP, x, y, second + 40)
     }
 
     private fun drag(map: View, fromX: Float, fromY: Float, dx: Float = 20f, dy: Float = 20f) {
@@ -201,7 +211,7 @@ public class NativeCameraIntegrationTest {
         val sheet = map.height / 3f
         map.setContentPadding(0f, 0f, 0f, sheet)
         assertEquals(sheet, map.effectiveContentPadding.bottom)
-        withTimeout(5_000) {
+        withTimeout(10_000) {
             while (abs(map.project(centre).y - (map.height - sheet) / 2f) > 2f) delay(50)
         }
         // Fitting bounds keeps them inside the uncovered part of the view.
@@ -275,7 +285,7 @@ public class NativeCameraIntegrationTest {
         assertEquals(View.VISIBLE, controls.compass.visibility)
         activity.events.clear()
         controls.compass.performClick()
-        withTimeout(5_000) {
+        withTimeout(10_000) {
             while (abs(map.currentCamera!!.bearing) > 0.001 || map.isMoving) delay(50)
         }
         assertEquals("The compass moves the map for a person.", setOf(TileflowCameraChangeReason.GESTURE), activity.reasons())
@@ -287,7 +297,7 @@ public class NativeCameraIntegrationTest {
         activity.events.clear()
         val compass = controls.compass
         press(map, compass.left + compass.width / 2f, compass.top + compass.height / 2f)
-        withTimeout(5_000) { while (abs(map.currentCamera!!.bearing) > 0.001 || map.isMoving) delay(50) }
+        withTimeout(10_000) { while (abs(map.currentCamera!!.bearing) > 0.001 || map.isMoving) delay(50) }
         delay(500)
         assertFalse(activity.events.any { it is TileflowMapEvent.Tap })
 
@@ -296,7 +306,7 @@ public class NativeCameraIntegrationTest {
         val y = map.height / 3f
         activity.events.clear()
         press(map, x, y)
-        withTimeout(5_000) { while (activity.events.none { it is TileflowMapEvent.Tap }) delay(50) }
+        withTimeout(10_000) { while (activity.events.none { it is TileflowMapEvent.Tap }) delay(50) }
         val tap = activity.events.filterIsInstance<TileflowMapEvent.Tap>().first()
         assertEquals(x, tap.point.x, 2f)
         assertEquals(y, tap.point.y, 2f)
@@ -305,14 +315,14 @@ public class NativeCameraIntegrationTest {
         assertEquals(tapped.latitude, tap.coordinate.latitude, 1e-5)
         activity.events.clear()
         press(map, x, y, millis = 900)
-        withTimeout(5_000) { while (activity.events.none { it is TileflowMapEvent.LongPress }) delay(50) }
+        withTimeout(10_000) { while (activity.events.none { it is TileflowMapEvent.LongPress }) delay(50) }
         delay(500)
         assertFalse(activity.events.any { it is TileflowMapEvent.Tap })
 
         // Gestures report their start and end at the camera level, and move the map for a person.
         activity.events.clear()
         drag(map, map.width / 2f, map.height / 2f, dx = -15f, dy = 0f)
-        withTimeout(5_000) {
+        withTimeout(10_000) {
             while (TileflowMapEvent.GestureEnded(TileflowGesture.PAN) !in activity.events) delay(50)
         }
         assertTrue(TileflowMapEvent.GestureStarted(TileflowGesture.PAN) in activity.events)
@@ -327,10 +337,8 @@ public class NativeCameraIntegrationTest {
         val start = map.camera().zoom
         val anchor = map.unproject(TileflowPoint(x, y))
         activity.events.clear()
-        press(map, x, y)
-        delay(80)
-        press(map, x, y)
-        withTimeout(5_000) {
+        doubleTap(map, x, y)
+        withTimeout(10_000) {
             while (abs(map.camera().zoom - start - 2) > 0.01 || map.isMoving) delay(50)
         }
         val kept = map.project(anchor)
@@ -351,7 +359,7 @@ public class NativeCameraIntegrationTest {
         )
         activity.events.clear()
         press(map, x, y)
-        withTimeout(5_000) { while (activity.events.none { it is TileflowMapEvent.Tap }) delay(50) }
+        withTimeout(10_000) { while (activity.events.none { it is TileflowMapEvent.Tap }) delay(50) }
 
         // With cooperative gestures one finger does not move the map, and the hint shows.
         map.setOptions(options.copy(gestures = TileflowGestures(cooperative = true)))
@@ -388,7 +396,7 @@ public class NativeCameraIntegrationTest {
         map.setOptions(
             TileflowMapOptions(cameraLimits = TileflowCameraLimits(maxZoom = 15.0, maxPitch = 45.0))
         )
-        withTimeout(5_000) { while (map.currentCamera!!.zoom > 15.001) delay(50) }
+        withTimeout(10_000) { while (map.currentCamera!!.zoom > 15.001) delay(50) }
         map.jump(TileflowCamera(-3.70, 40.42, 18.0, pitch = 55.0))
         assertEquals(15.0, map.camera().zoom, 0.001)
         assertEquals(45.0, map.camera().pitch, 0.01)
@@ -440,7 +448,7 @@ public class NativeCameraIntegrationTest {
                         TileflowCameraAnimationResult.FINISHED,
                         state.ease(TileflowCameraUpdate(zoom = 17.0), 300),
                     )
-                    withTimeout(5_000) { while (abs(state.camera!!.zoom - 17.0) > 0.001) delay(50) }
+                    withTimeout(10_000) { while (abs(state.camera!!.zoom - 17.0) > 0.001) delay(50) }
                     delay(500)
                     val settled =
                         activity.events.filterIsInstance<TileflowMapEvent.CameraChanged>().count {

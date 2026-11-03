@@ -1496,7 +1496,7 @@ function runPreviewScript(
   }> = [
     {id: 'tileflow-landuse-business-area', metadata: {}, sourceLayer: 'landuse', type: 'fill'},
     {
-      id: 'tileflow-buildings-3d',
+      id: 'tileflow-buildings-native-extrusion',
       metadata: {'tileflow:3d-toggle': 'building'},
       type: 'fill-extrusion',
     },
@@ -1599,7 +1599,7 @@ function runPreviewScript(
     getLayoutProperty(layerId: string, property: string): string | undefined {
       if (property !== 'visibility') return undefined;
       if (layerId === 'tileflow-landuse-business-area') return businessAreaVisibility;
-      if (layerId === 'tileflow-buildings-3d') return buildingVisibility;
+      if (layerId === 'tileflow-buildings-native-extrusion') return buildingVisibility;
       if (layerId === 'tileflow-vegetation-trees') return treeVisibility;
       return undefined;
     }
@@ -1638,7 +1638,7 @@ function runPreviewScript(
       if (layerId === 'tileflow-landuse-business-area' && property === 'visibility') {
         businessAreaVisibility = value;
       }
-      if (layerId === 'tileflow-buildings-3d' && property === 'visibility') {
+      if (layerId === 'tileflow-buildings-native-extrusion' && property === 'visibility') {
         buildingVisibility = value;
       }
       if (layerId === 'tileflow-vegetation-trees' && property === 'visibility') {

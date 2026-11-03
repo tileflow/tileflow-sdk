@@ -105,7 +105,7 @@ test('road placement keeps foreground behavior by default and moves only street 
       ...compilePoi(poi({categories: ['food-drink'], icons: false}), context),
     ]);
     const street = indexOf(layers, 'tileflow-label-road-primary');
-    const building = indexOf(layers, 'tileflow-buildings-3d');
+    const building = indexOf(layers, 'tileflow-buildings-native-extrusion');
     const destination = indexOf(layers, 'tileflow-poi-label');
     assert.equal(street < building, roadPlacement === 'ground');
     assert.equal(street < destination, roadPlacement === 'ground');

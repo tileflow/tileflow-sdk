@@ -68,7 +68,10 @@ test('the preview reads layers live, as the style declares them', () => {
   const map = createMap();
   const reads = create(map);
   map.layers.set('water', {id: 'water', type: 'fill', sourceLayer: 'water', metadata: {a: 1}});
-  map.layers.set('tileflow-buildings-3d', {id: 'tileflow-buildings-3d', type: 'custom'});
+  map.layers.set('tileflow-buildings-scene-3d', {
+    id: 'tileflow-buildings-scene-3d',
+    type: 'custom',
+  });
   // Spread the layers into this realm to compare them.
   assert.deepEqual(
     [...reads.layers()].map((layer) => ({...layer})),

@@ -1,5 +1,6 @@
 import type {TileflowBuildings3DChange} from './buildings-3d-browser';
 import {tileflowBuildingsMetadataKey} from './buildings-3d-design';
+import {createBuildingNativeLayers} from './building-native-layers-browser';
 import type {TileflowMap3D, TileflowMap3DOptions} from './map-3d-browser';
 import {tileflowStreetLightsMetadataKey} from './street-lights';
 import {tileflowVegetationMetadataKey} from './trees-3d';
@@ -86,6 +87,7 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
   let scene: TileflowMap3D | undefined;
   let loading = false;
   let disposed = false;
+  const pendingNativeBuildings = createBuildingNativeLayers(map);
 
   // Whether the style declares 3D changes with the style, not each time a 2D map settles.
   let declares: boolean | undefined;
@@ -95,18 +97,24 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
       map,
       ...(options.controller ? {controller: options.controller} : {}),
     });
-    if (!declares) return;
+    if (!declares) {
+      pendingNativeBuildings.restore();
+      return;
+    }
+    pendingNativeBuildings.setVisible(viewMode === '3d');
     loading = true;
     stopWatching();
     load()
       .then(({createTileflowMap3D}) => {
         if (disposed) return;
+        pendingNativeBuildings.restore();
         scene = createTileflowMap3D({
           ...sceneOptions,
           map,
           viewMode,
           vegetation,
           camera: {adaptivePerspective},
+          ...(onError ? {onError} : {}),
         });
       })
       .catch((error: unknown) => {
@@ -127,11 +135,13 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
     disposed = true;
     stopWatching();
     map.off('remove', onRemove);
+    pendingNativeBuildings.restore();
     scene?.dispose();
     scene = undefined;
   }
   function onRemove() {
     // The mounted scene handles removal itself. Do not restore its lens on a destroyed map.
+    pendingNativeBuildings.forget();
     scene = undefined;
     dispose();
   }
@@ -149,6 +159,7 @@ export function attachTileflowMap3D(options: AttachTileflowMap3DOptions): Tilefl
     setViewMode(mode, change) {
       if (mode === viewMode) return;
       viewMode = mode;
+      if (!scene) pendingNativeBuildings.setVisible(declares ? mode === '3d' : undefined);
       if (scene) void (mode === '3d' ? scene.show(change) : scene.hide(change));
     },
     setVegetation(visible) {

@@ -620,5 +620,5 @@ At 1280 × 720 and DPR 1, the mask occupies 921,600 bytes, excluding driver over
 - Model materials use semantic colours and role emission; physical roughness, metallic
   reflections and authored textures are not rendered.
 - A hosted map places its building models as its Team's 3D models: `tileflow deploy` uploads no
-  model files (see [Team 3D models](#team-3d-models)). A deploy with `--with-native` does not take
-  them, since MapLibre Native draws no models. Models named by `url` deploy as they are.
+  model files (see [Team 3D models](#team-3d-models)). Its native styles leave the models out and
+  record it, since MapLibre Native draws no models. Models named by `url` deploy as they are.

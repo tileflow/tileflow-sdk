@@ -302,19 +302,27 @@ export function assertPackedManifest(manifest, files) {
     required.push(
       'react-native.config.cjs',
       'android/build.gradle',
-      'TileflowNativeAdmission.podspec',
-      'ios/tileflow_native_admission.rb',
+      'TileflowReactNative.podspec',
+      'ios/tileflow_post_install.rb',
+      'plugin/index.cjs',
     );
     requireMobile(
       files.some((name) => name.startsWith('android/src/') && name.endsWith('.kt')) &&
-        files.some((name) => name.startsWith('ios/') && name.endsWith('.mm')),
+        files.some((name) => name.startsWith('ios/') && name.endsWith('.mm')) &&
+        files.some((name) => name.startsWith('ios/Sources/') && name.endsWith('.swift')) &&
+        files.some((name) => name.startsWith('src/specs/') && name.endsWith('.ts')),
       'PACK_INVALID',
       'pack',
     );
   }
   requireMobile(
     required.every((name) => files.includes(name)) &&
-      files.every((name) => !/^(?:src|test|harness|node_modules)\//u.test(name)),
+      files.every(
+        (name) =>
+          !/^(?:test|harness|node_modules|example)\//u.test(name) &&
+          // Codegen reads the TurboModule specs from the package; no other source is packed.
+          (!name.startsWith('src/') || name.startsWith('src/specs/')),
+      ),
     'PACK_INVALID',
     'pack',
   );
@@ -339,9 +347,8 @@ export function assertPackedAndroidConfig(config) {
     'pack',
   );
   requireMobile(
-    android.packageImportPath ===
-      'import dev.tileflow.reactnative.TileflowNativeAdmissionPackage;' &&
-      android.packageInstance === 'new TileflowNativeAdmissionPackage()',
+    android.packageImportPath === 'import dev.tileflow.reactnative.TileflowReactNativePackage;' &&
+      android.packageInstance === 'new TileflowReactNativePackage()',
     'AUTOLINK_INVALID',
     'pack',
   );
@@ -358,14 +365,14 @@ export function assertAutolinking(document, platform, installedRoot, kind) {
     requireMobile(
       native.sourceDir &&
         resolve(native.sourceDir) === resolve(installedRoot, 'android') &&
-        native.packageInstance === 'new TileflowNativeAdmissionPackage()',
+        native.packageInstance === 'new TileflowReactNativePackage()',
       'AUTOLINK_INVALID',
       kind,
     );
   } else {
     requireMobile(
       native.podspecPath &&
-        resolve(native.podspecPath) === resolve(installedRoot, 'TileflowNativeAdmission.podspec'),
+        resolve(native.podspecPath) === resolve(installedRoot, 'TileflowReactNative.podspec'),
       'AUTOLINK_INVALID',
       kind,
     );
@@ -380,14 +387,14 @@ export function addIosPostInstallHooks(podfile) {
   const anchor = /(\n[ \t]*react_native_post_install\([\s\S]*?\n[ \t]*\))/gu;
   requireMobile(
     [...podfile.matchAll(anchor)].length === 1 &&
-      !podfile.includes('tileflow_native_admission_post_install') &&
+      !podfile.includes('tileflow_post_install') &&
       !podfile.includes('$MLRN.post_install'),
     'TEMPLATE_INVALID',
     'templates',
   );
   return podfile.replace(
     anchor,
-    '$1\n    $MLRN.post_install(installer)\n    tileflow_native_admission_post_install(installer)',
+    '$1\n    $MLRN.post_install(installer)\n    tileflow_post_install(installer)',
   );
 }
 export function assertHermesBytecode(bytes) {
@@ -401,7 +408,17 @@ export function assertHermesBytecode(bytes) {
   );
   return {format: 'hermes-bytecode', version: bytes.readUInt32LE(8)};
 }
-export const mobileAppSource = `import {Map} from '@tileflow/react-native';
+export const mobileAppSource = `import {Map, TileflowOfflineStore, TileflowSearch, type OfflineRegionLoadOptions} from '@tileflow/react-native';
+
+const region: OfflineRegionLoadOptions = {
+	geometry: {type: 'boundingBox', west: -3.71, south: 40.41, east: -3.69, north: 40.43},
+	content: {type: 'hosted', mapId: 'map_0123456789abcdef', themes: ['day']},
+};
+
+export async function prepare() {
+	await TileflowOfflineStore.estimateRegion(region);
+	return TileflowSearch.geocode({query: 'Puerta del Sol', limit: 1});
+}
 
 export default function App() {
 	return <Map source={{map: 'smoke', manifestUrl: 'https://example.invalid/tileflow/native/manifest.json'}} theme="light" style={{flex: 1}} />;

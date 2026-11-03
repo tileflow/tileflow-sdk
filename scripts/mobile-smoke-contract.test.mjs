@@ -32,8 +32,8 @@ import {
 
 const androidConfig = {
   sourceDir: 'android',
-  packageImportPath: 'import dev.tileflow.reactnative.TileflowNativeAdmissionPackage;',
-  packageInstance: 'new TileflowNativeAdmissionPackage()',
+  packageImportPath: 'import dev.tileflow.reactnative.TileflowReactNativePackage;',
+  packageInstance: 'new TileflowReactNativePackage()',
 };
 const source = {
   name: '@tileflow/react-native',
@@ -129,7 +129,10 @@ test('consumer matrix distinguishes the generator from the CLI pinned by the bar
     ),
   );
   assert.ok(expoAutolinkingArguments('ios').includes('react-native-config'));
-  assert.match(mobileAppSource, /import \{Map\} from '@tileflow\/react-native'/u);
+  assert.match(
+    mobileAppSource,
+    /import \{Map, TileflowOfflineStore, TileflowSearch, type OfflineRegionLoadOptions\} from '@tileflow\/react-native'/u,
+  );
   assert.match(
     mobileAppSource,
     /manifestUrl: 'https:\/\/example.invalid\/tileflow\/native\/manifest.json'/u,
@@ -195,7 +198,7 @@ test('absolute packed Android sourceDir and missing Community CLI discovery are 
         root,
         platforms: {
           android: {...androidConfig, sourceDir: `${root}/android`},
-          ios: {podspecPath: `${root}/TileflowNativeAdmission.podspec`},
+          ios: {podspecPath: `${root}/TileflowReactNative.podspec`},
         },
       },
       '@maplibre/maplibre-react-native': {platforms: {android: {}, ios: {}}},
@@ -220,7 +223,7 @@ test('only the documented post-install hooks and Release build entry points are 
   const patched = addIosPostInstallHooks(podfile);
   assert.match(
     patched,
-    /\)\n[ ]{4}\$MLRN.post_install\(installer\)\n[ ]{4}tileflow_native_admission_post_install\(installer\)/u,
+    /\)\n[ ]{4}\$MLRN.post_install\(installer\)\n[ ]{4}tileflow_post_install\(installer\)/u,
   );
   assert.throws(() => addIosPostInstallHooks(patched), codeIs('TEMPLATE_INVALID'));
   assert.ok(androidReleaseArguments().includes(':app:assembleRelease'));

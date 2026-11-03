@@ -51,14 +51,14 @@ test('React Native is publishable without shipping development tests or widening
     await readFile(new URL('../packages/react-native/package.json', import.meta.url), 'utf8'),
   );
   assertPublicWorkspaceManifest('@tileflow/react-native', manifest);
-  assert.deepEqual(Object.keys(manifest.exports), ['.']);
+  assert.deepEqual(Object.keys(manifest.exports), ['.', './app.plugin.js', './package.json']);
   assert.deepEqual(manifest.peerDependencies, {
     '@maplibre/maplibre-react-native': '11.5.0',
     react: '19.2.0',
     'react-native': '0.83.10',
   });
   assert.ok(manifest.files.includes('android/src/main'));
-  assert.ok(manifest.files.includes('TileflowNativeAdmission.podspec'));
+  assert.ok(manifest.files.includes('TileflowReactNative.podspec'));
   assert.ok(manifest.files.includes('react-native.config.cjs'));
   assert.ok(!manifest.files.includes('android/src'));
   assert.ok(!manifest.files.some((path) => /(?:^|\/)(?:test|tests|harness)(?:\/|$)/iu.test(path)));

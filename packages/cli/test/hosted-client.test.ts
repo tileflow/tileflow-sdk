@@ -3,7 +3,8 @@ import test from 'node:test';
 import type {CompiledTileflowIconPackage} from '@tileflow/dev/icons';
 import type {CliAccountSession} from '../src/account-session';
 import {
-  publishHostedStyle,
+  HostedDeploymentError,
+  publishHostedRendererDeployment,
   requestHostedJson,
   requestMapCapability,
   requestTeamCapability,
@@ -29,20 +30,28 @@ test('Team credentials validate without a Project and Map operations send the ch
   assert.equal(profile.ok, true);
   if (profile.ok) assert.equal(profile.value.credentialType, 'team_api_key');
   let target: string | null = null;
-  await publishHostedStyle(
-    {
-      apiKey: 'synthetic-team-key',
-      apiUrl: 'https://api.example.test',
-      mapId: 'map_AbCdEfGhIjKlMnOp',
-    },
-    {},
-    'Deploy',
-    {
-      fetch: (async (_url, init) => {
-        target = new Headers(init?.headers).get('X-Tileflow-Map-Id');
-        return Response.json({error: 'fixture'}, {status: 403});
-      }) as typeof fetch,
-    },
+  const split = {
+    artifact: {renderers: {native: {documents: {styles: {}, family: {}}}}},
+    documents: {styles: {}, family: ''},
+  } as unknown as Parameters<typeof publishHostedRendererDeployment>[1]['split'];
+  await assert.rejects(
+    publishHostedRendererDeployment(
+      {
+        apiKey: 'synthetic-team-key',
+        apiUrl: 'https://api.example.test',
+        mapId: 'map_AbCdEfGhIjKlMnOp',
+      },
+      {body: {}, split},
+      {
+        request: {
+          fetch: (async (_url, init) => {
+            target = new Headers(init?.headers).get('X-Tileflow-Map-Id');
+            return Response.json({error: 'fixture'}, {status: 403});
+          }) as typeof fetch,
+        },
+      },
+    ),
+    HostedDeploymentError,
   );
   assert.equal(target, 'map_AbCdEfGhIjKlMnOp');
 });

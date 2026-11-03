@@ -2,9 +2,13 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {inspectPublicMapRuntime} from './map-runtime-fixture';
+import {publicRuntimeNames} from './public-runtime';
 
 test('the built root exports only a callable Map without native activation', async () => {
-  assert.deepEqual(await inspectPublicMapRuntime(), {exports: ['Map'], callable: 'function'});
+  assert.deepEqual(await inspectPublicMapRuntime(), {
+    exports: publicRuntimeNames,
+    callable: 'function',
+  });
 });
 
 test('the component owns commit delivery, safe ref and a mount-stable pinned upstream camera seed', async () => {

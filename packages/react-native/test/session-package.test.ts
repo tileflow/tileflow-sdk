@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import ts from 'typescript';
+import {publicManifestExports} from './public-runtime';
 
 const root = new URL('../', import.meta.url);
 
@@ -33,7 +34,7 @@ function runtimeImports(text: string): string[] {
 
 test('session authority stays absent from the public Map contract and package exports', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
-  assert.deepEqual(Object.keys(manifest.exports), ['.']);
+  assert.deepEqual(Object.keys(manifest.exports), publicManifestExports);
   const sourceEntry = await readFile(new URL('src/index.ts', root), 'utf8');
   assert.match(sourceEntry, /export \{Map\} from ['"]\.\/map['"]/u);
   // Safe session diagnostics are public; session and admission modules are not.

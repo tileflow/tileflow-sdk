@@ -1,0 +1,5 @@
+# Native build output from apps that build this package, and from its Swift test package.
+android/build/
+android/.cxx/
+.build/
+.swiftpm/

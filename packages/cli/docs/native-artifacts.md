@@ -19,8 +19,8 @@ runtime manifest, a separate schema-3 `native-build.json` record and a family do
 Both commands accept `--renderer web|native`; omission means `web`. Renderer selection is separate
 from `--target local|hosted`. Existing `validate --target hosted` continues to perform web Hosted
 preflight. Native with `--target hosted` fails with `NATIVE_RENDERER_UNSUPPORTED` before loading the
-config or writing files. `build --target hosted` is not publication and is rejected. The explicit
-combined Hosted publication command below performs its own complete two-renderer preflight.
+config or writing files. `build --target hosted` is not publication and is rejected. Hosted
+`deploy`, below, performs its own complete two-renderer preflight.
 
 JSON success uses the existing version-1 command envelope. Native results additionally identify
 `renderer: 'native'`, `profile: 'native-v1'` and `validation: 'static-artifacts'`. JSON failure writes
@@ -97,47 +97,78 @@ into native style declarations. See the
 [profile contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/native-artifact-profile.md)
 and [artifact layout](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-artifacts.md).
 
-## Publish web and Native together
+## Publish to Hosted for web and native apps
 
-The pre-release source supports an explicit combined deployment against a compatible Hosted API.
-This is a wire and implementation contract, not a statement that a package or server release is
-available. The API must understand renderer-collection deployment schema 2.
+Every Hosted deploy publishes both renderer families of the map: the web styles and the native
+styles MapLibre Native draws on iOS and Android, with the map's family document. There is no
+separate flag. This describes the protocol the CLI implements against a compatible Hosted API; it
+is not a statement that a package or server release is available.
 
 ```sh
-npx tileflow deploy --with-native --map-id map_0123456789abcdef --map stores
+npx tileflow deploy --map-id map_0123456789abcdef --map stores
 ```
 
-`--map-id` selects the existing managed Tileflow Map. `--map` selects one map from the repository;
-it can be omitted only when the config contains one map. The command uses the ordinary deployment
-credential or account capability, not the publishable mobile credential. Do not put privileged
-credentials in mobile application configuration.
+`--map-id` selects the managed Tileflow Map; without it, `deploy` creates one first. `--map`
+selects one map from the repository and can be omitted only when the config contains one map. The
+command uses the ordinary deployment credential or account capability, not the publishable mobile
+credential. Do not put privileged credentials in mobile application configuration.
 
 Before authentication, upload or publication, the command loads the trusted config once, prepares
-its icon closure, compiles all web themes and lowers all Native themes from that same compiled
-input. It validates profile `native-v1`, hashes, authored identity, source ownership declarations,
-semantic POI provenance and overlay boundaries, and computes the map's family document from the
-Native themes. Native incompatibility rejects the entire request; it cannot publish a new web
-family alone. A map that places its own Team 3D building models is rejected: native styles leave
-the models out, but a renderer deployment does not bind the web family's Team models yet. Existing Hosted restrictions still apply, including the
-current rejection of package-owned web font bundles. This opt-in does not bypass those restrictions;
-use an explicitly configured glyph provider for this Hosted path.
+the map's icons, fonts and models, compiles every web theme and prepares every native theme from
+that same compiled input. It validates profile `native-v1`, hashes, authored identity, source
+ownership declarations, semantic POI provenance and overlay boundaries, and computes the family
+document. Native preparation leaves out what MapLibre Native cannot draw and records it; a map
+always publishes, and the command ends with a short list of what native apps draw differently
+(for example the 3D building scene drawn as plain extrusions, or browser contours left out).
+Only a theme that cannot be prepared at all, such as one whose glyphs are not served over HTTPS,
+stops the deploy, with its diagnostics.
 
-Shared icon packages use the existing content-addressed upload protocol once. The command replaces
-only the confirmed owned sprite URL, without reevaluating config, and sends one strict renderer
-collection to `POST /v1/styles`. The server verifies both complete families and their owned resources,
-stages immutable outputs, and activates them through the existing single deployment authority.
-A Native staging failure does not activate the replacement web family. Retry the same input after an
-interrupted response: the server's existing content identity determines reuse or a new deployment.
+A map's own fonts travel as a Hosted font bundle that both families use: web styles load the faces
+in the browser and native styles name the same files in `font-faces`. A map that places Team 3D
+building models publishes both families too: its native styles leave the models out and record
+it, and the response reports each placed model's published version.
 
-The successful response has its own explicit schema version 2 and identifies one managed Map and
-deployment plus web and Native theme references. The CLI requires the complete matching response
-before atomically replacing `--manifest`. That local file stays a strict **runtime manifest v1 for
-web**, so existing bundlers do not receive unknown Native fields. The CLI separately prints the
-canonical Native manifest URL. A failed request or invalid response leaves the existing local file
-unchanged; an uncertain response is not proof that the server performed no publication.
+Icon packages and font bundles are uploaded once, by content. The command then binds the compiled
+styles to the confirmed sprite and font addresses, without evaluating the config again, and
+publishes in several bounded requests:
 
-Ordinary `deploy` without `--with-native` keeps its schema-1 request and response behavior. A later
-web-only deployment does not inherit a Native family from an older deployment.
+1. `POST /v1/styles` carries the web family and an index of the native documents (deployment
+   schema 3). The server reserves a deployment and answers `202` with the documents it still
+   lacks.
+2. Each native theme style, then the family document, is uploaded with `PUT` to the address the
+   server named, as the exact canonical JSON the index describes.
+3. The same `POST /v1/styles` activates the deployment once every document has arrived; the
+   server checks each native style against its web theme before it publishes either family.
+
+Every request is sent gzip-encoded. The decoded web request may hold 16 MiB, each native document
+8 MiB and all native documents together 32 MiB; a map over a budget fails before any upload. The
+output reports each step:
+
+```text
+i Publishing stores for web and native apps (12 themes, 6.4 MB web request).
+i Reserved v8; uploading 13 native documents (11.6 MB).
+  ✓ Native style dark 712.2 KB, 1/13
+  …
+  ✓ Family document 3.4 MB, 13/13
+i Activating v8.
+✓ Published stores (v8) for web and native apps.
+! Native apps draw stores without some web features:
+    3D building scene: drawn as plain building extrusions
+    Sky, atmosphere and fog: not drawn
+```
+
+Uploads are create-only and the reservation follows the deployment's content, so an interrupted
+deploy is resumed by running the same command again: the server lists only the documents still
+missing (`Resuming v8: 4 of 13 native documents left to upload`). Repeating a deploy that already
+published reports it as unchanged without uploading anything. A failed request or invalid response
+leaves the local manifest unchanged; an uncertain response is not proof that the server performed
+no publication.
+
+The successful response (schema 3) identifies one managed Map and deployment, the web and native
+theme references, and the native family document's address and revision. The CLI requires the
+complete matching response before atomically replacing `--manifest`. That local file stays a strict
+**runtime manifest for web**, so existing bundlers do not receive native fields. The CLI separately
+prints the canonical native manifest URL.
 
 ## Native discovery and protected resources
 

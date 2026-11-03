@@ -3,6 +3,7 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import ts from 'typescript';
 import {inspectPublicMapRuntime} from './map-runtime-fixture';
+import {publicManifestExports, publicRuntimeNames} from './public-runtime';
 
 const root = new URL('../', import.meta.url);
 const read = (path: string) => readFile(new URL(path, root), 'utf8');
@@ -30,13 +31,16 @@ export const configurationFiles = [
 test('configuration stays private with the exact peer matrix behind the inert public Map entry', async () => {
   const manifest = JSON.parse(await read('package.json'));
   assert.equal(manifest.private, undefined);
-  assert.deepEqual(Object.keys(manifest.exports), ['.']);
+  assert.deepEqual(Object.keys(manifest.exports), publicManifestExports);
   assert.deepEqual(manifest.peerDependencies, {
     '@maplibre/maplibre-react-native': '11.5.0',
     react: '19.2.0',
     'react-native': '0.83.10',
   });
-  assert.deepEqual(await inspectPublicMapRuntime(), {exports: ['Map'], callable: 'function'});
+  assert.deepEqual(await inspectPublicMapRuntime(), {
+    exports: publicRuntimeNames,
+    callable: 'function',
+  });
   for (const file of ['src/index.ts', 'dist/index.d.ts']) {
     assert.doesNotMatch(
       await read(file),
@@ -87,9 +91,9 @@ test('configuration and identity checks form a closed renderer-neutral import gr
 
 test('one native reader is autolinked without eager constants or another configuration path', async () => {
   const registration = await read(
-    'android/src/main/java/dev/tileflow/reactnative/TileflowNativeAdmissionPackage.kt',
+    'android/src/main/java/dev/tileflow/reactnative/TileflowReactNativePackage.kt',
   );
-  assert.match(registration, /TileflowNativeConfigurationModule\(context\)/u);
+  assert.match(registration, /TileflowNativeConfigurationModule\(reactContext\)/u);
   const android = await read(
     'android/src/main/java/dev/tileflow/reactnative/TileflowNativeConfigurationModule.kt',
   );
@@ -105,7 +109,7 @@ test('one native reader is autolinked without eager constants or another configu
   assert.match(ios, /RCT_EXPORT_MODULE\(TileflowNativeConfiguration\)/u);
   assert.match(ios, /NSBundle\.mainBundle/u);
   assert.doesNotMatch(ios, /constantsToExport|NSURLSession|TFAdmissionEngine|MLN/u);
-  const pod = await read('TileflowNativeAdmission.podspec');
+  const pod = await read('TileflowReactNative.podspec');
   assert.match(pod, /ios\/\*\.\{h,mm\}/u);
   assert.match(pod, /private_header_files = 'ios\/\*\.h'/u);
 });

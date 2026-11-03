@@ -19,7 +19,7 @@ test('package documentation describes the mounted Map without claiming executed 
     '6.31.0',
     '0.83.10',
     '11.5.0',
-    'tileflow_native_admission_post_install',
+    'tileflow_post_install',
     'X-Tileflow-Native-Grant',
     '10,000',
     'six-hour',

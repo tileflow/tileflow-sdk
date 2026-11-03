@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import {readdir, readFile} from 'node:fs/promises';
 import {extname, join} from 'node:path';
 import test from 'node:test';
+import {publicRuntimeExports} from './public-runtime';
 import {fileURLToPath} from 'node:url';
 import ts from 'typescript';
 
@@ -53,7 +54,7 @@ test('existing workspace packages have no mobile dependencies or source imports'
   }
 });
 
-test('public runtime is limited to Map while portable types and platform responsibilities stay isolated', async () => {
+test('public runtime is the Map, offline store and service clients while portable types and platform responsibilities stay isolated', async () => {
   const root = fileURLToPath(new URL('../src/', import.meta.url));
   for (const name of ['contract.ts', 'interaction-contract.ts']) {
     const contract = await readFile(join(root, name), 'utf8');
@@ -81,17 +82,21 @@ test('public runtime is limited to Map while portable types and platform respons
     ts.ScriptKind.TS,
   );
   const valueExports = indexSyntax.statements.filter(
-    (statement) => ts.isExportDeclaration(statement) && statement.isTypeOnly === false,
+    (statement): statement is ts.ExportDeclaration =>
+      ts.isExportDeclaration(statement) && statement.isTypeOnly === false,
   );
-  assert.equal(valueExports.length, 1);
-  const exported = valueExports[0] as ts.ExportDeclaration;
-  assert.equal(ts.isStringLiteral(exported.moduleSpecifier!), true);
-  assert.equal((exported.moduleSpecifier as ts.StringLiteral).text, './map');
   assert.deepEqual(
-    exported.exportClause && ts.isNamedExports(exported.exportClause)
-      ? exported.exportClause.elements.map((element) => element.name.text)
-      : [],
-    ['Map'],
+    Object.fromEntries(
+      valueExports.map((exported) => [
+        (exported.moduleSpecifier as ts.StringLiteral).text,
+        exported.exportClause && ts.isNamedExports(exported.exportClause)
+          ? exported.exportClause.elements
+              .filter((element) => !element.isTypeOnly)
+              .map((element) => element.name.text)
+          : [],
+      ]),
+    ),
+    publicRuntimeExports,
   );
 
   const interactionOwners = new Set([
@@ -136,7 +141,10 @@ test('public runtime is limited to Map while portable types and platform respons
         file === join(root, 'native-admission-bridge.ts') ||
         file === join(root, 'native-document-bridge.ts') ||
         file === join(root, 'native-configuration-bridge.ts') ||
-        file === join(root, 'native-surface-bridge.ts');
+        file === join(root, 'native-surface-bridge.ts') ||
+        // The TurboModule specs look their native modules up.
+        file === join(root, 'specs/NativeTileflowServices.ts') ||
+        file === join(root, 'specs/NativeTileflowOffline.ts');
       if (specifier === 'react-native' && !privatePlatformEntry)
         assert.equal(statement.importClause?.isTypeOnly, true, file);
     }

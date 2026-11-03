@@ -15,3 +15,9 @@ platforms/android/.kotlin/
 .build/
 .swiftpm/
 output/
+
+# The React Native example app generates its native projects and installs its own modules.
+packages/react-native/example/android/
+packages/react-native/example/ios/
+packages/react-native/example/node_modules/
+packages/react-native/example/pnpm-lock.yaml

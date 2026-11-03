@@ -45,6 +45,7 @@ export async function inspectPublicMapRuntime(): Promise<unknown> {
 			export function processColor() { throw new Error('Marker color evaluated during import.'); }
 			export function findNodeHandle() { throw new Error('A native ref was resolved during import.'); }
 			export const StyleSheet = {create: (value) => value};
+			export const TurboModuleRegistry = {get() { throw new Error('A native module was looked up during import.'); }};
 		`,
     );
     await module(

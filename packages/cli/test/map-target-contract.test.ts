@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
-import {hostedStyleDeploymentResponseSchema} from '../src/hosted-response';
+import {tileflowRendererDeploymentResponseSchema} from '@tileflow/core/build';
 
 test('managed deploy targets the visible mapId while keeping Project internal', async () => {
   const [index, client] = await Promise.all([
@@ -17,17 +17,38 @@ test('managed deploy targets the visible mapId while keeping Project internal', 
 });
 
 test('hosted deployment responses require one persistent managed Map ID', () => {
-  const response = {
-    mapId: 'map_test',
-    themes: {light: {styleUrl: 'https://api.example.test/maps/map_test/light.json'}},
-  };
+  const response = (mapId: string) => ({
+    kind: 'tileflow-map-deployment-result',
+    schemaVersion: 3,
+    changed: true,
+    mapId,
+    deploymentId: 'dep_test',
+    version: 1,
+    renderers: {
+      web: {themes: {light: {styleUrl: `https://api.example.test/maps/${mapId}/light.json`}}},
+      native: {
+        profile: 'native-v1',
+        manifestUrl: `https://api.example.test/maps/${mapId}/native/manifest.json`,
+        family: {
+          url: `https://api.example.test/maps/${mapId}/native/family/v1.json`,
+          revision: 'a'.repeat(64),
+        },
+        themes: {
+          light: {
+            styleUrl: `https://api.example.test/maps/${mapId}/native/v1/light.json`,
+            revision: 'a'.repeat(64),
+          },
+        },
+      },
+    },
+  });
 
-  assert.equal(hostedStyleDeploymentResponseSchema.safeParse(response).success, false);
   assert.equal(
-    hostedStyleDeploymentResponseSchema.safeParse({
-      ...response,
-      mapId: 'map_AbCdEfGhIjKlMnOp',
-    }).success,
+    tileflowRendererDeploymentResponseSchema.safeParse(response('map_test')).success,
+    false,
+  );
+  assert.equal(
+    tileflowRendererDeploymentResponseSchema.safeParse(response('map_AbCdEfGhIjKlMnOp')).success,
     true,
   );
 });

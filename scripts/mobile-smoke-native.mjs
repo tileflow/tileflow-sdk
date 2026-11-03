@@ -1,5 +1,5 @@
 import {realpath, stat} from 'node:fs/promises';
-import {join, resolve} from 'node:path';
+import {isAbsolute, join, resolve} from 'node:path';
 import {
   assertHermesBytecode,
   assertMobilePlatform,
@@ -13,7 +13,81 @@ import {
   mobileFileIdentity,
   readMobileFile,
   readMobileJson,
+  writeMobileFile,
 } from './mobile-smoke-workspace.mjs';
+
+/**
+ * The native SDK candidate the consumers build against, from TILEFLOW_NATIVE_CANDIDATE: a
+ * directory that `scripts/native-release-prepare.mjs` wrote, with the Swift package and the Maven
+ * repository of one version. Native builds need it until the native SDKs are published.
+ */
+export async function readNativeCandidate(context) {
+  const directory = context.env.TILEFLOW_NATIVE_CANDIDATE;
+  const missing = () =>
+    new MobileSmokeError('PREREQUISITE_MISSING', 'prerequisites', 'native-candidate');
+  if (!directory || !isAbsolute(directory) || resolve(directory) !== directory) throw missing();
+  let receipt;
+  try {
+    receipt = JSON.parse(
+      (await readMobileFile(directory, join(directory, 'candidate.json'))).toString(),
+    );
+  } catch {
+    throw missing();
+  }
+  const version = receipt?.version;
+  const swift = join(directory, receipt?.swift?.path ?? 'swift');
+  const maven = join(directory, 'maven');
+  if (
+    receipt?.schemaVersion !== 1 ||
+    typeof version !== 'string' ||
+    !/^[0-9A-Za-z.-]+$/u.test(version)
+  )
+    throw missing();
+  for (const path of [
+    join(swift, 'Package.swift'),
+    join(maven, 'dev', 'tileflow', 'tileflow-sdk', version, `tileflow-sdk-${version}.pom`),
+  ]) {
+    try {
+      if (!(await stat(path)).isFile()) throw missing();
+    } catch {
+      throw missing();
+    }
+  }
+  return {directory, version, swift, maven};
+}
+
+const minimumIos = '16.0';
+const minimumAndroid = 26;
+
+/** Raises a consumer Podfile's platform and its Xcode project's deployment target to iOS 16. */
+export function iosConsumerFiles(podfile, project) {
+  const platform = /^platform :ios, .*$/mu;
+  requireMobile(platform.test(podfile), 'TEMPLATE_INVALID', 'ios');
+  return {
+    podfile: podfile.replace(platform, `platform :ios, '${minimumIos}'`),
+    project: project.replaceAll(
+      /IPHONEOS_DEPLOYMENT_TARGET = (?:1[0-5](?:\.\d+)?|"1[0-5](?:\.\d+)?");/gu,
+      `IPHONEOS_DEPLOYMENT_TARGET = ${minimumIos};`,
+    ),
+  };
+}
+
+/** Points a consumer's Gradle build at the candidate and raises its minimum to API 26. */
+export function androidConsumerFiles(properties, build, candidate) {
+  const repository = `maven { url = uri(${JSON.stringify(candidate.maven)}) }`;
+  const nextProperties = `${properties.replace(/\s*$/u, '')}
+tileflowMavenRepository=${candidate.maven}
+tileflowNativeVersion=${candidate.version}
+android.minSdkVersion=${minimumAndroid}
+`;
+  let nextBuild = build.replace(/minSdkVersion = (\d+)/u, (line, value) =>
+    Number(value) < minimumAndroid ? `minSdkVersion = ${minimumAndroid}` : line,
+  );
+  nextBuild = /allprojects\s*\{\s*\n\s*repositories\s*\{/u.test(nextBuild)
+    ? nextBuild.replace(/(allprojects\s*\{\s*\n\s*repositories\s*\{\n)/u, `$1    ${repository}\n`)
+    : `${nextBuild.replace(/\s*$/u, '')}\n\nallprojects {\n  repositories {\n    ${repository}\n  }\n}\n`;
+  return {properties: nextProperties, build: nextBuild};
+}
 
 export async function checkMobilePrerequisites(
   context,
@@ -54,6 +128,7 @@ export async function checkMobilePrerequisites(
   requirePrerequisite(/^\d+\.\d+\.\d+$/u.test(npmVersion), 'npm', 'TOOLCHAIN_MISMATCH');
   await probe('tar', 'tar', ['--version']);
   const tools = {node: process.versions.node, pnpm: pnpmVersion, npm: npmVersion};
+  if (mode !== 'packed') tools.nativeCandidate = (await readNativeCandidate(context)).version;
   if (mode === 'android') {
     const javaHome = context.env.JAVA_HOME;
     const sdk = context.env.ANDROID_HOME ?? context.env.ANDROID_SDK_ROOT;
@@ -183,6 +258,14 @@ export async function buildMobileAndroid(context, consumer) {
     'TEMPLATE_INVALID',
     step,
   );
+  const candidate = await readNativeCandidate(context);
+  const files = androidConsumerFiles(
+    (await readMobileFile(context.root, join(directory, 'gradle.properties'))).toString(),
+    (await readMobileFile(context.root, join(directory, 'build.gradle'))).toString(),
+    candidate,
+  );
+  await writeMobileFile(context.root, join(directory, 'gradle.properties'), files.properties);
+  await writeMobileFile(context.root, join(directory, 'build.gradle'), files.build);
   await context.run(join(directory, 'gradlew'), androidReleaseArguments(), {
     cwd: directory,
     step,
@@ -205,7 +288,7 @@ export async function buildMobileAndroid(context, consumer) {
     'BINARY_INVALID',
     step,
   );
-  const files = [];
+  const apks = [];
   for (const name of names.sort()) {
     const apk = join(output, name);
     await assertOwnedPath(context.root, apk);
@@ -214,7 +297,7 @@ export async function buildMobileAndroid(context, consumer) {
       maxOutputBytes: 64 * 1024 * 1024,
     });
     const hermes = assertHermesBytecode(bundle.stdout);
-    files.push({
+    apks.push({
       ...(await mobileFileIdentity(context.root, apk, `${consumer.kind}/${name}`)),
       hermes,
     });
@@ -224,23 +307,33 @@ export async function buildMobileAndroid(context, consumer) {
     platform: 'android',
     configuration: 'Release',
     gradle: mobileVersions.gradle,
-    files,
+    nativeCandidate: candidate.version,
+    files: apks,
   };
 }
 
 export async function buildMobileIos(context, consumer) {
   const directory = join(consumer.directory, 'ios');
   const step = `ios-${consumer.kind}`;
+  const candidate = await readNativeCandidate(context);
+  const podfilePath = join(directory, 'Podfile');
+  const projectPath = join(directory, `${consumer.scheme}.xcodeproj`, 'project.pbxproj');
+  const files = iosConsumerFiles(
+    (await readMobileFile(context.root, podfilePath)).toString(),
+    (await readMobileFile(context.root, projectPath)).toString(),
+  );
+  await writeMobileFile(context.root, podfilePath, files.podfile);
+  await writeMobileFile(context.root, projectPath, files.project);
   await context.run('pod', ['install'], {
     cwd: directory,
     step,
     timeoutMs: 30 * 60 * 1000,
-    env: {USE_HERMES: '1'},
+    env: {USE_HERMES: '1', TILEFLOW_SWIFT_PACKAGE_PATH: candidate.swift},
   });
   const lockPath = join(directory, 'Podfile.lock');
   const lock = (await readMobileFile(context.root, lockPath)).toString();
   requireMobile(
-    /TileflowNativeAdmission \(/u.test(lock) && /MapLibreReactNative \(11\.5\.0\)/u.test(lock),
+    /TileflowReactNative \(/u.test(lock) && /MapLibreReactNative \(11\.5\.0\)/u.test(lock),
     'AUTOLINK_INVALID',
     step,
   );
@@ -297,6 +390,7 @@ export async function buildMobileIos(context, consumer) {
     destination: 'simulator',
     configuration: 'Release',
     hermes,
+    nativeCandidate: candidate.version,
     files: [executable, bundle],
     podsLock: await mobileFileIdentity(context.root, lockPath, `${consumer.kind}-Podfile.lock`),
   };

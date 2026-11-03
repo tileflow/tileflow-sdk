@@ -6,7 +6,10 @@ export const nativePackageFiles = [
   'ios/*.h',
   'ios/*.mm',
   'ios/*.rb',
-  'TileflowNativeAdmission.podspec',
+  'TileflowReactNative.podspec',
   'react-native.config.cjs',
   'LICENSE',
+  'ios/Sources/*.swift',
+  'src/specs',
+  'plugin',
 ];

@@ -2,17 +2,21 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import {inspectPublicMapRuntime} from './map-runtime-fixture';
+import {publicManifestExports, publicRuntimeNames} from './public-runtime';
 
 const packageRoot = new URL('../', import.meta.url);
 
 test('native admission remains private behind the public package root', async () => {
   const manifest = JSON.parse(await readFile(new URL('package.json', packageRoot), 'utf8'));
   assert.equal(manifest.private, undefined);
-  assert.deepEqual(Object.keys(manifest.exports), ['.']);
+  assert.deepEqual(Object.keys(manifest.exports), publicManifestExports);
 });
 
 test('the public runtime exports only Map and importing it does not activate private admission', async () => {
-  assert.deepEqual(await inspectPublicMapRuntime(), {exports: ['Map'], callable: 'function'});
+  assert.deepEqual(await inspectPublicMapRuntime(), {
+    exports: publicRuntimeNames,
+    callable: 'function',
+  });
   const source = await readFile(new URL('src/index.ts', packageRoot), 'utf8');
   assert.match(source, /export \{Map\} from ['"]\.\/map['"]/u);
   assert.doesNotMatch(source, /NativeAdmission|HostedNativeSession|native-admission/iu);

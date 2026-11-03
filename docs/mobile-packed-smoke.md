@@ -14,6 +14,19 @@ running the check. Corepack network provisioning is disabled by the smoke. Publi
 Gradle/Maven and Apple/CocoaPods/SPM downloads used by the selected mode must be reachable; no
 private registry credentials are read.
 
+The `android` and `ios` modes build against a native SDK candidate until the native SDKs are
+published. Prepare one from a clean checkout and pass its absolute directory in
+`TILEFLOW_NATIVE_CANDIDATE`:
+
+```sh
+node scripts/native-release-prepare.mjs --output /absolute/new/candidate
+TILEFLOW_NATIVE_CANDIDATE=/absolute/new/candidate pnpm run smoke:mobile:ios
+```
+
+The native stage raises each consumer to iOS 16 and Android API 26, points CocoaPods at the
+candidate's Swift package (`TILEFLOW_SWIFT_PACKAGE_PATH`) and Gradle at its Maven repository and
+version. The summary records the candidate version.
+
 Android additionally requires an explicit `JAVA_HOME` for JDK 21, `ANDROID_HOME` or
 `ANDROID_SDK_ROOT`, Android platform 36, build tools 36.0.0, NDK 27.1.12297006, accepted Android SDK
 licenses and `unzip`. Supply any additional native compiler components required by the pinned
@@ -62,7 +75,7 @@ each APK. `ios` includes all packed checks, installs Pods, and builds both Relea
 with code signing disabled. It discovers app outputs from Xcode build settings, not a hard-coded
 absolute DerivedData path, and checks each resulting `main.jsbundle` header and length for Hermes
 bytecode version 96. Only the documented `$MLRN.post_install(installer)` and
-`tileflow_native_admission_post_install(installer)` hooks are added after React Native's existing
+`tileflow_post_install(installer)` hooks are added after React Native's existing
 iOS post-install hook. No manual Android linking is added.
 
 ## Results and cleanup

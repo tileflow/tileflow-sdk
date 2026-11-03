@@ -31,45 +31,6 @@ const publicHttpUrlSchema = z
     );
   });
 
-export const hostedStyleDeploymentResponseSchema = z
-  .object({
-    changed: z.boolean().optional(),
-    deploymentId: safeIdentifierSchema.optional(),
-    mapId: z.string().regex(/^map_[A-Za-z0-9_-]{16}$/u),
-    themes: z
-      .record(
-        safeIdentifierSchema,
-        z
-          .object({
-            styleId: safeIdentifierSchema.optional(),
-            styleUrl: publicHttpUrlSchema,
-          })
-          .strict(),
-      )
-      .refine((themes) => Object.keys(themes).length > 0),
-    version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional(),
-    /**
-     * The Team 3D models the map places, each at its published current version, and whether that
-     * version was prepared from the same glTF binaries as the map's own files.
-     */
-    teamModels: z
-      .array(
-        z
-          .object({
-            model: z
-              .string()
-              .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u)
-              .max(64),
-            version: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-            sources: z.enum(['match', 'differ', 'unknown']),
-          })
-          .strict(),
-      )
-      .max(256)
-      .optional(),
-  })
-  .strict();
-
 export const hostedIconPackageResponseSchema = z.object({
   changed: z.boolean().optional(),
   contentHash: z.string().regex(/^[a-f0-9]{64}$/u),

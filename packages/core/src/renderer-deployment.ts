@@ -1,7 +1,5 @@
-import {classicManifestSchemaOperations} from './manifest-schema-classic';
-import {createTileflowTimeOfDaySchema} from './time-of-day-schema';
-import {validateTileflowTimeOfDayVariants, type TileflowTimeOfDayVariants} from './time-of-day';
 import {z} from 'zod';
+import {tileflowMaxPitch} from './camera-limits';
 import {
   assertTileflowInteractionManifestLayers,
   type TileflowInteractionManifest,
@@ -11,21 +9,34 @@ import {
   tileflowRenderedIconIdentitySchema,
 } from './icon-composition';
 import {serializeCanonicalJson, sha256Hex} from './icon-package';
+import {classicManifestSchemaOperations} from './manifest-schema-classic';
 import {tileflowNativeBuildRecordSchema} from './native-build-record';
 import {readTileflowNativeDegradations} from './native-capabilities';
 import {validateTileflowNativePreparedStyle} from './native-profile';
 import {createTileflowNativeFamily, tileflowNativeFamilySchema} from './native-profile-family';
 import {tileflowNativeProfileLimits} from './native-profile-helpers';
 import {tileflowPortableIdSchema, tileflowThemeNameSchema} from './portable-identity';
-import {tileflowMaxPitch} from './camera-limits';
+import {type TileflowTimeOfDayVariants, validateTileflowTimeOfDayVariants} from './time-of-day';
+import {createTileflowTimeOfDaySchema} from './time-of-day-schema';
 
-/** These are transport/validation bounds, not renderer or commercial quotas. */
+/**
+ * Transport and validation bounds of a Hosted renderer deployment, not renderer or commercial
+ * quotas. Each is measured on the UTF-8 bytes of canonical JSON, before any transport encoding.
+ * The web request carries the web family plus the native family's build manifest, build record and
+ * document index; every native document (each theme style and the family document) then travels
+ * in its own request.
+ */
 export const tileflowRendererDeploymentLimits = Object.freeze({
-  maximumBytes: 16 * 1024 * 1024,
-  maximumNativeFamilyBytes: tileflowNativeProfileLimits.maximumStyleBytes,
+  maximumWebRequestBytes: 16 * 1024 * 1024,
+  maximumDocumentBytes: tileflowNativeProfileLimits.maximumStyleBytes,
+  maximumNativeFamilyBytes: 32 * 1024 * 1024,
   maximumThemes: 64,
 });
 const hashSchema = z.string().regex(/^[a-f0-9]{64}$/u);
+const modelNameSchema = z
+  .string()
+  .max(64)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u);
 const recordSchema = z.record(z.string().min(1).max(256), z.unknown());
 const positive = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const sourceAssetsSchema = z
@@ -58,6 +69,16 @@ const sourceAssetsSchema = z
       )
       .max(512),
     iconComposition: tileflowIconCompositionSchema.optional(),
+    /** The source glTF binaries of the map's own tree models, by level of detail. */
+    models: z
+      .array(
+        z
+          .object({id: modelNameSchema, level: z.enum(['far', 'mid', 'near']), sha256: hashSchema})
+          .strict(),
+      )
+      .min(1)
+      .max(256)
+      .optional(),
   })
   .strict();
 const themeBuildSchema = z
@@ -119,6 +140,15 @@ const familyShape = {
   buildManifest: buildManifestSchema,
   styles: z.record(tileflowThemeNameSchema, recordSchema),
 };
+/** Tileflow's own tilesets, which a Team source can never name. */
+const platformTilesets = new Set([
+  'bathymetry',
+  'bathymetry-dem',
+  'boundaries',
+  'nautical',
+  'terrain',
+  'world',
+]);
 const teamSourcesSchema = z
   .record(
     tileflowPortableIdSchema,
@@ -141,7 +171,7 @@ const teamSourcesSchema = z
       if (
         id === 'tileflow' ||
         id.startsWith('tileflow-') ||
-        ['world', 'terrain'].includes(value.tileset) ||
+        platformTilesets.has(value.tileset) ||
         tilesets.has(value.tileset)
       )
         context.addIssue({code: 'custom', message: 'Invalid logical Team source binding'});
@@ -180,43 +210,102 @@ export const tileflowRendererDeploymentArtifactSchema = z
   })
   .strict()
   .superRefine((artifact, context) => {
-    const fail = () =>
+    const {web, native} = artifact.renderers;
+    if (
+      !consistentFamilies(artifact.mapId, [
+        {buildManifest: web.buildManifest, themes: Object.keys(web.styles)},
+        {buildManifest: native.buildManifest, themes: Object.keys(native.styles)},
+      ])
+    )
       context.addIssue({
         code: 'custom',
         message: 'Renderer families must share one complete authored Map identity',
       });
-    for (const family of [artifact.renderers.web, artifact.renderers.native]) {
-      const names = Object.keys(family.buildManifest.maps);
-      const map = family.buildManifest.maps[artifact.mapId];
-      if (names.length !== 1 || names[0] !== artifact.mapId || !map) {
-        fail();
-        continue;
-      }
-      const themes = Object.keys(map.themes).sort();
-      if (
-        !themes.length ||
-        themes.length > tileflowRendererDeploymentLimits.maximumThemes ||
-        !equal(themes, Object.keys(family.styles).sort()) ||
-        !themes.includes(map.defaultTheme) ||
-        map.lineage[0]?.id !== artifact.mapId ||
-        map.lineage[0]?.mapVersion !== map.mapVersion ||
-        Boolean(map.sourceAssets.iconComposition) !== (map.mapRevisionSchemaVersion === 2)
-      )
-        fail();
-      if (map.timeOfDay && validateTileflowTimeOfDayVariants(map.timeOfDay, map.themes).length)
-        fail();
-      for (const scheme of ['light', 'dark'] as const) {
-        if (map.systemThemes && map.themes[map.systemThemes[scheme]]?.colorScheme !== scheme)
-          fail();
-      }
-    }
-    const web = artifact.renderers.web.buildManifest;
-    const native = artifact.renderers.native.buildManifest;
-    if (!equal(authoredIdentity(web), authoredIdentity(native))) fail();
   });
 export type TileflowRendererDeploymentArtifact = z.infer<
   typeof tileflowRendererDeploymentArtifactSchema
 >;
+
+const nativeDocumentShape = {
+  sha256: hashSchema,
+  bytes: z.number().int().min(2).max(tileflowRendererDeploymentLimits.maximumDocumentBytes),
+};
+
+/**
+ * The request form of a renderer deployment (schema 3). The web family travels in the request; the
+ * native family is declared by its build manifest, build record and an index of its documents: the
+ * SHA-256 and size of each theme's native style and of the family document, which then travel in
+ * their own requests. `splitTileflowRendererDeployment` derives it from a whole artifact.
+ */
+export const tileflowRendererDeploymentRequestArtifactSchema = z
+  .object({
+    kind: z.literal('tileflow-map-deployment'),
+    schemaVersion: z.literal(3),
+    mapId: tileflowPortableIdSchema,
+    teamSources: teamSourcesSchema,
+    view: viewSchema.optional(),
+    renderers: z
+      .object({
+        web: z.object(familyShape).strict(),
+        native: z
+          .object({
+            buildManifest: buildManifestSchema,
+            buildRecord: tileflowNativeBuildRecordSchema,
+            documents: z
+              .object({
+                styles: z.record(tileflowThemeNameSchema, z.object(nativeDocumentShape).strict()),
+                family: z
+                  .object({
+                    ...nativeDocumentShape,
+                    themes: z
+                      .array(tileflowThemeNameSchema)
+                      .min(1)
+                      .max(tileflowRendererDeploymentLimits.maximumThemes),
+                  })
+                  .strict(),
+              })
+              .strict(),
+          })
+          .strict(),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((artifact, context) => {
+    const {web, native} = artifact.renderers;
+    const {styles, family} = native.documents;
+    const names = Object.keys(web.styles).sort();
+    const nativeMap = native.buildManifest.maps[artifact.mapId];
+    if (
+      !consistentFamilies(artifact.mapId, [
+        {buildManifest: web.buildManifest, themes: names},
+        {buildManifest: native.buildManifest, themes: Object.keys(styles)},
+      ]) ||
+      new Set(family.themes).size !== family.themes.length ||
+      !equal([...family.themes].sort(), names) ||
+      !equal(
+        native.buildRecord.transformations.map((value) => `${value.map}/${value.theme}`),
+        names.map((name) => `${artifact.mapId}/${name}`),
+      ) ||
+      names.some((name) => styles[name]?.sha256 !== nativeMap?.themes[name]?.styleSha256) ||
+      Object.values(styles).reduce((total, document) => total + document.bytes, family.bytes) >
+        tileflowRendererDeploymentLimits.maximumNativeFamilyBytes
+    )
+      context.addIssue({
+        code: 'custom',
+        message: 'The request must index exactly the native documents of one complete Map',
+      });
+  });
+export type TileflowRendererDeploymentRequestArtifact = z.infer<
+  typeof tileflowRendererDeploymentRequestArtifactSchema
+>;
+
+/** A renderer deployment as it travels: its request artifact and the native documents' bytes. */
+export type TileflowSplitRendererDeployment = Readonly<{
+  artifact: TileflowRendererDeploymentRequestArtifact;
+  /** The exact canonical JSON each native document is uploaded as, by theme, and the family's. */
+  documents: Readonly<{styles: Readonly<Record<string, string>>; family: string}>;
+}>;
 
 export class TileflowRendererDeploymentError extends Error {
   readonly code = 'RENDERER_DEPLOYMENT_INVALID' as const;
@@ -226,25 +315,33 @@ export class TileflowRendererDeploymentError extends Error {
   }
 }
 
+export type TileflowRendererDeploymentParseOptions = Readonly<{
+  /**
+   * An exact HTTP origin the native styles may reference, for local development of the API on
+   * the developer's own machine. Hosted publication never accepts one.
+   */
+  developmentOrigin?: string;
+}>;
+
 /** Hash/profile verification is deliberately separate from shape validation and server authority. */
 export async function parseTileflowRendererDeploymentArtifact(
   input: unknown,
+  options: TileflowRendererDeploymentParseOptions = {},
 ): Promise<TileflowRendererDeploymentArtifact> {
   try {
     const inputText = serializeCanonicalJson(input);
     if (
-      new TextEncoder().encode(inputText).byteLength >
-        tileflowRendererDeploymentLimits.maximumBytes ||
-      /tf_(?:public|native|live)_/u.test(inputText)
+      utf8Bytes(inputText) >
+        tileflowRendererDeploymentLimits.maximumWebRequestBytes +
+          tileflowRendererDeploymentLimits.maximumNativeFamilyBytes ||
+      secretPattern.test(inputText)
     )
       throw new Error();
     const artifact = tileflowRendererDeploymentArtifactSchema.parse(input);
     const {web, native} = artifact.renderers;
-    if (
-      new TextEncoder().encode(serializeCanonicalJson(native)).byteLength >
-      tileflowRendererDeploymentLimits.maximumNativeFamilyBytes
-    )
-      throw new Error();
+    // Every budget applies to the deployment as it travels: the web request and each document.
+    const split = await splitArtifact(artifact);
+    if (!split) throw new Error();
     if (
       (await sha256Hex(serializeCanonicalJson(native.buildManifest))) !==
       native.buildRecord.buildManifestSha256
@@ -267,7 +364,7 @@ export async function parseTileflowRendererDeploymentArtifact(
         (value) => value.theme === name,
       )!;
       const webHash = await sha256Hex(serializeCanonicalJson(webStyle));
-      const nativeHash = await sha256Hex(serializeCanonicalJson(nativeStyle));
+      const nativeHash = split.artifact.renderers.native.documents.styles[name]?.sha256;
       if (
         webHash !== webTheme.styleSha256 ||
         nativeHash !== nativeTheme.styleSha256 ||
@@ -283,6 +380,9 @@ export async function parseTileflowRendererDeploymentArtifact(
           nativeValidationStyle(nativeStyle, artifact.teamSources),
           {
             documentUrl: `https://artifacts.invalid/native/styles/${artifact.mapId}/${name}.json`,
+            ...(options.developmentOrigin === undefined
+              ? {}
+              : {developmentOrigin: options.developmentOrigin}),
           },
         ).length
       )
@@ -351,6 +451,86 @@ export async function parseTileflowRendererDeploymentArtifact(
   }
 }
 
+/**
+ * Carry a whole renderer deployment as its request artifact (schema 3) plus the canonical bytes of
+ * each native document, which are uploaded on their own. Fails when the web request, a document or
+ * the native family exceeds its budget.
+ */
+export async function splitTileflowRendererDeployment(
+  artifact: TileflowRendererDeploymentArtifact,
+): Promise<TileflowSplitRendererDeployment> {
+  let split: TileflowSplitRendererDeployment | undefined;
+  try {
+    split = await splitArtifact(artifact);
+  } catch {
+    split = undefined;
+  }
+  if (!split) throw new TileflowRendererDeploymentError();
+  return split;
+}
+
+async function splitArtifact(
+  artifact: TileflowRendererDeploymentArtifact,
+): Promise<TileflowSplitRendererDeployment | undefined> {
+  const {buildManifest, buildRecord, family, styles} = artifact.renderers.native;
+  const limits = tileflowRendererDeploymentLimits;
+  const names = Object.keys(styles).sort();
+  const texts = names.map((name) => serializeCanonicalJson(styles[name]));
+  const familyText = serializeCanonicalJson(family);
+  const sizes = texts.map(utf8Bytes);
+  const familyBytes = utf8Bytes(familyText);
+  if (
+    [...sizes, familyBytes].some((size) => size > limits.maximumDocumentBytes) ||
+    sizes.reduce((total, size) => total + size, familyBytes) > limits.maximumNativeFamilyBytes
+  )
+    return undefined;
+  const index = await Promise.all(
+    texts.map(async (text, position) => ({sha256: await sha256Hex(text), bytes: sizes[position]!})),
+  );
+  const request = {
+    kind: 'tileflow-map-deployment',
+    schemaVersion: 3,
+    mapId: artifact.mapId,
+    teamSources: artifact.teamSources,
+    ...(artifact.view ? {view: artifact.view} : {}),
+    renderers: {
+      web: artifact.renderers.web,
+      native: {
+        buildManifest,
+        buildRecord,
+        documents: {
+          styles: Object.fromEntries(names.map((name, position) => [name, index[position]!])),
+          family: {
+            sha256: await sha256Hex(familyText),
+            bytes: familyBytes,
+            themes: family.themes.map((theme) => theme.name),
+          },
+        },
+      },
+    },
+  };
+  const requestText = serializeCanonicalJson(request);
+  if (
+    utf8Bytes(requestText) > limits.maximumWebRequestBytes ||
+    [requestText, ...texts, familyText].some((text) => secretPattern.test(text))
+  )
+    return undefined;
+  const parsed = tileflowRendererDeploymentRequestArtifactSchema.safeParse(request);
+  if (!parsed.success) return undefined;
+  return {
+    artifact: parsed.data,
+    documents: {
+      styles: Object.fromEntries(names.map((name, position) => [name, texts[position]!])),
+      family: familyText,
+    },
+  };
+}
+
+const secretPattern = /tf_(?:public|native|live)_/u;
+function utf8Bytes(text: string): number {
+  return new TextEncoder().encode(text).byteLength;
+}
+
 function nativeValidationStyle(
   style: Record<string, unknown>,
   bindings: TileflowRendererDeploymentArtifact['teamSources'],
@@ -371,7 +551,40 @@ function nativeValidationStyle(
   }
   return copy;
 }
-function authoredIdentity(manifest: z.infer<typeof buildManifestSchema>) {
+type BuildManifest = z.infer<typeof buildManifestSchema>;
+/** Both renderer families describe one complete authored Map, each with exactly these themes. */
+function consistentFamilies(
+  mapId: string,
+  families: readonly Readonly<{buildManifest: BuildManifest; themes: readonly string[]}>[],
+): boolean {
+  for (const family of families) {
+    const names = Object.keys(family.buildManifest.maps);
+    const map = family.buildManifest.maps[mapId];
+    if (names.length !== 1 || names[0] !== mapId || !map) return false;
+    const themes = Object.keys(map.themes).sort();
+    if (
+      !themes.length ||
+      themes.length > tileflowRendererDeploymentLimits.maximumThemes ||
+      !equal(themes, [...family.themes].sort()) ||
+      !themes.includes(map.defaultTheme) ||
+      map.lineage[0]?.id !== mapId ||
+      map.lineage[0]?.mapVersion !== map.mapVersion ||
+      Boolean(map.sourceAssets.iconComposition) !== (map.mapRevisionSchemaVersion === 2)
+    )
+      return false;
+    if (map.timeOfDay && validateTileflowTimeOfDayVariants(map.timeOfDay, map.themes).length)
+      return false;
+    for (const scheme of ['light', 'dark'] as const) {
+      if (map.systemThemes && map.themes[map.systemThemes[scheme]]?.colorScheme !== scheme)
+        return false;
+    }
+  }
+  const [first, ...rest] = families;
+  return rest.every((family) =>
+    equal(authoredIdentity(first!.buildManifest), authoredIdentity(family.buildManifest)),
+  );
+}
+function authoredIdentity(manifest: BuildManifest) {
   return {
     ...manifest,
     maps: Object.fromEntries(
@@ -499,7 +712,16 @@ function semanticIdentity(style: Record<string, unknown>) {
 }
 
 const mapIdSchema = z.string().regex(/^map_[A-Za-z0-9_-]{16}$/u);
-const publicUrlSchema = z
+const deploymentIdSchema = z
+  .string()
+  .min(1)
+  .max(128)
+  .regex(/^[A-Za-z0-9_-]+$/u);
+/** The deployment a pending reply reserved; native documents are uploaded to its routes. */
+const reservedDeploymentIdSchema = z.string().regex(/^dep_[A-Za-z0-9_-]{1,128}$/u);
+const loopbackHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
+/** HTTPS, or HTTP on a loopback host for local development of the API. */
+const deliveryUrlSchema = z
   .string()
   .min(1)
   .max(2048)
@@ -507,33 +729,50 @@ const publicUrlSchema = z
     try {
       const url = new URL(value);
       return (
-        url.protocol === 'https:' &&
+        (url.protocol === 'https:' ||
+          (url.protocol === 'http:' && loopbackHosts.has(url.hostname))) &&
         !url.username &&
         !url.password &&
         !url.search &&
         !url.hash &&
         url.toString() === value &&
-        !/tf_(?:public|native|live)_/u.test(value)
+        !secretPattern.test(value)
       );
     } catch {
       return false;
     }
   });
 const webResponseTheme = z
-  .object({styleId: z.string().min(1).max(128).optional(), styleUrl: publicUrlSchema})
+  .object({styleId: z.string().min(1).max(128).optional(), styleUrl: deliveryUrlSchema})
   .strict();
-const nativeResponseTheme = z.object({styleUrl: publicUrlSchema, revision: hashSchema}).strict();
+const nativeResponseTheme = z.object({styleUrl: deliveryUrlSchema, revision: hashSchema}).strict();
+/**
+ * The Team 3D models a map places, each at its published current version, and whether that
+ * version was prepared from the same glTF binaries as the map's own files.
+ */
+const teamModelReportSchema = z
+  .array(
+    z
+      .object({
+        model: modelNameSchema,
+        version: positive,
+        sources: z.enum(['match', 'differ', 'unknown']),
+      })
+      .strict(),
+  )
+  .max(256);
+
+/**
+ * A published renderer deployment (schema 3): both families of one deployment version. Native
+ * styles never carry Team 3D models; `teamModels` reports the ones the web family places.
+ */
 export const tileflowRendererDeploymentResponseSchema = z
   .object({
     kind: z.literal('tileflow-map-deployment-result'),
-    schemaVersion: z.literal(2),
+    schemaVersion: z.literal(3),
     changed: z.boolean(),
     mapId: mapIdSchema,
-    deploymentId: z
-      .string()
-      .min(1)
-      .max(128)
-      .regex(/^[A-Za-z0-9_-]+$/u),
+    deploymentId: deploymentIdSchema,
     version: positive,
     worldConversionId: z.string().min(1).max(128).optional(),
     renderers: z
@@ -542,12 +781,14 @@ export const tileflowRendererDeploymentResponseSchema = z
         native: z
           .object({
             profile: z.literal('native-v1'),
-            manifestUrl: publicUrlSchema,
+            manifestUrl: deliveryUrlSchema,
+            family: z.object({url: deliveryUrlSchema, revision: hashSchema}).strict(),
             themes: z.record(tileflowThemeNameSchema, nativeResponseTheme),
           })
           .strict(),
       })
       .strict(),
+    teamModels: teamModelReportSchema.optional(),
   })
   .strict()
   .superRefine((value, context) => {
@@ -555,15 +796,15 @@ export const tileflowRendererDeploymentResponseSchema = z
       const names = Object.keys(value.renderers.web.themes).sort();
       const native = value.renderers.native;
       const url = new URL(native.manifestUrl);
+      const base = `${url.origin}/maps/${value.mapId}/native`;
       if (
         !names.length ||
-        names.length > 64 ||
+        names.length > tileflowRendererDeploymentLimits.maximumThemes ||
         !equal(names, Object.keys(native.themes).sort()) ||
-        url.pathname !== `/maps/${value.mapId}/native/manifest.json` ||
+        native.manifestUrl !== `${base}/manifest.json` ||
+        native.family.url !== `${base}/family/v${value.version}.json` ||
         names.some(
-          (name) =>
-            native.themes[name]!.styleUrl !==
-            `${url.origin}/maps/${value.mapId}/native/v${value.version}/${name}.json`,
+          (name) => native.themes[name]!.styleUrl !== `${base}/v${value.version}/${name}.json`,
         )
       )
         throw new Error();
@@ -577,3 +818,103 @@ export const tileflowRendererDeploymentResponseSchema = z
 export type TileflowRendererDeploymentResponse = z.infer<
   typeof tileflowRendererDeploymentResponseSchema
 >;
+
+const pendingDocumentShape = {
+  ...nativeDocumentShape,
+  method: z.literal('PUT'),
+  url: deliveryUrlSchema,
+};
+/**
+ * A reserved renderer deployment that publishes once the listed native documents arrive (HTTP
+ * 202). Each missing theme style is listed, then the family document when it is missing; each is
+ * uploaded with `PUT` to its `url`, and the same deployment request then activates it.
+ */
+export const tileflowRendererDeploymentPendingSchema = z
+  .object({
+    kind: z.literal('tileflow-map-deployment-pending'),
+    schemaVersion: z.literal(1),
+    mapId: mapIdSchema,
+    deploymentId: reservedDeploymentIdSchema,
+    version: positive,
+    native: z
+      .object({
+        documents: z
+          .array(
+            z.discriminatedUnion('document', [
+              z
+                .object({
+                  document: z.literal('style'),
+                  theme: tileflowThemeNameSchema,
+                  ...pendingDocumentShape,
+                })
+                .strict(),
+              z.object({document: z.literal('family'), ...pendingDocumentShape}).strict(),
+            ]),
+          )
+          .min(1)
+          .max(tileflowRendererDeploymentLimits.maximumThemes + 1),
+      })
+      .strict(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const documents = value.native.documents;
+    const themes = new Set<string>();
+    let origin: string | undefined;
+    for (const [index, document] of documents.entries()) {
+      let documentOrigin: string | undefined;
+      try {
+        documentOrigin = new URL(document.url).origin;
+      } catch {
+        documentOrigin = undefined;
+      }
+      origin ??= documentOrigin;
+      const path = tileflowNativeDocumentUploadPath(value.deploymentId, document);
+      const valid =
+        documentOrigin !== undefined &&
+        documentOrigin === origin &&
+        document.url === `${origin}${path}` &&
+        (document.document === 'style'
+          ? !themes.has(document.theme)
+          : index === documents.length - 1);
+      if (document.document === 'style') themes.add(document.theme);
+      if (!valid)
+        context.addIssue({
+          code: 'custom',
+          path: ['native', 'documents', index],
+          message: 'Each missing native document is listed once, at its upload route, family last',
+        });
+    }
+  });
+export type TileflowRendererDeploymentPending = z.infer<
+  typeof tileflowRendererDeploymentPendingSchema
+>;
+
+/** The API path a native document of a reserved deployment is uploaded to. */
+export function tileflowNativeDocumentUploadPath(
+  deploymentId: string,
+  document: Readonly<{document: 'style'; theme: string}> | Readonly<{document: 'family'}>,
+): string {
+  const base = `/v1/styles/deployments/${encodeURIComponent(deploymentId)}/native`;
+  return document.document === 'family'
+    ? `${base}/family.json`
+    : `${base}/styles/${encodeURIComponent(document.theme)}.json`;
+}
+
+/** The answer to one uploaded native document (HTTP 200). */
+export const tileflowNativeDocumentReceiptSchema = z
+  .object({
+    kind: z.literal('tileflow-native-document-receipt'),
+    schemaVersion: z.literal(1),
+    deploymentId: reservedDeploymentIdSchema,
+    version: positive,
+    document: z.enum(['style', 'family']),
+    theme: tileflowThemeNameSchema.optional(),
+    ...nativeDocumentShape,
+  })
+  .strict()
+  .refine(
+    (value) => (value.document === 'style') === (value.theme !== undefined),
+    'A style receipt names its theme; a family receipt names none',
+  );
+export type TileflowNativeDocumentReceipt = z.infer<typeof tileflowNativeDocumentReceiptSchema>;

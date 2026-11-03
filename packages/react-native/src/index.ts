@@ -42,3 +42,17 @@ export type {
   TileflowResolvedAnnotationTarget,
   TileflowResolvedPoiFeatureTarget,
 } from '@tileflow/interactions';
+export {
+  configuredServices,
+  TileflowElevation,
+  TileflowGeoIP,
+  TileflowOfflineStore,
+  TileflowOfflineSwitch,
+  TileflowRouting,
+  TileflowSearch,
+} from './sdk';
+export {TileflowServiceError, type TileflowServiceErrorKind} from './services/error';
+export type * from './services/types';
+export {TileflowOfflineError} from './offline/error';
+export type * from './offline/types';
+export {TileflowNativeModuleUnavailableError} from './sdk-modules';

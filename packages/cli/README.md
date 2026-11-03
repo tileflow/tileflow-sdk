@@ -251,7 +251,8 @@ credential or the portable `id` in your config. CI always deploys an existing Ma
 for that destination. `logout` removes the saved personal session.
 
 Deploy sends compact web cartography and data requirements, retaining concrete native artifacts.
-The web budget is 512,000 UTF-8 bytes; icon receipts and native payloads have separate bounds.
+The web budget is 2,000,000 UTF-8 bytes for the whole family; icon receipts and native payloads
+have separate bounds.
 Oversized maps fail before uploads with their size and limit; no automatic simplification occurs.
 
 Deploy publishes the compiled concrete-theme family and managed icon assets; it does not ask the

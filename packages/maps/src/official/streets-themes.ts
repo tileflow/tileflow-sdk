@@ -642,6 +642,7 @@ const streetsDarkTheme = defineTheme(streetsLightTheme, {
   version: 1,
   colorScheme: 'dark',
   tokens: {
+    image: {...streetsImages, ...streetsPoiImageTokens('dark')},
     color: streetsPaletteColors('night', 'default'),
     number: streetsLightingNumbers('night', 'default'),
   },
@@ -668,6 +669,18 @@ function defineStreetsPaletteTheme(
     colorScheme: isDark ? 'dark' : 'light',
     lighting: streetsLighting[colorTheme][preset],
     tokens: {
+      image: {
+        ...streetsImages,
+        ...streetsPoiImageTokens(
+          colorTheme === 'monochrome'
+            ? isDark
+              ? 'monochrome-dark'
+              : 'monochrome'
+            : isDark
+              ? 'dark'
+              : 'light',
+        ),
+      },
       color: streetsPaletteColors(preset, colorTheme),
       number: streetsLightingNumbers(preset, colorTheme),
     },

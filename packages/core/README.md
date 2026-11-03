@@ -151,6 +151,24 @@ export default defineMap({
 receipts must use a concrete theme such as `light` or `dark`.
 
 Theme and `timeOfDay` changes animate over 450 ms by default, respecting reduced motion.
+Prepared web builds use a version-3 runtime manifest with `familyUrl`, pointing to one version-1
+`tileflow-style-family` document. It shares JSON structure and variant parameters while retaining
+flat `styleUrl` exports. `createTileflowStyleFamily` from `@tileflow/core/build` factors compiled
+styles; `parseTileflowStyleFamily` and `materializeTileflowStyleFamily` from `@tileflow/core/runtime`
+validate and export a concrete variant. Limits cover document size, depth, layers and expansion.
+The browser theme controller loads a family once and applies compatible appearances through its
+prepared paint plan, preserving sources and application layers. Metadata endpoints stay stable
+through a blend so 3D renderers can reuse palettes. Structural alternatives retain style switching.
+Parameter columns describe storage, not semantic tokens.
+Build preparation splits feature-dependent colours once; remaining feature-dependent
+values switch once rather than rebuilding tiles every animation frame. RGBA icon palettes switch
+at the dominant theme, retaining symbol layout. Device-specific profiling remains necessary.
+`loadTileflowRuntimeAppearance()` prepares the initial style for direct MapLibre integrations.
+Web builds preserve explicit colour bindings. Use `controller.setColors({'surface.water': '#008800'})`
+with the map's token names; `{}` restores authored colours. Dependencies follow their tokens;
+fixed colours and application layers remain unchanged. Direct `createStyle` calls opt in with
+`runtimeColors: true`. `createTileflowAppearanceController()` adds author-owned `fixed`, `system`
+or local `clock` selection through `set()`, with no UI or location request.
 The same controller can make chosen modules recede and the map's labels fade so an application's
 own content reads first.
 It also sets the style-wide states that themes read with `expr.globalState`, easing numbers so the

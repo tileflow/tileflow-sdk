@@ -250,6 +250,11 @@ with `--origin`, or `--any-website`. It prints the Map ID to use for later deplo
 credential or the portable `id` in your config. CI always deploys an existing Map with a deploy key
 for that destination. `logout` removes the saved personal session.
 
+Deploy sends shared web cartography and common data requirements in a compact envelope, while
+retaining concrete native artifacts. The web publication budget is 512,000 UTF-8 bytes, excluding
+bounded icon receipts and the separately bounded native payload. An oversized map fails before
+uploads with its actual size and the limit; the CLI does not silently simplify it.
+
 Deploy publishes the compiled concrete-theme family and managed icon assets; it does not ask the
 server to compile TypeScript. Repeating an unchanged deployment reuses its version. Build writers
 refuse to overwrite hosted manifests by default, and deploy refuses to replace a self-hosted

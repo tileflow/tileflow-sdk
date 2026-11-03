@@ -40,6 +40,7 @@ import {
   createTileflowThemeController,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
+  loadTileflowRuntimeAppearance,
   loadTileflowStyleFonts,
   registerTileflowContourProtocol,
   registerTileflowPathGroundProtocol,
@@ -860,14 +861,15 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
 
       const loadId = mapLoadId;
       const container = containerRef.value;
-      const runtime = runtimeStyle.value;
+      let runtime = runtimeStyle.value;
       let maplibregl: Awaited<ReturnType<typeof loadTileflowMapLibre>>;
 
       try {
-        [maplibregl] = await Promise.all([
+        [maplibregl, runtime] = await Promise.all([
           loadTileflowMapLibre(),
-          loadTileflowStyleFonts(runtime.style, {
-            fontFaces: runtime.fontFaces,
+          loadTileflowRuntimeAppearance(runtime).then(async (prepared) => {
+            await loadTileflowStyleFonts(prepared.style, {fontFaces: prepared.fontFaces});
+            return prepared;
           }),
         ]);
       } catch (error) {

@@ -9,6 +9,7 @@ import {
 import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../boundary-areas/compile';
 import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
 import {tileflowCameraMetadataKey} from '../camera';
+import {extractTileflowColorPrograms, preserveThemeColorPrograms} from '../color-program';
 import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
@@ -138,6 +139,8 @@ export type TileflowPreparedMapAssets = {
 };
 
 export type TileflowSemanticCompileOptions = {
+  /** Preserve semantic colour bindings for runtime customization without recompilation. */
+  runtimeColors?: boolean;
   apiBaseUrl?: string;
   /** Resolved authoring identity. Internal build orchestration supplies this. */
   map?: {
@@ -239,13 +242,18 @@ function compileSemanticStyleInternal(
   const resolvedThemeConfig = runCompilationPhase('theme', () =>
     resolveThemeValues(themeableConfig, selected.theme, `map.${input.id}`),
   );
-  const config = runCompilationPhase('config-validation', () =>
+  let config = runCompilationPhase('config-validation', () =>
     parseResolvedTileflowMap({
       ...resolvedThemeConfig,
       ...(overlays ? {overlays} : {}),
       themes: input.themes,
     } as TileflowSemanticMapConfig),
   );
+  if (options.runtimeColors)
+    config = {
+      ...config,
+      modules: preserveThemeColorPrograms(input.modules, config.modules, selected.theme),
+    };
   const apiBaseUrl = normalizeBaseUrl(options.apiBaseUrl);
   const data = runCompilationPhase('data', () => resolveTileflowData(config.data, {apiBaseUrl}));
   const marine = runCompilationPhase('data', () => resolveMarine(config.marine, apiBaseUrl));
@@ -342,6 +350,7 @@ function compileSemanticStyleInternal(
     resolveThemeColors(
       selected.theme,
       onReport ? (decision) => colorDecisions.push(decision) : undefined,
+      options.runtimeColors,
     ),
   );
   const images = runCompilationPhase('theme', () => resolveThemeImages(selected.theme));
@@ -672,7 +681,7 @@ function compileSemanticStyleInternal(
     marine?.nautical?.sourceId,
     tileflowNauticalV1Schema.layers.lights,
   );
-  const style: MapLibreStyle = {
+  let style: MapLibreStyle = {
     ...(sky
       ? {sky: compileTileflowStreetSky(sky, Boolean(atmosphere))}
       : atmosphere
@@ -768,6 +777,65 @@ function compileSemanticStyleInternal(
       ...(nauticalLights ? {[tileflowNauticalLightsMetadataKey]: nauticalLights} : {}),
     },
   };
+  if (options.runtimeColors) {
+    const theme = selected.theme;
+    if (style.light)
+      style.light = preserveThemeColorPrograms(
+        {color: theme.lighting.sun?.color ?? theme.lighting.color},
+        style.light,
+        theme,
+        true,
+      );
+    const authoredSky = typeof input.sky === 'object' ? input.sky : undefined;
+    if (style.sky && authoredSky)
+      style.sky = preserveThemeColorPrograms(
+        {
+          'sky-color': authoredSky.color,
+          'horizon-color': authoredSky.horizonColor,
+          'fog-color': authoredSky.horizonColor,
+        },
+        style.sky,
+        theme,
+        true,
+      );
+    if (style.metadata) {
+      style.metadata['tileflow:sun'] = preserveThemeColorPrograms(
+        {color: theme.lighting.sun?.color, ambient: {color: theme.lighting.ambient?.color}},
+        style.metadata['tileflow:sun'],
+        theme,
+        true,
+      );
+      if (authoredSky)
+        style.metadata['tileflow:sky'] = preserveThemeColorPrograms(
+          {
+            glowColor: authoredSky.glowColor,
+            timesOfDay: Object.fromEntries(
+              ['day', 'night', 'dawn', 'dusk'].map((moment) => [moment, authoredSky]),
+            ),
+          },
+          style.metadata['tileflow:sky'],
+          theme,
+          true,
+        );
+      const route = Object.fromEntries(
+        ['line', 'casing', 'core', 'glow', 'alternative']
+          .filter((key) => Object.hasOwn(theme.tokens.color, `route.${key}`))
+          .map((key) => [key, {kind: 'theme-token', category: 'color', token: `route.${key}`}]),
+      );
+      style.metadata['tileflow:route'] = preserveThemeColorPrograms(
+        route,
+        style.metadata['tileflow:route'],
+        theme,
+        true,
+      );
+      for (const key of Object.keys(style.metadata))
+        if (style.metadata[key] === undefined) delete style.metadata[key];
+    }
+    style = extractTileflowColorPrograms(style, {
+      color: theme.tokens.color,
+      number: theme.tokens.number,
+    });
+  }
   const report: TileflowCompilationReport = {
     ...partialReport,
     ...(onReport

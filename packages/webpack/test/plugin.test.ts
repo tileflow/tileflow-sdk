@@ -65,6 +65,7 @@ test('registers watch inputs and emits deterministic Webpack assets', async (t) 
     names.filter((name) => !name.includes('/generations/')),
     [
       'maps/build-manifest.json',
+      'maps/families/main.json',
       'maps/icons/main/sprite.json',
       'maps/icons/main/sprite.png',
       'maps/icons/main/sprite@2x.json',
@@ -76,11 +77,15 @@ test('registers watch inputs and emits deterministic Webpack assets', async (t) 
     ],
   );
   const generated = names.filter((name) => name.includes('/generations/'));
-  assert.equal(generated.length, 4 + Object.keys(streetsThemes).length);
+  assert.equal(generated.length, 5 + Object.keys(streetsThemes).length);
   assert.ok(generated.every((name) => /^maps\/generations\/[a-f0-9]{64}\//.test(name)));
   const manifestAsset = emitted.get('maps/manifest.json') as RawSource;
   const manifest = JSON.parse(String(manifestAsset.value)) as RuntimeManifest;
-  assert.equal(manifest.version, 2);
+  assert.equal(manifest.version, 3);
+  assert.match(
+    manifest.maps.main?.familyUrl ?? '',
+    /^\/app\/maps\/generations\/[a-f0-9]{64}\/families\/main\.json$/u,
+  );
   assert.equal(Object.hasOwn(manifest, 'kind'), false);
   assert.equal(Object.hasOwn(manifest, 'styles'), false);
   assert.equal(manifest.maps.main?.defaultTheme, 'light');
@@ -264,7 +269,7 @@ function createHostedManifest() {
 }
 
 function assertLocalManifest(manifest: RuntimeManifest, base: string): void {
-  assert.equal(manifest.version, 2);
+  assert.equal(manifest.version, 3);
   assert.equal(manifest.apiUrl, undefined);
   assert.equal(Object.hasOwn(manifest, 'kind'), false);
   assert.equal(Object.hasOwn(manifest, 'styles'), false);
@@ -396,6 +401,7 @@ type RuntimeManifest = {
     string,
     {
       defaultTheme: string;
+      familyUrl?: string;
       environment?: string;
       mapId?: string;
       systemThemes?: {dark: string; light: string};
@@ -409,7 +415,7 @@ type RuntimeManifest = {
       >;
     }
   >;
-  version: 1;
+  version: 1 | 2 | 3;
 };
 
 test('the Webpack production build emits the exact locked icon composition', async (t) => {

@@ -29,6 +29,7 @@ import {
   createStylesFromCatalog,
   createStylesFromCatalogWithInspection,
   createTileflowMapBuildManifest,
+  createTileflowStyleFamily,
   type TileflowBuildCatalog,
   type TileflowBuildStyles,
   tileflowMapBuildManifestFileName,
@@ -47,6 +48,7 @@ import {
   TileflowNativeCompatibilityError,
   type TileflowRenderer,
 } from '@tileflow/core/native-profile';
+import {prepareTileflowStyleFamilyForRendering} from '@tileflow/core/runtime';
 import {
   defaultTileflowConfigPath,
   getTileflowMapNames,
@@ -384,6 +386,7 @@ export async function createTileflowArtifactPlan(
 
   const inspected = options.inspection
     ? createTileflowStylesWithInspection(prepared.project, {
+        runtimeColors: true,
         apiBaseUrl: options.apiBaseUrl,
         mapAssets: prepared.mapAssets,
       })
@@ -392,6 +395,9 @@ export async function createTileflowArtifactPlan(
   const compiledStyles =
     inspected?.styles ??
     compileStyles(prepared.project, {
+      // Both renderers share compilation before Native's representation-only lowering.
+      // Native removes the web-only binding catalog after that common semantic pipeline.
+      runtimeColors: true,
       apiBaseUrl: options.apiBaseUrl,
       mapAssets: prepared.mapAssets,
     });
@@ -481,7 +487,7 @@ export async function createTileflowArtifactPlan(
             styleBaseUrl: nativePublicBase(options.styleBaseUrl ?? '.'),
           })
         : createFontAwareManifest(
-            createManifest(prepared.project, {styleBaseUrl: options.styleBaseUrl}),
+            createManifest(prepared.project, {styleBaseUrl: options.styleBaseUrl, families: true}),
             styles,
           );
     const inputs: TileflowArtifactInputGraph = {
@@ -569,6 +575,9 @@ export function getTileflowArtifactFiles(
 }
 
 function getStableTileflowArtifactFiles(artifacts: TileflowBuildArtifacts): TileflowArtifactFile[] {
+  for (const [mapName, themes] of Object.entries(artifacts.styles))
+    for (const themeName of Object.keys(themes))
+      assertTileflowArtifactFileName(`styles/${mapName}/${themeName}.json`);
   const files: TileflowArtifactFile[] = [
     {
       contentType: 'application/json; charset=utf-8',
@@ -587,6 +596,13 @@ function getStableTileflowArtifactFiles(artifacts: TileflowBuildArtifacts): Tile
         source: `${JSON.stringify(style)}\n`,
       })),
     ),
+    ...(!artifacts.nativeBuild
+      ? Object.entries(artifacts.styles).map(([mapName, styles]) => ({
+          contentType: 'application/json; charset=utf-8',
+          fileName: `families/${mapName}.json`,
+          source: `${JSON.stringify(prepareTileflowStyleFamilyForRendering(createTileflowStyleFamily(styles)))}\n`,
+        }))
+      : []),
     ...artifacts.assets,
     ...(artifacts.nativeBuild
       ? [
@@ -630,6 +646,15 @@ function createGenerationManifest(
         mapName,
         {
           ...map,
+          ...(map.familyUrl
+            ? {
+                familyUrl: insertGenerationInPublicUrl(
+                  map.familyUrl,
+                  `families/${mapName}.json`,
+                  generation,
+                ),
+              }
+            : {}),
           themes: Object.fromEntries(
             Object.entries(map.themes).map(([themeName, theme]) => [
               themeName,
@@ -706,7 +731,36 @@ function createGenerationArtifactFiles(
     fileName: `${prefix}/${asset.fileName}`,
   }));
 
-  return validateArtifactFiles([...stableFiles, ...immutableStyles, ...immutableAssets]);
+  const immutableFamilies = artifacts.nativeBuild
+    ? []
+    : Object.keys(artifacts.styles).map((mapName) => ({
+        contentType: 'application/json; charset=utf-8',
+        fileName: `${prefix}/families/${mapName}.json`,
+        source: `${JSON.stringify(
+          prepareTileflowStyleFamilyForRendering(
+            createTileflowStyleFamily(
+              Object.fromEntries(
+                Object.keys(artifacts.styles[mapName]!).map((theme) => [
+                  theme,
+                  JSON.parse(
+                    String(
+                      immutableStyles.find(
+                        (file) => file.fileName === `${prefix}/styles/${mapName}/${theme}.json`,
+                      )!.source,
+                    ),
+                  ) as MapLibreStyle,
+                ]),
+              ),
+            ),
+          ),
+        )}\n`,
+      }));
+  return validateArtifactFiles([
+    ...stableFiles,
+    ...immutableStyles,
+    ...immutableFamilies,
+    ...immutableAssets,
+  ]);
 }
 
 function createFontAwareManifest(
@@ -1378,6 +1432,7 @@ function assertTileflowArtifactFileName(fileName: string): void {
   assertSafeManagedFileName(fileName);
   const logicalName = fileName.replace(/^generations\/[a-f0-9]{64}\//, '');
   const styleMatch = /^styles\/([^/]+)\/([^/]+)\.json$/u.exec(logicalName);
+  const familyMatch = /^families\/([^/]+)\.json$/u.exec(logicalName);
   const iconMatch = /^icons\/([^/]+)\/sprite(?:@2x)?\.(?:json|png)$/u.exec(logicalName);
   const imageMatch = /^images\/([^/]+)\/[a-f0-9]{64}\.png$/u.exec(logicalName);
   // A map's building models, named by their id and the start of their SHA-256.
@@ -1391,6 +1446,7 @@ function assertTileflowArtifactFileName(fileName: string): void {
     (styleMatch &&
       tileflowMapIdSchema.safeParse(styleMatch[1]).success &&
       tileflowThemeNameSchema.safeParse(styleMatch[2]).success) ||
+    (familyMatch && tileflowMapIdSchema.safeParse(familyMatch[1]).success) ||
     (iconMatch && tileflowMapIdSchema.safeParse(iconMatch[1]).success) ||
     (imageMatch && tileflowMapIdSchema.safeParse(imageMatch[1]).success) ||
     (modelMatch && tileflowMapIdSchema.safeParse(modelMatch[1]).success) ||

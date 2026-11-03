@@ -1,5 +1,6 @@
 import type {z} from 'zod';
 import {serializeTileflowFontBundleManifest} from '@tileflow/core';
+import {compactTileflowDeploymentArtifact, tileflowDeploymentWebBytes} from '@tileflow/core/build';
 import type {CompiledTileflowFontBundle} from '@tileflow/dev/fonts';
 import type {CompiledTileflowIconPackage} from '@tileflow/dev/icons';
 import {
@@ -653,11 +654,14 @@ export async function publishHostedStyle(
   | {ok: false; status: number}
   | {ok: true; value: z.infer<typeof hostedStyleDeploymentResponseSchema>}
 > {
+  const input = body as Record<string, unknown>;
+  const compactBody = {...input, artifact: compactTileflowDeploymentArtifact(input.artifact)};
+  assertHostedStyleBudget(compactBody);
   const response = await requestHostedJson(
     api.apiUrl,
     '/v1/styles',
     {
-      ...jsonRequest('POST', body),
+      ...jsonRequest('POST', compactBody),
       headers: {...authorizationHeaders(api.apiKey, api.mapId), 'Content-Type': 'application/json'},
     },
     options,
@@ -667,6 +671,16 @@ export async function publishHostedStyle(
     ok: true,
     value: parseResponse(response, hostedStyleDeploymentResponseSchema, responseLabel),
   };
+}
+
+export function assertHostedStyleBudget(body: unknown): void {
+  const actualBytes = tileflowDeploymentWebBytes(body);
+  const limitBytes = 512_000;
+  if (actualBytes > limitBytes)
+    throw Object.assign(
+      new Error(`Style content is ${actualBytes} bytes; the limit is ${limitBytes} bytes.`),
+      {code: 'STYLE_SOURCE_TOO_LARGE', actualBytes, limitBytes},
+    );
 }
 
 export async function uploadHostedIconPackage(

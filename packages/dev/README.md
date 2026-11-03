@@ -85,6 +85,10 @@ await writeTileflowBuildArtifacts({
 
 Serve the complete output. The writer installs immutable generation assets before changing the
 manifest pointer, tracks its own files, and refuses to replace a hosted manifest by default.
+Web output includes `families/<map>.json` and its immutable generation copy. The version-3
+manifest selects that shared document; conventional theme JSON remains available for exports.
+Web artifacts include semantic runtime colour programs. Native artifacts keep concrete styles.
+Changing SDK/map package versions requires rebuilding and publishing the new artifacts.
 Native builds retain embedded PNG image sources as hashed files beside the styles, so their
 resource URLs remain portable without permitting data URLs in the native profile.
 `overwriteHostedManifest: true` is an explicit migration option, not a normal build setting.

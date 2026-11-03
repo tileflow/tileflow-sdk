@@ -89,7 +89,7 @@ export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
               : {}),
           },
           font: base.light!.tokens.font,
-          image: {...base.light!.tokens.image, ...streetsDayImages},
+          image: {...theme.tokens.image, ...(name === 'light' ? streetsDayImages : {})},
           number: Object.fromEntries([
             ['roads.path.groundOpacity', 1],
             ['labels.shield.spacing11', 420],

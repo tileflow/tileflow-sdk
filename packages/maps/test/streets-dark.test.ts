@@ -1227,7 +1227,10 @@ test('Streets Dark recolors POI labels with shared artwork and identical ranked 
   for (const id of ['tileflow-poi', 'tileflow-poi-prominent']) {
     const lightLayer = requireLayer(light, id);
     const darkLayer = requireLayer(dark, id);
-    assert.deepEqual(darkLayer.layout?.['icon-image'], lightLayer.layout?.['icon-image']);
+    assert.equal(
+      JSON.stringify(darkLayer.layout?.['icon-image']).replace(/-dark/g, ''),
+      JSON.stringify(lightLayer.layout?.['icon-image']).replace(/unified-day-/g, ''),
+    );
     const availableIcons = new Set(
       readdirSync(new URL('../assets/streets/icons/', import.meta.url))
         .filter((name) => name.endsWith('.svg'))

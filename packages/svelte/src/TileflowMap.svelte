@@ -39,6 +39,7 @@
     attachTileflowNotices,
     createTileflowSessionStarter,
     createTileflowThemeController,
+    loadTileflowRuntimeAppearance,
     type TileflowMap3DAttachment,
     createTileflowTransformRequest,
     getTileflowSystemColorScheme,
@@ -551,13 +552,16 @@
 
     const loadId = mapLoadId;
     const targetContainer = container;
-    const runtime = runtimeStyle;
+    let runtime = runtimeStyle;
     let maplibregl: Awaited<ReturnType<typeof loadTileflowMapLibre>>;
 
     try {
-      [maplibregl] = await Promise.all([
+      [maplibregl, runtime] = await Promise.all([
         loadTileflowMapLibre(),
-        loadTileflowStyleFonts(runtime.style, {fontFaces: runtime.fontFaces}),
+        loadTileflowRuntimeAppearance(runtime).then(async (prepared) => {
+          await loadTileflowStyleFonts(prepared.style, {fontFaces: prepared.fontFaces});
+          return prepared;
+        }),
       ]);
     } catch (error) {
       if (mounted && runId === refreshRunId && loadId === mapLoadId) {

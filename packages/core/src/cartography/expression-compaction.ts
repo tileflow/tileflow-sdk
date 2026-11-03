@@ -4,6 +4,7 @@ type Scope = ReadonlyMap<string, {value: unknown; scope: Scope}>;
 
 /** Compact generated expressions without changing literal data or discarding fallible guards. */
 export function compactTileflowExpression(value: unknown, scope: Scope = new Map()): unknown {
+  if (isColorProgramMarker(value)) return value;
   if (!isExpression(value) || value[0] === 'literal' || value[0] === 'var') return value;
   if (value[0] === 'let') return compactLet(value, scope);
   const node = value.map((entry, index) => {
@@ -329,3 +330,4 @@ export function compactTileflowLayer<T extends Record<string, unknown>>(layer: T
   }
   return result;
 }
+import {isColorProgramMarker} from '../color-program';

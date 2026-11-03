@@ -8,6 +8,7 @@ import {
   requestHostedJson,
   requestTeamCapability,
 } from './hosted-client';
+import {allowsStoredAccountSession, isHostedApiKey} from './hosted-options';
 
 export type HostedTeamOptions = {
   apiKey?: string;
@@ -46,8 +47,8 @@ export async function resolveTeamAuthority(
     emitFailure(options.json, 'invalid_api_url', safeMessage(error));
     return null;
   }
-  if (options.apiKey) {
-    if (!/^tf_live_[0-9a-f]{48}$/u.test(options.apiKey)) {
+  if (options.apiKey !== undefined) {
+    if (!isHostedApiKey(options.apiKey)) {
       emitFailure(options.json, 'invalid_team_data_key', 'Team data API key is invalid.');
       return null;
     }
@@ -60,6 +61,15 @@ export async function resolveTeamAuthority(
       return null;
     }
     return {apiOrigin, credential: options.apiKey, team: null};
+  }
+
+  if (!allowsStoredAccountSession()) {
+    emitFailure(
+      options.json,
+      'api_key_required',
+      'CI requires TILEFLOW_API_KEY or --api-key. Saved personal logins are not used in CI.',
+    );
+    return null;
   }
 
   let config: AuthConfig;

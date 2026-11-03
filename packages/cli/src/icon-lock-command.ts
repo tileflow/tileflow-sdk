@@ -21,6 +21,7 @@ import {
 import {readTileflowIconsLockfileText, writeTileflowIconsLockfile} from '@tileflow/dev/icons';
 import type {AuthConfig} from './account-session';
 import {withTileflowConfigSecretsHidden} from './config-execution';
+import {hostedApiKeyOption, hostedApiUrlOption} from './hosted-options';
 import {
   authorizedTeamRequest,
   emitFailure,
@@ -287,8 +288,8 @@ function withLockOptions(
   return command
     .option('-c, --config <path>', 'config path', dependencies.defaultConfigPath)
     .option('--team <team>', 'target Team as @team')
-    .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
-    .option('--api-key <key>', 'Team data API key', process.env.TILEFLOW_API_KEY)
+    .addOption(hostedApiUrlOption())
+    .addOption(hostedApiKeyOption('Team data API key'))
     .option('--json', 'print deterministic schema-version-1 JSON');
 }
 

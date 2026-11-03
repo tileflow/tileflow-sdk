@@ -38,6 +38,9 @@ function colors(name: string) {
   );
 }
 
+// Daylight owns the cartography. Every appearance uses its fonts, artwork, path
+// visibility and label spacing; only colors and lighting vary. This is a Streets
+// design decision, not a restriction on other maps authored with Tileflow.
 export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
   const themes = Object.fromEntries(
     Object.entries(base).map(([name, theme]) => [
@@ -46,6 +49,7 @@ export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
         id: `streets-${name}`,
         version: 1,
         colorScheme: theme.colorScheme,
+        typography: base.light!.typography,
         tokens: {
           color: {
             ...colors(name),
@@ -84,14 +88,15 @@ export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
                 }
               : {}),
           },
-          image: name === 'light' ? streetsDayImages : {},
+          font: base.light!.tokens.font,
+          image: {...base.light!.tokens.image, ...streetsDayImages},
           number: Object.fromEntries([
-            ['roads.path.groundOpacity', name === 'light' ? 1 : 0],
-            ['labels.shield.spacing11', name === 'light' ? 420 : 220],
-            ['labels.shield.spacing13', name === 'light' ? 480 : 300],
+            ['roads.path.groundOpacity', 1],
+            ['labels.shield.spacing11', 420],
+            ['labels.shield.spacing13', 480],
             ...[100, 85, 78, 55, 25].map((value) => [
               `land.climate.opacity${value === 100 ? '' : value}`,
-              name === 'light' ? value / 100 : 0,
+              value / 100,
             ]),
           ]),
         },

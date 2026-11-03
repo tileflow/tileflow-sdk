@@ -69,12 +69,21 @@ test('Streets consumer compilation retains ground-aware paths with a packaged so
     }
   }
 });
-test('other Streets themes do not gain the daylight path treatment', () => {
+test('all Streets appearances keep the daylight path clipping and uncased geometry', () => {
+  const day = createStyle(streets, {theme: 'light', preparedAssets});
   for (const theme of Object.keys(streetsThemes).filter((name) => name !== 'light')) {
     const style = createStyle(streets, {theme, preparedAssets});
-    assert.equal(style.sources['tileflow-path-ground'], undefined, theme);
+    assert.deepEqual(
+      style.sources['tileflow-path-ground'],
+      day.sources['tileflow-path-ground'],
+      theme,
+    );
     const casing = style.layers.find((l) => l.id === 'tileflow-road-surface-footway-casing');
-    assert.ok(casing?.type === 'line');
-    assert.notEqual(casing.paint?.['line-opacity'], 0, theme);
+    assert.ok(casing?.type === 'line', theme);
+    assert.equal(casing.paint?.['line-opacity'], 0, theme);
+    assert.ok(
+      style.layers.some((layer) => layer.id === 'tileflow-road-surface-footway-fill-on-green'),
+      theme,
+    );
   }
 });

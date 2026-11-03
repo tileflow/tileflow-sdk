@@ -296,7 +296,7 @@ test('Streets exposes complete palette variants on one map identity', () => {
   );
   assert.equal(
     resolveTileflowTheme(streetsThemes.dark).tokens.image['roads.sidewalkPattern'],
-    'sidewalk-dot-dark',
+    'sidewalk-dot',
   );
   const expectedShieldImages = {
     'roads.shield.circleNeutral': 'road-shield-circle-neutral',
@@ -357,9 +357,9 @@ test('Streets exposes complete palette variants on one map identity', () => {
     ['linear'],
     ['zoom'],
     11,
-    220,
+    420,
     13,
-    300,
+    480,
     14,
     600,
   ]);
@@ -415,64 +415,6 @@ test('Streets exposes complete palette variants on one map identity', () => {
   assert.deepEqual(validateStyleMin(style as never), []);
 });
 
-test('Streets Dark preserves Streets geometry, ordering, visibility, and label behavior', () => {
-  const light = compile('light');
-  const dark = compile('dark');
-  const dayPathLayers = new Set([
-    'tileflow-road-surface-cycleway-shadow-on-green',
-    'tileflow-road-surface-pathway-fill-on-green',
-    'tileflow-road-surface-footway-fill-on-green',
-    'tileflow-road-surface-steps-fill-on-green',
-    'tileflow-road-surface-pedestrian-fill-on-green',
-  ]);
-  assert.deepEqual(
-    light.layers
-      .filter(({id}) => !dark.layers.some((l) => l.id === id))
-      .map(({id}) => id)
-      .sort(),
-    [...dayPathLayers].sort(),
-  );
-  const structuralContract = (layer: (typeof light.layers)[number]) => {
-    const layout = JSON.parse(JSON.stringify(layer.layout ?? {}).replace(/-dark(?=")/gu, ''));
-    if (
-      ['tileflow-poi', 'tileflow-poi-prominent', 'tileflow-vegetation-render-crowns'].includes(
-        layer.id,
-      )
-    )
-      delete layout['icon-image'];
-    if (layer.id === 'tileflow-label-road-shield-detail') delete layout['symbol-spacing'];
-    return {
-      filter: layer.filter,
-      id: layer.id,
-      layout,
-      maxzoom: layer.maxzoom,
-      minzoom: layer.minzoom,
-      source: layer.source,
-      sourceLayer: layer['source-layer'],
-      type: layer.type,
-    };
-  };
-  const commonDay = light.layers.filter(({id}) => !dayPathLayers.has(id));
-  const byId = (layers: typeof light.layers) =>
-    layers.map(structuralContract).sort((a, b) => a.id.localeCompare(b.id));
-  assert.deepEqual(byId(dark.layers), byId(commonDay));
-  const vehicleOrder = (layers: typeof light.layers) =>
-    layers
-      .filter(
-        ({id}) =>
-          !/^tileflow-road-(surface|bridge|tunnel)-(pathway|footway|pedestrian|steps|cycleway)-/.test(
-            id,
-          ),
-      )
-      .map(({id}) => id);
-  assert.deepEqual(vehicleOrder(dark.layers), vehicleOrder(commonDay));
-  assert.deepEqual(dark.metadata?.['tileflow:modules'], light.metadata?.['tileflow:modules']);
-  const {['tileflow-path-ground']: pathGround, ...daySources} = light.sources;
-  assert.ok(pathGround);
-  assert.deepEqual(dark.sources, daySources);
-  assert.equal(dark.glyphs, light.glyphs);
-});
-
 test('Streets Dark recolors every color-bearing Streets layer without major light leakage', () => {
   const light = compile('light');
   const dark = compile('dark');
@@ -480,13 +422,7 @@ test('Streets Dark recolors every color-bearing Streets layer without major ligh
 
   for (const lightLayer of light.layers) {
     const darkLayer = dark.layers.find(({id}) => id === lightLayer.id);
-    if (!darkLayer) {
-      assert.match(
-        lightLayer.id,
-        /^tileflow-road-surface-(cycleway-shadow|pathway-fill|footway-fill|steps-fill|pedestrian-fill)-on-green$/,
-      );
-      continue;
-    }
+    assert.ok(darkLayer, `Dark must retain the daylight layer ${lightLayer.id}`);
     const sourceColors = collectColorLiterals(lightLayer.paint).filter(
       (color) => color !== 'RGBA(0, 0, 0, 0)',
     );
@@ -1205,13 +1141,7 @@ test('Streets Dark retains every public render-stack contribution and refinement
     );
 
   const canonical = (compiled: typeof light) =>
-    [
-      ...new Set(
-        semanticContributions(compiled)
-          .filter(({target}) => !target.endsWith('.onGreen'))
-          .map((value) => JSON.stringify(value)),
-      ),
-    ].sort();
+    [...new Set(semanticContributions(compiled).map((value) => JSON.stringify(value)))].sort();
   assert.deepEqual(canonical(dark), canonical(light));
 
   const darkContributions = dark.inspection.layers.flatMap((layer) =>
@@ -1261,7 +1191,7 @@ test('Streets Dark retains every public render-stack contribution and refinement
   }
 });
 
-test('Streets Dark keeps canonical POI category colors with themed sprites and identical ranked placement', () => {
+test('Streets Dark recolors POI labels with shared artwork and identical ranked placement', () => {
   const light = compile('light');
   const dark = compile('dark');
   const categories = [
@@ -1297,7 +1227,7 @@ test('Streets Dark keeps canonical POI category colors with themed sprites and i
   for (const id of ['tileflow-poi', 'tileflow-poi-prominent']) {
     const lightLayer = requireLayer(light, id);
     const darkLayer = requireLayer(dark, id);
-    assert.notDeepEqual(darkLayer.layout?.['icon-image'], lightLayer.layout?.['icon-image']);
+    assert.deepEqual(darkLayer.layout?.['icon-image'], lightLayer.layout?.['icon-image']);
     const availableIcons = new Set(
       readdirSync(new URL('../assets/streets/icons/', import.meta.url))
         .filter((name) => name.endsWith('.svg'))

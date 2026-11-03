@@ -125,17 +125,7 @@ test('regenerating inherited Streets preserves each overview background and shie
     assert.ok(shield?.type === 'symbol');
     assert.deepEqual(
       shield.layout?.['symbol-spacing'],
-      [
-        'interpolate',
-        ['linear'],
-        ['zoom'],
-        11,
-        theme === 'light' ? 420 : 220,
-        13,
-        theme === 'light' ? 480 : 300,
-        14,
-        600,
-      ],
+      ['interpolate', ['linear'], ['zoom'], 11, 420, 13, 480, 14, 600],
       theme,
     );
   }

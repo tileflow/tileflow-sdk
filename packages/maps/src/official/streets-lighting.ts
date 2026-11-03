@@ -57,55 +57,58 @@ const defaultLighting = {
   },
 } as const;
 
-const fadedLighting = {
-  dawn: {
-    sun: {...defaultLighting.dawn.sun, color: 'rgb(252.513725, 222.937729, 169.273879)'},
-    ambient: {color: 'rgb(254, 244.681815, 235.980392)', intensity: 0.75},
-  },
-  day: {
-    sun: {...defaultLighting.day.sun, color: '#FFF8EF', intensity: 0.26},
-    ambient: {color: '#EBF0F8', intensity: 0.74},
-  },
-  dusk: {
-    sun: {...defaultLighting.dusk.sun, color: 'rgb(252.513725, 217.250027, 164.945083)'},
-    ambient: {color: 'rgb(87.776471, 97.427724, 126.419608)', intensity: 0.8},
-  },
-  night: {
-    sun: {...defaultLighting.night.sun, color: 'rgb(97.815686, 102.955556, 118.333333)'},
-    ambient: {color: 'rgb(2, 38.117647, 86.886275)', intensity: 0.5},
-  },
-} as const;
+// A palette changes the color of the light, never its direction or strength.
+// All palettes at the same moment therefore share the same shadow geometry.
+function withLightColors(colors: Record<StreetsLightPreset, {sun: string; ambient: string}>) {
+  return Object.fromEntries(
+    (Object.keys(defaultLighting) as StreetsLightPreset[]).map((preset) => [
+      preset,
+      {
+        sun: {...defaultLighting[preset].sun, color: colors[preset].sun},
+        ambient: {...defaultLighting[preset].ambient, color: colors[preset].ambient},
+      },
+    ]),
+  ) as Record<
+    StreetsLightPreset,
+    {
+      sun: {
+        azimuth: number;
+        altitude: number;
+        color: string;
+        intensity: number;
+        shadowIntensity: number;
+      };
+      ambient: {color: string; intensity: number};
+    }
+  >;
+}
 
-const monochromeLighting = {
+const fadedLighting = withLightColors({
   dawn: {
-    sun: {
-      ...defaultLighting.dawn.sun,
-      altitude: 50,
-      color: 'rgb(226.147143, 226.147143, 226.147143)',
-      intensity: 0.35,
-    },
-    ambient: {color: 'rgb(245.703576, 245.703576, 245.703576)', intensity: 0.75},
+    sun: 'rgb(252.513725, 222.937729, 169.273879)',
+    ambient: 'rgb(254, 244.681815, 235.980392)',
   },
-  day: {
-    sun: {...defaultLighting.day.sun, color: '#FFFFFF', intensity: 0.2, shadowIntensity: 1},
-    ambient: {color: '#FFFFFF', intensity: 0.85},
-  },
+  day: {sun: '#FFF8EF', ambient: '#EBF0F8'},
   dusk: {
-    sun: {
-      ...defaultLighting.dusk.sun,
-      altitude: 60,
-      color: 'rgb(163.817309, 163.817309, 163.817309)',
-      intensity: 0.15,
-    },
-    ambient: {color: 'rgb(126.294118, 126.294118, 126.294118)', intensity: 0.1},
+    sun: 'rgb(252.513725, 217.250027, 164.945083)',
+    ambient: 'rgb(87.776471, 97.427724, 126.419608)',
   },
-  night: {
-    // Standard's monochrome LUT maps a black light input to #353535. Feeding the
-    // raw black into the scene would incorrectly remove all night illumination.
-    sun: {...defaultLighting.night.sun, color: '#353535', intensity: 0.25},
-    ambient: {color: '#353535', intensity: 0},
+  night: {sun: 'rgb(97.815686, 102.955556, 118.333333)', ambient: 'rgb(2, 38.117647, 86.886275)'},
+});
+
+const monochromeLighting = withLightColors({
+  dawn: {
+    sun: 'rgb(226.147143, 226.147143, 226.147143)',
+    ambient: 'rgb(245.703576, 245.703576, 245.703576)',
   },
-} as const;
+  day: {sun: '#FFFFFF', ambient: '#FFFFFF'},
+  dusk: {
+    sun: 'rgb(163.817309, 163.817309, 163.817309)',
+    ambient: 'rgb(126.294118, 126.294118, 126.294118)',
+  },
+  // Retain legible artistic moonlight; black would remove all night illumination.
+  night: {sun: '#353535', ambient: '#353535'},
+});
 
 export const streetsLighting = {
   default: defaultLighting,

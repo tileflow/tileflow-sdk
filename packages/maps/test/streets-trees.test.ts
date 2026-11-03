@@ -100,11 +100,7 @@ test('Streets owns both tree representations and an extension can disable both',
     assert.equal(crown.layout?.['icon-ignore-placement'], true);
     assert.equal(crown.layout?.['icon-pitch-alignment'], 'map');
     for (const form of streetsTreeForms) {
-      assert.ok(
-        JSON.stringify(crown.layout?.['icon-image']).includes(
-          `streets-tree-${form}${theme === 'dark' ? '-dark' : ''}`,
-        ),
-      );
+      assert.ok(JSON.stringify(crown.layout?.['icon-image']).includes(`streets-tree-${form}`));
     }
     const bare = compile(
       theme,

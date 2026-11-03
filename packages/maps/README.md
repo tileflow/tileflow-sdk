@@ -81,13 +81,13 @@ Streets has twelve theme/time combinations. Inspector offers **Default**, **Fade
 presets. Default retains the configuration key `light`: `theme="light" timeOfDay="night"`
 selects `dark`, while `theme="light" timeOfDay="day"` selects `light`. The other concrete themes
 are `dawn`, `dusk`, `faded`, `monochrome`, `dawn-faded`, `dawn-monochrome`, `dusk-faded`,
-`dusk-monochrome`, `dark-faded`, and `dark-monochrome`. Each combination selects a complete
-palette and artwork; time presets do not apply a global lighting tint to the flat map.
+`dusk-monochrome`, `dark-faded`, and `dark-monochrome`. All twelve appearances share roads, label placement, fonts and icon artwork.
+Colors and lighting vary; flat-map colors are authored independently.
 
 Scene lighting is calibrated against Mapbox Standard. Streets owns its cartography: slate-blue
 roads with stronger regional outlines, neutral urban surfaces, pale warm rural ground, green
 parks and subtle cream buildings. Its palette is not a fixed copy of the provider's reference
-colors. Day uses category-colored POI discs; dark mode uses pale discs with dark pictograms.
+colors. All appearances use the daylight map's category-colored POI discs and pictograms.
 Maki pictograms distinguish transport modes and POI types. Scene-sun lighting preserves
 unshadowed roof paint while allowing light color to affect walls.
 
@@ -117,12 +117,12 @@ at junctions. Links remain narrower and draw before receiving roads. Tunnel casi
 surface and bridge casings are continuous. Construction fills and marks draw below roads in
 service. Crosswalks and compact blue-gray arrows fade in from z16.5.
 
-Daytime surface footpaths and cycleways use white strokes over mapped green ground and a
-muted gray-earth stroke elsewhere, at 92% of their authored width and without a casing.
+Surface footpaths and cycleways share geometry across appearances, at 92% of their authored
+width and without casings. Day uses white over mapped green ground and gray-earth elsewhere.
 The shared `roads.pathGround` compiler and browser protocol clip the green portions from the
 same vector tiles; a complete ground-colored path remains visible if context cannot load.
 Road carriageway outlines draw above these paths. This treatment belongs to the Streets
-definition and survives normal artifact regeneration; other themes retain their own path styles.
+definition and survives normal artifact regeneration in every palette and time preset.
 Road palettes, width profiles, building outlines and the overview backgrounds are authored here
 in Maps; consumers inherit them without installing a separately edited style snapshot.
 
@@ -149,8 +149,8 @@ lighting transition (`threeDimensional.edgeRadius: 1.5`). Courtyards and tile cu
 Shields use 9 px DINish Bold and closer spacing at z11–13. Street names yield to destinations
 and draw above flat footprints but below 3D buildings, with viewport-aligned letters.
 3D lights use a southern sun by day, southeast at dawn, southwest at dusk and western moonlight
-at night. Daylight pairs warm sun with cool skylight; other presets retain Standard's observed
-lighting. `controller.setSun({date, location})` uses the real sun instead.
+at night. At each moment, palettes share light direction, strength and shadow geometry;
+only light colors change. `controller.setSun({date, location})` uses the real sun instead.
 Streets enables `camera.adaptivePerspective`. See camera, landmark and lighting settings in
 [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
 The buildings' `threeDimensional.lighting` and `shadows` options control the effect, and each

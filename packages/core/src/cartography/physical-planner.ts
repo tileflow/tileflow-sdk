@@ -721,6 +721,21 @@ function combineConditionalValues(
   if (allEqual(entries.map(({value}) => value))) {
     return {ok: true, value: entries[0]?.value};
   }
+  // A step whose last stop is below this cohort cannot change again. Resolve
+  // only that unreachable camera branch before comparing colors; otherwise two
+  // palettes with the same geometry can acquire different physical layers just
+  // because their low-zoom colors happen to be equal. Future steps stay intact.
+  const atMinimumZoom = (value: unknown) => {
+    if (!isZoomStep(value)) return value;
+    const step = value as unknown[];
+    const lastStop = step[step.length - 2];
+    return typeof lastStop === 'number' && lastStop <= minimumRelevantZoom
+      ? evaluateZoomStep(value, minimumRelevantZoom)
+      : value;
+  };
+  entries = entries.map(({condition, value}) => ({condition, value: atMinimumZoom(value)}));
+  fallback = atMinimumZoom(fallback);
+  if (allEqual(entries.map(({value}) => value))) return {ok: true, value: entries[0]!.value};
   const letValues = entries.map(({value}) =>
     Array.isArray(value) && value.length === 4 && value[0] === 'let' ? value : undefined,
   );

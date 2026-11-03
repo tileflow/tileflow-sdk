@@ -46,20 +46,27 @@ function matchesRgb(actual: readonly number[], expected: readonly number[], cont
 for (const [name, theme] of Object.entries(themes)) {
   test(`Streets ${theme} publishes its authored scene light and transformed color`, () => {
     const expected = reference.lights[name as keyof typeof themes];
+    const time = name.split('-')[1] as 'dawn' | 'day' | 'dusk' | 'night';
+    const directionReference = reference.lights[`default-${time}`];
+    const shared = resolveTileflowTheme(streetsThemes[themes[`default-${time}`]]).sun!;
     const preset = resolveTileflowTheme(streetsThemes[theme]).sun;
     assert.ok(preset);
-    assert.equal(preset.azimuth, expected.direction[0]);
-    assert.equal(preset.altitude, 90 - expected.direction[1], 'polar angle converts to altitude');
+    assert.equal(preset.azimuth, directionReference.direction[0]);
+    assert.equal(
+      preset.altitude,
+      90 - directionReference.direction[1],
+      'palettes share the same sun position',
+    );
+    assert.equal(preset.intensity, shared.intensity);
+    assert.equal(preset.ambient.intensity, shared.ambient.intensity);
+    assert.equal(preset.shadowIntensity, shared.shadowIntensity);
     const light = resolveTileflowSun(preset);
     // Coloured daylight is art-directed by Streets; other presets retain the measured reference.
     if (!name.endsWith('-day') || name.startsWith('monochrome')) {
-      assert.equal(preset.intensity, expected.directional.intensity);
-      assert.equal(preset.ambient.intensity, expected.ambient.intensity);
-      assert.equal(preset.shadowIntensity, expected.shadowIntensity);
       matchesRgb(light.rgb, expected.directional.rgb, `${theme} directional`);
       matchesRgb(light.ambient.rgb, expected.ambient.rgb, `${theme} ambient`);
     }
-    const [azimuth, polar] = expected.direction.map((angle) => (angle * Math.PI) / 180);
+    const [azimuth, polar] = directionReference.direction.map((angle) => (angle * Math.PI) / 180);
     const direction = [
       Math.sin(azimuth!) * Math.sin(polar!),
       Math.cos(azimuth!) * Math.sin(polar!),
@@ -124,7 +131,7 @@ for (const [name, theme] of Object.entries(themes)) {
       name.endsWith('night') && !mono ? 0.3 : 0,
       'colour transforms must not switch ordinary building lights on during dusk',
     );
-    assert.deepEqual(compiled.light?.position, [1.15, ...expected.direction]);
+    assert.deepEqual(compiled.light?.position, [1.15, ...directionReference.direction]);
     assert.equal(compiled.light?.anchor, 'map');
     // Native extrusion shading is a separate fallback; its tint must not apply
     // Standard's effective scene colors to the observed roof material twice.
@@ -145,7 +152,7 @@ test('all night themes retain moonlight while the current scene remains in its n
   }
 });
 
-test('monochrome uses neutral transformed light and its own dawn and dusk directions', () => {
+test('monochrome changes light colors without moving dawn or dusk shadows', () => {
   assert.deepEqual(Object.keys(reference.lights), Object.keys(themes));
   for (const time of ['dawn', 'day', 'dusk', 'night'] as const) {
     const preset = resolveTileflowTheme(streetsThemes[themes[`monochrome-${time}`]]).sun;
@@ -156,8 +163,8 @@ test('monochrome uses neutral transformed light and its own dawn and dusk direct
     assert.equal(light.ambient.rgb[0], light.ambient.rgb[1]);
     assert.equal(light.ambient.rgb[1], light.ambient.rgb[2]);
   }
-  assert.equal(resolveTileflowTheme(streetsThemes['dawn-monochrome']).sun?.altitude, 50);
-  assert.equal(resolveTileflowTheme(streetsThemes['dusk-monochrome']).sun?.altitude, 60);
+  assert.equal(resolveTileflowTheme(streetsThemes['dawn-monochrome']).sun?.altitude, 40);
+  assert.equal(resolveTileflowTheme(streetsThemes['dusk-monochrome']).sun?.altitude, 10);
 });
 
 test('time and theme transitions keep valid resolved light through their interpolation', () => {

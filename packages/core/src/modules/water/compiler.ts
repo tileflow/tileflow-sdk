@@ -98,7 +98,7 @@ export function compileWater(
         type: 'fill',
         source,
         'source-layer': layers.water,
-        filter: ['!=', ['get', fields.intermittent], 1],
+        filter: ['!=', ['get', fields.intermittent], true],
       },
       config.bodies,
     )) {
@@ -120,7 +120,7 @@ export function compileWater(
         type: 'fill',
         source,
         'source-layer': layers.water,
-        filter: ['==', ['get', fields.intermittent], 1],
+        filter: ['==', ['get', fields.intermittent], true],
       },
       config.intermittent.bodies,
     )) {
@@ -383,7 +383,7 @@ export function compileWater(
           filter: [
             'all',
             classFilter(fields.class, classes),
-            ['!=', ['get', fields.intermittent], 1],
+            ['!=', ['get', fields.intermittent], true],
           ],
         },
         style,
@@ -413,7 +413,7 @@ export function compileWater(
           filter: [
             'all',
             classFilter(fields.class, classes),
-            ['==', ['get', fields.intermittent], 1],
+            ['==', ['get', fields.intermittent], true],
           ],
         },
         mergeTileflowDesign(style, intermittent),

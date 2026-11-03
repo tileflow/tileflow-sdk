@@ -13,7 +13,7 @@ import {
   withRenderStack,
   zoom,
 } from '@tileflow/core';
-import {streetsClimateImage} from './streets-climate-image';
+import {streetsClimateImage} from './streets-climate';
 import {
   streetsAccessOverview,
   streetsAgriculturalColor,
@@ -89,7 +89,7 @@ export function withStreetsCartography(base: TileflowMap) {
         {
           ...withoutStack(land),
           globalLandcoverUnderlay: {
-            url: streetsClimateImage,
+            url: streetsClimateImage.url,
             coordinates: [
               [-180, 85.0511287798066],
               [180, 85.0511287798066],

@@ -19,6 +19,10 @@ import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
 import {type ResolvedMarine, resolveMarine, tileflowNauticalV1Schema} from '../marine';
 import {buildingTargetsOfOtherModes} from '../modules/buildings/compiler';
+import {
+  tileflowLandcoverUnderlaySource,
+  tileflowLandcoverUnderlaySourceId,
+} from '../modules/land/underlay';
 import {tileflowNauticalNotice} from '../modules/nautical';
 import {compilePathGroundFamilies} from '../modules/roads/path-ground';
 import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
@@ -128,7 +132,6 @@ import {
 import {tileflowBuildings3DDesignOf, tileflowStreetLightsDesignOf} from './scene-3d-metadata';
 import {bindSemanticReferences, createSemanticDataView} from './semantic-bindings';
 import {tileflowSemanticCompilerIdentity} from './semantic-compiler';
-
 
 const tileflowWorldDetailSourceLayers: ReadonlySet<string> = new Set(
   tileflowWorldDetailLayers.map((name) => tileflowWorldLayers[name]),
@@ -575,19 +578,22 @@ function compileSemanticStyleInternal(
     detail !== undefined &&
     layers.some(
       (layer) =>
-        layer.source ===
-          (detail.delivery === 'separate' ? detail.sourceId : data.sourceId) &&
+        layer.source === (detail.delivery === 'separate' ? detail.sourceId : data.sourceId) &&
         tileflowWorldDetailSourceLayers.has(String(layer['source-layer'])),
     );
   const primaryUrl = drawsDetail && detail.delivery === 'composite' ? detail.url : data.url;
+  // The land-cover underlay's source exists only where its layer survived compilation.
+  const underlay = layers.some((layer) => layer.source === tileflowLandcoverUnderlaySourceId)
+    ? modules.land?.globalLandcoverUnderlay
+    : undefined;
+  const underlaySource = underlay ? tileflowLandcoverUnderlaySource(underlay) : undefined;
   const primarySource: Record<string, unknown> = {
     type: 'vector',
     ...(primaryUrl !== undefined ? {url: primaryUrl} : {tiles: data.tiles}),
     attribution: [
       data.attribution,
-      ...(modules.land?.globalLandcoverUnderlay
-        ? [modules.land.globalLandcoverUnderlay.attribution]
-        : []),
+      // A raster underlay credits its own source, shown only while it is drawn.
+      ...(underlay && underlaySource?.type === 'image' ? [underlay.attribution] : []),
     ]
       .filter(Boolean)
       .join(' | '),
@@ -614,18 +620,7 @@ function compileSemanticStyleInternal(
           },
         }
       : {}),
-    ...(modules.land?.enabled !== false &&
-    modules.land?.globalLandcoverUnderlay &&
-    data.schema.layers.landcover &&
-    modules.land.globalLandcover?.visible !== false
-      ? {
-          'tileflow-landcover-underlay': {
-            type: 'image',
-            url: modules.land.globalLandcoverUnderlay.url,
-            coordinates: modules.land.globalLandcoverUnderlay.coordinates,
-          },
-        }
-      : {}),
+    ...(underlaySource ? {[tileflowLandcoverUnderlaySourceId]: underlaySource} : {}),
     ...(marine?.bathymetry?.vector
       ? {[marine.bathymetry.vector.sourceId]: marine.bathymetry.vector.source}
       : {}),
@@ -639,9 +634,10 @@ function compileSemanticStyleInternal(
     ...hostedSources.definitions,
   };
   const sourceIdentities = {
-    [data.sourceId]: drawsDetail && detail.delivery === 'composite'
-      ? {...data.identity, url: detail.url}
-      : data.identity,
+    [data.sourceId]:
+      drawsDetail && detail.delivery === 'composite'
+        ? {...data.identity, url: detail.url}
+        : data.identity,
     ...(drawsDetail && detail.delivery === 'separate'
       ? {[detail.sourceId]: {...data.identity, url: detail.url}}
       : {}),

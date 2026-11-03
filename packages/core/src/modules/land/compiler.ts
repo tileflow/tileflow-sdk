@@ -15,6 +15,7 @@ import type {
   TileflowLandModuleConfig,
   TileflowLanduseClass,
 } from './index';
+import {isTileflowUnderlayInvisible, tileflowLandcoverUnderlaySourceId} from './underlay';
 
 // Hedges last, so a hedge along a wall or fence stays on top.
 const barrierClasses = [
@@ -214,7 +215,8 @@ export function compileLand(
   if (
     config.globalLandcoverUnderlay &&
     schema.layers.landcover &&
-    config.globalLandcover?.visible !== false
+    config.globalLandcover?.visible !== false &&
+    !isTileflowUnderlayInvisible(config.globalLandcoverUnderlay)
   ) {
     const underlay = config.globalLandcoverUnderlay;
     contributions.push({
@@ -226,7 +228,7 @@ export function compileLand(
       layer: {
         id: 'tileflow-global-landcover-underlay',
         type: 'raster',
-        source: 'tileflow-landcover-underlay',
+        source: tileflowLandcoverUnderlaySourceId,
         minzoom: underlay.minZoom ?? 0,
         maxzoom: underlay.maxZoom ?? 11,
         paint: {
@@ -299,7 +301,10 @@ export function compileLand(
     appendLanduse(name, matches);
   }
 
-  const appendLandcover = (name: TileflowLandcoverClass, matches: readonly TileflowGroundMatch[]) => {
+  const appendLandcover = (
+    name: TileflowLandcoverClass,
+    matches: readonly TileflowGroundMatch[],
+  ) => {
     const style = config.landcover?.[name];
     if (!style) return;
     for (const area of createAreaLayers(
@@ -432,7 +437,8 @@ function groundFilter(
   const filters = matches.map((match) => {
     const classes = classFilter(classField, match.class);
     if (match.type) return ['all', classes, classFilter(typeField, match.type)];
-    if (match.excludeType) return ['all', classes, ['!', classFilter(typeField, match.excludeType)]];
+    if (match.excludeType)
+      return ['all', classes, ['!', classFilter(typeField, match.excludeType)]];
     return classes;
   });
   return filters.length === 1 ? filters[0]! : ['any', ...filters];

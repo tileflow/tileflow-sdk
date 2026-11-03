@@ -151,6 +151,20 @@ export default defineMap({
 receipts must use a concrete theme such as `light` or `dark`.
 
 Theme and `timeOfDay` changes animate over 450 ms by default, respecting reduced motion.
+Web manifests (v3) declare `familyUrl`: a bounded `tileflow-style-family` v1 document sharing
+structure and parameters, with flat `styleUrl` exports retained. `createTileflowStyleFamily`
+(`@tileflow/core/build`) factors styles; `parseTileflowStyleFamily` and
+`materializeTileflowStyleFamily` (`@tileflow/core/runtime`) validate and expand them.
+The controller loads each family once, preserving sources and application layers for compatible
+appearances. Stable metadata endpoints let 3D palettes be reused. Structural variants still swap
+styles. Feature-dependent branches are prepared once; remaining discrete values and RGBA icons
+switch at the dominant theme, preserving symbol layout. Parameter columns are not semantic tokens.
+`loadTileflowRuntimeAppearance()` prepares the initial style for direct MapLibre integrations.
+Web builds retain token bindings: `controller.setColors({'surface.water': '#008800'})` overrides
+named tokens; `{}` restores authored colours. Fixed colours and application layers are preserved.
+Direct `createStyle` calls opt in with `runtimeColors: true`.
+`createTileflowAppearanceController().set()` selects author-owned `fixed`, `system` or local
+`clock` behaviour without UI or a location request. Profile performance on the target device.
 The same controller can make chosen modules recede and the map's labels fade so an application's
 own content reads first.
 It also sets the style-wide states that themes read with `expr.globalState`, easing numbers so the
@@ -191,6 +205,11 @@ semantic target.
 validates the authoring input and throws on failure. `createStyle(map, options)` returns a style or
 throws; `createStyleResult(map, options)` returns structured diagnostics and a compilation report.
 Only a successful result contains `style`.
+
+Compilation compacts redundant expressions and shares repeated predicates and values with
+MapLibre `let` bindings. Themes still produce standalone Style JSON, with the same layer order,
+appearance and assets. Inspect semantic targets rather than depending on the emitted expression
+shape; it may change when the compiler removes repetition.
 
 Maps with package/local icon or font directories need the CLI, a build plugin, or
 [`@tileflow/dev/artifacts`](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/README.md)
@@ -271,15 +290,22 @@ under the camera, read chosen layers of a vector source for an area at a fixed z
 Browser 3D scenes support `camera.adaptivePerspective`: caller override,
 map default, then `false`. Streets enables it. Depth markers let buildings
 occlude application markers.
+`camera.pitchLimit: {maxZoom, maxPitch}` caps inclination at and below the given zoom. Closer
+views and scene disposal restore the application's maximum; a stricter application cap wins.
 Custom 3D layers load visible ground from the bottom of the viewport towards the horizon before
 spending tiles offscreen. Buildings fade down at the far boundary, across the view's width, and
 distance haze follows that boundary. Coverage follows the viewport and its projection on resize,
 within each layer's `maxTiles` budget (25 by default); views exceeding that budget still have
 bounded coverage, with the nearest ground taking priority.
 Model roles use `modelLighting` for independent colours and materials. `colorScale` (0–1,
-default 1) subtly darkens a role after recolouring. Map-shaded models share the buildings’
-vertical/contact gradient; physical roles keep their own lighting. Model corner geometry is
-authored in the asset, while ordinary tile corners use `edgeRadius`.
+default 1) subtly darkens a role after recolouring. Ordinary buildings use soft daylight fill
+and a restrained vertical gradient through the lower 85% of each facade, leaving roofs and upper edges light. Map-shaded models
+retain a short gradient at their base; physical roles keep their own lighting. Model corner
+geometry is authored in the asset, while ordinary tile corners use `edgeRadius`.
+Set `buildings.threeDimensional.entrance: false` to show ordinary buildings and models at full
+height and opacity at their entrance zooms, without growth or fading during zoom or model arrival.
+Equal entrance endpoints, such as `entrance: {buildings: [14.25, 14.25], models: [14.25, 14.25]}`,
+choose an immediate appearance at a specific zoom.
 
 Text requires exactly one provider. Soundings and Blueprint use URL glyphs; Streets packages DINish
 and Noto Sans; Baedeker, 1777 and Siegfried package Cormorant; Cívica packages its lettering. Hosted

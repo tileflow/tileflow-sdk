@@ -6,6 +6,7 @@ import {
   serializeCanonicalJson,
 } from '@tileflow/core';
 import {
+  compactTileflowDeploymentArtifact,
   createTileflowMapBuildManifest,
   parseTileflowRendererDeploymentArtifact,
   type TileflowBuildCatalog,
@@ -30,6 +31,7 @@ import {normalizeApiOrigin} from './account-session';
 import {withTileflowConfigSecretsHidden} from './config-execution';
 import type {DeploySource} from './deploy-source';
 import {
+  assertHostedStyleBudget,
   type HostedApi,
   type HostedRequestOptions,
   requestHostedJson,
@@ -142,7 +144,11 @@ export async function prepareNativeHostedDeploy(
       ]),
     ),
   };
-  const styles = createTileflowStyles(project, {apiBaseUrl: apiOrigin, mapAssets});
+  const styles = createTileflowStyles(project, {
+    apiBaseUrl: apiOrigin,
+    mapAssets,
+    runtimeColors: true,
+  });
   const local = await prepareTileflowLocalTilesets(project, styles, {
     assetBaseUrl: apiOrigin,
     baseDirectory,
@@ -247,6 +253,23 @@ export async function runHostedNativeDeploy(options: NativeHostedDeployOptions, 
     const preflight = await parseTileflowRendererDeploymentArtifact(prepared.artifact);
     if (preflight.mapId !== prepared.mapName)
       throw failure('The prepared map does not match its artifact.');
+    const requestBody = (artifact: TileflowRendererDeploymentArtifact) => ({
+      artifact: compactTileflowDeploymentArtifact(artifact),
+      environment: prepared.mapName,
+      managedMapId: mapId,
+      usageMode: 'session',
+      source: ports.source,
+      ...(prepared.iconBinding
+        ? {
+            iconPackage: {
+              contentHash: prepared.iconBinding.packageHash,
+              label: prepared.iconBinding.label,
+            },
+          }
+        : {}),
+      ...(prepared.iconComposition ? {iconComposition: prepared.iconComposition} : {}),
+    });
+    assertHostedStyleBudget(requestBody(preflight));
     const existing = await ports.loadManifest(options.manifest, {
       overwriteSelfHosted: options.overwriteSelfHostedManifest === true,
     });
@@ -298,6 +321,8 @@ export async function runHostedNativeDeploy(options: NativeHostedDeployOptions, 
     )
       throw failure('Icon composition does not match the confirmed effective package.');
     let response;
+    const body = requestBody(artifact);
+    assertHostedStyleBudget(body);
     try {
       response = await requestHostedJson(
         apiOrigin,
@@ -309,22 +334,7 @@ export async function runHostedNativeDeploy(options: NativeHostedDeployOptions, 
             'X-Tileflow-Map-Id': mapId,
             'Content-Type': 'application/json',
           },
-          body: serializeCanonicalJson({
-            artifact,
-            environment: prepared.mapName,
-            managedMapId: mapId,
-            usageMode: 'session',
-            source: ports.source,
-            ...(iconPackage && prepared.iconBinding
-              ? {
-                  iconPackage: {
-                    contentHash: iconPackage.contentHash,
-                    label: prepared.iconBinding.label,
-                  },
-                }
-              : {}),
-            ...(prepared.iconComposition ? {iconComposition: prepared.iconComposition} : {}),
-          }),
+          body: serializeCanonicalJson(body),
         },
         ports.request,
       );
@@ -362,13 +372,19 @@ export async function runHostedNativeDeploy(options: NativeHostedDeployOptions, 
     const manifest = parseTileflowRuntimeManifest({
       apiUrl: apiOrigin,
       version:
-        build.timeOfDay || Object.values(existing?.maps ?? {}).some((map) => map.timeOfDay) ? 2 : 1,
+        result.renderers.web.familyUrl ||
+        Object.values(existing?.maps ?? {}).some((map) => map.familyUrl)
+          ? 3
+          : build.timeOfDay || Object.values(existing?.maps ?? {}).some((map) => map.timeOfDay)
+            ? 2
+            : 1,
       maps: {
         ...(existing?.maps ?? {}),
         [prepared.mapName]: {
           defaultTheme: build.defaultTheme,
           environment: prepared.mapName,
           mapId,
+          ...(result.renderers.web.familyUrl ? {familyUrl: result.renderers.web.familyUrl} : {}),
           ...(build.systemThemes ? {systemThemes: build.systemThemes} : {}),
           ...(build.timeOfDay ? {timeOfDay: build.timeOfDay} : {}),
           ...(artifact.view ? {view: artifact.view} : {}),

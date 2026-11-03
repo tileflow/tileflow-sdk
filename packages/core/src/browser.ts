@@ -1,3 +1,4 @@
+import type {TileflowColorOverrides} from './color-program-runtime';
 import {
   createTileflowDynamicImageRegistry,
   type TileflowDynamicImage,
@@ -20,6 +21,16 @@ import {
   validateTileflowThemeBlendSelection,
 } from './runtime';
 import {readTileflowSky, tileflowSkyAtSun, tileflowSkyMetadataKey, tileflowSkySunKey} from './sky';
+import type {TileflowStyleFamily} from './style-family';
+import {
+  expandTileflowFamilyTemplate,
+  materializeTileflowStyleFamily,
+  parseTileflowStyleFamily,
+} from './style-family';
+import {createTileflowFamilyAnimator, mixTileflowFamilyValues} from './style-family-browser';
+import {loadTileflowStyleFamily} from './style-family-loader';
+import {prepareTileflowStyleFamilyForRendering} from './style-family-render';
+import {resolveTileflowFamilyResourceUrls} from './style-family-runtime';
 import {
   mixTileflowAzimuths,
   readTileflowSunPreset,
@@ -49,6 +60,7 @@ import {
   beginTileflowStyleCrossfade,
   canBlendTileflowThemes,
   createTileflowThemeBlender,
+  createTileflowThemeImageMixer,
   prefersReducedMotion,
   type TileflowThemeBlender,
   type TileflowThemeMotionMap,
@@ -59,6 +71,10 @@ import {
   waitForTileflowThemeGeometry,
 } from './theme-preparation-browser';
 import type {MapLibreStyle} from './types';
+
+export type {TileflowColorOverrides} from './color-program-runtime';
+
+export {loadTileflowRuntimeAppearance} from './style-family-runtime';
 
 export {
   attachTileflowAtmosphere,
@@ -299,6 +315,8 @@ export {
 } from './nautical-light-rhythm';
 
 export * from './fair-use-browser';
+export {createTileflowAppearanceController} from './appearance-browser';
+export type {TileflowAppearanceSelection} from './appearance';
 export {
   registerTileflowPathGroundProtocol,
   type TileflowPathGroundRegistry,
@@ -410,6 +428,8 @@ export type TileflowThemeTransitionOptions = Readonly<{
 }>;
 
 export type TileflowThemeChangeOptions = Readonly<{
+  /** Rebuild the style to retry failed renderer resources, bypassing appearance-only updates. */
+  rebuild?: boolean;
   transition?: TileflowThemeTransitionOptions;
 }>;
 
@@ -484,6 +504,12 @@ export type TileflowSunRequest =
   | Readonly<{date: Date | number; location?: readonly [number, number]}>;
 
 export type TileflowThemeController = {
+  /** Replace named colour overrides; an empty record restores the map author's colours. */
+  setColors(
+    colors: TileflowColorOverrides,
+    options?: TileflowThemeChangeOptions,
+  ): Promise<TileflowThemeTransitionResult>;
+  getColors(): TileflowColorOverrides;
   dispose(): void;
   /** Own a fixed-size RGBA image with a stable name across themes, restored after style reloads. */
   registerImage(name: string, image: TileflowDynamicImage): TileflowDynamicImageHandle;
@@ -625,6 +651,7 @@ export function createTileflowThemeController(options: {
   loadFonts?: (style: TileflowRuntimeStyle) => Promise<void>;
   /** Loads a theme's style document for a blend; defaults to a same-origin-credentials fetch. */
   loadStyle?: (url: string) => Promise<MapLibreStyle>;
+  loadFamily?: (url: string) => Promise<TileflowStyleFamily>;
   map: TileflowStyleSwitchMap;
   onTransition?: (transition: TileflowThemeTransition) => void;
   timeoutMs?: number;
@@ -637,6 +664,39 @@ export function createTileflowThemeController(options: {
     ((runtimeStyle: TileflowRuntimeStyle) =>
       loadTileflowStyleFonts(runtimeStyle.style, {fontFaces: runtimeStyle.fontFaces}));
   const loadStyle = options.loadStyle ?? loadTileflowBlendStyle;
+  const familyCache = new Map<string, Promise<TileflowStyleFamily>>();
+  if (options.initial.familyUrl && options.initial.family)
+    familyCache.set(options.initial.familyUrl, Promise.resolve(options.initial.family));
+  const familyAbort = new AbortController();
+  const loadFamily =
+    options.loadFamily ??
+    ((url: string) => loadTileflowStyleFamily(url, {signal: familyAbort.signal}));
+  const resolveFamily = async (style: TileflowRuntimeStyle): Promise<TileflowRuntimeStyle> => {
+    if (!style.familyUrl || style.family) return style;
+    let pending = familyCache.get(style.familyUrl);
+    if (!pending) {
+      const url = style.familyUrl;
+      pending = loadFamily(url)
+        .then(parseTileflowStyleFamily)
+        .then((family) => resolveTileflowFamilyResourceUrls(family, url))
+        .then(prepareTileflowStyleFamilyForRendering)
+        .catch((error: unknown) => {
+          familyCache.delete(url);
+          throw error;
+        });
+      familyCache.set(url, pending);
+      if (familyCache.size > 4) familyCache.delete(familyCache.keys().next().value!);
+    }
+    const family = await pending;
+    return {
+      ...style,
+      family,
+      style:
+        familyActive && current.family === family
+          ? style.style
+          : materializeTileflowStyleFamily(family, style.theme!),
+    };
+  };
   const timeoutMs = normalizeThemeTransitionTimeout(options.timeoutMs);
   const defaultTransition = normalizeThemeTransitionDuration(options.transition);
   const defaultThemeTransition = normalizeThemeTransitionDuration(
@@ -659,6 +719,7 @@ export function createTileflowThemeController(options: {
     options.map.off('styledata', invalidateMetadata);
     options.map.off('style.load', invalidateMetadata);
     options.map.off('remove', releaseMetadata);
+    options.map.off('styledata', syncFamilyImages);
     invalidateMetadata();
   };
   options.map.on('styledata', invalidateMetadata);
@@ -708,24 +769,133 @@ export function createTileflowThemeController(options: {
   // The sky a placed sun wrote, and the sky of the style a theme given by URL compiled.
   let sunSkyWritten: string | undefined;
   let urlStyleSky: unknown;
+  let family = options.initial.family && parseTileflowStyleFamily(options.initial.family);
+  let familyActive = false;
+  let familyBlend: TileflowThemeBlendState | undefined;
+  const familyView = tileflowThemeMotionView(options.map);
+  let familyAnimator: ReturnType<typeof createTileflowFamilyAnimator> | undefined;
+  let familyImagePlan: TileflowThemeBlendPlan['images'] = [];
+  let familyImages: ReturnType<typeof createTileflowThemeImageMixer> | undefined;
+  const syncFamilyImages = () => {
+    if (!familyActive || !familyAnimator || !familyImages || !family) return;
+    const {metadata, position} = familyAnimator.frame;
+    const value = metadata[position < 0.5 ? 0 : metadata.length - 1] as
+      Record<string, unknown> | undefined;
+    const index = family.themes.indexOf(String(value?.['tileflow:family-image-theme']));
+    if (index >= 0) {
+      familyImages.paint('dominant', index);
+      familyImages.paint('position', index);
+    }
+  };
+
+  installFamily(options.initial);
+  function installFamily(style: TileflowRuntimeStyle) {
+    const initialColors = style.family === family ? familyAnimator?.getColors() : undefined;
+    options.map.off('styledata', syncFamilyImages);
+    familyBlend = undefined;
+    familyAnimator?.dispose();
+    familyAnimator = undefined;
+    familyImages = undefined;
+    familyImagePlan = [];
+    family = style.family && parseTileflowStyleFamily(style.family);
+    familyActive = Boolean(
+      family?.updates.appearanceOnly &&
+      familySharesLayout(family) &&
+      typeof options.map.setPaintProperty === 'function',
+    );
+    if (!familyActive || !family) return;
+    const imagePlan = materializeTileflowStyleFamily(family, style.theme!).metadata?.[
+      'tileflow:family-images'
+    ] as TileflowThemeBlendPlan['images'] | undefined;
+    familyImagePlan = imagePlan ?? [];
+    if (
+      imagePlan?.length &&
+      typeof options.map.getImage === 'function' &&
+      typeof options.map.updateImage === 'function'
+    ) {
+      images?.assertBlend(imagePlan);
+      options.map.on('styledata', syncFamilyImages);
+      familyImages = createTileflowThemeImageMixer(
+        options.map as Parameters<typeof createTileflowThemeImageMixer>[0],
+        imagePlan,
+      );
+    }
+    familyAnimator = createTileflowFamilyAnimator({
+      family,
+      initialTheme: style.theme!,
+      initialColors,
+      now: () => familyView?.performance?.now?.() ?? Date.now(),
+      requestFrame: familyView
+        ? (callback) => familyView.requestAnimationFrame(callback)
+        : undefined,
+      cancelFrame: familyView ? (id) => familyView.cancelAnimationFrame(id) : undefined,
+      writePaint(layer, property, value) {
+        (
+          options.map.setPaintProperty as (
+            layer: string,
+            property: string,
+            value: unknown,
+            options?: object,
+          ) => void
+        ).call(options.map, layer, property, emphasisValue(layer, property, value), {
+          validate: false,
+        });
+      },
+      onFrame() {
+        syncFamilyImages();
+        themeSun = undefined;
+        writeSunLight();
+        const sky = themeSky();
+        if (!sunShown && sky !== undefined && typeof options.map.setSky === 'function')
+          (options.map.setSky as (sky: unknown, options?: object) => void).call(options.map, sky, {
+            validate: false,
+          });
+        images?.invalidate();
+        const repaint = (options.map as {triggerRepaint?: () => void}).triggerRepaint;
+        repaint?.call(options.map);
+      },
+    });
+    syncFamilyImages();
+  }
+
+  function familySharesLayout(value: TileflowStyleFamily): boolean {
+    const varies = (node: unknown): boolean => {
+      if (!node || typeof node !== 'object') return false;
+      if ('$variant' in node) return true;
+      return Object.values(node).some(varies);
+    };
+    const template = expandTileflowFamilyTemplate(value) as unknown as MapLibreStyle;
+    // Raw families may still vary icon-image. Only the prepared atlas plan can retain layout.
+    return template.layers.every((layer) => !varies(layer.layout));
+  }
 
   function imageContext() {
     return {
       theme: current.theme!,
-      blend: activeBlend
-        ? Object.freeze({
-            position: activeBlend.blender.position,
-            themes: Object.freeze(activeBlend.themes.map((theme) => theme.theme!)),
-          })
-        : undefined,
+      blend:
+        familyActive && familyBlend
+          ? Object.freeze({
+              position: familyBlend.position,
+              themes: Object.freeze([...familyBlend.themes]),
+            })
+          : activeBlend
+            ? Object.freeze({
+                position: activeBlend.blender.position,
+                themes: Object.freeze(activeBlend.themes.map((theme) => theme.theme!)),
+              })
+            : undefined,
       states: Object.freeze(
         Object.fromEntries([...states].map(([name, state]) => [name, state.shown])),
       ),
     };
   }
 
-  return {
+  const controller: TileflowThemeController = {
     dispose() {
+      options.map.off('styledata', syncFamilyImages);
+      familyAbort.abort();
+      familyCache.clear();
+      familyAnimator?.dispose();
       disposed = true;
       stopThemeMotion?.();
       releaseMetadata();
@@ -738,6 +908,7 @@ export function createTileflowThemeController(options: {
       stopSunMotion({status: 'superseded', theme: current.theme});
     },
     getBlend() {
+      if (familyActive) return familyBlend;
       if (!activeBlend) return undefined;
       return {
         held: activeBlend.blender.held,
@@ -748,11 +919,51 @@ export function createTileflowThemeController(options: {
     },
     registerImage(name, definition) {
       if (disposed) throw new Error('Tileflow theme controller is disposed.');
-      if (activeBlend?.plan.images.some((image) => image.names.includes(name))) {
+      if (
+        activeBlend?.plan.images.some((image) => image.names.includes(name)) ||
+        familyImagePlan.some((image) => image.names.includes(name))
+      ) {
         throw new TypeError('Dynamic image names must remain identical across blended themes.');
       }
       images ??= createTileflowDynamicImageRegistry(options.map, imageContext, resetStates);
       return images.register(name, definition);
+    },
+    getColors() {
+      return familyAnimator?.getColors() ?? {};
+    },
+    setColors(colors, changeOptions) {
+      if (disposed) return Promise.resolve(disposedResult(current.theme));
+      if (!familyActive || !familyAnimator)
+        return Promise.resolve({
+          status: 'failed',
+          error: new TypeError('Runtime colours require a prepared configurable family.'),
+        });
+      const duration = transitionOf(changeOptions, defaultThemeTransition);
+      if (duration instanceof TypeError)
+        return Promise.resolve({status: 'failed', error: duration});
+      const animator = familyAnimator;
+      const run = ++requestId;
+      return whenContextAvailable(options.map)
+        .then(() => {
+          if (disposed || run !== requestId || animator !== familyAnimator)
+            return {status: 'superseded'} as const;
+          return animator.setColors(colors, reducedMotion() ? 0 : duration);
+        })
+        .then((result) => {
+          if (disposed || run !== requestId || animator !== familyAnimator)
+            return {status: 'superseded'} as const;
+          if (result.status === 'applied') {
+            current = {
+              ...current,
+              theme: result.theme ?? current.theme,
+              style: animator.getStyle(result.theme ?? current.theme!),
+            };
+            shown = {style: current.style};
+            shownLayers = typeof current.style === 'string' ? undefined : current.style.layers;
+            resetEmphasis();
+          }
+          return result;
+        });
     },
     getCurrent() {
       return current;
@@ -762,6 +973,11 @@ export function createTileflowThemeController(options: {
     },
     getRouteInks() {
       const scheme = current.colorScheme === 'dark' ? 'dark' : 'light';
+      if (familyActive && familyAnimator) {
+        const {metadata, position} = familyAnimator.frame;
+        const inks = metadata.map((value) => tileflowStyleRouteInks({metadata: value}, scheme));
+        return tileflowRouteInksAt(inks, position) ?? inks[0]!;
+      }
       const blended = activeBlend && blendRouteInks.get(activeBlend.plan);
       if (activeBlend && blended)
         return tileflowRouteInksAt(blended, activeBlend.blender.position) ?? blended[0]!;
@@ -778,6 +994,11 @@ export function createTileflowThemeController(options: {
         typeof metadata === 'object' && metadata !== null && !Array.isArray(metadata)
           ? (metadata as Record<string, unknown>)[key]
           : undefined;
+      if (familyActive && familyAnimator)
+        return {
+          values: familyAnimator.frame.metadata.map(read),
+          position: familyAnimator.frame.position,
+        };
       const blended = activeBlend && blendMetadata.get(activeBlend.plan);
       if (activeBlend && blended)
         return {values: blended.map(read), position: activeBlend.blender.position};
@@ -829,14 +1050,50 @@ export function createTileflowThemeController(options: {
       return changeEmphasis(request, reducedMotion() ? 0 : transition);
     },
     setBlend(request, changeOptions) {
+      if (request.themes.some((style) => style.familyUrl && !style.family)) {
+        const run = ++requestId;
+        return Promise.all(request.themes.map(resolveFamily)).then(
+          (themes) =>
+            run === requestId && !disposed
+              ? controller.setBlend({...request, themes}, changeOptions)
+              : ({status: 'superseded'} as const),
+          (error: unknown) => handlePreloadFailure(run, nearestTheme(request), error),
+        );
+      }
       const targetTheme = nearestTheme(request);
       const invalid = validateBlendRequest(request);
       if (invalid) return Promise.resolve({error: invalid, status: 'failed', theme: targetTheme});
       if (disposed) return Promise.resolve(disposedResult(targetTheme));
+      if (
+        familyActive &&
+        familyAnimator &&
+        request.themes.every((style) => style.family === family)
+      ) {
+        const run = ++requestId;
+        const result = familyAnimator.setBlend(
+          request.themes.map((style) => style.theme!),
+          request.position,
+        );
+        return result.then((result) => {
+          if (run !== requestId || disposed) return {status: 'superseded'} as const;
+          if (result.status !== 'applied') return result;
+          familyBlend = {
+            held: false,
+            position: request.position,
+            themes: request.themes.map((style) => style.theme!),
+            relayoutAt: [],
+          };
+          current = request.themes[Math.round(request.position)]!;
+          images?.invalidate();
+          return result;
+        });
+      }
       const transition = transitionOf(changeOptions, defaultThemeTransition);
       if (transition instanceof TypeError)
         return Promise.resolve({error: transition, status: 'failed', theme: targetTheme});
       stopThemeMotion?.();
+      familyAnimator?.dispose();
+      familyActive = false;
       const key = blendKey(request.themes);
       if (activeBlend?.key === key) {
         // The same themes: only the position moves, at once, superseding older pending changes.
@@ -873,6 +1130,16 @@ export function createTileflowThemeController(options: {
       return pending.promise;
     },
     setTheme(style, changeOptions) {
+      if (style.familyUrl && !style.family) {
+        const run = ++requestId;
+        return resolveFamily(style).then(
+          (resolved) =>
+            run === requestId && !disposed
+              ? controller.setTheme(resolved, changeOptions)
+              : ({status: 'superseded', theme: style.theme} as const),
+          (error: unknown) => handlePreloadFailure(run, style.theme, error),
+        );
+      }
       const invalidTheme = validateConcreteRuntimeTheme(style, 'target');
       if (invalidTheme) {
         return Promise.resolve({error: invalidTheme, status: 'failed', theme: style.theme});
@@ -881,6 +1148,42 @@ export function createTileflowThemeController(options: {
       const transition = transitionOf(changeOptions, defaultThemeTransition);
       if (transition instanceof TypeError)
         return Promise.resolve({error: transition, status: 'failed', theme: style.theme});
+      if (familyActive && familyAnimator && style.family === family && !changeOptions?.rebuild) {
+        familyBlend = undefined;
+        const run = ++requestId;
+        options.onTransition?.({
+          currentTheme: current.theme,
+          phase: 'applying',
+          targetTheme: style.theme,
+        });
+        return whenContextAvailable(options.map)
+          .then(() => {
+            if (run !== requestId || disposed)
+              return {status: 'superseded', theme: style.theme} as const;
+            return familyAnimator!.setTheme(style.theme!, reducedMotion() ? 0 : transition);
+          })
+          .then((result) => {
+            if (run !== requestId || disposed)
+              return {status: 'superseded', theme: style.theme} as const;
+            if (result.status === 'applied') {
+              current = {...style, style: familyAnimator!.getStyle(style.theme!)};
+              shown = {style: current.style};
+              shownLayers = typeof current.style === 'string' ? undefined : current.style.layers;
+              resetEmphasis();
+            }
+            options.onTransition?.({
+              currentTheme: current.theme,
+              phase: result.status === 'failed' ? 'error' : 'ready',
+              targetTheme: style.theme,
+              ...(result.status === 'failed' ? {error: result.error} : {}),
+            });
+            return result;
+          });
+      }
+      if (style.family === family && familyAnimator && changeOptions?.rebuild)
+        style = {...style, style: familyAnimator.getStyle(style.theme!)};
+      familyActive = false;
+      familyAnimator?.dispose();
       stopThemeMotion?.();
       const runId = ++requestId;
       pendingBlend = undefined;
@@ -901,6 +1204,32 @@ export function createTileflowThemeController(options: {
       );
     },
   };
+
+  if (options.initial.familyUrl && !options.initial.family) {
+    const initial = current;
+    void resolveFamily(initial)
+      .then((resolved) => {
+        if (!disposed && current === initial && requestId === 0) {
+          const actual = (
+            typeof current.style === 'string' ? shownStyleDocument() : current.style
+          ) as {layers?: {id?: string}[]} | undefined;
+          const prepared = typeof resolved.style === 'string' ? undefined : resolved.style;
+          // A controller attached to an already visible flat export must not start writing to
+          // prepared branches that have not been installed. Its first explicit switch installs them.
+          if (
+            !actual?.layers ||
+            !prepared ||
+            JSON.stringify(actual.layers.map((layer) => layer.id)) !==
+              JSON.stringify(prepared.layers.map((layer) => layer.id))
+          )
+            return;
+          current = resolved;
+          installFamily(resolved);
+        }
+      })
+      .catch(() => undefined);
+  }
+  return controller;
 
   function transitionOf(
     changeOptions: TileflowThemeChangeOptions | undefined,
@@ -1097,6 +1426,7 @@ export function createTileflowThemeController(options: {
       if (target.kind === 'theme') {
         current = target.style;
         shown = {style: styleInput};
+        installFamily(target.style);
       } else {
         const blender = createBlender(target.plan, target.position());
         activeBlend = {blender, key: target.key, plan: target.plan, themes: target.themes};
@@ -1239,6 +1569,7 @@ export function createTileflowThemeController(options: {
       shownLayers = typeof shown.style === 'string' ? undefined : shown.style.layers;
     }
     current = previous.current;
+    installFamily(previous.current);
     resetEmphasis();
     resetStates();
     resetSun(blend ? undefined : previous.shown.style);
@@ -1249,6 +1580,14 @@ export function createTileflowThemeController(options: {
 
   /** The sun preset of the themes on screen, mixed at the blend's position. */
   function themeSunPreset(): {preset: TileflowSunPreset; published: boolean} {
+    if (familyActive && familyAnimator) {
+      const frame = familyAnimator.frame;
+      const presets = frame.metadata.map((metadata) => tileflowStyleSunPreset({metadata}));
+      return {
+        preset: tileflowSunPresetAt(presets, frame.position) ?? presets[0]!,
+        published: frame.metadata.some((metadata) => readTileflowSunPreset(metadata) !== undefined),
+      };
+    }
     const blended = activeBlend && blendSuns.get(activeBlend.plan);
     if (activeBlend && blended) {
       return {
@@ -1276,6 +1615,10 @@ export function createTileflowThemeController(options: {
 
   /** The sky the themes on screen compiled, mixed at the blend's position. */
   function themeSky(): unknown {
+    if (familyActive && familyAnimator) {
+      const {skies, position} = familyAnimator.frame;
+      return skies.length < 2 ? skies[0] : mixTileflowFamilyValues(skies[0], skies[1], position);
+    }
     if (activeBlend?.plan.sky !== undefined)
       return fillTileflowThemeBlendTemplate(activeBlend.plan.sky, activeBlend.blender.position);
     return typeof shown.style === 'string' ? urlStyleSky : shown.style.sky;
@@ -1353,6 +1696,12 @@ export function createTileflowThemeController(options: {
   }
 
   function shownStyleLight(): unknown {
+    if (familyActive && familyAnimator) {
+      const {lights, position} = familyAnimator.frame;
+      return lights.length < 2
+        ? lights[0]
+        : mixTileflowFamilyValues(lights[0], lights[1], position);
+    }
     const style = typeof shown.style === 'string' ? undefined : shown.style;
     return style?.light;
   }

@@ -1,15 +1,15 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
 import {createHash} from 'node:crypto';
-import {serializeCanonicalJson, type MapLibreStyle} from '@tileflow/core';
+import test from 'node:test';
+import {type MapLibreStyle, serializeCanonicalJson} from '@tileflow/core';
 import {
   inferTileflowDataRequirements,
   inferTileflowSourceRequirements,
   type TileflowMapBuildManifestV1,
 } from '@tileflow/core/build';
-import {prepareTileflowHostedNativeDeployment} from '@tileflow/dev/artifacts';
-import {runHostedNativeDeploy, type PreparedNativeDeploy} from '../src/hosted-native-deploy';
 import type {TileflowRuntimeManifest} from '@tileflow/core/manifest';
+import {prepareTileflowHostedNativeDeployment} from '@tileflow/dev/artifacts';
+import {type PreparedNativeDeploy, runHostedNativeDeploy} from '../src/hosted-native-deploy';
 
 const apiUrl = 'https://api.example.test';
 const mapId = 'map_0123456789abcdef';
@@ -129,7 +129,7 @@ test('native selection rejects absent target and unsafe origin before local conf
   }
 });
 
-test('complete preflight and existing-manifest checks precede authentication and schema-2 publication', async () => {
+test('complete preflight and existing-manifest checks precede authentication and compact schema-4 publication', async () => {
   const events: string[] = [];
   let written: TileflowRuntimeManifest | undefined;
   const candidate = await prepared();
@@ -160,7 +160,9 @@ test('complete preflight and existing-manifest checks precede authentication and
         assert.equal(init?.redirect, 'error');
         assert.equal(new Headers(init?.headers).get('X-Tileflow-Map-Id'), mapId);
         const body = JSON.parse(String(init?.body));
-        assert.equal(body.artifact.schemaVersion, 2);
+        assert.equal(body.artifact.schemaVersion, 4);
+        assert.equal(body.artifact.renderers.web.family.kind, 'tileflow-style-family');
+        assert.equal(body.artifact.renderers.web.styles, undefined);
         assert.equal(body.managedMapId, mapId);
         assert.equal(body.usageMode, 'session');
         assert.deepEqual(Object.keys(body.artifact.renderers).sort(), ['native', 'web']);

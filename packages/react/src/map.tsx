@@ -34,6 +34,7 @@ import {
   createTileflowThemeController,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
+  loadTileflowRuntimeAppearance,
   loadTileflowStyleFonts,
   registerTileflowContourProtocol,
   registerTileflowPathGroundProtocol,
@@ -763,11 +764,12 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
 
     void Promise.all([
       loadTileflowMapLibre(),
-      loadTileflowStyleFonts(initialRuntimeStyle.style, {
-        fontFaces: initialRuntimeStyle.fontFaces,
+      loadTileflowRuntimeAppearance(initialRuntimeStyle).then(async (prepared) => {
+        await loadTileflowStyleFonts(prepared.style, {fontFaces: prepared.fontFaces});
+        return prepared;
       }),
     ])
-      .then(([maplibregl]) => {
+      .then(([maplibregl, preparedAppearance]) => {
         if (cancelled || containerRef.current !== container) {
           return;
         }
@@ -838,7 +840,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
             stableMapOptions?.canvasContextAttributes,
           ),
           container,
-          style: initialRuntimeStyle.style as StyleSpecification | string,
+          style: preparedAppearance.style as StyleSpecification | string,
           bearing: bearingRef.current,
           center: centerRef.current,
           pitch: pitchRef.current,
@@ -866,7 +868,7 @@ export function Map<TAnnotation extends TileflowAnnotation = TileflowAnnotation>
           initialRuntimeStyle.theme === undefined
             ? undefined
             : createTileflowThemeController({
-                initial: initialRuntimeStyle,
+                initial: preparedAppearance,
                 map,
                 onTransition(transition) {
                   onThemeChangeRef.current?.(transition);

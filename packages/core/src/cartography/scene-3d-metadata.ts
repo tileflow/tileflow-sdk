@@ -1,3 +1,4 @@
+import {isColorProgramMarker, mapColorProgramsThrough} from '../color-program';
 // What a compiled style tells Core's 3D renderers about the map's 3D buildings and street lights:
 // their design from the buildings and roads modules, with the data's references still semantic
 // (the caller binds them with the rest of the style), the buildings' colour as the map's own final
@@ -66,7 +67,7 @@ export function tileflowBuildings3DDesignOf(
   const edgeColor =
     style.edgeColor === undefined ? undefined : toMapLibreStyleValue(style.edgeColor as never);
   const surfaces = isRecord(style.surfaces)
-    ? readTileflowBuildingSurfaces(
+    ? mapColorProgramsThrough(
         Object.fromEntries(
           Object.entries(style.surfaces).map(([key, entry]) => [
             key,
@@ -80,6 +81,7 @@ export function tileflowBuildings3DDesignOf(
               : entry,
           ]),
         ),
+        readTileflowBuildingSurfaces,
       )
     : undefined;
   return {
@@ -94,24 +96,29 @@ export function tileflowBuildings3DDesignOf(
     verticalGradient,
     edges: number(style.edges, 0),
     edgeRadius: number(style.edgeRadius, defaults.edgeRadius),
-    ...(typeof edgeColor === 'string' ? {edgeColor} : {}),
+    ...(typeof edgeColor === 'string' || isColorProgramMarker(edgeColor)
+      ? {edgeColor: edgeColor as unknown as string}
+      : {}),
     nightLight: number(style.nightLight, 0),
     ...(isRecord(style.floodLight)
       ? {
-          floodLight: readBuildingFloodLight({
-            ...style.floodLight,
-            intensity: number(style.floodLight.intensity, 0),
-            brightnessScale: number(style.floodLight.brightnessScale, 1),
-            color:
-              style.floodLight.color === undefined
-                ? undefined
-                : toMapLibreStyleValue(style.floodLight.color as never),
-          }),
+          floodLight: mapColorProgramsThrough(
+            {
+              ...style.floodLight,
+              intensity: number(style.floodLight.intensity, 0),
+              brightnessScale: number(style.floodLight.brightnessScale, 1),
+              color:
+                style.floodLight.color === undefined
+                  ? undefined
+                  : toMapLibreStyleValue(style.floodLight.color as never),
+            },
+            readBuildingFloodLight,
+          ),
         }
       : {}),
     ...(isRecord(style.modelLighting)
       ? {
-          modelLighting: readModelRoleLighting(
+          modelLighting: mapColorProgramsThrough(
             Object.fromEntries(
               Object.entries(style.modelLighting)
                 .filter(([, entry]) => isRecord(entry))
@@ -163,6 +170,7 @@ export function tileflowBuildings3DDesignOf(
                   ];
                 }),
             ),
+            readModelRoleLighting,
           ),
         }
       : {}),
@@ -250,7 +258,8 @@ function modelColours(value: unknown): {modelColors?: Record<string, string>} {
   const colours: Record<string, string> = {};
   for (const [part, colour] of Object.entries(value)) {
     const resolved = colour === undefined ? undefined : toMapLibreStyleValue(colour as never);
-    if (typeof resolved === 'string') colours[part] = resolved;
+    if (typeof resolved === 'string' || isColorProgramMarker(resolved))
+      colours[part] = resolved as unknown as string;
   }
   return Object.keys(colours).length > 0 ? {modelColors: colours} : {};
 }
@@ -284,7 +293,10 @@ export function tileflowStreetLightsDesignOf(
     },
     estimate:
       estimate === 'streets' || estimate === 'none' || estimate === 'lit' ? estimate : 'lit',
-    color: typeof color === 'string' ? color : tileflowDefaultStreetLightsDesign.color,
+    color:
+      typeof color === 'string' || isColorProgramMarker(color)
+        ? (color as unknown as string)
+        : tileflowDefaultStreetLightsDesign.color,
     intensity: typeof intensity === 'number' ? intensity : 1,
   };
 }

@@ -28,7 +28,7 @@ test('keeps MapLibre behind the interactive runtime boundary', async () => {
   const loader = await readFile(new URL('../src/maplibre.js', import.meta.url), 'utf8');
 
   assert.match(component, /loadTileflowMapLibre\(\)/u);
-  assert.match(component, /loadTileflowStyleFonts\(runtime\.style/u);
+  assert.match(component, /loadTileflowStyleFonts\(prepared\.style/u);
   assert.match(component, /registerTileflowContourProtocol/u);
   assert.ok(component.indexOf('loadTileflowStyleFonts') < component.indexOf('new maplibregl.Map'));
   assert.ok(

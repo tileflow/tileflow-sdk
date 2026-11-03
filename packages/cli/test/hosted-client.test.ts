@@ -36,7 +36,14 @@ test('Team credentials validate without a Project and Map operations send the ch
       apiUrl: 'https://api.example.test',
       mapId: 'map_AbCdEfGhIjKlMnOp',
     },
-    {},
+    {
+      artifact: {
+        kind: 'tileflow-map-deployment',
+        schemaVersion: 1,
+        styles: {light: {version: 8, sources: {}, layers: []}},
+        buildManifest: {maps: {main: {themes: {light: {}}, sourceAssets: {fonts: [], icons: []}}}},
+      },
+    },
     'Deploy',
     {
       fetch: (async (_url, init) => {

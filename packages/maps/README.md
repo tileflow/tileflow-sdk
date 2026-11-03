@@ -81,21 +81,19 @@ Streets has twelve theme/time combinations. Inspector offers **Default**, **Fade
 presets. Default retains the configuration key `light`: `theme="light" timeOfDay="night"`
 selects `dark`, while `theme="light" timeOfDay="day"` selects `light`. The other concrete themes
 are `dawn`, `dusk`, `faded`, `monochrome`, `dawn-faded`, `dawn-monochrome`, `dusk-faded`,
-`dusk-monochrome`, `dark-faded`, and `dark-monochrome`. Each combination selects a complete
-palette and artwork; time presets do not apply a global lighting tint to the flat map.
+`dusk-monochrome`, `dark-faded`, and `dark-monochrome`. All twelve appearances share roads, label placement, fonts and icon artwork.
+Colors and lighting vary; flat-map colors are authored independently.
 
 Scene lighting is calibrated against Mapbox Standard. Streets owns its cartography: slate-blue
 roads with stronger regional outlines, neutral urban surfaces, pale warm rural ground, green
 parks and subtle cream buildings. Its palette is not a fixed copy of the provider's reference
-colors. Day uses category-colored POI discs; dark mode uses pale discs with dark pictograms.
+colors. All appearances use the daylight map's category-colored POI discs and pictograms.
 Maki pictograms distinguish transport modes and POI types. Scene-sun lighting preserves
 unshadowed roof paint while allowing light color to affect walls.
 
-At regional scales, the default day theme uses a packaged, attributed climate underlay to
-separate humid and dry regions. It fades out by zoom 11, where mapped land cover and land use
-supply local detail. Climate is broad context, not a claim of surveyed vegetation at a specific
-site. The other themes retain their own authored land-cover palettes. Urban and education
-areas use neutral surfaces; farmland stays pale, while mapped orchards and nurseries remain
+The regional climate underlay is temporarily disabled while shared URL delivery is prepared;
+compiled styles omit its image source and raster layer. Themes use their authored land-cover
+palettes. Urban and education areas use neutral surfaces; farmland stays pale, while mapped orchards and nurseries remain
 green. Underground footprints flagged `hide_3d` are omitted from the flat building layers. Streets
 suspends duplicate flat building footprints in 3D so roads remain visible under open landmarks;
 2D mode restores ordinary footprints. Normal 3D buildings keep a small neutral/active tone difference. Authored models use
@@ -119,12 +117,12 @@ at junctions. Links remain narrower and draw before receiving roads. Tunnel casi
 surface and bridge casings are continuous. Construction fills and marks draw below roads in
 service. Crosswalks and compact blue-gray arrows fade in from z16.5.
 
-Daytime surface footpaths and cycleways use white strokes over mapped green ground and a
-muted gray-earth stroke elsewhere, at 92% of their authored width and without a casing.
+Surface footpaths and cycleways share geometry across appearances, at 92% of their authored
+width and without casings. Day uses white over mapped green ground and gray-earth elsewhere.
 The shared `roads.pathGround` compiler and browser protocol clip the green portions from the
 same vector tiles; a complete ground-colored path remains visible if context cannot load.
 Road carriageway outlines draw above these paths. This treatment belongs to the Streets
-definition and survives normal artifact regeneration; other themes retain their own path styles.
+definition and survives normal artifact regeneration in every palette and time preset.
 Road palettes, width profiles, building outlines and the overview backgrounds are authored here
 in Maps; consumers inherit them without installing a separately edited style snapshot.
 
@@ -150,10 +148,9 @@ Streets rounds exterior building corners with a 1.5-metre radius and softens the
 lighting transition (`threeDimensional.edgeRadius: 1.5`). Courtyards and tile cuts retain their shape.
 Shields use 9 px DINish Bold and closer spacing at z11–13. Street names yield to destinations
 and draw above flat footprints but below 3D buildings, with viewport-aligned letters.
-3D lights use Standard's effective theme presets, retrieved on 2026-10-18: southern sun by day,
-southeast at dawn, southwest at dusk and western moonlight at night. Monochrome has distinct
-directions and strengths. Tileflow holds zoom 14+ values; Standard varies intensity below z14.
-Shading differs; `controller.setSun({date, location})` uses the real sun instead of presets.
+3D lights use a southern sun by day, southeast at dawn, southwest at dusk and western moonlight
+at night. At each moment, palettes share light direction, strength and shadow geometry;
+only light colors change. `controller.setSun({date, location})` uses the real sun instead.
 Streets enables `camera.adaptivePerspective`. See camera, landmark and lighting settings in
 [3D buildings](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
 The buildings' `threeDimensional.lighting` and `shadows` options control the effect, and each
@@ -169,7 +166,8 @@ Pedestrian paths group separately. Compact types preserve language;
 `labels.roadNameFormat: 'full'` keeps source names.
 Disabling roads omits their names.
 Road rings, ramp and surface ordering use [Core's replaceable defaults](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md).
-Streets owns colors, widths, typography and time-of-day themes.
+All non-day themes grade day's ground, water, roads, trees and 2D/3D materials across zooms:
+yellow warmth at dawn, dimmer stone at dusk, cool night. Day palettes stay unchanged.
 Each theme paints a [street sky](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md) with night stars; `atmosphere: true`
 on a globe map adds space around it. Mercator and native targets remain supported.
 
@@ -327,7 +325,14 @@ concrete theme names remain available for existing applications and captures. Th
 is inherited when extending Streets without overriding it.
 See the [time-of-day contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md#style-with-themes-and-semantic-modules).
 
-Streets packages its low-zoom climate artwork and attribution, contrasted routes and compact trees.
-Models inherit ordinary-building shading. Glass parts can be recoloured independently through
-`modelColors.glass`; windows use `modelLighting.window.colorScale: 0.94`.
+Streets packages contrasted routes and compact trees. Climate artwork and its attribution are
+retained for future URL delivery, but the underlay is not included in compiled styles.
+When the 3D view is active, available buildings and models appear at full height from zoom 14.25
+without zoom entrance animations.
+Pitch is capped at 38° through zoom 15; closer views use the application's maximum.
+Daylight combines warm limestone buildings, ivory model surfaces, smoked-blue glazing and warm
+roof tones under warm sunlight and cool skylight. Models share ordinary-building shading, with
+soft contact shadows and ambient occlusion in recesses. Monochrome materials stay neutral.
+Glass parts can be recoloured independently through `modelColors.glass`; window roles retain
+that glass tint even on a shared stone part, with `modelLighting.window.colorScale: 0.96`.
 Other maps can override their colour and material without regenerating the model.

@@ -35,3 +35,20 @@ test('camera policy survives compilation and inheritance; false overrides a pare
     {},
   );
 });
+
+test('a zoom pitch limit survives compilation and rejects invalid limits', () => {
+  const pitchLimit = {maxZoom: 15, maxPitch: 38};
+  const parent = extendStreets({camera: {pitchLimit}, modules: {poi: disable()}});
+  const inherited = defineMap({id: 'limited-camera', version: 1, extends: parent});
+  assert.deepEqual(readTileflowCamera(createStyle(inherited).metadata), {pitchLimit});
+  for (const invalid of [
+    {maxZoom: 25, maxPitch: 38},
+    {maxZoom: 15, maxPitch: 90},
+  ]) {
+    assert.throws(() => parseTileflowMap({...parent, camera: {pitchLimit: invalid}}));
+    assert.deepEqual(
+      readTileflowCamera({[tileflowCameraMetadataKey]: {version: 1, pitchLimit: invalid}}),
+      {},
+    );
+  }
+});

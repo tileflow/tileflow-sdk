@@ -16,20 +16,11 @@ const preparedAssets = {
   },
 };
 
-test('continental context is portable, precedes cover and cannot tint city detail', () => {
+test('Streets omits the climate image until shared external delivery is available', () => {
   const style = createStyle(streets, {theme: 'light', preparedAssets});
-  const underlay = style.layers.findIndex((l) => l.id === 'tileflow-global-landcover-underlay');
-  assert.ok(
-    underlay > 0 && underlay < style.layers.findIndex((l) => l.id === 'tileflow-global-landcover'),
-  );
-  assert.equal(style.layers[underlay]!.maxzoom, 11);
-  const source = style.sources['tileflow-landcover-underlay'] as {
-    url: string;
-    coordinates: number[][];
-  };
-  assert.match(source.url, /^data:image\/png;base64,/);
-  assert.equal(source.coordinates[1]![0]! - source.coordinates[0]![0]!, 360);
-  assert.ok(source.coordinates[0]![1]! > 85 && source.coordinates[2]![1]! < -85);
+  assert.equal(style.sources['tileflow-landcover-underlay'], undefined);
+  assert.ok(!style.layers.some((layer) => layer.id === 'tileflow-global-landcover-underlay'));
+  assert.ok(!JSON.stringify(style.sources).includes('data:image/'));
   assert.ok(!JSON.stringify(style.sources).includes('localhost'));
   assert.ok(!JSON.stringify(style.sources).includes('127.0.0.1'));
 });

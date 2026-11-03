@@ -1616,9 +1616,10 @@ export function createTileflowBuildings3D(
         context.uniform4f(u.u_ring ?? null, ...ringIn(x, y));
         context.uniform2f(u.u_ring_ahead ?? null, ...ahead);
         context.uniform1i(u.u_ring_directional ?? null, camera.ring()?.fade ? 1 : 0);
+        // A cold/refreshed palette uploads a texture. Keep it off the shadow sampler on unit 0.
+        context.activeTexture(context.TEXTURE1);
         const palette = themes ? paletteOf(context, entry, themes.themes) : undefined;
         context.uniform1f(u.u_palette_on!, palette ? 1 : 0);
-        context.activeTexture(context.TEXTURE1);
         context.bindTexture(context.TEXTURE_2D, palette?.texture ?? blank ?? null);
         context.uniform1i(u.u_palette!, 1);
         if (palette && themes) {

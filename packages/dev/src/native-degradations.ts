@@ -39,7 +39,17 @@ export type NativeDegradedStyle = Readonly<{
   degradations: TileflowNativeDegradation[];
 }>;
 
-const contourProtocol = /^tileflow-contour:\/\//iu;
+/**
+ * Sources whose tiles Tileflow's browser runtime derives through a protocol. A record names the
+ * source as its subject; the native style leaves the source and its layers out.
+ */
+const derivedSourceProtocols = [
+  // Contour lines and labels generated from elevation tiles.
+  {protocol: /^tileflow-contour:\/\//iu, feature: 'deviceContours'},
+  // The green portions of paths, clipped to green ground; the complete ground-coloured paths
+  // drawn below them remain.
+  {protocol: /^tileflow-path-ground:\/\//iu, feature: 'pathGround'},
+] as const;
 /** Style metadata only Tileflow's browser 3D runtime reads; native styles do not carry it. */
 const sceneMetadataKeys = [
   tileflowBuildingsMetadataKey,
@@ -63,7 +73,8 @@ function object(value: unknown): Json | undefined {
  * representation lowering runs. The input is a compiled web style and is not modified.
  *
  * - Nautical lights shine steadily.
- * - Contour sources generated in the browser are removed with their layers.
+ * - Contour sources and the green path portions generated in the browser, and images embedded as
+ *   data URIs, are removed with their layers.
  * - The 3D scene: building extrusion passes are shown, or one is generated from the buildings
  *   design; landmarks, building models, 3D trees and street lights are recorded and their
  *   metadata dropped.
@@ -88,23 +99,28 @@ export function degradeTileflowNativeStyle(web: MapLibreStyle): NativeDegradedSt
   const metadata: Json = {...object(steady.metadata)};
   const sources: Json = {...object(steady.sources)};
 
-  // Contours generated in the browser: their sources and every layer drawing them.
-  const contourSources = Object.keys(sources)
-    .sort()
-    .filter((id) => {
-      const source = object(sources[id]);
-      const urls = [source?.url, ...(Array.isArray(source?.tiles) ? source.tiles : [])];
-      return urls.some((url) => typeof url === 'string' && contourProtocol.test(url));
-    });
+  // Sources native maps cannot load, with every layer drawing them: tiles the browser derives
+  // (contours, the green portions of paths) and images embedded as data URIs. Local builds write
+  // embedded images as files first; a Hosted map has no file to serve them from.
   const removed = new Set<number>();
-  for (const id of contourSources) {
+  for (const id of Object.keys(sources).sort()) {
+    const source = object(sources[id]);
+    const urls = [source?.url, ...(Array.isArray(source?.tiles) ? source.tiles : [])];
+    const feature =
+      derivedSourceProtocols.find(({protocol}) =>
+        urls.some((url) => typeof url === 'string' && protocol.test(url)),
+      )?.feature ??
+      (source?.type === 'image' && typeof source.url === 'string' && /^data:/iu.test(source.url)
+        ? 'embeddedImages'
+        : undefined);
+    if (!feature) continue;
     const layers = inputLayers.flatMap((layer, index) =>
       layer.source === id ? [{layer, index}] : [],
     );
     for (const {index} of layers) removed.add(index);
     delete sources[id];
     degradations.push(
-      createTileflowNativeDegradation('deviceContours', {
+      createTileflowNativeDegradation(feature, {
         subject: id,
         layers: layers.map(({layer}) => layer.id),
       }),

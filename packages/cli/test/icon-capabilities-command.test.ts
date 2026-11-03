@@ -148,9 +148,13 @@ test('validate, build and development reject the same mixed composition and reco
   await Promise.all(
     [
       'base-icons/health.svg',
-      ...['doctor', 'doctor-dark', 'doctor-monochrome', 'doctor-monochrome-dark'].map(
-        (name) => `base-icons/${name}.svg`,
-      ),
+      ...[
+        'doctor',
+        'unified-day-doctor',
+        'doctor-dark',
+        'doctor-monochrome',
+        'doctor-monochrome-dark',
+      ].map((name) => `base-icons/${name}.svg`),
       'icons/health.svg',
     ].map((file) => writeFile(join(cwd, file), svg)),
   );

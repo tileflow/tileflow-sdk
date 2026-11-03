@@ -4,6 +4,7 @@ import type {CompiledTileflowIconPackage} from '@tileflow/dev/icons';
 import type {CliAccountSession} from '../src/account-session';
 import {
   HostedDeploymentError,
+  pollDeviceToken,
   publishHostedRendererDeployment,
   requestHostedJson,
   requestMapCapability,
@@ -328,3 +329,107 @@ function compiledIconPackageFixture(): CompiledTileflowIconPackage {
     },
   };
 }
+
+const deviceAuthorization = {
+  apiUrl: 'https://api.example.test',
+  deviceCode: 'device_fixture',
+  expiresIn: 60,
+  interval: 1,
+  userCode: 'TESTCODE',
+  verificationUri: 'https://app.example.test/activate',
+  verificationUriComplete: 'https://app.example.test/activate?code=TESTCODE',
+};
+const deviceToken = {
+  account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
+  accountSession: `tf_session_${'a'.repeat(64)}`,
+  apiUrl: 'https://api.example.test',
+  createdAt: '2026-08-15T00:00:00.000Z',
+  expiresAt: '2026-12-01T00:00:00.000Z',
+  sessionId: 'cli_session_test',
+};
+
+test('device polling retries temporary failures with backoff and Retry-After using the same authorization', async () => {
+  let now = 0;
+  let calls = 0;
+  const waits: number[] = [];
+  const result = await pollDeviceToken(
+    'https://app.example.test',
+    deviceAuthorization,
+    {
+      codeVerifier: 'verifier',
+      now: () => now,
+      sleep: async (ms) => {
+        waits.push(ms);
+        now += ms;
+      },
+    },
+    {
+      fetch: (async (_url, init) => {
+        assert.deepEqual(JSON.parse(String(init?.body)), {
+          codeVerifier: 'verifier',
+          deviceCode: 'device_fixture',
+        });
+        calls++;
+        if (calls === 1) throw new TypeError('fetch failed');
+        if (calls === 2) return Response.json({}, {status: 503});
+        if (calls === 3) return Response.json({}, {status: 429, headers: {'Retry-After': '9'}});
+        if (calls === 4) return Response.json({error: 'authorization_pending'}, {status: 428});
+        return Response.json(deviceToken);
+      }) as typeof fetch,
+    },
+  );
+  assert.deepEqual(result, deviceToken);
+  assert.deepEqual(waits, [1000, 2000, 4000, 9000, 6000]);
+});
+
+test('device polling stops for rejected authorization and invalid grants without retrying', async () => {
+  for (const [error, status] of [
+    ['access_denied', 403],
+    ['invalid_grant', 400],
+  ] as const) {
+    let calls = 0;
+    await assert.rejects(
+      pollDeviceToken(
+        'https://app.example.test',
+        deviceAuthorization,
+        {codeVerifier: 'verifier', sleep: async () => {}},
+        {
+          fetch: (async () => {
+            calls++;
+            return Response.json({error}, {status});
+          }) as typeof fetch,
+        },
+      ),
+      /denied|failed/,
+    );
+    assert.equal(calls, 1);
+  }
+});
+
+test('device polling respects the original deadline and never sends a request after expiry', async () => {
+  let now = 0;
+  let calls = 0;
+  await assert.rejects(
+    pollDeviceToken(
+      'https://app.example.test',
+      deviceAuthorization,
+      {
+        codeVerifier: 'verifier',
+        expiresAt: 2500,
+        now: () => now,
+        sleep: async (ms) => {
+          now += ms;
+        },
+      },
+      {
+        fetch: (async () => {
+          calls++;
+          throw new DOMException('timeout', 'TimeoutError');
+        }) as typeof fetch,
+      },
+    ),
+    /expired/,
+  );
+  assert.equal(calls, 1);
+  assert.equal(now, 2500);
+});

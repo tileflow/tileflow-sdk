@@ -20,6 +20,22 @@ const view = (pitch: number, extra: Partial<Parameters<typeof tileflowSkyHaze>[0
 const close = (actual: number, expected: number, tolerance = 1e-6) =>
   assert.ok(Math.abs(actual - expected) <= tolerance, `${actual} is not ${expected}`);
 
+test('a view-aligned far boundary fits haze at the same depth across the viewport', () => {
+  for (const aspect of [0.5, 1, 2, 4])
+    close(
+      tileflowSkyReachDepth(
+        {pitch: 60, fov, aspect},
+        {
+          ahead: 0,
+          across: 0,
+          radius: 0,
+          forward: 3,
+        },
+      )!,
+      1 + 3 * Math.sin(Math.PI / 3),
+    );
+});
+
 test('the horizon line follows MapLibre 6.13: 85 % of the true horizon, at most 89.25° down', () => {
   close(tileflowSkyHorizon(60), Math.tan((30 * Math.PI) / 180) * 0.85);
   close(tileflowSkyHorizon(84), Math.tan((6 * Math.PI) / 180) * 0.85);

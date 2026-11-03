@@ -45,6 +45,7 @@ import {
   streetsIcons,
   streetsThemes,
 } from '../src';
+import {streetsDayColors} from '../src/official/streets-day-colors';
 import {streetsPreparedModels, streetsTreeIconIds} from './streets-assets';
 import {streetsPoiImageIds} from './streets-poi-fixture';
 import {standardCartographyReference as colorReference} from './streets-standard-cartography-fixture';
@@ -1116,7 +1117,7 @@ test('Streets road labels retain class thresholds and readable text below buildi
       contributions.some(({target}) => target === 'buildings.flat.fill'),
     )!.index;
     const buildingIndex = style.layers.findIndex(
-      ({id}) => id === 'tileflow-buildings-render-extrusion',
+      ({id}) => id === 'tileflow-buildings-native-extrusion',
     );
     const destinationIndex = style.layers.findIndex(({id}) => id === 'tileflow-poi');
     assert.ok(destinationIndex > buildingIndex);
@@ -1315,8 +1316,8 @@ test('Streets keeps its runtime-toggle geometry and business surface in the comp
   // Core's 3D buildings take the colour of Streets' 3D building pass; street lights stay off.
   const buildings3D = readTileflowBuildings3D(style.metadata);
   assert.ok(buildings3D, 'Streets lost its 3D buildings description');
-  const extrusion = byId.get('tileflow-buildings-render-extrusion');
-  assert.equal(buildings3D.color, extrusion?.paint?.['fill-extrusion-color']);
+  const extrusion = byId.get('tileflow-buildings-native-extrusion');
+  assert.deepEqual(buildings3D.color, extrusion?.paint?.['fill-extrusion-color']);
   assert.equal(buildings3D.layers.building, extrusion?.['source-layer']);
   assert.equal(buildings3D.windows, false);
   assert.equal(buildings3D.verticalGradient, true);
@@ -1381,7 +1382,7 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
   assert.equal(byId.has('tileflow-parking-symbol-label'), false);
 
   const expectedPoiTextColors = Object.fromEntries(
-    Object.entries(colorReference.colors['default-day'])
+    Object.entries({...colorReference.colors['default-day'], ...streetsDayColors})
       .filter(
         ([role]) =>
           role.startsWith('poi.') && !['poi.halo', 'poi.icon', 'poi.label'].includes(role),
@@ -1463,24 +1464,30 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
       ),
     );
   for (const [properties, expected] of [
-    [{category: 'transport', mode: 'subway', type: 'public_transit_facility'}, 'major-transit'],
-    [{category: 'transport', mode: 'train', type: 'train_station'}, 'rail'],
-    [{category: 'transport', mode: 'tram', type: 'tram_stop'}, 'rail-light'],
-    [{category: 'transport', mode: 'bus', type: 'bus_stop'}, 'bus'],
-    [{category: 'transport', mode: 'ferry', type: 'ferry_terminal'}, 'ferry'],
-    [{category: 'transport', mode: 'aerialway', type: 'ground_transport_facility'}, 'aerialway'],
-    [{category: 'transport', type: 'airport'}, 'airport'],
-    [{category: 'food-drink', type: 'bar'}, 'bar'],
-    [{category: 'food-drink', type: 'cafe'}, 'coffee'],
-    [{category: 'food-drink', type: 'restaurant'}, 'food'],
+    [
+      {category: 'transport', mode: 'subway', type: 'public_transit_facility'},
+      'unified-day-major-transit',
+    ],
+    [{category: 'transport', mode: 'train', type: 'train_station'}, 'unified-day-rail'],
+    [{category: 'transport', mode: 'tram', type: 'tram_stop'}, 'unified-day-rail-light'],
+    [{category: 'transport', mode: 'bus', type: 'bus_stop'}, 'unified-day-bus'],
+    [{category: 'transport', mode: 'ferry', type: 'ferry_terminal'}, 'unified-day-ferry'],
+    [
+      {category: 'transport', mode: 'aerialway', type: 'ground_transport_facility'},
+      'unified-day-aerialway',
+    ],
+    [{category: 'transport', type: 'airport'}, 'unified-day-airport'],
+    [{category: 'food-drink', type: 'bar'}, 'unified-day-bar'],
+    [{category: 'food-drink', type: 'cafe'}, 'unified-day-coffee'],
+    [{category: 'food-drink', type: 'restaurant'}, 'unified-day-food'],
     [{category: 'arts-entertainment', type: 'museum'}, 'culture'],
     [{category: 'arts-entertainment', type: 'art_gallery'}, 'art-gallery'],
-    [{category: 'retail', type: 'vehicle_dealer'}, 'car'],
-    [{category: 'retail', type: 'specialty_store'}, 'shopping'],
-    [{category: 'religion', type: 'christian_place_of_worship'}, 'christian'],
-    [{category: 'visitor-amenity', type: 'public_restroom'}, 'toilet'],
-    [{category: 'visitor-amenity', type: 'parking'}, 'parking'],
-    [{category: 'park-nature', type: 'park'}, 'nature'],
+    [{category: 'retail', type: 'vehicle_dealer'}, 'unified-day-car'],
+    [{category: 'retail', type: 'specialty_store'}, 'unified-day-shopping'],
+    [{category: 'religion', type: 'christian_place_of_worship'}, 'unified-day-christian'],
+    [{category: 'visitor-amenity', type: 'public_restroom'}, 'unified-day-toilet'],
+    [{category: 'visitor-amenity', type: 'parking'}, 'unified-day-parking'],
+    [{category: 'park-nature', type: 'park'}, 'unified-day-nature'],
   ] as const) {
     assert.equal(pictogram(properties), expected, JSON.stringify(properties));
   }
@@ -1496,15 +1503,46 @@ test('Streets buildings switch to native extrusions only without the flat render
       modules: {buildings: refine(buildings)},
     });
   assert.throws(() => compileOfficialMap(extend({mode: '3d'}), 'light'), {
-    code: 'unknown-or-circular-anchor',
+    code: 'unknown-refinement-target',
     message:
-      /beside buildings\.flat\.fill, which buildings draws only in mode 'flat'.*refine\(\{mode: '3d', renderStack: reset\(\)\}\)/u,
+      /targets buildings\.flat\.fill, which buildings draws only in mode 'flat'.*refine\(\{mode: '3d', renderStack: reset\(\)\}\)/u,
   });
 
   const layerIds = compileOfficialMap(extend({mode: '3d', renderStack: reset()}), 'light')
     .layers.map(({id}) => id)
     .filter((id) => id.startsWith('tileflow-buildings'));
-  assert.deepEqual(layerIds, ['tileflow-buildings-3d']);
+  assert.deepEqual(layerIds, ['tileflow-buildings-native-extrusion']);
+});
+
+test('Streets can compile native buildings and placed GLB models with distinct layer IDs', () => {
+  const map = defineMap({
+    id: 'streets-with-model',
+    version: 1,
+    extends: streets,
+    modules: {
+      buildings: refine({
+        mode: '3d',
+        renderStack: reset(),
+        threeDimensional: {
+          models: [
+            {model: 'tower', url: 'https://example.com/models/tower.glb', at: [2.2945, 48.8583]},
+          ],
+        },
+      }),
+    },
+  });
+  const style = compileOfficialMap(map, 'light');
+  assert.ok(
+    style.layers.some(
+      ({id, type}) => id === 'tileflow-buildings-native-extrusion' && type === 'fill-extrusion',
+    ),
+  );
+  assert.equal(
+    style.layers.some(({id}) => id === 'tileflow-buildings-scene-3d'),
+    false,
+  );
+  assert.equal(readTileflowBuildings3D(style.metadata)?.models?.[0]?.model, 'tower');
+  assert.deepEqual(validateStyleMin(style as never), []);
 });
 
 test('Streets colours the water, vegetation and wood parts of models in every theme', () => {
@@ -1523,6 +1561,9 @@ test('Streets colours the water, vegetation and wood parts of models in every th
       resolveMap(streets).themes[theme]!.tokens.color['hydro.water'],
     );
     assert.equal(buildings.modelLighting?.unclassified?.emissiveStrength, 0);
-    assert.equal(buildings.modelColors.glass, undefined);
+    assert.equal(
+      buildings.modelColors.glass,
+      resolveMap(streets).themes[theme]!.tokens.color['buildings.modelGlass'],
+    );
   }
 });

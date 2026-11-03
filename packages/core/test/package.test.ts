@@ -43,7 +43,7 @@ test('declares the browser entry without exposing it from the package root', asy
   assert.equal(manifest.exports['./package.json'], './package.json');
   assert.equal(manifest.exports['./maps'], undefined);
   assert.equal(Object.hasOwn(manifest.exports['.'] as object, 'browser'), false);
-  assert.deepEqual(manifest.files, ['dist', 'docs', 'LICENSE', 'THIRD_PARTY_NOTICES.md']);
+  assert.deepEqual(manifest.files, ['dist', 'LICENSE', 'THIRD_PARTY_NOTICES.md']);
 });
 
 test('imports the packaged manifest and runtime boundaries without browser globals', async () => {
@@ -74,7 +74,7 @@ test('keeps config compilation out of runtime and browser bundles', async () => 
 test('ships notices for every third-party component embedded in the browser entry', async () => {
   const notices = await readFile(new URL('../THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8');
   for (const requiredNotice of [
-    'maplibre-contour 0.1.0',
+    'maplibre-contour 0.1.1',
     'PMTiles 4.5.0',
     'fflate 0.8.3',
     'd3-contour',

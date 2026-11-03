@@ -63,6 +63,8 @@ test('prepares every official theme, recording what each native artifact draws d
     'scene3d:extrusions',
     'sky:none',
     'trees3d:none',
+    // Only themes that colour paths on green ground derive their green portions.
+    'pathGround:tileflow-path-ground:none',
   ]);
   assert.deepEqual(degradations('map-1777'), [
     'models3d:extrusions',

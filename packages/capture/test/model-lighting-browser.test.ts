@@ -27,6 +27,7 @@ out vec3 v_shadow;
 out float v_light;
 flat out int v_lighting_role;
 out float v_height;
+out float v_ground_height;
 out vec4 v_uv;
 out vec4 v_rgba;
 out vec3 v_position;
@@ -42,6 +43,7 @@ void main() {
   v_shadow = vec3(0.5);
   v_light = u_test_visibility;
   v_lighting_role = u_test_role;
+  v_ground_height = 10.0;
   v_height = u_test_height;
   v_uv = vec4(0.0);
   v_rgba = vec4(1.0);
@@ -65,8 +67,10 @@ void main() {
         gl.useProgram(program);
         const scalar = (name: string, value: number) =>
           gl.uniform1f(gl.getUniformLocation(program, name), value);
-        for (let role = 0; role < 7; role++)
+        for (let role = 0; role < 7; role++) {
           gl.uniform3f(gl.getUniformLocation(program, `u_role_appearance[${role}]`), 0, 1, 1);
+          scalar(`u_role_color_scale[${role}]`, 1);
+        }
         scalar('u_ambient_occlusion', 1);
         for (let channel = 0; channel < 5; channel++)
           gl.uniform1i(gl.getUniformLocation(program, `u_material_texture${channel}`), 1);

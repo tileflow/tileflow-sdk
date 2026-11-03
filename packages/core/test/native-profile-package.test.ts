@@ -17,7 +17,7 @@ test('publishes a build-only profile entry without widening the root or native U
     default: './dist/native-profile.js',
   });
   assert.equal(manifest.dependencies['@maplibre/maplibre-gl-style-spec'], '24.8.5');
-  assert.deepEqual(manifest.files, ['dist', 'docs', 'LICENSE', 'THIRD_PARTY_NOTICES.md']);
+  assert.deepEqual(manifest.files, ['dist', 'LICENSE', 'THIRD_PARTY_NOTICES.md']);
   const declarations = await readFile(new URL('dist/native-profile.d.ts', packageRoot), 'utf8');
   for (const name of [
     'tileflowNativeProfileSchema',

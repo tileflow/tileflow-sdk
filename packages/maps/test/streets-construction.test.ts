@@ -44,7 +44,7 @@ test('Streets construction roads have square transverse marks over a faint conti
     assert.ok(path);
     const footpath = {class: 'path_construction', subclass: 'footway'};
     assert.deepEqual(paint(path, 'line-dasharray', 18, footpath), [1.5, 1]);
-    assert.equal(paint(path, 'line-opacity', 18, footpath), 0.96);
+    assert.equal(paint(path, 'line-opacity', 18, footpath), theme === undefined ? 1 : 0.96);
     const marks = style.layers.filter(
       (layer): layer is LineLayerSpecification =>
         layer.type === 'line' &&

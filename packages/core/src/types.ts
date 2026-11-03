@@ -342,6 +342,14 @@ export type TileflowRoadsModuleConfig = {
   modifiers?: Partial<Record<TileflowRoadModifier, TileflowRoadTreatmentStyle>>;
   mountainBike?: Partial<Record<TileflowMountainBikeScale, TileflowRoadTreatmentStyle>>;
   oneWayMarkers?: boolean;
+  /** Surface paths keep a ground-coloured fallback and white/green-ground clipped strokes. */
+  pathGround?: {
+    greenColor: TileflowThemeColorValue;
+    groundColor: TileflowThemeColorValue;
+    /** Zero disables derivation in this theme. */
+    opacity?: TileflowThemeNumberValue;
+    widthScale?: TileflowThemeNumberValue;
+  };
   outline?: TileflowRoadOutline;
   /** Draw ramp fills below receiving roads by default; `by-class` keeps their class's order. */
   rampOrder?: 'below-roads' | 'by-class';

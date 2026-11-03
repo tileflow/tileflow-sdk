@@ -16,6 +16,8 @@ export type TileflowBuildingMode = '3d' | 'flat';
 export type TileflowBuildingsThreeDimensionalStyle = {
   /** Use the scene sun (default), or the style's native extrusion light. */
   lighting?: 'style' | 'sun';
+  /** Keep flat footprints beneath 3D buildings (default true); false restores them in 2D. */
+  flatFootprints?: boolean;
   /** Per-building brightness variation, from 0 to 1; defaults to 0 (authored colour). */
   colorVariation?: TileflowThemeNumberValue;
   /** How strongly roof outlines and outer corners catch the light, from 0 (default) to 1. */
@@ -61,6 +63,8 @@ export type TileflowBuildingsThreeDimensionalStyle = {
         /** Physical-material tint. Explicit modelColors take precedence. */
         color?: TileflowThemeColorValue;
         colorMix?: TileflowThemeNumberValue;
+        /** Relative brightness after role/part colours, from zero to one; defaults to one. */
+        colorScale?: TileflowThemeNumberValue;
         metallic?: TileflowThemeNumberValue;
         roughness?: TileflowThemeNumberValue;
         /** Normalize matte light to ordinary buildings, or retain physical glTF lighting (default). */
@@ -90,6 +94,8 @@ export type TileflowBuildingsThreeDimensionalStyle = {
   occlusion?: boolean;
   /** Ground contact shadow strength, from 0 to 1; defaults to 0.16. Facade shading is independent. */
   groundOcclusion?: TileflowThemeNumberValue;
+  /** Ground contact shadow reach in metres, from 0 to 20; defaults to 3. Zero hides it. */
+  groundOcclusionRadius?: TileflowThemeNumberValue;
   /** Prepared model ambient occlusion strength, from 0 to 1; defaults to 0.75. */
   modelOcclusion?: TileflowThemeNumberValue;
   /** Shadows from the sun, on the buildings and the flat map; defaults to true. */

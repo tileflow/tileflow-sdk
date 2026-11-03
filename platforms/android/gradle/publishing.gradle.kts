@@ -3,7 +3,7 @@
 // A library applies this script after its Android, Kotlin and Dokka plugins. Coordinates, names
 // and descriptions come from `platforms/native-release.json`, which the release scripts read too.
 // Builds only ever write to a local `file:` repository; signing and upload to Maven Central happen
-// later, on the exact files this produces (see PUBLISHING.md).
+// later, on the exact files this produces.
 import groovy.json.JsonSlurper
 
 apply(plugin = "maven-publish")

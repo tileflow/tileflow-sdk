@@ -114,6 +114,3 @@ Direct MapLibre consumers can use `createTileflowMapLibreDomRuntime` for annotat
 objects and schedulers are injected at attach time, so both subpath imports remain SSR-safe.
 `createTileflowMapLibreInteractionCoordinator` joins them around one controlled or uncontrolled
 popup state and commits the closing runtime before the opening runtime.
-
-See [`docs/contracts/map-interactions.md`](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/map-interactions.md) for lifecycle,
-accessibility, security, capture, and framework parity requirements.

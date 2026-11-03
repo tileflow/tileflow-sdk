@@ -10,6 +10,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -130,20 +131,33 @@ public class AnnotationIntegrationTest {
             delay(300)
             assertEquals("The application did not receive the taken tap.", before, appTaps())
             // A tap beside the annotation reaches the application.
-            touch(map, point.x + 200f, point.y + 200f)
+            touch(map, point.x + map.width / 4f, point.y + map.height / 4f)
             until("the application received a tap") { appTaps() > before }
 
             // A pan that starts on the draggable annotation moves it, not the map.
             val camera = map.currentCamera!!
-            touch(map, point.x, point.y, dx = 15f, dy = 10f, steps = 10)
+            val dragX = minOf(150f, map.width / 4f)
+            val dragY = minOf(100f, map.height / 4f)
+            touch(map, point.x, point.y, dx = dragX / 10, dy = dragY / 10, steps = 10)
             until("the drag ended") { dropped.isNotEmpty() }
-            val target = map.unproject(TileflowPoint(point.x + 150f, point.y + 100f))
+            val target = map.unproject(TileflowPoint(point.x + dragX, point.y + dragY))
             assertEquals(target.longitude, dropped.single().longitude, 1e-4)
             assertEquals(target.latitude, dropped.single().latitude, 1e-4)
             assertEquals(camera, map.currentCamera)
-            val moved =
-                map.querySourceFeatures("spots").single().feature.geometry as TileflowGeometry.Point
-            assertEquals(target.longitude, moved.coordinate.longitude, 1e-4)
+            // Source queries read the renderer's worker tiles. The drag callback is immediate,
+            // while its final GeoJSON update can still be in flight to that worker.
+            var moved: TileflowGeometry.Point? = null
+            until("the source has processed the released geometry") {
+                moved =
+                    map.querySourceFeatures("spots").singleOrNull()?.feature?.geometry
+                        as? TileflowGeometry.Point
+                moved?.coordinate?.let {
+                    abs(target.longitude - it.longitude) < 1e-4 &&
+                        abs(target.latitude - it.latitude) < 1e-4
+                } == true
+            }
+            assertEquals(target.longitude, moved!!.coordinate.longitude, 1e-4)
+            assertEquals(target.latitude, moved!!.coordinate.latitude, 1e-4)
         }
     }
 
@@ -178,6 +192,28 @@ public class AnnotationIntegrationTest {
             overlay.delivery.clear()
             val skew =
                 suspendJavascript(map, "Date.now() - (performance.timeOrigin + performance.now())")
+            suspendJavascript(
+                map,
+                """
+                (() => {
+                    const channel = window.tileflowNative;
+                    const send = channel.postMessage.bind(channel);
+                    const samples = window.tileflowTrackingTiming = {beforeSend: [], longTasks: []};
+                    const measured = message => {
+                        const event = JSON.parse(message);
+                        if (event.event === 'trackedPointsMoved') {
+                            samples.beforeSend.push(performance.timeOrigin + performance.now() - event.result.time);
+                        }
+                        send(message);
+                    };
+                    channel.postMessage = measured;
+                    samples.installed = channel.postMessage === measured;
+                    new PerformanceObserver(list => {
+                        samples.longTasks.push(...list.getEntries().map(entry => entry.duration));
+                    }).observe({type: 'longtask'});
+                })()
+                """.trimIndent(),
+            )
             // Pan by the view's width in half a second, back and forth.
             val width = bounds.east - bounds.west
             val started = SystemClock.uptimeMillis()
@@ -221,6 +257,13 @@ public class AnnotationIntegrationTest {
             println(
                 "Tileflow: delivery to the main thread p50 %.1f ms, p95 %.1f ms; renderer clock skew %s ms"
                     .format(overlay.delivery.percentile(0.5), overlay.delivery.percentile(0.95), skew)
+            )
+            println(
+                "Tileflow: renderer timing " +
+                    suspendJavascript(
+                        map,
+                        "JSON.stringify({...window.tileflowTrackingTiming, clockSkewAfter: Date.now() - (performance.timeOrigin + performance.now())})",
+                    )
             )
             assertTrue("Too few position updates: ${lag.count}", lag.count >= 30)
             assertTrue("Lag p95 $p95 ms", p95 < 100)

@@ -542,7 +542,7 @@ class DelayedStyleSwitchMap {
 test('ships the pinned contour generator inside the browser entry without a CDN runtime', async () => {
   const browserEntry = await readFile(new URL('../dist/browser.js', import.meta.url), 'utf8');
 
-  assert.match(browserEntry, /maplibre-contour@0\.1\.0/u);
+  assert.match(browserEntry, /maplibre-contour@0\.1\.1/u);
   assert.doesNotMatch(browserEntry, /unpkg\.com/u);
   assert.doesNotMatch(browserEntry, /import\(["']maplibre-contour["']\)/u);
 });
@@ -837,6 +837,29 @@ const exactBrowserWorldUrl =
   `https://cdn.tileflow.dev/tiles/world/world-v1-release-browser/0/0/0.pbf?` +
   `worldDescriptorSha256=${'a'.repeat(64)}&map=map_public`;
 const retiredMutableWorldUrl = 'https://world.tileflow.dev/world/v1/0/0/0.pbf';
+
+test('World bridge calls the default browser fetch with its global receiver', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = function (this: unknown, ...args: Parameters<typeof fetch>) {
+    assert.equal(this, globalThis);
+    assert.equal(args[0], exactBrowserWorldUrl);
+    assert.equal(args[1]?.credentials, 'omit');
+    return Promise.resolve(new Response(new Uint8Array([1, 2, 3])));
+  };
+  let bridge: ReturnType<typeof registerTileflowWorldRequestBridge> | undefined;
+  try {
+    const registered = registerTestWorldBridge({});
+    bridge = registered.bridge;
+    const result = await registered.protocolHandler(
+      {url: bridge.rewriteUrl(exactBrowserWorldUrl)},
+      new AbortController(),
+    );
+    assert.equal(result.data.byteLength, 3);
+  } finally {
+    bridge?.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});
 
 test('World bridge follows signed notice activation and shapes an empty tile', async () => {
   const notices: Array<TileflowFairUseNotice | null> = [];
@@ -1515,7 +1538,7 @@ test('transform request is always installed, a no-op without work, and propagate
 });
 
 function registerTestWorldBridge(input: {
-  fetch: typeof fetch;
+  fetch?: typeof fetch;
   now?: () => number;
   onNotice?: (notice: TileflowFairUseNotice | null) => void;
 }): {

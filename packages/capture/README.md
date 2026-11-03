@@ -116,7 +116,7 @@ per-user browser cache.
 
 ## Render a timed shot
 
-A [capture shot](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)
+A [capture shot](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md)
 is a committed camera move with keyframes and an optional theme blend. This module assumes a
 `dusk-flyover` shot in `tileflow.config.ts` and writes its WebM video and receipt:
 
@@ -255,8 +255,6 @@ requiring compatible framing, renderer, and data identity. It accepts captures w
 retained `definition`; when present, that definition must match the explicit review definition.
 `analyzeTileflowCaptureReference` analyzes
 an external PNG without claiming receipt compatibility. Neither operation approves a baseline.
-See the [receipt and comparison reference](https://github.com/tileflow/tileflow-sdk/blob/main/packages/capture/docs/receipts-and-comparison.md),
-also included under `docs/` in the installed package, for identities, metrics, and limits.
 
 ## Errors, receipts, and reproducibility
 
@@ -274,6 +272,5 @@ available tiles while preserving the scene camera. Retries reuse the same frozen
 Remote-dependent rendering is not a guarantee of globally identical pixels
 across platforms or future runs.
 
-Read the [capture contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/local-visual-capture.md)
-for durable behavior and [third-party notices](https://github.com/tileflow/tileflow-sdk/blob/main/packages/capture/THIRD_PARTY_NOTICES.md)
-for runtime licenses. For release-specific behavior, prefer installed declarations and docs over `main`.
+Read [third-party notices](https://github.com/tileflow/tileflow-sdk/blob/main/packages/capture/THIRD_PARTY_NOTICES.md)
+for runtime licenses. For release-specific behavior, prefer installed README and declarations over `main`.

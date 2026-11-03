@@ -72,7 +72,13 @@ const nineTenths = 0.804_2;
  * A disc the 3D city covers whole, relative to the map's centre and in camera distances: how far
  * its centre lies ahead along the view and across it to the right, and its radius.
  */
-export type TileflowSkyHazeReach = Readonly<{ahead: number; across: number; radius: number}>;
+export type TileflowSkyHazeReach = Readonly<{
+  ahead: number;
+  across: number;
+  radius: number;
+  /** View-aligned far boundary from the map centre, in camera distances. */
+  forward?: number;
+}>;
 
 /**
  * The nearest view depth, in camera distances, at which the 3D city's edge shows: where rays across
@@ -84,6 +90,7 @@ export function tileflowSkyReachDepth(
   reach: TileflowSkyHazeReach,
 ): number | undefined {
   const sin = Math.sin(radians(view.pitch));
+  if (reach.forward !== undefined) return 1 + reach.forward * sin;
   const cos = Math.cos(radians(view.pitch));
   // The camera stands a camera distance from the centre: back along the view and up.
   const back = -sin;

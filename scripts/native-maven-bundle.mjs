@@ -535,13 +535,13 @@ async function main() {
     const body = await response.text();
     if (!response.ok || !body.includes('BEGIN PGP PUBLIC KEY BLOCK')) {
       throw new Error(
-        `The public key ${fingerprint} is not on keyserver.ubuntu.com, so Maven Central cannot verify the signatures. Publish it first (PUBLISHING.md).`,
+        `The public key ${fingerprint} is not on keyserver.ubuntu.com, so Maven Central cannot verify the signatures. Publish the signing public key before releasing.`,
       );
     }
     console.log(`Public key ${fingerprint} is available from keyserver.ubuntu.com.`);
   } else {
     throw new Error(
-      'Usage: native-maven-bundle.mjs validate|import-key|bundle|keyserver [options] (see PUBLISHING.md)',
+      'Usage: native-maven-bundle.mjs validate|import-key|bundle|keyserver [options]',
     );
   }
 }

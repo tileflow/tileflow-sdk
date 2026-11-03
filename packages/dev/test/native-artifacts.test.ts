@@ -325,9 +325,17 @@ test('records terrain displacement as a degradation instead of failing', async (
       const receipt = native.nativeBuild!.transformations.find((item) => item.theme === theme)!;
       assert.deepEqual(receipt.degradations, ids);
     }
+    // The family lists themes in declared order, the record by name.
     assert.deepEqual(
-      native.nativeFamilies?.main?.themes.map(({degradations}) => degradations.map(({id}) => id)),
-      native.nativeBuild!.transformations.map(({degradations}) => degradations),
+      Object.fromEntries(
+        native.nativeFamilies!.main!.themes.map(({name, degradations}) => [
+          name,
+          degradations.map(({id}) => id),
+        ]),
+      ),
+      Object.fromEntries(
+        native.nativeBuild!.transformations.map(({theme, degradations}) => [theme, degradations]),
+      ),
     );
   } finally {
     await disposeTileflowBuildArtifacts(native);

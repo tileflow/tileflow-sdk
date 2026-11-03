@@ -28,7 +28,6 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "docs",
     "THIRD_PARTY_NOTICES.md",
     "LICENSE"
   ],
@@ -60,7 +59,7 @@
   "dependencies": {
     "@tileflow/core": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
     "@tileflow/dev": "workspace:>=0.1.0-alpha.16 <0.1.0-beta.0",
-    "maplibre-gl": "6.13.0",
+    "maplibre-gl": "6.16.0",
     "pixelmatch": "7.2.0",
     "playwright": "1.62.1",
     "pngjs": "7.0.0"
@@ -74,7 +73,7 @@
     "@tileflow/vite": "workspace:*",
     "@tileflow/vue": "workspace:*",
     "@tileflow/webpack": "workspace:*",
-    "@types/node": "^25.9.2",
+    "@types/node": "^26.6.5",
     "@types/pngjs": "6.0.5",
     "@vitejs/plugin-vue": "^6.0.8",
     "maplibre-gl-min": "npm:maplibre-gl@6.4.1",

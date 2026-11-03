@@ -53,6 +53,10 @@ export default defineMap({
   },
   modules: {
     addresses: disable(),
+    // MapLibre Native requests an image source only while one of its layers is inside its zoom
+    // range, and reports a map loaded only once every source has loaded: Streets' climate
+    // underlay, drawn up to z11, would keep these city-zoom maps from ever becoming ready.
+    land: {type: 'land', globalLandcover: {visible: false}},
     aeroways: disable(),
     boundaries: disable(),
     landforms: disable(),

@@ -250,6 +250,28 @@ test('a pan that starts on a draggable annotation drags it, keeping it under the
   assert.equal(run.events.at(-1)?.[1].phase, 'ended');
 });
 
+test('a drag ends at the released position even when the last move was coalesced', () => {
+  const run = harness({
+    hits: [{layer: 'pins', source: 'pin-source', id: 'pin', properties: {draggable: true}}],
+  });
+  run.controller.setLayers({layers: ['pins']});
+  run.pointer('pointerdown', 120, 30);
+  run.pointer('pointermove', 140, 40);
+  // WebView may deliver the release before a move at the final finger position.
+  run.pointer('pointerup', 150, 50);
+  run.flush();
+  assert.deepEqual(run.moves.at(-1)?.[2], {type: 'Point', coordinates: [5, 5]});
+  assert.deepEqual(run.events.at(-1)?.[1], {
+    phase: 'ended',
+    layer: 'pins',
+    id: 'pin',
+    geometry: {type: 'Point', coordinates: [5, 5]},
+    point: {x: 150, y: 50},
+  });
+  assert.equal(run.pan(), true);
+  assert.equal(run.controller.dragging, false);
+});
+
 test('every position of a dragged line moves with the finger', () => {
   const run = harness({
     hits: [{layer: 'routes', source: 'routes', id: 'line', properties: {draggable: true}}],

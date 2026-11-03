@@ -1,0 +1,9 @@
+Historical Köppen–Geiger climate classification, 1991–2020.
+Beck et al. (2023), https://doi.org/10.1038/s41597-023-02549-6
+Source: https://www.gloh2o.org/koppen/
+Archive: https://ndownloader.figshare.com/files/61012822
+Archive MD5: 7fc2f5a15d4f5fe0ce59c9a9b502aa09
+License: Creative Commons Attribution 4.0 International.
+https://creativecommons.org/licenses/by/4.0/
+Adaptation: historical classes mapped to a crop-colour proxy, spatially smoothed,
+reprojected to Web Mercator and tiled. No real-time vegetation is inferred.

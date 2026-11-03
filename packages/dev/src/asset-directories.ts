@@ -105,7 +105,11 @@ export async function resolveTileflowAssetDirectories(
       let packageRoot: string;
       try {
         validatePackageDirectory(directory);
-        const requireFromProject = createRequire(resolve(realCwd, '__tileflow_config__.cjs'));
+        // Resolve from the actual config, as Node resolves its imports. This also finds
+        // workspace links when the selected working tree includes sibling packages.
+        const requireFromProject = createRequire(
+          resolve(realBaseDirectory, '__tileflow_config__.cjs'),
+        );
         let packageJson: string;
         try {
           packageJson = requireFromProject.resolve(`${directory.package}/package.json`);
@@ -160,7 +164,10 @@ export async function resolveTileflowAssetDirectories(
         containmentRoot,
         packageOwned,
         realPath: realCandidate,
-        watch: !packageOwned,
+        watch:
+          !packageOwned ||
+          (isPathInside(realCwd, realCandidate) &&
+            !realCandidate.split(/[\\/]/u).includes('node_modules')),
       });
     } catch (error) {
       issues.push({

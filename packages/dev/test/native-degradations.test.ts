@@ -96,6 +96,82 @@ test('leaves out browser contours with their layers and records each change', ()
   });
 });
 
+test('leaves out the green path portions the browser derives and keeps the complete paths', () => {
+  const derived = {
+    type: 'vector',
+    url: `tileflow-path-ground://source/index.json?source=${encodeURIComponent(JSON.stringify({url: world.url}))}`,
+  };
+  const input = style({
+    sources: {world, 'tileflow-path-ground': derived},
+    layers: [
+      {id: 'path', type: 'line', source: 'world', 'source-layer': 'transportation'},
+      {
+        id: 'path-on-green',
+        type: 'line',
+        source: 'tileflow-path-ground',
+        'source-layer': 'transportation',
+      },
+      {id: 'labels', type: 'symbol', source: 'world', 'source-layer': 'place'},
+    ],
+    metadata: {},
+  });
+  const result = degradeTileflowNativeStyle(input);
+  assert.deepEqual(Object.keys(result.style.sources), ['world']);
+  assert.deepEqual(result.removedLayers, [1]);
+  assert.deepEqual(result.inputIndexes, [0, 2]);
+  assert.deepEqual(
+    result.degradations.map(({id, feature, reason, fallback, layers}) => [
+      id,
+      feature,
+      reason,
+      fallback,
+      layers,
+    ]),
+    [['pathGround:tileflow-path-ground', 'pathGround', 'web-runtime', 'none', ['path-on-green']]],
+  );
+});
+
+test('leaves out images embedded as data URIs, which native maps cannot load', () => {
+  const input = style({
+    sources: {
+      world,
+      underlay: {
+        type: 'image',
+        url: 'data:image/png;base64,iVBORw0KGgo=',
+        coordinates: [
+          [-180, 85],
+          [180, 85],
+          [180, -85],
+          [-180, -85],
+        ],
+      },
+      file: {
+        type: 'image',
+        url: '../../images/main/underlay.png',
+        coordinates: [
+          [-180, 85],
+          [180, 85],
+          [180, -85],
+          [-180, -85],
+        ],
+      },
+    },
+    layers: [
+      {id: 'background', type: 'background'},
+      {id: 'underlay', type: 'raster', source: 'underlay'},
+      {id: 'file', type: 'raster', source: 'file'},
+    ],
+    metadata: {},
+  } as never);
+  const result = degradeTileflowNativeStyle(input);
+  assert.deepEqual(Object.keys(result.style.sources), ['world', 'file']);
+  assert.deepEqual(result.removedLayers, [1]);
+  assert.deepEqual(
+    result.degradations.map(({id, reason, fallback, layers}) => [id, reason, fallback, layers]),
+    [['embeddedImages:underlay', 'engine-unsupported', 'none', ['underlay']]],
+  );
+});
+
 test('generates the building extrusion from the map’s 3D buildings design', () => {
   const extrusion = degradeTileflowNativeStyle(style()).style.layers[2]!;
   assert.deepEqual(extrusion, {

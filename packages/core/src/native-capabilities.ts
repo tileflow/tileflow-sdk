@@ -71,6 +71,20 @@ export const tileflowNativeCapabilities = Object.freeze({
     description:
       'Contour lines and their labels are generated from elevation tiles in the browser; native maps do not draw them.',
   }),
+  pathGround: Object.freeze({
+    detection: 'artifact',
+    reason: 'web-runtime',
+    fallback: 'none',
+    description:
+      'Paths keep their ground colour across parks and other green areas: the green portions are clipped from vector tiles in the browser.',
+  }),
+  embeddedImages: Object.freeze({
+    detection: 'artifact',
+    reason: 'engine-unsupported',
+    fallback: 'none',
+    description:
+      'Images embedded in the style as data URIs are not drawn: MapLibre Native loads images only from URLs. Local native builds write them as files instead.',
+  }),
   nauticalLightRhythm: Object.freeze({
     detection: 'artifact',
     reason: 'web-runtime',

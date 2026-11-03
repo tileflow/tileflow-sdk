@@ -5,6 +5,7 @@ import {serializeCanonicalJson} from '@tileflow/core';
 import {inspectTileflowPmtiles} from '@tileflow/dev/tilesets';
 import type {AuthConfig} from './account-session';
 import {requestHostedJson} from './hosted-client';
+import {hostedApiKeyOption, hostedApiUrlOption} from './hosted-options';
 import {
   authorizedTeamRequest,
   emitFailure,
@@ -101,8 +102,8 @@ export function registerTilesetCommands(
     .option('--name <name>', 'display name')
     .option('--attribution <text>', 'data attribution')
     .option('--team <team>', 'target Team as @team')
-    .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
-    .option('--api-key <key>', 'Team data API key', process.env.TILEFLOW_API_KEY)
+    .addOption(hostedApiUrlOption())
+    .addOption(hostedApiKeyOption('Team data API key'))
     .option('--json', 'print deterministic schema-version-2 JSON')
     .action(
       async (
@@ -211,8 +212,8 @@ export function registerTilesetCommands(
     .command('list')
     .description('List tilesets owned by one Team')
     .option('--team <team>', 'target Team as @team')
-    .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
-    .option('--api-key <key>', 'Team data API key', process.env.TILEFLOW_API_KEY)
+    .addOption(hostedApiUrlOption())
+    .addOption(hostedApiKeyOption('Team data API key'))
     .option('--json', 'print deterministic schema-version-1 JSON')
     .action(async (options: HostedTilesetOptions) => {
       try {
@@ -235,8 +236,8 @@ export function registerTilesetCommands(
     .description('Show one Team tileset')
     .argument('<id>', 'Team-local logical ID or opaque resource ID')
     .option('--team <team>', 'target Team as @team')
-    .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
-    .option('--api-key <key>', 'Team data API key', process.env.TILEFLOW_API_KEY)
+    .addOption(hostedApiUrlOption())
+    .addOption(hostedApiKeyOption('Team data API key'))
     .option('--json', 'print deterministic schema-version-1 JSON')
     .action(async (id: string, options: HostedTilesetOptions) => {
       try {
@@ -274,8 +275,8 @@ export function registerTilesetCommands(
     .argument('<id>', 'Team-local logical ID or opaque resource ID')
     .requiredOption('--confirm <id>', 'repeat the exact tileset ID')
     .option('--team <team>', 'target Team as @team')
-    .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
-    .option('--api-key <key>', 'Team data API key', process.env.TILEFLOW_API_KEY)
+    .addOption(hostedApiUrlOption())
+    .addOption(hostedApiKeyOption('Team data API key'))
     .option('--json', 'print deterministic schema-version-1 JSON')
     .action(async (id: string, options: HostedTilesetOptions & {confirm: string}) => {
       try {

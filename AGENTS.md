@@ -4,10 +4,10 @@
 
 - Public package source lives under `packages/`.
 - Package behavior belongs in the owning package README.
-- Follow `docs/documentation.md` for documentation changes; run `pnpm run docs:check` after building.
-- Durable capture and visual-testing behavior belongs in
-  `docs/contracts/local-visual-capture.md`.
-- Package release procedure belongs in `PUBLISHING.md`.
+- Keep README files with the packages they describe and run `pnpm run docs:check` after building.
+- Do not add documentation/planning directories, internal procedures or links to private repositories.
+- Preview and capture maps through `tileflow preview` and `tileflow capture`; reuse their shared
+  artifact preparation instead of introducing a separate viewer.
 
 ## Validation
 

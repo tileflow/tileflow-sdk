@@ -1112,6 +1112,22 @@ const landModuleSchema = z
       .optional(),
     enabled: z.boolean().optional(),
     globalLandcover: fillStyleSchema.optional(),
+    globalLandcoverUnderlay: z
+      .object({
+        url: z.string().min(1),
+        coordinates: z.tuple([
+          z.tuple([z.number(), z.number()]),
+          z.tuple([z.number(), z.number()]),
+          z.tuple([z.number(), z.number()]),
+          z.tuple([z.number(), z.number()]),
+        ]),
+        attribution: z.string().min(1),
+        opacity: numberValueSchema.optional(),
+        minZoom: z.number().min(0).max(24).optional(),
+        maxZoom: z.number().min(0).max(24).optional(),
+      })
+      .strict()
+      .optional(),
     landcover: z
       .object({
         farmland: areaStyleSchema.optional(),
@@ -1204,6 +1220,7 @@ const modelRoleLightingSchema = z
     emissiveColor: themeColorValueSchema.optional(),
     color: themeColorValueSchema.optional(),
     colorMix: boundedThemeNumberSchema(0, 1).optional(),
+    colorScale: boundedThemeNumberSchema(0, 1).optional(),
     metallic: boundedThemeNumberSchema(0, 1).optional(),
     roughness: boundedThemeNumberSchema(0, 1).optional(),
     shading: z.enum(['physical', 'map']).optional(),
@@ -1278,8 +1295,10 @@ const buildingsModuleSchema = z
           .object({buildings: entranceBandSchema.optional(), models: entranceBandSchema.optional()})
           .strict()
           .optional(),
+        flatFootprints: z.boolean().optional(),
         occlusion: z.boolean().optional(),
         groundOcclusion: boundedThemeNumberSchema(0, 1).optional(),
+        groundOcclusionRadius: boundedThemeNumberSchema(0, 20).optional(),
         modelOcclusion: boundedThemeNumberSchema(0, 1).optional(),
         shadows: z.boolean().optional(),
         windows: z.boolean().optional(),
@@ -1500,6 +1519,15 @@ const roadsModuleSchema = z
       .strict()
       .optional(),
     oneWayMarkers: z.boolean().optional(),
+    pathGround: z
+      .object({
+        greenColor: themeColorValueSchema,
+        groundColor: themeColorValueSchema,
+        opacity: themeNumberValueSchema.optional(),
+        widthScale: themeNumberValueSchema.optional(),
+      })
+      .strict()
+      .optional(),
     outline: z.enum(['none', 'subtle', 'strong']).optional(),
     rampOrder: z
       .enum(['below-roads', 'by-class'])
@@ -1807,6 +1835,9 @@ const modulesSchema = z
                   .object({
                     crownScale: boundedThemeNumberSchema(0.1, 10).optional(),
                     heightScale: boundedThemeNumberSchema(0.1, 10).optional(),
+                    sizeAnchor: boundedThemeNumberSchema(1, 45).optional(),
+                    crownAnchor: boundedThemeNumberSchema(1, 25).optional(),
+                    sizeCompression: boundedThemeNumberSchema(0, 1).optional(),
                     models: z
                       .array(
                         z
@@ -2669,6 +2700,7 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
   .object({
     atmosphere: atmosphereSchema.optional(),
     boundaryAreas: boundaryAreasSchema.optional(),
+    camera: z.object({adaptivePerspective: z.boolean().optional()}).strict().optional(),
     data: dataSchema.optional(),
     defaultTheme: tileflowThemeNameSchema,
     fonts: fontDirectoriesSchema.optional(),

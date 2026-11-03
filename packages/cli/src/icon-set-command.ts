@@ -10,6 +10,7 @@ import {
 } from '@tileflow/core';
 import {type CompiledTileflowIconPackage, composeTileflowIconSources} from '@tileflow/dev/icons';
 import type {AuthConfig} from './account-session';
+import {hostedApiKeyOption, hostedApiUrlOption} from './hosted-options';
 import {
   authorizedTeamRequest,
   emitFailure,
@@ -460,8 +461,8 @@ export function registerIconSetCommands(
 function withTeamOptions(command: Command): Command {
   return command
     .option('--team <team>', 'target Team as @team')
-    .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
-    .option('--api-key <key>', 'Team data API key', process.env.TILEFLOW_API_KEY)
+    .addOption(hostedApiUrlOption())
+    .addOption(hostedApiKeyOption('Team data API key'))
     .option('--json', 'print deterministic schema-version-1 JSON');
 }
 

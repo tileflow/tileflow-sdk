@@ -33,6 +33,12 @@ maps drawn after it. The CI run therefore skips only `MapIntegrationTests` and
 local Mac to render them on iOS itself. On failure, Xcode results are retained in the
 `swift-integration-results` artifact.
 
+The hosted macOS image enables Reduce Motion by default. CI disables it in both the macOS and
+UIKit accessibility preference domains. It checks AppKit before launching the test host and the
+camera tests check UIKit and WebKit too: camera cancellation, shot cues and annotation
+tracking need actual intermediate animation frames. Keep motion enabled when running these tests
+locally; their assertions and latency budgets are unchanged.
+
 MapLibre Native ships no Mac Catalyst slice, so neither the package nor these tests build for Mac
 Catalyst.
 

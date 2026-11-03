@@ -69,6 +69,7 @@ function reachOf(map: TileflowSkyHazeView, distance: number): TileflowSkyHazeRea
     ahead: (east * Math.sin(bearing) + north * Math.cos(bearing)) / metres,
     across: (east * Math.cos(bearing) - north * Math.sin(bearing)) / metres,
     radius: reach.radius / metres,
+    ...(reach.forward === undefined ? {} : {forward: reach.forward / metres}),
   };
 }
 

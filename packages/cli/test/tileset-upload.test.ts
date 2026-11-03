@@ -303,6 +303,39 @@ test('idempotent control requests retry bounded transient HTTP failures', async 
   assert.deepEqual(delays, [250]);
 });
 
+test('administratively disabled uploads stop without retrying or exposing server text', async () => {
+  const file = generatedFile(8);
+  const upload = await prepareTeamTilesetUpload(file);
+  let calls = 0;
+  const delays: number[] = [];
+  const transport = createHostedTeamTilesetUploadTransport({
+    apiOrigin: 'https://api.example.test',
+    credential: `tf_cap_${'a'.repeat(64)}`,
+    fetch: (async () => {
+      calls += 1;
+      return Response.json(
+        {code: 'TF_TILESET_UPLOAD_DISABLED', error: 'X-Amz-Credential=never-print-this'},
+        {status: 503},
+      );
+    }) as typeof fetch,
+    sleep: async (milliseconds) => {
+      delays.push(milliseconds);
+    },
+    tilesetId,
+  });
+
+  await assert.rejects(
+    publishPreparedTeamTilesetUpload({file, tilesetId, transport, upload}),
+    (error: unknown) =>
+      error instanceof TeamTilesetUploadError &&
+      error.code === 'TF_TILESET_UPLOAD_DISABLED' &&
+      !error.message.includes('never-print-this'),
+  );
+
+  assert.equal(calls, 1);
+  assert.deepEqual(delays, []);
+});
+
 test('an unchanged current version needs no retained upload control', async () => {
   const file = generatedFile(8);
   const upload = await prepareTeamTilesetUpload(file);

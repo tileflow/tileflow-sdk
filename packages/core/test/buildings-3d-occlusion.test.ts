@@ -1,8 +1,41 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import {buildings, createStyle, defineTheme, disable, parseTileflowMap, token} from '../src';
+import {readTileflowBuildings3D} from '../src/buildings-3d-design';
 import {meshTileflowBuildings, tileflowBuildingVertexBytes} from '../src/buildings-3d-mesh';
 import {buildingContactSegments} from '../src/buildings-3d-occlusion';
 import type {TileflowTileLayer} from '../src/vector-tile-decode';
+import {extendStreets, testLightTheme} from './map-fixture';
+
+test('ground contact radius survives theme resolution, compilation and runtime parsing', () => {
+  const map = extendStreets({
+    themes: {
+      light: defineTheme({
+        ...testLightTheme,
+        tokens: {...testLightTheme.tokens, number: {contactRadius: 1.5}},
+      }),
+    },
+    modules: {
+      poi: disable(),
+      buildings: buildings({
+        flat: {fill: {color: token.color('surface.building')}},
+        threeDimensional: {groundOcclusionRadius: token.number('contactRadius')},
+      }),
+    },
+  });
+  const design = readTileflowBuildings3D(JSON.parse(JSON.stringify(createStyle(map).metadata)))!;
+  assert.equal(design.groundOcclusionRadius, 1.5);
+  assert.equal(design.groundOcclusion, 0.16);
+  assert.equal(design.occlusion, true);
+  for (const groundOcclusionRadius of [-1, 21, Infinity, NaN])
+    assert.throws(() =>
+      parseTileflowMap(
+        extendStreets({
+          modules: {buildings: buildings({threeDimensional: {groundOcclusionRadius}})},
+        }),
+      ),
+    );
+});
 
 test('contact segments follow real wall indices across buildings, courtyards and rounded corners', () => {
   const layer: TileflowTileLayer = {

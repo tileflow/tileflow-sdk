@@ -19,6 +19,7 @@ import {
 } from '@tileflow/core/native-profile';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {createTileflowBuildArtifacts, disposeTileflowBuildArtifacts} from '../src/artifacts';
+import {prepareEmbeddedImageSources} from '../src/image-source-assets';
 import {lowerTileflowNativeCompiledStyles} from '../src/native-artifacts';
 import {degradeTileflowNativeStyle} from '../src/native-degradations';
 import {lowerNativeStyleRepresentation, nativeLoweringVersion} from '../src/native-lowering';
@@ -295,30 +296,55 @@ test('Streets themes retain identity and audited native transformation spans', a
     assert.equal(item.sky, 'removed');
     assert.equal(Object.hasOwn(native.styles.streets![item.theme]!, 'sky'), false);
     assert.ok(item.layers.length > 0);
-    const original = web.styles.streets![item.theme]!;
+    // Local native builds write embedded images as files before preparing native styles.
+    const input = prepareEmbeddedImageSources({
+      streets: {[item.theme]: web.styles.streets![item.theme]!},
+    }).styles.streets![item.theme]!;
+    const degraded = degradeTileflowNativeStyle(input);
+    const original = degraded.style;
     const output = native.styles.streets![item.theme]!;
     assert.notEqual(
       native.buildManifest.maps.streets!.themes[item.theme]!.styleSha256,
       web.buildManifest.maps.streets!.themes[item.theme]!.styleSha256,
     );
     assert.equal('projection' in output, false);
+    // Core's compiled extrusion stands in for its building scene: shown for the 3D view mode,
+    // recorded, and never duplicated by a generated one.
+    const extrusions = output.layers.filter((layer) => layer.type === 'fill-extrusion');
+    assert.deepEqual(
+      extrusions.map(({id}) => id),
+      ['tileflow-buildings-native-extrusion'],
+    );
+    assert.equal((extrusions[0]!.metadata as any)?.['tileflow:3d-toggle'], 'building');
+    assert.notEqual((extrusions[0]!.layout as any)?.visibility, 'none');
+    assert.deepEqual(degraded.degradations.find(({id}) => id === 'scene3d')?.layers, [
+      'tileflow-buildings-native-extrusion',
+    ]);
     assert.deepEqual(
       validateTileflowNativePreparedStyle(output, {
         documentUrl: 'https://artifacts.invalid/style.json',
       }),
       [],
     );
-    // Streets degrades without removing or adding layers, so spans keep the web indexes.
-    const independentlyLowered = lowerNativeStyleRepresentation(
-      degradeTileflowNativeStyle(original).style,
-      (filter) => convertFilter(structuredClone(filter) as any),
+    // Streets adds no layers; degradations may leave some out, so spans name the web indexes.
+    assert.ok(degraded.inputIndexes.every((index) => index >= 0));
+    assert.deepEqual(item.removedLayers, degraded.removedLayers);
+    assert.deepEqual(item.insertedLayers, []);
+    const independentlyLowered = lowerNativeStyleRepresentation(original, (filter) =>
+      convertFilter(structuredClone(filter) as any),
     );
     // Font/sprite URL preparation is renderer-owned; structural layer data is unchanged except for lowering.
     assert.deepEqual(output.layers, independentlyLowered.style.layers);
-    assert.equal(item.inputLayers, original.layers.length);
+    assert.equal(item.inputLayers, input.layers.length);
     assert.equal(item.outputLayers, output.layers.length);
-    assert.deepEqual(item.layers, independentlyLowered.layers);
-    for (const span of item.layers) {
+    assert.deepEqual(
+      item.layers,
+      independentlyLowered.layers.map((span) => ({
+        ...span,
+        inputLayer: degraded.inputIndexes[span.inputLayer]!,
+      })),
+    );
+    for (const span of independentlyLowered.layers) {
       const logical = original.layers[span.inputLayer]! as any;
       for (const physical of output.layers.slice(
         span.outputStart,

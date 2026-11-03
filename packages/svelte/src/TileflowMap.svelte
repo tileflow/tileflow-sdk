@@ -44,6 +44,7 @@
     getTileflowSystemColorScheme,
     loadTileflowStyleFonts,
     registerTileflowContourProtocol,
+    registerTileflowPathGroundProtocol,
     registerTileflowPmtilesProtocol,
     registerTileflowWorldRequestBridge,
     subscribeTileflowSystemColorScheme,
@@ -584,6 +585,7 @@
     });
     mapFairUseNotice = attachTileflowFairUseNotice(targetContainer);
     registerTileflowContourProtocol({addProtocol: maplibregl.addProtocol});
+    registerTileflowPathGroundProtocol({addProtocol: maplibregl.addProtocol});
     registerTileflowPmtilesProtocol({addProtocol: maplibregl.addProtocol});
     mapWorldRequestBridge = registerTileflowWorldRequestBridge({
       addProtocol: maplibregl.addProtocol,

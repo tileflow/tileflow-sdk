@@ -241,42 +241,48 @@ export function createAnnotationController(
     },
     {capture: true, signal: output.signal},
   );
-  container.addEventListener(
-    'pointermove',
-    (event) => {
-      const current = drag;
-      if (!current || event.pointerId !== current.pointer) return;
-      const point = local(event);
-      const dx = point.x - current.start.x;
-      const dy = point.y - current.start.y;
-      if (!current.moved && Math.hypot(dx, dy) <= dragSlop) return;
-      const geometry = mapPositions(current.anchors, ([x, y, ...rest]) => {
-        const location = map.unproject([x! + dx, y! + dy]);
-        return [wrapNear(location.lng, 0), Math.max(-85, Math.min(85, location.lat)), ...rest];
-      });
-      if (!output.style()?.moveFeature(current.source, current.id, geometry)) return;
-      current.last = {geometry, point};
-      if (!current.moved) {
-        current.moved = true;
-        try {
-          container.setPointerCapture(event.pointerId);
-        } catch {
-          // The pointer already ended.
-        }
-        emitDrag('started', current);
-        return;
+  const move = (event: PointerEvent) => {
+    const current = drag;
+    if (!current || event.pointerId !== current.pointer) return;
+    const point = local(event);
+    const dx = point.x - current.start.x;
+    const dy = point.y - current.start.y;
+    if (!current.moved && Math.hypot(dx, dy) <= dragSlop) return;
+    const geometry = mapPositions(current.anchors, ([x, y, ...rest]) => {
+      const location = map.unproject([x! + dx, y! + dy]);
+      return [wrapNear(location.lng, 0), Math.max(-85, Math.min(85, location.lat)), ...rest];
+    });
+    if (!output.style()?.moveFeature(current.source, current.id, geometry)) return;
+    current.last = {geometry, point};
+    if (!current.moved) {
+      current.moved = true;
+      try {
+        container.setPointerCapture(event.pointerId);
+      } catch {
+        // The pointer already ended.
       }
-      // Moves are reported once per frame, with the latest position.
-      if (current.reportPending) return;
-      current.reportPending = true;
-      frame(() => {
-        current.reportPending = false;
-        if (drag === current) emitDrag('moved', current);
-      });
+      emitDrag('started', current);
+      return;
+    }
+    // Moves are reported once per frame, with the latest position.
+    if (current.reportPending) return;
+    current.reportPending = true;
+    frame(() => {
+      current.reportPending = false;
+      if (drag === current) emitDrag('moved', current);
+    });
+  };
+  container.addEventListener('pointermove', move, {signal: output.signal});
+  container.addEventListener(
+    'pointerup',
+    (event) => {
+      if (!drag || event.pointerId !== drag.pointer) return;
+      // WebView can coalesce the last move; the release carries the final position.
+      move(event);
+      finish();
     },
     {signal: output.signal},
   );
-  container.addEventListener('pointerup', () => finish(), {signal: output.signal});
   container.addEventListener('pointercancel', () => finish(), {signal: output.signal});
 
   return {

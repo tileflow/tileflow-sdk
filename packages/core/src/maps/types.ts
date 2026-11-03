@@ -1,5 +1,6 @@
 import type {TileflowAtmosphere} from '../atmosphere';
 import type {TileflowBoundaryAreas} from '../boundary-areas';
+import type {TileflowCameraOptions} from '../camera';
 import type {TileflowCaptureScene} from '../capture-scene';
 import type {TileflowCaptureShot} from '../capture-shot';
 import type {TileflowResolvedSemanticModuleOverrides} from '../cartography/domain-registry';
@@ -57,6 +58,8 @@ export type TileflowMapDesign = TileflowMapTextAssets & {
    * selections. World's border lines remain the `boundaries` module. False removes inherited areas.
    */
   boundaryAreas?: TileflowBoundaryAreas;
+  /** Browser 3D camera policy. Omission inherits; an explicit false disables the effect. */
+  camera?: TileflowCameraOptions;
   data?: TileflowDataConfig;
   /** Name used whenever a concrete theme is not explicitly requested. */
   defaultTheme?: TileflowThemeName;

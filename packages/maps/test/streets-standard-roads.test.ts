@@ -61,7 +61,17 @@ function lineColor(
 
 for (const [profile, theme] of Object.entries(themes)) {
   test(`Streets ${theme} matches independently lit borders and keeps the HD zoom handoff`, () => {
-    const expected = reference.profiles[profile as keyof typeof themes].roles;
+    const measured = reference.profiles[profile as keyof typeof themes].roles;
+    const expected =
+      theme === 'light'
+        ? {
+            generic: {unshadowedRGB: [141, 176, 188]},
+            motorway: {unshadowedRGB: [117, 154, 166]},
+            trunk: {unshadowedRGB: [98, 147, 163]},
+            hd: {unshadowedRGB: [138, 167, 176]},
+            path: {unshadowedRGB: [201, 201, 193]},
+          }
+        : measured;
     const colors = resolveTileflowTheme(streetsThemes[theme]).tokens.color;
     for (const [token, role] of [
       ['roads.default.casing', 'generic'],

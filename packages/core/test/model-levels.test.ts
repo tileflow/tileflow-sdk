@@ -100,3 +100,22 @@ test('a model casts its shadow with its next lighter level', () => {
   assert.equal(tileflowModelShadowLevel(0, 2), 1);
   assert.equal(tileflowModelShadowLevel(0, 1), 0);
 });
+
+test('a narrow field of view preserves detail when the camera retreats at the same apparent size', () => {
+  for (const model of [tower, hall, gate]) {
+    const centre = (model.bounds[2] + model.bounds[5]) / 2;
+    for (const distance of [500, 1_400, 2_400, 4_000, 6_000]) {
+      const expected = tileflowModelLevel(model, {camera: [0, 0, centre + distance]});
+      for (const fov of [2, 5, 15, (Math.atan(1 / 3) * 360) / Math.PI]) {
+        const scale = Math.tan((fov * Math.PI) / 360) * 3;
+        assert.equal(
+          tileflowModelLevel(model, {
+            camera: [0, 0, centre + distance / scale],
+            verticalFieldOfView: fov,
+          }),
+          expected,
+        );
+      }
+    }
+  }
+});

@@ -10,6 +10,8 @@ export function streetsBuildingColors(base: string, dark: boolean) {
       .toUpperCase();
   return {
     'buildings.modelSurface': base,
+    // Temporary glass review tint; use base to restore the neutral finish.
+    'buildings.modelGlass': '#C7DFE9',
     'buildings.modelSecondary': hex(rgb.map((v) => v + (255 - v) * (dark ? 0.018 : 0.24))),
     'buildings.modelRoof': hex(rgb.map((v) => (v * 0.8 + gray * 0.2) * 0.97)),
     'buildings.modelAccent': hex(rgb.map((v) => v + (255 - v) * (dark ? 0.025 : 0.34))),

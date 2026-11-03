@@ -92,7 +92,7 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     XCTAssertNotEqual(fill.fillColor, receded)
 
     // The 3D view shows the extrusions that stand in for the scene; the flat view hides them.
-    let extrusion = { engine.mapView?.style?.layer(withIdentifier: "tileflow-buildings-render-extrusion") }
+    let extrusion = { engine.mapView?.style?.layer(withIdentifier: "tileflow-buildings-native-extrusion") }
     XCTAssertEqual(extrusion()?.isVisible, false)
     try await view.setViewMode(.threeDimensional, duration: 0.3)
     try await waitUntil { extrusion()?.isVisible == true && engine.viewModeMotion == nil }

@@ -57,8 +57,8 @@ delivery manifest. Config loading executes trusted imports and is not a sandbox.
 In a React application's client entry, before mounting an interactive map:
 
 ```ts
-import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import {configureTileflowMapLibre} from '@tileflow/react';
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 
 configureTileflowMapLibre({workerUrl});
 ```

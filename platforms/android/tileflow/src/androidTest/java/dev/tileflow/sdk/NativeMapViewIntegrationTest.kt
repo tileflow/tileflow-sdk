@@ -247,7 +247,7 @@ public class NativeMapViewIntegrationTest {
                     fun extrusion() =
                         engine.map
                             ?.style
-                            ?.getLayer("tileflow-buildings-render-extrusion")
+                            ?.getLayer("tileflow-buildings-native-extrusion")
                             ?.visibility
                             ?.value
                     assertEquals(Property.NONE, extrusion())

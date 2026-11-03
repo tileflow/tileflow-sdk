@@ -8,12 +8,14 @@ import {
 } from '../atmosphere-compile';
 import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../boundary-areas/compile';
 import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
+import {tileflowCameraMetadataKey} from '../camera';
 import {resolveTileflowData} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
 import {type ResolvedMarine, resolveMarine, tileflowNauticalV1Schema} from '../marine';
 import {buildingTargetsOfOtherModes} from '../modules/buildings/compiler';
 import {tileflowNauticalNotice} from '../modules/nautical';
+import {compilePathGroundFamilies} from '../modules/roads/path-ground';
 import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
 import {declareTileflowNauticalLights, tileflowNauticalLightsMetadataKey} from '../nautical-lights';
 import {type TileflowMapNotice, tileflowNoticesMetadataKey} from '../notices';
@@ -22,6 +24,11 @@ import {
   resolveTileflowHostedSources,
   tileflowHostedSourceLimit,
 } from '../overlays';
+import {
+  pathGroundProtocolUrl,
+  pathGroundSourceConfig,
+  tileflowPathGroundSource,
+} from '../path-ground-protocol';
 import {parseResolvedTileflowMap} from '../resolved-map-schema';
 import {
   resolveTileflowRouteInks,
@@ -299,6 +306,7 @@ function compileSemanticStyleInternal(
   });
   const platformSourceIds = [
     data.sourceId,
+    tileflowPathGroundSource,
     ...terrainSources.map(({sourceId}) => sourceId),
     ...marineSources.map(({sourceId}) => sourceId),
     ...(boundaryAreas ? [boundaryAreas.sourceId] : []),
@@ -393,8 +401,12 @@ function compileSemanticStyleInternal(
       buildingTargetsOfOtherModes(modules.buildings),
     ),
   );
+  const pathGround = compilePathGroundFamilies(
+    stackedFamilies,
+    modules.roads?.enabled === false ? undefined : modules.roads?.pathGround,
+  );
   const plannedFamilies = runCompilationPhase('physical-planner', () =>
-    planTileflowLayerFamilies(stackedFamilies),
+    planTileflowLayerFamilies(pathGround.families),
   );
   // This is the sole MapLibre emission and semantic-data binding boundary.
   const loweredDomainIR = runCompilationPhase('lowering', () =>
@@ -549,7 +561,14 @@ function compileSemanticStyleInternal(
   const primarySource: Record<string, unknown> = {
     type: 'vector',
     ...(data.url !== undefined ? {url: data.url} : {tiles: data.tiles}),
-    attribution: data.attribution,
+    attribution: [
+      data.attribution,
+      ...(modules.land?.globalLandcoverUnderlay
+        ? [modules.land.globalLandcoverUnderlay.attribution]
+        : []),
+    ]
+      .filter(Boolean)
+      .join(' | '),
     ...(data.bounds ? {bounds: data.bounds} : {}),
     ...(data.maxzoom === undefined ? {} : {maxzoom: data.maxzoom}),
     ...(data.minzoom === undefined ? {} : {minzoom: data.minzoom}),
@@ -562,6 +581,26 @@ function compileSemanticStyleInternal(
 
   const sources: MapLibreStyle['sources'] = {
     [data.sourceId]: primarySource,
+    ...(pathGround.active
+      ? {
+          [tileflowPathGroundSource]: {
+            type: 'vector',
+            url: pathGroundProtocolUrl(pathGroundSourceConfig(data)),
+          },
+        }
+      : {}),
+    ...(modules.land?.enabled !== false &&
+    modules.land?.globalLandcoverUnderlay &&
+    data.schema.layers.globalLandcover &&
+    modules.land.globalLandcover?.visible !== false
+      ? {
+          'tileflow-landcover-underlay': {
+            type: 'image',
+            url: modules.land.globalLandcoverUnderlay.url,
+            coordinates: modules.land.globalLandcoverUnderlay.coordinates,
+          },
+        }
+      : {}),
     ...(marine?.bathymetry?.vector
       ? {[marine.bathymetry.vector.sourceId]: marine.bathymetry.vector.source}
       : {}),
@@ -716,6 +755,14 @@ function compileSemanticStyleInternal(
         .map(([name]) => name)
         .sort(),
       ...(config.view ? {'tileflow:view': config.view} : {}),
+      ...(config.camera?.adaptivePerspective !== undefined
+        ? {
+            [tileflowCameraMetadataKey]: {
+              version: 1,
+              adaptivePerspective: config.camera.adaptivePerspective,
+            },
+          }
+        : {}),
       ...(notices.length > 0 ? {[tileflowNoticesMetadataKey]: notices} : {}),
       ...(nauticalLights ? {[tileflowNauticalLightsMetadataKey]: nauticalLights} : {}),
     },

@@ -96,21 +96,47 @@ function artifact() {
   };
 }
 
-/** The web style draws browser contours; its native style leaves them out and records it. */
-function degradedArtifact() {
+/** Web sources native maps cannot load, each with the record that names the omitted source. */
+const omittedSources = {
+  deviceContours: {
+    reason: 'web-runtime',
+    source: {type: 'vector', tiles: ['tileflow-contour://tiles/{z}/{x}/{y}.pbf']},
+    layer: {type: 'line', 'source-layer': 'contours'},
+  },
+  pathGround: {
+    reason: 'web-runtime',
+    source: {type: 'vector', url: 'tileflow-path-ground://source/index.json?source=%7B%7D'},
+    layer: {type: 'line', 'source-layer': 'transportation'},
+  },
+  embeddedImages: {
+    reason: 'engine-unsupported',
+    source: {
+      type: 'image',
+      url: 'data:image/png;base64,iVBORw0KGgo=',
+      coordinates: [
+        [-180, 85],
+        [180, 85],
+        [180, -85],
+        [-180, -85],
+      ],
+    },
+    layer: {type: 'raster'},
+  },
+} as const;
+
+/** The web style draws a source native maps cannot load; its native style leaves it out and records it. */
+function degradedArtifact(feature: keyof typeof omittedSources = 'deviceContours') {
   const value = artifact();
   const web = value.renderers.web.styles.light as Record<string, any>;
-  web.sources.contours = {
-    type: 'vector',
-    tiles: ['tileflow-contour://tiles/{z}/{x}/{y}.pbf'],
-  };
-  web.layers.push({id: 'contours', type: 'line', source: 'contours', 'source-layer': 'contours'});
+  const omitted = omittedSources[feature];
+  web.sources.contours = structuredClone(omitted.source);
+  web.layers.push({id: 'contours', source: 'contours', ...omitted.layer});
   const native = value.renderers.native.styles.light as Record<string, any>;
   native.metadata['tileflow:nativeDegradations'] = [
     {
-      id: 'deviceContours:contours',
-      feature: 'deviceContours',
-      reason: 'web-runtime',
+      id: `${feature}:contours`,
+      feature,
+      reason: omitted.reason,
       fallback: 'none',
       layers: ['contours'],
     },
@@ -128,7 +154,7 @@ function degradedArtifact() {
         loweredStyleSha256: hash(native),
         inputLayers: 2,
         removedLayers: [1],
-        degradations: ['deviceContours:contours'],
+        degradations: [`${feature}:contours`],
       },
     ],
   );
@@ -317,11 +343,13 @@ test('the family document is the one Core computes from the native styles', asyn
 });
 
 test('a native style leaves out only the sources its degradations name', async () => {
-  const parsed = await parseTileflowRendererDeploymentArtifact(degradedArtifact());
-  assert.deepEqual(
-    parsed.renderers.native.family.themes[0]!.degradations.map(({id}) => id),
-    ['deviceContours:contours'],
-  );
+  for (const feature of ['deviceContours', 'pathGround', 'embeddedImages'] as const) {
+    const parsed = await parseTileflowRendererDeploymentArtifact(degradedArtifact(feature));
+    assert.deepEqual(
+      parsed.renderers.native.family.themes[0]!.degradations.map(({id}) => id),
+      [`${feature}:contours`],
+    );
+  }
   for (const change of [
     (value: ReturnType<typeof degradedArtifact>) => {
       value.renderers.native.buildRecord.transformations[0]!.degradations = [];

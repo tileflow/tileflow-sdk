@@ -31,6 +31,8 @@ export type TileflowModelLevelGeometry = Readonly<{
 export type TileflowModelLevelView = Readonly<{
   /** The camera, in metres east, north and up of the model's origin. */
   camera: readonly [number, number, number];
+  /** Vertical field of view in degrees; omitted uses MapLibre's default camera. */
+  verticalFieldOfView?: number;
 }>;
 
 /** The distances at which a model of these bounds lightens, by its height and width. */
@@ -69,7 +71,11 @@ export function tileflowModelLevel(
 ): number {
   const thresholds = tileflowModelLevelDistancesOf(model.bounds);
   const last = Math.max(0, Math.min(model.levels, thresholds.length + 1) - 1);
-  const distance = tileflowModelCameraDistance(model, view);
+  const fov = view.verticalFieldOfView;
+  // Distance thresholds assume MapLibre's default focal length (tan(fov / 2) = 1/3).
+  // A narrower lens moves the camera back without making the model smaller on screen.
+  const lens = fov !== undefined && fov > 0 && fov < 180 ? Math.tan((fov * Math.PI) / 360) * 3 : 1;
+  const distance = tileflowModelCameraDistance(model, view) * lens;
   if (!Number.isFinite(distance)) return 0;
   const margin = previous === undefined ? 1 : tileflowModelLevelHysteresis;
   let level = Math.max(0, Math.min(last, previous ?? 0));

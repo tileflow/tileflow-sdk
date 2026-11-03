@@ -37,6 +37,7 @@ uniform float u_metres; // metres per tile unit
 uniform vec2 u_offset; // this tile's corner from the scene's origin, in tile units
 uniform float u_minimum_height; // optional visual height floor, in metres
 uniform vec2 u_size_scale; // the map's height and crown scales, for this form
+uniform vec3 u_size_compression; // reference height, reference crown, strength
 uniform float u_round; // how far normals turn from the facets to the round shape, by finish
 
 float growthOf() {
@@ -53,7 +54,14 @@ vec2 turned(vec2 v) {
 
 vec2 displaySize() {
   vec2 size = a_tree_size * 0.1 * u_size_scale;
-  return size * max(1.0, u_minimum_height / max(size.x, 0.001));
+  size *= max(1.0, u_minimum_height / max(size.x, 0.001));
+  // Scale the complete tree together to preserve crown, trunk and branch proportions.
+  if (u_size_compression.z > 0.0) {
+    vec2 relative = max(u_size_compression.xy, vec2(0.001)) / max(size, vec2(0.001));
+    // Balance height and footprint, so a short but broad crown is not enlarged.
+    size *= min(1.35, pow(relative.x * relative.y, u_size_compression.z * 0.5));
+  }
+  return size;
 }
 
 vec3 standing(float growth) {

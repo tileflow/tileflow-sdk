@@ -61,6 +61,7 @@ import {
   installAccountSession,
   loadAuthConfig,
   normalizeApiOrigin,
+  prepareAccountLogin,
   removeAccountSession,
   removeAuthFile,
   resolveAccountSession,
@@ -93,6 +94,7 @@ import {
   validateAccountSession,
   validateApiKey,
 } from './hosted-client';
+import {hostedApiKeyOption, hostedApiUrlOption, isHostedApiKey} from './hosted-options';
 import {
   describeNativeDifference,
   HostedCompatibilityError,
@@ -193,14 +195,14 @@ program
 program
   .command('login')
   .description('Authorize this machine for your Tileflow account')
-  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
+  .addOption(hostedApiUrlOption())
   .option(
     '--app-url <url>',
     'Tileflow Dashboard URL',
     process.env.TILEFLOW_APP_URL ?? defaultAppUrl,
   )
   .option('--no-browser', 'print the authorization URL without opening it')
-  .action(async (options: {apiUrl?: string; appUrl?: string; noBrowser?: boolean}) => {
+  .action(async (options: {apiUrl?: string; appUrl?: string; browser?: boolean}) => {
     const apiUrl = normalizeUrl(options.apiUrl ?? defaultApiUrl);
     const appUrl = normalizeUrl(options.appUrl ?? defaultAppUrl);
 
@@ -208,7 +210,7 @@ program
       await loginWithDeviceFlow({
         expectedApiUrl: apiUrl,
         appUrl,
-        noBrowser: Boolean(options.noBrowser),
+        noBrowser: options.browser === false,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Login failed.';
@@ -220,7 +222,7 @@ program
 program
   .command('logout')
   .description("Revoke this origin's Tileflow account session")
-  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
+  .addOption(hostedApiUrlOption())
   .action(async (options: {apiUrl?: string}) => {
     const apiUrl = normalizeApiOrigin(options.apiUrl ?? defaultApiUrl);
     const config = await loadAuthConfig().catch((error: unknown) => {
@@ -255,7 +257,7 @@ program
 program
   .command('whoami')
   .description('Show the authenticated Tileflow account')
-  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
+  .addOption(hostedApiUrlOption())
   .option('--json', 'print deterministic schema-version-1 JSON')
   .action(async (options: {apiUrl?: string; json?: boolean}) => {
     const config = await loadAuthConfig().catch((error: unknown) => {
@@ -923,8 +925,8 @@ addMapSetupOptions(
 )
   .option('-c, --config <path>', 'config path', defaultConfigPath)
   .option('--manifest <path>', 'manifest path written for frontend bundlers', defaultManifestPath)
-  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
-  .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
+  .addOption(hostedApiUrlOption())
+  .addOption(hostedApiKeyOption('Tileflow API key'))
   .option('--map-id <id>', 'managed Map destination; omit it to create a new Map')
   .option('--map <name>', 'configured map to connect when the repository contains multiple maps')
   .option(
@@ -1073,8 +1075,8 @@ addMapSetupOptions(
 program
   .command('status')
   .description('Show deployed compiled styles')
-  .option('--api-url <url>', 'Tileflow API URL', process.env.TILEFLOW_API_URL)
-  .option('--api-key <key>', 'Tileflow API key', process.env.TILEFLOW_API_KEY)
+  .addOption(hostedApiUrlOption())
+  .addOption(hostedApiKeyOption('Tileflow API key'))
   .option('--map-id <id>', 'managed Map destination')
   .option('--json', 'print raw JSON')
   .action(async (options: {apiUrl?: string; apiKey?: string; json?: boolean; mapId?: string}) => {
@@ -1518,13 +1520,25 @@ async function loginWithDeviceFlow(options: {
   expectedApiUrl: string;
   noBrowser: boolean;
 }) {
+  const authState = await prepareAccountLogin();
+  if (authState.kind === 'legacy') {
+    logWarning('An older Tileflow CLI login will be replaced after authorization.');
+  }
   const codeVerifier = randomBase64Url(32);
   const codeChallenge = createPkceChallenge(codeVerifier);
   printTitle('Tileflow login', 'Authorize this machine from the Tileflow dashboard.');
+  const authorizationStartedAt = Date.now();
   const authorization = await startDeviceAuthorization(options.appUrl, {
     codeChallenge,
     deviceName: hostname(),
   });
+
+  const apiUrl = normalizeApiOrigin(options.expectedApiUrl);
+  if (normalizeApiOrigin(authorization.apiUrl) !== apiUrl) {
+    throw new Error('The dashboard returned an unexpected Tileflow API origin.');
+  }
+  const previousSession =
+    authState.kind === 'sessions' ? authState.config.sessions[apiUrl] : undefined;
 
   printKeyValue('Code', pc.bold(authorization.userCode));
   printKeyValue('URL', link(authorization.verificationUriComplete));
@@ -1550,12 +1564,8 @@ async function loginWithDeviceFlow(options: {
   logInfo('Waiting for authorization...');
   const token = await pollDeviceToken(options.appUrl, authorization, {
     codeVerifier,
+    expiresAt: authorizationStartedAt + authorization.expiresIn * 1000,
   });
-  const apiUrl = normalizeApiOrigin(token.apiUrl);
-
-  if (apiUrl !== normalizeApiOrigin(options.expectedApiUrl)) {
-    throw new Error(`The dashboard returned an unexpected Tileflow API origin: ${apiUrl}.`);
-  }
 
   const session: CliAccountSession = {
     account: token.account,
@@ -1565,16 +1575,36 @@ async function loginWithDeviceFlow(options: {
     expiresAt: token.expiresAt,
     sessionId: token.sessionId,
   };
-  const profile = await validateAccountSession(session);
-
-  if (!profile.ok) {
-    throw new Error(profile.error);
+  let account = session.account;
+  try {
+    // Never follow a token response to another origin, including during cleanup.
+    if (normalizeApiOrigin(token.apiUrl) !== apiUrl) {
+      throw new Error('The dashboard returned an unexpected Tileflow API origin.');
+    }
+    const profile = await validateAccountSession(session);
+    if (!profile.ok) throw new Error(profile.error);
+    account = profile.value.account;
+    await installAccountSession({...session, account});
+  } catch (error) {
+    if (!(await revokeHostedAccountSession(apiUrl, session.accountSession))) {
+      logWarning(
+        'Could not revoke the new account session after login failed. Revoke it in Dashboard settings.',
+      );
+    }
+    throw error;
   }
 
-  await installAccountSession({...session, account: profile.value.account});
-
+  if (
+    previousSession &&
+    previousSession.accountSession !== session.accountSession &&
+    !(await revokeHostedAccountSession(apiUrl, previousSession.accountSession))
+  ) {
+    logWarning(
+      'The new login was saved, but the previous session could not be revoked. Revoke it in Dashboard settings.',
+    );
+  }
   logSuccess('Signed in to Tileflow.');
-  printAccountDetails({...session, account: profile.value.account});
+  printAccountDetails({...session, account});
   printKeyValue('Dashboard', link(options.appUrl));
 }
 
@@ -1677,7 +1707,7 @@ function validateMapSetupTarget(
       : true;
   }
   const createFirst = `Create the Map with ${command('tileflow maps create')} after ${command('tileflow login')}, then pass --map-id.`;
-  if (options.apiKey || !allowsStoredDeployCredential(source)) {
+  if (options.apiKey !== undefined || !allowsStoredDeployCredential(source)) {
     return fail('Managed deploy with a Tileflow credential or in CI requires --map-id.', [
       createFirst,
     ]);
@@ -1773,7 +1803,12 @@ async function requireApiOptions(
     return null;
   }
 
-  if (options.apiKey) {
+  if (options.apiKey !== undefined) {
+    if (!isHostedApiKey(options.apiKey)) {
+      if (!behavior.silent) logError('Tileflow API key is invalid.');
+      process.exitCode = 1;
+      return null;
+    }
     if (behavior.assertExplicitKeyMap) {
       const profile = await validateApiKey(apiUrl, options.apiKey);
       if (!profile.ok) {

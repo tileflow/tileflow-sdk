@@ -81,6 +81,7 @@ const tileflowBrowserModule = `${readFileSync(
   join(dirname(tileflowCorePackagePath), 'dist', 'browser.js'),
   'utf8',
 )}\nglobalThis.__tileflowRegisterContourProtocol = registerTileflowContourProtocol;
+globalThis.__tileflowRegisterPathGroundProtocol = registerTileflowPathGroundProtocol;
 globalThis.__tileflowRegisterPmtilesProtocol = registerTileflowPmtilesProtocol;
 globalThis.__tileflowAttachAtmosphere = attachTileflowAtmosphere;
 globalThis.__tileflowAttachNotices = attachTileflowNotices;
@@ -880,6 +881,7 @@ window.__tileflowCaptureLoad = async function(input) {
   try {
     await loadTileflowFontFaces(input.fontFaces || []);
     window.__tileflowRegisterContourProtocol?.({addProtocol: window.maplibregl.addProtocol});
+    window.__tileflowRegisterPathGroundProtocol?.({addProtocol: window.maplibregl.addProtocol});
     window.__tileflowRegisterPmtilesProtocol?.({addProtocol: window.maplibregl.addProtocol});
     const data = input.style.metadata?.["tileflow:data"];
     const worldSourceId = data?.kind === "tileflow-world" ? data.sourceId : undefined;

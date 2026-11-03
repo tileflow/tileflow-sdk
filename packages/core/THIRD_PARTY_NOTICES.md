@@ -1,11 +1,11 @@
 # Third-party notices
 
-`@tileflow/core/browser` embeds `maplibre-contour` 0.1.0, `PMTiles` 4.5.0, `fflate` 0.8.3, and
+`@tileflow/core/browser` embeds `maplibre-contour` 0.1.1, `PMTiles` 4.5.0, `fflate` 0.8.3, and
 `earcut` 3.2.4 so contour, local archive, and 3D building rendering remain self-contained.
 `@tileflow/core` and `@tileflow/core/browser` embed the decoder of `meshoptimizer` 1.3.0, loaded
 only to read a compressed 3D model file. The complete upstream licenses follow.
 
-## maplibre-contour 0.1.0
+## maplibre-contour 0.1.1
 
 BSD 3-Clause License
 
@@ -295,7 +295,7 @@ OF THIS SOFTWARE.
 
 ---
 
-## whatwg-url 17.2.0 and tr46 7.0.0
+## whatwg-url 17.3.0 and tr46 7.0.0
 
 The native entry embeds the low-level `whatwg-url` parser and `tr46` IDNA processing. During the
 native build only, the parser's encoding and query-encoding imports use Tileflow's private UTF-8

@@ -39,3 +39,42 @@ test('explicit emitter reach is bounded and follows its directed lower edge', ()
   assert.ok(reversed[7]! > 0);
   assert.ok(modelEmitterGeometry({...light, depth: 10}).positions.every(Number.isFinite));
 });
+
+test('relative window brightness survives authoring while explicit window colours remain independent', async () => {
+  const {buildings, createStyle, defineTheme, disable, fixed, token} = await import('../src');
+  const {readTileflowBuildings3D} = await import('../src/buildings-3d-design');
+  const {readModelRoleLighting} = await import('../src/building-illumination');
+  const {extendStreets, testLightTheme} = await import('./map-fixture');
+  const map = extendStreets({
+    themes: {
+      light: defineTheme({
+        ...testLightTheme,
+        tokens: {...testLightTheme.tokens, number: {windowContrast: 0.94}},
+      }),
+    },
+    modules: {
+      poi: disable(),
+      buildings: buildings({
+        flat: {fill: {color: token.color('surface.building')}},
+        threeDimensional: {
+          modelColors: {
+            glass: fixed('#ff0000', {reason: 'explicit independent glazing in regression'}),
+          },
+          modelLighting: {
+            window: {
+              color: fixed('#604030', {reason: 'explicit role tint in regression'}),
+              colorScale: token.number('windowContrast'),
+              shading: 'map',
+            },
+          },
+        },
+      }),
+    },
+  });
+  const design = readTileflowBuildings3D(JSON.parse(JSON.stringify(createStyle(map).metadata)))!;
+  assert.equal(design.modelLighting!.window!.colorScale, 0.94);
+  assert.equal(design.modelLighting!.window!.color, '#604030');
+  assert.equal(design.modelColors!.glass, '#ff0000');
+  assert.equal(readModelRoleLighting({window: {colorScale: -0.1}})!.window!.colorScale, 1);
+  assert.equal(readModelRoleLighting({window: {colorScale: Infinity}})!.window!.colorScale, 1);
+});

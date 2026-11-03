@@ -19,6 +19,10 @@ export type TileflowTreeFinish = (typeof tileflowTreeFinishes)[number];
 export type TileflowTreeFormStyle = Readonly<{
   heightScale?: number;
   crownScale?: number;
+  /** Reference height/crown in metres and strength of proportional size compression. */
+  sizeAnchor?: number;
+  crownAnchor?: number;
+  sizeCompression?: number;
   /** Ids of the map's own models, one to four; each tree draws one by its stable seed. */
   models?: readonly string[];
 }>;
@@ -828,6 +832,15 @@ export function readTileflowVegetation3D(metadata: unknown): TileflowVegetation3
           {
             heightScale: scale(own.heightScale),
             crownScale: scale(own.crownScale),
+            ...(typeof own.sizeAnchor === 'number' && Number.isFinite(own.sizeAnchor)
+              ? {sizeAnchor: clamp(own.sizeAnchor, [1, 45])}
+              : {}),
+            ...(typeof own.crownAnchor === 'number' && Number.isFinite(own.crownAnchor)
+              ? {crownAnchor: clamp(own.crownAnchor, [1, 25])}
+              : {}),
+            ...(typeof own.sizeCompression === 'number' && Number.isFinite(own.sizeCompression)
+              ? {sizeCompression: clamp(own.sizeCompression, [0, 1])}
+              : {}),
             ...(drawn.length > 0 ? {models: drawn} : {}),
           },
         ],

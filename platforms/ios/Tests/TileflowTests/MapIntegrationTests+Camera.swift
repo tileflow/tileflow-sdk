@@ -72,6 +72,12 @@ extension MapIntegrationTests {
     let host = try await loadedMap()
     defer { host.close() }
     let view = host.view
+    XCTAssertFalse(
+      UIAccessibility.isReduceMotionEnabled, "Camera animation tests require motion enabled in UIKit.")
+    let reducedMotion = try await renderer(view).evaluateJavaScript(
+      "matchMedia('(prefers-reduced-motion: reduce)').matches")
+    XCTAssertEqual(
+      reducedMotion as? Bool, false, "Camera animation tests require motion enabled in WebKit.")
     let start = TileflowCamera(longitude: -3.70, latitude: 40.42, zoom: 13)
     let result = try await view.jump(to: start)
     XCTAssertEqual(result, .finished)

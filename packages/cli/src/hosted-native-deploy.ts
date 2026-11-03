@@ -602,6 +602,10 @@ export function describeNativeDifference(difference: NativeDifference): string {
       return 'Sky, atmosphere and fog: not drawn';
     case 'deviceContours':
       return 'Contour lines and labels: not drawn';
+    case 'pathGround':
+      return 'Paths on green ground: drawn in their ground colour';
+    case 'embeddedImages':
+      return 'Images embedded in the style: not drawn';
     case 'nauticalLightRhythm':
       return 'Nautical light rhythms: lights shine steadily';
     case 'symbolOverlap':

@@ -7,7 +7,7 @@ import {
   createAreaLayers,
 } from '../../cartography/layer-style';
 import {mergeTileflowDesign} from '../../cartography/merge';
-import {expression, zoom} from '../../cartography/values';
+import {expression, toMapLibreStyleValue, zoom} from '../../cartography/values';
 import type {TileflowResolvedModuleConfig} from '../resolved';
 import type {
   TileflowBarrierClass,
@@ -186,6 +186,33 @@ export function compileLand(
       owner: 'land',
       slot: 'background',
       target: 'land.background',
+    });
+  }
+
+  if (
+    config.globalLandcoverUnderlay &&
+    schema.layers.globalLandcover &&
+    config.globalLandcover?.visible !== false
+  ) {
+    const underlay = config.globalLandcoverUnderlay;
+    contributions.push({
+      kind: 'layer',
+      owner: 'land',
+      slot: 'land',
+      localOrder: 9,
+      target: 'land.globalLandcoverUnderlay',
+      layer: {
+        id: 'tileflow-global-landcover-underlay',
+        type: 'raster',
+        source: 'tileflow-landcover-underlay',
+        minzoom: underlay.minZoom ?? 0,
+        maxzoom: underlay.maxZoom ?? 11,
+        paint: {
+          'raster-opacity': toMapLibreStyleValue(underlay.opacity ?? 1),
+          'raster-fade-duration': 0,
+          'raster-resampling': 'linear',
+        },
+      },
     });
   }
 

@@ -424,7 +424,14 @@ export function createHostedTeamTilesetUploadTransport(input: {
         }
       }
       if (response?.ok) return response.body;
-      if (response && !isRetryableStatus(response.status)) throw responseError(response);
+      if (
+        response &&
+        (asRecord(response.body).code === 'TF_TILESET_UPLOAD_DISABLED' ||
+          !isRetryableStatus(response.status))
+      ) {
+        throw responseError(response);
+      }
+
       if (attempt === maximumControlAttempts) {
         if (response) throw responseError(response);
         break;
@@ -780,6 +787,8 @@ function invalidRemoteResponse() {
 }
 
 function failureMessage(code: string) {
+  if (code === 'TF_TILESET_UPLOAD_DISABLED') return 'New tileset uploads are disabled.';
+
   if (code === 'TF_TILESET_SCHEMA_INCOMPATIBLE') {
     return 'Tileset schema is incompatible with retained Map deployments.';
   }

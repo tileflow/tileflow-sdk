@@ -108,9 +108,14 @@ test('watches conservative transitive inputs and emits monotonic building/ready 
   session.subscribe((state) => states.push(state));
 
   await writeFile(join(cwd, 'tokens.json'), '{"water":"#abcdef"}\n', 'utf8');
+  // Startup filesystem notifications can produce another ready generation before this edit.
+  // Wait for its artifact within the same deadline, not just an arbitrary generation number.
   const ready = await waitForState(
     session,
-    (state) => state.status === 'ready' && state.generation >= 2,
+    (state) =>
+      state.status === 'ready' &&
+      state.generation >= 2 &&
+      waterColor(session.getLastGoodArtifacts()) === '#abcdef',
   );
   assert.equal(ready.status, 'ready');
   assert.equal(waterColor(session.getLastGoodArtifacts()), '#abcdef');
@@ -1415,7 +1420,8 @@ function runPreviewScript(
     ?.replace(/^[ \t]*import [^\n]+;[ \t]*$/gm, '')
     .replace(/^[ \t]*await loadTileflowStyleFonts\([^\n]+;[ \t]*$/gm, '')
     .replace(/^[ \t]*registerTileflowPmtilesProtocol\([^\n]+;[ \t]*$/gm, '')
-    .replace(/^[ \t]*registerTileflowContourProtocol\([^\n]+;[ \t]*$/gm, '');
+    .replace(/^[ \t]*registerTileflowContourProtocol\([^\n]+;[ \t]*$/gm, '')
+    .replace(/^[ \t]*registerTileflowPathGroundProtocol\([^\n]+;[ \t]*$/gm, '');
   assert.ok(script, 'expected an inline preview script');
 
   let mapOptions: Record<string, unknown> | undefined;
@@ -1490,7 +1496,7 @@ function runPreviewScript(
   }> = [
     {id: 'tileflow-landuse-business-area', metadata: {}, sourceLayer: 'landuse', type: 'fill'},
     {
-      id: 'tileflow-buildings-3d',
+      id: 'tileflow-buildings-native-extrusion',
       metadata: {'tileflow:3d-toggle': 'building'},
       type: 'fill-extrusion',
     },
@@ -1593,7 +1599,7 @@ function runPreviewScript(
     getLayoutProperty(layerId: string, property: string): string | undefined {
       if (property !== 'visibility') return undefined;
       if (layerId === 'tileflow-landuse-business-area') return businessAreaVisibility;
-      if (layerId === 'tileflow-buildings-3d') return buildingVisibility;
+      if (layerId === 'tileflow-buildings-native-extrusion') return buildingVisibility;
       if (layerId === 'tileflow-vegetation-trees') return treeVisibility;
       return undefined;
     }
@@ -1632,7 +1638,7 @@ function runPreviewScript(
       if (layerId === 'tileflow-landuse-business-area' && property === 'visibility') {
         businessAreaVisibility = value;
       }
-      if (layerId === 'tileflow-buildings-3d' && property === 'visibility') {
+      if (layerId === 'tileflow-buildings-native-extrusion' && property === 'visibility') {
         buildingVisibility = value;
       }
       if (layerId === 'tileflow-vegetation-trees' && property === 'visibility') {

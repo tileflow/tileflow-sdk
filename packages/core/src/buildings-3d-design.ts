@@ -24,6 +24,8 @@ export const tileflowBuildingsMetadataKey = 'tileflow:buildings';
 export type TileflowBuildings3DDesign = Readonly<{
   /** The vector source and its layers with the buildings and the places they hold. */
   source: string;
+  /** Flat layers suspended while the 3D scene owns the buildings. */
+  flatLayers?: readonly Readonly<{id: string; visible: boolean}>[];
   layers: Readonly<{building: string; places?: string}>;
   /**
    * Each building's colour: a CSS colour, or a MapLibre expression over the building's
@@ -63,6 +65,8 @@ export type TileflowBuildings3DDesign = Readonly<{
   occlusion: boolean;
   /** Ground contact shadow strength; facade shading is independent. */
   groundOcclusion?: number;
+  /** Ground contact shadow reach in metres; zero hides it. */
+  groundOcclusionRadius?: number;
   /** Strength of prepared model ambient visibility; zero leaves the sky contribution unchanged. */
   modelOcclusion?: number;
   /** Building models the map places in its city, each replacing the buildings under it. */
@@ -103,6 +107,7 @@ export const tileflowDefaultBuildings3DDesign = Object.freeze({
   shadows: true,
   occlusion: true,
   groundOcclusion: 0.16,
+  groundOcclusionRadius: 3,
   modelOcclusion: 0.75,
 } satisfies TileflowBuildings3DDesign);
 
@@ -154,7 +159,16 @@ export function readTileflowBuildings3D(metadata: unknown): TileflowBuildings3DD
     shadows: typeof value.shadows === 'boolean' ? value.shadows : defaults.shadows,
     occlusion: typeof value.occlusion === 'boolean' ? value.occlusion : defaults.occlusion,
     groundOcclusion: within(value.groundOcclusion, 1, defaults.groundOcclusion),
+    groundOcclusionRadius: within(value.groundOcclusionRadius, 20, defaults.groundOcclusionRadius),
     modelOcclusion: within(value.modelOcclusion, 1, defaults.modelOcclusion),
+    ...(Array.isArray(value.flatLayers) &&
+    value.flatLayers.length <= 128 &&
+    value.flatLayers.every(
+      (entry) =>
+        isRecord(entry) && typeof entry.id === 'string' && typeof entry.visible === 'boolean',
+    )
+      ? {flatLayers: value.flatLayers as {id: string; visible: boolean}[]}
+      : {}),
     ...modelsOf(value.models),
     ...modelColorsOf(value.modelColors),
     ...landmarksOf(value.landmarks),

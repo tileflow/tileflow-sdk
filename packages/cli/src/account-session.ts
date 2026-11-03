@@ -26,6 +26,7 @@ export type AuthConfig = Readonly<{
 
 export type AuthFileState =
   | Readonly<{kind: 'empty'}>
+  | Readonly<{kind: 'legacy'}>
   | Readonly<{config: AuthConfig; kind: 'sessions'}>
   | Readonly<{kind: 'invalid'}>;
 
@@ -71,6 +72,22 @@ const authConfigSchema = z
       }
     }
   });
+const legacyAuthConfigSchema = z
+  .object({
+    apiKey: z.string().min(1).max(4096),
+    apiUrl: z
+      .url()
+      .max(2048)
+      .refine((value) => {
+        try {
+          normalizeApiOrigin(value);
+          return true;
+        } catch {
+          return false;
+        }
+      }),
+  })
+  .strict();
 export function emptyAuthConfig(): AuthConfig {
   return Object.freeze({sessions: Object.freeze({}), version: 2});
 }
@@ -94,7 +111,27 @@ export async function readAuthFile(path = authConfigPath()): Promise<AuthFileSta
   }
 
   const config = authConfigSchema.safeParse(parsed);
-  return config.success ? {config: freezeConfig(config.data), kind: 'sessions'} : {kind: 'invalid'};
+  if (config.success) return {config: freezeConfig(config.data), kind: 'sessions'};
+  return legacyAuthConfigSchema.safeParse(parsed).success ? {kind: 'legacy'} : {kind: 'invalid'};
+}
+
+export async function prepareAccountLogin(path = authConfigPath()): Promise<AuthFileState> {
+  const state = await readAuthFile(path);
+  if (state.kind === 'invalid') {
+    throw new Error('Tileflow auth state is invalid; no changes were made.');
+  }
+
+  const directory = dirname(path);
+  const probePath = `${path}.tmp-${process.pid}-${randomBytes(8).toString('hex')}`;
+  await mkdir(directory, {mode: 0o700, recursive: true});
+  const handle = await open(probePath, 'wx', 0o600);
+  try {
+    await handle.sync();
+  } finally {
+    await handle.close();
+    await unlink(probePath);
+  }
+  return state;
 }
 
 export async function loadAuthConfig(path = authConfigPath()): Promise<AuthConfig> {
@@ -102,6 +139,11 @@ export async function loadAuthConfig(path = authConfigPath()): Promise<AuthConfi
 
   if (state.kind === 'empty') return emptyAuthConfig();
   if (state.kind === 'sessions') return state.config;
+  if (state.kind === 'legacy') {
+    throw new Error(
+      'Tileflow CLI login uses an older format. Run tileflow login to sign in again.',
+    );
+  }
   throw new Error('Tileflow auth state is invalid; no changes were made.');
 }
 

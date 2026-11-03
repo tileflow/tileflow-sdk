@@ -108,6 +108,7 @@ out vec3 v_shadow;
 out float v_light;
 flat out int v_lighting_role;
 out float v_height;
+out float v_ground_height;
 out vec4 v_uv;
 out vec4 v_rgba;
 out vec3 v_position;
@@ -136,6 +137,7 @@ void main() {
   v_light = a_paint.z / 255.0;
   v_lighting_role = clamp(int(a_lighting_role + 0.5), 0, 6);
   v_height = (m.z - u_model_height.x) / max(u_model_height.y, 0.001);
+  v_ground_height = m.z;
 }`;
 
 export const tileflowModelFragment = `#version 300 es
@@ -146,6 +148,9 @@ in vec3 v_shadow;
 in float v_light;
 flat in int v_lighting_role;
 in float v_height;
+in float v_ground_height;
+uniform vec3 u_facade_shading; // vertical gradient, ground-contact strength and radius in metres
+uniform float u_role_color_scale[7];
 uniform vec3 u_sun_dir;
 uniform vec3 u_sun_light;
 uniform vec3 u_sky_light;
@@ -173,6 +178,16 @@ vec3 shade(vec3 normal, float lit, float occlusion) {
   return min(pow(light / max(roof, vec3(1e-4)), vec3(1.0 / 2.2)), vec3(1.7));
 }
 
+// Same quiet ground-to-facade transition as ordinary tile buildings, evaluated in metres.
+// Only map-shaded roles opt in; roofs and physical materials keep their own response.
+float facadeShade(vec3 normal, int role) {
+  float wall = 1.0 - abs(normal.z);
+  float up = max(v_ground_height, 0.0);
+  float gradient = 0.1 * u_facade_shading.x * (1.0 - smoothstep(0.0, 3.0, up));
+  float contact = u_facade_shading.y * exp(-up / max(u_facade_shading.z, 0.001));
+  return 1.0 - max(gradient, contact) * wall * u_role_appearance[role].x;
+}
+
 void main() {
   vec3 normal = normalize(gl_FrontFacing ? v_normal : -v_normal);
   if (u_physical) normal = materialNormal(normal);
@@ -187,7 +202,7 @@ void main() {
   float emission = clamp(u_role_emission[role] * multiplier, 0.0, 1.0);
   if (u_physical) {
     float alpha = materialAlpha();
-    vec3 base = materialBase(role);
+    vec3 base = materialBase(role) * fromSRGB(vec3(u_role_color_scale[role]));
     float mapShare = u_role_appearance[role].x;
     vec3 radiance;
     if (mapShare >= 1.0) {
@@ -197,13 +212,14 @@ void main() {
       if (mapShare > 0.0)
         radiance = mix(radiance, base * fromSRGB(shade(normal, lit, u_role_appearance[role].y)), mapShare);
     }
+    radiance *= fromSRGB(vec3(facadeShade(normal, role)));
     radiance += u_emissive * fromSRGB(materialTexture(4).rgb);
     vec4 own = u_role_emission_colour[role];
     radiance = mix(radiance, mix(base, fromSRGB(own.rgb), own.a), emission);
     fragColor = vec4(hazed(toSRGB(radiance)), alpha * u_opacity);
     return;
   }
-  vec3 colour = v_colour * shade(normal, lit, u_role_appearance[role].y);
+  vec3 colour = v_colour * u_role_color_scale[role] * shade(normal, lit, u_role_appearance[role].y) * facadeShade(normal, role);
   if (emission > 0.0) {
     vec4 own = u_role_emission_colour[role];
     vec3 target = mix(v_colour, own.rgb, own.a);

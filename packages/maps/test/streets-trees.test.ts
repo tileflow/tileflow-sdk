@@ -63,7 +63,9 @@ test('Streets owns both tree representations and an extension can disable both',
     const style = compile(theme);
     const description = readTileflowVegetation3D(style.metadata);
     assert.ok(description);
-    assert.equal(description.minimumHeight, 8);
+    assert.equal(description.minimumHeight, 6.4);
+    assert.equal(description.forms.round?.sizeCompression, 0.5);
+    assert.deepEqual(description.forms.round?.models, ['streets-tree-round']);
     assert.equal(description.materialVariation, 1);
     assert.equal(description.finish, 'smooth');
     assert.equal(Object.keys(description.models ?? {}).length, 7);

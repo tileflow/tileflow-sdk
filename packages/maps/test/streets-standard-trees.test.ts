@@ -92,8 +92,18 @@ for (const [referenceName, theme] of Object.entries(themes)) {
     assert.deepEqual(vegetation.colors.broadleaf, broadleaf);
     assert.deepEqual(vegetation.colors.conifer, conifer);
     assert.deepEqual(vegetation.colors.palm, broadleaf.slice(0, 3));
-    guardObservedMaterial(vegetation.colors.bark, observed.bark, `${theme} bark`);
-    guardObservedMaterial(vegetation.colors.broadleaf[1], observed.crown, `${theme} crown`);
+    if (theme === 'light') {
+      // The authored day palette now shares warm wood between trees and models.
+      assert.equal(vegetation.colors.bark, '#C6B493');
+      assert.equal(vegetation.colors.bark, colors['buildings.modelWood']);
+    } else {
+      guardObservedMaterial(vegetation.colors.bark, observed.bark, `${theme} bark`);
+    }
+    if (theme === 'light') {
+      assert.deepEqual(vegetation.colors.broadleaf, ['#87BFA8', '#9CD1B0', '#ABDDA9', '#B8E6C4']);
+    } else {
+      guardObservedMaterial(vegetation.colors.broadleaf[1], observed.crown, `${theme} crown`);
+    }
 
     for (const [kind, palette] of Object.entries(vegetation.colors)) {
       for (const value of typeof palette === 'string' ? [palette] : palette) {
@@ -122,9 +132,9 @@ for (const [referenceName, theme] of Object.entries(themes)) {
         Object.entries(vegetation.forms).map(([form, definition]) => [form, definition.models]),
       ),
       {
-        round: ['streets-tree-round', 'streets-tree-open'],
+        round: ['streets-tree-round'],
         open: ['streets-tree-open'],
-        tall: ['streets-tree-tall', 'streets-tree-open'],
+        tall: ['streets-tree-tall'],
         conifer: ['streets-tree-conifer'],
         columnar: ['streets-tree-columnar'],
         palm: ['streets-tree-palm-feather', 'streets-tree-palm-fan'],

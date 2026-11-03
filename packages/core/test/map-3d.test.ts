@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {tileflowBuildings3DLayerId} from '../src/buildings-3d-browser';
+import {tileflowNativeBuildingsLayerId} from '../src/building-layer-ids';
 import {attachTileflowMap3D} from '../src/map-3d-attach-browser';
 
 // React, Vue and Svelte mount the scene through attachTileflowMap3D with this loader.
@@ -9,7 +10,7 @@ const mounted = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function fakeMap(initial: Record<string, unknown>) {
   const listeners = new Map<string, Set<() => void>>();
-  const layers = new Set<string>();
+  const layers = new Map<string, {id: string}>();
   let metadata = initial;
   let reads = 0;
   return {
@@ -26,11 +27,11 @@ function fakeMap(initial: Record<string, unknown>) {
       this.fire('style.load');
     },
     addLayer(layer: {id: string}) {
-      layers.add(layer.id);
+      layers.set(layer.id, layer);
     },
     getBearing: () => 0,
     getCenter: () => ({lat: 40.42, lng: -3.7}),
-    getLayer: (id: string) => (layers.has(id) ? {} : undefined),
+    getLayer: (id: string) => layers.get(id),
     getPaintProperty: () => undefined,
     getPitch: () => 60,
     getSource: () => undefined,
@@ -66,6 +67,55 @@ test('a style that declares buildings mounts the 3D buildings by default', async
   assert.ok(map.layers.has(tileflowBuildings3DLayerId));
   scene.dispose();
   assert.equal(map.layers.has(tileflowBuildings3DLayerId), false);
+});
+
+test('the native extrusion stays visible through lazy loading and takes over if loading fails', async () => {
+  const map = fakeMap(buildings);
+  map.layers.set(tileflowNativeBuildingsLayerId, {id: tileflowNativeBuildingsLayerId});
+  let visibility = 'none';
+  Object.assign(map, {
+    getLayoutProperty: () => visibility,
+    setLayoutProperty: (_id: string, _property: string, next: string) => {
+      visibility = next;
+    },
+  });
+  let fail!: (error: Error) => void;
+  const errors: unknown[] = [];
+  const attachment = attachTileflowMap3D({
+    map,
+    load: () => new Promise((_resolve, reject) => (fail = reject)),
+    onError: (error) => errors.push(error),
+  });
+  assert.equal(visibility, 'visible');
+  attachment.setViewMode('2d');
+  assert.equal(visibility, 'none');
+  attachment.setViewMode('3d');
+  assert.equal(visibility, 'visible');
+  fail(new Error('loader failed'));
+  await mounted();
+  assert.equal(visibility, 'visible');
+  assert.equal(errors.length, 1);
+  attachment.dispose();
+  assert.equal(visibility, 'none');
+});
+
+test('mounting the scene keeps native buildings until its first drawable frame', async () => {
+  const map = fakeMap(buildings);
+  map.layers.set(tileflowNativeBuildingsLayerId, {id: tileflowNativeBuildingsLayerId});
+  let visibility = 'none';
+  Object.assign(map, {
+    getLayoutProperty: () => visibility,
+    setLayoutProperty: (_id: string, _property: string, next: string) => {
+      visibility = next;
+    },
+  });
+  const attachment = attachTileflowMap3D({map, load});
+  assert.equal(visibility, 'visible');
+  await mounted();
+  assert.ok(map.layers.has(tileflowBuildings3DLayerId));
+  assert.equal(visibility, 'visible');
+  attachment.dispose();
+  assert.equal(visibility, 'none');
 });
 
 test('the 2D view opts out: no 3D layer is mounted until the scene is shown', async () => {
@@ -132,4 +182,94 @@ test('a view mode change passes its transition to the scene, so buildings rise o
     ['hide', undefined],
   ]);
   scene.dispose();
+});
+
+function cameraMap(metadata: Record<string, unknown>) {
+  const map = fakeMap(metadata);
+  let fov = 36.87;
+  let writes = 0;
+  return Object.assign(map, {
+    getPitch: () => 0,
+    getCanvas: () => ({clientHeight: 900}),
+    getVerticalFieldOfView: () => fov,
+    setVerticalFieldOfView(value: number) {
+      fov = value;
+      writes++;
+      map.fire('move');
+    },
+    get writes() {
+      return writes;
+    },
+  });
+}
+const adaptive = {...buildings, 'tileflow:camera': {version: 1, adaptivePerspective: true}};
+
+test('flat footprints remain until the 3D renderer has a drawable frame', async () => {
+  const native = {visibility: 'visible'};
+  const map = fakeMap({
+    'tileflow:buildings': {
+      version: 1,
+      source: 'tileflow',
+      layers: {building: 'building'},
+      color: '#dddddd',
+      flatLayers: [{id: 'footprint', visible: true}],
+    },
+  });
+  const originalLayer = map.getLayer;
+  Object.assign(map, {
+    getLayer: (id: string) => (id === 'footprint' ? native : originalLayer(id)),
+    getLayersOrder: () => ['footprint'],
+    getCanvas: () => ({clientHeight: 900, getContext: () => ({})}),
+    getLayoutProperty: () => native.visibility,
+    setLayoutProperty: (_id: string, _property: string, value: string) => {
+      native.visibility = value;
+    },
+  });
+  const attachment = attachTileflowMap3D({map, load});
+  await mounted();
+  assert.equal(native.visibility, 'visible');
+  attachment.setViewMode('2d');
+  assert.equal(native.visibility, 'visible');
+  attachment.setViewMode('3d');
+  assert.equal(native.visibility, 'visible');
+  attachment.dispose();
+  assert.equal(native.visibility, 'visible');
+});
+
+test('camera precedence is caller, authored map, then false; switching view restores the lens', async () => {
+  const map = cameraMap(buildings);
+  const attachment = attachTileflowMap3D({map, load});
+  await mounted();
+  assert.equal(map.getVerticalFieldOfView(), 36.87);
+  map.loadStyle(adaptive);
+  assert.ok(map.getVerticalFieldOfView() < 7);
+  attachment.setAdaptivePerspective(false);
+  assert.equal(map.getVerticalFieldOfView(), 36.87);
+  map.loadStyle(adaptive);
+  assert.equal(map.getVerticalFieldOfView(), 36.87);
+  attachment.setAdaptivePerspective(undefined);
+  assert.ok(map.getVerticalFieldOfView() < 7);
+  attachment.setViewMode('2d');
+  assert.equal(map.getVerticalFieldOfView(), 36.87);
+  attachment.setViewMode('3d');
+  assert.ok(map.getVerticalFieldOfView() < 7);
+  map.loadStyle(buildings);
+  assert.equal(map.getVerticalFieldOfView(), 36.87);
+  attachment.setAdaptivePerspective(true);
+  assert.ok(map.getVerticalFieldOfView() < 7);
+  attachment.dispose();
+  assert.equal(map.getVerticalFieldOfView(), 36.87);
+});
+
+test('caller camera changes before lazy loading win, and removal never writes the destroyed camera', async () => {
+  const map = cameraMap(adaptive);
+  const attachment = attachTileflowMap3D({map, load, camera: {adaptivePerspective: false}});
+  attachment.setAdaptivePerspective(true);
+  await mounted();
+  assert.ok(map.getVerticalFieldOfView() < 7);
+  const before = map.getVerticalFieldOfView();
+  map.fire('remove');
+  attachment.dispose();
+  assert.equal(attachment.scene, undefined);
+  assert.equal(map.getVerticalFieldOfView(), before);
 });

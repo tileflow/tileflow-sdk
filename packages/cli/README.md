@@ -44,7 +44,7 @@ file. A framework component defaults to `/tileflow/manifest.json`; set its `mani
 when your application's public path differs.
 
 `build` is local. Hosted compatibility is a separate preflight: hosted deployment requires Tileflow
-World and currently rejects local/package font bundles. Production builds reject unresolved local
+World and publishes a map's own fonts as a Hosted font bundle. Production builds reject unresolved local
 PMTiles inputs rather than silently copying or publishing user datasets. Publish managed data
 explicitly or supply an application-owned production source.
 
@@ -58,9 +58,6 @@ and optional time-of-day composition), `inspect` for configuration and data, `ca
 for reproducible evidence, and `compare` for saved captures, semantic edits, styles, references or
 baselines. `preview` opens Inspector. These tools work in independent projects with
 custom maps and data; official maps are optional.
-
-See the [map authoring workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md)
-for command examples, bounded JSON queries, compatible aliases and efficient agent workflows.
 
 ## Preview and compare
 
@@ -111,9 +108,7 @@ npx tileflow inspect session --url http://127.0.0.1:3333 --json
 ```
 
 Use the origin printed by your running preview. This reads browser observations, including their
-age and stale flag; exact source lines and token ownership are not inferred. See the
-[Inspector workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md#work-with-a-person-and-an-agent)
-for storage and context bounds.
+age and stale flag; exact source lines and token ownership are not inferred.
 
 `--api-base-url` or `TILEFLOW_API_URL` changes the API origin used by the official preview sources.
 It does not change the map's authored data ownership or publish any data.
@@ -122,8 +117,6 @@ It does not change the map's authored data ownership or publish any data.
 
 Captures return reusable IDs. Compare two saved renders with
 `tileflow compare --before <id> --after <id> --json`; no config, browser, or network is needed.
-The [authoring workflow](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/map-authoring.md)
-describes storage, integrity checks, mismatch outcomes and watch-session reuse.
 
 Add a concrete-theme scene to `tileflow.config.ts`:
 
@@ -176,7 +169,7 @@ Do not run a separate `tileflow preview` server beside the application.
 
 ## Render a timed shot
 
-Commit a [capture shot](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/docs/capture-shots.md)
+Commit a capture shot
 under `shots` on the same map: a concrete theme, a viewport, and two or more center-camera
 keyframes, optionally with a theme blend. Then render it:
 
@@ -209,8 +202,7 @@ receipt. Use `visual compare` for an authenticated two-style review with matched
 renderer, and data identity. Neither operation approves a baseline. Capture watch mode emits NDJSON
 generation events rather than a single JSON document.
 
-The [capture contract](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/local-visual-capture.md)
-documents readiness, receipts, comparison limits, and CLI output formats.
+Use `tileflow capture --help` and `tileflow compare --help` for installed command options.
 
 ## Publish data and deploy a map
 
@@ -218,6 +210,30 @@ Hosted writes require authorization. For local development, `login` stores a per
 for CI, provide an appropriately scoped key through the secret environment variable
 `TILEFLOW_API_KEY`. CI does not fall back to a saved personal login. Never put a key in a config,
 browser bundle, copied prompt, or command-line argument.
+
+If `login` finds the older local file containing an API key and API URL, it replaces that file only
+after a new account login succeeds. The old API key is not converted into an account session.
+Unrecognized local files are left untouched and stop login before authorization begins.
+
+For commands accepting an API key, `--api-key` takes precedence over `TILEFLOW_API_KEY`;
+only an absent key allows a saved personal session. An empty, invalid, expired or revoked key
+fails without switching identities. `--api-url` takes precedence over `TILEFLOW_API_URL`.
+This selection also applies to `models`, `tileset`, Icon Set commands and Map status. Keys
+never appear in help output. When a personal account can manage several Teams, pass an
+explicit `--team @team`; a Team key already selects its Team.
+
+`login` always authorizes a personal session through the dashboard, even when an API key is
+configured. `--no-browser` prints the URL without prompting to open it. Polling retries temporary
+connection/server failures with bounded backoff and honors rate-limit waits until the authorization
+expires. Denied or invalid authorizations stop immediately. A new session is validated and saved
+before the previous session for that API origin is revoked. Failed validation or persistence
+attempts to revoke the newly issued session and preserves the saved login. If cleanup cannot
+reach the server, the CLI explains that the session must be revoked in Dashboard settings.
+
+`logout` revokes only the saved personal session for the selected API origin. If server revocation
+fails, local access is preserved so logout can be retried. API keys remain independent: an API key
+in the environment still authorizes resource commands after logout. Personal session tokens stay
+in the local auth file with restricted permissions; this CLI does not use an OS credential store.
 
 ```sh
 npx tileflow login
@@ -229,16 +245,16 @@ npx tileflow status --map-id map_AbCdEfGhIjKlMnOp
 
 Without `--map-id`, a logged-in `deploy` first creates the Map in the Team you administer (it asks,
 or takes `--team @team`, when several qualify) with the browser access you choose: exact origins
-with `--origin`, or `--any-website`. It prints the Map ID to use for later deploys;
+with `--origin` (a website, or an app's WebView page under its own scheme such as `myapp://app`),
+or `--any-website`. It prints the Map ID to use for later deploys;
 `tileflow maps create` creates the Map without deploying. The Map ID is a public identifier, not a
 credential or the portable `id` in your config. CI always deploys an existing Map with a deploy key
 for that destination. `logout` removes the saved personal session.
 
 Deploy publishes the compiled themes for web and native apps; the server compiles no TypeScript.
-It reports native differences, resumes interrupted runs and reuses unchanged versions
-([protocol](docs/native-artifacts.md#publish-to-hosted-for-web-and-native-apps)). Build writers
-refuse to overwrite hosted manifests by default, and deploy refuses to replace a self-hosted
-manifest without explicit authorization. Keep separate outputs, or use the documented overwrite
+It reports native differences, resumes interrupted runs and reuses unchanged versions. Build
+writers refuse to overwrite hosted manifests by default, and deploy refuses to replace a
+self-hosted manifest without explicit authorization. Keep separate outputs, or use the documented overwrite
 option only for an intentional migration.
 
 Data publication is separate from map deployment:
@@ -253,6 +269,9 @@ Use your own file, Team selector, and attribution. Inspection is account-free. P
 and uploads a managed dataset using Team data authority, not a map-only deploy key. Interrupted
 uploads are resumable; a completed version becomes current at stable delivery URLs. Purge is
 explicit, requires confirmation, and can be blocked by retained deployment dependencies.
+
+Administratively disabled uploads return `TF_TILESET_UPLOAD_DISABLED` without retrying.
+Temporary service failures retain bounded retries.
 
 `inspect features` samples bounded vector-source features. `icons list` and `icons diff` inspect
 prepared icon identities; they do not turn package directories into a separate hosted library.
@@ -317,25 +336,9 @@ Missing fonts or sprites require the complete prepared output. Hosted compatibil
 be fixed before authentication or upload, not bypassed with repeated deployment attempts.
 
 See [deployment documentation](https://tileflow.dev/docs/deploy),
-[SDK responsibility boundaries](https://github.com/tileflow/tileflow-sdk/blob/main/docs/contracts/sdk-responsibilities.md),
+[SDK responsibility boundaries](https://github.com/tileflow/tileflow-sdk/blob/main/README.md),
 and [issues](https://github.com/tileflow/tileflow-sdk/issues). Source `main` may be newer than npm;
 use the installed CLI's help and generated contracts for that release.
-
-## Detailed guides
-
-These guides are also included in the installed package under `docs/`. They describe this source
-revision; prefer the installed copy when working with an older release.
-
-- [CLI setup and defaults](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/cli-setup-and-defaults.md)
-- [Build artifacts](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/build-artifacts.md)
-- [Deterministic agent diagnostics](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/deterministic-agent-diagnostics.md)
-- [Coordinates](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/coordinates.md)
-- [Command families](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/command-families.md)
-- [Local visual feedback](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/local-visual-feedback.md)
-- [Inspect vector features](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/inspect-vector-features.md)
-- [Hosted authentication and deploy](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/hosted-authentication-and-deploy.md)
-- [Agent icon composition](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/agent-icon-composition.md)
-- [Read-only icon comparison](https://github.com/tileflow/tileflow-sdk/blob/main/packages/cli/docs/read-only-icon-comparison.md)
 
 ## Validate icon representations
 
@@ -349,4 +352,4 @@ reports the invalid generation while retaining its last valid artifact.
 
 Declare defaults in `tileflow.icons.json`; inspect effective appearances and text-fitting layouts with
 `tileflow icons list --json`. Diff reports detect default-only changes and show rendered previews.
-See [Author recolorable and adaptable icons](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/docs/native-icons.md) for the source profile and halo bounds.
+See [Author recolorable and adaptable icons](https://github.com/tileflow/tileflow-sdk/blob/main/packages/dev/README.md) for the source profile and halo bounds.

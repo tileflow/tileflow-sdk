@@ -401,7 +401,9 @@ export async function parseTileflowRendererDeploymentArtifact(
       for (const id of Object.keys(webSources))
         if (
           !Object.hasOwn(nativeSources, id) &&
-          !degradations.some((record) => record.id === `deviceContours:${id}`)
+          !degradations.some((record) =>
+            nativeSourceDegradations.some((feature) => record.id === `${feature}:${id}`),
+          )
         )
           throw new Error();
       if (
@@ -526,6 +528,8 @@ async function splitArtifact(
   };
 }
 
+/** Degradations whose subject is a web source the native style leaves out with its layers. */
+const nativeSourceDegradations = ['deviceContours', 'pathGround', 'embeddedImages'] as const;
 const secretPattern = /tf_(?:public|native|live)_/u;
 function utf8Bytes(text: string): number {
   return new TextEncoder().encode(text).byteLength;

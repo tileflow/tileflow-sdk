@@ -17,7 +17,7 @@ export const tileflowBuildingVertexBytes = 28;
 /** World's `tone`, which the renderer uses to choose the buildings it flood-lights. */
 const tones: Readonly<Record<string, number>> = {commercial: 1, active: 2, destination: 3};
 /**
- * World's `class`, the building's use, as the renderer groups it for its windows: 1 housing, 2 a
+ * World's `use`, the building's use, as the renderer groups it for its windows: 1 housing, 2 a
  * place of work, study or care, 3 a building without rows of windows (a shed, a barn, a factory, a
  * church). Packed above the tone, four values apart.
  */

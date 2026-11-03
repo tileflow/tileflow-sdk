@@ -33,13 +33,13 @@ type TileflowGroundMatch = {
 };
 
 // World's ground classes drawn as each Tileflow land use. World has no civic or government
-// ground class; those styles draw only data that publishes one.
+// ground class, so those land uses draw nothing.
 const landuseClasses: Record<TileflowLanduseClass, readonly TileflowGroundMatch[]> = {
   cemetery: [{class: ['cemetery']}],
-  civic: [{class: ['civic']}],
+  civic: [],
   commercial: [{class: ['commercial', 'retail']}],
   education: [{class: ['education']}],
-  government: [{class: ['government']}],
+  government: [],
   industrial: [{class: ['industrial']}],
   medical: [{class: ['hospital']}],
   military: [{class: ['military']}],
@@ -262,7 +262,7 @@ export function compileLand(
   let localOrder = 100;
   const appendLanduse = (name: TileflowLanduseClass, matches: readonly TileflowGroundMatch[]) => {
     const style = config.landuse?.[name];
-    if (!style) return;
+    if (!style || matches.length === 0) return;
     for (const area of createAreaLayers(
       {
         id: `tileflow-landuse-${name}`,

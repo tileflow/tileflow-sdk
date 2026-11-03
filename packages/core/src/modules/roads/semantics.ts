@@ -96,7 +96,14 @@ export function tileflowRoadClassFilter(
   ];
 }
 
-/** The values of the `class` field a road class draws. */
-export function tileflowRoadClassValues(roadClass: TileflowRoadClass): string[] {
-  return [...roadClassValues[roadClass], ...tileflowRoadConstructionClasses];
+/** A kind of feature a road class draws: its `class`, and the `type`s it can have when known. */
+export type TileflowRoadKind = Readonly<{class: string; types?: readonly string[]}>;
+
+/** Every kind of feature a road class draws: roads in service, and roads being built as it. */
+export function tileflowRoadKinds(roadClass: TileflowRoadClass): TileflowRoadKind[] {
+  const inService =
+    isTileflowPathRoadClass(roadClass) && roadClass !== 'pedestrian'
+      ? [{class: 'path', types: pathTypes[roadClass]}]
+      : roadClassValues[roadClass].map((value) => ({class: value}));
+  return [...inService, {class: 'construction', types: constructionTypes[roadClass]}];
 }

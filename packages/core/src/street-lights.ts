@@ -28,9 +28,9 @@ export type TileflowStreetLightPlacementOptions = Readonly<{
 
 /** A tile's layers the lamps come from, as World names them. */
 export type TileflowStreetLightLayers = Readonly<{
-  /** Points with `subclass` `street_lamp` (World's `street_furniture`). */
+  /** Points with `type` `street_lamp` (World's `street_furniture`). */
   streetFurniture?: TileflowTileLayer;
-  /** Streets by `class`, with `lit` where mapped (World's `transportation`). */
+  /** Streets by `class`, with `lit` where mapped (World's `road`). */
   transportation?: TileflowTileLayer;
   /** Pavements, as lines or areas, with `lit` where mapped (World's `sidewalk`). */
   sidewalks?: TileflowTileLayer;

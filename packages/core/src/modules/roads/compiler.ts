@@ -33,8 +33,9 @@ import {
   isTileflowPathRoadClass,
   tileflowPathRoadClasses,
   tileflowRoadClassFilter,
-  tileflowRoadClassValues,
   tileflowRoadConstructionClasses,
+  type TileflowRoadKind,
+  tileflowRoadKinds,
 } from './semantics';
 
 const roadClassOrder: readonly TileflowRoadClass[] = [
@@ -130,10 +131,7 @@ export function compileRoads(
       request?.classes?.[roadClass],
     );
     const treatments = resolveRoadTreatments(request, schema.fields, roadClass);
-    const drawn = {
-      field: schema.fields.class,
-      classes: new Set(tileflowRoadClassValues(roadClass)),
-    };
+    const drawn: DrawnRoads = {fields: schema.fields, kinds: tileflowRoadKinds(roadClass)};
     const roundaboutSurface: RoundaboutSurface = {roadClass};
     roundaboutSurfaces.push(roundaboutSurface);
 
@@ -790,8 +788,8 @@ function applyRoadTreatments(
   structure: TileflowRoadStructure,
   phase: 'casing' | 'fill' | 'shadow',
   fallbackColor: string,
-  /** The road class's `class` field and values, to settle conditions on them. */
-  drawn: Readonly<{field: string; classes: ReadonlySet<string>}>,
+  /** The road class's kinds of feature, to settle conditions on them. */
+  drawn: DrawnRoads,
 ): typeof base {
   const result = {...base} as Record<string, unknown>;
   const paintProperties = [
@@ -860,58 +858,77 @@ function applyRoadTreatments(
   return result as typeof base;
 }
 
+/** The kinds of feature a road class's layers draw: a `class`, and the `type`s it can have. */
+type DrawnRoads = Readonly<{
+  fields: Readonly<{class: string; type: string}>;
+  kinds: readonly TileflowRoadKind[];
+}>;
+
 /**
- * A value as a road class's features see it: conditions on the `class` field that hold, or fail,
- * for every class value it draws are settled. In a motorway's layers a dash for construction paths
- * never applies, and the motorway keeps the solid-line shader.
+ * A value as a road class's features see it: conditions on `class` and `type` that hold, or fail,
+ * for every kind of feature it draws are settled. In a motorway's layers a dash for footpaths under
+ * construction never applies, and the motorway keeps the solid-line shader.
  */
-function withinClasses(
-  value: unknown,
-  drawn: Readonly<{field: string; classes: ReadonlySet<string>}>,
-): unknown {
-  const decided = (condition: unknown): boolean | undefined => {
+function withinClasses(value: unknown, drawn: DrawnRoads): unknown {
+  // The field by the data's name, or by the semantic name bound to it later.
+  const fieldOf = (operand: unknown): 'class' | 'type' | undefined => {
+    if (!Array.isArray(operand) || operand.length !== 2 || operand[0] !== 'get') return undefined;
+    const name = operand[1];
+    if (name === drawn.fields.class) return 'class';
+    if (name === drawn.fields.type) return 'type';
+    if (
+      typeof name === 'object' &&
+      name !== null &&
+      (name as {kind?: unknown}).kind === 'tileflow-data-field'
+    ) {
+      const semantic = (name as {name?: unknown}).name;
+      return semantic === 'class' || semantic === 'type' ? semantic : undefined;
+    }
+    return undefined;
+  };
+  // Whether one kind of feature has a value among the labels: undefined when it may or may not.
+  const among = (kind: TileflowRoadKind, field: 'class' | 'type', labels: readonly unknown[]) => {
+    if (field === 'class') return labels.includes(kind.class);
+    if (!kind.types) return undefined;
+    const hits = kind.types.filter((type) => labels.includes(type)).length;
+    return hits === 0 ? false : hits === kind.types.length ? true : undefined;
+  };
+  const decide = (condition: unknown, kind: TileflowRoadKind): boolean | undefined => {
     if (!Array.isArray(condition)) return typeof condition === 'boolean' ? condition : undefined;
     const [operator, ...operands] = condition;
-    // The class field by the data's name, or by the semantic name bound to it later.
-    const isClass = (operand: unknown) =>
-      Array.isArray(operand) &&
-      operand.length === 2 &&
-      operand[0] === 'get' &&
-      (operand[1] === drawn.field ||
-        (typeof operand[1] === 'object' &&
-          operand[1] !== null &&
-          (operand[1] as {kind?: unknown}).kind === 'tileflow-data-field' &&
-          (operand[1] as {name?: unknown}).name === 'class'));
-    const among = (labels: readonly unknown[]) => {
-      const hits = [...drawn.classes].filter((value) => labels.includes(value)).length;
-      return hits === 0 ? false : hits === drawn.classes.size ? true : undefined;
-    };
     if ((operator === '==' || operator === '!=') && operands.length === 2) {
-      const label = isClass(operands[0]) ? operands[1] : isClass(operands[1]) ? operands[0] : null;
-      if (typeof label !== 'string') return undefined;
-      const equal = among([label]);
+      const field = fieldOf(operands[0]) ?? fieldOf(operands[1]);
+      const label = fieldOf(operands[0]) ? operands[1] : operands[0];
+      if (!field || typeof label !== 'string') return undefined;
+      const equal = among(kind, field, [label]);
       return equal === undefined ? undefined : operator === '==' ? equal : !equal;
     }
     if (
       operator === 'match' &&
       operands.length === 4 &&
-      isClass(operands[0]) &&
+      fieldOf(operands[0]) &&
       typeof operands[2] === 'boolean' &&
       typeof operands[3] === 'boolean'
     ) {
       const labels = Array.isArray(operands[1]) ? operands[1] : [operands[1]];
-      const matched = among(labels);
+      const matched = among(kind, fieldOf(operands[0])!, labels);
       return matched === undefined ? undefined : matched ? operands[2] : operands[3];
     }
     if (operator === '!' && operands.length === 1) {
-      const inner = decided(operands[0]);
+      const inner = decide(operands[0], kind);
       return inner === undefined ? undefined : !inner;
     }
     if (operator === 'all' || operator === 'any') {
-      const results = operands.map(decided);
+      const results = operands.map((operand) => decide(operand, kind));
       if (results.includes(operator === 'all' ? false : true)) return operator !== 'all';
       return results.every((result) => result !== undefined) ? operator === 'all' : undefined;
     }
+    return undefined;
+  };
+  const decided = (condition: unknown): boolean | undefined => {
+    const results = drawn.kinds.map((kind) => decide(condition, kind));
+    if (results.every((result) => result === true)) return true;
+    if (results.every((result) => result === false)) return false;
     return undefined;
   };
   if (!Array.isArray(value) || value[0] !== 'case') return value;

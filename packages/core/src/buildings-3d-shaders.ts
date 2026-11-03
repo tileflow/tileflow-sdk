@@ -237,12 +237,12 @@ float hash(vec2 p) {
   return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
-// The contact shade rises gradually up the facade, in world metres. Use one bounded shade
-// for the authored gradient, ground contact and inner corners, rather than multiplying them.
+// The authored gradient follows the facade's height, leaving its upper edge light. Ground
+// contact and inner corners stay local; their shades never multiply into a dark lower band.
 float facadeShade() {
   if (v_building.z < 0.5) return 1.0;
-  float reach = min(3.0, max((v_facade.z - v_base) * 0.5, 0.1));
-  float gradient = 0.1 * u_style_gradient * (1.0 - smoothstep(0.0, reach, v_facade.y - v_base));
+  float reach = max((v_facade.z - v_base) * 0.85, 0.1);
+  float gradient = 0.12 * u_style_gradient * (1.0 - smoothstep(0.0, reach, v_facade.y - v_base));
   // Exponential attenuation leaves a soft tail above the first floor, without a band ending
   // at its radius. Height above ground also keeps raised parts from acquiring a dark lower rim.
   float up = max(v_facade.y, 0.0);
@@ -274,10 +274,10 @@ vec3 styleColour(vec3 colour, vec3 normal) {
 
 // A surface's light over the light a sunlit roof takes, in the map's colours: a sunlit roof keeps
 // its colour, a wall turned to a low sun glows, and shade takes the sky's colour. A wall sees half
-// the sky; by day the ground's light makes up some of the rest, at night little does.
+// the sky; broad daylight fill keeps facades luminous, while night has little bounced light.
 vec3 shade(vec3 normal, float lit) {
   float facing = dot(normal, u_sun_dir);
-  vec3 sky = u_sky_light * mix(mix(0.8, 0.5, u_night), 1.0, normal.z);
+  vec3 sky = u_sky_light * mix(mix(0.92, 0.5, u_night), 1.0, normal.z);
   vec3 light = sky + u_sun_light * max(facing, 0.0) * (1.0 - u_shadow * (1.0 - lit));
   vec3 roof = u_sky_light + u_sun_light * max(u_sun_dir.z, 0.0);
   return min(pow(light / max(roof, vec3(1e-4)), vec3(1.0 / 2.2)), vec3(1.7));

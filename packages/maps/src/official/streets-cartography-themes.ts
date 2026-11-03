@@ -1,8 +1,9 @@
-import {defineTheme, type TileflowTheme, token} from '@tileflow/core';
+import {defineTheme, resolveTileflowTheme, type TileflowTheme, token} from '@tileflow/core';
 import {streetsBuildingColors} from './streets-building-colors';
 import {streetsDayColors, streetsDayImages} from './streets-day-colors';
 import {streetsDayGroundColors} from './streets-ground-and-access';
 import {streetsNetworkDayColors} from './streets-network-overview';
+import {streetsTimeColors} from './streets-time-colors';
 
 const palettes = {
   day: ['#E8EAED', '#F3E9DF', '#D5D8DD', '#DDCCC0'],
@@ -38,7 +39,7 @@ function colors(name: string) {
 }
 
 export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
-  return Object.fromEntries(
+  const themes = Object.fromEntries(
     Object.entries(base).map(([name, theme]) => [
       name,
       defineTheme(theme, {
@@ -64,12 +65,13 @@ export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
             'roads.overview.casingClose': token.color('roads.detail.casing'),
             ...(name === 'light' ? streetsDayGroundColors : {}),
             ...(name === 'light' ? streetsNetworkDayColors : {}),
-            // Daylight 3D stone is a soft ivory, still cooler than active buildings.
+            // The ordinary city stays in warm limestone; authored parts add material contrast.
             'buildings.raised.neutral':
-              name === 'light' ? '#EDEDE7' : colors(name)['buildings.flat.neutral'],
+              name === 'light' ? '#ECE8DE' : colors(name)['buildings.flat.neutral'],
             ...streetsBuildingColors(
-              name === 'light' ? '#EDEDE7' : colors(name)['buildings.flat.neutral']!,
+              name === 'light' ? '#EEEAE1' : colors(name)['buildings.flat.neutral']!,
               theme.colorScheme === 'dark',
+              name.includes('monochrome'),
             ),
             ...(name === 'light'
               ? {
@@ -96,4 +98,25 @@ export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
       }),
     ]),
   );
+  const day = resolveTileflowTheme(themes.light!).tokens.color;
+  const referenceDay = resolveTileflowTheme(base.light!).tokens.color;
+  for (const [name, theme] of Object.entries(themes)) {
+    if (!/^(?:dawn|dusk|dark)(?:-|$)/.test(name)) continue;
+    const referenceTime = resolveTileflowTheme(base[name]!).tokens.color;
+    themes[name] = defineTheme(theme, {
+      id: `streets-${name}`,
+      version: 1,
+      colorScheme: theme.colorScheme,
+      tokens: {
+        color: streetsTimeColors(
+          {...day, 'landcover.global.crop': streetsDayGroundColors['landcover.global.crop']},
+          referenceDay,
+          referenceTime,
+          name.includes('monochrome'),
+          name.startsWith('dawn') ? 'dawn' : name.startsWith('dusk') ? 'dusk' : 'night',
+        ),
+      },
+    });
+  }
+  return themes;
 }

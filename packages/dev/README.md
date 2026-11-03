@@ -59,6 +59,9 @@ The artifact plan exposes files and observed inputs from the same generation. St
 `styles[map][theme]`, never as an implicit default-theme alias. Keep that generation alive for the
 whole operation, then release it. Do not reconstruct its asset list from directory guesses.
 
+Generated style files use compact JSON in both stable and immutable generation paths. Their
+parsed contents are unchanged; format the JSON in your editor when inspecting a generated file.
+
 Map-owned tree models are prepared alongside icons and embedded in the styles. Custom tools that
 compile icons separately can use `prepareTileflowMapTreeModels` from `@tileflow/dev/icons` with
 the map's model directories, base directory, working directory, target and diagnostic path. Pass

@@ -1211,7 +1211,7 @@ function boundedThemeNumberSchema(min: number, max: number) {
 // A zoom band a part of the 3D city comes in over, from where it starts to where it stands.
 const entranceBandSchema = z
   .tuple([z.number().finite().min(0).max(24), z.number().finite().min(0).max(24)])
-  .refine(([from, to]) => from < to, 'A band starts at a lower zoom than it ends.');
+  .refine(([from, to]) => from <= to, 'A band cannot end before it starts.');
 
 const modelRoleLightingSchema = z
   .object({
@@ -1294,6 +1294,7 @@ const buildingsModuleSchema = z
         entrance: z
           .object({buildings: entranceBandSchema.optional(), models: entranceBandSchema.optional()})
           .strict()
+          .or(z.literal(false))
           .optional(),
         flatFootprints: z.boolean().optional(),
         occlusion: z.boolean().optional(),
@@ -2700,7 +2701,19 @@ export const resolvedTileflowMapSchema: z.ZodType<TileflowCompilerConfig> = z
   .object({
     atmosphere: atmosphereSchema.optional(),
     boundaryAreas: boundaryAreasSchema.optional(),
-    camera: z.object({adaptivePerspective: z.boolean().optional()}).strict().optional(),
+    camera: z
+      .object({
+        adaptivePerspective: z.boolean().optional(),
+        pitchLimit: z
+          .object({
+            maxZoom: z.number().finite().min(0).max(24),
+            maxPitch: z.number().finite().min(0).max(tileflowMaxPitch),
+          })
+          .strict()
+          .optional(),
+      })
+      .strict()
+      .optional(),
     data: dataSchema.optional(),
     defaultTheme: tileflowThemeNameSchema,
     fonts: fontDirectoriesSchema.optional(),

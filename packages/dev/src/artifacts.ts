@@ -584,7 +584,7 @@ function getStableTileflowArtifactFiles(artifacts: TileflowBuildArtifacts): Tile
       Object.entries(themes).map(([themeName, style]) => ({
         contentType: 'application/json; charset=utf-8',
         fileName: `styles/${mapName}/${themeName}.json`,
-        source: `${JSON.stringify(style, null, 2)}\n`,
+        source: `${JSON.stringify(style)}\n`,
       })),
     ),
     ...artifacts.assets,
@@ -697,7 +697,7 @@ function createGenerationArtifactFiles(
       return {
         contentType: 'application/json; charset=utf-8',
         fileName: `${prefix}/styles/${mapName}/${themeName}.json`,
-        source: `${JSON.stringify(generationStyle, null, 2)}\n`,
+        source: `${JSON.stringify(generationStyle)}\n`,
       } satisfies TileflowArtifactFile;
     }),
   );

@@ -1,11 +1,12 @@
 import type {TileflowThemeLighting} from '@tileflow/core';
 import type {StreetsColorTheme, StreetsLightPreset} from './streets-theme-colors';
 
-// Public Mapbox Standard light properties, retrieved 2026-10-18 from
+// Dawn, dusk and night retain public Mapbox Standard light properties, retrieved 2026-10-18 from
 // https://api.mapbox.com/styles/v1/mapbox/standard (modified 2026-10-08T14:57:51.547Z).
 // Direction is [azimuth clockwise from north, polar angle from the zenith]:
 // https://docs.mapbox.com/style-spec/reference/light/#direction
-// These are the fixed zoom >= 14 values. Standard interpolates directional intensity
+// Daylight uses Streets' warm sun and cool skylight to separate its architectural planes.
+// The reference presets use the fixed zoom >= 14 values. Standard interpolates directional intensity
 // at zooms 12/13/14; Tileflow's theme sun currently accepts constant presets.
 // Effective colors include Standard's color-theme LUT, evaluated with GL JS 3.28.1's
 // trilinear interpolation; fractional RGB preserves its output. The fixture records
@@ -27,11 +28,11 @@ const defaultLighting = {
     sun: {
       azimuth: 180,
       altitude: 70,
-      color: '#FFFFFF',
-      intensity: 0.2,
-      shadowIntensity: 1,
+      color: '#FFF5E8',
+      intensity: 0.3,
+      shadowIntensity: 0.8,
     },
-    ambient: {color: '#FFFFFF', intensity: 0.8},
+    ambient: {color: '#E2EBF7', intensity: 0.7},
   },
   dusk: {
     sun: {
@@ -61,7 +62,10 @@ const fadedLighting = {
     sun: {...defaultLighting.dawn.sun, color: 'rgb(252.513725, 222.937729, 169.273879)'},
     ambient: {color: 'rgb(254, 244.681815, 235.980392)', intensity: 0.75},
   },
-  day: defaultLighting.day,
+  day: {
+    sun: {...defaultLighting.day.sun, color: '#FFF8EF', intensity: 0.26},
+    ambient: {color: '#EBF0F8', intensity: 0.74},
+  },
   dusk: {
     sun: {...defaultLighting.dusk.sun, color: 'rgb(252.513725, 217.250027, 164.945083)'},
     ambient: {color: 'rgb(87.776471, 97.427724, 126.419608)', intensity: 0.8},
@@ -83,8 +87,8 @@ const monochromeLighting = {
     ambient: {color: 'rgb(245.703576, 245.703576, 245.703576)', intensity: 0.75},
   },
   day: {
-    sun: defaultLighting.day.sun,
-    ambient: {...defaultLighting.day.ambient, intensity: 0.85},
+    sun: {...defaultLighting.day.sun, color: '#FFFFFF', intensity: 0.2, shadowIntensity: 1},
+    ambient: {color: '#FFFFFF', intensity: 0.85},
   },
   dusk: {
     sun: {

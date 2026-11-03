@@ -557,7 +557,11 @@ function streetsPaletteColors(preset: StreetsLightPreset, colorTheme: StreetsCol
           ? '#F8E4C4'
           : '#F5CFA8',
     ...streetsModelLighting(preset, colorTheme).colors,
-    ...streetsBuildingColors(palette['buildings.extrusion']!, isDarkStreetsPreset(preset)),
+    ...streetsBuildingColors(
+      palette['buildings.extrusion']!,
+      isDarkStreetsPreset(preset),
+      colorTheme === 'monochrome',
+    ),
     ...streetsSkyTokens(preset, colorTheme).colors,
   };
 }

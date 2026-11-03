@@ -922,7 +922,11 @@ function classMatchLabelsAreDisjoint(labels: unknown[]): boolean {
 function splitClassMatch(
   condition: unknown[],
 ): {field: unknown; labels: unknown; remainder: unknown[]} | undefined {
-  const parts = condition[0] === 'all' ? condition.slice(1) : [condition];
+  // Selectors acquire nested conjunctions when ramps and structural filters are added.
+  // Flattening preserves their order and lets a cohort carry its class match just once.
+  const conjuncts = (value: unknown): unknown[] =>
+    Array.isArray(value) && value[0] === 'all' ? value.slice(1).flatMap(conjuncts) : [value];
+  const parts = conjuncts(condition);
   const matchIndex = parts.findIndex(
     (part) =>
       Array.isArray(part) &&

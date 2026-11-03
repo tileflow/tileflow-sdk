@@ -755,11 +755,12 @@ function compileSemanticStyleInternal(
         .map(([name]) => name)
         .sort(),
       ...(config.view ? {'tileflow:view': config.view} : {}),
-      ...(config.camera?.adaptivePerspective !== undefined
+      ...(config.camera?.adaptivePerspective !== undefined ||
+      config.camera?.pitchLimit !== undefined
         ? {
             [tileflowCameraMetadataKey]: {
               version: 1,
-              adaptivePerspective: config.camera.adaptivePerspective,
+              ...config.camera,
             },
           }
         : {}),

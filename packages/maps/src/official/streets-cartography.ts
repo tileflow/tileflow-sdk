@@ -7,13 +7,11 @@ import {
   resolveMap,
   type TileflowMap,
   type TileflowNamedRenderStack,
-  type TileflowThemeNumberValue,
   type TileflowVegetationModuleConfig,
   token,
   withRenderStack,
   zoom,
 } from '@tileflow/core';
-import {streetsClimateImage} from './streets-climate-image';
 import {
   streetsAccessOverview,
   streetsAgriculturalColor,
@@ -86,28 +84,8 @@ export function withStreetsCartography(base: TileflowMap) {
       land: withRenderStack(
         {
           ...withoutStack(land),
-          globalLandcoverUnderlay: {
-            url: streetsClimateImage,
-            coordinates: [
-              [-180, 85.0511287798066],
-              [180, 85.0511287798066],
-              [180, -85.0511287798066],
-              [-180, -85.0511287798066],
-            ],
-            attribution:
-              'Climate context: <a href="https://doi.org/10.1038/s41597-023-02549-6">Beck et al. (2023)</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>; colours and smoothing adapted by Tileflow',
-            maxZoom: 11,
-            opacity: zoom.linear<TileflowThemeNumberValue>([
-              [0, token.number('land.climate.opacity')],
-              [7, token.number('land.climate.opacity')],
-              [8, token.number('land.climate.opacity85')],
-              [9, token.number('land.climate.opacity78')],
-              [10, token.number('land.climate.opacity')],
-              [10.5, token.number('land.climate.opacity55')],
-              [10.75, token.number('land.climate.opacity25')],
-              [11, 0],
-            ]),
-          },
+          // The climate underlay is paused until it has a shared URL and visibility-aware loading.
+          // Its source, generator and attribution are retained in assets/streets/climate.
           background: {...land.background, color: streetsGroundBackground},
           landcover: {
             ...land.landcover,

@@ -63,6 +63,12 @@ test('models source, prepared and artifact-plan boundaries with a complete input
   const {files: _files, ...stableArtifacts} = plan;
   const style = plan.styles.main?.light;
   assert.ok(style);
+  for (const file of plan.files.filter((entry) =>
+    /styles\/main\/light\.json$/u.test(entry.fileName),
+  )) {
+    assert.equal(typeof file.source, 'string');
+    assert.equal(file.source, `${JSON.stringify(JSON.parse(file.source as string))}\n`);
+  }
   for (const [mapName, themeName] of [
     ['con', 'light'],
     ['constructor', 'light'],

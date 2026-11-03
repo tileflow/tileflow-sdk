@@ -1,3 +1,4 @@
+import {Color, createPropertyExpression, latest} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import {readdirSync} from 'node:fs';
 import test from 'node:test';
@@ -43,18 +44,21 @@ function matchesRgb(actual: readonly number[], expected: readonly number[], cont
 }
 
 for (const [name, theme] of Object.entries(themes)) {
-  test(`Streets ${theme} publishes Standard ${name} high-zoom light and transformed color`, () => {
+  test(`Streets ${theme} publishes its authored scene light and transformed color`, () => {
     const expected = reference.lights[name as keyof typeof themes];
     const preset = resolveTileflowTheme(streetsThemes[theme]).sun;
     assert.ok(preset);
     assert.equal(preset.azimuth, expected.direction[0]);
     assert.equal(preset.altitude, 90 - expected.direction[1], 'polar angle converts to altitude');
-    assert.equal(preset.intensity, expected.directional.intensity);
-    assert.equal(preset.ambient.intensity, expected.ambient.intensity);
-    assert.equal(preset.shadowIntensity, expected.shadowIntensity);
     const light = resolveTileflowSun(preset);
-    matchesRgb(light.rgb, expected.directional.rgb, `${theme} directional`);
-    matchesRgb(light.ambient.rgb, expected.ambient.rgb, `${theme} ambient`);
+    // Coloured daylight is art-directed by Streets; other presets retain the measured reference.
+    if (!name.endsWith('-day') || name.startsWith('monochrome')) {
+      assert.equal(preset.intensity, expected.directional.intensity);
+      assert.equal(preset.ambient.intensity, expected.ambient.intensity);
+      assert.equal(preset.shadowIntensity, expected.shadowIntensity);
+      matchesRgb(light.rgb, expected.directional.rgb, `${theme} directional`);
+      matchesRgb(light.ambient.rgb, expected.ambient.rgb, `${theme} ambient`);
+    }
     const [azimuth, polar] = expected.direction.map((angle) => (angle * Math.PI) / 180);
     const direction = [
       Math.sin(azimuth!) * Math.sin(polar!),
@@ -64,28 +68,44 @@ for (const [name, theme] of Object.entries(themes)) {
     direction.forEach((value, axis) => assert.ok(Math.abs(light.direction[axis]! - value) < 1e-12));
 
     const compiled = createStyle(streets, {theme, preparedAssets});
+    assert.deepEqual(compiled.metadata?.['tileflow:camera'], {
+      version: 1,
+      adaptivePerspective: true,
+      pitchLimit: {maxZoom: 15, maxPitch: 38},
+    });
     assert.deepEqual(readTileflowSunPreset(compiled.metadata), preset);
     const buildings = readTileflowBuildings3D(compiled.metadata)!;
+    assert.deepEqual(buildings.entrance, {buildings: [14.25, 14.25], models: [14.25, 14.25]});
     assert.equal(buildings.occlusion, true);
-    assert.equal(buildings.groundOcclusion, 0.07);
+    assert.equal(buildings.groundOcclusion, 0.1);
     assert.equal(buildings.modelOcclusion, 0.75);
     const dark = name.endsWith('dusk') || name.endsWith('night');
     const mono = name.startsWith('monochrome');
-    // Model materials share the ordinary buildings; windows retain independent styling.
+    // Model materials follow their own palette; windows retain independent styling.
     assert.equal(buildings.modelLighting!.wall!.emissiveStrength, 0);
     assert.equal(buildings.modelLighting!.wall!.shading, 'map');
     assert.equal(buildings.modelLighting!.window!.shading, 'map');
-    assert.equal(buildings.modelLighting!.window!.partColorMix, 1);
+    assert.equal(buildings.modelLighting!.window!.partColorMix, 0);
     const colors = resolveTileflowTheme(streetsThemes[theme]).tokens.color;
-    assert.equal(buildings.modelColors!.surface, colors['buildings.raised.neutral']);
-    assert.deepEqual(buildings.color, [
-      'match',
-      ['get', 'building_tone'],
-      ['commercial', 'active'],
-      colors['buildings.flat.active'],
-      colors['buildings.raised.neutral'],
-    ]);
-    assert.equal(buildings.modelLighting!.window!.colorScale, 0.94);
+    assert.equal(buildings.modelColors!.surface, colors['buildings.modelSurface']);
+    const buildingColor = createPropertyExpression(
+      buildings.color,
+      latest.paint_fill['fill-color'],
+    );
+    assert.equal(buildingColor.result, 'success');
+    if (buildingColor.result !== 'success') throw new Error('Invalid building color');
+    for (const tone of ['commercial', 'active', 'residential', undefined])
+      assert.deepEqual(
+        buildingColor.value.evaluate({zoom: 17}, {type: 3, properties: {building_tone: tone}}),
+        Color.parse(
+          colors[
+            tone === 'commercial' || tone === 'active'
+              ? 'buildings.flat.active'
+              : 'buildings.raised.neutral'
+          ]!,
+        ),
+      );
+    assert.equal(buildings.modelLighting!.window!.colorScale, 0.96);
     assert.equal(buildings.modelLighting!.window!.emissiveStrength, 0);
     assert.equal(buildings.modelLighting?.window?.metallic, 0);
     assert.equal(buildings.modelLighting?.window?.roughness, 1);

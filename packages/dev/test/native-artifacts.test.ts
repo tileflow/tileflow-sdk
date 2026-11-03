@@ -305,39 +305,48 @@ for (const [label, extra, expectedPath] of [
   });
 }
 
-test('forwards the renderer into watched generations and retains the last valid one on failure', async (t) => {
-  const cwd = await fixture(t);
-  const session = await createTileflowArtifactSession({
-    cwd,
-    renderer: 'native',
-    watch: true,
-    debounceMs: 10,
-  });
-  try {
-    assert.equal(session.getState().status, 'ready');
-    const previous = session.getLastGoodArtifacts();
-    assert.ok(previous?.nativeBuild);
-    const generation = session.getState().generation;
-    let readyEvents = 0;
-    session.subscribe((state) => {
-      if (state.status === 'ready') readyEvents++;
+test(
+  'forwards the renderer into watched generations and retains the last valid one on failure',
+  {timeout: 120_000},
+  async (t) => {
+    const cwd = await fixture(t);
+    const session = await createTileflowArtifactSession({
+      cwd,
+      renderer: 'native',
+      watch: true,
+      debounceMs: 10,
     });
-    await writeFile(join(cwd, 'tileflow.config.ts'), config("terrain:'3d',"));
-    const deadline = Date.now() + 10_000;
-    while (session.getState().status !== 'invalid' && Date.now() < deadline) await delay(25);
-    const invalid = session.getState();
-    assert.equal(invalid.status, 'invalid');
-    if (invalid.status !== 'invalid') throw new Error('Expected an invalid generation.');
-    assert.equal(invalid.lastGoodGeneration, generation);
-    assert.equal(session.getLastGoodArtifacts(), previous);
-    assert.equal(readyEvents, 0);
-    assert.equal(invalid.diagnostics[0]?.renderer, 'native');
-    assert.equal(invalid.diagnostics[0]?.profile, 'native-v1');
-    assert.match(invalid.diagnostics[0]?.path ?? '', /^\/maps\/main\/themes\//u);
-  } finally {
-    await session.close();
-  }
-});
+    try {
+      assert.equal(session.getState().status, 'ready');
+      const previous = session.getLastGoodArtifacts();
+      assert.ok(previous?.nativeBuild);
+      const generation = session.getState().generation;
+      let readyEvents = 0;
+      session.subscribe((state) => {
+        if (state.status === 'ready') readyEvents++;
+      });
+      await writeFile(join(cwd, 'tileflow.config.ts'), config("terrain:'3d',"));
+      // This checks watch completion, not compilation speed on a shared CI runner. Await the new
+      // terminal state so an unexpected successful build still fails the assertions below.
+      while (
+        session.getState().generation === generation ||
+        session.getState().status === 'building'
+      )
+        await delay(25, undefined, {signal: t.signal});
+      const invalid = session.getState();
+      assert.equal(invalid.status, 'invalid');
+      if (invalid.status !== 'invalid') throw new Error('Expected an invalid generation.');
+      assert.equal(invalid.lastGoodGeneration, generation);
+      assert.equal(session.getLastGoodArtifacts(), previous);
+      assert.equal(readyEvents, 0);
+      assert.equal(invalid.diagnostics[0]?.renderer, 'native');
+      assert.equal(invalid.diagnostics[0]?.profile, 'native-v1');
+      assert.match(invalid.diagnostics[0]?.path ?? '', /^\/maps\/main\/themes\//u);
+    } finally {
+      await session.close();
+    }
+  },
+);
 
 test('preserves native context in existing diagnostic envelopes without treating pointers as filesystem paths', () => {
   const error = new TileflowNativeCompatibilityError([

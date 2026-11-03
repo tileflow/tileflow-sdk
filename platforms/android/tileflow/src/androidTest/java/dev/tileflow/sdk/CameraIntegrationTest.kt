@@ -6,6 +6,7 @@ import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.tileflow.sdk.engine.MapEngineKind
 import java.net.URI
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -26,20 +27,26 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/** A map with a view identifier, so it keeps its camera when the activity is recreated. */
+/**
+ * A map with a view identifier, so it keeps its camera when the activity is recreated. With
+ * [native], MapLibre Native draws the fixture's city map instead of the web runtime.
+ */
 public class CameraHostActivity : ComponentActivity() {
     lateinit var map: TileflowMapView
     val loaded = CountDownLatch(1)
     val failures = CopyOnWriteArrayList<TileflowErrorCode>()
+    val events = CopyOnWriteArrayList<TileflowMapEvent>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         map =
             TileflowMapView(this).apply {
                 id = MAP_ID
+                if (native) engineKind = MapEngineKind.NATIVE
                 // The tests measure the view itself; system bars do not move the camera here.
                 automaticallyAdjustsContentPadding = false
                 onEvent = {
+                    events.add(it)
                     when (it) {
                         TileflowMapEvent.ContentReady -> loaded.countDown()
                         is TileflowMapEvent.Failed -> failures.add(it.code)
@@ -47,11 +54,13 @@ public class CameraHostActivity : ComponentActivity() {
                     }
                 }
                 setSource(
-                    TileflowMapSource(
-                        map = "fixture",
-                        manifestUrl = URI("http://127.0.0.1:18645/manifest.json"),
-                        allowsLoopbackHttp = true,
-                    )
+                    if (native) NativeViewHostActivity.CITY
+                    else
+                        TileflowMapSource(
+                            map = "fixture",
+                            manifestUrl = URI("http://127.0.0.1:18645/manifest.json"),
+                            allowsLoopbackHttp = true,
+                        )
                 )
             }
         setContentView(map)
@@ -64,6 +73,7 @@ public class CameraHostActivity : ComponentActivity() {
 
     internal companion object {
         const val MAP_ID = 4242
+        @Volatile var native = false
     }
 }
 

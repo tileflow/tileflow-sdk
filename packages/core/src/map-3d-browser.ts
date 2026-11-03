@@ -1,4 +1,5 @@
 import {createBuildingFlatLayers} from './building-flat-layers-browser';
+import {createBuildingNativeLayers} from './building-native-layers-browser';
 import {
   createTileflowBuildings3D,
   type TileflowBuildings3D,
@@ -43,6 +44,8 @@ export type TileflowMap3DOptions = Readonly<{
   camera?: TileflowCameraOptions;
   /** The map's request rules, for the tiles the renderers read. */
   transformRequest?: TileflowTileRequestTransform;
+  /** Reports a building-renderer failure while the native extrusion stays visible. */
+  onError?: (error: unknown) => void;
 }>;
 
 export type TileflowMap3D = {
@@ -81,6 +84,7 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
   let vegetation: TileflowVegetationController | undefined;
   let streetLights: TileflowStreetLights | undefined;
   const flatBuildings = createBuildingFlatLayers(map);
+  const nativeBuildings = createBuildingNativeLayers(map);
   let footprintLayers: readonly Readonly<{id: string; visible: boolean}>[] | undefined;
   let footprintZoom = 15.3;
   let disposed = false;
@@ -94,6 +98,15 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
   // What the style declares changes with the style, not each time the map settles; without a
   // controller, reading it serializes the whole style.
   let declarations: ReadonlySet<string> | undefined;
+  let declaresBuildings = false;
+
+  function syncNativeBuildings(): void {
+    if (disposed) return;
+    nativeBuildings.setVisible(
+      declaresBuildings ? viewMode === '3d' && !buildings?.ready : undefined,
+    );
+    syncFlatBuildings();
+  }
 
   function sync(): void {
     if (disposed || syncing || !map.isStyleLoaded()) return;
@@ -122,10 +135,15 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
         ...(controller ? {controller} : {}),
       }));
       const declares = (key: string) => declared.has(key);
+      declaresBuildings = declares(tileflowBuildingsMetadataKey);
       // Undeclared buildings would draw with default design, so a style without them has none.
-      if (shown && declares(tileflowBuildingsMetadataKey))
-        buildings ??= createTileflowBuildings3D(shared);
-      else if (!declares(tileflowBuildingsMetadataKey) && buildings) {
+      if (shown && declaresBuildings)
+        buildings ??= createTileflowBuildings3D({
+          ...shared,
+          onReadyChange: syncNativeBuildings,
+          ...(options.onError ? {onError: options.onError} : {}),
+        });
+      else if (!declaresBuildings && buildings) {
         buildings.dispose();
         buildings = undefined;
       }
@@ -134,7 +152,7 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
         (declares(tileflowVegetationMetadataKey) || declares(tileflowVegetationDisplayMetadataKey))
       )
         vegetation = createTileflowVegetation({...shared, visible: vegetationVisible, viewMode});
-      syncFlatBuildings();
+      syncNativeBuildings();
       // Street lights are part of the 3D view only.
       if (shown && declares(tileflowStreetLightsMetadataKey))
         streetLights ??= createTileflowStreetLights(shared);
@@ -157,7 +175,7 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
     flatBuildings.update(
       footprintLayers,
       viewMode === '3d' &&
-        Boolean(buildings) &&
+        Boolean(buildings?.ready) &&
         map.getZoom() >= footprintZoom &&
         Boolean(canvas?.getContext?.('webgl2')),
     );
@@ -194,6 +212,7 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
     map.off('move', syncFlatBuildings);
     streetLights?.dispose();
     buildings?.dispose();
+    nativeBuildings.restore();
     vegetation?.dispose();
     streetLights = undefined;
     buildings = undefined;
@@ -210,6 +229,7 @@ export function createTileflowMap3D(options: TileflowMap3DOptions): TileflowMap3
 
   function onRemove(): void {
     flatBuildings.forget();
+    nativeBuildings.forget();
     dispose();
   }
 

@@ -142,7 +142,7 @@ for (const [referenceName, theme] of Object.entries(themes)) {
     );
 
     const extrusion = style.layers.find(
-      (layer) => layer.id === 'tileflow-buildings-render-extrusion',
+      (layer) => layer.id === 'tileflow-buildings-native-extrusion',
     );
     assert.ok(extrusion && extrusion.type === 'fill-extrusion', 'Missing compiled extrusion');
     const input = color(

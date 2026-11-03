@@ -6,6 +6,7 @@ import {
   defaultBuildingFloodLight,
   defaultModelEmissionGradient,
 } from './building-illumination';
+import {tileflowBuildingsSceneLayerId, tileflowNativeBuildingsLayerId} from './building-layer-ids';
 import {
   readTileflowBuildings3D,
   type TileflowBuildings3DDesign,
@@ -121,6 +122,10 @@ export type TileflowBuildings3DOptions = Readonly<{
   beforeId?: string;
   /** The map's request rules, for the tiles the renderer reads. */
   transformRequest?: TileflowTileRequestTransform;
+  /** Called when the custom layer gains or loses a drawable frame. */
+  onReadyChange?: (ready: boolean) => void;
+  /** Rendering failures leave the compiled extrusion available as a fallback. */
+  onError?: (error: unknown) => void;
 }>;
 
 export type TileflowBuildings3DChange = Readonly<{
@@ -138,6 +143,8 @@ export type TileflowBuildings3D = {
   grow(scale: number, options?: TileflowBuildings3DChange): Promise<void>;
   /** The height scale shown now. */
   readonly scale: number;
+  /** True after a frame has drawn with its visible building tiles prepared. */
+  readonly ready: boolean;
   /**
    * Whether the map's style describes its 3D buildings (the buildings module's
    * `threeDimensional`), tiles raised, buildings and vertices, and the placed models standing, for
@@ -154,7 +161,7 @@ export type TileflowBuildings3D = {
   dispose(): void;
 };
 
-export const tileflowBuildings3DLayerId = 'tileflow-buildings-3d';
+export const tileflowBuildings3DLayerId = tileflowBuildingsSceneLayerId;
 // World's buildings carry their heights at z15; a source that stops earlier is read at its maxzoom.
 const preferredZoom = 15;
 const defaultTransition = 0;
@@ -262,6 +269,22 @@ export function createTileflowBuildings3D(
   // The ground masks drawn by this frame's prerender, read back by its render.
   let masks: {contact?: WebGLTexture; flood?: WebGLTexture} = {};
   let disposed = false;
+  let ready = false;
+  let installedLayer: unknown;
+  let reportedError = false;
+
+  function setReady(next: boolean): void {
+    if (ready === next) return;
+    ready = next;
+    options.onReadyChange?.(next);
+  }
+
+  function reportError(error: unknown): void {
+    setReady(false);
+    if (reportedError) return;
+    reportedError = true;
+    options.onError?.(error);
+  }
   /** The view depth past which the distance haze hides everything, as drawn last. */
   let hazeDepth = Infinity;
   /** The view's direction along the ground, in tile axes, as drawn last. */
@@ -316,6 +339,8 @@ export function createTileflowBuildings3D(
       context.texParameteri(context.TEXTURE_2D, context.TEXTURE_MAG_FILTER, context.NEAREST);
     },
     onRemove(_: unknown, context: WebGLRenderingContext | WebGL2RenderingContext) {
+      setReady(false);
+      installedLayer = undefined;
       if (!isWebGL2(context)) return;
       // A style loaded in full removes the layer and adds it again: its tiles keep their buffers,
       // as they no longer keep their arrays to upload again. Disposing releases them.
@@ -378,16 +403,27 @@ export function createTileflowBuildings3D(
           map.triggerRepaint();
           return;
         }
-      } catch {
+      } catch (error) {
+        reportError(error);
         return;
       }
       // Prepare resident tiles before the zoom entrance, so the fade starts with ready geometry.
       // Uploads are bounded and request frames only while work remains.
       if (target > 0 || scale > 0) upload(context);
+      // Panning, zooming or changing the building design can expose tiles that are not drawable
+      // yet. Bring the native extrusion back until the new coverage has drawn.
+      const coverageReady = visibleScale() > 0 && preparedCoverage();
+      if (ready && !coverageReady) setReady(false);
       // The distance haze fits itself to where the city's tiles end.
       scene.setReach(visibleScale() > 0 ? reachNow() : undefined);
       if (visibleScale() <= 0 && modelScale() <= 0) return;
-      draw(context, args);
+      try {
+        draw(context, args);
+        if (!ready && coverageReady) setReady(true);
+        reportedError = false;
+      } catch (error) {
+        reportError(error);
+      }
     },
   };
 
@@ -722,7 +758,7 @@ export function createTileflowBuildings3D(
     }
     let text: unknown;
     for (const [layerId, property] of [
-      ['tileflow-buildings-render-extrusion', 'fill-extrusion-color'],
+      [tileflowNativeBuildingsLayerId, 'fill-extrusion-color'],
       ['tileflow-buildings-fill', 'fill-color'],
     ] as const) {
       if (!map.getLayer(layerId)) continue;
@@ -791,6 +827,17 @@ export function createTileflowBuildings3D(
 
   function drawn(): TileEntry[] {
     return camera.ready().filter((entry) => entry.value.gl);
+  }
+
+  /** Keep the native extrusion until every tile chosen for this view can draw or is empty. */
+  function preparedCoverage(): boolean {
+    const coverage = camera.coverage();
+    if (coverage.length === 0) return false;
+    const resident = new Map([...camera.all()].map((tile) => [`${tile.x}/${tile.y}`, tile.value]));
+    return coverage.every(({x, y}) => {
+      const value = resident.get(`${x}/${y}`);
+      return value === emptyTile || Boolean(value?.gl);
+    });
   }
 
   // --- Shadows, in the map's shared 3D scene ---
@@ -1982,6 +2029,7 @@ export function createTileflowBuildings3D(
     if (disposed || map.getLayer(tileflowBuildings3DLayerId) || !map.isStyleLoaded()) return;
     try {
       map.addLayer(layer, beforeId());
+      installedLayer = map.getLayer(tileflowBuildings3DLayerId);
     } catch {
       // The style is mid-update; the next style event retries.
     }
@@ -2099,6 +2147,9 @@ export function createTileflowBuildings3D(
     get scale() {
       return scale;
     },
+    get ready() {
+      return ready;
+    },
     get stats() {
       let buildings = 0;
       let vertices = 0;
@@ -2127,7 +2178,8 @@ export function createTileflowBuildings3D(
       scene.setReach(undefined);
       models.dispose();
       try {
-        if (map.getLayer(tileflowBuildings3DLayerId)) map.removeLayer(tileflowBuildings3DLayerId);
+        if (installedLayer && map.getLayer(tileflowBuildings3DLayerId) === installedLayer)
+          map.removeLayer(tileflowBuildings3DLayerId);
       } catch {
         // A map already removed has no layers left to remove.
       }

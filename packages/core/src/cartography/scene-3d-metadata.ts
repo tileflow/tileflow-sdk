@@ -3,6 +3,7 @@
 // (the caller binds them with the rest of the style), the buildings' colour as the map's own final
 // 3D building colour, else its roofs', and the tileset of Tileflow's landmarks the map shows.
 import {readBuildingFloodLight, readModelRoleLighting} from '../building-illumination';
+import {tileflowNativeBuildingsLayerId} from '../building-layer-ids';
 import {
   readTileflowBuildingsEntrance,
   type TileflowBuildingModelPlacement,
@@ -25,8 +26,7 @@ type Layer = {
 
 // The colour of the map's buildings in 3D: its 3D building pass, its extrusion, then its roofs.
 const colourSources: readonly (readonly [string, string])[] = [
-  ['tileflow-buildings-render-extrusion', 'fill-extrusion-color'],
-  ['tileflow-buildings-3d', 'fill-extrusion-color'],
+  [tileflowNativeBuildingsLayerId, 'fill-extrusion-color'],
   ['tileflow-buildings-fill', 'fill-color'],
 ];
 

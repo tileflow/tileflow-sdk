@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {tileflowBuildings3DLayerId} from '../src/buildings-3d-browser';
+import {tileflowNativeBuildingsLayerId} from '../src/building-layer-ids';
 import {attachTileflowMap3D} from '../src/map-3d-attach-browser';
 
 // React, Vue and Svelte mount the scene through attachTileflowMap3D with this loader.
@@ -9,7 +10,7 @@ const mounted = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function fakeMap(initial: Record<string, unknown>) {
   const listeners = new Map<string, Set<() => void>>();
-  const layers = new Set<string>();
+  const layers = new Map<string, {id: string}>();
   let metadata = initial;
   let reads = 0;
   return {
@@ -26,11 +27,11 @@ function fakeMap(initial: Record<string, unknown>) {
       this.fire('style.load');
     },
     addLayer(layer: {id: string}) {
-      layers.add(layer.id);
+      layers.set(layer.id, layer);
     },
     getBearing: () => 0,
     getCenter: () => ({lat: 40.42, lng: -3.7}),
-    getLayer: (id: string) => (layers.has(id) ? {} : undefined),
+    getLayer: (id: string) => layers.get(id),
     getPaintProperty: () => undefined,
     getPitch: () => 60,
     getSource: () => undefined,
@@ -66,6 +67,55 @@ test('a style that declares buildings mounts the 3D buildings by default', async
   assert.ok(map.layers.has(tileflowBuildings3DLayerId));
   scene.dispose();
   assert.equal(map.layers.has(tileflowBuildings3DLayerId), false);
+});
+
+test('the native extrusion stays visible through lazy loading and takes over if loading fails', async () => {
+  const map = fakeMap(buildings);
+  map.layers.set(tileflowNativeBuildingsLayerId, {id: tileflowNativeBuildingsLayerId});
+  let visibility = 'none';
+  Object.assign(map, {
+    getLayoutProperty: () => visibility,
+    setLayoutProperty: (_id: string, _property: string, next: string) => {
+      visibility = next;
+    },
+  });
+  let fail!: (error: Error) => void;
+  const errors: unknown[] = [];
+  const attachment = attachTileflowMap3D({
+    map,
+    load: () => new Promise((_resolve, reject) => (fail = reject)),
+    onError: (error) => errors.push(error),
+  });
+  assert.equal(visibility, 'visible');
+  attachment.setViewMode('2d');
+  assert.equal(visibility, 'none');
+  attachment.setViewMode('3d');
+  assert.equal(visibility, 'visible');
+  fail(new Error('loader failed'));
+  await mounted();
+  assert.equal(visibility, 'visible');
+  assert.equal(errors.length, 1);
+  attachment.dispose();
+  assert.equal(visibility, 'none');
+});
+
+test('mounting the scene keeps native buildings until its first drawable frame', async () => {
+  const map = fakeMap(buildings);
+  map.layers.set(tileflowNativeBuildingsLayerId, {id: tileflowNativeBuildingsLayerId});
+  let visibility = 'none';
+  Object.assign(map, {
+    getLayoutProperty: () => visibility,
+    setLayoutProperty: (_id: string, _property: string, next: string) => {
+      visibility = next;
+    },
+  });
+  const attachment = attachTileflowMap3D({map, load});
+  assert.equal(visibility, 'visible');
+  await mounted();
+  assert.ok(map.layers.has(tileflowBuildings3DLayerId));
+  assert.equal(visibility, 'visible');
+  attachment.dispose();
+  assert.equal(visibility, 'none');
 });
 
 test('the 2D view opts out: no 3D layer is mounted until the scene is shown', async () => {
@@ -154,7 +204,7 @@ function cameraMap(metadata: Record<string, unknown>) {
 }
 const adaptive = {...buildings, 'tileflow:camera': {version: 1, adaptivePerspective: true}};
 
-test('the scene restores flat footprints when returning to 2D and on disposal', async () => {
+test('flat footprints remain until the 3D renderer has a drawable frame', async () => {
   const native = {visibility: 'visible'};
   const map = fakeMap({
     'tileflow:buildings': {
@@ -177,11 +227,11 @@ test('the scene restores flat footprints when returning to 2D and on disposal', 
   });
   const attachment = attachTileflowMap3D({map, load});
   await mounted();
-  assert.equal(native.visibility, 'none');
+  assert.equal(native.visibility, 'visible');
   attachment.setViewMode('2d');
   assert.equal(native.visibility, 'visible');
   attachment.setViewMode('3d');
-  assert.equal(native.visibility, 'none');
+  assert.equal(native.visibility, 'visible');
   attachment.dispose();
   assert.equal(native.visibility, 'visible');
 });

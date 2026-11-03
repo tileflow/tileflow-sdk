@@ -643,7 +643,7 @@ test('Streets Dark recolors every color-bearing Streets layer without major ligh
     '#2b2f3a',
   ]);
   assert.deepEqual(
-    requireLayer(dark, 'tileflow-buildings-render-extrusion').paint?.['fill-extrusion-color'],
+    requireLayer(dark, 'tileflow-buildings-native-extrusion').paint?.['fill-extrusion-color'],
     ['match', ['get', 'building_tone'], ['commercial', 'active'], '#37352f', '#2b2f3a'],
   );
   assert.equal(
@@ -1276,7 +1276,7 @@ test('Streets contact shadows only shade raised buildings that meet the ground',
   for (const theme of ['light', 'dark'] as const) {
     const style = compile(theme);
     const extrusionIndex = style.layers.findIndex(
-      (layer) => layer.id === 'tileflow-buildings-render-extrusion',
+      (layer) => layer.id === 'tileflow-buildings-native-extrusion',
     );
     for (const role of ['shadowSoft', 'shadowCore']) {
       const layer = requireLayer(style, `tileflow-buildings-render-${role}`);
@@ -1617,7 +1617,7 @@ test('Streets street names yield to destinations and buildings without flattenin
   for (const theme of ['light', 'dark'] as const) {
     const compiled = compileInspected(theme);
     const {style, inspection} = compiled;
-    const buildings = requireLayer(style, 'tileflow-buildings-render-extrusion');
+    const buildings = requireLayer(style, 'tileflow-buildings-native-extrusion');
     const names = layersForTargets(compiled, (target) => target.startsWith('labels.roads.'));
     const nativeClasses = new Set(
       inspection.layers.flatMap(({contributions}) =>

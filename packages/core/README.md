@@ -166,6 +166,10 @@ returns the sun the map shows with `getSun()`, mixed during a blend, for an appl
 layers, and `setSun()` places it by direction or by the real sun of a date and place.
 `createTileflowBuildings3D` enables worker-meshed buildings rising in at zoom 15–15.3, with scene
 sun, cast/contact shadows and 0.8 m rounded corners. Each effect is independently overridable.
+The compiled `tileflow-buildings-native-extrusion` layer supplies simple 3D buildings while the
+browser scene loads or cannot draw. The scene uses its own `tileflow-buildings-scene-3d` layer and
+replaces the native extrusion only after its visible building tiles have drawn. A failed scene keeps
+the native buildings visible; switching to 2D restores the style's authored visibility.
 Street lights default to off, including in Streets. Set `roads.streetLights.enabled: true` and mount
 `createTileflowStreetLights` to enable them.
 `createTileflowVegetation` controls all trees using the map's `3d`, `flat` or `auto` policy.

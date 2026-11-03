@@ -8,10 +8,7 @@ import {
 } from '@tileflow/core';
 import type {TileflowCaptureAsset} from './assets';
 import {TileflowCaptureError} from './errors';
-import type {
-  TileflowCaptureDataInput,
-  TileflowCaptureWorldIdentity,
-} from './receipt';
+import type {TileflowCaptureDataInput, TileflowCaptureWorldIdentity} from './receipt';
 
 export const tileflowWorldCurrentTileJsonUrl = tileflowWorldTileJsonUrl;
 
@@ -23,10 +20,7 @@ type FetchTileJson = (
 ) => Promise<Pick<Response, 'ok' | 'status' | 'text'>>;
 
 export type TileflowCaptureResolvedWorldV1 = Readonly<{
-  identity: Omit<
-    TileflowCaptureWorldIdentity,
-    'kind' | 'schema' | 'schemaVersion' | 'sourceId'
-  >;
+  identity: Omit<TileflowCaptureWorldIdentity, 'kind' | 'schema' | 'schemaVersion' | 'sourceId'>;
   tileJsonUrl: string;
   tileJson: string;
   tiles: readonly [string];

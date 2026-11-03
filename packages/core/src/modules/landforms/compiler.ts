@@ -50,7 +50,11 @@ export function compileLandforms(
       {
         minZoom,
         placement: 'point',
-        priority: expression<number>(['-', 100, ['to-number', ['get', schema.fields.filterrank], 5]]),
+        priority: expression<number>([
+          '-',
+          100,
+          ['to-number', ['get', schema.fields.filterrank], 5],
+        ]),
         text: {
           allowOverlap: false,
           color: context.colors.labels.muted,

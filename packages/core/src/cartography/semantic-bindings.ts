@@ -220,7 +220,6 @@ function detailSourceId(data: ResolvedTileflowData): string {
   return data.detail?.delivery === 'separate' ? data.detail.sourceId : data.sourceId;
 }
 
-
 type BindingContext = Readonly<{
   data: ResolvedTileflowData;
   partition?: TileflowDataLayerPartition;

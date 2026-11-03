@@ -37,7 +37,12 @@ function overviewWidth(width: TileflowLineStyle['width'], local: boolean) {
             : 1;
     if (factor !== 1) {
       const authored = value[i + 1];
-      value[i + 1] = ['case', ['==', ['get', field('link')], true], authored, ['*', authored, factor]];
+      value[i + 1] = [
+        'case',
+        ['==', ['get', field('link')], true],
+        authored,
+        ['*', authored, factor],
+      ];
     }
   }
   return {...width, value} as typeof width;

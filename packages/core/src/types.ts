@@ -284,8 +284,7 @@ export type TileflowRoadTreatmentStyle = Partial<
   enabled?: boolean;
   widthScale?: TileflowThemeNumberValue;
 };
-export type TileflowRoadModifier =
-  'construction' | 'expressway' | 'indoor' | 'ramp' | 'unpaved';
+export type TileflowRoadModifier = 'construction' | 'expressway' | 'indoor' | 'ramp' | 'unpaved';
 export type TileflowRoadRestriction = 'access' | 'bicycle' | 'foot' | 'horse' | 'toll';
 export type TileflowMountainBikeScale =
   '0' | '0+' | '1' | '1+' | '2' | '2+' | '3' | '3+' | '4' | '5' | '6';

@@ -234,10 +234,7 @@ test('exponential and step curves stay exact when categories are combined', () =
     [15, 0.1, 0.05],
     [17, 0.1, 0.2],
   ] as const) {
-    assert.equal(
-      evaluate(stepped, 'layout', 'text-letter-spacing', at, {class: 'retail'}),
-      retail,
-    );
+    assert.equal(evaluate(stepped, 'layout', 'text-letter-spacing', at, {class: 'retail'}), retail);
     assert.equal(
       evaluate(stepped, 'layout', 'text-letter-spacing', at, {class: 'lodging'}),
       lodging,

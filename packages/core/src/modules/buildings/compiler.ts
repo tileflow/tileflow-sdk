@@ -54,7 +54,11 @@ export function compileBuildings(
           source,
           'source-layer': sourceLayer,
           // A footprint whose parts draw it in 3D says `extrude: false`.
-          filter: ['all', visibilityFilter, ['!=', ['get', context.data.schema.fields.extrude], false]],
+          filter: [
+            'all',
+            visibilityFilter,
+            ['!=', ['get', context.data.schema.fields.extrude], false],
+          ],
         },
         style,
       ),
@@ -181,9 +185,5 @@ function buildingBaseExpression(
   height: unknown[],
 ): unknown[] {
   const fields = context.data.schema.fields;
-  return [
-    'max',
-    0,
-    ['min', ['to-number', ['coalesce', ['get', fields.minHeight], 0], 0], height],
-  ];
+  return ['max', 0, ['min', ['to-number', ['coalesce', ['get', fields.minHeight], 0], 0], height]];
 }

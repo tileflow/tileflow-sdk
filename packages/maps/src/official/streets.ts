@@ -337,16 +337,10 @@ const groundedBuilding3dSelector = {
     },
   ],
 } as const satisfies TileflowRenderSelector;
-const building3dHeight = expr.max(
-  0,
-  expr.toNumber(expr.coalesce(expr.get(field('height')), 5), 5),
-);
+const building3dHeight = expr.max(0, expr.toNumber(expr.coalesce(expr.get(field('height')), 5), 5));
 const building3dBase = expr.max(
   0,
-  expr.min(
-    expr.toNumber(expr.coalesce(expr.get(field('minHeight')), 0), 0),
-    building3dHeight,
-  ),
+  expr.min(expr.toNumber(expr.coalesce(expr.get(field('minHeight')), 0), 0), building3dHeight),
 );
 // Surface caps follow the reference's z14 transition. Structural layers use
 // their own constant caps so tunnels cannot extend past their portals.
@@ -459,7 +453,9 @@ function roadCasingWidth(major: boolean) {
   return expr.interpolate({kind: 'exponential', base: 1.5}, expr.zoom(), [
     [
       14,
-      major ? expr.case<number>([{when: expr.eq(expr.get(field('link')), true), value: 0.8}], 1) : 0.8,
+      major
+        ? expr.case<number>([{when: expr.eq(expr.get(field('link')), true), value: 0.8}], 1)
+        : 0.8,
     ],
     [22, 2],
   ]);
@@ -2596,7 +2592,10 @@ const streetsBase = bindOfficialMapTheme(
                     {kind: 'cubic-bezier', x1: 0.2, x2: 0.9, y1: 0, y2: 1},
                     expr.zoom(),
                     [
-                      [3, expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 13, [[6, 11]])],
+                      [
+                        3,
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 13, [[6, 11]]),
+                      ],
                       [
                         6,
                         expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 18, [
@@ -2645,7 +2644,10 @@ const streetsBase = bindOfficialMapTheme(
                     {kind: 'cubic-bezier', x1: 0.2, x2: 0.9, y1: 0, y2: 1},
                     expr.zoom(),
                     [
-                      [3, expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 11, [[9, 10]])],
+                      [
+                        3,
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 11, [[9, 10]]),
+                      ],
                       [
                         6,
                         expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 14, [
@@ -2704,7 +2706,10 @@ const streetsBase = bindOfficialMapTheme(
                     {kind: 'cubic-bezier', x1: 0.2, x2: 0.9, y1: 0, y2: 1},
                     expr.zoom(),
                     [
-                      [3, expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 11, [[9, 10]])],
+                      [
+                        3,
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 11, [[9, 10]]),
+                      ],
                       [
                         6,
                         expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 14, [

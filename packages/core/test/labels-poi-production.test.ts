@@ -136,10 +136,7 @@ test('POI and geographic labels share the requested language and bound English f
     localizedContext,
     'fr',
   );
-  const textField = (
-    contributions: readonly TileflowLayerContribution[],
-    id: string,
-  ): unknown => {
+  const textField = (contributions: readonly TileflowLayerContribution[], id: string): unknown => {
     const layer = assembleTileflowLayers(contributions, data).find((entry) => entry.id === id);
     return (layer?.layout as Record<string, unknown> | undefined)?.['text-field'];
   };

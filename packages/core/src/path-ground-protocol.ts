@@ -20,7 +20,9 @@ export function pathGroundSourceConfig(data: ResolvedTileflowData): PathGroundSo
       ...new Set(
         (['landuse', 'landuseOverlay'] as const).flatMap(
           (name) =>
-            data.schema.adapter?.layers[name]?.map(({layer}) => layer) ?? [data.schema.layers[name]],
+            data.schema.adapter?.layers[name]?.map(({layer}) => layer) ?? [
+              data.schema.layers[name],
+            ],
         ),
       ),
     ],

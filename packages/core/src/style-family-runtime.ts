@@ -18,7 +18,11 @@ export function resolveTileflowStyleResourceUrls(
 ): MapLibreStyle {
   const result = structuredClone(style);
   const absolute = (value: string) =>
-    new URL(value, documentUrl).href.replaceAll(/%7B([^%]+)%7D/giu, '{$1}');
+    // URL encodes path placeholders. Query values may contain a nested URL whose
+    // escaped placeholders must remain opaque to the outer tile substitution.
+    new URL(value, documentUrl).href.replace(/^[^?#]+/u, (path) =>
+      path.replaceAll(/%7B([^%]+)%7D/giu, '{$1}'),
+    );
   const property = (record: Record<string, unknown>, key: string) => {
     if (typeof record[key] === 'string') record[key] = absolute(record[key]);
   };

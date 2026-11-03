@@ -5,6 +5,10 @@ import {createTileflowThemeController} from '../src/browser';
 import {createTileflowStyleFamily, materializeTileflowStyleFamily} from '../src/style-family';
 import {prepareTileflowStyleFamilyForRendering} from '../src/style-family-render';
 import {loadTileflowRuntimeAppearance} from '../src/style-family-runtime';
+import {
+  createTileflowContourProtocolUrl,
+  parseTileflowContourProtocolRequest,
+} from '../src/terrain/contour-protocol';
 import type {MapLibreStyle} from '../src/types';
 
 function familyFixture() {
@@ -110,6 +114,57 @@ test('initial family assets resolve relative to their document and the controlle
   );
   assert.equal(requests, 1);
   controller.dispose();
+});
+
+test('family URL resolution preserves nested contour templates through outer tile substitution', async () => {
+  const demUrl = 'https://terrain.example.test/{z}/{x}/{y}.webp?token=a%2Bb';
+  const contourUrl = createTileflowContourProtocolUrl({
+    demUrl,
+    demMaxzoom: 12,
+    encoding: 'terrarium',
+    maxzoom: 14,
+    multiplier: 1,
+    overzoom: 2,
+    thresholds: {8: [200, 1000], 14: [30, 300]},
+  });
+  for (const structural of [false, true]) {
+    const day: MapLibreStyle = {
+      version: 8,
+      sources: {
+        contours: {type: 'vector', tiles: [contourUrl]},
+        world: {
+          type: 'vector',
+          tiles: ['./tiles/{z}/{x}/{y}.pbf?zoom={z}&literal=%7Bz%7D'],
+        },
+      },
+      layers: [{id: 'background', type: 'background', paint: {'background-color': '#fff'}}],
+    };
+    const night: MapLibreStyle = {
+      ...day,
+      layers: [
+        {
+          id: structural ? 'night-background' : 'background',
+          type: 'background',
+          paint: {'background-color': '#000'},
+        },
+      ],
+    };
+    const runtime = await loadTileflowRuntimeAppearance(
+      {theme: 'day', style: day, familyUrl: 'https://example.test/maps/family.json'},
+      {fetch: (async () => Response.json(createTileflowStyleFamily({day, night}))) as typeof fetch},
+    );
+    const delivered = runtime.style as MapLibreStyle;
+    const template = (delivered.sources.contours as {tiles: string[]}).tiles[0]!;
+    assert.equal(template, contourUrl);
+    const request = template
+      .replaceAll('{z}', '12')
+      .replaceAll('{x}', '2134')
+      .replaceAll('{y}', '1456');
+    assert.equal(parseTileflowContourProtocolRequest(request).config.demUrl, demUrl);
+    assert.deepEqual((delivered.sources.world as {tiles: string[]}).tiles, [
+      'https://example.test/maps/tiles/{z}/{x}/{y}.pbf?zoom={z}&literal=%7Bz%7D',
+    ]);
+  }
 });
 
 test('palette-specific RGBA artwork shares symbol layout and changes only its atlas pixels', async () => {

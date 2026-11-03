@@ -310,6 +310,10 @@ test(
   {timeout: 120_000},
   async (t) => {
     const cwd = await fixture(t);
+    // Whole Streets families are qualified above. One real variant is sufficient
+    // for this watcher/retention contract, without recompiling twelve themes.
+    const watchedConfig = (extra = '') => config(`themes:{light:streets.themes.light},${extra}`);
+    await writeFile(join(cwd, 'tileflow.config.ts'), watchedConfig());
     const session = await createTileflowArtifactSession({
       cwd,
       renderer: 'native',
@@ -317,7 +321,7 @@ test(
       debounceMs: 10,
     });
     try {
-      assert.equal(session.getState().status, 'ready');
+      assert.equal(session.getState().status, 'ready', JSON.stringify(session.getState()));
       const previous = session.getLastGoodArtifacts();
       assert.ok(previous?.nativeBuild);
       const generation = session.getState().generation;
@@ -325,7 +329,7 @@ test(
       session.subscribe((state) => {
         if (state.status === 'ready') readyEvents++;
       });
-      await writeFile(join(cwd, 'tileflow.config.ts'), config("terrain:'3d',"));
+      await writeFile(join(cwd, 'tileflow.config.ts'), watchedConfig("terrain:'3d',"));
       // This checks watch completion, not compilation speed on a shared CI runner. Await the new
       // terminal state so an unexpected successful build still fails the assertions below.
       while (

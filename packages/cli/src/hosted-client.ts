@@ -674,12 +674,12 @@ export async function publishHostedStyle(
 }
 
 export function assertHostedStyleBudget(body: unknown): void {
-  const actualBytes = tileflowDeploymentWebBytes(body);
-  const limitBytes = 512_000;
-  if (actualBytes > limitBytes)
+  const observedBytes = tileflowDeploymentWebBytes(body);
+  const limitBytes = 2_000_000;
+  if (observedBytes > limitBytes)
     throw Object.assign(
-      new Error(`Style content is ${actualBytes} bytes; the limit is ${limitBytes} bytes.`),
-      {code: 'STYLE_SOURCE_TOO_LARGE', actualBytes, limitBytes},
+      new Error(`Style content is ${observedBytes} bytes; the limit is ${limitBytes} bytes.`),
+      {code: 'STYLE_DEPLOYMENT_TOO_LARGE', scope: 'web', observedBytes, limitBytes},
     );
 }
 

@@ -260,6 +260,45 @@ template, zoom limits, thresholds, and the Tileflow contour protocol. Framework 
 tooling prepare browser resources; direct MapLibre integrations must register required protocols
 before loading a style.
 
+### Load a portable style in MapLibre
+
+Await `loadTileflowRuntimeStyle` from `@tileflow/core/browser` before passing a runtime style to
+MapLibre. React, Vue and Svelte do this automatically. Sprites, glyphs, fonts, sources, images,
+videos, GeoJSON and Tileflow model/landmark URLs resolve against their declaring document. HTTP
+TileJSON loads once per preparation, with explicit source options taking precedence.
+Artifacts stay portable; inputs are unchanged.
+
+<!-- docs:check -->
+
+```ts
+import {loadTileflowRuntimeStyle, loadTileflowStyleFonts} from '@tileflow/core/browser';
+import type {TileflowRuntimeStyle} from '@tileflow/core/runtime';
+
+export async function prepareMapStyle(runtime: TileflowRuntimeStyle, signal?: AbortSignal) {
+  const prepared = await loadTileflowRuntimeStyle(runtime, {signal});
+  await loadTileflowStyleFonts(prepared.style, {fontFaces: prepared.fontFaces});
+  return prepared.style; // Pass this object as new maplibregl.Map({container, style}).
+}
+```
+
+Resolve the runtime with `resolveTileflowRuntimeStyle`. Outside a browser, use an absolute style
+URL; for inline documents, supply their URL as `baseUrl` (default: `document.baseURI`). Absolute
+URLs, signatures and template tokens retain their spelling. Application metadata, expressions,
+source IDs and inline GeoJSON are not rewritten.
+
+`fetch`, `signal` and `transformRequest(url, resourceType)` control style and TileJSON requests.
+Resource types are `Style` and `Source`.
+Custom source protocols, including managed PMTiles, remain with the registered MapLibre handler;
+that handler owns any relative resources inside its returned document. Network failures, malformed
+documents and size limits reject preparation. Style documents are limited to 16 MiB and TileJSON
+documents to 1 MiB. Requests use same-origin credentials and reject redirects by default.
+
+`createTileflowThemeController` prepares URL-backed themes before switching or blending them. Pass
+`initialStyle: prepared.style` alongside the original `initial` runtime value so rollback can reuse
+the loaded document, and pass `styleLoadOptions` to reuse authentication and cancellation. The
+controller retains the original `getCurrent()` identity. `loadStyle` overrides and inline themes
+must supply already prepared documents. Disposal aborts pending document loads.
+
 With `projection: 'globe'`, `atmosphere: true` adds a halo and stars; an object configures colors, star count and size.
 `sky` follows the sun at street level. Frameworks and capture attach both; direct
 MapLibre consumers call `attachTileflowAtmosphere(map)` from `@tileflow/core/browser`.

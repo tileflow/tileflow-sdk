@@ -40,6 +40,7 @@ import {
   createTileflowThemeController,
   createTileflowTransformRequest,
   getTileflowSystemColorScheme,
+  loadTileflowRuntimeStyle,
   loadTileflowStyleFonts,
   registerTileflowContourProtocol,
   registerTileflowPathGroundProtocol,
@@ -303,6 +304,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     let themeController: TileflowThemeController | null = null;
     let unsubscribeSystemColorScheme: (() => void) | null = null;
     let mapLoadId = 0;
+    let resourceLifetime: AbortController | undefined;
     let manifestLoadId = 0;
     let readinessRunId = 0;
     let interactionReadinessRunId = 0;
@@ -725,6 +727,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
 
     const destroyMap = () => {
       mapLoadId += 1;
+      resourceLifetime?.abort();
+      resourceLifetime = undefined;
       readinessRunId += 1;
       invalidateInteractionReadiness();
       const lifecycle = mapLifecycle;
@@ -861,17 +865,36 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       const loadId = mapLoadId;
       const container = containerRef.value;
       const runtime = runtimeStyle.value;
+      const session = createTileflowSessionController({source: 'vue'});
+      const lifetime = new AbortController();
+      resourceLifetime = lifetime;
+      const resourceTransform = createTileflowTransformRequest({
+        getAnalytics: () => resolvedAnalytics.value,
+        sessionController: session,
+        sessionId: session.sessionId,
+        transformRequest: props.mapOptions?.transformRequest ?? undefined,
+      });
+      const styleLoadOptions = {
+        signal: lifetime.signal,
+        transformRequest: (url: string, type: 'Style' | 'Source') =>
+          resourceTransform(
+            url,
+            type as Parameters<NonNullable<TileflowMapOptions['transformRequest']>>[1],
+          ),
+      };
       let maplibregl: Awaited<ReturnType<typeof loadTileflowMapLibre>>;
-
+      let prepared: Awaited<ReturnType<typeof loadTileflowRuntimeStyle>>;
       try {
-        [maplibregl] = await Promise.all([
+        [maplibregl, prepared] = await Promise.all([
           loadTileflowMapLibre(),
-          loadTileflowStyleFonts(runtime.style, {
-            fontFaces: runtime.fontFaces,
+          loadTileflowRuntimeStyle(runtime, styleLoadOptions).then(async (loaded) => {
+            await loadTileflowStyleFonts(loaded.style, {fontFaces: loaded.fontFaces});
+            return loaded;
           }),
         ]);
       } catch (error) {
         if (loadId === mapLoadId) {
+          lifetime.abort();
           console.error('Failed to load the Tileflow map runtime', error);
           mapCaptureState.value = 'error';
         }
@@ -882,7 +905,6 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         return;
       }
 
-      const session = createTileflowSessionController({source: 'vue'});
       const sessionStarter = createTileflowSessionStarter({
         getSessionId: () => session.sessionId,
         sessionId: session.sessionId,
@@ -912,7 +934,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
         container,
         interactive: resolvedInteractive.value,
         pitch: resolvedPitch.value,
-        style: runtime.style as StyleSpecification | string,
+        style: prepared.style as StyleSpecification,
         transformRequest: createTileflowTransformRequest<
           RequestParameters,
           Parameters<RequestTransformFunction>[1]
@@ -938,6 +960,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
           ? null
           : createTileflowThemeController({
               initial: runtime,
+              initialStyle: prepared.style,
+              styleLoadOptions,
               map,
               onTransition(transition) {
                 emit('themeChange', transition);

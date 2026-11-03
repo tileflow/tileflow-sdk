@@ -84,7 +84,7 @@ export type TileflowBuildings3DDesign = Readonly<{
 export type TileflowBuildingModelPlacement = Readonly<{
   /** The model's id, its file's name in the map's `models` directories. */
   model: string;
-  /** Where the prepared model file is served, absolute or relative to the page. */
+  /** Where the prepared model file is served; the web style loader resolves it against the style. */
   url: string;
   /** Longitude and latitude of the model's origin, where it stands on the ground. */
   at: readonly [number, number];

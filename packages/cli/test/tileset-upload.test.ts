@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
+import {mkdtemp, rm, writeFile} from 'node:fs/promises';
 import {createServer} from 'node:http';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import test from 'node:test';
 import {
   createHostedTeamTilesetUploadTransport,
   createTeamTilesetPartLayout,
   createTeamTilesetUploadIdempotencyKey,
+  inspectNodeTeamTilesetArchive,
   maximumTeamTilesetBytes,
+  openNodeTeamTilesetArchive,
   type PositionedUploadFile,
   type PreparedTeamTilesetUpload,
   prepareTeamTilesetUpload,
@@ -20,6 +25,38 @@ import {
 } from '../src/tileset-upload';
 
 const tilesetId = 'tls_opaque_identity_1234';
+
+test('Node positioned reads preserve offsets, concurrent ownership and truncated-file errors', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-positioned-upload-'));
+  const path = join(directory, 'archive.bin');
+  const source = Buffer.from(Array.from({length: 129}, (_, index) => index));
+  await writeFile(path, source);
+  const file = await openNodeTeamTilesetArchive(path, await inspectNodeTeamTilesetArchive(path));
+  t.after(async () => {
+    await file.close();
+    await rm(directory, {recursive: true, force: true});
+  });
+  assert.ok(file.readInto);
+  const backing = Buffer.alloc(16, 255);
+  assert.equal(await file.readInto(7, backing.subarray(3, 13)), 10);
+  assert.deepEqual(backing.subarray(0, 3), Buffer.alloc(3, 255));
+  assert.deepEqual(backing.subarray(3, 13), source.subarray(7, 17));
+  assert.deepEqual(backing.subarray(13), Buffer.alloc(3, 255));
+
+  const targets = Array.from({length: 4}, () => Buffer.alloc(8));
+  await Promise.all(targets.map((target, index) => file.readInto!(index * 32 + 1, target)));
+  targets.forEach((target, index) =>
+    assert.deepEqual(target, source.subarray(index * 32 + 1, index * 32 + 9)),
+  );
+  const [first, second] = await Promise.all([file.read(10, 9), file.read(100, 5)]);
+  first.fill(255);
+  assert.deepEqual(second, source.subarray(100, 105));
+  await assert.rejects(
+    file.readInto(125, Buffer.alloc(5)),
+    (error: unknown) =>
+      error instanceof TeamTilesetUploadError && error.code === 'TF_TILESET_LOCAL_FILE_CHANGED',
+  );
+});
 
 test('fixed part layout reaches the exact 4,000,000,000-byte boundary without allocating it', () => {
   const layout = createTeamTilesetPartLayout(maximumTeamTilesetBytes);

@@ -161,9 +161,48 @@ private suspend fun TileflowMapView.changeStyle(
  * renderer.
  */
 public suspend fun TileflowMapView.addSource(source: TileflowSource) {
-    if (!STYLE_ID.matches(source.id) || runtimeStyle.sources.any { it.id == source.id }) invalid()
     val (spec, log) = sourceWire(source)
-    val record = RuntimeStyle.Source(source.id, spec, log)
+    addSource(RuntimeStyle.Source(source.id, spec, log))
+}
+
+private val sourceTypes = setOf("geojson", "vector", "raster", "raster-dem", "image")
+private val layerTypes = setOf(
+    "fill", "line", "symbol", "circle", "heatmap", "fill-extrusion", "raster",
+    "hillshade", "color-relief", "background",
+)
+private val geoJSONTypes = setOf(
+    "Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon",
+    "GeometryCollection", "Feature", "FeatureCollection",
+)
+
+/** Adds a style-spec source supplied as JSON. Inline GeoJSON uses the typed source's data channel. */
+public suspend fun TileflowMapView.addStyleSource(id: String, properties: JSONObject) {
+    val type = properties.opt("type")
+    if (type !in sourceTypes) invalid()
+    // Copy the small specification separately from the potentially large inline geometry.
+    val keys = properties.keys().asSequence().filter { type != "geojson" || it != "data" }.toList()
+    val spec = JSONObject(JSONObject(properties, keys.toTypedArray()).toString())
+    val log = if (type == "geojson") {
+        val data = when (val value = properties.opt("data")) {
+            is JSONObject -> {
+                if (value.opt("type") !in geoJSONTypes) invalid()
+                TileflowGeoJSONData.GeoJSON(value.toString())
+            }
+            is String -> {
+                if (!runCatching { java.net.URI(value).isAbsolute }.getOrDefault(false)) invalid()
+                TileflowGeoJSONData.Url(value)
+            }
+            null -> TileflowGeoJSONData.Empty
+            else -> invalid()
+        }
+        GeoJSONLog(geoJSONBase(data), promoteId = spec.opt("promoteId") as? String)
+    } else null
+    addSource(RuntimeStyle.Source(id, spec, log))
+}
+
+private suspend fun TileflowMapView.addSource(record: RuntimeStyle.Source) {
+    if (!STYLE_ID.matches(record.id) || sourceExists(record.id)) invalid()
+    if (readyEngine == null) engineKind.validateQueued(record)
     changeStyle({ sources += record }) { engine -> engine.addSource(record) }
 }
 
@@ -268,17 +307,37 @@ public suspend fun TileflowMapView.addLayer(
     layer: TileflowLayer,
     position: TileflowLayerPosition = TileflowLayerPosition.Default,
 ) {
-    if (
-        !STYLE_ID.matches(layer.id) ||
-            runtimeStyle.layers.any { it.id == layer.id } ||
-            runtimeStyle.layers.size >= 1024
-    )
-        invalid()
-    val json = layer.json()
+    addLayer(layer.id, layer.json(), layer.slot, position)
+}
+
+/** Adds a style-spec layer supplied as JSON, using the application's layer identifiers. */
+public suspend fun TileflowMapView.addStyleLayer(
+    properties: JSONObject,
+    position: TileflowLayerPosition = TileflowLayerPosition.Default,
+) {
+    val json = JSONObject(properties.toString())
+    val id = json.opt("id") as? String ?: invalid()
+    val type = json.opt("type")
+    if (type !in layerTypes) invalid()
+    if (if (type == "background") json.has("source") else json.opt("source") !is String) invalid()
+    val slot = json.remove("slot")?.let { name ->
+        TileflowLayerSlot.entries.firstOrNull { it.wireName == name } ?: invalid()
+    }
+    addLayer(id, json, slot, position)
+}
+
+private suspend fun TileflowMapView.addLayer(
+    id: String,
+    json: JSONObject,
+    requestedSlot: TileflowLayerSlot?,
+    position: TileflowLayerPosition,
+) {
+    if (!STYLE_ID.matches(id) || layerExists(id) || runtimeStyle.layers.size >= 1024) invalid()
     if (json.has("source") && !sourceExists(json.getString("source")))
         invalid(ProtocolContract.ErrorReason.UNKNOWN_SOURCE)
-    val (at, slot) = insertion(runtimeStyle.layers, position, layer.slot)
-    val record = RuntimeStyle.Layer(layer.id, json, slot)
+    val (at, slot) = insertion(runtimeStyle.layers, position, requestedSlot)
+    val record = RuntimeStyle.Layer(id, json, slot)
+    if (readyEngine == null) engineKind.validateQueued(record)
     changeStyle({ layers.add(at, record) }) { engine ->
         val payload = JSONObject().put("layer", json)
         if (slot != null && position == TileflowLayerPosition.Default)

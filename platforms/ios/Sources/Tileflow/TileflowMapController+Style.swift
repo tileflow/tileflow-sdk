@@ -7,6 +7,18 @@ extension TileflowMapController {
     try await attached().addSource(source)
   }
 
+  /// Adds a style-spec source supplied as JSON.
+  public func addSource(id: String, properties: [String: Any]) async throws {
+    try await attached().addSource(id: id, properties: properties)
+  }
+
+  /// Adds a style-spec layer supplied as JSON.
+  public func addLayer(properties: [String: Any], position: TileflowLayerPosition = .default)
+    async throws
+  {
+    try await attached().addLayer(properties: properties, position: position)
+  }
+
   /// See ``TileflowMapView/removeSource(_:)``.
   public func removeSource(_ id: String) async throws { try await attached().removeSource(id) }
 

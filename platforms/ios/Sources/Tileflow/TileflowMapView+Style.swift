@@ -105,12 +105,53 @@ extension TileflowMapView {
   /// channel, up to 32 MiB. The source and everything drawn from it survive theme changes and a
   /// new renderer.
   public func addSource(_ source: any TileflowSource) async throws {
-    try Self.validateIdentifier(source.id)
-    guard !runtimeStyle.sources.contains(where: { $0.id == source.id }) else {
+    let (spec, log) = try Self.sourceWire(source)
+    try await addSource(.init(id: source.id, spec: spec, geoJSON: log))
+  }
+
+  /// Adds a style-spec source supplied as JSON. Inline GeoJSON uses the same data channel as a typed source.
+  public func addSource(id: String, properties: [String: Any]) async throws {
+    var properties = properties
+    guard let type = properties["type"] as? String,
+      ["geojson", "vector", "raster", "raster-dem", "image"].contains(type)
+    else { throw TileflowMapError.invalidRequest }
+
+    var log: GeoJSONLog?
+    if type == "geojson" {
+      let data: TileflowGeoJSONData
+      switch properties.removeValue(forKey: "data") {
+      case let object as [String: Any]:
+        guard let type = object["type"] as? String, Self.geoJSONTypes.contains(type),
+          JSONSerialization.isValidJSONObject(object)
+        else { throw TileflowMapError.invalidRequest }
+        data = .geoJSON(try JSONSerialization.data(withJSONObject: object))
+      case let text as String:
+        guard let url = URL(string: text), url.scheme != nil else {
+          throw TileflowMapError.invalidRequest
+        }
+        data = .url(url)
+      case nil: data = .empty
+      default: throw TileflowMapError.invalidRequest
+      }
+      log = GeoJSONLog(
+        base: try Self.geoJSONBase(data).0, promoteId: properties["promoteId"] as? String)
+    }
+    guard JSONSerialization.isValidJSONObject(properties) else {
       throw TileflowMapError.invalidRequest
     }
-    let (spec, log) = try Self.sourceWire(source)
-    let record = RuntimeStyle.Source(id: source.id, spec: spec, geoJSON: log)
+    try await addSource(
+      .init(id: id, spec: properties.mapValues(JSONValue.init(foundation:)), geoJSON: log))
+  }
+
+  private static let geoJSONTypes: Set<String> = [
+    "Point", "MultiPoint", "LineString", "MultiLineString", "Polygon", "MultiPolygon",
+    "GeometryCollection", "Feature", "FeatureCollection",
+  ]
+
+  private func addSource(_ record: RuntimeStyle.Source) async throws {
+    try Self.validateIdentifier(record.id)
+    guard !sourceExists(record.id) else { throw TileflowMapError.invalidRequest }
+    if readyEngine == nil { try engineKind.validateQueued(record) }
     try await changeStyle({ $0.sources.append(record) }) { engine in
       try await self.sendAddSource(record, through: engine)
     }
@@ -214,17 +255,50 @@ extension TileflowMapView {
   public func addLayer(_ layer: any TileflowLayer, position: TileflowLayerPosition = .default)
     async throws
   {
-    try Self.validateIdentifier(layer.id)
-    guard !runtimeStyle.layers.contains(where: { $0.id == layer.id }),
-      runtimeStyle.layers.count < 1024
+    try await addLayer(
+      id: layer.id, json: JSONValue.encoded(layer), slot: layer.slot, position: position)
+  }
+
+  /// Adds a style-spec layer supplied as JSON, using the application's layer identifiers.
+  public func addLayer(properties: [String: Any], position: TileflowLayerPosition = .default)
+    async throws
+  {
+    var properties = properties
+    guard JSONSerialization.isValidJSONObject(properties),
+      let id = properties["id"] as? String, let type = properties["type"] as? String,
+      [
+        "fill", "line", "symbol", "circle", "heatmap", "fill-extrusion", "raster", "hillshade",
+        "color-relief", "background",
+      ].contains(type),
+      type == "background" ? properties["source"] == nil : properties["source"] is String
     else { throw TileflowMapError.invalidRequest }
-    let json = try JSONValue.encoded(layer)
+    var slot: TileflowLayerSlot?
+    if let value = properties.removeValue(forKey: "slot") {
+      guard let name = value as? String, let parsed = TileflowLayerSlot(rawValue: name) else {
+        throw TileflowMapError.invalidRequest
+      }
+      slot = parsed
+    }
+    try await addLayer(
+      id: id, json: JSONValue(foundation: properties), slot: slot, position: position)
+  }
+
+  private func addLayer(
+    id: String, json: JSONValue, slot: TileflowLayerSlot?, position: TileflowLayerPosition
+  )
+    async throws
+  {
+    try Self.validateIdentifier(id)
+    guard !layerExists(id), runtimeStyle.layers.count < 1024 else {
+      throw TileflowMapError.invalidRequest
+    }
     if let source = json["source"]?.string, !sourceExists(source) {
       throw TileflowMapError(.invalidRequest, reason: .unknownSource)
     }
-    var record = RuntimeStyle.Layer(id: layer.id, json: json, slot: layer.slot)
+    var record = RuntimeStyle.Layer(id: id, json: json, slot: slot)
     let at = try insertionIndex(for: position, slot: &record.slot)
     let fixed = record
+    if readyEngine == nil { try engineKind.validateQueued(fixed) }
     try await changeStyle({ $0.layers.insert(fixed, at: at) }) { engine in
       var payload: [String: JSONValue] = ["layer": json]
       if let slot = fixed.slot, position == .default { payload["slot"] = .string(slot.rawValue) }

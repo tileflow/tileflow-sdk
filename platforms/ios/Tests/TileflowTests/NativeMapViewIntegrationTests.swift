@@ -33,6 +33,72 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     TileflowMapSource(map: "city", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
   }
 
+  func testRuntimeJSONSurvivesThemeAndCanBeRemoved() async throws {
+    try await requireNativeFixture()
+    let events = NativeMapEvents()
+    let view = TileflowMapView(source: citySource)
+    view.engineKind = .native
+
+    do {
+      try await view.addSource(
+        id: "remote", properties: ["type": "geojson", "data": "https://example.com/points"])
+      XCTFail("Expected invalidRequest before mount")
+    } catch let error as TileflowMapError {
+      XCTAssertEqual(error, .invalidRequest)
+    }
+    XCTAssertFalse(view.sourceExists("remote"))
+
+    let data: [String: Any] = ["type": "Point", "coordinates": [-3.70, 40.42]]
+    try await view.addSource(id: "places", properties: ["type": "geojson", "data": data])
+    let window = mount(view, events: events)
+    defer {
+      view.destroy()
+      window.isHidden = true
+    }
+    try await events.waitForLoads(1)
+    try await view.addLayer(properties: [
+      "id": "points", "type": "circle", "source": "places", "paint": ["circle-radius": 11],
+    ])
+
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+    try await view.addLayer(
+      TileflowCircleLayer(id: "under", source: "places"), position: .below("points"))
+    do {
+      try await view.addLayer(properties: [
+        "id": "bad", "type": "circle", "source": "places", "paint": ["circle-radius": -1],
+      ])
+      XCTFail("Expected invalidRequest")
+    } catch let error as TileflowMapError {
+      XCTAssertEqual(error, .invalidRequest)
+    }
+    XCTAssertFalse(view.layerExists("bad"))
+
+    func checkStyle() async throws {
+      let map = try XCTUnwrap(engine.mapView)
+      let style = try XCTUnwrap(map.style)
+      let layer = try XCTUnwrap(
+        style.layer(withIdentifier: "__tileflow_layer_points") as? MLNCircleStyleLayer)
+      XCTAssertEqual(layer.circleRadius.constantValue as? NSNumber, 11)
+      XCTAssertEqual(
+        style.layers.suffix(2).map(\.identifier),
+        ["__tileflow_layer_under", "__tileflow_layer_points"])
+
+      let point = try await view.project(Self.center)
+      try await waitUntil {
+        !map.visibleFeatures(at: point, styleLayerIdentifiers: [layer.identifier]).isEmpty
+      }
+    }
+    try await checkStyle()
+    try await view.setTheme("dark")
+    try await checkStyle()
+
+    try await view.removeLayer("under")
+    try await view.removeLayer("points")
+    try await view.removeSource("places")
+    XCTAssertNil(engine.mapView?.style?.layer(withIdentifier: "__tileflow_layer_points"))
+    XCTAssertNil(engine.mapView?.style?.source(withIdentifier: "__tileflow_source_places"))
+  }
+
   func testOnlineMapLoadsChangesThemeAndRetires() async throws {
     try await requireNativeFixture()
     let events = NativeMapEvents()

@@ -1,6 +1,7 @@
 package dev.tileflow.sdk.engine
 
 import android.view.View
+import dev.tileflow.sdk.RuntimeStyle
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.bridge.DataChannel
@@ -13,7 +14,15 @@ internal enum class MapEngineKind {
     /** The embedded web runtime in a system WebView. */
     WEB_VIEW,
     /** MapLibre Native. */
-    NATIVE,
+    NATIVE;
+
+    fun validateQueued(source: RuntimeStyle.Source) {
+        if (this == NATIVE) NativeRuntimeStyle.validateQueuedSource(source)
+    }
+
+    fun validateQueued(layer: RuntimeStyle.Layer) {
+        if (this == NATIVE) NativeRuntimeStyle.circlePaint(layer.json, layer.slot != null)
+    }
 }
 
 /** What an engine reports to the view that owns it. Every callback runs on the main thread. */

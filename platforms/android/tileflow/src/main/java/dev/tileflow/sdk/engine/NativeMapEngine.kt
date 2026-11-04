@@ -134,6 +134,9 @@ internal class NativeMapEngine(
     private var emphasisShown: NativeEmphasisRequest? = null
     private var emphasisStrength = 0.0
     private var emphasisRun = 0
+    private val runtimeStyle = NativeRuntimeStyle()
+    private val loadedStyle: Style?
+        get() = if (contentStyleLoaded) map?.style else null
     private val styleWaiters = mutableListOf<CancellableContinuation<Throwable?>>()
     private val renderWaiters = mutableListOf<CancellableContinuation<Unit>>()
 
@@ -261,6 +264,22 @@ internal class NativeMapEngine(
             val request = payload as? JSONObject
             return when (method) {
                 ProtocolContract.Method.INITIALIZE -> initialize(map, request ?: invalid())
+                ProtocolContract.Method.ADD_SOURCE -> {
+                    runtimeStyle.addSource(request ?: invalid(), data, loadedStyle)
+                    JSONObject.NULL
+                }
+                ProtocolContract.Method.ADD_LAYER -> {
+                    runtimeStyle.addLayer(request ?: invalid(), loadedStyle)
+                    JSONObject.NULL
+                }
+                ProtocolContract.Method.REMOVE_LAYER -> {
+                    runtimeStyle.removeLayer(request ?: invalid(), loadedStyle)
+                    JSONObject.NULL
+                }
+                ProtocolContract.Method.REMOVE_SOURCE -> {
+                    runtimeStyle.removeSource(request ?: invalid(), loadedStyle)
+                    JSONObject.NULL
+                }
                 ProtocolContract.Method.QUERY_AT_POINT -> query(map, point(request))
                 ProtocolContract.Method.SET_VISIBILITY -> JSONObject.NULL
                 ProtocolContract.Method.SET_OPTIONS -> {
@@ -418,6 +437,13 @@ internal class NativeMapEngine(
         contentStyleLoaded = false
         map.setStyle(Style.Builder().fromJson(projected.style.toString())) {
             if (retired) return@setStyle
+            try {
+                runtimeStyle.restore(it)
+            } catch (error: TileflowMapException) {
+                styleWaiters.toList().also { styleWaiters.clear() }.forEach { it.resume(error) }
+                callbacks.failed(error)
+                return@setStyle
+            }
             contentStyleLoaded = true
             styleDidLoad()
             styleWaiters.toList().also { styleWaiters.clear() }.forEach { it.resume(null) }

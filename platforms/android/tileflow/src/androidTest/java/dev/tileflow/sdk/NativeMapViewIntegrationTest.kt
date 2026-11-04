@@ -27,6 +27,9 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import org.json.JSONObject
+import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.android.geometry.LatLng
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -171,6 +174,67 @@ public class NativeMapViewIntegrationTest {
             delay(100)
         }
         fail("The buildings did not render: $observed")
+    }
+
+    @Test
+    public fun runtimeJSONSurvivesThemeAndCanBeRemoved() {
+        requireNativeFixture()
+        val activity = show()
+        try {
+            runBlocking {
+                withContext(Dispatchers.Main) {
+                    val detached = TileflowMapView(activity).apply { engineKind = MapEngineKind.NATIVE }
+                    try {
+                        val remote = JSONObject("""{"type":"geojson","data":"https://example.com/points"}""")
+                        val failure = runCatching { detached.addStyleSource("remote", remote) }.exceptionOrNull()
+                        assertEquals(TileflowErrorCode.INVALID_REQUEST, (failure as TileflowMapException).code)
+                        assertFalse(detached.sourceExists("remote"))
+                    } finally {
+                        detached.destroy()
+                    }
+                    val view = activity.views.single()
+                    activity.recorded.single().waitForLoads(1)
+                    val source = JSONObject("""{"type":"geojson","data":{"type":"Point","coordinates":[-3.70,40.42]}}""")
+                    val layer = JSONObject("""{"id":"points","type":"circle","source":"places","paint":{"circle-radius":11}}""")
+                    view.addStyleSource("places", source)
+                    view.addStyleLayer(layer)
+                    layer.getJSONObject("paint").put("circle-radius", 0)
+
+                    view.addLayer(TileflowCircleLayer("under", "places"), TileflowLayerPosition.Below("points"))
+                    val bad = JSONObject("""{"id":"bad","type":"circle","source":"places","paint":{"circle-radius":-1}}""")
+                    val failure = runCatching { view.addStyleLayer(bad) }.exceptionOrNull()
+                    assertEquals(TileflowErrorCode.INVALID_REQUEST, (failure as TileflowMapException).code)
+                    assertFalse(view.layerExists("bad"))
+
+                    suspend fun checkStyle() {
+                        val map = requireNotNull(activity.engine?.map)
+                        val style = requireNotNull(map.style)
+                        val points = requireNotNull(style.getLayerAs<CircleLayer>("__tileflow_layer_points"))
+                        assertEquals(11f, points.circleRadius.value)
+                        assertEquals(
+                            listOf("__tileflow_layer_under", "__tileflow_layer_points"),
+                            style.layers.takeLast(2).map { it.id },
+                        )
+                        val point = map.projection.toScreenLocation(LatLng(center.latitude, center.longitude))
+                        withTimeout(10_000) {
+                            while (map.queryRenderedFeatures(point, points.id).isEmpty()) delay(50)
+                        }
+                    }
+                    checkStyle()
+                    view.setTheme("dark")
+                    checkStyle()
+
+                    view.removeLayer("under")
+                    view.removeLayer("points")
+                    view.removeSource("places")
+                    val style = requireNotNull(activity.engine?.map?.style)
+                    assertNull(style.getLayer("__tileflow_layer_points"))
+                    assertNull(style.getSource("__tileflow_source_places"))
+                }
+            }
+        } finally {
+            instrumentation.runOnMainSync { activity.finish() }
+        }
     }
 
     @Test

@@ -1,10 +1,21 @@
 package dev.tileflow.sdk
 
 import androidx.compose.ui.unit.DpOffset
+import org.json.JSONObject
 
 /** See [TileflowMapView.addSource]. */
 public suspend fun TileflowMapController.addSource(source: TileflowSource): Unit =
     attached().addSource(source)
+
+/** See [TileflowMapView.addStyleSource]. */
+public suspend fun TileflowMapController.addStyleSource(id: String, properties: JSONObject): Unit =
+    attached().addStyleSource(id, properties)
+
+/** See [TileflowMapView.addStyleLayer]. */
+public suspend fun TileflowMapController.addStyleLayer(
+    properties: JSONObject,
+    position: TileflowLayerPosition = TileflowLayerPosition.Default,
+): Unit = attached().addStyleLayer(properties, position)
 
 /** See [TileflowMapView.removeSource]. */
 public suspend fun TileflowMapController.removeSource(id: String): Unit =

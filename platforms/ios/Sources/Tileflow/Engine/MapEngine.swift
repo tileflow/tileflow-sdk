@@ -6,6 +6,16 @@ enum MapEngineKind: Sendable {
   case webView
   /// MapLibre Native.
   case native
+
+  @MainActor func validateQueued(_ source: RuntimeStyle.Source) throws {
+    if self == .native { try NativeRuntimeStyle.validateQueuedSource(source) }
+  }
+
+  @MainActor func validateQueued(_ layer: RuntimeStyle.Layer) throws {
+    if self == .native {
+      _ = try NativeRuntimeStyle.circlePaint(layer.json, hasSlot: layer.slot != nil)
+    }
+  }
 }
 
 /// The commands a view sends to its engine, with the JSON payloads the view has validated. Both

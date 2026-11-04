@@ -31,6 +31,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   var onRendererTerminated: ((ProtocolContract.ErrorReason) -> Void)?
 
   let data = DataChannel()
+  private let runtimeStyle = NativeRuntimeStyle()
   let container = UIView()
   private(set) var mapView: MLNMapView?
   let loader: any ResourceLoading
@@ -46,6 +47,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   private var initialized = false
   /// Whether the map's own style finished loading; the initial empty style does not count.
   var styleLoaded = false
+  private var loadedStyle: MLNStyle? { styleLoaded ? mapView?.style : nil }
   private var styleRequested = false
   /// Whether `contentReady` waits for the map's style to finish drawing.
   private var contentPending = false
@@ -137,6 +139,18 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     switch command {
     case .initialize:
       try await initialize(payload)
+      return .null
+    case .addSource:
+      try runtimeStyle.addSource(payload, channel: self.data, style: loadedStyle)
+      return .null
+    case .addLayer:
+      try runtimeStyle.addLayer(payload, style: loadedStyle)
+      return .null
+    case .removeLayer:
+      try runtimeStyle.removeLayer(payload, style: loadedStyle)
+      return .null
+    case .removeSource:
+      try runtimeStyle.removeSource(payload, style: loadedStyle)
       return .null
     case .queryAtPoint:
       return .array(features(at: try Self.point(payload)))
@@ -483,7 +497,15 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   nonisolated func mapView(_ mapView: MLNMapView, didFinishLoading style: MLNStyle) {
     MainActor.assumeIsolated {
-      guard styleRequested, !retired else { return }
+      guard styleRequested, !retired, let loadedStyle = self.mapView?.style else { return }
+      do {
+        try runtimeStyle.restore(in: loadedStyle)
+      } catch {
+        for waiter in styleWaiters { waiter.resume(throwing: error) }
+        styleWaiters.removeAll()
+        onFailure?(.invalidRequest)
+        return
+      }
       styleLoaded = true
       styleDidLoad()
       for waiter in styleWaiters { waiter.resume() }

@@ -248,16 +248,16 @@ package uses this contract for its mounted Map; it is not yet published.
 
 ## Data, terrain, and browser resources
 
-Tileflow World is the hosted primary source, read through its open (CC0)
+Tileflow World is the hosted primary source, with an open (CC0)
 [schema](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/reference/tileflow-world-v1.json);
-detail layers load only when drawn. `vectorTiles()` takes tiles in that schema or OpenMapTiles'
+detail layers load only when drawn. `vectorTiles()` takes that schema or OpenMapTiles
 (`openMapTiles()`). `hostedTileset()`, `boundaryAreas` and overlays add named sources.
 
 `bathymetry({vectorLayers: {...}})` declares contour/name layers. `marine: 'nautical'` adds
 navigation marks, flashing lights, and a "Not for navigation" notice.
 
-World attribution links to Tileflow's source notice and OpenStreetMap. External vector data retains
-the attribution supplied by its owner.
+World attribution credits Tileflow and OpenStreetMap; other vector data keeps its owner's
+attribution.
 
 `projection` accepts `mercator` or `globe`. Terrain supports `none`, `hillshade`, `3d`, and an object
 form for explicit hillshade and contour configuration. Browser-derived contours require a DEM tile

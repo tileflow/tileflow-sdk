@@ -39,9 +39,7 @@ final class NativeSceneContent {
   }
 
   func setContent(_ request: JSONValue, data: DataChannel) throws {
-    guard request["annotations"]?.array?.isEmpty != false,
-      let definitions = request["overlays"]?.array
-    else {
+    guard let definitions = request["overlays"]?.array else {
       throw TileflowMapError.invalidRequest
     }
     let next = NativeRuntimeStyle(.overlays)

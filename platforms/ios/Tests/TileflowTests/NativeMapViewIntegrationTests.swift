@@ -715,11 +715,8 @@ final class NativeMapViewIntegrationTests: XCTestCase {
         map.style?.layer(withIdentifier: "__tileflow_app_route") as? MLNLineStyleLayer)
       return JSONValue(foundation: line.lineGradient.mgl_jsonExpressionObject)
     }
-    do {
-      try await view.setContent(
-        annotations: [.init(id: "pin", coordinate: Self.center, title: "Mixed")], layers: [layer])
-      XCTFail("Expected unsupported annotations to reject the whole content update")
-    } catch let error as TileflowMapError { XCTAssertEqual(error, .invalidRequest) }
+    try await view.setContent(
+      annotations: [.init(id: "pin", coordinate: Self.center, title: "Mixed")], layers: [layer])
     XCTAssertNotNil(map.style?.layer(withIdentifier: "__tileflow_app_route"))
     let initial = try gradient()
     let drawn = try await view.animateLineProgress(
@@ -1097,8 +1094,8 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     }
   }
 
-  /// View annotations the native engine cannot track yet are sent once, not again and again.
-  func testRejectedTrackedPointsAreNotSentAgain() async throws {
+  /// A static view annotation keeps its tracking registration across frames.
+  func testUnchangedTrackedPointsAreNotSentAgain() async throws {
     try await requireNativeFixture()
     let events = NativeMapEvents()
     let view = TileflowMapView(source: citySource)

@@ -51,14 +51,16 @@ struct TrackedPositions {
   /// dropped, and points of the set that are gone are forgotten.
   @discardableResult
   mutating func apply(revision: Int, positions flat: [Double?]) -> Bool {
-    guard let keys = sets[revision], flat.count == keys.count * 2 else { return false }
-    for (index, key) in keys.enumerated() {
-      if let x = flat[index * 2], let y = flat[index * 2 + 1] {
-        positions[key] = CGPoint(x: x, y: y)
-      } else {
-        positions[key] = nil
-      }
+    guard flat.count.isMultiple(of: 2) else { return false }
+    return apply(revision: revision, count: flat.count / 2) { i in
+      guard let x = flat[i * 2], let y = flat[i * 2 + 1] else { return nil }
+      return CGPoint(x: x, y: y)
     }
+  }
+
+  mutating func apply(revision: Int, count: Int, point: (Int) -> CGPoint?) -> Bool {
+    guard let keys = sets[revision], keys.count == count else { return false }
+    for (i, key) in keys.enumerated() { positions[key] = point(i) }
     sets = sets.filter { $0.key >= revision }
     let live = Set(sets.values.joined())
     positions = positions.filter { live.contains($0.key) }
@@ -204,6 +206,14 @@ final class AnnotationOverlay: UIView {
     else { return }
     sample = (revision, time, items.map(\.number))
     startRefreshes()
+  }
+
+  /// MapLibre and its UIKit overlays are committed together for the frame it just rendered.
+  func receiveNativeFrame(revision: Int, points: [CGPoint?]) {
+    guard tracked.apply(revision: revision, count: points.count, point: { points[$0] }) else { return }
+    needsPlacement = false
+    appliedFrames += 1
+    place()
   }
 
   func setNeedsPlacement() {

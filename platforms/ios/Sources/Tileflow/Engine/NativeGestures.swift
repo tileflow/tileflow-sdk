@@ -1,5 +1,6 @@
 import MapLibre
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 
 /// What a person does on a map that MapLibre Native draws: which gestures move the camera, taps
 /// and long presses with their coordinate, double taps that zoom by the chosen amount, the end of
@@ -20,6 +21,8 @@ final class NativeGestures: NSObject, UIGestureRecognizerDelegate {
   private weak var mapView: MLNMapView?
   private weak var camera: NativeCamera?
   private let emit: (String, JSONValue) -> Void
+  private let annotations: NativeMapAnnotations
+  let annotationDrag: NativeAnnotationDragRecognizer
   let tap = UITapGestureRecognizer()
   let longPress = UILongPressGestureRecognizer()
   /// A double tap that zooms by an amount other than MapLibre's single level.
@@ -37,11 +40,13 @@ final class NativeGestures: NSObject, UIGestureRecognizerDelegate {
   private var hintTimer: Task<Void, Never>?
 
   init(
-    mapView: MLNMapView, container: UIView, camera: NativeCamera,
+    mapView: MLNMapView, container: UIView, camera: NativeCamera, annotations: NativeMapAnnotations,
     emit: @escaping (String, JSONValue) -> Void
   ) {
     self.mapView = mapView
     self.camera = camera
+    self.annotations = annotations
+    annotationDrag = NativeAnnotationDragRecognizer(annotations)
     self.emit = emit
     super.init()
     var quickZoom: [UIGestureRecognizer] = []
@@ -61,7 +66,8 @@ final class NativeGestures: NSObject, UIGestureRecognizerDelegate {
       default: break
       }
     }
-    for (recognizer, _) in tracked {
+    for (recognizer, gesture) in tracked {
+      if gesture == .pan { recognizer.require(toFail: annotationDrag) }
       recognizer.addTarget(self, action: #selector(trackedChanged(_:)))
     }
     tap.addTarget(self, action: #selector(tapped(_:)))
@@ -74,11 +80,13 @@ final class NativeGestures: NSObject, UIGestureRecognizerDelegate {
     hintPan.addTarget(self, action: #selector(hinted(_:)))
     hintPan.maximumNumberOfTouches = 1
     hintPan.isEnabled = false
+    tap.require(toFail: annotationDrag)
+    hintPan.require(toFail: annotationDrag)
     tap.require(toFail: longPress)
     tap.require(toFail: doubleTap)
     for other in zoomTaps where other.numberOfTapsRequired == 2 { tap.require(toFail: other) }
     for other in quickZoom { tap.require(toFail: other) }
-    for recognizer in [tap, longPress, doubleTap, hintPan] as [UIGestureRecognizer] {
+    for recognizer in [annotationDrag, tap, longPress, doubleTap, hintPan] as [UIGestureRecognizer] {
       recognizer.delegate = self
       recognizer.cancelsTouchesInView = false
       mapView.addGestureRecognizer(recognizer)
@@ -147,7 +155,7 @@ final class NativeGestures: NSObject, UIGestureRecognizerDelegate {
   }
 
   @objc func pressed(_ recognizer: UILongPressGestureRecognizer) {
-    guard recognizer.state == .began else { return }
+    guard recognizer.state == .began, !annotations.dragging else { return }
     report("longPress", at: recognizer.location(in: mapView))
   }
 
@@ -170,14 +178,15 @@ final class NativeGestures: NSObject, UIGestureRecognizerDelegate {
 
   private func report(_ event: String, at point: CGPoint) {
     guard let coordinate = camera?.coordinate(at: point) else { return }
-    emit(
-      event,
-      .object([
-        "coordinate": .object([
-          "longitude": .number(coordinate.longitude), "latitude": .number(coordinate.latitude),
-        ]),
-        "point": .object(["x": .number(point.x), "y": .number(point.y)]),
-      ]))
+    var payload: [String: JSONValue] = [
+      "coordinate": .object([
+        "longitude": .number(coordinate.longitude), "latitude": .number(coordinate.latitude),
+      ]),
+      "point": .object(["x": .number(point.x), "y": .number(point.y)]),
+    ]
+    let hits = annotations.hits(at: point)
+    if !hits.isEmpty { payload["annotations"] = .array(hits) }
+    emit(event, .object(payload))
   }
 
   // MARK: Hint
@@ -214,4 +223,52 @@ final class NativeGestures: NSObject, UIGestureRecognizerDelegate {
     _ gestureRecognizer: UIGestureRecognizer,
     shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
   ) -> Bool { true }
+}
+
+
+/// A draggable annotation takes a one-finger pan; taps and long presses still work on it.
+@MainActor
+final class NativeAnnotationDragRecognizer: UIGestureRecognizer {
+  private let annotations: NativeMapAnnotations
+  private weak var finger: UITouch?
+
+  init(_ annotations: NativeMapAnnotations) {
+    self.annotations = annotations
+    super.init(target: nil, action: nil)
+  }
+
+  override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard finger == nil, touches.count == 1, let touch = touches.first,
+      annotations.beginDrag(at: touch.location(in: view))
+    else {
+      annotations.endDrag()
+      state = state == .possible ? .failed : .cancelled
+      return
+    }
+    finger = touch
+  }
+
+  override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard let finger, touches.contains(finger), annotations.moveDrag(to: finger.location(in: view)) else { return }
+    state = state == .possible ? .began : .changed
+  }
+
+  override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+    guard let finger, touches.contains(finger) else { return }
+    let point = finger.location(in: view)
+    // UIKit can coalesce the last move into the release.
+    if annotations.moveDrag(to: point), state == .possible { state = .began }
+    annotations.endDrag()
+    state = state == .possible ? .failed : .ended
+  }
+
+  override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+    annotations.endDrag()
+    state = state == .possible ? .failed : .cancelled
+  }
+
+  override func reset() {
+    finger = nil
+    super.reset()
+  }
 }

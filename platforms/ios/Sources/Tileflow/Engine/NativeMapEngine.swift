@@ -23,6 +23,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   static let emptyStyle = #"{"version":8,"sources":{},"layers":[]}"#
   static let log = Logger(subsystem: "dev.tileflow", category: "map")
 
+  var onAnnotationFrame: ((Int, [CGPoint?]) -> Void)?
   var onReady: (() -> Void)?
   var onEvent: ((String, JSONValue) -> Void)?
   var onFailure: ((TileflowMapError) -> Void)?
@@ -33,6 +34,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   let data = DataChannel()
   let runtimeStyle = NativeRuntimeStyle()
   lazy var scene = NativeMapScene(self)
+  lazy var mapAnnotations = NativeMapAnnotations(self)
   lazy var sceneContent = NativeSceneContent(self)
   lazy var sceneAnimations = NativeSceneAnimations(self)
   private let resourceKinds = LockedValue<[(prefix: String, kind: TileflowResourceKind)]>([])
@@ -201,7 +203,9 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       setViewMode(mode, duration: (payload["duration"]?.number ?? 0) / 1000)
       return .null
     case .setContent:
+      let pins = try NativeMapAnnotations.pins(in: payload)
       try sceneContent.setContent(payload, data: self.data)
+      mapAnnotations.setPins(pins)
       sceneAnimations.stopLines()
       return .null
     case .setDepthMarkers:
@@ -214,11 +218,10 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       sceneAnimations.stop(payload)
       return .null
     case .setAnnotationLayers:
-      // The view sends the layers whenever an engine becomes ready.
-      guard payload["layers"]?.array?.isEmpty != false else { throw Self.unsupported(command) }
+      try mapAnnotations.setLayers(payload)
       return .null
     case .setTrackedPoints:
-      guard payload["points"]?.array?.isEmpty != false else { throw Self.unsupported(command) }
+      try mapAnnotations.setTracking(payload)
       return .null
     default:
       throw Self.unsupported(command)
@@ -311,6 +314,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   func retire(_ error: TileflowMapError) {
     guard !retired else { return }
+    onAnnotationFrame = nil
+    mapAnnotations.retire()
     sceneAnimations.retire()
     scene.retire()
     retirementError = error
@@ -651,6 +656,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   nonisolated func mapViewDidFinishRenderingFrame(_ mapView: MLNMapView, fullyRendered: Bool) {
     MainActor.assumeIsolated {
+      mapAnnotations.frame()
       scene.confirmBoundaries()
       if !runtimeStyle.pendingState.isEmpty, let style = loadedStyle { runtimeStyle.confirmState(in: style) }
       if fullyRendered {

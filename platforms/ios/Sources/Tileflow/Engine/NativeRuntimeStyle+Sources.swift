@@ -406,6 +406,32 @@ extension NativeRuntimeStyle {
     }
   }
 
+  func annotationGeometry(source id: String, id feature: String) -> JSONValue? {
+    guard var item = sources[id], let shape = item.shape,
+      let index = try? item.features ?? FeatureIndex(shape), let original = index.features[feature]
+    else { return nil }
+    item.features = index
+    sources[id] = item
+    return JSONValue(foundation: original.geoJSONDictionary())["geometry"]
+  }
+
+  func moveAnnotation(source id: String, id feature: String, to geometry: JSONValue, style: MLNStyle) -> Bool {
+    guard var item = sources[id], var index = item.features, let original = index.features[feature],
+      let source = style.source(withIdentifier: sourceID(id)) as? MLNShapeSource
+    else { return false }
+    var json = original.geoJSONDictionary()
+    json["geometry"] = geometry.foundation
+    guard let bytes = try? JSONSerialization.data(withJSONObject: json),
+      let replacement = try? Self.shape(bytes) as? FeatureIndex.Feature else { return false }
+    index.features[feature] = replacement
+    let next = MLNShapeCollectionFeature(shapes: index.order.compactMap { index.features[$0] })
+    source.shape = next
+    item.shape = next
+    item.features = index
+    sources[id] = item
+    return true
+  }
+
   func updateFeatures(_ request: JSONValue, channel: DataChannel, in style: MLNStyle?) throws {
     guard let id = request["id"]?.string, var item = sources[id], let shape = item.shape else {
       throw TileflowMapError.invalidRequest

@@ -54,16 +54,6 @@ final class NativeMapEngineTests: XCTestCase {
     XCTAssertEqual(coordinate.latitude, 40.42, accuracy: 0.0001)
     let features = try await view.query(at: point)
     XCTAssertTrue(features.contains { $0.layer == "poi" }, "The POI did not render: \(features)")
-    // What the native engine does not draw yet is refused, not silently dropped.
-    do {
-      try await view.setContent(
-        annotations: [
-          .init(id: "place", coordinate: .init(longitude: -3.7, latitude: 40.42), title: "Place")
-        ])
-      XCTFail("The native engine accepted content it does not draw")
-    } catch let error as TileflowMapError {
-      XCTAssertEqual(error.code, .invalidRequest)
-    }
     XCTAssertEqual(foreign.withLock { $0 }, [], "MapLibre reached the network on its own")
 
     map.close()

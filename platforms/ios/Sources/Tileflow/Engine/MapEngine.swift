@@ -7,10 +7,6 @@ enum MapEngineKind: Sendable {
   /// MapLibre Native.
   case native
 
-  func validateContent(_ content: MapContent) throws {
-    if self == .native, !content.annotations.isEmpty { throw TileflowMapError.invalidRequest }
-  }
-
   @MainActor func validateQueued(_ source: RuntimeStyle.Source) throws {
     if self == .native { try NativeRuntimeStyle.validateQueuedSource(source) }
   }
@@ -91,6 +87,8 @@ protocol MapEngine: AnyObject, Sendable {
   var onReady: (() -> Void)? { get set }
   /// An event and its value.
   var onEvent: ((String, JSONValue) -> Void)? { get set }
+  /// Positions of tracked views when the engine draws in the same UIKit frame.
+  var onAnnotationFrame: ((Int, [CGPoint?]) -> Void)? { get set }
   /// The engine cannot continue in this generation.
   var onFailure: ((TileflowMapError) -> Void)? { get set }
   /// The engine could not start, before it was ready; the view reports it as it is.
@@ -111,6 +109,12 @@ protocol MapEngine: AnyObject, Sendable {
 }
 
 extension MapEngine {
+  /// A separate renderer process delivers positions in its tracked-points events.
+  var onAnnotationFrame: ((Int, [CGPoint?]) -> Void)? {
+    get { nil }
+    set {}
+  }
+
   func call(_ command: MapEngineCommand) async throws -> JSONValue {
     try await call(command, payload: .null, data: [])
   }

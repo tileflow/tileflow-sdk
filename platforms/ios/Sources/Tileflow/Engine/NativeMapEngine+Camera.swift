@@ -26,7 +26,7 @@ extension NativeMapEngine {
     }
     let camera = NativeCamera(mapView: mapView, emit: emit)
     self.camera = camera
-    gestures = NativeGestures(mapView: mapView, container: container, camera: camera, emit: emit)
+    gestures = NativeGestures(mapView: mapView, container: container, camera: camera, annotations: mapAnnotations, emit: emit)
   }
 
   /// Applies what `initialize` carries for the camera before the map's first camera: the events

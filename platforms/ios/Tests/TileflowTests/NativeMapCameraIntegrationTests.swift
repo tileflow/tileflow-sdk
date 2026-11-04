@@ -473,7 +473,7 @@ private final class FakePan: UIPanGestureRecognizer {
 }
 
 /// A recognized tap at a point, for the SDK's tap and double-tap handlers.
-private final class FakeTap: UITapGestureRecognizer {
+final class FakeTap: UITapGestureRecognizer {
   private let point: CGPoint
 
   init(point: CGPoint) {
@@ -489,7 +489,7 @@ private final class FakeTap: UITapGestureRecognizer {
 }
 
 /// A long press that has just begun at a point, for the SDK's long-press handler.
-private final class FakeLongPress: UILongPressGestureRecognizer {
+final class FakeLongPress: UILongPressGestureRecognizer {
   private let point: CGPoint
 
   init(point: CGPoint) {

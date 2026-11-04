@@ -325,7 +325,6 @@ public final class TileflowMapView: UIView {
     guard !destroyed else { throw TileflowMapError.disposed }
     let next = MapContent(annotations: annotations, overlays: layers)
     try next.validate()
-    try engineKind.validateContent(next)
     let previous = content
     contentRevision += 1
     let revision = contentRevision
@@ -558,6 +557,10 @@ public final class TileflowMapView: UIView {
     engine.onEvent = { [weak self] event, value in
       guard let self, !self.destroyed, self.generation == current else { return }
       self.receive(event, value, generation: current)
+    }
+    engine.onAnnotationFrame = { [weak self] revision, points in
+      guard let self, !self.destroyed, self.generation == current else { return }
+      self.annotationOverlay.receiveNativeFrame(revision: revision, points: points)
     }
     self.engine = engine
     annotationOverlay.frame = bounds

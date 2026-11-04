@@ -6,6 +6,7 @@ import {createStyle, readTileflowSunPreset, resolveTileflowTheme} from '@tileflo
 import {mixTileflowSunPresets, resolveTileflowSun} from '@tileflow/core/browser';
 import {buildingFloodLightShare} from '../../core/src/building-illumination';
 import {readTileflowBuildings3D} from '../../core/src/buildings-3d-design';
+import {tileflowSceneLight} from '../../core/src/scene-3d-browser';
 import {streets, streetsThemes} from '../src';
 import {streetsPreparedModels} from './streets-assets';
 import {standardLightingReference as reference} from './streets-standard-lighting-fixture';
@@ -48,7 +49,6 @@ for (const [name, theme] of Object.entries(themes)) {
     const expected = reference.lights[name as keyof typeof themes];
     const time = name.split('-')[1] as 'dawn' | 'day' | 'dusk' | 'night';
     const directionReference = reference.lights[`default-${time}`];
-    const shared = resolveTileflowTheme(streetsThemes[themes[`default-${time}`]]).sun!;
     const preset = resolveTileflowTheme(streetsThemes[theme]).sun;
     assert.ok(preset);
     assert.equal(preset.azimuth, directionReference.direction[0]);
@@ -57,15 +57,12 @@ for (const [name, theme] of Object.entries(themes)) {
       90 - directionReference.direction[1],
       'palettes share the same sun position',
     );
-    assert.equal(preset.intensity, shared.intensity);
-    assert.equal(preset.ambient.intensity, shared.ambient.intensity);
-    assert.equal(preset.shadowIntensity, shared.shadowIntensity);
+    assert.equal(preset.intensity, directionReference.directional.intensity);
+    assert.equal(preset.ambient.intensity, directionReference.ambient.intensity);
+    assert.equal(preset.shadowIntensity, directionReference.shadowIntensity);
     const light = resolveTileflowSun(preset);
-    // Coloured daylight is art-directed by Streets; other presets retain the measured reference.
-    if (!name.endsWith('-day') || name.startsWith('monochrome')) {
-      matchesRgb(light.rgb, expected.directional.rgb, `${theme} directional`);
-      matchesRgb(light.ambient.rgb, expected.ambient.rgb, `${theme} ambient`);
-    }
+    matchesRgb(light.rgb, expected.directional.rgb, `${theme} directional`);
+    matchesRgb(light.ambient.rgb, expected.ambient.rgb, `${theme} ambient`);
     const [azimuth, polar] = directionReference.direction.map((angle) => (angle * Math.PI) / 180);
     const direction = [
       Math.sin(azimuth!) * Math.sin(polar!),
@@ -138,6 +135,18 @@ for (const [name, theme] of Object.entries(themes)) {
     assert.equal(compiled.light?.color, '#FFFFFF');
   });
 }
+
+test('daylight ground shadows retain neutral ambient fill in every palette', () => {
+  for (const theme of ['light', 'faded', 'monochrome'] as const) {
+    const sun = resolveTileflowSun(resolveTileflowTheme(streetsThemes[theme]).sun!);
+    const light = tileflowSceneLight(sun);
+    assert.equal(light.strength, 1);
+    assert.deepEqual(
+      light.groundShadow.map((value) => Math.round(value * 255)),
+      [232, 232, 232],
+    );
+  }
+});
 
 test('all night themes retain moonlight while the current scene remains in its night range', () => {
   for (const theme of ['dark', 'dark-faded', 'dark-monochrome'] as const) {

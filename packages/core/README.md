@@ -162,8 +162,9 @@ Theme controllers also provide module/label emphasis, eased numeric `expr.global
 and fixed-size dynamic RGBA images with state refresh and restoration across theme changes.
 `getRouteInks()` supplies route colours; `createTileflowLineProgress` animates drawing routes.
 `createTileflowGroundLayers` places them under 3D buildings, optionally showing occluded stretches
-faintly. Themes declare `lighting.sun` and `lighting.ambient`; `getSun()` returns the displayed,
-blended sun for application 3D layers. `setSun()` accepts a direction or a date and location.
+faintly. Themes declare `lighting.sun` and `lighting.ambient`; `getSun()` returns the displayed
+sun. `setSun()` accepts angles or a date and location. Transitions
+mix 3D directions (angular fallback for opposite vectors) and OKLab light colours.
 
 `createTileflowBuildings3D` enables worker-meshed buildings rising at zoom 15–15.3, scene sun,
 cast/contact shadows and 0.8 m rounded corners; effects are independently overridable. Its

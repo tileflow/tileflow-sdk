@@ -5,6 +5,7 @@ import {createTileflowThemeController} from '../src/browser';
 import type {TileflowRuntimeStyle} from '../src/runtime';
 import {
   mixTileflowAzimuths,
+  mixTileflowSunDirections,
   mixTileflowSunPresets,
   readTileflowSunPreset,
   resolveTileflowSun,
@@ -124,12 +125,65 @@ test('suns mix the short way round, in OKLab colours', () => {
   );
   assert.equal(mixTileflowSunPresets(tileflowDefaultSunPreset, evening, 1), evening);
   const half = mixTileflowSunPresets(tileflowDefaultSunPreset, evening, 0.5);
-  near(half.azimuth, 250, 1e-9);
-  near(half.altitude, 34, 1e-9);
+  near(half.azimuth, 265.43199752031626, 1e-9);
+  near(half.altitude, 40.323375731515746, 1e-9);
   near(half.intensity, 0.55, 1e-9);
   assert.notEqual(half.color, evening.color);
   assert.deepEqual(tileflowSunPresetAt([tileflowDefaultSunPreset, evening], 0.5), half);
   assert.equal(tileflowSunPresetAt([], 0), undefined);
+});
+
+test('day to dusk follows the normalized 3D light direction', () => {
+  const from = {azimuth: 180, altitude: 70};
+  const to = {azimuth: 240, altitude: 10};
+  const half = mixTileflowSunDirections(from, to, 0.5);
+  // Midpoint of the reference light vectors, rather than the angular midpoint (210°, 40°).
+  near(half.azimuth, 225.62629957526136, 1e-9);
+  near(half.altitude, 43.01782783204154, 1e-9);
+  assert.equal(mixTileflowSunDirections(from, to, -1), from);
+  assert.equal(mixTileflowSunDirections(from, to, 2), to);
+  assert.equal(mixTileflowSunDirections(from, to, NaN), from);
+});
+
+test('direction blends remain finite and continuous across north, zenith and opposite vectors', () => {
+  for (const [from, to] of [
+    [
+      {azimuth: 350, altitude: 20},
+      {azimuth: 10, altitude: 20},
+    ],
+    [
+      {azimuth: 0, altitude: 80},
+      {azimuth: 180, altitude: 80},
+    ],
+    [
+      {azimuth: 0, altitude: 0},
+      {azimuth: 180, altitude: 0},
+    ],
+    [
+      {azimuth: 40, altitude: 90},
+      {azimuth: 220, altitude: -90},
+    ],
+    [
+      {azimuth: 0, altitude: 0},
+      {azimuth: 179.9, altitude: 0},
+    ],
+  ] as const) {
+    let previous = tileflowSunDirection(from.azimuth, from.altitude);
+    for (let step = 0; step <= 100; step += 1) {
+      const mixed = mixTileflowSunDirections(from, to, step / 100);
+      const direction = tileflowSunDirection(mixed.azimuth, mixed.altitude);
+      assert.ok(direction.every(Number.isFinite));
+      near(Math.hypot(...direction), 1, 1e-12);
+      assert.ok(Math.hypot(...direction.map((v, i) => v - previous[i]!)) < 0.05);
+      previous = direction;
+    }
+  }
+  near(
+    mixTileflowSunDirections({azimuth: 350, altitude: 20}, {azimuth: 10, altitude: 20}, 0.5)
+      .azimuth,
+    0,
+    1e-9,
+  );
 });
 
 test('the map light points from the sun, anchored to the map', () => {
@@ -402,12 +456,44 @@ test('the controller shows the theme sun and mixes it during a blend', async () 
   assert.equal((await controller.setBlend({position: 0.5, themes: [day, dusk]})).status, 'applied');
   const half = controller.getSun();
   // The light theme lights from MapLibre's default direction, [1.15, 210, 30].
-  near(half.azimuth, 250, 1e-6);
-  near(half.altitude, (60 + 8) / 2, 1e-6);
+  near(half.azimuth, 265.43199752031626, 1e-6);
+  near(half.altitude, 40.323375731515746, 1e-6);
   // The blend's light turns with the mixed sun.
   const light = map.lights.at(-1) as {anchor: string; position: number[]};
   assert.equal(light.anchor, 'map');
-  near(light.position[1]!, 250, 1e-3);
+  near(light.position[1]!, half.azimuth, 1e-3);
+  controller.dispose();
+});
+
+test('animated setSun follows the same vector path as a theme blend', async () => {
+  let clock = 0;
+  const frames: (() => void)[] = [];
+  const view = {
+    performance: {now: () => clock},
+    requestAnimationFrame: (callback: () => void) => frames.push(callback),
+    cancelAnimationFrame() {},
+    clearTimeout() {},
+    matchMedia: () => ({matches: false}),
+  };
+  const map = Object.assign(new LightMap(), {
+    getCanvas: () => ({ownerDocument: {defaultView: view}}),
+  });
+  const controller = createTileflowThemeController({
+    initial: runtime('light'),
+    loadFonts: () => Promise.resolve(),
+    map,
+  });
+  await controller.setSun({azimuth: 180, altitude: 70}, {transition: {duration: 0}});
+  const motion = controller.setSun({azimuth: 240, altitude: 10}, {transition: {duration: 1000}});
+  clock = 500;
+  for (const frame of frames.splice(0)) frame();
+  near(controller.getSun().azimuth, 225.62629957526136, 1e-9);
+  near(controller.getSun().altitude, 43.01782783204154, 1e-9);
+  clock = 1000;
+  for (const frame of frames.splice(0)) frame();
+  assert.equal((await motion).status, 'applied');
+  assert.equal(controller.getSun().azimuth, 240);
+  assert.equal(controller.getSun().altitude, 10);
   controller.dispose();
 });
 

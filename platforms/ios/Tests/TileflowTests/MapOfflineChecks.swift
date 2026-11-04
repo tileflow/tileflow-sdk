@@ -41,22 +41,23 @@ extension XCTestCase {
   /// Downloads a region of the fixture's Hosted map as packs. In airplane mode the map opens from
   /// the packs without a session and nothing reaches the network; online it starts its session and
   /// the packs' entries come back unchanged as 304.
-  func checkAHostedMapOpensFromItsPackOfflineAndRevalidatesItOnline(engine: MapEngineKind)
-    async throws
+  func checkAHostedMapOpensFromItsPackOfflineAndRevalidatesItOnline(
+    engine: MapEngineKind, profile: OfflinePackProfile = .webView
+  ) async throws
   {
     let discovery = URL(
       string: "\(FixtureServer.origin)/maps/\(Self.hostedFixtureMapID)/mobile/manifest.json")!
     try await requireMapFixture(discovery)
     await TileflowMapCache.clear()
     let configuration = try fixtureConfiguration()
-    let store = offlineMapStore(client: { try OfflinePackClient(configuration: configuration) })
+    let store = offlineMapStore(profile: profile, client: { try OfflinePackClient(configuration: configuration) })
     _ = try await fixtureCounters(reset: true)
     try await downloadRegion(
       store, id: "hosted",
       options: TileflowOfflineRegionLoadOptions(
         geometry: .boundingBox(
           TileflowBoundingBox(west: -3.705, south: 40.416, east: -3.695, north: 40.424)),
-        content: .hosted(mapID: Self.hostedFixtureMapID, themes: ["day"]), minZoom: 13,
+        content: .hosted(mapID: Self.hostedFixtureMapID, themes: profile == .native ? ["day", "night"] : ["day"]), minZoom: 13,
         maxZoom: 15))
     let downloaded = try await fixtureCounters()
     XCTAssertEqual(downloaded["packs"], 1, "One download created")
@@ -74,6 +75,10 @@ extension XCTestCase {
       defer { TileflowOfflineSwitch.shared.isNetworkEnabled = true }
       let map = try await mountMap(source, engine: engine)
       defer { map.close() }
+      if profile == .native {
+        // Blending reads the family and both theme styles from the downloaded pack.
+        try await map.view.setBlend(themes: ["day", "night"], position: 0.75)
+      }
       let features = try await map.view.query(
         at: CGPoint(x: map.view.bounds.midX, y: map.view.bounds.midY))
       XCTAssertTrue(
@@ -191,8 +196,9 @@ extension XCTestCase {
   }
 
   /// A store of its own, downloading in the foreground, whose regions every map may use.
-  func offlineMapStore(client: @escaping @Sendable () throws -> OfflinePackClient)
-    -> TileflowOfflineStore
+  func offlineMapStore(
+    profile: OfflinePackProfile = .webView, client: @escaping @Sendable () throws -> OfflinePackClient
+  ) -> TileflowOfflineStore
   {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
       "offline-map-\(UUID().uuidString)", isDirectory: true)
@@ -202,7 +208,7 @@ extension XCTestCase {
         fetcher: OfflineURLSessionFetcher(
           configuration: .ephemeral, directory: root.appendingPathComponent("transfers")),
         client: client,
-        availableBytes: { nil }, index: .shared))
+        availableBytes: { nil }, index: .shared, profile: profile))
     addTeardownBlock {
       for region in await store.allRegions() { try? await store.removeRegion(id: region.id) }
       try? FileManager.default.removeItem(at: root)

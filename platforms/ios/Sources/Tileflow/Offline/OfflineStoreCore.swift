@@ -41,6 +41,7 @@ actor OfflineStoreCore {
     var index: OfflineServingIndex? = nil
     /// Space a download leaves free on the device.
     var reserveBytes: Int64 = 64 * 1024 * 1024
+    var profile: OfflinePackProfile = .webView
     var concurrency = 64
     /// Packs transferred at once.
     var packConcurrency = 4
@@ -75,6 +76,8 @@ actor OfflineStoreCore {
   private var layout: OfflineLayout { dependencies.layout }
   private var records: [String: OfflineRegionRecord] = [:]
   private var isOpen = false
+  /// Controls of one region run in order while a stopped transfer finishes.
+  private var controls: [String: [CheckedContinuation<Void, Never>]] = [:]
   private var runs: [String: (token: UUID, task: Task<Void, Never>)] = [:]
   private var progress: [String: OfflineProgress] = [:]
   private var plans: [String: OfflineVersionPlan] = [:]
@@ -310,6 +313,8 @@ actor OfflineStoreCore {
   func load(_ id: String, _ options: TileflowOfflineRegionLoadOptions, automatic: Bool = false)
     async throws -> TileflowOfflineRegion
   {
+    await enterControl(id)
+    defer { leaveControl(id) }
     open()
     guard !id.isEmpty, id.utf8.count <= 256 else {
       throw TileflowOfflineError.options("invalidRegionID")
@@ -329,7 +334,6 @@ actor OfflineStoreCore {
       // Loading an automatic update makes it the application's: it may use any allowed network.
       let takenOver = !automatic && pending.automatic == true
       if pending.state != .downloading || takenOver {
-        if takenOver { stopRun(id, pending, cancelTransfers: false) }
         pending.state = .downloading
         pending.error = nil
         pending.retryAt = nil
@@ -337,6 +341,7 @@ actor OfflineStoreCore {
         record.pending = pending
         try save(record)
       }
+      if takenOver { await stopRun(id, pending, cancelTransfers: false) }
       startRun(id)
       return snapshot(record)!
     }
@@ -363,7 +368,7 @@ actor OfflineStoreCore {
       ])
       try OfflineLayout.write(JSONEncoder().encode(value), to: layout.plan(id, number))
     }
-    if records[id]?.pending != nil { discardPending(id) }
+    if records[id]?.pending != nil { await discardPending(id) }
     let now = dependencies.now()
     var record =
       records[id]
@@ -391,28 +396,32 @@ actor OfflineStoreCore {
 
   // MARK: Controlling
 
-  func pause(_ id: String) throws {
+  func pause(_ id: String) async throws {
+    await enterControl(id)
+    defer { leaveControl(id) }
     open()
     guard var record = records[id], !record.removing else {
       throw TileflowOfflineError(.regionNotFound)
     }
     guard var pending = record.pending, pending.state != .paused else { return }
-    stopRun(id, pending)
     pending.state = .paused
     pending.retryAt = nil
     record.pending = pending
     try save(record)
+    await stopRun(id, pending)
     emitChanged(id)
   }
 
-  func resume(_ id: String) throws {
+  func resume(_ id: String) async throws {
+    await enterControl(id)
+    defer { leaveControl(id) }
     open()
     guard var record = records[id], !record.removing else {
       throw TileflowOfflineError(.regionNotFound)
     }
     guard var pending = record.pending else { return }
     // A waiting download continues now instead of at its retry time.
-    if pending.state == .waiting { stopRun(id, pending, cancelTransfers: false) }
+    let wasWaiting = pending.state == .waiting
     if pending.state != .downloading {
       pending.state = .downloading
       pending.error = nil
@@ -420,6 +429,7 @@ actor OfflineStoreCore {
       record.pending = pending
       try save(record)
     }
+    if wasWaiting { await stopRun(id, pending, cancelTransfers: false) }
     startRun(id)
     emitChanged(id)
   }
@@ -436,26 +446,36 @@ actor OfflineStoreCore {
 
   /// Stops the download. A region never completed is removed; an update is abandoned and the
   /// stored version kept.
-  func cancel(_ id: String) throws {
+  func cancel(_ id: String) async throws {
+    await enterControl(id)
+    defer { leaveControl(id) }
     open()
     guard let record = records[id], !record.removing else {
       throw TileflowOfflineError(.regionNotFound)
     }
-    guard record.active != nil else { return try remove(id) }
+    guard record.active != nil else { return try await remove(record) }
     guard record.pending != nil else { return }
-    discardPending(id)
+    await discardPending(id)
     emitChanged(id)
   }
 
-  func remove(_ id: String) throws {
+  func remove(_ id: String) async throws {
+    await enterControl(id)
+    defer { leaveControl(id) }
     open()
-    guard var record = records[id], !record.removing else {
+    guard let record = records[id], !record.removing else {
       throw TileflowOfflineError(.regionNotFound)
     }
-    record.versions.forEach { discardTransfers(id, $0) }
+    try await remove(record)
+  }
+
+  private func remove(_ existing: OfflineRegionRecord) async throws {
+    var record = existing
     record.removing = true
     try save(record)
-    finishRemoval(id)
+    if let pending = record.pending { await stopRun(record.id, pending) }
+    record.versions.forEach { discardTransfers(record.id, $0) }
+    finishRemoval(record.id)
   }
 
   // MARK: Updates
@@ -516,11 +536,13 @@ actor OfflineStoreCore {
   /// The network returned: waiting downloads try again now and due regions are revalidated.
   func networkDidConnect() async {
     open()
-    for (id, record) in records where !record.removing {
-      if let pending = record.pending, pending.state == .waiting,
+    for id in Array(records.keys) {
+      await enterControl(id)
+      defer { leaveControl(id) }
+      if let record = records[id], !record.removing, let pending = record.pending, pending.state == .waiting,
         pending.error?.code == TileflowOfflineError.Code.network.rawValue
       {
-        stopRun(id, pending, cancelTransfers: false)
+        await stopRun(id, pending, cancelTransfers: false)
         startRun(id)
       }
     }
@@ -639,6 +661,22 @@ actor OfflineStoreCore {
 
   // MARK: Downloading
 
+  private func enterControl(_ id: String) async {
+    guard controls[id] != nil else {
+      controls[id] = []
+      return
+    }
+    await withCheckedContinuation { controls[id]!.append($0) }
+  }
+
+  private func leaveControl(_ id: String) {
+    if controls[id]?.isEmpty == false {
+      controls[id]!.removeFirst().resume()
+    } else {
+      controls[id] = nil
+    }
+  }
+
   private func startRun(_ id: String) {
     guard runs[id] == nil else { return }
     let token = UUID()
@@ -654,14 +692,16 @@ actor OfflineStoreCore {
   }
 
   private func stopRun(_ id: String, _ version: OfflineVersionRecord, cancelTransfers: Bool = true)
+    async
   {
-    runs.removeValue(forKey: id)?.task.cancel()
+    let task = runs[id]?.task
+    task?.cancel()
     if cancelTransfers { dependencies.fetcher.cancel(prefix: transferPrefix(id, version.number)) }
+    await task?.value
   }
 
   /// Stops the version's transfers and forgets what they received.
   private func discardTransfers(_ id: String, _ version: OfflineVersionRecord) {
-    stopRun(id, version, cancelTransfers: false)
     let prefix = transferPrefix(id, version.number)
     dependencies.fetcher.discard(prefix: prefix)
     layout.packs.removeIncoming(prefix: prefix)
@@ -790,7 +830,7 @@ actor OfflineStoreCore {
       let client = try dependencies.client()
       var plan = try self.plan(id, pending)
       let download = try await client.create(plan.requests[index])
-      guard let current = records[id]?.pending, current.number == pending.number else {
+      guard !Task.isCancelled, let current = records[id]?.pending, current.number == pending.number else {
         return false
       }
       let previousResources = Dictionary(
@@ -962,8 +1002,10 @@ actor OfflineStoreCore {
   }
 
   /// Abandons the pending version and releases what only it used.
-  private func discardPending(_ id: String) {
-    guard var record = records[id], let pending = record.pending else { return }
+  private func discardPending(_ id: String) async {
+    guard let pending = records[id]?.pending else { return }
+    await stopRun(id, pending)
+    guard var record = records[id], record.pending?.number == pending.number else { return }
     discardTransfers(id, pending)
     release(id, [pending])
     record.pending = nil
@@ -1019,7 +1061,8 @@ actor OfflineStoreCore {
     }
     let client = try dependencies.client()
     let requests = try OfflinePackRequest.requests(
-      mapID: mapID, themes: themes, geometry: options.geometry, zooms: options.zooms)
+      mapID: mapID, themes: themes, geometry: options.geometry, zooms: options.zooms,
+      profile: dependencies.profile)
     var downloads: [OfflineDownload] = []
     for request in requests {
       let now = dependencies.now()
@@ -1194,7 +1237,7 @@ actor OfflineStoreCore {
   }
 
   private func update(_ id: String, _ change: (inout OfflineVersionRecord) -> Void) {
-    guard var record = records[id], var pending = record.pending else { return }
+    guard !Task.isCancelled, var record = records[id], !record.removing, var pending = record.pending else { return }
     change(&pending)
     record.pending = pending
     try? save(record)

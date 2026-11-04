@@ -177,6 +177,11 @@ final class NativeMapEngineTests: XCTestCase {
     XCTAssertEqual(foreign.withLock { $0 }, [])
   }
 
+  func testDownloadedNativeThemesBlendWithoutANetwork() async throws {
+    try await checkAHostedMapOpensFromItsPackOfflineAndRevalidatesItOnline(engine: .native, profile: .native)
+    XCTAssertEqual(foreign.withLock { $0 }, [])
+  }
+
   func testTerrainZoomedPastItsDownloadedZoomsHasNoHolesOffline() async throws {
     try await checkTerrainZoomedPastItsDownloadedZoomsHasNoHolesOffline(engine: .native)
     XCTAssertEqual(foreign.withLock { $0 }, [])

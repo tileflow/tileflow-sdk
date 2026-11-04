@@ -5,7 +5,6 @@ import android.graphics.Bitmap
 import android.graphics.PointF
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
@@ -572,7 +571,6 @@ internal class NativeMapEngine(
     }
 
     private fun warnFeature(feature: String, message: String) {
-        Log.w(TAG, message)
         warnings.feature(feature, message)
     }
 
@@ -1321,7 +1319,6 @@ internal class NativeMapEngine(
         )
 
     internal companion object {
-        const val TAG = "Tileflow"
         /** The steepest pitch MapLibre Android draws. */
         const val MAXIMUM_PITCH = NativeCamera.MAXIMUM_PITCH
 

@@ -68,6 +68,12 @@ constructor(
     attrs: AttributeSet? = null,
 ) : FrameLayout(context, attrs) {
     public var onEvent: (TileflowMapEvent) -> Unit = {}
+
+    internal fun emit(event: TileflowMapEvent) {
+        TileflowMapDiagnostics.report(event, options.diagnostics)
+        onEvent(event)
+    }
+
     public var source: TileflowMapSource? = null
         private set
 
@@ -471,7 +477,7 @@ constructor(
                 error.code == TileflowErrorCode.DISPOSED
         )
             return
-        onEvent(TileflowMapEvent.Warning(error.code, error.context, 1))
+        emit(TileflowMapEvent.Warning(error.code, error.context, 1))
     }
 
     /**
@@ -706,6 +712,10 @@ constructor(
         if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
         options.validate()
         val previous = this.options
+        if (previous.diagnostics !== options.diagnostics && previous.copy(diagnostics = options.diagnostics) == options) {
+            this.options = options
+            return
+        }
         val previousSubscriptions = subscriptions
         this.options = options
         subscriptions =
@@ -1150,7 +1160,7 @@ constructor(
             } catch (error: TileflowMapException) {
                 // The theme is applied again to the next renderer if this one was replaced.
                 if (!destroyed && error.code != TileflowErrorCode.CANCELLED)
-                    onEvent(TileflowMapEvent.Failed(error.code, error.context))
+                    emit(TileflowMapEvent.Failed(error.code, error.context))
             }
         }
     }
@@ -1213,14 +1223,14 @@ constructor(
             pendingRemount = true
             return
         }
-        onEvent(TileflowMapEvent.Failed(code, context))
+        emit(TileflowMapEvent.Failed(code, context))
     }
 
     private fun contentReady() {
         generationReady = true
         resetRecovery()
         controlsView.visibility = VISIBLE
-        onEvent(TileflowMapEvent.ContentReady)
+        emit(TileflowMapEvent.ContentReady)
     }
 
     /** The camera to start at, or to move to once the renderer that is loading can move. */
@@ -1279,12 +1289,12 @@ constructor(
                     loadFailed = { failed, error ->
                         if (!destroyed && generation == current && engine === failed) {
                             retireGeneration()
-                            onEvent(TileflowMapEvent.Failed(error.code, error.context))
+                            emit(TileflowMapEvent.Failed(error.code, error.context))
                         }
                     },
                     externalLink = {
                         if (!destroyed && generation == current)
-                            onEvent(TileflowMapEvent.ExternalLinkRequested(it))
+                            emit(TileflowMapEvent.ExternalLinkRequested(it))
                     },
                     rendererGone = { gone, reason ->
                         // The system may end a hidden renderer to reclaim memory, or a renderer may
@@ -1294,7 +1304,7 @@ constructor(
                             if (recoveries++ < 1) remount()
                             else {
                                 retireGeneration()
-                                onEvent(
+                                emit(
                                     TileflowMapEvent.Failed(
                                         TileflowErrorCode.RENDERER_FAILED,
                                         TileflowErrorContext.of(reason),
@@ -1329,7 +1339,7 @@ constructor(
             updateVisibility()
         } catch (error: Exception) {
             retireGeneration()
-            onEvent(
+            emit(
                 TileflowMapEvent.Failed(
                     (error as? TileflowMapException)?.code ?: TileflowErrorCode.MISSING_RUNTIME,
                     (error as? TileflowMapException)?.context ?: TileflowErrorContext.NONE,
@@ -1431,7 +1441,7 @@ constructor(
             work()
         } catch (error: TileflowMapException) {
             if (error.code != TileflowErrorCode.INVALID_REQUEST || destroyed) throw error
-            onEvent(TileflowMapEvent.Warning(error.code, error.context, 1))
+            emit(TileflowMapEvent.Warning(error.code, error.context, 1))
         }
     }
 
@@ -1483,13 +1493,13 @@ constructor(
                 onCameraObserved?.invoke(parsed.change)
                 cameraEvents.receive(parsed.change, options.events) {
                     if (!destroyed && generation == current)
-                        onEvent(TileflowMapEvent.CameraChanged(it))
+                        emit(TileflowMapEvent.CameraChanged(it))
                 }
             }
             is TileflowMapEvent.GestureStarted,
             is TileflowMapEvent.GestureEnded ->
-                if (options.events.level.includes(TileflowEventLevel.CAMERA)) onEvent(parsed)
-            else -> onEvent(parsed)
+                if (options.events.level.includes(TileflowEventLevel.CAMERA)) emit(parsed)
+            else -> emit(parsed)
         }
     }
 

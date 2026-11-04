@@ -1,6 +1,5 @@
 import Foundation
 import MapLibre
-import OSLog
 import UIKit
 
 /// The map drawn by MapLibre Native in an `MLNMapView`.
@@ -20,7 +19,6 @@ import UIKit
 final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   /// A style with nothing to draw, which needs no resource.
   static let emptyStyle = #"{"version":8,"sources":{},"layers":[]}"#
-  static let log = Logger(subsystem: "dev.tileflow", category: "map")
 
   var onAnnotationFrame: ((Int, [CGPoint?]) -> Void)?
   var onReady: (() -> Void)?

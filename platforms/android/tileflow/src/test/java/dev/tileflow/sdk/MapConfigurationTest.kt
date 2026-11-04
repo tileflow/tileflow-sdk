@@ -10,6 +10,7 @@ import dev.tileflow.configuration.TileflowConfiguration
 import dev.tileflow.configuration.TileflowConfigurationException
 import dev.tileflow.configuration.TileflowCredential
 import java.net.URI
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,6 +18,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
 
 /**
  * How a Hosted map finds its credential and API origin: its own configuration, else the one set
@@ -29,6 +31,77 @@ class MapConfigurationTest {
     private val credential = "tf_public_" + "a".repeat(48)
     private val otherCredential = "tf_public_" + "c".repeat(48)
     private val servicesCredential = "tf_public_" + "b".repeat(48)
+
+    @Test
+    fun mapDiagnosticsFilterEventsAndKeepCredentialsOutOfTheSink() = runBlocking {
+        val entries = mutableListOf<TileflowMapDiagnostics.Entry>()
+        val map = TileflowMapView(RuntimeEnvironment.getApplication())
+        try {
+            map.setOptions(
+                TileflowMapOptions(diagnostics = TileflowMapDiagnostics(sink = entries::add))
+            )
+            val context =
+                TileflowErrorContext(
+                    reason = credential,
+                    resource = TileflowResourceKind.TILE,
+                    origin = "https://user:$credential@example.test/tile",
+                    status = 401,
+                    message = credential,
+                    feature = credential,
+                )
+            var delivered = 0
+            map.onEvent = { delivered++ }
+            map.emit(TileflowMapEvent.Loading)
+            map.emit(
+                TileflowMapEvent.ExternalLinkRequested(URI("https://example.test/?key=$credential"))
+            )
+            map.emit(TileflowMapEvent.Warning(TileflowErrorCode.RESOURCE_FAILED, context, 3))
+            map.emit(TileflowMapEvent.Failed(TileflowErrorCode.RESOURCE_FAILED, context))
+            assertEquals(4, delivered)
+            assertEquals(
+                listOf(TileflowMapDiagnostics.Event.WARNING, TileflowMapDiagnostics.Event.FAILURE),
+                entries.map { it.event },
+            )
+            assertEquals(TileflowResourceKind.TILE, entries.first().resource)
+            assertEquals(401, entries.first().status)
+            assertEquals(null, entries.first().feature)
+            assertEquals(3, entries.first().occurrences)
+            assertFalse(entries.toString().contains(credential))
+
+            val replacement = mutableListOf<TileflowMapDiagnostics.Entry>()
+            map.setOptions(
+                TileflowMapOptions(
+                    diagnostics =
+                        TileflowMapDiagnostics(TileflowMapDiagnostics.Level.DEBUG, replacement::add)
+                )
+            )
+            map.emit(TileflowMapEvent.Loading)
+            map.emit(TileflowMapEvent.ContentReady)
+            assertEquals(
+                listOf(
+                    TileflowMapDiagnostics.Event.LOADING,
+                    TileflowMapDiagnostics.Event.CONTENT_READY,
+                ),
+                replacement.map { it.event },
+            )
+            assertEquals(2, entries.size)
+
+            map.setOptions(TileflowMapOptions())
+            ShadowLog.clear()
+            map.emit(
+                TileflowMapEvent.Warning(
+                    TileflowErrorCode.RENDERER_FAILED,
+                    context.copy(reason = "featureUnavailable", feature = "terrain3d"),
+                    1,
+                )
+            )
+            val logged = ShadowLog.getLogsForTag("Tileflow").map { it.msg }
+            assertTrue(logged.single().contains("terrain3d"))
+            assertFalse(logged.single().contains(credential))
+        } finally {
+            map.destroy()
+        }
+    }
 
     @Test
     fun theMapsOwnConfigurationComesFirst() {

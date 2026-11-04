@@ -120,6 +120,8 @@ public data class TileflowMapOptions(
     val location: TileflowLocationOptions = TileflowLocationOptions(),
     val antialias: Boolean = true,
     val validatesStyle: Boolean = false,
+    /** Destination and minimum level for this map's diagnostic events. */
+    val diagnostics: TileflowMapDiagnostics? = null,
 ) {
     /**
      * The renderer's options. Event delivery is set up separately by the SDK; the attribution's

@@ -99,13 +99,15 @@ public struct TileflowMapOptions: Equatable, Sendable {
   /// validates its styles when it builds them, so this is off by default. Changing it starts a
   /// new renderer.
   public var validatesStyle: Bool = false
+  /// Destination and minimum level for this map's diagnostic events.
+  public var diagnostics: TileflowMapDiagnostics?
 
   public init(
     viewMode: TileflowViewMode = .flat, quality: TileflowQuality? = nil,
     gestures: TileflowGestures = .init(), controls: TileflowMapControls = .init(),
     cameraLimits: TileflowCameraLimits = .init(), events: TileflowEventOptions = .init(),
     vegetation: Bool? = nil, location: TileflowLocationOptions = .init(), antialias: Bool = true,
-    validatesStyle: Bool = false
+    validatesStyle: Bool = false, diagnostics: TileflowMapDiagnostics? = nil
   ) {
     self.viewMode = viewMode
     self.quality = quality
@@ -117,6 +119,7 @@ public struct TileflowMapOptions: Equatable, Sendable {
     self.location = location
     self.antialias = antialias
     self.validatesStyle = validatesStyle
+    self.diagnostics = diagnostics
   }
 
   /// The renderer's options. The attribution's corner follows the layout direction.

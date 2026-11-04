@@ -4,6 +4,12 @@ import UIKit
 @MainActor
 public final class TileflowMapView: UIView {
   public var onEvent: ((TileflowMapEvent) -> Void)?
+
+  func emit(_ event: TileflowMapEvent) {
+    TileflowMapDiagnostics.report(event, to: options.diagnostics)
+    onEvent?(event)
+  }
+
   public private(set) var source: TileflowMapSource
   public private(set) var theme: String?
   public private(set) var options: TileflowMapOptions
@@ -140,7 +146,7 @@ public final class TileflowMapView: UIView {
   public override func didMoveToWindow() {
     super.didMoveToWindow()
     if window != nil, engine == nil, !destroyed, !pendingRemount {
-      do { try mount() } catch { onEvent?(.failed(error as? TileflowMapError ?? .invalidSource)) }
+      do { try mount() } catch { emit(.failed(error as? TileflowMapError ?? .invalidSource)) }
     }
     updateVisibility()
   }
@@ -250,6 +256,10 @@ public final class TileflowMapView: UIView {
     guard !destroyed else { throw TileflowMapError.disposed }
     try options.validate()
     let previous = self.options
+    if previous.diagnostics !== options.diagnostics {
+      self.options.diagnostics = options.diagnostics
+      if self.options == options { return }
+    }
     let previousSubscriptions = subscriptions
     self.options = options
     subscriptions = EventSubscriptions(
@@ -453,7 +463,7 @@ public final class TileflowMapView: UIView {
       pendingRemount = true
       return
     }
-    do { try mount() } catch { onEvent?(.failed(error as? TileflowMapError ?? .rendererFailed)) }
+    do { try mount() } catch { emit(.failed(error as? TileflowMapError ?? .rendererFailed)) }
   }
 
   /// A load that fails while hidden, for example because the system suspended its networking,
@@ -464,7 +474,7 @@ public final class TileflowMapView: UIView {
       pendingRemount = true
       return
     }
-    onEvent?(.failed(error))
+    emit(.failed(error))
   }
 
   /// A protected style belongs to a superseded Map deployment: reload discovery once per load.
@@ -485,7 +495,7 @@ public final class TileflowMapView: UIView {
     rendererVisible = visible
     if visible, pendingRemount {
       retireGeneration()
-      do { try mount() } catch { onEvent?(.failed(error as? TileflowMapError ?? .rendererFailed)) }
+      do { try mount() } catch { emit(.failed(error as? TileflowMapError ?? .rendererFailed)) }
       return
     }
     guard initialized, let engine else { return }
@@ -529,11 +539,11 @@ public final class TileflowMapView: UIView {
         self.engine === engine
       else { return }
       self.retireGeneration()
-      self.onEvent?(.failed(error))
+      self.emit(.failed(error))
     }
     engine.onExternalLink = { [weak self] url in
       guard let self, !self.destroyed else { return }
-      self.onEvent?(.externalLinkRequested(url))
+      self.emit(.externalLinkRequested(url))
     }
     engine.onRendererTerminated = { [weak self, weak engine] reason in
       guard let self, let engine, self.engine === engine else { return }
@@ -642,7 +652,7 @@ public final class TileflowMapView: UIView {
       try await work()
     } catch let error as TileflowMapError where error.code == .invalidRequest {
       guard !destroyed else { throw error }
-      onEvent?(.warning(TileflowMapWarning(error: error, occurrences: 1)))
+      emit(.warning(TileflowMapWarning(error: error, occurrences: 1)))
     }
   }
 
@@ -650,7 +660,7 @@ public final class TileflowMapView: UIView {
     generationReady = true
     resetRecovery()
     controlsView.isHidden = false
-    onEvent?(.contentReady)
+    emit(.contentReady)
   }
 
   /// Keeps the synchronous camera and the controls current.
@@ -670,15 +680,15 @@ public final class TileflowMapView: UIView {
         let bytes = try? JSONEncoder().encode(raw),
         let coordinate = try? JSONDecoder().decode(TileflowCoordinate.self, from: bytes)
       {
-        onEvent?(.annotationActivated(id: id, coordinate: coordinate))
+        emit(.annotationActivated(id: id, coordinate: coordinate))
       }
     case "poiActivated":
       if let bytes = try? JSONEncoder().encode(value),
         let selection = try? JSONDecoder().decode(TileflowPoiSelection.self, from: bytes)
       {
-        onEvent?(.poiActivated(selection))
+        emit(.poiActivated(selection))
       }
-    case "loading": onEvent?(.loading)
+    case "loading": emit(.loading)
     case "contentReady":
       if let camera = TileflowCamera(wire: value["camera"]) { observe(camera) }
       contentReady()
@@ -687,20 +697,20 @@ public final class TileflowMapView: UIView {
         observe(change.camera)
         cameraEvents.receive(change, options: options.events) { [weak self] change in
           guard let self, !self.destroyed, self.generation == current else { return }
-          self.onEvent?(.cameraChanged(change))
+          self.emit(.cameraChanged(change))
         }
       }
     case "tap":
       if let touch = TileflowMapTouch(wire: value),
         !annotationTouch(value, touch: touch, longPress: false)
       {
-        onEvent?(.tap(touch))
+        emit(.tap(touch))
       }
     case "longPress":
       if let touch = TileflowMapTouch(wire: value),
         !annotationTouch(value, touch: touch, longPress: true)
       {
-        onEvent?(.longPress(touch))
+        emit(.longPress(touch))
       }
     case "annotationDragged": receiveAnnotationDrag(value)
     case "trackedPointsMoved": annotationOverlay.receive(value)
@@ -708,19 +718,19 @@ public final class TileflowMapView: UIView {
       if options.events.level.includes(.camera),
         let gesture = value["gesture"]?.string.flatMap(TileflowGesture.init(rawValue:))
       {
-        onEvent?(event == "gestureStarted" ? .gestureStarted(gesture) : .gestureEnded(gesture))
+        emit(event == "gestureStarted" ? .gestureStarted(gesture) : .gestureEnded(gesture))
       }
     case "themeChanged":
-      if let name = value["theme"]?.string { onEvent?(.themeChanged(name)) }
+      if let name = value["theme"]?.string { emit(.themeChanged(name)) }
     case "themeTransition":
       if let transition = TileflowThemeTransition(wire: value) {
-        onEvent?(.themeTransition(transition))
+        emit(.themeTransition(transition))
       }
     case "animationEnded", "shotCue": animations.receive(event, value)
     case "followModeChanged": receiveFollowModeChanged(value)
     case "warning":
       if let count = value["count"]?.number.flatMap({ Int(exactly: $0) }), count > 0 {
-        onEvent?(
+        emit(
           .warning(TileflowMapWarning(error: TileflowMapError(wire: value), occurrences: count)))
       }
     case "error": report(TileflowMapError(wire: value), generation: current)
@@ -809,7 +819,7 @@ public final class TileflowMapView: UIView {
     guard !destroyed else { return }
     guard recoveryCount < 1 else {
       retireGeneration()
-      onEvent?(.failed(TileflowMapError(.rendererFailed, reason: reason)))
+      emit(.failed(TileflowMapError(.rendererFailed, reason: reason)))
       return
     }
     recoveryCount += 1

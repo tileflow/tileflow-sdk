@@ -18,7 +18,7 @@ extension TileflowMapView {
     guard !needsRenderer || styleEngine != nil else { throw TileflowMapError.cancelled }
     try options?.validate()
     let before = runtimeStyle
-    let beforeContent = content
+    let beforeMarkers = content.annotations
     let originalOptions = self.options
     let originalEngine = engine
     let dropped = Set(
@@ -37,8 +37,8 @@ extension TileflowMapView {
       if next.annotations != prior.annotations {
         let previousIDs = Set(prior.annotations.map(\.id))
         let markers = content.annotations.filter { !previousIDs.contains($0.id) } + next.annotations
-        try await replaceMapContent(.init(annotations: markers, overlays: content.overlays))
-        undo.append { try await self.replaceMapContent(beforeContent) }
+        try await replaceDeclaredAnnotations(markers)
+        undo.append { try await self.replaceDeclaredAnnotations(beforeMarkers) }
       }
       guard !needsRenderer || originalEngine === styleEngine else {
         throw TileflowMapError.cancelled
@@ -61,8 +61,20 @@ extension TileflowMapView {
         }.value
       }
       runtimeStyle = before
-      content = beforeContent
+      content.annotations = beforeMarkers
       if !recovered, !isDestroyed, originalEngine === engine { try? reload() }
+      throw error
+    }
+  }
+
+  private func replaceDeclaredAnnotations(_ markers: [TileflowAnnotation]) async throws {
+    let previous = content.annotations
+    try MapContent(annotations: markers, overlays: content.overlays).validate()
+    content.annotations = markers
+    do {
+      if let engine = styleEngine { try await engine.setAnnotations(markers, overlays: content.overlays) }
+    } catch {
+      content.annotations = previous
       throw error
     }
   }

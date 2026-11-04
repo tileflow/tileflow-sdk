@@ -104,11 +104,19 @@ protocol MapEngine: AnyObject, Sendable {
   /// Sends a command. Cancelling the calling task cancels it in the engine as well.
   func call(_ command: MapEngineCommand, payload: JSONValue, data: [DataChannel.Reference])
     async throws -> JSONValue
+  /// Updates the map's simple markers while application overlays keep drawing.
+  func setAnnotations(_ annotations: [TileflowAnnotation], overlays: [TileflowGeoJSONLayer]) async throws
   /// Pending calls fail with `error`; the engine stops and leaves the view hierarchy.
   func retire(_ error: TileflowMapError)
 }
 
 extension MapEngine {
+  func setAnnotations(_ annotations: [TileflowAnnotation], overlays: [TileflowGeoJSONLayer]) async throws {
+    let content = MapContent(annotations: annotations, overlays: overlays)
+    let (payload, references) = try content.wireValue(data: data)
+    _ = try await call(.setContent, payload: payload, data: references)
+  }
+
   /// A separate renderer process delivers positions in its tracked-points events.
   var onAnnotationFrame: ((Int, [CGPoint?]) -> Void)? {
     get { nil }

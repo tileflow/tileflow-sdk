@@ -107,8 +107,11 @@ final class NativeMapContentIntegrationTests: XCTestCase {
     try await view.addSource(TileflowGeoJSONSource(id: "outside", data: .empty))
     let externalPin = TileflowAnnotation(id: "outside", coordinate: center, title: "Imperative")
     let overlay = try TileflowGeoJSONLayer(
-      id: "external", geoJSON: Data(#"{"type":"FeatureCollection","features":[]}"#.utf8),
-      kind: .circle)
+      id: "external",
+      geoJSON: Data(
+        #"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"LineString","coordinates":[[-3.71,40.42],[-3.69,40.42]]}}]}"#
+          .utf8),
+      kind: .line, progress: .init(end: 0))
     try await view.setContent(annotations: [externalPin], layers: [overlay])
     let originalOverlay = try XCTUnwrap(style.layer(withIdentifier: "__tileflow_app_external"))
     model.stage = .live
@@ -116,23 +119,35 @@ final class NativeMapContentIntegrationTests: XCTestCase {
       style.layer(withIdentifier: "__tileflow_layer_a") != nil && view.options.location.enabled
         && view.content.annotations.count == 2
     }
+    let animation = Task {
+      try await view.animateLineProgress(layers: ["external"], to: .init(end: 0.9), duration: 1.5)
+    }
+    try await until("The imperative route did not start animating") {
+      engine.received[.animateLineProgress] == 1
+    }
+    let marker = try XCTUnwrap(engine.container.subviews.first { $0.accessibilityIdentifier == "stop" })
+    var shownTitles: [String?] = []
     let before = engine.received
     let started = ContinuousClock.now
     for tick in 1...10 {
       model.tick = tick
       try await ContinuousClock().sleep(until: started.advanced(by: .milliseconds(tick * 100)))
+      shownTitles.append(marker.accessibilityLabel)
     }
     try await until("The last marker and radius were not rendered") {
       let circle = style.layer(withIdentifier: "__tileflow_layer_a") as? MLNCircleStyleLayer
       return (circle?.circleRadius.constantValue as? NSNumber)?.intValue == 16
         && engine.container.subviews.contains { $0.accessibilityLabel == "Stop 10" }
     }
+    let completed = try await animation.value
+    XCTAssertTrue(completed, "Declarative pin edits interrupted the imperative route")
     func changes(_ command: MapEngineCommand) -> Int {
       (engine.received[command] ?? 0) - (before[command] ?? 0)
     }
     XCTAssertEqual(changes(.updateLayer), 10)
     XCTAssertEqual(changes(.setGeoJSONSourceData), 5)
-    XCTAssertEqual(changes(.setContent), 10)
+    XCTAssertEqual(shownTitles, (1...10).map { "Stop \($0)" })
+    XCTAssertEqual(changes(.setContent), 0)
     for command in [MapEngineCommand.addSource, .removeSource, .addLayer, .removeLayer, .moveLayer]
     { XCTAssertEqual(changes(command), 0) }
     XCTAssertTrue(try controller.attached() === view)

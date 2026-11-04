@@ -8,6 +8,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -144,11 +145,12 @@ private suspend fun TileflowMapView.changeStyle(
     if (isDestroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
     val previous = runtimeStyle.copy()
     runtimeStyle.change()
-    val engine = readyEngine ?: return
+    val engine = styleEngine ?: return
     try {
         send(engine)
-    } catch (error: TileflowMapException) {
-        if (error.code == TileflowErrorCode.INVALID_REQUEST) runtimeStyle.restore(previous)
+    } catch (error: Exception) {
+        if (readyEngine === engine || (error as? TileflowMapException)?.code == TileflowErrorCode.INVALID_REQUEST)
+            runtimeStyle.restore(previous)
         throw error
     }
 }
@@ -200,14 +202,14 @@ public suspend fun TileflowMapView.addStyleSource(id: String, properties: JSONOb
     addSource(RuntimeStyle.Source(id, spec, log))
 }
 
-private suspend fun TileflowMapView.addSource(record: RuntimeStyle.Source) {
+private suspend fun TileflowMapView.addSource(record: RuntimeStyle.Source): Unit = styleEdits.withLock {
     if (!STYLE_ID.matches(record.id) || sourceExists(record.id)) invalid()
-    if (readyEngine == null) engineKind.validateQueued(record)
+    if (styleEngine == null) engineKind.validateQueued(record)
     changeStyle({ sources += record }) { engine -> engine.addSource(record) }
 }
 
 /** Removes a source no application layer draws. */
-public suspend fun TileflowMapView.removeSource(id: String) {
+public suspend fun TileflowMapView.removeSource(id: String): Unit = styleEdits.withLock {
     if (runtimeStyle.sources.none { it.id == id }) invalid(ProtocolContract.ErrorReason.UNKNOWN_SOURCE)
     if (runtimeStyle.layers.any { it.json.optString("source") == id }) invalid()
     changeStyle({
@@ -223,7 +225,7 @@ public fun TileflowMapView.sourceExists(id: String): Boolean =
     runtimeStyle.sources.any { it.id == id }
 
 /** Replaces a GeoJSON source's data; feature state stays with feature identifiers. */
-public suspend fun TileflowMapView.setGeoJSONSourceData(sourceId: String, data: TileflowGeoJSONData) {
+public suspend fun TileflowMapView.setGeoJSONSourceData(sourceId: String, data: TileflowGeoJSONData): Unit = styleEdits.withLock {
     val source = geoJSONSource(sourceId)
     val base = geoJSONBase(data)
     changeStyle({
@@ -264,11 +266,11 @@ private suspend fun TileflowMapView.updateFeatures(
     sourceId: String,
     add: List<TileflowFeature>,
     remove: List<String>,
-) {
+): Unit = styleEdits.withLock {
     val source = geoJSONSource(sourceId)
     val log = source.geoJSON!!
     if (log.base is GeoJSONLog.Base.Url) invalid()
-    if (add.isEmpty() && remove.isEmpty()) return
+    if (add.isEmpty() && remove.isEmpty()) return@withLock
     if (remove.any { it.isEmpty() || it.length > 128 }) invalid()
     if (add.any { feature -> log.promoteId?.let { feature.properties[it] == null } ?: (feature.id == null) })
         invalid()
@@ -336,13 +338,13 @@ private suspend fun TileflowMapView.addLayer(
     json: JSONObject,
     requestedSlot: TileflowLayerSlot?,
     position: TileflowLayerPosition,
-) {
+): Unit = styleEdits.withLock {
     if (!STYLE_ID.matches(id) || layerExists(id) || runtimeStyle.layers.size >= 1024) invalid()
     if (json.has("source") && !sourceExists(json.getString("source")))
         invalid(ProtocolContract.ErrorReason.UNKNOWN_SOURCE)
     val (at, slot) = insertion(runtimeStyle.layers, position, requestedSlot)
     val record = RuntimeStyle.Layer(id, json, slot)
-    if (readyEngine == null) engineKind.validateQueued(record)
+    if (styleEngine == null) engineKind.validateQueued(record)
     changeStyle({ layers.add(at, record) }) { engine ->
         val payload = JSONObject().put("layer", json)
         if (slot != null && position == TileflowLayerPosition.Default)
@@ -362,12 +364,12 @@ public suspend fun TileflowMapView.updateStyleLayer(properties: JSONObject) {
     updateLayer(styleLayer(properties))
 }
 
-private suspend fun TileflowMapView.updateLayer(layer: RuntimeStyle.Layer) {
+private suspend fun TileflowMapView.updateLayer(layer: RuntimeStyle.Layer): Unit = styleEdits.withLock {
     val index = runtimeStyle.layers.indexOfFirst { it.id == layer.id }
     if (index < 0) invalid(ProtocolContract.ErrorReason.UNKNOWN_LAYER)
     if (layer.json.has("source") && !sourceExists(layer.json.getString("source")))
         invalid(ProtocolContract.ErrorReason.UNKNOWN_SOURCE)
-    if (readyEngine == null) engineKind.validateQueued(layer)
+    if (styleEngine == null) engineKind.validateQueued(layer)
     changeStyle({ layers[index] = layer }) { engine ->
         val payload = JSONObject().put("layer", layer.json)
         layer.slot?.let { payload.put("slot", it.wireName) }
@@ -379,7 +381,7 @@ private suspend fun TileflowMapView.updateLayer(layer: RuntimeStyle.Layer) {
  * Moves a layer relative to the application's other layers; [TileflowLayerPosition.Default] puts
  * it on top of its slot.
  */
-public suspend fun TileflowMapView.moveLayer(id: String, position: TileflowLayerPosition) {
+public suspend fun TileflowMapView.moveLayer(id: String, position: TileflowLayerPosition): Unit = styleEdits.withLock {
     val index = runtimeStyle.layers.indexOfFirst { it.id == id }
     if (index < 0) invalid(ProtocolContract.ErrorReason.UNKNOWN_LAYER)
     if (
@@ -403,7 +405,7 @@ public suspend fun TileflowMapView.moveLayer(id: String, position: TileflowLayer
     }
 }
 
-public suspend fun TileflowMapView.removeLayer(id: String) {
+public suspend fun TileflowMapView.removeLayer(id: String): Unit = styleEdits.withLock {
     if (runtimeStyle.layers.none { it.id == id }) invalid(ProtocolContract.ErrorReason.UNKNOWN_LAYER)
     changeStyle({ layers.removeAll { it.id == id } }) { engine ->
         engine.call(ProtocolContract.Method.REMOVE_LAYER, JSONObject().put("id", id))
@@ -424,7 +426,7 @@ public suspend fun TileflowMapView.setFeatureState(
     sourceLayer: String? = null,
     featureId: String,
     state: Map<String, TileflowStyleValue>,
-) {
+): Unit = styleEdits.withLock {
     if (!sourceExists(sourceId)) invalid(ProtocolContract.ErrorReason.UNKNOWN_SOURCE)
     if (featureId.isEmpty() || featureId.length > 128 || state.size > 64) invalid()
     val wire = JSONObject().apply { state.forEach { (key, value) -> put(key, TileflowStyleValue.json(value)) } }
@@ -460,7 +462,7 @@ public suspend fun TileflowMapView.removeFeatureState(
     sourceLayer: String? = null,
     featureId: String? = null,
     key: String? = null,
-) {
+): Unit = styleEdits.withLock {
     if (!sourceExists(sourceId)) invalid(ProtocolContract.ErrorReason.UNKNOWN_SOURCE)
     if (key != null && featureId == null) invalid()
     val stateKey = RuntimeStyle.stateKey(sourceId, sourceLayer)
@@ -800,7 +802,15 @@ private fun TileflowMapView.compactIfNeeded(source: RuntimeStyle.Source) {
  * Gives a new renderer the application's runtime style: sources and their updates, layers in
  * order, then feature state.
  */
-internal suspend fun TileflowMapView.replayStyle(engine: MapEngine) {
+internal suspend fun TileflowMapView.replayStyle(engine: MapEngine): Unit = styleEdits.withLock {
+    try {
+        restoreStyle(engine)
+    } finally {
+        if (readyEngine === engine) styleRestored = true
+    }
+}
+
+private suspend fun TileflowMapView.restoreStyle(engine: MapEngine) {
     val style = runtimeStyle.copy()
     for (source in style.sources) {
         engine.addSource(source)

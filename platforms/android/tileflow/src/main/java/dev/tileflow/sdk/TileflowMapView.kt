@@ -41,6 +41,7 @@ import dev.tileflow.sdk.transport.grantScope
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -80,6 +81,10 @@ constructor(
     internal val animations = AnimationWaiters()
     /** The application's runtime style, given again to each new renderer. */
     internal val runtimeStyle = RuntimeStyle()
+    internal val styleEdits = Mutex()
+    internal var styleRestored = false
+    internal val styleEngine: MapEngine?
+        get() = if (styleRestored) readyEngine else null
     /** The application images the scene holds. */
     internal var images: List<TileflowMapImage> = emptyList()
 
@@ -1541,6 +1546,7 @@ constructor(
     /** Pending calls fail with `cancelled` when replaced and with `disposed` when destroyed. */
     private fun retireGeneration(code: TileflowErrorCode = TileflowErrorCode.CANCELLED) {
         initialized = false
+        styleRestored = false
         annotationLayersSent = null
         annotationLayersSending = false
         subscriptionsSending = false

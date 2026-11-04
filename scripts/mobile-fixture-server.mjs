@@ -388,6 +388,13 @@ nativeBuild.prepare().catch((error) => console.error(error));
 const server = createServer((request, response) => {
   response.setHeader('Access-Control-Allow-Origin', '*');
   if (hosted(request, response)) return;
+  if (request.url === '/runtime-style/invalid-tiles.json') {
+    // Keep the first source in flight while another style edit is submitted.
+    response.setHeader('Content-Type', 'application/json');
+    response.setHeader('Cache-Control', 'no-store');
+    setTimeout(() => response.end('{"tiles":'), 300);
+    return;
+  }
   if (/^\/(?:native|terrain)\//u.test(request.url ?? '')) {
     response.setHeader('Cache-Control', 'no-store');
     nativeBuild.handle(request, response).then((handled) => {

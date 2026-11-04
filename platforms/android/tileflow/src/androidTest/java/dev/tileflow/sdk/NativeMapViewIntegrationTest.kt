@@ -21,6 +21,8 @@ import java.net.URI
 import java.net.URL
 import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.coroutines.resume
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -230,6 +232,50 @@ public class NativeMapViewIntegrationTest {
                     val style = requireNotNull(activity.engine?.map?.style)
                     assertNull(style.getLayer("__tileflow_layer_points"))
                     assertNull(style.getSource("__tileflow_source_places"))
+                }
+            }
+        } finally {
+            instrumentation.runOnMainSync { activity.finish() }
+        }
+    }
+
+    @Test
+    public fun rejectedSlowSourcePreservesConcurrentSourceAndItsReplay() {
+        requireNativeFixture()
+        val activity = show()
+        try {
+            runBlocking {
+                withContext(Dispatchers.Main) {
+                    val view = activity.views.single()
+                    val events = activity.recorded.single()
+                    events.waitForLoads(1)
+                    val invalid = async(start = CoroutineStart.UNDISPATCHED) {
+                        runCatching {
+                            view.addStyleSource("rejected", JSONObject()
+                                .put("type", "vector")
+                                .put("url", "${Fixture.ORIGIN}/runtime-style/invalid-tiles.json"))
+                        }.exceptionOrNull()
+                    }
+                    val valid = async(start = CoroutineStart.UNDISPATCHED) {
+                        view.addStyleSource("kept", JSONObject("""{"type":"geojson","data":{"type":"Point","coordinates":[-3.7,40.42]}}"""))
+                    }
+                    assertEquals(TileflowErrorCode.RESOURCE_FAILED, (invalid.await() as TileflowMapException).code)
+                    valid.await()
+                    fun checkSources() {
+                        assertFalse("Rejected source retained by view", view.sourceExists("rejected"))
+                        assertTrue("Concurrent source lost by view", view.sourceExists("kept"))
+                        val style = requireNotNull(activity.engine?.map?.style)
+                        assertNull(style.getSource("__tileflow_source_rejected"))
+                        assertNotNull(style.getSource("__tileflow_source_kept"))
+                    }
+                    checkSources()
+                    val loads = events.loads
+                    view.reload()
+                    events.waitForLoads(loads + 1)
+                    withTimeout(10_000) {
+                        while (activity.engine?.map?.style?.getSource("__tileflow_source_kept") == null) delay(40)
+                    }
+                    checkSources()
                 }
             }
         } finally {

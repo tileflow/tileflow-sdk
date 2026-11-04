@@ -2131,6 +2131,438 @@
       "theme": null
     }
   ],
+  "solar": [
+    {
+      "date": 1782043200000,
+      "location": [-3.7, 40.42],
+      "preset": {
+        "azimuth": 350,
+        "altitude": 60,
+        "color": "#ffffff",
+        "intensity": 0.5,
+        "shadowIntensity": 0.6,
+        "ambient": {
+          "color": "#dfe8ff",
+          "intensity": 0.5
+        }
+      },
+      "position": {
+        "azimuth": 167.10768261500857,
+        "altitude": 72.66639395743161
+      },
+      "resolved": {
+        "azimuth": 167.10768261500857,
+        "altitude": 72.66639395743161,
+        "direction": [0.06647504265327478, -0.2904242214253031, 0.9545862141858911],
+        "color": "#ffffff",
+        "rgb": [1, 1, 1],
+        "intensity": 0.5,
+        "shadowIntensity": 0.6,
+        "ambient": {
+          "color": "#dfe8ff",
+          "rgb": [0.8745098039215686, 0.9098039215686274, 1],
+          "intensity": 0.5
+        },
+        "brightness": 0.4402,
+        "source": "date"
+      }
+    },
+    {
+      "date": 1773986700000,
+      "location": [0, 51.48],
+      "preset": {
+        "azimuth": 350,
+        "altitude": 60,
+        "color": "#ffffff",
+        "intensity": 0.5,
+        "shadowIntensity": 0.6,
+        "ambient": {
+          "color": "#dfe8ff",
+          "intensity": 0.5
+        }
+      },
+      "position": {
+        "azimuth": 89.59749955997074,
+        "altitude": 0.061320352038130466
+      },
+      "resolved": {
+        "azimuth": 89.59749955997074,
+        "altitude": 0.061320352038130466,
+        "direction": [0.999974752389765, 0.0070248961158374855, 0.0010702418372349825],
+        "color": "#ffffff",
+        "rgb": [1, 1, 1],
+        "intensity": 0.034456249659971,
+        "shadowIntensity": 0.6,
+        "ambient": {
+          "color": "#dfe8ff",
+          "rgb": [0.8745098039215686, 0.9098039215686274, 1],
+          "intensity": 0.5
+        },
+        "brightness": 0.201571,
+        "source": "date"
+      }
+    },
+    {
+      "date": 1797854400000,
+      "location": [18.96, 69.65],
+      "preset": {
+        "azimuth": 350,
+        "altitude": 60,
+        "color": "#ffffff",
+        "intensity": 0.5,
+        "shadowIntensity": 0.6,
+        "ambient": {
+          "color": "#dfe8ff",
+          "intensity": 0.5
+        }
+      },
+      "position": {
+        "azimuth": 197.82841352434087,
+        "altitude": -4.05178451546956
+      },
+      "resolved": {
+        "azimuth": 197.82841352434087,
+        "altitude": -4.05178451546956,
+        "direction": [-0.30540220136077284, -0.9495983018300728, -0.07065805379032232],
+        "color": "#ffffff",
+        "rgb": [1, 1, 1],
+        "intensity": 0,
+        "shadowIntensity": 0.6,
+        "ambient": {
+          "color": "#dfe8ff",
+          "rgb": [0.8745098039215686, 0.9098039215686274, 1],
+          "intensity": 0.5
+        },
+        "brightness": 0.201553,
+        "source": "date"
+      }
+    },
+    {
+      "date": 1790127000000,
+      "location": [179.5, -16],
+      "preset": {
+        "azimuth": 350,
+        "altitude": 60,
+        "color": "#ffffff",
+        "intensity": 0.5,
+        "shadowIntensity": 0.6,
+        "ambient": {
+          "color": "#dfe8ff",
+          "intensity": 0.5
+        }
+      },
+      "position": {
+        "azimuth": 301.88760277589944,
+        "altitude": 61.5524580573572
+      },
+      "resolved": {
+        "azimuth": 301.88760277589944,
+        "altitude": 61.5524580573572,
+        "direction": [-0.40446546957988777, 0.2516361764178728, 0.8792536145136476],
+        "color": "#ffffff",
+        "rgb": [1, 1, 1],
+        "intensity": 0.5,
+        "shadowIntensity": 0.6,
+        "ambient": {
+          "color": "#dfe8ff",
+          "rgb": [0.8745098039215686, 0.9098039215686274, 1],
+          "intensity": 0.5
+        },
+        "brightness": 0.421366,
+        "source": "date"
+      }
+    }
+  ],
+  "shots": [
+    {
+      "shot": {
+        "easing": "linear",
+        "keyframes": [
+          {
+            "at": 0,
+            "camera": {
+              "center": [178, 10],
+              "zoom": 8,
+              "bearing": 350,
+              "pitch": 5
+            },
+            "blend": {
+              "themes": ["light", "dark"],
+              "position": 0
+            }
+          },
+          {
+            "at": 600,
+            "camera": {
+              "center": [-178, 50],
+              "zoom": 10,
+              "bearing": 10,
+              "pitch": 35
+            },
+            "blend": {
+              "themes": ["light", "dark"],
+              "position": 0.7
+            }
+          },
+          {
+            "at": 1000,
+            "camera": {
+              "center": [-160, 25],
+              "zoom": 9,
+              "bearing": 250,
+              "pitch": 15
+            },
+            "blend": {
+              "themes": ["light", "dark"],
+              "position": 1
+            }
+          }
+        ]
+      },
+      "samples": [
+        {
+          "at": 0,
+          "camera": {
+            "type": "center",
+            "center": [178, 10],
+            "zoom": 8,
+            "bearing": 350,
+            "pitch": 5
+          },
+          "blendPosition": 0,
+          "requestedAt": -100
+        },
+        {
+          "at": 0,
+          "camera": {
+            "type": "center",
+            "center": [178, 10],
+            "zoom": 8,
+            "bearing": 350,
+            "pitch": 5
+          },
+          "blendPosition": 0,
+          "requestedAt": 0
+        },
+        {
+          "at": 150,
+          "camera": {
+            "type": "center",
+            "center": [179, 21.492789754426084],
+            "zoom": 8.5,
+            "bearing": -5,
+            "pitch": 12.5
+          },
+          "blendPosition": 0.175,
+          "requestedAt": 150
+        },
+        {
+          "at": 300,
+          "camera": {
+            "type": "center",
+            "center": [180, 32.146701400480126],
+            "zoom": 9,
+            "bearing": 0,
+            "pitch": 20
+          },
+          "blendPosition": 0.35,
+          "requestedAt": 300
+        },
+        {
+          "at": 600,
+          "camera": {
+            "type": "center",
+            "center": [-178, 50],
+            "zoom": 10,
+            "bearing": 10,
+            "pitch": 35
+          },
+          "blendPosition": 0.7,
+          "requestedAt": 600
+        },
+        {
+          "at": 850,
+          "camera": {
+            "type": "center",
+            "center": [-166.75, 35.373052981214315],
+            "zoom": 9.375,
+            "bearing": -65,
+            "pitch": 22.5
+          },
+          "blendPosition": 0.8875,
+          "requestedAt": 850
+        },
+        {
+          "at": 1000,
+          "camera": {
+            "type": "center",
+            "center": [-160, 25],
+            "zoom": 9,
+            "bearing": 250,
+            "pitch": 15
+          },
+          "blendPosition": 1,
+          "requestedAt": 1000
+        },
+        {
+          "at": 1000,
+          "camera": {
+            "type": "center",
+            "center": [-160, 25],
+            "zoom": 9,
+            "bearing": 250,
+            "pitch": 15
+          },
+          "blendPosition": 1,
+          "requestedAt": 1100
+        }
+      ]
+    },
+    {
+      "shot": {
+        "easing": "smooth",
+        "keyframes": [
+          {
+            "at": 0,
+            "camera": {
+              "center": [178, 10],
+              "zoom": 8,
+              "bearing": 350,
+              "pitch": 5
+            },
+            "blend": {
+              "themes": ["light", "dark"],
+              "position": 0
+            }
+          },
+          {
+            "at": 600,
+            "camera": {
+              "center": [-178, 50],
+              "zoom": 10,
+              "bearing": 10,
+              "pitch": 35
+            },
+            "blend": {
+              "themes": ["light", "dark"],
+              "position": 0.7
+            }
+          },
+          {
+            "at": 1000,
+            "camera": {
+              "center": [-160, 25],
+              "zoom": 9,
+              "bearing": 250,
+              "pitch": 15
+            },
+            "blend": {
+              "themes": ["light", "dark"],
+              "position": 1
+            }
+          }
+        ]
+      },
+      "samples": [
+        {
+          "at": 0,
+          "camera": {
+            "type": "center",
+            "center": [178, 10],
+            "zoom": 8,
+            "bearing": 350,
+            "pitch": 5
+          },
+          "blendPosition": 0,
+          "requestedAt": -100
+        },
+        {
+          "at": 0,
+          "camera": {
+            "type": "center",
+            "center": [178, 10],
+            "zoom": 8,
+            "bearing": 350,
+            "pitch": 5
+          },
+          "blendPosition": 0,
+          "requestedAt": 0
+        },
+        {
+          "at": 150,
+          "camera": {
+            "type": "center",
+            "center": [178.625, 17.26156414054904],
+            "zoom": 8.3125,
+            "bearing": -6.875,
+            "pitch": 9.6875
+          },
+          "blendPosition": 0.109375,
+          "requestedAt": 150
+        },
+        {
+          "at": 300,
+          "camera": {
+            "type": "center",
+            "center": [180, 32.146701400480126],
+            "zoom": 9,
+            "bearing": 0,
+            "pitch": 20
+          },
+          "blendPosition": 0.35,
+          "requestedAt": 300
+        },
+        {
+          "at": 600,
+          "camera": {
+            "type": "center",
+            "center": [-178, 50],
+            "zoom": 10,
+            "bearing": 10,
+            "pitch": 35
+          },
+          "blendPosition": 0.7,
+          "requestedAt": 600
+        },
+        {
+          "at": 850,
+          "camera": {
+            "type": "center",
+            "center": [-165.6953125, 33.826157303250014],
+            "zoom": 9.31640625,
+            "bearing": -72.03125,
+            "pitch": 21.328125
+          },
+          "blendPosition": 0.905078125,
+          "requestedAt": 850
+        },
+        {
+          "at": 1000,
+          "camera": {
+            "type": "center",
+            "center": [-160, 25],
+            "zoom": 9,
+            "bearing": 250,
+            "pitch": 15
+          },
+          "blendPosition": 1,
+          "requestedAt": 1000
+        },
+        {
+          "at": 1000,
+          "camera": {
+            "type": "center",
+            "center": [-160, 25],
+            "zoom": 9,
+            "bearing": 250,
+            "pitch": 15
+          },
+          "blendPosition": 1,
+          "requestedAt": 1100
+        }
+      ]
+    }
+  ],
   "suns": [
     {
       "from": {

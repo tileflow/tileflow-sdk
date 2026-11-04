@@ -23,7 +23,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const config = (
   base,
   underlay,
-) => `import {defineMap, disable, tileflowWorldSchema, vectorTiles} from '@tileflow/core';
+) => `import {boundaryChoropleth, choroplethScale, defineMap, disable, tileflowWorldSchema, vectorTiles} from '@tileflow/core';
 import {streets, streetsThemes} from '@tileflow/maps';
 const city = defineMap({
   id: 'city',
@@ -81,6 +81,21 @@ const city = defineMap({
 });
 export default {maps: {
   city,
+  appearance: defineMap({
+    id: 'appearance',
+    version: 1,
+    extends: city,
+    boundaryAreas: {family: 'boundaries', url: '${base}/fixture-boundaries/tiles.json'},
+    overlays: {
+      score: boundaryChoropleth({
+        id: 'score',
+        classes: ['municipality'],
+        missingColor: '#00000000',
+        scale: choroplethScale.linear([[0, '#ffffff'], [10, '#ff0000']]),
+        values: {joinBy: 'id', rows: [{key: 41, value: 3}]},
+      }),
+    },
+  }),
   streets: defineMap({
     id: 'streets',
     version: 1,

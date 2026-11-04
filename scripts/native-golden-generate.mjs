@@ -15,7 +15,8 @@ const target = 'packages/core/test/fixtures/native-evaluators.json';
 const copies = ['platforms/ios/Tests/TileflowTests/Fixtures/Native/native-evaluators.json'];
 const core = (entry) => import(pathToFileURL(resolve(root, `packages/core/dist/${entry}.js`)).href);
 const profile = await core('native-profile');
-const {resolveTileflowRuntimeTheme} = await core('index');
+const {resolveTileflowRuntimeTheme, resolveTileflowSun, tileflowSunPosition} = await core('index');
+const {tileflowShotStateAt} = await core('browser');
 
 // A small family: three themes that blend and one, `mono`, with another layer list.
 const input = JSON.parse(await readFile(resolve(root, source), 'utf8'));
@@ -161,6 +162,50 @@ const inkMixes = [
   [night.routeInks, dusk.routeInks, 0.2],
 ].map(([from, to, t]) => ({from, to, t, mixed: profile.mixTileflowRouteInks(from, to, t)}));
 
+// Noon, sunrise, polar winter and the date line exercise the date and refraction branches.
+const solar = [
+  ['2026-06-21T12:00:00Z', [-3.7, 40.42]],
+  ['2026-03-20T06:05:00Z', [0, 51.48]],
+  ['2026-12-21T12:00:00Z', [18.96, 69.65]],
+  ['2026-09-23T01:30:00Z', [179.5, -16]],
+].map(([iso, location]) => {
+  const date = Date.parse(iso);
+  const position = tileflowSunPosition(date, location);
+  return {
+    date,
+    location,
+    preset: day.sun,
+    position,
+    resolved: resolveTileflowSun(day.sun, position, 'date'),
+  };
+});
+
+const keyframes = [
+  {
+    at: 0,
+    camera: {center: [178, 10], zoom: 8, bearing: 350, pitch: 5},
+    blend: {themes: ['light', 'dark'], position: 0},
+  },
+  {
+    at: 600,
+    camera: {center: [-178, 50], zoom: 10, bearing: 10, pitch: 35},
+    blend: {themes: ['light', 'dark'], position: 0.7},
+  },
+  {
+    at: 1000,
+    camera: {center: [-160, 25], zoom: 9, bearing: 250, pitch: 15},
+    blend: {themes: ['light', 'dark'], position: 1},
+  },
+];
+const shots = ['linear', 'smooth'].map((easing) => {
+  const shot = {easing, keyframes};
+  const samples = [-100, 0, 150, 300, 600, 850, 1000, 1100].map((at) => ({
+    ...tileflowShotStateAt(shot, at),
+    requestedAt: at,
+  }));
+  return {shot, samples};
+});
+
 const fixture = {
   kind: 'tileflow-native-evaluator-fixtures',
   schemaVersion: 1,
@@ -177,6 +222,8 @@ const fixture = {
   blends,
   emphasis,
   themeSelections,
+  solar,
+  shots,
   suns: sunMixes,
   routeInks: inkMixes,
 };

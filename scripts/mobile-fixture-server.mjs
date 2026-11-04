@@ -268,39 +268,49 @@ const field = (number, wire, payload) => [
   ...payload,
 ];
 const zigzag = (value) => (value << 1) ^ (value >> 31);
-/** One `building` layer of a Mapbox Vector Tile with the buildings inside tile z/x/y. */
-function buildingTile(z, x, y) {
-  const extent = 4096;
+const tileExtent = 4096;
+
+function tileProjection(z, x, y) {
   const scale = 2 ** z;
-  const project = ([longitude, latitude]) => {
+  return ([longitude, latitude]) => {
     const radians = (latitude * Math.PI) / 180;
     const worldX = ((longitude + 180) / 360) * scale;
     const worldY =
       ((1 - Math.log(Math.tan(radians) + 1 / Math.cos(radians)) / Math.PI) / 2) * scale;
-    return [Math.round((worldX - x) * extent), Math.round((worldY - y) * extent)];
+    return [Math.round((worldX - x) * tileExtent), Math.round((worldY - y) * tileExtent)];
   };
+}
+
+/** MVT commands for a clockwise four-corner ring. */
+function rectangleGeometry(points) {
+  const ring = [points[0], points[3], points[2], points[1]];
+  const geometry = [9];
+  let [cx, cy] = [0, 0];
+  ring.forEach(([px, py], position) => {
+    if (position === 1) geometry.push(2 | ((ring.length - 1) << 3));
+    geometry.push(zigzag(px - cx), zigzag(py - cy));
+    [cx, cy] = [px, py];
+  });
+  geometry.push(15);
+  return geometry.flatMap(varint);
+}
+
+/** One `building` layer of a Mapbox Vector Tile with the buildings inside tile z/x/y. */
+function buildingTile(z, x, y) {
+  const extent = tileExtent;
+  const project = tileProjection(z, x, y);
   const values = [];
   const features = [];
   for (const [index, building] of buildings.entries()) {
     const points = building.ring.map(project);
     if (points.every(([px, py]) => px < 0 || py < 0 || px > extent || py > extent)) continue;
-    // A clockwise exterior ring on screen: west-south, west-north, east-north, east-south.
-    const ring = [points[0], points[3], points[2], points[1]];
-    const geometry = [9];
-    let [cx, cy] = [0, 0];
-    ring.forEach(([px, py], position) => {
-      if (position === 1) geometry.push(2 | ((ring.length - 1) << 3));
-      geometry.push(zigzag(px - cx), zigzag(py - cy));
-      [cx, cy] = [px, py];
-    });
-    geometry.push(15);
     values.push(field(3, 1, [...new Uint8Array(new Float64Array([building.height]).buffer)]));
     features.push(
       field(2, 2, [
         ...field(1, 0, varint(index + 1)),
         ...field(2, 2, [0, ...varint(values.length - 1), 1, ...varint(values.length - 1)]),
         ...field(3, 0, varint(3)),
-        ...field(4, 2, geometry.flatMap(varint)),
+        ...field(4, 2, rectangleGeometry(points)),
       ]),
     );
   }
@@ -315,8 +325,43 @@ function buildingTile(z, x, y) {
   ];
   return Buffer.from(field(3, 2, layer));
 }
+/** A small municipality around the scene camera, with polygon and label sharing the real tile ID 41. */
+function boundaryTile(z, x, y) {
+  const project = tileProjection(z, x, y);
+  const ring = buildings[40].ring.map(project);
+  const center = project(sceneCenter);
+  const beyond = (axis, limit, sign) => ring.every((point) => sign * (point[axis] - limit) > 0);
+  const areaVisible = ![0, 1].some((axis) => beyond(axis, 0, -1) || beyond(axis, tileExtent, 1));
+
+  function layer(name, type, geometry) {
+    const feature = geometry
+      ? field(2, 2, [
+          ...field(1, 0, varint(41)),
+          ...field(2, 2, [0, 0, 1, 1]),
+          ...field(3, 0, varint(type)),
+          ...field(4, 2, geometry),
+        ])
+      : [];
+    return field(3, 2, [
+      ...field(15, 0, varint(2)),
+      ...field(1, 2, [...Buffer.from(name)]),
+      ...feature,
+      ...field(3, 2, [...Buffer.from('class')]),
+      ...field(3, 2, [...Buffer.from('ref')]),
+      ...field(4, 2, field(1, 2, [...Buffer.from('municipality')])),
+      ...field(4, 2, field(1, 2, [...Buffer.from('fixture-41')])),
+      ...field(5, 0, varint(tileExtent)),
+    ]);
+  }
+  const labelVisible = center.every((n) => n >= 0 && n <= tileExtent);
+  return Buffer.from([
+    ...layer('boundary_area', 3, areaVisible && rectangleGeometry(ring)),
+    ...layer('boundary_label', 1, labelVisible && [9, ...center.flatMap((n) => varint(zigzag(n)))]),
+  ]);
+}
 const sceneStyle = (dark) => ({
   version: 8,
+  state: {'fixture-opacity': {default: 1}, 'fixture-mode': {default: 'base'}},
   metadata: {
     'tileflow:fontFaces': fontFaces(base),
     'tileflow:buildings': {
@@ -427,6 +472,25 @@ const server = createServer((request, response) => {
   if (request.url === '/redirect') {
     response.writeHead(302, {Location: `${base}/archive.bin`});
     response.end();
+    return;
+  }
+  if (path === '/fixture-boundaries/tiles.json') {
+    response.setHeader('Content-Type', 'application/json');
+    response.end(
+      JSON.stringify({
+        tilejson: '3.0.0',
+        tiles: [`${base}/fixture-boundaries/{z}/{x}/{y}.mvt`],
+        bounds: [-3.71, 40.41, -3.69, 40.43],
+        minzoom: 12,
+        maxzoom: 16,
+      }),
+    );
+    return;
+  }
+  const boundary = /^\/fixture-boundaries\/(\d+)\/(\d+)\/(\d+)\.mvt$/u.exec(path);
+  if (boundary) {
+    response.setHeader('Content-Type', 'application/vnd.mapbox-vector-tile');
+    response.end(boundaryTile(...boundary.slice(1).map(Number)));
     return;
   }
   const tile = /^\/city\/(\d+)\/(\d+)\/(\d+)\.mvt$/u.exec(request.url ?? '');

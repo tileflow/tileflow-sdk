@@ -134,6 +134,29 @@ public class AnnotationIntegrationTest {
             touch(map, point.x + map.width / 4f, point.y + map.height / 4f)
             until("the application received a tap") { appTaps() > before }
 
+            // Hold the manager's acknowledgement across reload. The old map has applied the
+            // user's drag, but the call to write its final coordinates is still in flight.
+            suspendJavascript(map, """
+                (() => {
+                  const receive = window.tileflow.receive;
+                  const channel = window.tileflowNative;
+                  const post = channel.postMessage.bind(channel);
+                  let updateId;
+                  window.tileflow.receive = raw => {
+                    const message = JSON.parse(raw);
+                    if (message.command.method === 'setGeoJSONSourceData' && message.command.payload?.id === 'spots')
+                      updateId = message.requestId;
+                    receive(raw);
+                  };
+                  channel.postMessage = raw => {
+                    if (updateId && JSON.parse(raw).requestId === updateId) {
+                      window.tileflowDragWritePending = true;
+                      return;
+                    }
+                    post(raw);
+                  };
+                })()
+            """.trimIndent())
             // A pan that starts on the draggable annotation moves it, not the map.
             val camera = map.currentCamera!!
             val dragX = minOf(150f, map.width / 4f)
@@ -158,6 +181,20 @@ public class AnnotationIntegrationTest {
             }
             assertEquals(target.longitude, moved!!.coordinate.longitude, 1e-4)
             assertEquals(target.latitude, moved!!.coordinate.latitude, 1e-4)
+
+            until("the manager's write is still in flight") {
+                suspendJavascript(map, "window.tileflowDragWritePending === true") == "true"
+            }
+            val loads = activity.loads.size
+            map.reload()
+            until("the replacement renderer is ready") { activity.loads.size > loads }
+            var restored: TileflowCoordinate? = null
+            until("the replacement renderer has a feature") {
+                restored = (map.querySourceFeatures("spots").singleOrNull()?.feature?.geometry as? TileflowGeometry.Point)?.coordinate
+                restored != null
+            }
+            assertEquals("Replayed drag longitude", dropped.single().longitude, restored!!.longitude, 1e-4)
+            assertEquals("Replayed drag latitude", dropped.single().latitude, restored!!.latitude, 1e-4)
         }
     }
 

@@ -1412,6 +1412,8 @@ constructor(
                     sendOptions(events = subscriptions != startingSubscriptions)
                 // Only a camera the application asked for meanwhile moves again.
                 requestedCamera?.takeIf { it.second != startingRequest }?.let { move(it.first) }
+                annotations.prepareReplay(this@TileflowMapView)
+                if (destroyed || generation != current) return@launch
                 replay { replayScene(readyEngine) }
                 replay { replayStyle(readyEngine) }
                 replay { replayLocation(readyEngine) }

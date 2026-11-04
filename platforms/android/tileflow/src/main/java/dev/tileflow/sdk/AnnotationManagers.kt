@@ -74,6 +74,11 @@ public class TileflowAnnotations internal constructor() {
         next?.annotationsChanged()
     }
 
+    /** Retain the managers' current annotations before the new renderer restores its style. */
+    internal suspend fun prepareReplay(target: TileflowMapView) {
+        for (manager in managers.values.toList()) manager.prepareReplay(target)
+    }
+
     internal fun changed() {
         view?.annotationsChanged()
     }
@@ -246,6 +251,15 @@ internal constructor(
                 target.annotationWarning(error)
             }
         }
+    }
+
+    internal suspend fun prepareReplay(target: TileflowMapView) {
+        if (disposed || view !== target || target.isDestroyed) return
+        // A retired renderer can cancel the final write of a drag. Diff the manager's geometry
+        // against its last acknowledged features and finish that write before contentReady.
+        dirty = true
+        schedule()
+        job?.join()
     }
 
     private fun schedule() {

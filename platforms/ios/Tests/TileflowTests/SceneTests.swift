@@ -136,25 +136,69 @@ final class SceneTests: XCTestCase {
   }
 
   func testANewRendererReceivesTheSceneAtOnceAndInOrder() throws {
-    var state = SceneState()
-    state.depthMarkers = SceneCommand(.setDepthMarkers, payload: .object(["markers": .array([])]))
-    state.images = SceneCommand(.setImages, payload: .object(["images": .array([])]))
-    state.sun = SceneCommand(.setSun, payload: .object(["sun": .null, "duration": .number(450)]))
-    state.setStyleState(
-      "traffic", SceneCommand(.setStyleState, payload: .object(["duration": .number(250)])))
-    state.setStyleState(
-      "night", SceneCommand(.setStyleState, payload: .object(["duration": .number(0)])))
-    state.setStyleState(
-      "traffic", SceneCommand(.setStyleState, payload: .object(["duration": .number(100)])))
+    let state = SceneState()
+    func keep(_ method: ProtocolContract.Method, _ payload: JSONValue, name: String? = nil) {
+      let edit = state.begin(SceneCommand(method, payload: payload), stateName: name)
+      state.finish(edit, accepted: true)
+    }
+
+    keep(.setDepthMarkers, .object(["markers": .array([])]))
+    keep(.setImages, .object(["images": .array([])]))
+    keep(.setSun, .object(["sun": .null, "duration": .number(450)]))
+    keep(.setStyleState, .object(["duration": .number(250)]), name: "traffic")
+    keep(.setStyleState, .object(["duration": .number(0)]), name: "night")
+    keep(.setStyleState, .object(["duration": .number(100)]), name: "traffic")
     XCTAssertEqual(
-      state.commands.map(\.method),
+      state.replay.map(\.command.method),
       [.setImages, .setDepthMarkers, .setSun, .setStyleState, .setStyleState])
-    XCTAssertEqual(state.styleStates.map(\.name), ["night", "traffic"])
+    XCTAssertEqual(state.replay.compactMap(\.stateName), ["night", "traffic"])
+    let sun = try XCTUnwrap(state.replay.first { $0.command.method == .setSun }?.command)
     let channel = DataChannel()
-    let (replayed, _) = try state.sun!.build(channel, true)
+    let (replayed, _) = try sun.build(channel, true)
     XCTAssertEqual(replayed["duration"]?.number, 0)
-    let (sent, _) = try state.sun!.build(channel, false)
+    let (sent, _) = try sun.build(channel, false)
     XCTAssertEqual(sent["duration"]?.number, 450)
+  }
+
+  func testSceneRepliesRetainTheNewestAcceptedRequestForEachName() {
+    let state = SceneState()
+    func change(_ name: String) -> SceneState.Edit {
+      state.begin(SceneCommand(.setStyleState, payload: .null), stateName: name)
+    }
+    let first = change("traffic")
+    let rejected = change("traffic")
+    let other = change("night")
+    state.finish(other, accepted: true)
+    state.finish(rejected, accepted: false)
+    XCTAssertEqual(state.replay.compactMap(\.stateName), ["night"])
+
+    state.finish(first, accepted: true)
+    XCTAssertTrue(state.replay.first === first)
+    XCTAssertTrue(state.replay.last === other)
+
+    let older = change("traffic")
+    let newer = change("traffic")
+    state.finish(newer, accepted: true)
+    state.finish(older, accepted: true)
+    let cancelled = change("traffic")
+    state.finish(cancelled, accepted: false)
+    XCTAssertEqual(state.replay.count, 2)
+    XCTAssertTrue(state.replay.last === newer)
+  }
+
+  func testPendingImagesCanBeEditedButOnlyAcceptedImagesReplay() throws {
+    let state = SceneState()
+    let command = SceneCommand(.setImages, payload: .null)
+    let pin = try TileflowMapImage(name: "pin", data: Data([1]))
+    let arrow = try TileflowMapImage(name: "arrow", data: Data([2]))
+    let first = state.begin(command, images: [pin])
+    let rejected = state.begin(command, images: state.editableImages + [arrow])
+    XCTAssertEqual(state.editableImages.map(\.name), ["pin", "arrow"])
+    XCTAssertTrue(state.replay.isEmpty)
+    state.finish(first, accepted: true)
+    state.finish(rejected, accepted: false)
+    XCTAssertEqual(state.editableImages.map(\.name), ["pin"])
+    XCTAssertTrue(state.replay.first === first)
   }
 
   func testAnimationWaitsEndWithTheirRendererAndCallCuesBack() async throws {
@@ -195,7 +239,7 @@ final class SceneTests: XCTestCase {
     try await view.setStyleState("traffic", to: 0.5)
     try await view.setViewMode(.threeDimensional, duration: 1)
     XCTAssertEqual(view.options.viewMode, .threeDimensional)
-    XCTAssertEqual(view.scene.commands.count, 2)
+    XCTAssertEqual(view.scene.replay.count, 2)
     for invalid in [
       { try await view.setSun(.direction(azimuth: 0, altitude: 91)) },
       { try await view.setSun(nil, duration: 6) },

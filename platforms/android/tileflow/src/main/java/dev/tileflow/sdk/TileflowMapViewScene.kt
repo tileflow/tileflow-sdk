@@ -7,6 +7,8 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.suspendCancellableCoroutine
 import org.json.JSONArray
 import org.json.JSONObject
@@ -40,42 +42,54 @@ internal class SceneCommand(
  * images before the markers that show them.
  */
 internal class SceneState {
-    var images: SceneCommand? = null
-    var depthMarkers: SceneCommand? = null
-    var sun: SceneCommand? = null
-    var emphasis: SceneCommand? = null
-    val styleStates: LinkedHashMap<String, SceneCommand> = LinkedHashMap()
-    var boundaries: SceneCommand? = null
-
-    val commands: List<SceneCommand>
-        get() =
-            listOfNotNull(images, depthMarkers, sun, emphasis) +
-                styleStates.values +
-                listOfNotNull(boundaries)
-
-    fun setStyleState(name: String, command: SceneCommand) {
-        styleStates.remove(name)
-        styleStates[name] = command
+    class Edit(
+        val command: SceneCommand,
+        val stateName: String?,
+        val images: List<TileflowMapImage>?,
+    ) {
+        var accepted = false
     }
 
-    fun copy(): SceneState =
-        SceneState().also {
-            it.images = images
-            it.depthMarkers = depthMarkers
-            it.sun = sun
-            it.emphasis = emphasis
-            it.styleStates.putAll(styleStates)
-            it.boundaries = boundaries
+    private val edits = mutableListOf<Edit>()
+
+    /** Keep issue order while the renderer answers concurrent requests. */
+    fun begin(
+        command: SceneCommand,
+        stateName: String? = null,
+        images: List<TileflowMapImage>? = null,
+    ): Edit = Edit(command, stateName, images).also(edits::add)
+
+    fun finish(edit: Edit, accepted: Boolean) {
+        val index = edits.indexOf(edit)
+        if (index < 0) return
+        if (!accepted) {
+            edits.removeAt(index)
+            return
+        }
+        edit.accepted = true
+        // A newer acceptance replaces only earlier requests for this property or named state.
+        edits.subList(0, index).removeAll {
+            it.command.method == edit.command.method && it.stateName == edit.stateName
+        }
+    }
+
+    /** Incremental image edits build on the latest request even while its reply is pending. */
+    val editableImages: List<TileflowMapImage>
+        get() = edits.lastOrNull { it.images != null }?.images.orEmpty()
+
+    val replay: List<Edit>
+        get() = replayOrder.flatMap { method ->
+            edits.filter { it.accepted && it.command.method == method }
         }
 
-    fun restore(from: SceneState) {
-        images = from.images
-        depthMarkers = from.depthMarkers
-        sun = from.sun
-        emphasis = from.emphasis
-        styleStates.clear()
-        styleStates.putAll(from.styleStates)
-        boundaries = from.boundaries
+    fun retains(edit: Edit): Boolean = edit in edits
+
+    private companion object {
+        val replayOrder = listOf(
+            ProtocolContract.Method.SET_IMAGES, ProtocolContract.Method.SET_DEPTH_MARKERS,
+            ProtocolContract.Method.SET_SUN, ProtocolContract.Method.SET_EMPHASIS,
+            ProtocolContract.Method.SET_STYLE_STATE, ProtocolContract.Method.SET_BOUNDARY_VALUES,
+        )
     }
 }
 
@@ -137,32 +151,37 @@ private fun TileflowMapView.requireRenderer(): MapEngine {
     return readyEngine ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
 }
 
-/** Keeps a scene request for later renderers and sends it to the current one. */
 private suspend fun TileflowMapView.sendScene(
     command: SceneCommand,
-    keep: SceneState.(SceneCommand) -> Unit,
+    stateName: String? = null,
+    images: List<TileflowMapImage>? = null,
 ) {
     if (isDestroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
-    val previous = scene.copy()
-    scene.keep(command)
-    val engine = readyEngine ?: return
+    currentCoroutineContext().ensureActive()
+    val edit = scene.begin(command, stateName, images)
+    if (images != null) this.images = images
+    var accepted = false
     try {
-        engine.send(command, replaying = false)
-    } catch (error: TileflowMapException) {
-        // A request the renderer refuses is not given to the next one either.
-        if (error.code == TileflowErrorCode.INVALID_REQUEST) scene.restore(previous)
-        throw error
+        val applied = readyEngine?.send(command, replaying = false) ?: true
+        currentCoroutineContext().ensureActive()
+        accepted = applied
+    } finally {
+        scene.finish(edit, accepted)
+        if (images != null) this.images = scene.editableImages
     }
 }
 
-private suspend fun MapEngine.send(command: SceneCommand, replaying: Boolean) {
+private suspend fun MapEngine.send(command: SceneCommand, replaying: Boolean): Boolean {
     val (payload, references) = command.build(data, replaying)
-    call(command.method, payload, references)
+    val result = call(command.method, payload, references)
+    return (result as? JSONObject)?.optString("status") != "superseded"
 }
 
-/** Gives a new renderer the scene the application asked for, at once. */
+/** Gives a new renderer the accepted scene, at once. */
 internal suspend fun TileflowMapView.replayScene(engine: MapEngine) {
-    for (command in scene.commands) engine.send(command, replaying = true)
+    for (edit in scene.replay) {
+        if (scene.retains(edit)) engine.send(edit.command, replaying = true)
+    }
 }
 
 /**
@@ -187,7 +206,7 @@ public suspend fun TileflowMapView.setViewMode(mode: TileflowViewMode, durationM
 public suspend fun TileflowMapView.setSun(sun: TileflowSun?, durationMillis: Long = 0) {
     val payload =
         JSONObject().put("sun", TileflowSun.json(sun)).put("duration", transition(durationMillis))
-    sendScene(SceneCommand(ProtocolContract.Method.SET_SUN, payload)) { this.sun = it }
+    sendScene(SceneCommand(ProtocolContract.Method.SET_SUN, payload))
 }
 
 /**
@@ -205,9 +224,7 @@ public suspend fun TileflowMapView.setEmphasis(
                 ProtocolContract.Method.SET_EMPHASIS,
                 JSONObject().put("emphasis", JSONObject.NULL).put("duration", duration),
             )
-        ) {
-            this.emphasis = it
-        }
+        )
         return
     }
     val keep = emphasis.keepArea?.toByteArray(Charsets.UTF_8)
@@ -242,9 +259,7 @@ public suspend fun TileflowMapView.setEmphasis(
             JSONObject().put("emphasis", value).put("duration", if (replaying) 0 else duration) to
                 references
         }
-    ) {
-        this.emphasis = it
-    }
+    )
 }
 
 /**
@@ -262,9 +277,7 @@ public suspend fun TileflowMapView.setStyleState(
             .put("name", name)
             .put("value", TileflowStyleValue.json(value))
             .put("duration", transition(durationMillis))
-    sendScene(SceneCommand(ProtocolContract.Method.SET_STYLE_STATE, payload)) {
-        setStyleState(name, it)
-    }
+    sendScene(SceneCommand(ProtocolContract.Method.SET_STYLE_STATE, payload), stateName = name)
 }
 
 /**
@@ -291,9 +304,7 @@ public suspend fun TileflowMapView.setBoundaryValues(values: TileflowBoundaryVal
                 ProtocolContract.Method.SET_BOUNDARY_VALUES,
                 JSONObject().put("values", JSONObject.NULL),
             )
-        ) {
-            boundaries = it
-        }
+        )
         return
     }
     val (joinBy, rows) = values.rows()
@@ -314,9 +325,7 @@ public suspend fun TileflowMapView.setBoundaryValues(values: TileflowBoundaryVal
                 .put("labels", values.labels)
                 .put("state", values.state) to listOf(reference)
         }
-    ) {
-        boundaries = it
-    }
+    )
 }
 
 /** Replaces the application's images. Unchanged images are neither sent nor decoded again. */
@@ -336,18 +345,6 @@ public suspend fun TileflowMapView.setImages(images: List<TileflowMapImage>) {
             ),
         )
     val kept = images.toList()
-    val previousImages = this.images
-    this.images = kept
-    try {
-        sendImages(kept)
-    } catch (error: TileflowMapException) {
-        // A refused request is not kept, as the scene does not keep it.
-        if (error.code == TileflowErrorCode.INVALID_REQUEST) this.images = previousImages
-        throw error
-    }
-}
-
-private suspend fun TileflowMapView.sendImages(kept: List<TileflowMapImage>) {
     sendScene(
         SceneCommand(ProtocolContract.Method.SET_IMAGES) { channel, _ ->
             val references = mutableListOf<DataChannel.Reference>()
@@ -383,10 +380,9 @@ private suspend fun TileflowMapView.sendImages(kept: List<TileflowMapImage>) {
                 channel.release(references)
                 throw error
             }
-        }
-    ) {
-        this.images = it
-    }
+        },
+        images = kept,
+    )
 }
 
 /**
@@ -395,9 +391,7 @@ private suspend fun TileflowMapView.sendImages(kept: List<TileflowMapImage>) {
 public suspend fun TileflowMapView.setDepthMarkers(markers: List<TileflowDepthMarker>) {
     if (markers.size > 128 || markers.map { it.id }.toSet().size != markers.size) invalid()
     val payload = JSONObject().put("markers", JSONArray(markers.map { it.json() }))
-    sendScene(SceneCommand(ProtocolContract.Method.SET_DEPTH_MARKERS, payload)) {
-        depthMarkers = it
-    }
+    sendScene(SceneCommand(ProtocolContract.Method.SET_DEPTH_MARKERS, payload))
 }
 
 /**

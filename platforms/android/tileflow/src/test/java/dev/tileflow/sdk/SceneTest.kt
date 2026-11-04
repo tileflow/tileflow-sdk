@@ -6,7 +6,13 @@ import android.graphics.Color
 import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.EventSubscriptions
 import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.engine.MapEngine
 import java.time.Instant
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.yield
@@ -235,15 +241,15 @@ class SceneTest {
     @Test
     fun aNewRendererReceivesTheSceneAtOnceAndInOrder() {
         val state = SceneState()
-        state.depthMarkers =
-            SceneCommand(ProtocolContract.Method.SET_DEPTH_MARKERS, JSONObject().put("markers", 0))
-        state.images = SceneCommand(ProtocolContract.Method.SET_IMAGES, JSONObject())
-        state.sun =
-            SceneCommand(ProtocolContract.Method.SET_SUN, JSONObject().put("duration", 450))
-        val traffic = SceneCommand(ProtocolContract.Method.SET_STYLE_STATE, JSONObject())
-        state.setStyleState("traffic", traffic)
-        state.setStyleState("night", traffic)
-        state.setStyleState("traffic", traffic)
+        fun keep(method: ProtocolContract.Method, payload: JSONObject, name: String? = null) {
+            state.finish(state.begin(SceneCommand(method, payload), name), accepted = true)
+        }
+        keep(ProtocolContract.Method.SET_DEPTH_MARKERS, JSONObject().put("markers", 0))
+        keep(ProtocolContract.Method.SET_IMAGES, JSONObject())
+        keep(ProtocolContract.Method.SET_SUN, JSONObject().put("duration", 450))
+        keep(ProtocolContract.Method.SET_STYLE_STATE, JSONObject(), "traffic")
+        keep(ProtocolContract.Method.SET_STYLE_STATE, JSONObject(), "night")
+        keep(ProtocolContract.Method.SET_STYLE_STATE, JSONObject(), "traffic")
         assertEquals(
             listOf(
                 ProtocolContract.Method.SET_IMAGES,
@@ -252,12 +258,29 @@ class SceneTest {
                 ProtocolContract.Method.SET_STYLE_STATE,
                 ProtocolContract.Method.SET_STYLE_STATE,
             ),
-            state.commands.map { it.method },
+            state.replay.map { it.command.method },
         )
-        assertEquals(listOf("night", "traffic"), state.styleStates.keys.toList())
+        assertEquals(listOf("night", "traffic"), state.replay.mapNotNull { it.stateName })
         val channel = DataChannel()
-        assertEquals(0, state.sun!!.build(channel, true).first.getInt("duration"))
-        assertEquals(450, state.sun!!.build(channel, false).first.getInt("duration"))
+        val sun = state.replay.single { it.command.method == ProtocolContract.Method.SET_SUN }.command
+        assertEquals(0, sun.build(channel, true).first.getInt("duration"))
+        assertEquals(450, sun.build(channel, false).first.getInt("duration"))
+    }
+
+    @Test
+    fun pendingImagesCanBeEditedButOnlyAcceptedImagesReplay() {
+        val state = SceneState()
+        val command = SceneCommand(ProtocolContract.Method.SET_IMAGES, JSONObject())
+        val pin = TileflowMapImage("pin", byteArrayOf(1))
+        val arrow = TileflowMapImage("arrow", byteArrayOf(2))
+        val first = state.begin(command, images = listOf(pin))
+        val rejected = state.begin(command, images = state.editableImages + arrow)
+        assertEquals(listOf("pin", "arrow"), state.editableImages.map { it.name })
+        assertTrue(state.replay.isEmpty())
+        state.finish(first, accepted = true)
+        state.finish(rejected, accepted = false)
+        assertEquals(listOf("pin"), state.editableImages.map { it.name })
+        assertEquals(first, state.replay.single())
     }
 
     @Test
@@ -284,6 +307,75 @@ class SceneTest {
     }
 
     @Test
+    fun rejectedSceneRequestPreservesAnOverlappingAcceptedState(): Unit = runBlocking {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val map = TileflowMapView(activity)
+        val replies = Channel<CompletableDeferred<Any>>(Channel.UNLIMITED)
+        val engine = object : MapEngine {
+            override val view = android.view.View(activity)
+            override val data = DataChannel()
+            override fun start() {}
+            override fun setVisible(visible: Boolean) {}
+            override fun retire(code: TileflowErrorCode) {}
+            override suspend fun call(
+                method: ProtocolContract.Method,
+                payload: Any,
+                references: List<DataChannel.Reference>,
+            ): Any {
+                val reply = CompletableDeferred<Any>()
+                replies.send(reply)
+                return reply.await()
+            }
+        }
+        // Hold renderer replies independently, using the same public setters as the application.
+        org.robolectric.util.ReflectionHelpers.setField(map, "engine", engine)
+        org.robolectric.util.ReflectionHelpers.setField(map, "initialized", true)
+        fun change(name: String, value: Double) = async(start = CoroutineStart.UNDISPATCHED) {
+            runCatching { map.setStyleState(name, TileflowStyleValue.Number(value)) }
+        }
+        fun replayed() = map.scene.replay.associate {
+            val data = it.command.build(engine.data, true).first
+            data.getString("name") to data.getDouble("value")
+        }
+        try {
+            withTimeout(5_000) {
+                val older = change("traffic", 1.0)
+                val olderReply = replies.receive()
+                val rejected = change("traffic", 2.0)
+                val rejectReply = replies.receive()
+                val night = change("night", 3.0)
+                replies.receive().complete(JSONObject.NULL)
+                night.await().getOrThrow()
+                rejectReply.completeExceptionally(TileflowMapException(TileflowErrorCode.INVALID_REQUEST))
+                val rejection = rejected.await().exceptionOrNull() as TileflowMapException
+                assertEquals(TileflowErrorCode.INVALID_REQUEST, rejection.code)
+                assertEquals(mapOf("night" to 3.0), replayed())
+
+                olderReply.complete(JSONObject.NULL)
+                older.await().getOrThrow()
+                assertEquals(mapOf("traffic" to 1.0, "night" to 3.0), replayed())
+
+                val stale = change("traffic", 4.0)
+                val staleReply = replies.receive()
+                val latest = change("traffic", 5.0)
+                replies.receive().complete(JSONObject.NULL)
+                latest.await().getOrThrow()
+                staleReply.complete(JSONObject.NULL)
+                stale.await().getOrThrow()
+                val cancelled = change("traffic", 6.0)
+                replies.receive()
+                cancelled.cancelAndJoin()
+                val superseded = change("traffic", 7.0)
+                replies.receive().complete(JSONObject().put("status", "superseded"))
+                superseded.await().getOrThrow()
+                assertEquals(mapOf("traffic" to 5.0, "night" to 3.0), replayed())
+            }
+        } finally {
+            map.destroy()
+        }
+    }
+
+    @Test
     fun sceneCallsCheckTheirParametersBeforeTheRenderer(): Unit = runBlocking {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         val view = TileflowMapView(activity)
@@ -293,7 +385,7 @@ class SceneTest {
             view.setStyleState("traffic", TileflowStyleValue.Number(0.5))
             view.setViewMode(TileflowViewMode.THREE_DIMENSIONAL, durationMillis = 1000)
             assertEquals(TileflowViewMode.THREE_DIMENSIONAL, view.options.viewMode)
-            assertEquals(2, view.scene.commands.size)
+            assertEquals(2, view.scene.replay.size)
             for (invalid in
                 listOf<suspend () -> Unit>(
                     { view.setSun(TileflowSun.Direction(0.0, 91.0)) },

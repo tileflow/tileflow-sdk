@@ -29,23 +29,57 @@ struct SceneCommand {
 
 /// The scene beyond the theme that the application asked for, in the order a renderer needs it:
 /// images before the markers that show them.
-struct SceneState {
-  var images: SceneCommand?
-  var depthMarkers: SceneCommand?
-  var sun: SceneCommand?
-  var emphasis: SceneCommand?
-  var styleStates: [(name: String, command: SceneCommand)] = []
-  var boundaries: SceneCommand?
+@MainActor
+final class SceneState {
+  final class Edit {
+    let command: SceneCommand
+    let stateName: String?
+    let images: [TileflowMapImage]?
+    fileprivate var accepted = false
 
-  var commands: [SceneCommand] {
-    [images, depthMarkers, sun, emphasis].compactMap { $0 } + styleStates.map(\.command)
-      + [boundaries].compactMap { $0 }
+    init(_ command: SceneCommand, stateName: String?, images: [TileflowMapImage]?) {
+      self.command = command
+      self.stateName = stateName
+      self.images = images
+    }
   }
 
-  mutating func setStyleState(_ name: String, _ command: SceneCommand) {
-    styleStates.removeAll { $0.name == name }
-    styleStates.append((name, command))
+  private var edits: [Edit] = []
+
+  /// Keep issue order while the renderer answers concurrent requests.
+  func begin(_ command: SceneCommand, stateName: String? = nil, images: [TileflowMapImage]? = nil)
+    -> Edit
+  {
+    let edit = Edit(command, stateName: stateName, images: images)
+    edits.append(edit)
+    return edit
   }
+
+  func finish(_ edit: Edit, accepted: Bool) {
+    guard let index = edits.firstIndex(where: { $0 === edit }) else { return }
+    guard accepted else {
+      edits.remove(at: index)
+      return
+    }
+    edit.accepted = true
+    // A newer acceptance replaces only earlier requests for this same property or named state.
+    for i in (0..<index).reversed()
+    where edits[i].command.method == edit.command.method && edits[i].stateName == edit.stateName {
+      edits.remove(at: i)
+    }
+  }
+
+  /// Incremental image edits build on the latest request, even if its reply is pending.
+  var editableImages: [TileflowMapImage] { edits.last { $0.images != nil }?.images ?? [] }
+
+  var replay: [Edit] {
+    let methods: [ProtocolContract.Method] = [
+      .setImages, .setDepthMarkers, .setSun, .setEmphasis, .setStyleState, .setBoundaryValues,
+    ]
+    return methods.flatMap { method in edits.filter { $0.accepted && $0.command.method == method } }
+  }
+
+  func retains(_ edit: Edit) -> Bool { edits.contains { $0 === edit } }
 }
 
 /// Calls that wait for an animation of the current renderer to end.
@@ -143,8 +177,8 @@ extension TileflowMapView {
       value = .object(request)
     }
     try await sendScene(
-      SceneCommand(.setSun, payload: .object(["sun": value, "duration": try milliseconds(duration)])),
-      keep: { $0.sun = $1 })
+      SceneCommand(
+        .setSun, payload: .object(["sun": value, "duration": try milliseconds(duration)])))
   }
 
   /// Makes chosen modules of the map recede and its labels fade, so the application's content
@@ -153,8 +187,7 @@ extension TileflowMapView {
     let transition = try milliseconds(duration)
     guard let emphasis else {
       try await sendScene(
-        SceneCommand(.setEmphasis, payload: .object(["emphasis": .null, "duration": transition])),
-        keep: { $0.emphasis = $1 })
+        SceneCommand(.setEmphasis, payload: .object(["emphasis": .null, "duration": transition])))
       return
     }
     guard emphasis.recede.count <= 64,
@@ -189,8 +222,7 @@ extension TileflowMapView {
           .object(["emphasis": .object(value), "duration": replaying ? .number(0) : transition]),
           references
         )
-      },
-      keep: { $0.emphasis = $1 })
+      })
   }
 
   /// Sets a style-wide state that the map's themes read with `globalState`. A number eases from
@@ -212,7 +244,7 @@ extension TileflowMapView {
         payload: .object([
           "name": .string(name), "value": value.wireValue, "duration": try milliseconds(duration),
         ])),
-      keep: { $0.setStyleState(name, $1) })
+      stateName: name)
   }
 
   /// The route inks of the theme on screen, mixed during a blend. Layers drawn with a
@@ -230,8 +262,7 @@ extension TileflowMapView {
   public func setBoundaryValues(_ values: TileflowBoundaryValues?) async throws {
     guard let values else {
       try await sendScene(
-        SceneCommand(.setBoundaryValues, payload: .object(["values": .null])),
-        keep: { $0.boundaries = $1 })
+        SceneCommand(.setBoundaryValues, payload: .object(["values": .null])))
       return
     }
     let (joinBy, rows) = try values.rowsJSON()
@@ -250,8 +281,7 @@ extension TileflowMapView {
           ]),
           [reference]
         )
-      },
-      keep: { $0.boundaries = $1 })
+      })
   }
 
   /// Replaces the application's images. Unchanged images are neither sent nor decoded again.
@@ -268,10 +298,7 @@ extension TileflowMapView {
       throw TileflowMapError(
         .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataTotalBytes)
     }
-    let previousImages = self.images
-    self.images = images
-    do {
-      try await sendScene(
+    try await sendScene(
         SceneCommand(.setImages) { channel, _ in
           var references: [DataChannel.Reference] = []
           do {
@@ -299,12 +326,7 @@ extension TileflowMapView {
             throw error
           }
         },
-        keep: { $0.images = $1 })
-    } catch let error as TileflowMapError where error == .invalidRequest {
-      // A refused request is not kept, as the scene does not keep it.
-      self.images = previousImages
-      throw error
-    }
+      images: images)
   }
 
   /// Replaces the markers drawn in the map's 3D scene. Each names an image passed with
@@ -314,7 +336,7 @@ extension TileflowMapView {
       throw TileflowMapError.invalidRequest
     }
     let value = JSONValue.object(["markers": .array(try markers.map { try $0.wireValue() })])
-    try await sendScene(SceneCommand(.setDepthMarkers, payload: value), keep: { $0.depthMarkers = $1 })
+    try await sendScene(SceneCommand(.setDepthMarkers, payload: value))
   }
 
   /// Moves the drawn stretch of line layers drawn with progress, together, over `duration`
@@ -381,32 +403,39 @@ extension TileflowMapView {
     return .number((duration * 1000).rounded())
   }
 
-  /// Keeps a scene request for later renderers and sends it to the current one.
   private func sendScene(
-    _ command: SceneCommand, keep: (inout SceneState, SceneCommand) -> Void
+    _ command: SceneCommand, stateName: String? = nil, images: [TileflowMapImage]? = nil
   ) async throws {
     guard !isDestroyed else { throw TileflowMapError.disposed }
-    let previous = scene
-    keep(&scene, command)
-    guard let engine = readyEngine else { return }
-    do {
-      try await send(command, through: engine, replaying: false)
-    } catch let error as TileflowMapError where error == .invalidRequest {
-      // A request the renderer refuses is not given to the next one either.
-      scene = previous
-      throw error
+    try Task.checkCancellation()
+    let edit = scene.begin(command, stateName: stateName, images: images)
+    if let images { self.images = images }
+    var accepted = false
+    defer {
+      scene.finish(edit, accepted: accepted)
+      if images != nil { self.images = scene.editableImages }
+    }
+    if let engine = readyEngine {
+      let applied = try await send(command, through: engine, replaying: false)
+      try Task.checkCancellation()
+      accepted = applied
+    } else {
+      accepted = true
     }
   }
 
   private func send(_ command: SceneCommand, through engine: any MapEngine, replaying: Bool)
-    async throws
+    async throws -> Bool
   {
     let (payload, references) = try command.build(engine.data, replaying)
-    _ = try await engine.call(command.method, payload: payload, data: references)
+    let result = try await engine.call(command.method, payload: payload, data: references)
+    return result["status"]?.string != "superseded"
   }
 
-  /// Gives a new renderer the scene the application asked for, at once.
+  /// Gives a new renderer the accepted scene, at once.
   func replayScene(through engine: any MapEngine) async throws {
-    for command in scene.commands { try await send(command, through: engine, replaying: true) }
+    for edit in scene.replay where scene.retains(edit) {
+      _ = try await send(edit.command, through: engine, replaying: true)
+    }
   }
 }

@@ -143,6 +143,29 @@ final class StyleTests: XCTestCase {
     XCTAssertNil(GeoJSONLog.compact(base: promoted, updates: [], promoteId: nil))
   }
 
+  func testInvalidUpdateBeforeMountKeepsLastAcceptedLayer() async throws {
+    let view = TileflowMapView(source: TileflowMapSource(
+      map: "fixture", manifestURL: URL(string: "https://maps.example/manifest.json")!))
+    view.engineKind = .native
+    defer { view.destroy() }
+    try await view.addSource(TileflowGeoJSONSource(id: "places", data: .empty))
+    var layer = TileflowCircleLayer(id: "points", source: "places")
+    layer.circleRadius = 6
+    try await view.addLayer(layer)
+
+    try await view.updateLayer(properties: [
+      "id": "points", "type": "circle", "source": "places", "paint": ["circle-radius": 12],
+    ])
+    layer.circleRadius = -1
+    do {
+      try await view.updateLayer(layer)
+      XCTFail("Invalid circle radius was kept for the next renderer")
+    } catch let error as TileflowMapError {
+      XCTAssertEqual(error, .invalidRequest)
+    }
+    XCTAssertEqual(view.runtimeStyle.layers.first?.json["paint"]?["circle-radius"]?.number, 12)
+  }
+
   func testTheViewKeepsLayersInOrderAndRefusesUnknownNames() async throws {
     let view = TileflowMapView(
       source: TileflowMapSource(map: "fixture", manifestURL: URL(string: "https://maps.example/manifest.json")!))

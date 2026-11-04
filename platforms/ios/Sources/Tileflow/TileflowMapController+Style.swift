@@ -61,6 +61,11 @@ extension TileflowMapController {
     try await attached().updateLayer(layer)
   }
 
+  /// Replaces an application layer with style-spec JSON.
+  public func updateLayer(properties: [String: Any]) async throws {
+    try await attached().updateLayer(properties: properties)
+  }
+
   /// See ``TileflowMapView/moveLayer(_:position:)``.
   public func moveLayer(_ id: String, position: TileflowLayerPosition) async throws {
     try await attached().moveLayer(id, position: position)

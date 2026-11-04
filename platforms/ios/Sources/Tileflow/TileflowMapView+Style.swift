@@ -263,6 +263,11 @@ extension TileflowMapView {
   public func addLayer(properties: [String: Any], position: TileflowLayerPosition = .default)
     async throws
   {
+    let layer = try Self.styleLayer(properties)
+    try await addLayer(id: layer.id, json: layer.json, slot: layer.slot, position: position)
+  }
+
+  private static func styleLayer(_ properties: [String: Any]) throws -> RuntimeStyle.Layer {
     var properties = properties
     guard JSONSerialization.isValidJSONObject(properties),
       let id = properties["id"] as? String, let type = properties["type"] as? String,
@@ -279,8 +284,7 @@ extension TileflowMapView {
       }
       slot = parsed
     }
-    try await addLayer(
-      id: id, json: JSONValue(foundation: properties), slot: slot, position: position)
+    return RuntimeStyle.Layer(id: id, json: JSONValue(foundation: properties), slot: slot)
   }
 
   private func addLayer(
@@ -309,18 +313,25 @@ extension TileflowMapView {
 
   /// Replaces a layer's definition in place; only the properties that changed reach the map.
   public func updateLayer(_ layer: any TileflowLayer) async throws {
+    try await updateLayer(.init(id: layer.id, json: JSONValue.encoded(layer), slot: layer.slot))
+  }
+
+  /// Replaces the definition of an existing application layer with style-spec JSON.
+  public func updateLayer(properties: [String: Any]) async throws {
+    try await updateLayer(Self.styleLayer(properties))
+  }
+
+  private func updateLayer(_ layer: RuntimeStyle.Layer) async throws {
     guard let index = runtimeStyle.layers.firstIndex(where: { $0.id == layer.id }) else {
       throw TileflowMapError(.invalidRequest, reason: .unknownLayer)
     }
-    let json = try JSONValue.encoded(layer)
-    if let source = json["source"]?.string, !sourceExists(source) {
+    if let source = layer.json["source"]?.string, !sourceExists(source) {
       throw TileflowMapError(.invalidRequest, reason: .unknownSource)
     }
-    let slot = layer.slot
-    try await changeStyle({ $0.layers[index] = .init(id: layer.id, json: json, slot: slot) }) {
-      engine in
-      var payload: [String: JSONValue] = ["layer": json]
-      if let slot { payload["slot"] = .string(slot.rawValue) }
+    if readyEngine == nil { try engineKind.validateQueued(layer) }
+    try await changeStyle({ $0.layers[index] = layer }) { engine in
+      var payload: [String: JSONValue] = ["layer": layer.json]
+      if let slot = layer.slot { payload["slot"] = .string(slot.rawValue) }
       _ = try await engine.call(.updateLayer, payload: .object(payload))
     }
   }

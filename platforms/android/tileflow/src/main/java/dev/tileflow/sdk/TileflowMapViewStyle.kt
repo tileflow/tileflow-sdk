@@ -315,6 +315,11 @@ public suspend fun TileflowMapView.addStyleLayer(
     properties: JSONObject,
     position: TileflowLayerPosition = TileflowLayerPosition.Default,
 ) {
+    val layer = styleLayer(properties)
+    addLayer(layer.id, layer.json, layer.slot, position)
+}
+
+private fun styleLayer(properties: JSONObject): RuntimeStyle.Layer {
     val json = JSONObject(properties.toString())
     val id = json.opt("id") as? String ?: invalid()
     val type = json.opt("type")
@@ -323,7 +328,7 @@ public suspend fun TileflowMapView.addStyleLayer(
     val slot = json.remove("slot")?.let { name ->
         TileflowLayerSlot.entries.firstOrNull { it.wireName == name } ?: invalid()
     }
-    addLayer(id, json, slot, position)
+    return RuntimeStyle.Layer(id, json, slot)
 }
 
 private suspend fun TileflowMapView.addLayer(
@@ -349,15 +354,23 @@ private suspend fun TileflowMapView.addLayer(
 
 /** Replaces a layer's definition in place; only the properties that changed reach the map. */
 public suspend fun TileflowMapView.updateLayer(layer: TileflowLayer) {
+    updateLayer(RuntimeStyle.Layer(layer.id, layer.json(), layer.slot))
+}
+
+/** Replaces the definition of an existing application layer with style-spec JSON. */
+public suspend fun TileflowMapView.updateStyleLayer(properties: JSONObject) {
+    updateLayer(styleLayer(properties))
+}
+
+private suspend fun TileflowMapView.updateLayer(layer: RuntimeStyle.Layer) {
     val index = runtimeStyle.layers.indexOfFirst { it.id == layer.id }
     if (index < 0) invalid(ProtocolContract.ErrorReason.UNKNOWN_LAYER)
-    val json = layer.json()
-    if (json.has("source") && !sourceExists(json.getString("source")))
+    if (layer.json.has("source") && !sourceExists(layer.json.getString("source")))
         invalid(ProtocolContract.ErrorReason.UNKNOWN_SOURCE)
-    val slot = layer.slot
-    changeStyle({ layers[index] = RuntimeStyle.Layer(layer.id, json, slot) }) { engine ->
-        val payload = JSONObject().put("layer", json)
-        slot?.let { payload.put("slot", it.wireName) }
+    if (readyEngine == null) engineKind.validateQueued(layer)
+    changeStyle({ layers[index] = layer }) { engine ->
+        val payload = JSONObject().put("layer", layer.json)
+        layer.slot?.let { payload.put("slot", it.wireName) }
         engine.call(ProtocolContract.Method.UPDATE_LAYER, payload)
     }
 }

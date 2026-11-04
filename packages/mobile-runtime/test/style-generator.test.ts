@@ -4,6 +4,7 @@ import {createRequire} from 'node:module';
 import {dirname, resolve} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
+import {nativePropertyRecords, readNativeStylePins} from '../../../scripts/mobile-native-style.mjs';
 import {
   camel,
   operatorName,
@@ -20,11 +21,30 @@ const maplibre = createRequire(runtime.resolve('maplibre-gl/package.json'));
 const manifest = maplibre.resolve('@maplibre/maplibre-gl-style-spec/package.json');
 const {version} = JSON.parse(await readFile(manifest, 'utf8'));
 const spec = JSON.parse(await readFile(resolve(dirname(manifest), 'dist/latest.json'), 'utf8'));
-const rendered = renderStyle(spec, version);
+const pins = await readNativeStylePins(root);
+const rendered = renderStyle(spec, version, pins);
 
 test('the generated style types are current with the renderer specification', async () => {
   for (const [path, content] of Object.entries(rendered))
     assert.equal(await readFile(resolve(root, path), 'utf8'), content, `Regenerate ${path}.`);
+});
+
+test('native property records distinguish constants, feature expressions and unsupported properties', () => {
+  const {layers} = readSpecification(spec);
+  for (const platform of ['ios', 'android'] as const) {
+    const entries = new Map(
+      nativePropertyRecords(layers, platform, pins[platform]).map(
+        (record) => [record.key, record] as const,
+      ),
+    );
+    assert.equal(entries.get('line/layout/line-cap')?.dataDriven, false);
+    assert.equal(entries.get('circle/paint/circle-radius')?.dataDriven, true);
+    assert.equal(entries.get('circle/paint/circle-radius')?.minimum, 0);
+    assert.equal(entries.get('fill/paint/fill-translate')?.length, 2);
+    assert.equal(entries.has('symbol/layout/text-overlap'), false);
+    assert.ok(entries.has('color-relief/paint/color-relief-color'));
+    if (platform === 'ios') assert.equal(entries.get('symbol/layout/text-field')?.cocoaKey, 'text');
+  }
 });
 
 test('every layer type and property of the specification has a typed member', () => {

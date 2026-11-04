@@ -2,6 +2,7 @@ import {mkdir, readFile, writeFile} from 'node:fs/promises';
 import {createRequire} from 'node:module';
 import {dirname, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
+import {readNativeStylePins} from './mobile-native-style.mjs';
 import {renderStyle} from './mobile-style.mjs';
 
 // Writes the typed runtime style of the Swift and Kotlin SDKs from the MapLibre style specification
@@ -16,7 +17,9 @@ const spec = JSON.parse(
   await readFile(resolve(dirname(specification), 'dist/latest.json'), 'utf8'),
 );
 const stale = [];
-for (const [path, content] of Object.entries(renderStyle(spec, version))) {
+for (const [path, content] of Object.entries(
+  renderStyle(spec, version, await readNativeStylePins(root)),
+)) {
   if (process.argv.includes('--check')) {
     const current = await readFile(resolve(root, path), 'utf8').catch(() => undefined);
     if (current !== content) stale.push(path);

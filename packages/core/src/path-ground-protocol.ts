@@ -1,4 +1,4 @@
-import type {ResolvedTileflowData} from './data';
+import {type ResolvedTileflowData, resolveTileflowData} from './data';
 import type {PathGroundBindings} from './path-ground-geometry';
 
 export const tileflowPathGroundProtocol = 'tileflow-path-ground';
@@ -34,6 +34,14 @@ export function pathGroundSourceConfig(data: ResolvedTileflowData): PathGroundSo
 export function pathGroundProtocolUrl(source: PathGroundSource, tile = false) {
   return `${tileflowPathGroundProtocol}://source/${tile ? '{z}/{x}/{y}.pbf' : 'index.json'}?source=${encodeURIComponent(JSON.stringify(source))}`;
 }
+/** The compiler's derived-path index for one World TileJSON, including its release or map binding. */
+export function tileflowWorldPathGroundUrl(tileJsonUrl: string): string {
+  return pathGroundProtocolUrl({
+    ...pathGroundSourceConfig(resolveTileflowData(undefined)),
+    url: tileJsonUrl,
+  });
+}
+
 export function parsePathGroundRequest(value: string) {
   if (value.length > 16000) throw new Error('Path context URL is too long');
   const url = new URL(value);

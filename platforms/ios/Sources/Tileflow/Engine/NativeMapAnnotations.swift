@@ -120,22 +120,31 @@ final class NativeMapAnnotations {
     project()
   }
 
-  private static func point(
-    _ coordinate: TileflowCoordinate, on map: MLNMapView, near center: Double
-  ) -> CGPoint? {
-    let longitude = coordinate.longitude + 360 * ((center - coordinate.longitude) / 360).rounded()
+  private static func point(_ coordinate: TileflowCoordinate, on map: MLNMapView) -> CGPoint? {
+    // MapLibre selects the nearest world copy after validating the geographic coordinate.
     let result = map.convert(
-      CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: longitude), toPointTo: map)
+      CLLocationCoordinate2D(latitude: coordinate.latitude, longitude: coordinate.longitude),
+      toPointTo: map)
     return result.x.isFinite && result.y.isFinite ? result : nil
   }
 
   private func project() {
     guard !pins.isEmpty || !tracked.isEmpty || lastProjection == nil, let map = engine.mapView
     else { return }
-    let center = map.centerCoordinate.longitude
+    let pitch = map.camera.pitch * .pi / 180
+    // MapLibre also projects ground behind the camera. Its fixed vertical field of view
+    // gives a focal length of 1.5 viewport heights; the ground ends at this screen row.
+    let horizon = pitch > 0
+      ? map.convert(map.centerCoordinate, toPointTo: map).y - 1.5 * map.bounds.height / tan(pitch)
+      : -CGFloat.infinity
+    func visiblePoint(_ coordinate: TileflowCoordinate) -> CGPoint? {
+      guard let point = Self.point(coordinate, on: map), point.y > horizon else { return nil }
+      return point
+    }
+
     for (id, pin) in pins {
       guard let button = buttons[id] else { continue }
-      if let point = Self.point(pin.coordinate, on: map, near: center) {
+      if let point = visiblePoint(pin.coordinate) {
         button.center = point
         button.isHidden = false
       } else {
@@ -143,7 +152,7 @@ final class NativeMapAnnotations {
       }
     }
     guard !tracked.isEmpty || lastProjection == nil else { return }
-    let positions = tracked.map { Self.point($0, on: map, near: center) }
+    let positions = tracked.map(visiblePoint)
     guard positions != lastProjection else { return }
     lastProjection = positions
     engine.onAnnotationFrame?(revision, positions)
@@ -191,9 +200,7 @@ final class NativeMapAnnotations {
         geometry,
         transform: { values in
           guard
-            let p = Self.point(
-              .init(longitude: values[0], latitude: values[1]), on: map,
-              near: map.centerCoordinate.longitude)
+            let p = Self.point(.init(longitude: values[0], latitude: values[1]), on: map)
           else { return nil }
           return [p.x, p.y] + values.dropFirst(2)
         })

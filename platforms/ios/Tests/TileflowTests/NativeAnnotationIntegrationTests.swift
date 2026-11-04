@@ -78,6 +78,61 @@ final class NativeAnnotationIntegrationTests: XCTestCase {
     XCTAssertNil(button())
   }
 
+  func testPinsAndViewsStayOnTheVisibleWorldAcrossTheAntimeridian() async throws {
+    let (view, window, _) = try await mounted()
+    defer {
+      view.destroy()
+      window.isHidden = true
+    }
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+    for longitude in [179.0, -179.0] {
+      let center = TileflowCoordinate(longitude: longitude, latitude: 0)
+      let across = TileflowCoordinate(longitude: -longitude, latitude: 0)
+      try await view.move(to: .init(center: center, zoom: 4))
+      let expected = try await view.project(across)
+      XCTAssertTrue(view.bounds.contains(expected))
+
+      try await view.setContent(
+        annotations: [.init(id: "ferry", coordinate: across, title: "Ferry")])
+      let pin = try XCTUnwrap(
+        engine.container.subviews.first { $0.accessibilityIdentifier == "ferry" })
+      XCTAssertFalse(pin.isHidden)
+      XCTAssertEqual(pin.center.x, expected.x, accuracy: 0.5)
+
+      let label = UIView(frame: CGRect(x: 0, y: 0, width: 12, height: 12))
+      let annotation = TileflowViewAnnotation(coordinate: across, view: label)
+      view.viewAnnotations.add(annotation)
+      try await until { !annotation.isHidden }
+      XCTAssertEqual(label.center.x, expected.x, accuracy: 0.5)
+      annotation.remove()
+    }
+  }
+
+  func testAnnotationsBehindThePitchedCameraAreHidden() async throws {
+    let (view, window, _) = try await mounted()
+    defer {
+      view.destroy()
+      window.isHidden = true
+    }
+    try await view.move(to: .init(center: madrid, zoom: 14, bearing: 0, pitch: 80))
+    let behind = TileflowCoordinate(longitude: madrid.longitude, latitude: madrid.latitude - 5)
+    let far = TileflowViewAnnotation(
+      coordinate: behind, view: UIView(frame: .init(x: 0, y: 0, width: 10, height: 10)))
+    let near = TileflowViewAnnotation(coordinate: madrid, view: UIView(frame: far.view.bounds))
+    view.viewAnnotations.add(far)
+    view.viewAnnotations.add(near)
+    try await until { !near.isHidden }
+    XCTAssertTrue(far.isHidden)
+
+    try await view.setContent(annotations: [.init(id: "bay", coordinate: behind, title: "Bay")])
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+    let pin = try XCTUnwrap(engine.container.subviews.first { $0.accessibilityIdentifier == "bay" })
+    XCTAssertTrue(pin.isHidden)
+
+    try await view.move(to: .init(center: behind))
+    try await until { !pin.isHidden && !far.isHidden }
+  }
+
   func testManagedAnnotationsReceiveHitsDragsAndAccessibilityOnTheNativeMap() async throws {
     let (view, window, events) = try await mounted()
     defer {

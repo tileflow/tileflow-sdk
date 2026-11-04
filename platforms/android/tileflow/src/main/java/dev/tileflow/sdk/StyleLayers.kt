@@ -514,7 +514,7 @@ public class TileflowFillLayer(id: String, public val source: String) : Tileflow
      * overlap accumulation is preserved, then `fill-layer-opacity` composites the result. This
      * property affects only the layer it is set on and cannot be used to composite multiple layers
      * together or control how this layer blends with layers above or below it. From 0 to 1.
-     * Default: `1`.
+     * Default: `1`. The native renderer rejects this property.
      */
     public var fillLayerOpacity: TileflowValue<Double>? = null
 
@@ -685,7 +685,10 @@ public class TileflowLineLayer(id: String, public val source: String) : Tileflow
     /** The zoom level from which the layer hides. */
     public var maxZoom: Double? = null
 
-    /** The display of line endings. Default: `"butt"`. */
+    /**
+     * The display of line endings. Default: `"butt"`. The native renderer rejects expressions that
+     * read feature data for this property.
+     */
     public var lineCap: TileflowValue<TileflowLineCap>? = null
 
     public fun lineCap(value: TileflowLineCap): TileflowLineLayer = apply {
@@ -707,7 +710,10 @@ public class TileflowLineLayer(id: String, public val source: String) : Tileflow
         lineJoin = TileflowValue.expression(expression)
     }
 
-    /** Used to automatically convert miter joins to bevel joins for sharp angles. Default: `2`. */
+    /**
+     * Used to automatically convert miter joins to bevel joins for sharp angles. Default: `2`. The
+     * native renderer rejects expressions that read feature data for this property.
+     */
     public var lineMiterLimit: TileflowValue<Double>? = null
 
     public fun lineMiterLimit(value: Double): TileflowLineLayer = apply {
@@ -720,6 +726,7 @@ public class TileflowLineLayer(id: String, public val source: String) : Tileflow
 
     /**
      * Used to automatically convert round joins to miter joins for shallow angles. Default: `1.05`.
+     * The native renderer rejects expressions that read feature data for this property.
      */
     public var lineRoundLimit: TileflowValue<Double>? = null
 
@@ -782,6 +789,7 @@ public class TileflowLineLayer(id: String, public val source: String) : Tileflow
      * overlap accumulation is preserved, then layer-opacity composites the result. This property
      * affects only the layer it is set on and cannot be used to composite multiple layers together
      * or control how this layer blends with layers above or below it. From 0 to 1. Default: `1`.
+     * The native renderer rejects this property.
      */
     public var lineLayerOpacity: TileflowValue<Double>? = null
 
@@ -937,6 +945,7 @@ public class TileflowLineLayer(id: String, public val source: String) : Tileflow
      * render dashed lines to the expected scale. Zoom-dependent expressions will be evaluated only
      * at integer zoom levels. The only way to create an array value is using `["literal", [...]]`;
      * arrays cannot be read from or derived from feature properties. In line widths. At least 0.
+     * The native renderer rejects expressions that read feature data for this property.
      */
     public var lineDasharray: TileflowValue<List<Double>>? = null
 
@@ -1147,7 +1156,8 @@ public class TileflowSymbolLayer(id: String, public val source: String) : Tilefl
 
     /**
      * Allows for control over whether to show an icon when it overlaps other symbols on the map. If
-     * `icon-overlap` is not set, `icon-allow-overlap` is used instead.
+     * `icon-overlap` is not set, `icon-allow-overlap` is used instead. The native renderer rejects
+     * this property.
      */
     public var iconOverlap: TileflowValue<TileflowIconOverlap>? = null
 
@@ -1188,7 +1198,7 @@ public class TileflowSymbolLayer(id: String, public val source: String) : Tilefl
 
     /**
      * In combination with `symbol-placement`, determines the rotation behavior of icons. Default:
-     * `"auto"`.
+     * `"auto"`. The native renderer rejects expressions that read feature data for this property.
      */
     public var iconRotationAlignment: TileflowValue<TileflowIconRotationAlignment>? = null
 
@@ -1264,7 +1274,8 @@ public class TileflowSymbolLayer(id: String, public val source: String) : Tilefl
 
     /**
      * Size of additional area round the icon bounding box used for detecting symbol collisions. In
-     * pixels. Default: `[2]`.
+     * pixels. Default: `[2]`. The native renderer rejects expressions that read feature data for
+     * this property.
      */
     public var iconPadding: TileflowValue<List<Double>>? = null
 
@@ -1474,7 +1485,8 @@ public class TileflowSymbolLayer(id: String, public val source: String) : Tilefl
      * To increase the chance of placing high-priority labels on the map, you can provide an array
      * of `text-anchor` locations, each paired with an offset value. The renderer will attempt to
      * place the label at each location, in order, before moving on to the next location+offset. Use
-     * `text-justify: auto` to choose justification based on anchor position.
+     * `text-justify: auto` to choose justification based on anchor position. The native renderer
+     * rejects expressions that read feature data for this property.
      */
     public var textVariableAnchorOffset: TileflowValue<TileflowTextAnchorOffsets>? = null
 
@@ -1610,7 +1622,8 @@ public class TileflowSymbolLayer(id: String, public val source: String) : Tilefl
 
     /**
      * Allows for control over whether to show symbol text when it overlaps other symbols on the
-     * map. If `text-overlap` is not set, `text-allow-overlap` is used instead
+     * map. If `text-overlap` is not set, `text-allow-overlap` is used instead The native renderer
+     * rejects this property.
      */
     public var textOverlap: TileflowValue<TileflowTextOverlap>? = null
 
@@ -1652,6 +1665,7 @@ public class TileflowSymbolLayer(id: String, public val source: String) : Tilefl
     /**
      * The height above the anchor, in meters, at which the symbol is placed. Use
      * `symbol-height-anchor` to control what this height is measured from. In meters. Default: `0`.
+     * The native renderer rejects this property.
      */
     public var symbolHeightOffset: TileflowValue<Double>? = null
 
@@ -1663,7 +1677,10 @@ public class TileflowSymbolLayer(id: String, public val source: String) : Tilefl
         symbolHeightOffset = TileflowValue.expression(expression)
     }
 
-    /** Defines what `symbol-height-offset` is measured from. Default: `"ground"`. */
+    /**
+     * Defines what `symbol-height-offset` is measured from. Default: `"ground"`. The native
+     * renderer rejects this property.
+     */
     public var symbolHeightAnchor: TileflowValue<TileflowSymbolHeightAnchor>? = null
 
     public fun symbolHeightAnchor(value: TileflowSymbolHeightAnchor): TileflowSymbolLayer = apply {
@@ -2835,7 +2852,7 @@ public class TileflowRasterLayer(id: String, public val source: String) : Tilefl
     /**
      * The resampling/interpolation method to use for overscaling, also known as texture
      * magnification filter. !Visual comparison of linear resampling versus nearest resampling
-     * Default: `"linear"`.
+     * Default: `"linear"`. The native renderer rejects this property.
      */
     public var resampling: TileflowValue<TileflowResampling>? = null
 
@@ -3080,7 +3097,7 @@ public class TileflowHillshadeLayer(id: String, public val source: String) : Til
     /**
      * The resampling/interpolation method to use for overscaling, also known as texture
      * magnification filter. !Visual comparison of linear resampling versus nearest resampling
-     * Default: `"linear"`.
+     * Default: `"linear"`. The native renderer rejects this property.
      */
     public var resampling: TileflowValue<TileflowResampling>? = null
 
@@ -3186,7 +3203,7 @@ public class TileflowColorReliefLayer(id: String, public val source: String) : T
     /**
      * The resampling/interpolation method to use for overscaling, also known as texture
      * magnification filter. !Visual comparison of linear resampling versus nearest resampling
-     * Default: `"linear"`.
+     * Default: `"linear"`. The native renderer rejects this property.
      */
     public var resampling: TileflowValue<TileflowResampling>? = null
 

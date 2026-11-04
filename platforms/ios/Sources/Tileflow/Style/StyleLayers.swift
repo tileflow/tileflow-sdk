@@ -468,7 +468,7 @@ public struct TileflowFillLayer: TileflowLayer, Equatable {
   /// overlap accumulation is preserved, then `fill-layer-opacity` composites the result. This
   /// property affects only the layer it is set on and cannot be used to composite multiple layers
   /// together or control how this layer blends with layers above or below it. From 0 to 1. Default:
-  /// `1`.
+  /// `1`. The native renderer rejects this property.
   public var fillLayerOpacity: TileflowValue<Double>?
   /// How `fillLayerOpacity` changes when it is set.
   public var fillLayerOpacityTransition: TileflowTransition?
@@ -545,13 +545,16 @@ public struct TileflowLineLayer: TileflowLayer, Equatable {
   public var maxZoom: Double?
   /// Where the layer lies among the map’s own layers; nil lies above them all.
   public var slot: TileflowLayerSlot?
-  /// The display of line endings. Default: `"butt"`.
+  /// The display of line endings. Default: `"butt"`. The native renderer rejects expressions that
+  /// read feature data for this property.
   public var lineCap: TileflowValue<TileflowLineCap>?
   /// The display of lines when joining. Default: `"miter"`.
   public var lineJoin: TileflowValue<TileflowLineJoin>?
-  /// Used to automatically convert miter joins to bevel joins for sharp angles. Default: `2`.
+  /// Used to automatically convert miter joins to bevel joins for sharp angles. Default: `2`. The
+  /// native renderer rejects expressions that read feature data for this property.
   public var lineMiterLimit: TileflowValue<Double>?
   /// Used to automatically convert round joins to miter joins for shallow angles. Default: `1.05`.
+  /// The native renderer rejects expressions that read feature data for this property.
   public var lineRoundLimit: TileflowValue<Double>?
   /// Sorts features in ascending order based on this value. Features with a higher sort key will
   /// appear above features with a lower sort key.
@@ -568,7 +571,8 @@ public struct TileflowLineLayer: TileflowLayer, Equatable {
   /// given opacity. When both `line-opacity` and `line-layer-opacity` are set, the per-feature,
   /// overlap accumulation is preserved, then layer-opacity composites the result. This property
   /// affects only the layer it is set on and cannot be used to composite multiple layers together
-  /// or control how this layer blends with layers above or below it. From 0 to 1. Default: `1`.
+  /// or control how this layer blends with layers above or below it. From 0 to 1. Default: `1`. The
+  /// native renderer rejects this property.
   public var lineLayerOpacity: TileflowValue<Double>?
   /// How `lineLayerOpacity` changes when it is set.
   public var lineLayerOpacityTransition: TileflowTransition?
@@ -608,7 +612,8 @@ public struct TileflowLineLayer: TileflowLayer, Equatable {
   /// length by the current line width. GeoJSON sources with `lineMetrics: true` specified won't
   /// render dashed lines to the expected scale. Zoom-dependent expressions will be evaluated only
   /// at integer zoom levels. The only way to create an array value is using `["literal", [...]]`;
-  /// arrays cannot be read from or derived from feature properties. In line widths. At least 0.
+  /// arrays cannot be read from or derived from feature properties. In line widths. At least 0. The
+  /// native renderer rejects expressions that read feature data for this property.
   public var lineDasharray: TileflowValue<[Double]>?
   /// How `lineDasharray` changes when it is set.
   public var lineDasharrayTransition: TileflowTransition?
@@ -706,7 +711,8 @@ public struct TileflowSymbolLayer: TileflowLayer, Equatable {
   /// Default: `false`.
   public var iconAllowOverlap: TileflowValue<Bool>?
   /// Allows for control over whether to show an icon when it overlaps other symbols on the map. If
-  /// `icon-overlap` is not set, `icon-allow-overlap` is used instead.
+  /// `icon-overlap` is not set, `icon-allow-overlap` is used instead. The native renderer rejects
+  /// this property.
   public var iconOverlap: TileflowValue<TileflowIconOverlap>?
   /// If true, other symbols can be visible even if they collide with the icon. Default: `false`.
   public var iconIgnorePlacement: TileflowValue<Bool>?
@@ -714,7 +720,7 @@ public struct TileflowSymbolLayer: TileflowLayer, Equatable {
   /// symbols and the text does not. Default: `false`.
   public var iconOptional: TileflowValue<Bool>?
   /// In combination with `symbol-placement`, determines the rotation behavior of icons. Default:
-  /// `"auto"`.
+  /// `"auto"`. The native renderer rejects expressions that read feature data for this property.
   public var iconRotationAlignment: TileflowValue<TileflowIconRotationAlignment>?
   /// Scales the original size of the icon by the provided factor. The new pixel size of the image
   /// will be the original pixel size multiplied by `icon-size`. 1 is the original size; 3 triples
@@ -730,7 +736,8 @@ public struct TileflowSymbolLayer: TileflowLayer, Equatable {
   /// Rotates the icon clockwise. In degrees. Default: `0`.
   public var iconRotate: TileflowValue<Double>?
   /// Size of additional area round the icon bounding box used for detecting symbol collisions. In
-  /// pixels. Default: `[2]`.
+  /// pixels. Default: `[2]`. The native renderer rejects expressions that read feature data for
+  /// this property.
   public var iconPadding: TileflowValue<[Double]>?
   /// If true, the icon may be flipped to prevent it from being rendered upside-down. Default:
   /// `false`.
@@ -780,7 +787,8 @@ public struct TileflowSymbolLayer: TileflowLayer, Equatable {
   /// To increase the chance of placing high-priority labels on the map, you can provide an array of
   /// `text-anchor` locations, each paired with an offset value. The renderer will attempt to place
   /// the label at each location, in order, before moving on to the next location+offset. Use
-  /// `text-justify: auto` to choose justification based on anchor position.
+  /// `text-justify: auto` to choose justification based on anchor position. The native renderer
+  /// rejects expressions that read feature data for this property.
   public var textVariableAnchorOffset: TileflowValue<TileflowTextAnchorOffsets>?
   /// Part of the text placed closest to the anchor. Default: `"center"`.
   public var textAnchor: TileflowValue<TileflowTextAnchor>?
@@ -812,7 +820,8 @@ public struct TileflowSymbolLayer: TileflowLayer, Equatable {
   /// Default: `false`.
   public var textAllowOverlap: TileflowValue<Bool>?
   /// Allows for control over whether to show symbol text when it overlaps other symbols on the map.
-  /// If `text-overlap` is not set, `text-allow-overlap` is used instead
+  /// If `text-overlap` is not set, `text-allow-overlap` is used instead The native renderer rejects
+  /// this property.
   public var textOverlap: TileflowValue<TileflowTextOverlap>?
   /// If true, other symbols can be visible even if they collide with the text. Default: `false`.
   public var textIgnorePlacement: TileflowValue<Bool>?
@@ -821,8 +830,10 @@ public struct TileflowSymbolLayer: TileflowLayer, Equatable {
   public var textOptional: TileflowValue<Bool>?
   /// The height above the anchor, in meters, at which the symbol is placed. Use
   /// `symbol-height-anchor` to control what this height is measured from. In meters. Default: `0`.
+  /// The native renderer rejects this property.
   public var symbolHeightOffset: TileflowValue<Double>?
-  /// Defines what `symbol-height-offset` is measured from. Default: `"ground"`.
+  /// Defines what `symbol-height-offset` is measured from. Default: `"ground"`. The native renderer
+  /// rejects this property.
   public var symbolHeightAnchor: TileflowValue<TileflowSymbolHeightAnchor>?
   /// Whether this layer is displayed. Default: `"visible"`.
   public var visibility: TileflowValue<TileflowVisibility>?
@@ -1276,7 +1287,7 @@ public struct TileflowRasterLayer: TileflowLayer, Equatable {
   public var rasterContrastTransition: TileflowTransition?
   /// The resampling/interpolation method to use for overscaling, also known as texture
   /// magnification filter. !Visual comparison of linear resampling versus nearest resampling
-  /// Default: `"linear"`.
+  /// Default: `"linear"`. The native renderer rejects this property.
   public var resampling: TileflowValue<TileflowResampling>?
   /// The resampling/interpolation method to use for overscaling, also known as texture
   /// magnification filter. It is advised to use the generic `resampling` paint property instead.
@@ -1369,7 +1380,7 @@ public struct TileflowHillshadeLayer: TileflowLayer, Equatable {
   public var hillshadeMethod: TileflowValue<TileflowHillshadeMethod>?
   /// The resampling/interpolation method to use for overscaling, also known as texture
   /// magnification filter. !Visual comparison of linear resampling versus nearest resampling
-  /// Default: `"linear"`.
+  /// Default: `"linear"`. The native renderer rejects this property.
   public var resampling: TileflowValue<TileflowResampling>?
 
   public init(id: String, source: String) {
@@ -1424,7 +1435,7 @@ public struct TileflowColorReliefLayer: TileflowLayer, Equatable {
   public var colorReliefColor: TileflowValue<TileflowColor>?
   /// The resampling/interpolation method to use for overscaling, also known as texture
   /// magnification filter. !Visual comparison of linear resampling versus nearest resampling
-  /// Default: `"linear"`.
+  /// Default: `"linear"`. The native renderer rejects this property.
   public var resampling: TileflowValue<TileflowResampling>?
 
   public init(id: String, source: String) {

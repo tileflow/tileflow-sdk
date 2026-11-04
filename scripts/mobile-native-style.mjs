@@ -71,6 +71,18 @@ function available(since, pin) {
   return true;
 }
 
+export function nativePropertyNote(spec, platform, pin) {
+  const support = spec['sdk-support'];
+  if (!available(support?.['basic functionality']?.[platform], pin))
+    return ' The native renderer rejects this property.';
+  if (
+    spec.expression?.parameters?.includes('feature') &&
+    !available(support?.['data-driven styling']?.[platform], pin)
+  )
+    return ' The native renderer rejects expressions that read feature data for this property.';
+  return '';
+}
+
 export function nativePropertyRecords(layers, platform, pin) {
   const records = [];
   for (const layer of layers) {

@@ -3,7 +3,7 @@
 // layer kinds with every layout and paint property, the enumerations those properties take, and a
 // factory for each expression operator. scripts/mobile-style-generate.mjs writes or checks the
 // outputs; this module stays free of file access so its rules can be tested directly.
-import {nativePropertyTable} from './mobile-native-style.mjs';
+import {nativePropertyNote, nativePropertyTable} from './mobile-native-style.mjs';
 import {documentation} from './mobile-protocol.mjs';
 
 export const banner = (version) =>
@@ -189,7 +189,7 @@ const swiftCase = (value) => {
   return ['default', 'case', 'in', 'is', 'as', 'self'].includes(name) ? `\`${name}\`` : name;
 };
 
-function swiftLayers(model, version) {
+function swiftLayers(model, version, pin) {
   const enums = model.enums.map(
     (entry) => `${swiftDoc(`Values of \`${entry.property}\`.`, '')}
 public enum ${entry.name}: String, Sendable, Equatable, CaseIterable {
@@ -224,7 +224,7 @@ extension ${entry.name}: StyleWire {}`,
     const properties = layer.properties.flatMap((entry) => {
       const type = entry.expression ? `TileflowValue<${entry.type.swift}>` : entry.type.swift;
       return [
-        `${swiftDoc(entry.documentation, '  ')}\n  public var ${entry.identifier}: ${type}?`,
+        `${swiftDoc(entry.documentation + nativePropertyNote(entry.property, 'ios', pin), '  ')}\n  public var ${entry.identifier}: ${type}?`,
         ...(entry.transition
           ? [
               `${swiftDoc(`How \`${entry.identifier}\` changes when it is set.`, '  ')}\n  public var ${entry.identifier}Transition: TileflowTransition?`,
@@ -287,7 +287,7 @@ ${[
 `;
 }
 
-function kotlinLayers(model, version) {
+function kotlinLayers(model, version, pin) {
   const enums = model.enums.map(
     (entry) => `${kotlinDoc(`Values of \`${entry.property}\`.`, '')}
 public enum class ${entry.name}(override val value: String) : TileflowStyleEnum {
@@ -322,7 +322,7 @@ ${entry.values
             `    public fun ${entry.identifier}(value: ${entry.type.kotlin}): ${self} = apply {\n        ${entry.identifier} = value\n    }`,
           ];
       return [
-        `${kotlinDoc(entry.documentation, '    ')}\n    public var ${entry.identifier}: ${type}? = null\n\n${setters.join('\n\n')}`,
+        `${kotlinDoc(entry.documentation + nativePropertyNote(entry.property, 'android', pin), '    ')}\n    public var ${entry.identifier}: ${type}? = null\n\n${setters.join('\n\n')}`,
         ...(entry.transition
           ? [
               `${kotlinDoc(`How [${entry.identifier}] changes when it is set.`, '    ')}\n    public var ${entry.identifier}Transition: TileflowTransition? = null\n\n    public fun ${entry.identifier}Transition(transition: TileflowTransition): ${self} = apply {\n        ${entry.identifier}Transition = transition\n    }`,
@@ -508,9 +508,9 @@ export function renderStyle(spec, version, pins) {
       pins.android,
       banner(version),
     ),
-    [outputs.swiftLayers]: swiftLayers(model, version),
+    [outputs.swiftLayers]: swiftLayers(model, version, pins.ios),
     [outputs.swiftExpressions]: swiftExpressions(model, version),
-    [outputs.kotlinLayers]: kotlinLayers(model, version),
+    [outputs.kotlinLayers]: kotlinLayers(model, version, pins.android),
     [outputs.kotlinExpressions]: kotlinExpressions(model, version),
   };
 }

@@ -217,6 +217,54 @@ test('rejects globe and retains the existing style-spec pitch range', () => {
   hasIssue({...background(), pitch: 86}, 'NATIVE_UNSUPPORTED_STYLE', '/pitch');
 });
 
+test('native feature state colors features with intrinsic IDs only in compatible paint properties', () => {
+  const score = ['feature-state', 'value'];
+  const color = ['case', ['==', score, 1], '#ff0000', '#0000ff'];
+  const source = labels().sources.world;
+  const fill = {id: 'districts', type: 'fill', source: 'world', 'source-layer': 'boundary_area'};
+  const style = (layer: object, data: object = source) => ({
+    version: 8,
+    sources: {world: data},
+    layers: [layer],
+  });
+
+  const regions = {...fill, paint: {'fill-color': color}};
+  assert.deepEqual(validateTileflowNativeStyle(style(regions)), []);
+  assert.deepEqual(
+    validateTileflowNativeStyle(
+      style(
+        {id: 'points', type: 'circle', source: 'world', paint: {'circle-color': color}},
+        {type: 'geojson', data: {type: 'FeatureCollection', features: []}},
+      ),
+    ),
+    [],
+  );
+
+  hasIssue(
+    style({...fill, filter: ['==', score, 1]}),
+    'NATIVE_UNSUPPORTED_STYLE',
+    '/layers/0/filter/1/0',
+  );
+  hasIssue(
+    style({id: 'skyline', type: 'background', paint: {'background-color': color}}),
+    'NATIVE_UNSUPPORTED_STYLE',
+    '/layers/0/paint/background-color/1/1/0',
+  );
+  hasIssue(
+    style(regions, {...source, promoteId: 'ref'}),
+    'NATIVE_UNSUPPORTED_STYLE',
+    '/layers/0/paint/fill-color/1/1/0',
+  );
+  hasIssue(
+    style(
+      {id: 'points', type: 'circle', source: 'world', paint: {'circle-color': color}},
+      {type: 'geojson', generateId: true, data: {type: 'FeatureCollection', features: []}},
+    ),
+    'NATIVE_UNSUPPORTED_STYLE',
+    '/layers/0/paint/circle-color/1/1/0',
+  );
+});
+
 test('checks nested expression support without interpreting literal data or match labels', () => {
   const style = labels();
   style.layers[0]!.layout['text-field'] = ['coalesce', ['feature-state', 'name'], 'fallback'];

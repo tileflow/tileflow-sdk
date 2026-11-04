@@ -132,6 +132,7 @@ type JsonRecord = Record<string, unknown>;
 type SpecProperty = {
   type?: string;
   transition?: boolean;
+  expression?: {parameters?: string[]};
   values?: Record<string, SpecProperty>;
   'sdk-support'?: Record<string, Record<string, unknown>>;
 };
@@ -418,19 +419,25 @@ function validateNativeStyle(
         return;
       }
       properties(layer, spec.layer, path, add);
+      const source = typeof layer.source === 'string' ? sources[layer.source] : undefined;
+      const intrinsicIds =
+        record(source) &&
+        (source.type === 'geojson' || source.type === 'vector') &&
+        source.promoteId === undefined &&
+        source.generateId !== true;
       for (const group of ['layout', 'paint']) {
         const values = layer[group];
         if (!record(values)) continue;
-        properties(
-          values,
-          spec[`${group}_${layer.type}`],
-          `${path}/${group}`,
-          add,
-          'NATIVE_UNSUPPORTED_STYLE',
-          true,
-        );
+        const definitions = spec[`${group}_${layer.type}`];
+        properties(values, definitions, `${path}/${group}`, add, 'NATIVE_UNSUPPORTED_STYLE', true);
         for (const key of Object.keys(values).sort()) {
-          expressions(values[key], pointer(`${path}/${group}`, key), add);
+          const definition = definitions?.[key];
+          const featureState =
+            group === 'paint' &&
+            intrinsicIds &&
+            definition?.expression?.parameters?.includes('feature-state') === true &&
+            supportsBoth(definition['sdk-support']?.['data-driven styling'] ?? {});
+          expressions(values[key], pointer(`${path}/${group}`, key), add, featureState);
         }
       }
       expressions(layer.filter, `${path}/filter`, add);
@@ -512,13 +519,16 @@ function supportsBoth(support: Record<string, unknown>): boolean {
   return supportsNativeVersions(support, tileflowNativeProfile);
 }
 
-function expressions(value: unknown, path: string, add: AddDiagnostic): void {
+function expressions(value: unknown, path: string, add: AddDiagnostic, featureState = false): void {
   if (!Array.isArray(value) || !isExpression(value)) return;
   const operator = value[0] as string;
   const support = Object.hasOwn(nativeSupportAdditions, operator)
     ? nativeSupportAdditions[operator]
     : expressionDefinitions?.[operator]?.['sdk-support']?.['basic functionality'];
-  if (!support || !supportsBoth(support)) add('NATIVE_UNSUPPORTED_STYLE', `${path}/0`);
+  // The pinned native renderers draw per-feature paint from intrinsic IDs. Other contexts
+  // retain the specification's exclusion, including filters, layout and source aggregation.
+  const supported = operator === 'feature-state' ? featureState : support && supportsBoth(support);
+  if (!supported) add('NATIVE_UNSUPPORTED_STYLE', `${path}/0`);
   if (operator === 'literal') return;
   value.forEach((child, index) => {
     if (index === 0) return;
@@ -526,8 +536,8 @@ function expressions(value: unknown, path: string, add: AddDiagnostic): void {
     if (operator.startsWith('interpolate') && index === 1) return;
     if (record(child)) {
       for (const key of Object.keys(child).sort())
-        expressions(child[key], pointer(`${path}/${index}`, key), add);
-    } else expressions(child, `${path}/${index}`, add);
+        expressions(child[key], pointer(`${path}/${index}`, key), add, featureState);
+    } else expressions(child, `${path}/${index}`, add, featureState);
   });
 }
 

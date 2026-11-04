@@ -147,10 +147,10 @@ Theme and `timeOfDay` changes animate over 450 ms, respecting reduced motion. We
 add `familyUrl`, a bounded `tileflow-style-family` v1 document sharing structure and parameters;
 flat `styleUrl` exports remain. `createTileflowStyleFamily` (`@tileflow/core/build`) factors styles;
 `parseTileflowStyleFamily` and `materializeTileflowStyleFamily` (`@tileflow/core/runtime`) validate
-and expand them. Controllers load each family once. Compatible appearances preserve sources,
+and expand them. Controllers cache families. Compatible appearances preserve sources,
 application layers and 3D palettes; structural variants swap styles. Feature-dependent branches
 prepare once; discrete values and RGBA icons switch at the dominant theme without relayout.
-Parameter columns are not semantic tokens.
+Fades use premultiplied OKLab. Parameter columns are not semantic tokens.
 
 `controller.setColors({'surface.water': '#008800'})` overrides named tokens; `{}` restores authored
 colours. Fixed colours and application layers remain. Web builds retain token bindings; direct

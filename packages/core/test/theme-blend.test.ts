@@ -4,6 +4,7 @@ import test from 'node:test';
 import {createStyle, defineTheme} from '../src/index';
 import {
   fillTileflowThemeBlendTemplate,
+  mixTileflowColours,
   planTileflowThemeBlend,
   TileflowThemeBlendError,
 } from '../src/theme-blend';
@@ -55,6 +56,32 @@ test('split branch filters retain let bindings, including nested shadowing', () 
 });
 const paintOf = (entry: Record<string, unknown> | undefined) =>
   (entry?.paint ?? {}) as Record<string, unknown>;
+
+test('transparent theme colours fade without mixing their invisible RGB into the visible colour', () => {
+  for (const transparent of ['rgba(0, 0, 0, 0)', '#fff0', 'rgba(255, 0, 0, 0)']) {
+    const plan = planTileflowThemeBlend([
+      style([layer('crop', 'fill', {'fill-color': transparent})]),
+      style([layer('crop', 'fill', {'fill-color': '#C9F2D0'})]),
+    ]);
+    assert.equal(paintOf(plan.styleAt(0).layers[0])['fill-color'], transparent);
+    assert.equal(paintOf(plan.styleAt(1).layers[0])['fill-color'], '#C9F2D0');
+    for (const t of [0.1, 0.25, 0.5, 0.75, 0.9]) {
+      const expected = `rgba(201, 242, 208, ${t})`;
+      assert.equal(mixTileflowColours(transparent, '#C9F2D0', t), expected);
+      assert.equal(mixTileflowColours('#C9F2D0', transparent, 1 - t), expected);
+      assert.equal(paintOf(plan.styleAt(t).layers[0])['fill-color'], expected);
+    }
+  }
+});
+
+test('partly transparent colours contribute in proportion to their alpha', () => {
+  const opaque = mixTileflowColours('#ff0000', '#0000ff', 2 / 3)!;
+  assert.equal(
+    mixTileflowColours('rgba(255, 0, 0, 0.25)', 'rgba(0, 0, 255, 0.5)', 0.5),
+    opaque.replace(', 1)', ', 0.375)'),
+  );
+  assert.equal(mixTileflowColours('#f000', '#00f0', 0.5), 'rgba(0, 0, 0, 0)');
+});
 
 test('mixes plain colours in OKLab and numbers linearly between neighbouring themes', () => {
   const plan = planTileflowThemeBlend([

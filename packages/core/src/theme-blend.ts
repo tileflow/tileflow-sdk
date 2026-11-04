@@ -387,12 +387,19 @@ export function fillTileflowThemeBlendTemplate(template: unknown, position: numb
   return fillTemplate(template, position);
 }
 
-/** Two CSS colours mixed in OKLab, `t` of the way from the first; undefined unless both parse. */
+/** CSS colours mixed in premultiplied OKLab; undefined unless both parse. */
 export function mixTileflowColours(from: string, to: string, t: number): string | undefined {
   const a = oklab(from);
   const b = oklab(to);
   if (!a || !b) return undefined;
-  return colourFromOklab(a.map((value, channel) => value + (b[channel]! - value) * t));
+  const alpha = a[3]! + (b[3]! - a[3]!) * t;
+  if (alpha <= 0) return 'rgba(0, 0, 0, 0)';
+  // Invisible RGB must not tint a fade (for example transparent black to green landcover).
+  const channels = a.slice(0, 3).map((value, channel) => {
+    const from = value * a[3]!;
+    return (from + (b[channel]! * b[3]! - from) * t) / alpha;
+  });
+  return colourFromOklab([...channels, alpha]);
 }
 
 /**
@@ -454,10 +461,7 @@ function mixLeaf(values: readonly (number | string)[], position: number): number
   if (t <= 0 || from === to) return from;
   if (t >= 1) return to;
   if (typeof from === 'number' && typeof to === 'number') return from + (to - from) * t;
-  const a = oklab(String(from));
-  const b = oklab(String(to));
-  if (!a || !b) return t < 0.5 ? from : to;
-  return colourFromOklab(a.map((value, channel) => value + (b[channel]! - value) * t));
+  return mixTileflowColours(String(from), String(to), t) ?? (t < 0.5 ? from : to);
 }
 
 function clampPosition(position: number, themes: number): number {

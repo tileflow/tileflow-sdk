@@ -47,7 +47,10 @@ internal class SceneState {
         val stateName: String?,
         val images: List<TileflowMapImage>?,
     ) {
-        var accepted = false
+        enum class Status { SENDING, QUEUED, ACCEPTED }
+
+        val destination = command.method to stateName
+        var status = Status.SENDING
     }
 
     private val edits = mutableListOf<Edit>()
@@ -59,6 +62,12 @@ internal class SceneState {
         images: List<TileflowMapImage>? = null,
     ): Edit = Edit(command, stateName, images).also(edits::add)
 
+    /** Coalesce requests made before a renderer exists, keeping its last confirmed value as fallback. */
+    fun queue(edit: Edit) {
+        edits.removeAll { it.status == Edit.Status.QUEUED && it.destination == edit.destination }
+        edit.status = Edit.Status.QUEUED
+    }
+
     fun finish(edit: Edit, accepted: Boolean) {
         val index = edits.indexOf(edit)
         if (index < 0) return
@@ -66,10 +75,10 @@ internal class SceneState {
             edits.removeAt(index)
             return
         }
-        edit.accepted = true
+        edit.status = Edit.Status.ACCEPTED
         // A newer acceptance replaces only earlier requests for this property or named state.
         edits.subList(0, index).removeAll {
-            it.command.method == edit.command.method && it.stateName == edit.stateName
+            it.destination == edit.destination
         }
     }
 
@@ -78,11 +87,39 @@ internal class SceneState {
         get() = edits.lastOrNull { it.images != null }?.images.orEmpty()
 
     val replay: List<Edit>
-        get() = replayOrder.flatMap { method ->
-            edits.filter { it.accepted && it.command.method == method }
+        get() {
+            val latest = edits.asReversed().filter { it.status != Edit.Status.SENDING }
+                .distinctBy { it.destination }.asReversed()
+            return replayOrder.flatMap { method -> latest.filter { it.command.method == method } }
         }
 
-    fun retains(edit: Edit): Boolean = edit in edits
+    suspend fun restore(
+        imagesChanged: (List<TileflowMapImage>) -> Unit = {},
+        send: suspend (SceneCommand) -> Boolean,
+    ) {
+        var refusal: TileflowMapException? = null
+        for (selected in replay) {
+            val fallback = if (selected.status == Edit.Status.QUEUED) edits.lastOrNull {
+                it.status == Edit.Status.ACCEPTED && it.destination == selected.destination
+            } else null
+            for (edit in listOfNotNull(selected, fallback)) {
+                if (edit !in edits) break
+                val queuedImages = edit.status == Edit.Status.QUEUED && edit.images != null
+                try {
+                    val applied = send(edit.command)
+                    if (edit.status == Edit.Status.QUEUED) finish(edit, applied)
+                    break
+                } catch (error: TileflowMapException) {
+                    if (error.code != TileflowErrorCode.INVALID_REQUEST) throw error
+                    if (refusal == null) refusal = error
+                    if (edit.status == Edit.Status.QUEUED) finish(edit, accepted = false)
+                } finally {
+                    if (queuedImages) imagesChanged(editableImages)
+                }
+            }
+        }
+        refusal?.let { throw it }
+    }
 
     private companion object {
         val replayOrder = listOf(
@@ -163,9 +200,14 @@ private suspend fun TileflowMapView.sendScene(
     currentCoroutineContext().ensureActive()
     val edit = scene.begin(command, stateName, images)
     if (images != null) this.images = images
+    val engine = readyEngine
+    if (engine == null) {
+        scene.queue(edit)
+        return
+    }
     var accepted = false
     try {
-        val applied = readyEngine?.send(command, replaying = false) ?: true
+        val applied = engine.send(command, replaying = false)
         currentCoroutineContext().ensureActive()
         accepted = applied
     } finally {
@@ -180,10 +222,10 @@ private suspend fun MapEngine.send(command: SceneCommand, replaying: Boolean): B
     return (result as? JSONObject)?.optString("status") != "superseded"
 }
 
-/** Gives a new renderer the accepted scene, at once. */
+/** Restores accepted values and checks requests queued before the renderer existed. */
 internal suspend fun TileflowMapView.replayScene(engine: MapEngine) {
-    for (edit in scene.replay) {
-        if (scene.retains(edit)) engine.send(edit.command, replaying = true)
+    scene.restore(imagesChanged = { images = it }) { command ->
+        engine.send(command, replaying = true)
     }
 }
 

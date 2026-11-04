@@ -310,7 +310,10 @@ class SceneTest {
     }
 
     /** An application-facing map whose renderer acknowledgements can be delivered out of order. */
-    private class SceneReplyEngine(activity: Activity) : MapEngine {
+    private class SceneReplyEngine(
+        activity: Activity,
+        private val respond: ((ProtocolContract.Method, Any) -> Any)? = null,
+    ) : MapEngine {
         val replies = Channel<CompletableDeferred<Any>>(Channel.UNLIMITED)
         override val view = android.view.View(activity)
         override val data = DataChannel()
@@ -323,14 +326,61 @@ class SceneTest {
             payload: Any,
             references: List<DataChannel.Reference>,
         ): Any {
-            val reply = CompletableDeferred<Any>()
-            replies.send(reply)
-            return reply.await()
+            try {
+                respond?.let { return it(method, payload) }
+                val reply = CompletableDeferred<Any>()
+                replies.send(reply)
+                return reply.await()
+            } finally {
+                data.release(references)
+            }
         }
 
         fun install(map: TileflowMapView) {
             org.robolectric.util.ReflectionHelpers.setField(map, "engine", this)
             org.robolectric.util.ReflectionHelpers.setField(map, "initialized", true)
+        }
+    }
+
+    @Test
+    fun aRefusedQueuedMarkerRestoresItsConfirmedPredecessorAndReplaysOtherProperties(): Unit = runBlocking {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val map = TileflowMapView(activity)
+        fun marker(image: String) = TileflowDepthMarker(
+            "place", TileflowCoordinate(0.0, 0.0), image, 1.0, 1.0,
+        )
+        try {
+            SceneReplyEngine(activity) { _, _ -> JSONObject.NULL }.install(map)
+            map.setImages(listOf(TileflowMapImage("pin", byteArrayOf(1))))
+            map.setDepthMarkers(listOf(marker("pin")))
+            map.reload()
+
+            map.setDepthMarkers(listOf(marker("absent")))
+            map.setStyleState("traffic", TileflowStyleValue.Bool(true))
+            val drawn = mutableListOf<String>()
+            val replacement = SceneReplyEngine(activity) { method, payload ->
+                val value = payload as JSONObject
+                when (method) {
+                    ProtocolContract.Method.SET_IMAGES -> drawn += "images"
+                    ProtocolContract.Method.SET_DEPTH_MARKERS -> {
+                        val image = value.getJSONArray("markers").getJSONObject(0).getString("image")
+                        if (image != "pin") throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
+                        drawn += image
+                    }
+                    ProtocolContract.Method.SET_STYLE_STATE -> drawn += value.getString("name")
+                    else -> Unit
+                }
+                JSONObject.NULL
+            }
+            replacement.install(map)
+            val error = runCatching { map.replayScene(replacement) }.exceptionOrNull() as TileflowMapException
+            assertEquals(TileflowErrorCode.INVALID_REQUEST, error.code)
+            assertEquals(listOf("images", "pin", "traffic"), drawn)
+            drawn.clear()
+            map.replayScene(replacement)
+            assertEquals(listOf("images", "pin", "traffic"), drawn)
+        } finally {
+            map.destroy()
         }
     }
 

@@ -31,11 +31,21 @@ struct SceneCommand {
 /// images before the markers that show them.
 @MainActor
 final class SceneState {
+  fileprivate enum Destination: Hashable {
+    case property(ProtocolContract.Method)
+    case styleState(String)
+  }
+
   final class Edit {
+    fileprivate enum Status { case sending, queued, accepted }
+
     let command: SceneCommand
     let stateName: String?
     let images: [TileflowMapImage]?
-    fileprivate var accepted = false
+    fileprivate var status = Status.sending
+    fileprivate var destination: Destination {
+      stateName.map(Destination.styleState) ?? .property(command.method)
+    }
 
     init(_ command: SceneCommand, stateName: String?, images: [TileflowMapImage]?) {
       self.command = command
@@ -55,16 +65,22 @@ final class SceneState {
     return edit
   }
 
+  /// Coalesce requests made before a renderer exists, retaining its last confirmed value as fallback.
+  func queue(_ edit: Edit) {
+    edits.removeAll { $0.status == .queued && $0.destination == edit.destination }
+    edit.status = .queued
+  }
+
   func finish(_ edit: Edit, accepted: Bool) {
     guard let index = edits.firstIndex(where: { $0 === edit }) else { return }
     guard accepted else {
       edits.remove(at: index)
       return
     }
-    edit.accepted = true
+    edit.status = .accepted
     // A newer acceptance replaces only earlier requests for this same property or named state.
     for i in (0..<index).reversed()
-    where edits[i].command.method == edit.command.method && edits[i].stateName == edit.stateName {
+    where edits[i].destination == edit.destination {
       edits.remove(at: i)
     }
   }
@@ -76,10 +92,38 @@ final class SceneState {
     let methods: [ProtocolContract.Method] = [
       .setImages, .setDepthMarkers, .setSun, .setEmphasis, .setStyleState, .setBoundaryValues,
     ]
-    return methods.flatMap { method in edits.filter { $0.accepted && $0.command.method == method } }
+    var seen = Set<Destination>()
+    let latest = edits.reversed().filter {
+      $0.status != .sending && seen.insert($0.destination).inserted
+    }.reversed()
+    return methods.flatMap { method in latest.filter { $0.command.method == method } }
   }
 
-  func retains(_ edit: Edit) -> Bool { edits.contains { $0 === edit } }
+  func restore(
+    imagesChanged: ([TileflowMapImage]) -> Void = { _ in },
+    _ send: (SceneCommand) async throws -> Bool
+  ) async throws {
+    var refusal: TileflowMapError?
+    for selected in replay {
+      let fallback =
+        selected.status == .queued
+        ? edits.last { $0.status == .accepted && $0.destination == selected.destination } : nil
+      for edit in [selected, fallback].compactMap({ $0 }) {
+        guard edits.contains(where: { $0 === edit }) else { break }
+        let queuedImages = edit.status == .queued && edit.images != nil
+        defer { if queuedImages { imagesChanged(editableImages) } }
+        do {
+          let applied = try await send(edit.command)
+          if edit.status == .queued { finish(edit, accepted: applied) }
+          break
+        } catch let error as TileflowMapError where error == .invalidRequest {
+          if refusal == nil { refusal = error }
+          if edit.status == .queued { finish(edit, accepted: false) }
+        }
+      }
+    }
+    if let refusal { throw refusal }
+  }
 }
 
 /// Calls that wait for an animation of the current renderer to end.
@@ -431,18 +475,18 @@ extension TileflowMapView {
     try Task.checkCancellation()
     let edit = scene.begin(command, stateName: stateName, images: images)
     if let images { self.images = images }
+    guard let engine = readyEngine else {
+      scene.queue(edit)
+      return
+    }
     var accepted = false
     defer {
       scene.finish(edit, accepted: accepted)
       if images != nil { self.images = scene.editableImages }
     }
-    if let engine = readyEngine {
-      let applied = try await send(command, through: engine, replaying: false)
-      try Task.checkCancellation()
-      accepted = applied
-    } else {
-      accepted = true
-    }
+    let applied = try await send(command, through: engine, replaying: false)
+    try Task.checkCancellation()
+    accepted = applied
   }
 
   private func send(_ command: SceneCommand, through engine: any MapEngine, replaying: Bool)
@@ -453,10 +497,10 @@ extension TileflowMapView {
     return result["status"]?.string != "superseded"
   }
 
-  /// Gives a new renderer the accepted scene, at once.
+  /// Restores accepted values and checks requests queued before the renderer existed.
   func replayScene(through engine: any MapEngine) async throws {
-    for edit in scene.replay where scene.retains(edit) {
-      _ = try await send(edit.command, through: engine, replaying: true)
+    try await scene.restore(imagesChanged: { self.images = $0 }) { command in
+      try await send(command, through: engine, replaying: true)
     }
   }
 }

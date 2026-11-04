@@ -186,6 +186,45 @@ final class SceneTests: XCTestCase {
     XCTAssertTrue(state.replay.last === newer)
   }
 
+  func testQueuedMarkersUseImagesAddedBeforeMountAndRecoverFromARejectedReplacement() async throws {
+    let state = SceneState()
+    let channel = DataChannel()
+    func command(_ method: ProtocolContract.Method, _ value: String) -> SceneCommand {
+      SceneCommand(method, payload: .string(value))
+    }
+    state.queue(state.begin(command(.setDepthMarkers, "pin")))
+    state.queue(state.begin(command(.setImages, "pin")))
+    var image: String?
+    var drawn: [String] = []
+    func draw(_ command: SceneCommand) throws -> Bool {
+      let payload = try command.build(channel, true).0
+      if command.method == .setImages {
+        image = payload.string
+      } else if command.method == .setDepthMarkers, payload.string != image {
+        throw TileflowMapError.invalidRequest
+      }
+      drawn.append(command.method.rawValue + "/" + (payload.string ?? ""))
+      return true
+    }
+    try await state.restore(draw)
+    XCTAssertEqual(drawn, ["setImages/pin", "setDepthMarkers/pin"])
+
+    state.queue(state.begin(command(.setDepthMarkers, "absent")))
+    state.queue(state.begin(command(.setStyleState, "traffic"), stateName: "traffic"))
+    drawn = []
+    do {
+      try await state.restore(draw)
+      XCTFail("The absent marker image should be refused.")
+    } catch let error as TileflowMapError {
+      XCTAssertEqual(error, .invalidRequest)
+    }
+    let recovered = ["setImages/pin", "setDepthMarkers/pin", "setStyleState/traffic"]
+    XCTAssertEqual(drawn, recovered)
+    drawn = []
+    try await state.restore(draw)
+    XCTAssertEqual(drawn, recovered)
+  }
+
   func testPendingImagesCanBeEditedButOnlyAcceptedImagesReplay() throws {
     let state = SceneState()
     let command = SceneCommand(.setImages, payload: .null)

@@ -159,6 +159,22 @@ final class NativeCamera {
     }
   }
 
+  func shotStarted() {
+    stop()
+    emit("cameraMoveStarted", .object(["camera": wire, "reason": .string("api")]))
+  }
+
+  func shotFrame(_ frame: TileflowCamera) {
+    quiet = true
+    jump(to: frame)
+    quiet = false
+    if followsFrames { emit("cameraMoved", .object(["camera": wire, "reason": .string("api")])) }
+  }
+
+  func shotEnded() {
+    emit("cameraMoveEnded", .object(["camera": wire, "reason": .string("api")]))
+  }
+
   /// Runs one movement the view asked for and answers with how it ended and where the camera is.
   /// Cancelling the calling task stops the movement in MapLibre and throws `CancellationError`.
   func move(_ payload: JSONValue) async throws -> JSONValue {

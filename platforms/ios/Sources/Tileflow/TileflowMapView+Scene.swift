@@ -55,8 +55,10 @@ final class AnimationWaiters {
   private var cues: [String: (String) -> Void] = [:]
   /// Ends that arrived before their call learned the animation's identifier.
   private var ended: [String: Bool] = [:]
+  private var earlyCues: [String: [String]] = [:]
 
   func wait(for id: String, onCue: ((String) -> Void)?) async throws -> Bool {
+    for cue in earlyCues.removeValue(forKey: id) ?? [] { onCue?(cue) }
     if let finished = ended.removeValue(forKey: id) { return finished }
     if let onCue { cues[id] = onCue }
     return try await withCheckedThrowingContinuation { waiting[id] = $0 }
@@ -66,7 +68,10 @@ final class AnimationWaiters {
     guard let id = value["animation"]?.string else { return }
     switch event {
     case "shotCue":
-      if let cue = value["cue"]?.string { cues[id]?(cue) }
+      if let cue = value["cue"]?.string {
+        if let handler = cues[id] { handler(cue) }
+        else if waiting[id] == nil, earlyCues.count < 64, (earlyCues[id]?.count ?? 0) < 64 { earlyCues[id, default: []].append(cue) }
+      }
     case "animationEnded":
       let finished = value["finished"]?.bool ?? false
       cues.removeValue(forKey: id)
@@ -81,6 +86,7 @@ final class AnimationWaiters {
 
   /// Stops waiting for one animation, as when its caller is cancelled.
   func abandon(_ id: String, with error: any Error) {
+    earlyCues.removeValue(forKey: id)
     cues.removeValue(forKey: id)
     waiting.removeValue(forKey: id)?.resume(throwing: error)
   }
@@ -91,6 +97,7 @@ final class AnimationWaiters {
     waiting.removeAll()
     cues.removeAll()
     ended.removeAll()
+    earlyCues.removeAll()
     for continuation in pending { continuation.resume(throwing: error) }
   }
 }

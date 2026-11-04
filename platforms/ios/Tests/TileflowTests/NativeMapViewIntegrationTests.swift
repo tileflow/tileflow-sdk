@@ -546,6 +546,77 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     XCTAssertTrue(events.failures.isEmpty)
   }
 
+  func testNativeSceneDrawsProgressAndDepthSymbolsAndPlaysShots() async throws {
+    try await requireNativeFixture()
+    let events = NativeMapEvents()
+    let view = TileflowMapView(source: citySource)
+    view.engineKind = .native
+    let window = mount(view, events: events)
+    defer { view.destroy(); window.isHidden = true }
+    try await events.waitForLoads(1)
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+    let pin = UIGraphicsImageRenderer(size: CGSize(width: 12,height: 16)).image { context in
+      UIColor.orange.setFill(); context.fill(CGRect(x: 0,y: 0,width: 12,height: 16))
+    }
+    try await view.setImages([try .init(name: "pin", image: pin)])
+    let marker = TileflowDepthMarker(id: "cafe", coordinate: Self.center, image: "pin", size: CGSize(width: 12,height: 16), anchor: .bottom)
+    try await view.setDepthMarkers([marker])
+    let map = try XCTUnwrap(engine.mapView)
+    let at = try await view.project(Self.center)
+    try await waitUntil { !map.visibleFeatures(at: at, styleLayerIdentifiers: ["__tileflow_depth_cafe"]).isEmpty }
+    do {
+      var invalid = marker; invalid.image = "absent"
+      try await view.setDepthMarkers([invalid]); XCTFail("Expected invalidImage")
+    } catch let error as TileflowMapError { XCTAssertEqual(error.context.reason, "invalidImage") }
+    XCTAssertNotNil(map.style?.layer(withIdentifier: "__tileflow_depth_cafe"))
+
+    let route = Data(#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"LineString","coordinates":[[-3.715,40.415],[-3.7,40.42],[-3.685,40.425]]}}]}"#.utf8)
+    let layer = try TileflowGeoJSONLayer(id: "route", geoJSON: route, kind: .line, ink: .line, placement: .ground, progress: .init(end: 0,highlight: "#ffffff"))
+    try await view.setContent(layers: [layer])
+    func gradient() throws -> JSONValue {
+      let line = try XCTUnwrap(map.style?.layer(withIdentifier: "__tileflow_app_route") as? MLNLineStyleLayer)
+      return JSONValue(foundation: line.lineGradient.mgl_jsonExpressionObject)
+    }
+    let initial = try gradient()
+    let drawn = try await view.animateLineProgress(layers: ["route"], to: .init(end: 0.7,light: 0.55), duration: 0.1)
+    XCTAssertTrue(drawn)
+    XCTAssertNotEqual(try gradient(),initial)
+    try await view.setTheme("dark")
+    XCTAssertNotNil(map.style?.layer(withIdentifier: "__tileflow_app_route"))
+    XCTAssertNotNil(map.style?.image(forName: "__tileflow_depth_image_cafe"))
+    do {
+      _ = try await view.animateLineProgress(layers: ["missing"], to: .init(), duration: 0)
+      XCTFail("Expected unknownLayer")
+    } catch let error as TileflowMapError { XCTAssertEqual(error.context.reason,"unknownLayer") }
+
+    let a = TileflowCamera(longitude: -3.70,latitude: 40.42,zoom: 15,bearing: 0,pitch: 5)
+    let b = TileflowCamera(longitude: -3.69,latitude: 40.425,zoom: 15,bearing: 24,pitch: 40)
+    var cues: [String] = []
+    let shot = TileflowShot(keyframes: [.init(time:0,camera:a),.init(time:0.25,camera:b)], cues: [.init(time:0,id:"start"),.init(time:0.12,id:"mid"),.init(time:0.25,id:"end")])
+    let played = try await view.play(shot, onCue: { cues.append($0) })
+    XCTAssertTrue(played); XCTAssertEqual(cues,["start","mid","end"])
+    let final = try await view.camera()
+    XCTAssertEqual(final.latitude,b.latitude,accuracy:0.00001)
+    XCTAssertEqual(final.bearing,b.bearing,accuracy:0.01)
+    XCTAssertEqual(final.pitch,b.pitch,accuracy:0.01)
+    let longShot = TileflowShot(keyframes: [.init(time:0,camera:b),.init(time:30,camera:a)])
+    let first = Task { try await view.play(longShot) }
+    try await Task.sleep(for:.milliseconds(50))
+    let replacement = try await view.play(shot)
+    let superseded = try await first.value
+    XCTAssertTrue(replacement); XCTAssertFalse(superseded)
+    let cancelled = Task { try await view.play(longShot) }
+    try await Task.sleep(for:.milliseconds(50)); cancelled.cancel()
+    do { _ = try await cancelled.value; XCTFail("Expected cancellation") } catch is CancellationError {}
+    try view.reload(); try await events.waitForLoads(2)
+    let newMap = try XCTUnwrap((view.engine as? NativeMapEngine)?.mapView)
+    XCTAssertNotNil(newMap.style?.layer(withIdentifier: "__tileflow_depth_cafe"))
+    XCTAssertNotNil(newMap.style?.layer(withIdentifier: "__tileflow_app_route"))
+    try await view.setImages([])
+    XCTAssertNil(newMap.style?.layer(withIdentifier: "__tileflow_depth_cafe"))
+    XCTAssertTrue(events.failures.isEmpty)
+  }
+
   func testOnlineMapLoadsChangesThemeAndRetires() async throws {
     try await requireNativeFixture()
     let events = NativeMapEvents()

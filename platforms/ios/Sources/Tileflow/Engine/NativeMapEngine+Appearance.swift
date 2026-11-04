@@ -274,6 +274,7 @@ extension NativeMapEngine {
     else { return nil }
     shown = .blend(next)
     scene.blendChanged()
+    do { try sceneContent.refreshInks() } catch { return nil }
     applyEmphasis(strength: emphasis.strength, featureData: true)
     return .object(["status": .string("applied"), "theme": .string(request.themes[next.dominant])])
   }

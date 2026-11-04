@@ -63,8 +63,10 @@ extension NativeMapEngine {
     case .getCamera:
       return camera.wire
     case .moveCamera:
+      sceneAnimations.stopShot()
       return try await camera.move(payload)
     case .stopCamera:
+      sceneAnimations.stopShot()
       camera.stop()
       return .null
     case .cameraForBounds:

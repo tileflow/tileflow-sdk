@@ -117,6 +117,24 @@ final class NativeEvaluatorTests: XCTestCase {
     }
   }
 
+  func testShotSamplesFollowCoreAcrossTheAntimeridian() throws {
+    let rows = try XCTUnwrap(fixture["shots"]?.array)
+    XCTAssertFalse(rows.isEmpty)
+    for row in rows {
+      let shot = try NativeShot(XCTUnwrap(row["shot"]))
+      for sample in try XCTUnwrap(row["samples"]?.array) {
+        let result = shot.sample(try XCTUnwrap(sample["requestedAt"]?.number))
+        XCTAssertEqual(result.at, try XCTUnwrap(sample["at"]?.number))
+        let camera = try XCTUnwrap(sample["camera"])
+        assertMatches(.array([.number(result.camera.longitude),.number(result.camera.latitude)]),try XCTUnwrap(camera["center"]), "camera center")
+        assertMatches(.number(result.camera.zoom),try XCTUnwrap(camera["zoom"]), "zoom")
+        assertMatches(.number(result.camera.pitch),try XCTUnwrap(camera["pitch"]), "pitch")
+        assertMatches(.number(result.camera.bearing),try XCTUnwrap(camera["bearing"]), "bearing")
+        assertMatches(result.blend.map(JSONValue.number) ?? .null, sample["blendPosition"] ?? .null,"blend")
+      }
+    }
+  }
+
   func testThreeDecimalsRoundAsTheWebDoes() {
     XCTAssertEqual(NativeEvaluators.threeDecimals(1), "1")
     XCTAssertEqual(NativeEvaluators.threeDecimals(0.5), "0.5")

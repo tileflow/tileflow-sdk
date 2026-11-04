@@ -141,6 +141,7 @@ final class NativeRuntimeStyle {
     for layer in layers.reversed() {
       if let native = style.layer(withIdentifier: layerID(layer.id)) { style.removeLayer(native) }
     }
+    for id in images.keys { style.removeImage(forName: id) }
     for id in sources.keys {
       if let source = style.source(withIdentifier: sourceID(id)) { style.removeSource(source) }
     }

@@ -33,6 +33,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   let data = DataChannel()
   let runtimeStyle = NativeRuntimeStyle()
   lazy var scene = NativeMapScene(self)
+  lazy var sceneContent = NativeSceneContent(self)
+  lazy var sceneAnimations = NativeSceneAnimations(self)
   private let resourceKinds = LockedValue<[(prefix: String, kind: TileflowResourceKind)]>([])
   private var baseResourceKinds: [(prefix: String, kind: TileflowResourceKind)] = []
   private var styleWork: Task<Void, Never>?
@@ -199,9 +201,17 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       setViewMode(mode, duration: (payload["duration"]?.number ?? 0) / 1000)
       return .null
     case .setContent:
-      guard payload["annotations"]?.array?.isEmpty != false,
-        payload["overlays"]?.array?.isEmpty != false
-      else { throw Self.unsupported(command) }
+      try sceneContent.setContent(payload, data: self.data)
+      sceneAnimations.stopLines()
+      return .null
+    case .setDepthMarkers:
+      guard let markers = payload["markers"]?.array else { throw TileflowMapError.invalidRequest }
+      try sceneContent.setMarkers(markers)
+      return .null
+    case .animateLineProgress: return try sceneAnimations.progress(payload, content: sceneContent)
+    case .playShot: return try await sceneAnimations.play(payload)
+    case .stopAnimation:
+      sceneAnimations.stop(payload)
       return .null
     case .setAnnotationLayers:
       // The view sends the layers whenever an engine becomes ready.
@@ -261,6 +271,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       return try runtimeStyle.queryCluster(request, style: loadedStyle)
     case .setImages:
       try runtimeStyle.setImages(request, channel: data, style: loadedStyle)
+      try sceneContent.imagesChanged()
     default: throw Self.unsupported(command)
     }
     return .null
@@ -300,6 +311,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   func retire(_ error: TileflowMapError) {
     guard !retired else { return }
+    sceneAnimations.retire()
     scene.retire()
     retirementError = error
     retired = true
@@ -608,6 +620,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       guard styleRequested, !retired, let loadedStyle = self.mapView?.style else { return }
       do {
         try runtimeStyle.restore(in: loadedStyle)
+        try sceneContent.restore(in: loadedStyle)
       } catch {
         for waiter in styleWaiters { waiter.resume(throwing: error) }
         styleWaiters.removeAll()
@@ -666,7 +679,10 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   nonisolated func mapView(
     _ mapView: MLNMapView, regionWillChangeWith reason: MLNCameraChangeReason, animated: Bool
   ) {
-    MainActor.assumeIsolated { camera?.willChange(reason) }
+    MainActor.assumeIsolated {
+      if !reason.isDisjoint(with: NativeCamera.anyGesture) { sceneAnimations.stopShot() }
+      camera?.willChange(reason)
+    }
   }
 
   nonisolated func mapView(_ mapView: MLNMapView, regionIsChangingWith reason: MLNCameraChangeReason)

@@ -517,6 +517,37 @@ final class OfflineStoreTests: XCTestCase {
     subscription.cancel()
   }
 
+  func testStoppingWaitsForTheLastPackAndLeavesNoOrphans() async throws {
+    for action in ["pause", "cancel", "remove"] {
+      let service = OfflineServiceStub()
+      let fetcher = OfflineFinishingPackFetcher(service)
+      let store = makeStore(service, root: action, fetcher: fetcher)
+      try await store.loadRegion(id: "madrid", options: madrid())
+      await fetcher.response.waiting()
+
+      let stopping = Task {
+        switch action {
+        case "pause": try await store.pauseRegion(id: "madrid")
+        case "cancel": try await store.cancelRegion(id: "madrid")
+        default: try await store.removeRegion(id: "madrid")
+        }
+        XCTAssertTrue(fetcher.delivered.withLock { $0 }, "\(action) returned before the pack transfer settled")
+      }
+      try await waitUntil { fetcher.stopped.withLock { $0 } }
+      await fetcher.response.pass()
+      try await stopping.value
+
+      if action == "pause" {
+        let region = await store.region(id: "madrid")
+        XCTAssertEqual(region?.state, .paused)
+        try await store.cancelRegion(id: "madrid")
+      }
+      let packs = OfflineLayout(root: directory.appendingPathComponent(action)).packs
+      let files = (try? FileManager.default.contentsOfDirectory(atPath: packs.directory.path)) ?? []
+      XCTAssertTrue(files.allSatisfy { $0 == "incoming" }, "\(action) left packs: \(files)")
+    }
+  }
+
   func testPauseAndCancel() async throws {
     let service = OfflineServiceStub()
     service.freezeAfter = 5
@@ -1558,6 +1589,31 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     return formatter.string(from: Date(timeIntervalSince1970: seconds))
   }
+}
+
+/// Holds a completed pack just before the transfer hands its file to the downloader.
+private final class OfflineFinishingPackFetcher: OfflineResourceFetching, Sendable {
+  let response = OfflineWatchClock()
+  let stopped = LockedValue(false)
+  let delivered = LockedValue(false)
+  private let first = LockedValue(true)
+  private let base: OfflineServiceStub
+
+  init(_ base: OfflineServiceStub) { self.base = base }
+
+  func fetch(_ request: OfflineFetchRequest) async throws -> OfflineFetchResponse {
+    let result = try await base.fetch(request)
+    guard let destination = request.destination,
+      first.withLock({ value in defer { value = false }; return value })
+    else { return result }
+    let bytes = try Data(contentsOf: destination)
+    await response.period()
+    try bytes.write(to: destination)
+    delivered.withLock { $0 = true }
+    return result
+  }
+
+  func cancel(prefix: String) { stopped.withLock { $0 = true } }
 }
 
 /// A process that ends after `after` requests: later requests never return.

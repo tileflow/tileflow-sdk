@@ -301,10 +301,11 @@ class OfflineStoreTest {
                     .contentEquals("tile ${service.changedTile.name}#1".toByteArray())
             )
 
-            // Pausing returns once the stopped download recorded what it was storing, so resuming
-            // asks only for what it still lacks.
-            service.freezeAfter = null
+            // Pause between recorded packs. A request cancelled before delivery can be sent again.
+            val receivedPacks = service.downloads.drop(first).count { it.url.endsWith(".tfpack") }
+            awaitRegion(store, "madrid") { it.completedPackCount >= receivedPacks }
             store.pauseRegion("madrid")
+            service.freezeAfter = null
             store.resumeRegion("madrid")
             val done =
                 awaitRegion(store, "madrid") { it.state == COMPLETE && it.completedAtMillis != null }

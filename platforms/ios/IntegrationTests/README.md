@@ -27,6 +27,12 @@ both ARM and Intel runners, with iOS 18.5 and 26 (rechecked with iOS 26.2 and 26
 The simulator run therefore excludes `MapIntegrationTests` and `MapStyleIntegrationTests`,
 which draw the map, from its pass. Both run in full in the required Catalyst pass below.
 
+Bridge and resource transport tests keep their real WebKit views detached from the window.
+They exercise JavaScript, messages, fetches, fonts, images and workers without presenting a
+composited surface. On iOS 17+, `inactiveSchedulingPolicy = .none` keeps those detached views
+running. This removes an unnecessary compositing surface from non-rendering tests; their
+handshake deadlines and assertions remain unchanged.
+
 The complete suite, including map rendering, themes, content restoration and reloads, then runs
 with Mac Catalyst. Catalyst uses the same UIKit SDK sources and test files while rendering
 through the host graphics stack. Use the simulator command above on a local Mac to render on iOS

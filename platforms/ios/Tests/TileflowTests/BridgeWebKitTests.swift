@@ -13,7 +13,6 @@ final class BridgeWebKitTests: XCTestCase {
   private struct Stub {
     let bridge: MapBridge
     let webView: WKWebView
-    let window: UIWindow
     let handler: ResourceSchemeHandler
     let root: URL
 
@@ -23,7 +22,6 @@ final class BridgeWebKitTests: XCTestCase {
       handler.retire()
       webView.stopLoading()
       webView.configuration.userContentController.removeAllScriptMessageHandlers()
-      window.isHidden = true
       try? FileManager.default.removeItem(at: root)
     }
   }
@@ -111,6 +109,11 @@ final class BridgeWebKitTests: XCTestCase {
     let bridge = MapBridge(instanceID: "stub", generation: 1, runtimeHash: "stub", data: data)
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
+    // Exercise the real WebKit transport without presenting a GPU-backed surface.
+    // Detached views otherwise suspend JavaScript on newer iOS versions.
+    if #available(iOS 17.0, *) {
+      configuration.preferences.inactiveSchedulingPolicy = .none
+    }
     configuration.setURLSchemeHandler(handler, forURLScheme: ResourceURL.scheme)
     configuration.userContentController.add(bridge, name: "tileflow")
     configuration.userContentController.addUserScript(
@@ -120,11 +123,6 @@ final class BridgeWebKitTests: XCTestCase {
         injectionTime: .atDocumentStart, forMainFrameOnly: true))
     let webView = WKWebView(
       frame: CGRect(x: 0, y: 0, width: 320, height: 480), configuration: configuration)
-    let window = UIWindow(frame: webView.frame)
-    let controller = UIViewController()
-    window.rootViewController = controller
-    controller.view.addSubview(webView)
-    window.makeKeyAndVisible()
     bridge.webView = webView
     let settled = expectation(description: "Handshake settled")
     var failure: TileflowMapError?
@@ -137,7 +135,7 @@ final class BridgeWebKitTests: XCTestCase {
     webView.load(URLRequest(url: ResourceURL.runtimeURL))
     await fulfillment(of: [settled], timeout: 30)
     return (
-      Stub(bridge: bridge, webView: webView, window: window, handler: handler, root: root), failure
+      Stub(bridge: bridge, webView: webView, handler: handler, root: root), failure
     )
   }
 

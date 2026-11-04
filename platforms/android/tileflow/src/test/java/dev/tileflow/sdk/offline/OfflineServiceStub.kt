@@ -114,6 +114,12 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
     /** The next pack responses with bytes carry a damaged byte. */
     @Volatile var corruptPacks = 0
     @Volatile var onDownload: ((Int) -> Unit)? = null
+    /** Called with how many answers the store has received, as each arrives. */
+    @Volatile var onReceived: ((Int) -> Unit)? = null
+    private val receivedAnswers = AtomicInteger()
+    /** Answers that reached the store: an answer a stopped request never takes is not one. */
+    val received: Int
+        get() = receivedAnswers.get()
     @Volatile var billable = 0L
 
     /** The z17 tile a new World release changes. */
@@ -446,6 +452,10 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
         if (freeze) {
             delay(Long.MAX_VALUE)
             error("unreachable")
+        }
+        if (response != null) {
+            val count = receivedAnswers.incrementAndGet()
+            onReceived?.invoke(count)
         }
         return response ?: throw IOException("offline")
     }

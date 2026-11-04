@@ -30,6 +30,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -39,6 +40,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import okhttp3.Request
 import okio.Buffer
 import org.json.JSONArray
@@ -269,7 +271,7 @@ class OfflineStoreTest {
             val index = OfflineServingIndex()
             val store = store(service, index = index)
             store.loadRegion("madrid", madrid())
-            waitFor(store, "madrid") { it.state == COMPLETE }
+            awaitRegion(store, "madrid") { it.state == COMPLETE }
             val first = service.downloads.size
             val oldTile = service.tileUrl(service.changedTile)
 
@@ -288,8 +290,9 @@ class OfflineStoreTest {
             // answers 304.
             service.publish()
             service.freezeAfter = first + 4
+            val received = service.receivedAll(first + 4)
             store.loadRegion("madrid", madrid())
-            waitUntil { service.downloads.size >= first + 4 }
+            received.await()
             val updating = store.region("madrid")!!
             assertTrue("The stored version stays while the update downloads", updating.isAvailable)
             assertTrue(
@@ -298,10 +301,13 @@ class OfflineStoreTest {
                     .contentEquals("tile ${service.changedTile.name}#1".toByteArray())
             )
 
+            // Pausing returns once the stopped download recorded what it was storing, so resuming
+            // asks only for what it still lacks.
             service.freezeAfter = null
             store.pauseRegion("madrid")
             store.resumeRegion("madrid")
-            val done = waitFor(store, "madrid") { it.state == COMPLETE && it.completedAtMillis != null }
+            val done =
+                awaitRegion(store, "madrid") { it.state == COMPLETE && it.completedAtMillis != null }
             val update = service.downloads.drop(first)
             assertEquals(
                 setOf(
@@ -333,7 +339,7 @@ class OfflineStoreTest {
             val before = service.downloads.size
             service.deploy()
             store.loadRegion("madrid", madrid())
-            waitFor(store, "madrid") { it.state == COMPLETE }
+            awaitRegion(store, "madrid") { it.state == COMPLETE }
             assertEquals(
                 setOf(
                     "$ORIGIN/v1/offline/documents/style.tfpack",
@@ -593,16 +599,18 @@ class OfflineStoreTest {
     fun pauseAndCancel() = runBlocking<Unit> {
         val service = OfflineServiceStub()
         service.freezeAfter = 5
+        val received = service.receivedAll(5)
         val store = store(service)
         store.loadRegion("madrid", madrid())
-        waitUntil { service.downloads.size >= 5 }
+        received.await()
+        // Pausing returns once the download has stopped: nothing it transfers lands later.
         store.pauseRegion("madrid")
         assertEquals(TileflowOfflineRegion.DownloadState.PAUSED, store.region("madrid")!!.state)
         service.freezeAfter = null
-        delay(50)
         assertEquals(5, service.downloads.size)
 
-        // Cancelling a region that never completed removes it and what it stored.
+        // Cancelling a region that never completed removes it and everything it stored, also
+        // what the stopped download was storing when it was paused.
         store.cancelRegion("madrid")
         assertTrue(store.allRegions().isEmpty())
         assertEquals(emptyList<File>(), storedPacks())
@@ -1173,6 +1181,51 @@ class OfflineStoreTest {
             delay(5)
         }
         throw AssertionError("Timed out: ${store.region(id)}")
+    }
+
+    /**
+     * The region once [predicate] holds, from the store's own events. The timeout only stops a
+     * test that would otherwise hang; the event arrives as soon as the store changes.
+     */
+    private suspend fun awaitRegion(
+        store: TileflowOfflineStore,
+        id: String,
+        predicate: (TileflowOfflineRegion) -> Boolean,
+    ): TileflowOfflineRegion {
+        val reached = CompletableDeferred<TileflowOfflineRegion>()
+        val subscription =
+            store.subscribe { event ->
+                if (
+                    event is TileflowOfflineRegionEvent.Changed &&
+                        event.region.id == id &&
+                        predicate(event.region)
+                )
+                    reached.complete(event.region)
+            }
+        try {
+            store.region(id)?.takeIf(predicate)?.let {
+                return it
+            }
+            return withTimeout(30_000) { reached.await() }
+        } finally {
+            subscription.cancel()
+        }
+    }
+
+    /**
+     * Completes once the store has received [count] of the service's answers. An answer the
+     * service gave counts only once the store takes it: a request stopped in between asks again.
+     */
+    private fun OfflineServiceStub.receivedAll(count: Int): Received {
+        val done = CompletableDeferred<Unit>()
+        onReceived = { if (it >= count) done.complete(Unit) }
+        if (received >= count) done.complete(Unit)
+        return Received(done)
+    }
+
+    /** Awaits the answers; the timeout only stops a test that would otherwise hang. */
+    private class Received(private val done: CompletableDeferred<Unit>) {
+        suspend fun await() = withTimeout(30_000) { done.await() }
     }
 
     private suspend fun waitUntil(timeoutMillis: Long = 30_000, condition: () -> Boolean) {

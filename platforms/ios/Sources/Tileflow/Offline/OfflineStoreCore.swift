@@ -93,6 +93,7 @@ actor OfflineStoreCore {
   init(_ dependencies: Dependencies, subscribers: OfflineSubscribers) {
     self.dependencies = dependencies
     self.subscribers = subscribers
+    dependencies.fetcher.onWarning { warning in subscribers.emit(.warning(warning)) }
   }
 
   // MARK: Opening

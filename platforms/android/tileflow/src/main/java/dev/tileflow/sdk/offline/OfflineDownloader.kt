@@ -307,40 +307,44 @@ internal class OfflineDownloader(
                                     is Work.Resource -> download(item.resource, job)
                                     is Work.Pack -> download(item.pack, job)
                                 }
-                            lock.withLock {
-                                when (result) {
-                                    is Result.Stored -> {
-                                        stored.add(item.key to result.entry)
-                                        sinceCheck += result.entry.resources
-                                        // A pack is a unit of progress worth reporting at once.
-                                        if (result.entry.pack != null) flush()
+                            // What a transfer stored is recorded even when the run stops
+                            // meanwhile, so a removal releases it instead of leaving it behind.
+                            withContext(NonCancellable) {
+                                lock.withLock {
+                                    when (result) {
+                                        is Result.Stored -> {
+                                            stored.add(item.key to result.entry)
+                                            sinceCheck += result.entry.resources
+                                            // A pack is a unit of progress worth reporting at once.
+                                            if (result.entry.pack != null) flush()
+                                        }
+                                        Result.Mismatch -> {
+                                            val count = (mismatches[item.key] ?: 0) + 1
+                                            mismatches[item.key] = count
+                                            if (count >= 3)
+                                                record(
+                                                    OfflineDownloadOutcome.Fail(
+                                                        OfflinePackFormat.invalid()
+                                                    )
+                                                )
+                                            else retries.addLast(item)
+                                        }
+                                        is Result.Outcome -> record(result.outcome)
                                     }
-                                    Result.Mismatch -> {
-                                        val count = (mismatches[item.key] ?: 0) + 1
-                                        mismatches[item.key] = count
-                                        if (count >= 3)
+                                    if (stored.size >= BATCH) flush()
+                                    if (sinceCheck >= SPACE_CHECK) {
+                                        sinceCheck = 0
+                                        val room =
+                                            OfflineStorage.hasRoom(reserveBytes, availableBytes, cache)
+                                        if (!room)
                                             record(
                                                 OfflineDownloadOutcome.Fail(
-                                                    OfflinePackFormat.invalid()
+                                                    TileflowOfflineException(
+                                                        TileflowOfflineErrorCode.INSUFFICIENT_STORAGE
+                                                    )
                                                 )
                                             )
-                                        else retries.addLast(item)
                                     }
-                                    is Result.Outcome -> record(result.outcome)
-                                }
-                                if (stored.size >= BATCH) flush()
-                                if (sinceCheck >= SPACE_CHECK) {
-                                    sinceCheck = 0
-                                    val room =
-                                        OfflineStorage.hasRoom(reserveBytes, availableBytes, cache)
-                                    if (!room)
-                                        record(
-                                            OfflineDownloadOutcome.Fail(
-                                                TileflowOfflineException(
-                                                    TileflowOfflineErrorCode.INSUFFICIENT_STORAGE
-                                                )
-                                            )
-                                        )
                                 }
                             }
                         }

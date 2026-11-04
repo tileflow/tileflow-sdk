@@ -152,17 +152,23 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       let prior = styleWork
       let work = Task { @MainActor [weak self] in
         await prior?.value
+        try Task.checkCancellation()
         guard let self else { throw TileflowMapError.disposed }
         if let error = self.retirementError { throw error }
         do {
           return try await self.styleCommand(command, request: payload)
         } catch {
+          try Task.checkCancellation()
           if let lifecycleError = self.retirementError { throw lifecycleError }
           throw error
         }
       }
       styleWork = Task { _ = await work.result }
-      return try await work.value
+      return try await withTaskCancellationHandler {
+        try await work.value
+      } onCancel: {
+        work.cancel()
+      }
     case .queryAtPoint:
       return .array(features(at: try Self.point(payload)))
     case .setVisibility:
@@ -215,6 +221,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
         let source = try await NativeRuntimeStyle.prepareSource(
           request, channel: data, styleURL: url, load: loadApplicationData,
           project: { [self] in try await project($0, styleURL: $1, context: context) })
+        try Task.checkCancellation()
         if let error = retirementError { throw error }
         try runtimeStyle.addSource(source, in: loadedStyle)
         updateApplicationResources()
@@ -224,6 +231,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
         }
         let bytes = try await NativeRuntimeStyle.geoJSONBytes(
           value, channel: data, styleURL: url, load: loadApplicationData)
+        try Task.checkCancellation()
         if let error = retirementError { throw error }
         try runtimeStyle.replaceData(bytes, source: id, in: loadedStyle)
       }

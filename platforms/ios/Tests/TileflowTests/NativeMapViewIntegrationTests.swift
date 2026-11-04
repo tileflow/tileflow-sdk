@@ -378,6 +378,35 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     XCTAssertFalse(after)
   }
 
+  func testCallerCanCancelAnInFlightSourceRead() async throws {
+    try await requireNativeFixture()
+    let events = NativeMapEvents()
+    let view = TileflowMapView(source: citySource)
+    view.engineKind = .native
+    let window = mount(view, events: events)
+    defer {
+      view.destroy()
+      window.isHidden = true
+    }
+
+    try await events.waitForLoads(1)
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+    let sent = engine.received[.addSource, default: 0]
+    let pending = Task { @MainActor in
+      try await view.addSource(
+        id: "cancelled",
+        properties: ["type": "vector", "url": "\(FixtureServer.origin)/runtime-style/invalid-tiles.json"])
+    }
+    try await waitUntil { engine.received[.addSource, default: 0] > sent }
+    pending.cancel()
+    do {
+      try await pending.value
+      XCTFail("The source was added after the caller cancelled")
+    } catch is CancellationError {}
+    XCTAssertFalse(view.sourceExists("cancelled"))
+    XCTAssertNil(engine.mapView?.style?.source(withIdentifier: "__tileflow_source_cancelled"))
+  }
+
   func testReloadCancelsThePreviousRenderersSourceLoad() async throws {
     try await requireNativeFixture()
     let events = NativeMapEvents()

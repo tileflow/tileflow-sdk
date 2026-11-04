@@ -33,7 +33,7 @@ internal class NativeSceneClock {
 
     fun start(key: String, duration: Long, step: (Double) -> Unit, end: (Boolean) -> Unit = {}) {
         stop(key)
-        if (duration == 0L) {
+        if (duration == 0L || !android.animation.ValueAnimator.areAnimatorsEnabled()) {
             step(1.0)
             end(true)
             return

@@ -94,7 +94,9 @@ internal class NativeScenePlayer(
                 var nextCue = 0
                 var success = false
                 try {
-                    var elapsed = 0L
+                    var elapsed =
+                        if (android.animation.ValueAnimator.areAnimatorsEnabled()) 0L
+                        else frames.last().at
                     while (isActive && shotId == id) {
                         val state =
                             NativeSceneMath.shot(

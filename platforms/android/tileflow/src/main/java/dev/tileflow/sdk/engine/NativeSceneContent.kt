@@ -118,23 +118,32 @@ internal class NativeSceneContent(
             }
         paint(layer, item)
         val ground = def.optString("placement") == "ground"
-        val anchor =
-            if (ground) {
-                val advertised =
-                    document
-                        .optJSONObject("metadata")
-                        ?.optJSONObject("tileflow:overlay-placement-manifest")
-                        ?.optJSONObject("anchors")
-                        ?.opt("below-labels") as? String
-                advertised?.takeIf { style.getLayer(it) != null }
-                    ?: style.layers.firstOrNull { it is SymbolLayer }?.id
-            } else null
+        val anchor = if (ground) groundAnchor(style) else null
         if (anchor != null) style.addLayerBelow(layer, anchor) else style.addLayer(layer)
         if (ground && def.optDouble("occludedOpacity", 0.0) > 0)
             degraded(
                 "sceneOcclusion",
                 "Native maps draw ground overlays and markers without scene occlusion.",
             )
+    }
+
+    /** Core places ground content above the road band but before its first 3D building. */
+    private fun groundAnchor(style: Style): String? {
+        val anchors =
+            document
+                .optJSONObject("metadata")
+                ?.optJSONObject("tileflow:overlay-placement-manifest")
+                ?.optJSONObject("anchors")
+        val order = style.layers.filterNot { it.id.startsWith("__tileflow_app_") }
+        val floor = order.indexOfFirst { it.id == anchors?.opt("above-roads") }.coerceAtLeast(0)
+        var ceiling = order.indexOfFirst { it.id == anchors?.opt("above-buildings") }
+        if (ceiling < 0)
+            ceiling =
+                (floor until order.size).firstOrNull { order[it] is SymbolLayer } ?: order.size
+        if (ceiling < floor) ceiling = order.size
+        return (floor until ceiling)
+            .firstOrNull { order[it] is FillExtrusionLayer }
+            ?.let { order[it].id } ?: order.getOrNull(ceiling)?.id
     }
 
     private fun paint(layer: Layer, overlay: Overlay) {
@@ -205,7 +214,7 @@ internal class NativeSceneContent(
                     shown.put(
                         "light",
                         NativeSceneMath.mix(
-                            start.optDouble("light", goal.getDouble("light")),
+                            start.optDouble("light", start.optDouble("start", 0.0)),
                             goal.getDouble("light"),
                             t,
                         ),

@@ -359,6 +359,25 @@ function boundaryTile(z, x, y) {
     ...layer('boundary_label', 1, labelVisible && [9, ...center.flatMap((n) => varint(zigzag(n)))]),
   ]);
 }
+// A self-hosted style isolates native rendering from the compiler's admission rules.
+const districtStyle = {
+  version: 8,
+  sources: {'tileflow-boundaries': {type: 'vector', url: `${base}/fixture-boundaries/tiles.json`}},
+  layers: [
+    {id: 'ground', type: 'background', paint: {'background-color': '#ffffff'}},
+    {
+      id: 'district-fill',
+      type: 'fill',
+      source: 'tileflow-boundaries',
+      'source-layer': 'boundary_area',
+      paint: {
+        'fill-antialias': false,
+        'fill-color': ['match', ['feature-state', 'value'], 1, '#ff0000', 2, '#0000ff', '#00ff00'],
+      },
+    },
+  ],
+};
+
 const sceneStyle = (dark) => ({
   version: 8,
   state: {'fixture-opacity': {default: 1}, 'fixture-mode': {default: 'base'}},
@@ -544,6 +563,11 @@ const server = createServer((request, response) => {
                 },
               },
             },
+            districts: {
+              defaultTheme: 'day',
+              view: {center: sceneCenter, zoom: 16, bearing: 0, pitch: 0},
+              themes: {day: {styleUrl: `${base}/district-state.json`, colorScheme: 'light'}},
+            },
             scene: {
               defaultTheme: 'day',
               systemThemes: {light: 'day', dark: 'night'},
@@ -573,9 +597,11 @@ const server = createServer((request, response) => {
               ? nauticalStyle(path === '/nautical-night.json')
               : path === '/nautical-data.json'
                 ? nauticalData
-                : path === '/scene-day.json' || path === '/scene-night.json'
-                  ? sceneStyle(path === '/scene-night.json')
-                  : null;
+                : path === '/district-state.json'
+                  ? districtStyle
+                  : path === '/scene-day.json' || path === '/scene-night.json'
+                    ? sceneStyle(path === '/scene-night.json')
+                    : null;
   if (!value) {
     response.statusCode = 404;
     response.setHeader('Cache-Control', 'no-store');

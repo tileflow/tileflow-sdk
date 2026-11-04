@@ -117,7 +117,7 @@ internal class NativeSceneContent(
         paint(layer, item)
         val ground = def.optString("placement") == "ground"
         val anchor = if (ground) groundAnchor(style) else null
-        if (anchor != null) style.addLayerBelow(layer, anchor) else style.addLayer(layer)
+        if (anchor != null) style.addLayerBelow(layer, anchor) else style.addBelowLocation(layer)
         if (ground && def.optDouble("occludedOpacity", 0.0) > 0)
             degraded(
                 "sceneOcclusion",
@@ -361,7 +361,7 @@ internal class NativeSceneContent(
                         .put(atZero * 16_777_216)
                 layer.setProperties(PropertyFactory.iconSize(Expression.raw(scale.toString())))
             } else layer.setProperties(PropertyFactory.iconSize(visibleScale.toFloat()))
-            style.addLayer(layer)
+            style.addBelowLocation(layer)
             markerLayers += id
             if (marker.optBoolean("occlude"))
                 degraded(

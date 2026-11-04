@@ -95,6 +95,8 @@ internal class NativeCamera(
     private var targetBounds: LatLngBounds? = null
     /** Whether the view follows the camera frame by frame: `cameraMoved` costs a call per frame. */
     var followsFrames: Boolean = true
+    var followsLocation: Boolean = false
+    var paddingWhileFollowing: ((DoubleArray) -> Boolean)? = null
     /** Gestures a person is making. */
     private val gestures = LinkedHashSet<String>()
     private var retired = false
@@ -408,6 +410,7 @@ internal class NativeCamera(
         if (retired || isMoving || movement != null || gestures.isNotEmpty()) return
         pendingPadding = null
         if (map.cameraPosition.padding?.contentEquals(padding) == true) return
+        if (paddingWhileFollowing?.invoke(padding) == true) return
         issue("system") {
             map.moveCamera(
                 CameraUpdateFactory.paddingTo(padding[0], padding[1], padding[2], padding[3])
@@ -473,7 +476,7 @@ internal class NativeCamera(
                 // A person's gesture takes over the movement the application asked for.
                 end("interrupted")
                 "gesture"
-            } else issuer ?: movement?.reason ?: "system"
+            } else issuer ?: movement?.reason ?: if (followsLocation) "location" else "system"
         if (isMoving) return
         isMoving = true
         emit("cameraMoveStarted", JSONObject().put("camera", json).put("reason", changeReason))

@@ -222,7 +222,7 @@ internal class NativeRuntimeStyle(
         val above = sorted.drop(sorted.indexOf(layer) + 1).firstOrNull {
             anchor(style, it) == anchor && style.getLayer(it.id) != null
         }?.id ?: anchor
-        if (above == null) style.addLayer(native) else style.addLayerBelow(native, above)
+        if (above == null) style.addBelowLocation(native) else style.addLayerBelow(native, above)
     }
 
     private fun state(method: Method, request: JSONObject): Any {

@@ -171,6 +171,8 @@ internal class NativeMapEngine(
     /** The camera and the gestures, once MapLibre's map is ready. */
     internal var camera: NativeCamera? = null
         private set
+    internal var location: NativeMapLocation? = null
+        private set
 
     private var annotations: NativeAnnotations? = null
     override val annotationProjection: AnnotationProjection? get() = annotations
@@ -315,6 +317,14 @@ internal class NativeMapEngine(
                 }
                 ProtocolContract.Method.QUERY_AT_POINT -> query(map, point(request))
                 ProtocolContract.Method.SET_VISIBILITY -> JSONObject.NULL
+                ProtocolContract.Method.UPDATE_LOCATION -> {
+                    location?.update(request ?: invalid())
+                    JSONObject.NULL
+                }
+                ProtocolContract.Method.SET_FOLLOW_MODE -> {
+                    location?.follow(request ?: invalid())
+                    JSONObject.NULL
+                }
                 ProtocolContract.Method.SET_OPTIONS -> {
                     attribution.place(request?.optString("attribution"), null)
                     request?.optString("viewMode")?.takeIf { it.isNotEmpty() }?.let {
@@ -523,6 +533,7 @@ internal class NativeMapEngine(
                 contentStyleLoaded = true
                 sceneAppearance.restore(projected.style)
                 sceneContent.restore(it, projected.style)
+                location?.restore(it)
             } catch (failure: Exception) {
                 contentStyleLoaded = false
                 val error = failure as? TileflowMapException ?: TileflowMapException(
@@ -622,6 +633,7 @@ internal class NativeMapEngine(
         if (resume && !viewResumed) {
             viewResumed = true
             mapView.onResume()
+            location?.resume()
         }
         if (!resume && viewResumed) {
             viewResumed = false
@@ -653,6 +665,7 @@ internal class NativeMapEngine(
         creditReader.shutdownNow()
         scenePlayer.retire()
         sceneClock.retire()
+        location?.retire()
         camera?.retire(code)
         annotations?.retire()
         gestures?.retire()
@@ -1195,12 +1208,18 @@ internal class NativeMapEngine(
         map.uiSettings.isCompassEnabled = false
         val emit: (String, JSONObject) -> Unit = { event, value ->
             if (!retired) {
+                if (event == "gestureStarted" || (event == "cameraMoveStarted" && value.optString("reason") == "gesture")) {
+                    location?.stop("gesture")
+                }
                 if (event == "cameraMoveStarted" && value.optString("reason") == "gesture") scenePlayer.stopShot()
                 callbacks.event(event, value)
             }
         }
         val camera = NativeCamera(map, mapView, density, emit, ::warnPitch)
         this.camera = camera
+        location = NativeMapLocation(container.context, map, camera, emit).also {
+            camera.paddingWhileFollowing = it::padding
+        }
         val owner = NativeAnnotations(container.context, map, mapView, runtimeStyle, emit)
         annotations = owner
         container.addView(owner.view, container.indexOfChild(attribution.view),
@@ -1222,6 +1241,7 @@ internal class NativeMapEngine(
         options ?: return
         gestures?.apply(options.optJSONObject("gestures"))
         camera?.setLimits(options.optJSONObject("limits"))
+        location?.options(options.optJSONObject("location"))
     }
 
     /** The view follows the camera frame by frame only when it subscribes to `cameraMoved`. */
@@ -1295,6 +1315,7 @@ internal class NativeMapEngine(
     /** Rendered features at a point, topmost layer first: MapLibre's features carry no layer. */
     private fun query(map: MapLibreMap, point: PointF): JSONArray {
         val result = JSONArray()
+        location?.query(point, result)
         val layers = projection?.layerSources ?: return result
         val style = map.style
         for ((layer, source) in layers.entries.reversed()) {

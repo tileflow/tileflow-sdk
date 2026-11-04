@@ -17,7 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -42,8 +42,11 @@ public class LocationIntegrationTest {
         )
 
     private suspend fun waitFor(message: String, condition: () -> Boolean) {
-        withTimeout(10_000) { while (!condition()) delay(50) }
-        assertTrue(message, condition())
+        val complete = withTimeoutOrNull(10_000) {
+            while (!condition()) delay(50)
+            true
+        }
+        assertTrue(message, complete == true)
     }
 
     /** Whether the camera's centre is within a metre of a coordinate. */
@@ -65,7 +68,19 @@ public class LocationIntegrationTest {
     }
 
     @Test
-    public fun aSimulatedRouteMovesThePuckAndTheCameraThatFollowsIt() {
+    public fun aSimulatedRouteMovesThePuckAndTheCameraThatFollowsIt() = route()
+
+    @Test
+    public fun aNativeMapFollowsTheSimulatedRouteAndRestoresThePuck() {
+        CameraHostActivity.native = true
+        try {
+            route()
+        } finally {
+            CameraHostActivity.native = false
+        }
+    }
+
+    private fun route() {
         ActivityScenario.launch(CameraHostActivity::class.java).use { scenario ->
             lateinit var activity: CameraHostActivity
             scenario.onActivity { activity = it }

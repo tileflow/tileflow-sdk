@@ -142,6 +142,10 @@ internal class OfflineStoreCore(
             }
             if (record.retired != null) finishRetirement(id)
             val pending = record.pending ?: continue
+            if (pending.automatic == true && record.check?.state == "not_updatable") {
+                discardPending(id)
+                continue
+            }
             progress[id] = storedProgress(id, pending)
             if (
                 pending.state == OfflineVersionRecord.State.DOWNLOADING ||
@@ -365,11 +369,15 @@ internal class OfflineStoreCore(
         val json = options.toJson()
         lock.withLock {
             val record = records[id]
+            if (automatic && (record == null || !canStartAutomaticUpdate(record, now()))) {
+                throw TileflowOfflineException(TileflowOfflineErrorCode.GRANT_REJECTED)
+            }
             val pending = record?.pending
             val current = pending?.let { offlineOptions(it.options) }
             if (
                 record != null &&
                     pending != null &&
+                    !(pending.automatic == true && record.check?.state == "not_updatable") &&
                     current?.copy(metadata = emptyMap()) == options.copy(metadata = emptyMap())
             ) {
                 // Metadata alone never restarts a download: it changes in place.
@@ -398,12 +406,17 @@ internal class OfflineStoreCore(
         }
 
         // A new version: the plan first, so a refusal changes nothing.
-        val number = lock.withLock { records[id]?.nextVersion ?: 1 }
+        val (number, requiresFreshGrant) =
+            lock.withLock {
+                val current = records[id]
+                (current?.nextVersion ?: 1) to (current?.check?.state == "not_updatable")
+            }
         val plan: OfflineVersionPlan
         var apiOrigin: URI? = null
         when (val content = options.content) {
             is TileflowOfflineContent.Hosted -> {
-                val hosted = hostedPlan(options, consuming = true)
+                val hosted =
+                    hostedPlan(options, consuming = true, requiresFreshGrant = requiresFreshGrant)
                 plan = hosted.first
                 apiOrigin = hosted.second
                 lock.withLock { checkDeviceLimit(id, plan) }
@@ -430,8 +443,12 @@ internal class OfflineStoreCore(
         }
         // A pending version this one replaces stops first, so nothing it was storing lands after
         // its files are released.
-        if (lock.withLock { records[id]?.pending?.also { runner.stop(id) } != null }) settle(id)
+        if (!automatic && lock.withLock { records[id]?.pending?.also { runner.stop(id) } != null })
+            settle(id)
         return lock.withLock {
+            if (automatic && records[id]?.let { canStartAutomaticUpdate(it, now()) } != true) {
+                throw TileflowOfflineException(TileflowOfflineErrorCode.GRANT_REJECTED)
+            }
             if (records[id]?.pending != null) discardPending(id)
             val time = now()
             val record = records[id] ?: OfflineRegionRecord(id, time)
@@ -489,6 +506,7 @@ internal class OfflineStoreCore(
             openLocked()
             val record = existing(id)
             val pending = record.pending ?: return@withLock
+            if (pending.automatic == true && record.check?.state == "not_updatable") return@withLock
             // A waiting download continues now instead of at its retry time.
             if (pending.state == OfflineVersionRecord.State.WAITING) runner.stop(id)
             if (pending.state != OfflineVersionRecord.State.DOWNLOADING)
@@ -596,16 +614,17 @@ internal class OfflineStoreCore(
                         val check = record.check
                         !record.removing &&
                             active != null &&
-                            active.packs > 0 &&
+                            active.downloads > 0 &&
                             (check == null ||
                                 (check.state != "not_updatable" &&
                                     time >= check.checkedAt + check.intervalMillis))
                     }
                     .mapNotNull { record ->
-                        runCatching { record.id to plan(record.id, record.active!!) }.getOrNull()
+                        runCatching { record to plan(record.id, record.active!!) }.getOrNull()
                     }
             }
-        for ((id, plan) in due) {
+        for ((record, plan) in due) {
+            val id = record.id
             val states = ArrayList<OfflinePackRevalidation>()
             for (download in plan.downloads) {
                 states.add(
@@ -614,12 +633,27 @@ internal class OfflineStoreCore(
                     } catch (error: CancellationException) {
                         throw error
                     } catch (_: Exception) {
-                        break
+                        continue
                     }
                 )
             }
-            if (states.size != plan.downloads.size) continue
-            var check = OfflineCheckRecord("current", null, now(), 86_400_000)
+            // One explicit denial applies to the whole region. Confirm access only if every grant
+            // answered.
+            if (
+                states.size != plan.downloads.size &&
+                    states.none { it is OfflinePackRevalidation.NotUpdatable }
+            )
+                continue
+            val upgrade =
+                profile == OfflinePackProfile.NATIVE &&
+                    plan.requests.any { it.profile == OfflinePackProfile.WEB_VIEW.wireName }
+            var check =
+                OfflineCheckRecord(
+                    if (upgrade) "update_available" else "current",
+                    null,
+                    now(),
+                    86_400_000,
+                )
             for (state in states) {
                 check =
                     when (state) {
@@ -644,15 +678,60 @@ internal class OfflineStoreCore(
                             )
                     }
             }
-            lock.withLock {
-                val current = records[id]?.takeIf { !it.removing } ?: return@withLock
-                val validatedAt =
-                    if (check.state == "not_updatable")
-                        current.check?.validatedAt ?: current.active?.completedAt
-                    else check.checkedAt
-                save(current.copy(check = check.copy(validatedAt = validatedAt)))
-                publishServing()
-                emitChanged(id)
+            val stopped =
+                lock.withLock {
+                    val current = records[id]?.takeIf { !it.removing } ?: return@withLock null
+                    val active = current.active ?: return@withLock null
+                    if (active !== record.active) {
+                        if (
+                            active.number != record.active?.number ||
+                                current.createdAt != record.createdAt
+                        )
+                            return@withLock null
+                        // Metadata can change while checking. Match the actual grants before
+                        // applying
+                        // the reply to a region that could have been deleted and recreated with
+                        // this id.
+                        val grants =
+                            runCatching { plan(id, active).downloads.map { it.grant.value } }
+                                .getOrNull()
+                        if (grants != plan.downloads.map { it.grant.value }) return@withLock null
+                    }
+                    val validatedAt =
+                        if (check.state == "not_updatable")
+                            current.check?.validatedAt ?: current.active?.completedAt
+                        else check.checkedAt
+                    val revoked =
+                        current.pending?.takeIf {
+                            it.automatic == true && check.state == "not_updatable"
+                        }
+                    if (revoked != null) runner.stop(id)
+                    val pending =
+                        revoked?.copy(state = OfflineVersionRecord.State.PAUSED, retryAt = null)
+                            ?: current.pending
+                    save(
+                        current.copy(
+                            pending = pending,
+                            check = check.copy(validatedAt = validatedAt),
+                        )
+                    )
+                    publishServing()
+                    emitChanged(id)
+                    revoked?.number
+                }
+            if (stopped != null) {
+                settle(id)
+                lock.withLock {
+                    val current = records[id]
+                    if (
+                        current?.pending?.number == stopped &&
+                            current.pending.automatic == true &&
+                            current.check?.state == "not_updatable"
+                    ) {
+                        discardPending(id)
+                        emitChanged(id)
+                    }
+                }
             }
         }
     }
@@ -723,6 +802,20 @@ internal class OfflineStoreCore(
 
     // Automatic updates.
 
+    /**
+     * A new automatic reservation needs a current service answer and a still-valid active region.
+     */
+    private fun canStartAutomaticUpdate(record: OfflineRegionRecord, time: Long): Boolean {
+        val check = record.check ?: return false
+        return settings.automaticUpdates &&
+            !record.removing &&
+            record.pending == null &&
+            record.active != null &&
+            check.state == "update_available" &&
+            time - check.checkedAt < check.intervalMillis &&
+            expiryPhase(record, time) == OfflineExpiryPhase.VALID
+    }
+
     suspend fun automaticUpdatesEnabled(): Boolean =
         lock.withLock {
             openLocked()
@@ -763,15 +856,7 @@ internal class OfflineStoreCore(
         val due =
             lock.withLock {
                 records.values
-                    .filter { record ->
-                        val active = record.active
-                        settings.automaticUpdates &&
-                            !record.removing &&
-                            record.pending == null &&
-                            active != null &&
-                            active.downloads > 0 &&
-                            record.check?.state == "update_available"
-                    }
+                    .filter { canStartAutomaticUpdate(it, now()) }
                     .mapNotNull { record ->
                         offlineOptions(record.active!!.options)?.let { record.id to it }
                     }
@@ -1113,6 +1198,7 @@ internal class OfflineStoreCore(
     private fun activate(id: String) {
         val record = records[id] ?: return
         val pending = record.pending ?: return
+        if (pending.automatic == true && record.check?.state == "not_updatable") return
         val plan = runCatching { plan(id, pending) }.getOrNull() ?: return
         val stored = OfflineProgressLog.read(layout.progress(id, pending.number))
         // Every pack the version lists is in the store: a version never activates with a pack gone.
@@ -1257,6 +1343,7 @@ internal class OfflineStoreCore(
     private suspend fun hostedPlan(
         options: TileflowOfflineRegionLoadOptions,
         consuming: Boolean = false,
+        requiresFreshGrant: Boolean = false,
     ): Pair<OfflineVersionPlan, URI> {
         val content =
             options.content as? TileflowOfflineContent.Hosted
@@ -1274,9 +1361,11 @@ internal class OfflineStoreCore(
         for (request in requests) {
             val reusable =
                 lock.withLock {
-                    created[request]
-                        ?.takeIf { it.manifest.downloadExpiresAtMillis - now() > REUSE_WINDOW }
-                        ?.also { if (consuming) created.remove(request) }
+                    val candidate = if (consuming) created.remove(request) else created[request]
+                    candidate?.takeIf {
+                        !requiresFreshGrant &&
+                            it.manifest.downloadExpiresAtMillis - now() > REUSE_WINDOW
+                    }
                 }
             val download =
                 reusable

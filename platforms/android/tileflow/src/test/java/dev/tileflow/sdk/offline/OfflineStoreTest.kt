@@ -34,6 +34,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -263,6 +264,337 @@ class OfflineStoreTest {
             assertEquals(50_000, error.context.limit)
         }
     }
+
+    @Test
+    fun aNativeStoreOffersTheProfileUpdateOnlyAfterAccessIsRevalidated() =
+        runBlocking<Unit> {
+            val service = OfflineServiceStub()
+            val options = madrid()
+            val web = store(service)
+            web.loadRegion("madrid", options)
+            awaitRegion(web, "madrid") { it.state == COMPLETE }
+
+            val oldStyle = service.key(service.styleUrl)
+            val index = OfflineServingIndex()
+            val native = store(service, index = index, profile = OfflinePackProfile.NATIVE)
+            service.online = false
+            assertTrue(native.region("madrid")!!.isAvailable)
+            assertEquals(200, index.resource(oldStyle, cache)?.metadata?.status)
+            service.clock.addAndGet(DAY + 1)
+            native.core.checkForUpdates()
+            assertEquals(
+                TileflowOfflineRegion.UpdateState.Current,
+                native.region("madrid")!!.updateState,
+            )
+            assertEquals(listOf("webview-v1"), service.createdProfiles)
+
+            service.online = true
+            native.core.checkForUpdates()
+            assertEquals(
+                TileflowOfflineRegion.UpdateState.UpdateAvailable,
+                native.region("madrid")!!.updateState,
+            )
+            assertEquals(listOf("webview-v1"), service.createdProfiles)
+
+            native.loadRegion("madrid", options)
+            awaitRegion(native, "madrid") {
+                it.state == COMPLETE && it.updateState == TileflowOfflineRegion.UpdateState.Current
+            }
+            assertEquals(listOf("webview-v1", "native-v1"), service.createdProfiles)
+            val nativeStyle = service.key(service.styleUrl.replace("/webview-v1/", "/native/"))
+            assertEquals(200, index.resource(nativeStyle, cache)?.metadata?.status)
+            assertNull(index.resource(oldStyle, cache))
+            assertNotNull(index.resource(service.key(service.tileUrl(service.changedTile)), cache))
+        }
+
+    @Test
+    fun aFailedRevalidationNeverStartsAnAutomaticProfileChangeUsingAnOldAnswer() =
+        runBlocking<Unit> {
+            val service = OfflineServiceStub()
+            val web = store(service)
+            web.loadRegion("madrid", madrid())
+            awaitRegion(web, "madrid") { it.state == COMPLETE }
+            val native = store(service, profile = OfflinePackProfile.NATIVE)
+            service.clock.addAndGet(DAY + 1)
+            native.core.checkForUpdates()
+            assertEquals(
+                TileflowOfflineRegion.UpdateState.UpdateAvailable,
+                native.region("madrid")!!.updateState,
+            )
+
+            native.setAutomaticUpdates(true)
+            service.clock.addAndGet(40 * DAY)
+            service.onRevalidation = { throw IOException("revalidation unavailable") }
+            val started =
+                native.core.updateAutomatically(
+                    OfflineUpdateConditions(isUnmetered = true, isLowPower = false)
+                )
+            assertTrue(started.isEmpty())
+            assertEquals(listOf("webview-v1"), service.createdProfiles)
+            assertEquals(
+                TileflowOfflineRegion.ExpiryState.Expired,
+                native.region("madrid")!!.expiryState,
+            )
+        }
+
+    @Test
+    fun aRevocationStopsAPausedAutomaticReplacementAndKeepsItsActiveRegion() =
+        runBlocking<Unit> {
+            val service = OfflineServiceStub()
+            val web = store(service)
+            web.loadRegion("madrid", madrid())
+            awaitRegion(web, "madrid") { it.state == COMPLETE }
+            val index = OfflineServingIndex()
+            val native = store(service, index = index, profile = OfflinePackProfile.NATIVE)
+            service.clock.addAndGet(DAY + 1)
+            native.setAutomaticUpdates(true)
+            service.freezeAfter = service.downloads.size
+            val started =
+                native.core.updateAutomatically(
+                    OfflineUpdateConditions(isUnmetered = true, isLowPower = false)
+                )
+            assertEquals(listOf("madrid"), started)
+            native.pauseRegion("madrid")
+
+            service.revalidationState = "not_updatable"
+            service.clock.addAndGet(DAY + 1)
+            native.core.checkForUpdates()
+            service.freezeAfter = null
+            native.resumeRegion("madrid")
+            val oldStyle = service.key(service.styleUrl)
+            val retained = awaitRegion(native, "madrid") { it.state == COMPLETE }
+            assertEquals(
+                TileflowOfflineRegion.UpdateState.NotUpdatable("credential_revoked"),
+                retained.updateState,
+            )
+            assertNotNull(index.resource(oldStyle, cache))
+            assertEquals(listOf("webview-v1", "native-v1"), service.createdProfiles)
+        }
+
+    @Test
+    fun aManualProfileReplacementAfterRevocationRequiresANewReservation() =
+        runBlocking<Unit> {
+            val service = OfflineServiceStub()
+            val web = store(service)
+            web.loadRegion("madrid", madrid())
+            awaitRegion(web, "madrid") { it.state == COMPLETE }
+            val native = store(service, profile = OfflinePackProfile.NATIVE)
+            service.clock.addAndGet(DAY + 1)
+            native.estimateRegion(madrid())
+            assertEquals(listOf("webview-v1", "native-v1"), service.createdProfiles)
+            service.revalidationState = "not_updatable"
+            native.core.checkForUpdates()
+            assertEquals(
+                TileflowOfflineRegion.UpdateState.NotUpdatable("credential_revoked"),
+                native.region("madrid")!!.updateState,
+            )
+
+            native.loadRegion("madrid", madrid())
+            awaitRegion(native, "madrid") { it.state == COMPLETE }
+            assertEquals(listOf("webview-v1", "native-v1", "native-v1"), service.createdProfiles)
+        }
+
+    @Test
+    fun aLateRevalidationCannotRevokeANewRegionWithTheSameIdAndVersionNumber() =
+        runBlocking<Unit> {
+            val service = OfflineServiceStub()
+            val originalTime = service.clock.get()
+            val web = store(service)
+            web.loadRegion("madrid", madrid())
+            awaitRegion(web, "madrid") { it.state == COMPLETE }
+            val native = store(service, profile = OfflinePackProfile.NATIVE)
+            service.clock.addAndGet(DAY + 1)
+            service.revalidationState = "not_updatable"
+            val entered = CompletableDeferred<Unit>()
+            val release = java.util.concurrent.CountDownLatch(1)
+            service.onRevalidation = {
+                entered.complete(Unit)
+                check(release.await(10, TimeUnit.SECONDS))
+            }
+            val checking = async(Dispatchers.Default) { native.core.checkForUpdates() }
+            try {
+                kotlinx.coroutines.withTimeout(10_000) { entered.await() }
+                native.removeRegion("madrid")
+                service.clock.set(originalTime)
+                native.loadRegion("madrid", madrid())
+                awaitRegion(native, "madrid") { it.state == COMPLETE }
+            } finally {
+                release.countDown()
+                checking.await()
+            }
+            assertEquals(
+                TileflowOfflineRegion.UpdateState.Current,
+                native.region("madrid")!!.updateState,
+            )
+            assertEquals(listOf("webview-v1", "native-v1"), service.createdProfiles)
+        }
+
+    @Test
+    fun aPausedWebRequestRenewsWithItsOriginalProfileAfterReopening() =
+        runBlocking<Unit> {
+            val service = OfflineServiceStub()
+            val web = store(service, concurrency = 1)
+            service.freezeAfter = 0
+            web.loadRegion("madrid", madrid())
+            web.pauseRegion("madrid")
+            val native = store(service, profile = OfflinePackProfile.NATIVE)
+            assertEquals(
+                TileflowOfflineRegion.DownloadState.PAUSED,
+                native.region("madrid")!!.state,
+            )
+            service.clock.addAndGet(2 * DAY)
+            service.freezeAfter = null
+            native.resumeRegion("madrid")
+            awaitRegion(native, "madrid") { it.state == COMPLETE }
+            assertTrue(service.createdProfiles.size >= 2)
+            assertTrue(service.createdProfiles.all { it == "webview-v1" })
+        }
+
+    @Test
+    fun oneRevokedGrantWinsOverAMissingReplyButPartialApprovalsDoNotValidate() =
+        runBlocking<Unit> {
+            for ((index, failAt) in listOf(1, 2).withIndex()) {
+                val service = OfflineServiceStub()
+                if (index == 1) {
+                    service.documentsPublicOnly = true
+                    service.tileLimit = 0
+                }
+                val root = "multipart-$index"
+                val web = store(service, root = root)
+                web.loadRegion("madrid", madrid())
+                awaitRegion(web, "madrid") { it.state == COMPLETE }
+                // Persist a second admitted grant as older, partitioned versions did.
+                val files = layout(root)
+                val record = requireNotNull(OfflineRegionRecord.read(files.record("madrid")))
+                val active = requireNotNull(record.active)
+                val request = files.request("madrid", active.number, 0).readBytes()
+                OfflineLayout.write(request, files.request("madrid", active.number, 1))
+                OfflineLayout.write(
+                    service.created(requireNotNull(OfflinePackRequest.fromJson(request))),
+                    files.download("madrid", active.number, 1),
+                )
+                record.copy(active = active.copy(downloads = 2)).write(files.record("madrid"))
+
+                val native = store(service, root = root, profile = OfflinePackProfile.NATIVE)
+                service.clock.addAndGet(DAY + 1)
+                val replies = AtomicInteger()
+                service.onRevalidation = {
+                    if (replies.incrementAndGet() == failAt) throw IOException("missing reply")
+                }
+                native.core.checkForUpdates()
+                assertEquals(
+                    TileflowOfflineRegion.UpdateState.Current,
+                    native.region("madrid")!!.updateState,
+                )
+                assertEquals(
+                    record.check?.validatedAt,
+                    OfflineRegionRecord.read(files.record("madrid"))?.check?.validatedAt,
+                )
+
+                replies.set(0)
+                service.revalidationState = "not_updatable"
+                native.core.checkForUpdates()
+                assertEquals(
+                    TileflowOfflineRegion.UpdateState.NotUpdatable("credential_revoked"),
+                    native.region("madrid")!!.updateState,
+                )
+            }
+        }
+
+    @Test
+    fun storageAndIntegrityFailuresKeepTheWebRegionAndSharedPacksAcrossRestart() =
+        runBlocking<Unit> {
+            val service = OfflineServiceStub()
+            val web = store(service)
+            for (id in listOf("madrid", "neighbor")) {
+                web.loadRegion(id, madrid())
+                awaitRegion(web, id) { it.state == COMPLETE }
+            }
+            val oldStyle = service.key(service.styleUrl)
+            val tile = service.key(service.tileUrl(service.changedTile))
+            val index = OfflineServingIndex()
+            val space = AtomicReference<Long?>(0)
+            val native =
+                store(service, space = space, index = index, profile = OfflinePackProfile.NATIVE)
+            native.loadRegion("madrid", madrid())
+            val failed = waitFor(native, "madrid") { it.state == FAILED }
+            assertEquals(TileflowOfflineErrorCode.INSUFFICIENT_STORAGE, failed.error?.code)
+            assertTrue(failed.isAvailable)
+            assertNotNull(index.resource(oldStyle, cache))
+
+            val reopened =
+                store(service, space = space, index = index, profile = OfflinePackProfile.NATIVE)
+            space.set(null)
+            service.corruptPacks = 1_000
+            reopened.resumeRegion("madrid")
+            val damaged =
+                waitFor(reopened, "madrid") {
+                    it.error?.code == TileflowOfflineErrorCode.INVALID_RESPONSE
+                }
+            assertTrue(damaged.isAvailable)
+            assertNotNull(index.resource(oldStyle, cache))
+
+            service.corruptPacks = 0
+            reopened.resumeRegion("madrid")
+            awaitRegion(reopened, "madrid") { it.state == COMPLETE }
+            assertNotNull(
+                index.resource(
+                    service.key(service.styleUrl.replace("/webview-v1/", "/native/")),
+                    cache,
+                )
+            )
+            assertNotNull(index.resource(oldStyle, cache))
+            reopened.removeRegion("neighbor")
+            assertNull(index.resource(oldStyle, cache))
+            assertNotNull(index.resource(tile, cache))
+        }
+
+    @Test
+    fun anAutomaticReservationCannotStopANewerManualDownload() =
+        runBlocking<Unit> {
+            val service = OfflineServiceStub()
+            val web = store(service)
+            web.loadRegion("madrid", madrid())
+            awaitRegion(web, "madrid") { it.state == COMPLETE }
+            lateinit var runner: RecordingRunner
+            val native =
+                store(
+                    service,
+                    profile = OfflinePackProfile.NATIVE,
+                    runner = { RecordingRunner(it).also { value -> runner = value } },
+                )
+            service.clock.addAndGet(DAY + 1)
+            native.setAutomaticUpdates(true)
+            val entered = CompletableDeferred<Unit>()
+            val release = java.util.concurrent.CountDownLatch(1)
+            service.onReservation = {
+                service.onReservation = null
+                entered.complete(Unit)
+                check(release.await(10, TimeUnit.SECONDS))
+            }
+            val automatic =
+                async(Dispatchers.Default) {
+                    native.core.updateAutomatically(
+                        OfflineUpdateConditions(isUnmetered = true, isLowPower = false)
+                    )
+                }
+            try {
+                kotlinx.coroutines.withTimeout(10_000) { entered.await() }
+                service.freezeAfter = service.downloads.size
+                native.loadRegion("madrid", madrid(east = -3.68))
+            } finally {
+                release.countDown()
+            }
+            assertTrue(automatic.await().isEmpty())
+            assertTrue(
+                "The losing reservation stopped the current download",
+                runner.stopped.isEmpty(),
+            )
+            native.pauseRegion("madrid")
+            service.freezeAfter = null
+            native.resumeRegion("madrid")
+            awaitRegion(native, "madrid") { it.state == COMPLETE }
+        }
 
     @Test
     fun updatesDownloadOnlyChangedPacksAndKeepTheStoredVersionUntilComplete() =
@@ -1098,6 +1430,7 @@ class OfflineStoreTest {
         available: (() -> Long?)? = null,
         scheduler: OfflineUpdateScheduler? = null,
         conditions: AtomicReference<OfflineUpdateConditions>? = null,
+        profile: OfflinePackProfile = OfflinePackProfile.WEB_VIEW,
     ): OfflineStoreCore {
         val cache =
             if (root == "offline") cache
@@ -1123,6 +1456,7 @@ class OfflineStoreTest {
             sleep = { sleeps?.add(it); delay(2) },
             scheduler = scheduler,
             conditions = { conditions?.get() ?: OfflineUpdateConditions.UNAVAILABLE },
+            profile = profile,
         )
     }
 
@@ -1138,6 +1472,7 @@ class OfflineStoreTest {
         scheduler: OfflineUpdateScheduler? = null,
         conditions: AtomicReference<OfflineUpdateConditions>? = null,
         runner: ((OfflineStoreCore) -> OfflineRunner)? = null,
+        profile: OfflinePackProfile = OfflinePackProfile.WEB_VIEW,
     ): TileflowOfflineStore {
         val subscribers = OfflineSubscribers()
         return TileflowOfflineStore(
@@ -1154,6 +1489,7 @@ class OfflineStoreTest {
                 available = available,
                 scheduler = scheduler,
                 conditions = conditions,
+                profile = profile,
             ),
             subscribers,
         )
@@ -1164,13 +1500,17 @@ class OfflineStoreTest {
         private val base =
             OfflineScopeRunner(core, CoroutineScope(SupervisorJob() + Dispatchers.IO).also(scopes::add))
         val restrictions = CopyOnWriteArrayList<TileflowOfflineNetworkRestriction>()
+        val stopped = CopyOnWriteArrayList<String>()
 
         override fun start(id: String, restriction: TileflowOfflineNetworkRestriction) {
             restrictions.add(restriction)
             base.start(id, restriction)
         }
 
-        override fun stop(id: String) = base.stop(id)
+        override fun stop(id: String) {
+            stopped.add(id)
+            base.stop(id)
+        }
     }
 
     private fun madrid(east: Double = -3.69) =

@@ -121,7 +121,7 @@ internal data class GeoJSONLog(
     }
 }
 
-private val STYLE_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+internal val STYLE_ID = Regex("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 
 private fun invalid(reason: ProtocolContract.ErrorReason? = null): Nothing =
     throw TileflowMapException(
@@ -152,6 +152,7 @@ private suspend fun TileflowMapView.changeStyle(
         runtimeStyle.restore(previous)
         throw error
     }
+    declaredContent?.ownersChanged()
 }
 
 // Sources
@@ -201,14 +202,20 @@ public suspend fun TileflowMapView.addStyleSource(id: String, properties: JSONOb
     addSource(RuntimeStyle.Source(id, spec, log))
 }
 
-private suspend fun TileflowMapView.addSource(record: RuntimeStyle.Source): Unit = styleEdits.withLock {
+private suspend fun TileflowMapView.addSource(record: RuntimeStyle.Source) =
+    styleEdits.withLock { insertStyleSource(record) }
+
+internal suspend fun TileflowMapView.insertStyleSource(record: RuntimeStyle.Source) {
     if (!STYLE_ID.matches(record.id) || sourceExists(record.id)) invalid()
     if (styleEngine == null) engineKind.validateQueued(record)
     changeStyle({ sources += record }) { engine -> engine.addSource(record) }
 }
 
 /** Removes a source no application layer draws. */
-public suspend fun TileflowMapView.removeSource(id: String): Unit = styleEdits.withLock {
+public suspend fun TileflowMapView.removeSource(id: String): Unit =
+    styleEdits.withLock { deleteStyleSource(id) }
+
+internal suspend fun TileflowMapView.deleteStyleSource(id: String) {
     if (runtimeStyle.sources.none { it.id == id }) invalid(ProtocolContract.ErrorReason.UNKNOWN_SOURCE)
     if (runtimeStyle.layers.any { it.json.optString("source") == id }) invalid()
     changeStyle({
@@ -225,8 +232,11 @@ public fun TileflowMapView.sourceExists(id: String): Boolean =
 
 /** Replaces a GeoJSON source's data; feature state stays with feature identifiers. */
 public suspend fun TileflowMapView.setGeoJSONSourceData(sourceId: String, data: TileflowGeoJSONData): Unit = styleEdits.withLock {
+    replaceStyleData(sourceId, geoJSONBase(data))
+}
+
+internal suspend fun TileflowMapView.replaceStyleData(sourceId: String, base: GeoJSONLog.Base) {
     val source = geoJSONSource(sourceId)
-    val base = geoJSONBase(data)
     changeStyle({
         val log = source.geoJSON!!
         source.geoJSON = GeoJSONLog(base, promoteId = log.promoteId, revision = log.revision + 1)
@@ -337,7 +347,12 @@ private suspend fun TileflowMapView.addLayer(
     json: JSONObject,
     requestedSlot: TileflowLayerSlot?,
     position: TileflowLayerPosition,
-): Unit = styleEdits.withLock {
+): Unit = styleEdits.withLock { insertStyleLayer(RuntimeStyle.Layer(id, json, requestedSlot), position) }
+
+internal suspend fun TileflowMapView.insertStyleLayer(layer: RuntimeStyle.Layer, position: TileflowLayerPosition) {
+    val id = layer.id
+    val json = layer.json
+    val requestedSlot = layer.slot
     if (!STYLE_ID.matches(id) || layerExists(id) || runtimeStyle.layers.size >= 1024) invalid()
     if (json.has("source") && !sourceExists(json.getString("source")))
         invalid(ProtocolContract.ErrorReason.UNKNOWN_SOURCE)
@@ -363,7 +378,10 @@ public suspend fun TileflowMapView.updateStyleLayer(properties: JSONObject) {
     updateLayer(styleLayer(properties))
 }
 
-private suspend fun TileflowMapView.updateLayer(layer: RuntimeStyle.Layer): Unit = styleEdits.withLock {
+private suspend fun TileflowMapView.updateLayer(layer: RuntimeStyle.Layer) =
+    styleEdits.withLock { replaceStyleLayer(layer) }
+
+internal suspend fun TileflowMapView.replaceStyleLayer(layer: RuntimeStyle.Layer) {
     val index = runtimeStyle.layers.indexOfFirst { it.id == layer.id }
     if (index < 0) invalid(ProtocolContract.ErrorReason.UNKNOWN_LAYER)
     if (layer.json.has("source") && !sourceExists(layer.json.getString("source")))
@@ -380,7 +398,10 @@ private suspend fun TileflowMapView.updateLayer(layer: RuntimeStyle.Layer): Unit
  * Moves a layer relative to the application's other layers; [TileflowLayerPosition.Default] puts
  * it on top of its slot.
  */
-public suspend fun TileflowMapView.moveLayer(id: String, position: TileflowLayerPosition): Unit = styleEdits.withLock {
+public suspend fun TileflowMapView.moveLayer(id: String, position: TileflowLayerPosition): Unit =
+    styleEdits.withLock { positionStyleLayer(id, position) }
+
+internal suspend fun TileflowMapView.positionStyleLayer(id: String, position: TileflowLayerPosition) {
     val index = runtimeStyle.layers.indexOfFirst { it.id == id }
     if (index < 0) invalid(ProtocolContract.ErrorReason.UNKNOWN_LAYER)
     if (
@@ -404,7 +425,10 @@ public suspend fun TileflowMapView.moveLayer(id: String, position: TileflowLayer
     }
 }
 
-public suspend fun TileflowMapView.removeLayer(id: String): Unit = styleEdits.withLock {
+public suspend fun TileflowMapView.removeLayer(id: String): Unit =
+    styleEdits.withLock { deleteStyleLayer(id) }
+
+internal suspend fun TileflowMapView.deleteStyleLayer(id: String) {
     if (runtimeStyle.layers.none { it.id == id }) invalid(ProtocolContract.ErrorReason.UNKNOWN_LAYER)
     changeStyle({ layers.removeAll { it.id == id } }) { engine ->
         engine.call(ProtocolContract.Method.REMOVE_LAYER, JSONObject().put("id", id))
@@ -574,7 +598,7 @@ private fun features(value: Any): List<TileflowQueriedFeature> {
     return (0 until array.length()).map { TileflowQueriedFeature.of(array.getJSONObject(it)) }
 }
 
-private fun featureTarget(source: String, sourceLayer: String?, id: String): JSONObject =
+internal fun featureTarget(source: String, sourceLayer: String?, id: String): JSONObject =
     JSONObject().put("source", source).put("id", TileflowFeature.wireId(id)).apply {
         sourceLayer?.let { put("sourceLayer", it) }
     }
@@ -626,7 +650,7 @@ private fun insertion(
 }
 
 /** A source's MapLibre specification without its data, and the GeoJSON it starts with. */
-internal fun sourceWire(source: TileflowSource): Pair<JSONObject, GeoJSONLog?> {
+internal fun sourceWire(source: TileflowSource, inlineBase: GeoJSONLog.Base? = null): Pair<JSONObject, GeoJSONLog?> {
     fun tiled(type: String, tiles: TileflowTiles, bounds: TileflowBounds?, attribution: String?) =
         JSONObject().put("type", type).apply {
             when (tiles) {
@@ -666,7 +690,7 @@ internal fun sourceWire(source: TileflowSource): Pair<JSONObject, GeoJSONLog?> {
                     if (source.generateId) put("generateId", true)
                     source.promoteId?.let { put("promoteId", it) }
                 }
-            spec to GeoJSONLog(geoJSONBase(source.data), promoteId = source.promoteId)
+            spec to GeoJSONLog(inlineBase ?: geoJSONBase(source.data), promoteId = source.promoteId)
         }
         is TileflowVectorSource ->
             tiled("vector", source.tiles, source.bounds, source.attribution)
@@ -750,7 +774,7 @@ private suspend fun MapEngine.addSource(record: RuntimeStyle.Source) {
     )
 }
 
-private suspend fun MapEngine.sendUpdate(update: GeoJSONLog.Update, source: String) {
+internal suspend fun MapEngine.sendUpdate(update: GeoJSONLog.Update, source: String) {
     val payload = JSONObject().put("id", source)
     val references = mutableListOf<DataChannel.Reference>()
     update.add?.let { bytes ->

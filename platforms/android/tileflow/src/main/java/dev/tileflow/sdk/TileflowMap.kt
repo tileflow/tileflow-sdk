@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
@@ -21,10 +22,10 @@ import dev.tileflow.sdk.location.TileflowLocationState
  * Recomposition preserves the renderer; source replacement is an explicit resource transition.
  *
  * With a [cameraState] the map is controlled: see [TileflowCameraState]. [contentPadding] is space
- * the application covers at each edge, such as a sheet over the map; the camera centres on the
- * rest of the view and the controls stay inside it, together with the system bars and display
- * cutout. Return false from [touchFilter] to leave a touch that begins at that point to the
- * composables behind the map.
+ * the application covers at each edge, such as a sheet over the map; the camera centres on the rest
+ * of the view and the controls stay inside it, together with the system bars and display cutout.
+ * Return false from [touchFilter] to leave a touch that begins at that point to the composables
+ * behind the map.
  *
  * With a [locationState] the follow mode is hoisted: see [TileflowLocationState]. Show the location
  * with [TileflowMapOptions.location]; [locationProvider] replaces the SDK's default provider, for
@@ -45,6 +46,40 @@ public fun TileflowMap(
     locationProvider: TileflowLocationProvider? = null,
     onEvent: (TileflowMapEvent) -> Unit = {},
 ) {
+    TileflowMap(
+        source,
+        {},
+        modifier,
+        theme,
+        initialCamera,
+        options,
+        controller,
+        cameraState,
+        contentPadding,
+        touchFilter,
+        locationState,
+        locationProvider,
+        onEvent,
+    )
+}
+
+/** Shows a map whose sources, layers, markers and location can be declared in [content]. */
+@Composable
+public fun TileflowMap(
+    source: TileflowMapSource,
+    content: TileflowMapContentBuilder.() -> Unit,
+    modifier: Modifier = Modifier,
+    theme: String? = null,
+    initialCamera: TileflowCamera? = null,
+    options: TileflowMapOptions = TileflowMapOptions(),
+    controller: TileflowMapController? = null,
+    cameraState: TileflowCameraState? = null,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    touchFilter: ((DpOffset) -> Boolean)? = null,
+    locationState: TileflowLocationState? = null,
+    locationProvider: TileflowLocationProvider? = null,
+    onEvent: (TileflowMapEvent) -> Unit = {},
+) {
     val context = LocalContext.current
     val latestEvent = rememberUpdatedState(onEvent)
     val latestFilter = rememberUpdatedState(touchFilter)
@@ -52,14 +87,18 @@ public fun TileflowMap(
     val latestLocation = rememberUpdatedState(locationState)
     val events: (TileflowMapEvent) -> Unit = { event ->
         if (event is TileflowMapEvent.CameraChanged) latestState.value?.record(event.change)
-        if (event is TileflowMapEvent.FollowModeChanged)
-            latestLocation.value?.record(event.change)
+        if (event is TileflowMapEvent.FollowModeChanged) latestLocation.value?.record(event.change)
         latestEvent.value(event)
     }
     val view =
         remember(context) {
             TileflowMapView(context).apply {
                 this.onEvent = events
+                try {
+                    adoptOptions(options)
+                } catch (_: TileflowMapException) {
+                    // The coordinator reports an invalid initial declaration through onEvent.
+                }
                 setSource(source, cameraState?.camera ?: initialCamera)
             }
         }
@@ -73,14 +112,9 @@ public fun TileflowMap(
                 latestEvent.value(TileflowMapEvent.Failed(error.code, error.context))
         }
     }
-    LaunchedEffect(view, options) {
-        try {
-            view.setOptions(options)
-        } catch (error: TileflowMapException) {
-            if (error.code != TileflowErrorCode.CANCELLED)
-                latestEvent.value(TileflowMapEvent.Failed(error.code, error.context))
-        }
-    }
+    val declared = remember(view) { MapContentCoordinator(view).also { view.declaredContent = it } }
+    val elements = TileflowMapContentBuilder().apply(content)
+    SideEffect { declared.submit(elements, options) }
     // The application's writes move the map; the map's own writes are already where it is.
     LaunchedEffect(view, cameraState) {
         val state = cameraState ?: return@LaunchedEffect
@@ -151,10 +185,11 @@ public fun TileflowMap(
             if (it.locationProvider !== locationProvider) it.locationProvider = locationProvider
             it.touchFilter =
                 if (!filtering) null
-                else { x, y ->
-                    val point = DpOffset((x / density).dp, (y / density).dp)
-                    latestFilter.value?.invoke(point) != false
-                }
+                else
+                    { x, y ->
+                        val point = DpOffset((x / density).dp, (y / density).dp)
+                        latestFilter.value?.invoke(point) != false
+                    }
         },
     )
 }
@@ -179,7 +214,42 @@ public fun TileflowMap(
     onEvent: (TileflowMapEvent) -> Unit = {},
 ) {
     TileflowMap(
+        mapId,
+        {},
+        modifier,
+        theme,
+        initialCamera,
+        options,
+        controller,
+        cameraState,
+        contentPadding,
+        touchFilter,
+        locationState,
+        locationProvider,
+        onEvent,
+    )
+}
+
+/** Shows a Hosted map with declarative [content]. */
+@Composable
+public fun TileflowMap(
+    mapId: String,
+    content: TileflowMapContentBuilder.() -> Unit,
+    modifier: Modifier = Modifier,
+    theme: String? = null,
+    initialCamera: TileflowCamera? = null,
+    options: TileflowMapOptions = TileflowMapOptions(),
+    controller: TileflowMapController? = null,
+    cameraState: TileflowCameraState? = null,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
+    touchFilter: ((DpOffset) -> Boolean)? = null,
+    locationState: TileflowLocationState? = null,
+    locationProvider: TileflowLocationProvider? = null,
+    onEvent: (TileflowMapEvent) -> Unit = {},
+) {
+    TileflowMap(
         TileflowMapSource.hosted(mapId),
+        content,
         modifier,
         theme,
         initialCamera,

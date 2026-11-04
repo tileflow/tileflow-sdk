@@ -162,8 +162,10 @@ internal class NativeAnnotations(
     fun setSimple(entries: List<Simple>) {
         if (entries == pins.values.map { it.entry }) return
         val wanted = entries.map { it.id }.toSet()
+        val coordinatesChanged = pins.keys != wanted || entries.any { pins[it.id]?.entry?.coordinate != it.coordinate }
         for (id in pins.keys - wanted) view.removeView(pins.remove(id))
         for (entry in entries) {
+            if (pins[entry.id]?.entry == entry) continue
             val pin =
                 pins.getOrPut(entry.id) {
                     Pin(view.context, entry).also {
@@ -175,6 +177,7 @@ internal class NativeAnnotations(
             pin.contentDescription = entry.title
             pin.invalidate()
         }
+        if (!coordinatesChanged) return
         pinInput = DoubleArray(pins.size * 2)
         pins.values.forEachIndexed { i, pin ->
             pinInput[i * 2] = pin.entry.coordinate.latitude

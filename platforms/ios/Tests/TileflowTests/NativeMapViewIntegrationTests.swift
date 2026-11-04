@@ -165,11 +165,27 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     let zoom = try await view.clusterExpansionZoom(sourceId: "points", clusterId: cluster)
     XCTAssertGreaterThan(zoom, 9)
 
+    try await view.move(
+      to: .init(longitude: -3.7, latitude: 40.42, zoom: 12, pitch: 80), animation: .none)
+    var steep: [TileflowQueriedFeature] = []
+    for _ in 0..<100 {
+      steep = try await view.queryRenderedFeatures(options: .init(limit: 100_000))
+      if !steep.isEmpty { break }
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    XCTAssertFalse(steep.isEmpty)
+
     let center = TileflowCoordinate(longitude: -3.895, latitude: 40.3)
     try await view.setFeatureState(sourceId: "points", featureId: "5", state: ["selected": true])
     try await view.move(
       to: .init(longitude: center.longitude, latitude: center.latitude, zoom: 17), animation: .none)
     func checkSelected() async throws {
+      let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+      let native = try XCTUnwrap(engine.mapView?.style)
+      let source = try XCTUnwrap(
+        native.source(withIdentifier: "__tileflow_source_points") as? MLNShapeSource)
+      try await waitUntil(seconds: 5) { source.featureState(featureID: "5")?["selected"] as? Bool == true }
+      XCTAssertEqual(native.image(forName: "disc")?.renderingMode, .alwaysTemplate)
       let at = try await view.project(center)
       let rendered = try await hits("point", at: .point(at))
       XCTAssertTrue(rendered.contains { $0.feature.id == "5" && $0.state["selected"] == true })
@@ -197,6 +213,13 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     let base = FixtureServer.origin
     try await view.addSource(
       id: "places", properties: ["type": "geojson", "data": base + "/data.json"])
+    do {
+      try await view.addSource(id: "volatile", properties: [
+        "type": "vector", "tiles": [base + "/city/{z}/{x}/{y}.mvt"], "volatile": true,
+      ])
+      XCTFail("Expected a cache policy the renderer cannot apply to be rejected")
+    } catch let error as TileflowMapError { XCTAssertEqual(error, .invalidRequest) }
+    XCTAssertFalse(view.sourceExists("volatile"))
     try await view.addSource(
       id: "opentiles", properties: ["type": "vector", "tiles": [base + "/city/{z}/{x}/{y}.mvt"]])
     try await view.addSource(
@@ -314,6 +337,82 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     XCTAssertEqual(last.first?.feature.properties["rank"]?.number, 3)
     let final = try await ids(triangle)
     XCTAssertTrue(final.isEmpty)
+  }
+
+  func testFilteredGeoJSONRemovesAFeatureWhenItsPropertiesChange() async throws {
+    try await requireNativeFixture()
+    let events = NativeMapEvents()
+    let view = TileflowMapView(source: citySource)
+    view.engineKind = .native
+    let window = mount(view, events: events)
+    defer {
+      view.destroy()
+      window.isHidden = true
+    }
+    try await events.waitForLoads(1)
+    let first = TileflowFeature(id: "1", geometry: .point(Self.center), properties: ["rank": 1])
+    var source = TileflowGeoJSONSource(id: "ranked", data: .features([first]))
+    source.filter = .eq(.get("rank"), 1)
+    try await view.addSource(source)
+    try await view.addLayer(TileflowCircleLayer(id: "ranked-points", source: "ranked"))
+    let at = try await view.project(Self.center)
+    func visible() async throws -> Bool {
+      try await view.queryRenderedFeatures(
+        in: .point(at), options: .init(layerIds: ["ranked-points"])
+      ).contains { $0.feature.id == "1" }
+    }
+    for _ in 0..<100 {
+      if try await visible() { break }
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    let before = try await visible()
+    XCTAssertTrue(before)
+    var changed = first
+    changed.properties["rank"] = 0
+    try await view.updateGeoJSONSourceFeatures(sourceId: "ranked", features: [changed])
+    for _ in 0..<100 {
+      if try await !visible() { break }
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    let after = try await visible()
+    XCTAssertFalse(after)
+  }
+
+  func testReloadCancelsThePreviousRenderersSourceLoad() async throws {
+    try await requireNativeFixture()
+    let events = NativeMapEvents()
+    let view = TileflowMapView(source: citySource)
+    view.engineKind = .native
+    let window = mount(view, events: events)
+    defer {
+      view.destroy()
+      window.isHidden = true
+    }
+    try await events.waitForLoads(1)
+    let initial = try XCTUnwrap(view.engine as? NativeMapEngine)
+    let count = initial.received[.addSource, default: 0]
+    let loading = Task { @MainActor in
+      try await view.addSource(
+        id: "retired",
+        properties: [
+          "type": "vector", "url": FixtureServer.origin + "/runtime-style/invalid-tiles.json",
+        ])
+    }
+    try await waitUntil { initial.received[.addSource, default: 0] > count }
+    try view.reload()
+    do {
+      try await loading.value
+      XCTFail("Expected the request to retire with its renderer")
+    } catch let error as TileflowMapError {
+      XCTAssertEqual(error, .cancelled)
+    }
+    XCTAssertNil(initial.mapView?.style?.source(withIdentifier: "__tileflow_source_retired"))
+    try await waitUntil(seconds: 5) { events.loads == 2 || !events.failures.isEmpty }
+    XCTAssertTrue(events.failures.isEmpty, "\(events.failures)")
+    XCTAssertEqual(events.loads, 2)
+    XCTAssertFalse(view.sourceExists("retired"))
+    let replacement = try XCTUnwrap(view.engine as? NativeMapEngine)
+    XCTAssertNil(replacement.mapView?.style?.source(withIdentifier: "__tileflow_source_retired"))
   }
 
   func testConcurrentSourceRejectionKeepsTheSuccessfulSource() async throws {

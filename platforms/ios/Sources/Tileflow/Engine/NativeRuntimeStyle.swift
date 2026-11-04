@@ -32,6 +32,14 @@ final class NativeRuntimeStyle {
   var layers: [Layer] = []
   var images: [String: Image] = [:]
   var states: [String: [String: [String: JSONValue]]] = [:]
+
+  struct StateTarget: Hashable {
+    let source: String
+    let layer: String
+    let feature: String
+  }
+  var pendingState: Set<StateTarget> = []
+  var stateRetriedLastFrame: Set<StateTarget> = []
   var theme: String?
   private var anchors: [String: String]?
 

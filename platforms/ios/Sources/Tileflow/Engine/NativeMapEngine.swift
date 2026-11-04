@@ -48,6 +48,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     self?.onEvent?("warning", warning)
   }
   private(set) var retired = false
+  private var retirementError: TileflowMapError?
   private var initialized = false
   /// Whether the map's own style finished loading; the initial empty style does not count.
   var styleLoaded = false
@@ -151,8 +152,14 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       let prior = styleWork
       let work = Task { @MainActor [weak self] in
         await prior?.value
-        guard let self, !self.retired else { throw TileflowMapError.disposed }
-        return try await self.styleCommand(command, request: payload)
+        guard let self else { throw TileflowMapError.disposed }
+        if let error = self.retirementError { throw error }
+        do {
+          return try await self.styleCommand(command, request: payload)
+        } catch {
+          if let lifecycleError = self.retirementError { throw lifecycleError }
+          throw error
+        }
       }
       styleWork = Task { _ = await work.result }
       return try await work.value
@@ -208,7 +215,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
         let source = try await NativeRuntimeStyle.prepareSource(
           request, channel: data, styleURL: url, load: loadApplicationData,
           project: { [self] in try await project($0, styleURL: $1, context: context) })
-        guard !retired else { throw TileflowMapError.disposed }
+        if let error = retirementError { throw error }
         try runtimeStyle.addSource(source, in: loadedStyle)
         updateApplicationResources()
       } else {
@@ -217,7 +224,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
         }
         let bytes = try await NativeRuntimeStyle.geoJSONBytes(
           value, channel: data, styleURL: url, load: loadApplicationData)
-        guard !retired else { throw TileflowMapError.disposed }
+        if let error = retirementError { throw error }
         try runtimeStyle.replaceData(bytes, source: id, in: loadedStyle)
       }
     case .removeSource:
@@ -279,6 +286,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   func retire(_ error: TileflowMapError) {
     guard !retired else { return }
+    retirementError = error
     retired = true
     if let context { MapResourceContexts.shared.retire(context) }
     context = nil
@@ -614,10 +622,12 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   }
 
   nonisolated func mapViewDidFinishRenderingFrame(_ mapView: MLNMapView, fullyRendered: Bool) {
-    guard fullyRendered else { return }
     MainActor.assumeIsolated {
-      contentLoaded()
-      rendered()
+      if !runtimeStyle.pendingState.isEmpty, let style = loadedStyle { runtimeStyle.confirmState(in: style) }
+      if fullyRendered {
+        contentLoaded()
+        rendered()
+      }
     }
   }
 

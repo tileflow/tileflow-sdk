@@ -23,6 +23,42 @@ extension NativeRuntimeStyle {
     default: throw TileflowMapError.invalidRequest
     }
     guard ok else { throw TileflowMapError.invalidRequest }
+    pendingState.insert(StateTarget(source: id, layer: sourceLayer, feature: feature))
+  }
+
+  /// The style can contain a source one frame before the renderer creates its render source.
+  /// MapLibre accepts a state write in that interval and drops it. Verify against the renderer
+  /// on its next frame and retry only targets whose state has not reached it yet.
+  func confirmState(in style: MLNStyle) {
+    // The setter requests a frame itself. Let that frame confirm without requesting another
+    // while a source is unused; adding a layer or moving the camera will draw again.
+    let last = stateRetriedLastFrame
+    stateRetriedLastFrame.removeAll(keepingCapacity: true)
+    for target in pendingState {
+      let key = RuntimeStyle.stateKey(target.source, target.layer)
+      guard let values = states[key]?[target.feature], !values.isEmpty else {
+        pendingState.remove(target)
+        continue
+      }
+      let current: [String: Any]?
+      switch style.source(withIdentifier: Self.sourceID(target.source)) {
+      case let source as MLNShapeSource:
+        current = source.featureState(featureID: target.feature)
+      case let source as MLNVectorTileSource:
+        current = source.featureState(sourceLayerID: target.layer, featureID: target.feature)
+      default: continue
+      }
+      if let current,
+        values.allSatisfy({ current[$0.key].map(JSONValue.init(foundation:)) == $0.value })
+      {
+        pendingState.remove(target)
+      } else if !last.contains(target) {
+        stateRetriedLastFrame.insert(target)
+        try? applyState(
+          sourceID: target.source, sourceLayer: target.layer, feature: target.feature,
+          values: values, in: style)
+      }
+    }
   }
 
   func changeState(_ method: MapEngineCommand, request: JSONValue, style: MLNStyle?) throws {
@@ -162,10 +198,20 @@ extension NativeRuntimeStyle {
     let point = try geometry?["point"].map(NativeMapEngine.point)
     let polygon = try geometry?["polygon"]?.array?.map(NativeMapEngine.point)
     let corners = try geometry?["box"]?.array?.map(NativeMapEngine.point)
-    let bounds =
+    let requestedBounds =
       (polygon ?? corners).map { points in
         points.reduce(CGRect.null) { $0.union(CGRect(origin: $1, size: .zero)) }
       } ?? map.bounds
+    let bounds = requestedBounds.intersection(map.bounds)
+    guard !bounds.isNull else { return .array([]) }
+    let bands: [CGRect]
+    if point == nil, map.camera.pitch >= 60, bounds.height > 64 {
+      bands = stride(from: bounds.minY, to: bounds.maxY, by: 64).map { y in
+        CGRect(x: bounds.minX, y: y, width: bounds.width, height: min(64, bounds.maxY - y))
+      }
+    } else {
+      bands = [bounds]
+    }
     let byID = Dictionary(uniqueKeysWithValues: layers.map { (Self.layerID($0.id), $0) })
     var results: [JSONValue] = []
     for native in style.layers.reversed()
@@ -173,28 +219,38 @@ extension NativeRuntimeStyle {
       guard let layer = byID[native.identifier], let source = layer.json["source"]?.string else {
         continue
       }
-      let features: [any MLNFeature]
-      if let point {
-        features = map.visibleFeatures(
-          at: point, styleLayerIdentifiers: [native.identifier], predicate: predicate)
-      } else {
-        features = map.visibleFeatures(
-          in: bounds, styleLayerIdentifiers: [native.identifier], predicate: predicate)
-      }
       var seen = Set<String>()
-      for feature in features {
-        if let id = feature.identifier.map({ String(describing: $0) }), !seen.insert(id).inserted {
-          continue
+      var anonymousGeometries = Set<Data>()
+      for band in bands {
+        let features: [any MLNFeature]
+        if let point {
+          features = map.visibleFeatures(
+            at: point, styleLayerIdentifiers: [native.identifier], predicate: predicate)
+        } else {
+          features = map.visibleFeatures(
+            in: band, styleLayerIdentifiers: [native.identifier], predicate: predicate)
         }
-        let value = wire(
-          feature, source: source, sourceLayer: layer.json["source-layer"]?.string, layer: layer.id)
-        if let polygon, let shape = value["geometry"],
-          !Self.intersects(polygon, geometry: shape, map: map)
-        {
-          continue
+        for feature in features {
+          if let id = feature.identifier.map({ String(describing: $0) }), !seen.insert(id).inserted
+          {
+            continue
+          }
+          if bands.count > 1, feature.identifier == nil {
+            let key = try JSONSerialization.data(
+              withJSONObject: feature.geoJSONDictionary(), options: .sortedKeys)
+            guard anonymousGeometries.insert(key).inserted else { continue }
+          }
+          let value = wire(
+            feature, source: source, sourceLayer: layer.json["source-layer"]?.string,
+            layer: layer.id)
+          if let polygon, let shape = value["geometry"],
+            !Self.intersects(polygon, geometry: shape, map: map)
+          {
+            continue
+          }
+          results.append(value)
+          if results.count == limit { return .array(results) }
         }
-        results.append(value)
-        if results.count == limit { return .array(results) }
       }
     }
     return .array(results)

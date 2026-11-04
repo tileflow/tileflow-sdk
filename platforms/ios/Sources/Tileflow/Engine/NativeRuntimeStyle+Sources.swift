@@ -23,7 +23,7 @@ extension NativeRuntimeStyle {
   private static func validateSource(_ spec: [String: JSONValue]) throws {
     let keys = Set(spec.keys)
     let tiles: Set<String> = [
-      "type", "url", "tiles", "minzoom", "maxzoom", "scheme", "bounds", "attribution", "volatile",
+      "type", "url", "tiles", "minzoom", "maxzoom", "scheme", "bounds", "attribution",
     ]
     switch spec["type"]?.string {
     case "geojson":
@@ -323,11 +323,18 @@ extension NativeRuntimeStyle {
           feature["id"] = index
         }
         if let predicate {
-          let value = try shape(JSONSerialization.data(withJSONObject: feature))
+          let type = (feature["geometry"] as? [String: Any])?["type"] as? String ?? ""
+          let context: [String: Any] = [
+            "featureAttributes": properties,
+            "featureIdentifier": feature["id"] ?? NSNull(),
+            "geometryType": type.hasPrefix("Multi") ? String(type.dropFirst(5)) : type,
+          ]
           var include = false
-          guard TFStylePerform({ include = predicate.evaluate(with: value) }) else {
-            throw TileflowMapError.invalidRequest
-          }
+          guard
+            TFStylePerform({
+              include = predicate.evaluate(with: properties, substitutionVariables: context)
+            })
+          else { throw TileflowMapError.invalidRequest }
           if !include { continue }
         }
         prepared.append(feature)

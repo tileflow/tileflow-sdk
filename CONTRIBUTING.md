@@ -128,8 +128,12 @@ with `--keep`. No source package versions or application credentials are changed
 
 ## Public contracts
 
-Keep package exports and README examples aligned; run `pnpm run docs:check` after building.
-Public repositories retain README files, source, tests, licenses and notices. Do not add `docs/`,
+Keep package READMEs focused on purpose, installation, a working example, and links to next steps.
+Detailed public contracts belong in the owning package's `REFERENCE.md`; include it in the package
+and preserve version-specific behavior when moving material out of a README. Link to the relevant
+[public guides](https://tileflow.dev/docs) for longer walkthroughs. Keep examples aligned with public
+exports; `pnpm run docs:check` checks README and reference examples after building.
+Public repositories retain README files, package references, source, tests, licenses and notices. Do not add `docs/`,
 `plans/`, `planning/`, internal procedures or private repository links.
 Shared hosted API and rendering contracts must remain backward compatible because
 npm and platform production cannot update atomically; deploy compatible server behavior before

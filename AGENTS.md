@@ -3,8 +3,11 @@
 ## Scope
 
 - Public package source lives under `packages/`.
-- Package behavior belongs in the owning package README.
-- Keep README files with the packages they describe and run `pnpm run docs:check` after building.
+- Keep package READMEs focused on purpose, installation, one working example, and next steps.
+- Put detailed public contracts in the owning package's `REFERENCE.md` and link to the relevant
+  guides at `https://tileflow.dev/docs`. Preserve version-specific behavior when shortening a README.
+- Include `REFERENCE.md` in the package when present; its links and examples are checked alongside
+  the README. Run `pnpm run docs:check` after building.
 - Do not add documentation/planning directories, internal procedures or links to private repositories.
 - Preview and capture maps through `tileflow preview` and `tileflow capture`; reuse their shared
   artifact preparation instead of introducing a separate viewer.

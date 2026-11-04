@@ -123,6 +123,7 @@ test('publish registers a Team-local ID and uses the resumable direct-upload pro
       });
     }
     if (url.origin === 'https://private.example.test') {
+      request.body = new Uint8Array(await new Response(request.body).arrayBuffer());
       const part = (beginBody?.parts as Array<Record<string, unknown>>)[0]!;
       return new Response(null, {
         headers: {etag: Buffer.from(String(part.md5Base64), 'base64').toString('hex')},

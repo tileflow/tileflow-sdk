@@ -94,9 +94,11 @@ export function streetsCartographyThemes(base: Record<string, TileflowTheme>) {
             ['roads.path.groundOpacity', 1],
             ['labels.shield.spacing11', 420],
             ['labels.shield.spacing13', 480],
+            // Only daylight shows the climate; the other appearances keep the same layer clear,
+            // so every appearance shares one cartography.
             ...[100, 85, 78, 55, 25].map((value) => [
               `land.climate.opacity${value === 100 ? '' : value}`,
-              value / 100,
+              name === 'light' ? value / 100 : 0,
             ]),
           ]),
         },

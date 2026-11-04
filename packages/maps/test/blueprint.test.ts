@@ -367,33 +367,33 @@ test('Blueprint keeps technical overlays honest and inside canonical data contra
   ) => featureFilter(layer.filter as never).filter({zoom}, {type, properties} as never);
 
   assert.equal(
-    matches(callouts, 1, {category: 'landmark', filter_rank: 0, name: 'Museo', size_rank: 0}),
+    matches(callouts, 1, {class: 'landmark', filterrank: 0, name: 'Museo', sizerank: 0}),
     true,
   );
   assert.equal(
     matches(callouts, 1, {
-      category: 'landmark',
-      filter_rank: 1,
-      'name:latin': 'Museum',
-      size_rank: 8,
+      class: 'landmark',
+      filterrank: 1,
+      name_latin: 'Museum',
+      sizerank: 8,
     }),
     true,
   );
   assert.equal(
-    matches(callouts, 1, {category: 'landmark', filter_rank: 2, name: 'Museo', size_rank: 0}),
+    matches(callouts, 1, {class: 'landmark', filterrank: 2, name: 'Museo', sizerank: 0}),
     false,
   );
   assert.equal(
-    matches(callouts, 1, {category: 'landmark', filter_rank: 0, name: 'Museo', size_rank: 9}),
+    matches(callouts, 1, {class: 'landmark', filterrank: 0, name: 'Museo', sizerank: 9}),
     false,
   );
   assert.equal(
-    matches(callouts, 1, {category: 'transport', filter_rank: 0, name: 'Estación', size_rank: 0}),
+    matches(callouts, 1, {class: 'transport', filterrank: 0, name: 'Estación', sizerank: 0}),
     false,
   );
-  assert.equal(matches(callouts, 1, {category: 'landmark', filter_rank: 0, size_rank: 0}), false);
+  assert.equal(matches(callouts, 1, {class: 'landmark', filterrank: 0, sizerank: 0}), false);
   assert.equal(
-    matches(callouts, 2, {category: 'landmark', filter_rank: 0, name: 'Museo', size_rank: 0}),
+    matches(callouts, 2, {class: 'landmark', filterrank: 0, name: 'Museo', sizerank: 0}),
     false,
   );
 
@@ -406,53 +406,60 @@ test('Blueprint keeps technical overlays honest and inside canonical data contra
   assert.deepEqual(callouts.layout?.['text-field'], [
     'coalesce',
     ['get', 'name'],
-    ['get', 'name:latin'],
-    ['get', 'name:en'],
+    ['get', 'name_latin'],
+    ['get', 'name_en'],
     '',
   ]);
   assert.deepEqual(callouts.layout?.['symbol-sort-key'], [
     '+',
-    ['*', ['to-number', ['get', 'filter_rank'], 6], 17],
-    ['to-number', ['get', 'size_rank'], 17],
+    ['*', ['to-number', ['get', 'filterrank'], 6], 17],
+    ['to-number', ['get', 'sizerank'], 17],
   ]);
   assert.equal(compiledLayer(compiled, 'poi.landmark.label'), undefined);
 
   assert.equal(matches(prominentBuildings, 3, {importance_tier: 2}), true);
-  assert.equal(
-    matches(prominentBuildings, 3, {building_tone: 'destination', importance_tier: 1}),
-    false,
-  );
-  assert.equal(matches(prominentBuildings, 3, {building_tone: 'destination'}), true);
-  assert.equal(matches(prominentBuildings, 3, {building_tone: 'active', render_height: 24}), true);
-  assert.equal(
-    matches(prominentBuildings, 3, {building_tone: 'commercial', render_height: 23}),
-    false,
-  );
+  assert.equal(matches(prominentBuildings, 3, {tone: 'destination', importance_tier: 1}), false);
+  assert.equal(matches(prominentBuildings, 3, {tone: 'destination'}), true);
+  assert.equal(matches(prominentBuildings, 3, {tone: 'active', height: 24}), true);
+  assert.equal(matches(prominentBuildings, 3, {tone: 'commercial', height: 23}), false);
   assert.equal(matches(footprintHatch, 3, {importance_tier: 2}), true);
   assert.equal(matches(footprintHatch, 3, {}), false);
 
-  for (const landcoverClass of ['wood', 'forest']) {
-    assert.equal(matches(landscapeHatch, 3, {class: landcoverClass}), true);
+  for (const properties of [{class: 'wood'}, {class: 'wood', type: 'forest'}]) {
+    assert.equal(matches(landscapeHatch, 3, properties), true);
   }
-  for (const subclass of ['park', 'garden']) {
-    assert.equal(matches(parkHatch, 3, {class: 'grass', subclass}), true);
+  for (const properties of [
+    {class: 'park'},
+    {class: 'park', type: 'park'},
+    {class: 'garden', type: 'garden'},
+  ]) {
+    assert.equal(matches(parkHatch, 3, properties), true);
   }
   for (const properties of [
     {class: 'grass'},
-    {class: 'grass', subclass: 'meadow'},
-    {class: 'grass', subclass: 'scrub'},
-    {class: 'grass', subclass: 'recreation_ground'},
-    {class: 'grass', subclass: 'flowerbed'},
+    {class: 'grass', type: 'meadow'},
+    {class: 'scrub'},
+    {class: 'park', type: 'recreation_ground'},
+    {class: 'garden', type: 'flowerbed'},
   ]) {
     assert.equal(matches(landscapeHatch, 3, properties), false);
     assert.equal(matches(parkHatch, 3, properties), false);
   }
 
-  for (const landuseClass of ['pitch', 'track', 'playground', 'zoo']) {
-    assert.equal(matches(recreationHatch, 3, {class: landuseClass}), true);
+  for (const properties of [
+    {class: 'pitch'},
+    {class: 'pitch', type: 'track'},
+    {class: 'playground'},
+    {class: 'park', type: 'zoo'},
+  ]) {
+    assert.equal(matches(recreationHatch, 3, properties), true);
   }
-  for (const landuseClass of ['recreation_ground', 'park', 'cemetery']) {
-    assert.equal(matches(recreationHatch, 3, {class: landuseClass}), false);
+  for (const properties of [
+    {class: 'park', type: 'recreation_ground'},
+    {class: 'park'},
+    {class: 'cemetery'},
+  ]) {
+    assert.equal(matches(recreationHatch, 3, properties), false);
   }
   for (const landuseClass of ['industrial', 'railway']) {
     assert.equal(matches(industrialHatch, 3, {class: landuseClass}), true);
@@ -468,8 +475,8 @@ test('Blueprint keeps technical overlays honest and inside canonical data contra
     assert.equal(matches(roadCenterline, 2, {class: roadClass}), true);
   }
   assert.equal(matches(roadCenterline, 2, {class: 'secondary'}), false);
-  assert.equal(matches(roadCenterline, 2, {brunnel: 'bridge', class: 'motorway'}), false);
-  assert.equal(matches(roadCenterline, 2, {brunnel: 'tunnel', class: 'motorway'}), false);
+  assert.equal(matches(roadCenterline, 2, {structure: 'bridge', class: 'motorway'}), false);
+  assert.equal(matches(roadCenterline, 2, {structure: 'tunnel', class: 'motorway'}), false);
   const centerlineIndex = compiledLayerIndex(compiled, 'roads.render.majorRoadCenterline');
   for (const target of [
     'roads.classes.primary.surface.fill',
@@ -482,19 +489,16 @@ test('Blueprint keeps technical overlays honest and inside canonical data contra
     );
   }
 
-  assert.equal(matches(heightAnnotations, 3, {render_height: 24, importance_tier: 2}), true);
-  assert.equal(matches(heightAnnotations, 3, {render_height: 23, importance_tier: 2}), false);
-  assert.equal(
-    matches(heightAnnotations, 3, {building_tone: 'destination', render_height: 24}),
-    true,
-  );
-  assert.equal(matches(heightAnnotations, 3, {height: 100, importance_tier: 2}), false);
-  assert.equal(matches(heightAnnotations, 3, {render_height: 100, importance_tier: 2}), true);
-  assert.equal(matches(heightAnnotations, 3, {render_height: 100}), false);
+  assert.equal(matches(heightAnnotations, 3, {height: 24, importance_tier: 2}), true);
+  assert.equal(matches(heightAnnotations, 3, {height: 23, importance_tier: 2}), false);
+  assert.equal(matches(heightAnnotations, 3, {tone: 'destination', height: 24}), true);
+  assert.equal(matches(heightAnnotations, 3, {render_height: 100, importance_tier: 2}), false);
+  assert.equal(matches(heightAnnotations, 3, {height: 100, importance_tier: 2}), true);
+  assert.equal(matches(heightAnnotations, 3, {height: 100}), false);
   assert.deepEqual(heightAnnotations.layout?.['text-field'], [
     'concat',
     'H ≈ ',
-    ['to-string', ['to-number', ['get', 'render_height'], 0]],
+    ['to-string', ['to-number', ['get', 'height'], 0]],
     ' M',
   ]);
 });

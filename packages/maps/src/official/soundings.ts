@@ -418,6 +418,8 @@ export const soundings = bindOfficialMapTheme(
         water: 'all',
       }),
       land: land({
+        // Buildings are off, and so are the areas where their activity concentrates.
+        activityAreas: {fill: {visible: false}, outline: {visible: false}},
         background: {opacity: 1, pattern: 'soundings-paper-grain'},
         globalLandcover: {
           color: expr.match(
@@ -534,7 +536,7 @@ export const soundings = bindOfficialMapTheme(
           // Ferry names are operational context, not a recommended track.
           ferryLabels: renderPass({
             placement: {above: 'transit.ferry'},
-            feature: 'roadName',
+            feature: 'roadLabel',
             renderer: 'symbol',
             selector: {
               kind: 'all',
@@ -545,7 +547,7 @@ export const soundings = bindOfficialMapTheme(
                   kind: 'any',
                   selectors: [
                     {field: 'class', kind: 'compare', operator: 'eq', value: 'ferry'},
-                    {field: 'subclass', kind: 'compare', operator: 'eq', value: 'ferry'},
+                    {field: 'type', kind: 'compare', operator: 'eq', value: 'ferry'},
                   ],
                 },
               ],
@@ -729,7 +731,7 @@ export const soundings = bindOfficialMapTheme(
               kind: 'any',
               selectors: [
                 {field: 'class', kind: 'compare', operator: 'eq', value: 'pier'},
-                {field: 'subclass', kind: 'compare', operator: 'eq', value: 'pier'},
+                {field: 'type', kind: 'compare', operator: 'eq', value: 'pier'},
               ],
             },
             style: {
@@ -757,7 +759,7 @@ export const soundings = bindOfficialMapTheme(
               kind: 'any',
               selectors: [
                 {field: 'class', kind: 'compare', operator: 'eq', value: 'pier'},
-                {field: 'subclass', kind: 'compare', operator: 'eq', value: 'pier'},
+                {field: 'type', kind: 'compare', operator: 'eq', value: 'pier'},
               ],
             },
             style: {
@@ -780,14 +782,7 @@ export const soundings = bindOfficialMapTheme(
             placement: {above: 'water.bodies.fill'},
             feature: 'water',
             renderer: 'fill',
-            selector: {
-              coerce: 'number',
-              fallback: 0,
-              field: 'intermittent',
-              kind: 'compare',
-              operator: 'ne',
-              value: 1,
-            },
+            selector: {field: 'intermittent', kind: 'compare', operator: 'ne', value: true},
             style: {
               minZoom: 7,
               opacity: zoom.linear([
@@ -802,14 +797,7 @@ export const soundings = bindOfficialMapTheme(
             placement: {above: 'water.intermittent.bodies.fill'},
             feature: 'water',
             renderer: 'fill',
-            selector: {
-              coerce: 'number',
-              fallback: 0,
-              field: 'intermittent',
-              kind: 'compare',
-              operator: 'eq',
-              value: 1,
-            },
+            selector: {field: 'intermittent', kind: 'compare', operator: 'eq', value: true},
             style: {minZoom: 9, opacity: 0.16, pattern: 'soundings-water-dots'},
           }),
         },

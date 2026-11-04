@@ -551,11 +551,11 @@ export default {
   assert.equal(standaloneReceipt.image.physicalWidth, 192);
   assert.equal(standaloneReceipt.image.physicalHeight, 128);
   assert.equal(standaloneReceipt.networkDependent, false);
-  assert.equal(standaloneReceipt.schemaVersion, 4);
+  assert.equal(standaloneReceipt.schemaVersion, 5);
   assert.equal(standaloneReceipt.scene.theme, 'light');
   assert.equal(standaloneReceipt.data.kind, 'vector-tiles');
   assert.equal(standaloneReceipt.data.schema, 'openmaptiles');
-  assert.equal(standaloneReceipt.data.schemaVersion, 1);
+  assert.equal(standaloneReceipt.data.schemaVersion, 2);
   assert.equal(standaloneReceipt.data.sourceId, 'tileflow');
   assert.equal(standaloneReceipt.data.source?.kind, 'loopback');
   assert.match(standaloneReceipt.data.source?.sha256 ?? '', /^[a-f0-9]{64}$/u);
@@ -647,7 +647,7 @@ export default {
   const sha256 = createHash('sha256').update(png).digest('hex');
   assert.equal(entry.sha256, sha256);
   const receipt = JSON.parse(await readFile(join(consumerDirectory, entry.receiptPath), 'utf8'));
-  assert.equal(receipt.schemaVersion, 4);
+  assert.equal(receipt.schemaVersion, 5);
   assert.equal(receipt.scene.theme, 'light');
   assert.equal(receipt.image.sha256, sha256);
   assert.equal(receipt.image.physicalWidth, 192);
@@ -655,7 +655,7 @@ export default {
   assert.equal(receipt.networkDependent, false);
   assert.equal(receipt.data.kind, 'vector-tiles');
   assert.equal(receipt.data.schema, 'openmaptiles');
-  assert.equal(receipt.data.schemaVersion, 1);
+  assert.equal(receipt.data.schemaVersion, 2);
   assert.equal(receipt.data.sourceId, 'tileflow');
   assert.equal(receipt.data.source?.kind, 'loopback');
   assert.match(receipt.data.source?.sha256 ?? '', /^[a-f0-9]{64}$/u);
@@ -693,7 +693,7 @@ async function loadCapture(entry) {
     readFile(join(process.cwd(), entry.receiptPath), 'utf8'),
   ]);
   const receipt = parseTileflowCaptureReceipt(receiptSource);
-  assert.equal(receipt.schemaVersion, 4);
+  assert.equal(receipt.schemaVersion, 5);
   return {
     scene: entry.scene,
     map: entry.map,
@@ -908,9 +908,22 @@ async function auditPublicTarball(packageName, tarball, packedVersions, releaseC
       'Maps tarball is missing official-map notices.',
     );
     const sourceAssetRoot = join(repositoryRoot, 'packages', 'maps', 'assets');
+    // The manifest may leave out exact asset paths served from elsewhere, such as Streets' hosted
+    // climate image; every other source asset must ship.
+    const excludedAssetEntries = new Set(
+      manifest.files
+        .filter((entry) => entry.startsWith('!'))
+        .map((entry) => `package/${entry.slice(1)}`),
+    );
     const expectedAssetEntries = (await listFiles(sourceAssetRoot))
       .map((path) => `package/assets/${relative(sourceAssetRoot, path).replaceAll('\\', '/')}`)
+      .filter((entry) => !excludedAssetEntries.delete(entry))
       .sort();
+    assert.deepEqual(
+      [...excludedAssetEntries],
+      [],
+      'Maps manifest excludes paths that are not source asset files.',
+    );
     const packedAssetEntries = entries
       .filter((entry) => entry.startsWith('package/assets/') && !entry.endsWith('/'))
       .sort();

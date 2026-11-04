@@ -168,6 +168,8 @@ export function resolveColors(
     'visitor-amenity': labelDefaults.poi,
   } satisfies TileflowResolvedPoiColors;
   const landuseDefaults = {
+    activity: mix(base.building, base.roadMajor, 0.28),
+    activityOutline: mix(base.building, base.roadMajor, 0.42),
     cemetery: mix(base.park, base.land, 0.35),
     civic: mix(base.land, base.textMuted, 0.08),
     commercial: mix(base.land, base.textMuted, 0.05),
@@ -205,8 +207,6 @@ export function resolveColors(
   } satisfies ResolvedColorGroup<TileflowHydroColorConfig>;
   const buildingDefaults = {
     active: mix(base.building, base.roadMajor, 0.22),
-    businessCorridor: mix(base.building, base.roadMajor, 0.28),
-    businessCorridorOutline: mix(base.building, base.roadMajor, 0.42),
     civic: mix(base.building, base.boundary, 0.28),
     commercial: mix(base.building, base.roadMajor, 0.22),
     destination: mix(base.building, base.roadMajor, 0.22),
@@ -371,8 +371,6 @@ export function resolveThemeColors(
     boundaries: optionalGroup('boundaries', ['admin', 'disputed', 'major', 'maritime']),
     buildings: optionalGroup('buildings', [
       'active',
-      'businessCorridor',
-      'businessCorridorOutline',
       'civic',
       'commercial',
       'destination',
@@ -416,6 +414,8 @@ export function resolveThemeColors(
       'wood',
     ]),
     landuse: optionalGroup('landuse', [
+      'activity',
+      'activityOutline',
       'cemetery',
       'civic',
       'commercial',

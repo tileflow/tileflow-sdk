@@ -261,7 +261,7 @@ const rows: ReadonlyArray<readonly [string, readonly string[]]> = [
     ],
   ],
   [
-    'landuse.commercial landuse.businessCorridor buildings.businessCorridor',
+    'landuse.commercial landuse.activity',
     [
       '#FFDDBF',
       '#FEECDF',

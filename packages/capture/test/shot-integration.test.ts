@@ -59,7 +59,7 @@ export default defineMap({
     type: 'vector-tiles',
     attribution: 'Tileflow exact fixture',
     revision: 'fixture_1',
-    schema: {type: 'openmaptiles', contractVersion: 1},
+    schema: {type: 'openmaptiles', contractVersion: 2},
     tiles: [${JSON.stringify(`${origin}/tiles/world/{z}/{x}/{y}.pbf`)}],
     minzoom: 0,
     maxzoom: 14,

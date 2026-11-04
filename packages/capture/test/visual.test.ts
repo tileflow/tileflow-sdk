@@ -27,25 +27,25 @@ const dataIdentity: TileflowCaptureDataInput = {
   kind: 'tileflow-world',
   product: 'world-v1',
   releaseId: 'world-v1-visual-fixture',
-  schema: 'openmaptiles',
+  schema: 'tileflow-world',
   schemaVersion: 1,
-  semantics: {parkLayer: 'protected-only'},
   sourceId: 'tileflow',
+  sources: [
+    {
+      archiveSha256: '1'.repeat(64),
+      contractSha256: '2'.repeat(64),
+      dataContractSha256: '3'.repeat(64),
+      id: 'world',
+    },
+  ],
 };
 
 const vectorDataIdentity = {
   bindings: {fields: {class: 'class'}, layers: {road: 'transportation'}},
-  capabilities: {
-    businessCorridor: true,
-    bathymetry: false,
-    canopy: false,
-    globalLandcover: true,
-    tree: true,
-  },
   kind: 'vector-tiles',
   revision: 'archive-1',
   schema: 'openmaptiles',
-  schemaVersion: 1,
+  schemaVersion: 2,
   semantics: {parkLayer: 'mixed'},
   sourceId: 'tileflow',
   url: 'http://127.0.0.1:8080/tiles.json?token=first',
@@ -370,8 +370,12 @@ test('compares vector data identity exactly, apart from loopback ports and URL s
       },
     },
     {
-      ...vectorDataIdentity,
-      capabilities: {...vectorDataIdentity.capabilities, bathymetry: true},
+      kind: 'vector-tiles' as const,
+      revision: vectorDataIdentity.revision,
+      schema: 'tileflow-world' as const,
+      schemaVersion: 1,
+      sourceId: 'tileflow' as const,
+      url: vectorDataIdentity.url,
     },
     {...vectorDataIdentity, semantics: {parkLayer: 'protected-only' as const}},
     {...vectorDataIdentity, url: 'http://localhost:43123/other.json'},
@@ -382,7 +386,7 @@ test('compares vector data identity exactly, apart from loopback ports and URL s
   }
 });
 
-test('treats a different exact World release as a scene identity mismatch', async () => {
+test('treats a different exact World release or tileset selection as a scene identity mismatch', async () => {
   const png = createPng(2, 2, [20, 40, 60, 255]);
   const actual = await createCapture(png, 2, 2);
   const baseline = structuredClone(actual.receipt);
@@ -399,6 +403,26 @@ test('treats a different exact World release as a scene identity mismatch', asyn
   });
   assert.equal(comparison.status, 'scene-mismatch');
   assert.equal(comparison.sceneMatch, false);
+
+  const detailed = structuredClone(actual.receipt);
+  if (detailed.data.kind !== 'tileflow-world') {
+    throw new Error('Expected an exact World receipt fixture.');
+  }
+  detailed.data.sources = [
+    ...detailed.data.sources,
+    {
+      archiveSha256: '4'.repeat(64),
+      contractSha256: '5'.repeat(64),
+      dataContractSha256: '6'.repeat(64),
+      id: 'world-detail',
+    },
+  ];
+  const sourceMismatch = await compareTileflowCaptureToBaseline(actual, {
+    png,
+    receipt: detailed,
+  });
+  assert.equal(sourceMismatch.status, 'scene-mismatch');
+  assert.equal(sourceMismatch.sceneMatch, false);
 });
 
 test('rejects corrupt PNGs, inconsistent hashes, and executable or additive receipt shapes', async () => {
@@ -479,7 +503,7 @@ test('rejects duplicate-key receipt JSON instead of accepting parser-dependent i
   const png = createPng(1, 1, [1, 2, 3, 255]);
   const receipt = await createReceipt(png, 1, 1);
   const canonical = serializeTileflowCaptureReceipt(receipt);
-  const ambiguous = canonical.replace('"schemaVersion":4', '"schemaVersion":0,"schemaVersion":4');
+  const ambiguous = canonical.replace('"schemaVersion":5', '"schemaVersion":0,"schemaVersion":5');
 
   assert.throws(() => parseTileflowCaptureReceipt(ambiguous), /canonical|unsupported|duplicate/i);
 });

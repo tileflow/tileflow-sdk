@@ -9,13 +9,21 @@ import {
   token,
   withRenderStack,
 } from '@tileflow/core';
+import {worldConstructionSelector, worldConstructionTypes} from './world-roads';
 
 /** Keep construction ground and marks beneath the roads that are already in service. */
 export function withStreetsConstruction(
   module: TileflowRoadsModuleConfig,
   stack: TileflowNamedRenderStack,
 ): TileflowModuleWithRenderStack<TileflowRoadsModuleConfig, TileflowNamedRenderStack> {
-  const constructionPath = expr.eq(expr.get(field('class')), 'path_construction');
+  const constructionPath = expr.all(
+    expr.eq(expr.get(field('class')), 'construction'),
+    expr.match(
+      expr.get(field('type')),
+      [{labels: [...worldConstructionTypes.pathway, 'footway', 'cycleway', 'steps'], value: true}],
+      false,
+    ),
+  );
   const marks = Object.fromEntries(
     (
       [
@@ -36,19 +44,12 @@ export function withStreetsConstruction(
         kind: 'all',
         selectors: [
           {kind: 'geometry', geometry: 'line'},
-          {
-            kind: 'in',
-            field: 'class',
-            values:
-              roadClass === 'track'
-                ? ['track_construction', 'raceway_construction']
-                : [`${roadClass}_construction`],
-          },
-          {kind: 'compare', field: 'brunnel', operator: 'ne', value: 'bridge'},
-          {kind: 'compare', field: 'brunnel', operator: 'ne', value: 'tunnel'},
+          worldConstructionSelector(roadClass),
+          {kind: 'compare', field: 'structure', operator: 'ne', value: 'bridge'},
+          {kind: 'compare', field: 'structure', operator: 'ne', value: 'tunnel'},
           {
             kind: 'step',
-            fallback: {kind: 'compare', field: 'ramp', operator: 'ne', value: 1},
+            fallback: {kind: 'compare', field: 'link', operator: 'ne', value: true},
             stops: [{zoom: 12, selector: {kind: 'literal', value: true}}],
           },
         ],

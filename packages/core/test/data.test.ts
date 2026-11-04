@@ -1,16 +1,39 @@
+import {featureFilter} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  createStyle,
+  disable,
+  fixed,
   isCanonicalOpenMapTilesSchema,
   openMapTiles,
+  renderPass,
+  type ResolvedTileflowData,
   resolveTileflowData,
+  tileflowDetailSourceId,
   tileflowWorld,
+  tileflowWorldDetailLayers,
+  tileflowWorldDetailTileJsonUrl,
   tileflowWorldGeneration,
+  tileflowWorldLayers,
+  tileflowWorldSchema,
   tileflowWorldTileJsonUrl,
-  tileflowWorldV1Schema,
-  validateTileflowWorldV1Tilejson,
+  tileflowWorldTilesetOf,
+  transit,
+  validateTileflowWorldTilejson,
   vectorTiles,
+  withRenderStack,
 } from '../src';
+import {
+  bindSemanticLayer,
+  createSemanticDataView,
+  dataLayer,
+  dataSource,
+} from '../src/cartography/semantic-bindings';
+import {compileLand} from '../src/modules/land/compiler';
+import {resolveColors} from '../src/themes';
+import {assembleTileflowLayers} from './layer-ir-fixture';
+import {extendStreets} from './map-fixture';
 
 test('resolves omitted data to the World current TileJSON discovery selector', () => {
   const resolved = resolveTileflowData(undefined);
@@ -24,19 +47,25 @@ test('resolves omitted data to the World current TileJSON discovery selector', (
   assert.equal(resolved.schema.layers.bathymetry, 'bathymetry');
   assert.equal(resolved.schema.fields.bathymetryMinDepth, 'min_depth');
   assert.equal(resolved.schema.fields.bathymetrySortKey, 'sort_key');
+  assert.equal(resolved.schema.type, 'tileflow-world');
+  assert.equal(resolved.schema.adapter, undefined);
+  assert.equal(resolved.schema.layers.roadLabel, 'road_label');
+  assert.equal(resolved.schema.nameLanguagePrefix, 'name_');
+  assert.deepEqual(resolved.detail, {
+    delivery: 'composite',
+    url: 'https://api.tileflow.dev/tiles/world,world-detail/tiles.json',
+  });
   assert.equal(
     resolved.attribution,
     '<a href="https://tileflow.dev/copyright">© Tileflow</a> ' +
-      '<a href="https://www.openmaptiles.org/">© OpenMapTiles</a> ' +
       '<a href="https://www.openstreetmap.org/copyright">© OpenStreetMap</a>',
   );
   assert.deepEqual(resolved.identity, {
     generation: 'v1',
     kind: 'tileflow-world',
-    schema: 'openmaptiles',
+    schema: 'tileflow-world',
     schemaVersion: 1,
     worldSelection: {kind: 'current', product: 'world-v1'},
-    semantics: {parkLayer: 'protected-only'},
     sourceId: 'tileflow',
     url: tileflowWorldTileJsonUrl,
   });
@@ -55,6 +84,10 @@ test('resolves an exact World selection with both immutable identity fields', ()
     `https://api.example.test/tiles/world/tiles.json?worldReleaseId=${releaseId}&worldDescriptorSha256=${descriptorSha256}`,
   );
   assert.equal(resolved.tiles, undefined);
+  assert.deepEqual(resolved.detail, {
+    delivery: 'composite',
+    url: `https://api.example.test/tiles/world,world-detail/tiles.json?worldReleaseId=${releaseId}&worldDescriptorSha256=${descriptorSha256}`,
+  });
   assert.deepEqual(resolved.identity.worldSelection, {
     kind: 'release',
     product: 'world-v1',
@@ -159,7 +192,7 @@ test('rejects unsafe vector and PMTiles URL protocols, authority, and paths', ()
 test('supports explicit schema bindings and identifies canonical OpenMapTiles', () => {
   const canonical = openMapTiles();
   const remapped = openMapTiles({
-    layers: {globalLandcover: 'worldcover_lowzoom', road: 'roads_v2'},
+    layers: {landcover: 'cover_v2', road: 'roads_v2'},
     fields: {
       access: 'permission',
       class: 'kind',
@@ -171,16 +204,18 @@ test('supports explicit schema bindings and identifies canonical OpenMapTiles', 
   });
 
   assert.equal(isCanonicalOpenMapTilesSchema(canonical), true);
+  assert.equal(canonical.contractVersion, 2);
   assert.deepEqual(canonical.semantics, {parkLayer: 'mixed'});
   assert.equal(isCanonicalOpenMapTilesSchema(remapped), false);
-  assert.equal(canonical.layers.globalLandcover, 'globallandcover');
-  assert.equal(canonical.layers.businessCorridor, 'business_corridor');
-  assert.equal(canonical.layers.canopy, 'canopy');
-  assert.equal(canonical.layers.tree, 'tree');
-  assert.equal(canonical.fields.canopyClearanceAtZoom15, 'clearance_px_z15');
-  assert.equal(canonical.fields.canopyCoverPercent, 'cover_pct');
-  assert.equal(canonical.fields.canopyRank, 'rank');
-  assert.equal(remapped.layers.globalLandcover, 'worldcover_lowzoom');
+  // OpenMapTiles bindings name canonical OpenMapTiles layers and fields only.
+  for (const layer of ['businessCorridor', 'canopy', 'globalLandcover', 'tree']) {
+    assert.equal(Object.hasOwn(canonical.layers, layer), false, layer);
+  }
+  for (const field of ['canopyClearanceAtZoom15', 'canopyCoverPercent', 'canopyRank']) {
+    assert.equal(Object.hasOwn(canonical.fields, field), false, field);
+  }
+  assert.equal(canonical.layers.road, 'transportation');
+  assert.equal(remapped.layers.landcover, 'cover_v2');
   assert.equal(remapped.layers.road, 'roads_v2');
   assert.equal(remapped.fields.class, 'kind');
   assert.equal(remapped.fields.access, 'permission');
@@ -191,12 +226,10 @@ test('supports explicit schema bindings and identifies canonical OpenMapTiles', 
   assert.equal(canonical.fields.toll, 'toll');
 });
 
-test('makes park-layer semantics explicit and requires them on every schema', () => {
-  const world = tileflowWorldV1Schema();
+test('makes park-layer semantics explicit and requires them on every OpenMapTiles schema', () => {
   const protectedOnly = openMapTiles({semantics: {parkLayer: 'protected-only'}});
   const generic = openMapTiles();
 
-  assert.equal(world.semantics.parkLayer, 'protected-only');
   assert.equal(protectedOnly.semantics.parkLayer, 'protected-only');
   assert.equal(isCanonicalOpenMapTilesSchema(protectedOnly), false);
   assert.equal(generic.semantics.parkLayer, 'mixed');
@@ -214,247 +247,192 @@ test('makes park-layer semantics explicit and requires them on every schema', ()
       }),
     /semantics\.parkLayer is invalid/u,
   );
-});
-
-test('preserves explicitly absent optional source-layer capabilities', () => {
-  const schema = openMapTiles({
-    capabilities: {businessCorridor: false, canopy: false, globalLandcover: false, tree: false},
-  });
-
-  assert.equal(isCanonicalOpenMapTilesSchema(schema), false);
-  assert.equal(isCanonicalOpenMapTilesSchema(openMapTiles({capabilities: {canopy: false}})), false);
-
-  const resolved = resolveTileflowData(
-    vectorTiles({
-      attribution: '© Example',
-      schema,
-      url: '/tiles.json',
-    }),
+  assert.throws(
+    () =>
+      vectorTiles({
+        attribution: '© Example',
+        schema: {type: 'tileflow-world', version: 2} as never,
+        url: '/tiles.json',
+      }),
+    /Tileflow World schema version must be 1/u,
   );
-  assert.equal(resolved.schema.layers.globalLandcover, undefined);
-  assert.equal(resolved.schema.layers.businessCorridor, undefined);
-  assert.equal(resolved.schema.layers.canopy, undefined);
-  assert.equal(resolved.schema.layers.tree, undefined);
-  assert.equal(resolved.identity.capabilities?.globalLandcover, false);
-  assert.equal(resolved.identity.capabilities?.businessCorridor, false);
-  assert.equal(resolved.identity.capabilities?.bathymetry, false);
-  assert.equal(resolved.identity.capabilities?.canopy, false);
-  assert.equal(resolved.identity.capabilities?.tree, false);
-  assert.equal(resolved.identity.bindings?.layers.canopy, undefined);
 });
 
-test('records the optional canopy layer as a data identity capability', () => {
+test('reads OpenMapTiles through World layers and fields, without the layers it lacks', () => {
   const resolved = resolveTileflowData(
     vectorTiles({attribution: '© Example', schema: openMapTiles(), url: '/tiles.json'}),
   );
 
-  assert.equal(resolved.identity.bindings?.layers.canopy, 'canopy');
-  assert.equal(resolved.identity.bindings?.fields.canopyRank, 'rank');
-  assert.deepEqual(resolved.identity.capabilities, {
-    businessCorridor: true,
-    bathymetry: false,
-    canopy: true,
-    globalLandcover: true,
-    tree: true,
+  assert.equal(resolved.schema.type, 'openmaptiles');
+  assert.equal(resolved.schema.version, 2);
+  assert.equal(resolved.schema.nameLanguagePrefix, 'name:');
+  assert.equal(resolved.schema.layers.admin, 'boundary');
+  assert.equal(resolved.schema.layers.landuseOverlay, 'park');
+  assert.equal(resolved.schema.layers.road, 'transportation');
+  assert.equal(resolved.schema.layers.roadLabel, 'transportation_name');
+  for (const layer of [
+    'bathymetry',
+    'canopy',
+    'landcover',
+    'roadOutline',
+    'roadShield',
+    'sidewalk',
+    'tree',
+  ] as const) {
+    assert.equal(resolved.schema.layers[layer], undefined, layer);
+  }
+  assert.equal(resolved.schema.fields.link, 'ramp');
+  assert.equal(resolved.schema.fields.structure, 'brunnel');
+  assert.equal(resolved.schema.fields.extrude, 'hide_3d');
+  assert.equal(resolved.schema.fields.canopyRank, undefined);
+  assert.equal(resolved.schema.fields.icon, undefined);
+  assert.equal(resolved.detail, undefined);
+  // OpenMapTiles identities record their bindings and park semantics; World needs neither.
+  assert.deepEqual(resolved.identity, {
+    bindings: {fields: {...openMapTiles().fields}, layers: {...openMapTiles().layers}},
+    kind: 'vector-tiles',
+    schema: 'openmaptiles',
+    schemaVersion: 2,
+    semantics: {parkLayer: 'mixed'},
+    sourceId: 'tileflow',
+    url: '/tiles.json',
+  });
+
+  const world = resolveTileflowData(
+    vectorTiles({attribution: '© Example', schema: tileflowWorldSchema(), url: '/tiles.json'}),
+  );
+  assert.deepEqual(world.schema.layers, {...tileflowWorldLayers});
+  assert.equal(world.detail, undefined);
+  assert.deepEqual(world.identity, {
+    kind: 'vector-tiles',
+    schema: 'tileflow-world',
+    schemaVersion: 1,
+    sourceId: 'tileflow',
+    url: '/tiles.json',
   });
 });
 
-test('defines and validates the required Tileflow World V1 surface extensions', () => {
-  const generic = openMapTiles();
-  const worldV1 = tileflowWorldV1Schema();
-
-  assert.equal(generic.layers.bathymetry, undefined);
-  assert.equal(generic.fields.bathymetryMinDepth, undefined);
-  assert.equal(generic.fields.shieldKind, undefined);
-  assert.equal(generic.fields.shieldLineLengthMeters, undefined);
-  assert.equal(generic.fields.shieldNetwork, undefined);
-  assert.equal(generic.fields.shieldRank, undefined);
-  assert.equal(generic.fields.shieldText, undefined);
-  assert.equal(generic.fields.shieldTextColor, undefined);
-  for (const [field, binding] of [
-    ['circularClearanceExtraAtZoom15', 'clearance_extra_px_z15'],
-    ['circularInnerRadiusMeters', 'inner_radius_m'],
-    ['circularKind', 'circle_kind'],
-    ['circularOuterRadiusMeters', 'outer_radius_m'],
-    ['circularRadiusAtZoom15', 'radius_px_z15'],
-    ['circularRadiusMeters', 'radius_m'],
-    ['direction', 'direction'],
-    ['hasParts', 'has_parts'],
-    ['importanceTier', 'importance_tier'],
-  ] as const) {
-    assert.equal(generic.fields[field], binding, field);
-    assert.equal(worldV1.fields[field], binding, field);
-  }
-  assert.equal(worldV1.layers.bathymetry, 'bathymetry');
-  assert.equal(worldV1.layers.circularFeature, 'circular_feature');
-  assert.equal(worldV1.layers.globalLandcover, 'globallandcover');
-  assert.equal(worldV1.layers.sidewalk, 'sidewalk');
-  assert.equal(worldV1.layers.streetFurniture, 'street_furniture');
-  assert.equal(worldV1.layers.roadShield, 'transportation_shield');
-  assert.equal(worldV1.layers.transportationOutline, 'transportation_outline');
-  assert.equal(generic.layers.transportationOutline, undefined);
-  assert.equal(worldV1.fields.bathymetryMinDepth, 'min_depth');
-  assert.equal(worldV1.fields.bathymetrySortKey, 'sort_key');
-  assert.equal(worldV1.fields.importanceTier, 'importance_tier');
-  assert.equal(worldV1.fields.poiCategory, 'category');
-  assert.equal(worldV1.fields.poiFilterRank, 'filter_rank');
-  assert.equal(worldV1.fields.poiIcon, 'icon');
-  assert.equal(worldV1.fields.poiSizeRank, 'size_rank');
-  assert.equal(worldV1.fields.poiType, 'type');
-  assert.equal(worldV1.fields.shieldKind, 'shield_kind');
-  assert.equal(worldV1.fields.shieldLineLengthMeters, 'shield_line_length_m');
-  assert.equal(worldV1.fields.shieldNetwork, 'shield_network');
-  assert.equal(worldV1.fields.shieldRank, 'shield_rank');
-  assert.equal(worldV1.fields.shieldText, 'shield_text');
-  assert.equal(worldV1.fields.shieldTextColor, 'shield_text_color');
-  assert.deepEqual(
-    validateTileflowWorldV1Tilejson({
-      vector_layers: validWorldV1VectorLayers(),
-    }),
-    [],
-  );
-  assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: []}), [
-    'Tileflow World V1 requires bathymetry.',
-    'Tileflow World V1 requires globallandcover.',
-    'Tileflow World V1 requires circular_feature.',
-    'Tileflow World V1 requires sidewalk.',
-    'Tileflow World V1 requires street_furniture.',
-    'Tileflow World V1 requires poi.',
-    'Tileflow World V1 requires transportation.',
-    'Tileflow World V1 requires transportation_name.',
-    'Tileflow World V1 requires transportation_shield.',
-    'Tileflow World V1 requires transportation_outline.',
+test('validates the layers and fields a Tileflow World TileJSON declares', () => {
+  assert.deepEqual(validateTileflowWorldTilejson({vector_layers: validWorldVectorLayers()}), []);
+  assert.deepEqual(validateTileflowWorldTilejson({vector_layers: []}), [
+    'Tileflow World requires admin.',
+    'Tileflow World requires aeroway.',
+    'Tileflow World requires airport_label.',
+    'Tileflow World requires building.',
+    'Tileflow World requires housenum_label.',
+    'Tileflow World requires landuse.',
+    'Tileflow World requires landuse_overlay.',
+    'Tileflow World requires natural_label.',
+    'Tileflow World requires place_label.',
+    'Tileflow World requires water.',
+    'Tileflow World requires waterway.',
+    'Tileflow World requires bathymetry.',
+    'Tileflow World requires landcover.',
+    'Tileflow World requires poi_label.',
+    'Tileflow World requires circular_feature.',
+    'Tileflow World requires sidewalk.',
+    'Tileflow World requires street_furniture.',
+    'Tileflow World requires road.',
+    'Tileflow World requires road_label.',
+    'Tileflow World requires road_shield.',
+    'Tileflow World requires road_outline.',
   ]);
-  assert.equal(
-    tileflowWorldV1Schema({capabilities: {globalLandcover: false}}).layers.globalLandcover,
-    'globallandcover',
-  );
-  const invalidLandcover = validWorldV1VectorLayers();
-  invalidLandcover[1] = {
-    id: 'globallandcover',
-    minzoom: 0,
-    maxzoom: 8,
-    fields: {class: 'Number'},
-  };
   assert.deepEqual(
-    validateTileflowWorldV1Tilejson({
-      vector_layers: invalidLandcover,
+    validateTileflowWorldTilejson({
+      vector_layers: worldVectorLayers({
+        landcover: {maxzoom: 8, fields: {class: 'Number'}},
+        place_label: {fields: {class: 'Number'}},
+      }),
     }),
     [
-      'Tileflow World V1 globallandcover must declare z0-z10.',
-      'Tileflow World V1 requires String class on globallandcover.',
+      'Tileflow World requires String class on place_label.',
+      'Tileflow World landcover must declare z0-z10.',
+      'Tileflow World requires String class on landcover.',
     ],
   );
 });
 
-test('fails closed on malformed or duplicate Tileflow World V1 detail capabilities', () => {
-  const malformed = validWorldV1VectorLayers();
-  malformed[2] = {
-    ...malformed[2],
-    maxzoom: 14,
-    fields: {...malformed[2]!.fields, radius_m: 'String'},
-  };
-  malformed[3] = {
-    ...malformed[3],
-    minzoom: 14,
-    fields: {...malformed[3]!.fields, class: 'Number'},
-  };
-  malformed[4] = {
-    ...malformed[4],
-    fields: {
-      ...malformed[4]!.fields,
-      crossing: 'Boolean',
-      direction: 'Boolean',
-      markings: 'Boolean',
-    },
-  };
-  malformed[5] = {
-    ...malformed[5],
-    fields: {...malformed[5]!.fields, clearance_extra_px_z15: 'String'},
-  };
+test('fails closed on malformed or duplicate Tileflow World detail layers', () => {
+  assert.deepEqual(
+    validateTileflowWorldTilejson({
+      vector_layers: worldVectorLayers({
+        circular_feature: {maxzoom: 14, fields: {radius_m: 'String'}},
+        sidewalk: {minzoom: 14, fields: {class: 'Number'}},
+        street_furniture: {
+          fields: {crossing: 'Boolean', direction: 'Boolean', markings: 'Boolean'},
+        },
+        road: {fields: {clearance_extra_px_z15: 'String'}},
+      }),
+    }),
+    [
+      'Tileflow World circular_feature must declare native z15.',
+      'Tileflow World requires Number radius_m on circular_feature.',
+      'Tileflow World sidewalk must declare native z15.',
+      'Tileflow World requires String class on sidewalk.',
+      'Tileflow World requires String crossing on street_furniture.',
+      'Tileflow World requires String markings on street_furniture.',
+      'Tileflow World requires Number or String direction on street_furniture.',
+    ],
+  );
 
-  assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: malformed}), [
-    'Tileflow World V1 circular_feature must declare native z15.',
-    'Tileflow World V1 requires Number radius_m on circular_feature.',
-    'Tileflow World V1 sidewalk must declare native z15.',
-    'Tileflow World V1 requires String class on sidewalk.',
-    'Tileflow World V1 requires Number or String direction on street_furniture.',
-    'Tileflow World V1 requires String crossing on street_furniture.',
-    'Tileflow World V1 requires String markings on street_furniture.',
-    'Tileflow World V1 requires Number clearance_extra_px_z15 on transportation.',
-  ]);
+  assert.deepEqual(
+    validateTileflowWorldTilejson({
+      vector_layers: worldVectorLayers({road_label: {fields: {shield_kind: 'Number'}}}),
+    }),
+    ['Tileflow World requires String shield_kind on road_label.'],
+  );
 
-  const malformedShields = validWorldV1VectorLayers();
-  malformedShields[6] = {
-    ...malformedShields[6]!,
-    fields: {...malformedShields[6]!.fields, shield_kind: 'Number'},
-  };
-  assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: malformedShields}), [
-    'Tileflow World V1 requires String shield_kind on transportation_name.',
-  ]);
+  assert.deepEqual(
+    validateTileflowWorldTilejson({
+      vector_layers: worldVectorLayers({
+        road_shield: {minzoom: 5, fields: {shield_text_color: 'Number'}},
+      }),
+    }),
+    [
+      'Tileflow World road_shield must declare z6-z10.',
+      'Tileflow World requires String shield_text_color on road_shield.',
+    ],
+  );
 
-  const malformedOverview = validWorldV1VectorLayers();
-  malformedOverview[7] = {
-    ...malformedOverview[7]!,
-    minzoom: 5,
-    fields: {...malformedOverview[7]!.fields, shield_text_color: 'Number'},
-  };
-  assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: malformedOverview}), [
-    'Tileflow World V1 transportation_shield must declare z6-z10.',
-    'Tileflow World V1 requires String shield_text_color on transportation_shield.',
-  ]);
+  assert.deepEqual(
+    validateTileflowWorldTilejson({
+      vector_layers: worldVectorLayers({
+        poi_label: {
+          minzoom: 5,
+          fields: {class: 'Number', filterrank: 'String', min_zoom: 'String'},
+        },
+      }),
+    }),
+    [
+      'Tileflow World poi_label must declare z12-z15.',
+      'Tileflow World requires String class on poi_label.',
+      'Tileflow World requires Number filterrank on poi_label.',
+      'Tileflow World requires Number min_zoom on poi_label.',
+    ],
+  );
 
-  const malformedPoi = validWorldV1VectorLayers();
-  malformedPoi[8] = {
-    ...malformedPoi[8]!,
-    minzoom: 5,
-    fields: {
-      ...malformedPoi[8]!.fields,
-      category: 'Number',
-      filter_rank: 'String',
-      min_zoom: 'String',
-    },
-  };
-  assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: malformedPoi}), [
-    'Tileflow World V1 poi must declare z12-z15.',
-    'Tileflow World V1 requires String category on poi.',
-    'Tileflow World V1 requires Number filter_rank on poi.',
-    'Tileflow World V1 requires Number min_zoom on poi.',
-  ]);
+  assert.deepEqual(
+    validateTileflowWorldTilejson({
+      vector_layers: worldVectorLayers({road_outline: {minzoom: 14, fields: {class: 'Number'}}}),
+    }),
+    [
+      'Tileflow World road_outline must declare z13-z15.',
+      'Tileflow World requires String class on road_outline.',
+    ],
+  );
 
-  const malformedOutline = validWorldV1VectorLayers();
-  malformedOutline[9] = {
-    ...malformedOutline[9]!,
-    minzoom: 14,
-    fields: {...malformedOutline[9]!.fields, class: 'Number'},
-  };
-  assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: malformedOutline}), [
-    'Tileflow World V1 transportation_outline must declare native z13-z15.',
-    'Tileflow World V1 requires String class on transportation_outline.',
-  ]);
-
-  const duplicate = validWorldV1VectorLayers();
-  duplicate.push({...duplicate[2]!});
-  assert.deepEqual(validateTileflowWorldV1Tilejson({vector_layers: duplicate}), [
-    'Tileflow World V1 requires exactly one circular_feature layer.',
+  const duplicate = validWorldVectorLayers();
+  duplicate.push({...duplicate.find(({id}) => id === 'circular_feature')!});
+  assert.deepEqual(validateTileflowWorldTilejson({vector_layers: duplicate}), [
+    'Tileflow World requires exactly one circular_feature layer.',
   ]);
 });
 
-test('accepts World V1 TileJSON without canopy and validates canopy when declared', () => {
-  const worldV1 = tileflowWorldV1Schema();
-  assert.equal(worldV1.layers.canopy, 'canopy');
-  assert.equal(worldV1.fields.canopyRank, 'rank');
-  assert.equal(worldV1.fields.canopyClearanceAtZoom15, 'clearance_px_z15');
-  assert.equal(worldV1.fields.canopyCoverPercent, 'cover_pct');
-  assert.equal(tileflowWorldV1Schema({capabilities: {canopy: false}}).layers.canopy, undefined);
-
+test('accepts World TileJSON without canopy and validates canopy when declared', () => {
+  assert.deepEqual(validateTileflowWorldTilejson({vector_layers: validWorldVectorLayers()}), []);
   assert.deepEqual(
-    validateTileflowWorldV1Tilejson({vector_layers: validWorldV1VectorLayers()}),
-    [],
-  );
-  assert.deepEqual(
-    validateTileflowWorldV1Tilejson({
-      vector_layers: [...validWorldV1VectorLayers(), validCanopyVectorLayer()],
+    validateTileflowWorldTilejson({
+      vector_layers: [...validWorldVectorLayers(), validCanopyVectorLayer()],
     }),
     [],
   );
@@ -465,54 +443,206 @@ test('accepts World V1 TileJSON without canopy and validates canopy when declare
     fields: {clearance_px_z15: 'Number', rank: 'String'},
   };
   assert.deepEqual(
-    validateTileflowWorldV1Tilejson({vector_layers: [...validWorldV1VectorLayers(), malformed]}),
+    validateTileflowWorldTilejson({vector_layers: [...validWorldVectorLayers(), malformed]}),
     [
-      'Tileflow World V1 canopy must declare native z14-z15.',
-      'Tileflow World V1 requires Number rank on canopy.',
-      'Tileflow World V1 requires Number cover_pct on canopy.',
+      'Tileflow World canopy must declare z14-z15.',
+      'Tileflow World requires Number rank on canopy.',
+      'Tileflow World requires Number cover_pct on canopy.',
     ],
   );
   assert.deepEqual(
-    validateTileflowWorldV1Tilejson({
-      vector_layers: [...validWorldV1VectorLayers(), {...validCanopyVectorLayer(), maxzoom: 16}],
+    validateTileflowWorldTilejson({
+      vector_layers: [...validWorldVectorLayers(), {...validCanopyVectorLayer(), maxzoom: 16}],
     }),
-    ['Tileflow World V1 canopy must declare native z14-z15.'],
+    ['Tileflow World canopy must declare z14-z15.'],
   );
   assert.deepEqual(
-    validateTileflowWorldV1Tilejson({
+    validateTileflowWorldTilejson({
       vector_layers: [
-        ...validWorldV1VectorLayers(),
+        ...validWorldVectorLayers(),
         validCanopyVectorLayer(),
         validCanopyVectorLayer(),
       ],
     }),
-    ['Tileflow World V1 requires exactly one canopy layer.'],
+    ['Tileflow World requires exactly one canopy layer.'],
   );
+});
 
-  // A schema without the canopy binding ignores the layer; a remapped binding is validated.
+test('validates the world and world-detail tilesets of a release apart', () => {
   assert.deepEqual(
-    validateTileflowWorldV1Tilejson(
-      {vector_layers: [...validWorldV1VectorLayers(), malformed]},
-      tileflowWorldV1Schema({capabilities: {canopy: false}}),
+    tileflowWorldDetailLayers.map((name) => tileflowWorldLayers[name]),
+    ['building_entrance', 'transit_line', 'underground'],
+  );
+  assert.equal(tileflowWorldTilesetOf('transitLine'), 'world-detail');
+  assert.equal(tileflowWorldTilesetOf('road'), 'world');
+
+  const detail = [{id: 'building_entrance'}, {id: 'transit_line'}, {id: 'underground'}];
+  assert.deepEqual(validateTileflowWorldTilejson({vector_layers: detail}, 'world-detail'), []);
+  assert.deepEqual(
+    validateTileflowWorldTilejson(
+      {vector_layers: [{id: 'transit_line'}, {id: 'road'}]},
+      'world-detail',
     ),
-    [],
+    [
+      'Tileflow World requires building_entrance.',
+      'Tileflow World requires underground.',
+      'Tileflow World world-detail must not declare road.',
+    ],
   );
   assert.deepEqual(
-    validateTileflowWorldV1Tilejson(
-      {vector_layers: [...validWorldV1VectorLayers(), validCanopyVectorLayer()]},
-      tileflowWorldV1Schema({fields: {canopyRank: 'grove_rank'}, layers: {canopy: 'groves'}}),
-    ),
-    [],
+    validateTileflowWorldTilejson({
+      vector_layers: [...validWorldVectorLayers(), {id: 'transit_line'}],
+    }),
+    ['Tileflow World world must not declare transit_line.'],
   );
-  assert.deepEqual(
-    validateTileflowWorldV1Tilejson(
-      {
-        vector_layers: [...validWorldV1VectorLayers(), {...validCanopyVectorLayer(), id: 'groves'}],
-      },
-      tileflowWorldV1Schema({fields: {canopyRank: 'grove_rank'}, layers: {canopy: 'groves'}}),
-    ),
-    ['Tileflow World V1 requires Number grove_rank on groves.'],
+  assert.deepEqual(resolveTileflowData(undefined, {worldDetail: 'separate'}).detail, {
+    delivery: 'separate',
+    sourceId: tileflowDetailSourceId,
+    url: tileflowWorldDetailTileJsonUrl,
+  });
+});
+
+test('a World map loads world-detail only when one of its layers draws a detail layer', () => {
+  const transitLines = withRenderStack(transit(), {
+    lines: renderPass({
+      placement: 'above-roads',
+      feature: 'transitLine',
+      renderer: 'line',
+      style: {color: fixed('#123456', {reason: 'Test colour.'}), width: 2},
+    }),
+  });
+  const plain = createStyle(extendStreets({modules: {poi: disable()}}));
+  const detailed = createStyle(extendStreets({modules: {poi: disable(), transit: transitLines}}));
+  const compositeUrl = 'https://api.tileflow.dev/tiles/world,world-detail/tiles.json';
+  const sourceIdentity = (style: typeof plain) =>
+    (style.metadata as Record<string, Record<string, {url?: string}>>)['tileflow:sources']?.tileflow
+      ?.url;
+
+  // By default one source serves both tilesets; its URL names world-detail only when drawn.
+  assert.deepEqual(Object.keys(plain.sources), ['tileflow']);
+  assert.equal((plain.sources.tileflow as {url?: string}).url, tileflowWorldTileJsonUrl);
+  assert.equal(sourceIdentity(plain), tileflowWorldTileJsonUrl);
+  assert.deepEqual(Object.keys(detailed.sources), ['tileflow']);
+  assert.equal((detailed.sources.tileflow as {url?: string}).url, compositeUrl);
+  assert.equal(sourceIdentity(detailed), compositeUrl);
+  const lines = detailed.layers.find((layer) => layer.id === 'tileflow-transit-render-lines');
+  assert.equal((lines as {source?: string} | undefined)?.source, 'tileflow');
+  assert.equal((lines as {'source-layer'?: string} | undefined)?.['source-layer'], 'transit_line');
+
+  // Served apart, world-detail layers draw from their own source; World's others stay primary.
+  const separate = resolveTileflowData(undefined, {worldDetail: 'separate'});
+  const bind = (name: 'road' | 'transitLine', data: ResolvedTileflowData) =>
+    bindSemanticLayer(
+      {id: 'detail-fixture', type: 'line', source: dataSource(), 'source-layer': dataLayer(name)},
+      data,
+    ).map((layer) => [layer.source, layer['source-layer']]);
+  assert.deepEqual(bind('transitLine', separate), [[tileflowDetailSourceId, 'transit_line']]);
+  assert.deepEqual(bind('road', separate), [['tileflow', 'road']]);
+  assert.deepEqual(bind('transitLine', resolveTileflowData(undefined)), [
+    ['tileflow', 'transit_line'],
+  ]);
+});
+
+test('OpenMapTiles splits World landuse over the layers that hold it and skips those a filter excludes', () => {
+  const lower = (parkLayer: 'mixed' | 'protected-only') => {
+    const data = resolveTileflowData(
+      vectorTiles({
+        attribution: '© Example',
+        schema: openMapTiles({semantics: {parkLayer}}),
+        url: '/tiles.json',
+      }),
+    );
+    const context = {
+      colors: resolveColors(),
+      data: createSemanticDataView(data),
+      images: {},
+      typography: {font: 'Noto Sans Regular'},
+    };
+    return assembleTileflowLayers(compileLand(undefined, context), data);
+  };
+  const sourceLayers = (layers: ReturnType<typeof lower>, id: string) =>
+    layers
+      .filter((layer) => layer.id === id || layer.id.startsWith(`${id}~`))
+      .map((layer) => [layer.id, layer['source-layer']]);
+  const matches = (
+    layers: ReturnType<typeof lower>,
+    id: string,
+    properties: Record<string, string>,
+  ) =>
+    featureFilter(layers.find((layer) => layer.id === id)?.filter as never).filter({zoom: 14}, {
+      type: 3,
+      properties,
+    } as never);
+
+  const mixed = lower('mixed');
+  // Urban use reads OpenMapTiles landuse only, natural cover its landcover only.
+  assert.deepEqual(sourceLayers(mixed, 'tileflow-landuse-education'), [
+    ['tileflow-landuse-education', 'landuse'],
+  ]);
+  assert.deepEqual(sourceLayers(mixed, 'tileflow-landcover-wood'), [
+    ['tileflow-landcover-wood', 'landcover'],
+  ]);
+  // Parks are landuse parks (theme parks), landcover parks and the ordinary parks of a mixed
+  // park layer; the first copy keeps the layer's ID.
+  assert.deepEqual(sourceLayers(mixed, 'tileflow-landcover-urbanPark'), [
+    ['tileflow-landcover-urbanPark', 'landuse'],
+    ['tileflow-landcover-urbanPark~landcover', 'landcover'],
+    ['tileflow-landcover-urbanPark~park', 'park'],
+  ]);
+  assert.deepEqual(sourceLayers(mixed, 'tileflow-landcover-wetland'), [
+    ['tileflow-landcover-wetland', 'landcover'],
+  ]);
+  // A World class no OpenMapTiles layer produces draws nothing.
+  assert.deepEqual(sourceLayers(mixed, 'tileflow-landuse-parking'), []);
+
+  // Each copy reads its own layer's values as World's.
+  assert.equal(matches(mixed, 'tileflow-landuse-education', {class: 'school'}), true);
+  assert.equal(matches(mixed, 'tileflow-landuse-education', {class: 'residential'}), false);
+  assert.equal(
+    matches(mixed, 'tileflow-landcover-wood', {class: 'wood', subclass: 'forest'}),
+    true,
   );
+  assert.equal(
+    matches(mixed, 'tileflow-landcover-wood', {class: 'wetland', subclass: 'wood'}),
+    false,
+  );
+  assert.equal(matches(mixed, 'tileflow-landcover-wetland', {class: 'wetland'}), true);
+  assert.equal(matches(mixed, 'tileflow-landcover-urbanPark', {class: 'theme_park'}), true);
+  assert.equal(matches(mixed, 'tileflow-landcover-urbanPark', {class: 'zoo'}), false);
+  assert.equal(matches(mixed, 'tileflow-landuse-recreation', {class: 'zoo'}), true);
+  assert.equal(
+    matches(mixed, 'tileflow-landcover-urbanPark~landcover', {class: 'grass', subclass: 'park'}),
+    true,
+  );
+  assert.equal(
+    matches(mixed, 'tileflow-landcover-urbanPark~landcover', {
+      class: 'grass',
+      subclass: 'recreation_ground',
+    }),
+    false,
+  );
+  assert.equal(
+    matches(mixed, 'tileflow-landcover-recreationGround~landcover', {
+      class: 'grass',
+      subclass: 'recreation_ground',
+    }),
+    true,
+  );
+  assert.equal(matches(mixed, 'tileflow-landcover-urbanPark~park', {class: 'park'}), true);
+  assert.equal(
+    matches(mixed, 'tileflow-landcover-urbanPark~park', {class: 'national_park'}),
+    false,
+  );
+  assert.equal(matches(mixed, 'tileflow-landcover-protected', {class: 'national_park'}), true);
+  assert.equal(matches(mixed, 'tileflow-landcover-protected', {class: 'park'}), false);
+
+  // A protected-only park layer holds no ordinary parks.
+  const protectedOnly = lower('protected-only');
+  assert.deepEqual(sourceLayers(protectedOnly, 'tileflow-landcover-urbanPark'), [
+    ['tileflow-landcover-urbanPark', 'landuse'],
+    ['tileflow-landcover-urbanPark~landcover', 'landcover'],
+  ]);
+  assert.equal(matches(protectedOnly, 'tileflow-landcover-protected', {class: 'park'}), true);
 });
 
 test('rejects private URL credentials, invalid descriptors, and missing attribution', () => {
@@ -545,12 +675,14 @@ test('rejects private URL credentials, invalid descriptors, and missing attribut
   );
 });
 
-function validCanopyVectorLayer(): {
+type VectorLayer = {
   fields: Record<string, string>;
   id: string;
   maxzoom: number;
   minzoom: number;
-} {
+};
+
+function validCanopyVectorLayer(): VectorLayer {
   return {
     id: 'canopy',
     minzoom: 14,
@@ -559,13 +691,35 @@ function validCanopyVectorLayer(): {
   };
 }
 
-function validWorldV1VectorLayers(): Array<{
-  fields: Record<string, string>;
-  id: string;
-  maxzoom: number;
-  minzoom: number;
-}> {
+/** The valid World layers, with some changed: their zooms replaced, their fields merged. */
+function worldVectorLayers(
+  changes: Readonly<Record<string, Partial<VectorLayer>>> = {},
+): VectorLayer[] {
+  return validWorldVectorLayers().map((layer) => {
+    const change = changes[layer.id];
+    return change ? {...layer, ...change, fields: {...layer.fields, ...change.fields}} : layer;
+  });
+}
+
+function validWorldVectorLayers(): VectorLayer[] {
+  const classed = (id: string): VectorLayer => ({
+    id,
+    minzoom: 0,
+    maxzoom: 15,
+    fields: {class: 'String'},
+  });
   return [
+    {id: 'admin', minzoom: 0, maxzoom: 15, fields: {admin_level: 'Number'}},
+    classed('aeroway'),
+    classed('airport_label'),
+    classed('building'),
+    {id: 'housenum_label', minzoom: 15, maxzoom: 15, fields: {house_num: 'String'}},
+    classed('landuse'),
+    classed('landuse_overlay'),
+    classed('natural_label'),
+    classed('place_label'),
+    classed('water'),
+    classed('waterway'),
     {
       id: 'bathymetry',
       minzoom: 0,
@@ -573,7 +727,7 @@ function validWorldV1VectorLayers(): Array<{
       fields: {min_depth: 'Number', sort_key: 'Number'},
     },
     {
-      id: 'globallandcover',
+      id: 'landcover',
       minzoom: 0,
       maxzoom: 10,
       fields: {class: 'String'},
@@ -595,7 +749,7 @@ function validWorldV1VectorLayers(): Array<{
       id: 'sidewalk',
       minzoom: 15,
       maxzoom: 15,
-      fields: {class: 'String', subclass: 'String'},
+      fields: {class: 'String', type: 'String'},
     },
     {
       id: 'street_furniture',
@@ -606,23 +760,23 @@ function validWorldV1VectorLayers(): Array<{
         crossing: 'String',
         direction: 'Number',
         markings: 'String',
-        subclass: 'String',
+        type: 'String',
       },
     },
     {
-      id: 'transportation',
+      id: 'road',
       minzoom: 4,
       maxzoom: 15,
-      fields: {clearance_extra_px_z15: 'Number'},
+      fields: {class: 'String', clearance_extra_px_z15: 'Number'},
     },
     {
-      id: 'transportation_name',
+      id: 'road_label',
       minzoom: 11,
       maxzoom: 15,
       fields: {
         class: 'String',
         ref: 'String',
-        ref_length: 'Number',
+        reflen: 'Number',
         shield_kind: 'String',
         shield_line_length_m: 'Number',
         shield_network: 'String',
@@ -632,13 +786,13 @@ function validWorldV1VectorLayers(): Array<{
       },
     },
     {
-      id: 'transportation_shield',
+      id: 'road_shield',
       minzoom: 6,
       maxzoom: 10,
       fields: {
         class: 'String',
         ref: 'String',
-        ref_length: 'Number',
+        reflen: 'Number',
         shield_kind: 'String',
         shield_network: 'String',
         shield_rank: 'Number',
@@ -647,26 +801,26 @@ function validWorldV1VectorLayers(): Array<{
       },
     },
     {
-      id: 'poi',
+      id: 'poi_label',
       minzoom: 12,
       maxzoom: 15,
       fields: {
-        category: 'String',
-        filter_rank: 'Number',
+        class: 'String',
+        filterrank: 'Number',
         icon: 'String',
         min_zoom: 'Number',
-        size_rank: 'Number',
+        sizerank: 'Number',
         type: 'String',
       },
     },
     {
-      id: 'transportation_outline',
+      id: 'road_outline',
       minzoom: 13,
       maxzoom: 15,
       fields: {
-        brunnel: 'String',
         class: 'String',
-        subclass: 'String',
+        structure: 'String',
+        type: 'String',
         underground: 'Boolean',
       },
     },

@@ -67,6 +67,8 @@ export type TileflowPoiColorConfig = Partial<Record<TileflowPoiCategory, Tileflo
 };
 
 export type TileflowLanduseColorConfig = {
+  activity?: TileflowColor;
+  activityOutline?: TileflowColor;
   cemetery?: TileflowColor;
   civic?: TileflowColor;
   commercial?: TileflowColor;
@@ -107,8 +109,6 @@ export type TileflowHydroColorConfig = {
 
 export type TileflowBuildingColorConfig = {
   active?: TileflowColor;
-  businessCorridor?: TileflowColor;
-  businessCorridorOutline?: TileflowColor;
   civic?: TileflowColor;
   commercial?: TileflowColor;
   destination?: TileflowColor;
@@ -284,8 +284,7 @@ export type TileflowRoadTreatmentStyle = Partial<
   enabled?: boolean;
   widthScale?: TileflowThemeNumberValue;
 };
-export type TileflowRoadModifier =
-  'construction' | 'expressway' | 'indoor' | 'official' | 'ramp' | 'unpaved';
+export type TileflowRoadModifier = 'construction' | 'expressway' | 'indoor' | 'ramp' | 'unpaved';
 export type TileflowRoadRestriction = 'access' | 'bicycle' | 'foot' | 'horse' | 'toll';
 export type TileflowMountainBikeScale =
   '0' | '0+' | '1' | '1+' | '2' | '2+' | '3' | '3+' | '4' | '5' | '6';

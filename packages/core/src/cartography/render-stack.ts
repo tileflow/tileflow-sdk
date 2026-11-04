@@ -1,8 +1,8 @@
-import {roadLabelPlacementKey} from './label-placement';
-import type {
-  OpenMapTilesFieldBindings,
-  OpenMapTilesLayerBindings,
-  ResolvedTileflowData,
+import {
+  type ResolvedTileflowData,
+  type TileflowWorldFieldName,
+  tileflowWorldFields,
+  type TileflowWorldLayerName,
 } from '../data';
 import {
   type TileflowBandPlacement,
@@ -22,6 +22,7 @@ import {
   type TileflowLayerTemplateIR,
 } from './domain-ir';
 import {type TileflowLayerDomain, tileflowLayerDomains} from './domains';
+import {roadLabelPlacementKey} from './label-placement';
 import {
   applyBackgroundStyle,
   applyCircleStyle,
@@ -84,8 +85,8 @@ export type TileflowRenderPlacement =
   | {readonly above: string; readonly below?: never}
   | {readonly above?: never; readonly below: string};
 export type TileflowRenderStackRenderer = (typeof tileflowRenderStackRenderers)[number];
-export type TileflowRenderFeature = keyof OpenMapTilesLayerBindings;
-export type TileflowRenderField = keyof OpenMapTilesFieldBindings;
+export type TileflowRenderFeature = TileflowWorldLayerName;
+export type TileflowRenderField = TileflowWorldFieldName;
 export type TileflowRenderScalar = boolean | number | string;
 export type TileflowRenderGeometry = (typeof tileflowRenderSelectorGeometries)[number];
 export type TileflowRenderComparison = (typeof tileflowRenderSelectorComparisons)[number];
@@ -580,7 +581,7 @@ export function compileRenderStacks(
     .map((operation, order) => ({...operation, order}));
 }
 
-/** Lower a closed semantic selector through the active OpenMapTiles field bindings. */
+/** Lower a closed semantic selector through the active data schema's field bindings. */
 export function compileRenderSelector(
   selector: TileflowRenderSelector,
   data: ResolvedTileflowData,
@@ -1046,10 +1047,10 @@ function validateNormalization(
 
 function requireFieldBinding(
   fieldName: TileflowRenderField,
-  data: ResolvedTileflowData,
+  _data: ResolvedTileflowData,
 ): ReturnType<typeof field> {
-  const binding = data.schema.fields[fieldName];
-  if (!Object.hasOwn(data.schema.fields, fieldName) || !binding) {
+  // A World field the data lacks is accepted and reads as absent at lowering.
+  if (!Object.hasOwn(tileflowWorldFields, fieldName)) {
     throw renderStackError(
       'missing-field-binding',
       `Tileflow data schema does not provide field ${String(fieldName)}.`,

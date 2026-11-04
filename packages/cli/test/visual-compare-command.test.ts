@@ -404,7 +404,7 @@ test(
           schemaVersion: number;
           scene: {theme: string};
         };
-        assert.equal(receipt.schemaVersion, 4);
+        assert.equal(receipt.schemaVersion, 5);
         assert.equal(receipt.scene.theme, 'light');
       }
     }

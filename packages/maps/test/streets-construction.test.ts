@@ -42,7 +42,7 @@ test('Streets construction roads have square transverse marks over a faint conti
         layer.type === 'line' && layer.id === 'tileflow-road-surface-footway-fill',
     );
     assert.ok(path);
-    const footpath = {class: 'path_construction', subclass: 'footway'};
+    const footpath = {class: 'construction', type: 'footway'};
     assert.deepEqual(paint(path, 'line-dasharray', 18, footpath), [1.5, 1]);
     assert.equal(paint(path, 'line-opacity', 18, footpath), 1);
     const marks = style.layers.filter(
@@ -54,7 +54,9 @@ test('Streets construction roads have square transverse marks over a faint conti
     assert.equal(marks.length, 8);
     for (const mark of marks) {
       const roadClass = mark.id.replace('tileflow-roads-render-construction-', '');
-      const properties = {class: `${roadClass}_construction`, ramp: 0, oneway: 1};
+      // A road being built is World class construction, typed by the class it becomes.
+      const worldClass = roadClass === 'minor' ? 'street' : roadClass;
+      const properties = {class: 'construction', type: worldClass, link: false, oneway: true};
       const filter = featureFilter(mark.filter);
       const underlay = style.layers.find(
         (layer): layer is LineLayerSpecification =>
@@ -75,22 +77,22 @@ test('Streets construction roads have square transverse marks over a faint conti
       assert.equal(mark.layout?.['line-cap'], 'butt', 'Marks must never become round pills');
       for (const zoom of [15, 16.8, 18, 20]) {
         assert.equal(filter.filter({zoom}, {type: 2, properties}), true);
-        for (const brunnel of ['bridge', 'tunnel']) {
+        for (const structure of ['bridge', 'tunnel']) {
           assert.equal(
-            filter.filter({zoom}, {type: 2, properties: {...properties, brunnel}}),
+            filter.filter({zoom}, {type: 2, properties: {...properties, structure}}),
             false,
           );
         }
         assert.equal(
-          filter.filter({zoom}, {type: 2, properties: {...properties, class: roadClass}}),
+          filter.filter({zoom}, {type: 2, properties: {...properties, class: worldClass}}),
           false,
           'Ordinary roads must not receive construction marks',
         );
         const dash = paint(mark, 'line-dasharray', zoom, properties);
         assert.ok(dash[0] < 0.2 && dash[1] < 0.3, 'Marks must be short and frequent');
-        for (const ramp of [0, 1]) {
-          const feature = {...properties, ramp};
-          const target = `roads.classes.${roadClass}.surface.${ramp ? 'rampFill' : 'fill'}`;
+        for (const link of [false, true]) {
+          const feature = {...properties, link};
+          const target = `roads.classes.${roadClass}.surface.${link ? 'rampFill' : 'fill'}`;
           const candidates = new Set(
             inspection.layers
               .filter((layer) =>
@@ -109,7 +111,7 @@ test('Streets construction roads have square transverse marks over a faint conti
           assert.equal(
             bases.length,
             1,
-            `${roadClass} ramp=${ramp} has one carriageway at z${zoom}`,
+            `${roadClass} link=${link} has one carriageway at z${zoom}`,
           );
           const base = bases[0]!;
           // A carriageway is solid: without a dash, or with one that resolves to solid here.
@@ -128,14 +130,13 @@ test('Streets construction roads have square transverse marks over a faint conti
 
           assert.ok(
             Math.abs(
-              paint(mark, 'line-width', zoom, {...properties, ramp}) -
-                paint(base, 'line-width', zoom, {...properties, ramp}),
+              paint(mark, 'line-width', zoom, feature) - paint(base, 'line-width', zoom, feature),
             ) < 1e-9,
             `${roadClass} marks must follow the carriageway width at z${zoom}`,
           );
           assert.equal(
-            paint(underlay, 'line-width', zoom, {...properties, ramp}),
-            paint(mark, 'line-width', zoom, {...properties, ramp}),
+            paint(underlay, 'line-width', zoom, feature),
+            paint(mark, 'line-width', zoom, feature),
           );
         }
       }

@@ -84,8 +84,6 @@ function createSiegfriedTheme(
       },
       buildings: {
         active: palette.ink,
-        businessCorridor: palette.paper,
-        businessCorridorOutline: palette.ink,
         civic: palette.ink,
         commercial: palette.ink,
         destination: palette.ink,
@@ -134,6 +132,8 @@ function createSiegfriedTheme(
         wood: palette.paper,
       },
       landuse: {
+        activity: palette.paper,
+        activityOutline: palette.ink,
         cemetery: palette.paper,
         civic: palette.paper,
         commercial: palette.paper,

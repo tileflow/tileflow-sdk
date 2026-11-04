@@ -7,11 +7,13 @@ import {
   resolveMap,
   type TileflowMap,
   type TileflowNamedRenderStack,
+  type TileflowThemeNumberValue,
   type TileflowVegetationModuleConfig,
   token,
   withRenderStack,
   zoom,
 } from '@tileflow/core';
+import {streetsClimateImage} from './streets-climate';
 import {
   streetsAccessOverview,
   streetsAgriculturalColor,
@@ -19,19 +21,21 @@ import {
 } from './streets-ground-and-access';
 import {streetsOverviewRoads} from './streets-network-overview';
 
-const visibleBuilding = {
-  kind: 'all',
-  selectors: [
-    {field: 'hide3d', kind: 'compare', operator: 'ne', value: true},
-    {field: 'hide3d', kind: 'compare', operator: 'ne', value: 1},
-    {field: 'hide3d', kind: 'compare', operator: 'ne', value: '1'},
-    {field: 'hide3d', kind: 'compare', operator: 'ne', value: 'true'},
+// A footprint whose building parts draw it says `extrude: false`.
+const activityOpacity = expr.interpolate(
+  {kind: 'linear'},
+  expr.toNumber(expr.coalesce(expr.get(field('activity')), 1), 1),
+  [
+    [1, 0.4],
+    [5, 1],
   ],
-} as const;
+);
+
+const visibleBuilding = {field: 'extrude', kind: 'compare', operator: 'ne', value: false} as const;
 
 function buildingColor(outline = false, raised = false) {
   return expr.match(
-    expr.get(field('buildingTone')),
+    expr.get(field('tone')),
     [
       {
         labels: ['commercial', 'active'],
@@ -84,8 +88,30 @@ export function withStreetsCartography(base: TileflowMap) {
       land: withRenderStack(
         {
           ...withoutStack(land),
-          // The climate underlay is paused until it has a shared URL and visibility-aware loading.
-          // Its source, generator and attribution are retained in assets/streets/climate.
+          globalLandcoverUnderlay: {
+            url: streetsClimateImage.url,
+            coordinates: [
+              [-180, 85.0511287798066],
+              [180, 85.0511287798066],
+              [180, -85.0511287798066],
+              [-180, -85.0511287798066],
+            ],
+            attribution:
+              'Climate context: <a href="https://doi.org/10.1038/s41597-023-02549-6">Beck et al. (2023)</a>, <a href="https://creativecommons.org/licenses/by/4.0/">CC BY 4.0</a>; colours and smoothing adapted by Tileflow',
+            maxZoom: 11,
+            opacity: zoom.linear<TileflowThemeNumberValue>([
+              [0, token.number('land.climate.opacity')],
+              [7, token.number('land.climate.opacity')],
+              [8, token.number('land.climate.opacity85')],
+              [9, token.number('land.climate.opacity78')],
+              [10, token.number('land.climate.opacity')],
+              [10.5, token.number('land.climate.opacity55')],
+              [10.75, token.number('land.climate.opacity25')],
+              [11, 0],
+            ]),
+          },
+          // Streets draws activity areas in its own pass below, fading them out under buildings.
+          activityAreas: {fill: {visible: false}, outline: {visible: false}},
           background: {...land.background, color: streetsGroundBackground},
           landcover: {
             ...land.landcover,
@@ -97,17 +123,19 @@ export function withStreetsCartography(base: TileflowMap) {
         },
         {
           ...landStack,
-          businessArea: renderPass({
+          // Where shops, food, services and offices concentrate: stronger with the area's
+          // activity level, from 1 to 5, until buildings take over.
+          activityAreas: renderPass({
             placement: {above: 'land.landuse.residential.fill'},
-            feature: 'landuse',
+            feature: 'landuseOverlay',
             renderer: 'fill',
-            selector: {field: 'class', kind: 'compare', operator: 'eq', value: 'business_area'},
+            selector: {field: 'class', kind: 'compare', operator: 'eq', value: 'activity_area'},
             style: {
-              color: token.color('landuse.businessCorridor'),
+              color: token.color('landuse.activity'),
               minZoom: 11,
-              opacity: zoom.linear([
-                [15, 1],
-                [15.5, 0.75],
+              opacity: expr.interpolate({kind: 'linear'}, expr.zoom(), [
+                [15, activityOpacity],
+                [15.5, expr.multiply(activityOpacity, 0.75)],
                 [16.25, 0],
               ]),
             },

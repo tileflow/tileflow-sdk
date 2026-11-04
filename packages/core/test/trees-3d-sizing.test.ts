@@ -133,12 +133,12 @@ test('tree height floors never resize hedges in color, outline or shadow passes'
         parts: [[[500 + (index % 4) * 1000, 500 + Math.floor(index / 4) * 1000]]],
       })),
     },
-    hedge: {
+    traffic_control: {
       extent: 4096,
       features: [
         {
           type: 2,
-          properties: {subclass: 'hedge'},
+          properties: {class: 'barrier', type: 'hedge'},
           parts: [
             [
               [2000, 2000],
@@ -167,7 +167,7 @@ test('tree height floors never resize hedges in color, outline or shadow passes'
         [tileflowVegetationMetadataKey]: {
           version: 1,
           source: 'tileflow',
-          layers: {tree: 'tree', hedge: 'hedge'},
+          layers: {tree: 'tree', hedge: 'traffic_control'},
           fields: {},
           colors: {bark: '#554433', broadleaf: ['#335533'], conifer: ['#224422']},
           minimumHeight: 8,

@@ -33,8 +33,8 @@ test('default semantic modules render standard house numbers and named landforms
   const peak = style.layers.find(({id}) => id === 'tileflow-landforms');
   const modules = style.metadata?.['tileflow:modules'] as string[];
 
-  assert.equal(address?.['source-layer'], 'housenumber');
-  assert.equal(peak?.['source-layer'], 'mountain_peak');
+  assert.equal(address?.['source-layer'], 'housenum_label');
+  assert.equal(peak?.['source-layer'], 'natural_label');
   assert.ok(modules.includes('addresses'));
   assert.ok(modules.includes('landforms'));
   assert.deepEqual(validateStyleMin(style as never), []);

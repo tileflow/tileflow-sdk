@@ -19,7 +19,7 @@ test('typed expression builders retain semantic fields until binding and lower e
       {
         when: expr.any(
           expr.eq(expr.get(field('class')), 'motorway'),
-          expr.gt(expr.toNumber(expr.get(field('rank')), 99), 5),
+          expr.gt(expr.toNumber(expr.get(field('symbolrank')), 99), 5),
         ),
         value: expr.interpolate(
           {kind: 'cubic-bezier', x1: 0.42, y1: 0, x2: 1, y2: 1},
@@ -117,7 +117,7 @@ test('numeric identity mixing varies empty-property points without camera or mut
 test('feature state, boolean assertions, and scoped variables lower without raw arrays', () => {
   const tier = expr.let(
     'tier',
-    expr.toNumber(expr.get(field('rank')), 0),
+    expr.toNumber(expr.get(field('symbolrank')), 0),
     expr.case(
       [
         {

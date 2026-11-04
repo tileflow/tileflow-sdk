@@ -1,4 +1,9 @@
-import {openMapTiles, resolveTileflowData, vectorTiles} from '../src';
+import {
+  type ResolvedTileflowData,
+  resolveTileflowData,
+  tileflowWorldSchema,
+  vectorTiles,
+} from '../src';
 import {
   readTileflowCompilerProvenance,
   tileflowCompilerProvenanceMetadataKey,
@@ -29,20 +34,24 @@ type Layer = Record<string, unknown> & {id: string; type: string};
 const fallbackData = resolveTileflowData(
   vectorTiles({
     attribution: 'Layer IR test fixture',
-    schema: openMapTiles(),
+    schema: tileflowWorldSchema(),
     url: 'https://example.test/layer-ir.json',
   }),
 );
 
-/** Test-only physical view over the semantic graph and final lowering boundary. */
+/**
+ * Test-only physical view over the semantic graph and final lowering boundary. Contributions
+ * compiled against `createSemanticDataView(data)` lower through that same `data`.
+ */
 export function assembleTileflowLayers(
   contributions: readonly TileflowLayerContribution[],
+  data: ResolvedTileflowData = fallbackData,
 ): Layer[] {
   const families = contributions.map(createTileflowLayerFamilyIR);
   return [
     ...lowerTileflowDomainIR(
       assembleTileflowLayerFamilies(families),
-      fallbackData,
+      data,
       fixturePhysicalIds(contributions),
     ).layers,
   ];

@@ -675,7 +675,7 @@ test('deploy rejects external vector data before any remote write', async (t) =>
       fields: `data: {
     type: 'vector-tiles',
     attribution: '© Example © OpenStreetMap contributors',
-    schema: {type: 'openmaptiles', contractVersion: 1},
+    schema: {type: 'openmaptiles', contractVersion: 2},
     url: 'https://vector.example.test/tiles.json'
   }`,
     }),
@@ -1375,7 +1375,7 @@ test('validate --target hosted shares deploy rejection of external vector data',
       fields: `data: {
     type: 'vector-tiles',
     attribution: '© Example © OpenStreetMap contributors',
-    schema: {type: 'openmaptiles', contractVersion: 1},
+    schema: {type: 'openmaptiles', contractVersion: 2},
     url: 'https://vector.example.test/tiles.json'
   }`,
     }),

@@ -23,19 +23,28 @@ import type {
 } from '../../types';
 import type {TileflowResolvedModuleConfig} from '../resolved';
 import {resolveRoads} from '../roads';
-import {tileflowRoadClasses, tileflowRoadClassFilter} from '../roads/semantics';
+import {
+  tileflowRoadClasses,
+  tileflowRoadClassFilter,
+  tileflowRoadInServiceClasses,
+} from '../roads/semantics';
 import {resolveLabels, visibleRoadLabelClasses} from './index';
 import {compactRoadNameExpression} from './road-names';
 
-const placeClasses: Record<TileflowPlaceLabelClass, readonly string[]> = {
-  continent: ['continent'],
-  country: ['country'],
-  state: ['state', 'province', 'aboriginal_lands'],
-  city: ['city'],
-  town: ['town'],
-  village: ['village'],
-  neighborhood: ['suburb', 'neighbourhood', 'quarter', 'borough'],
-  other: ['hamlet', 'isolated_dwelling', 'island', 'strait'],
+// World's place labels: the broad `class` of countries, states and continents, and the OSM
+// `place` value (`type`) of settlements, their subdivisions and islands.
+const placeClasses: Record<
+  TileflowPlaceLabelClass,
+  Readonly<{field: 'class' | 'type'; values: readonly string[]}>
+> = {
+  continent: {field: 'class', values: ['continent']},
+  country: {field: 'class', values: ['country']},
+  state: {field: 'class', values: ['state', 'territory']},
+  city: {field: 'type', values: ['city']},
+  town: {field: 'type', values: ['town']},
+  village: {field: 'type', values: ['village']},
+  neighborhood: {field: 'type', values: ['suburb', 'neighbourhood', 'quarter', 'borough']},
+  other: {field: 'type', values: ['hamlet', 'isolated_dwelling', 'island']},
 };
 
 // Mapbox-style collision priority: detailed settlements are offered first in
@@ -62,7 +71,7 @@ export function compileLabels(
   const groundRoadNames = semantics.roadPlacement === 'ground';
   const roads = resolveRoads(roadRequest);
   const {colors} = context;
-  const rankField = context.data.schema.fields.rank;
+  const rankField = context.data.schema.fields.symbolrank;
   const capitalField = context.data.schema.fields.capital;
   const defaults = {
     places: {
@@ -257,14 +266,14 @@ export function compileLabels(
             id,
             type: 'symbol',
             source,
-            'source-layer': schema.layers.place,
+            'source-layer': schema.layers.placeLabel,
             filter: [
               'all',
               ['has', schema.fields.name],
               placeFilter(
                 placeClass,
-                schema.fields.class,
-                schema.fields.rank,
+                schema.fields,
+                schema.fields.symbolrank,
                 schema.fields.capital,
               ),
             ],
@@ -300,7 +309,7 @@ export function compileLabels(
             id,
             type: 'symbol',
             source,
-            'source-layer': schema.layers.roadName,
+            'source-layer': schema.layers.roadLabel,
             ...(groundRoadNames ? {metadata: groundRoadLabelMetadata} : {}),
             filter: [
               'all',
@@ -352,9 +361,20 @@ export function compileLabels(
       'all',
       ['has', schema.fields.ref],
       ...(shieldKindField ? [['has', shieldKindField]] : []),
-      ['>=', ['to-number', ['get', schema.fields.refLength], 0], 1],
-      ['<=', ['to-number', ['coalesce', ['get', schema.fields.refLength], 99], 99], 6],
-      roadClassesFilter(schema.fields, eligibleShieldRoads as TileflowRoadClass[]),
+      ['>=', ['to-number', ['get', schema.fields.reflen], 0], 1],
+      ['<=', ['to-number', ['coalesce', ['get', schema.fields.reflen], 99], 99], 6],
+      // Shields mark roads in service by class; World's shield points carry no `type`.
+      [
+        'match',
+        ['get', schema.fields.class],
+        [
+          ...new Set(
+            (eligibleShieldRoads as TileflowRoadClass[]).flatMap(tileflowRoadInServiceClasses),
+          ),
+        ],
+        true,
+        false,
+      ],
     ];
     const phases = [
       ...(shieldKindField && schema.layers.roadShield
@@ -374,7 +394,7 @@ export function compileLabels(
         name: 'detail',
         order: labelOrder.shield + 1,
         placement: 'line',
-        sourceLayer: schema.layers.roadName,
+        sourceLayer: schema.layers.roadLabel,
         style: styles.shields?.detail,
       } as const,
     ];
@@ -443,15 +463,12 @@ export function compileLabels(
             id: 'tileflow-label-road-junction',
             type: 'symbol',
             source,
-            'source-layer': schema.layers.roadName,
+            'source-layer': schema.layers.roadLabel,
             filter: [
               'all',
               ['==', ['geometry-type'], 'Point'],
-              [
-                'any',
-                ['==', ['get', schema.fields.class], 'motorway_junction'],
-                ['==', ['get', schema.fields.subclass], 'junction'],
-              ],
+              // A motorway exit: the class of its road and `type: junction`.
+              ['==', ['get', schema.fields.type], 'junction'],
               ['any', ['has', schema.fields.ref], ['has', schema.fields.name]],
             ],
           },
@@ -478,7 +495,7 @@ export function compileLabels(
     }> = [
       {
         name: 'ocean',
-        sourceLayer: schema.layers.waterName,
+        sourceLayer: schema.layers.naturalLabel,
         filter: [
           'all',
           ['has', schema.fields.name],
@@ -488,28 +505,33 @@ export function compileLabels(
       },
       {
         name: 'other',
-        sourceLayer: schema.layers.waterName,
+        sourceLayer: schema.layers.naturalLabel,
         filter: [
           'all',
           ['has', schema.fields.name],
-          classFilter(schema.fields.class, ['lake', 'reservoir', 'bay']),
+          classFilter(schema.fields.class, ['lake', 'reservoir', 'bay', 'strait']),
           ['==', ['geometry-type'], 'Point'],
         ],
       },
       {
         name: 'line',
-        sourceLayer: schema.layers.waterName,
+        sourceLayer: schema.layers.naturalLabel,
         filter: [
           'all',
           ['has', schema.fields.name],
-          classFilter(schema.fields.class, ['ocean', 'sea', 'lake', 'reservoir', 'bay']),
+          classFilter(schema.fields.class, ['ocean', 'sea', 'lake', 'reservoir', 'bay', 'strait']),
           ['==', ['geometry-type'], 'LineString'],
         ],
       },
       {
         name: 'waterway',
-        sourceLayer: schema.layers.waterway,
-        filter: ['all', ['has', schema.fields.name], ['==', ['geometry-type'], 'LineString']],
+        sourceLayer: schema.layers.naturalLabel,
+        filter: [
+          'all',
+          ['has', schema.fields.name],
+          classFilter(schema.fields.class, ['river', 'stream', 'canal']),
+          ['==', ['geometry-type'], 'LineString'],
+        ],
       },
     ];
     const visibleTargets =
@@ -552,7 +574,7 @@ export function compileLabels(
             id: 'tileflow-label-aerodrome',
             type: 'symbol',
             source,
-            'source-layer': schema.layers.aerodromeLabel,
+            'source-layer': schema.layers.airportLabel,
             filter: ['has', schema.fields.name],
           },
           mergeTileflowDesign(styles.aerodrome, {text: {field: aerodromeField}}),
@@ -674,7 +696,7 @@ function aerodromeLabelExpression(
 
 function placeFilter(
   placeClass: TileflowPlaceLabelClass,
-  classField: string,
+  fields: {class: string; type: string},
   rankField: string,
   capitalField: string,
 ): unknown[] {
@@ -683,7 +705,7 @@ function placeFilter(
       'any',
       [
         'all',
-        classFilter(classField, ['island', 'strait']),
+        classFilter(fields.type, ['island']),
         zoomRankFilter(rankField, [
           [0, 4],
           [8, 8],
@@ -692,7 +714,7 @@ function placeFilter(
       ],
       [
         'all',
-        classFilter(classField, ['hamlet', 'isolated_dwelling']),
+        classFilter(fields.type, ['hamlet', 'isolated_dwelling']),
         zoomRankFilter(rankField, [
           [0, false],
           [11, 8],
@@ -749,7 +771,8 @@ function placeFilter(
                   ])
                 : undefined;
 
-  const classes = classFilter(classField, placeClasses[placeClass]);
+  const place = placeClasses[placeClass];
+  const classes = classFilter(fields[place.field], place.values);
   return hierarchy === undefined ? classes : ['all', classes, hierarchy];
 }
 
@@ -785,15 +808,6 @@ function placePriority(
 
 function capitalFilter(capitalField: string): unknown[] {
   return ['>', ['to-number', ['get', capitalField], 0], 0];
-}
-
-function roadClassesFilter(
-  fields: TileflowDomainCompileContext['data']['schema']['fields'],
-  roadClasses: readonly TileflowRoadClass[],
-): unknown[] {
-  return roadClasses.length === 1
-    ? tileflowRoadClassFilter(fields, roadClasses[0]!)
-    : ['any', ...roadClasses.map((roadClass) => tileflowRoadClassFilter(fields, roadClass))];
 }
 
 function symbolContribution(

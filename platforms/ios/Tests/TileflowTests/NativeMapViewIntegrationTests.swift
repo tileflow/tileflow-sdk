@@ -117,6 +117,49 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     }
   }
 
+  /// The city map holds a world image drawn only below zoom 11, as Streets' climate underlay is. At
+  /// zoom 16 no layer draws it, which MapLibre Native takes for an image source still loading: the
+  /// map must load all the same, and draw the image once the camera zooms out to it.
+  func testAWorldImageOutsideItsZoomsLetsTheMapLoadAndDrawsWhenInRange() async throws {
+    try await requireNativeFixture()
+    let events = NativeMapEvents()
+    let view = TileflowMapView(source: citySource)
+    view.engineKind = .native
+    let window = mount(view, events: events)
+    defer {
+      view.destroy()
+      window.isHidden = true
+    }
+    try await events.waitForLoads(1)
+    XCTAssertTrue(events.failures.isEmpty, "\(events.failures)")
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+    let style = try XCTUnwrap(engine.mapView?.style)
+    let underlay = try XCTUnwrap(
+      style.layer(withIdentifier: "tileflow-global-landcover-underlay") as? MLNRasterStyleLayer)
+    XCTAssertEqual(underlay.maximumZoomLevel, 11)
+    XCTAssertTrue(style.source(withIdentifier: "tileflow-landcover-underlay") is MLNRasterTileSource)
+    XCTAssertLessThan(Self.underlayShare(window), 0.01, "At zoom 16 no layer draws the image")
+
+    try await view.setCamera(TileflowCamera(longitude: -3.70, latitude: 40.42, zoom: 5))
+    try await waitUntil { Self.underlayShare(window) > 0.5 }
+    XCTAssertTrue(events.failures.isEmpty, "\(events.failures)")
+  }
+
+  /// The share of the window in the fixture underlay's green, `#01a004`.
+  private static func underlayShare(_ window: UIWindow) -> Double {
+    let pixels = PixelReader(NativeOfflineElevationTests.snapshot(window))
+    var green = 0
+    var total = 0
+    for y in stride(from: 0, to: pixels.height, by: 8) {
+      for x in stride(from: 0, to: pixels.width, by: 8) {
+        let pixel = pixels.rgb(CGPoint(x: x, y: y))
+        total += 1
+        if pixel.r < 60, pixel.g > 120, pixel.b < 60 { green += 1 }
+      }
+    }
+    return Double(green) / Double(max(total, 1))
+  }
+
   func testRendererLossWhileHiddenWaitsForVisibilityAndInvalidRequestsAnswerAtOnce() async throws {
     try await requireNativeFixture()
     let events = NativeMapEvents()

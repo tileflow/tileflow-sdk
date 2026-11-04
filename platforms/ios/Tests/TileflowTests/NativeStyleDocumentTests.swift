@@ -161,6 +161,54 @@ final class NativeStyleDocumentTests: XCTestCase {
       packedSources["world"]?["minzoom"] as? Int, 0, "Only elevation sources change their zooms")
   }
 
+  /// An image covering the Web Mercator world reaches the engine as a raster source whose one
+  /// zoom-0 tile is the image: MapLibre Native counts a raster source no layer needs as loaded, but
+  /// an image source only once it has drawn it. Any other image stays an image source.
+  func testAWorldImageBecomesTheOneTileOfARasterSource() async throws {
+    let latitude = NativeStyleDocument.mercatorLatitude
+    let style: [String: Any] = [
+      "version": 8,
+      "sources": [
+        "underlay": [
+          "type": "image", "url": "../../images/m/underlay.png", "attribution": "© Climate",
+          "coordinates": [[-180, latitude], [180, latitude], [180, -latitude], [-180, -latitude]],
+        ],
+        "photo": [
+          "type": "image", "url": "https://a.test/photo.png",
+          "coordinates": [[0, 1], [1, 1], [1, 0], [0, 0]],
+        ],
+        "mirrored": [
+          "type": "image", "url": "https://a.test/mirrored.png",
+          "coordinates": [[180, latitude], [-180, latitude], [-180, -latitude], [180, -latitude]],
+        ],
+      ],
+      "layers": [
+        ["id": "underlay", "type": "raster", "source": "underlay", "maxzoom": 11],
+        ["id": "photo", "type": "raster", "source": "photo"],
+      ],
+    ]
+    let projected = try await NativeStyleDocument.project(
+      style, styleURL: URL(string: "https://a.test/maps/m/v1/day.json")!, context: context,
+      load: { _, _ in [:] })
+    let document = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: Data(projected.json.utf8)) as? [String: Any])
+    let sources = try XCTUnwrap(document["sources"] as? [String: [String: Any]])
+    let underlay = try XCTUnwrap(sources["underlay"])
+    XCTAssertEqual(underlay["type"] as? String, "raster")
+    XCTAssertEqual(underlay["minzoom"] as? Int, 0)
+    XCTAssertEqual(underlay["maxzoom"] as? Int, 0)
+    XCTAssertEqual(underlay["attribution"] as? String, "© Climate")
+    XCTAssertNil(underlay["coordinates"])
+    let tiles = try XCTUnwrap(underlay["tiles"] as? [String])
+    XCTAssertEqual(tiles.count, 1)
+    let remote = try XCTUnwrap(MapResourceAddress.decode(XCTUnwrap(URL(string: tiles[0])))).remote
+    XCTAssertEqual(remote.absoluteString, "https://a.test/maps/images/m/underlay.png")
+    XCTAssertEqual(projected.kind(of: remote), .image, "The transport still reads it as an image")
+    XCTAssertEqual(sources["photo"]?["type"] as? String, "image")
+    XCTAssertEqual(sources["mirrored"]?["type"] as? String, "image", "Corners keep their order")
+    XCTAssertEqual(projected.attributions, ["© Climate"])
+  }
+
   /// A style that draws its labels with web fonts has no glyphs for the engine; its text is left
   /// out so the rest of the map draws.
   func testTextWithoutGlyphsOrFontFacesIsLeftOut() async throws {

@@ -175,6 +175,44 @@ class NativeStyleDocumentTest {
         assertEquals(10, minzoom(declared, "depths"))
     }
 
+    /**
+     * An image covering the Web Mercator world reaches MapLibre as a raster source whose one zoom-0
+     * tile is the image: MapLibre Native counts a raster source no layer needs as loaded, but an
+     * image source only once it has drawn it. Any other image stays an image source.
+     */
+    @Test
+    fun aWorldImageBecomesTheOneTileOfARasterSource() {
+        val latitude = NativeStyleDocument.MERCATOR_LATITUDE
+        val images =
+            JSONObject(
+                """{"version":8,"sources":{
+                    "underlay":{"type":"image","url":"underlay.png","attribution":"© Climate",
+                      "coordinates":[[-180,$latitude],[180,$latitude],[180,-$latitude],
+                        [-180,-$latitude]]},
+                    "photo":{"type":"image","url":"photo.png",
+                      "coordinates":[[0,1],[1,1],[1,0],[0,0]]},
+                    "mirrored":{"type":"image","url":"mirrored.png",
+                      "coordinates":[[180,$latitude],[-180,$latitude],[-180,-$latitude],
+                        [180,-$latitude]]}},
+                    "layers":[{"id":"underlay","type":"raster","source":"underlay","maxzoom":11}]}"""
+            )
+        val projected = NativeStyleDocument.project(images, styleUrl, context, ::load)
+        val sources = projected.style.getJSONObject("sources")
+        val underlay = sources.getJSONObject("underlay")
+        assertEquals("raster", underlay.getString("type"))
+        assertEquals(0, underlay.getInt("minzoom"))
+        assertEquals(0, underlay.getInt("maxzoom"))
+        assertEquals("© Climate", underlay.getString("attribution"))
+        assertFalse(underlay.has("coordinates"))
+        val remote = "https://api.tileflow.test/maps/m/mobile/webview-v1/v1/underlay.png"
+        assertEquals(1, underlay.getJSONArray("tiles").length())
+        assertEquals(address(remote), underlay.getJSONArray("tiles").getString(0))
+        assertEquals(TileflowResourceKind.IMAGE, projected.classify(URI(remote)))
+        assertEquals("image", sources.getJSONObject("photo").getString("type"))
+        assertEquals("image", sources.getJSONObject("mirrored").getString("type"))
+        assertEquals(listOf("© Climate"), projected.attributions)
+    }
+
     @Test
     fun labelsWithoutGlyphsOrFontFacesDrawNoText() {
         val projected = NativeStyleDocument.project(style, styleUrl, context, ::load)

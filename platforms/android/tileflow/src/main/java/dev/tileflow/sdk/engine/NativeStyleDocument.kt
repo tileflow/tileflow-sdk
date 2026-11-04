@@ -7,6 +7,7 @@ import dev.tileflow.sdk.TileflowResourceKind
 import dev.tileflow.sdk.transport.MapResourceAddress
 import dev.tileflow.sdk.transport.ResourcePolicy
 import java.net.URI
+import kotlin.math.abs
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -38,7 +39,9 @@ internal class NativeStyleProjection(
  * the host reads the style and every TileJSON a source references by `url` through the map's
  * transport, embeds the TileJSONs, and rewrites every address MapLibre will request (tiles,
  * sprites, glyphs, font faces, GeoJSON data, images, PMTiles archives) to a transport address with
- * the map's context. Relative addresses resolve against the style's own address first.
+ * the map's context. Relative addresses resolve against the style's own address first. An image
+ * source that covers the whole Web Mercator world, such as Streets' climate underlay, reaches
+ * MapLibre as a raster source whose only tile is that image ([worldImageTile]).
  */
 internal object NativeStyleDocument {
     private val tileJsonKeys =
@@ -139,6 +142,7 @@ internal object NativeStyleDocument {
                 source.optString("attribution").takeIf { it.isNotEmpty() }?.let {
                     if (it !in attributions) attributions += it
                 }
+                if (type == "image") worldImageTile(source)?.let { sources.put(id, it) }
             }
         }
         when (val sprite = out.opt("sprite")) {
@@ -189,6 +193,48 @@ internal object NativeStyleDocument {
             }
         }
         return NativeStyleProjection(out, attributions, layerSources, kinds, omitted)
+    }
+
+    /** The latitude where Web Mercator ends, north and south. */
+    internal const val MERCATOR_LATITUDE = 85.0511287798066
+
+    /**
+     * An image source that covers exactly the Web Mercator world, as a raster source whose only
+     * tile is that image; null for any other source.
+     *
+     * MapLibre Native counts an image source as loaded only once it has drawn it, and it draws it
+     * only while one of its layers is inside its zoom range. Until then the map never finishes
+     * loading: no complete frame, no idle state, and so no `contentReady` and no theme change that
+     * waits for the new style to draw. Streets' underlay stops at zoom 11, so every map opened at
+     * city zoom waited forever. A raster source that no layer needs is complete, and its zoom-0
+     * tile covers the same extent as the image at every zoom, so the map draws the same.
+     */
+    internal fun worldImageTile(source: JSONObject): JSONObject? {
+        val url = source.opt("url") as? String ?: return null
+        val corners = source.optJSONArray("coordinates") ?: return null
+        val world =
+            listOf(
+                -180.0 to MERCATOR_LATITUDE,
+                180.0 to MERCATOR_LATITUDE,
+                180.0 to -MERCATOR_LATITUDE,
+                -180.0 to -MERCATOR_LATITUDE,
+            )
+        if (corners.length() != world.size) return null
+        for ((index, expected) in world.withIndex()) {
+            val corner = corners.optJSONArray(index) ?: return null
+            if (corner.length() != 2) return null
+            val longitude = (corner.opt(0) as? Number)?.toDouble() ?: return null
+            val latitude = (corner.opt(1) as? Number)?.toDouble() ?: return null
+            if (abs(longitude - expected.first) > 1e-6 || abs(latitude - expected.second) > 1e-6)
+                return null
+        }
+        return JSONObject()
+            .put("type", "raster")
+            .put("tiles", JSONArray().put(url))
+            .put("tileSize", 512)
+            .put("minzoom", 0)
+            .put("maxzoom", 0)
+            .also { tile -> source.opt("attribution")?.let { tile.put("attribution", it) } }
     }
 
     private fun tileJson(url: String, load: (URI) -> ByteArray): JSONObject {

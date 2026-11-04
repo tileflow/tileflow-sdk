@@ -34,7 +34,46 @@ struct ProjectedStyle: Sendable {
 /// When a map opens from its downloaded regions, each raster-dem source starts at the lowest zoom
 /// the regions store for it: the renderer asks for every ancestor of a tile it cannot draw, and the
 /// regions hold none below that zoom.
+///
+/// An image source that covers the whole Web Mercator world, such as Streets' climate underlay,
+/// reaches the engine as a raster source whose only tile, at zoom 0, is that image
+/// (``worldImageTile(_:)``).
 enum NativeStyleDocument {
+  /// The latitude where Web Mercator ends, north and south.
+  static let mercatorLatitude = 85.0511287798066
+
+  /// An image source that covers exactly the Web Mercator world, as a raster source whose only
+  /// tile is that image; nil for any other source.
+  ///
+  /// MapLibre Native counts an image source as loaded only once it has drawn it, and it draws it
+  /// only while one of its layers is inside its zoom range. Until then the map never finishes
+  /// loading: no complete frame, no idle state, and so no `contentReady` and no theme change that
+  /// waits for the new style to draw. Streets' underlay stops at zoom 11, so every map opened at
+  /// city zoom waited forever. A raster source that no layer needs is complete, and its zoom-0
+  /// tile covers the same extent as the image at every zoom, so the map draws the same.
+  static func worldImageTile(_ source: [String: Any]) -> [String: Any]? {
+    guard let url = source["url"] as? String, let corners = source["coordinates"] as? [[Any]],
+      corners.count == 4
+    else { return nil }
+    let world: [[Double]] = [
+      [-180, mercatorLatitude], [180, mercatorLatitude], [180, -mercatorLatitude],
+      [-180, -mercatorLatitude],
+    ]
+    for (corner, expected) in zip(corners, world) {
+      guard corner.count == 2 else { return nil }
+      for (value, target) in zip(corner, expected) {
+        guard let number = (value as? NSNumber)?.doubleValue, abs(number - target) < 1e-6 else {
+          return nil
+        }
+      }
+    }
+    var tile: [String: Any] = [
+      "type": "raster", "tiles": [url], "tileSize": 512, "minzoom": 0, "maxzoom": 0,
+    ]
+    if let attribution = source["attribution"] { tile["attribution"] = attribution }
+    return tile
+  }
+
   /// Reads a JSON document through the map's transport, or throws `resourceFailed`.
   typealias Load = (URL, TileflowResourceKind) async throws -> [String: Any]
   /// The lowest zoom the map's regions store for a tile template, when the map opens from them.
@@ -98,6 +137,7 @@ enum NativeStyleDocument {
         }
         if type == "image", let url = source["url"] as? String {
           source["url"] = address(url, base: base, kind: .image)
+          if let tile = worldImageTile(source) { source = tile }
         }
         if let text = source["attribution"] as? String, !text.isEmpty,
           !attributions.contains(text)

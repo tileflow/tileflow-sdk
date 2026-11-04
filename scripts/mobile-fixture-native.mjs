@@ -6,10 +6,12 @@ import {fileURLToPath, pathToFileURL} from 'node:url';
 
 /**
  * A self-hosted map built for the native renderer, as `tileflow build --renderer native` prepares
- * it: Streets over the fixture's city tiles and constant elevation, in four themes. `@tileflow/dev`
- * builds it in memory with the fixture's origin as its development origin, the HTTP exception a
- * served native preview has, and the server answers its files under `/native/`: the manifest at
- * `/native/manifest.json`, styles, family documents, sprites and font faces.
+ * it: Streets over the fixture's city tiles and constant elevation, in four themes, with a world
+ * image underlay drawn up to z11 like Streets' climate underlay, so that at the city's zooms no
+ * layer draws that image source. `@tileflow/dev` builds it in memory with the fixture's origin as
+ * its development origin, the HTTP exception a served native preview has, and the server answers
+ * its files under `/native/`: the manifest at `/native/manifest.json`, styles, family documents,
+ * sprites, images and font faces.
  *
  * A build takes tens of seconds, so its files are kept in the system's temporary directory, keyed
  * by the origin, the map and the built packages it depends on. Requests wait for the first build.
@@ -20,6 +22,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 /** The map: Streets, with only the modules the city tiles hold and four themes. */
 const config = (
   base,
+  underlay,
 ) => `import {defineMap, disable, openMapTiles, vectorTiles} from '@tileflow/core';
 import {streets, streetsThemes} from '@tileflow/maps';
 export default defineMap({
@@ -53,10 +56,21 @@ export default defineMap({
   },
   modules: {
     addresses: disable(),
-    // MapLibre Native requests an image source only while one of its layers is inside its zoom
-    // range, and reports a map loaded only once every source has loaded: Streets' climate
-    // underlay, drawn up to z11, would keep these city-zoom maps from ever becoming ready.
-    land: {type: 'land', globalLandcover: {visible: false}},
+    // An image the build writes as a file, as a local build writes Streets' climate underlay.
+    land: {
+      type: 'land',
+      globalLandcoverUnderlay: {
+        url: '${underlay}',
+        coordinates: [
+          [-180, 85.0511287798066],
+          [180, 85.0511287798066],
+          [180, -85.0511287798066],
+          [-180, -85.0511287798066],
+        ],
+        attribution: 'Fixture Climate',
+        maxZoom: 11,
+      },
+    },
     aeroways: disable(),
     boundaries: disable(),
     landforms: disable(),
@@ -80,7 +94,7 @@ async function inputs() {
   return lines.join('\n');
 }
 
-async function build(base, directory) {
+async function build(base, underlay, directory) {
   const work = `${directory}.work`;
   await rm(work, {recursive: true, force: true});
   const project = join(work, 'project');
@@ -90,7 +104,7 @@ async function build(base, directory) {
       resolve(root, 'packages', name),
       join(project, 'node_modules', '@tileflow', name),
     );
-  await writeFile(join(project, 'tileflow.config.ts'), config(base));
+  await writeFile(join(project, 'tileflow.config.ts'), config(base, underlay));
   const dev = await import(pathToFileURL(resolve(root, 'packages/dev/dist/artifacts.js')).href);
   const artifacts = await dev.createTileflowBuildArtifacts({
     cwd: project,
@@ -119,11 +133,12 @@ async function build(base, directory) {
 }
 
 export function createNativeBuildFixture({base, elevation}) {
+  const underlay = `data:image/png;base64,${elevation.toString('base64')}`;
   let ready;
   const prepare = () => {
     ready ??= (async () => {
       const key = createHash('sha256')
-        .update(`${base}\n${config(base)}\n${await inputs()}`)
+        .update(`${base}\n${config(base, underlay)}\n${await inputs()}`)
         .digest('hex')
         .slice(0, 16);
       const directory = join(tmpdir(), 'tileflow-mobile-fixture', `native-${key}`);
@@ -131,7 +146,7 @@ export function createNativeBuildFixture({base, elevation}) {
       if (!(await stat(marker).catch(() => undefined))) {
         const started = Date.now();
         console.log('Building the native fixture map…');
-        await build(base, directory);
+        await build(base, underlay, directory);
         console.log(`Native fixture map built in ${Math.round((Date.now() - started) / 1000)} s.`);
       }
       return directory;

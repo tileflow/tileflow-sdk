@@ -2,6 +2,8 @@ package dev.tileflow.sdk
 
 import android.content.Intent
 import android.content.pm.ActivityInfo
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Bundle
 import android.view.ViewGroup
 import android.widget.LinearLayout
@@ -18,9 +20,11 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
 import java.util.concurrent.CopyOnWriteArrayList
+import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.junit.After
@@ -36,6 +40,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.maplibre.android.style.layers.FillLayer
 import org.maplibre.android.style.layers.Property
+import org.maplibre.android.style.layers.RasterLayer
+import org.maplibre.android.style.sources.RasterSource
 
 /** What a map view reported during a check. */
 internal class NativeMapEvents {
@@ -276,6 +282,60 @@ public class NativeMapViewIntegrationTest {
         } finally {
             instrumentation.runOnMainSync { activity.finish() }
         }
+    }
+
+    /**
+     * The city map holds a world image drawn only below zoom 11, as Streets' climate underlay is.
+     * At zoom 16 no layer draws it, which MapLibre Native takes for an image source still loading:
+     * the map must load all the same, and draw the image once the camera zooms out to it.
+     */
+    @Test
+    public fun aWorldImageOutsideItsZoomsLetsTheMapLoadAndDrawsWhenInRange() {
+        requireNativeFixture()
+        val activity = show()
+        val events = activity.recorded.single()
+        try {
+            runBlocking {
+                withContext(Dispatchers.Main) {
+                    val map = activity.views.single()
+                    events.waitForLoads(1)
+                    assertTrue("Map errors: ${events.failures}", events.failures.isEmpty())
+                    val engine = requireNotNull(activity.engine)
+                    val style = requireNotNull(engine.map?.style)
+                    val underlay =
+                        style.getLayer("tileflow-global-landcover-underlay") as RasterLayer
+                    assertEquals(11f, underlay.maxZoom, 0f)
+                    assertTrue(style.getSource("tileflow-landcover-underlay") is RasterSource)
+                    val hidden = underlayShare(engine)
+                    assertTrue("At zoom 16 no layer draws the image: $hidden", hidden < 0.01)
+
+                    map.setCamera(TileflowCamera(-3.70, 40.42, 5.0))
+                    withTimeout(10_000) { while (underlayShare(engine) <= 0.5) delay(100) }
+                    assertTrue("Map errors: ${events.failures}", events.failures.isEmpty())
+                }
+            }
+        } finally {
+            instrumentation.runOnMainSync { activity.finish() }
+        }
+    }
+
+    /** The share of the map's own drawing in the fixture underlay's green, `#01a004`. */
+    private suspend fun underlayShare(engine: NativeMapEngine): Double {
+        val bitmap =
+            suspendCancellableCoroutine<Bitmap?> { done ->
+                engine.map?.snapshot { done.resume(it) } ?: done.resume(null)
+            } ?: return 0.0
+        var green = 0
+        var total = 0
+        for (y in 0 until bitmap.height step 8) {
+            for (x in 0 until bitmap.width step 8) {
+                val pixel = bitmap.getPixel(x, y)
+                total += 1
+                if (Color.red(pixel) < 60 && Color.green(pixel) > 120 && Color.blue(pixel) < 60)
+                    green += 1
+            }
+        }
+        return green.toDouble() / maxOf(total, 1)
     }
 
     @Test

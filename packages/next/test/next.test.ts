@@ -294,7 +294,17 @@ test('refreshes direct style requests after a config edit without requiring a ma
 });
 
 function configWithBackground(background: string): string {
-  return rootConfig(background);
+  return `import {defineMap, defineTheme} from '@tileflow/core';
+import {streetsThemes} from '@tileflow/maps';
+export default defineMap({
+  id: 'main', version: 1, defaultTheme: 'light',
+  themes: {light: defineTheme(streetsThemes.light, {
+    id: 'fixture-light', version: 1, colorScheme: 'light',
+    tokens: {color: {'surface.background': ${JSON.stringify(background)}}}
+  })},
+  icons: [], modules: {poi: {type: 'poi', icons: false}},
+  glyphs: {kind: 'url', url: '${glyphUrl}', fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']}
+});\n`;
 }
 
 function rootConfig(background?: string): string {

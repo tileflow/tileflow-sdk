@@ -625,7 +625,10 @@ function compileSemanticStyleInternal(
       ? {
           [tileflowPathGroundSource]: {
             type: 'vector',
-            url: pathGroundProtocolUrl(pathGroundSourceConfig(data)),
+            // Path ground reads the primary source's tiles, so the browser downloads them once.
+            url: pathGroundProtocolUrl(
+              pathGroundSourceConfig(primaryUrl === undefined ? data : {...data, url: primaryUrl}),
+            ),
           },
         }
       : {}),

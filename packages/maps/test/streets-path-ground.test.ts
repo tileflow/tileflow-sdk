@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import {readdirSync} from 'node:fs';
 import test from 'node:test';
-import {createStyle, defineMap, refine} from '@tileflow/core';
+import {
+  createStyle,
+  defineMap,
+  fixed,
+  refine,
+  renderPass,
+  transit,
+  withRenderStack,
+} from '@tileflow/core';
 import {streets, streetsThemes} from '../src';
 import {streetsPreparedModels} from './streets-assets';
 
@@ -85,5 +93,30 @@ test('all Streets appearances keep the daylight path clipping and uncased geomet
       style.layers.some((layer) => layer.id === 'tileflow-road-surface-footway-fill-on-green'),
       theme,
     );
+  }
+});
+
+test('Streets path ground reads the primary source tiles when the map also draws world-detail', () => {
+  const transitLines = withRenderStack(transit(), {
+    lines: renderPass({
+      placement: 'above-roads',
+      feature: 'transitLine',
+      renderer: 'line',
+      style: {color: fixed('#123456', {reason: 'Test colour.'}), width: 2},
+    }),
+  });
+  const pathGroundUrl = (style: ReturnType<typeof createStyle>) =>
+    JSON.parse(
+      new URL((style.sources['tileflow-path-ground'] as {url: string}).url).searchParams.get(
+        'source',
+      )!,
+    ).url;
+  for (const modules of [{}, {transit: transitLines}]) {
+    const style = createStyle(defineMap({id: 'consumer', version: 1, extends: streets, modules}), {
+      theme: 'light',
+      preparedAssets,
+    });
+    // One URL per tile, so the browser downloads World's tiles once for both sources.
+    assert.equal(pathGroundUrl(style), (style.sources.tileflow as {url: string}).url);
   }
 });

@@ -1,36 +1,31 @@
 import {createTileflowStyleFamily, expandTileflowStyleFamily} from './style-family';
 import type {MapLibreStyle} from './types';
 
-/** Compact transport versions: v3 is web; v4 contains web plus a conventional Native artifact. */
+/** Web themes and repeated requirements share one copy on the wire. */
+export function compactDeploymentWebFamily(input: Record<string, unknown>) {
+  const {styles, ...rest} = input;
+  return {
+    ...rest,
+    ...compactRequirements(rest.buildManifest),
+    family: createTileflowStyleFamily(object(styles) as Record<string, MapLibreStyle>),
+  };
+}
+
+/** v3 carries web, v4 carries inline native styles, and v5 indexes separate native documents. */
 export function compactTileflowDeploymentArtifact(input: unknown): Record<string, unknown> {
   const artifact = object(input);
   if (artifact.kind !== 'tileflow-map-deployment') throw new TypeError('Invalid deployment kind.');
-  if (artifact.schemaVersion === 1) {
-    const {styles, ...rest} = artifact;
-    return {
-      ...rest,
-      ...compactRequirements(rest.buildManifest),
-      schemaVersion: 3,
-      family: createTileflowStyleFamily(object(styles) as Record<string, MapLibreStyle>),
-    };
-  }
-  if (artifact.schemaVersion === 2) {
+  if (artifact.schemaVersion === 1)
+    return {...compactDeploymentWebFamily(artifact), schemaVersion: 3};
+  if (artifact.schemaVersion === 2 || artifact.schemaVersion === 5) {
     const renderers = object(artifact.renderers);
-    const {styles, ...web} = object(renderers.web);
     return {
       ...artifact,
-      schemaVersion: 4,
-      renderers: {
-        ...renderers,
-        web: {
-          ...web,
-          ...compactRequirements(web.buildManifest),
-          family: createTileflowStyleFamily(object(styles) as Record<string, MapLibreStyle>),
-        },
-      },
+      schemaVersion: artifact.schemaVersion === 2 ? 4 : 5,
+      renderers: {...renderers, web: compactDeploymentWebFamily(object(renderers.web))},
     };
   }
-  throw new TypeError('Expected deployment schema version 1 or 2.');
+  throw new TypeError('Expected deployment schema version 1, 2 or 5.');
 }
 
 /** Decode before existing hash/resource verification. Expansion grants no publication authority. */
@@ -47,7 +42,7 @@ export function expandTileflowDeploymentArtifact(input: unknown): unknown {
       styles: expandTileflowStyleFamily(family),
     };
   }
-  if (artifact.schemaVersion === 4) {
+  if (artifact.schemaVersion === 4 || artifact.schemaVersion === 5) {
     const renderers = object(artifact.renderers);
     const web = object(renderers.web);
     if (Object.hasOwn(web, 'styles'))
@@ -55,7 +50,7 @@ export function expandTileflowDeploymentArtifact(input: unknown): unknown {
     const {family, sharedRequirements, ...rest} = web;
     return {
       ...artifact,
-      schemaVersion: 2,
+      schemaVersion: artifact.schemaVersion === 4 ? 2 : 5,
       renderers: {
         ...renderers,
         web: {
@@ -170,10 +165,10 @@ export function tileflowDeploymentWebBytes(input: unknown): number {
   const {iconComposition: _receipt, ...body} = object(input);
   const source = object(body.artifact);
   const artifact: Record<string, unknown> =
-    source.schemaVersion === 2 || source.schemaVersion === 4
+    source.schemaVersion === 2 || source.schemaVersion === 4 || source.schemaVersion === 5
       ? {
           kind: source.kind,
-          schemaVersion: source.schemaVersion === 4 ? 3 : 1,
+          schemaVersion: source.schemaVersion === 2 ? 1 : 3,
           mapId: source.mapId,
           teamSources: source.teamSources,
           ...object(object(source.renderers).web),

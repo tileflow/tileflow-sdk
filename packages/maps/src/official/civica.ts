@@ -160,7 +160,7 @@ function destination(
 ): TileflowPoiCategoryStyle {
   const park = role === 'park';
   const station = role === 'station';
-  const principalPark = expr.lte(expr.toNumber(expr.get(field('poiSizeRank')), 16), 4);
+  const principalPark = expr.lte(expr.toNumber(expr.get(field('sizerank')), 16), 4);
   return {
     minZoom,
     icon: {
@@ -205,14 +205,13 @@ function destination(
 
 function texture(
   above: string,
-  feature: 'landcover' | 'landuse',
   selector: TileflowRenderSelector,
   pattern: string,
   minZoom: number,
   opacity: number,
 ) {
   return renderPass({
-    feature,
+    feature: 'landuse',
     placement: {above},
     renderer: 'fill',
     selector,
@@ -227,7 +226,7 @@ function texture(
   });
 }
 
-const buildingTone = expr.coalesce(expr.get(field('buildingTone')), 'generic');
+const buildingTone = expr.coalesce(expr.get(field('tone')), 'generic');
 // Semantic destination/civic classification supplies the red plate. Height alone
 // never turns an ordinary office tower into a landmark.
 const buildingColor = expr.match(
@@ -292,7 +291,7 @@ const destinationSchedule: TileflowRenderSelector = {
         },
         {
           kind: 'compare',
-          field: 'poiFilterRank',
+          field: 'filterrank',
           coerce: 'number',
           fallback: 6,
           operator: 'lte',
@@ -439,6 +438,7 @@ export const civica = bindOfficialMapTheme(
     modules: {
       land: withRenderStack(
         land({
+          activityAreas: {fill: {visible: false}, outline: {visible: false}},
           background: {color: ink.paper},
           globalLandcover: {
             minZoom: 0,
@@ -507,12 +507,31 @@ export const civica = bindOfficialMapTheme(
         {
           parkGroves: texture(
             'land.landcover.urbanPark.fill',
-            'landcover',
+            // The parks and gardens the land module draws as urban parks.
             {
-              kind: 'all',
+              kind: 'any',
               selectors: [
-                {kind: 'in', field: 'class', values: ['grass']},
-                {kind: 'in', field: 'subclass', values: ['park', 'garden', 'orchard']},
+                {
+                  kind: 'all',
+                  selectors: [
+                    {kind: 'in', field: 'class', values: ['park']},
+                    {
+                      kind: 'not',
+                      selector: {
+                        kind: 'in',
+                        field: 'type',
+                        values: ['recreation_ground', 'village_green', 'zoo'],
+                      },
+                    },
+                  ],
+                },
+                {
+                  kind: 'all',
+                  selectors: [
+                    {kind: 'in', field: 'class', values: ['garden']},
+                    {kind: 'not', selector: {kind: 'in', field: 'type', values: ['flowerbed']}},
+                  ],
+                },
               ],
             },
             'civica-park-groves',
@@ -521,23 +540,20 @@ export const civica = bindOfficialMapTheme(
           ),
           woodlandGroves: texture(
             'land.landcover.wood.fill',
-            'landcover',
-            {kind: 'in', field: 'class', values: ['wood', 'forest']},
+            {kind: 'in', field: 'class', values: ['wood']},
             'civica-park-groves',
             19,
             0.18,
           ),
           orchardRows: texture(
             'land.landcover.grass.fill',
-            'landcover',
-            {kind: 'in', field: 'subclass', values: ['orchard', 'vineyard']},
+            {kind: 'in', field: 'class', values: ['orchard', 'vineyard']},
             'civica-orchard',
             19,
             0.2,
           ),
           industrialHatch: texture(
             'land.landuse.industrial.fill',
-            'landuse',
             {kind: 'in', field: 'class', values: ['industrial']},
             'civica-industrial-hatch',
             20,
@@ -612,7 +628,6 @@ export const civica = bindOfficialMapTheme(
       buildings: withRenderStack(
         buildings({
           mode: 'flat',
-          businessCorridor: {fill: {visible: false}, outline: {visible: false}},
           flat: {
             fill: {
               color: buildingColor,
@@ -966,12 +981,12 @@ export const civica = bindOfficialMapTheme(
               selector: {
                 kind: 'all',
                 selectors: [
-                  {kind: 'in', field: 'poiCategory', values: [category]},
-                  {kind: 'has', field: 'poiFilterRank'},
-                  {kind: 'has', field: 'poiSizeRank'},
+                  {kind: 'in', field: 'class', values: [category]},
+                  {kind: 'has', field: 'filterrank'},
+                  {kind: 'has', field: 'sizerank'},
                   {
                     kind: 'compare',
-                    field: 'poiFilterRank',
+                    field: 'filterrank',
                     coerce: 'number',
                     fallback: 6,
                     operator: 'lte',
@@ -987,7 +1002,7 @@ export const civica = bindOfficialMapTheme(
                   },
                   {
                     kind: 'compare',
-                    field: 'poiFilterRank',
+                    field: 'filterrank',
                     coerce: 'number',
                     fallback: -1,
                     operator: 'gte',
@@ -995,7 +1010,7 @@ export const civica = bindOfficialMapTheme(
                   },
                   {
                     kind: 'compare',
-                    field: 'poiSizeRank',
+                    field: 'sizerank',
                     coerce: 'number',
                     fallback: -1,
                     operator: 'gte',
@@ -1003,7 +1018,7 @@ export const civica = bindOfficialMapTheme(
                   },
                   {
                     kind: 'compare',
-                    field: 'poiSizeRank',
+                    field: 'sizerank',
                     coerce: 'number',
                     fallback: 17,
                     operator: 'lte',
@@ -1021,14 +1036,14 @@ export const civica = bindOfficialMapTheme(
                             selectors: [
                               {
                                 kind: 'compare',
-                                field: 'poiFilterRank',
+                                field: 'filterrank',
                                 coerce: 'number',
                                 operator: 'lte',
                                 value: 1,
                               },
                               {
                                 kind: 'compare',
-                                field: 'poiSizeRank',
+                                field: 'sizerank',
                                 coerce: 'number',
                                 operator: 'lt',
                                 value: 16,
@@ -1043,7 +1058,7 @@ export const civica = bindOfficialMapTheme(
                     ? ([
                         {
                           kind: 'not',
-                          selector: {kind: 'in', field: 'poiType', values: ['airport']},
+                          selector: {kind: 'in', field: 'type', values: ['airport']},
                         },
                         {
                           kind: 'step',
@@ -1051,7 +1066,7 @@ export const civica = bindOfficialMapTheme(
                             kind: 'not',
                             selector: {
                               kind: 'in',
-                              field: 'poiType',
+                              field: 'type',
                               values: ['public_transit_facility'],
                             },
                           },

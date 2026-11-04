@@ -162,8 +162,9 @@ Theme controllers also provide module/label emphasis, eased numeric `expr.global
 and fixed-size dynamic RGBA images with state refresh and restoration across theme changes.
 `getRouteInks()` supplies route colours; `createTileflowLineProgress` animates drawing routes.
 `createTileflowGroundLayers` places them under 3D buildings, optionally showing occluded stretches
-faintly. Themes declare `lighting.sun` and `lighting.ambient`; `getSun()` returns the displayed,
-blended sun for application 3D layers. `setSun()` accepts a direction or a date and location.
+faintly. Themes declare `lighting.sun` and `lighting.ambient`; `getSun()` returns the displayed
+sun. `setSun()` accepts angles or a date and location. Transitions
+mix 3D directions (angular fallback for opposite vectors) and OKLab light colours.
 
 `createTileflowBuildings3D` enables worker-meshed buildings rising at zoom 15–15.3, scene sun,
 cast/contact shadows and 0.8 m rounded corners; effects are independently overridable. Its
@@ -238,25 +239,25 @@ const nativeSource = {
 } satisfies TileflowNativeSource;
 ```
 
-These objects select existing prepared maps; they do not compile or render one. Every Tileflow
-framework Map is manifest-backed, without a renderer discriminator or direct-style mode. The
+Framework Maps select a prepared map from its manifest. They accept neither a renderer
+discriminator nor a direct style. The
 obsolete source fields `kind` and `style` are rejected. Completely unmanaged maps use upstream
 MapLibre directly. Omitted themes use the manifest default, concrete themes select exact names,
 and `system` requires the manifest's explicit light/dark mapping and a supplied runtime color scheme.
-The pre-release React Native
-package uses this contract for its mounted Map; it is not yet published.
+The unpublished React Native package uses this contract for its mounted Map.
 
 ## Data, terrain, and browser resources
 
-Tileflow World is the hosted primary source. `vectorTiles()` with `openMapTiles()` supports
-external local/self-hosted data; hosted eligibility is separate. `hostedTileset()`, `boundaryAreas`
-and semantic overlays add named sources. Local PMTiles inputs are tooling-only.
+Tileflow World is the hosted primary source, with an open (CC0)
+[schema](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/reference/tileflow-world-v1.json);
+detail layers load only when drawn. `vectorTiles()` takes that schema or OpenMapTiles
+(`openMapTiles()`). `hostedTileset()`, `boundaryAreas` and overlays add named sources.
 
 `bathymetry({vectorLayers: {...}})` declares contour/name layers. `marine: 'nautical'` adds
 navigation marks, flashing lights, and a "Not for navigation" notice.
 
-World attribution links to Tileflow's source notice, OpenMapTiles, and OpenStreetMap. External
-vector data retains the attribution supplied by its owner.
+World attribution credits Tileflow and OpenStreetMap; other vector data keeps its owner's
+attribution.
 
 `projection` accepts `mercator` or `globe`. Terrain supports `none`, `hillshade`, `3d`, and an object
 form for explicit hillshade and contour configuration. Browser-derived contours require a DEM tile

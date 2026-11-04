@@ -147,7 +147,7 @@ test('a deployment is reserved, its native documents uploaded family last, then 
   }
   assert.equal(platform.requests[1]!.body.toString('utf8'), input.split.documents.styles.dark);
   assert.equal(platform.requests[3]!.body.toString('utf8'), input.split.documents.family);
-  assert.equal(requestJson(platform.requests[0]!).artifact.schemaVersion, 3);
+  assert.equal(requestJson(platform.requests[0]!).artifact.schemaVersion, 5);
   assert.equal('styles' in requestJson(platform.requests[0]!).artifact.renderers.native, false);
   assert.deepEqual(
     events.map((event) => event.kind),

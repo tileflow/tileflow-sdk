@@ -298,7 +298,7 @@ function buildingTile(z, x, y) {
     features.push(
       field(2, 2, [
         ...field(1, 0, varint(index + 1)),
-        ...field(2, 2, [...varint(0), ...varint(values.length - 1)]),
+        ...field(2, 2, [0, ...varint(values.length - 1), 1, ...varint(values.length - 1)]),
         ...field(3, 0, varint(3)),
         ...field(4, 2, geometry.flatMap(varint)),
       ]),
@@ -309,6 +309,7 @@ function buildingTile(z, x, y) {
     ...field(1, 2, [...Buffer.from('building')]),
     ...features.flat(),
     ...field(3, 2, [...Buffer.from('render_height')]),
+    ...field(3, 2, [...Buffer.from('height')]),
     ...values.flatMap((value) => field(4, 2, value)),
     ...field(5, 0, varint(extent)),
   ];

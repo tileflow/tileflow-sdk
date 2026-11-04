@@ -49,6 +49,11 @@ export type TileflowBarrierStyle = {
 };
 
 export type TileflowLandModuleOptions = {
+  /**
+   * Activity areas, where shops, food, services and offices concentrate: World's
+   * `landuse_overlay` areas of class `activity_area`, with an `activity` level from 1 to 5.
+   */
+  activityAreas?: TileflowAreaStyle;
   background?: TileflowBackgroundStyle;
   /**
    * Hedges, fences and walls, drawn at the top of the land band with hedges uppermost. A barrier

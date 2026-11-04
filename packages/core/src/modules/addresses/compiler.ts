@@ -34,7 +34,7 @@ export function compileAddresses(
     request?.labels,
     {
       text: {
-        field: expression<string>(['to-string', ['get', context.data.schema.fields.houseNumber]]),
+        field: expression<string>(['to-string', ['get', context.data.schema.fields.houseNum]]),
       },
     },
   );
@@ -49,8 +49,8 @@ export function compileAddresses(
           id: 'tileflow-addresses-labels',
           type: 'symbol',
           source,
-          'source-layer': schema.layers.houseNumber,
-          filter: ['all', ['==', ['geometry-type'], 'Point'], ['has', schema.fields.houseNumber]],
+          'source-layer': schema.layers.housenumLabel,
+          filter: ['all', ['==', ['geometry-type'], 'Point'], ['has', schema.fields.houseNum]],
         },
         style,
       ),

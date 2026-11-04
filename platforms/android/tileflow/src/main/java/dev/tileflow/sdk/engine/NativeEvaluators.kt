@@ -3,11 +3,15 @@ package dev.tileflow.sdk.engine
 import java.math.BigDecimal
 import java.math.RoundingMode
 import kotlin.math.abs
+import kotlin.math.atan2
 import kotlin.math.cbrt
+import kotlin.math.cos
 import kotlin.math.floor
+import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.pow
+import kotlin.math.sin
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -369,10 +373,7 @@ internal object NativeEvaluators {
 
     // Suns and route inks
 
-    /**
-     * Two suns mixed: the azimuth turns the short way round, colours mix in OKLab and numbers
-     * linearly.
-     */
+    /** Blend sun directions in Cartesian space and light colours in OKLab. */
     fun mixSuns(from: JSONObject, to: JSONObject, t: Double): JSONObject {
         val at = min(1.0, max(0.0, if (t.isFinite()) t else 0.0))
         if (at == 0.0) return from
@@ -384,12 +385,10 @@ internal object NativeEvaluators {
         }
         val fromAmbient = from.optJSONObject("ambient")
         val toAmbient = to.optJSONObject("ambient")
+        val (azimuth, altitude) = mixedSunDirection(from, to, at)
         return JSONObject()
-            .put(
-                "azimuth",
-                mixAzimuths(from.optDouble("azimuth", 0.0), to.optDouble("azimuth", 0.0), at),
-            )
-            .put("altitude", number(from, to, "altitude"))
+            .put("azimuth", azimuth)
+            .put("altitude", altitude)
             .put("color", mixedColour(from.optString("color"), to.optString("color"), at))
             .put("intensity", number(from, to, "intensity"))
             .put("shadowIntensity", number(from, to, "shadowIntensity"))
@@ -406,6 +405,30 @@ internal object NativeEvaluators {
                     )
                     .put("intensity", number(fromAmbient, toAmbient, "intensity")),
             )
+    }
+
+    private fun mixedSunDirection(from: JSONObject, to: JSONObject, t: Double): Pair<Double, Double> {
+        fun vector(azimuth: Double, altitude: Double): DoubleArray {
+            val a = Math.toRadians(azimuth)
+            val h = Math.toRadians(altitude)
+            return doubleArrayOf(sin(a) * cos(h), cos(a) * cos(h), sin(h))
+        }
+
+        val azimuthA = from.optDouble("azimuth", 0.0)
+        val azimuthB = to.optDouble("azimuth", 0.0)
+        val altitudeA = from.optDouble("altitude", 0.0)
+        val altitudeB = to.optDouble("altitude", 0.0)
+        val a = vector(azimuthA, altitudeA)
+        val b = vector(azimuthB, altitudeB)
+        val azimuth = mixAzimuths(azimuthA, azimuthB, t)
+        if (a.indices.sumOf { a[it] * b[it] } < -0.9995) {
+            return azimuth to altitudeA + (altitudeB - altitudeA) * t
+        }
+
+        val (x, y, z) = DoubleArray(3) { a[it] + (b[it] - a[it]) * t }
+        val horizontal = hypot(x, y)
+        val bearing = if (horizontal < 1e-12) azimuth else normalizedAzimuth(Math.toDegrees(atan2(x, y)))
+        return bearing to Math.toDegrees(atan2(z, horizontal))
     }
 
     /** An azimuth [t] of the way from [from] to [to], turning the short way round. */

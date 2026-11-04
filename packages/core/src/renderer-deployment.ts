@@ -4,6 +4,7 @@ import {
   assertTileflowInteractionManifestLayers,
   type TileflowInteractionManifest,
 } from './cartography/interaction-manifest';
+import {compactDeploymentWebFamily, expandTileflowDeploymentArtifact} from './family-deployment';
 import {
   tileflowIconCompositionSchema,
   tileflowRenderedIconIdentitySchema,
@@ -27,6 +28,7 @@ import {createTileflowTimeOfDaySchema} from './time-of-day-schema';
  * in its own request.
  */
 export const tileflowRendererDeploymentLimits = Object.freeze({
+  maximumWebBytes: 2_000_000,
   maximumWebRequestBytes: 16 * 1024 * 1024,
   maximumDocumentBytes: tileflowNativeProfileLimits.maximumStyleBytes,
   maximumNativeFamilyBytes: 32 * 1024 * 1024,
@@ -232,15 +234,15 @@ const nativeDocumentShape = {
 };
 
 /**
- * The request form of a renderer deployment (schema 3). The web family travels in the request; the
+ * The expanded request form of a renderer deployment (schema 5). The web family travels in the request; the
  * native family is declared by its build manifest, build record and an index of its documents: the
  * SHA-256 and size of each theme's native style and of the family document, which then travel in
  * their own requests. `splitTileflowRendererDeployment` derives it from a whole artifact.
  */
-export const tileflowRendererDeploymentRequestArtifactSchema = z
+const expandedRequestSchema = z
   .object({
     kind: z.literal('tileflow-map-deployment'),
-    schemaVersion: z.literal(3),
+    schemaVersion: z.literal(5),
     mapId: tileflowPortableIdSchema,
     teamSources: teamSourcesSchema,
     view: viewSchema.optional(),
@@ -296,13 +298,31 @@ export const tileflowRendererDeploymentRequestArtifactSchema = z
         message: 'The request must index exactly the native documents of one complete Map',
       });
   });
+/** Decode the compact web family before validating its identity against the native index. */
+export const tileflowRendererDeploymentRequestArtifactSchema = z
+  .unknown()
+  .transform((input, ctx) => {
+    try {
+      return expandTileflowDeploymentArtifact(input);
+    } catch {
+      ctx.addIssue({code: 'custom', message: 'Invalid compact deployment family'});
+      return z.NEVER;
+    }
+  })
+  .pipe(expandedRequestSchema);
+
 export type TileflowRendererDeploymentRequestArtifact = z.infer<
   typeof tileflowRendererDeploymentRequestArtifactSchema
 >;
 
 /** A renderer deployment as it travels: its request artifact and the native documents' bytes. */
 export type TileflowSplitRendererDeployment = Readonly<{
-  artifact: TileflowRendererDeploymentRequestArtifact;
+  artifact: Omit<TileflowRendererDeploymentRequestArtifact, 'renderers'> & {
+    renderers: {
+      web: ReturnType<typeof compactDeploymentWebFamily>;
+      native: TileflowRendererDeploymentRequestArtifact['renderers']['native'];
+    };
+  };
   /** The exact canonical JSON each native document is uploaded as, by theme, and the family's. */
   documents: Readonly<{styles: Readonly<Record<string, string>>; family: string}>;
 }>;
@@ -454,7 +474,7 @@ export async function parseTileflowRendererDeploymentArtifact(
 }
 
 /**
- * Carry a whole renderer deployment as its request artifact (schema 3) plus the canonical bytes of
+ * Carry a whole renderer deployment as its request artifact (schema 5) plus the canonical bytes of
  * each native document, which are uploaded on their own. Fails when the web request, a document or
  * the native family exceeds its budget.
  */
@@ -490,13 +510,13 @@ async function splitArtifact(
     texts.map(async (text, position) => ({sha256: await sha256Hex(text), bytes: sizes[position]!})),
   );
   const request = {
-    kind: 'tileflow-map-deployment',
-    schemaVersion: 3,
+    kind: 'tileflow-map-deployment' as const,
+    schemaVersion: 5 as const,
     mapId: artifact.mapId,
     teamSources: artifact.teamSources,
     ...(artifact.view ? {view: artifact.view} : {}),
     renderers: {
-      web: artifact.renderers.web,
+      web: compactDeploymentWebFamily(artifact.renderers.web),
       native: {
         buildManifest,
         buildRecord,
@@ -520,7 +540,7 @@ async function splitArtifact(
   const parsed = tileflowRendererDeploymentRequestArtifactSchema.safeParse(request);
   if (!parsed.success) return undefined;
   return {
-    artifact: parsed.data,
+    artifact: request,
     documents: {
       styles: Object.fromEntries(names.map((name, position) => [name, texts[position]!])),
       family: familyText,

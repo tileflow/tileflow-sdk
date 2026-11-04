@@ -2,6 +2,7 @@ import {gzipSync} from 'node:zlib';
 import type {z} from 'zod';
 import {serializeCanonicalJson, serializeTileflowFontBundleManifest} from '@tileflow/core';
 import {
+  tileflowDeploymentWebBytes,
   tileflowNativeDocumentReceiptSchema,
   tileflowNativeDocumentUploadPath,
   tileflowRendererDeploymentLimits,
@@ -427,7 +428,10 @@ export async function requestTeamCapability(
   team: string,
   scopes: HostedTeamCapabilityScope[],
   options: HostedRequestOptions = {},
-): Promise<{capability: string; ok: true; team: ProjectIdentity} | {error: string; ok: false}> {
+): Promise<
+  | {capability: string; expiresAt: string; ok: true; team: ProjectIdentity}
+  | {error: string; ok: false}
+> {
   let response: HostedJsonResponse;
   try {
     response = await requestHostedJson(
@@ -464,7 +468,7 @@ export async function requestTeamCapability(
   ) {
     return {error: 'Team capability response was invalid.', ok: false};
   }
-  return {capability: body.capability, ok: true, team: body.team};
+  return {capability: body.capability, expiresAt: body.expiresAt, ok: true, team: body.team};
 }
 
 export async function listAccountTeams(
@@ -735,6 +739,11 @@ export async function publishHostedRendererDeployment(
   if (bytes > tileflowRendererDeploymentLimits.maximumWebRequestBytes)
     throw new HostedDeploymentError(
       `The deployment request is ${formatMegabytes(bytes)}; Hosted accepts at most ${formatMegabytes(tileflowRendererDeploymentLimits.maximumWebRequestBytes)}.`,
+    );
+  const webBytes = tileflowDeploymentWebBytes(input.body);
+  if (webBytes > tileflowRendererDeploymentLimits.maximumWebBytes)
+    throw new HostedDeploymentError(
+      `The compact web styles use ${webBytes} bytes; Hosted accepts at most ${tileflowRendererDeploymentLimits.maximumWebBytes}.`,
     );
   const body = gzipSync(text);
   const index = input.split.artifact.renderers.native.documents;

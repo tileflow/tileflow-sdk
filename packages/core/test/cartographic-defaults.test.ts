@@ -18,11 +18,12 @@ import {
   reset,
   resolveTileflowData,
   roads,
-  tileflowWorldV1Schema,
+  tileflowWorldSchema,
   vectorTiles,
   withRenderStack,
 } from '../src';
 import {compileRenderStack} from '../src/cartography/render-stack';
+import {createSemanticDataView} from '../src/cartography/semantic-bindings';
 import {compileAddresses} from '../src/modules/addresses/compiler';
 import {compileBuildings} from '../src/modules/buildings/compiler';
 import {resolveLabels} from '../src/modules/labels';
@@ -53,18 +54,42 @@ function indexOf(layers: readonly {id: string}[], id: string) {
 }
 
 test('explicit ground details cover parks while parking and recreation stay visible', () => {
-  for (const schema of [openMapTiles(), tileflowWorldV1Schema()]) {
+  for (const schema of [openMapTiles(), tileflowWorldSchema()]) {
     const data = resolveTileflowData(
       vectorTiles({attribution: 'Test', schema, url: 'https://example.test/tiles.json'}),
     );
-    const layers = assembleTileflowLayers(compileLand(undefined, {...context, data}));
-    const parks = ['tileflow-landcover-protected', 'tileflow-landcover-urbanPark'];
-    if (data.schema.semantics.parkLayer === 'mixed') parks.push('tileflow-landcover-legacy-park');
+    const layers = assembleTileflowLayers(
+      compileLand(undefined, {...context, data: createSemanticDataView(data)}),
+      data,
+    );
+    // Every copy of a layer the data splits over several source layers.
+    const copies = (id: string) => {
+      const found = layers.flatMap((layer, index) =>
+        layer.id === id || layer.id.startsWith(`${id}~`) ? [index] : [],
+      );
+      assert.notEqual(found.length, 0, `Expected ${id}`);
+      return found;
+    };
+    const parks = [
+      ...copies('tileflow-landcover-protected'),
+      ...copies('tileflow-landcover-urbanPark'),
+    ];
+    // OpenMapTiles has no parking areas.
+    const paved = [
+      ...(schema.type === 'tileflow-world' ? copies('tileflow-landuse-parking') : []),
+      ...copies('tileflow-landuse-recreation'),
+    ];
     for (const detail of ['grass', 'meadow', 'scrub', 'flowerbed']) {
-      const detailIndex = indexOf(layers, `tileflow-landcover-${detail}`);
-      for (const park of parks) assert.ok(detailIndex > indexOf(layers, park));
-      assert.ok(indexOf(layers, 'tileflow-landuse-parking') > detailIndex);
-      assert.ok(indexOf(layers, 'tileflow-landuse-recreation') > detailIndex);
+      for (const detailIndex of copies(`tileflow-landcover-${detail}`)) {
+        assert.ok(
+          parks.every((park) => detailIndex > park),
+          detail,
+        );
+        assert.ok(
+          paved.every((index) => index > detailIndex),
+          detail,
+        );
+      }
     }
   }
 });

@@ -26,6 +26,8 @@ export type PositionedUploadFile = Readonly<{
   close(): Promise<void>;
   identity(): Promise<UploadFileIdentity>;
   read(position: number, byteCount: number): Promise<Uint8Array>;
+  /** Fill the caller's buffer without retaining it. */
+  readInto?(position: number, target: Uint8Array): Promise<number>;
 }>;
 
 export type TeamTilesetUploadPart = Readonly<{
@@ -223,19 +225,30 @@ export async function openNodeTeamTilesetArchive(
     throw error;
   }
 
+  const readInto = async (position: number, target: Uint8Array) => {
+    let offset = 0;
+    while (offset < target.byteLength) {
+      const result = await handle.read(
+        target,
+        offset,
+        target.byteLength - offset,
+        position + offset,
+      );
+      if (result.bytesRead === 0) throw localFileChanged();
+      offset += result.bytesRead;
+    }
+    return offset;
+  };
+
   return {
     close: () => handle.close(),
     identity,
     async read(position, byteCount) {
       const bytes = Buffer.allocUnsafe(byteCount);
-      let offset = 0;
-      while (offset < byteCount) {
-        const result = await handle.read(bytes, offset, byteCount - offset, position + offset);
-        if (result.bytesRead === 0) throw localFileChanged();
-        offset += result.bytesRead;
-      }
+      await readInto(position, bytes);
       return bytes;
     },
+    readInto,
   };
 }
 
@@ -245,9 +258,17 @@ export async function prepareTeamTilesetUpload(
   const identity = await file.identity();
   const layout = createTeamTilesetPartLayout(identity.size);
   const parts: TeamTilesetUploadPart[] = [];
+  const reusable = file.readInto
+    ? Buffer.allocUnsafe(Math.min(identity.size, teamTilesetPartSize))
+    : undefined;
 
   for (const part of layout) {
-    const bytes = await file.read(part.position, part.byteCount);
+    const bytes = reusable
+      ? reusable.subarray(0, part.byteCount)
+      : await file.read(part.position, part.byteCount);
+    if (reusable && (await file.readInto!(part.position, bytes)) !== part.byteCount) {
+      throw localFileChanged();
+    }
     if (bytes.byteLength !== part.byteCount) throw localFileChanged();
     parts.push(
       Object.freeze({
@@ -393,6 +414,7 @@ export async function publishPreparedTeamTilesetUpload(input: {
 export function createHostedTeamTilesetUploadTransport(input: {
   apiOrigin: string;
   credential: string;
+  getCredential?: () => Promise<string>;
   fetch?: typeof globalThis.fetch;
   sleep?: (milliseconds: number) => Promise<void>;
   tilesetId: string;
@@ -400,6 +422,16 @@ export function createHostedTeamTilesetUploadTransport(input: {
   const basePath = `/v1/tilesets/${encodeURIComponent(input.tilesetId)}/uploads`;
   const control = async (path: string, init: RequestInit) => {
     for (let attempt = 1; attempt <= maximumControlAttempts; attempt += 1) {
+      let credential: string;
+      try {
+        credential = (await input.getCredential?.()) ?? input.credential;
+      } catch {
+        throw new TeamTilesetUploadError(
+          'TF_TILESET_UPLOAD_UNAVAILABLE',
+          'Team authorization could not be renewed. Run tileflow login and retry the upload.',
+        );
+      }
+
       let response: HostedJsonResponse | undefined;
       try {
         response = await requestHostedJson(
@@ -408,7 +440,7 @@ export function createHostedTeamTilesetUploadTransport(input: {
           {
             ...init,
             headers: {
-              Authorization: `Bearer ${input.credential}`,
+              Authorization: `Bearer ${credential}`,
               ...(init.body ? {'Content-Type': 'application/json'} : {}),
               ...init.headers,
             },
@@ -469,26 +501,30 @@ export function createHostedTeamTilesetUploadTransport(input: {
       );
     },
     async putPart(authorization, bytes) {
-      let response: Response;
+      const controller = new AbortController();
       try {
-        const body = new Uint8Array(
-          bytes.buffer as ArrayBuffer,
-          bytes.byteOffset,
-          bytes.byteLength,
-        );
-        response = await (input.fetch ?? globalThis.fetch)(authorization.url, {
+        const body = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controller.enqueue(bytes);
+            controller.close();
+          },
+        });
+        const response = await (input.fetch ?? globalThis.fetch)(authorization.url, {
           body,
+          duplex: 'half',
           headers: authorization.headers,
           method: 'PUT',
           redirect: 'error',
-          signal: AbortSignal.timeout(partTransferTimeoutMs),
-        });
+          signal: AbortSignal.any([controller.signal, AbortSignal.timeout(partTransferTimeoutMs)]),
+        } as RequestInit & {duplex: 'half'});
+        const etag = response.headers.get('etag');
+        await response.body?.cancel().catch(() => undefined);
+        return {etag, status: response.status};
       } catch {
         throw new Error('Direct part transfer failed.');
+      } finally {
+        controller.abort();
       }
-      const etag = response.headers.get('etag');
-      await response.body?.cancel().catch(() => undefined);
-      return {etag, status: response.status};
     },
     async recordPart(uploadId, body) {
       partReceiptResponseSchema.parse(
@@ -513,6 +549,12 @@ async function uploadMissingParts(
   },
 ) {
   let completedParts = input.upload.parts.length - input.missingParts.length;
+  const transferBufferBytes = Math.max(0, ...input.missingParts.map((part) => part.byteCount));
+  const transferBuffers = input.file.readInto
+    ? Array.from({length: Math.min(uploadConcurrency, input.missingParts.length)}, () =>
+        Buffer.allocUnsafe(transferBufferBytes),
+      )
+    : [];
 
   for (let offset = 0; offset < input.missingParts.length; offset += authorizationBatchSize) {
     const authorizationParts = input.missingParts.slice(offset, offset + authorizationBatchSize);
@@ -532,9 +574,15 @@ async function uploadMissingParts(
       assertFileIdentity(input.upload.identity, await input.file.identity());
       const group = authorizationParts.slice(groupOffset, groupOffset + uploadConcurrency);
       const settled = await Promise.allSettled(
-        group.map(async (part) => {
+        group.map(async (part, index) => {
           const position = (part.partNumber - 1) * teamTilesetPartSize;
-          const bytes = await input.file.read(position, part.byteCount);
+          const reusable = transferBuffers[index];
+          const bytes = reusable
+            ? reusable.subarray(0, part.byteCount)
+            : await input.file.read(position, part.byteCount);
+          if (reusable && (await input.file.readInto!(position, bytes)) !== part.byteCount) {
+            throw localFileChanged();
+          }
           if (bytes.byteLength !== part.byteCount) throw localFileChanged();
           await uploadPartWithRetry({
             ...input,

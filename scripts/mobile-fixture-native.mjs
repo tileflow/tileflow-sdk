@@ -23,9 +23,9 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 const config = (
   base,
   underlay,
-) => `import {defineMap, disable, openMapTiles, vectorTiles} from '@tileflow/core';
+) => `import {defineMap, disable, tileflowWorldSchema, vectorTiles} from '@tileflow/core';
 import {streets, streetsThemes} from '@tileflow/maps';
-export default defineMap({
+const city = defineMap({
   id: 'city',
   version: 1,
   extends: streets,
@@ -43,7 +43,7 @@ export default defineMap({
   data: vectorTiles({
     attribution: 'Fixture City',
     revision: 'fixture-city-v1',
-    schema: openMapTiles(),
+    schema: tileflowWorldSchema(),
     tiles: ['${base}/city/{z}/{x}/{y}.mvt'],
   }),
   terrain: {
@@ -56,7 +56,7 @@ export default defineMap({
   },
   modules: {
     addresses: disable(),
-    // An image the build writes as a file, as a local build writes Streets' climate underlay.
+    // An embedded world image exercises native extraction and projection.
     land: {
       type: 'land',
       globalLandcoverUnderlay: {
@@ -79,6 +79,21 @@ export default defineMap({
     transit: disable(),
   },
 });
+export default {maps: {
+  city,
+  streets: defineMap({
+    id: 'streets',
+    version: 1,
+    extends: streets,
+    view: {center: [-3.7, 40.42], zoom: 16},
+    data: vectorTiles({
+      attribution: 'Fixture City',
+      schema: tileflowWorldSchema(),
+      tiles: ['${base}/city/{z}/{x}/{y}.mvt'],
+    }),
+    terrain: {...streets.terrain, tiles: ['${base}/terrain/{z}/{x}/{y}.png']},
+  }),
+}};
 `;
 
 /** Names, sizes and times of the built packages the map depends on. */
@@ -104,10 +119,11 @@ async function build(base, underlay, directory) {
       resolve(root, 'packages', name),
       join(project, 'node_modules', '@tileflow', name),
     );
-  await writeFile(join(project, 'tileflow.config.ts'), config(base, underlay));
+  await writeFile(join(project, 'tileflow.workspace.ts'), config(base, underlay));
   const dev = await import(pathToFileURL(resolve(root, 'packages/dev/dist/artifacts.js')).href);
   const artifacts = await dev.createTileflowBuildArtifacts({
     cwd: project,
+    config: 'tileflow.workspace.ts',
     renderer: 'native',
     styleBaseUrl: base,
     assetBaseUrl: base,

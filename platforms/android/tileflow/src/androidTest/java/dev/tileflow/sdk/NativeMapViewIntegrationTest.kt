@@ -284,6 +284,34 @@ public class NativeMapViewIntegrationTest {
         }
     }
 
+    @Test
+    public fun streetsLoadsAtCityZoomWithItsHostedClimateLayer() {
+        requireNativeFixture()
+        val streets = TileflowMapSource(
+            map = "streets",
+            manifestUrl = URI("${Fixture.ORIGIN}/native/manifest.json"),
+            allowsLoopbackHttp = true,
+        )
+        NativeViewHostActivity.maps = listOf(streets to null)
+        val activity = show()
+        try {
+            runBlocking {
+                withContext(Dispatchers.Main) {
+                    val events = activity.recorded.single()
+                    events.waitForLoads(1)
+                    val map = activity.views.single()
+                    val style = requireNotNull(activity.engine?.map?.style)
+                    val climate = style.getLayer("tileflow-global-landcover-underlay") as RasterLayer
+                    assertTrue(map.camera().zoom > climate.maxZoom)
+                    assertTrue(style.getSource("tileflow-landcover-underlay") is RasterSource)
+                    assertTrue("Map errors: ${events.failures}", events.failures.isEmpty())
+                }
+            }
+        } finally {
+            instrumentation.runOnMainSync { activity.finish() }
+        }
+    }
+
     /**
      * The city map holds a world image drawn only below zoom 11, as Streets' climate underlay is.
      * At zoom 16 no layer draws it, which MapLibre Native takes for an image source still loading:

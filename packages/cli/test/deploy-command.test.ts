@@ -5,6 +5,7 @@ import {mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test, {type TestContext} from 'node:test';
+import {tileflowRendererDeploymentRequestArtifactSchema} from '@tileflow/core/build';
 import {cliFixtureArguments} from '../../../test-support/cli-fixture';
 import {createTileflowIconSetProject} from '../../../test-support/icon-set-project';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
@@ -62,8 +63,13 @@ type DeployBody = {
   };
   [key: string]: any;
 };
-const deployBody = (platform: FakePlatform, index = 0) =>
-  platform.deployments[index]!.body as DeployBody;
+const deployBody = (platform: FakePlatform, index = 0) => {
+  const body = platform.deployments[index]!.body;
+  return {
+    ...body,
+    artifact: tileflowRendererDeploymentRequestArtifactSchema.parse(body.artifact),
+  } as DeployBody;
+};
 const routes = (platform: FakePlatform) =>
   platform.requests.map(
     (request) =>
@@ -103,7 +109,7 @@ test('Map deploy auto-selects one map, publishes both renderer families and writ
   assert.equal(body.managedMapId, managedMapId);
   assert.equal(body.usageMode, 'session');
   assert.equal(body.artifact.kind, 'tileflow-map-deployment');
-  assert.equal(body.artifact.schemaVersion, 3);
+  assert.equal(body.artifact.schemaVersion, 5);
   assert.deepEqual(body.artifact.teamSources, {});
   assert.deepEqual(Object.keys(body.artifact.renderers.web.styles), streetsThemeNames);
   assert.deepEqual(Object.keys(body.artifact.renderers.native.documents.styles), streetsThemeNames);
@@ -234,7 +240,7 @@ view: {center: [-3.7, 40.4], zoom: 11}`,
   assert.equal(body.managedMapId, managedMapId);
   assert.equal(body.iconPackage?.label, 'madrid');
   assert.equal(body.policy, undefined);
-  assert.equal(body.artifact.schemaVersion, 3);
+  assert.equal(body.artifact.schemaVersion, 5);
   const styles = body.artifact.renderers.web.styles;
   assert.deepEqual(Object.keys(styles), streetsThemeNames);
   const sprite = `${api.url}/sprites/icp_${String(body.iconPackage?.contentHash).slice(0, 24)}/sprite`;
@@ -527,7 +533,7 @@ test('deploy rejects external vector data before any remote write', async (t) =>
       fields: `data: {
     type: 'vector-tiles',
     attribution: '© Example © OpenStreetMap contributors',
-    schema: {type: 'openmaptiles', contractVersion: 1},
+    schema: {type: 'openmaptiles', contractVersion: 2},
     url: 'https://vector.example.test/tiles.json'
   }`,
     }),
@@ -621,7 +627,7 @@ test('deploy uploads generated icon files before posting sanitized style JSON', 
   const buildManifest = artifact.renderers.web.buildManifest;
   const mapEntry = buildManifest.maps.madrid;
   assert.equal(artifact.mapId, 'madrid');
-  assert.equal(artifact.schemaVersion, 3);
+  assert.equal(artifact.schemaVersion, 5);
   assert.equal(buildManifest.schemaVersion, 1);
   assert.equal(mapEntry?.mapVersion, 1);
   assert.equal(mapEntry?.semanticCompiler?.name, 'tileflow-semantic');
@@ -761,7 +767,7 @@ test('deploy binds one composition receipt to the effective package in manifest 
   assert.ok(body.iconComposition);
   assert.ok(embedded);
   assert.equal(built.mapRevisionSchemaVersion, 2);
-  assert.equal(JSON.stringify(body.iconComposition), JSON.stringify(embedded));
+  assert.deepEqual(body.iconComposition, embedded);
   assert.equal(body.iconComposition.packageHash, body.iconPackage?.contentHash);
   assert.equal(body.iconComposition.packageHash, api.requests[0]!.path.split('/').pop());
   assert.deepEqual(
@@ -1006,7 +1012,7 @@ test('deploy rejects a successful response for another persistent Map', async (t
     intercept(request, platform) {
       if (request.path !== '/v1/styles' || platform.deployments.length === 0) return undefined;
       // Once the documents arrived, answer with a complete deployment of another Map.
-      const themes = Object.keys(requestJson(request).artifact.renderers.web.styles);
+      const themes = requestJson(request).artifact.renderers.web.family.themes as string[];
       const native = `${platform.url}/maps/${otherMap}/native`;
       return {
         status: 200,
@@ -1071,7 +1077,7 @@ test('validate --target hosted shares deploy rejection of external vector data',
       fields: `data: {
     type: 'vector-tiles',
     attribution: '© Example © OpenStreetMap contributors',
-    schema: {type: 'openmaptiles', contractVersion: 1},
+    schema: {type: 'openmaptiles', contractVersion: 2},
     url: 'https://vector.example.test/tiles.json'
   }`,
     }),

@@ -84,17 +84,17 @@ are `dawn`, `dusk`, `faded`, `monochrome`, `dawn-faded`, `dawn-monochrome`, `dus
 `dusk-monochrome`, `dark-faded`, and `dark-monochrome`. All twelve appearances share roads, label placement, fonts and icon artwork.
 Colors and lighting vary; flat-map colors are authored independently.
 
-Scene lighting is calibrated against Mapbox Standard. Streets owns its cartography: slate-blue
-roads with stronger regional outlines, neutral urban surfaces, pale warm rural ground, green
-parks and subtle cream buildings. Its palette is not a fixed copy of the provider's reference
-colors. All appearances use the daylight map's category-colored POI discs and pictograms.
-Maki pictograms distinguish transport modes and POI types. Scene-sun lighting preserves
-unshadowed roof paint while allowing light color to affect walls.
+Scene lighting is calibrated against Mapbox Standard while retaining Streets' slate-blue roads,
+neutral urban surfaces, pale warm rural ground, green parks and cream buildings. All appearances
+share category-colored POI discs and Maki pictograms. Lighting preserves sunlit roof paint and
+tints walls. Daylight uses neutral direct light (0.2) and ambient fill (0.8); buildings and
+map-shaded models keep ambient fill at night, with local occlusion at contacts and recesses.
 
-The regional climate underlay is temporarily disabled while shared URL delivery is prepared;
-compiled styles omit its image source and raster layer. Themes use their authored land-cover
-palettes. Urban and education areas use neutral surfaces; farmland stays pale, while mapped orchards and nurseries remain
-green. Underground footprints flagged `hide_3d` are omitted from the flat building layers. Streets
+Below zoom 11, daylight draws a climate image separating humid and dry regions; it is
+loaded only there and is broad context, not surveyed vegetation. Other appearances keep it clear.
+Urban and education areas use neutral surfaces; farmland stays pale, mapped orchards and nurseries
+green. Activity areas tint the ground by activity until buildings take over. Footprints drawn
+by building parts (`extrude: false`) are omitted from the flat building layers. Streets
 suspends duplicate flat building footprints in 3D so roads remain visible under open landmarks;
 2D mode restores ordinary footprints. Normal 3D buildings keep a small neutral/active tone difference. Authored models use
 the neutral building color and independently configurable window shading.
@@ -205,7 +205,7 @@ export default defineMap({
 
 POIs follow World ranks and category density, with extra detail for parks and transport.
 Generic airport POIs are limited to rank 0 to reduce misplaced business listings; the dedicated
-aerodrome layer continues to label mapped airports. This display policy does not repair source data.
+airport label layer continues to label mapped airports. This display policy does not repair source data.
 Road-reference repetition is reduced at z11–13 and retains its detail interval from z14.
 Gardens stay at ranks 0–1 at every zoom, keeping principal destinations while omitting botanical
 collections and some small independent gardens. Other park and landmark types retain their usual
@@ -332,7 +332,7 @@ When the 3D view is active, available buildings and models appear at full height
 without zoom entrance animations.
 Pitch is capped at 38° through zoom 15; closer views use the application's maximum.
 Daylight combines warm limestone buildings, ivory model surfaces, smoked-blue glazing and warm
-roof tones under warm sunlight and cool skylight. Models share ordinary-building shading, with
+roof tones under neutral sunlight and skylight. Models share ordinary-building shading, with
 soft contact shadows and ambient occlusion in recesses. Monochrome materials stay neutral.
 Glass parts can be recoloured independently through `modelColors.glass`; window roles retain
 that glass tint even on a shared stone part, with `modelLighting.window.colorScale: 0.96`.

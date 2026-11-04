@@ -5,7 +5,7 @@ import {tileflowRendererDeploymentResponseSchema} from '@tileflow/core/build';
 
 test('managed deploy targets the visible mapId while keeping Project internal', async () => {
   const [index, client] = await Promise.all([
-    readFile(new URL('../src/index.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/cli-main.ts', import.meta.url), 'utf8'),
     readFile(new URL('../src/hosted-client.ts', import.meta.url), 'utf8'),
   ]);
   const deploy = index.match(/\.command\('deploy'\)[\s\S]*?\.command\('status'/u)?.[0];

@@ -30,6 +30,7 @@ import {map1777Fonts, map1777Icons} from '../assets';
 import {map1777RoadBorder, map1777RoadWidth, withMap1777RoadDetail} from './map-1777-roads';
 import {map1777TimeThemes} from './map-1777-themes';
 import {bindOfficialMapTheme, defineOfficialTheme} from './theme-helpers';
+import {worldRoadSelector} from './world-roads';
 
 /**
  * Ink and watercolor inspired by the 1777 cabinet sheets: pale laid paper,
@@ -145,14 +146,11 @@ function map1777RoadStyle(
 
 const map1777BuildingHeight = expr.max(
   0,
-  expr.toNumber(expr.coalesce(expr.get(field('renderHeight')), 5), 5),
+  expr.toNumber(expr.coalesce(expr.get(field('height')), 5), 5),
 );
 const map1777BuildingBase = expr.max(
   0,
-  expr.min(
-    expr.toNumber(expr.coalesce(expr.get(field('renderMinHeight')), 0), 0),
-    map1777BuildingHeight,
-  ),
+  expr.min(expr.toNumber(expr.coalesce(expr.get(field('minHeight')), 0), 0), map1777BuildingHeight),
 );
 
 function map1777PathStyle(
@@ -223,13 +221,9 @@ const map1777PathLabel = {
   },
 } satisfies TileflowSymbolStyle;
 
-function map1777StreetName(
-  style: TileflowSymbolStyle,
-  classes: readonly string[],
-  subclasses?: readonly string[],
-) {
+function map1777StreetName(style: TileflowSymbolStyle, roadClasses: readonly TileflowRoadClass[]) {
   return renderPass({
-    feature: 'roadName',
+    feature: 'roadLabel',
     renderer: 'symbol',
     requirements: ['roads'],
     placement: 'below-buildings',
@@ -237,8 +231,7 @@ function map1777StreetName(
       kind: 'all',
       selectors: [
         {field: 'name', kind: 'has'},
-        {field: 'class', kind: 'in', values: classes},
-        ...(subclasses ? [{field: 'subclass', kind: 'in', values: subclasses} as const] : []),
+        worldRoadSelector(roadClasses, {construction: true}),
       ],
     },
     style: {
@@ -248,7 +241,7 @@ function map1777StreetName(
         field: expr.coalesce(
           expr.get(field('name')),
           expr.get(field('nameLatin')),
-          expr.get(field('nameEnglish')),
+          expr.get(field('nameEn')),
         ),
       },
     },
@@ -258,34 +251,56 @@ function map1777StreetName(
 // Each mapped field keeps one wash and stroke direction. Missing IDs use the first plate.
 const map1777FieldVariant = expr.modulo(expr.toNumber(expr.id(), 0), 3);
 
+function groundClass(...classes: string[]): TileflowRenderSelector {
+  return {field: 'class', kind: 'in', values: classes};
+}
+
+// The parks and gardens the land module draws as urban parks.
+const urbanParkGround: TileflowRenderSelector = {
+  kind: 'any',
+  selectors: [
+    {
+      kind: 'all',
+      selectors: [
+        groundClass('park'),
+        {
+          kind: 'not',
+          selector: {
+            field: 'type',
+            kind: 'in',
+            values: ['recreation_ground', 'village_green', 'zoo'],
+          },
+        },
+      ],
+    },
+    {
+      kind: 'all',
+      selectors: [
+        groundClass('garden'),
+        {kind: 'not', selector: {field: 'type', kind: 'in', values: ['flowerbed']}},
+      ],
+    },
+  ],
+};
+
 function landcoverPattern(
   target: string,
   pattern: NonNullable<TileflowFillStyle['pattern']>,
-  classes: readonly string[],
+  ground: TileflowRenderSelector,
   options: {
+    /** Wetlands are an overlay on the ground rather than a ground class. */
+    feature?: 'landuse' | 'landuseOverlay';
     minZoom?: number;
     opacity?: number;
-    subclasses?: readonly string[];
   } = {},
 ) {
-  const classSelector = {
-    field: 'class',
-    kind: 'in',
-    values: classes,
-  } as const satisfies TileflowRenderSelector;
-  const selector: TileflowRenderSelector = options.subclasses
-    ? {
-        kind: 'all',
-        selectors: [classSelector, {field: 'subclass', kind: 'in', values: options.subclasses}],
-      }
-    : classSelector;
   const minZoom = options.minZoom ?? 9;
 
   return renderPass({
     placement: {above: target},
-    feature: 'landcover',
+    feature: options.feature ?? 'landuse',
     renderer: 'fill',
-    selector,
+    selector: ground,
     style: {
       minZoom,
       opacity: zoom.linear([
@@ -352,8 +367,6 @@ export const map1777Theme = defineOfficialTheme({
     },
     buildings: {
       active: map1777Palette.buildingActive,
-      businessCorridor: map1777Palette.building,
-      businessCorridorOutline: map1777Palette.buildingOutline,
       civic: '#AF4C42',
       commercial: '#C25B4D',
       destination: map1777Palette.buildingActive,
@@ -402,6 +415,8 @@ export const map1777Theme = defineOfficialTheme({
       wood: map1777Palette.wood,
     },
     landuse: {
+      activity: map1777Palette.building,
+      activityOutline: map1777Palette.buildingOutline,
       cemetery: '#BCC99D',
       civic: '#E8DCC3',
       commercial: '#E5D4BC',
@@ -567,10 +582,6 @@ const map1777Day = bindOfficialMapTheme(
             edgeColor: map1777Palette.buildingOutline,
             colorVariation: 0.035,
           },
-          businessCorridor: {
-            fill: {visible: false},
-            outline: {visible: false},
-          },
           flat: {
             fill: {
               color: map1777Palette.building,
@@ -625,14 +636,8 @@ const map1777Day = bindOfficialMapTheme(
             placement: {above: 'buildings.flat.outline'},
             feature: 'building',
             renderer: 'extrusion',
-            selector: {
-              kind: 'all',
-              selectors: [
-                {field: 'hide3d', kind: 'compare', operator: 'ne', value: true},
-                {field: 'hide3d', kind: 'compare', operator: 'ne', value: 1},
-                {field: 'hide3d', kind: 'compare', operator: 'ne', value: '1'},
-              ],
-            },
+            // A footprint whose parts draw it in 3D says `extrude: false`.
+            selector: {field: 'extrude', kind: 'compare', operator: 'ne', value: false},
             style: {
               base: map1777BuildingBase,
               color: map1777Palette.building,
@@ -808,51 +813,46 @@ const map1777Day = bindOfficialMapTheme(
         {
           // Own these ground labels here: replacing the roads module must not
           // leave refinements pointing at optional road-label contributions.
-          roadPaths: map1777StreetName(
-            map1777PathLabel,
-            ['path', 'path_construction'],
-            ['path', 'bridleway', 'corridor', 'footway', 'cycleway', 'steps', 'pedestrian'],
-          ),
-          roadTrack: map1777StreetName(map1777PathLabel, [
-            'track',
-            'raceway',
-            'track_construction',
-            'raceway_construction',
+          roadPaths: map1777StreetName(map1777PathLabel, [
+            'pathway',
+            'footway',
+            'cycleway',
+            'steps',
+            'pedestrian',
           ]),
+          roadTrack: map1777StreetName(map1777PathLabel, ['track']),
           roadService: map1777StreetName(
             {...map1777RoadLabel, minZoom: 16, priority: 48, spacing: 340},
-            ['service', 'busway', 'bus_guideway', 'service_construction'],
+            ['service'],
           ),
-          roadMinor: map1777StreetName({...map1777RoadLabel, minZoom: 14}, [
-            'minor',
-            'residential',
-            'unclassified',
-            'minor_construction',
-          ]),
+          roadMinor: map1777StreetName({...map1777RoadLabel, minZoom: 14}, ['minor']),
           roadTertiary: map1777StreetName({...map1777RoadLabel, minZoom: 12, priority: 72}, [
             'tertiary',
-            'tertiary_construction',
           ]),
           roadSecondary: map1777StreetName(
             {...map1777RoadLabel, minZoom: 11, priority: 80, spacing: 360},
-            ['secondary', 'secondary_construction'],
+            ['secondary'],
           ),
           roadPrimary: map1777StreetName(
             {...map1777RoadLabel, minZoom: 10, priority: 86, spacing: 360},
-            ['primary', 'primary_construction'],
+            ['primary'],
           ),
           roadTrunk: map1777StreetName(
             {...map1777RoadLabel, minZoom: 9, priority: 90, spacing: 400},
-            ['trunk', 'trunk_construction'],
+            ['trunk'],
           ),
           roadMotorway: map1777StreetName(
             {...map1777RoadLabel, minZoom: 8, priority: 94, spacing: 400},
-            ['motorway', 'motorway_construction'],
+            ['motorway'],
           ),
         },
       ),
       land: withRenderStack(
         land({
+          activityAreas: {
+            fill: {visible: false},
+            outline: {visible: false},
+          },
           background: {opacity: 1, pattern: 'map-1777-paper-grain'},
           globalLandcover: {
             color: expr.match(
@@ -963,36 +963,37 @@ const map1777Day = bindOfficialMapTheme(
               ],
               token.image('land.field.hatch'),
             ),
-            ['farmland'],
+            groundClass('farmland', 'orchard', 'vineyard'),
             {minZoom: 8, opacity: 0.82},
           ),
-          heathTexture: landcoverPattern('land.landcover.scrub.fill', 'map-1777-heath', ['grass'], {
-            minZoom: 9,
-            opacity: 0.72,
-            subclasses: ['scrub'],
-          }),
+          heathTexture: landcoverPattern(
+            'land.landcover.scrub.fill',
+            'map-1777-heath',
+            groundClass('scrub'),
+            {minZoom: 9, opacity: 0.72},
+          ),
           orchardTexture: landcoverPattern(
             'land.landcover.urbanPark.fill',
             'map-1777-orchard',
-            ['grass'],
-            {minZoom: 11, opacity: 0.64, subclasses: ['park', 'garden']},
+            urbanParkGround,
+            {minZoom: 11, opacity: 0.64},
           ),
           sandTexture: landcoverPattern(
             'land.landcover.sand.fill',
             'map-1777-sand',
-            ['sand', 'beach'],
+            groundClass('sand'),
             {minZoom: 9, opacity: 0.72},
           ),
           wetlandTexture: landcoverPattern(
             'land.landcover.wetland.fill',
             'map-1777-wetland',
-            ['wetland'],
-            {minZoom: 9, opacity: 0.78},
+            groundClass('wetland'),
+            {feature: 'landuseOverlay', minZoom: 9, opacity: 0.78},
           ),
           woodTexture: landcoverPattern(
             'land.landcover.wood.fill',
             'map-1777-woodland',
-            ['wood', 'forest'],
+            groundClass('wood'),
             {minZoom: 8, opacity: 0.82},
           ),
           residentialTexture: landusePattern(
@@ -1341,14 +1342,7 @@ const map1777Day = bindOfficialMapTheme(
             placement: {below: 'water.bodies.outline'},
             feature: 'water',
             renderer: 'line',
-            selector: {
-              coerce: 'number',
-              fallback: 0,
-              field: 'intermittent',
-              kind: 'compare',
-              operator: 'ne',
-              value: 1,
-            },
+            selector: {field: 'intermittent', kind: 'compare', operator: 'ne', value: true},
             style: {
               color: map1777Palette.waterBank,
               minZoom: 9,
@@ -1366,14 +1360,7 @@ const map1777Day = bindOfficialMapTheme(
             placement: {above: 'water.bodies.fill'},
             feature: 'water',
             renderer: 'fill',
-            selector: {
-              coerce: 'number',
-              fallback: 0,
-              field: 'intermittent',
-              kind: 'compare',
-              operator: 'ne',
-              value: 1,
-            },
+            selector: {field: 'intermittent', kind: 'compare', operator: 'ne', value: true},
             style: {
               minZoom: 7,
               opacity: zoom.linear([
@@ -1388,14 +1375,7 @@ const map1777Day = bindOfficialMapTheme(
             placement: {above: 'water.intermittent.bodies.fill'},
             feature: 'water',
             renderer: 'fill',
-            selector: {
-              coerce: 'number',
-              fallback: 0,
-              field: 'intermittent',
-              kind: 'compare',
-              operator: 'eq',
-              value: 1,
-            },
+            selector: {field: 'intermittent', kind: 'compare', operator: 'eq', value: true},
             style: {
               minZoom: 9,
               opacity: 0.2,

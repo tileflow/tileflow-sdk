@@ -16,11 +16,19 @@ export function pathGroundSourceConfig(data: ResolvedTileflowData): PathGroundSo
     minzoom: Math.max(12, data.minzoom ?? 0),
     maxzoom: data.maxzoom ?? 15,
     road: data.schema.layers.road,
-    landcover: data.schema.layers.landcover,
-    landuse: data.schema.layers.landuse,
+    ground: [
+      ...new Set(
+        (['landuse', 'landuseOverlay'] as const).flatMap(
+          (name) =>
+            data.schema.adapter?.layers[name]?.map(({layer}) => layer) ?? [
+              data.schema.layers[name],
+            ],
+        ),
+      ),
+    ],
     class: data.schema.fields.class,
-    subclass: data.schema.fields.subclass,
-    brunnel: data.schema.fields.brunnel,
+    type: data.schema.fields.type,
+    structure: data.schema.fields.structure,
   };
 }
 export function pathGroundProtocolUrl(source: PathGroundSource, tile = false) {
@@ -40,9 +48,13 @@ export function parsePathGroundRequest(value: string) {
   const source: PathGroundSource = JSON.parse(url.searchParams.get('source') ?? 'null');
   if (
     !source ||
-    !['road', 'landcover', 'landuse', 'class', 'subclass', 'brunnel'].every(
+    !['road', 'class', 'type', 'structure'].every(
       (k) => typeof source[k as keyof PathGroundSource] === 'string',
-    )
+    ) ||
+    !Array.isArray(source.ground) ||
+    source.ground.length === 0 ||
+    source.ground.length > 8 ||
+    !source.ground.every((layer) => typeof layer === 'string')
   )
     throw new Error('Invalid path context bindings');
   if (!source.url && !source.tiles?.length) throw new Error('Missing path context source');

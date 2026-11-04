@@ -76,7 +76,7 @@ export function compilePoi(
   }
 
   const {prominentRank} = semantics.placement;
-  const filterRank = numericPoiField(context.data.schema.fields.poiFilterRank, 6);
+  const filterRank = numericPoiField(context.data.schema.fields.filterrank, 6);
   return (['marker', 'combined', 'icon', 'label'] as const).flatMap((representation) => {
     const entries = parts.filter((part) => part.representation === representation);
     if (entries.length === 0) return [];
@@ -86,7 +86,7 @@ export function compilePoi(
       representation,
     );
     const layer = mergePoiCategoryLayers(entries, {
-      categoryField: context.data.schema.fields.poiCategory,
+      categoryField: context.data.schema.fields.class,
       filter,
       id: `tileflow-poi${suffix.replace('.', '-')}`,
     });
@@ -177,7 +177,7 @@ function compileCategory(
       ...style,
       icon: {
         ...style.icon,
-        image: resolvePoiImage(category, context, schema.fields.poiIcon),
+        image: resolvePoiImage(category, context, schema.fields.icon),
       },
     };
   }
@@ -187,9 +187,9 @@ function compileCategory(
     id: `tileflow-poi-${category}`,
     type: 'symbol',
     source,
-    'source-layer': schema.layers.poi,
+    'source-layer': schema.layers.poiLabel,
     minzoom: semantics.minZoom,
-    layout: {'symbol-sort-key': poiSortKey(schema.fields.poiFilterRank, schema.fields.poiSizeRank)},
+    layout: {'symbol-sort-key': poiSortKey(schema.fields.filterrank, schema.fields.sizerank)},
   });
   const parts: CategoryPart[] = [];
   selection.register(category, {icon: showIcon, text: showText});
@@ -204,7 +204,7 @@ function compileCategory(
           ...markerBase,
           type: 'circle',
           layout: {
-            'circle-sort-key': poiSortKey(schema.fields.poiFilterRank, schema.fields.poiSizeRank),
+            'circle-sort-key': poiSortKey(schema.fields.filterrank, schema.fields.sizerank),
           },
         },
         markerStyle,
@@ -279,12 +279,12 @@ function createPoiSelection(
   const iconOnlyTypes = [...new Set(semantics.placement.iconOnlyTypes)];
   const iconOnly = (): unknown[] =>
     iconOnlyTypes.length
-      ? ['match', ['get', fields.poiType], iconOnlyTypes, true, false]
+      ? ['match', ['get', fields.type], iconOnlyTypes, true, false]
       : ['literal', false];
   const inCategories = (categories: readonly TileflowPoiCategory[]): unknown[] =>
     categories.length === 1
-      ? ['==', ['get', fields.poiCategory], categories[0]]
-      : ['match', ['get', fields.poiCategory], [...categories], true, false];
+      ? ['==', ['get', fields.class], categories[0]]
+      : ['match', ['get', fields.class], [...categories], true, false];
   const named = (): unknown[] => [
     'any',
     ...labelNameFields(language, context).map((field) => ['has', field]),
@@ -298,29 +298,29 @@ function createPoiSelection(
       if (!iconOnlyTypes.length || field === undefined) return field;
       return expression<string>([
         'match',
-        ['get', fields.poiType],
+        ['get', fields.type],
         iconOnlyTypes,
         '',
         fieldValue(field),
       ]);
     },
     filter(categories, representation) {
-      const filterRank = numericPoiField(fields.poiFilterRank, 6);
-      const sizeRank = numericPoiField(fields.poiSizeRank, 17);
+      const filterRank = numericPoiField(fields.filterrank, 6);
+      const sizeRank = numericPoiField(fields.sizerank, 17);
       const result: unknown[] = [
         'all',
         inCategories(categories),
-        ['has', fields.poiFilterRank],
+        ['has', fields.filterrank],
         ['>=', filterRank, 0],
-        ['<=', filterRank, poiRankThreshold(semantics, fields.poiCategory)],
-        ['has', fields.poiSizeRank],
+        ['<=', filterRank, poiRankThreshold(semantics, fields.class)],
+        ['has', fields.sizerank],
         ['>=', sizeRank, 0],
         ['<=', sizeRank, 16],
       ];
       if (typeRankCaps.length) {
         result.push([
           'match',
-          ['get', fields.poiType],
+          ['get', fields.type],
           ...typeRankCaps.flatMap(([type, rank]) => [type, ['<=', filterRank, rank]]),
           true,
         ]);
@@ -360,11 +360,12 @@ function fieldValue(field: NonNullable<TileflowTextStyle['field']>): unknown {
 function resolvePoiImage(
   category: keyof typeof tileflowPoiImageRoles,
   context: TileflowDomainCompileContext,
-  iconField: string,
+  iconField: string | undefined,
 ) {
   const role = `poi.${category}`;
   const themed = context.images[role];
   const fallback = themed ?? tileflowPoiImageRoles[category].fallback;
+  if (!iconField) return expression<string>(['image', fallback]);
   return expression<string>([
     'case',
     ['has', iconField],

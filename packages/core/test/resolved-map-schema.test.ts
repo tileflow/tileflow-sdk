@@ -13,6 +13,7 @@ import {
   parseTileflowMap as parseMap,
   poi,
   renderPass,
+  resolveTileflowData,
   roads,
   tileflowBandPlacements,
   tileflowLandformClasses,
@@ -23,7 +24,7 @@ import {
   tileflowRoadClasses,
   tileflowThemeLimits,
   tileflowThemeTokenCategories,
-  tileflowWorldV1Schema,
+  tileflowWorldSchema,
   token,
   validateTileflowMap,
   vegetation,
@@ -251,65 +252,68 @@ test('requires exact unique NFC font faces', () => {
   }
 });
 
-test('accepts a resolved-map remap for the optional global land-cover extension', () => {
+test('accepts canonical OpenMapTiles remaps and rejects bindings for World-only layers', () => {
   const map = parseDesign({
     data: {
       type: 'vector-tiles',
       attribution: '© Example',
       schema: {
         type: 'openmaptiles',
-        contractVersion: 1,
-        layers: {globalLandcover: 'worldcover_lowzoom'},
+        contractVersion: 2,
+        fields: {subclass: 'kind_detail'},
+        layers: {landcover: 'cover_v2'},
       },
       url: '/tiles.json',
     },
   });
 
   assert.equal(map.data?.type, 'vector-tiles');
-  if (map.data?.type !== 'vector-tiles') return;
-  assert.equal(map.data.schema.layers.globalLandcover, 'worldcover_lowzoom');
-  assert.equal(map.data.schema.layers.landcover, 'landcover');
-  assert.equal(map.data.schema.layers.canopy, undefined);
+  if (map.data?.type !== 'vector-tiles' || map.data.schema.type !== 'openmaptiles') return;
+  assert.equal(map.data.schema.layers.landcover, 'cover_v2');
+  assert.equal(map.data.schema.layers.landuse, 'landuse');
+  assert.equal(map.data.schema.fields.subclass, 'kind_detail');
+  assert.deepEqual(map.data.schema.semantics, {parkLayer: 'mixed'});
+
+  // OpenMapTiles bindings name OpenMapTiles content; World's own layers have no binding.
+  for (const schema of [
+    {type: 'openmaptiles', contractVersion: 2, layers: {globalLandcover: 'worldcover'}},
+    {type: 'openmaptiles', contractVersion: 2, layers: {canopy: 'groves'}},
+    {type: 'openmaptiles', contractVersion: 2, fields: {canopyRank: 'grove_rank'}},
+    {type: 'openmaptiles', contractVersion: 1},
+  ]) {
+    assert.throws(
+      () =>
+        parseDesign({
+          data: {type: 'vector-tiles', attribution: '© Example', schema, url: '/tiles.json'},
+        }),
+      JSON.stringify(schema),
+    );
+  }
 });
 
-test('accepts a resolved-map remap for the optional canopy extension', () => {
+test('accepts the Tileflow World schema for vector tiles at runtime', () => {
   const map = parseDesign({
     data: {
       type: 'vector-tiles',
       attribution: '© Example',
-      schema: {
-        type: 'openmaptiles',
-        contractVersion: 1,
-        fields: {canopyRank: 'grove_rank'},
-        layers: {canopy: 'groves'},
+      schema: tileflowWorldSchema(),
+      url: '/tiles.json',
+    },
+  });
+
+  assert.equal(map.data?.type, 'vector-tiles');
+  if (map.data?.type !== 'vector-tiles') return;
+  assert.deepEqual(map.data.schema, {type: 'tileflow-world', version: 1});
+  assert.throws(() =>
+    parseDesign({
+      data: {
+        type: 'vector-tiles',
+        attribution: '© Example',
+        schema: {type: 'tileflow-world', version: 2},
+        url: '/tiles.json',
       },
-      url: '/tiles.json',
-    },
-  });
-
-  assert.equal(map.data?.type, 'vector-tiles');
-  if (map.data?.type !== 'vector-tiles') return;
-  assert.equal(map.data.schema.layers.canopy, 'groves');
-  assert.equal(map.data.schema.fields.canopyRank, 'grove_rank');
-  assert.equal(map.data.schema.fields.canopyClearanceAtZoom15, 'clearance_px_z15');
-  assert.equal(map.data.schema.fields.canopyCoverPercent, 'cover_pct');
-});
-
-test('accepts the typed Tileflow World V1 bathymetry extension at runtime', () => {
-  const map = parseDesign({
-    data: {
-      type: 'vector-tiles',
-      attribution: '© Example',
-      schema: tileflowWorldV1Schema(),
-      url: '/tiles.json',
-    },
-  });
-
-  assert.equal(map.data?.type, 'vector-tiles');
-  if (map.data?.type !== 'vector-tiles') return;
-  assert.equal(map.data.schema.layers.bathymetry, 'bathymetry');
-  assert.equal(map.data.schema.fields.bathymetryMinDepth, 'min_depth');
-  assert.equal(map.data.schema.fields.bathymetrySortKey, 'sort_key');
+    }),
+  );
 });
 
 test('accepts detailed cartographic module styles and their optional data bindings', () => {
@@ -317,22 +321,7 @@ test('accepts detailed cartographic module styles and their optional data bindin
     data: {
       type: 'vector-tiles',
       attribution: '© Example',
-      schema: tileflowWorldV1Schema({
-        fields: {
-          circularInnerRadiusMeters: 'inner_radius_m',
-          circularKind: 'circle_kind',
-          circularOuterRadiusMeters: 'outer_radius_m',
-          circularRadiusAtZoom15: 'radius_px_z15',
-          circularRadiusMeters: 'radius_m',
-          direction: 'direction',
-          importanceTier: 'importance_tier',
-        },
-        layers: {
-          circularFeature: 'circular_feature',
-          sidewalk: 'sidewalk',
-          streetFurniture: 'street_furniture',
-        },
-      }),
+      schema: tileflowWorldSchema(),
       url: '/tiles.json',
     },
     modules: {
@@ -404,8 +393,12 @@ test('accepts detailed cartographic module styles and their optional data bindin
     zOrder: 'source',
   });
   if (map.data?.type !== 'vector-tiles') return;
-  assert.equal(map.data.schema.layers.circularFeature, 'circular_feature');
-  assert.equal(map.data.schema.fields.direction, 'direction');
+  const data = resolveTileflowData(map.data);
+  assert.equal(data.schema.layers.circularFeature, 'circular_feature');
+  assert.equal(data.schema.layers.sidewalk, 'sidewalk');
+  assert.equal(data.schema.layers.streetFurniture, 'street_furniture');
+  assert.equal(data.schema.fields.circularRadiusAtZoom15, 'radius_px_z15');
+  assert.equal(data.schema.fields.direction, 'direction');
 
   assert.throws(
     () =>
@@ -1055,7 +1048,7 @@ test('rejects wrong theme-token categories in direct and zoom-dependent style va
         land: {
           type: 'land',
           globalLandcover: {
-            color: expr.coalesce(expr.get(field('buildingTone')), token.image('wrong')) as never,
+            color: expr.coalesce(expr.get(field('tone')), token.image('wrong')) as never,
           },
         },
       },
@@ -1188,7 +1181,7 @@ test('accepts direct fixture tile templates without a TileJSON lookup', () => {
       type: 'vector-tiles',
       attribution: '© Fixture',
       revision: 'fixture_1',
-      schema: {type: 'openmaptiles', contractVersion: 1},
+      schema: {type: 'tileflow-world', version: 1},
       tiles: ['pmtiles://./test/fixtures/world.pmtiles'],
       minzoom: 0,
       maxzoom: 14,
@@ -1207,19 +1200,19 @@ test('rejects unsafe vector URLs at the resolved-map validation boundary', () =>
     {
       type: 'vector-tiles',
       attribution: '© Fixture',
-      schema: {type: 'openmaptiles', contractVersion: 1},
+      schema: {type: 'tileflow-world', version: 1},
       url: 'http://tiles.example.test/tiles.json',
     },
     {
       type: 'vector-tiles',
       attribution: '© Fixture',
-      schema: {type: 'openmaptiles', contractVersion: 1},
+      schema: {type: 'tileflow-world', version: 1},
       tiles: ['javascript:alert(1)'],
     },
     {
       type: 'vector-tiles',
       attribution: '© Fixture',
-      schema: {type: 'openmaptiles', contractVersion: 1},
+      schema: {type: 'tileflow-world', version: 1},
       url: 'pmtiles://./../private/world.pmtiles',
     },
   ]) {
@@ -1334,7 +1327,6 @@ test('accepts semantic path road targets and rejects the old overlapping path ta
             construction: {surface: {fill: {dash: [2, 1], opacity: 0.7}}},
             expressway: {widthScale: 1.1},
             indoor: {surface: {fill: {opacity: 0.4}}},
-            official: {surface: {casing: {color: '#445566'}}},
             ramp: {widthScale: 0.7},
             unpaved: {surface: {fill: {color: '#E9E4DA'}}},
           },

@@ -11,6 +11,18 @@ import {
 const digest = (character: string) => character.repeat(64);
 const releaseId = 'world-v1-capture-release';
 const descriptorSha256 = digest('d');
+const worldSource = {
+  archiveSha256: digest('1'),
+  contractSha256: digest('2'),
+  dataContractSha256: digest('3'),
+  id: 'world',
+} as const;
+const worldDetailSource = {
+  archiveSha256: digest('4'),
+  contractSha256: digest('5'),
+  dataContractSha256: digest('6'),
+  id: 'world-detail',
+} as const;
 
 test('resolves current once and reuses one exact World identity across scenes and retries', async () => {
   let requests = 0;
@@ -34,6 +46,8 @@ test('resolves current once and reuses one exact World identity across scenes an
   if (first.data.kind === 'tileflow-world') {
     assert.equal(first.data.releaseId, releaseId);
     assert.equal(first.data.descriptorSha256, descriptorSha256);
+    assert.equal(first.data.schema, 'tileflow-world');
+    assert.deepEqual(first.data.sources, [worldSource]);
   }
   for (const prepared of [first, second, retry]) {
     assert.equal('tiles' in prepared.style.sources.tileflow!, false);
@@ -219,6 +233,8 @@ test('requires every exact World identity field and rejects mutable or conflicti
     'descriptorSha256',
     'product',
     'releaseId',
+    'releaseSources',
+    'sources',
   ] as const) {
     const tileJson = exactTileJson();
     delete (tileJson.tileflow.world as Record<string, unknown>)[field];
@@ -248,6 +264,45 @@ test('requires every exact World identity field and rejects mutable or conflicti
   }
 });
 
+test('requires a canonical selection of the release World sources', async () => {
+  const resolve = (input: Parameters<typeof exactTileJson>[0]) =>
+    resolveTileflowCaptureWorldTileJson(tileflowWorldCurrentTileJsonUrl, {
+      fetchTileJson: async () => jsonResponse(exactTileJson(input)),
+    });
+
+  const composite = await resolve({sources: [worldSource, worldDetailSource]});
+  assert.deepEqual(composite.identity.sources, [worldSource, worldDetailSource]);
+
+  for (const [input, message] of [
+    [{sources: [worldDetailSource, worldSource]}, /not a canonical selection/],
+    [{sources: [worldSource, worldSource]}, /not a canonical selection/],
+    [
+      {releaseSources: ['world'], sources: [worldSource, worldDetailSource]},
+      /not a canonical selection/,
+    ],
+    [{releaseSources: ['world-detail'], sources: [worldSource]}, /not a canonical selection/],
+    [{sources: []}, /no selected sources/],
+    [{sources: [{...worldSource, id: 'world-overview'}]}, /invalid sources\.id/],
+    [{sources: [{...worldSource, revision: 'archive-1'}]}, /missing or unsupported fields/],
+    [{sources: [{...worldSource, dataContractSha256: 'c'}]}, /invalid sources\.dataContractSha256/],
+    [{releaseSources: []}, /invalid releaseSources/],
+    [{releaseSources: ['world', 'world']}, /invalid releaseSources/],
+    [{releaseSources: ['world', 'world-overview']}, /invalid releaseSources/],
+  ] as const) {
+    await assert.rejects(resolve(input), message, JSON.stringify(input));
+  }
+});
+
+test('rejects World style metadata outside the Tileflow World schema', async () => {
+  const world = new TileflowCaptureWorldSession(async () => jsonResponse(exactTileJson()));
+  const style = currentStyle('openmaptiles');
+  Object.assign(style.metadata!['tileflow:data'] as Record<string, unknown>, {
+    schema: 'openmaptiles',
+  });
+
+  await assert.rejects(world.prepare(style), /compiled style has an invalid schema/u);
+});
+
 test('rejects the retired mutable World tile template without performing discovery', async () => {
   let requests = 0;
   const world = new TileflowCaptureWorldSession(async () => {
@@ -271,9 +326,8 @@ function currentStyle(name: string, url = tileflowWorldCurrentTileJsonUrl): MapL
       'tileflow:data': {
         generation: 'v1',
         kind: 'tileflow-world',
-        schema: 'openmaptiles',
+        schema: 'tileflow-world',
         schemaVersion: 1,
-        semantics: {parkLayer: 'protected-only'},
         sourceId: 'tileflow',
       },
     },
@@ -294,7 +348,14 @@ function exactTileTemplate(
   );
 }
 
-function exactTileJson(input: {releaseId?: string; tiles?: string[]} = {}) {
+function exactTileJson(
+  input: {
+    releaseId?: string;
+    releaseSources?: readonly unknown[];
+    sources?: readonly unknown[];
+    tiles?: string[];
+  } = {},
+) {
   const selectedReleaseId = input.releaseId ?? releaseId;
   return {
     tilejson: '3.0.0',
@@ -308,6 +369,8 @@ function exactTileJson(input: {releaseId?: string; tiles?: string[]} = {}) {
         descriptorSha256,
         product: 'world-v1',
         releaseId: selectedReleaseId,
+        releaseSources: input.releaseSources ?? ['world', 'world-detail'],
+        sources: input.sources ?? [worldSource],
       },
     },
   };

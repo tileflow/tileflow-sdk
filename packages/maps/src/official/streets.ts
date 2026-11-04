@@ -38,6 +38,7 @@ import {streetsPoiImage} from './streets-poi';
 import {streetsThemes, streetsVisual} from './streets-themes';
 import {streetsTrees} from './streets-trees';
 import {bindOfficialMapTheme} from './theme-helpers';
+import {worldConstructionTypes, worldRoadSelector} from './world-roads';
 
 // Shared detail roles for labels, POI, paths, trees, and transit. Every value
 // remains a semantic theme reference; this object does not carry a second
@@ -88,8 +89,8 @@ const streetsSurfacePalette = {
     [14, streetsVisual.surface.background],
   ]),
   barren: streetsVisual.landcover.barren,
-  businessCorridor: streetsVisual.landuse.businessCorridor,
-  businessCorridorOutline: streetsVisual.landuse.businessCorridorOutline,
+  activity: streetsVisual.landuse.activity,
+  activityOutline: streetsVisual.landuse.activityOutline,
   cemetery: streetsVisual.landuse.cemetery,
   civic: streetsVisual.landuse.civic,
   crop: streetsVisual.landcover.farmland,
@@ -189,8 +190,8 @@ const protectedAreaOpacity = zoom.linear([
 // pictogram follows World's transport mode and type (streets-poi.ts) and transport keeps its
 // fixed label size.
 function streetsPoiStyle(category: TileflowPoiCategory): TileflowPoiCategoryStyle {
-  const filterRank = expr.toNumber(expr.get(field('poiFilterRank')), 6);
-  const sizeRank = expr.toNumber(expr.get(field('poiSizeRank')), 17);
+  const filterRank = expr.toNumber(expr.get(field('filterrank')), 6);
+  const sizeRank = expr.toNumber(expr.get(field('sizerank')), 17);
   const featured = expr.all(expr.lte(filterRank, 0), expr.lt(sizeRank, 5));
   const featuredDetail = expr.all(expr.lte(filterRank, 1), expr.lt(sizeRank, 13));
   return {
@@ -302,12 +303,10 @@ const buildingOutlineColor = mapboxBuildingPalette.outline;
 const building3dColor = streetsVisual.building.extrusion;
 const buildingShadowColor = streetsVisual.building.shadow;
 const visibleBuilding3dSelector = {
-  kind: 'all',
-  selectors: [
-    {field: 'hide3d', kind: 'compare', operator: 'ne', value: true},
-    {field: 'hide3d', kind: 'compare', operator: 'ne', value: 1},
-    {field: 'hide3d', kind: 'compare', operator: 'ne', value: '1'},
-  ],
+  field: 'extrude',
+  kind: 'compare',
+  operator: 'ne',
+  value: false,
 } as const satisfies TileflowRenderSelector;
 // Contact shading belongs only where a raised building meets the ground.
 const groundedBuilding3dSelector = {
@@ -315,7 +314,7 @@ const groundedBuilding3dSelector = {
   selectors: [
     visibleBuilding3dSelector,
     {
-      field: 'renderMinHeight',
+      field: 'minHeight',
       coerce: 'number',
       fallback: 0,
       kind: 'compare',
@@ -325,9 +324,9 @@ const groundedBuilding3dSelector = {
     {
       kind: 'any',
       selectors: [
-        {kind: 'not', selector: {kind: 'has', field: 'renderHeight'}},
+        {kind: 'not', selector: {kind: 'has', field: 'height'}},
         {
-          field: 'renderHeight',
+          field: 'height',
           coerce: 'number',
           fallback: 5,
           kind: 'compare',
@@ -338,16 +337,10 @@ const groundedBuilding3dSelector = {
     },
   ],
 } as const satisfies TileflowRenderSelector;
-const building3dHeight = expr.max(
-  0,
-  expr.toNumber(expr.coalesce(expr.get(field('renderHeight')), 5), 5),
-);
+const building3dHeight = expr.max(0, expr.toNumber(expr.coalesce(expr.get(field('height')), 5), 5));
 const building3dBase = expr.max(
   0,
-  expr.min(
-    expr.toNumber(expr.coalesce(expr.get(field('renderMinHeight')), 0), 0),
-    building3dHeight,
-  ),
+  expr.min(expr.toNumber(expr.coalesce(expr.get(field('minHeight')), 0), 0), building3dHeight),
 );
 // Surface caps follow the reference's z14 transition. Structural layers use
 // their own constant caps so tunnels cannot extend past their portals.
@@ -368,7 +361,7 @@ const pathLineJoin = zoom.step<TileflowLineJoin>([
   [16, 'round'],
 ]);
 const circularRoadBaseWidth = expr.match<string, number>(
-  expr.coalesce(expr.get(field('class')), 'minor'),
+  expr.coalesce(expr.get(field('class')), 'street'),
   [
     {labels: 'motorway', value: 6},
     {labels: 'trunk', value: 5.5},
@@ -404,9 +397,8 @@ function roadWidth(widths: WidthStops, oneWayScale: number, rampWidths?: WidthSt
     const ordinaryWidth =
       oneWayScale === 1
         ? width
-        : expr.match<number, number>(
-            expr.get(field('oneway')),
-            [{labels: [1, -1], value: width * oneWayScale}],
+        : expr.case<number>(
+            [{when: expr.eq(expr.get(field('oneway')), true), value: width * oneWayScale}],
             width,
           );
     const rampWidth = rampWidths ? sampleRoadWidth(rampWidths, level) : undefined;
@@ -414,7 +406,7 @@ function roadWidth(widths: WidthStops, oneWayScale: number, rampWidths?: WidthSt
       rampWidth === undefined
         ? ordinaryWidth
         : expr.case<number>(
-            [{when: expr.eq(expr.get(field('ramp')), 1), value: rampWidth}],
+            [{when: expr.eq(expr.get(field('link')), true), value: rampWidth}],
             ordinaryWidth,
           );
     return surfaceWidth;
@@ -461,7 +453,9 @@ function roadCasingWidth(major: boolean) {
   return expr.interpolate({kind: 'exponential', base: 1.5}, expr.zoom(), [
     [
       14,
-      major ? expr.case<number>([{when: expr.eq(expr.get(field('ramp')), 1), value: 0.8}], 1) : 0.8,
+      major
+        ? expr.case<number>([{when: expr.eq(expr.get(field('link')), true), value: 0.8}], 1)
+        : 0.8,
     ],
     [22, 2],
   ]);
@@ -544,7 +538,7 @@ function rankAtMost(value: number): TileflowRenderSelector {
   return {
     coerce: 'number',
     fallback: 99,
-    field: 'rank',
+    field: 'symbolrank',
     kind: 'compare',
     operator: 'lte',
     value,
@@ -555,7 +549,7 @@ const namedCitySelector = {
   kind: 'all',
   selectors: [
     {field: 'name', kind: 'has'},
-    {field: 'class', kind: 'compare', operator: 'eq', value: 'city'},
+    {field: 'type', kind: 'compare', operator: 'eq', value: 'city'},
     {
       kind: 'any',
       selectors: [
@@ -585,7 +579,7 @@ function streetsBoundaryRenderStack() {
   return {
     admin2Background: renderPass({
       placement: {below: 'boundaries.admin4'},
-      feature: 'boundary',
+      feature: 'admin',
       renderer: 'line',
       selector: {
         kind: 'all',
@@ -627,7 +621,7 @@ function streetsBoundaryRenderStack() {
     }),
     admin4Background: renderPass({
       placement: {below: 'boundaries.admin4'},
-      feature: 'boundary',
+      feature: 'admin',
       renderer: 'line',
       selector: {
         kind: 'all',
@@ -674,7 +668,7 @@ function streetsBoundaryRenderStack() {
     // metro zooms onward, so Streets adds it as an explicit semantic pass.
     admin6: renderPass({
       placement: {above: 'boundaries.admin4'},
-      feature: 'boundary',
+      feature: 'admin',
       renderer: 'line',
       selector: {
         kind: 'all',
@@ -719,14 +713,14 @@ function streetsBoundaryRenderStack() {
 function streetsLandRenderStack() {
   return {
     // Core orders general cover, parks, lawn detail and mapped built surfaces.
-    // Streets adds only its own business-corridor treatment.
-    businessArea: renderPass({
+    // Streets adds only its own activity-area treatment.
+    activityAreas: renderPass({
       placement: {above: 'land.landuse.residential.fill'},
-      feature: 'landuse',
+      feature: 'landuseOverlay',
       renderer: 'fill',
-      selector: {field: 'class', kind: 'compare', operator: 'eq', value: 'business_area'},
+      selector: {field: 'class', kind: 'compare', operator: 'eq', value: 'activity_area'},
       style: {
-        color: streetsSurfacePalette.businessCorridor,
+        color: streetsSurfacePalette.activity,
         minZoom: 11,
         opacity: 1,
       },
@@ -903,7 +897,7 @@ function streetsBuildingRenderStack() {
 function streetsLabelRenderStack() {
   return {
     ferry: renderPass({
-      feature: 'roadName',
+      feature: 'roadLabel',
       placement: 'below-labels',
       renderer: 'symbol',
       selector: {
@@ -915,7 +909,7 @@ function streetsLabelRenderStack() {
             kind: 'any',
             selectors: [
               {field: 'class', kind: 'compare', operator: 'eq', value: 'ferry'},
-              {field: 'subclass', kind: 'compare', operator: 'eq', value: 'ferry'},
+              {field: 'type', kind: 'compare', operator: 'eq', value: 'ferry'},
             ],
           },
         ],
@@ -946,14 +940,14 @@ function streetsLabelRenderStack() {
     }),
     settlementMarker: renderPass({
       placement: {below: 'labels.places.city'},
-      feature: 'place',
+      feature: 'placeLabel',
       renderer: 'circle',
       selector: namedCitySelector,
       style: {
         color: streetsVisual.label.settlement,
         maxZoom: 8,
         minZoom: 2,
-        radius: expr.step(expr.coalesce(expr.get(field('rank')), 99), 3, [
+        radius: expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 3, [
           [3, 2.5],
           [7, 2],
         ]),
@@ -990,7 +984,7 @@ function streetsLabelRenderStack() {
           {
             field: 'class',
             kind: 'in',
-            values: ['state', 'province', 'aboriginal_lands'],
+            values: ['state', 'territory'],
           },
           {
             fallback: rankAtMost(1),
@@ -1017,7 +1011,7 @@ function streetsLabelRenderStack() {
         kind: 'all',
         selectors: [
           {field: 'name', kind: 'has'},
-          {field: 'class', kind: 'compare', operator: 'eq', value: 'town'},
+          {field: 'type', kind: 'compare', operator: 'eq', value: 'town'},
           {
             fallback: rankAtMost(7),
             kind: 'step',
@@ -1038,7 +1032,7 @@ function streetsLabelRenderStack() {
         kind: 'all',
         selectors: [
           {field: 'name', kind: 'has'},
-          {field: 'class', kind: 'compare', operator: 'eq', value: 'village'},
+          {field: 'type', kind: 'compare', operator: 'eq', value: 'village'},
           {
             fallback: {kind: 'literal', value: false},
             kind: 'step',
@@ -1061,7 +1055,7 @@ function streetsLabelRenderStack() {
         selectors: [
           {field: 'name', kind: 'has'},
           {
-            field: 'class',
+            field: 'type',
             kind: 'in',
             values: ['suburb', 'neighbourhood', 'quarter', 'borough'],
           },
@@ -1101,7 +1095,14 @@ function cityRoadSurfaceColor(roadClass: keyof typeof streetsCityRoadPalette) {
         expr.case<ColorValue>(
           [
             {
-              when: expr.eq(expr.get(field('class')), `${roadClass}_construction`),
+              when: expr.all(
+                expr.eq(expr.get(field('class')), 'construction'),
+                expr.match(
+                  expr.get(field('type')),
+                  [{labels: [...worldConstructionTypes[roadClass]], value: true}],
+                  false,
+                ),
+              ),
               value: roadSurfaceColor,
             },
             {
@@ -1134,16 +1135,12 @@ function streetsRoadEligibility() {
             kind: 'all',
             selectors: [
               {kind: 'geometry', geometry: 'line'},
-              {
-                kind: 'in',
-                field: 'class',
-                values: [roadClass, `${roadClass}_construction`],
-              },
+              worldRoadSelector([roadClass], {construction: true}),
               {
                 kind: 'compare',
-                field: 'ramp',
+                field: 'link',
                 operator: phase === 'rampFill' ? 'eq' : 'ne',
-                value: 1,
+                value: true,
               },
               {
                 kind: 'step',
@@ -1154,8 +1151,8 @@ function streetsRoadEligibility() {
                     selector: {
                       kind: 'all',
                       selectors: [
-                        {kind: 'compare', field: 'brunnel', operator: 'ne', value: 'tunnel'},
-                        {kind: 'compare', field: 'brunnel', operator: 'ne', value: 'bridge'},
+                        {kind: 'compare', field: 'structure', operator: 'ne', value: 'tunnel'},
+                        {kind: 'compare', field: 'structure', operator: 'ne', value: 'bridge'},
                       ],
                     },
                   },
@@ -1216,10 +1213,8 @@ function streetsRoadRenderStack() {
           ]),
           padding: 0,
           pitchAlignment: 'map',
-          rotate: expr.case<number>(
-            [{when: expr.eq(expr.get(field('oneway')), -1), value: 180}],
-            0,
-          ),
+          // World orients one-way geometry in the direction of travel.
+          rotate: 0,
           rotationAlignment: 'map',
           size: expr.interpolate({kind: 'linear'}, expr.zoom(), [
             [15, 0.38],
@@ -1237,10 +1232,7 @@ function streetsRoadRenderStack() {
         ]),
         text: {
           allowOverlap: true,
-          field: expr.case<string>(
-            [{when: expr.eq(expr.get(field('oneway')), -1), value: '←'}],
-            '→',
-          ),
+          field: '→',
           ignorePlacement: true,
           keepUpright: false,
           opacity: 0,
@@ -1475,14 +1467,23 @@ function roadLabelStyle(kind: RoadLabelKind, minZoom: number): TileflowSymbolSty
     // Resolve dense parallel streets by road hierarchy, not incidental tile order.
     // All classes share this expression so the compiler retains one collision network.
     priority: expr.match<string, number>(
-      expr.coalesce(expr.get(field('class')), 'minor'),
+      // A road under construction ranks as the road it becomes.
+      expr.case<string>(
+        [
+          {
+            when: expr.eq(expr.get(field('class')), 'construction'),
+            value: expr.coalesce(expr.get(field('type')), ''),
+          },
+        ],
+        expr.coalesce(expr.get(field('class')), 'street'),
+      ),
       [
-        {labels: ['motorway', 'motorway_construction'], value: 6},
-        {labels: ['trunk', 'trunk_construction'], value: 5},
-        {labels: ['primary', 'primary_construction'], value: 4},
-        {labels: ['secondary', 'secondary_construction'], value: 3},
-        {labels: ['tertiary', 'tertiary_construction'], value: 2},
-        {labels: ['minor', 'minor_construction'], value: 1},
+        {labels: [...worldConstructionTypes.motorway], value: 6},
+        {labels: [...worldConstructionTypes.trunk], value: 5},
+        {labels: [...worldConstructionTypes.primary], value: 4},
+        {labels: [...worldConstructionTypes.secondary], value: 3},
+        {labels: [...worldConstructionTypes.tertiary], value: 2},
+        {labels: [...worldConstructionTypes.minor], value: 1},
       ],
       0,
     ),
@@ -1964,7 +1965,7 @@ const streetsBase = bindOfficialMapTheme(
             },
           },
           modifiers: {
-            // Optional keys: construction, expressway, indoor, official, ramp, unpaved.
+            // Optional keys: construction, expressway, indoor, ramp, unpaved.
             // Treatments accept enabled, widthScale, surface, tunnel, and bridge;
             // phases accept color, opacity, dash, blur, gapWidth, offset, and width.
             expressway: {widthScale: expresswayWidthScale}, // Finite number > 0.
@@ -2386,13 +2387,6 @@ const streetsBase = bindOfficialMapTheme(
               ),
             },
           },
-          businessCorridor: {
-            // This compatibility layer contains selected building footprints,
-            // not ground. Streets renders the derived business_area class through
-            // landuse instead.
-            fill: {visible: false},
-            outline: {visible: false},
-          },
           flat: {
             fill: {
               color: buildingFillColor,
@@ -2520,14 +2514,14 @@ const streetsBase = bindOfficialMapTheme(
                     [
                       [
                         1,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 11, [
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 11, [
                           [4, 9],
                           [5, 8],
                         ]),
                       ],
                       [
                         9,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 22, [
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 22, [
                           [4, 19],
                           [5, 17],
                         ]),
@@ -2555,14 +2549,14 @@ const streetsBase = bindOfficialMapTheme(
                     [
                       [
                         4,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 9, [
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 9, [
                           [6, 8],
                           [7, 7],
                         ]),
                       ],
                       [
                         9,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 21, [
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 21, [
                           [6, 16],
                           [7, 14],
                         ]),
@@ -2575,7 +2569,7 @@ const streetsBase = bindOfficialMapTheme(
               city: {
                 minZoom: 2,
                 maxZoom: 15,
-                priority: expr.subtract(100, expr.coalesce(expr.get(field('rank')), 20)),
+                priority: expr.subtract(100, expr.coalesce(expr.get(field('symbolrank')), 20)),
                 text: {
                   color: zoom.linear([
                     [2, streetsOverviewPalette.label],
@@ -2596,24 +2590,27 @@ const streetsBase = bindOfficialMapTheme(
                     {kind: 'cubic-bezier', x1: 0.2, x2: 0.9, y1: 0, y2: 1},
                     expr.zoom(),
                     [
-                      [3, expr.step(expr.coalesce(expr.get(field('rank')), 99), 13, [[6, 11]])],
+                      [
+                        3,
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 13, [[6, 11]]),
+                      ],
                       [
                         6,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 18, [
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 18, [
                           [6, 16],
                           [7, 14],
                         ]),
                       ],
                       [
                         8,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 20, [
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 20, [
                           [9, 16],
                           [10, 14],
                         ]),
                       ],
                       [
                         15,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 24, [
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 24, [
                           [9, 20],
                           [12, 16],
                           [15, 14],
@@ -2628,7 +2625,7 @@ const streetsBase = bindOfficialMapTheme(
               town: {
                 minZoom: 2,
                 maxZoom: 13,
-                priority: expr.subtract(80, expr.coalesce(expr.get(field('rank')), 20)),
+                priority: expr.subtract(80, expr.coalesce(expr.get(field('symbolrank')), 20)),
                 text: {
                   color: streetsVisual.label.settlement,
                   haloColor: streetsVisual.label.placeHalo,
@@ -2645,17 +2642,20 @@ const streetsBase = bindOfficialMapTheme(
                     {kind: 'cubic-bezier', x1: 0.2, x2: 0.9, y1: 0, y2: 1},
                     expr.zoom(),
                     [
-                      [3, expr.step(expr.coalesce(expr.get(field('rank')), 99), 11, [[9, 10]])],
+                      [
+                        3,
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 11, [[9, 10]]),
+                      ],
                       [
                         6,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 14, [
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 14, [
                           [9, 12],
                           [12, 10],
                         ]),
                       ],
                       [
                         8,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 16, [
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 16, [
                           [9, 14],
                           [12, 12],
                           [15, 10],
@@ -2663,7 +2663,7 @@ const streetsBase = bindOfficialMapTheme(
                       ],
                       [
                         13,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 22, [
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 22, [
                           [9, 20],
                           [12, 16],
                           [15, 14],
@@ -2687,7 +2687,7 @@ const streetsBase = bindOfficialMapTheme(
               village: {
                 minZoom: 2,
                 maxZoom: 13,
-                priority: expr.subtract(65, expr.coalesce(expr.get(field('rank')), 20)),
+                priority: expr.subtract(65, expr.coalesce(expr.get(field('symbolrank')), 20)),
                 text: {
                   color: streetsVisual.label.settlement,
                   haloColor: streetsVisual.label.placeHalo,
@@ -2704,17 +2704,20 @@ const streetsBase = bindOfficialMapTheme(
                     {kind: 'cubic-bezier', x1: 0.2, x2: 0.9, y1: 0, y2: 1},
                     expr.zoom(),
                     [
-                      [3, expr.step(expr.coalesce(expr.get(field('rank')), 99), 11, [[9, 10]])],
+                      [
+                        3,
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 11, [[9, 10]]),
+                      ],
                       [
                         6,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 14, [
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 14, [
                           [9, 12],
                           [12, 10],
                         ]),
                       ],
                       [
                         8,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 16, [
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 16, [
                           [9, 14],
                           [12, 12],
                           [15, 10],
@@ -2722,7 +2725,7 @@ const streetsBase = bindOfficialMapTheme(
                       ],
                       [
                         13,
-                        expr.step(expr.coalesce(expr.get(field('rank')), 99), 22, [
+                        expr.step(expr.coalesce(expr.get(field('symbolrank')), 99), 22, [
                           [9, 20],
                           [12, 16],
                           [15, 14],
@@ -2746,7 +2749,7 @@ const streetsBase = bindOfficialMapTheme(
               neighborhood: {
                 minZoom: 10,
                 maxZoom: 15,
-                priority: expr.subtract(65, expr.coalesce(expr.get(field('rank')), 20)),
+                priority: expr.subtract(65, expr.coalesce(expr.get(field('symbolrank')), 20)),
                 text: {
                   font: streetsVisual.font.default,
                   color: streetsVisual.label.neighborhood,
@@ -2754,7 +2757,7 @@ const streetsBase = bindOfficialMapTheme(
                   haloBlur: 0,
                   haloWidth: 1.3,
                   letterSpacing: expr.match<string, number>(
-                    expr.get(field('class')),
+                    expr.get(field('type')),
                     [{labels: 'suburb', value: 0.15}],
                     0.05,
                   ),
@@ -2768,7 +2771,7 @@ const streetsBase = bindOfficialMapTheme(
                       [
                         11,
                         expr.match<string, number>(
-                          expr.get(field('class')),
+                          expr.get(field('type')),
                           [{labels: 'suburb', value: 12}],
                           11.5,
                         ),
@@ -2776,7 +2779,7 @@ const streetsBase = bindOfficialMapTheme(
                       [
                         15,
                         expr.match<string, number>(
-                          expr.get(field('class')),
+                          expr.get(field('type')),
                           [{labels: 'suburb', value: 16}],
                           15,
                         ),

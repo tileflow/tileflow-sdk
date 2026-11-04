@@ -2,7 +2,7 @@
 // (World's `tree` points), each in the form and at the size its data gives, trees along mapped
 // rows of trees (`tree` lines), and one to three trees for each of World's decorative canopy points
 // (`canopy`), inside the room the point leaves; and clipped pieces along World's hedges
-// (`traffic_control` with `subclass=hedge`). A tree keeps its form, size, turn and shade wherever
+// (`traffic_control` with `type=hedge`). A tree keeps its form, size, turn and shade wherever
 // and whenever it is read. It has no DOM dependency.
 import type {TileflowTreeModel} from './trees-3d-model';
 import type {TileflowTileLayer} from './vector-tile-decode';
@@ -70,7 +70,8 @@ export const tileflowWorldTreeFields: TileflowTreeFields = Object.freeze({
   canopyClearance: 'clearance_px_z15',
   canopyCover: 'cover_pct',
   canopyHeight: 'height_m',
-  subclass: 'subclass',
+  // The barrier kind: World's `type`.
+  subclass: 'type',
   hedge: 'hedge',
 });
 
@@ -105,7 +106,7 @@ export type TileflowTreeLayers = Readonly<{
   /** Decorative canopy points in parks and gardens (World's `canopy`). */
   canopy?: TileflowTileLayer;
   /**
-   * World's `traffic_control`: its hedges, lines and areas of `subclass=hedge`, stand as clipped
+   * World's `traffic_control`: its hedges, lines and areas of `type=hedge`, stand as clipped
    * pieces along each line and round each area. Other barriers are left out.
    */
   hedges?: TileflowTileLayer;

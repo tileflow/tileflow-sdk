@@ -31,7 +31,7 @@ const icons = [
   'sidewalk-dot',
 ];
 const options = {preparedAssets: {icons: {ids: icons, sprite: '/tileflow/test/streets/sprite'}}};
-const tall = expr.gt(expr.get(field('renderHeight')), 20);
+const tall = expr.gt(expr.get(field('height')), 20);
 
 function compileError(map: ReturnType<typeof extendStreets>): string {
   try {
@@ -47,7 +47,7 @@ function labelPass(style: Record<string, unknown>) {
     modules: {
       labels: withRenderStack(labels(), {
         names: renderPass({
-          feature: 'poi',
+          feature: 'poiLabel',
           placement: 'below-labels',
           renderer: 'symbol',
           style: style as never,
@@ -81,7 +81,7 @@ test('a fixed operand inside a visual expression asks for a plain value', () => 
               color: expr.case(
                 [
                   {
-                    when: expr.gt(expr.get(field('renderHeight')), fixed(20, {reason: 'Towers'})),
+                    when: expr.gt(expr.get(field('height')), fixed(20, {reason: 'Towers'})),
                     value: token.color('surface.building'),
                   },
                 ],

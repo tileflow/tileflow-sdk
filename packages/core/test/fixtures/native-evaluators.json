@@ -2145,8 +2145,8 @@
       },
       "t": 0.5,
       "mixed": {
-        "azimuth": 5,
-        "altitude": 34,
+        "azimuth": 10.037594271704194,
+        "altitude": 34.82267794194991,
         "color": "rgba(255, 216, 185, 1)",
         "intensity": 0.4,
         "shadowIntensity": 0.5,
@@ -2181,8 +2181,8 @@
       },
       "t": 0.25,
       "mixed": {
-        "azimuth": 60,
-        "altitude": -1.5,
+        "azimuth": 27.818902163355894,
+        "altitude": -2.1694985009747887,
         "color": "rgba(195, 144, 116, 1)",
         "intensity": 0.22499999999999998,
         "shadowIntensity": 0.30000000000000004,

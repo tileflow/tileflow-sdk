@@ -54,7 +54,7 @@ function layer(
 const lamp = (x: number, y: number, properties: Record<string, string | number> = {}) => ({
   type: 'Point' as const,
   geometry: [[x, y]],
-  properties: {class: 'street', subclass: 'street_lamp', ...properties},
+  properties: {class: 'street', type: 'street_lamp', ...properties},
 });
 const street = (properties: Record<string, string | boolean>, y = 2000) => ({
   type: 'LineString' as const,
@@ -71,7 +71,7 @@ test('mapped lamps shine where they stand, with their height and the colour of t
         lamp(500, 200),
         // In the tile's buffer: the next tile draws it.
         lamp(-20, 200),
-        {type: 'Point', geometry: [[700, 200]], properties: {subclass: 'bench'}},
+        {type: 'Point', geometry: [[700, 200]], properties: {type: 'bench'}},
       ]),
     },
     options,
@@ -92,8 +92,8 @@ test('mapped lamps shine where they stand, with their height and the colour of t
 test('by default light is estimated only along streets and pavements mapped as lit', () => {
   const layers: TileflowStreetLightLayers = {
     transportation: layer([
-      street({class: 'minor'}, 1000),
-      street({class: 'minor', lit: true}, 2000),
+      street({class: 'street'}, 1000),
+      street({class: 'street', lit: true}, 2000),
       street({class: 'primary', lit: false}, 3000),
     ]),
     sidewalks: layer([
@@ -119,7 +119,7 @@ test('by default light is estimated only along streets and pavements mapped as l
 test('streets the data says nothing about take light only on request, never when mapped unlit', () => {
   const layers = {
     transportation: layer([
-      street({class: 'minor'}, 1000),
+      street({class: 'street'}, 1000),
       street({class: 'primary', lit: false}, 3000),
     ]),
   };
@@ -140,7 +140,7 @@ test('estimated light keeps clear of mapped lamps, and a well-mapped tile is lef
   const mappedLamps = layer([lamp(2000, 1000)]);
   const lamps = lampsOf(
     placeTileflowStreetLights(
-      {streetFurniture: mappedLamps, transportation: layer([street({class: 'minor'}, 1000)])},
+      {streetFurniture: mappedLamps, transportation: layer([street({class: 'street'}, 1000)])},
       {...options, estimate: 'streets'},
     ),
   );
@@ -158,7 +158,7 @@ test('estimated light keeps clear of mapped lamps, and a well-mapped tile is lef
   const placement = placeTileflowStreetLights(
     {
       streetFurniture: many,
-      transportation: layer([street({class: 'minor'}, 1000), street({class: 'minor'}, 2000)]),
+      transportation: layer([street({class: 'street'}, 1000), street({class: 'street'}, 2000)]),
     },
     {...options, estimate: 'streets'},
   );
@@ -214,7 +214,7 @@ test('standalone street lights reuse metadata until the style changes', () => {
     [tileflowStreetLightsMetadataKey]: {
       version: 1,
       source: 'tileflow',
-      layers: {streetFurniture: 'street_furniture', transportation: 'transportation'},
+      layers: {streetFurniture: 'street_furniture', transportation: 'road'},
     },
   };
   map.listeners.get('styledata')?.forEach((listener) => listener());
@@ -304,7 +304,7 @@ test('the street lights design is read only in a known version and shape', () =>
   const described = {
     version: 1,
     source: 'tileflow',
-    layers: {streetFurniture: 'street_furniture', transportation: 'transportation'},
+    layers: {streetFurniture: 'street_furniture', transportation: 'road'},
     estimate: 'everywhere',
     color: 'not a colour',
     intensity: 1.5,

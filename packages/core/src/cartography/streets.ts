@@ -10,11 +10,20 @@ import {resolveBoundaryAreas, validateBoundaryChoroplethOverlays} from '../bound
 import {tileflowBuildingsMetadata, tileflowBuildingsMetadataKey} from '../buildings-3d-design';
 import {tileflowCameraMetadataKey} from '../camera';
 import {extractTileflowColorPrograms, preserveThemeColorPrograms} from '../color-program';
-import {resolveTileflowData} from '../data';
+import {
+  resolveTileflowData,
+  tileflowWorldDetailLayers,
+  tileflowWorldFields,
+  tileflowWorldLayers,
+} from '../data';
 import {inferTileflowSourceRequirements} from '../data/requirements';
 import type {ResolvedTileflowMap} from '../maps';
 import {type ResolvedMarine, resolveMarine, tileflowNauticalV1Schema} from '../marine';
 import {buildingTargetsOfOtherModes} from '../modules/buildings/compiler';
+import {
+  tileflowLandcoverUnderlaySource,
+  tileflowLandcoverUnderlaySourceId,
+} from '../modules/land/underlay';
 import {tileflowNauticalNotice} from '../modules/nautical';
 import {compilePathGroundFamilies} from '../modules/roads/path-ground';
 import {tileflowVegetationDescription} from '../modules/vegetation/compiler';
@@ -125,6 +134,9 @@ import {tileflowBuildings3DDesignOf, tileflowStreetLightsDesignOf} from './scene
 import {bindSemanticReferences, createSemanticDataView} from './semantic-bindings';
 import {tileflowSemanticCompilerIdentity} from './semantic-compiler';
 
+const tileflowWorldDetailSourceLayers: ReadonlySet<string> = new Set(
+  tileflowWorldDetailLayers.map((name) => tileflowWorldLayers[name]),
+);
 export type TileflowSemanticMapConfig = ResolvedTileflowMap;
 
 export type TileflowPreparedMapAssets = {
@@ -534,12 +546,13 @@ function compileSemanticStyleInternal(
   onReport?.(partialReport);
   const interactionManifest = runCompilationPhase('finalization', () =>
     createTileflowInteractionManifest(plannedLayers, {
-      category: data.schema.fields.poiCategory,
-      filterRank: data.schema.fields.poiFilterRank,
-      icon: data.schema.fields.poiIcon,
+      category: data.schema.fields.class,
+      filterRank: data.schema.fields.filterrank,
+      // OpenMapTiles has no icon key; the property is then absent.
+      icon: data.schema.fields.icon ?? tileflowWorldFields.icon,
       name: data.schema.fields.name,
-      sizeRank: data.schema.fields.poiSizeRank,
-      type: data.schema.fields.poiType,
+      sizeRank: data.schema.fields.sizerank,
+      type: data.schema.fields.type,
     }),
   );
   const overlayPlacementManifest = runCompilationPhase('finalization', () =>
@@ -567,14 +580,29 @@ function compileSemanticStyleInternal(
   const glyphs = runCompilationPhase('assets', () => resolveGlyphs(config));
   const sprite = options.preparedAssets?.icons?.sprite;
 
+  // World's detail layers load only when the map draws one: from their own source, or from the
+  // primary source's composite TileJSON.
+  const detail = data.detail;
+  const drawsDetail =
+    detail !== undefined &&
+    layers.some(
+      (layer) =>
+        layer.source === (detail.delivery === 'separate' ? detail.sourceId : data.sourceId) &&
+        tileflowWorldDetailSourceLayers.has(String(layer['source-layer'])),
+    );
+  const primaryUrl = drawsDetail && detail.delivery === 'composite' ? detail.url : data.url;
+  // The land-cover underlay's source exists only where its layer survived compilation.
+  const underlay = layers.some((layer) => layer.source === tileflowLandcoverUnderlaySourceId)
+    ? modules.land?.globalLandcoverUnderlay
+    : undefined;
+  const underlaySource = underlay ? tileflowLandcoverUnderlaySource(underlay) : undefined;
   const primarySource: Record<string, unknown> = {
     type: 'vector',
-    ...(data.url !== undefined ? {url: data.url} : {tiles: data.tiles}),
+    ...(primaryUrl !== undefined ? {url: primaryUrl} : {tiles: data.tiles}),
     attribution: [
       data.attribution,
-      ...(modules.land?.globalLandcoverUnderlay
-        ? [modules.land.globalLandcoverUnderlay.attribution]
-        : []),
+      // A raster underlay credits its own source, shown only while it is drawn.
+      ...(underlay && underlaySource?.type === 'image' ? [underlay.attribution] : []),
     ]
       .filter(Boolean)
       .join(' | '),
@@ -590,26 +618,21 @@ function compileSemanticStyleInternal(
 
   const sources: MapLibreStyle['sources'] = {
     [data.sourceId]: primarySource,
+    ...(drawsDetail && detail.delivery === 'separate'
+      ? {[detail.sourceId]: {type: 'vector', url: detail.url, attribution: data.attribution}}
+      : {}),
     ...(pathGround.active
       ? {
           [tileflowPathGroundSource]: {
             type: 'vector',
-            url: pathGroundProtocolUrl(pathGroundSourceConfig(data)),
+            // Path ground reads the primary source's tiles, so the browser downloads them once.
+            url: pathGroundProtocolUrl(
+              pathGroundSourceConfig(primaryUrl === undefined ? data : {...data, url: primaryUrl}),
+            ),
           },
         }
       : {}),
-    ...(modules.land?.enabled !== false &&
-    modules.land?.globalLandcoverUnderlay &&
-    data.schema.layers.globalLandcover &&
-    modules.land.globalLandcover?.visible !== false
-      ? {
-          'tileflow-landcover-underlay': {
-            type: 'image',
-            url: modules.land.globalLandcoverUnderlay.url,
-            coordinates: modules.land.globalLandcoverUnderlay.coordinates,
-          },
-        }
-      : {}),
+    ...(underlaySource ? {[tileflowLandcoverUnderlaySourceId]: underlaySource} : {}),
     ...(marine?.bathymetry?.vector
       ? {[marine.bathymetry.vector.sourceId]: marine.bathymetry.vector.source}
       : {}),
@@ -623,7 +646,13 @@ function compileSemanticStyleInternal(
     ...hostedSources.definitions,
   };
   const sourceIdentities = {
-    [data.sourceId]: data.identity,
+    [data.sourceId]:
+      drawsDetail && detail.delivery === 'composite'
+        ? {...data.identity, url: detail.url}
+        : data.identity,
+    ...(drawsDetail && detail.delivery === 'separate'
+      ? {[detail.sourceId]: {...data.identity, url: detail.url}}
+      : {}),
     ...(marine?.bathymetry?.vector
       ? {[marine.bathymetry.vector.sourceId]: marine.bathymetry.vector.identity}
       : {}),

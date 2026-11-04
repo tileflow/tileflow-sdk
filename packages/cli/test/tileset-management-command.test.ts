@@ -123,6 +123,7 @@ test('publish registers a Team-local ID and uses the resumable direct-upload pro
       });
     }
     if (url.origin === 'https://private.example.test') {
+      request.body = new Uint8Array(await new Response(request.body).arrayBuffer());
       const part = (beginBody?.parts as Array<Record<string, unknown>>)[0]!;
       return new Response(null, {
         headers: {etag: Buffer.from(String(part.md5Base64), 'base64').toString('hex')},
@@ -211,6 +212,161 @@ test('publish registers a Team-local ID and uses the resumable direct-upload pro
   assert.equal(stdout.includes('r2Key'), false);
   assert.equal(stdout.includes('uploadId'), false);
   assert.equal(stdout.includes('X-Amz'), false);
+});
+
+test('account publication renews Team authority after a transfer outlives its capability', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-tileset-renewal-'));
+  const archive = join(directory, 'stores.pmtiles');
+  const apiOrigin = 'https://api.example.test';
+  const team = {id: 'org_acme', name: 'Acme', slug: 'acme'};
+  const accountSession = `tf_session_${'a'.repeat(64)}`;
+  const resourceId = 'tls_opaque-server-owned-id';
+  const originalFetch = globalThis.fetch;
+  const originalStdoutWrite = process.stdout.write;
+  const originalStderrWrite = process.stderr.write;
+  const originalExitCode = process.exitCode;
+  const environment = Object.fromEntries(
+    ['CI', 'GITHUB_ACTIONS', 'GITLAB_CI'].map((name) => [name, process.env[name]]),
+  );
+  let now = Date.now();
+  let capabilityExpiresAt = now;
+  let capabilityRequests = 0;
+  let begin: Record<string, unknown> = {};
+  let stdout = '';
+  let stderr = '';
+
+  await writeFile(archive, createPmtiles({vector_layers: []}));
+  t.mock.method(Date, 'now', () => now);
+  for (const name of Object.keys(environment)) delete process.env[name];
+
+  t.after(async () => {
+    globalThis.fetch = originalFetch;
+    process.stdout.write = originalStdoutWrite;
+    process.stderr.write = originalStderrWrite;
+    process.exitCode = originalExitCode;
+    for (const [name, value] of Object.entries(environment)) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
+    await rm(directory, {force: true, recursive: true});
+  });
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    stdout += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    stderr += String(chunk);
+    return true;
+  }) as typeof process.stderr.write;
+  globalThis.fetch = (async (input, init) => {
+    const url = new URL(String(input));
+    const headers = new Headers(init?.headers);
+    if (url.pathname === '/v1/cli/teams') {
+      return Response.json({schemaVersion: 1, teams: [team]});
+    }
+    if (url.pathname === '/v1/cli/team-capabilities') {
+      assert.equal(headers.get('authorization'), `Bearer ${accountSession}`);
+      assert.deepEqual(JSON.parse(String(init?.body)), {scopes: ['tilesets:write'], team: '@acme'});
+      capabilityRequests += 1;
+      capabilityExpiresAt = now + 300_000;
+      return Response.json({
+        capability: `tf_cap_${String(capabilityRequests).repeat(80)}`,
+        expiresAt: new Date(capabilityExpiresAt).toISOString(),
+        reference: '@acme',
+        schemaVersion: 1,
+        scopes: ['tilesets:write'],
+        team,
+      });
+    }
+    if (url.origin === 'https://private.example.test') {
+      assert.equal(headers.has('authorization'), false);
+      now += 301_000;
+      const part = (begin.parts as Array<Record<string, unknown>>)[0]!;
+      return new Response(null, {
+        headers: {etag: Buffer.from(String(part.md5Base64), 'base64').toString('hex')},
+      });
+    }
+    assert.equal(url.origin, apiOrigin);
+    if (now >= capabilityExpiresAt)
+      return Response.json({error: 'Expired capability'}, {status: 401});
+    assert.equal(
+      headers.get('authorization'),
+      `Bearer tf_cap_${String(capabilityRequests).repeat(80)}`,
+    );
+    if (url.pathname === '/v1/tilesets') return Response.json({tilesetId: resourceId});
+    if (url.pathname.endsWith('/uploads')) {
+      begin = JSON.parse(String(init?.body));
+      return Response.json(uploadSession(begin));
+    }
+    if (url.pathname.endsWith('/part-authorizations')) {
+      const part = (begin.parts as Array<Record<string, unknown>>)[0]!;
+      return Response.json({
+        schemaVersion: 1,
+        authorizations: [
+          {
+            expiresAt: new Date(now + 900_000).toISOString(),
+            headers: {
+              'Content-Length': String(part.byteCount),
+              'Content-MD5': String(part.md5Base64),
+            },
+            method: 'PUT',
+            partNumber: 1,
+            url: 'https://private.example.test/archive',
+          },
+        ],
+      });
+    }
+    if (url.pathname.endsWith('/parts')) {
+      return Response.json({...JSON.parse(String(init?.body)), changed: true, schemaVersion: 1});
+    }
+    if (url.pathname.endsWith('/complete'))
+      return Response.json({
+        byteCount: begin.byteCount,
+        contentHash: begin.contentHash,
+        contentHashAlgorithm: begin.contentHashAlgorithm,
+        publishedVersion: 1,
+        schemaVersion: 1,
+        state: 'published',
+        versionId: 'tsv_opaque-version-identity',
+      });
+    return Response.json(uploadSession(begin));
+  }) as typeof fetch;
+
+  const program = new Command().name('tileflow').exitOverride();
+  registerTilesetCommands(program, {
+    defaultApiUrl: apiOrigin,
+    loadAuthConfig: async () => ({
+      version: 2,
+      sessions: {
+        [apiOrigin]: {
+          account: {email: 'ada@example.test', id: 'usr_ada', name: 'Ada'},
+          accountSession,
+          apiOrigin,
+          createdAt: new Date(now - 60_000).toISOString(),
+          expiresAt: new Date(now + 86_400_000).toISOString(),
+          sessionId: 'cli_ada',
+        },
+      },
+    }),
+  });
+  await program.parseAsync([
+    'node',
+    'tileflow',
+    'tileset',
+    'publish',
+    archive,
+    '--id',
+    'stores',
+    '--team',
+    '@acme',
+    '--json',
+  ]);
+
+  assert.equal(stderr, '', 'A valid account session must renew expired Team authority');
+  assert.equal(JSON.parse(stdout).tileset.state, 'published');
+  assert.equal(capabilityRequests, 2);
+  assert.equal(stdout.includes(accountSession), false);
+  assert.equal(stdout.includes('tf_cap_'), false);
 });
 
 test('JSON management commands contain transport failures', async (t) => {

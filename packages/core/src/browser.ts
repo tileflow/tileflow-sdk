@@ -1,4 +1,5 @@
 import {readBoundedTileflowBrowserResource} from './browser-resource';
+import {syncTileflowClearLayers, type TileflowClearLayersMap} from './clear-layers-browser';
 import type {TileflowColorOverrides} from './color-program-runtime';
 import {
   createTileflowDynamicImageRegistry,
@@ -37,7 +38,7 @@ import {
   type TileflowRuntimeStyleLoadOptions,
 } from './style-resources-browser';
 import {
-  mixTileflowAzimuths,
+  mixTileflowSunDirections,
   readTileflowSunPreset,
   resolveTileflowSun,
   tileflowStyleSunPreset,
@@ -767,16 +768,23 @@ export function createTileflowThemeController(options: {
   const invalidateMetadata = () => {
     metadataStyle = undefined;
   };
+  // Shared layers an appearance keeps clear stay hidden, so their sources are never fetched.
+  const syncClearLayers = () => syncTileflowClearLayers(options.map as TileflowClearLayersMap);
   const releaseMetadata = () => {
     options.map.off('styledata', invalidateMetadata);
     options.map.off('style.load', invalidateMetadata);
+    options.map.off('styledata', syncClearLayers);
+    options.map.off('style.load', syncClearLayers);
     options.map.off('remove', releaseMetadata);
     options.map.off('styledata', syncFamilyImages);
     invalidateMetadata();
   };
   options.map.on('styledata', invalidateMetadata);
   options.map.on('style.load', invalidateMetadata);
+  options.map.on('style.load', syncClearLayers);
+  options.map.on('styledata', syncClearLayers);
   options.map.on('remove', releaseMetadata);
+  syncClearLayers();
   let shown: Shown = {style: options.initialStyle ?? options.initial.style};
   let activeBlend: ActiveBlend | undefined;
   let pendingBlend: PendingBlend | undefined;
@@ -1852,8 +1860,7 @@ export function createTileflowThemeController(options: {
         // Returning to the themes follows their sun, which a blend may be moving.
         const to = target ?? themeSunPreset().preset;
         sunShown = {
-          azimuth: mixTileflowAzimuths(from.azimuth, to.azimuth, eased),
-          altitude: from.altitude + (to.altitude - from.altitude) * eased,
+          ...mixTileflowSunDirections(from, to, eased),
           source: target?.source ?? from.source,
         };
         writeSunLight();

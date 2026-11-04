@@ -563,8 +563,18 @@ test('a document receipt names its theme only for a style', () => {
 test('split carries the web family in the request and each native document as canonical bytes', async () => {
   const value = await parseTileflowRendererDeploymentArtifact(artifact());
   const split = await splitTileflowRendererDeployment(value);
-  assert.equal(split.artifact.schemaVersion, 3);
-  assert.deepEqual(split.artifact.renderers.web, value.renderers.web);
+  assert.equal(split.artifact.schemaVersion, 5);
+  assert.equal('styles' in split.artifact.renderers.web, false);
+  assert.deepEqual(split.artifact.renderers.web.family.themes, ['light']);
+  assert.deepEqual(
+    tileflowRendererDeploymentRequestArtifactSchema.parse(split.artifact).renderers.web,
+    value.renderers.web,
+  );
+  assert.equal(
+    tileflowRendererDeploymentRequestArtifactSchema.safeParse({...split.artifact, schemaVersion: 3})
+      .success,
+    false,
+  );
   assert.deepEqual(Object.keys(split.artifact.renderers.native).sort(), [
     'buildManifest',
     'buildRecord',

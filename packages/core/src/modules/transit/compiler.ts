@@ -55,10 +55,10 @@ export function compileTransit(
   if (config.enabled === false) return [];
 
   const {sourceId: source, schema} = context.data;
-  const ferryFilter = modalFilter(schema.fields.class, schema.fields.subclass, ['ferry']);
+  const ferryFilter = modalFilter(schema.fields.class, schema.fields.type, ['ferry']);
   const cablewayFilter = [
     'all',
-    modalFilter(schema.fields.class, schema.fields.subclass, [
+    modalFilter(schema.fields.class, schema.fields.type, [
       'aerialway',
       'cable_car',
       'cableway',
@@ -68,13 +68,13 @@ export function compileTransit(
     ]),
     ['!', ferryFilter],
   ];
-  // OpenMapTiles may expose a mode through either `class` or `subclass`.
+  // A mode is a `class` (`rail`, `transit`) or a `type` (`subway`, `tram`).
   // Funiculars are railways rather than aerial cableways; keeping them here
   // also prevents a feature classified as `transit/funicular` from being
   // painted by two modal layers.
   const railModeFilter = [
     'all',
-    modalFilter(schema.fields.class, schema.fields.subclass, [
+    modalFilter(schema.fields.class, schema.fields.type, [
       'funicular',
       'light_rail',
       'monorail',
@@ -148,7 +148,7 @@ export function compileTransit(
             type: 'line',
             source,
             'source-layer': schema.layers.road,
-            filter: ['all', semanticFilter, structureFilter(schema.fields.brunnel, structure)],
+            filter: ['all', semanticFilter, structureFilter(schema.fields.structure, structure)],
           },
           style,
         ),
@@ -205,14 +205,10 @@ function structureFilter(field: string, structure: 'bridge' | 'surface' | 'tunne
     : ['==', ['get', field], structure];
 }
 
-function modalFilter(
-  classField: string,
-  subclassField: string,
-  modes: readonly string[],
-): unknown[] {
+function modalFilter(classField: string, typeField: string, modes: readonly string[]): unknown[] {
   return [
     'any',
     ['match', ['get', classField], modes, true, false],
-    ['match', ['get', subclassField], modes, true, false],
+    ['match', ['get', typeField], modes, true, false],
   ];
 }

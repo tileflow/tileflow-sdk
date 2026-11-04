@@ -364,8 +364,7 @@ enum NativeEvaluators {
 
   // MARK: Suns and route inks
 
-  /// Two suns mixed: the azimuth turns the short way round, colours mix in OKLab and numbers
-  /// linearly.
+  /// Blend sun directions in Cartesian space and light colours in OKLab.
   static func mixSuns(_ from: JSONValue, _ to: JSONValue, _ t: Double) -> JSONValue {
     let at = min(1, max(0, t.isFinite ? t : 0))
     if at == 0 { return from }
@@ -375,10 +374,10 @@ enum NativeEvaluators {
       let b = to[keyPath: key]?.number ?? 0
       return .number(a + (b - a) * at)
     }
+    let direction = mixedSunDirection(from, to, at)
     return .object([
-      "azimuth": .number(
-        mixAzimuths(from["azimuth"]?.number ?? 0, to["azimuth"]?.number ?? 0, at)),
-      "altitude": number(\.["altitude"]),
+      "azimuth": .number(direction.azimuth),
+      "altitude": .number(direction.altitude),
       "color": mixedColour(from["color"], to["color"], at),
       "intensity": number(\.["intensity"]),
       "shadowIntensity": number(\.["shadowIntensity"]),
@@ -387,6 +386,32 @@ enum NativeEvaluators {
         "intensity": number(\.["ambient"]?["intensity"]),
       ]),
     ])
+  }
+
+  private static func mixedSunDirection(_ from: JSONValue, _ to: JSONValue, _ t: Double)
+    -> (azimuth: Double, altitude: Double)
+  {
+    let degrees = Double.pi / 180
+    func vector(_ azimuth: Double, _ altitude: Double) -> SIMD3<Double> {
+      let a = azimuth * degrees
+      let h = altitude * degrees
+      return SIMD3(sin(a) * cos(h), cos(a) * cos(h), sin(h))
+    }
+
+    let azimuthA = from["azimuth"]?.number ?? 0, azimuthB = to["azimuth"]?.number ?? 0
+    let altitudeA = from["altitude"]?.number ?? 0, altitudeB = to["altitude"]?.number ?? 0
+    let a = vector(azimuthA, altitudeA), b = vector(azimuthB, altitudeB)
+    let azimuth = mixAzimuths(azimuthA, azimuthB, t)
+    if (a * b).sum() < -0.9995 {
+      return (azimuth, altitudeA + (altitudeB - altitudeA) * t)
+    }
+
+    let direction = a + (b - a) * t
+    let horizontal = hypot(direction.x, direction.y)
+    return (
+      horizontal < 1e-12 ? azimuth : normalizedAzimuth(atan2(direction.x, direction.y) / degrees),
+      atan2(direction.z, horizontal) / degrees
+    )
   }
 
   /// An azimuth `t` of the way from `from` to `to`, turning the short way round.

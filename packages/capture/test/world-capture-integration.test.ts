@@ -49,6 +49,15 @@ test(
                 archiveSha256: 'a'.repeat(64),
                 contractSha256: 'b'.repeat(64),
                 dataContractSha256: 'c'.repeat(64),
+                releaseSources: ['world', 'world-detail'],
+                sources: [
+                  {
+                    archiveSha256: 'e'.repeat(64),
+                    contractSha256: 'f'.repeat(64),
+                    dataContractSha256: '0'.repeat(64),
+                    id: 'world',
+                  },
+                ],
               },
             },
           }),
@@ -139,6 +148,10 @@ export default defineMap({
             if (capture.receipt.data.kind === 'tileflow-world') {
               assert.equal(capture.receipt.data.releaseId, releaseId);
               assert.equal(capture.receipt.data.descriptorSha256, descriptorSha256);
+              assert.deepEqual(
+                capture.receipt.data.sources.map(({id}) => id),
+                ['world'],
+              );
             }
           }
         } finally {

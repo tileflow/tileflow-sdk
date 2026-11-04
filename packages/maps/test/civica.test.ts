@@ -7,7 +7,7 @@ import {
 import assert from 'node:assert/strict';
 import {readdir} from 'node:fs/promises';
 import test from 'node:test';
-import {resolveMap, tileflowWorldV1Schema} from '@tileflow/core';
+import {resolveMap, tileflowWorldFields} from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
 import {civica, civicaFonts, civicaIcons} from '../src';
 
@@ -106,14 +106,14 @@ function acceptsPoi(
     type: string;
   }> = {},
 ) {
-  const fields = tileflowWorldV1Schema().fields;
+  const fields = tileflowWorldFields;
   const input = {category, rank: 1, sizeRank: 5, minZoom: 0, type: 'monument', ...candidate};
   const names = {
-    category: fields.poiCategory,
-    rank: fields.poiFilterRank,
-    sizeRank: fields.poiSizeRank,
+    category: fields.class,
+    rank: fields.filterrank,
+    sizeRank: fields.sizerank,
     minZoom: fields.minZoom,
-    type: fields.poiType,
+    type: fields.type,
   };
   const properties = Object.fromEntries(
     Object.entries(input).flatMap(([name, value]) =>
@@ -208,7 +208,7 @@ test('Cívica retains road hierarchy at city, neighborhood, and street scales', 
   assert.equal(visibleAt(motorway, 7), true);
   assert.equal(visibleAt(minor, 10), false);
   assert.equal(visibleAt(service, 12), false);
-  const classField = tileflowWorldV1Schema().fields.class;
+  const classField = tileflowWorldFields.class;
   let previousMinorWidth = 0;
   for (const zoom of [12, 14, 16, 19, 22]) {
     const motorwayWidth = Number(
@@ -218,7 +218,7 @@ test('Cívica retains road hierarchy at city, neighborhood, and street scales', 
     );
     const minorWidth = Number(
       evaluate(layerFor('roads.classes.minor.surface.fill', zoom), 'line-width', zoom, {
-        [classField]: 'minor',
+        [classField]: 'street',
       }),
     );
     assert.ok(motorwayWidth > minorWidth, `Motorway hierarchy was lost at z${zoom}`);
@@ -255,13 +255,13 @@ test('Cívica draws city-scale land and buildings as flat masses without outline
   assert.equal(visibleAt(layerFor('roads.roundabouts.fill'), 16), true);
   assert.equal(visibleAt(layerFor('roads.classes.primary.bridge.fill', 16), 16), true);
   assert.equal(visibleAt(layerFor('roads.classes.motorway.surface.casing'), 9), true);
-  const fields = tileflowWorldV1Schema().fields;
-  for (const [target, subclass, color] of [
+  const fields = tileflowWorldFields;
+  for (const [target, ground, color] of [
     ['land.landcover.urbanPark.fill', 'park', '#A8B965'],
     ['land.landcover.grass.fill', 'grass', '#B7C985'],
   ] as const) {
     const area = layerFor(target, 16);
-    const properties = {[fields.class]: 'grass', [fields.subclass]: subclass};
+    const properties = {[fields.class]: ground, [fields.type]: ground};
     assert.deepEqual(
       evaluate(area, 'fill-color', 16, properties),
       evaluate({...area, paint: {'fill-color': color}}, 'fill-color', 16, properties),
@@ -274,7 +274,7 @@ test('Cívica draws city-scale land and buildings as flat masses without outline
 });
 
 test('Cívica keeps park paths, textures, trees, and address detail out of the district drawing', () => {
-  const fields = tileflowWorldV1Schema().fields;
+  const fields = tileflowWorldFields;
   for (const [roadClass, minimumZoom, labelZoom] of [
     ['cycleway', 17, 18],
     ['footway', 17.5, 18],
@@ -288,7 +288,7 @@ test('Cívica keeps park paths, textures, trees, and address detail out of the d
     assert.equal(visibleAt(path, minimumZoom), true);
     const properties = {
       [fields.class]: roadClass === 'track' ? 'track' : 'path',
-      [fields.subclass]: roadClass === 'pathway' ? 'path' : roadClass,
+      [fields.type]: roadClass === 'pathway' ? 'path' : roadClass,
       [fields.surface]: 'paved',
       [fields.access]: 'yes',
     };
@@ -427,7 +427,7 @@ test('Cívica gives stations and parks space before secondary institutions and b
 });
 
 test('Cívica distinguishes park titles and station anchors from supporting captions', () => {
-  const fields = tileflowWorldV1Schema().fields;
+  const fields = tileflowWorldFields;
   const park = layerFor('poi.park-nature', 16.3);
   const station = layerFor('poi.transport', 16.3);
   const caption = layerFor('poi.education', 16.3);
@@ -442,8 +442,8 @@ test('Cívica distinguishes park titles and station anchors from supporting capt
   ]);
   assert.equal(park.layout?.['text-transform'], 'none');
   assert.equal(station.layout?.['text-transform'], 'uppercase');
-  const principalPark = {[fields.poiSizeRank]: 0};
-  const smallPark = {[fields.poiSizeRank]: 16};
+  const principalPark = {[fields.sizerank]: 0};
+  const smallPark = {[fields.sizerank]: 16};
   assert.ok(
     Number(evaluate(park, 'text-size', 16.3, principalPark)) >
       Number(evaluate(station, 'text-size', 16.3)),
@@ -469,11 +469,11 @@ test('Cívica distinguishes park titles and station anchors from supporting capt
 
 test('Cívica reserves vermilion building ink for civic and major destinations rather than height', () => {
   const building = layerFor('buildings.flat.fill');
-  const fields = tileflowWorldV1Schema().fields;
+  const fields = tileflowWorldFields;
   const color = (tone: string, height = 10, importance: number | string = 0) =>
     evaluate(building, 'fill-color', 16, {
-      [fields.buildingTone]: tone,
-      [fields.renderHeight]: height,
+      [fields.tone]: tone,
+      [fields.height]: height,
       [fields.importanceTier]: importance,
     });
   assert.deepEqual(color('destination', 10, 3), color('civic'));

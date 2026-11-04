@@ -47,9 +47,14 @@ function cartography(style: MapLibreStyle) {
             },
           }
         : {}),
-      // Color expressions may differ; widths, visibility, opacity and placement may not.
+      // Color expressions may differ; widths, visibility, opacity and placement may not. Only
+      // daylight shows the climate underlay, which the other appearances keep clear.
       paint: Object.fromEntries(
-        Object.entries(paint ?? {}).filter(([key]) => !key.includes('color')),
+        Object.entries(paint ?? {}).filter(
+          ([key]) =>
+            !key.includes('color') &&
+            !(layer.id === 'tileflow-global-landcover-underlay' && key === 'raster-opacity'),
+        ),
       ),
     })),
   };

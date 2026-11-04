@@ -32,7 +32,13 @@ test('Team credentials validate without a Project and Map operations send the ch
   if (profile.ok) assert.equal(profile.value.credentialType, 'team_api_key');
   let target: string | null = null;
   const split = {
-    artifact: {renderers: {native: {documents: {styles: {}, family: {}}}}},
+    artifact: {
+      schemaVersion: 5,
+      renderers: {
+        web: {buildManifest: {maps: {}}},
+        native: {documents: {styles: {}, family: {}}},
+      },
+    },
     documents: {styles: {}, family: ''},
   } as unknown as Parameters<typeof publishHostedRendererDeployment>[1]['split'];
   await assert.rejects(
@@ -42,7 +48,7 @@ test('Team credentials validate without a Project and Map operations send the ch
         apiUrl: 'https://api.example.test',
         mapId: 'map_AbCdEfGhIjKlMnOp',
       },
-      {body: {}, split},
+      {body: {artifact: split.artifact}, split},
       {
         request: {
           fetch: (async (_url, init) => {

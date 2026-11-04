@@ -200,15 +200,15 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
 
   const pierOutline = compiledLayer(compiled, 'water.render.pierOutline');
   const pierDeck = compiledLayer(compiled, 'water.render.pierDeck');
-  assert.equal(pierOutline?.['source-layer'], 'transportation');
+  assert.equal(pierOutline?.['source-layer'], 'road');
   assert.equal(pierOutline?.paint?.['line-color'], '#263D3F');
   assert.match(JSON.stringify(pierOutline?.filter), /pier/u);
-  assert.equal(pierDeck?.['source-layer'], 'transportation');
+  assert.equal(pierDeck?.['source-layer'], 'road');
   assert.equal(pierDeck?.paint?.['line-color'], '#EADDB9');
   assert.equal(style.layers.indexOf(pierOutline!) + 1, style.layers.indexOf(pierDeck!));
 
   const ferryLabels = compiledLayer(compiled, 'transit.render.ferryLabels');
-  assert.equal(ferryLabels?.['source-layer'], 'transportation_name');
+  assert.equal(ferryLabels?.['source-layer'], 'road_label');
   assert.equal(ferryLabels?.layout?.['symbol-placement'], 'line');
   assert.equal(ferryLabels?.layout?.['text-field']?.[1], 'name');
   assert.match(JSON.stringify(ferryLabels?.filter), /ferry/u);
@@ -253,15 +253,7 @@ test('Soundings compiles a focused bathymetric chart from World and Bathymetry',
 test('Soundings degrades cleanly on generic OpenMapTiles without bathymetry', () => {
   const data = vectorTiles({
     attribution: 'Generic OpenMapTiles fixture',
-    schema: openMapTiles({
-      capabilities: {
-        bathymetry: false,
-        businessCorridor: false,
-        canopy: false,
-        globalLandcover: false,
-        tree: false,
-      },
-    }),
+    schema: openMapTiles(),
     tiles: ['https://tiles.example.test/{z}/{x}/{y}.pbf'],
   });
   const generic = defineMap({

@@ -13,13 +13,14 @@ import {
   refine,
   resolveTileflowData,
   tileflowPoiImageRoles,
-  tileflowWorldV1Schema,
+  tileflowWorldSchema,
   vectorTiles,
   vegetation,
   water,
 } from '../src';
 import type {TileflowLayerContribution} from '../src/cartography/contributions';
 import {tileflowBuildings3DDesignOf} from '../src/cartography/scene-3d-metadata';
+import {createSemanticDataView} from '../src/cartography/semantic-bindings';
 import {tileflowFeatureColour} from '../src/feature-colour-browser';
 import {compileAeroways} from '../src/modules/aeroways/compiler';
 import {compileBoundaries} from '../src/modules/boundaries/compiler';
@@ -131,6 +132,17 @@ test('POI image roles are theme-selectable with an explicit built-in fallback co
 });
 
 test('park source semantics keep protected areas and urban parks disjoint', () => {
+  const world = assembleTileflowLayers(compileLand(undefined, context));
+  const worldProtected = layer(world, 'tileflow-landcover-protected');
+  const worldPark = layer(world, 'tileflow-landcover-urbanPark');
+  assert.equal(worldProtected['source-layer'], 'landuse_overlay');
+  assert.equal(worldPark['source-layer'], 'landuse');
+  assert.equal(matches(worldProtected.filter, {class: 'protected_area'}), true);
+  assert.equal(matches(worldProtected.filter, {class: 'park'}), false);
+  assert.equal(matches(worldPark.filter, {class: 'park'}), true);
+  assert.equal(matches(worldPark.filter, {class: 'protected_area'}), false);
+
+  // OpenMapTiles mixes ordinary parks with protected areas in one layer unless told otherwise.
   const mixedData = resolveTileflowData(
     vectorTiles({
       attribution: '© Test',
@@ -138,64 +150,92 @@ test('park source semantics keep protected areas and urban parks disjoint', () =
       url: '/tiles.json',
     }),
   );
-  const mixed = compileLand(undefined, {...context, data: mixedData});
-  const legacyPark = contribution(mixed, 'tileflow-landcover-legacy-park');
-  const mixedProtected = contribution(mixed, 'tileflow-landcover-protected');
-  const urbanPark = contribution(mixed, 'tileflow-landcover-urbanPark');
+  const mixedLand = compileLand(undefined, {...context, data: createSemanticDataView(mixedData)});
+  const mixed = assembleTileflowLayers(mixedLand, mixedData);
+  const parkCopy = layer(mixed, 'tileflow-landcover-urbanPark~protected_and_parks');
+  const mixedProtected = layer(mixed, 'tileflow-landcover-protected');
+  const urbanPark = layer(mixed, 'tileflow-landcover-urbanPark~landcover');
 
-  assert.equal(legacyPark.layer['source-layer'], 'protected_and_parks');
-  assert.equal(mixedProtected.layer['source-layer'], 'protected_and_parks');
-  assert.equal(urbanPark.layer['source-layer'], 'landcover');
-  assert.equal(matches(legacyPark.layer.filter, {kind: 'protected_area'}), false);
-  assert.equal(matches(mixedProtected.layer.filter, {kind: 'protected_area'}), true);
-  assert.equal(matches(legacyPark.layer.filter, {kind: 'park'}), true);
-  assert.equal(matches(urbanPark.layer.filter, {kind: 'grass', subclass: 'park'}), true);
-  assertValid(mixed);
+  assert.equal(parkCopy['source-layer'], 'protected_and_parks');
+  assert.equal(mixedProtected['source-layer'], 'protected_and_parks');
+  assert.equal(urbanPark['source-layer'], 'landcover');
+  assert.equal(matches(parkCopy.filter, {kind: 'protected_area'}), false);
+  assert.equal(matches(mixedProtected.filter, {kind: 'protected_area'}), true);
+  assert.equal(matches(parkCopy.filter, {kind: 'park'}), true);
+  assert.equal(matches(mixedProtected.filter, {kind: 'park'}), false);
+  assert.equal(matches(urbanPark.filter, {kind: 'grass', subclass: 'park'}), true);
+  assertValid(mixedLand, mixedData);
 
   const protectedOnlyData = resolveTileflowData(
     vectorTiles({
-      attribution: '© Tileflow fixture',
-      schema: tileflowWorldV1Schema({layers: {park: 'protected_only'}}),
-      url: '/world-v1.json',
+      attribution: '© Test',
+      schema: openMapTiles({
+        layers: {park: 'protected_only'},
+        semantics: {parkLayer: 'protected-only'},
+      }),
+      url: '/tiles.json',
     }),
   );
-  const protectedOnly = compileLand(undefined, {...context, data: protectedOnlyData});
-  const protectedArea = contribution(protectedOnly, 'tileflow-landcover-protected');
-  assert.equal(protectedArea.layer['source-layer'], 'protected_only');
-  assert.equal(protectedArea.layer.filter, undefined);
+  const protectedOnlyLand = compileLand(undefined, {
+    ...context,
+    data: createSemanticDataView(protectedOnlyData),
+  });
+  const protectedOnly = assembleTileflowLayers(protectedOnlyLand, protectedOnlyData);
+  const protectedArea = layer(protectedOnly, 'tileflow-landcover-protected');
+  assert.equal(protectedArea['source-layer'], 'protected_only');
+  assert.equal(matches(protectedArea.filter, {class: 'park'}), true);
   assert.equal(
-    protectedOnly.some(({layer}) => layer.id === 'tileflow-landcover-legacy-park'),
+    protectedOnly.some(({id}) => id.endsWith('~protected_only') && id.includes('urbanPark')),
     false,
   );
-  assertValid(protectedOnly);
+  assertValid(protectedOnlyLand, protectedOnlyData);
 });
 
-test('every typed grass subclass selects exactly one landcover fill', () => {
+test('every World park, garden, grass and scrub area selects exactly one landcover fill', () => {
   const contributions = compileLand(undefined, context);
-  const ids = [
-    'tileflow-landcover-grass',
-    'tileflow-landcover-scrub',
-    'tileflow-landcover-meadow',
-    'tileflow-landcover-urbanPark',
-    'tileflow-landcover-recreationGround',
-    'tileflow-landcover-villageGreen',
-    'tileflow-landcover-flowerbed',
-  ];
-  const layers = ids.map((id) => contribution(contributions, id).layer);
-  for (const subclass of [
-    undefined,
+  const names = [
+    'grass',
     'scrub',
     'meadow',
-    'park',
-    'garden',
-    'recreation_ground',
-    'village_green',
+    'urbanPark',
+    'recreationGround',
+    'villageGreen',
     'flowerbed',
-  ]) {
-    const properties = {class: 'grass', ...(subclass ? {subclass} : {})};
+  ];
+  const layers = names.map((name) => ({
+    name,
+    filter: contribution(contributions, `tileflow-landcover-${name}`).layer.filter,
+  }));
+  for (const [properties, expected] of [
+    [{class: 'grass'}, 'grass'],
+    [{class: 'grass', type: 'meadow'}, 'meadow'],
+    [{class: 'golf'}, 'grass'],
+    [{class: 'scrub', type: 'heath'}, 'scrub'],
+    [{class: 'park'}, 'urbanPark'],
+    [{class: 'park', type: 'recreation_ground'}, 'recreationGround'],
+    [{class: 'park', type: 'village_green'}, 'villageGreen'],
+    [{class: 'garden'}, 'urbanPark'],
+    [{class: 'garden', type: 'flowerbed'}, 'flowerbed'],
+  ] as const) {
     const selected = layers.filter(({filter}) => matches(filter, properties));
-    assert.equal(selected.length, 1, `${subclass ?? 'plain grass'} must select exactly one fill`);
+    assert.deepEqual(
+      selected.map(({name}) => name),
+      [expected],
+      `${JSON.stringify(properties)} must select exactly one fill`,
+    );
   }
+  // A zoo is recreation ground use, not a park fill.
+  assert.deepEqual(
+    layers.filter(({filter}) => matches(filter, {class: 'park', type: 'zoo'})),
+    [],
+  );
+  assert.equal(
+    matches(contribution(contributions, 'tileflow-landuse-recreation').layer.filter, {
+      class: 'park',
+      type: 'zoo',
+    }),
+    true,
+  );
 });
 
 test('transit modes are disjoint and funiculars remain rail', () => {
@@ -206,12 +246,12 @@ test('transit modes are disjoint and funiculars remain rail', () => {
   const railHatching = contribution(contributions, 'tileflow-transit-rail-hatching-surface');
   const serviceRail = contribution(contributions, 'tileflow-transit-service-rail-surface');
 
-  const funicular = {class: 'transit', subclass: 'funicular'};
+  const funicular = {class: 'transit', type: 'funicular'};
   assert.equal(matches(ferry.layer.filter, funicular), false);
   assert.equal(matches(cableway.layer.filter, funicular), false);
   assert.equal(matches(rail.layer.filter, funicular), true);
 
-  const gondola = {class: 'transit', subclass: 'gondola'};
+  const gondola = {class: 'transit', type: 'gondola'};
   assert.equal(matches(cableway.layer.filter, gondola), true);
   assert.equal(matches(rail.layer.filter, gondola), false);
 
@@ -220,7 +260,7 @@ test('transit modes are disjoint and funiculars remain rail', () => {
     assert.equal(matches(cableway.layer.filter, {class: mode}), false);
   }
 
-  const tramService = {class: 'transit', service: 'yard', subclass: 'tram'};
+  const tramService = {class: 'transit', service: 'yard', type: 'tram'};
   assert.equal(matches(rail.layer.filter, tramService), false);
   assert.equal(matches(serviceRail.layer.filter, tramService), true);
   assert.equal(matches(railHatching.layer.filter, tramService), true);
@@ -233,28 +273,20 @@ test('disputed maritime boundaries retain both strokes with disputed priority', 
   const maritime = contribution(contributions, 'tileflow-boundary-maritime');
   const disputed = contribution(contributions, 'tileflow-boundary-disputed');
   const combined = contribution(contributions, 'tileflow-boundary-disputed-maritime');
-  const both = {admin_level: 2, disputed: 1, maritime: 1};
+  const both = {admin_level: 2, disputed: true, maritime: true};
 
   assert.equal(matches(maritime.layer.filter, both), true);
   assert.equal(matches(disputed.layer.filter, both), false);
   assert.equal(matches(combined.layer.filter, both), true);
   assert.ok(maritime.localOrder < combined.localOrder);
-  assert.equal(matches(disputed.layer.filter, {...both, maritime: 0}), true);
-  assert.equal(matches(combined.layer.filter, {...both, maritime: 0}), false);
+  assert.equal(matches(disputed.layer.filter, {...both, maritime: false}), true);
+  assert.equal(matches(combined.layer.filter, {...both, maritime: false}), false);
   assertValid(contributions);
 });
 
-test('water consumes remapped bathymetry capability and omits it when absent', () => {
+test('water consumes World bathymetry and omits it from data without it', () => {
   const data = resolveTileflowData(
-    vectorTiles({
-      attribution: '© Test',
-      schema: openMapTiles({
-        capabilities: {bathymetry: true},
-        fields: {bathymetryMinDepth: 'depth_floor', bathymetrySortKey: 'depth_order'},
-        layers: {bathymetry: 'depth_bands'},
-      }),
-      url: '/tiles.json',
-    }),
+    vectorTiles({attribution: '© Test', schema: tileflowWorldSchema(), url: '/tiles.json'}),
   );
   const contributions = compileWater(water({bathymetryContours: {}, bathymetryLabels: {}}), {
     ...context,
@@ -264,24 +296,24 @@ test('water consumes remapped bathymetry capability and omits it when absent', (
   const bathymetryContours = contribution(contributions, 'tileflow-bathymetry-contours');
   const bathymetryLabels = contribution(contributions, 'tileflow-bathymetry-labels');
 
-  assert.equal(bathymetry.layer['source-layer'], 'depth_bands');
+  assert.equal(bathymetry.layer['source-layer'], 'bathymetry');
   assert.equal(bathymetry.layer.maxzoom, 10);
-  assert.match(JSON.stringify(bathymetry.layer.layout), /depth_order/);
-  assert.match(JSON.stringify(bathymetry.layer.paint), /depth_floor/);
-  assert.equal(bathymetryContours.layer['source-layer'], 'depth_bands');
-  assert.match(JSON.stringify(bathymetryContours.layer.filter), /depth_floor/);
+  assert.match(JSON.stringify(bathymetry.layer.layout), /"sort_key"/);
+  assert.match(JSON.stringify(bathymetry.layer.paint), /"min_depth"/);
+  assert.equal(bathymetryContours.layer['source-layer'], 'bathymetry');
+  assert.match(JSON.stringify(bathymetryContours.layer.filter), /"min_depth"/);
   assert.equal(
     (bathymetryContours.layer.paint as Record<string, unknown>)['line-color'],
     context.colors.hydro.label,
   );
   assert.equal(bathymetryContours.slot, 'hydro');
   assert.equal(bathymetryContours.target, 'water.bathymetryContours');
-  assert.equal(bathymetryLabels.layer['source-layer'], 'depth_bands');
+  assert.equal(bathymetryLabels.layer['source-layer'], 'bathymetry');
   assert.equal(bathymetryLabels.layer.minzoom, 3);
   assert.equal(bathymetryLabels.layer.maxzoom, 10);
   assert.deepEqual((bathymetryLabels.layer.layout as Record<string, unknown>)['text-field'], [
     'to-string',
-    ['abs', ['to-number', ['get', 'depth_floor'], 0]],
+    ['abs', ['to-number', ['get', 'min_depth'], 0]],
   ]);
   assert.equal(
     (bathymetryLabels.layer.paint as Record<string, unknown>)['text-color'],
@@ -332,7 +364,7 @@ test('3D vegetation keeps a portable styled fallback and exposes runtime paramet
   const data = resolveTileflowData(
     vectorTiles({
       attribution: '© Test',
-      schema: openMapTiles(),
+      schema: tileflowWorldSchema(),
       url: '/tiles.json',
     }),
   );
@@ -392,6 +424,15 @@ test('3D vegetation keeps a portable styled fallback and exposes runtime paramet
   assert.deepEqual(hostedDescription.colors.conifer, context.colors.vegetation.tree.conifer);
   assertValid([portable]);
   assertValid([hosted]);
+
+  // OpenMapTiles has no tree layer to draw.
+  const withoutTrees = resolveTileflowData(
+    vectorTiles({attribution: '© Test', schema: openMapTiles(), url: '/tiles.json'}),
+  );
+  assert.deepEqual(
+    compileVegetation(vegetation({mode: '3d'}), {...context, data: withoutTrees}),
+    [],
+  );
 });
 
 test('default 3D vegetation preserves exact dark semantic tree tokens', () => {
@@ -440,43 +481,44 @@ test('default 3D vegetation preserves exact dark semantic tree tokens', () => {
 });
 
 test('current building tones use bound fields and the available semantic theme colors', () => {
-  const data = resolveTileflowData(
-    vectorTiles({
-      attribution: '© Test',
-      schema: openMapTiles({fields: {buildingTone: 'tone'}}),
-      url: '/tiles.json',
-    }),
-  );
-  const buildings = contribution(
-    compileBuildings(undefined, {...context, data}),
-    'tileflow-buildings-fill',
-  );
+  const buildings = contribution(compileBuildings(undefined, context), 'tileflow-buildings-fill');
   const color = JSON.stringify((buildings.layer.paint as Record<string, unknown>)['fill-color']);
 
   for (const tone of ['active', 'commercial', 'destination']) assert.match(color, new RegExp(tone));
-  assert.match(color, /tone/);
+  assert.match(color, /\["get","tone"\]/);
   assert.doesNotMatch(color, /building_kind|has_business/);
   assertValid([buildings]);
+
+  // OpenMapTiles has neither tone nor use: its buildings take the generic theme colour.
+  const data = resolveTileflowData(
+    vectorTiles({attribution: '© Test', schema: openMapTiles(), url: '/tiles.json'}),
+  );
+  const untoned = contribution(
+    compileBuildings(undefined, {...context, data}),
+    'tileflow-buildings-fill',
+  );
+  const untonedColor = (untoned.layer.paint as Record<string, unknown>)['fill-color'];
+  assert.equal(untonedColor, context.colors.buildings.generic);
 });
 
-test('buildings take their theme colour by World class when they have no tone', () => {
+test('buildings take their theme colour by World use when they have no tone', () => {
   const colors = resolveColors();
   const buildings = contribution(compileBuildings(undefined, context), 'tileflow-buildings-fill');
   const color = (buildings.layer.paint as Record<string, unknown>)['fill-color'] as unknown[];
   const colourOf = (properties: Record<string, unknown>) =>
     tileflowFeatureColour(color, properties, tileflowColourChannels);
   const expected = (value: string) => tileflowFeatureColour(value, {}, tileflowColourChannels);
-  assert.deepEqual(colourOf({class: 'residential'}), expected(colors.buildings.residential));
-  assert.deepEqual(colourOf({class: 'commercial'}), expected(colors.buildings.commercial));
+  assert.deepEqual(colourOf({use: 'residential'}), expected(colors.buildings.residential));
+  assert.deepEqual(colourOf({use: 'commercial'}), expected(colors.buildings.commercial));
   for (const value of ['civic', 'education', 'medical', 'religious', 'transportation'])
-    assert.deepEqual(colourOf({class: value}), expected(colors.buildings.civic), value);
+    assert.deepEqual(colourOf({use: value}), expected(colors.buildings.civic), value);
   for (const value of ['industrial', 'agricultural', 'service'])
-    assert.deepEqual(colourOf({class: value}), expected(colors.buildings.industrial), value);
-  for (const properties of [{class: 'outbuilding'}, {class: 'unknown'}, {}])
+    assert.deepEqual(colourOf({use: value}), expected(colors.buildings.industrial), value);
+  for (const properties of [{use: 'outbuilding'}, {use: 'unknown'}, {}])
     assert.deepEqual(colourOf(properties), expected(colors.buildings.generic));
   // A tone, the reason for a building's palette, comes before its use.
   assert.deepEqual(
-    colourOf({class: 'residential', building_tone: 'destination'}),
+    colourOf({use: 'residential', tone: 'destination'}),
     expected(colors.buildings.destination),
   );
   assertValid([buildings]);
@@ -536,12 +578,21 @@ function contribution(
   return result;
 }
 
-function assertValid(contributions: readonly TileflowLayerContribution[]): void {
+function layer(layers: ReturnType<typeof assembleTileflowLayers>, id: string) {
+  const result = layers.find((entry) => entry.id === id);
+  assert.ok(result, `Missing ${id}`);
+  return result;
+}
+
+function assertValid(
+  contributions: readonly TileflowLayerContribution[],
+  data?: Parameters<typeof assembleTileflowLayers>[1],
+): void {
   const style = {
     version: 8 as const,
     glyphs: 'https://example.test/fonts/{fontstack}/{range}.pbf',
     sources: {tileflow: {type: 'vector' as const, url: 'https://example.test/tiles.json'}},
-    layers: assembleTileflowLayers(contributions),
+    layers: assembleTileflowLayers(contributions, data),
   };
   assert.deepEqual(validateStyleMin(style), []);
 }
@@ -554,6 +605,10 @@ function evaluate(value: unknown, properties: Record<string, unknown>): unknown 
   if (!Array.isArray(value)) return value;
   const [operator, ...args] = value;
   switch (operator) {
+    case 'literal':
+      return args[0];
+    case 'to-string':
+      return String(evaluate(args[0], properties) ?? '');
     case '!':
       return !evaluate(args[0], properties);
     case '!=':
@@ -574,9 +629,13 @@ function evaluate(value: unknown, properties: Record<string, unknown>): unknown 
       return Object.prototype.hasOwnProperty.call(properties, String(args[0]));
     case 'match': {
       const input = evaluate(args[0], properties);
-      const labels = args[1];
-      const matched = Array.isArray(labels) ? labels.includes(input) : labels === input;
-      return evaluate(matched ? args[2] : args[3], properties);
+      for (let index = 1; index < args.length - 1; index += 2) {
+        const labels = args[index];
+        if (Array.isArray(labels) ? labels.includes(input) : labels === input) {
+          return evaluate(args[index + 1], properties);
+        }
+      }
+      return evaluate(args.at(-1), properties);
     }
     case 'to-number': {
       for (const candidate of args) {

@@ -153,7 +153,6 @@ const approvedLightStyleColors = new Set([
   '#DDEAD4',
   '#DEE7E9',
   '#E0D7CB',
-  '#E2EBF7',
   '#E32A1B',
   '#E4EAE9',
   '#E7A3A4',
@@ -186,7 +185,6 @@ const approvedLightStyleColors = new Set([
   '#FF809A',
   '#FFA552',
   '#FFC77A',
-  '#FFF5E8',
   '#FFFFFF',
   'RGBA(0, 0, 0, 0)',
   'RGBA(0, 0, 0, 0.06)',
@@ -345,11 +343,11 @@ test('Streets exposes complete palette variants on one map identity', () => {
   assert.equal(style.sprite, '/tileflow/test/streets-dark/sprite');
   const overviewShield = requireLayer(style, 'tileflow-label-road-shield-overview');
   const detailShield = requireLayer(style, 'tileflow-label-road-shield-detail');
-  assert.equal(overviewShield['source-layer'], 'transportation_shield');
+  assert.equal(overviewShield['source-layer'], 'road_shield');
   assert.equal(overviewShield.layout?.['symbol-placement'], 'point');
   assert.equal(overviewShield.minzoom, 6);
   assert.equal(overviewShield.maxzoom, 11);
-  assert.equal(detailShield['source-layer'], 'transportation_name');
+  assert.equal(detailShield['source-layer'], 'road_label');
   assert.equal(detailShield.layout?.['symbol-placement'], 'line');
   assert.equal(detailShield.minzoom, 11);
   assert.deepEqual(detailShield.layout?.['symbol-spacing'], [
@@ -456,7 +454,7 @@ test('Streets Dark recolors every color-bearing Streets layer without major ligh
   );
   assert.deepEqual(requireLayer(dark, 'tileflow-buildings-fill').paint?.['fill-color'], [
     'match',
-    ['get', 'building_tone'],
+    ['get', 'tone'],
     ['commercial', 'active'],
     darkColors['buildings.flat.active'],
     darkColors['buildings.flat.neutral'],
@@ -465,15 +463,15 @@ test('Streets Dark recolors every color-bearing Streets layer without major ligh
     requireLayer(dark, 'tileflow-buildings-native-extrusion').paint?.['fill-extrusion-color'],
     [
       'match',
-      ['get', 'building_tone'],
+      ['get', 'tone'],
       ['commercial', 'active'],
       darkColors['buildings.flat.active'],
       darkColors['buildings.raised.neutral'],
     ],
   );
   assert.equal(
-    requireLayer(dark, 'tileflow-land-render-businessArea').paint?.['fill-color'],
-    darkColors['landuse.businessCorridor'],
+    requireLayer(dark, 'tileflow-land-render-activityAreas').paint?.['fill-color'],
+    darkColors['landuse.activity'],
   );
 
   const serialized = JSON.stringify(dark).toUpperCase();
@@ -569,14 +567,14 @@ test('Streets uses blue road decks with darker casings at street detail', () => 
           (l.maxzoom ?? 25) > 17.97 &&
           featureFilter(l.filter as never).filter({zoom: 17.97}, {
             type: 2,
-            properties: {class: roadClass, brunnel: structure},
+            properties: {class: roadClass, structure},
           } as never),
       );
       assert.ok(layer);
       return layer;
     };
-    const surfaceCasing = casingFor('surface', 'minor');
-    const bridgeCasing = casingFor('bridge', 'minor');
+    const surfaceCasing = casingFor('surface', 'street');
+    const bridgeCasing = casingFor('bridge', 'street');
     const bridgeDeck = requireLayer(style, 'tileflow-road-bridge-minor-fill');
 
     assert.match(
@@ -611,7 +609,7 @@ test('Streets uses blue road decks with darker casings at street detail', () => 
       assert.ok(
         Math.abs(
           Number(
-            gap.value.evaluate({zoom: 17.97}, {type: 2, properties: {class: 'minor'}} as never),
+            gap.value.evaluate({zoom: 17.97}, {type: 2, properties: {class: 'street'}} as never),
           ) -
             (0.5 + ((20 - 0.5) * (1.5 ** (17.97 - 12) - 1)) / (1.5 ** 6 - 1)),
         ) < 1e-9,
@@ -619,7 +617,7 @@ test('Streets uses blue road decks with darker casings at street detail', () => 
       );
     }
 
-    for (const roadClass of ['minor', 'primary', 'motorway']) {
+    for (const roadClass of ['street', 'primary', 'motorway']) {
       const tunnel = casingFor('tunnel', roadClass);
       assert.deepEqual(tunnel.paint?.['line-dasharray'], [3, 3]);
     }
@@ -631,7 +629,7 @@ test('Streets uses blue road decks with darker casings at street detail', () => 
       }
     }
 
-    const construction = {type: 2, properties: {class: 'minor_construction'}} as never;
+    const construction = {type: 2, properties: {class: 'construction', type: 'street'}} as never;
     const opacity = createPropertyExpression(
       surfaceCasing.paint?.['line-opacity'],
       styleSpec.paint_line['line-opacity'],
@@ -718,7 +716,7 @@ test('Streets preserves reference detail widths and class thresholds from z0 thr
     primary: {start: 6, widths: [0.8, 3, 28, 280]},
     secondary: {start: 8, widths: [0, 2.2, 26, 260]},
     tertiary: {start: 8, widths: [0, 2.2, 26, 260]},
-    minor: {start: 12, widths: [0, 0.5, 20, 200]},
+    street: {start: 12, widths: [0, 0.5, 20, 200]},
     service: {start: 15, widths: [0, 0, 10, 100]},
     track: {start: 15, widths: [0, 0, 10, 100]},
   };
@@ -779,9 +777,9 @@ test('Streets preserves reference detail widths and class thresholds from z0 thr
     const supportsRamp = ['motorway', 'trunk', 'primary', 'secondary', 'tertiary'].includes(
       roadClass,
     );
-    for (const flags of [{}, {expressway: 1}, ...(supportsRamp ? [{ramp: 1}] : [])]) {
-      const ramp = 'ramp' in flags;
-      const feature = {type: 2, properties: {class: roadClass, oneway: 1, ...flags}} as never;
+    for (const flags of [{}, {expressway: true}, ...(supportsRamp ? [{link: true}] : [])]) {
+      const ramp = 'link' in flags;
+      const feature = {type: 2, properties: {class: roadClass, oneway: true, ...flags}} as never;
       const widths = ramp
         ? ['motorway', 'trunk'].includes(roadClass)
           ? [0, 0.8, 20, 200]
@@ -811,7 +809,7 @@ test('Streets preserves reference detail widths and class thresholds from z0 thr
         );
         const expected = interpolate(z, [3, 12, 18, 22], widths);
         const authoredOverview =
-          !ramp && z < 15 && ['primary', 'secondary', 'tertiary', 'minor'].includes(roadClass);
+          !ramp && z < 15 && ['primary', 'secondary', 'tertiary', 'street'].includes(roadClass);
         for (const fill of authoredOverview ? [] : fills) {
           assert.equal(fill.width.result, 'success');
           if (fill.width.result === 'success')
@@ -847,8 +845,16 @@ test('Streets keeps available districts when source ranks change between tile zo
   for (const theme of ['light', 'dark'] as const) {
     const layer = requireLayer(compile(theme), 'tileflow-label-place-neighborhood');
     const filter = featureFilter(layer.filter as never).filter;
-    const accepts = (zoom: number, name: string, rank: number, placeClass = 'suburb') =>
-      filter({zoom}, {type: 'Point', properties: {name, rank, class: placeClass}} as never);
+    const accepts = (zoom: number, name: string, symbolrank: number, type = 'suburb') =>
+      filter({zoom}, {
+        type: 'Point',
+        properties: {
+          name,
+          symbolrank,
+          class: type === 'city' ? 'settlement' : 'settlement_subdivision',
+          type,
+        },
+      } as never);
 
     // World tiles observed at this camera give Manhattan a different rank at
     // each zoom. Zooming in must not discard a district that was already visible.
@@ -951,13 +957,13 @@ test('Streets restores Mapbox-scale contrast at city overview and building detai
     /"residential"\],"#F5F3F3"/u,
   );
   assert.equal(
-    requireLayer(style, 'tileflow-land-render-businessArea').paint?.['fill-color'],
+    requireLayer(style, 'tileflow-land-render-activityAreas').paint?.['fill-color'],
     '#F9EFDD',
   );
   const buildingFill = requireLayer(style, 'tileflow-buildings-fill');
   assert.deepEqual(buildingFill.paint?.['fill-color'], [
     'match',
-    ['get', 'building_tone'],
+    ['get', 'tone'],
     ['commercial', 'active'],
     '#EFEBDE',
     '#E7EBEA',
@@ -1100,11 +1106,12 @@ test('Streets contact shadows only shade raised buildings that meet the ground',
       const accepts = (properties: Record<string, unknown>) =>
         filter({zoom: 18}, {type: 3, properties} as never);
       assert.equal(accepts({}), true);
-      assert.equal(accepts({render_height: 12}), true);
-      assert.equal(accepts({render_height: '12', render_min_height: '0'}), true);
-      assert.equal(accepts({render_height: 12, render_min_height: 4}), false);
-      assert.equal(accepts({render_height: 0}), false);
-      for (const hide_3d of [true, 1, '1']) assert.equal(accepts({hide_3d}), false);
+      assert.equal(accepts({height: 12}), true);
+      assert.equal(accepts({height: 12, extrude: true}), true);
+      assert.equal(accepts({height: '12', min_height: '0'}), true);
+      assert.equal(accepts({height: 12, min_height: 4}), false);
+      assert.equal(accepts({height: 0}), false);
+      assert.equal(accepts({height: 12, extrude: false}), false);
       assert.equal(layer.layout?.visibility, 'none');
       assert.equal(layer.metadata?.['tileflow:3d-toggle'], 'building');
       assert.ok(style.layers.indexOf(layer) < extrusionIndex);
@@ -1151,7 +1158,7 @@ test('Streets Dark retains every public render-stack contribution and refinement
     'boundaries.render.admin2Background',
     'boundaries.render.admin4Background',
     'boundaries.render.admin6',
-    'land.render.businessArea',
+    'land.render.activityAreas',
     'buildings.render.shadowSoft',
     'buildings.render.shadowCore',
     'buildings.render.extrusion',
@@ -1246,7 +1253,7 @@ test('Streets Dark recolors POI labels with shared artwork and identical ranked 
       for (const category of categories) {
         const icon = expression.value.evaluate({zoom: 16}, {
           type: 1,
-          properties: {category},
+          properties: {class: category},
         } as never);
         const name = typeof icon === 'string' ? icon : icon.name;
         assert.ok(availableIcons.has(name), `${category}: missing themed icon ${name}`);
@@ -1254,8 +1261,8 @@ test('Streets Dark recolors POI labels with shared artwork and identical ranked 
     }
     assert.deepEqual(darkLayer.layout?.['symbol-sort-key'], [
       '+',
-      ['*', ['to-number', ['get', 'filter_rank'], 6], 17],
-      ['to-number', ['get', 'size_rank'], 17],
+      ['*', ['to-number', ['get', 'filterrank'], 6], 17],
+      ['to-number', ['get', 'sizerank'], 17],
     ]);
     assert.equal(lightLayer.layout?.['icon-size'], 1);
     assert.deepEqual(lightLayer.layout?.['text-font'], ['DINish Medium', 'Noto Sans Regular']);
@@ -1271,7 +1278,7 @@ test('Streets Dark recolors POI labels with shared artwork and identical ranked 
         String(
           (textColor.value as {evaluate: (...args: unknown[]) => unknown}).evaluate(
             {zoom: 16},
-            {type: 1, properties: {category}},
+            {type: 1, properties: {class: category}},
           ),
         ),
         String(Color.parse(darkCategoryColors[category])),
@@ -1330,7 +1337,7 @@ test('Streets keeps ferries subordinate and limits attributed hillshade to regio
     ]);
     const label = style.layers.find(({id}) => id.includes('ferry') && id.includes('label'));
     assert.ok(label);
-    assert.equal(label['source-layer'], 'transportation_name');
+    assert.equal(label['source-layer'], 'road_label');
     assert.equal(label.minzoom, 15);
     assert.equal(label.layout?.['symbol-placement'], 'line');
     assert.equal(label.layout?.['text-transform'], 'uppercase');
@@ -1344,7 +1351,7 @@ test('Streets keeps ferries subordinate and limits attributed hillshade to regio
     );
     const accepts = (properties: Record<string, string>) =>
       featureFilter(label.filter as never).filter({zoom: 16}, {type: 2, properties});
-    for (const properties of [{class: 'ferry'}, {class: 'transit', subclass: 'ferry'}]) {
+    for (const properties of [{class: 'ferry'}, {class: 'transit', type: 'ferry'}]) {
       assert.equal(accepts({...properties, name: 'Paulus Hook – Pier 11'}), true);
     }
     assert.equal(accepts({class: 'primary', name: 'Battery Place'}), false);
@@ -1373,17 +1380,21 @@ test('Streets label scales follow the reference hierarchy across overview and st
     const country = requireLayer(style, 'tileflow-label-place-country');
     const city = requireLayer(style, 'tileflow-label-place-city');
     const district = requireLayer(style, 'tileflow-label-place-neighborhood');
-    assert.equal(labelNumber(country, 'text-size', 1, {rank: 2}), 11);
-    assert.equal(labelNumber(country, 'text-size', 9, {rank: 2}), 22);
-    assert.equal(labelNumber(country, 'text-size', 9, {rank: 4}), 19);
-    assert.equal(labelNumber(country, 'text-size', 9, {rank: 5}), 17);
+    assert.equal(labelNumber(country, 'text-size', 1, {symbolrank: 2}), 11);
+    assert.equal(labelNumber(country, 'text-size', 9, {symbolrank: 2}), 22);
+    assert.equal(labelNumber(country, 'text-size', 9, {symbolrank: 4}), 19);
+    assert.equal(labelNumber(country, 'text-size', 9, {symbolrank: 5}), 17);
     assert.equal(country.paint?.['text-halo-width'], 1.25);
-    assert.equal(labelNumber(city, 'text-size', 6, {rank: 2}), 18);
-    assert.equal(labelNumber(city, 'text-size', 6, {rank: 6}), 16);
-    assert.equal(labelNumber(city, 'text-size', 15, {rank: 10}), 20);
-    assert.equal(labelNumber(district, 'text-size', 11, {class: 'suburb'}), 12);
-    assert.equal(labelNumber(district, 'text-size', 15, {class: 'suburb'}), 16);
-    assert.equal(labelNumber(district, 'text-size', 15, {class: 'neighbourhood'}), 15);
+    assert.equal(labelNumber(city, 'text-size', 6, {symbolrank: 2}), 18);
+    assert.equal(labelNumber(city, 'text-size', 6, {symbolrank: 6}), 16);
+    assert.equal(labelNumber(city, 'text-size', 15, {symbolrank: 10}), 20);
+    const subdivision = 'settlement_subdivision';
+    assert.equal(labelNumber(district, 'text-size', 11, {class: subdivision, type: 'suburb'}), 12);
+    assert.equal(labelNumber(district, 'text-size', 15, {class: subdivision, type: 'suburb'}), 16);
+    assert.equal(
+      labelNumber(district, 'text-size', 15, {class: subdivision, type: 'neighbourhood'}),
+      15,
+    );
     assert.equal(district.paint?.['text-halo-width'], 1.3);
     assert.equal(district.paint?.['text-halo-blur'], 0);
     assert.deepEqual(requireLayer(style, 'tileflow-label-place-state').layout?.['text-font'], [
@@ -1397,7 +1408,7 @@ test('Streets label scales follow the reference hierarchy across overview and st
       'primary',
       'secondary',
       'tertiary',
-      'minor',
+      'street',
       'service',
     ]) {
       let observed = 0;
@@ -1513,24 +1524,29 @@ test('Streets street names yield to destinations and buildings without flattenin
           (layer.maxzoom ?? 24) > 18 &&
           featureFilter(layer.filter as never).filter({zoom: 18}, {type: 2, properties}),
       );
-    for (const roadClass of [
-      'motorway',
-      'trunk',
-      'primary',
-      'secondary',
-      'tertiary',
-      'minor',
-      'residential',
-      'unclassified',
-      'service',
-      'track',
-      'busway',
-      'bus_guideway',
-      'minor_construction',
+    for (const road of [
+      ...[
+        'motorway',
+        'trunk',
+        'primary',
+        'secondary',
+        'tertiary',
+        'street',
+        'service',
+        'track',
+        'busway',
+      ].map((roadClass) => ({class: roadClass})),
+      {class: 'construction', type: 'street'},
+      {class: 'construction', type: 'residential'},
     ]) {
-      assert.equal(accepts({name: 'Main Street', class: roadClass}).length, 1, roadClass);
+      const label = JSON.stringify(road);
+      assert.equal(accepts({name: 'Main Street', ...road}).length, 1, label);
     }
-    for (const subclass of [
+    for (const type of ['path', 'bridleway', 'corridor', 'footway', 'cycleway', 'steps']) {
+      assert.equal(accepts({name: 'Park path', class: 'path', type}).length, 1, type);
+    }
+    assert.equal(accepts({name: 'Park path', class: 'pedestrian'}).length, 1, 'pedestrian');
+    for (const type of [
       'path',
       'bridleway',
       'corridor',
@@ -1539,14 +1555,13 @@ test('Streets street names yield to destinations and buildings without flattenin
       'steps',
       'pedestrian',
     ]) {
-      assert.equal(accepts({name: 'Park path', class: 'path', subclass}).length, 1, subclass);
       assert.equal(
-        accepts({name: 'Park path', class: 'path_construction', subclass}).length,
+        accepts({name: 'Park path', class: 'construction', type}).length,
         1,
-        subclass,
+        `${type} construction`,
       );
     }
-    for (const properties of [{class: 'minor'}, {name: 'Ferry', class: 'ferry'}]) {
+    for (const properties of [{class: 'street'}, {name: 'Ferry', class: 'ferry'}]) {
       assert.equal(accepts(properties).length, 0);
     }
     assert.equal(
@@ -1567,51 +1582,48 @@ test('Streets places every POI category by World rank and density without anonym
     z: number,
     properties: Record<string, unknown>,
   ) => featureFilter(layer.filter as never).filter({zoom: z}, {type: 1, properties});
-  const park = {category: 'park-nature', name: 'Park', filter_rank: 2, size_rank: 0};
+  const park = {class: 'park-nature', name: 'Park', filterrank: 2, sizerank: 0};
   assert.equal(accepts(ordinary, 15, park), true);
   const {name: _name, ...unnamedPark} = park;
-  const {filter_rank: _rank, ...unrankedPark} = park;
+  const {filterrank: _rank, ...unrankedPark} = park;
   assert.equal(accepts(ordinary, 15, unnamedPark), false);
   assert.equal(accepts(ordinary, 15, unrankedPark), false);
-  assert.equal(accepts(ordinary, 15, {...park, size_rank: 17}), false);
+  assert.equal(accepts(ordinary, 15, {...park, sizerank: 17}), false);
   // Parks/transport retain rank 3; other categories enter more selectively.
-  const ordinaryLandmark = {category: 'landmark', name: 'Building', filter_rank: 3, size_rank: 16};
+  const ordinaryLandmark = {class: 'landmark', name: 'Building', filterrank: 3, sizerank: 16};
   assert.equal(accepts(ordinary, 15, ordinaryLandmark), false);
-  assert.equal(accepts(ordinary, 15, {...ordinaryLandmark, filter_rank: 2}), true);
-  const smallBusiness = {category: 'food-drink', name: 'Cafe', filter_rank: 5, size_rank: 16};
+  assert.equal(accepts(ordinary, 15, {...ordinaryLandmark, filterrank: 2}), true);
+  const smallBusiness = {class: 'food-drink', name: 'Cafe', filterrank: 5, sizerank: 16};
   assert.equal(accepts(ordinary, 16, smallBusiness), false);
   assert.equal(accepts(ordinary, 17, smallBusiness), false);
-  assert.equal(accepts(ordinary, 17, {...smallBusiness, filter_rank: 4}), false);
-  assert.equal(accepts(ordinary, 18, {...smallBusiness, filter_rank: 4}), true);
-  assert.equal(
-    accepts(ordinary, 17, {...smallBusiness, category: 'lodging', filter_rank: 4}),
-    false,
-  );
-  assert.equal(accepts(ordinary, 18, {...smallBusiness, category: 'park-nature'}), true);
+  assert.equal(accepts(ordinary, 17, {...smallBusiness, filterrank: 4}), false);
+  assert.equal(accepts(ordinary, 18, {...smallBusiness, filterrank: 4}), true);
+  assert.equal(accepts(ordinary, 17, {...smallBusiness, class: 'lodging', filterrank: 4}), false);
+  assert.equal(accepts(ordinary, 18, {...smallBusiness, class: 'park-nature'}), true);
   // World's two most important ranks are placed before street and place names.
-  const louvre = {category: 'arts-entertainment', name: 'Musée', filter_rank: 0, size_rank: 0};
+  const louvre = {class: 'arts-entertainment', name: 'Musée', filterrank: 0, sizerank: 0};
   assert.equal(accepts(prominent, 14, louvre), true);
   assert.equal(accepts(ordinary, 14, louvre), false);
   assert.equal(accepts(prominent, 14, park), false);
   // Parking and toilets explain themselves and need no name.
   assert.equal(
     accepts(ordinary, 18, {
-      category: 'visitor-amenity',
+      class: 'visitor-amenity',
       type: 'parking',
-      filter_rank: 4,
-      size_rank: 9,
+      filterrank: 4,
+      sizerank: 9,
     }),
     true,
   );
-  const parkLabel = {category: 'park-nature', filter_rank: 1, size_rank: 0};
+  const parkLabel = {class: 'park-nature', filterrank: 1, sizerank: 0};
   assert.equal(labelNumber(prominent, 'text-size', 15, parkLabel), 13);
   assert.equal(labelNumber(prominent, 'text-size', 17, parkLabel), 18);
   assert.equal(
-    labelNumber(ordinary, 'text-size', 20, {category: 'food-drink', filter_rank: 3, size_rank: 16}),
+    labelNumber(ordinary, 'text-size', 20, {class: 'food-drink', filterrank: 3, sizerank: 16}),
     13,
   );
   assert.equal(
-    labelNumber(ordinary, 'text-size', 17, {category: 'transport', filter_rank: 0, size_rank: 0}),
+    labelNumber(ordinary, 'text-size', 17, {class: 'transport', filterrank: 0, sizerank: 0}),
     13,
   );
   assert.equal(labelNumber(ordinary, 'text-padding', 16), 6);
@@ -1622,14 +1634,14 @@ test('Streets keeps principal gardens and suppresses botanical collections at ev
   // Observed World features in Madrid's botanical garden; the shared type alone cannot
   // distinguish its destination from the named planting sections inside it.
   const gardens = [
-    {name: 'Real Jardín Botánico de Madrid', filter_rank: 1, size_rank: 0, visible: true},
-    {name: 'Rosaleda', filter_rank: 3, size_rank: 1, visible: false},
-    {name: 'Huerta y frutales', filter_rank: 3, size_rank: 3, visible: false},
-    {name: 'Plantas ornamentales', filter_rank: 2, size_rank: 1, visible: false},
-    {name: 'Comelínidas', filter_rank: 2, size_rank: 3, visible: false},
+    {name: 'Real Jardín Botánico de Madrid', filterrank: 1, sizerank: 0, visible: true},
+    {name: 'Rosaleda', filterrank: 3, sizerank: 1, visible: false},
+    {name: 'Huerta y frutales', filterrank: 3, sizerank: 3, visible: false},
+    {name: 'Plantas ornamentales', filterrank: 2, sizerank: 1, visible: false},
+    {name: 'Comelínidas', filterrank: 2, sizerank: 3, visible: false},
   ];
   for (const theme of ['light', 'dark'] as const) {
-    const layers = compile(theme).layers.filter((layer) => layer['source-layer'] === 'poi');
+    const layers = compile(theme).layers.filter((layer) => layer['source-layer'] === 'poi_label');
     for (const zoom of [15, 16, 18, 22, 24]) {
       const accepts = (properties: Record<string, unknown>) =>
         layers.some((layer) =>
@@ -1637,28 +1649,28 @@ test('Streets keeps principal gardens and suppresses botanical collections at ev
         );
       for (const {visible, ...garden} of gardens) {
         assert.equal(
-          accepts({category: 'park-nature', type: 'garden', ...garden}),
+          accepts({class: 'park-nature', type: 'garden', ...garden}),
           visible,
           `${theme}, z${zoom}, ${garden.name}`,
         );
       }
       assert.equal(
         accepts({
-          category: 'park-nature',
+          class: 'park-nature',
           type: 'park',
           name: 'Parque del Retiro',
-          filter_rank: 2,
-          size_rank: 0,
+          filterrank: 2,
+          sizerank: 0,
         }),
         true,
       );
       assert.equal(
         accepts({
-          category: 'landmark',
+          class: 'landmark',
           type: 'monument',
           name: 'Monument',
-          filter_rank: 1,
-          size_rank: 16,
+          filterrank: 1,
+          sizerank: 16,
         }),
         true,
       );

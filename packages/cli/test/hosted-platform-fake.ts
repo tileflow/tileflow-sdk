@@ -18,7 +18,7 @@ import {
 } from '@tileflow/core/native-profile';
 
 /**
- * An in-process fake of the Hosted renderer deployment protocol: `POST /v1/styles` with a schema-3
+ * An in-process fake of the Hosted renderer deployment protocol: `POST /v1/styles` with a schema-5
  * request, 202 with the missing native documents, a create-only `PUT` for each document (theme
  * styles first, the family document last and checked against Core) and the same `POST` to
  * activate. It follows the platform's routes, status codes and reply shapes; it stores nothing
@@ -150,9 +150,9 @@ export async function startFakePlatform(
       platform.deployments.push({body, status: reply.status});
       return reply;
     };
-    if (body.artifact?.schemaVersion === 2)
+    if ([2, 4].includes(body.artifact?.schemaVersion))
       return answer(failure(400, 'TF_RENDERER_DEPLOYMENT_RETIRED'));
-    if (body.artifact?.schemaVersion !== 3)
+    if (body.artifact?.schemaVersion !== 5)
       return answer(failure(400, 'TF_NATIVE_FAMILY_REQUIRED'));
     if (body.managedMapId !== mapId || body.usageMode !== 'session')
       return answer(failure(403, 'TF_MAP_FORBIDDEN'));

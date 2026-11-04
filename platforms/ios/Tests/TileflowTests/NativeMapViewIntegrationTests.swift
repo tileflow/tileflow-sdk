@@ -117,6 +117,30 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     }
   }
 
+  func testStreetsLoadsAtCityZoomWithItsHostedClimateLayer() async throws {
+    try await requireNativeFixture()
+    let events = NativeMapEvents()
+    let source = TileflowMapSource(
+      map: "streets", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
+    let view = TileflowMapView(source: source)
+    view.engineKind = .native
+    let window = mount(view, events: events)
+    defer {
+      view.destroy()
+      window.isHidden = true
+    }
+
+    try await events.waitForLoads(1)
+    let camera = try await view.camera()
+    let style = try XCTUnwrap((view.engine as? NativeMapEngine)?.mapView?.style)
+    let climate = try XCTUnwrap(
+      style.layer(withIdentifier: "tileflow-global-landcover-underlay") as? MLNRasterStyleLayer)
+    XCTAssertGreaterThan(camera.zoom, Double(climate.maximumZoomLevel))
+    XCTAssertTrue(
+      style.source(withIdentifier: "tileflow-landcover-underlay") is MLNRasterTileSource)
+    XCTAssertTrue(events.failures.isEmpty, "\(events.failures)")
+  }
+
   /// The city map holds a world image drawn only below zoom 11, as Streets' climate underlay is. At
   /// zoom 16 no layer draws it, which MapLibre Native takes for an image source still loading: the
   /// map must load all the same, and draw the image once the camera zooms out to it.

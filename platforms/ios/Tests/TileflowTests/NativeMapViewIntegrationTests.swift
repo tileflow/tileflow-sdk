@@ -546,6 +546,90 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     XCTAssertTrue(events.failures.isEmpty)
   }
 
+  func testBoundaryReplacementErasesEachOldValueAndPreservesOtherKeys() async throws {
+    let source = TileflowMapSource(map: "appearance", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
+    let view = TileflowMapView(source: source)
+    view.engineKind = .native
+    let events = NativeMapEvents()
+    let window = mount(view, events: events)
+    defer { view.destroy(); window.isHidden = true }
+    try await events.waitForLoads(1)
+    guard let engine = view.engine as? NativeMapEngine, let map = engine.mapView else { return XCTFail("A native map") }
+    let areas = try XCTUnwrap(map.style?.source(withIdentifier: "tileflow-boundaries") as? MLNVectorTileSource)
+    for id in ["41","42"] {
+      XCTAssertTrue(areas.setFeatureState(sourceLayerID: "boundary_area", featureID: id, state: ["other": true]))
+    }
+    try await view.setBoundaryValues(.init(ids: [41: 7,42:8],labels:true,state:"score"))
+    func contains(_ layer: String, _ id: String, _ key: String) -> Bool {
+      areas.featureState(sourceLayerID: layer, featureID: id)?[key] != nil
+    }
+    try await waitUntil { ["41","42"].allSatisfy { contains("boundary_area",$0,"score") && contains("boundary_label",$0,"score") } }
+    try await view.setBoundaryValues(.init(ids: [43: 9],state:"score"))
+    try await waitUntil(seconds: 2) { ["41","42"].allSatisfy { !contains("boundary_area",$0,"score") && !contains("boundary_label",$0,"score") } }
+    XCTAssertTrue(contains("boundary_area","43","score"))
+    XCTAssertFalse(contains("boundary_label","43","score"))
+    XCTAssertTrue(contains("boundary_area","41","other"))
+    XCTAssertTrue(contains("boundary_area","42","other"))
+  }
+
+  func testStateResetRestoresDefaultsFromTheNewThemeAndDateUsesTheMapCenter() async throws {
+    let view = TileflowMapView(source: TileflowMapSource(map:"scene",manifestURL:FixtureServer.manifest,allowsLoopbackHTTP:true))
+    view.engineKind = .native
+    let events = NativeMapEvents()
+    let window = mount(view, events: events)
+    defer { view.destroy(); window.isHidden = true }
+    try await events.waitForLoads(1)
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+    func style() throws -> MLNStyle { try XCTUnwrap(engine.mapView?.style) }
+    try await view.setStyleState("fixture-opacity",to:0.25)
+    try await view.setStyleState("fixture-mode",to:"overridden")
+    try await view.setStyleState("fixture-mode",to:.null)
+    try await view.setStyleState("fixture-opacity",to:.null)
+    XCTAssertEqual(try style().globalState["fixture-mode"] as? String,"base")
+    XCTAssertEqual(try style().globalState["fixture-opacity"] as? Double,1)
+    let camera = try await view.camera()
+    let time = 1_782_064_800.0
+    let expected = NativeSun.position(date:time*1000, location:.init(longitude:camera.longitude,latitude:camera.latitude))
+    try await view.setSun(.date(Date(timeIntervalSince1970:time)))
+    let light = try XCTUnwrap(try style().light.position.constantValue as? NSValue).mlnSphericalPositionValue
+    XCTAssertEqual(light.azimuthal,expected.azimuth,accuracy:0.001)
+    XCTAssertEqual(light.polar,min(90,max(0,90-expected.altitude)),accuracy:0.001)
+    try await view.setTheme("night")
+    XCTAssertEqual(try style().globalState["fixture-mode"] as? String,"base")
+    XCTAssertEqual(try style().globalState["fixture-opacity"] as? Double,1)
+  }
+
+  func testBoundaryFeatureStateChangesRenderedDistrictPixels() async throws {
+    let source = TileflowMapSource(map: "districts", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true)
+    let view = TileflowMapView(source: source)
+    view.engineKind = .native
+    let events = NativeMapEvents()
+    let window = mount(view, events: events)
+    defer { view.destroy(); window.isHidden = true }
+    try await events.waitForLoads(1)
+    let map = try XCTUnwrap((view.engine as? NativeMapEngine)?.mapView)
+    let point = try await view.project(Self.center)
+    try await waitUntil { map.visibleFeatures(at: point,styleLayerIdentifiers:["district-fill"]).contains { ($0.identifier as? NSNumber)?.intValue == 41 } }
+    let pixel = view.convert(point,to:window)
+    func waitForColor(_ expected: UInt32) async throws {
+      var last = ""
+      for _ in 0..<60 {
+        let image = PixelReader(NativeOfflineElevationTests.snapshot(window))
+        last = image.hex(pixel)
+        if image.matches(pixel, expected) { return }
+        try await Task.sleep(for: .milliseconds(50))
+      }
+      XCTFail("Expected district color \(String(expected, radix:16)), saw \(last)")
+    }
+    try await waitForColor(0x00ff00)
+    try await view.setBoundaryValues(.init(ids:[41:1]))
+    try await waitForColor(0xff0000)
+    try await view.setBoundaryValues(.init(ids:[41:2]))
+    try await waitForColor(0x0000ff)
+    try await view.setBoundaryValues(nil)
+    try await waitForColor(0x00ff00)
+  }
+
   func testNativeSceneDrawsProgressAndDepthSymbolsAndPlaysShots() async throws {
     try await requireNativeFixture()
     let events = NativeMapEvents()

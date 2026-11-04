@@ -12,6 +12,8 @@ final class NativeMapScene {
   private var transitions: [String: UUID] = [:]
   private(set) var boundaryValues = BoundaryRows()
   private var boundaryPending = Set<String>()
+  private struct Removal: Hashable { let layer: String; let id: String; let key: String }
+  private var boundaryRemovals: Set<Removal> = []
   private var lastBoundaryRetry = false
 
   init(_ engine: NativeMapEngine) { self.engine = engine }
@@ -108,6 +110,7 @@ final class NativeMapScene {
     guard let style else { return }
     applyLight()
     for (name, value) in states { style.setGlobalStateValue(value == .null ? nil : value.foundation, forProperty: name) }
+    boundaryRemovals.removeAll()
     boundaryPending = Set(boundaryValues.rows.keys)
     lastBoundaryRetry = false
     applyBoundaryChanges(previous: BoundaryRows())
@@ -154,21 +157,38 @@ final class NativeMapScene {
     guard let source = style?.source(withIdentifier: "tileflow-boundaries") as? MLNVectorTileSource else { return }
     for layer in previous.sourceLayers {
       for id in previous.rows.keys where previous.state != boundaryValues.state || !boundaryValues.sourceLayers.contains(layer) || boundaryValues.rows[id] == nil {
-        _ = source.removeFeatureState(sourceLayerID: layer, featureID: id, stateKey: previous.state)
+        let removal = Removal(layer: layer, id: id, key: previous.state)
+        boundaryRemovals.insert(removal)
+        erase(removal, from: source)
       }
     }
     boundaryPending.formIntersection(boundaryValues.rows.keys)
     for layer in boundaryValues.sourceLayers {
       for (id,value) in boundaryValues.rows where previous.state != boundaryValues.state || !previous.sourceLayers.contains(layer) || previous.rows[id] != value {
+        boundaryRemovals.remove(Removal(layer: layer, id: id, key: boundaryValues.state))
         _ = source.setFeatureState(sourceLayerID: layer, featureID: id, state: [boundaryValues.state: value.foundation])
         boundaryPending.insert(id)
       }
     }
   }
 
+  private func erase(_ target: Removal, from source: MLNVectorTileSource) {
+    let state = source.featureState(sourceLayerID: target.layer, featureID: target.id) ?? [:]
+    if state.keys.allSatisfy({ $0 == target.key }) {
+      _ = source.removeFeatureState(sourceLayerID: target.layer, featureID: target.id)
+    } else { _ = source.removeFeatureState(sourceLayerID: target.layer, featureID: target.id, stateKey: target.key) }
+  }
+
   func confirmBoundaries() {
-    guard !boundaryPending.isEmpty, let source = style?.source(withIdentifier: "tileflow-boundaries") as? MLNVectorTileSource else { return }
+    guard !boundaryPending.isEmpty || !boundaryRemovals.isEmpty, let source = style?.source(withIdentifier: "tileflow-boundaries") as? MLNVectorTileSource else { return }
     var retried = false
+    // The renderer can coalesce two property removals on the same source layer in a frame.
+    // Confirm each removal and retry one outstanding row per layer, keeping other clients' keys.
+    var touched = Set<String>()
+    for target in boundaryRemovals {
+      if source.featureState(sourceLayerID: target.layer, featureID: target.id)?[target.key] == nil { boundaryRemovals.remove(target) }
+      else if touched.insert(target.layer).inserted { erase(target, from: source) }
+    }
     for id in boundaryPending {
       guard let value = boundaryValues.rows[id] else { boundaryPending.remove(id); continue }
       let missing = boundaryValues.sourceLayers.filter { layer in

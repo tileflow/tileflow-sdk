@@ -759,6 +759,20 @@ class OfflineStoreTest {
     }
 
     @Test
+    fun selfHostedBuildFindsTheFamilyAndFontFacesBesideItsStyles() {
+        val url = URI("https://maps.example.test/manifest.json")
+        val generation = "https://cdn.example.test/artifacts/generations/g1"
+        val style = URI("$generation/styles/city/light.json")
+        val manifest = """{"maps":{"city":{"themes":{"light":{"styleUrl":"$style"}}}}}""".toByteArray()
+        val (_, documents) = OfflineSelfHosted.manifest(url, manifest, "city")
+        val fonts = """{"font-faces":{"Display":"../../fonts/display.ttf","Text":[{"url":"../../fonts/text.ttf"}]}}""".toByteArray()
+        assertEquals(
+            setOf(url, URI("$generation/families/city.json"), style, URI("$generation/fonts/display.ttf"), URI("$generation/fonts/text.ttf")),
+            (documents + OfflineSelfHosted.documents(style, fonts)).toSet(),
+        )
+    }
+
+    @Test
     fun selfHostedRegionDownloadsItsManifestStylesFontsSpritesGlyphsAndTiles() = runBlocking<Unit> {
         val service = OfflineServiceStub()
         val store = store(service)

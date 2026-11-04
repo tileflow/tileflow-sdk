@@ -8,7 +8,6 @@ import dev.tileflow.sdk.TileflowResourceKind
 import dev.tileflow.sdk.transport.MapResourceAddress
 import dev.tileflow.sdk.transport.ResourcePolicy
 import java.net.URI
-import java.net.URLEncoder
 import org.json.JSONObject
 
 /** The theme of a map that a renderer draws, from the map's manifest. */
@@ -75,11 +74,7 @@ internal class NativeMapManifest(
     fun familyUrl(styleUrl: String): String? =
         when (representation) {
             NativeRepresentation.NATIVE -> family?.first
-            NativeRepresentation.SELF_HOSTED ->
-                MapResourceAddress.resolve(
-                    styleUrl,
-                    "../../families/${URLEncoder.encode(map, "UTF-8").replace("+", "%20")}.json",
-                )
+            NativeRepresentation.SELF_HOSTED -> MapResourceAddress.familyUrl(styleUrl, map)
             NativeRepresentation.WEB_VIEW -> null
         }
 }

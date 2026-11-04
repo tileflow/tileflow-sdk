@@ -59,6 +59,10 @@ public suspend fun TileflowMapController.addLayer(
 public suspend fun TileflowMapController.updateLayer(layer: TileflowLayer): Unit =
     attached().updateLayer(layer)
 
+/** See [TileflowMapView.updateStyleLayer]. */
+public suspend fun TileflowMapController.updateStyleLayer(properties: JSONObject): Unit =
+    attached().updateStyleLayer(properties)
+
 /** See [TileflowMapView.moveLayer]. */
 public suspend fun TileflowMapController.moveLayer(id: String, position: TileflowLayerPosition): Unit =
     attached().moveLayer(id, position)

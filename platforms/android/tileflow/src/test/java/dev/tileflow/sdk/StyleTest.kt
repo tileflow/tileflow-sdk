@@ -4,6 +4,7 @@ import android.app.Activity
 import android.webkit.WebView
 import dev.tileflow.sdk.bridge.MapBridge
 import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.engine.MapEngineKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
@@ -231,6 +232,29 @@ class StyleTest {
                 .toByteArray()
         assertNotNull(GeoJSONLog.compact(promoted, listOf(GeoJSONLog.Update(null, listOf("a"))), "ref"))
         assertNull(GeoJSONLog.compact(promoted, emptyList(), null))
+    }
+
+    @Test
+    fun invalidUpdateBeforeMountKeepsLastAcceptedLayer(): Unit = runBlocking {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val view = TileflowMapView(activity).apply { engineKind = MapEngineKind.NATIVE }
+        try {
+            view.addSource(TileflowGeoJSONSource("places", TileflowGeoJSONData.Empty))
+            val points = TileflowCircleLayer("points", "places")
+            points.circleRadius = TileflowValue.Constant(6.0)
+            view.addLayer(points)
+
+            val updated = JSONObject("""{"id":"points","type":"circle","source":"places","paint":{"circle-radius":12}}""")
+            view.updateStyleLayer(updated)
+            updated.getJSONObject("paint").put("circle-radius", 0)
+            points.circleRadius = TileflowValue.Constant(-1.0)
+            val error = runCatching { view.updateLayer(points) }.exceptionOrNull()
+            assertEquals(TileflowErrorCode.INVALID_REQUEST, (error as? TileflowMapException)?.code)
+            val radius = view.runtimeStyle.layers.single().json.getJSONObject("paint").getDouble("circle-radius")
+            assertEquals(12.0, radius, 0.0)
+        } finally {
+            view.destroy()
+        }
     }
 
     @Test

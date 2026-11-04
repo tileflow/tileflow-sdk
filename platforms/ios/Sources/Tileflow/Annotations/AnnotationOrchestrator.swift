@@ -103,6 +103,13 @@ public final class TileflowAnnotationOrchestrator {
     previous.annotationOverlay.trackingChanged()
   }
 
+  /// Finish any interrupted manager batches in the retained style before a new renderer reads it.
+  func prepareForReplay() async {
+    await queue.drain()
+    for manager in managers { manager.core.prepareForReplay() }
+    await queue.drain()
+  }
+
   /// The layers the renderer treats as annotations.
   var layerIDs: [String] { managers.map(\.id) }
   var isEmpty: Bool { managers.isEmpty }

@@ -131,6 +131,10 @@ final class AnnotationManagerCore {
   var onChange: (() -> Void)?
 
   private var added = false
+  private var addedSource = false
+  private var interrupted = false
+  /// Positions already drawn by the current renderer while the finger is down.
+  private var draggedPositions: [String: JSONValue] = [:]
   /// The feature each annotation last sent, by identifier, in order.
   private(set) var synced: [String: JSONValue] = [:]
   private var syncedLayer: JSONValue?
@@ -162,7 +166,13 @@ final class AnnotationManagerCore {
     var plan = Plan(layer: layer == syncedLayer ? nil : layer)
     let current = features.map { ($0.id, $0.featureJSON) }
     let ids = Set(current.map(\.0))
-    let changed = current.filter { synced[$0.0] != $0.1 }
+    let changed = current.filter { id, feature in
+      guard let position = draggedPositions[id], case .object(var shown) = synced[id] else {
+        return synced[id] != feature
+      }
+      shown["geometry"] = position
+      return .object(shown) != feature
+    }
     let removed = synced.keys.filter { !ids.contains($0) }.sorted()
     if !added || (changed.count + removed.count) * 2 > current.count {
       if added && changed.isEmpty && removed.isEmpty { return plan }
@@ -189,46 +199,73 @@ final class AnnotationManagerCore {
     queue?.enqueue(self)
   }
 
-  /// Records the geometry a drag gave the renderer, so it is not sent again while dragging; at the
-  /// end of a drag the feature is sent once more, so later renderers receive it.
+  /// A renderer moves the annotation itself during a drag. The style registry receives the final
+  /// position, or the current position if that renderer is replaced before the gesture ends.
   func dragged(_ annotation: any AnnotationFeature, ended: Bool) {
-    guard var previous = synced[annotation.id], case .object(var feature) = previous else { return }
-    feature["geometry"] = annotation.geometry.wireValue
-    previous = .object(feature)
-    synced[annotation.id] = ended ? .null : previous
+    if ended {
+      draggedPositions.removeValue(forKey: annotation.id)
+      synced[annotation.id] = .null
+    } else {
+      draggedPositions[annotation.id] = annotation.geometry.wireValue
+    }
+  }
+
+  func prepareForReplay() {
+    guard interrupted || !draggedPositions.isEmpty else { return }
+    interrupted = false
+    draggedPositions.removeAll()
+    queue?.enqueue(self)
   }
 
   func flush() async {
     guard let view, !view.isDestroyed else { return }
+    let renderer = view.engine
     do {
       try await syncImages(on: view, removing: false)
       let plan = plan()
-      let features = features()
-      if !added {
-        let data = try JSONEncoder().encode(plan.replace)
+      let snapshot = features()
+      if !addedSource {
+        let bytes = try JSONEncoder().encode(plan.replace)
         try await view.addSource(
-          TileflowGeoJSONSource(id: id, data: .geoJSON(data), promoteId: "id"))
-        try await view.addLayer(
-          AnnotationLayerSpec(id: id, slot: slot, json: plan.layer ?? .null), position: position)
+          TileflowGeoJSONSource(id: id, data: .geoJSON(bytes), promoteId: "id"))
+        addedSource = true
+      } else if let replacement = plan.replace {
+        try await view.setGeoJSONSourceData(
+          id, data: .geoJSON(try JSONEncoder().encode(replacement)))
       } else {
-        if let replace = plan.replace {
-          try await view.setGeoJSONSourceData(id, data: .geoJSON(try JSONEncoder().encode(replace)))
-        } else {
-          if !plan.remove.isEmpty {
-            try await view.removeGeoJSONSourceFeatures(sourceId: id, featureIds: plan.remove)
-          }
-          if !plan.update.isEmpty {
-            try await view.updateGeoJSONSourceFeatures(
-              sourceId: id, features: plan.update.map(TileflowFeature.init(wire:)))
-          }
+        if !plan.remove.isEmpty {
+          try await view.removeGeoJSONSourceFeatures(sourceId: id, featureIds: plan.remove)
         }
-        if let layer = plan.layer {
-          try await view.updateLayer(AnnotationLayerSpec(id: id, slot: slot, json: layer))
+        if !plan.update.isEmpty {
+          try await view.updateGeoJSONSourceFeatures(
+            sourceId: id, features: plan.update.map(TileflowFeature.init(wire:)))
         }
       }
-      recordSynced(features, layer: plan.layer)
+      if let layer = plan.layer {
+        let spec = AnnotationLayerSpec(id: id, slot: slot, json: layer)
+        if added {
+          try await view.updateLayer(spec)
+        } else {
+          try await view.addLayer(spec, position: position)
+        }
+      }
+      if plan.replace != nil {
+        recordSynced(snapshot, layer: plan.layer)
+      } else {
+        // Only acknowledge the changes this batch actually wrote to the retained style.
+        for id in plan.remove { synced.removeValue(forKey: id) }
+        for updated in plan.update {
+          if let id = updated["properties"]?["id"]?.string { synced[id] = updated }
+        }
+        syncedLayer = plan.layer ?? syncedLayer
+      }
       try await syncImages(on: view, removing: true)
     } catch {
+      guard self.view === view, !view.isDestroyed else { return }
+      if renderer !== view.engine {
+        interrupted = true
+        return
+      }
       let error = error as? TileflowMapError ?? .invalidRequest
       if error == .disposed { return }
       view.onEvent?(.warning(TileflowMapWarning(error: error, occurrences: 1)))
@@ -248,8 +285,8 @@ final class AnnotationManagerCore {
       return
     }
     for image in images where !addedImages.contains(image.name) {
-      addedImages.insert(image.name)
       try await view.addImage(try TileflowMapImage(name: image.name, image: image.image))
+      addedImages.insert(image.name)
     }
   }
 
@@ -257,6 +294,9 @@ final class AnnotationManagerCore {
   func attach(to view: TileflowMapView) {
     self.view = view
     added = false
+    addedSource = false
+    interrupted = false
+    draggedPositions.removeAll()
     synced = [:]
     syncedLayer = nil
     addedImages = []
@@ -267,15 +307,14 @@ final class AnnotationManagerCore {
   func detach() {
     guard let view else { return }
     self.view = nil
-    let (id, images, wasAdded) = (self.id, addedImages, added)
+    let (id, images, hadLayer, hadSource) = (self.id, addedImages, added, addedSource)
     added = false
+    addedSource = false
     addedImages = []
     guard !view.isDestroyed else { return }
     Task {
-      if wasAdded {
-        try? await view.removeLayer(id)
-        try? await view.removeSource(id)
-      }
+      if hadLayer { try? await view.removeLayer(id) }
+      if hadSource { try? await view.removeSource(id) }
       for name in images { try? await view.removeImage(name) }
     }
   }
@@ -285,17 +324,18 @@ final class AnnotationManagerCore {
 @MainActor
 final class AnnotationFlushQueue {
   private var pending: [AnnotationManagerCore] = []
-  private var running = false
+  private var worker: Task<Void, Never>?
+
+  func drain() async { await worker?.value }
 
   func enqueue(_ core: AnnotationManagerCore) {
     if !pending.contains(where: { $0 === core }) { pending.append(core) }
-    guard !running else { return }
-    running = true
-    Task { [weak self] in
+    guard worker == nil else { return }
+    worker = Task { [weak self] in
       while let self, !self.pending.isEmpty {
         await self.pending.removeFirst().flush()
       }
-      self?.running = false
+      self?.worker = nil
     }
   }
 }

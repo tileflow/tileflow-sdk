@@ -620,6 +620,8 @@ public final class TileflowMapView: UIView {
       if let request = requestedCamera, request.count != startingRequest {
         try await move(to: request.camera, animation: .none)
       }
+      await annotations.prepareForReplay()
+      guard !destroyed, generation == current else { return }
       try await replay { try await self.replayScene(through: engine) }
       try await replay { try await self.replayStyle(through: engine) }
       try await replay { try await self.replayLocation(through: engine) }

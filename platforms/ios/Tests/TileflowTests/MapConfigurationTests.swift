@@ -14,6 +14,38 @@ final class MapConfigurationTests: XCTestCase {
   private let otherCredential = "tf_public_" + String(repeating: "c", count: 48)
   private let servicesCredential = "tf_public_" + String(repeating: "b", count: 48)
 
+  func testMapDiagnosticsFilterEventsAndKeepCredentialsOutOfTheSink() async throws {
+    var entries: [TileflowMapDiagnostics.Entry] = []
+    let diagnostics = TileflowMapDiagnostics { entries.append($0) }
+    let map = TileflowMapView(source: .hosted(mapID: mapID), options: .init(diagnostics: diagnostics))
+    defer { map.destroy() }
+
+    let context = TileflowErrorContext(
+      reason: credential, resource: .tile, origin: "https://user:\(credential)@example.test/tile",
+      status: 401, message: credential, feature: credential)
+    let error = TileflowMapError(.resourceFailed, context: context)
+    var delivered = 0
+    map.onEvent = { _ in delivered += 1 }
+    map.emit(.loading)
+    map.emit(.externalLinkRequested(URL(string: "https://example.test/?key=\(credential)")!))
+    map.emit(.warning(.init(error: error, occurrences: 3)))
+    map.emit(.failed(error))
+    XCTAssertEqual(delivered, 4)
+    XCTAssertEqual(entries.map(\.event), [.warning, .failure])
+    XCTAssertEqual(entries.first?.resource, .tile)
+    XCTAssertEqual(entries.first?.status, 401)
+    XCTAssertNil(entries.first?.feature)
+    XCTAssertEqual(entries.first?.occurrences, 3)
+    XCTAssertFalse(String(reflecting: entries).contains(credential))
+
+    var replacement: [TileflowMapDiagnostics.Entry] = []
+    try await map.setOptions(.init(diagnostics: .init(minimumLevel: .debug) { replacement.append($0) }))
+    map.emit(.loading)
+    map.emit(.contentReady)
+    XCTAssertEqual(replacement.map(\.event), [.loading, .contentReady])
+    XCTAssertEqual(entries.count, 2)
+  }
+
   func testTheMapsOwnConfigurationComesFirst() throws {
     let source = TileflowMapSource.hosted(
       mapID: mapID, configuration: try configuration("https://own.example.test", credential))

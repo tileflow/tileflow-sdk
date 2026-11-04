@@ -586,7 +586,6 @@ extension NativeMapEngine {
   }
 
   func warnFeature(_ feature: String, message: String) {
-    Self.log.warning("\(message, privacy: .public)")
     warnings.warn(
       .object([
         "code": .string("rendererFailed"), "message": .string(message),

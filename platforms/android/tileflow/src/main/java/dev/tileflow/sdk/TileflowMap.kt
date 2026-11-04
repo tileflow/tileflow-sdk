@@ -70,7 +70,7 @@ public fun TileflowMap(
             view.setTheme(theme)
         } catch (error: TileflowMapException) {
             if (error.code != TileflowErrorCode.CANCELLED)
-                latestEvent.value(TileflowMapEvent.Failed(error.code, error.context))
+                view.emit(TileflowMapEvent.Failed(error.code, error.context))
         }
     }
     LaunchedEffect(view, options) {
@@ -78,7 +78,7 @@ public fun TileflowMap(
             view.setOptions(options)
         } catch (error: TileflowMapException) {
             if (error.code != TileflowErrorCode.CANCELLED)
-                latestEvent.value(TileflowMapEvent.Failed(error.code, error.context))
+                view.emit(TileflowMapEvent.Failed(error.code, error.context))
         }
     }
     // The application's writes move the map; the map's own writes are already where it is.
@@ -92,7 +92,7 @@ public fun TileflowMap(
                     view.move(target)
                 } catch (error: TileflowMapException) {
                     if (error.code != TileflowErrorCode.CANCELLED)
-                        latestEvent.value(TileflowMapEvent.Failed(error.code, error.context))
+                        view.emit(TileflowMapEvent.Failed(error.code, error.context))
                 }
             }
     }
@@ -116,7 +116,7 @@ public fun TileflowMap(
         try {
             controller?.attach(view)
         } catch (error: TileflowMapException) {
-            latestEvent.value(TileflowMapEvent.Failed(error.code))
+            view.emit(TileflowMapEvent.Failed(error.code))
         }
         onDispose { controller?.detach(view) }
     }

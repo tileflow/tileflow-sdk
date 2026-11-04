@@ -159,7 +159,7 @@ public struct TileflowMap: UIViewRepresentable {
       }
     }
     do { try view.setSource(source) } catch {
-      onEvent(.failed(error as? TileflowMapError ?? .invalidSource))
+      view.emit(.failed(error as? TileflowMapError ?? .invalidSource))
     }
     // Apply a prop only when it changes, so a controller's own changes survive later updates.
     if context.coordinator.theme != theme {
@@ -196,7 +196,7 @@ public struct TileflowMap: UIViewRepresentable {
       guard controller !== next else { return }
       controller?.detach(view)
       controller = next
-      do { try next?.attach(view) } catch { view.onEvent?(.failed(.invalidRequest)) }
+      do { try next?.attach(view) } catch { view.emit(.failed(.invalidRequest)) }
     }
   }
 
@@ -212,6 +212,6 @@ extension TileflowMapView {
   func report(propertyError error: any Error) {
     let error = error as? TileflowMapError ?? .rendererFailed
     guard error != .cancelled else { return }
-    onEvent?(.failed(error))
+    emit(.failed(error))
   }
 }

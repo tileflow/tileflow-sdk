@@ -1,5 +1,6 @@
 import Foundation
 import MapLibre
+import OSLog
 import UIKit
 import XCTest
 
@@ -31,6 +32,33 @@ final class NativeMapViewIntegrationTests: XCTestCase {
 
   private var citySource: TileflowMapSource {
     TileflowMapSource(map: "city", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
+  }
+
+  func testNativeWarningsKeepStyleMessagesOutOfTheSystemLog() async throws {
+    try await requireNativeFixture()
+    let events = NativeMapEvents()
+    let view = TileflowMapView(source: citySource)
+    view.engineKind = .native
+    let window = mount(view, events: events)
+    defer {
+      view.destroy()
+      window.isHidden = true
+    }
+    try await events.waitForLoads(1)
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+    let store = try OSLogStore(scope: .currentProcessIdentifier)
+    let start = store.position(date: Date())
+    let secret = "private-style-" + UUID().uuidString
+    engine.warnFeature("terrain3d", message: secret)
+    let predicate = NSPredicate(format: "subsystem == %@ AND category == %@", "dev.tileflow", "map")
+    var messages: [String] = []
+    for _ in 0..<30 {
+      messages = try store.getEntries(at: start, matching: predicate).map(\.composedMessage)
+      if messages.contains(where: { $0.contains("terrain3d") || $0.contains(secret) }) { break }
+      try await Task.sleep(for: .milliseconds(100))
+    }
+    XCTAssertFalse(messages.contains { $0.contains(secret) })
+    XCTAssertTrue(messages.contains { $0.contains("terrain3d") })
   }
 
   func testRuntimeJSONSurvivesThemeAndCanBeRemoved() async throws {

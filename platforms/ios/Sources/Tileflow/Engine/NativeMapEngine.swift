@@ -213,9 +213,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       return .null
     case .setContent:
       let pins = try NativeMapAnnotations.pins(in: payload)
-      try sceneContent.setContent(payload, data: self.data)
+      if try sceneContent.setContent(payload, data: self.data) { sceneAnimations.stopLines() }
       mapAnnotations.setPins(pins)
-      sceneAnimations.stopLines()
       return .null
     case .setDepthMarkers:
       guard let markers = payload["markers"]?.array else { throw TileflowMapError.invalidRequest }

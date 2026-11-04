@@ -3,6 +3,14 @@ import UIKit
 
 @MainActor
 public final class TileflowMapView: UIView {
+  weak var declarativeContent: MapContentCoordinator?
+  private lazy var accessibilitySummary = MapAccessibilitySummary(map: self)
+
+  public override var accessibilityElements: [Any]? {
+    get { super.accessibilityElements ?? [accessibilitySummary] + subviews }
+    set { super.accessibilityElements = newValue }
+  }
+
   public var onEvent: ((TileflowMapEvent) -> Void)?
   public private(set) var source: TileflowMapSource
   public private(set) var theme: String?
@@ -43,7 +51,7 @@ public final class TileflowMapView: UIView {
   private var loadable: LoadableMapSource?
   private var hostedSession: HostedSession?
   private var appearance: (method: ProtocolContract.Method, payload: JSONValue)?
-  private var content = MapContent()
+  var content = MapContent()
   private var contentRevision = 0
   private var subscriptions = EventSubscriptions()
   let cameraEvents = CameraEventGate()
@@ -322,8 +330,13 @@ public final class TileflowMapView: UIView {
   public func setContent(
     annotations: [TileflowAnnotation] = [], layers: [TileflowGeoJSONLayer] = []
   ) async throws {
+    try await styleEdits.acquire()
+    defer { styleEdits.release() }
+    try await replaceMapContent(.init(annotations: annotations, overlays: layers))
+  }
+
+  func replaceMapContent(_ next: MapContent) async throws {
     guard !destroyed else { throw TileflowMapError.disposed }
-    let next = MapContent(annotations: annotations, overlays: layers)
     try next.validate()
     let previous = content
     contentRevision += 1
@@ -611,7 +624,11 @@ public final class TileflowMapView: UIView {
       initialized = true
       rendererInsets = startingInsets
       updateInsets()
-      try await replay { try await self.send(self.content, through: engine) }
+      try await replay {
+        try await self.styleEdits.acquire()
+        defer { self.styleEdits.release() }
+        try await self.send(self.content, through: engine)
+      }
       if appearance != nil {
         try await replay { try await self.applyAppearance() }
       } else if theme != startingTheme {
@@ -628,6 +645,8 @@ public final class TileflowMapView: UIView {
       guard !destroyed, generation == current else { return }
       try await replay { try await self.replayScene(through: engine) }
       try await replay { try await self.replayStyle(through: engine) }
+      await declarativeContent?.rendererReady(on: self)
+      guard !destroyed, generation == current else { return }
       try await replay { try await self.replayLocation(through: engine) }
       try await replay { try await self.replayAnnotations(through: engine) }
       if !rendererVisible {

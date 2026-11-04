@@ -53,6 +53,48 @@ test('commercial preflight sends the normalized Surface declared by the integrat
   assert.equal(requestBody?.surfaceId, 'store-locator');
 });
 
+test('commercial preflight preserves native fetch receiver requirements', async (t) => {
+  let calls = 0;
+  t.mock.method(
+    globalThis,
+    'fetch',
+    async function (this: unknown, _url: string | URL | Request, init?: RequestInit) {
+      assert.ok(this === undefined || this === globalThis, 'Invalid native fetch receiver');
+      calls += 1;
+      const request = JSON.parse(String(init?.body)) as {sessionId: string};
+
+      return Response.json(
+        {
+          expiresAt: '2026-08-29T12:15:00.000Z',
+          grant: 'native-grant',
+          ok: true,
+          sessionId: request.sessionId,
+          usageMode: 'session',
+        },
+        {status: 201},
+      );
+    },
+  );
+
+  for (const explicit of [false, true]) {
+    const controller = createTileflowSessionController({
+      ...(explicit ? {fetch: globalThis.fetch} : {}),
+      now: () => new Date('2026-08-29T12:00:00.000Z'),
+      sessionIdFactory: () => 'ses_native',
+      source: 'test',
+    });
+    const url = await controller.resolveRequestUrl(
+      'https://api.tileflow.dev/maps/map_1/style.json',
+      {apiUrl: 'https://api.tileflow.dev', mapId: 'map_1'},
+    );
+
+    assert.equal(new URL(url!).searchParams.get('grant'), 'native-grant');
+    assert.equal(new URL(url!).searchParams.get('session'), 'ses_native');
+  }
+
+  assert.equal(calls, 2);
+});
+
 test('validates portable map identity and explicit manifest overrides', () => {
   for (const source of [{map: 'main'}, {manifestUrl: '/custom/manifest.json', map: 'main'}]) {
     assert.deepEqual(validateTileflowRuntimeSource(source), {ok: true});

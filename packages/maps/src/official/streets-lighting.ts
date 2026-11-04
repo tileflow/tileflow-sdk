@@ -1,11 +1,11 @@
 import type {TileflowThemeLighting} from '@tileflow/core';
 import type {StreetsColorTheme, StreetsLightPreset} from './streets-theme-colors';
 
-// Dawn, dusk and night retain public Mapbox Standard light properties, retrieved 2026-10-18 from
+// Presets retain public Mapbox Standard light properties, retrieved 2026-10-18 from
 // https://api.mapbox.com/styles/v1/mapbox/standard (modified 2026-10-08T14:57:51.547Z).
 // Direction is [azimuth clockwise from north, polar angle from the zenith]:
 // https://docs.mapbox.com/style-spec/reference/light/#direction
-// Daylight uses Streets' warm sun and cool skylight to separate its architectural planes.
+// Neutral daylight keeps cast shadows soft without adding a second tint to authored materials.
 // The reference presets use the fixed zoom >= 14 values. Standard interpolates directional intensity
 // at zooms 12/13/14; Tileflow's theme sun currently accepts constant presets.
 // Effective colors include Standard's color-theme LUT, evaluated with GL JS 3.28.1's
@@ -28,11 +28,11 @@ const defaultLighting = {
     sun: {
       azimuth: 180,
       altitude: 70,
-      color: '#FFF5E8',
-      intensity: 0.3,
-      shadowIntensity: 0.8,
+      color: '#FFFFFF',
+      intensity: 0.2,
+      shadowIntensity: 1,
     },
-    ambient: {color: '#E2EBF7', intensity: 0.7},
+    ambient: {color: '#FFFFFF', intensity: 0.8},
   },
   dusk: {
     sun: {
@@ -88,7 +88,7 @@ const fadedLighting = withLightColors({
     sun: 'rgb(252.513725, 222.937729, 169.273879)',
     ambient: 'rgb(254, 244.681815, 235.980392)',
   },
-  day: {sun: '#FFF8EF', ambient: '#EBF0F8'},
+  day: {sun: '#FFFFFF', ambient: '#FFFFFF'},
   dusk: {
     sun: 'rgb(252.513725, 217.250027, 164.945083)',
     ambient: 'rgb(87.776471, 97.427724, 126.419608)',

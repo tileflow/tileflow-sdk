@@ -84,12 +84,11 @@ are `dawn`, `dusk`, `faded`, `monochrome`, `dawn-faded`, `dawn-monochrome`, `dus
 `dusk-monochrome`, `dark-faded`, and `dark-monochrome`. All twelve appearances share roads, label placement, fonts and icon artwork.
 Colors and lighting vary; flat-map colors are authored independently.
 
-Scene lighting is calibrated against Mapbox Standard. Streets owns its cartography: slate-blue
-roads with stronger regional outlines, neutral urban surfaces, pale warm rural ground, green
-parks and subtle cream buildings. Its palette is not a fixed copy of the provider's reference
-colors. All appearances use the daylight map's category-colored POI discs and pictograms.
-Maki pictograms distinguish transport modes and POI types. Scene-sun lighting preserves
-unshadowed roof paint while allowing light color to affect walls.
+Scene lighting is calibrated against Mapbox Standard while retaining Streets' slate-blue roads,
+neutral urban surfaces, pale warm rural ground, green parks and cream buildings. All appearances
+share category-colored POI discs and Maki pictograms. Lighting preserves sunlit roof paint and
+tints walls. Daylight uses neutral direct light (0.2) and ambient fill (0.8); buildings and
+map-shaded models keep ambient fill at night, with local occlusion at contacts and recesses.
 
 Below zoom 11, daylight draws a climate image separating humid and dry regions; it is
 loaded only there and is broad context, not surveyed vegetation. Other appearances keep it clear.
@@ -332,7 +331,7 @@ When the 3D view is active, available buildings and models appear at full height
 without zoom entrance animations.
 Pitch is capped at 38° through zoom 15; closer views use the application's maximum.
 Daylight combines warm limestone buildings, ivory model surfaces, smoked-blue glazing and warm
-roof tones under warm sunlight and cool skylight. Models share ordinary-building shading, with
+roof tones under neutral sunlight and skylight. Models share ordinary-building shading, with
 soft contact shadows and ambient occlusion in recesses. Monochrome materials stay neutral.
 Glass parts can be recoloured independently through `modelColors.glass`; window roles retain
 that glass tint even on a shared stone part, with `modelLighting.window.colorScale: 0.96`.

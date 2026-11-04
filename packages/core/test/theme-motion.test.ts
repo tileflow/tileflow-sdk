@@ -364,8 +364,10 @@ test('a blend of themes from different maps fails without changing the map', asy
 });
 
 /** A minimal browser around the map canvas for the cross-fade. */
-function browser(reducedMotion = false) {
+function browser(reducedMotion = false, frameStepMs?: number) {
   const inserted: FakeElement[] = [];
+  let frameTime = 0;
+
   class FakeElement {
     width = 0;
     height = 0;
@@ -385,8 +387,12 @@ function browser(reducedMotion = false) {
     cancelAnimationFrame: clearTimeout,
     clearTimeout,
     matchMedia: () => ({matches: reducedMotion}),
-    performance,
-    requestAnimationFrame: (callback: () => void) => setTimeout(callback, 1),
+    performance: frameStepMs === undefined ? performance : {now: () => frameTime},
+    requestAnimationFrame: (callback: () => void) =>
+      setTimeout(() => {
+        frameTime += frameStepMs ?? 0;
+        callback();
+      }, 1),
     setTimeout,
   };
   const canvas = {
@@ -427,7 +433,7 @@ class CameraMap extends FakeMap {
 }
 
 test('a theme change draws intermediate values on the live map and removes temporary layers', async () => {
-  const {canvas, inserted} = browser();
+  const {canvas, inserted} = browser(false, 16);
   const map = new CameraMap(canvas);
   const controller = createTileflowThemeController({
     initial: theme('day', day),

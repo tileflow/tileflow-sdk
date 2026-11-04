@@ -163,6 +163,7 @@ export default defineMap({
   id: 'main',
   version: 1,
   extends: streets,
+  themes: {light: streets.themes.light},
   data: vectorTiles({
     attribution: '© Tileflow capture fixture',
     revision: 'capture-fixture-v1',

@@ -25,6 +25,7 @@ export type HostedTeamDependencies = {
 export type HostedTeamAuthority = {
   apiOrigin: string;
   credential: string;
+  getCredential?: () => Promise<string>;
   team: ProjectIdentity | null;
 };
 
@@ -120,26 +121,59 @@ export async function resolveTeamAuthority(
     return null;
   }
   const capability = await requestTeamCapability(selected.session, `@${team.slug}`, scopes);
-  if (!capability.ok) {
-    emitFailure(options.json, 'team_capability_failed', capability.error);
+  if (!capability.ok || capability.team.id !== team.id) {
+    emitFailure(
+      options.json,
+      'team_capability_failed',
+      capability.ok ? 'Team capability response was invalid.' : capability.error,
+    );
     return null;
   }
+
+  let current = capability;
+  let renewal: Promise<void> | undefined;
+
+  const getCredential = async () => {
+    if (Date.parse(current.expiresAt) > Date.now() + 30_000) return current.capability;
+
+    renewal ??= requestTeamCapability(selected.session, `@${team.slug}`, scopes)
+      .then((next) => {
+        if (
+          !next.ok ||
+          next.team.id !== team.id ||
+          Date.parse(next.expiresAt) <= Date.now() + 30_000
+        ) {
+          throw new Error('Team authorization could not be renewed. Run tileflow login.');
+        }
+        current = next;
+      })
+      .finally(() => {
+        renewal = undefined;
+      });
+
+    await renewal;
+    return current.capability;
+  };
+
   return {
     apiOrigin: selected.session.apiOrigin,
     credential: capability.capability,
+    getCredential,
     team,
   };
 }
 
-export function authorizedTeamRequest(
+export async function authorizedTeamRequest(
   authority: HostedTeamAuthority,
   path: string,
   method: string,
   init: {body?: BodyInit; headers?: Record<string, string>} = {},
 ) {
+  const credential = (await authority.getCredential?.()) ?? authority.credential;
+
   return requestHostedJson(authority.apiOrigin, path, {
     ...(init.body === undefined ? {} : {body: init.body}),
-    headers: {Authorization: `Bearer ${authority.credential}`, ...init.headers},
+    headers: {Authorization: `Bearer ${credential}`, ...init.headers},
     method,
   });
 }

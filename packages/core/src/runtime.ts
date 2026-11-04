@@ -585,7 +585,8 @@ async function requestSessionGrant(input: {
 }) {
   return runWithinSessionGrantTimeout(input.timeoutMs, async (signal) => {
     const apiUrl = getTileflowAnalyticsApiUrl(input.analytics);
-    const response = await input.fetchGrant(`${apiUrl}/v1/sessions/start`, {
+    const fetchGrant = input.fetchGrant;
+    const response = await fetchGrant(`${apiUrl}/v1/sessions/start`, {
       body: JSON.stringify({
         mapId: input.analytics.mapId,
         sdkVersion: input.analytics.sdkVersion,

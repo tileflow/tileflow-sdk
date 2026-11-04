@@ -419,7 +419,10 @@ export async function requestTeamCapability(
   team: string,
   scopes: HostedTeamCapabilityScope[],
   options: HostedRequestOptions = {},
-): Promise<{capability: string; ok: true; team: ProjectIdentity} | {error: string; ok: false}> {
+): Promise<
+  | {capability: string; expiresAt: string; ok: true; team: ProjectIdentity}
+  | {error: string; ok: false}
+> {
   let response: HostedJsonResponse;
   try {
     response = await requestHostedJson(
@@ -456,7 +459,7 @@ export async function requestTeamCapability(
   ) {
     return {error: 'Team capability response was invalid.', ok: false};
   }
-  return {capability: body.capability, ok: true, team: body.team};
+  return {capability: body.capability, expiresAt: body.expiresAt, ok: true, team: body.team};
 }
 
 export async function listAccountTeams(

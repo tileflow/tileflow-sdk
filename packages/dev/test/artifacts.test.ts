@@ -3,6 +3,7 @@ import {mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile} from 'node:f
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
 import test from 'node:test';
+import {materializeTileflowStyleFamily} from '@tileflow/core/build';
 import {streetsIcons} from '@tileflow/maps';
 import {linkWorkspacePackages} from '../../../test-support/workspace-packages';
 import {
@@ -207,6 +208,21 @@ test('materializes package-owned Baedeker fonts and retargets immutable runtime 
     const fontFileName = publicFontUrl.pathname.replace(/^\/tileflow\//u, '');
     assert.ok(relativePlan.files.some((file) => file.fileName === fontFileName));
   }
+  const relativeFamilyPath = relativePlan.manifest.maps.night!.familyUrl!;
+  const relativeFamilyFile = relativePlan.files.find(
+    (file) => file.fileName === relativeFamilyPath.replace(/^\.\//u, ''),
+  )!;
+  const familyStyle = materializeTileflowStyleFamily(
+    JSON.parse(String(relativeFamilyFile.source)),
+    'light',
+  );
+  const familyFaces = familyStyle.metadata?.['tileflow:fontFaces'] as Array<{source: string}>;
+  assert.deepEqual(
+    familyFaces.map(
+      (face) => new URL(face.source, new URL(relativeFamilyPath, publicManifestUrl)).href,
+    ),
+    relativeFaces.map((face) => new URL(face.source, publicStyleUrl).href),
+  );
 
   await writeFile(
     join(cwd, 'tileflow.config.ts'),
@@ -257,6 +273,22 @@ test('keeps relative sprites valid inside the default content-addressed build la
         ),
     ),
   );
+
+  for (const [stylePath, familyPath] of [
+    [styleReference, plan.manifest.maps.main!.familyUrl!],
+    ['./styles/main/light.json', './families/main.json'],
+  ] as const) {
+    const file = (path: string) =>
+      plan.files.find((entry) => entry.fileName === path.replace(/^\.\//u, ''))!;
+    const style = JSON.parse(String(file(stylePath).source));
+    const family = JSON.parse(String(file(familyPath).source));
+    const appearance = materializeTileflowStyleFamily(family, 'light');
+    assert.equal(
+      new URL(`${appearance.sprite}.png`, new URL(familyPath, publicManifestUrl)).href,
+      new URL(`${style.sprite}.png`, new URL(stylePath, publicManifestUrl)).href,
+      'family and standalone style must address the same emitted sprite',
+    );
+  }
 });
 
 test('replaces a managed generation, removes only inventoried stale files and preserves user files', async (t) => {

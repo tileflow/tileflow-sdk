@@ -1,6 +1,11 @@
 import {modelMaterialSampling, modelPhysicalLighting} from './models-3d-material-shaders';
 import {tileflowModelLimits} from './models-3d-model';
-import {tileflowHazeFragment, tileflowHazeVertex, tileflowShadowLookup} from './scene-3d-shaders';
+import {
+  tileflowAmbientLight,
+  tileflowHazeFragment,
+  tileflowHazeVertex,
+  tileflowShadowLookup,
+} from './scene-3d-shaders';
 
 // Shaders of the building models a map places in its 3D city, drawn by Tileflow's 3D buildings
 // renderer (buildings-3d-browser.ts) in the same light as its buildings. A model's vertices are whole
@@ -162,16 +167,17 @@ uniform vec4 u_role_emission_gradient[7];
 uniform float u_role_emission_power[7];
 uniform float u_opacity;
 out vec4 fragColor;
+${tileflowAmbientLight}
 ${tileflowShadowLookup}
 ${tileflowHazeFragment}
 ${modelMaterialSampling}
 ${modelPhysicalLighting}
 
 // The buildings' light: a sunlit roof keeps its colour, a face turned to a low sun glows, and shade
-// takes the sky's colour; a face that looks down sees little sky.
+// takes the sky's colour. Baked occlusion independently attenuates ambient light in recesses.
 vec3 shade(vec3 normal, float lit, float occlusion) {
   float facing = dot(normal, u_sun_dir);
-  vec3 sky = u_sky_light * mix(mix(0.8, 0.5, u_night), 1.0, max(normal.z, -0.4));
+  vec3 sky = ambientLight(u_sky_light, normal);
   sky *= mix(1.0, v_light, u_ambient_occlusion * occlusion);
   vec3 light = sky + u_sun_light * max(facing, 0.0) * (1.0 - u_shadow * (1.0 - lit));
   vec3 roof = u_sky_light + u_sun_light * max(u_sun_dir.z, 0.0);

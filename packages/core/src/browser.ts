@@ -38,7 +38,7 @@ import {
   type TileflowRuntimeStyleLoadOptions,
 } from './style-resources-browser';
 import {
-  mixTileflowAzimuths,
+  mixTileflowSunDirections,
   readTileflowSunPreset,
   resolveTileflowSun,
   tileflowStyleSunPreset,
@@ -1860,8 +1860,7 @@ export function createTileflowThemeController(options: {
         // Returning to the themes follows their sun, which a blend may be moving.
         const to = target ?? themeSunPreset().preset;
         sunShown = {
-          azimuth: mixTileflowAzimuths(from.azimuth, to.azimuth, eased),
-          altitude: from.altitude + (to.altitude - from.altitude) * eased,
+          ...mixTileflowSunDirections(from, to, eased),
           source: target?.source ?? from.source,
         };
         writeSunLight();

@@ -41,7 +41,7 @@ final class NativeMapViewIntegrationTests: XCTestCase {
 
     do {
       try await view.addSource(
-        id: "remote", properties: ["type": "geojson", "data": "https://example.com/points"])
+        id: "remote", properties: ["type": "geojson", "data": "file:///outside-map.geojson"])
       XCTFail("Expected invalidRequest before mount")
     } catch let error as TileflowMapError {
       XCTAssertEqual(error, .invalidRequest)
@@ -97,6 +97,223 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await view.removeSource("places")
     XCTAssertNil(engine.mapView?.style?.layer(withIdentifier: "__tileflow_layer_points"))
     XCTAssertNil(engine.mapView?.style?.source(withIdentifier: "__tileflow_source_places"))
+  }
+
+  func testNativeClusteredStyleSurvivesThemeAndRenderer() async throws {
+    try await requireNativeFixture()
+    let events = NativeMapEvents()
+    let view = TileflowMapView(
+      source: citySource, initialCamera: .init(longitude: -3.7, latitude: 40.42, zoom: 9))
+    view.engineKind = .native
+    let window = mount(view, events: events)
+    defer { view.destroy(); window.isHidden = true }
+    try await events.waitForLoads(1)
+    try await view.addSource(
+      TileflowGeoJSONSource(
+        id: "points", data: .geoJSON(MapStyleIntegrationTests.points(100_000)), cluster: true,
+        clusterRadius: 50, clusterProperties: ["rankSum": .sum(.get("rank"))]))
+
+    var clusters = TileflowCircleLayer(id: "clusters", source: "points")
+    clusters.filter = .has("point_count")
+    clusters.circleColor = .expression(
+      .step(.get("point_count"), "#51bbd6", 100, "#f1f075", 750, "#f28cb1"))
+    clusters.circleRadius = .expression(.step(.get("point_count"), 16, 100, 22, 750, 30))
+    clusters.slot = .aboveLabels
+    try await view.addLayer(clusters)
+    var point = TileflowCircleLayer(id: "point", source: "points")
+    point.filter = .not(.has("point_count"))
+    point.circleRadius = 5
+    point.circleColor = .expression(
+      .switchCase(.boolean(.featureState("selected"), false), "#ff0000", "#11b4da"))
+    try await view.addLayer(point)
+    var heat = TileflowHeatmapLayer(id: "heat", source: "points")
+    heat.maxZoom = 9
+    try await view.addLayer(heat, position: .below("clusters"))
+    try await view.addImage(MapStyleIntegrationTests.sdfDisc())
+    var marks = TileflowSymbolLayer(id: "marks", source: "points")
+    marks.filter = .not(.has("point_count"))
+    marks.iconImage = "disc"
+    marks.iconColor = "#2a9d8f"
+    marks.iconAllowOverlap = true
+    try await view.addLayer(marks)
+    XCTAssertEqual(view.runtimeStyle.layers.map(\.id), ["heat", "clusters", "point", "marks"])
+
+    func hits(_ id: String, at geometry: TileflowQueryGeometry = .view) async throws
+      -> [TileflowQueriedFeature]
+    {
+      for _ in 0..<200 {
+        let features = try await view.queryRenderedFeatures(
+          in: geometry, options: .init(layerIds: [id]))
+        if !features.isEmpty { return features }
+        try await Task.sleep(for: .milliseconds(50))
+      }
+      return []
+    }
+    let clustersHit = try await hits("clusters")
+    let largest = try XCTUnwrap(
+      clustersHit.max {
+        ($0.feature.properties["point_count"]?.number ?? 0)
+          < ($1.feature.properties["point_count"]?.number ?? 0)
+      })
+    let cluster = try XCTUnwrap(largest.feature.clusterId)
+    XCTAssertGreaterThan(largest.feature.properties["rankSum"]?.number ?? 0, 0)
+    let children = try await view.clusterChildren(sourceId: "points", clusterId: cluster)
+    XCTAssertGreaterThan(children.count, 1)
+    let leaves = try await view.clusterLeaves(sourceId: "points", clusterId: cluster, limit: 2000)
+    XCTAssertEqual(
+      leaves.count, min(2000, Int(largest.feature.properties["point_count"]?.number ?? 0)))
+    let zoom = try await view.clusterExpansionZoom(sourceId: "points", clusterId: cluster)
+    XCTAssertGreaterThan(zoom, 9)
+
+    let center = TileflowCoordinate(longitude: -3.895, latitude: 40.3)
+    try await view.setFeatureState(sourceId: "points", featureId: "5", state: ["selected": true])
+    try await view.move(
+      to: .init(longitude: center.longitude, latitude: center.latitude, zoom: 17), animation: .none)
+    func checkSelected() async throws {
+      let at = try await view.project(center)
+      let rendered = try await hits("point", at: .point(at))
+      XCTAssertTrue(rendered.contains { $0.feature.id == "5" && $0.state["selected"] == true })
+      let symbols = try await hits("marks", at: .point(at))
+      XCTAssertTrue(symbols.contains { $0.feature.id == "5" })
+    }
+    try await checkSelected()
+    try await view.setTheme("dark")
+    try await checkSelected()
+    try view.reload()
+    try await events.waitForLoads(2)
+    try await checkSelected()
+    XCTAssertTrue(events.failures.isEmpty, "\(events.failures)")
+  }
+
+  func testNativeSourceAndLayerKindsUseTheMapTransport() async throws {
+    try await requireNativeFixture()
+    let view = TileflowMapView(source: citySource)
+    view.engineKind = .native
+    let events = NativeMapEvents()
+    let window = mount(view, events: events)
+    defer { view.destroy(); window.isHidden = true }
+    try await events.waitForLoads(1)
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+    let base = FixtureServer.origin
+    try await view.addSource(
+      id: "places", properties: ["type": "geojson", "data": base + "/data.json"])
+    try await view.addSource(
+      id: "opentiles", properties: ["type": "vector", "tiles": [base + "/city/{z}/{x}/{y}.mvt"]])
+    try await view.addSource(
+      id: "tiles",
+      properties: ["type": "raster", "tiles": [base + "/imagery/{z}/{x}/{y}.png"], "tileSize": 256])
+    try await view.addSource(
+      id: "terrain",
+      properties: [
+        "type": "raster-dem", "tiles": [base + "/relief/{z}/{x}/{y}.png"], "encoding": "terrarium",
+      ])
+    try await view.addSource(
+      id: "overlay",
+      properties: [
+        "type": "image", "url": base + "/overlay.png",
+        "coordinates": [[-3.71, 40.43], [-3.69, 40.43], [-3.69, 40.41], [-3.71, 40.41]],
+      ])
+
+    let style = try XCTUnwrap(engine.mapView?.style)
+    XCTAssertTrue(style.source(withIdentifier: "__tileflow_source_places") is MLNShapeSource)
+    XCTAssertTrue(
+      style.source(withIdentifier: "__tileflow_source_opentiles") is MLNVectorTileSource)
+    XCTAssertTrue(style.source(withIdentifier: "__tileflow_source_tiles") is MLNRasterTileSource)
+    XCTAssertTrue(style.source(withIdentifier: "__tileflow_source_terrain") is MLNRasterDEMSource)
+    let image = try XCTUnwrap(
+      style.source(withIdentifier: "__tileflow_source_overlay") as? MLNImageSource)
+    // An image destined for the network must still use this map's routing context.
+    XCTAssertEqual(image.url?.host, MapResourceAddress.host)
+
+    let definitions: [(String, String?)] = [
+      ("fill", "places"), ("line", "opentiles"), ("circle", "places"), ("symbol", "places"),
+      ("heatmap", "places"), ("fill-extrusion", "places"), ("raster", "tiles"),
+      ("color-relief", "terrain"), ("hillshade", "terrain"), ("background", nil),
+    ]
+    for (type, source) in definitions {
+      var spec: [String: Any] = ["type": type, "id": type, "minzoom": 23, "slot": "below-labels"]
+      if let source { spec["source"] = source }
+      if type == "line" {
+        spec["source-layer"] = "transportation"; spec["layout"] = ["line-cap": "round"]
+      }
+      try await view.addLayer(properties: spec)
+      XCTAssertNotNil(style.layer(withIdentifier: "__tileflow_layer_" + type))
+    }
+    try await view.addLayer(properties: [
+      "type": "raster", "id": "photo", "source": "overlay", "minzoom": 23,
+    ])
+
+    try await view.moveLayer("photo", position: .below("fill"))
+    let order = style.layers.map(\.identifier)
+    XCTAssertLessThan(
+      try XCTUnwrap(order.firstIndex(of: "__tileflow_layer_photo")),
+      try XCTUnwrap(order.firstIndex(of: "__tileflow_layer_fill")))
+    for id in definitions.map(\.0) + ["photo"] { try await view.removeLayer(id) }
+    for id in ["places", "opentiles", "tiles", "terrain", "overlay"] {
+      try await view.removeSource(id)
+    }
+  }
+
+  func testNativeFeatureUpdatesAndPolygonQueries() async throws {
+    try await requireNativeFixture()
+    let view = TileflowMapView(source: citySource)
+    view.engineKind = .native
+    let events = NativeMapEvents()
+    let window = mount(view, events: events)
+    defer { view.destroy(); window.isHidden = true }
+    try await events.waitForLoads(1)
+    try await view.addSource(TileflowGeoJSONSource(id: "points", data: .empty))
+    var circles = TileflowCircleLayer(id: "items", source: "points")
+    circles.circleRadius = 8
+    try await view.addLayer(circles)
+    circles.circleRadius = 9
+    try await view.updateLayer(circles)
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+    let edited = try XCTUnwrap(
+      engine.mapView?.style?.layer(withIdentifier: "__tileflow_layer_items") as? MLNCircleStyleLayer
+    )
+    XCTAssertEqual(edited.circleRadius.constantValue as? NSNumber, 9)
+
+    let one = try await view.unproject(CGPoint(x: 80, y: 80))
+    let two = try await view.unproject(CGPoint(x: 160, y: 160))
+    try await view.addGeoJSONSourceFeatures(
+      sourceId: "points",
+      features: [
+        TileflowFeature(id: "1", geometry: .point(one), properties: ["rank": 1]),
+        TileflowFeature(id: "2", geometry: .point(two), properties: ["rank": 2]),
+      ])
+    let box = TileflowQueryGeometry.box(CGRect(x: 50, y: 50, width: 150, height: 150))
+    let triangle = TileflowQueryGeometry.polygon([
+      CGPoint(x: 50, y: 50), CGPoint(x: 200, y: 50), CGPoint(x: 50, y: 200),
+    ])
+    func ids(_ shape: TileflowQueryGeometry) async throws -> Set<String> {
+      Set(
+        try await view.queryRenderedFeatures(in: shape, options: .init(layerIds: ["items"]))
+          .compactMap { $0.feature.id })
+    }
+    for _ in 0..<100 {
+      if try await ids(box) == ["1", "2"] { break }
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    let boxHits = try await ids(box)
+    let polygonHits = try await ids(triangle)
+    XCTAssertEqual(boxHits, ["1", "2"])
+    XCTAssertEqual(polygonHits, ["1"])
+
+    try await view.updateGeoJSONSourceFeatures(
+      sourceId: "points",
+      features: [TileflowFeature(id: "1", geometry: .point(two), properties: ["rank": 3])])
+    try await view.removeGeoJSONSourceFeatures(sourceId: "points", featureIds: ["2"])
+    var last: [TileflowQueriedFeature] = []
+    for _ in 0..<100 {
+      last = try await view.querySourceFeatures(sourceId: "points")
+      if last.count == 1 && last.first?.feature.properties["rank"]?.number == 3 { break }
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    XCTAssertEqual(last.compactMap { $0.feature.id }, ["1"])
+    XCTAssertEqual(last.first?.feature.properties["rank"]?.number, 3)
+    let final = try await ids(triangle)
+    XCTAssertTrue(final.isEmpty)
   }
 
   func testOnlineMapLoadsChangesThemeAndRetires() async throws {

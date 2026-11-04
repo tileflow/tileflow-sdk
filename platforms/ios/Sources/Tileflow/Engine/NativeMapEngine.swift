@@ -32,6 +32,11 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   let data = DataChannel()
   private let runtimeStyle = NativeRuntimeStyle()
+  private let resourceKinds = LockedValue<[(prefix: String, kind: TileflowResourceKind)]>([])
+  private var baseResourceKinds: [(prefix: String, kind: TileflowResourceKind)] = []
+  private var styleWork: Task<Void, Never>?
+  private var baseAttributions: [String] = []
+  private var attributionStyle: [String: Any] = [:]
   let container = UIView()
   private(set) var mapView: MLNMapView?
   let loader: any ResourceLoading
@@ -39,7 +44,6 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   private let offline: OfflineServingIndex
   /// The map's context in MapLibre's requests, while it is registered.
   private(set) var context: String?
-  private let projection = LockedValue<ProjectedStyle?>(nil)
   lazy var warnings = MapWarningAggregator { [weak self] warning in
     self?.onEvent?("warning", warning)
   }
@@ -140,18 +144,18 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     case .initialize:
       try await initialize(payload)
       return .null
-    case .addSource:
-      try runtimeStyle.addSource(payload, channel: self.data, style: loadedStyle)
-      return .null
-    case .addLayer:
-      try runtimeStyle.addLayer(payload, style: loadedStyle)
-      return .null
-    case .removeLayer:
-      try runtimeStyle.removeLayer(payload, style: loadedStyle)
-      return .null
-    case .removeSource:
-      try runtimeStyle.removeSource(payload, style: loadedStyle)
-      return .null
+    case .addSource, .addLayer, .moveLayer, .updateLayer, .removeSource, .removeLayer,
+      .setGeoJSONSourceData, .updateGeoJSONSource, .setFeatureState, .removeFeatureState,
+      .queryRenderedFeatures, .querySourceFeatures, .queryCluster, .setImages:
+      // A TileJSON request may suspend. Apply later layer and source commands in submission order.
+      let prior = styleWork
+      let work = Task { @MainActor [weak self] in
+        await prior?.value
+        guard let self, !self.retired else { throw TileflowMapError.disposed }
+        return try await self.styleCommand(command, request: payload)
+      }
+      styleWork = Task { _ = await work.result }
+      return try await work.value
     case .queryAtPoint:
       return .array(features(at: try Self.point(payload)))
     case .setVisibility:
@@ -190,6 +194,81 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     default:
       throw Self.unsupported(command)
     }
+  }
+
+  private func styleCommand(_ command: MapEngineCommand, request: JSONValue) async throws
+    -> JSONValue
+  {
+    switch command {
+    case .addSource, .setGeoJSONSourceData:
+      guard let theme = shown?.theme, let url = manifest?.styles[theme], let context else {
+        throw TileflowMapError.notReady
+      }
+      if command == .addSource {
+        let source = try await NativeRuntimeStyle.prepareSource(
+          request, channel: data, styleURL: url, load: loadApplicationData,
+          project: { [self] in try await project($0, styleURL: $1, context: context) })
+        guard !retired else { throw TileflowMapError.disposed }
+        try runtimeStyle.addSource(source, in: loadedStyle)
+        updateApplicationResources()
+      } else {
+        guard let value = request["data"], let id = request["id"]?.string else {
+          throw TileflowMapError.invalidRequest
+        }
+        let bytes = try await NativeRuntimeStyle.geoJSONBytes(
+          value, channel: data, styleURL: url, load: loadApplicationData)
+        guard !retired else { throw TileflowMapError.disposed }
+        try runtimeStyle.replaceData(bytes, source: id, in: loadedStyle)
+      }
+    case .removeSource:
+      try runtimeStyle.removeSource(request, style: loadedStyle)
+      updateApplicationResources()
+    case .addLayer, .updateLayer, .moveLayer, .removeLayer:
+      try runtimeStyle.modifyLayer(command, request: request, style: loadedStyle)
+    case .updateGeoJSONSource:
+      try runtimeStyle.updateFeatures(request, channel: data, in: loadedStyle)
+    case .setFeatureState, .removeFeatureState:
+      try runtimeStyle.changeState(command, request: request, style: loadedStyle)
+    case .queryRenderedFeatures:
+      guard let mapView, let loadedStyle else { throw TileflowMapError.notReady }
+      return try runtimeStyle.queryRendered(request, map: mapView, style: loadedStyle)
+    case .querySourceFeatures:
+      guard let loadedStyle else { throw TileflowMapError.notReady }
+      return try runtimeStyle.querySource(request, style: loadedStyle)
+    case .queryCluster:
+      guard let loadedStyle else { throw TileflowMapError.notReady }
+      return try runtimeStyle.queryCluster(request, style: loadedStyle)
+    case .setImages:
+      try runtimeStyle.setImages(request, channel: data, style: loadedStyle)
+    default: throw Self.unsupported(command)
+    }
+    return .null
+  }
+
+  private func loadApplicationData(_ url: URL) async throws -> Data {
+    let response = try await loader.load(URLRequest(url: url))
+    guard response.status == 200 else {
+      throw TileflowMapError(
+        .resourceFailed,
+        context: .init(resource: .data, origin: ResourcePolicy.origin(url), status: response.status)
+      )
+    }
+    return response.bytes
+  }
+
+  private func updateApplicationResources() {
+    let sources = runtimeStyle.sources.values.sorted { $0.id < $1.id }
+    let kinds = (baseResourceKinds + sources.flatMap(\.resourceKinds)).sorted {
+      $0.prefix.count > $1.prefix.count
+    }
+    resourceKinds.withLock { $0 = kinds }
+    var credits = baseAttributions
+    for source in sources {
+      if let text = source.spec["attribution"]?.string, !text.isEmpty, !credits.contains(text) {
+        credits.append(text)
+      }
+    }
+    attribution.setStyle(attributionStyle, attributions: credits)
   }
 
   static func unsupported(_ command: MapEngineCommand) -> TileflowMapError {
@@ -239,11 +318,14 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     guard let map = payload["source"]?["map"]?.string,
       let manifestURL = payload["source"]?["manifestUrl"]?.string.flatMap(URL.init(string:))
     else { throw TileflowMapError.invalidRequest }
-    let projection = self.projection
+    let resourceKinds = self.resourceKinds
     let context = MapResourceContexts.shared.register(
       MapResourceRoute(
         loader: loader,
-        classify: { remote in projection.withLock { $0?.kind(of: remote) } ?? .tile },
+        classify: { remote in
+          resourceKinds.withLock { $0.first { remote.absoluteString.hasPrefix($0.prefix) }?.kind }
+            ?? .tile
+        },
         report: { [weak self] outcome in
           Task { @MainActor in self?.received(outcome) }
         }))
@@ -367,8 +449,11 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   /// Gives MapLibre a projected style. What the engine reads from it applies once it loads.
   func show(_ style: [String: Any], projected: ProjectedStyle) {
     guard let mapView else { return }
-    projection.withLock { $0 = projected }
-    attribution.setStyle(style, attributions: projected.attributions)
+    baseResourceKinds = projected.kinds
+    baseAttributions = projected.attributions
+    attributionStyle = ["metadata": style["metadata"] ?? [:]]
+    updateApplicationResources()
+    runtimeStyle.configure(theme: shown?.theme, metadata: style["metadata"] as? [String: Any])
     document = NativeStyleDocument.Shown(style, omitted: projected.omitted)
     styleLoaded = false
     mapView.styleJSON = projected.json

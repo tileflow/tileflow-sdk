@@ -98,7 +98,7 @@ final class MapStyleIntegrationTests: XCTestCase {
   }
 
   /// Points on a grid around the fixture map, each with a numeric identifier and a rank.
-  private static func points(_ count: Int) -> Data {
+  static func points(_ count: Int) -> Data {
     var text = #"{"type":"FeatureCollection","features":["#
     text.reserveCapacity(count * 120)
     for index in 0..<count {
@@ -112,7 +112,7 @@ final class MapStyleIntegrationTests: XCTestCase {
   }
 
   /// A white disc on transparency: a signed distance field the layer recolours.
-  private static func sdfDisc() throws -> TileflowMapImage {
+  static func sdfDisc() throws -> TileflowMapImage {
     let renderer = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 24))
     let image = renderer.image { context in
       UIColor.white.setFill()

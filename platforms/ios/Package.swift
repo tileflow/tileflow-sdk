@@ -21,11 +21,16 @@ let package = Package(
     .target(
       name: "Tileflow",
       dependencies: [
-        "TileflowConfiguration",
+        "TileflowConfiguration", "TileflowStyleBridge",
         .product(name: "MapLibre", package: "maplibre-gl-native-distribution"),
       ],
       path: "Sources/Tileflow",
       resources: [.copy("EmbeddedRuntime")]
+    ),
+    .target(
+      name: "TileflowStyleBridge",
+      dependencies: [.product(name: "MapLibre", package: "maplibre-gl-native-distribution")],
+      path: "Sources/TileflowStyleBridge"
     ),
     .target(name: "TileflowConfiguration", path: "Sources/TileflowConfiguration"),
     .target(

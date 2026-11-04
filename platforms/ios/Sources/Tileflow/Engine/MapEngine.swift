@@ -13,7 +13,7 @@ enum MapEngineKind: Sendable {
 
   @MainActor func validateQueued(_ layer: RuntimeStyle.Layer) throws {
     if self == .native {
-      _ = try NativeRuntimeStyle.circlePaint(layer.json, hasSlot: layer.slot != nil)
+      try NativeRuntimeStyle.validateQueuedLayer(layer)
     }
   }
 }

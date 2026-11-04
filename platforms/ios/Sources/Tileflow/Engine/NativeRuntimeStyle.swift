@@ -1,162 +1,121 @@
 import Foundation
 import MapLibre
+import TileflowStyleBridge
+import UIKit
 
-/// Application objects installed in each loaded native style. Inline data outlives its channel reference.
+/// The application's style objects, kept across MapLibre's replacement of the base style.
 @MainActor
 final class NativeRuntimeStyle {
-  private struct Source {
-    let id: String
-    let shape: MLNShape
-    let clustered: Bool
+  static func sourceID(_ id: String) -> String { "__tileflow_source_" + id }
+  static func layerID(_ id: String) -> String { "__tileflow_layer_" + id }
 
-    func make() -> MLNShapeSource {
-      MLNShapeSource(identifier: id, shape: shape, options: [.clustered: clustered])
-    }
+  struct Source {
+    let id: String
+    var spec: [String: JSONValue]
+    var features: FeatureIndex?
+    var shape: MLNShape?
+    var resourceKinds: [(prefix: String, kind: TileflowResourceKind)] = []
   }
 
-  private struct Circle {
+  struct Layer {
     let id: String
-    let source: String
-    let paint: [String: JSONValue]
+    let json: JSONValue
+    var slot: TileflowLayerSlot?
+  }
 
-    @MainActor func make(source: MLNSource) throws -> MLNCircleStyleLayer {
-      let layer = MLNCircleStyleLayer(identifier: id, source: source)
-      for (name, value) in paint {
-        guard NativeStyleProperties.set(value, property: name, of: layer) else {
-          throw TileflowMapError.invalidRequest
+  struct Image {
+    let base: UIImage
+    let variants: [String: UIImage]
+  }
+
+  var sources: [String: Source] = [:]
+  var layers: [Layer] = []
+  var images: [String: Image] = [:]
+  var states: [String: [String: [String: JSONValue]]] = [:]
+  var theme: String?
+  private var anchors: [String: String]?
+
+  func configure(theme: String?, metadata: [String: Any]?) {
+    self.theme = theme
+    let manifest = metadata?["tileflow:overlay-placement-manifest"] as? [String: Any]
+    anchors = (manifest?["anchors"] as? [String: Any])?.compactMapValues { $0 as? String }
+  }
+
+  func beforeLayer(_ layer: Layer, in style: MLNStyle) -> MLNStyleLayer? {
+    // Missing manifest means all non-top slots share the first label as their anchor.
+    func anchor(_ slot: TileflowLayerSlot?) -> MLNStyleLayer? {
+      guard let slot else { return nil }
+      if let anchors { return anchors[slot.rawValue].flatMap(style.layer(withIdentifier:)) }
+      return slot == .aboveLabels
+        ? nil
+        : style.layers.first {
+          $0 is MLNSymbolStyleLayer && !$0.identifier.hasPrefix("__tileflow_layer_")
         }
+    }
+    func rank(_ slot: TileflowLayerSlot?) -> Int {
+      slot.flatMap { TileflowLayerSlot.allCases.firstIndex(of: $0) }
+        ?? TileflowLayerSlot.allCases.count
+    }
+    let sorted = layers.enumerated().sorted {
+      (rank($0.element.slot), $0.offset) < (rank($1.element.slot), $1.offset)
+    }.map(\.element)
+    let authored = anchor(layer.slot)
+    if let index = sorted.firstIndex(where: { $0.id == layer.id }) {
+      for next in sorted.dropFirst(index + 1)
+      where anchor(next.slot)?.identifier == authored?.identifier {
+        if let installed = style.layer(withIdentifier: Self.layerID(next.id)) { return installed }
       }
-      return layer
     }
+    return authored
   }
 
-  private var sources: [String: Source] = [:]
-  private var circles: [Circle] = []
-
-  private static func validateSource(_ spec: [String: JSONValue]) throws {
-    guard spec["type"] == .string("geojson"),
-      Set(spec.keys).isSubset(of: ["type", "data", "cluster"]),
-      spec["cluster"] == nil || spec["cluster"]?.bool != nil
-    else { throw TileflowMapError.invalidRequest }
-  }
-
-  private static func shape(_ bytes: Data) throws -> MLNShape {
-    guard let shape = try? MLNShape(data: bytes, encoding: String.Encoding.utf8.rawValue) else {
-      throw TileflowMapError.invalidRequest
-    }
-    return shape
-  }
-
-  /// A view can receive application data before the first style or renderer exists.
-  static func validateQueuedSource(_ source: RuntimeStyle.Source) throws {
-    try validateSource(source.spec)
-    switch source.geoJSON?.base {
-    case .bytes(let bytes, _): _ = try shape(bytes)
-    case .empty: break
-    default: throw TileflowMapError.invalidRequest
-    }
-  }
-
-  static func circlePaint(_ json: JSONValue, hasSlot: Bool) throws -> [String: JSONValue] {
-    guard case .object(let spec) = json, spec["type"] == .string("circle"), !hasSlot,
-      Set(spec.keys).isSubset(of: ["id", "type", "source", "paint"]),
-      case .object(let paint) = spec["paint"] ?? .object([:])
-    else { throw TileflowMapError.invalidRequest }
-    for (name, value) in paint {
-      let valid: Bool
-      switch name {
-      case "circle-color", "circle-stroke-color":
-        valid = value.string.flatMap(NativeEvaluators.parseColour) != nil
-      case "circle-radius", "circle-stroke-width": valid = value.number.map { $0 >= 0 } ?? false
-      case "circle-opacity", "circle-stroke-opacity", "circle-blur":
-        valid = value.number.map { (0...1).contains($0) } ?? false
-      default: valid = false
+  func setImages(_ request: JSONValue, channel: DataChannel, style: MLNStyle?) throws {
+    guard let entries = request["images"]?.array else { throw TileflowMapError.invalidRequest }
+    var next: [String: Image] = [:]
+    for entry in entries {
+      guard let name = entry["name"]?.string, next[name] == nil else {
+        throw TileflowMapError.invalidRequest
       }
-      guard valid else { throw TileflowMapError.invalidRequest }
-    }
-    return paint
-  }
-
-  func addSource(_ request: JSONValue, channel: DataChannel, style: MLNStyle?) throws {
-    guard let id = request["id"]?.string, case .object(let spec) = request["source"]
-    else { throw TileflowMapError.invalidRequest }
-    try Self.validateSource(spec)
-    let bytes: Data
-    if let ref = spec["data"]?["id"]?.string, let payload = channel.payload(ref) {
-      bytes = payload.bytes
-    } else if spec["data"]?["empty"]?.bool == true {
-      bytes = Data(#"{"type":"FeatureCollection","features":[]}"#.utf8)
-    } else {
-      throw TileflowMapError.invalidRequest
-    }
-
-    let key = "__tileflow_source_" + id
-    guard sources[key] == nil, style?.source(withIdentifier: key) == nil else {
-      throw TileflowMapError.invalidRequest
-    }
-    let source = Source(
-      id: key, shape: try Self.shape(bytes), clustered: spec["cluster"]?.bool ?? false)
-    style?.addSource(source.make())
-    sources[key] = source
-  }
-
-  func addLayer(_ request: JSONValue, style: MLNStyle?) throws {
-    guard let spec = request["layer"], let id = spec["id"]?.string,
-      let sourceID = spec["source"]?.string,
-      let source = sources["__tileflow_source_" + sourceID]
-    else { throw TileflowMapError.invalidRequest }
-    let paint = try Self.circlePaint(spec, hasSlot: request["slot"] != nil)
-    let circle = Circle(id: "__tileflow_layer_" + id, source: source.id, paint: paint)
-    guard !circles.contains(where: { $0.id == circle.id }),
-      style?.layer(withIdentifier: circle.id) == nil
-    else { throw TileflowMapError.invalidRequest }
-    let index: Int
-    if let position = request["position"] {
-      guard let relative = (position["above"] ?? position["below"])?.string,
-        let at = circles.firstIndex(where: { $0.id == "__tileflow_layer_" + relative })
-      else { throw TileflowMapError.invalidRequest }
-      index = position["above"] != nil ? at + 1 : at
-    } else {
-      index = circles.count
-    }
-
-    let layer = try circle.make(source: style?.source(withIdentifier: source.id) ?? source.make())
-    if let style {
-      if index < circles.count, let next = style.layer(withIdentifier: circles[index].id) {
-        style.insertLayer(layer, below: next)
+      let ratio = entry["pixelRatio"]?.number ?? 1
+      let sdf = entry["sdf"]?.bool == true
+      func decode(_ ref: JSONValue?) throws -> UIImage {
+        guard let id = ref?["id"]?.string, let data = channel.payload(id),
+          let image = UIImage(data: data.bytes, scale: CGFloat(ratio))
+        else { throw TileflowMapError.invalidRequest }
+        return image.withRenderingMode(sdf ? .alwaysTemplate : .alwaysOriginal)
+      }
+      let variants: [String: UIImage]
+      if case .object(let refs) = entry["variants"] {
+        variants = try refs.mapValues(decode)
       } else {
-        style.addLayer(layer)
+        variants = [:]
+      }
+      next[name] = try Image(base: decode(entry["data"]), variants: variants)
+    }
+    if let style {
+      for name in images.keys where next[name] == nil { style.removeImage(forName: name) }
+      for (name, image) in next {
+        style.setImage(theme.flatMap { image.variants[$0] } ?? image.base, forName: name)
       }
     }
-    circles.insert(circle, at: index)
-  }
-
-  func removeLayer(_ request: JSONValue, style: MLNStyle?) throws {
-    guard let id = request["id"]?.string,
-      let index = circles.firstIndex(where: { $0.id == "__tileflow_layer_" + id })
-    else { throw TileflowMapError.invalidRequest }
-    let circle = circles.remove(at: index)
-    if let layer = style?.layer(withIdentifier: circle.id) { style?.removeLayer(layer) }
-  }
-
-  func removeSource(_ request: JSONValue, style: MLNStyle?) throws {
-    guard let id = request["id"]?.string else { throw TileflowMapError.invalidRequest }
-    let key = "__tileflow_source_" + id
-    guard !circles.contains(where: { $0.source == key }), sources.removeValue(forKey: key) != nil
-    else { throw TileflowMapError.invalidRequest }
-    if let source = style?.source(withIdentifier: key) { style?.removeSource(source) }
+    images = next
   }
 
   func restore(in style: MLNStyle) throws {
-    guard sources.keys.allSatisfy({ style.source(withIdentifier: $0) == nil }),
-      circles.allSatisfy({ style.layer(withIdentifier: $0.id) == nil })
+    guard sources.keys.allSatisfy({ style.source(withIdentifier: Self.sourceID($0)) == nil }),
+      layers.allSatisfy({ style.layer(withIdentifier: Self.layerID($0.id)) == nil })
     else { throw TileflowMapError.invalidRequest }
-    for source in sources.values { style.addSource(source.make()) }
-    for circle in circles {
-      guard let source = style.source(withIdentifier: circle.source) else {
-        throw TileflowMapError.invalidRequest
+    for item in sources.values { style.addSource(try Self.makeSource(item)) }
+    for (name, image) in images {
+      style.setImage(theme.flatMap { image.variants[$0] } ?? image.base, forName: name)
+    }
+    for layer in layers { try install(layer, in: style) }
+    for (target, features) in states {
+      let parts = target.components(separatedBy: "\n")
+      for (id, state) in features {
+        try applyState(
+          sourceID: parts[0], sourceLayer: parts[1], feature: id, values: state, in: style)
       }
-      style.addLayer(try circle.make(source: source))
     }
   }
 }

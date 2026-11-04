@@ -8,7 +8,7 @@ final class StyleEditQueue {
   private var waiting: [(id: UUID, call: CheckedContinuation<Void, any Error>)] = []
 
   func acquire() async throws {
-    guard !Task.isCancelled else { throw TileflowMapError.cancelled }
+    try Task.checkCancellation()
     if !held {
       held = true
       return
@@ -21,13 +21,13 @@ final class StyleEditQueue {
     } onCancel: {
       Task { @MainActor in
         if let index = self.waiting.firstIndex(where: { $0.id == id }) {
-          self.waiting.remove(at: index).call.resume(throwing: TileflowMapError.cancelled)
+          self.waiting.remove(at: index).call.resume(throwing: CancellationError())
         }
       }
     }
     if Task.isCancelled {
       release()
-      throw TileflowMapError.cancelled
+      throw CancellationError()
     }
   }
 
@@ -788,9 +788,7 @@ extension TileflowMapView {
     do {
       try await send(engine)
     } catch {
-      if readyEngine === engine || (error as? TileflowMapError)?.code == .invalidRequest {
-        runtimeStyle = previous
-      }
+      runtimeStyle = previous
       throw error
     }
   }

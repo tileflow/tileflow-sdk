@@ -185,7 +185,7 @@ public class NativeMapViewIntegrationTest {
                 withContext(Dispatchers.Main) {
                     val detached = TileflowMapView(activity).apply { engineKind = MapEngineKind.NATIVE }
                     try {
-                        val remote = JSONObject("""{"type":"geojson","data":"https://example.com/points"}""")
+                        val remote = JSONObject("""{"type":"geojson","data":"file:///private/points.geojson"}""")
                         val failure = runCatching { detached.addStyleSource("remote", remote) }.exceptionOrNull()
                         assertEquals(TileflowErrorCode.INVALID_REQUEST, (failure as TileflowMapException).code)
                         assertFalse(detached.sourceExists("remote"))
@@ -230,6 +230,84 @@ public class NativeMapViewIntegrationTest {
                     val style = requireNotNull(activity.engine?.map?.style)
                     assertNull(style.getLayer("__tileflow_layer_points"))
                     assertNull(style.getSource("__tileflow_source_places"))
+                }
+            }
+        } finally {
+            instrumentation.runOnMainSync { activity.finish() }
+        }
+    }
+
+    @Test
+    public fun allStyleTypesAndFeatureEditsReachMapLibre() {
+        requireNativeFixture()
+        val activity = show()
+        try {
+            runBlocking {
+                withContext(Dispatchers.Main) {
+                    val view = activity.views.single()
+                    activity.recorded.single().waitForLoads(1)
+                    val root = Fixture.ORIGIN
+                    view.addStyleSource("places", JSONObject("""{"type":"geojson"}"""))
+                    view.addStyleSource("v", JSONObject("""{"type":"vector","tiles":["$root/city/{z}/{x}/{y}.mvt"]}"""))
+                    view.addStyleSource("r", JSONObject("""{"type":"raster","tiles":["$root/terrain/{z}/{x}/{y}.png"]}"""))
+                    view.addStyleSource("d", JSONObject("""{"type":"raster-dem","tiles":["$root/terrain/{z}/{x}/{y}.png"],"encoding":"mapbox"}"""))
+                    view.addStyleSource("img", JSONObject("""{"type":"image","url":"$root/terrain/0/0/0.png","coordinates":[[-3.9,40.5],[-3.8,40.5],[-3.8,40.4],[-3.9,40.4]]}"""))
+
+                    val types = mapOf("background" to null, "fill" to "v", "line" to "places", "symbol" to "places",
+                        "circle" to "places", "heatmap" to "places", "fill-extrusion" to "places", "raster" to "img",
+                        "hillshade" to "d", "color-relief" to "d")
+                    for ((type, source) in types) {
+                        val definition = JSONObject().put("id", type).put("type", type)
+                        source?.let { definition.put("source", it) }
+                        if (source == "v") definition.put("source-layer", "building")
+                        if (type == "circle") definition.put("slot", "below-labels")
+                        view.addStyleLayer(definition)
+                    }
+                    val style = requireNotNull(activity.engine?.map?.style)
+                    for (type in types.keys) assertNotNull(type, style.getLayer("__tileflow_layer_" + type))
+                    for (source in listOf("places", "v", "r", "d", "img")) assertNotNull(source, style.getSource("__tileflow_source_" + source))
+
+                    val colors = TileflowExpression
+                    view.updateLayer(TileflowCircleLayer("circle", "places").circleRadius(12.0).circleColor(
+                        colors.switchCase(colors.boolean(colors.featureState("active"), colors.literal(false)),
+                            colors.literal("#ff0000"), colors.literal("#0000ff"))
+                    ))
+                    view.moveLayer("circle", TileflowLayerPosition.Above("color-relief"))
+                    assertEquals("__tileflow_layer_circle", style.layers.last().id)
+                    assertEquals(12f, style.getLayerAs<CircleLayer>("__tileflow_layer_circle")?.circleRadius?.value)
+                    val first = TileflowFeature("41", TileflowGeometry.Point(center))
+                    val second = TileflowFeature("42", TileflowGeometry.Point(center))
+                    view.addGeoJSONSourceFeatures("places", listOf(first, second))
+                    view.updateGeoJSONSourceFeatures("places", listOf(first.copy(properties = mapOf("value" to TileflowJSON.Number(2.0)))))
+                    view.removeGeoJSONSourceFeatures("places", listOf("42"))
+                    val projected = view.project(center)
+                    fun p(dx: Int, dy: Int) = TileflowPoint(projected.x + dx, projected.y + dy)
+                    val box = TileflowQueryGeometry.Box(p(-20,-20), p(20,20))
+                    val polygon = TileflowQueryGeometry.Polygon(listOf(p(-20,-15), p(20,-15), p(0,25)))
+                    val misses = TileflowQueryGeometry.Polygon(listOf(p(-40,-40), p(8,-40), p(-40,8)))
+                    val circles = TileflowRenderedQueryOptions(listOf("circle"))
+                    withTimeout(15_000) {
+                        while (!view.querySourceFeatures("places").any { it.feature.properties["value"] == TileflowJSON.Number(2.0) }) delay(60)
+                    }
+                    assertEquals(listOf("41"), view.querySourceFeatures("places").map { it.feature.id })
+                    for (area in listOf(box, polygon)) assertEquals("41", view.queryRenderedFeatures(area, circles).first().feature.id)
+                    assertTrue(view.queryRenderedFeatures(misses, circles).isEmpty())
+                    view.setFeatureState("places", featureId = "41", state = mapOf("active" to TileflowStyleValue.Bool(true)))
+                    assertEquals(TileflowStyleValue.Bool(true), view.queryRenderedFeatures(box, circles).first().state["active"])
+                    suspend fun circlePixel(): Int {
+                        val image = suspendCancellableCoroutine<Bitmap?> { done ->
+                            requireNotNull(activity.engine?.map).snapshot { done.resume(it) }
+                        } ?: error("No rendered snapshot")
+                        return image.getPixel(projected.x.toInt(), projected.y.toInt())
+                    }
+                    withTimeout(10_000) { while (Color.red(circlePixel()) < 240) delay(50) }
+                    view.removeFeatureState("places", featureId = "41", key = "active")
+                    withTimeout(10_000) {
+                        while (view.queryRenderedFeatures(box, circles).first().state.isNotEmpty() || Color.blue(circlePixel()) < 240)
+                            delay(50)
+                    }
+                    view.setGeoJSONSourceData("places", TileflowGeoJSONData.Empty)
+                    withTimeout(15_000) { while (view.querySourceFeatures("places").isNotEmpty()) delay(60) }
                 }
             }
         } finally {

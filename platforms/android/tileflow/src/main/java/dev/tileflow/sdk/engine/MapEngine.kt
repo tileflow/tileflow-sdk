@@ -17,11 +17,11 @@ internal enum class MapEngineKind {
     NATIVE;
 
     fun validateQueued(source: RuntimeStyle.Source) {
-        if (this == NATIVE) NativeRuntimeStyle.validateQueuedSource(source)
+        if (this == NATIVE) NativeStyleSource.validateQueued(source)
     }
 
     fun validateQueued(layer: RuntimeStyle.Layer) {
-        if (this == NATIVE) NativeRuntimeStyle.circlePaint(layer.json, layer.slot != null)
+        if (this == NATIVE) NativeStyleLayer(layer.json, layer.slot).validate()
     }
 }
 

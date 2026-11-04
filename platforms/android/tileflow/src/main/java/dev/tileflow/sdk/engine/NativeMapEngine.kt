@@ -134,7 +134,9 @@ internal class NativeMapEngine(
     private var emphasisShown: NativeEmphasisRequest? = null
     private var emphasisStrength = 0.0
     private var emphasisRun = 0
-    private val runtimeStyle = NativeRuntimeStyle()
+    private val runtimeStyle = NativeRuntimeStyle(
+        { loadedStyle }, { currentTheme }, ::projectRuntimeSource, ::loadRuntimeGeoJSON
+    )
     private val loadedStyle: Style?
         get() = if (contentStyleLoaded) map?.style else null
     private val styleWaiters = mutableListOf<CancellableContinuation<Throwable?>>()
@@ -191,6 +193,7 @@ internal class NativeMapEngine(
             reportContentReady()
             rendered()
         }
+        mapView.addOnDidBecomeIdleListener { if (!retired) runtimeStyle.confirmState() }
         mapView.addOnDidFailLoadingMapListener { message ->
             if (retired) return@addOnDidFailLoadingMapListener
             val failure =
@@ -219,7 +222,7 @@ internal class NativeMapEngine(
             MapResourceContexts.register(
                 MapResourceRoute(
                     loader,
-                    classify = { projection?.classify(it) ?: TileflowResourceKind.OTHER },
+                    classify = { runtimeStyle.classify(it) ?: projection?.classify(it) ?: TileflowResourceKind.OTHER },
                     report = { outcome -> main.post { received(outcome) } },
                 )
             )
@@ -264,21 +267,12 @@ internal class NativeMapEngine(
             val request = payload as? JSONObject
             return when (method) {
                 ProtocolContract.Method.INITIALIZE -> initialize(map, request ?: invalid())
-                ProtocolContract.Method.ADD_SOURCE -> {
-                    runtimeStyle.addSource(request ?: invalid(), data, loadedStyle)
-                    JSONObject.NULL
-                }
-                ProtocolContract.Method.ADD_LAYER -> {
-                    runtimeStyle.addLayer(request ?: invalid(), loadedStyle)
-                    JSONObject.NULL
-                }
-                ProtocolContract.Method.REMOVE_LAYER -> {
-                    runtimeStyle.removeLayer(request ?: invalid(), loadedStyle)
-                    JSONObject.NULL
-                }
-                ProtocolContract.Method.REMOVE_SOURCE -> {
-                    runtimeStyle.removeSource(request ?: invalid(), loadedStyle)
-                    JSONObject.NULL
+                in NativeRuntimeStyle.methods -> {
+                    val result = runtimeStyle.call(method, request ?: invalid(), data, map, mapView, density)
+                    if (method == ProtocolContract.Method.ADD_SOURCE || method == ProtocolContract.Method.REMOVE_SOURCE) {
+                        projection?.let { attribution.setStyle(it.style, (it.attributions + runtimeStyle.attributions).distinct()) }
+                    }
+                    result
                 }
                 ProtocolContract.Method.QUERY_AT_POINT -> query(map, point(request))
                 ProtocolContract.Method.SET_VISIBILITY -> JSONObject.NULL
@@ -397,6 +391,33 @@ internal class NativeMapEngine(
         return NativeStyleDocument.project(style, url, context, ::load, storedZooms)
     }
 
+    private fun styleAddress(): String =
+        currentTheme?.let { manifest?.theme(it)?.styleUrl } ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
+
+    /** All runtime resources follow the same resource policy, cache and offline rules as the authored style. */
+    private suspend fun projectRuntimeSource(spec: JSONObject): Pair<JSONObject, NativeStyleProjection> {
+        val base = styleAddress()
+        val owner = resourceContext ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
+        val projected = withContext(Dispatchers.IO) {
+            project(JSONObject().put("sources", JSONObject().put("app", spec)), base)
+        }
+        if (retired || resourceContext != owner) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+        val source = projected.style.getJSONObject("sources").getJSONObject("app")
+        val urls = source.optJSONArray("tiles")?.items().orEmpty() + listOfNotNull(source.opt("url"))
+        if (urls.isEmpty() || urls.any { value ->
+                value !is String || !value.removePrefix("pmtiles://").startsWith("${dev.tileflow.sdk.transport.MapResourceAddress.PREFIX}$owner/")
+            }) styleInvalid("Source URL did not resolve through the map transport")
+        return source to projected
+    }
+
+    private suspend fun loadRuntimeGeoJSON(url: String): String {
+        NativeStyleSource.validateLocation(url, absolute = true)
+        val bytes = withContext(Dispatchers.IO) { load(URI(url)) }
+        if (retired) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+        if (bytes.size > ProtocolContract.MAXIMUM_DATA_BYTES) styleInvalid("GeoJSON is too large")
+        return bytes.toString(Charsets.UTF_8)
+    }
+
     /**
      * Reads the map's family document, if it has one, and checks a Hosted document against the
      * revision discovery gave. A map without it draws its themes but cannot blend them or apply an
@@ -432,13 +453,13 @@ internal class NativeMapEngine(
     /** Gives MapLibre a projected style; what the engine reads from it applies once it loads. */
     private fun show(map: MapLibreMap, style: JSONObject, projected: NativeStyleProjection) {
         projection = projected
-        attribution.setStyle(style, projected.attributions)
+        attribution.setStyle(style, (projected.attributions + runtimeStyle.attributions).distinct())
         read(style, projected.omitted)
         contentStyleLoaded = false
         map.setStyle(Style.Builder().fromJson(projected.style.toString())) {
             if (retired) return@setStyle
             try {
-                runtimeStyle.restore(it)
+                runtimeStyle.restore(it, projected.style)
             } catch (error: TileflowMapException) {
                 styleWaiters.toList().also { styleWaiters.clear() }.forEach { it.resume(error) }
                 callbacks.failed(error)

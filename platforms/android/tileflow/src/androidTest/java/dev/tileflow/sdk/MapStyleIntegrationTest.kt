@@ -5,15 +5,13 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.os.Build
-import android.webkit.WebView
+import dev.tileflow.sdk.engine.NativeMapEngine
+import org.maplibre.android.maps.MapView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import java.util.concurrent.TimeUnit
-import kotlin.coroutines.resume
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
@@ -23,7 +21,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * The application's runtime style through the embedded renderer: 100 000 clustered points with an
+ * The application's runtime style through MapLibre Native: 100 000 clustered points with an
  * interactive cluster, feature state, images and queries, all surviving a theme change and a new
  * renderer. Run with the online fixture server and `adb reverse tcp:18645 tcp:<port>`. The test
  * prints its measurements for the device it runs on.
@@ -32,22 +30,11 @@ import org.junit.runner.RunWith
 public class MapStyleIntegrationTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
 
-    private fun show(): SceneHostActivity {
-        val intent =
-            Intent(instrumentation.context, SceneHostActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra("map", "fixture")
-        val activity = instrumentation.startActivitySync(intent) as SceneHostActivity
-        assertTrue("The map did not load.", activity.loaded.await(30, TimeUnit.SECONDS))
-        return activity
+    private fun show(): NativeViewHostActivity {
+        val intent = Intent(instrumentation.context, NativeViewHostActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        return instrumentation.startActivitySync(intent) as NativeViewHostActivity
     }
-
-    private suspend fun javascript(map: TileflowMapView, script: String): String =
-        suspendCancellableCoroutine { continuation ->
-            (map.getChildAt(0) as WebView).evaluateJavascript(script) {
-                if (continuation.isActive) continuation.resume(it)
-            }
-        }
 
     private suspend fun until(label: String, condition: suspend () -> Boolean) {
         withTimeout(30_000) {
@@ -67,28 +54,22 @@ public class MapStyleIntegrationTest {
         map: TileflowMapView,
         update: TileflowCameraUpdate,
     ): Pair<Double, Double> {
-        javascript(
-            map,
-            """
-            window.tileflowFrames = [];
-            (() => {
-              let last;
-              const frame = (time) => {
-                if (last !== undefined) window.tileflowFrames.push(time - last);
-                last = time;
-                if (window.tileflowFrames.length < 90) requestAnimationFrame(frame);
-              };
-              requestAnimationFrame(frame);
-            })();
-            """
-                .trimIndent(),
-        )
-        map.ease(update, durationMillis = 1500)
-        until("frames sampled") {
-            javascript(map, "window.tileflowFrames.length").toIntOrNull()?.let { it >= 60 } == true
+        val view = (map.readyEngine as NativeMapEngine).mapView
+        var previous = 0L
+        val intervals = mutableListOf<Double>()
+        val listener = MapView.OnWillStartRenderingFrameListener {
+            val now = System.nanoTime()
+            if (previous > 0) intervals += (now - previous) / 1_000_000.0
+            previous = now
         }
-        val values = JSONArray(javascript(map, "window.tileflowFrames"))
-        val sorted = (0 until values.length()).map { values.getDouble(it) }.sorted()
+        view.addOnWillStartRenderingFrameListener(listener)
+        try {
+            map.ease(update, durationMillis = 1500)
+            until("native frames sampled") { intervals.size >= 2 }
+        } finally {
+            view.removeOnWillStartRenderingFrameListener(listener)
+        }
+        val sorted = intervals.sorted()
         return sorted[sorted.size / 2] to sorted[((sorted.size - 1) * 0.95).toInt()]
     }
 
@@ -114,12 +95,14 @@ public class MapStyleIntegrationTest {
     @Test
     public fun hundredThousandClusteredPointsSurviveAThemeChangeAndANewRenderer() {
         val activity = show()
-        val map = activity.map
+        val map = activity.views.single()
+        val events = activity.recorded.single()
         val measurements = mutableListOf<String>()
         val e = TileflowExpression
         try {
             runBlocking {
                 withContext(Dispatchers.Main) {
+                    events.waitForLoads(1)
                     map.jump(TileflowCamera(-3.7, 40.42, 9.0))
                     // The same movement without the points, for comparison on this device.
                     val (baseP50, baseP95) =
@@ -209,6 +192,7 @@ public class MapStyleIntegrationTest {
                     }
                     val largest = found.maxBy(count)
                     assertEquals("clusters", largest.layer)
+                    assertTrue((largest.feature.properties["rankSum"] as TileflowJSON.Number).value > 0)
                     val cluster = largest.feature.clusterId!!
                     val center = (largest.feature.geometry as TileflowGeometry.Point).coordinate
                     assertTrue(map.clusterChildren("points", cluster).size > 1)
@@ -272,10 +256,10 @@ public class MapStyleIntegrationTest {
                     }
 
                     // A new renderer receives the whole style again.
-                    val loads = activity.loads.size
+                    val loads = events.loads
                     map.reload()
                     val replay = millis {
-                        until("the new renderer") { activity.loads.size > loads }
+                        until("the new renderer") { events.loads > loads }
                         until("the style on the new renderer") {
                             selected().any { it.state["selected"] == TileflowStyleValue.Bool(true) }
                         }
@@ -283,13 +267,13 @@ public class MapStyleIntegrationTest {
                     measurements += "new renderer with the style replayed $replay ms"
                 }
             }
-            val failures = activity.events.filterIsInstance<TileflowMapEvent.Failed>()
+            val failures = events.failures
             assertTrue("Map errors: $failures", failures.isEmpty())
             println(
                 "Tileflow runtime style on ${Build.MODEL} API ${Build.VERSION.SDK_INT}: ${measurements.joinToString(", ")}."
             )
         } finally {
-            activity.finish()
+            instrumentation.runOnMainSync { activity.finish() }
         }
     }
 }

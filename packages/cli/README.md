@@ -274,6 +274,9 @@ authority and renews account-backed authorization during long transfers and vali
 uploads resume; published versions become current at stable delivery URLs. Purge requires confirmation
 and can be blocked by retained deployment dependencies.
 
+Hashing reuses one 16 MiB buffer. Transfers stream up to four parts simultaneously using independent
+reusable buffers and the same integrity checks on retries.
+
 Administratively disabled uploads return `TF_TILESET_UPLOAD_DISABLED` without retrying.
 Temporary service failures retain bounded retries.
 

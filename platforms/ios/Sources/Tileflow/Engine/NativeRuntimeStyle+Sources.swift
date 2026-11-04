@@ -190,12 +190,12 @@ extension NativeRuntimeStyle {
       topLeft: points[0], bottomLeft: points[3], bottomRight: points[2], topRight: points[1])
   }
 
-  static func makeSource(_ item: Source) throws -> MLNSource {
+  func makeSource(_ item: Source) throws -> MLNSource {
     let key = sourceID(item.id)
     let spec = item.spec
     let type = spec["type"]?.string
     if type == "geojson" {
-      let options = try shapeOptions(spec)
+      let options = try Self.shapeOptions(spec)
       guard let shape = item.shape else { throw TileflowMapError.invalidRequest }
       var source: MLNShapeSource?
       guard
@@ -209,7 +209,7 @@ extension NativeRuntimeStyle {
         throw TileflowMapError.invalidRequest
       }
       return try MLNImageSource(
-        identifier: key, coordinateQuad: quad(spec["coordinates"]), url: url)
+        identifier: key, coordinateQuad: Self.quad(spec["coordinates"]), url: url)
     }
     if let config = spec["url"]?.string.flatMap(URL.init(string:)) {
       switch type {
@@ -226,7 +226,7 @@ extension NativeRuntimeStyle {
     guard let tiles = spec["tiles"]?.array?.compactMap(\.string), !tiles.isEmpty else {
       throw TileflowMapError.invalidRequest
     }
-    let options = try tileOptions(spec)
+    let options = try Self.tileOptions(spec)
     switch type {
     case "vector":
       return MLNVectorTileSource(identifier: key, tileURLTemplates: tiles, options: options)
@@ -241,6 +241,12 @@ extension NativeRuntimeStyle {
 
 extension NativeRuntimeStyle {
   /// Resolves external references through the map's resource policy before handing them to MapLibre.
+  static func inlineSource(_ id: String, bytes: Data, lineMetrics: Bool = false) throws -> Source {
+    var item = Source(id: id, spec: ["type": .string("geojson"), "lineMetrics": .bool(lineMetrics)])
+    try setBytes(bytes, on: &item)
+    return item
+  }
+
   static func prepareSource(
     _ request: JSONValue, channel: DataChannel, styleURL: URL,
     load: @MainActor (URL) async throws -> Data,
@@ -348,9 +354,9 @@ extension NativeRuntimeStyle {
   }
 
   func addSource(_ item: Source, in style: MLNStyle?) throws {
-    guard sources[item.id] == nil, style?.source(withIdentifier: Self.sourceID(item.id)) == nil
+    guard sources[item.id] == nil, style?.source(withIdentifier: sourceID(item.id)) == nil
     else { throw TileflowMapError.invalidRequest }
-    let source = try Self.makeSource(item)
+    let source = try makeSource(item)
     if let style, !TFStylePerform({ style.addSource(source) }) {
       throw TileflowMapError.invalidRequest
     }
@@ -363,7 +369,7 @@ extension NativeRuntimeStyle {
     }
     try Self.setBytes(bytes, on: &item)
     if let style {
-      guard let source = style.source(withIdentifier: Self.sourceID(id)) as? MLNShapeSource else {
+      guard let source = style.source(withIdentifier: sourceID(id)) as? MLNShapeSource else {
         throw TileflowMapError.invalidRequest
       }
       source.shape = item.shape
@@ -442,7 +448,7 @@ extension NativeRuntimeStyle {
     }
     let next = MLNShapeCollectionFeature(shapes: index.order.compactMap { index.features[$0] })
     if let style {
-      guard let source = style.source(withIdentifier: Self.sourceID(id)) as? MLNShapeSource else {
+      guard let source = style.source(withIdentifier: sourceID(id)) as? MLNShapeSource else {
         throw TileflowMapError.invalidRequest
       }
       source.shape = next
@@ -456,7 +462,7 @@ extension NativeRuntimeStyle {
     guard let id = request["id"]?.string, sources[id] != nil,
       !layers.contains(where: { $0.json["source"]?.string == id })
     else { throw TileflowMapError.invalidRequest }
-    if let style, let source = style.source(withIdentifier: Self.sourceID(id)),
+    if let style, let source = style.source(withIdentifier: sourceID(id)),
       !TFStylePerform({ style.removeSource(source) })
     {
       throw TileflowMapError.invalidRequest

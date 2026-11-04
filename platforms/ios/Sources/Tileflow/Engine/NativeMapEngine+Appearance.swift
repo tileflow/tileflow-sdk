@@ -72,6 +72,7 @@ extension NativeMapEngine {
 
   /// A style finished loading: the view mode, the emphasis and the degradations apply to it.
   func styleDidLoad() {
+    scene.restore()
     viewModeMotion?.cancel()
     viewModeMotion = nil
     applyViewMode(factor: viewMode == "3d" ? 1 : 0)
@@ -272,6 +273,7 @@ extension NativeMapEngine {
         blend, to: request.position, dominant: request.hold ? blend.dominant : request.nearest)
     else { return nil }
     shown = .blend(next)
+    scene.blendChanged()
     applyEmphasis(strength: emphasis.strength, featureData: true)
     return .object(["status": .string("applied"), "theme": .string(request.themes[next.dominant])])
   }

@@ -31,7 +31,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   var onRendererTerminated: ((ProtocolContract.ErrorReason) -> Void)?
 
   let data = DataChannel()
-  private let runtimeStyle = NativeRuntimeStyle()
+  let runtimeStyle = NativeRuntimeStyle()
+  lazy var scene = NativeMapScene(self)
   private let resourceKinds = LockedValue<[(prefix: String, kind: TileflowResourceKind)]>([])
   private var baseResourceKinds: [(prefix: String, kind: TileflowResourceKind)] = []
   private var styleWork: Task<Void, Never>?
@@ -169,6 +170,11 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       } onCancel: {
         work.cancel()
       }
+    case .setSun: return try await scene.setSun(payload)
+    case .setStyleState: return try await scene.setStyleState(payload)
+    case .setBoundaryValues:
+      try scene.setBoundaries(payload, data: self.data)
+      return .null
     case .queryAtPoint:
       return .array(features(at: try Self.point(payload)))
     case .setVisibility:
@@ -294,6 +300,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   func retire(_ error: TileflowMapError) {
     guard !retired else { return }
+    scene.retire()
     retirementError = error
     retired = true
     if let context { MapResourceContexts.shared.retire(context) }
@@ -631,6 +638,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   nonisolated func mapViewDidFinishRenderingFrame(_ mapView: MLNMapView, fullyRendered: Bool) {
     MainActor.assumeIsolated {
+      scene.confirmBoundaries()
       if !runtimeStyle.pendingState.isEmpty, let style = loadedStyle { runtimeStyle.confirmState(in: style) }
       if fullyRendered {
         contentLoaded()

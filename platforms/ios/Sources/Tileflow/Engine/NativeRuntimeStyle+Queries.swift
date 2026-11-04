@@ -15,7 +15,7 @@ extension NativeRuntimeStyle {
   ) throws {
     let properties = values.mapValues(\.foundation)
     let ok: Bool
-    switch style.source(withIdentifier: Self.sourceID(id)) {
+    switch style.source(withIdentifier: sourceID(id)) {
     case let geoJSON as MLNShapeSource where sourceLayer.isEmpty:
       ok = geoJSON.setFeatureState(featureID: feature, state: properties)
     case let vector as MLNVectorTileSource where !sourceLayer.isEmpty:
@@ -41,7 +41,7 @@ extension NativeRuntimeStyle {
         continue
       }
       let current: [String: Any]?
-      switch style.source(withIdentifier: Self.sourceID(target.source)) {
+      switch style.source(withIdentifier: sourceID(target.source)) {
       case let source as MLNShapeSource:
         current = source.featureState(featureID: target.feature)
       case let source as MLNVectorTileSource:
@@ -84,7 +84,7 @@ extension NativeRuntimeStyle {
     } else {
       let key = request["key"]?.string
       if let style {
-        switch style.source(withIdentifier: Self.sourceID(id)) {
+        switch style.source(withIdentifier: sourceID(id)) {
         case let geo as MLNShapeSource:
           if let feature, let key {
             _ = geo.removeFeatureState(featureID: feature, stateKey: key)
@@ -133,7 +133,7 @@ extension NativeRuntimeStyle {
   func queryCluster(_ request: JSONValue, style: MLNStyle) throws -> JSONValue {
     guard let id = request["source"]?.string, let value = request["cluster"]?.number,
       let number = UInt32(exactly: value),
-      let source = style.source(withIdentifier: Self.sourceID(id)) as? MLNShapeSource,
+      let source = style.source(withIdentifier: sourceID(id)) as? MLNShapeSource,
       sources[id]?.spec["cluster"]?.bool == true
     else { throw TileflowMapError.invalidRequest }
     let cluster = MLNPointFeatureCluster()
@@ -155,7 +155,7 @@ extension NativeRuntimeStyle {
 
   func querySource(_ request: JSONValue, style: MLNStyle) throws -> JSONValue {
     guard let id = request["source"]?.string, let item = sources[id],
-      let source = style.source(withIdentifier: Self.sourceID(id))
+      let source = style.source(withIdentifier: sourceID(id))
     else { throw TileflowMapError.invalidRequest }
     let predicate = try request["filter"].map(Self.predicate)
     let limit = Int(request["limit"]?.number ?? 1000)
@@ -191,7 +191,7 @@ extension NativeRuntimeStyle {
   }
 
   func queryRendered(_ request: JSONValue, map: MLNMapView, style: MLNStyle) throws -> JSONValue {
-    let selected = request["layers"]?.array?.compactMap(\.string).map(Self.layerID)
+    let selected = request["layers"]?.array?.compactMap(\.string).map(layerID)
     let predicate = try request["filter"].map(Self.predicate)
     let limit = Int(request["limit"]?.number ?? 1000)
     let geometry = request["geometry"]
@@ -212,7 +212,7 @@ extension NativeRuntimeStyle {
     } else {
       bands = [bounds]
     }
-    let byID = Dictionary(uniqueKeysWithValues: layers.map { (Self.layerID($0.id), $0) })
+    let byID = Dictionary(uniqueKeysWithValues: layers.map { (layerID($0.id), $0) })
     var results: [JSONValue] = []
     for native in style.layers.reversed()
     where selected?.contains(native.identifier) != false && native.isVisible {

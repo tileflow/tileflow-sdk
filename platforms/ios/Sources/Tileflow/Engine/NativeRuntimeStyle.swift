@@ -6,8 +6,11 @@ import UIKit
 /// The application's style objects, kept across MapLibre's replacement of the base style.
 @MainActor
 final class NativeRuntimeStyle {
-  static func sourceID(_ id: String) -> String { "__tileflow_source_" + id }
-  static func layerID(_ id: String) -> String { "__tileflow_layer_" + id }
+  /// Scene content and application style have disjoint names even when clients reuse the same id.
+  private let scenePrefix: String?
+  init(scenePrefix: String? = nil) { self.scenePrefix = scenePrefix }
+  func sourceID(_ id: String) -> String { (scenePrefix ?? "__tileflow_source_") + id }
+  func layerID(_ id: String) -> String { (scenePrefix ?? "__tileflow_layer_") + id }
 
   struct Source {
     let id: String
@@ -71,7 +74,7 @@ final class NativeRuntimeStyle {
     if let index = sorted.firstIndex(where: { $0.id == layer.id }) {
       for next in sorted.dropFirst(index + 1)
       where anchor(next.slot)?.identifier == authored?.identifier {
-        if let installed = style.layer(withIdentifier: Self.layerID(next.id)) { return installed }
+        if let installed = style.layer(withIdentifier: layerID(next.id)) { return installed }
       }
     }
     return authored
@@ -98,7 +101,12 @@ final class NativeRuntimeStyle {
       } else {
         variants = [:]
       }
-      next[name] = try Image(base: decode(entry["data"]), variants: variants)
+      let base = try decode(entry["data"])
+      guard let pixels = base.cgImage, (1...2048).contains(pixels.width), (1...2048).contains(pixels.height),
+        variants.values.allSatisfy({ $0.cgImage?.width == pixels.width && $0.cgImage?.height == pixels.height }),
+        images[name] != nil || style?.image(forName: name) == nil
+      else { throw TileflowMapError(.invalidRequest, reason: .invalidImage) }
+      next[name] = Image(base: base, variants: variants)
     }
     if let style {
       for name in images.keys where next[name] == nil { style.removeImage(forName: name) }
@@ -109,11 +117,40 @@ final class NativeRuntimeStyle {
     images = next
   }
 
+  func showImages(for name: String, style: MLNStyle) {
+    guard theme != name else { return }
+    theme = name
+    for (id, image) in images { style.setImage(image.variants[name] ?? image.base, forName: id) }
+  }
+
+  /// Replace the objects owned by one scene component after its new definitions have been validated.
+  func replace(with next: NativeRuntimeStyle, in style: MLNStyle) throws {
+    for id in next.sources.keys where sources[id] == nil && style.source(withIdentifier: next.sourceID(id)) != nil { throw TileflowMapError.invalidRequest }
+    let owned = Set(layers.map(\.id))
+    for layer in next.layers where !owned.contains(layer.id) && style.layer(withIdentifier: next.layerID(layer.id)) != nil { throw TileflowMapError.invalidRequest }
+    removeInstalled(in: style)
+    do { try next.restore(in: style) }
+    catch {
+      next.removeInstalled(in: style)
+      try restore(in: style)
+      throw error
+    }
+  }
+
+  private func removeInstalled(in style: MLNStyle) {
+    for layer in layers.reversed() {
+      if let native = style.layer(withIdentifier: layerID(layer.id)) { style.removeLayer(native) }
+    }
+    for id in sources.keys {
+      if let source = style.source(withIdentifier: sourceID(id)) { style.removeSource(source) }
+    }
+  }
+
   func restore(in style: MLNStyle) throws {
-    guard sources.keys.allSatisfy({ style.source(withIdentifier: Self.sourceID($0)) == nil }),
-      layers.allSatisfy({ style.layer(withIdentifier: Self.layerID($0.id)) == nil })
+    guard sources.keys.allSatisfy({ style.source(withIdentifier: sourceID($0)) == nil }),
+      layers.allSatisfy({ style.layer(withIdentifier: layerID($0.id)) == nil })
     else { throw TileflowMapError.invalidRequest }
-    for item in sources.values { style.addSource(try Self.makeSource(item)) }
+    for item in sources.values { style.addSource(try makeSource(item)) }
     for (name, image) in images {
       style.setImage(theme.flatMap { image.variants[$0] } ?? image.base, forName: name)
     }

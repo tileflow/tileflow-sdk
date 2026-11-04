@@ -16,14 +16,14 @@ extension NativeRuntimeStyle {
     _ = try makeLayer(layer.json, source: source)
   }
 
-  private static func makeLayer(_ json: JSONValue, source: MLNSource?) throws -> MLNStyleLayer {
+  private static func makeLayer(_ json: JSONValue, source: MLNSource?, identifier: String? = nil) throws -> MLNStyleLayer {
     guard case .object(let fields) = json, let id = json["id"]?.string,
       let type = json["type"]?.string,
       Set(fields.keys).isSubset(of: [
         "id", "type", "source", "source-layer", "filter", "minzoom", "maxzoom", "layout", "paint",
       ])
     else { throw TileflowMapError.invalidRequest }
-    let key = layerID(id)
+    let key = identifier ?? "__tileflow_layer_" + id
     let layer: MLNStyleLayer
     if type == "background" {
       layer = MLNBackgroundStyleLayer(identifier: key)
@@ -162,9 +162,9 @@ extension NativeRuntimeStyle {
     throws
   {
     let source = next.json["source"]?.string.flatMap {
-      style.source(withIdentifier: Self.sourceID($0))
+      style.source(withIdentifier: sourceID($0))
     }
-    let validated = try Self.makeLayer(next.json, source: source)
+    let validated = try Self.makeLayer(next.json, source: source, identifier: layerID(next.id))
     let type = next.json["type"]?.string ?? ""
     var keys: [String] = []
     for (name, key) in [
@@ -194,9 +194,9 @@ extension NativeRuntimeStyle {
 
   func install(_ layer: Layer, in style: MLNStyle) throws {
     let source = layer.json["source"]?.string.flatMap {
-      style.source(withIdentifier: Self.sourceID($0))
+      style.source(withIdentifier: sourceID($0))
     }
-    let native = try Self.makeLayer(layer.json, source: source)
+    let native = try Self.makeLayer(layer.json, source: source, identifier: layerID(layer.id))
     let before = beforeLayer(layer, in: style)
     guard
       TFStylePerform({
@@ -213,14 +213,14 @@ extension NativeRuntimeStyle {
     let old = layers
     let at = layers.firstIndex { $0.id == id }
     if method == .addLayer {
-      guard at == nil, style?.layer(withIdentifier: Self.layerID(id)) == nil else {
+      guard at == nil, style?.layer(withIdentifier: layerID(id)) == nil else {
         throw TileflowMapError.invalidRequest
       }
     } else if at == nil {
       throw TileflowMapError.invalidRequest
     }
     let prior = at.map { layers.remove(at: $0) }
-    let installed = style?.layer(withIdentifier: Self.layerID(id))
+    let installed = style?.layer(withIdentifier: layerID(id))
     var removed = false
     do {
       if method != .removeLayer {

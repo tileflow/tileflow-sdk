@@ -106,6 +106,17 @@ final class NativeEvaluatorTests: XCTestCase {
     }
   }
 
+  func testSolarPositionAndIlluminationFollowCore() throws {
+    let rows = try XCTUnwrap(fixture["solar"]?.array)
+    XCTAssertFalse(rows.isEmpty)
+    for row in rows {
+      let coordinates = try XCTUnwrap(row["location"]?.array?.compactMap(\.number))
+      let direction = NativeSun.position(date: try XCTUnwrap(row["date"]?.number), location: .init(longitude: coordinates[0], latitude: coordinates[1]))
+      assertMatches(direction.json, try XCTUnwrap(row["position"]), "solar position")
+      assertMatches(NativeSun.resolve(direction, preset: try XCTUnwrap(row["preset"])), try XCTUnwrap(row["resolved"]), "solar lighting")
+    }
+  }
+
   func testThreeDecimalsRoundAsTheWebDoes() {
     XCTAssertEqual(NativeEvaluators.threeDecimals(1), "1")
     XCTAssertEqual(NativeEvaluators.threeDecimals(0.5), "0.5")

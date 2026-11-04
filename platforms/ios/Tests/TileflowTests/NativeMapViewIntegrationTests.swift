@@ -488,6 +488,64 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     check(try XCTUnwrap(view.engine as? NativeMapEngine))
   }
 
+  func testSceneLightStateBoundariesAndImageVariantsReachMapLibre() async throws {
+    let source = TileflowMapSource(map: "appearance", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
+    let events = NativeMapEvents()
+    let view = TileflowMapView(source: source)
+    view.engineKind = .native
+    let window = mount(view, events: events)
+    defer { view.destroy(); window.isHidden = true }
+    try await events.waitForLoads(1)
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+    func style() throws -> MLNStyle { try XCTUnwrap(engine.mapView?.style) }
+    let before = try XCTUnwrap(try style().light.position.constantValue as? NSValue).mlnSphericalPositionValue
+    try await view.setSun(.direction(azimuth: 15, altitude: 23), duration: 0.05)
+    var lit = try XCTUnwrap(try style().light.position.constantValue as? NSValue).mlnSphericalPositionValue
+    XCTAssertEqual(lit.azimuthal, 15, accuracy: 0.01)
+    XCTAssertEqual(lit.polar, 67, accuracy: 0.01)
+    try await view.setSun(nil)
+    lit = try XCTUnwrap(try style().light.position.constantValue as? NSValue).mlnSphericalPositionValue
+    XCTAssertEqual(lit.azimuthal, before.azimuthal, accuracy: 0.01)
+    XCTAssertEqual(lit.polar, before.polar, accuracy: 0.01)
+
+    try await view.setStyleState("fixture-mode", to: "test")
+    try await view.setStyleState("fixture-opacity", to: 0)
+    try await view.setStyleState("fixture-opacity", to: 0.75, duration: 0.1)
+    XCTAssertEqual(try style().globalState["fixture-opacity"] as? Double, 0.75)
+    XCTAssertEqual(try style().globalState["fixture-mode"] as? String, "test")
+
+    func pixels(_ color: UIColor) -> UIImage {
+      let renderer = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8))
+      return renderer.image { context in color.setFill(); context.fill(CGRect(x: 0,y: 0,width: 8,height: 8)) }
+    }
+    try await view.setImages([try .init(name: "pin", image: pixels(.red), variants: ["dark": pixels(.blue)])])
+    let light = try XCTUnwrap(try style().image(forName: "pin")?.pngData())
+    try await view.setBoundaryValues(.init(ids: [41: 7], labels: true, state: "score"))
+    func checkScore(_ expected: Double?, layer: String = "boundary_area") async throws {
+      let source = try XCTUnwrap(try style().source(withIdentifier: "tileflow-boundaries") as? MLNVectorTileSource)
+      try await waitUntil { source.featureState(sourceLayerID: layer, featureID: "41")?["score"] as? Double == expected }
+    }
+    try await checkScore(7)
+    try await checkScore(7, layer: "boundary_label")
+    let point = try await view.project(Self.center)
+    try await waitUntil { engine.mapView?.visibleFeatures(at: point, styleLayerIdentifiers: ["score-fill"]).contains { ($0.identifier as? NSNumber)?.intValue == 41 } == true }
+    try await view.setTheme("dark")
+    try await checkScore(7)
+    XCTAssertNotEqual(try style().image(forName: "pin")?.pngData(), light)
+    XCTAssertEqual(try style().globalState["fixture-mode"] as? String, "test")
+    try await view.setBoundaryValues(nil)
+    try await checkScore(nil)
+    try await view.setBlend(themes: ["light", "dark"], position: 0)
+    XCTAssertEqual(try style().image(forName: "pin")?.pngData(), light)
+    try await view.setBlend(themes: ["light", "dark"], position: 1)
+    XCTAssertNotEqual(try style().image(forName: "pin")?.pngData(), light)
+    try view.reload()
+    try await events.waitForLoads(2)
+    let replacement = try XCTUnwrap(view.engine as? NativeMapEngine)
+    XCTAssertEqual(replacement.mapView?.style?.globalState["fixture-opacity"] as? Double, 0.75)
+    XCTAssertTrue(events.failures.isEmpty)
+  }
+
   func testOnlineMapLoadsChangesThemeAndRetires() async throws {
     try await requireNativeFixture()
     let events = NativeMapEvents()

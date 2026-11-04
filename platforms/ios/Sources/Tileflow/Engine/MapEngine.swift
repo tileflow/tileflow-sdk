@@ -7,6 +7,10 @@ enum MapEngineKind: Sendable {
   /// MapLibre Native.
   case native
 
+  func validateContent(_ content: MapContent) throws {
+    if self == .native, !content.annotations.isEmpty { throw TileflowMapError.invalidRequest }
+  }
+
   @MainActor func validateQueued(_ source: RuntimeStyle.Source) throws {
     if self == .native { try NativeRuntimeStyle.validateQueuedSource(source) }
   }

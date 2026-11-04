@@ -242,7 +242,8 @@ extension NativeRuntimeStyle {
 extension NativeRuntimeStyle {
   /// Resolves external references through the map's resource policy before handing them to MapLibre.
   static func inlineSource(_ id: String, bytes: Data, lineMetrics: Bool = false) throws -> Source {
-    var item = Source(id: id, spec: ["type": .string("geojson"), "lineMetrics": .bool(lineMetrics)])
+    var item = Source(
+      id: id, spec: ["type": .string("geojson"), "lineMetrics": .bool(lineMetrics)])
     try setBytes(bytes, on: &item)
     return item
   }

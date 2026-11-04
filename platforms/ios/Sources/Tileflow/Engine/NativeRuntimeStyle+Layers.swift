@@ -16,7 +16,9 @@ extension NativeRuntimeStyle {
     _ = try makeLayer(layer.json, source: source)
   }
 
-  private static func makeLayer(_ json: JSONValue, source: MLNSource?, identifier: String? = nil) throws -> MLNStyleLayer {
+  private static func makeLayer(_ json: JSONValue, source: MLNSource?, identifier: String? = nil)
+    throws -> MLNStyleLayer
+  {
     guard case .object(let fields) = json, let id = json["id"]?.string,
       let type = json["type"]?.string,
       Set(fields.keys).isSubset(of: [

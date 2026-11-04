@@ -6,11 +6,20 @@ import UIKit
 /// The application's style objects, kept across MapLibre's replacement of the base style.
 @MainActor
 final class NativeRuntimeStyle {
-  /// Scene content and application style have disjoint names even when clients reuse the same id.
-  private let scenePrefix: String?
-  init(scenePrefix: String? = nil) { self.scenePrefix = scenePrefix }
-  func sourceID(_ id: String) -> String { (scenePrefix ?? "__tileflow_source_") + id }
-  func layerID(_ id: String) -> String { (scenePrefix ?? "__tileflow_layer_") + id }
+  enum Namespace { case application, overlays, markers }
+  private let namespace: Namespace
+  init(_ namespace: Namespace = .application) { self.namespace = namespace }
+
+  func sourceID(_ id: String) -> String {
+    switch namespace {
+    case .application: "__tileflow_source_" + id
+    case .overlays: "__tileflow_app_" + id
+    case .markers: "__tileflow_depth_" + id
+    }
+  }
+  func layerID(_ id: String) -> String {
+    namespace == .application ? "__tileflow_layer_" + id : sourceID(id)
+  }
 
   struct Source {
     let id: String
@@ -29,6 +38,7 @@ final class NativeRuntimeStyle {
   struct Image {
     let base: UIImage
     let variants: [String: UIImage]
+    var identity: JSONValue?
   }
 
   var sources: [String: Source] = [:]
@@ -56,6 +66,19 @@ final class NativeRuntimeStyle {
     // Missing manifest means all non-top slots share the first label as their anchor.
     func anchor(_ slot: TileflowLayerSlot?) -> MLNStyleLayer? {
       guard let slot else { return nil }
+      if namespace == .overlays {
+        let order = style.layers
+        let floor =
+          anchors?["above-roads"].flatMap { id in order.firstIndex { $0.identifier == id } } ?? 0
+        var ceiling =
+          anchors?["above-buildings"].flatMap { id in order.firstIndex { $0.identifier == id } }
+          ?? order[floor...].firstIndex {
+            $0 is MLNSymbolStyleLayer && !$0.identifier.hasPrefix("__tileflow_app_")
+          } ?? order.count
+        if ceiling < floor { ceiling = order.count }
+        return order[floor..<ceiling].first { $0 is MLNFillExtrusionStyleLayer }
+          ?? (ceiling == order.count ? nil : order[ceiling])
+      }
       if let anchors { return anchors[slot.rawValue].flatMap(style.layer(withIdentifier:)) }
       return slot == .aboveLabels
         ? nil
@@ -89,10 +112,23 @@ final class NativeRuntimeStyle {
       }
       let ratio = entry["pixelRatio"]?.number ?? 1
       let sdf = entry["sdf"]?.bool == true
+      let refs: [String: JSONValue]
+      if case .object(let values) = entry["variants"] { refs = values } else { refs = [:] }
+      let identity: JSONValue = .object([
+        "data": entry["data"]?["sha256"] ?? .null, "ratio": .number(ratio), "sdf": .bool(sdf),
+        "variants": .object(refs.mapValues { $0["sha256"] ?? .null }),
+      ])
+      if let previous = images[name], previous.identity == identity {
+        next[name] = previous
+        continue
+      }
       func decode(_ ref: JSONValue?) throws -> UIImage {
-        guard let id = ref?["id"]?.string, let data = channel.payload(id),
-          let image = UIImage(data: data.bytes, scale: CGFloat(ratio))
-        else { throw TileflowMapError.invalidRequest }
+        guard let id = ref?["id"]?.string, let data = channel.payload(id) else {
+          throw TileflowMapError.invalidRequest
+        }
+        guard let image = UIImage(data: data.bytes, scale: CGFloat(ratio)) else {
+          throw TileflowMapError(.invalidRequest, reason: .invalidImage)
+        }
         return image.withRenderingMode(sdf ? .alwaysTemplate : .alwaysOriginal)
       }
       let variants: [String: UIImage]
@@ -102,15 +138,18 @@ final class NativeRuntimeStyle {
         variants = [:]
       }
       let base = try decode(entry["data"])
-      guard let pixels = base.cgImage, (1...2048).contains(pixels.width), (1...2048).contains(pixels.height),
-        variants.values.allSatisfy({ $0.cgImage?.width == pixels.width && $0.cgImage?.height == pixels.height }),
+      guard let pixels = base.cgImage, (1...2048).contains(pixels.width),
+        (1...2048).contains(pixels.height),
+        variants.values.allSatisfy({
+          $0.cgImage?.width == pixels.width && $0.cgImage?.height == pixels.height
+        }),
         images[name] != nil || style?.image(forName: name) == nil
       else { throw TileflowMapError(.invalidRequest, reason: .invalidImage) }
-      next[name] = Image(base: base, variants: variants)
+      next[name] = Image(base: base, variants: variants, identity: identity)
     }
     if let style {
       for name in images.keys where next[name] == nil { style.removeImage(forName: name) }
-      for (name, image) in next {
+      for (name, image) in next where images[name]?.identity != image.identity {
         style.setImage(theme.flatMap { image.variants[$0] } ?? image.base, forName: name)
       }
     }
@@ -125,12 +164,17 @@ final class NativeRuntimeStyle {
 
   /// Replace the objects owned by one scene component after its new definitions have been validated.
   func replace(with next: NativeRuntimeStyle, in style: MLNStyle) throws {
-    for id in next.sources.keys where sources[id] == nil && style.source(withIdentifier: next.sourceID(id)) != nil { throw TileflowMapError.invalidRequest }
+    for id in next.sources.keys
+    where sources[id] == nil && style.source(withIdentifier: next.sourceID(id)) != nil {
+      throw TileflowMapError.invalidRequest
+    }
     let owned = Set(layers.map(\.id))
-    for layer in next.layers where !owned.contains(layer.id) && style.layer(withIdentifier: next.layerID(layer.id)) != nil { throw TileflowMapError.invalidRequest }
+    for layer in next.layers
+    where !owned.contains(layer.id) && style.layer(withIdentifier: next.layerID(layer.id)) != nil {
+      throw TileflowMapError.invalidRequest
+    }
     removeInstalled(in: style)
-    do { try next.restore(in: style) }
-    catch {
+    do { try next.restore(in: style) } catch {
       next.removeInstalled(in: style)
       try restore(in: style)
       throw error

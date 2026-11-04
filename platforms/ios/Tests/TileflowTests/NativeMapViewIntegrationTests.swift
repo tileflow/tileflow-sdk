@@ -489,7 +489,8 @@ final class NativeMapViewIntegrationTests: XCTestCase {
   }
 
   func testSceneLightStateBoundariesAndImageVariantsReachMapLibre() async throws {
-    let source = TileflowMapSource(map: "appearance", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
+    let source = TileflowMapSource(
+      map: "appearance", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
     let events = NativeMapEvents()
     let view = TileflowMapView(source: source)
     view.engineKind = .native
@@ -498,13 +499,16 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await events.waitForLoads(1)
     let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
     func style() throws -> MLNStyle { try XCTUnwrap(engine.mapView?.style) }
-    let before = try XCTUnwrap(try style().light.position.constantValue as? NSValue).mlnSphericalPositionValue
+    let before = try XCTUnwrap(try style().light.position.constantValue as? NSValue)
+      .mlnSphericalPositionValue
     try await view.setSun(.direction(azimuth: 15, altitude: 23), duration: 0.05)
-    var lit = try XCTUnwrap(try style().light.position.constantValue as? NSValue).mlnSphericalPositionValue
+    var lit = try XCTUnwrap(try style().light.position.constantValue as? NSValue)
+      .mlnSphericalPositionValue
     XCTAssertEqual(lit.azimuthal, 15, accuracy: 0.01)
     XCTAssertEqual(lit.polar, 67, accuracy: 0.01)
     try await view.setSun(nil)
-    lit = try XCTUnwrap(try style().light.position.constantValue as? NSValue).mlnSphericalPositionValue
+    lit = try XCTUnwrap(try style().light.position.constantValue as? NSValue)
+      .mlnSphericalPositionValue
     XCTAssertEqual(lit.azimuthal, before.azimuthal, accuracy: 0.01)
     XCTAssertEqual(lit.polar, before.polar, accuracy: 0.01)
 
@@ -516,19 +520,30 @@ final class NativeMapViewIntegrationTests: XCTestCase {
 
     func pixels(_ color: UIColor) -> UIImage {
       let renderer = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8))
-      return renderer.image { context in color.setFill(); context.fill(CGRect(x: 0,y: 0,width: 8,height: 8)) }
+      return renderer.image { context in
+        color.setFill(); context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+      }
     }
-    try await view.setImages([try .init(name: "pin", image: pixels(.red), variants: ["dark": pixels(.blue)])])
+    try await view.setImages([
+      try .init(name: "pin", image: pixels(.red), variants: ["dark": pixels(.blue)])
+    ])
     let light = try XCTUnwrap(try style().image(forName: "pin")?.pngData())
     try await view.setBoundaryValues(.init(ids: [41: 7], labels: true, state: "score"))
     func checkScore(_ expected: Double?, layer: String = "boundary_area") async throws {
-      let source = try XCTUnwrap(try style().source(withIdentifier: "tileflow-boundaries") as? MLNVectorTileSource)
-      try await waitUntil { source.featureState(sourceLayerID: layer, featureID: "41")?["score"] as? Double == expected }
+      let source = try XCTUnwrap(
+        try style().source(withIdentifier: "tileflow-boundaries") as? MLNVectorTileSource)
+      try await waitUntil {
+        source.featureState(sourceLayerID: layer, featureID: "41")?["score"] as? Double == expected
+      }
     }
     try await checkScore(7)
     try await checkScore(7, layer: "boundary_label")
     let point = try await view.project(Self.center)
-    try await waitUntil { engine.mapView?.visibleFeatures(at: point, styleLayerIdentifiers: ["score-fill"]).contains { ($0.identifier as? NSNumber)?.intValue == 41 } == true }
+    try await waitUntil {
+      engine.mapView?.visibleFeatures(at: point, styleLayerIdentifiers: ["score-fill"]).contains {
+        ($0.identifier as? NSNumber)?.intValue == 41
+      } == true
+    }
     try await view.setTheme("dark")
     try await checkScore(7)
     XCTAssertNotEqual(try style().image(forName: "pin")?.pngData(), light)
@@ -547,33 +562,49 @@ final class NativeMapViewIntegrationTests: XCTestCase {
   }
 
   func testBoundaryReplacementErasesEachOldValueAndPreservesOtherKeys() async throws {
-    let source = TileflowMapSource(map: "appearance", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
+    let source = TileflowMapSource(
+      map: "appearance", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
     let view = TileflowMapView(source: source)
     view.engineKind = .native
     let events = NativeMapEvents()
     let window = mount(view, events: events)
     defer { view.destroy(); window.isHidden = true }
     try await events.waitForLoads(1)
-    guard let engine = view.engine as? NativeMapEngine, let map = engine.mapView else { return XCTFail("A native map") }
-    let areas = try XCTUnwrap(map.style?.source(withIdentifier: "tileflow-boundaries") as? MLNVectorTileSource)
-    for id in ["41","42"] {
-      XCTAssertTrue(areas.setFeatureState(sourceLayerID: "boundary_area", featureID: id, state: ["other": true]))
+    guard let engine = view.engine as? NativeMapEngine, let map = engine.mapView else {
+      return XCTFail("A native map")
     }
-    try await view.setBoundaryValues(.init(ids: [41: 7,42:8],labels:true,state:"score"))
+    let areas = try XCTUnwrap(
+      map.style?.source(withIdentifier: "tileflow-boundaries") as? MLNVectorTileSource)
+    for id in ["41", "42"] {
+      XCTAssertTrue(
+        areas.setFeatureState(sourceLayerID: "boundary_area", featureID: id, state: ["other": true])
+      )
+    }
+    try await view.setBoundaryValues(.init(ids: [41: 7, 42: 8], labels: true, state: "score"))
     func contains(_ layer: String, _ id: String, _ key: String) -> Bool {
       areas.featureState(sourceLayerID: layer, featureID: id)?[key] != nil
     }
-    try await waitUntil { ["41","42"].allSatisfy { contains("boundary_area",$0,"score") && contains("boundary_label",$0,"score") } }
-    try await view.setBoundaryValues(.init(ids: [43: 9],state:"score"))
-    try await waitUntil(seconds: 2) { ["41","42"].allSatisfy { !contains("boundary_area",$0,"score") && !contains("boundary_label",$0,"score") } }
-    XCTAssertTrue(contains("boundary_area","43","score"))
-    XCTAssertFalse(contains("boundary_label","43","score"))
-    XCTAssertTrue(contains("boundary_area","41","other"))
-    XCTAssertTrue(contains("boundary_area","42","other"))
+    try await waitUntil {
+      ["41", "42"].allSatisfy {
+        contains("boundary_area", $0, "score") && contains("boundary_label", $0, "score")
+      }
+    }
+    try await view.setBoundaryValues(.init(ids: [43: 9], state: "score"))
+    try await waitUntil(seconds: 2) {
+      ["41", "42"].allSatisfy {
+        !contains("boundary_area", $0, "score") && !contains("boundary_label", $0, "score")
+      }
+    }
+    XCTAssertTrue(contains("boundary_area", "43", "score"))
+    XCTAssertFalse(contains("boundary_label", "43", "score"))
+    XCTAssertTrue(contains("boundary_area", "41", "other"))
+    XCTAssertTrue(contains("boundary_area", "42", "other"))
   }
 
   func testStateResetRestoresDefaultsFromTheNewThemeAndDateUsesTheMapCenter() async throws {
-    let view = TileflowMapView(source: TileflowMapSource(map:"scene",manifestURL:FixtureServer.manifest,allowsLoopbackHTTP:true))
+    let view = TileflowMapView(
+      source: TileflowMapSource(
+        map: "scene", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true))
     view.engineKind = .native
     let events = NativeMapEvents()
     let window = mount(view, events: events)
@@ -581,26 +612,36 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await events.waitForLoads(1)
     let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
     func style() throws -> MLNStyle { try XCTUnwrap(engine.mapView?.style) }
-    try await view.setStyleState("fixture-opacity",to:0.25)
-    try await view.setStyleState("fixture-mode",to:"overridden")
-    try await view.setStyleState("fixture-mode",to:.null)
-    try await view.setStyleState("fixture-opacity",to:.null)
-    XCTAssertEqual(try style().globalState["fixture-mode"] as? String,"base")
-    XCTAssertEqual(try style().globalState["fixture-opacity"] as? Double,1)
+    try await view.setStyleState("fixture-opacity", to: 0.25)
+    try await view.setStyleState("fixture-mode", to: "overridden")
+    try await view.setStyleState("fixture-mode", to: .null)
+    try await view.setStyleState("fixture-opacity", to: .null)
+    XCTAssertEqual(try style().globalState["fixture-mode"] as? String, "base")
+    XCTAssertEqual(try style().globalState["fixture-opacity"] as? Double, 1)
     let camera = try await view.camera()
     let time = 1_782_064_800.0
-    let expected = NativeSun.position(date:time*1000, location:.init(longitude:camera.longitude,latitude:camera.latitude))
-    try await view.setSun(.date(Date(timeIntervalSince1970:time)))
-    let light = try XCTUnwrap(try style().light.position.constantValue as? NSValue).mlnSphericalPositionValue
-    XCTAssertEqual(light.azimuthal,expected.azimuth,accuracy:0.001)
-    XCTAssertEqual(light.polar,min(90,max(0,90-expected.altitude)),accuracy:0.001)
+    let expected = NativeSun.position(
+      date: time * 1000, location: .init(longitude: camera.longitude, latitude: camera.latitude))
+    try await view.setSun(.date(Date(timeIntervalSince1970: time)))
+    let light = try XCTUnwrap(try style().light.position.constantValue as? NSValue)
+      .mlnSphericalPositionValue
+    XCTAssertEqual(light.azimuthal, expected.azimuth, accuracy: 0.001)
+    XCTAssertEqual(light.polar, min(90, max(0, 90 - expected.altitude)), accuracy: 0.001)
     try await view.setTheme("night")
-    XCTAssertEqual(try style().globalState["fixture-mode"] as? String,"base")
-    XCTAssertEqual(try style().globalState["fixture-opacity"] as? Double,1)
+    XCTAssertEqual(try style().globalState["fixture-mode"] as? String, "base")
+    XCTAssertEqual(try style().globalState["fixture-opacity"] as? Double, 1)
   }
 
   func testBoundaryFeatureStateChangesRenderedDistrictPixels() async throws {
-    let source = TileflowMapSource(map: "districts", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true)
+    try await checkBoundaryPixels(map: "districts", manifest: FixtureServer.manifest, layer: "district-fill")
+  }
+
+  func testCompiledBoundaryScaleChangesRenderedDistrictPixels() async throws {
+    try await checkBoundaryPixels(map: "appearance", manifest: Self.nativeManifest, layer: "score-fill")
+  }
+
+  private func checkBoundaryPixels(map name: String, manifest: URL, layer: String) async throws {
+    let source = TileflowMapSource(map: name, manifestURL: manifest, allowsLoopbackHTTP: true)
     let view = TileflowMapView(source: source)
     view.engineKind = .native
     let events = NativeMapEvents()
@@ -609,8 +650,12 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await events.waitForLoads(1)
     let map = try XCTUnwrap((view.engine as? NativeMapEngine)?.mapView)
     let point = try await view.project(Self.center)
-    try await waitUntil { map.visibleFeatures(at: point,styleLayerIdentifiers:["district-fill"]).contains { ($0.identifier as? NSNumber)?.intValue == 41 } }
-    let pixel = view.convert(point,to:window)
+    try await waitUntil {
+      map.visibleFeatures(at: point, styleLayerIdentifiers: [layer]).contains {
+        ($0.identifier as? NSNumber)?.intValue == 41
+      }
+    }
+    let pixel = view.convert(point, to: window)
     func waitForColor(_ expected: UInt32) async throws {
       var last = ""
       for _ in 0..<60 {
@@ -622,9 +667,9 @@ final class NativeMapViewIntegrationTests: XCTestCase {
       XCTFail("Expected district color \(String(expected, radix:16)), saw \(last)")
     }
     try await waitForColor(0x00ff00)
-    try await view.setBoundaryValues(.init(ids:[41:1]))
+    try await view.setBoundaryValues(.init(ids: [41: 1]))
     try await waitForColor(0xff0000)
-    try await view.setBoundaryValues(.init(ids:[41:2]))
+    try await view.setBoundaryValues(.init(ids: [41: 2]))
     try await waitForColor(0x0000ff)
     try await view.setBoundaryValues(nil)
     try await waitForColor(0x00ff00)
@@ -639,59 +684,81 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     defer { view.destroy(); window.isHidden = true }
     try await events.waitForLoads(1)
     let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
-    let pin = UIGraphicsImageRenderer(size: CGSize(width: 12,height: 16)).image { context in
-      UIColor.orange.setFill(); context.fill(CGRect(x: 0,y: 0,width: 12,height: 16))
+    let pin = UIGraphicsImageRenderer(size: CGSize(width: 12, height: 16)).image { context in
+      UIColor.orange.setFill(); context.fill(CGRect(x: 0, y: 0, width: 12, height: 16))
     }
     try await view.setImages([try .init(name: "pin", image: pin)])
-    let marker = TileflowDepthMarker(id: "cafe", coordinate: Self.center, image: "pin", size: CGSize(width: 12,height: 16), anchor: .bottom)
+    let marker = TileflowDepthMarker(
+      id: "cafe", coordinate: Self.center, image: "pin", size: CGSize(width: 12, height: 16),
+      anchor: .bottom)
     try await view.setDepthMarkers([marker])
     let map = try XCTUnwrap(engine.mapView)
     let at = try await view.project(Self.center)
-    try await waitUntil { !map.visibleFeatures(at: at, styleLayerIdentifiers: ["__tileflow_depth_cafe"]).isEmpty }
+    try await waitUntil {
+      !map.visibleFeatures(at: at, styleLayerIdentifiers: ["__tileflow_depth_cafe"]).isEmpty
+    }
     do {
       var invalid = marker; invalid.image = "absent"
       try await view.setDepthMarkers([invalid]); XCTFail("Expected invalidImage")
     } catch let error as TileflowMapError { XCTAssertEqual(error.context.reason, "invalidImage") }
     XCTAssertNotNil(map.style?.layer(withIdentifier: "__tileflow_depth_cafe"))
 
-    let route = Data(#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"LineString","coordinates":[[-3.715,40.415],[-3.7,40.42],[-3.685,40.425]]}}]}"#.utf8)
-    let layer = try TileflowGeoJSONLayer(id: "route", geoJSON: route, kind: .line, ink: .line, placement: .ground, progress: .init(end: 0,highlight: "#ffffff"))
+    let route = Data(
+      #"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"LineString","coordinates":[[-3.715,40.415],[-3.7,40.42],[-3.685,40.425]]}}]}"#
+        .utf8)
+    let layer = try TileflowGeoJSONLayer(
+      id: "route", geoJSON: route, kind: .line, ink: .line, placement: .ground,
+      progress: .init(end: 0, highlight: "#ffffff"))
     try await view.setContent(layers: [layer])
     func gradient() throws -> JSONValue {
-      let line = try XCTUnwrap(map.style?.layer(withIdentifier: "__tileflow_app_route") as? MLNLineStyleLayer)
+      let line = try XCTUnwrap(
+        map.style?.layer(withIdentifier: "__tileflow_app_route") as? MLNLineStyleLayer)
       return JSONValue(foundation: line.lineGradient.mgl_jsonExpressionObject)
     }
+    do {
+      try await view.setContent(
+        annotations: [.init(id: "pin", coordinate: Self.center, title: "Mixed")], layers: [layer])
+      XCTFail("Expected unsupported annotations to reject the whole content update")
+    } catch let error as TileflowMapError { XCTAssertEqual(error, .invalidRequest) }
+    XCTAssertNotNil(map.style?.layer(withIdentifier: "__tileflow_app_route"))
     let initial = try gradient()
-    let drawn = try await view.animateLineProgress(layers: ["route"], to: .init(end: 0.7,light: 0.55), duration: 0.1)
+    let drawn = try await view.animateLineProgress(
+      layers: ["route"], to: .init(end: 0.7, light: 0.55), duration: 0.1)
     XCTAssertTrue(drawn)
-    XCTAssertNotEqual(try gradient(),initial)
+    XCTAssertNotEqual(try gradient(), initial)
     try await view.setTheme("dark")
     XCTAssertNotNil(map.style?.layer(withIdentifier: "__tileflow_app_route"))
     XCTAssertNotNil(map.style?.image(forName: "__tileflow_depth_image_cafe"))
     do {
       _ = try await view.animateLineProgress(layers: ["missing"], to: .init(), duration: 0)
       XCTFail("Expected unknownLayer")
-    } catch let error as TileflowMapError { XCTAssertEqual(error.context.reason,"unknownLayer") }
+    } catch let error as TileflowMapError { XCTAssertEqual(error.context.reason, "unknownLayer") }
 
-    let a = TileflowCamera(longitude: -3.70,latitude: 40.42,zoom: 15,bearing: 0,pitch: 5)
-    let b = TileflowCamera(longitude: -3.69,latitude: 40.425,zoom: 15,bearing: 24,pitch: 40)
+    let a = TileflowCamera(longitude: -3.70, latitude: 40.42, zoom: 15, bearing: 0, pitch: 5)
+    let b = TileflowCamera(longitude: -3.69, latitude: 40.425, zoom: 15, bearing: 24, pitch: 40)
     var cues: [String] = []
-    let shot = TileflowShot(keyframes: [.init(time:0,camera:a),.init(time:0.25,camera:b)], cues: [.init(time:0,id:"start"),.init(time:0.12,id:"mid"),.init(time:0.25,id:"end")])
+    let shot = TileflowShot(
+      keyframes: [.init(time: 0, camera: a), .init(time: 0.25, camera: b)],
+      cues: [
+        .init(time: 0, id: "start"), .init(time: 0.12, id: "mid"), .init(time: 0.25, id: "end"),
+      ])
     let played = try await view.play(shot, onCue: { cues.append($0) })
-    XCTAssertTrue(played); XCTAssertEqual(cues,["start","mid","end"])
+    XCTAssertTrue(played); XCTAssertEqual(cues, ["start", "mid", "end"])
     let final = try await view.camera()
-    XCTAssertEqual(final.latitude,b.latitude,accuracy:0.00001)
-    XCTAssertEqual(final.bearing,b.bearing,accuracy:0.01)
-    XCTAssertEqual(final.pitch,b.pitch,accuracy:0.01)
-    let longShot = TileflowShot(keyframes: [.init(time:0,camera:b),.init(time:30,camera:a)])
+    XCTAssertEqual(final.latitude, b.latitude, accuracy: 0.00001)
+    XCTAssertEqual(final.bearing, b.bearing, accuracy: 0.01)
+    XCTAssertEqual(final.pitch, b.pitch, accuracy: 0.01)
+    let longShot = TileflowShot(keyframes: [.init(time: 0, camera: b), .init(time: 30, camera: a)])
     let first = Task { try await view.play(longShot) }
-    try await Task.sleep(for:.milliseconds(50))
+    try await Task.sleep(for: .milliseconds(50))
     let replacement = try await view.play(shot)
     let superseded = try await first.value
     XCTAssertTrue(replacement); XCTAssertFalse(superseded)
     let cancelled = Task { try await view.play(longShot) }
-    try await Task.sleep(for:.milliseconds(50)); cancelled.cancel()
-    do { _ = try await cancelled.value; XCTFail("Expected cancellation") } catch is CancellationError {}
+    try await Task.sleep(for: .milliseconds(50)); cancelled.cancel()
+    do {
+      _ = try await cancelled.value; XCTFail("Expected cancellation")
+    } catch is CancellationError {}
     try view.reload(); try await events.waitForLoads(2)
     let newMap = try XCTUnwrap((view.engine as? NativeMapEngine)?.mapView)
     XCTAssertNotNil(newMap.style?.layer(withIdentifier: "__tileflow_depth_cafe"))

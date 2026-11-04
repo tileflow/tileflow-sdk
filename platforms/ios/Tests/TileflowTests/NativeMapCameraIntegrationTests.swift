@@ -107,6 +107,30 @@ final class NativeMapCameraIntegrationTests: XCTestCase {
     handle(.ended)
   }
 
+  func testAPanInterruptsABlendedCameraShot() async throws {
+    let host = try await loadedMap()
+    defer { host.close() }
+    let start = TileflowCamera(longitude: -3.7, latitude: 40.42, zoom: 15)
+    let end = TileflowCamera(longitude: -3.65, latitude: 40.44, zoom: 16, bearing: 45, pitch: 30)
+    var cues: [String] = []
+    let shot = TileflowShot(
+      keyframes: [
+        .init(time: 0, camera: start, blendPosition: 0),
+        .init(time: 0.12, camera: end, blendPosition: 1),
+        .init(time: 10, camera: start, blendPosition: 0),
+      ],
+      themes: ["light", "dark"],
+      cues: [.init(time: 0.12, id: "night"), .init(time: 10, id: "late")])
+    let playing = Task { try await host.view.play(shot, onCue: { cues.append($0) }) }
+    try await waitUntil { cues.contains("night") }
+    XCTAssertEqual(host.engine.shown?.theme, "dark")
+    drag(host, by: CGPoint(x: 40, y: 15))
+    let completed = try await playing.value
+    XCTAssertFalse(completed)
+    XCTAssertEqual(cues, ["night"])
+    XCTAssertTrue(host.reasons.contains(.gesture))
+  }
+
   func testCameraMovementsAnswerWithHowTheyEnded() async throws {
     let host = try await loadedMap()
     defer { host.close() }

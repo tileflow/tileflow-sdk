@@ -111,9 +111,13 @@ final class NativeEvaluatorTests: XCTestCase {
     XCTAssertFalse(rows.isEmpty)
     for row in rows {
       let coordinates = try XCTUnwrap(row["location"]?.array?.compactMap(\.number))
-      let direction = NativeSun.position(date: try XCTUnwrap(row["date"]?.number), location: .init(longitude: coordinates[0], latitude: coordinates[1]))
+      let direction = NativeSun.position(
+        date: try XCTUnwrap(row["date"]?.number),
+        location: .init(longitude: coordinates[0], latitude: coordinates[1]))
       assertMatches(direction.json, try XCTUnwrap(row["position"]), "solar position")
-      assertMatches(NativeSun.resolve(direction, preset: try XCTUnwrap(row["preset"])), try XCTUnwrap(row["resolved"]), "solar lighting")
+      assertMatches(
+        NativeSun.resolve(direction, preset: try XCTUnwrap(row["preset"])),
+        try XCTUnwrap(row["resolved"]), "solar lighting")
     }
   }
 
@@ -126,11 +130,14 @@ final class NativeEvaluatorTests: XCTestCase {
         let result = shot.sample(try XCTUnwrap(sample["requestedAt"]?.number))
         XCTAssertEqual(result.at, try XCTUnwrap(sample["at"]?.number))
         let camera = try XCTUnwrap(sample["camera"])
-        assertMatches(.array([.number(result.camera.longitude),.number(result.camera.latitude)]),try XCTUnwrap(camera["center"]), "camera center")
-        assertMatches(.number(result.camera.zoom),try XCTUnwrap(camera["zoom"]), "zoom")
-        assertMatches(.number(result.camera.pitch),try XCTUnwrap(camera["pitch"]), "pitch")
-        assertMatches(.number(result.camera.bearing),try XCTUnwrap(camera["bearing"]), "bearing")
-        assertMatches(result.blend.map(JSONValue.number) ?? .null, sample["blendPosition"] ?? .null,"blend")
+        assertMatches(
+          .array([.number(result.camera.longitude), .number(result.camera.latitude)]),
+          try XCTUnwrap(camera["center"]), "camera center")
+        assertMatches(.number(result.camera.zoom), try XCTUnwrap(camera["zoom"]), "zoom")
+        assertMatches(.number(result.camera.pitch), try XCTUnwrap(camera["pitch"]), "pitch")
+        assertMatches(.number(result.camera.bearing), try XCTUnwrap(camera["bearing"]), "bearing")
+        assertMatches(
+          result.blend.map(JSONValue.number) ?? .null, sample["blendPosition"] ?? .null, "blend")
       }
     }
   }

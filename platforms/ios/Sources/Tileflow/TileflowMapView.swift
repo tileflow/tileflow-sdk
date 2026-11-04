@@ -325,6 +325,7 @@ public final class TileflowMapView: UIView {
     guard !destroyed else { throw TileflowMapError.disposed }
     let next = MapContent(annotations: annotations, overlays: layers)
     try next.validate()
+    try engineKind.validateContent(next)
     let previous = content
     contentRevision += 1
     let revision = contentRevision

@@ -121,5 +121,16 @@ export type OfflineRegionEstimate = {
   mapViews: number;
 };
 
+/**
+ * Why downloads run differently than an app expects; downloads continue. iOS reports
+ * `backgroundTransferUnavailable` once when the system's background transfer service never starts
+ * a download, as in unsigned builds: downloads then run in the foreground and stop while the app is
+ * suspended.
+ */
+export type OfflineWarningCode = 'backgroundTransferUnavailable';
+
 export type OfflineRegionEvent =
-  {type: 'changed'; region: OfflineRegion} | {type: 'removed'; id: string};
+  | {type: 'changed'; region: OfflineRegion}
+  | {type: 'removed'; id: string}
+  /** A developer-facing warning in English, reported once; not for display to people. */
+  | {type: 'warning'; code: OfflineWarningCode; message: string};

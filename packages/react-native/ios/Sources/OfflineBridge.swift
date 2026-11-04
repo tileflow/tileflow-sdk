@@ -157,6 +157,8 @@ enum OfflineBridge {
     switch event {
     case .changed(let region): ["type": "changed", "region": encode(region)]
     case .removed(let id): ["type": "removed", "id": id]
+    case .warning(let warning):
+      ["type": "warning", "code": warning.code.rawValue, "message": warning.message]
     }
   }
 

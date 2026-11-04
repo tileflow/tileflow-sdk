@@ -72,6 +72,20 @@ test('a listener that throws does not stop the others', () => {
   assert.equal(reported.length, 1);
 });
 
+test('a background transfer warning reaches listeners with its code and message', () => {
+  const {module, emit} = fakeModule();
+  const {TileflowOfflineStore} = createOfflineStore(
+    () => module,
+    () => undefined,
+  );
+  const warnings: string[] = [];
+  TileflowOfflineStore.subscribe((event: OfflineRegionEvent) => {
+    if (event.type === 'warning') warnings.push(`${event.code}: ${event.message}`);
+  });
+  emit({type: 'warning', code: 'backgroundTransferUnavailable', message: 'Foreground downloads.'});
+  assert.deepEqual(warnings, ['backgroundTransferUnavailable: Foreground downloads.']);
+});
+
 test('region resolves null for an unknown ID', async () => {
   const {module} = fakeModule({region: async () => ({})});
   const {TileflowOfflineStore} = createOfflineStore(

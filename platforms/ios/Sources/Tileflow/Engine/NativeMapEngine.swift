@@ -33,6 +33,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   let data = DataChannel()
   let runtimeStyle = NativeRuntimeStyle()
+  lazy var mapLocation = NativeMapLocation(self)
   lazy var scene = NativeMapScene(self)
   lazy var mapAnnotations = NativeMapAnnotations(self)
   lazy var sceneContent = NativeSceneContent(self)
@@ -134,6 +135,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       self.container.addSubview(self.attribution.view)
       self.mapView = mapView
       self.prepareCamera(mapView)
+      self.mapLocation.install(on: mapView)
       self.onReady?()
     }
   }
@@ -182,6 +184,13 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     case .queryAtPoint:
       return .array(features(at: try Self.point(payload)))
     case .setVisibility:
+      mapLocation.setVisible(payload["visible"]?.bool ?? true)
+      return .null
+    case .updateLocation:
+      try mapLocation.update(payload)
+      return .null
+    case .setFollowMode:
+      try mapLocation.setFollow(payload)
       return .null
     case .setOptions:
       if let mode = payload["viewMode"]?.string { setViewMode(mode, duration: 0) }
@@ -213,7 +222,9 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       try sceneContent.setMarkers(markers)
       return .null
     case .animateLineProgress: return try sceneAnimations.progress(payload, content: sceneContent)
-    case .playShot: return try await sceneAnimations.play(payload)
+    case .playShot:
+      mapLocation.interrupt(.api)
+      return try await sceneAnimations.play(payload)
     case .stopAnimation:
       sceneAnimations.stop(payload)
       return .null
@@ -314,6 +325,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   func retire(_ error: TileflowMapError) {
     guard !retired else { return }
+    mapLocation.retire()
     onAnnotationFrame = nil
     mapAnnotations.retire()
     sceneAnimations.retire()
@@ -654,6 +666,11 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     }
   }
 
+  nonisolated func mapView(_ mapView: MLNMapView, viewFor annotation: any MLNAnnotation) -> MLNAnnotationView? {
+    guard annotation is MLNUserLocation else { return nil }
+    return MainActor.assumeIsolated { mapLocation.makePuck() }
+  }
+
   nonisolated func mapViewDidFinishRenderingFrame(_ mapView: MLNMapView, fullyRendered: Bool) {
     MainActor.assumeIsolated {
       mapAnnotations.frame()
@@ -686,7 +703,10 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     _ mapView: MLNMapView, regionWillChangeWith reason: MLNCameraChangeReason, animated: Bool
   ) {
     MainActor.assumeIsolated {
-      if !reason.isDisjoint(with: NativeCamera.anyGesture) { sceneAnimations.stopShot() }
+      if !reason.isDisjoint(with: NativeCamera.anyGesture) {
+        mapLocation.interrupt(.gesture)
+        sceneAnimations.stopShot()
+      }
       camera?.willChange(reason)
     }
   }

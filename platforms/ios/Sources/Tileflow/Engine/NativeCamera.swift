@@ -336,6 +336,22 @@ final class NativeCamera {
     return started
   }
 
+  func stopLocation() {
+    guard isMoving, changeReason == "location" else { return }
+    halt("location")
+  }
+
+  func locationChange(_ change: () -> Void) { issue("location", change) }
+
+  /// Uses the same zoom, inset and event conventions as movements the application requests.
+  func moveForLocation(to target: TileflowCamera, duration: TimeInterval, completion: (() -> Void)? = nil) {
+    guard let mapView, let native = mapCamera(target) else { completion?(); return }
+    locationChange {
+      mapView.setCamera(native, withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : duration,
+        animationTimingFunction: CAMediaTimingFunction(name: .linear), completionHandler: completion)
+    }
+  }
+
   /// A person's double tap: the zoom changes by `delta` around `point`, as MapLibre's own double tap
   /// does by one level.
   func zoom(by delta: Double, around point: CGPoint) {
@@ -482,7 +498,9 @@ final class NativeCamera {
     let gesture = !change.isDisjoint(with: Self.anyGesture)
     // A person's gesture takes over the movement the application asked for.
     if gesture, issuer == nil { end(.interrupted) }
-    changeReason = gesture ? "gesture" : issuer ?? movement?.reason ?? "system"
+    // Heading callbacks can arrive from the location manager after the original delegate call.
+    let tracking = mapView.map { $0.userTrackingMode != .none } ?? false
+    changeReason = gesture ? "gesture" : issuer ?? movement?.reason ?? (tracking ? "location" : "system")
     if !isMoving {
       isMoving = true
       emit("cameraMoveStarted", .object(["camera": wire, "reason": .string(changeReason)]))

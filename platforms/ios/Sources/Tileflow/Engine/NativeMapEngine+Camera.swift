@@ -22,6 +22,9 @@ extension NativeMapEngine {
     mapView.maximumZoomLevel = 24
     let emit: (String, JSONValue) -> Void = { [weak self] event, value in
       guard let self, !self.retired else { return }
+      if event == "cameraMoveStarted", value["reason"] == .string("gesture") {
+        self.mapLocation.interrupt(.gesture)
+      }
       self.onEvent?(event, value)
     }
     let camera = NativeCamera(mapView: mapView, emit: emit)
@@ -39,6 +42,7 @@ extension NativeMapEngine {
 
   func applyCameraOptions(_ options: JSONValue?) {
     guard let options else { return }
+    mapLocation.setOptions(options["location"])
     gestures?.apply(options["gestures"])
     camera?.setLimits(options["limits"])
   }
@@ -63,9 +67,11 @@ extension NativeMapEngine {
     case .getCamera:
       return camera.wire
     case .moveCamera:
+      mapLocation.interrupt(payload["reason"]?.string == "gesture" ? .gesture : .api)
       sceneAnimations.stopShot()
       return try await camera.move(payload)
     case .stopCamera:
+      mapLocation.interrupt(.api)
       sceneAnimations.stopShot()
       camera.stop()
       return .null

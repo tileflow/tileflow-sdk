@@ -23,17 +23,15 @@ if [[ "${TILEFLOW_ANDROID_REQUIRE_GPU:-0}" == 1 ]]; then
 fi
 adb shell wm size
 adb shell wm density
-adb reverse tcp:18645 tcp:18645
+adb reverse tcp:18645 "tcp:${TILEFLOW_FIXTURE_PORT:-18645}"
 adb logcat -c
 # Hosted emulators draw with a software GPU too slowly for the timing budgets of these WebView
 # map tests; they run on local emulators and devices, and go with the WebView engine.
 skipped=()
 if [ "${TILEFLOW_HOSTED_EMULATOR:-}" = "true" ]; then
   timed=(
-    dev.tileflow.sdk.AnnotationIntegrationTest#twoHundredViewsFollowAFastPan
     dev.tileflow.sdk.CameraIntegrationTest#movementsAnswerWithHowTheyEnded
     dev.tileflow.sdk.MapIntegrationTest#eventLevelsCameraReasonsAndLargeContentOverTheDataChannel
-    dev.tileflow.sdk.MapSceneIntegrationTest#theSceneReachesTheRendererAndANewRendererReceivesItAgain
   )
   skipped=("-Pandroid.testInstrumentationRunnerArguments.notClass=$(IFS=,; echo "${timed[*]}")")
 fi

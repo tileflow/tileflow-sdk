@@ -41,6 +41,7 @@ actor OfflineStoreCore {
     var index: OfflineServingIndex? = nil
     /// Space a download leaves free on the device.
     var reserveBytes: Int64 = 64 * 1024 * 1024
+    var profile: OfflinePackProfile = .webView
     var concurrency = 64
     /// Packs transferred at once.
     var packConcurrency = 4
@@ -1060,7 +1061,8 @@ actor OfflineStoreCore {
     }
     let client = try dependencies.client()
     let requests = try OfflinePackRequest.requests(
-      mapID: mapID, themes: themes, geometry: options.geometry, zooms: options.zooms)
+      mapID: mapID, themes: themes, geometry: options.geometry, zooms: options.zooms,
+      profile: dependencies.profile)
     var downloads: [OfflineDownload] = []
     for request in requests {
       let now = dependencies.now()

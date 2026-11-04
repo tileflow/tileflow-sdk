@@ -611,9 +611,10 @@ export function createHostedFixture({base, tile, center}) {
       const bytes = body(url);
       return {kind, url, bytes: bytes.length, sha256: sha(bytes)};
     };
+    const native = request.profile === 'native-v1';
     const publicResources = [
       publicResource('discovery', urls.discovery),
-      publicResource('profile', urls.profile),
+      publicResource('profile', native ? urls.nativeManifest : urls.profile),
     ];
     const packs = [];
     const add = (id, kind, path, entries, extra = {}) => {
@@ -634,21 +635,30 @@ export function createHostedFixture({base, tile, center}) {
     const terrainTheme = request.themes.includes('terrain');
     const labelsTheme = request.themes.includes('labels');
     const marineTheme = request.themes.includes('marine');
-    const documentUrls = [
+    const webStyles = [
       ...(request.themes.includes('day') ? [urls.style] : []),
       ...(labelsTheme ? [urls.labelsStyle] : []),
       ...(terrainTheme ? [urls.terrainStyle] : []),
       ...(marineTheme ? [urls.marineStyle] : []),
+    ];
+    const jsonEntry = (name, bytes) => ({name, contentType: 'application/json', body: bytes});
+    const styles = native
+      ? [
+          ...request.themes.map((name) =>
+            jsonEntry(urls.native(state.deployment, name), nativeDocument(name)),
+          ),
+          jsonEntry(urls.nativeFamily(state.deployment), nativeFamilyBytes),
+        ]
+      : webStyles.map((url) => jsonEntry(url, body(url)));
+    const tileJson = [
       urls.tilejson,
       ...(terrainTheme ? [urls.terrainTilejson] : []),
       ...(marineTheme ? [urls.nauticalTilejson, urls.bathymetryTilejson] : []),
     ];
-    add(
-      'style',
-      'documents',
-      '/v1/offline/documents/style.tfpack',
-      documentUrls.map((url) => ({name: url, contentType: 'application/json', body: body(url)})),
-    );
+    add('style', 'documents', '/v1/offline/documents/style.tfpack', [
+      ...styles,
+      ...tileJson.map((url) => jsonEntry(url, body(url))),
+    ]);
     if (labelsTheme) {
       add(
         'assets',
@@ -745,7 +755,7 @@ export function createHostedFixture({base, tile, center}) {
       downloadId: `odl_${randomUUID().replaceAll('-', '').slice(0, 22)}`,
       mapId: hostedMapId,
       profile: request.profile,
-      deploymentVersion: 1,
+      deploymentVersion: state.deployment,
       themes: request.themes,
       coverSha256: sha(JSON.stringify(request.cover)),
       minZoom: request.minZoom,

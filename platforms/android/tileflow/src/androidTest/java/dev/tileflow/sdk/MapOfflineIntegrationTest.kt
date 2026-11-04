@@ -12,6 +12,7 @@ import dev.tileflow.sdk.engine.MapEngineKind
 import dev.tileflow.sdk.offline.OfflineFetchRequest
 import dev.tileflow.sdk.offline.OfflineHttpFetcher
 import dev.tileflow.sdk.offline.OfflineLayout
+import dev.tileflow.sdk.offline.OfflinePackProfile
 import dev.tileflow.sdk.offline.OfflinePackClient
 import dev.tileflow.sdk.offline.OfflineScopeRunner
 import dev.tileflow.sdk.offline.OfflineServingIndex
@@ -132,6 +133,10 @@ public class MapOfflineIntegrationTest {
         hostedPackOfflineThenOnline(MapEngineKind.NATIVE)
 
     @Test
+    public fun downloadedNativeThemesBlendWithoutANetwork() =
+        hostedPackOfflineThenOnline(MapEngineKind.NATIVE, OfflinePackProfile.NATIVE)
+
+    @Test
     public fun terrainZoomedPastItsDownloadedZoomsHasNoHolesOffline() =
         terrainPastItsDownloadedZooms(MapEngineKind.WEB_VIEW)
 
@@ -168,7 +173,10 @@ public class MapOfflineIntegrationTest {
         assertEquals("Nothing came from the network", 0, runBlocking { cache.usage() }.entries)
     }
 
-    private fun hostedPackOfflineThenOnline(kind: MapEngineKind) {
+    private fun hostedPackOfflineThenOnline(
+        kind: MapEngineKind,
+        profile: OfflinePackProfile = OfflinePackProfile.WEB_VIEW,
+    ) {
         OfflineMapHostActivity.kind = kind
         requireFixture("$ORIGIN/maps/$HOSTED_MAP_ID/mobile/manifest.json")
         val cache = TileflowMapCache.get(context)
@@ -178,7 +186,7 @@ public class MapOfflineIntegrationTest {
                 apiOrigin = URI(ORIGIN),
                 mapCredential = TileflowCredential("tf_public_" + "f".repeat(48)),
             )
-        val store = store { OfflinePackClient(configuration) }
+        val store = store(profile) { OfflinePackClient(configuration) }
         counters(reset = true)
         download(
             store,
@@ -187,7 +195,7 @@ public class MapOfflineIntegrationTest {
                 TileflowOfflineGeometry.BoundingBox(
                     TileflowBoundingBox(-3.705, 40.416, -3.695, 40.424)
                 ),
-                TileflowOfflineContent.Hosted(HOSTED_MAP_ID, listOf("day")),
+                TileflowOfflineContent.Hosted(HOSTED_MAP_ID, if (profile == OfflinePackProfile.NATIVE) listOf("day", "night") else listOf("day")),
                 minZoom = 13,
                 maxZoom = 15,
             ),
@@ -204,6 +212,9 @@ public class MapOfflineIntegrationTest {
         TileflowOfflineSwitch.isNetworkEnabled = false
         val offline = show(source)
         try {
+            if (profile == OfflinePackProfile.NATIVE) runBlocking {
+                withContext(Dispatchers.Main) { offline.map.setBlend(listOf("day", "night"), 0.75) }
+            }
             assertTrue("The pack did not render", rendered(offline, "buildings"))
         } finally {
             instrumentation.runOnMainSync { offline.finish() }
@@ -301,7 +312,10 @@ public class MapOfflineIntegrationTest {
     }
 
     /** A store of its own, downloading in the process, whose regions every map may use. */
-    private fun store(client: () -> OfflinePackClient): TileflowOfflineStore {
+    private fun store(
+        profile: OfflinePackProfile = OfflinePackProfile.WEB_VIEW,
+        client: () -> OfflinePackClient,
+    ): TileflowOfflineStore {
         val subscribers = OfflineSubscribers()
         val core =
             OfflineStoreCore(
@@ -313,6 +327,7 @@ public class MapOfflineIntegrationTest {
                 subscribers,
                 OfflineServingIndex.shared,
                 { OfflineScopeRunner(it, scope) },
+                profile = profile,
             )
         return TileflowOfflineStore(core, subscribers).also(stores::add)
     }
@@ -374,7 +389,8 @@ public class MapOfflineIntegrationTest {
     }
 
     private companion object {
-        const val ORIGIN = "http://127.0.0.1:18645"
+        val ORIGIN: String
+            get() = "http://127.0.0.1:${InstrumentationRegistry.getArguments().getString("tileflowFixturePort", "18645")}"
         const val HOSTED_MAP_ID = "map_offlinefixture01"
     }
 }

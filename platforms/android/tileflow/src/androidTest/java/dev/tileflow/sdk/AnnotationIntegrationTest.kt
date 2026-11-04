@@ -1,6 +1,7 @@
 package dev.tileflow.sdk
 
 import android.content.Intent
+import android.graphics.Bitmap
 import android.graphics.Color
 import android.os.Build
 import android.os.SystemClock
@@ -12,6 +13,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -24,19 +26,20 @@ import org.junit.runner.RunWith
 /**
  * Annotations through the embedded renderer: taps and drags reach annotation listeners, native
  * views follow a fast pan, and accessibility services read annotations in order. Run with the
- * online fixture server and `adb reverse tcp:18645 tcp:<port>`. The test prints the delay between
- * a rendered frame and the views it moves, for the device it runs on.
+ * online fixture server and `adb reverse tcp:18645 tcp:<port>`. The test prints the delay between a
+ * rendered frame and the views it moves, for the device it runs on.
  */
 @RunWith(AndroidJUnit4::class)
 public class AnnotationIntegrationTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val centre = TileflowCoordinate(-3.7, 40.42)
 
-    private fun show(): SceneHostActivity {
+    private fun show(native: Boolean = true): SceneHostActivity {
         val intent =
             Intent(instrumentation.context, SceneHostActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .putExtra("map", "fixture")
+                .putExtra("map", if (native) "appearance" else "fixture")
+                .putExtra("nativeEngine", native)
         val activity = instrumentation.startActivitySync(intent) as SceneHostActivity
         assertTrue("The map did not load.", activity.loaded.await(30, TimeUnit.SECONDS))
         return activity
@@ -86,8 +89,13 @@ public class AnnotationIntegrationTest {
     }
 
     @Test
-    public fun aTapOnAnAnnotationReachesItsListenerAndADragMovesIt() {
-        val activity = show()
+    public fun aTapOnAnAnnotationReachesItsListenerAndADragMovesIt() = dragAndReload(native = true)
+
+    @Test
+    public fun aWebViewDragInFlightReplaysItsReleasedGeometry() = dragAndReload(native = false)
+
+    private fun dragAndReload(native: Boolean) {
+        val activity = show(native)
         onMap(activity) { map ->
             map.jump(TileflowCamera(centre.longitude, centre.latitude, 14.0))
             val circles =
@@ -130,33 +138,63 @@ public class AnnotationIntegrationTest {
             assertEquals(listOf(spot.id), taps)
             delay(300)
             assertEquals("The application did not receive the taken tap.", before, appTaps())
+            if (native) {
+                val held = mutableListOf<String>()
+                circles.addLongClickListener {
+                    held += it.id
+                    true
+                }
+                val down = SystemClock.uptimeMillis()
+                val press =
+                    MotionEvent.obtain(down, down, MotionEvent.ACTION_DOWN, point.x, point.y, 0)
+                map.dispatchTouchEvent(press)
+                press.recycle()
+                delay((android.view.ViewConfiguration.getLongPressTimeout() + 200).toLong())
+                val release =
+                    MotionEvent.obtain(
+                        down,
+                        SystemClock.uptimeMillis(),
+                        MotionEvent.ACTION_UP,
+                        point.x,
+                        point.y,
+                        0,
+                    )
+                map.dispatchTouchEvent(release)
+                release.recycle()
+                until("the annotation owns the long press") { held == listOf(spot.id) }
+            }
             // A tap beside the annotation reaches the application.
             touch(map, point.x + map.width / 4f, point.y + map.height / 4f)
             until("the application received a tap") { appTaps() > before }
 
             // Hold the manager's acknowledgement across reload. The old map has applied the
             // user's drag, but the call to write its final coordinates is still in flight.
-            suspendJavascript(map, """
-                (() => {
-                  const receive = window.tileflow.receive;
-                  const channel = window.tileflowNative;
-                  const post = channel.postMessage.bind(channel);
-                  let updateId;
-                  window.tileflow.receive = raw => {
-                    const message = JSON.parse(raw);
-                    if (message.command.method === 'setGeoJSONSourceData' && message.command.payload?.id === 'spots')
-                      updateId = message.requestId;
-                    receive(raw);
-                  };
-                  channel.postMessage = raw => {
-                    if (updateId && JSON.parse(raw).requestId === updateId) {
-                      window.tileflowDragWritePending = true;
-                      return;
-                    }
-                    post(raw);
-                  };
-                })()
-            """.trimIndent())
+            if (!native)
+                suspendJavascript(
+                    map,
+                    """
+                    (() => {
+                      const receive = window.tileflow.receive;
+                      const channel = window.tileflowNative;
+                      const post = channel.postMessage.bind(channel);
+                      let updateId;
+                      window.tileflow.receive = raw => {
+                        const message = JSON.parse(raw);
+                        if (message.command.method === 'setGeoJSONSourceData' && message.command.payload?.id === 'spots')
+                          updateId = message.requestId;
+                        receive(raw);
+                      };
+                      channel.postMessage = raw => {
+                        if (updateId && JSON.parse(raw).requestId === updateId) {
+                          window.tileflowDragWritePending = true;
+                          return;
+                        }
+                        post(raw);
+                      };
+                    })()
+                    """
+                        .trimIndent(),
+                )
             // A pan that starts on the draggable annotation moves it, not the map.
             val camera = map.currentCamera!!
             val dragX = minOf(150f, map.width / 4f)
@@ -182,26 +220,71 @@ public class AnnotationIntegrationTest {
             assertEquals(target.longitude, moved!!.coordinate.longitude, 1e-4)
             assertEquals(target.latitude, moved!!.coordinate.latitude, 1e-4)
 
-            until("the manager's write is still in flight") {
-                suspendJavascript(map, "window.tileflowDragWritePending === true") == "true"
-            }
+            if (!native)
+                until("the manager's write is still in flight") {
+                    suspendJavascript(map, "window.tileflowDragWritePending === true") == "true"
+                }
             val loads = activity.loads.size
             map.reload()
             until("the replacement renderer is ready") { activity.loads.size > loads }
             var restored: TileflowCoordinate? = null
             until("the replacement renderer has a feature") {
-                restored = (map.querySourceFeatures("spots").singleOrNull()?.feature?.geometry as? TileflowGeometry.Point)?.coordinate
+                restored =
+                    (map.querySourceFeatures("spots").singleOrNull()?.feature?.geometry
+                            as? TileflowGeometry.Point)
+                        ?.coordinate
                 restored != null
             }
-            assertEquals("Replayed drag longitude", dropped.single().longitude, restored!!.longitude, 1e-4)
-            assertEquals("Replayed drag latitude", dropped.single().latitude, restored!!.latitude, 1e-4)
+            assertEquals(
+                "Replayed drag longitude",
+                dropped.single().longitude,
+                restored!!.longitude,
+                1e-4,
+            )
+            assertEquals(
+                "Replayed drag latitude",
+                dropped.single().latitude,
+                restored!!.latitude,
+                1e-4,
+            )
+            if (native) {
+                val at = map.project(restored!!)
+                val last = TileflowPoint(at.x + 30, at.y + 24)
+                val released = dropped.size
+                val expected = map.unproject(last)
+                val down = SystemClock.uptimeMillis()
+                fun move(action: Int, x: Float, y: Float) {
+                    MotionEvent.obtain(down, down, action, x, y, 0).also {
+                        map.dispatchTouchEvent(it)
+                        it.recycle()
+                    }
+                }
+                move(MotionEvent.ACTION_DOWN, at.x, at.y)
+                move(MotionEvent.ACTION_MOVE, at.x + 14, at.y + 14)
+                move(MotionEvent.ACTION_MOVE, last.x, last.y)
+                // Replace the renderer before a display frame or a release event can run.
+                val nextLoad = activity.loads.size
+                map.reload()
+                until("an unfinished drag is restored") { activity.loads.size > nextLoad }
+                val actual =
+                    map.querySourceFeatures("spots").single().feature.geometry
+                        as TileflowGeometry.Point
+                assertEquals(expected.longitude, actual.coordinate.longitude, 1e-4)
+                assertEquals(expected.latitude, actual.coordinate.latitude, 1e-4)
+                assertEquals(
+                    "Renderer retirement does not synthesize a release",
+                    released,
+                    dropped.size,
+                )
+            }
         }
     }
 
     @Test
     public fun twoHundredViewsFollowAFastPan() {
         val performanceMode =
-            InstrumentationRegistry.getArguments().getString("tileflowAnnotationPerformance", "strict")
+            InstrumentationRegistry.getArguments()
+                .getString("tileflowAnnotationPerformance", "strict")
         require(performanceMode == "strict" || performanceMode == "report") {
             "tileflowAnnotationPerformance must be strict or report"
         }
@@ -209,6 +292,9 @@ public class AnnotationIntegrationTest {
         onMap(activity) { map ->
             map.jump(TileflowCamera(centre.longitude, centre.latitude, 13.0))
             val bounds = map.visibleBounds()
+            val markerIndex = 110
+            val viewColor = Color.rgb(19, 253, 139)
+            val circleColor = Color.rgb(243, 0, 247)
             val views =
                 (0 until 200).map { index ->
                     val coordinate =
@@ -216,7 +302,10 @@ public class AnnotationIntegrationTest {
                             bounds.west + (bounds.east - bounds.west) * ((index % 20) + 0.5) / 20,
                             bounds.south + (bounds.north - bounds.south) * ((index / 20) + 0.5) / 10,
                         )
-                    val view = View(activity).apply { setBackgroundColor(Color.BLUE) }
+                    val view =
+                        View(activity).apply {
+                            setBackgroundColor(if (index == markerIndex) viewColor else Color.BLUE)
+                        }
                     map.viewAnnotationManager.addViewAnnotation(
                         view,
                         TileflowViewAnnotationOptions(
@@ -229,89 +318,400 @@ public class AnnotationIntegrationTest {
                     view to coordinate
                 }
             until("the views are placed") { views.all { it.first.visibility == View.VISIBLE } }
-            val overlay = map.annotationOverlay
-            overlay.lag.clear()
-            overlay.delivery.clear()
-            val skew =
-                suspendJavascript(map, "Date.now() - (performance.timeOrigin + performance.now())")
-            suspendJavascript(
-                map,
-                """
-                (() => {
-                    const channel = window.tileflowNative;
-                    const send = channel.postMessage.bind(channel);
-                    const samples = window.tileflowTrackingTiming = {beforeSend: [], longTasks: []};
-                    const measured = message => {
-                        const event = JSON.parse(message);
-                        if (event.event === 'trackedPointsMoved') {
-                            samples.beforeSend.push(performance.timeOrigin + performance.now() - event.result.time);
-                        }
-                        send(message);
-                    };
-                    channel.postMessage = measured;
-                    samples.installed = channel.postMessage === measured;
-                    new PerformanceObserver(list => {
-                        samples.longTasks.push(...list.getEntries().map(entry => entry.duration));
-                    }).observe({type: 'longtask'});
-                })()
-                """.trimIndent(),
-            )
-            // Pan by the view's width in half a second, back and forth.
-            val width = bounds.east - bounds.west
-            val started = SystemClock.uptimeMillis()
-            for (pass in 0 until 6) {
-                val shift = if (pass % 2 == 0) width else 0.0
-                map.ease(
-                    TileflowCameraUpdate(
-                        center = TileflowCoordinate(centre.longitude + shift, centre.latitude)
+            val engine = map.readyEngine as dev.tileflow.sdk.engine.NativeMapEngine
+            val projection = requireNotNull(engine.map).projection
+            val reference = views[markerIndex].second
+            map.addSource(
+                TileflowGeoJSONSource(
+                    "view-reference",
+                    TileflowGeoJSONData.Features(
+                        listOf(TileflowFeature("1", TileflowGeometry.Point(reference)))
                     ),
-                    durationMillis = 500,
                 )
+            )
+            map.addLayer(
+                TileflowCircleLayer("view-reference", "view-reference")
+                    .circleColor(TileflowColor.fromHex("#f300f7"))
+                    .circleRadius(10.0)
+            )
+            until("MapLibre draws the reference point") {
+                map.queryRenderedFeatures(
+                        options = TileflowRenderedQueryOptions(listOf("view-reference"))
+                    )
+                    .isNotEmpty()
+            }
+            val histories = mutableListOf<Double>()
+            val physical = mutableListOf<Pair<Int, Double>>()
+            val origin = IntArray(2).also(map::getLocationOnScreen)
+            val row =
+                projection
+                    .toScreenLocation(
+                        org.maplibre.android.geometry.LatLng(
+                            reference.latitude,
+                            reference.longitude,
+                        )
+                    )
+                    .y
+                    .toInt() + origin[1]
+            val locations = DoubleArray(views.size * 2)
+            views.forEachIndexed { i, (_, coordinate) ->
+                locations[2 * i] = coordinate.latitude
+                locations[2 * i + 1] = coordinate.longitude
+            }
+            val samples = mutableListOf<Int>()
+            val finishedFrames = ArrayDeque<DoubleArray>()
+            var lastDraw: DoubleArray? = null
+            fun projected() =
+                DoubleArray(locations.size).also { projection.toScreenLocations(locations, it) }
+            // The last two completed MapLibre frames are independent of the view layout code.
+            val nativeFrames =
+                org.maplibre.android.maps.MapView.OnDidFinishRenderingFrameListener { _, _, _ ->
+                    val pose = projected()
+                    finishedFrames.addFirst(pose)
+                    histories += pose[markerIndex * 2] + origin[0]
+                    if (finishedFrames.size > 2) finishedFrames.removeLast()
+                }
+            val observer =
+                object : android.graphics.drawable.Drawable() {
+                    override fun draw(canvas: android.graphics.Canvas) {
+                        val current = projected()
+                        val previous = lastDraw
+                        lastDraw = current
+                        if (previous == null || abs(current[0] - previous[0]) < 0.25) return
+                        val visible =
+                            views.indices.filter { views[it].first.visibility == View.VISIBLE }
+                        if (visible.isEmpty()) return
+                        val poses = mutableListOf(current)
+                        for (frame in finishedFrames) {
+                            if (abs(frame[0] - poses.last()[0]) > 0.25) poses += frame
+                        }
+                        val age =
+                            poses.indexOfFirst { pose ->
+                                visible.all { index ->
+                                    val child = views[index].first
+                                    abs(child.translationX + child.width / 2f - pose[2 * index]) <=
+                                        1.5 &&
+                                        abs(
+                                            child.translationY + child.height / 2f -
+                                                pose[2 * index + 1]
+                                        ) <= 1.5
+                                }
+                            }
+                        samples += if (age >= 0) age else 3
+                    }
+
+                    override fun setAlpha(alpha: Int) {}
+
+                    override fun setColorFilter(filter: android.graphics.ColorFilter?) {}
+
+                    @Deprecated("Deprecated by Android")
+                    override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSPARENT
+                }
+            val overlay = map.annotationOverlay
+            observer.setBounds(0, 0, overlay.width, overlay.height)
+            engine.mapView.addOnDidFinishRenderingFrameListener(nativeFrames)
+            overlay.overlay.add(observer)
+            val started = SystemClock.uptimeMillis()
+            try {
+                val width = bounds.east - bounds.west
+                kotlinx.coroutines.coroutineScope {
+                    for (shift in listOf(0.5, -0.5, 0.5, -0.5, 0.5, 0.0)) {
+                        histories.clear()
+                        val capture =
+                            async(Dispatchers.Default) {
+                                delay(230)
+                                val image =
+                                    requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+                                try {
+                                    markerCenters(image, row, viewColor, circleColor)
+                                } finally {
+                                    image.recycle()
+                                }
+                            }
+                        map.ease(
+                            TileflowCameraUpdate(
+                                center =
+                                    TileflowCoordinate(
+                                        centre.longitude + width * shift,
+                                        centre.latitude,
+                                    )
+                            ),
+                            durationMillis = 500,
+                        )
+                        val (viewX, circleX) = capture.await()
+                        val delta = abs(viewX - circleX)
+                        val frame =
+                            histories.indices.minByOrNull { abs(histories[it] - circleX) }
+                                ?: error("No MapLibre frame")
+                        val distance =
+                            listOf(frame - 1, frame + 1)
+                                .filter { it in histories.indices }
+                                .maxOfOrNull { abs(histories[it] - histories[frame]) } ?: 0.0
+                        // A composed screenshot contains both the Android child and the MapLibre
+                        // circle. Allow only subpixel rasterization and one observed map-frame
+                        // step.
+                        val viewFrame =
+                            histories.indices.minByOrNull { abs(histories[it] - viewX) } ?: frame
+                        println(
+                            "Tileflow physical: native=$circleX view=$viewX, nearest frames $frame/$viewFrame, step=$distance, direction=${histories.last()-histories.first()}, frames=${histories.size}"
+                        )
+                        if (distance > 2)
+                            physical +=
+                                kotlin.math
+                                    .ceil((delta - 1.5).coerceAtLeast(0.0) / distance)
+                                    .toInt() to delta
+                    }
+                }
+            } finally {
+                overlay.overlay.remove(observer)
+                engine.mapView.removeOnDidFinishRenderingFrameListener(nativeFrames)
             }
             val elapsed = SystemClock.uptimeMillis() - started
-            delay(200)
-            // After the pan, each view sits where its coordinate is.
-            for ((view, coordinate) in views.take(20)) {
-                val expected = map.project(coordinate)
-                assertEquals(expected.x, view.translationX + view.width / 2f, 1.5f)
-                assertEquals(expected.y, view.translationY + view.height / 2f, 1.5f)
+            assertTrue("Too few draws while moving: ${samples.size}", samples.size >= 30)
+            val sorted = samples.sorted()
+            val p95 = sorted[((sorted.size - 1) * 0.95).toInt()]
+            assertTrue(
+                "Too few independently captured moving frames: $physical",
+                physical.size >= 3,
+            )
+            val worst = maxOf(sorted.last(), physical.maxOf { it.first })
+            println(
+                "Tileflow: 200 view annotations, ${sorted.size} moving draws in ${elapsed} ms on ${Build.MODEL} (API ${Build.VERSION.SDK_INT}, $performanceMode): projection lag p50 ${sorted[sorted.size/2]}, p95 $p95, max $worst frames; composed marker samples=$physical"
+            )
+            assertEquals(200, overlay.trackedCount)
+            if (performanceMode == "strict") {
+                assertTrue("Worst draw lag $worst frames (p95 $p95)", worst <= 1)
             }
-            val lag = overlay.lag
-            val frame = 1000.0 / 60
-            val p50 = lag.percentile(0.5)!!
-            val p95 = lag.percentile(0.95)!!
-            val maximum = lag.maximum!!
-            println(
-                "Tileflow: 200 view annotations, %d position updates in %d ms of panning on %s (API %d): lag p50 %.1f ms (%.2f frames), p95 %.1f ms (%.2f frames), max %.1f ms (%.2f frames)"
-                    .format(
-                        lag.count,
-                        elapsed,
-                        Build.MODEL,
-                        Build.VERSION.SDK_INT,
-                        p50,
-                        p50 / frame,
-                        p95,
-                        p95 / frame,
-                        maximum,
-                        maximum / frame,
-                    )
-            )
-            println(
-                "Tileflow: delivery to the main thread p50 %.1f ms, p95 %.1f ms; renderer clock skew %s ms"
-                    .format(overlay.delivery.percentile(0.5), overlay.delivery.percentile(0.95), skew)
-            )
-            println(
-                "Tileflow: renderer timing " +
-                    suspendJavascript(
-                        map,
-                        "JSON.stringify({...window.tileflowTrackingTiming, clockSkewAfter: Date.now() - (performance.timeOrigin + performance.now())})",
-                    )
-            )
-            assertTrue("Too few position updates: ${lag.count}", lag.count >= 30)
-            println("Tileflow: annotation performance mode $performanceMode; p95 budget <100 ms")
-            if (performanceMode == "strict") assertTrue("Lag p95 $p95 ms", p95 < 100)
+            for ((child, coordinate) in views) {
+                val final = map.project(coordinate)
+                assertEquals(final.x, child.translationX + child.width / 2f, 1.5f)
+                assertEquals(final.y, child.translationY + child.height / 2f, 1.5f)
+            }
+            val targetX = map.project(reference).x + origin[0]
+            until("the composed markers reach the final camera position") {
+                val image = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+                try {
+                    val (viewX, circleX) = markerCenters(image, row, viewColor, circleColor)
+                    abs(viewX - targetX) <= 1.5 && abs(circleX - viewX) <= 1.5
+                } finally {
+                    image.recycle()
+                }
+            }
             map.viewAnnotationManager.removeAllViewAnnotations()
             assertTrue(views.all { it.first.parent == null })
+        }
+    }
+
+    /**
+     * Horizontal centers of the colored Android child and the native circle underneath it, measured
+     * in one image of the display compositor during a pan.
+     */
+    private fun markerCenters(
+        image: android.graphics.Bitmap,
+        row: Int,
+        viewColor: Int,
+        mapColor: Int,
+    ): Pair<Double, Double> {
+        val top = (row - 36).coerceAtLeast(0)
+        val height = minOf(image.height - top, 73)
+        val pixels = IntArray(image.width * height)
+        image.getPixels(pixels, 0, image.width, 0, top, image.width, height)
+        fun center(color: Int): Double {
+            var lo = image.width
+            var hi = -1
+            pixels.forEachIndexed { i, value ->
+                if (
+                    abs(Color.red(value) - Color.red(color)) <= 2 &&
+                        abs(Color.green(value) - Color.green(color)) <= 2 &&
+                        abs(Color.blue(value) - Color.blue(color)) <= 2
+                ) {
+                    val x = i % image.width
+                    lo = minOf(lo, x)
+                    hi = maxOf(hi, x)
+                }
+            }
+            assertTrue(
+                "Missing or ambiguous marker color ${Integer.toHexString(color)} in [$lo,$hi], row $row",
+                hi >= lo && hi - lo < 120,
+            )
+            return (hi + lo) / 2.0
+        }
+        return center(viewColor) to center(mapColor)
+    }
+
+    @Test
+    public fun viewAnnotationsBehindAPitchedCameraAreHidden() {
+        val activity = show()
+        onMap(activity) { map ->
+            map.jump(TileflowCamera(centre.longitude, centre.latitude, 14.0, pitch = 60.0))
+            val south = TileflowCoordinate(centre.longitude, centre.latitude - 5.0)
+            fun viewAt(point: TileflowCoordinate) =
+                View(activity).also {
+                    map.viewAnnotationManager.addViewAnnotation(
+                        it,
+                        TileflowViewAnnotationOptions(
+                            point,
+                            allowOverlap = true,
+                            width = 24f,
+                            height = 24f,
+                        ),
+                    )
+                }
+            val front = viewAt(centre)
+            val behind = viewAt(south)
+            val simple = TileflowAnnotation("south", south, "Southern marker", "#ff0000")
+            map.setContent(annotations = listOf(simple))
+            until("the pitched camera places the visible annotation") {
+                front.visibility == View.VISIBLE && front.translationY > 0
+            }
+            val mirrored = map.project(south)
+            assertTrue(
+                "MapLibre returns a finite projected point",
+                mirrored.x.isFinite() && mirrored.y.isFinite(),
+            )
+            assertTrue(
+                "Annotation behind the camera must be hidden. Native projection: $mirrored",
+                behind.visibility != View.VISIBLE,
+            )
+            val markers = arrayListOf<View>()
+            map.findViewsWithText(markers, simple.title, View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION)
+            assertTrue(markers.none { it.isShown })
+            map.jump(
+                TileflowCamera(
+                    centre.longitude,
+                    centre.latitude,
+                    14.0,
+                    bearing = 180.0,
+                    pitch = 60.0,
+                )
+            )
+            until("turning toward the coordinate restores its projection") {
+                behind.visibility == View.VISIBLE
+            }
+        }
+    }
+
+    @Test
+    public fun draggingLinesAndPolygonsPreservesOffscreenVerticesAndHoles() {
+        val activity = show()
+        onMap(activity) { map ->
+            map.jump(TileflowCamera(centre.longitude, centre.latitude, 15.0))
+            suspend fun coordinate(x: Float, y: Float) = map.unproject(TileflowPoint(x, y))
+            val x = map.width / 2f
+            val y = map.height / 2f
+            val lines =
+                map.annotations.createPolylineAnnotationManager(TileflowAnnotationConfig("paths"))
+            // The western endpoint is outside the visible tiles; dragging keeps the full source
+            // geometry.
+            val original =
+                listOf(coordinate(-map.width.toFloat(), y - 120), coordinate(x + 140, y - 120))
+            val line =
+                lines.create(
+                    TileflowPolylineAnnotationOptions()
+                        .withPoints(original)
+                        .withLineColor(Color.RED)
+                        .withLineWidth(14.0)
+                        .withDraggable(true)
+                )
+            val polygons =
+                map.annotations.createPolygonAnnotationManager(TileflowAnnotationConfig("areas"))
+            suspend fun ring(left: Float, top: Float, right: Float, bottom: Float) =
+                listOf(
+                    coordinate(left, top),
+                    coordinate(right, top),
+                    coordinate(right, bottom),
+                    coordinate(left, bottom),
+                    coordinate(left, top),
+                )
+            val outer = ring(x - 110, y + 70, x + 110, y + 240)
+            val hole = ring(x + 30, y + 140, x + 65, y + 185).reversed()
+            val polygon =
+                polygons.create(
+                    TileflowPolygonAnnotationOptions()
+                        .withPoints(listOf(outer, hole))
+                        .withFillColor(Color.RED)
+                        .withDraggable(true)
+                )
+            suspend fun visible(name: String, at: TileflowPoint) =
+                map.layerExists(name) &&
+                    map.queryRenderedFeatures(
+                            TileflowQueryGeometry.Point(at),
+                            TileflowRenderedQueryOptions(listOf(name)),
+                        )
+                        .isNotEmpty()
+            until("both geometries are drawn") {
+                visible("paths", TileflowPoint(x, y - 120)) &&
+                    visible("areas", TileflowPoint(x, y + 105))
+            }
+            val initialCamera = map.camera()
+            touch(map, x, y - 120, dx = 6f, dy = 4f, steps = 8)
+            until("the full line moved") { line.points.first() != original.first() }
+            val west = map.project(line.points.first())
+            assertEquals(-map.width.toFloat() + 48, west.x, 2f)
+            assertEquals(y - 120 + 32, west.y, 2f)
+            touch(map, x, y + 105, dx = -5f, dy = 3f, steps = 8)
+            until("the polygon moved") { polygon.points.first().first() != outer.first() }
+            assertEquals(2, polygon.points.size)
+            val currentHole = polygon.points[1].first()
+            val holePixel = map.project(currentHole)
+            assertEquals(x + 30 - 40, holePixel.x, 2f)
+            assertEquals(y + 140 + 24, holePixel.y, 2f)
+            assertEquals(initialCamera, map.camera())
+        }
+    }
+
+    @Test
+    public fun simpleMarkersActivateAccessiblyAndSurviveReload() {
+        val activity = show()
+        onMap(activity) { map ->
+            val marker = TileflowAnnotation("store", centre, "Visit the store", "#dc5800")
+            suspend fun button(label: String): View {
+                var target: View? = null
+                until("the marker is accessible") {
+                    val found = arrayListOf<View>()
+                    map.findViewsWithText(found, label, View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION)
+                    target = found.firstOrNull { it.contentDescription == label && it.isShown }
+                    target != null
+                }
+                return requireNotNull(target)
+            }
+            map.setContent(annotations = listOf(marker))
+            val first = button(marker.title)
+            val point = map.project(centre)
+            until("the marker is placed at its coordinate") {
+                abs(first.translationX + first.width / 2f - point.x) <= 1.5f &&
+                    abs(first.translationY + first.height / 2f - point.y) <= 1.5f
+            }
+            fun activations() =
+                activity.events.filterIsInstance<TileflowMapEvent.AnnotationActivated>().count {
+                    it.id == marker.id && it.coordinate == centre
+                }
+            touch(map, point.x, point.y)
+            until("tapping the marker activates it") { activations() == 1 }
+            assertTrue(first.performAccessibilityAction(AccessibilityNodeInfo.ACTION_CLICK, null))
+            until("the accessibility action activates the marker") { activations() == 2 }
+            val renamed = marker.copy(title = "Updated store", color = "#dc580080")
+            map.setContent(annotations = listOf(renamed))
+            assertTrue(first === button(renamed.title))
+            val icon = Bitmap.createBitmap(first.width, first.height, Bitmap.Config.ARGB_8888)
+            try {
+                first.draw(android.graphics.Canvas(icon))
+                assertEquals(
+                    "The marker preserves the requested alpha",
+                    128,
+                    Color.alpha(icon.getPixel(icon.width / 2, icon.height / 2)),
+                )
+            } finally {
+                icon.recycle()
+            }
+            val loads = activity.loads.size
+            map.reload()
+            until("new map") { activity.loads.size > loads }
+            assertTrue(first !== button(renamed.title))
+            map.setContent()
+            val found = arrayListOf<View>()
+            map.findViewsWithText(found, renamed.title, View.FIND_VIEWS_WITH_CONTENT_DESCRIPTION)
+            assertTrue(found.isEmpty())
         }
     }
 
@@ -326,13 +726,17 @@ public class AnnotationIntegrationTest {
             val north =
                 pins.create(
                     TileflowPointAnnotationOptions()
-                        .withPoint(TileflowCoordinate(centre.longitude + 0.004, centre.latitude + 0.006))
+                        .withPoint(
+                            TileflowCoordinate(centre.longitude + 0.004, centre.latitude + 0.006)
+                        )
                         .withAccessibilityLabel("North pin")
                 )
             val south =
                 pins.create(
                     TileflowPointAnnotationOptions()
-                        .withPoint(TileflowCoordinate(centre.longitude - 0.004, centre.latitude - 0.006))
+                        .withPoint(
+                            TileflowCoordinate(centre.longitude - 0.004, centre.latitude - 0.006)
+                        )
                         .withAccessibilityLabel("South pin")
                 )
             val callout = View(activity).apply { contentDescription = "Callout" }
@@ -371,7 +775,9 @@ public class AnnotationIntegrationTest {
             assertEquals(point.x, target.translationX + target.width / 2f, 1.5f)
             assertEquals(point.y, target.translationY + target.height / 2f, 1.5f)
             assertTrue(target.performAccessibilityAction(AccessibilityNodeInfo.ACTION_CLICK, null))
-            assertTrue(target.performAccessibilityAction(AccessibilityNodeInfo.ACTION_LONG_CLICK, null))
+            assertTrue(
+                target.performAccessibilityAction(AccessibilityNodeInfo.ACTION_LONG_CLICK, null)
+            )
             assertEquals(listOf("tap South pin", "hold South pin"), activated)
             overlay.forcesAccessibilityTracking = false
             assertEquals(null, overlay.accessibilityTarget(pins.id, south.id))

@@ -172,6 +172,8 @@ internal class NativeMapEngine(
     internal var camera: NativeCamera? = null
         private set
 
+    private var annotations: NativeAnnotations? = null
+    override val annotationProjection: AnnotationProjection? get() = annotations
     internal var gestures: NativeGestures? = null
         private set
 
@@ -343,7 +345,11 @@ internal class NativeMapEngine(
                 }
                 ProtocolContract.Method.SET_DEPTH_MARKERS -> sceneContent.setMarkers(request ?: invalid()).let { JSONObject.NULL }
                 ProtocolContract.Method.SET_CONTENT -> {
-                    sceneContent.setContent(request ?: invalid(),data)
+                    val value = request ?: invalid()
+                    val owner = annotations ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
+                    val simple = owner.simple(value)
+                    sceneContent.setContent(value,data)
+                    owner.setSimple(simple)
                     scenePlayer.stopLines()
                     JSONObject.NULL
                 }
@@ -351,8 +357,10 @@ internal class NativeMapEngine(
                 ProtocolContract.Method.PLAY_SHOT -> scenePlayer.play(request ?: invalid())
                 ProtocolContract.Method.STOP_ANIMATION -> { scenePlayer.stop(request?.getString("animation") ?: invalid()); JSONObject.NULL }
                 // The view always tells a new engine its annotation layers and tracked points.
-                ProtocolContract.Method.SET_ANNOTATION_LAYERS ->
-                    if (isEmpty(payload, "layers")) JSONObject.NULL else unsupported(method)
+                ProtocolContract.Method.SET_ANNOTATION_LAYERS -> {
+                    annotations?.setLayers(request ?: invalid())
+                    JSONObject.NULL
+                }
                 ProtocolContract.Method.SET_TRACKED_POINTS ->
                     if (isEmpty(payload, "points")) JSONObject.NULL else unsupported(method)
                 else -> unsupported(method)
@@ -646,6 +654,7 @@ internal class NativeMapEngine(
         scenePlayer.retire()
         sceneClock.retire()
         camera?.retire(code)
+        annotations?.retire()
         gestures?.retire()
         val failure = TileflowMapException(code)
         styleWaiters.toList().also { styleWaiters.clear() }.forEach { it.resume(failure) }
@@ -1192,7 +1201,11 @@ internal class NativeMapEngine(
         }
         val camera = NativeCamera(map, mapView, density, emit, ::warnPitch)
         this.camera = camera
-        gestures = NativeGestures(container.context, map, mapView, container, camera, density, emit)
+        val owner = NativeAnnotations(container.context, map, mapView, runtimeStyle, emit)
+        annotations = owner
+        container.addView(owner.view, container.indexOfChild(attribution.view),
+            FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        gestures = NativeGestures(container.context, map, mapView, container, camera, density, emit, owner)
     }
 
     /**

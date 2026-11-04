@@ -46,8 +46,6 @@ internal class NativeSceneContent(
     private val markerSourceId = "__tileflow_depth_points"
 
     suspend fun setContent(request: JSONObject, data: DataChannel) {
-        if ((request.optJSONArray("annotations")?.length() ?: 0) != 0)
-            styleInvalid("Simple annotations require an annotation renderer")
         val run = ++revision
         val previous = overlays.associateBy { it.name }
         val candidates =

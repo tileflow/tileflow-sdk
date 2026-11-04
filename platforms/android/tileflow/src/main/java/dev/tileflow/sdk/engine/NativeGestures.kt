@@ -41,6 +41,7 @@ internal class NativeGestures(
     private val camera: NativeCamera,
     private val density: Float,
     private val emit: (String, JSONObject) -> Unit,
+    private val annotations: NativeAnnotations,
 ) {
     /** The gestures the view's options ask for. */
     data class Settings(
@@ -201,6 +202,18 @@ internal class NativeGestures(
      * touch (no tap, no long press) and the hint shows; a second finger hands the touch back.
      */
     private fun touched(event: MotionEvent): Boolean {
+        val dragging = annotations.touch(event) {
+            val cancel = MotionEvent.obtain(event)
+            cancel.action = MotionEvent.ACTION_CANCEL
+            try {
+                doubleTaps.onTouchEvent(cancel)
+                mapView.onTouchEvent(cancel)
+            } finally {
+                cancel.recycle()
+            }
+        }
+        if (dragging) return true
+
         doubleTaps.onTouchEvent(event)
         if (!settings.cooperative || !settings.pan) return false
         when (event.actionMasked) {
@@ -264,7 +277,8 @@ internal class NativeGestures(
                         .put("longitude", wrapped.longitude)
                         .put("latitude", wrapped.latitude),
                 )
-                .put("point", JSONObject().put("x", point.x / density).put("y", point.y / density)),
+                .put("point", JSONObject().put("x", point.x / density).put("y", point.y / density))
+                .put("annotations", annotations.press(point)),
         )
     }
 

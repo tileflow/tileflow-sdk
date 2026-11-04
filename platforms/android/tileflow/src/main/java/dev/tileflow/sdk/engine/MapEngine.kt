@@ -83,6 +83,10 @@ internal interface MapEngine {
      */
     val data: DataChannel
 
+    /** Native renderers can project all tracked points synchronously at Android draw time. */
+    val annotationProjection: AnnotationProjection?
+        get() = null
+
     /** Starts loading. [MapEngineCallbacks.ready] follows once the engine takes `initialize`. */
     fun start()
 

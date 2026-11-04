@@ -336,6 +336,26 @@ internal class NativeRuntimeStyle(
         images = next
     }
 
+    fun dragFeature(layerName: String, id: String): NativeDragFeature? {
+        val layer = layers.firstOrNull { it.name == layerName } ?: return null
+        val source = sources[layer.source] ?: return null
+        var current = source.geoJSON ?: return null
+        val collection = JSONObject(current)
+        val feature = collection.optJSONArray("features")?.objects()?.firstOrNull {
+            it.opt("id")?.toString() == id
+        } ?: return null
+        val geometry = feature.optJSONObject("geometry") ?: return null
+        return NativeDragFeature(geometry) { moved ->
+            if (sources[layer.source] !== source || source.geoJSON !== current) false
+            else {
+                feature.put("geometry", moved)
+                current = collection.toString()
+                setData(source,current)
+                true
+            }
+        }
+    }
+
     fun image(name: String): Bitmap? = images[name]?.forTheme(currentTheme())
 
     fun refreshImageVariants() {

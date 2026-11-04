@@ -2,6 +2,8 @@ package dev.tileflow.sdk
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Canvas
+import dev.tileflow.sdk.engine.AnnotationProjection
 import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.View
@@ -91,6 +93,9 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
     private var revision = 0
     private var sentPoints: List<Pair<Any, TileflowCoordinate>>? = null
     private var sending = false
+    private var native: AnnotationProjection? = null
+    private var nativeInput = DoubleArray(0)
+    private var nativePixels = DoubleArray(0)
     private var frameRequested = false
     private var latestSampleTime: Double? = null
     private val targets = LinkedHashMap<Pair<String, String>, AccessibilityTarget>()
@@ -210,6 +215,25 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
         val engine = map.readyEngine ?: return
         val points = desiredPoints()
         if (points == sentPoints) return
+        val synchronous = engine.annotationProjection
+        if (synchronous != null) {
+            native?.onFrame = null
+            native = synchronous
+            sentPoints = points
+            nativeInput = DoubleArray(points.size * 2)
+            nativePixels = DoubleArray(nativeInput.size)
+            points.forEachIndexed { index, point ->
+                nativeInput[index * 2] = point.second.latitude
+                nativeInput[index * 2 + 1] = point.second.longitude
+            }
+            synchronous.track(nativeInput)
+            synchronous.onFrame = if (points.isEmpty()) null else ({
+                applyPositions()
+                invalidate()
+            })
+            invalidate()
+            return
+        }
         val current = ++revision
         tracked.sent(current, points.map { it.first })
         sentPoints = points
@@ -250,6 +274,10 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
     }
 
     fun rendererRetired() {
+        native?.onFrame = null
+        native?.track(DoubleArray(0))
+        native = null
+        latestSampleTime = null
         sentPoints = null
         sending = false
         tracked.clear()
@@ -265,9 +293,33 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
     }
 
     private fun requestFrame() {
+        if (native != null) {
+            invalidate()
+            return
+        }
         if (frameRequested || !isAttachedToWindow) return
         frameRequested = true
         Choreographer.getInstance().postFrameCallback(frameCallback)
+    }
+
+    override fun dispatchDraw(canvas: Canvas) {
+        if (native != null && nativeInput.isNotEmpty()) applyPositions()
+        super.dispatchDraw(canvas)
+    }
+
+    private fun projectNative(projector: AnnotationProjection) {
+        val points = sentPoints ?: return
+        if (points.isEmpty()) return
+        projector.project(nativeInput, nativePixels)
+        points.forEachIndexed { index, (key, _) ->
+            val x = nativePixels[index * 2].toFloat()
+            val y = nativePixels[index * 2 + 1].toFloat()
+            if (x.isFinite() && y.isFinite()) {
+                val point = tracked.positions[key] ?: FloatArray(2).also { tracked.positions[key] = it }
+                point[0] = x
+                point[1] = y
+            } else tracked.positions[key] = null
+        }
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
@@ -278,6 +330,7 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
 
     /** Moves the views to the newest positions and places the view annotations. */
     internal fun applyPositions() {
+        native?.let(::projectNative)
         frameRequested = false
         latestSampleTime?.let { lag.record(System.currentTimeMillis() - it) }
         latestSampleTime = null
@@ -412,6 +465,9 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
     }
 
     fun dispose() {
+        native?.onFrame = null
+        native?.track(DoubleArray(0))
+        native = null
         if (frameRequested) Choreographer.getInstance().removeFrameCallback(frameCallback)
         frameRequested = false
         tracked.clear()

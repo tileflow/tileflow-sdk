@@ -13,6 +13,7 @@ import {
   zoom,
 } from '../src';
 import type {TileflowLayerContribution} from '../src/cartography/contributions';
+import {foldMappedComparison, mappedValue} from '../src/cartography/mapped-comparisons';
 import {createSemanticDataView} from '../src/cartography/semantic-bindings';
 import {expression} from '../src/cartography/values';
 import {compileAeroways} from '../src/modules/aeroways/compiler';
@@ -69,7 +70,7 @@ const openMapTilesConstruction = [
 
 /** The World road `class` the OpenMapTiles adapter reads from `class` and `subclass`. */
 function openMapTilesRoadClass(classField: string, subclassField: string): unknown[] {
-  return [
+  return mappedValue([
     'match',
     ['get', classField],
     'minor',
@@ -81,29 +82,26 @@ function openMapTilesRoadClass(classField: string, subclassField: string): unkno
     'path',
     ['match', ['get', subclassField], 'pedestrian', 'pedestrian', 'path'],
     ['to-string', ['get', classField]],
-  ];
+  ]);
 }
 
 /** The World road `type`: the subclass, or the class a road under construction becomes. */
 function openMapTilesRoadType(classField: string, subclassField: string): unknown[] {
-  return [
+  return mappedValue([
     'match',
     ['get', classField],
-    openMapTilesConstruction,
-    [
-      'match',
-      ['get', classField],
-      'minor_construction',
-      'street',
-      [
-        'slice',
-        ['to-string', ['get', classField]],
-        0,
-        ['index-of', '_construction', ['get', classField]],
-      ],
-    ],
+    ...openMapTilesConstruction.flatMap((value) => [
+      value,
+      value === 'minor_construction' ? 'street' : value.slice(0, -'_construction'.length),
+    ]),
     ['get', subclassField],
-  ];
+  ]);
+}
+
+/** An expected expression as binding to OpenMapTiles folds it: comparisons read OMT properties. */
+function foldedBinding(value: unknown, mappedValues: readonly unknown[]): unknown {
+  if (!Array.isArray(value) || mappedValues.includes(value)) return value;
+  return foldMappedComparison(value.map((item) => foldedBinding(item, mappedValues)));
 }
 
 test('compiles complete land and water domains into stable direct layers', () => {
@@ -666,18 +664,22 @@ test('compiles disjoint semantic path families across structures and remapped fi
     pedestrian: ['pedestrian'],
   } as const;
 
-  for (const {layers, roadClass, roadType, structureField} of [
+  const omtClass = openMapTilesRoadClass('kind', 'kind_detail');
+  const omtType = openMapTilesRoadType('kind', 'kind_detail');
+  for (const {layers, roadClass, roadType, structureField, bind} of [
     {
       layers: assembleTileflowLayers(compileRoads(request, context)),
       roadClass: ['get', 'class'],
       roadType: ['get', 'type'],
       structureField: 'structure',
+      bind: (value: unknown) => value,
     },
     {
       layers: compileThrough(remapped, (remappedContext) => compileRoads(request, remappedContext)),
-      roadClass: openMapTilesRoadClass('kind', 'kind_detail'),
-      roadType: openMapTilesRoadType('kind', 'kind_detail'),
+      roadClass: omtClass,
+      roadType: omtType,
       structureField: 'brunnel',
+      bind: (value: unknown) => foldedBinding(value, [omtClass, omtType]),
     },
   ]) {
     for (const [pathClass, types] of Object.entries(expectedTypes)) {
@@ -686,20 +688,23 @@ test('compiles disjoint semantic path families across structures and remapped fi
           (entry) => entry.id === `tileflow-road-${structure}-${pathClass}-fill`,
         );
         assert.ok(layer, `${pathClass} ${structure} fill must exist`);
-        assert.deepEqual(layer.filter, [
-          'all',
-          ['==', ['geometry-type'], 'LineString'],
-          [
-            'any',
-            pathClass === 'pedestrian'
-              ? ['match', roadClass, ['pedestrian'], true, false]
-              : ['all', ['==', roadClass, 'path'], ['match', roadType, types, true, false]],
-            ['all', ['==', roadClass, 'construction'], ['match', roadType, types, true, false]],
-          ],
-          structure === 'surface'
-            ? ['match', ['get', structureField], ['tunnel', 'bridge'], false, true]
-            : ['==', ['get', structureField], structure],
-        ]);
+        assert.deepEqual(
+          layer.filter,
+          bind([
+            'all',
+            ['==', ['geometry-type'], 'LineString'],
+            [
+              'any',
+              pathClass === 'pedestrian'
+                ? ['match', roadClass, ['pedestrian'], true, false]
+                : ['all', ['==', roadClass, 'path'], ['match', roadType, types, true, false]],
+              ['all', ['==', roadClass, 'construction'], ['match', roadType, types, true, false]],
+            ],
+            structure === 'surface'
+              ? ['match', ['get', structureField], ['tunnel', 'bridge'], false, true]
+              : ['==', ['get', structureField], structure],
+          ]),
+        );
       }
     }
 
@@ -877,21 +882,28 @@ test('compiles pedestrian polygons as a semantic road area even without line cla
   const layers = assembleTileflowLayers(contributions, data);
   const pedestrianArea = layers.find((layer) => layer.id === 'tileflow-road-pedestrian-area');
   const roadClass = openMapTilesRoadClass('kind', 'kind_detail');
+  const roadType = openMapTilesRoadType('kind', 'kind_detail');
 
   assert.ok(pedestrianArea);
-  assert.deepEqual(pedestrianArea.filter, [
-    'all',
-    ['==', ['geometry-type'], 'Polygon'],
-    [
-      'any',
-      ['match', roadClass, ['pedestrian'], true, false],
+  assert.deepEqual(
+    pedestrianArea.filter,
+    foldedBinding(
       [
         'all',
-        ['==', roadClass, 'construction'],
-        ['match', openMapTilesRoadType('kind', 'kind_detail'), ['pedestrian'], true, false],
+        ['==', ['geometry-type'], 'Polygon'],
+        [
+          'any',
+          ['match', roadClass, ['pedestrian'], true, false],
+          [
+            'all',
+            ['==', roadClass, 'construction'],
+            ['match', roadType, ['pedestrian'], true, false],
+          ],
+        ],
       ],
-    ],
-  ]);
+      [roadClass, roadType],
+    ),
+  );
   assert.deepEqual(pedestrianArea.paint, {
     'fill-color': '#F1F3F5',
     'fill-opacity': 1,

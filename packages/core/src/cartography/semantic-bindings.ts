@@ -10,6 +10,7 @@ import {
   tileflowWorldLayers,
 } from '../data';
 import {tileflowBathymetryV1Schema} from '../marine';
+import {foldMappedComparison, mappedValue} from './mapped-comparisons';
 
 /*
  * The SDK reads data through the Tileflow World schema's layers and fields. This keeps
@@ -232,10 +233,13 @@ function bindSemanticValue(value: unknown, context: BindingContext): unknown {
       if (isDataFieldReference(operand)) {
         const accessor = fieldAccessor(operand, context);
         if (typeof accessor === 'string') return [operator, accessor];
-        return operator === 'get' ? accessor.expression : ['!=', accessor.expression, null];
+        return operator === 'get'
+          ? mappedValue(accessor.expression)
+          : ['!=', accessor.expression, null];
       }
     }
-    return value.map((item) => bindSemanticValue(item, context));
+    const bound = value.map((item) => bindSemanticValue(item, context));
+    return context.data.schema.adapter ? foldMappedComparison(bound) : bound;
   }
   if (isDataFieldReference(value)) {
     const accessor = fieldAccessor(value, context);

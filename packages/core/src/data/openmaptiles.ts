@@ -265,18 +265,15 @@ export function openMapTilesAdapter(schema: OpenMapTilesSchema): {
     ],
   };
   // A road under construction tells the class it is built as, as World does.
+  // One branch per class keeps comparisons on the type foldable into a single `match`.
   const roadType = {
     expression: [
       'match',
       get(f.class),
-      omtRoadConstructionClasses.map((value) => `${value}_construction`),
-      [
-        'match',
-        get(f.class),
-        'minor_construction',
-        'street',
-        ['slice', ['to-string', get(f.class)], 0, ['index-of', '_construction', get(f.class)]],
-      ],
+      ...omtRoadConstructionClasses.flatMap((value) => [
+        `${value}_construction`,
+        value === 'minor' ? 'street' : value,
+      ]),
       get(f.subclass),
     ],
   };

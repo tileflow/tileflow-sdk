@@ -50,7 +50,9 @@ extension XCTestCase {
     try await requireMapFixture(discovery)
     await TileflowMapCache.clear()
     let configuration = try fixtureConfiguration()
-    let store = offlineMapStore(profile: profile, client: { try OfflinePackClient(configuration: configuration) })
+    let opensLegacy = engine == .native && profile == .webView
+    let store = offlineMapStore(profile: profile, index: opensLegacy ? OfflineServingIndex() : .shared,
+      client: { try OfflinePackClient(configuration: configuration) })
     _ = try await fixtureCounters(reset: true)
     try await downloadRegion(
       store, id: "hosted",
@@ -61,7 +63,16 @@ extension XCTestCase {
         maxZoom: 15))
     let downloaded = try await fixtureCounters()
     XCTAssertEqual(downloaded["packs"], 1, "One download created")
-    let stored = await store.region(id: "hosted")
+    // Only the reopened store publishes this old region to the map's serving index.
+    let reader: TileflowOfflineStore
+    if opensLegacy {
+      var dependencies = await store.core.dependencies
+      dependencies.profile = .native
+      dependencies.index = .shared
+      reader = TileflowOfflineStore(dependencies: dependencies)
+    } else { reader = store }
+    defer { if opensLegacy { OfflineServingIndex.shared.publish(.init(), from: reader.core) } }
+    let stored = await reader.region(id: "hosted")
     let region = try XCTUnwrap(stored)
     XCTAssertEqual(downloaded["packResources"], region.requiredPackCount)
     XCTAssertEqual(downloaded["sessions"], 0)
@@ -197,7 +208,8 @@ extension XCTestCase {
 
   /// A store of its own, downloading in the foreground, whose regions every map may use.
   func offlineMapStore(
-    profile: OfflinePackProfile = .webView, client: @escaping @Sendable () throws -> OfflinePackClient
+    profile: OfflinePackProfile = .webView, index: OfflineServingIndex = .shared,
+    client: @escaping @Sendable () throws -> OfflinePackClient
   ) -> TileflowOfflineStore
   {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -208,7 +220,7 @@ extension XCTestCase {
         fetcher: OfflineURLSessionFetcher(
           configuration: .ephemeral, directory: root.appendingPathComponent("transfers")),
         client: client,
-        availableBytes: { nil }, index: .shared, profile: profile))
+        availableBytes: { nil }, index: index, profile: profile))
     addTeardownBlock {
       for region in await store.allRegions() { try? await store.removeRegion(id: region.id) }
       try? FileManager.default.removeItem(at: root)

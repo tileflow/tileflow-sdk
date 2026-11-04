@@ -76,6 +76,9 @@ actor OfflineStoreCore {
   private var layout: OfflineLayout { dependencies.layout }
   private var records: [String: OfflineRegionRecord] = [:]
   private var isOpen = false
+  /// A reply belongs to the active version that requested it. Removing or replacing that
+  /// version invalidates the token, even when a recreated region starts again at version one.
+  private var revalidations: [String: UUID] = [:]
   /// Controls of one region run in order while a stopped transfer finishes.
   private var controls: [String: [CheckedContinuation<Void, Never>]] = [:]
   private var runs: [String: (token: UUID, task: Task<Void, Never>)] = [:]
@@ -125,6 +128,13 @@ actor OfflineStoreCore {
         continue
       }
       if record.retired != nil { finishRetirement(id) }
+      if var current = records[id], let pending = current.pending, pending.automatic == true,
+        current.check?.state == "not_updatable" {
+        // Revocation was recorded before the interrupted process finished stopping its transfer.
+        dependencies.fetcher.cancel(prefix: transferPrefix(id, pending.number))
+        finishPendingDiscard(&current, pending)
+        continue
+      }
       if let pending = record.pending {
         progress[id] = storedProgress(id, pending)
         if [.downloading, .waiting].contains(pending.state) { startRun(id) }
@@ -322,7 +332,10 @@ actor OfflineStoreCore {
     try options.geometry.validate()
     _ = try options.zooms
     let json = options.json
+    if automatic, !canStartAutomaticUpdate(id) { throw CancellationError() }
+    let needsNewGrant = records[id].map { ($0.active?.downloads ?? 0) > 0 && !hasAutomaticAccess($0) } ?? false
     if var record = records[id], var pending = record.pending,
+      !(pending.automatic == true && needsNewGrant),
       Self.withoutMetadata(pending.options) == Self.withoutMetadata(json)
     {
       // Metadata alone never restarts a download: it changes in place.
@@ -352,7 +365,8 @@ actor OfflineStoreCore {
     var apiOrigin: URL?
     switch options.content {
     case .hosted:
-      let hosted = try await hostedPlan(options, consuming: true)
+      let hosted = try await hostedPlan(options, consuming: true, reuseEstimate: !needsNewGrant)
+      if automatic, !canStartAutomaticUpdate(id) { throw CancellationError() }
       plan = hosted.plan
       apiOrigin = hosted.apiOrigin
       try checkDeviceLimit(id, plan)
@@ -490,7 +504,7 @@ actor OfflineStoreCore {
     guard let client = try? dependencies.client() else { return }
     let now = dependencies.now()
     for id in records.keys.sorted() {
-      guard let record = records[id], !record.removing, let active = record.active,
+      guard revalidations[id] == nil, let record = records[id], !record.removing, let active = record.active,
         active.downloads > 0
       else { continue }
       if let check = record.check {
@@ -499,12 +513,16 @@ actor OfflineStoreCore {
         else { continue }
       }
       guard let plan = try? plan(id, active) else { continue }
+      let token = UUID()
+      revalidations[id] = token
+      defer { if revalidations[id] == token { revalidations[id] = nil } }
       var states: [OfflinePackRevalidation] = []
       for download in plan.downloads {
         guard let state = try? await client.revalidate(download.grant) else { break }
         states.append(state)
       }
-      guard states.count == plan.downloads.count, var current = records[id], !current.removing
+      guard revalidations[id] == token, states.count == plan.downloads.count,
+        var current = records[id], !current.removing, current.active?.number == active.number
       else { continue }
       var check = OfflineCheckRecord(
         state: "current", reason: nil, checkedAt: now.offlineMilliseconds, interval: 86_400)
@@ -523,13 +541,33 @@ actor OfflineStoreCore {
           check.checkedAt = checkedAt.offlineMilliseconds
         }
       }
+      if check.state == "current", dependencies.profile == .native,
+        plan.downloads.contains(where: { $0.manifest.profile == OfflinePackProfile.webView.rawValue }) {
+        check.state = "update_available"
+      }
       check.validatedAt =
         check.state == "not_updatable"
         ? current.check?.validatedAt ?? active.completedAt : check.checkedAt
       current.check = check
-      try? save(current)
+      let refused = check.state == "not_updatable" && current.pending?.automatic == true
+        ? current.pending?.number : nil
+      if refused != nil {
+        current.pending?.state = .paused
+        current.pending?.retryAt = nil
+      }
+      guard (try? save(current)) != nil else { continue }
       publishServing()
       emitChanged(id)
+      if let refused {
+        runs[id]?.task.cancel()
+        await enterControl(id)
+        defer { leaveControl(id) }
+        await discardPending(id) { record, pending in
+          self.revalidations[id] == token && pending.number == refused
+            && pending.automatic == true && record.check?.state == "not_updatable"
+        }
+        emitChanged(id)
+      }
     }
   }
 
@@ -616,6 +654,18 @@ actor OfflineStoreCore {
       now, Date(offlineMilliseconds: last).addingTimeInterval(Self.automaticUpdateInterval))
   }
 
+  private func hasAutomaticAccess(_ record: OfflineRegionRecord) -> Bool {
+    record.check?.state != "not_updatable" && expiryPhase(record, at: dependencies.now()) == .valid
+  }
+
+  private func canStartAutomaticUpdate(_ id: String) -> Bool {
+    guard settings.automaticUpdates, let record = records[id], !record.removing, record.pending == nil,
+      let active = record.active, active.downloads > 0, let check = record.check, check.state == "update_available",
+      hasAutomaticAccess(record) else { return false }
+    // If a due revalidation failed, its earlier offer cannot authorize a fresh download.
+    return dependencies.now() < Date(offlineMilliseconds: check.checkedAt).addingTimeInterval(check.interval)
+  }
+
   /// One automatic update pass: when automatic updates are on and `conditions` allow them, due
   /// regions are revalidated and each Hosted region with an update available downloads it, exactly
   /// as loading it again would, but only on unmetered networks. The stored version serves until
@@ -631,9 +681,7 @@ actor OfflineStoreCore {
     await checkForUpdates()
     var started: [String] = []
     for id in records.keys.sorted() {
-      guard settings.automaticUpdates, let record = records[id], !record.removing,
-        record.pending == nil, let active = record.active, active.downloads > 0,
-        record.check?.state == "update_available",
+      guard canStartAutomaticUpdate(id), let active = records[id]?.active,
         let options = TileflowOfflineRegionLoadOptions(json: active.options)
       else { continue }
       do {
@@ -715,6 +763,9 @@ actor OfflineStoreCore {
       guard let record = records[id], !record.removing, let pending = record.pending,
         [.downloading, .waiting].contains(pending.state)
       else { return }
+      if pending.automatic == true, !hasAutomaticAccess(record) {
+        return update(id) { $0.fail(.init(.accessDenied)) }
+      }
       if let retryAt = pending.retryAt, !waited {
         let delay = Date(offlineMilliseconds: retryAt).timeIntervalSince(dependencies.now())
         if delay > 0 {
@@ -1002,15 +1053,22 @@ actor OfflineStoreCore {
   }
 
   /// Abandons the pending version and releases what only it used.
-  private func discardPending(_ id: String) async {
-    guard let pending = records[id]?.pending else { return }
+  private func discardPending(
+    _ id: String, when allowed: (OfflineRegionRecord, OfflineVersionRecord) -> Bool = { _, _ in true }
+  ) async {
+    guard let before = records[id], let pending = before.pending, allowed(before, pending) else { return }
     await stopRun(id, pending)
-    guard var record = records[id], record.pending?.number == pending.number else { return }
-    discardTransfers(id, pending)
-    release(id, [pending])
+    guard var record = records[id], let current = record.pending, current.number == pending.number,
+      allowed(record, current) else { return }
+    finishPendingDiscard(&record, current)
+  }
+
+  private func finishPendingDiscard(_ record: inout OfflineRegionRecord, _ pending: OfflineVersionRecord) {
+    discardTransfers(record.id, pending)
+    release(record.id, [pending])
     record.pending = nil
     try? save(record)
-    progress[id] = nil
+    progress[record.id] = nil
   }
 
   /// Removes the packs and pinned entries of `versions` that no other version references, then
@@ -1053,7 +1111,8 @@ actor OfflineStoreCore {
 
   /// The downloads of `options`: those an estimate created, or new ones. A load consumes what
   /// an estimate created, so loading again later sees the Map as it is then.
-  private func hostedPlan(_ options: TileflowOfflineRegionLoadOptions, consuming: Bool = false)
+  private func hostedPlan(_ options: TileflowOfflineRegionLoadOptions, consuming: Bool = false,
+    reuseEstimate: Bool = true)
     async throws -> (plan: OfflineVersionPlan, apiOrigin: URL)
   {
     guard case .hosted(let mapID, let themes) = options.content else {
@@ -1066,7 +1125,7 @@ actor OfflineStoreCore {
     var downloads: [OfflineDownload] = []
     for request in requests {
       let now = dependencies.now()
-      if let download = created[request],
+      if reuseEstimate, let download = created[request],
         download.manifest.downloadExpiresAt.timeIntervalSince(now) > Self.reuseWindow
       {
         if consuming { created.removeValue(forKey: request) }
@@ -1233,6 +1292,9 @@ actor OfflineStoreCore {
 
   private func save(_ record: OfflineRegionRecord) throws {
     try record.write(layout.record(record.id))
+    if record.removing || records[record.id]?.active?.number != record.active?.number {
+      revalidations[record.id] = nil
+    }
     records[record.id] = record
   }
 

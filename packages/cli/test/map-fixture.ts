@@ -28,7 +28,7 @@ export function tileflowMapFixture(options: TileflowMapFixtureOptions): string {
       ? `data: vectorTiles({
   attribution: '© Tileflow CLI fixture',
   revision: 'cli-fixture-v1',
-  schema: openMapTiles(),
+  schema: tileflowWorldSchema(),
   tiles: ['https://tiles.example.invalid/{z}/{x}/{y}.pbf']
 })`
       : '',
@@ -58,7 +58,7 @@ export function tileflowMapFixture(options: TileflowMapFixtureOptions): string {
     .join(',\n');
   const coreImports =
     options.data === 'fixture'
-      ? 'defineMap, disable, openMapTiles, vectorTiles'
+      ? 'defineMap, disable, tileflowWorldSchema, vectorTiles'
       : 'defineMap, disable';
   return `${normalizeSection(options.imports)}import {${coreImports}} from '@tileflow/core';
 import {streets} from '@tileflow/maps';

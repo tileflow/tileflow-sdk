@@ -90,10 +90,11 @@ share category-colored POI discs and Maki pictograms. Lighting preserves sunlit 
 tints walls. Daylight uses neutral direct light (0.2) and ambient fill (0.8); buildings and
 map-shaded models keep ambient fill at night, with local occlusion at contacts and recesses.
 
-The regional climate underlay is temporarily disabled while shared URL delivery is prepared;
-compiled styles omit its image source and raster layer. Themes use their authored land-cover
-palettes. Urban and education areas use neutral surfaces; farmland stays pale, while mapped orchards and nurseries remain
-green. Underground footprints flagged `hide_3d` are omitted from the flat building layers. Streets
+Below zoom 11, daylight draws a climate image separating humid and dry regions; it is
+loaded only there and is broad context, not surveyed vegetation. Other appearances keep it clear.
+Urban and education areas use neutral surfaces; farmland stays pale, mapped orchards and nurseries
+green. Activity areas tint the ground by activity until buildings take over. Footprints drawn
+by building parts (`extrude: false`) are omitted from the flat building layers. Streets
 suspends duplicate flat building footprints in 3D so roads remain visible under open landmarks;
 2D mode restores ordinary footprints. Normal 3D buildings keep a small neutral/active tone difference. Authored models use
 the neutral building color and independently configurable window shading.
@@ -203,7 +204,7 @@ export default defineMap({
 
 POIs follow World ranks and category density, with extra detail for parks and transport.
 Generic airport POIs are limited to rank 0 to reduce misplaced business listings; the dedicated
-aerodrome layer continues to label mapped airports. This display policy does not repair source data.
+airport label layer continues to label mapped airports. This display policy does not repair source data.
 Road-reference repetition is reduced at z11–13 and retains its detail interval from z14.
 Gardens stay at ranks 0–1 at every zoom, keeping principal destinations while omitting botanical
 collections and some small independent gardens. Other park and landmark types retain their usual

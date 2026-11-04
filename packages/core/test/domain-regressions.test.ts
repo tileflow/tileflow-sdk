@@ -1,13 +1,15 @@
-import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
+import {featureFilter, validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {TileflowLayerContribution} from '../src/cartography/contributions';
+import {createSemanticDataView} from '../src/cartography/semantic-bindings';
 import {
   aeroways,
   buildings,
   labels,
   openMapTiles,
   poi,
+  type ResolvedTileflowData,
   resolveTileflowData,
   roads,
   vectorTiles,
@@ -37,13 +39,21 @@ const context = {
   },
 };
 
-function styleFor(contributions: readonly TileflowLayerContribution[]) {
+function styleFor(
+  contributions: readonly TileflowLayerContribution[],
+  data?: ResolvedTileflowData,
+) {
   return {
     version: 8 as const,
     glyphs: 'https://example.test/fonts/{fontstack}/{range}.pbf',
     sources: {tileflow: {type: 'vector' as const, url: 'https://example.test/tiles.json'}},
-    layers: assembleTileflowLayers(contributions),
+    layers: assembleTileflowLayers(contributions, data),
   };
+}
+
+/** A compile context that reads `data` through World's names, lowered by `styleFor`. */
+function semanticContext(data: ResolvedTileflowData) {
+  return {...context, data: createSemanticDataView(data)};
 }
 
 test('vegetation emits ordered radius stops when minZoom is 20 or greater', () => {
@@ -84,7 +94,10 @@ test('English labels honor the remapped nameEnglish binding', () => {
       url: '/tiles.json',
     }),
   );
-  const style = styleFor(compileLabels(labels({language: 'en'}), undefined, {...context, data}));
+  const style = styleFor(
+    compileLabels(labels({language: 'en'}), undefined, semanticContext(data)),
+    data,
+  );
   const place = style.layers.find((layer) => layer.id === 'tileflow-label-place-city');
 
   assert.match(JSON.stringify(place?.layout), /english_label/);
@@ -93,6 +106,36 @@ test('English labels honor the remapped nameEnglish binding', () => {
 });
 
 test('POI compilation deduplicates canonical categories and honors remapped fields', () => {
+  const config = poi({
+    categories: ['food-drink', 'food-drink', 'transport'],
+    density: 2,
+    icons: false,
+    labels: true,
+    minZoom: 20,
+  });
+  const style = styleFor(compilePoi(config, context));
+  const poiLayers = style.layers.filter((layer) => layer.id.startsWith('tileflow-poi'));
+  const transport = poiLayers.find((layer) => layer.id === 'tileflow-poi-label');
+
+  assert.deepEqual(
+    poiLayers.map((layer) => layer.id),
+    ['tileflow-poi-label'],
+  );
+  assert.deepEqual((transport?.filter as unknown[])[1], [
+    'match',
+    ['get', 'class'],
+    ['food-drink', 'transport'],
+    true,
+    false,
+  ]);
+  assert.equal(new Set(poiLayers.map((layer) => layer.id)).size, poiLayers.length);
+  assert.equal(transport?.minzoom, 20);
+  assert.match(JSON.stringify(transport?.filter), /"filterrank"/);
+  assert.match(JSON.stringify(transport?.filter), /"sizerank"/);
+  assert.match(JSON.stringify(transport?.filter), /to-number/);
+  assert.deepEqual(validateStyleMin(style), []);
+
+  // OpenMapTiles' names and rank, by the properties the data binds them to.
   const data = resolveTileflowData(
     vectorTiles({
       attribution: '© Test',
@@ -101,53 +144,22 @@ test('POI compilation deduplicates canonical categories and honors remapped fiel
           name: 'local_label',
           nameEnglish: 'english_label',
           nameLatin: 'latin_label',
-          poiCategory: 'poi_category',
-          poiFilterRank: 'poi_filter_rank',
-          poiIcon: 'poi_icon',
-          poiSizeRank: 'poi_size_rank',
-          poiType: 'poi_type',
+          rank: 'poi_rank',
         },
       }),
       url: '/tiles.json',
     }),
   );
-  const style = styleFor(
-    compilePoi(
-      poi({
-        categories: ['food-drink', 'food-drink', 'transport'],
-        density: 2,
-        icons: false,
-        labels: true,
-        minZoom: 20,
-      }),
-      {...context, data},
-    ),
-  );
-  const poiLayers = style.layers.filter((layer) => layer.id.startsWith('tileflow-poi'));
-  const transport = poiLayers.find((layer) => layer.id === 'tileflow-poi-label');
-  const serialized = JSON.stringify(poiLayers);
+  const remapped = styleFor(compilePoi(config, semanticContext(data)), data);
+  const remappedLayer = remapped.layers.find((layer) => layer.id === 'tileflow-poi-label');
+  const serialized = JSON.stringify(remapped.layers);
 
-  assert.deepEqual(
-    poiLayers.map((layer) => layer.id),
-    ['tileflow-poi-label'],
-  );
-  assert.deepEqual((transport?.filter as unknown[])[1], [
-    'match',
-    ['get', 'poi_category'],
-    ['food-drink', 'transport'],
-    true,
-    false,
-  ]);
-  assert.equal(new Set(poiLayers.map((layer) => layer.id)).size, poiLayers.length);
-  assert.equal(transport?.minzoom, 20);
-  assert.match(JSON.stringify(transport?.filter), /poi_category/);
-  assert.match(JSON.stringify(transport?.filter), /poi_filter_rank/);
-  assert.match(JSON.stringify(transport?.filter), /poi_size_rank/);
-  assert.match(JSON.stringify(transport?.filter), /to-number/);
+  assert.equal(remappedLayer?.['source-layer'], 'poi');
+  assert.match(JSON.stringify(remappedLayer?.filter), /poi_rank/);
   assert.match(serialized, /local_label/);
   assert.match(serialized, /english_label/);
   assert.match(serialized, /latin_label/);
-  assert.deepEqual(validateStyleMin(style), []);
+  assert.deepEqual(validateStyleMin(remapped), []);
 });
 
 test('one-way markers follow visible road detail and line geometry', () => {
@@ -183,13 +195,21 @@ test('road and aeroway line phases exclude polygon geometries', () => {
 
 test('grass and scrub compiler filters are mutually exclusive', () => {
   const layers = compileLand(undefined, context);
-  const grass = layers.find((entry) => entry.layer.id === 'tileflow-landcover-grass');
-  const scrub = layers.find((entry) => entry.layer.id === 'tileflow-landcover-scrub');
+  const filterOf = (id: string) =>
+    featureFilter(layers.find((entry) => entry.layer.id === id)?.layer.filter as never);
+  const grass = filterOf('tileflow-landcover-grass');
+  const scrub = filterOf('tileflow-landcover-scrub');
+  const matches = (filter: typeof grass, properties: object) =>
+    filter.filter({zoom: 14}, {type: 3, properties} as never);
 
-  assert.match(JSON.stringify(grass?.layer.filter), /scrub/);
-  assert.match(JSON.stringify(grass?.layer.filter), /"!"/);
-  assert.match(JSON.stringify(scrub?.layer.filter), /scrub/);
-  assert.doesNotMatch(JSON.stringify(scrub?.layer.filter), /"!"/);
+  for (const properties of [{class: 'grass'}, {class: 'golf'}]) {
+    assert.equal(matches(grass, properties), true, JSON.stringify(properties));
+    assert.equal(matches(scrub, properties), false, JSON.stringify(properties));
+  }
+  for (const properties of [{class: 'scrub'}, {class: 'scrub', type: 'heath'}]) {
+    assert.equal(matches(scrub, properties), true, JSON.stringify(properties));
+    assert.equal(matches(grass, properties), false, JSON.stringify(properties));
+  }
 });
 
 test('administrative, disputed, and maritime boundary filters are disjoint', () => {
@@ -200,7 +220,7 @@ test('administrative, disputed, and maritime boundary filters are disjoint', () 
       url: '/tiles.json',
     }),
   );
-  const style = styleFor(compileBoundaries(undefined, {...context, data}));
+  const style = styleFor(compileBoundaries(undefined, semanticContext(data)), data);
   const admin2 = style.layers.find((layer) => layer.id === 'tileflow-boundary-admin2');
   const disputed = style.layers.find((layer) => layer.id === 'tileflow-boundary-disputed');
   const maritime = style.layers.find((layer) => layer.id === 'tileflow-boundary-maritime');
@@ -224,10 +244,11 @@ test('3d buildings use a conservative height and clamp their base to the height'
   assert.match(serialized, /fill-extrusion-base/);
   assert.match(serialized, /"min"/);
   assert.match(serialized, /,5/);
-  assert.doesNotMatch(serialized, /\["get","height"\]/);
-  assert.doesNotMatch(serialized, /\["get","min_height"\]/);
+  assert.match(serialized, /\["get","height"\]/);
+  assert.match(serialized, /\["get","min_height"\]/);
+  assert.doesNotMatch(serialized, /render_height/);
   assert.doesNotMatch(serialized, /,18/);
-  assert.match(serialized, /"hide_3d"/);
+  assert.match(serialized, /"extrude"/);
   assert.deepEqual(validateStyleMin(style), []);
 });
 
@@ -235,7 +256,8 @@ test('optional source-layer capabilities do not emit permanently missing layers'
   const data = resolveTileflowData(
     vectorTiles({
       attribution: '© Test',
-      schema: openMapTiles({capabilities: {globalLandcover: false, tree: false}}),
+      // OpenMapTiles has neither World's global landcover nor its trees.
+      schema: openMapTiles(),
       url: '/tiles.json',
     }),
   );

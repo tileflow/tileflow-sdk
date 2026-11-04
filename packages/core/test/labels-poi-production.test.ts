@@ -2,6 +2,7 @@ import {validateStyleMin} from '@maplibre/maplibre-gl-style-spec';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {TileflowLayerContribution} from '../src/cartography/contributions';
+import {createSemanticDataView} from '../src/cartography/semantic-bindings';
 import {labels, openMapTiles, poi, resolveTileflowData, roads, vectorTiles} from '../src/index';
 import {compileLabels} from '../src/modules/labels/compiler';
 import {compilePoi} from '../src/modules/poi/compiler';
@@ -21,14 +22,22 @@ const context = {
   },
 };
 
-function styleFor(contributions: readonly TileflowLayerContribution[]) {
+function styleFor(
+  contributions: readonly TileflowLayerContribution[],
+  data?: ReturnType<typeof resolveTileflowData>,
+) {
   return {
     version: 8 as const,
     glyphs: 'https://example.test/fonts/{fontstack}/{range}.pbf',
     sprite: 'https://example.test/sprite',
     sources: {tileflow: {type: 'vector' as const, url: 'https://example.test/tiles.json'}},
-    layers: assembleTileflowLayers(contributions),
+    layers: assembleTileflowLayers(contributions, data),
   };
+}
+
+/** Compile against other data as a map does: through World names, lowered by the data's adapter. */
+function semanticContext(data: ReturnType<typeof resolveTileflowData>) {
+  return {...context, data: createSemanticDataView(data)};
 }
 
 test('POI labels clear their own icons while preserving normal collision and coupling', () => {
@@ -116,7 +125,7 @@ test('POI and geographic labels share the requested language and bound English f
       url: '/tiles.json',
     }),
   );
-  const localizedContext = {...context, data};
+  const localizedContext = semanticContext(data);
   const geographic = compileLabels(
     labels({language: 'fr', places: 'major', roads: 'none', shields: 'none', water: 'none'}),
     roads({detail: 'none'}),
@@ -127,11 +136,12 @@ test('POI and geographic labels share the requested language and bound English f
     localizedContext,
     'fr',
   );
-  const cityField = (
-    geographic.find((entry) => entry.layer.id === 'tileflow-label-place-city')?.layer
-      .layout as Record<string, unknown>
-  )['text-field'];
-  const poiField = (points[0]?.layer.layout as Record<string, unknown>)['text-field'];
+  const textField = (contributions: readonly TileflowLayerContribution[], id: string): unknown => {
+    const layer = assembleTileflowLayers(contributions, data).find((entry) => entry.id === id);
+    return (layer?.layout as Record<string, unknown> | undefined)?.['text-field'];
+  };
+  const cityField = textField(geographic, 'tileflow-label-place-city');
+  const poiField = textField(points, 'tileflow-poi-label');
 
   assert.deepEqual(poiField, cityField);
   assert.deepEqual(cityField, [
@@ -146,10 +156,10 @@ test('POI and geographic labels share the requested language and bound English f
     localizedContext,
     'en',
   );
-  const englishField = (english[0]?.layer.layout as Record<string, unknown>)['text-field'];
+  const englishField = textField(english, 'tileflow-poi-label');
   assert.match(JSON.stringify(englishField), /english_label/);
   assert.doesNotMatch(JSON.stringify(englishField), /name:en/);
-  assert.deepEqual(validateStyleMin(styleFor([...geographic, ...points])), []);
+  assert.deepEqual(validateStyleMin(styleFor([...geographic, ...points], data)), []);
 });
 
 test('place labels apply ranked zoom hierarchy, capital priority, and extended source classes', () => {
@@ -179,17 +189,53 @@ test('place labels apply ranked zoom hierarchy, capital priority, and extended s
   assert.match(JSON.stringify(city?.filter), /rank/);
   assert.match(JSON.stringify(city?.filter), /zoom/);
   assert.match(JSON.stringify(city?.layout?.['symbol-sort-key']), /capital/);
-  assert.match(JSON.stringify(state?.filter), /aboriginal_lands/);
+  // World's territories include OpenMapTiles' aboriginal lands; straits are natural labels.
+  assert.match(JSON.stringify(state?.filter), /territory/);
   assert.match(JSON.stringify(neighborhood?.filter), /borough/);
   assert.match(JSON.stringify(other?.filter), /island/);
-  assert.match(JSON.stringify(other?.filter), /strait/);
   assert.match(JSON.stringify(other?.filter), /isolated_dwelling/);
   assert.equal(other?.minzoom, 6);
   assert.equal(other?.maxzoom, 16);
+  const water = compileLabels(
+    labels({junctions: false, places: 'none', roads: 'none', shields: 'none', water: 'major'}),
+    roads({detail: 'none'}),
+    context,
+  ).find((entry) => entry.layer.id === 'tileflow-label-water-other')?.layer;
+  assert.match(JSON.stringify(water?.filter), /strait/);
   assert.deepEqual(validateStyleMin(styleFor(contributions)), []);
 });
 
 test('shields and junctions use geometry-safe filters and localized junction names', () => {
+  const request = labels({
+    junctions: true,
+    language: 'es',
+    places: 'none',
+    roads: 'none',
+    shields: 'all',
+    water: 'none',
+  });
+  const contributions = compileLabels(request, roads({detail: 'all'}), context);
+  const layers = assembleTileflowLayers(contributions);
+  const layer = (id: string) => layers.find((entry) => entry.id === id);
+  const overview = layer('tileflow-label-road-shield-overview');
+  const detail = layer('tileflow-label-road-shield-detail');
+  const junction = layer('tileflow-label-road-junction');
+
+  assert.equal(overview?.['source-layer'], 'road_shield');
+  assert.equal(detail?.['source-layer'], 'road_label');
+  assert.match(JSON.stringify(overview?.filter), /Point/);
+  assert.match(JSON.stringify(detail?.filter), /LineString/);
+  assert.match(JSON.stringify(overview?.filter), /shield_kind/);
+  assert.match(JSON.stringify(detail?.layout?.['text-field']), /to-string/);
+  assert.match(JSON.stringify(detail?.layout?.['text-field']), /shield_text/);
+  assert.match(JSON.stringify(junction?.filter), /Point/);
+  assert.match(JSON.stringify(junction?.layout?.['text-field']), /name_es/);
+  assert.match(JSON.stringify(junction?.layout?.['text-field']), /name_latin/);
+  assert.equal(junction?.minzoom, 13);
+  assert.equal(junction?.maxzoom, 18);
+  assert.deepEqual(validateStyleMin(styleFor(contributions)), []);
+
+  // OpenMapTiles names junctions in its own fields and has no shield layer: shields follow lines.
   const data = resolveTileflowData(
     vectorTiles({
       attribution: '© Test',
@@ -199,49 +245,28 @@ test('shields and junctions use geometry-safe filters and localized junction nam
           name: 'local_label',
           nameLatin: 'latin_label',
           ref: 'route_ref',
-          shieldKind: 'shield_family',
-          shieldLineLengthMeters: 'shield_line_length',
-          shieldRank: 'shield_rank',
-          shieldText: 'shield_text',
-          shieldTextColor: 'shield_ink',
           subclass: 'detail',
         },
-        layers: {roadName: 'road_labels', roadShield: 'road_shields'},
+        layers: {roadName: 'road_labels'},
       }),
       url: '/tiles.json',
     }),
   );
-  const contributions = compileLabels(
-    labels({
-      junctions: true,
-      language: 'es',
-      places: 'none',
-      roads: 'none',
-      shields: 'all',
-      water: 'none',
-    }),
-    roads({detail: 'all'}),
-    {...context, data},
-  );
-  const overview = contributions.find(
-    (entry) => entry.layer.id === 'tileflow-label-road-shield-overview',
-  )?.layer;
-  const detail = contributions.find(
-    (entry) => entry.layer.id === 'tileflow-label-road-shield-detail',
-  )?.layer;
-  const junction = contributions.find(
-    (entry) => entry.layer.id === 'tileflow-label-road-junction',
-  )?.layer;
+  const remapped = compileLabels(request, roads({detail: 'all'}), semanticContext(data));
+  const remappedLayers = assembleTileflowLayers(remapped, data);
+  const remappedLayer = (id: string) => remappedLayers.find((entry) => entry.id === id);
+  const remappedDetail = remappedLayer('tileflow-label-road-shield-detail');
+  const remappedJunction = remappedLayer('tileflow-label-road-junction');
 
-  assert.match(JSON.stringify(overview?.filter), /Point/);
-  assert.match(JSON.stringify(detail?.filter), /LineString/);
-  assert.match(JSON.stringify(overview?.filter), /shield_family/);
-  assert.match(JSON.stringify(detail?.layout?.['text-field']), /to-string/);
-  assert.match(JSON.stringify(detail?.layout?.['text-field']), /shield_text/);
-  assert.match(JSON.stringify(junction?.filter), /Point/);
-  assert.match(JSON.stringify(junction?.layout?.['text-field']), /name:es/);
-  assert.match(JSON.stringify(junction?.layout?.['text-field']), /latin_label/);
-  assert.equal(junction?.minzoom, 13);
-  assert.equal(junction?.maxzoom, 18);
-  assert.deepEqual(validateStyleMin(styleFor(contributions)), []);
+  assert.equal(remappedLayer('tileflow-label-road-shield-overview'), undefined);
+  assert.equal(remappedDetail?.['source-layer'], 'road_labels');
+  assert.match(JSON.stringify(remappedDetail?.filter), /LineString/);
+  assert.deepEqual(remappedDetail?.layout?.['text-field'], ['to-string', ['get', 'route_ref']]);
+  assert.equal(remappedJunction?.['source-layer'], 'road_labels');
+  assert.match(JSON.stringify(remappedJunction?.filter), /Point/);
+  assert.match(JSON.stringify(remappedJunction?.filter), /"detail"/);
+  assert.match(JSON.stringify(remappedJunction?.layout?.['text-field']), /name:es/);
+  assert.match(JSON.stringify(remappedJunction?.layout?.['text-field']), /latin_label/);
+  assert.match(JSON.stringify(remappedJunction?.layout?.['text-field']), /route_ref/);
+  assert.deepEqual(validateStyleMin(styleFor(remapped, data)), []);
 });

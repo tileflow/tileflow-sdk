@@ -20,6 +20,7 @@ import {
   reset,
   resolveMap,
   resolveTileflowTheme,
+  tileflowPrimarySourceId,
   vectorTiles,
 } from '@tileflow/core';
 import {createStyleWithInspection} from '@tileflow/core/build';
@@ -275,22 +276,35 @@ function compileOfficialMap(map: Parameters<typeof resolveMap>[0], theme?: strin
   });
 }
 
-test('official World styles avoid fields absent from the V1 release contract', () => {
-  for (const [map, fields] of [
-    [streets, {building: ['has_parts'], transportation: ['clearance_extra_px_z15']}],
-
-    [blueprint, {building: ['height', 'name']}],
-  ] as const) {
+test('official World styles read only layers and fields of the World v1 contract', async () => {
+  const contract = JSON.parse(
+    await readFile(new URL('../../core/reference/tileflow-world-v1.json', import.meta.url), 'utf8'),
+  ) as {layers: Record<string, {fields: Record<string, {type: string}>}>};
+  // `name_<lang>` stands for every published language, `route_<n>_<field>` for route concurrency.
+  const contractField = (name: string) =>
+    /^name_(?!latin$)/u.test(name)
+      ? 'name_<lang>'
+      : /^route_\d+_/u.test(name)
+        ? 'route_<n>_<field>'
+        : name;
+  for (const map of [baedeker, blueprint, civica, map1777, siegfried, soundings, streets]) {
     const requirements = inferTileflowDataRequirements(compileOfficialMap(map));
-    for (const [layer, absentFields] of Object.entries(fields)) {
-      const required = requirements.sourceLayers.find(({id}) => id === layer);
-      assert.ok(required, `${map.id} must still render ${layer}`);
-      for (const field of absentFields) {
-        assert.equal(
-          required.fields.some(({name}) => name === field),
-          false,
-          `${map.id} requires unpublished ${layer}.${field}`,
-        );
+    assert.equal(requirements.complete, true, `${map.id} reads fields it cannot name`);
+    for (const layer of ['road', 'water']) {
+      assert.ok(
+        requirements.sourceLayers.some(({id}) => id === layer),
+        `${map.id} must still render ${layer}`,
+      );
+    }
+    for (const {id: layer, fields} of requirements.sourceLayers) {
+      const published = contract.layers[layer]?.fields;
+      assert.ok(published, `${map.id} requires unpublished layer ${layer}`);
+      for (const {name, type} of fields) {
+        const field = published[contractField(name)];
+        assert.ok(field, `${map.id} requires unpublished ${layer}.${name}`);
+        if (type !== undefined) {
+          assert.equal(type, field.type, `${map.id} reads ${layer}.${name} as ${type}`);
+        }
       }
     }
   }
@@ -704,10 +718,10 @@ test('Streets highway links retain class colors below receiving carriageways', (
     });
     for (const zoom of [17.509138, 18.37]) {
       for (const structure of ['surface', 'bridge', 'tunnel']) {
-        const fillFor = (roadClass: string, ramp: number) => {
+        const fillFor = (roadClass: string, link: boolean) => {
           const feature = {
             type: 2,
-            properties: {class: roadClass, brunnel: structure, ramp, oneway: 1, surface: 'paved'},
+            properties: {class: roadClass, structure, link, oneway: true, surface: 'paved'},
           } as never;
           const fillTargets = new Set([
             `roads.classes.${roadClass}.${structure}.fill`,
@@ -732,13 +746,13 @@ test('Streets highway links retain class colors below receiving carriageways', (
           if (expression.result !== 'success') throw new Error('Invalid road color expression');
           return {layer, color: String(expression.value.evaluate({zoom}, feature))};
         };
-        const receiving = fillFor('primary', 0);
+        const receiving = fillFor('primary', false);
         for (const roadClass of ['motorway', 'trunk']) {
-          const ramp = fillFor(roadClass, 1);
-          assert.equal(ramp.color, fillFor(roadClass, 0).color, 'Links keep their class color');
+          const ramp = fillFor(roadClass, true);
+          assert.equal(ramp.color, fillFor(roadClass, false).color, 'Links keep their class color');
           if (theme === 'light' && structure !== 'tunnel') {
             assert.equal(ramp.color, receiving.color, 'Day main roads share the darker swatch');
-            assert.notEqual(ramp.color, fillFor('secondary', 0).color);
+            assert.notEqual(ramp.color, fillFor('secondary', false).color);
           } else {
             assert.notEqual(
               ramp.color,
@@ -763,7 +777,7 @@ test('Streets-family road caps follow overview and structural reference geometry
     const style = compileOfficialMap(map);
     const byId = new Map(style.layers.map((layer) => [layer.id, layer]));
 
-    for (const roadClass of ['minor', 'primary', 'motorway']) {
+    for (const roadClass of ['street', 'primary', 'motorway']) {
       for (const phase of ['casing', 'fill']) {
         for (const structure of ['surface', 'bridge', 'tunnel']) {
           const layer = style.layers.find(
@@ -774,7 +788,7 @@ test('Streets-family road caps follow overview and structural reference geometry
               (l.maxzoom ?? 25) > 18 &&
               featureFilter(l.filter as never).filter({zoom: 18}, {
                 type: 2,
-                properties: {class: roadClass, brunnel: structure},
+                properties: {class: roadClass, structure},
               } as never),
           );
           const id = `${structure}-${roadClass}-${phase}`;
@@ -873,15 +887,7 @@ test('official road maps avoid seam-prone caps on ordinary surface and bridge se
 test('official maps compile against generic OpenMapTiles without optional capabilities', () => {
   const data = vectorTiles({
     attribution: 'Fixture data',
-    schema: openMapTiles({
-      capabilities: {
-        bathymetry: false,
-        businessCorridor: false,
-        canopy: false,
-        globalLandcover: false,
-        tree: false,
-      },
-    }),
+    schema: openMapTiles(),
     tiles: ['https://tiles.example.test/{z}/{x}/{y}.pbf'],
   });
 
@@ -914,6 +920,19 @@ test('official maps compile against generic OpenMapTiles without optional capabi
       layerIds.has('tileflow-global-landcover'),
       false,
       `${id} emitted global landcover`,
+    );
+    // A World layer that OpenMapTiles splits reads each part through its own layer, named after it.
+    const omtLayers = new Set<string>(Object.values(openMapTiles().layers));
+    for (const layer of style.layers) {
+      if (layer.source !== tileflowPrimarySourceId || !('source-layer' in layer)) continue;
+      const sourceLayer = layer['source-layer'];
+      assert.ok(omtLayers.has(sourceLayer), `${id} ${layer.id} reads ${sourceLayer}`);
+      if (layer.id.includes('~'))
+        assert.ok(layer.id.endsWith(`~${sourceLayer}`), `${id} ${layer.id}`);
+    }
+    assert.ok(
+      style.layers.some((layer) => layer.id.includes('~')),
+      `${id} read no split World layer`,
     );
     assert.deepEqual(validateStyleMin(style as never), [], `${id} emitted an invalid style`);
   }
@@ -1033,7 +1052,7 @@ test('Streets green surfaces are typed and contain no legacy raw detail layers',
   }
 
   const globalLandcover = style.layers.find(({id}) => id === 'tileflow-global-landcover');
-  assert.equal(globalLandcover?.['source-layer'], 'globallandcover');
+  assert.equal(globalLandcover?.['source-layer'], 'landcover');
   assert.equal(globalLandcover?.maxzoom, 11);
   assert.deepEqual((globalLandcover?.paint as Record<string, unknown>)['fill-opacity'], [
     'interpolate',
@@ -1067,14 +1086,14 @@ test('Streets road labels retain class thresholds and readable text below buildi
     ['primary', 'primary', undefined, 12, 9, 16, 0.15],
     ['secondary', 'secondary', undefined, 12, 9, 16, 0.15],
     ['tertiary', 'tertiary', undefined, 13, 9, 16, 0.15],
-    ['minor', 'minor', undefined, 13, 8, 14, 0.15],
+    ['minor', 'street', undefined, 13, 8, 14, 0.15],
     ['service', 'service', undefined, 15, 6.5, 13, 0.15],
     ['track', 'track', undefined, 15, 6.5, 13, 0.15],
     ['pathway', 'path', 'path', 15, 6.5, 13, 0.01],
     ['footway', 'path', 'footway', 15, 6.5, 13, 0.01],
     ['cycleway', 'path', 'cycleway', 15, 6.5, 13, 0.01],
     ['steps', 'path', 'steps', 15, 6.5, 13, 0.01],
-    ['pedestrian', 'path', 'pedestrian', 12, 9, 14, 0.01],
+    ['pedestrian', 'pedestrian', undefined, 12, 9, 14, 0.01],
   ] as const;
   const resolved = resolveMap(streets);
   assert.equal(resolved.modules.labels?.roadPlacement, 'ground');
@@ -1138,7 +1157,10 @@ test('Streets road labels retain class thresholds and readable text below buildi
     for (const zoom of [13, 14, 17]) {
       const properties = {name: 'A road', class: 'primary'};
       const network = active(properties, zoom)[0]!;
-      const evaluateLayout = (key: 'text-padding' | 'symbol-sort-key', roadClass: string) => {
+      const evaluateLayout = (
+        key: 'text-padding' | 'symbol-sort-key',
+        road: Record<string, unknown>,
+      ) => {
         const parsed = createPropertyExpression(
           network.layout?.[key],
           latest.layout_symbol[key] as never,
@@ -1147,22 +1169,23 @@ test('Streets road labels retain class thresholds and readable text below buildi
         if (parsed.result !== 'success') throw new Error(`Invalid ${key}`);
         return parsed.value.evaluate({zoom}, {
           type: 2,
-          properties: {...properties, class: roadClass},
+          properties: {...properties, ...road},
         } as never);
       };
       assert.ok(
-        evaluateLayout('symbol-sort-key', 'primary') < evaluateLayout('symbol-sort-key', 'minor'),
+        evaluateLayout('symbol-sort-key', {class: 'primary'}) <
+          evaluateLayout('symbol-sort-key', {class: 'street'}),
       );
       assert.equal(
-        evaluateLayout('symbol-sort-key', 'primary'),
-        evaluateLayout('symbol-sort-key', 'primary_construction'),
+        evaluateLayout('symbol-sort-key', {class: 'primary'}),
+        evaluateLayout('symbol-sort-key', {class: 'construction', type: 'primary'}),
       );
-      assert.equal(evaluateLayout('text-padding', 'primary'), zoom === 13 ? 5 : 1);
+      assert.equal(evaluateLayout('text-padding', {class: 'primary'}), zoom === 13 ? 5 : 1);
     }
     for (const [
       roadClass,
       sourceClass,
-      subclass,
+      type,
       minZoom,
       startSize,
       endSize,
@@ -1171,7 +1194,7 @@ test('Streets road labels retain class thresholds and readable text below buildi
       const properties = {
         name: 'Local street',
         class: sourceClass,
-        ...(subclass ? {subclass} : {}),
+        ...(type ? {type} : {}),
       };
       assert.equal(
         active(properties, minZoom - 0.01).length,
@@ -1222,24 +1245,22 @@ test('Streets road labels retain class thresholds and readable text below buildi
           ),
         );
       }
-      const construction = {...properties, class: `${sourceClass}_construction`};
+      const construction = {...properties, class: 'construction', type: type ?? sourceClass};
       assert.equal(
         active(construction, 18).length,
         1,
         `${theme}: ${roadClass} construction stays in the native class`,
       );
     }
-    for (const subclass of [
-      'path',
-      'bridleway',
-      'corridor',
-      'footway',
-      'cycleway',
-      'steps',
-      'pedestrian',
+    for (const path of [
+      ...['path', 'bridleway', 'corridor', 'footway', 'cycleway', 'steps'].map((type) => ({
+        class: 'path',
+        type,
+      })),
+      {class: 'pedestrian'},
     ]) {
       assert.equal(
-        active({name: 'Path', class: 'path', subclass}, 18).length,
+        active({name: 'Path', ...path}, 18).length,
         1,
         `${theme}: path classes stay disjoint`,
       );
@@ -1281,7 +1302,7 @@ test('non-Streets official maps do not use Streets surface colors', () => {
   }
 });
 
-test('Streets keeps its runtime-toggle geometry and business surface in the compiled style', () => {
+test('Streets keeps its runtime-toggle geometry and activity surface in the compiled style', () => {
   const compiled = createStyleWithInspection(streets, {
     preparedAssets: preparedAssets(streets.id),
   });
@@ -1335,10 +1356,11 @@ test('Streets keeps its runtime-toggle geometry and business surface in the comp
   assert.match(buildings3D.landmarks?.url ?? '', /\/landmarks\/tiles\.json$/u);
   assert.equal(readTileflowStreetLights(style.metadata), undefined);
 
-  const businessArea = layerForTarget('land.render.businessArea');
-  assert.ok(businessArea, 'Streets lost its business land-use surface');
-  assert.equal(businessArea.type, 'fill');
-  assert.match(JSON.stringify(businessArea.filter), /business_area/u);
+  const activityAreas = layerForTarget('land.render.activityAreas');
+  assert.ok(activityAreas, 'Streets lost its activity land-use surface');
+  assert.equal(activityAreas.type, 'fill');
+  assert.equal(activityAreas['source-layer'], 'landuse_overlay');
+  assert.match(JSON.stringify(activityAreas.filter), /activity_area/u);
 });
 
 test('Streets consumes canonical producer-ranked POI and reserves house numbers for detail', () => {
@@ -1421,21 +1443,21 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
     assert.deepEqual(layer.layout?.['text-offset'], [0, 0.8]);
     assert.deepEqual(layer.layout?.['symbol-sort-key'], [
       '+',
-      ['*', ['to-number', ['get', 'filter_rank'], 6], 17],
-      ['to-number', ['get', 'size_rank'], 17],
+      ['*', ['to-number', ['get', 'filterrank'], 6], 17],
+      ['to-number', ['get', 'sizerank'], 17],
     ]);
     const filter = layer.filter as unknown[];
     assert.deepEqual(filter[1], [
       'match',
-      ['get', 'category'],
+      ['get', 'class'],
       [...(resolved.modules?.poi?.categories ?? [])],
       true,
       false,
     ]);
-    assert.doesNotMatch(JSON.stringify(filter), /"class"|"subclass"|"rank"/u);
+    assert.doesNotMatch(JSON.stringify(filter), /"category"|"subclass"|"rank"|"filter_rank"/u);
     // Category/zoom eligibility is evaluated in streets-dark.test.ts; this check covers
     // the shared rank contract and placement tier without fixing the expression shape.
-    assert.deepEqual(filter.at(-1), [ranks, ['to-number', ['get', 'filter_rank'], 6], 1]);
+    assert.deepEqual(filter.at(-1), [ranks, ['to-number', ['get', 'filterrank'], 6], 1]);
     assert.equal(layer.paint?.['text-halo-color'], '#FFFFFF');
     const textColor = createPropertyExpression(
       layer.paint?.['text-color'],
@@ -1447,7 +1469,7 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
         String(
           (textColor.value as {evaluate: (...args: unknown[]) => unknown}).evaluate(
             {zoom: 16},
-            {type: 1, properties: {category}},
+            {type: 1, properties: {class: category}},
           ),
         ),
         String(Color.parse(color)),
@@ -1471,29 +1493,29 @@ test('Streets consumes canonical producer-ranked POI and reserves house numbers 
     );
   for (const [properties, expected] of [
     [
-      {category: 'transport', mode: 'subway', type: 'public_transit_facility'},
+      {class: 'transport', mode: 'subway', type: 'public_transit_facility'},
       'unified-day-major-transit',
     ],
-    [{category: 'transport', mode: 'train', type: 'train_station'}, 'unified-day-rail'],
-    [{category: 'transport', mode: 'tram', type: 'tram_stop'}, 'unified-day-rail-light'],
-    [{category: 'transport', mode: 'bus', type: 'bus_stop'}, 'unified-day-bus'],
-    [{category: 'transport', mode: 'ferry', type: 'ferry_terminal'}, 'unified-day-ferry'],
+    [{class: 'transport', mode: 'train', type: 'train_station'}, 'unified-day-rail'],
+    [{class: 'transport', mode: 'tram', type: 'tram_stop'}, 'unified-day-rail-light'],
+    [{class: 'transport', mode: 'bus', type: 'bus_stop'}, 'unified-day-bus'],
+    [{class: 'transport', mode: 'ferry', type: 'ferry_terminal'}, 'unified-day-ferry'],
     [
-      {category: 'transport', mode: 'aerialway', type: 'ground_transport_facility'},
+      {class: 'transport', mode: 'aerialway', type: 'ground_transport_facility'},
       'unified-day-aerialway',
     ],
-    [{category: 'transport', type: 'airport'}, 'unified-day-airport'],
-    [{category: 'food-drink', type: 'bar'}, 'unified-day-bar'],
-    [{category: 'food-drink', type: 'cafe'}, 'unified-day-coffee'],
-    [{category: 'food-drink', type: 'restaurant'}, 'unified-day-food'],
-    [{category: 'arts-entertainment', type: 'museum'}, 'culture'],
-    [{category: 'arts-entertainment', type: 'art_gallery'}, 'art-gallery'],
-    [{category: 'retail', type: 'vehicle_dealer'}, 'unified-day-car'],
-    [{category: 'retail', type: 'specialty_store'}, 'unified-day-shopping'],
-    [{category: 'religion', type: 'christian_place_of_worship'}, 'unified-day-christian'],
-    [{category: 'visitor-amenity', type: 'public_restroom'}, 'unified-day-toilet'],
-    [{category: 'visitor-amenity', type: 'parking'}, 'unified-day-parking'],
-    [{category: 'park-nature', type: 'park'}, 'unified-day-nature'],
+    [{class: 'transport', type: 'airport'}, 'unified-day-airport'],
+    [{class: 'food-drink', type: 'bar'}, 'unified-day-bar'],
+    [{class: 'food-drink', type: 'cafe'}, 'unified-day-coffee'],
+    [{class: 'food-drink', type: 'restaurant'}, 'unified-day-food'],
+    [{class: 'arts-entertainment', type: 'museum'}, 'culture'],
+    [{class: 'arts-entertainment', type: 'art_gallery'}, 'art-gallery'],
+    [{class: 'retail', type: 'vehicle_dealer'}, 'unified-day-car'],
+    [{class: 'retail', type: 'specialty_store'}, 'unified-day-shopping'],
+    [{class: 'religion', type: 'christian_place_of_worship'}, 'unified-day-christian'],
+    [{class: 'visitor-amenity', type: 'public_restroom'}, 'unified-day-toilet'],
+    [{class: 'visitor-amenity', type: 'parking'}, 'unified-day-parking'],
+    [{class: 'park-nature', type: 'park'}, 'unified-day-nature'],
   ] as const) {
     assert.equal(pictogram(properties), expected, JSON.stringify(properties));
   }

@@ -1,4 +1,4 @@
-import {expr, field, renderPass, token, zoom} from '@tileflow/core';
+import {expr, field, renderPass, type TileflowThemeColorValue, token, zoom} from '@tileflow/core';
 
 // Keep continental ground quiet; introduce warmer open ground at local scales.
 export const streetsDayGroundColors = {
@@ -23,13 +23,14 @@ export const streetsDayGroundColors = {
 
 // Agricultural land use does not imply bare soil. Preserve mapped tree crops
 // and nurseries without guessing vegetation for unspecified farmland.
-export const streetsAgriculturalColor = expr.match(
-  expr.get(field('subclass')),
-  [
-    {labels: 'orchard', value: token.color('landcover.orchard')},
-    {labels: 'plant_nursery', value: token.color('landcover.nursery')},
-  ],
-  token.color('landcover.farmland'),
+export const streetsAgriculturalColor = expr.match<string, TileflowThemeColorValue>(
+  expr.get(field('class')),
+  [{labels: 'orchard', value: token.color('landcover.orchard')}],
+  expr.match<string, TileflowThemeColorValue>(
+    expr.get(field('type')),
+    [{labels: 'plant_nursery', value: token.color('landcover.nursery')}],
+    token.color('landcover.farmland'),
+  ),
 );
 
 export const streetsGroundBackground = zoom.linear([
@@ -48,7 +49,7 @@ export const streetsAccessOverview = renderPass({
     selectors: [
       {kind: 'geometry', geometry: 'line'},
       {kind: 'in', field: 'class', values: ['track', 'service']},
-      {kind: 'compare', field: 'brunnel', operator: 'ne', value: 'tunnel'},
+      {kind: 'compare', field: 'structure', operator: 'ne', value: 'tunnel'},
     ],
   },
   style: {

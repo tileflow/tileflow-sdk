@@ -274,15 +274,7 @@ test('Baedeker keeps a distinct engraved travel-plan grammar from 1777', () => {
 test('Baedeker stays valid against generic OpenMapTiles without optional capabilities', () => {
   const data = vectorTiles({
     attribution: 'Fixture data',
-    schema: openMapTiles({
-      capabilities: {
-        bathymetry: false,
-        businessCorridor: false,
-        canopy: false,
-        globalLandcover: false,
-        tree: false,
-      },
-    }),
+    schema: openMapTiles(),
     tiles: ['https://tiles.example.test/{z}/{x}/{y}.pbf'],
   });
   const style = createStyle({...baedeker, data}, {preparedAssets});

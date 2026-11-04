@@ -133,16 +133,17 @@ test('data identity distinguishes URLs and complete remapped bindings', () => {
   assert.equal(second.identity.bindings?.layers.road, 'roads_v2');
   assert.equal(second.identity.bindings?.fields.class, 'kind');
   assert.equal(second.identity.bindings?.fields.maritime, 'is_maritime');
-  assert.equal(first.identity.capabilities?.globalLandcover, true);
-  assert.equal(first.identity.capabilities?.bathymetry, false);
-  assert.equal(first.identity.capabilities?.canopy, true);
-  assert.equal(first.identity.capabilities?.tree, true);
+  assert.deepEqual(first.identity.semantics, {parkLayer: 'mixed'});
   assert.notDeepEqual(first.identity, second.identity);
 
-  const withoutTree = openMapTiles();
-  delete withoutTree.layers.tree;
-  const optional = resolveTileflowData(
-    vectorTiles({attribution: 'Example', schema: withoutTree, url: '/optional.json'}),
+  // The same layers read with other park semantics are other data.
+  const protectedOnly = resolveTileflowData(
+    vectorTiles({
+      attribution: 'Example',
+      schema: openMapTiles({semantics: {parkLayer: 'protected-only'}}),
+      url: '/first.json',
+    }),
   );
-  assert.equal(optional.identity.capabilities?.tree, false);
+  assert.equal(protectedOnly.identity.semantics?.parkLayer, 'protected-only');
+  assert.notDeepEqual(first.identity, protectedOnly.identity);
 });

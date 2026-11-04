@@ -350,7 +350,7 @@ export function streetsPoiImage() {
       labels: category,
       value: first
         ? expr.match<string, TileflowThemeImageValue>(
-            expr.get(field('poiType')),
+            expr.get(field('type')),
             [first, ...rest],
             categoryRole,
           )
@@ -366,7 +366,7 @@ export function streetsPoiImage() {
     expr.get(field('mode')),
     [firstMode!, ...otherModes],
     expr.match<string, TileflowThemeImageValue>(
-      expr.get(field('poiCategory')),
+      expr.get(field('class')),
       [firstCategory!, ...otherCategories],
       token.image('poi.landmark'),
     ),
@@ -378,7 +378,7 @@ export function streetsPoiImage() {
   return expr.case<TileflowThemeImageValue>(
     [
       {
-        when: expr.eq(expr.get(field('poiCategory')), 'transport'),
+        when: expr.eq(expr.get(field('class')), 'transport'),
         value: expr.match<string, TileflowThemeImageValue>(
           expr.get(field('network')),
           [firstNetwork!, ...otherNetworks],

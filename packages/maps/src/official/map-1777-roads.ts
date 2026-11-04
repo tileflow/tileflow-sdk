@@ -10,6 +10,7 @@ import {
   withRenderStack,
   zoom,
 } from '@tileflow/core';
+import {worldConstructionSelector, worldRoadSelector} from './world-roads';
 
 // The Streets zoom progression, with 15% slimmer carriageways. Keep these
 // atlas-owned so its colors, outlines and road treatments remain independent.
@@ -89,13 +90,6 @@ const carriageways = [
   'service',
   'track',
 ] as const;
-type Carriageway = (typeof carriageways)[number];
-
-const aliases: Partial<Record<Carriageway, readonly string[]>> = {
-  minor: ['residential', 'unclassified'],
-  service: ['busway', 'bus_guideway'],
-  track: ['raceway'],
-};
 
 const restrictedAccess = expr.all(
   expr.has(field('access')),
@@ -114,7 +108,7 @@ const restrictedAccess = expr.all(
 );
 
 function roadSelector(
-  classes: readonly string[],
+  roads: TileflowRenderSelector,
   structure: 'surface' | 'bridge',
   extra: readonly TileflowRenderSelector[] = [],
 ): TileflowRenderSelector {
@@ -122,14 +116,16 @@ function roadSelector(
     kind: 'all',
     selectors: [
       {kind: 'geometry', geometry: 'line'},
-      {kind: 'in', field: 'class', values: classes},
+      roads,
       structure === 'bridge'
-        ? {kind: 'compare', field: 'brunnel', operator: 'eq', value: 'bridge'}
-        : {kind: 'not', selector: {kind: 'in', field: 'brunnel', values: ['bridge', 'tunnel']}},
+        ? {kind: 'compare', field: 'structure', operator: 'eq', value: 'bridge'}
+        : {kind: 'not', selector: {kind: 'in', field: 'structure', values: ['bridge', 'tunnel']}},
       ...extra,
     ],
   };
 }
+
+const link = {kind: 'compare', field: 'link', operator: 'eq', value: true} as const;
 
 /** Separate ink plates for works and highway links without changing the atlas palette. */
 export function withMap1777RoadDetail(
@@ -148,11 +144,8 @@ export function withMap1777RoadDetail(
             [
               // Preserve the domain's first-match width rules, including service ways.
               {when: restrictedAccess, value: base},
-              {
-                when: expr.eq(expr.toNumber(expr.get(field('expressway')), 0), 1),
-                value: base * 1.06,
-              },
-              {when: expr.eq(expr.get(field('ramp')), 1), value: base * 0.72},
+              {when: expr.eq(expr.get(field('expressway')), true), value: base * 1.06},
+              {when: expr.eq(expr.get(field('link')), true), value: base * 0.72},
               ...(roadClass === 'service'
                 ? Object.entries({
                     alley: 0.82,
@@ -175,10 +168,8 @@ export function withMap1777RoadDetail(
         ...stops.slice(1),
       ]);
     };
-    const ordinary = [roadClass, ...(aliases[roadClass] ?? [])];
-    const construction = ordinary
-      .filter((name) => name === roadClass || name === 'raceway')
-      .map((name) => `${name}_construction`);
+    const ordinary = worldRoadSelector([roadClass]);
+    const construction = worldConstructionSelector(roadClass);
     const highway = roadClass === 'motorway' || roadClass === 'trunk';
 
     for (const phase of ['casing', 'fill'] as const) {
@@ -191,7 +182,7 @@ export function withMap1777RoadDetail(
           ordinary,
           'surface',
           highway && phase === 'fill'
-            ? [{kind: 'compare', field: 'ramp', operator: 'ne', value: 1}]
+            ? [{kind: 'compare', field: 'link', operator: 'ne', value: true}]
             : [],
         ),
         style: {},
@@ -222,17 +213,8 @@ export function withMap1777RoadDetail(
         detail[`${roadClass}-bridge-ordinary`] = refineRenderTarget({
           target: `roads.classes.${roadClass}.bridge.fill`,
           renderer: 'line',
-          selector: roadSelector([...ordinary, ...construction], 'bridge', [
-            {
-              kind: 'not',
-              selector: {
-                kind: 'all',
-                selectors: [
-                  {kind: 'in', field: 'class', values: ordinary},
-                  {kind: 'compare', field: 'ramp', operator: 'eq', value: 1},
-                ],
-              },
-            },
+          selector: roadSelector(worldRoadSelector([roadClass], {construction: true}), 'bridge', [
+            {kind: 'not', selector: {kind: 'all', selectors: [ordinary, link]}},
           ]),
           style: {},
         });
@@ -242,9 +224,7 @@ export function withMap1777RoadDetail(
         renderer: 'line',
         // Receiving carriageways cover the end of a link in the same band.
         placement: {below: `roads.classes.track.${structure}.fill`},
-        selector: roadSelector(ordinary, structure, [
-          {kind: 'compare', field: 'ramp', operator: 'eq', value: 1},
-        ]),
+        selector: roadSelector(ordinary, structure, [link]),
         style: {
           ...fill,
           width: width(0),
@@ -255,7 +235,7 @@ export function withMap1777RoadDetail(
                   [
                     {when: restrictedAccess, value: 0.9},
                     {when: expr.eq(expr.get(field('surface')), 'unpaved'), value: 0.82},
-                    {when: expr.eq(expr.toNumber(expr.get(field('indoor')), 0), 1), value: 0.72},
+                    {when: expr.eq(expr.get(field('indoor')), true), value: 0.72},
                   ],
                   0.94,
                 ),

@@ -164,11 +164,12 @@ function omitLandformElevationUnit(
   });
 }
 
+/** Ground classes, narrowed by their OSM value (`type`) when given. */
 function landcoverFilter(
   classes: readonly string[],
   options: {
-    excludeSubclasses?: readonly string[];
-    subclasses?: readonly string[];
+    excludeTypes?: readonly string[];
+    types?: readonly string[];
   } = {},
 ): TileflowRenderSelector {
   const classSelector = {
@@ -177,13 +178,13 @@ function landcoverFilter(
     values: classes,
   } as const satisfies TileflowRenderSelector;
   const selectors: TileflowRenderSelector[] = [classSelector];
-  if (options.subclasses) {
-    selectors.push({field: 'subclass', kind: 'in', values: options.subclasses});
+  if (options.types) {
+    selectors.push({field: 'type', kind: 'in', values: options.types});
   }
-  if (options.excludeSubclasses) {
+  if (options.excludeTypes) {
     selectors.push({
-      branches: [{result: false, values: options.excludeSubclasses}],
-      field: 'subclass',
+      branches: [{result: false, values: options.excludeTypes}],
+      field: 'type',
       kind: 'match',
       otherwise: true,
     });
@@ -196,16 +197,18 @@ function landcoverPattern(
   pattern: TileflowThemeImageValue,
   classes: readonly string[],
   options: {
-    excludeSubclasses?: readonly string[];
+    excludeTypes?: readonly string[];
+    /** Wetlands are an overlay on the ground rather than a ground class. */
+    feature?: 'landuse' | 'landuseOverlay';
     minZoom?: number;
     opacity?: number;
-    subclasses?: readonly string[];
+    types?: readonly string[];
   } = {},
 ) {
   const minZoom = options.minZoom ?? 9;
   return renderPass({
     placement: {above: target},
-    feature: 'landcover',
+    feature: options.feature ?? 'landuse',
     renderer: 'fill',
     selector: landcoverFilter(classes, options),
     style: {
@@ -228,15 +231,15 @@ function postContourLandcoverPattern(
   pattern: TileflowThemeImageValue,
   classes: readonly string[],
   options: {
-    excludeSubclasses?: readonly string[];
+    excludeTypes?: readonly string[];
     minZoom: number;
     opacity: number;
-    subclasses?: readonly string[];
+    types?: readonly string[];
   },
 ) {
   return renderPass({
     placement: {above: target},
-    feature: 'landcover',
+    feature: 'landuse',
     renderer: 'fill',
     requirements: ['land'],
     selector: landcoverFilter(classes, options),
@@ -352,10 +355,6 @@ export const siegfried = bindOfficialMapTheme(
         },
       }),
       buildings: buildings({
-        businessCorridor: {
-          fill: {visible: false},
-          outline: {visible: false},
-        },
         flat: {
           fill: {
             color: siegfriedPalette.ink,
@@ -597,6 +596,10 @@ export const siegfried = bindOfficialMapTheme(
       }),
       land: withRenderStack(
         land({
+          activityAreas: {
+            fill: {visible: false},
+            outline: {visible: false},
+          },
           background: {opacity: 1, pattern: siegfriedVisual.pattern['paper-grain']},
           globalLandcover: {visible: false},
           landcover: {
@@ -652,26 +655,26 @@ export const siegfried = bindOfficialMapTheme(
           forestPattern: landcoverPattern(
             'land.landcover.wood.outline',
             siegfriedVisual.pattern.forest,
-            ['wood', 'forest'],
+            ['wood'],
             {minZoom: 8, opacity: 0.84},
           ),
           gravelPattern: landcoverPattern(
             'land.landcover.sand.fill',
             siegfriedVisual.pattern.gravel,
-            ['sand', 'beach'],
+            ['sand'],
             {minZoom: 10, opacity: 0.64},
           ),
           orchardPattern: landcoverPattern(
             'land.landcover.urbanPark.fill',
             siegfriedVisual.pattern.orchard,
-            ['grass'],
-            {minZoom: 12, opacity: 0.62, subclasses: ['garden', 'orchard']},
+            ['garden'],
+            {excludeTypes: ['flowerbed'], minZoom: 12, opacity: 0.62},
           ),
           wetlandPattern: landcoverPattern(
             'land.landcover.wetland.fill',
             siegfriedVisual.pattern.wetland,
             ['wetland'],
-            {minZoom: 9, opacity: 0.8},
+            {feature: 'landuseOverlay', minZoom: 9, opacity: 0.8},
           ),
         },
       ),
@@ -905,7 +908,7 @@ export const siegfried = bindOfficialMapTheme(
         {
           rockMask: renderPass({
             placement: {below: 'water.bodies.fill'},
-            feature: 'landcover',
+            feature: 'landuse',
             renderer: 'fill',
             requirements: ['land'],
             selector: {field: 'class', kind: 'in', values: ['rock']},
@@ -920,7 +923,7 @@ export const siegfried = bindOfficialMapTheme(
             siegfriedVisual.pattern.rock,
             ['rock'],
             {
-              excludeSubclasses: ['scree', 'talus'],
+              excludeTypes: ['scree', 'talus'],
               minZoom: 9,
               opacity: 0.9,
             },
@@ -932,23 +935,23 @@ export const siegfried = bindOfficialMapTheme(
             {
               minZoom: 10,
               opacity: 0.82,
-              subclasses: ['scree', 'talus'],
+              types: ['scree', 'talus'],
             },
           ),
           glacierMask: renderPass({
             placement: {below: 'water.bodies.fill'},
-            feature: 'landcover',
+            feature: 'landuse',
             renderer: 'fill',
             requirements: ['land'],
-            selector: {field: 'class', kind: 'in', values: ['ice', 'glacier']},
+            selector: {field: 'class', kind: 'in', values: ['ice']},
             style: {color: siegfriedPalette.paper, minZoom: 7, opacity: 0.98},
           }),
           glacierPattern: renderPass({
             placement: {above: 'water.render.glacierMask'},
-            feature: 'landcover',
+            feature: 'landuse',
             renderer: 'fill',
             requirements: ['land'],
-            selector: {field: 'class', kind: 'in', values: ['ice', 'glacier']},
+            selector: {field: 'class', kind: 'in', values: ['ice']},
             style: {
               minZoom: 8,
               opacity: zoom.linear([
@@ -961,10 +964,10 @@ export const siegfried = bindOfficialMapTheme(
           }),
           glacierOutline: renderPass({
             placement: {above: 'water.render.glacierPattern'},
-            feature: 'landcover',
+            feature: 'landuse',
             renderer: 'line',
             requirements: ['land'],
-            selector: {field: 'class', kind: 'in', values: ['ice', 'glacier']},
+            selector: {field: 'class', kind: 'in', values: ['ice']},
             style: {
               cap: 'round',
               color: siegfriedPalette.blue,
@@ -978,14 +981,7 @@ export const siegfried = bindOfficialMapTheme(
             placement: {above: 'water.bodies.outline'},
             feature: 'water',
             renderer: 'fill',
-            selector: {
-              coerce: 'number',
-              fallback: 0,
-              field: 'intermittent',
-              kind: 'compare',
-              operator: 'ne',
-              value: 1,
-            },
+            selector: {field: 'intermittent', kind: 'compare', operator: 'ne', value: true},
             style: {
               minZoom: 7,
               opacity: zoom.linear([
@@ -1000,14 +996,7 @@ export const siegfried = bindOfficialMapTheme(
             placement: {above: 'water.intermittent.bodies.fill'},
             feature: 'water',
             renderer: 'fill',
-            selector: {
-              coerce: 'number',
-              fallback: 0,
-              field: 'intermittent',
-              kind: 'compare',
-              operator: 'eq',
-              value: 1,
-            },
+            selector: {field: 'intermittent', kind: 'compare', operator: 'eq', value: true},
             style: {
               minZoom: 9,
               opacity: 0.22,

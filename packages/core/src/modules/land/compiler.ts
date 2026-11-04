@@ -15,6 +15,7 @@ import type {
   TileflowLandModuleConfig,
   TileflowLanduseClass,
 } from './index';
+import {tileflowLandcoverUnderlaySourceId} from './underlay';
 
 // Hedges last, so a hedge along a wall or fence stays on top.
 const barrierClasses = [
@@ -23,61 +24,58 @@ const barrierClasses = [
   'hedge',
 ] as const satisfies readonly TileflowBarrierClass[];
 
-const landuseClasses: Record<TileflowLanduseClass, readonly string[]> = {
-  cemetery: ['cemetery'],
-  civic: ['community_centre', 'place_of_worship', 'social_facility'],
-  commercial: ['commercial', 'retail', 'business_area'],
-  education: ['school', 'university', 'college', 'kindergarten', 'education', 'library'],
-  government: ['civic', 'government', 'public', 'townhall'],
-  industrial: ['industrial'],
-  medical: ['hospital', 'clinic', 'doctors', 'medical'],
-  military: ['military'],
-  parking: ['parking'],
-  railway: ['railway'],
-  recreation: ['pitch', 'track', 'playground', 'zoo'],
-  residential: ['residential'],
-};
-
-type TileflowLandcoverClassMatch = {
+/** World ground areas drawn as one Tileflow land class: by `class`, optionally narrowed by `type`. */
+type TileflowGroundMatch = {
   class: readonly string[];
-  excludeSubclass?: readonly string[];
-  subclass?: readonly string[];
+  excludeType?: readonly string[];
+  layer?: 'landuse' | 'landuseOverlay';
+  type?: readonly string[];
 };
 
-const typedGrassSubclasses = [
-  'flowerbed',
-  'garden',
-  'meadow',
-  'park',
-  'recreation_ground',
-  'scrub',
-  'village_green',
-] as const;
+// World's ground classes drawn as each Tileflow land use. World has no civic or government
+// ground class, so those land uses draw nothing.
+const landuseClasses: Record<TileflowLanduseClass, readonly TileflowGroundMatch[]> = {
+  cemetery: [{class: ['cemetery']}],
+  civic: [],
+  commercial: [{class: ['commercial', 'retail']}],
+  education: [{class: ['education']}],
+  government: [],
+  industrial: [{class: ['industrial']}],
+  medical: [{class: ['hospital']}],
+  military: [{class: ['military']}],
+  parking: [{class: ['parking']}],
+  railway: [{class: ['railway']}],
+  recreation: [{class: ['pitch', 'playground']}, {class: ['park'], type: ['zoo']}],
+  residential: [{class: ['residential']}],
+};
 
-// Tileflow World retains fine OSM semantics in `subclass` while normalizing
-// these polygons under `class: grass`. Keep every typed branch disjoint from
-// the plain-grass fallback so no feature receives two green fills.
-const protectedLandcoverMatch = {class: ['protected_area']} as const;
+const parkDetails = ['recreation_ground', 'village_green', 'zoo'];
 
 // Broad physical cover is followed by protection/park surfaces, then explicitly mapped
 // ground details. Keep the latter above park fills without covering pitches/playgrounds.
 // This order is independent of config key order and remains replaceable by render targets.
 const landcoverClasses = [
-  ['farmland', {class: ['farmland']}],
-  ['ice', {class: ['ice', 'glacier']}],
-  ['rock', {class: ['rock']}],
-  ['sand', {class: ['sand', 'beach']}],
-  ['wetland', {class: ['wetland']}],
-  ['wood', {class: ['wood', 'forest']}],
-  ['protected', protectedLandcoverMatch],
-  ['urbanPark', {class: ['grass'], subclass: ['park', 'garden']}],
-  ['recreationGround', {class: ['grass'], subclass: ['recreation_ground']}],
-  ['villageGreen', {class: ['grass'], subclass: ['village_green']}],
-  ['grass', {class: ['grass'], excludeSubclass: typedGrassSubclasses}],
-  ['meadow', {class: ['grass'], subclass: ['meadow']}],
-  ['scrub', {class: ['grass'], subclass: ['scrub']}],
-  ['flowerbed', {class: ['grass'], subclass: ['flowerbed']}],
-] as const satisfies readonly (readonly [TileflowLandcoverClass, TileflowLandcoverClassMatch])[];
+  ['farmland', [{class: ['farmland', 'orchard', 'vineyard']}]],
+  ['ice', [{class: ['ice']}]],
+  ['rock', [{class: ['rock']}]],
+  ['sand', [{class: ['sand']}]],
+  ['wetland', [{class: ['wetland'], layer: 'landuseOverlay'}]],
+  ['wood', [{class: ['wood']}]],
+  ['protected', [{class: ['protected_area'], layer: 'landuseOverlay'}]],
+  [
+    'urbanPark',
+    [
+      {class: ['park'], excludeType: parkDetails},
+      {class: ['garden'], excludeType: ['flowerbed']},
+    ],
+  ],
+  ['recreationGround', [{class: ['park'], type: ['recreation_ground']}]],
+  ['villageGreen', [{class: ['park'], type: ['village_green']}]],
+  ['grass', [{class: ['grass'], excludeType: ['meadow']}, {class: ['golf']}]],
+  ['meadow', [{class: ['grass'], type: ['meadow']}]],
+  ['scrub', [{class: ['scrub']}]],
+  ['flowerbed', [{class: ['garden'], type: ['flowerbed']}]],
+] as const satisfies readonly (readonly [TileflowLandcoverClass, readonly TileflowGroundMatch[]])[];
 
 const detailedLandcover = new Set<TileflowLandcoverClass>([
   'grass',
@@ -96,6 +94,31 @@ export function compileLand(
     {
       type: 'land',
       enabled: true,
+      ...(schema.fields.activity
+        ? {
+            activityAreas: {
+              fill: {
+                color: colors.landuse.activity,
+                minZoom: 11,
+                opacity: expression<number>([
+                  'interpolate',
+                  ['linear'],
+                  ['to-number', ['coalesce', ['get', schema.fields.activity], 1], 1],
+                  1,
+                  0.08,
+                  5,
+                  0.24,
+                ]),
+              },
+              outline: {
+                color: colors.landuse.activityOutline,
+                minZoom: 14,
+                opacity: 0.16,
+                width: 0.5,
+              },
+            },
+          }
+        : {}),
       background: {color: colors.background},
       globalLandcover: {
         color: expression([
@@ -168,7 +191,7 @@ export function compileLand(
 
   const source = context.data.sourceId;
   const classField = schema.fields.class;
-  const subclassField = schema.fields.subclass;
+  const typeField = schema.fields.type;
   const contributions: TileflowLayerContribution[] = [];
 
   if (config.background?.visible !== false) {
@@ -191,7 +214,7 @@ export function compileLand(
 
   if (
     config.globalLandcoverUnderlay &&
-    schema.layers.globalLandcover &&
+    schema.layers.landcover &&
     config.globalLandcover?.visible !== false
   ) {
     const underlay = config.globalLandcoverUnderlay;
@@ -204,7 +227,7 @@ export function compileLand(
       layer: {
         id: 'tileflow-global-landcover-underlay',
         type: 'raster',
-        source: 'tileflow-landcover-underlay',
+        source: tileflowLandcoverUnderlaySourceId,
         minzoom: underlay.minZoom ?? 0,
         maxzoom: underlay.maxZoom ?? 11,
         paint: {
@@ -216,7 +239,7 @@ export function compileLand(
     });
   }
 
-  if (schema.layers.globalLandcover && config.globalLandcover?.visible !== false) {
+  if (schema.layers.landcover && config.globalLandcover?.visible !== false) {
     contributions.push({
       kind: 'layer',
       layer: applyFillStyle(
@@ -224,7 +247,7 @@ export function compileLand(
           id: 'tileflow-global-landcover',
           type: 'fill',
           source,
-          'source-layer': schema.layers.globalLandcover,
+          'source-layer': schema.layers.landcover,
         },
         config.globalLandcover ?? {},
       ),
@@ -236,16 +259,16 @@ export function compileLand(
   }
 
   let localOrder = 100;
-  const appendLanduse = (name: TileflowLanduseClass, classes: readonly string[]) => {
+  const appendLanduse = (name: TileflowLanduseClass, matches: readonly TileflowGroundMatch[]) => {
     const style = config.landuse?.[name];
-    if (!style) return;
+    if (!style || matches.length === 0) return;
     for (const area of createAreaLayers(
       {
         id: `tileflow-landuse-${name}`,
         type: 'fill',
         source,
         'source-layer': schema.layers.landuse,
-        filter: classFilter(classField, classes),
+        filter: groundFilter(classField, typeField, matches),
       },
       style,
     )) {
@@ -270,29 +293,26 @@ export function compileLand(
     }
   };
 
-  for (const [name, classes] of Object.entries(landuseClasses) as Array<
-    [TileflowLanduseClass, readonly string[]]
+  for (const [name, matches] of Object.entries(landuseClasses) as Array<
+    [TileflowLanduseClass, readonly TileflowGroundMatch[]]
   >) {
     if (name === 'recreation' || name === 'parking') continue;
-    appendLanduse(name, classes);
+    appendLanduse(name, matches);
   }
 
-  const appendLandcover = (name: TileflowLandcoverClass, match: TileflowLandcoverClassMatch) => {
+  const appendLandcover = (
+    name: TileflowLandcoverClass,
+    matches: readonly TileflowGroundMatch[],
+  ) => {
     const style = config.landcover?.[name];
     if (!style) return;
-    const protectedSource = name === 'protected';
-    const sourceLayer = protectedSource ? schema.layers.park : schema.layers.landcover;
-    const filter =
-      protectedSource && schema.semantics.parkLayer === 'protected-only'
-        ? undefined
-        : landcoverFilter(classField, subclassField, match);
     for (const area of createAreaLayers(
       {
         id: `tileflow-landcover-${name}`,
         type: 'fill',
         source,
-        'source-layer': sourceLayer,
-        ...(filter ? {filter} : {}),
+        'source-layer': schema.layers[matches[0]!.layer ?? 'landuse'],
+        filter: groundFilter(classField, typeField, matches),
       },
       style,
     )) {
@@ -317,37 +337,12 @@ export function compileLand(
     }
   };
 
-  for (const [name, match] of landcoverClasses) {
-    if (!detailedLandcover.has(name)) appendLandcover(name, match);
+  for (const [name, matches] of landcoverClasses) {
+    if (!detailedLandcover.has(name)) appendLandcover(name, matches);
   }
 
-  // Canonical OpenMapTiles historically mixes ordinary parks and protected
-  // areas in one layer. Preserve that compatibility branch without exposing
-  // the ambiguous legacy class in the public landcover taxonomy.
-  if (schema.semantics.parkLayer === 'mixed' && config.landcover?.urbanPark) {
-    for (const area of createAreaLayers(
-      {
-        id: 'tileflow-landcover-legacy-park',
-        type: 'fill',
-        source,
-        'source-layer': schema.layers.park,
-        filter: ['!', classFilter(classField, protectedLandcoverMatch.class)],
-      },
-      config.landcover.urbanPark,
-    )) {
-      contributions.push({
-        kind: 'layer',
-        layer: area.layer,
-        localOrder: localOrder++,
-        owner: 'land',
-        slot: 'land',
-        target: `land.compatibility.legacyPark.${area.phase}`,
-      });
-    }
-  }
-
-  for (const [name, match] of landcoverClasses) {
-    if (detailedLandcover.has(name)) appendLandcover(name, match);
+  for (const [name, matches] of landcoverClasses) {
+    if (detailedLandcover.has(name)) appendLandcover(name, matches);
   }
 
   // Mapped paved surfaces remain legible inside broad park/forest polygons. Recreation
@@ -355,12 +350,35 @@ export function compileLand(
   appendLanduse('parking', landuseClasses.parking);
   appendLanduse('recreation', landuseClasses.recreation);
 
+  // Activity areas: where shops, food, services and offices concentrate, by level 1 to 5.
+  if (config.activityAreas) {
+    for (const area of createAreaLayers(
+      {
+        id: 'tileflow-activity-areas',
+        type: 'fill',
+        source,
+        'source-layer': schema.layers.landuseOverlay,
+        filter: ['==', ['get', classField], 'activity_area'],
+      },
+      config.activityAreas,
+    )) {
+      contributions.push({
+        kind: 'layer',
+        layer: area.layer,
+        localOrder: localOrder++,
+        owner: 'land',
+        slot: 'land',
+        target: `land.activityAreas.${area.phase}`,
+      });
+    }
+  }
+
   // Barriers are lines; World also publishes the hedges OSM maps as areas, which `area` fills.
   // A barrier's fill, shadow and line draw in that order.
   const barrierLayer = schema.layers.trafficControl;
   for (const name of barrierLayer ? barrierClasses : []) {
     const style = config.barriers?.[name];
-    const kind = ['==', ['get', subclassField], name];
+    const kind = ['==', ['get', typeField], name];
     if (style?.area) {
       contributions.push({
         kind: 'layer',
@@ -410,15 +428,17 @@ function classFilter(field: string, classes: readonly string[]): unknown[] {
   return ['match', ['get', field], classes, true, false];
 }
 
-function landcoverFilter(
+function groundFilter(
   classField: string,
-  subclassField: string,
-  match: TileflowLandcoverClassMatch,
+  typeField: string,
+  matches: readonly TileflowGroundMatch[],
 ): unknown[] {
-  const filter = classFilter(classField, match.class);
-  if (match.subclass) return ['all', filter, classFilter(subclassField, match.subclass)];
-  if (match.excludeSubclass) {
-    return ['all', filter, ['!', classFilter(subclassField, match.excludeSubclass)]];
-  }
-  return filter;
+  const filters = matches.map((match) => {
+    const classes = classFilter(classField, match.class);
+    if (match.type) return ['all', classes, classFilter(typeField, match.type)];
+    if (match.excludeType)
+      return ['all', classes, ['!', classFilter(typeField, match.excludeType)]];
+    return classes;
+  });
+  return filters.length === 1 ? filters[0]! : ['any', ...filters];
 }

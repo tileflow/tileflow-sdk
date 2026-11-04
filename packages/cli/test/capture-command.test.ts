@@ -891,7 +891,7 @@ test(
     bounds: [-180, -85, 180, 85],
     revision: 'fixture_1',
     attribution: 'Fixture data',
-    schema: {type: 'openmaptiles', contractVersion: 1}
+    schema: {type: 'openmaptiles', contractVersion: 2}
   },
   scenes: {proof: {theme: 'light', camera: {type: 'center', center: [0, 0], zoom: 0}, viewport: {width: 256, height: 256}}}`,
       }),
@@ -961,7 +961,7 @@ test(
     bounds: [-180, -85, 180, 85],
     revision: 'fixture_1',
     attribution: 'Fixture data',
-    schema: {type: 'openmaptiles', contractVersion: 1}
+    schema: {type: 'openmaptiles', contractVersion: 2}
   },
   shots: {'fly-in': {theme: 'light', viewport: {width: 64, height: 64}, keyframes: [
     {at: 0, camera: {type: 'center', center: [0, 0], zoom: 0}},
@@ -1062,7 +1062,7 @@ for (const mode of ['named', 'exploratory'] as const) {
         bounds: [-180, -85, 180, 85],
         revision: 'fixture_1',
         attribution: 'Fixture data',
-        schema: {type: 'openmaptiles', contractVersion: 1}
+        schema: {type: 'openmaptiles', contractVersion: 2}
       },
       modules: {
         roads: {
@@ -1261,13 +1261,6 @@ function createShotCapture(shot: string): TileflowShotCapture {
   const receipt = createTileflowShotReceipt({
     data: {
       bindings: {fields: {class: 'class'}, layers: {road: 'transportation'}},
-      capabilities: {
-        businessCorridor: false,
-        bathymetry: false,
-        canopy: false,
-        globalLandcover: false,
-        tree: false,
-      },
       kind: 'vector-tiles',
       schema: 'openmaptiles',
       schemaVersion: 1,
@@ -1327,10 +1320,17 @@ function createCapture(scene: string): TileflowCapture {
       kind: 'tileflow-world',
       product: 'world-v1',
       releaseId: 'world-v1-cli-fixture',
-      schema: 'openmaptiles',
+      schema: 'tileflow-world',
       schemaVersion: 1,
-      semantics: {parkLayer: 'protected-only'},
       sourceId: 'tileflow',
+      sources: [
+        {
+          archiveSha256: '1'.repeat(64),
+          contractSha256: '2'.repeat(64),
+          dataContractSha256: '3'.repeat(64),
+          id: 'world',
+        },
+      ],
     },
     dpr: 1,
     height: 200,

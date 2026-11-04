@@ -155,34 +155,59 @@ const baedekerPathLabel = {
   },
 } satisfies TileflowSymbolStyle;
 
+function groundClass(...classes: string[]): TileflowRenderSelector {
+  return {field: 'class', kind: 'in', values: classes};
+}
+
+// Gardens without flowerbeds, which the land module draws apart.
+const gardenGround: TileflowRenderSelector = {
+  kind: 'all',
+  selectors: [
+    groundClass('garden'),
+    {kind: 'not', selector: {field: 'type', kind: 'in', values: ['flowerbed']}},
+  ],
+};
+
+// The parks and gardens the land module draws as urban parks.
+const urbanParkGround: TileflowRenderSelector = {
+  kind: 'any',
+  selectors: [
+    {
+      kind: 'all',
+      selectors: [
+        groundClass('park'),
+        {
+          kind: 'not',
+          selector: {
+            field: 'type',
+            kind: 'in',
+            values: ['recreation_ground', 'village_green', 'zoo'],
+          },
+        },
+      ],
+    },
+    gardenGround,
+  ],
+};
+
 function landcoverPattern(
   target: string,
   pattern: string,
-  classes: readonly string[],
+  ground: TileflowRenderSelector,
   options: {
+    /** Wetlands are an overlay on the ground rather than a ground class. */
+    feature?: 'landuse' | 'landuseOverlay';
     minZoom?: number;
     opacity?: number;
-    subclasses?: readonly string[];
   } = {},
 ) {
-  const classSelector = {
-    field: 'class',
-    kind: 'in',
-    values: classes,
-  } as const satisfies TileflowRenderSelector;
-  const selector: TileflowRenderSelector = options.subclasses
-    ? {
-        kind: 'all',
-        selectors: [classSelector, {field: 'subclass', kind: 'in', values: options.subclasses}],
-      }
-    : classSelector;
   const minZoom = options.minZoom ?? 9;
 
   return renderPass({
     placement: {above: target},
-    feature: 'landcover',
+    feature: options.feature ?? 'landuse',
     renderer: 'fill',
-    selector,
+    selector: ground,
     style: {
       minZoom,
       opacity: zoom.linear([
@@ -244,8 +269,6 @@ export const baedekerTheme = defineOfficialTheme({
     },
     buildings: {
       active: baedekerPalette.buildingActive,
-      businessCorridor: baedekerPalette.building,
-      businessCorridorOutline: baedekerPalette.buildingOutline,
       civic: '#C77659',
       commercial: '#C97E60',
       destination: baedekerPalette.buildingActive,
@@ -294,6 +317,8 @@ export const baedekerTheme = defineOfficialTheme({
       wood: baedekerPalette.wood,
     },
     landuse: {
+      activity: baedekerPalette.building,
+      activityOutline: baedekerPalette.buildingOutline,
       cemetery: '#D0D0B5',
       civic: '#E2D2BB',
       commercial: '#E3D0BB',
@@ -467,10 +492,6 @@ export const baedeker = bindOfficialMapTheme(
       }),
       buildings: withRenderStack(
         buildings({
-          businessCorridor: {
-            fill: {visible: false},
-            outline: {visible: false},
-          },
           flat: {
             fill: {
               color: baedekerPalette.building,
@@ -685,6 +706,10 @@ export const baedeker = bindOfficialMapTheme(
       }),
       land: withRenderStack(
         land({
+          activityAreas: {
+            fill: {visible: false},
+            outline: {visible: false},
+          },
           background: {opacity: 1, pattern: 'baedeker-paper-grain'},
           globalLandcover: {
             color: expr.match(
@@ -773,43 +798,43 @@ export const baedeker = bindOfficialMapTheme(
           rockHachures: landcoverPattern(
             'land.landcover.rock.fill',
             'baedeker-hachures',
-            ['rock'],
+            groundClass('rock'),
             {minZoom: 8, opacity: 0.44},
           ),
           scrubHachures: landcoverPattern(
             'land.landcover.scrub.fill',
             'baedeker-hachures',
-            ['grass'],
-            {minZoom: 9, opacity: 0.34, subclasses: ['scrub']},
+            groundClass('scrub'),
+            {minZoom: 9, opacity: 0.34},
           ),
           orchardTexture: landcoverPattern(
             'land.landcover.urbanPark.fill',
             'baedeker-orchard',
-            ['grass'],
-            {minZoom: 11, opacity: 0.58, subclasses: ['garden', 'orchard']},
+            gardenGround,
+            {minZoom: 11, opacity: 0.58},
           ),
           sandTexture: landcoverPattern(
             'land.landcover.sand.fill',
             'baedeker-sand',
-            ['sand', 'beach'],
+            groundClass('sand'),
             {minZoom: 9, opacity: 0.48},
           ),
           wetlandTexture: landcoverPattern(
             'land.landcover.wetland.fill',
             'baedeker-wetland',
-            ['wetland'],
-            {minZoom: 9, opacity: 0.56},
+            groundClass('wetland'),
+            {feature: 'landuseOverlay', minZoom: 9, opacity: 0.56},
           ),
           parkStipple: landcoverPattern(
             'land.landcover.urbanPark.fill',
             'baedeker-park-stipple',
-            ['grass'],
-            {minZoom: 10, opacity: 0.74, subclasses: ['park', 'garden']},
+            urbanParkGround,
+            {minZoom: 10, opacity: 0.74},
           ),
           woodStipple: landcoverPattern(
             'land.landcover.wood.fill',
             'baedeker-park-stipple',
-            ['wood', 'forest'],
+            groundClass('wood'),
             {minZoom: 9, opacity: 0.5},
           ),
           residentialTexture: landusePattern(
@@ -1205,14 +1230,7 @@ export const baedeker = bindOfficialMapTheme(
             placement: {above: 'water.bodies.fill'},
             feature: 'water',
             renderer: 'fill',
-            selector: {
-              coerce: 'number',
-              fallback: 0,
-              field: 'intermittent',
-              kind: 'compare',
-              operator: 'ne',
-              value: 1,
-            },
+            selector: {field: 'intermittent', kind: 'compare', operator: 'ne', value: true},
             style: {
               minZoom: 7,
               opacity: zoom.linear([
@@ -1227,14 +1245,7 @@ export const baedeker = bindOfficialMapTheme(
             placement: {above: 'water.intermittent.bodies.fill'},
             feature: 'water',
             renderer: 'fill',
-            selector: {
-              coerce: 'number',
-              fallback: 0,
-              field: 'intermittent',
-              kind: 'compare',
-              operator: 'eq',
-              value: 1,
-            },
+            selector: {field: 'intermittent', kind: 'compare', operator: 'eq', value: true},
             style: {
               minZoom: 9,
               opacity: 0.36,

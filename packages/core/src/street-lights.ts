@@ -28,9 +28,9 @@ export type TileflowStreetLightPlacementOptions = Readonly<{
 
 /** A tile's layers the lamps come from, as World names them. */
 export type TileflowStreetLightLayers = Readonly<{
-  /** Points with `subclass` `street_lamp` (World's `street_furniture`). */
+  /** Points with `type` `street_lamp` (World's `street_furniture`). */
   streetFurniture?: TileflowTileLayer;
-  /** Streets by `class`, with `lit` where mapped (World's `transportation`). */
+  /** Streets by `class`, with `lit` where mapped (World's `road`). */
   transportation?: TileflowTileLayer;
   /** Pavements, as lines or areas, with `lit` where mapped (World's `sidewalk`). */
   sidewalks?: TileflowTileLayer;
@@ -51,7 +51,7 @@ const streets: Readonly<Record<string, {spacing: number; kerb: number}>> = {
   primary: {spacing: 30, kerb: 10},
   secondary: {spacing: 32, kerb: 8.5},
   tertiary: {spacing: 34, kerb: 7},
-  minor: {spacing: 36, kerb: 5.5},
+  street: {spacing: 36, kerb: 5.5},
   pedestrian: {spacing: 26, kerb: 3},
 };
 // Streets lit only where the data says so.
@@ -120,7 +120,7 @@ export function placeTileflowStreetLights(
     const scale = extent / furniture.extent;
     for (const feature of furniture.features) {
       const properties = feature.properties;
-      if (feature.type !== 'Point' || properties.subclass !== 'street_lamp') continue;
+      if (feature.type !== 'Point' || properties.type !== 'street_lamp') continue;
       const height = lampHeight(properties);
       const colour = lampColour(properties);
       const count = Math.max(1, Math.min(4, Number(properties.light_count) || 1));
@@ -219,15 +219,10 @@ function streetRule(
   properties: Readonly<Record<string, string | number | boolean>>,
   mode: 'streets' | 'lit',
 ): {spacing: number; kerb: number} | undefined {
-  if (properties.brunnel === 'tunnel' || properties.covered === true) return undefined;
+  if (properties.structure === 'tunnel' || properties.covered === true) return undefined;
   const lit = properties.lit;
   if (lit === false || lit === 'no') return undefined;
-  const featureClass = String(properties.class ?? '');
-  const subclass = String(properties.subclass ?? '');
-  const kind =
-    featureClass === 'path' && (subclass === 'pedestrian' || subclass === 'living_street')
-      ? 'pedestrian'
-      : featureClass;
+  const kind = String(properties.class ?? '');
   const rule = streets[kind];
   if (rule && (mode === 'streets' || isLit(lit))) return rule;
   const litRule = litOnly[kind];
@@ -380,7 +375,7 @@ export const tileflowDefaultStreetLightsDesign: TileflowStreetLightsDesign = Obj
   source: 'tileflow',
   layers: Object.freeze({
     streetFurniture: 'street_furniture',
-    transportation: 'transportation',
+    transportation: 'road',
     sidewalk: 'sidewalk',
   }),
   estimate: 'lit',

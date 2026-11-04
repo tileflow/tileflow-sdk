@@ -79,7 +79,7 @@ for (const [referenceName, theme] of Object.entries(themes)) {
       ['surface.background', 'land'],
       ['surface.land', 'land'],
       ['landuse.commercial', 'commercial'],
-      ['landuse.businessCorridor', 'commercial'],
+      ['landuse.activity', 'commercial'],
       ['roads.default', 'road'],
       ['roads.minor', 'road'],
       ['landcover.greenspace', 'green'],
@@ -103,7 +103,7 @@ for (const [referenceName, theme] of Object.entries(themes)) {
     for (const [id, property, sample] of [
       ['tileflow-background', 'background-color', 'land'],
       ['tileflow-buildings-fill', 'fill-color', 'building'],
-      ['tileflow-land-render-businessArea', 'fill-color', 'commercial'],
+      ['tileflow-land-render-activityAreas', 'fill-color', 'commercial'],
     ] as const) {
       const layer = style.layers.find((candidate) => candidate.id === id);
       assert.ok(layer, `Missing ${id}`);
@@ -120,7 +120,7 @@ for (const [referenceName, theme] of Object.entries(themes)) {
           ? String(colors['buildings.flat.neutral'])
           : expectedColor(
               theme,
-              id === 'tileflow-background' ? 'surface.background' : 'landuse.businessCorridor',
+              id === 'tileflow-background' ? 'surface.background' : 'landuse.activity',
               expected[sample],
             ),
         `${theme} ${id}`,

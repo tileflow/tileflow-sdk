@@ -18,7 +18,14 @@ test('publishes official maps and their assets as one package', async () => {
     peerDependencies: Record<string, string>;
   };
 
-  assert.deepEqual(manifest.files, ['assets', 'dist', 'THIRD_PARTY_NOTICES.md', 'LICENSE']);
+  // Streets reads its climate image from Tileflow's servers; the package keeps only its recipe.
+  assert.deepEqual(manifest.files, [
+    'assets',
+    '!assets/streets/climate/streets-climate-v1.png',
+    'dist',
+    'THIRD_PARTY_NOTICES.md',
+    'LICENSE',
+  ]);
   assert.equal(manifest.peerDependencies['@tileflow/core'].startsWith('workspace:'), true);
   assert.deepEqual(manifest.exports['.'], {
     types: './dist/index.d.ts',

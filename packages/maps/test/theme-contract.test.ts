@@ -94,7 +94,7 @@ test('Streets routes independently configurable Standard roles through dedicated
     'landcover.global.snow',
     'landcover.global.trees',
     'landcover.global.urban',
-    'landuse.businessCorridor',
+    'landuse.activity',
     'landuse.civic',
     'landuse.education',
     'landuse.government',

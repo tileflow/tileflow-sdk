@@ -32,7 +32,7 @@ function layerOf(
     extent: 4096,
     features: features.map(({geometry, properties}) => ({
       type: 'Polygon' as const,
-      properties: {render_height: 30, ...properties},
+      properties: {height: 30, ...properties},
       geometry: geometry.map((ring) => ring.map((value) => value + 1000)),
     })),
   };
@@ -67,16 +67,16 @@ test("a building's use class is packed above its tone for the windows", () => {
       0,
     ).tone;
   assert.equal(packed({}), 0);
-  assert.equal(packed({class: 'residential'}), 4);
-  assert.equal(packed({class: 'education'}), 8);
-  assert.equal(packed({class: 'outbuilding'}), 12);
-  assert.equal(packed({class: 'industrial', building_tone: 'destination'}), 15);
-  assert.equal(packed({class: 'unknown', building_tone: 'commercial'}), 1);
+  assert.equal(packed({use: 'residential'}), 4);
+  assert.equal(packed({use: 'education'}), 8);
+  assert.equal(packed({use: 'outbuilding'}), 12);
+  assert.equal(packed({use: 'industrial', tone: 'destination'}), 15);
+  assert.equal(packed({use: 'unknown', tone: 'commercial'}), 1);
 });
 
 test('a building becomes a roof and four walls facing out of it', () => {
   const mesh = meshTileflowBuildings(
-    layerOf([{geometry: [square], properties: {building_tone: 'commercial'}}]),
+    layerOf([{geometry: [square], properties: {tone: 'commercial'}}]),
     {tileMetres: 1000},
   );
   assert.ok(mesh);
@@ -247,11 +247,18 @@ test("an L's inside corner is tight for the walls that meet there", () => {
 });
 
 test('hidden buildings, other geometry and empty layers raise nothing', () => {
-  assert.equal(
-    meshTileflowBuildings(layerOf([{geometry: [square], properties: {hide_3d: true}}]), {
+  // World's `extrude: false`, and OpenMapTiles' `hide_3d`: the building's parts draw it.
+  for (const hidden of [{extrude: false}, {hide_3d: true}] as Record<string, boolean>[])
+    assert.equal(
+      meshTileflowBuildings(layerOf([{geometry: [square], properties: hidden}]), {
+        tileMetres: 1000,
+      }),
+      undefined,
+    );
+  assert.ok(
+    meshTileflowBuildings(layerOf([{geometry: [square], properties: {extrude: true}}]), {
       tileMetres: 1000,
     }),
-    undefined,
   );
   assert.equal(
     meshTileflowBuildings(
@@ -283,7 +290,13 @@ test('heights fall back to five metres and bases stay under the top', () => {
         {type: 'Polygon', properties: {}, geometry: [square]},
         {
           type: 'Polygon',
-          properties: {render_height: 20, render_min_height: 50},
+          properties: {height: 20, min_height: 50},
+          geometry: [square],
+        },
+        // OpenMapTiles' heights.
+        {
+          type: 'Polygon',
+          properties: {render_height: 12, render_min_height: 4},
           geometry: [square],
         },
       ],
@@ -296,6 +309,10 @@ test('heights fall back to five metres and bases stay under the top', () => {
   assert.equal(second.feature, 1);
   assert.equal(second.base, 20);
   assert.equal(second.top, 20);
+  const third = vertex(mesh, mesh.vertices.length / tileflowBuildingVertexBytes - 1);
+  assert.equal(third.feature, 2);
+  assert.equal(third.base, 4);
+  assert.equal(third.top, 12);
 });
 
 /** Each building's night use, as the mesh stores it: none, dining, entertainment, nightlife. */
@@ -528,8 +545,8 @@ test('the 3D buildings design is read only in a known version and shape', () => 
   const described = {
     version: 1,
     source: 'tileflow',
-    layers: {building: 'building', places: 'poi'},
-    color: ['case', ['==', ['get', 'building_tone'], 'destination'], '#ff0000', '#00ff00'],
+    layers: {building: 'building', places: 'poi_label'},
+    color: ['case', ['==', ['get', 'tone'], 'destination'], '#ff0000', '#00ff00'],
     edges: 3,
     edgeColor: '#7fd8ff',
     nightLight: 0.5,
@@ -586,24 +603,16 @@ test('the 3D buildings design is read only in a known version and shape', () => 
 });
 
 test('a building colour expression evaluates as MapLibre evaluates it', () => {
-  const floors = ['/', ['to-number', ['get', 'render_height'], 0], 3.2];
+  const floors = ['/', ['to-number', ['get', 'height'], 0], 3.2];
   const expressions: unknown[] = [
     [
       'case',
-      ['==', ['coalesce', ['get', 'building_tone'], ''], 'destination'],
+      ['==', ['coalesce', ['get', 'tone'], ''], 'destination'],
       '#d4a017',
       ['step', ['%', floors, 5], '#f1d4cd', 1, '#d3e8da', 2, '#f6e0b5', 3, '#e2d5f0', 4, '#cfe3f2'],
     ],
-    ['match', ['get', 'building_tone'], ['active', 'commercial'], '#ff8800', '#336699'],
-    [
-      'interpolate',
-      ['linear'],
-      ['to-number', ['get', 'render_height'], 0],
-      0,
-      '#000000',
-      100,
-      '#ffffff',
-    ],
+    ['match', ['get', 'tone'], ['active', 'commercial'], '#ff8800', '#336699'],
+    ['interpolate', ['linear'], ['to-number', ['get', 'height'], 0], 0, '#000000', 100, '#ffffff'],
     [
       'let',
       'tall',
@@ -612,10 +621,10 @@ test('a building colour expression evaluates as MapLibre evaluates it', () => {
     ],
   ];
   const buildings = [
-    {render_height: 3},
-    {render_height: 12.8},
-    {render_height: 40, building_tone: 'destination'},
-    {render_height: '25', building_tone: 'commercial'},
+    {height: 3},
+    {height: 12.8},
+    {height: 40, tone: 'destination'},
+    {height: '25', tone: 'commercial'},
     {},
   ];
   for (const expression of expressions)
@@ -655,7 +664,7 @@ test('buildings have a sunlit finish by default and preserve explicit design cho
   const metadata = {
     version: 1,
     source: 'tileflow',
-    layers: {building: 'building', places: 'poi'},
+    layers: {building: 'building', places: 'poi_label'},
     color: '#d8d0c0',
   };
   assert.deepEqual(

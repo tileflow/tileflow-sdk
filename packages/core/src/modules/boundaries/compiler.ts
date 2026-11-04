@@ -59,14 +59,8 @@ export function compileBoundaries(
   if (config.enabled === false) return [];
 
   const {sourceId: source, schema} = context.data;
-  const disputedFilter = ['==', ['to-number', ['get', schema.fields.disputed], 0], 1] as const;
-  // OpenMapTiles exposes `maritime` as a numeric boundary flag. Keep the
-  // historic class fallback for archives that encoded it as a class.
-  const maritimeFilter = [
-    'any',
-    ['==', ['to-number', ['get', schema.fields.maritime], 0], 1],
-    ['==', ['get', schema.fields.class], 'maritime'],
-  ] as const;
+  const disputedFilter = ['==', ['get', schema.fields.disputed], true] as const;
+  const maritimeFilter = ['==', ['get', schema.fields.maritime], true] as const;
   const targets = [
     [
       'admin4',
@@ -106,7 +100,7 @@ export function compileBoundaries(
             id: `tileflow-boundary-${name}`,
             type: 'line',
             source,
-            'source-layer': schema.layers.boundary,
+            'source-layer': schema.layers.admin,
             filter: targetFilter,
           },
           style,

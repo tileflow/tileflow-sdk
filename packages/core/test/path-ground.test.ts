@@ -12,12 +12,11 @@ import type {MapLibreStyle} from '../src/types';
 import {decodeTileflowVectorTile, type TileflowTileFeature} from '../src/vector-tile-decode';
 
 const bindings: PathGroundBindings = {
-  road: 'transportation',
-  landcover: 'landcover',
-  landuse: 'landuse',
+  road: 'road',
+  ground: ['landuse', 'landuse_overlay'],
   class: 'class',
-  subclass: 'subclass',
-  brunnel: 'brunnel',
+  type: 'type',
+  structure: 'structure',
 };
 
 test('native preparation keeps complete paths and layer indices without a browser protocol', () => {
@@ -36,14 +35,14 @@ test('native preparation keeps complete paths and layer indices without a browse
         id: 'full-path',
         type: 'line',
         source: 'tileflow',
-        'source-layer': 'transportation',
+        'source-layer': 'road',
         paint: {'line-color': '#D5DAD7'},
       },
       {
         id: 'green-only',
         type: 'line',
         source: 'tileflow-path-ground',
-        'source-layer': 'transportation',
+        'source-layer': 'road',
         paint: {'line-color': '#FFFFFF', 'line-opacity': 1},
       },
     ],
@@ -71,13 +70,13 @@ const hole = [40, 40, 40, 60, 60, 60, 60, 40, 40, 40];
 const path: TileflowTileFeature = {
   id: 17,
   type: 'LineString',
-  properties: {class: 'path', subclass: 'footway', name: 'Garden walk'},
+  properties: {class: 'path', type: 'footway', name: 'Garden walk'},
   geometry: [[-10, 50, 110, 50]],
 };
 function tile(cover: TileflowTileFeature[], roads = [path], coverExtent = 4096) {
   const parts = [
-    encodeTileflowPathLayer('transportation', 4096, roads),
-    encodeTileflowPathLayer('landcover', coverExtent, cover),
+    encodeTileflowPathLayer('road', 4096, roads),
+    encodeTileflowPathLayer('landuse', coverExtent, cover),
   ];
   const result = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
   let offset = 0;
@@ -92,7 +91,7 @@ const garden = (
   properties = {class: 'grass'},
 ): TileflowTileFeature => ({type: 'Polygon', properties, geometry});
 const paths = (bytes: Uint8Array) =>
-  decodeTileflowVectorTile(deriveTileflowGreenPaths(bytes, bindings)).transportation!.features;
+  decodeTileflowVectorTile(deriveTileflowGreenPaths(bytes, bindings)).road!.features;
 
 test('paths change ground exactly at green boundaries and preserve real paved holes', () => {
   const result = paths(tile([garden([square, hole])]));
@@ -114,13 +113,13 @@ test('plain farmland stays ground-coloured and grade-separated paths are exclude
   assert.deepEqual(paths(tile([garden([square], {class: 'farmland'})])), []);
   assert.deepEqual(
     paths(
-      tile([garden([square])], [{...path, properties: {...path.properties, brunnel: 'bridge'}}]),
+      tile([garden([square])], [{...path, properties: {...path.properties, structure: 'bridge'}}]),
     ),
     [],
   );
   assert.deepEqual(
     paths(
-      tile([garden([square])], [{...path, properties: {...path.properties, brunnel: 'tunnel'}}]),
+      tile([garden([square])], [{...path, properties: {...path.properties, structure: 'tunnel'}}]),
     ),
     [],
   );
@@ -158,8 +157,7 @@ test('the packaged protocol resolves the same upstream TileJSON, caches bounded 
   const url = json.tiles[0]!.replace('{z}', '15').replace('{x}', '16047').replace('{y}', '12356');
   const result = await handler({url}, new AbortController());
   assert.equal(
-    decodeTileflowVectorTile(new Uint8Array(result.data as ArrayBuffer)).transportation!.features
-      .length,
+    decodeTileflowVectorTile(new Uint8Array(result.data as ArrayBuffer)).road!.features.length,
     1,
   );
   await handler({url}, new AbortController());

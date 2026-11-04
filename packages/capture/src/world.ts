@@ -3,14 +3,12 @@ import {
   isTileflowWorldReleaseId,
   type MapLibreStyle,
   tileflowWorldTileJsonUrl,
+  type TileflowWorldTileset,
+  tileflowWorldTilesets,
 } from '@tileflow/core';
 import type {TileflowCaptureAsset} from './assets';
 import {TileflowCaptureError} from './errors';
-import type {
-  TileflowCaptureDataInput,
-  TileflowCaptureDataSemantics,
-  TileflowCaptureWorldIdentity,
-} from './receipt';
+import type {TileflowCaptureDataInput, TileflowCaptureWorldIdentity} from './receipt';
 
 export const tileflowWorldCurrentTileJsonUrl = tileflowWorldTileJsonUrl;
 
@@ -22,10 +20,7 @@ type FetchTileJson = (
 ) => Promise<Pick<Response, 'ok' | 'status' | 'text'>>;
 
 export type TileflowCaptureResolvedWorldV1 = Readonly<{
-  identity: Omit<
-    TileflowCaptureWorldIdentity,
-    'kind' | 'schema' | 'schemaVersion' | 'semantics' | 'sourceId'
-  >;
+  identity: Omit<TileflowCaptureWorldIdentity, 'kind' | 'schema' | 'schemaVersion' | 'sourceId'>;
   tileJsonUrl: string;
   tileJson: string;
   tiles: readonly [string];
@@ -62,9 +57,8 @@ export class TileflowCaptureWorldSession {
     const data: TileflowCaptureWorldIdentity = {
       ...resolution.identity,
       kind: 'tileflow-world',
-      schema: requireLiteral(metadata.schema, 'openmaptiles', 'schema'),
+      schema: requireLiteral(metadata.schema, 'tileflow-world', 'schema'),
       schemaVersion: requirePositiveInteger(metadata.schemaVersion, 'schemaVersion'),
-      semantics: validateSemantics(metadata.semantics),
       sourceId: requireLiteral(metadata.sourceId, 'tileflow', 'sourceId'),
     };
     const {tiles: _mutableTiles, url: _mutableUrl, ...sourceWithoutSelector} = source;
@@ -157,6 +151,8 @@ export async function resolveTileflowCaptureWorldTileJson(
     'descriptorSha256',
     'product',
     'releaseId',
+    'releaseSources',
+    'sources',
   ]);
   if (world.product !== 'world-v1') {
     throw worldResolutionError('Tileflow World TileJSON has an unsupported product.');
@@ -173,6 +169,29 @@ export async function resolveTileflowCaptureWorldTileJson(
     );
   }
   const tileTemplate = validateExactTileTemplate(tileJson.tiles[0], releaseId, descriptorSha256);
+  const releaseSources = requireWorldSources(world.releaseSources, 'releaseSources');
+  if (!Array.isArray(world.sources) || world.sources.length === 0) {
+    throw worldResolutionError('Tileflow World TileJSON has no selected sources.');
+  }
+  const sources = world.sources.map((value) => {
+    const source = requireRecord(value, 'TileJSON tileflow.world.sources entry');
+    requireExactKeys(source, ['archiveSha256', 'contractSha256', 'dataContractSha256', 'id']);
+    return {
+      archiveSha256: requireHash(source.archiveSha256, 'sources.archiveSha256'),
+      contractSha256: requireHash(source.contractSha256, 'sources.contractSha256'),
+      dataContractSha256: requireHash(source.dataContractSha256, 'sources.dataContractSha256'),
+      id: requireWorldSources([source.id], 'sources.id')[0]!,
+    };
+  });
+  const ids = sources.map(({id}) => id);
+  const canonical = tileflowWorldTilesets.filter((id) => ids.includes(id));
+  if (
+    new Set(ids).size !== ids.length ||
+    ids.join() !== canonical.join() ||
+    ids.some((id) => !releaseSources.includes(id))
+  ) {
+    throw worldResolutionError('Tileflow World TileJSON sources are not a canonical selection.');
+  }
 
   return {
     identity: {
@@ -182,6 +201,7 @@ export async function resolveTileflowCaptureWorldTileJson(
       descriptorSha256,
       product: 'world-v1',
       releaseId,
+      sources,
     },
     tileJsonUrl: normalizedUrl,
     tileJson: text,
@@ -297,13 +317,16 @@ function validateExactTileTemplate(
   return value;
 }
 
-function validateSemantics(value: unknown): TileflowCaptureDataSemantics {
-  const semantics = requireRecord(value, 'data semantics');
-  requireExactKeys(semantics, ['parkLayer']);
-  if (semantics.parkLayer !== 'mixed' && semantics.parkLayer !== 'protected-only') {
-    throw worldResolutionError('The compiled style has invalid park semantics.');
+function requireWorldSources(value: unknown, field: string): TileflowWorldTileset[] {
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    value.some((id) => !(tileflowWorldTilesets as readonly unknown[]).includes(id)) ||
+    new Set(value).size !== value.length
+  ) {
+    throw worldResolutionError(`Tileflow World TileJSON has invalid ${field}.`);
   }
-  return {parkLayer: semantics.parkLayer};
+  return value as TileflowWorldTileset[];
 }
 
 function requireRecord(value: unknown, field: string): Record<string, unknown> {

@@ -88,7 +88,7 @@ export function tileflowBuildings3DDesignOf(
     source: context.data.sourceId as unknown as string,
     layers: {
       building: context.data.schema.layers.building,
-      ...(context.data.schema.layers.poi ? {places: context.data.schema.layers.poi} : {}),
+      places: context.data.schema.layers.poiLabel,
     },
     color: color ?? context.colors.buildings.generic,
     lighting: style.lighting === 'style' ? 'style' : defaults.lighting,

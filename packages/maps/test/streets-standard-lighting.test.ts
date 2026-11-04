@@ -100,7 +100,7 @@ for (const [name, theme] of Object.entries(themes)) {
     if (buildingColor.result !== 'success') throw new Error('Invalid building color');
     for (const tone of ['commercial', 'active', 'residential', undefined])
       assert.deepEqual(
-        buildingColor.value.evaluate({zoom: 17}, {type: 3, properties: {building_tone: tone}}),
+        buildingColor.value.evaluate({zoom: 17}, {type: 3, properties: {tone}}),
         Color.parse(
           colors[
             tone === 'commercial' || tone === 'active'

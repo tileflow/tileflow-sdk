@@ -270,7 +270,7 @@ npx tileflow tileset status stores --team @acme --json
 ```
 
 Inspect without an account; publish your own data with Team data authority and attribution.
-Authorization renews automatically. Interrupted uploads resume; published versions become
+Account-backed authorization renews automatically. Interrupted uploads resume; published versions become
 current at stable URLs. Purge requires confirmation and may be blocked by retained deployments.
 
 Hashing reuses a 16 MiB buffer. Up to four parts stream concurrently with reusable buffers.

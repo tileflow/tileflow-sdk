@@ -92,6 +92,7 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
 
     val clock = AtomicLong(1_793_188_800_000) // 2026-10-28T12:00:00Z
     val creations = AtomicInteger()
+    val createdProfiles = CopyOnWriteArrayList<String>()
     val revalidations = AtomicInteger()
     val downloads = CopyOnWriteArrayList<Download>()
     /** What each delivered pack entry and public file holds, decoded, by address. */
@@ -104,6 +105,8 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
     private val grants = HashMap<String, Pair<Long, Int>>()
     private val packs = HashMap<String, Map<String, ByteArray>>()
     @Volatile var revalidationState = "current"
+    @Volatile var onRevalidation: (() -> Unit)? = null
+    @Volatile var onReservation: (() -> Unit)? = null
     @Volatile var online = true
     @Volatile var freezeAfter: Int? = null
     @Volatile var expireGrantAfter: Int? = null
@@ -196,14 +199,16 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
         if (request.url.encodedPath.endsWith("/revalidate")) {
             revalidations.incrementAndGet()
             val checked = date(clock.get())
+            val state = revalidationState
+            onRevalidation?.invoke()
             val body =
-                if (revalidationState == "not_updatable")
+                if (state == "not_updatable")
                     """{"state":"not_updatable","reason":"credential_revoked","checkedAt":"$checked"}"""
-                else
-                    """{"state":"$revalidationState","checkedAt":"$checked","intervalSeconds":86400}"""
+                else """{"state":"$state","checkedAt":"$checked","intervalSeconds":86400}"""
             return ResourcePayload(body.toByteArray(), 200, emptyMap())
         }
         val buffer = Buffer().also { request.body!!.writeTo(it) }
+        onReservation?.invoke()
         return ResourcePayload(
             created(OfflinePackRequest.fromJson(buffer.readByteArray())!!),
             201,
@@ -219,6 +224,7 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
     fun created(request: OfflinePackRequest): ByteArray =
         synchronized(lock) {
             creations.incrementAndGet()
+            createdProfiles += request.profile
             revalidationState = "current"
             created(request, clock.get())
         }
@@ -238,7 +244,9 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
             )
         }
         file("discovery", "$MAP_PATH/manifest.json")
-        file("profile", "$MAP_PATH/webview-v1/manifest.json")
+        val representation =
+            if (request.profile == OfflinePackProfile.NATIVE.wireName) "native" else "webview-v1"
+        file("profile", "$MAP_PATH/$representation/manifest.json")
 
         val list = JSONArray()
         val bodies = HashMap<String, ByteArray>()
@@ -269,7 +277,7 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
             val styles =
                 request.themes.map { theme ->
                     OfflinePackBuilder.Entry(
-                        "$MAP_PATH/webview-v1/v$deployment/$theme.json",
+                        "$MAP_PATH/$representation/v$deployment/$theme.json",
                         "application/json",
                         null,
                         """{"version":8,"theme":"$theme","deployment":$deployment}""".toByteArray(),

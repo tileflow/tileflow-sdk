@@ -1015,21 +1015,21 @@ final class OfflineStoreTests: XCTestCase {
 
   // MARK: Helpers
 
-  private var layout: OfflineLayout {
+  var layout: OfflineLayout {
     OfflineLayout(root: directory.appendingPathComponent("offline", isDirectory: true))
   }
 
-  private lazy var cache = ResourceCacheStore(
+  lazy var cache = ResourceCacheStore(
     ambientRoot: directory.appendingPathComponent("ambient", isDirectory: true),
     durableRoot: directory.appendingPathComponent("durable", isDirectory: true),
     maximumBytes: 64 * 1024 * 1024)
 
-  private func makeStore(
+  func makeStore(
     _ service: OfflineServiceStub, root: String = "offline", space: LockedValue<Int64?>? = nil,
     sleeps: LockedValue<[TimeInterval]>? = nil, concurrency: Int = 8,
     fetcher: (any OfflineResourceFetching)? = nil, index: OfflineServingIndex? = nil,
     available: (@Sendable () -> Int64?)? = nil, scheduler: OfflineSchedulerStub? = nil,
-    conditions: LockedValue<OfflineUpdateConditions>? = nil
+    conditions: LockedValue<OfflineUpdateConditions>? = nil, profile: OfflinePackProfile = .webView
   ) -> TileflowOfflineStore {
     let cache =
       root == "offline"
@@ -1052,7 +1052,7 @@ final class OfflineStoreTests: XCTestCase {
             now: { Date(timeIntervalSince1970: clock.withLock { $0 }) })
         },
         availableBytes: available ?? { space?.withLock { $0 } ?? nil }, index: index,
-        reserveBytes: 4096,
+        reserveBytes: 4096, profile: profile,
         concurrency: concurrency, now: { Date(timeIntervalSince1970: clock.withLock { $0 }) },
         sleep: { delay in
           sleeps?.withLock { $0.append(delay) }
@@ -1082,7 +1082,7 @@ final class OfflineStoreTests: XCTestCase {
       allowsExpensiveNetworkAccess: !unmeteredOnly)
   }
 
-  private func madrid(east: Double = -3.69) -> TileflowOfflineRegionLoadOptions {
+  func madrid(east: Double = -3.69) -> TileflowOfflineRegionLoadOptions {
     TileflowOfflineRegionLoadOptions(
       geometry: .boundingBox(
         TileflowBoundingBox(west: -3.71, south: 40.41, east: east, north: 40.425)),
@@ -1090,7 +1090,7 @@ final class OfflineStoreTests: XCTestCase {
       maxZoom: 17)
   }
 
-  private func waitFor(
+  func waitFor(
     _ store: TileflowOfflineStore, _ id: String, timeout: TimeInterval = 30,
     _ predicate: (TileflowOfflineRegion) -> Bool
   ) async throws -> TileflowOfflineRegion {
@@ -1135,6 +1135,12 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
     var unmeteredOnly = false
   }
 
+  enum RevalidationReply: Sendable { case unavailable, state(String) }
+  let revalidationReplies = LockedValue<[RevalidationReply]>([])
+  let beforeRevalidationReply = LockedValue<(@Sendable () async -> Void)?>(nil)
+  let refusesCreation = LockedValue(false)
+  let refusesRevalidation = LockedValue(false)
+  let creationAttempts = LockedValue<[String]>([])
   let clock = LockedValue<TimeInterval>(1_793_188_800)  // 2026-10-28T12:00:00Z
   private let lock = NSLock()
   private var state = State()
@@ -1153,6 +1159,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
     var grants: [String: (expires: TimeInterval, uses: Int)] = [:]
     var packs: [String: [String: Data]] = [:]
     var creations = 0
+    var profiles: [String] = []
     var revalidations = 0
     var revalidationState = "current"
     var downloads: [Download] = []
@@ -1173,6 +1180,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
   private func locked<T>(_ body: (inout State) -> T) -> T { lock.withLock { body(&state) } }
 
   var creations: Int { locked { $0.creations } }
+  var profiles: [String] { locked { $0.profiles } }
   var revalidations: Int { locked { $0.revalidations } }
   var downloads: [Download] { locked { $0.downloads } }
   /// What each delivered pack entry and public file holds, decoded, by address.
@@ -1301,18 +1309,30 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
     guard isOnline else { throw URLError(.notConnectedToInternet) }
     let path = request.url!.path
     if path.hasSuffix("/revalidate") {
-      return locked { state in
+      let scripted = revalidationReplies.withLock { $0.isEmpty ? nil : $0.removeFirst() }
+      if case .unavailable? = scripted { throw URLError(.timedOut) }
+      if refusesRevalidation.withLock({ $0 }) { throw URLError(.timedOut) }
+      let reply = locked { state in
+        let result = if case .state(let result)? = scripted { result } else { state.revalidationState }
         state.revalidations += 1
         let checked = Self.date(clock.withLock { $0 })
         let body =
-          state.revalidationState == "not_updatable"
+          result == "not_updatable"
           ? #"{"state":"not_updatable","reason":"credential_revoked","checkedAt":"\#(checked)"}"#
-          : #"{"state":"\#(state.revalidationState)","checkedAt":"\#(checked)","intervalSeconds":86400}"#
+          : #"{"state":"\#(result)","checkedAt":"\#(checked)","intervalSeconds":86400}"#
         return ResourcePayload(bytes: Data(body.utf8), status: 200, headers: [:])
       }
+      if let gate = beforeRevalidationReply.withLock({ $0 }) { await gate() }
+      return reply
     }
+    let plan = OfflinePackRequest(json: request.httpBody!)!
+    creationAttempts.withLock { $0.append(plan.profile) }
+    if refusesCreation.withLock({ $0 }) {
+      return ResourcePayload(bytes: Data(#"{"error":{"code":"access_denied"}}"#.utf8), status: 403, headers: [:])
+    }
+
     return ResourcePayload(
-      bytes: created(OfflinePackRequest(json: request.httpBody!)!), status: 201, headers: [:])
+      bytes: created(plan), status: 201, headers: [:])
   }
 
   func close() {}
@@ -1322,6 +1342,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
     let now = clock.withLock { $0 }
     return locked { state in
       state.creations += 1
+      state.profiles.append(request.profile)
       state.revalidationState = "current"
       return created(request, now: now, state: &state)
     }
@@ -1339,7 +1360,9 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
       ])
     }
     file("discovery", "\(Self.mapPath)/manifest.json")
-    file("profile", "\(Self.mapPath)/webview-v1/manifest.json")
+    let profilePath = request.profile == OfflinePackProfile.native.rawValue
+      ? "\(Self.origin)/maps/\(request.mapID)/native" : "\(Self.mapPath)/webview-v1"
+    file("profile", "\(profilePath)/manifest.json")
 
     var packs: [[String: Any]] = []
     var bodies: [String: Data] = [:]
@@ -1361,7 +1384,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
     if !state.documentsPublicOnly {
       file("landmark", "\(Self.origin)/landmarks/2026-10/notice.txt")
       var styles: [OfflinePackBuilder.Entry] = request.themes.map { theme in
-        let url = "\(Self.mapPath)/webview-v1/v\(state.deployment)/\(theme).json"
+        let url = "\(profilePath)/v\(state.deployment)/\(theme).json"
         return .init(
           name: url, contentType: "application/json", encoding: nil,
           body: Data(#"{"version":8,"theme":"\#(theme)","deployment":\#(state.deployment)}"#.utf8))

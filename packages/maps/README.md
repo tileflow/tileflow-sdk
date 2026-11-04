@@ -323,7 +323,7 @@ Streets offers three time-of-day families: `light` (displayed as Default), `fade
 `dark-faded`. Inspector shows these as separate Theme and Time of day controls. All twelve
 concrete theme names remain available for existing applications and captures. This catalog
 is inherited when extending Streets without overriding it.
-See the [time-of-day contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/README.md#style-with-themes-and-semantic-modules).
+See the [time-of-day contract](https://github.com/tileflow/tileflow-sdk/blob/main/packages/core/REFERENCE.md#style-with-themes-and-semantic-modules).
 
 Streets packages contrasted routes and compact trees. Climate artwork and its attribution are
 retained for future URL delivery, but the underlay is not included in compiled styles.

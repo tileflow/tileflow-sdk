@@ -9,9 +9,9 @@ from the presence of an npm package. Config files are trusted executable code.
 
 ## Start here
 
-- [SDK overview and package selection](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/README.md): Local setup, package boundaries, and release guidance.
+- [SDK overview and package selection](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/README.md): Local setup, package selection, and links to contribution guidelines.
 - [CLI](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/cli/README.md): Validate, preview, build, capture, inspect, and deploy.
-- [Core](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/core/README.md): Map definitions, semantic modules, themes, inheritance, and compilation.
+- [Core](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/core/README.md): Installation, a first map, and links to design guides and the versioned Core reference.
 - [Official maps](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/maps/README.md): Eight standalone maps, their assets, and customization boundaries.
 
 ## Browser UI
@@ -45,4 +45,5 @@ from the presence of an npm package. Config files are trusted executable code.
 
 ## Deeper reference
 
+- [Core contracts](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/core/REFERENCE.md): Inheritance, themes, compilation, prepared maps, browser resources, and icon contracts. Included in the Core package for version-matched reference.
 - [Generated language reference](https://raw.githubusercontent.com/tileflow/tileflow-sdk/main/packages/core/reference/modules-api-reference.json): Exact authoring grammar; prefer `tileflow language schema --json` for an installed release.

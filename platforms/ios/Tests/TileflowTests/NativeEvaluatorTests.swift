@@ -15,7 +15,7 @@ final class NativeEvaluatorTests: XCTestCase {
 
   func testColoursMixInOKLab() throws {
     let cases = try XCTUnwrap(fixture["colours"]?.array)
-    XCTAssertEqual(cases.count, 10)
+    XCTAssertEqual(cases.count, 12)
     for item in cases {
       let mixed = NativeEvaluators.mixColours(
         try XCTUnwrap(item["from"]?.string), try XCTUnwrap(item["to"]?.string),

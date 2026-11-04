@@ -97,10 +97,16 @@ enum NativeEvaluators {
 
   // MARK: Colours
 
-  /// Two CSS colours mixed in OKLab, `t` of the way from the first; nil unless both parse.
+  /// Two CSS colours mixed in premultiplied OKLab, as in Core.
   static func mixColours(_ from: String, _ to: String, _ t: Double) -> String? {
     guard let a = oklab(from), let b = oklab(to) else { return nil }
-    return colour(fromOklab: zip(a, b).map { $0 + ($1 - $0) * t })
+    let alpha = a[3] + (b[3] - a[3]) * t
+    guard alpha > 0 else { return "rgba(0, 0, 0, 0)" }
+    let channels = (0..<3).map { i in
+      let first = a[i] * a[3]
+      return (first + (b[i] * b[3] - first) * t) / alpha
+    }
+    return colour(fromOklab: channels + [alpha])
   }
 
   /// A hex, `rgb(a)` or `hsl(a)` colour as OKLab lightness, a, b and alpha.

@@ -104,7 +104,15 @@ internal object NativeEvaluators {
     fun mixColours(from: String, to: String, t: Double): String? {
         val a = oklab(from) ?: return null
         val b = oklab(to) ?: return null
-        return colourFromOklab(DoubleArray(4) { a[it] + (b[it] - a[it]) * t })
+        val alpha = a[3] + (b[3] - a[3]) * t
+        if (alpha <= 0) return "rgba(0, 0, 0, 0)"
+        val channels = DoubleArray(4)
+        for (i in 0..2) {
+            val first = a[i] * a[3]
+            channels[i] = (first + (b[i] * b[3] - first) * t) / alpha
+        }
+        channels[3] = alpha
+        return colourFromOklab(channels)
     }
 
     /** A hex, `rgb(a)` or `hsl(a)` colour as OKLab lightness, a, b and alpha. */

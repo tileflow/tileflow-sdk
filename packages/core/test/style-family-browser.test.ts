@@ -3,6 +3,7 @@ import test from 'node:test';
 import {createTileflowThemeController} from '../src/browser';
 import {createTileflowStyleFamily, materializeTileflowStyleFamily} from '../src/style-family';
 import {createTileflowFamilyAnimator} from '../src/style-family-browser';
+import {prepareTileflowStyleFamilyForRendering} from '../src/style-family-render';
 import type {MapLibreStyle} from '../src/types';
 
 const styles = Object.fromEntries(
@@ -107,6 +108,63 @@ test('a new request starts from the appearance on screen and cancels outstanding
   finish(now);
   assert.equal((await second).status, 'applied');
   assert.equal(callbacks.size, 0);
+  animator.dispose();
+});
+
+test('prepared landcover fades retain their colour when interrupted and reversed', async () => {
+  const make = (crop: string): MapLibreStyle => ({
+    version: 8,
+    sources: {world: {type: 'vector', url: 'https://fixtures.tileflow.test/world.json'}},
+    layers: [
+      {
+        id: 'landcover',
+        type: 'fill',
+        source: 'world',
+        'source-layer': 'landcover',
+        paint: {'fill-color': ['match', ['get', 'class'], 'crop', crop, '#aaddaa']},
+      },
+    ],
+  });
+  const transparent = 'rgba(0, 0, 0, 0)';
+  const family = prepareTileflowStyleFamilyForRendering(
+    createTileflowStyleFamily({day: make(transparent), dawn: make('#C9F2D0')}),
+  );
+  const crop = materializeTileflowStyleFamily(family, 'day').layers.find(
+    (layer) => (layer.paint as Record<string, unknown>)['fill-color'] === transparent,
+  )!;
+  assert.ok(crop);
+  let now = 0;
+  let frame: (time: number) => void = () => assert.fail('no pending animation');
+  const paints = new Map<string, unknown>();
+  const animator = createTileflowFamilyAnimator({
+    family,
+    initialTheme: 'day',
+    now: () => now,
+    requestFrame(callback) {
+      frame = callback;
+      return 1;
+    },
+    cancelFrame() {},
+    writePaint(id, property, value) {
+      if (property === 'fill-color') paints.set(id, value);
+    },
+    onFrame() {},
+  });
+  const forward = animator.setTheme('dawn', 100);
+  now = 50;
+  frame(now);
+  assert.equal(paints.get(String(crop.id)), 'rgba(201, 242, 208, 0.5)');
+  const reverse = animator.setTheme('day', 100);
+  assert.equal((await forward).status, 'superseded');
+  now = 100;
+  frame(now);
+  assert.equal(paints.get(String(crop.id)), 'rgba(201, 242, 208, 0.25)');
+  now = 150;
+  frame(now);
+  assert.equal((await reverse).status, 'applied');
+  assert.equal(paints.get(String(crop.id)), transparent);
+  assert.equal((await animator.setBlend(['day', 'dawn'], 0.5)).status, 'applied');
+  assert.equal(paints.get(String(crop.id)), 'rgba(201, 242, 208, 0.5)');
   animator.dispose();
 });
 

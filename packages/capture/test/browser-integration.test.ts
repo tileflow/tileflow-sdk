@@ -161,7 +161,8 @@ test(
 
 test(
   'renders validated compiler-generated roads twice against loopback vector fixtures',
-  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 30_000},
+  // Allow compilation plus two captures, each with its own 30-second deadline.
+  {skip: process.env.TILEFLOW_RUN_BROWSER_TESTS !== '1', timeout: 90_000},
   async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'tileflow-generated-browser-'));
     await linkWorkspacePackages(cwd);

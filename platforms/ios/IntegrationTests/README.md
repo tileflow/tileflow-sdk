@@ -22,6 +22,9 @@ with `TILEFLOW_FIXTURE_PORT=<port>` and pass the same value to the tests as
 same fixtures as SwiftPM and supplies its own `Bundle.module` accessor; the SDK and its embedded
 resources still build through SwiftPM.
 
+Bridge and transport tests run their WebKit views detached. On iOS 17 and later,
+`inactiveSchedulingPolicy = .none` keeps those views processing JavaScript and requests.
+
 CI runs the suite on the standard macOS 26 runner with Xcode 26.6, on a pinned iPhone 17 simulator
 with iOS 26.5. It exercises iOS WebKit, the `tileflow:` scheme transport, sessions, resource policy,
 offline serving and the maps MapLibre Native draws with Metal, which the hosted simulator renders.

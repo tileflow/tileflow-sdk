@@ -85,21 +85,19 @@ final class ResourceWebKitTests: XCTestCase {
     }
     let configuration = WKWebViewConfiguration()
     configuration.websiteDataStore = .nonPersistent()
+    // Transport checks need JavaScript and resource loading, not an onscreen compositor.
+    if #available(iOS 17.0, *) {
+      configuration.preferences.inactiveSchedulingPolicy = .none
+    }
     configuration.setURLSchemeHandler(handler, forURLScheme: ResourceURL.scheme)
     configuration.userContentController.add(receiver, name: "probe")
     let webView = WKWebView(
       frame: CGRect(x: 0, y: 0, width: 320, height: 480), configuration: configuration)
-    let window = UIWindow(frame: webView.frame)
-    let controller = UIViewController()
-    window.rootViewController = controller
-    controller.view.addSubview(webView)
-    window.makeKeyAndVisible()
     webView.load(URLRequest(url: ResourceURL.runtimeURL))
     await fulfillment(of: [done], timeout: 30)
     handler.retire()
     webView.stopLoading()
     configuration.userContentController.removeScriptMessageHandler(forName: "probe")
-    window.isHidden = true
   }
 }
 

@@ -24,7 +24,7 @@ class NativeEvaluatorTest {
     @Test
     fun coloursMixInOkLab() {
         val cases = objects("colours")
-        assertEquals(10, cases.size)
+        assertEquals(12, cases.size)
         for (item in cases) {
             val mixed =
                 NativeEvaluators.mixColours(

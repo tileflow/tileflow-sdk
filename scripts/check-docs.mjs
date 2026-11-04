@@ -95,6 +95,8 @@ async function documents() {
   for (const entry of publicPackageCatalog) {
     const directory = join(root, 'packages', entry.directory);
     result.push({path: join(directory, 'README.md'), ...entry, readme: true});
+    const reference = join(directory, 'REFERENCE.md');
+    if (existsSync(reference)) result.push({path: reference, ...entry});
   }
   return result;
 }
@@ -108,6 +110,12 @@ async function checkPackaging(entry) {
   );
   const packed = new Set(JSON.parse(output)[0].files.map((file) => file.path));
   assert.ok(packed.has('README.md'), `${entry.name}: README.md is missing from the pack list`);
+  if (existsSync(join(directory, 'REFERENCE.md'))) {
+    assert.ok(
+      packed.has('REFERENCE.md'),
+      `${entry.name}: REFERENCE.md is missing from the pack list`,
+    );
+  }
   assertPublicPackageFiles(packed, entry.name);
 }
 

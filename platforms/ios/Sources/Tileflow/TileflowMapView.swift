@@ -72,6 +72,9 @@ public final class TileflowMapView: UIView {
   var scene = SceneState()
   /// The application's runtime style, given again to each new renderer.
   var runtimeStyle = RuntimeStyle()
+  let styleEdits = StyleEditQueue()
+  var styleRestored = false
+  var styleEngine: (any MapEngine)? { styleRestored ? readyEngine : nil }
   /// The application images the scene holds.
   var images: [TileflowMapImage] = []
   /// Calls waiting for an animation of the current renderer to end.
@@ -745,6 +748,7 @@ public final class TileflowMapView: UIView {
   /// Pending calls fail with `cancelled` when a renderer is replaced, `disposed` when destroyed.
   private func retireGeneration(_ error: TileflowMapError = .cancelled) {
     initialized = false
+    styleRestored = false
     rendererInsets = nil
     insetsUpdate?.cancel()
     insetsUpdate = nil

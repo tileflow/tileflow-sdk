@@ -1,6 +1,41 @@
 import Foundation
 import UIKit
 
+/// Only one edit may validate, change and roll back the view's retained style at a time.
+@MainActor
+final class StyleEditQueue {
+  private var held = false
+  private var waiting: [(id: UUID, call: CheckedContinuation<Void, any Error>)] = []
+
+  func acquire() async throws {
+    guard !Task.isCancelled else { throw TileflowMapError.cancelled }
+    if !held {
+      held = true
+      return
+    }
+    let id = UUID()
+    try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { (call: CheckedContinuation<Void, any Error>) in
+        waiting.append((id, call))
+      }
+    } onCancel: {
+      Task { @MainActor in
+        if let index = self.waiting.firstIndex(where: { $0.id == id }) {
+          self.waiting.remove(at: index).call.resume(throwing: TileflowMapError.cancelled)
+        }
+      }
+    }
+    if Task.isCancelled {
+      release()
+      throw TileflowMapError.cancelled
+    }
+  }
+
+  func release() {
+    if waiting.isEmpty { held = false } else { waiting.removeFirst().call.resume() }
+  }
+}
+
 /// The application's runtime style the view keeps, so the renderer restores it after a style
 /// change and a new renderer receives it again: sources with their data and feature updates,
 /// layers in order, and feature state.
@@ -149,9 +184,12 @@ extension TileflowMapView {
   ]
 
   private func addSource(_ record: RuntimeStyle.Source) async throws {
+    try await styleEdits.acquire()
+    defer { styleEdits.release() }
+
     try Self.validateIdentifier(record.id)
     guard !sourceExists(record.id) else { throw TileflowMapError.invalidRequest }
-    if readyEngine == nil { try engineKind.validateQueued(record) }
+    if styleEngine == nil { try engineKind.validateQueued(record) }
     try await changeStyle({ $0.sources.append(record) }) { engine in
       try await self.sendAddSource(record, through: engine)
     }
@@ -159,6 +197,9 @@ extension TileflowMapView {
 
   /// Removes a source no application layer draws.
   public func removeSource(_ id: String) async throws {
+    try await styleEdits.acquire()
+    defer { styleEdits.release() }
+
     guard runtimeStyle.sources.contains(where: { $0.id == id }) else {
       throw TileflowMapError(.invalidRequest, reason: .unknownSource)
     }
@@ -180,6 +221,9 @@ extension TileflowMapView {
 
   /// Replaces a GeoJSON source's data; feature state stays with feature identifiers.
   public func setGeoJSONSourceData(_ sourceId: String, data: TileflowGeoJSONData) async throws {
+    try await styleEdits.acquire()
+    defer { styleEdits.release() }
+
     let index = try geoJSONSource(sourceId)
     let (base, _) = try Self.geoJSONBase(data)
     try await changeStyle({ style in
@@ -218,6 +262,9 @@ extension TileflowMapView {
   private func updateFeatures(_ sourceId: String, add: [TileflowFeature], remove: [String])
     async throws
   {
+    try await styleEdits.acquire()
+    defer { styleEdits.release() }
+
     let index = try geoJSONSource(sourceId)
     if case .url = runtimeStyle.sources[index].geoJSON?.base { throw TileflowMapError.invalidRequest }
     guard !add.isEmpty || !remove.isEmpty else { return }
@@ -292,6 +339,9 @@ extension TileflowMapView {
   )
     async throws
   {
+    try await styleEdits.acquire()
+    defer { styleEdits.release() }
+
     try Self.validateIdentifier(id)
     guard !layerExists(id), runtimeStyle.layers.count < 1024 else {
       throw TileflowMapError.invalidRequest
@@ -302,7 +352,7 @@ extension TileflowMapView {
     var record = RuntimeStyle.Layer(id: id, json: json, slot: slot)
     let at = try insertionIndex(for: position, slot: &record.slot)
     let fixed = record
-    if readyEngine == nil { try engineKind.validateQueued(fixed) }
+    if styleEngine == nil { try engineKind.validateQueued(fixed) }
     try await changeStyle({ $0.layers.insert(fixed, at: at) }) { engine in
       var payload: [String: JSONValue] = ["layer": json]
       if let slot = fixed.slot, position == .default { payload["slot"] = .string(slot.rawValue) }
@@ -322,13 +372,16 @@ extension TileflowMapView {
   }
 
   private func updateLayer(_ layer: RuntimeStyle.Layer) async throws {
+    try await styleEdits.acquire()
+    defer { styleEdits.release() }
+
     guard let index = runtimeStyle.layers.firstIndex(where: { $0.id == layer.id }) else {
       throw TileflowMapError(.invalidRequest, reason: .unknownLayer)
     }
     if let source = layer.json["source"]?.string, !sourceExists(source) {
       throw TileflowMapError(.invalidRequest, reason: .unknownSource)
     }
-    if readyEngine == nil { try engineKind.validateQueued(layer) }
+    if styleEngine == nil { try engineKind.validateQueued(layer) }
     try await changeStyle({ $0.layers[index] = layer }) { engine in
       var payload: [String: JSONValue] = ["layer": layer.json]
       if let slot = layer.slot { payload["slot"] = .string(slot.rawValue) }
@@ -339,6 +392,9 @@ extension TileflowMapView {
   /// Moves a layer relative to the application's other layers; ``TileflowLayerPosition/default``
   /// puts it on top of its slot.
   public func moveLayer(_ id: String, position: TileflowLayerPosition) async throws {
+    try await styleEdits.acquire()
+    defer { styleEdits.release() }
+
     guard let index = runtimeStyle.layers.firstIndex(where: { $0.id == id }) else {
       throw TileflowMapError(.invalidRequest, reason: .unknownLayer)
     }
@@ -364,6 +420,9 @@ extension TileflowMapView {
   }
 
   public func removeLayer(_ id: String) async throws {
+    try await styleEdits.acquire()
+    defer { styleEdits.release() }
+
     guard runtimeStyle.layers.contains(where: { $0.id == id }) else {
       throw TileflowMapError(.invalidRequest, reason: .unknownLayer)
     }
@@ -385,6 +444,9 @@ extension TileflowMapView {
     sourceId: String, sourceLayer: String? = nil, featureId: String,
     state: [String: TileflowStyleValue]
   ) async throws {
+    try await styleEdits.acquire()
+    defer { styleEdits.release() }
+
     guard sourceExists(sourceId) else {
       throw TileflowMapError(.invalidRequest, reason: .unknownSource)
     }
@@ -419,6 +481,9 @@ extension TileflowMapView {
   public func removeFeatureState(
     sourceId: String, sourceLayer: String? = nil, featureId: String? = nil, key: String? = nil
   ) async throws {
+    try await styleEdits.acquire()
+    defer { styleEdits.release() }
+
     guard sourceExists(sourceId) else {
       throw TileflowMapError(.invalidRequest, reason: .unknownSource)
     }
@@ -719,11 +784,13 @@ extension TileflowMapView {
     guard !isDestroyed else { throw TileflowMapError.disposed }
     let previous = runtimeStyle
     change(&runtimeStyle)
-    guard let engine = readyEngine else { return }
+    guard let engine = styleEngine else { return }
     do {
       try await send(engine)
-    } catch let error as TileflowMapError where error == .invalidRequest {
-      runtimeStyle = previous
+    } catch {
+      if readyEngine === engine || (error as? TileflowMapError)?.code == .invalidRequest {
+        runtimeStyle = previous
+      }
       throw error
     }
   }
@@ -763,6 +830,12 @@ extension TileflowMapView {
   /// Gives a new renderer the application's runtime style: sources and their updates, layers in
   /// order, then feature state.
   func replayStyle(through engine: any MapEngine) async throws {
+    try await styleEdits.acquire()
+    defer {
+      if readyEngine === engine { styleRestored = true }
+      styleEdits.release()
+    }
+
     let style = runtimeStyle
     for source in style.sources {
       try await sendAddSource(source, through: engine)

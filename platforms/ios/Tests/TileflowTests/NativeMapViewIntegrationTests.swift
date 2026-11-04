@@ -316,6 +316,50 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     XCTAssertTrue(final.isEmpty)
   }
 
+  func testConcurrentSourceRejectionKeepsTheSuccessfulSource() async throws {
+    try await requireNativeFixture()
+    let events = NativeMapEvents()
+    let view = TileflowMapView(source: citySource)
+    view.engineKind = .native
+    let window = mount(view, events: events)
+    defer {
+      view.destroy()
+      window.isHidden = true
+    }
+    try await events.waitForLoads(1)
+    let initial = try XCTUnwrap(view.engine as? NativeMapEngine)
+    let baseline = initial.received[.addSource, default: 0]
+    let rejected = Task { @MainActor in
+      try await view.addSource(
+        id: "rejected", properties: [
+          "type": "vector", "url": FixtureServer.origin + "/runtime-style/invalid-tiles.json",
+        ])
+    }
+    try await waitUntil { initial.received[.addSource, default: 0] > baseline }
+    let point: [String: Any] = ["type": "Point", "coordinates": [-3.70, 40.42]]
+    try await view.addSource(id: "kept", properties: ["type": "geojson", "data": point])
+    do {
+      try await rejected.value
+      XCTFail("Expected invalid TileJSON to fail")
+    } catch let failure as TileflowMapError {
+      XCTAssertEqual(failure.code, .resourceFailed)
+    }
+
+    func check(_ engine: NativeMapEngine) {
+      XCTAssertFalse(view.sourceExists("rejected"))
+      XCTAssertTrue(view.sourceExists("kept"))
+      XCTAssertNil(engine.mapView?.style?.source(withIdentifier: "__tileflow_source_rejected"))
+      XCTAssertNotNil(engine.mapView?.style?.source(withIdentifier: "__tileflow_source_kept"))
+    }
+    check(initial)
+    try view.reload()
+    // A rejected source left in the registry fails replay before the map becomes ready.
+    try await waitUntil(seconds: 5) { events.loads == 2 || !events.failures.isEmpty }
+    XCTAssertTrue(events.failures.isEmpty, "\(events.failures)")
+    XCTAssertEqual(events.loads, 2)
+    check(try XCTUnwrap(view.engine as? NativeMapEngine))
+  }
+
   func testOnlineMapLoadsChangesThemeAndRetires() async throws {
     try await requireNativeFixture()
     let events = NativeMapEvents()

@@ -303,6 +303,35 @@ test('idempotent control requests retry bounded transient HTTP failures', async 
   assert.deepEqual(delays, [250]);
 });
 
+test('failed Team renewal sends no stale credential or private failure text', async () => {
+  let renewals = 0;
+  let requests = 0;
+  const transport = createHostedTeamTilesetUploadTransport({
+    apiOrigin: 'https://api.example.test',
+    credential: 'tf_cap_stale',
+    getCredential: async () => {
+      renewals += 1;
+      throw new Error('private-session-and-provider-response');
+    },
+    fetch: (async () => {
+      requests += 1;
+      throw new Error('Stale authority must not be sent');
+    }) as typeof fetch,
+    tilesetId,
+  });
+
+  await assert.rejects(
+    transport.status('tsu_opaque-upload-session'),
+    (error: unknown) =>
+      error instanceof TeamTilesetUploadError &&
+      error.code === 'TF_TILESET_UPLOAD_UNAVAILABLE' &&
+      error.message.includes('Run tileflow login') &&
+      !error.message.includes('private-session'),
+  );
+  assert.equal(renewals, 1);
+  assert.equal(requests, 0);
+});
+
 test('administratively disabled uploads stop without retrying or exposing server text', async () => {
   const file = generatedFile(8);
   const upload = await prepareTeamTilesetUpload(file);

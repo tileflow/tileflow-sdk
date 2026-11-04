@@ -4,7 +4,6 @@ import {z} from 'zod';
 import {serializeCanonicalJson} from '@tileflow/core';
 import {inspectTileflowPmtiles} from '@tileflow/dev/tilesets';
 import type {AuthConfig} from './account-session';
-import {requestHostedJson} from './hosted-client';
 import {hostedApiKeyOption, hostedApiUrlOption} from './hosted-options';
 import {
   authorizedTeamRequest,
@@ -127,7 +126,7 @@ export function registerTilesetCommands(
           const authority = await resolveTeamAuthority(options, ['tilesets:write'], dependencies);
           if (!authority) return;
 
-          const registration = await requestHostedJson(authority.apiOrigin, '/v1/tilesets', {
+          const registration = await authorizedTeamRequest(authority, '/v1/tilesets', 'POST', {
             body: JSON.stringify({
               ...(options.attribution ? {attribution: options.attribution} : {}),
               format: 'pmtiles',
@@ -135,10 +134,8 @@ export function registerTilesetCommands(
               slug: options.id,
             }),
             headers: {
-              Authorization: `Bearer ${authority.credential}`,
               'Content-Type': 'application/json',
             },
-            method: 'POST',
           });
           const registered = asRecord(registration.body);
           const resourceId = String(registered.tilesetId ?? '');
@@ -173,6 +170,7 @@ export function registerTilesetCommands(
             transport: createHostedTeamTilesetUploadTransport({
               apiOrigin: authority.apiOrigin,
               credential: authority.credential,
+              getCredential: authority.getCredential,
               tilesetId: resourceId,
             }),
             upload: prepared,
@@ -289,15 +287,14 @@ export function registerTilesetCommands(
         }
         const authority = await resolveTeamAuthority(options, ['tilesets:write'], dependencies);
         if (!authority) return;
-        const response = await requestHostedJson(
-          authority.apiOrigin,
+        const response = await authorizedTeamRequest(
+          authority,
           `/v1/tilesets/${encodeURIComponent(id)}`,
+          'DELETE',
           {
             headers: {
-              Authorization: `Bearer ${authority.credential}`,
               'X-Tileflow-Confirm-Tileset-Purge': id,
             },
-            method: 'DELETE',
           },
         );
         if (!response.ok) {

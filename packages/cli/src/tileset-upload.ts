@@ -393,6 +393,7 @@ export async function publishPreparedTeamTilesetUpload(input: {
 export function createHostedTeamTilesetUploadTransport(input: {
   apiOrigin: string;
   credential: string;
+  getCredential?: () => Promise<string>;
   fetch?: typeof globalThis.fetch;
   sleep?: (milliseconds: number) => Promise<void>;
   tilesetId: string;
@@ -400,6 +401,16 @@ export function createHostedTeamTilesetUploadTransport(input: {
   const basePath = `/v1/tilesets/${encodeURIComponent(input.tilesetId)}/uploads`;
   const control = async (path: string, init: RequestInit) => {
     for (let attempt = 1; attempt <= maximumControlAttempts; attempt += 1) {
+      let credential: string;
+      try {
+        credential = (await input.getCredential?.()) ?? input.credential;
+      } catch {
+        throw new TeamTilesetUploadError(
+          'TF_TILESET_UPLOAD_UNAVAILABLE',
+          'Team authorization could not be renewed. Run tileflow login and retry the upload.',
+        );
+      }
+
       let response: HostedJsonResponse | undefined;
       try {
         response = await requestHostedJson(
@@ -408,7 +419,7 @@ export function createHostedTeamTilesetUploadTransport(input: {
           {
             ...init,
             headers: {
-              Authorization: `Bearer ${input.credential}`,
+              Authorization: `Bearer ${credential}`,
               ...(init.body ? {'Content-Type': 'application/json'} : {}),
               ...init.headers,
             },

@@ -273,6 +273,7 @@ Use your own file, Team selector, and attribution. Inspection is account-free. P
 and uploads a managed dataset using Team data authority, not a map-only deploy key. Interrupted
 uploads are resumable; a completed version becomes current at stable delivery URLs. Purge is
 explicit, requires confirmation, and can be blocked by retained deployment dependencies.
+Account-backed publication renews short-lived Team authorization during long transfers and validation.
 
 Administratively disabled uploads return `TF_TILESET_UPLOAD_DISABLED` without retrying.
 Temporary service failures retain bounded retries.

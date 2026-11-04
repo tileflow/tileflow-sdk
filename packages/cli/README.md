@@ -269,10 +269,11 @@ npx tileflow tileset publish ./data/stores.pmtiles --id stores --team @acme --at
 npx tileflow tileset status stores --team @acme --json
 ```
 
-Use your own file, Team and attribution. Inspection needs no account. Publication requires Team data
-authority and renews account-backed authorization during long transfers and validation. Interrupted
-uploads resume; published versions become current at stable delivery URLs. Purge requires confirmation
-and can be blocked by retained deployment dependencies.
+Inspect without an account; publish your own data with Team data authority and attribution.
+Account-backed authorization renews automatically. Interrupted uploads resume; published versions become
+current at stable URLs. Purge requires confirmation and may be blocked by retained deployments.
+
+Hashing reuses a 16 MiB buffer. Up to four parts stream concurrently with reusable buffers.
 
 Administratively disabled uploads return `TF_TILESET_UPLOAD_DISABLED` without retrying.
 Temporary service failures retain bounded retries.

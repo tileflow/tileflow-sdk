@@ -1,10 +1,17 @@
 import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {mkdtemp, rm, writeFile} from 'node:fs/promises';
+import {createServer} from 'node:http';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import test from 'node:test';
 import {
   createHostedTeamTilesetUploadTransport,
   createTeamTilesetPartLayout,
   createTeamTilesetUploadIdempotencyKey,
+  inspectNodeTeamTilesetArchive,
   maximumTeamTilesetBytes,
+  openNodeTeamTilesetArchive,
   type PositionedUploadFile,
   type PreparedTeamTilesetUpload,
   prepareTeamTilesetUpload,
@@ -18,6 +25,38 @@ import {
 } from '../src/tileset-upload';
 
 const tilesetId = 'tls_opaque_identity_1234';
+
+test('Node positioned reads preserve offsets, concurrent ownership and truncated-file errors', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-positioned-upload-'));
+  const path = join(directory, 'archive.bin');
+  const source = Buffer.from(Array.from({length: 129}, (_, index) => index));
+  await writeFile(path, source);
+  const file = await openNodeTeamTilesetArchive(path, await inspectNodeTeamTilesetArchive(path));
+  t.after(async () => {
+    await file.close();
+    await rm(directory, {recursive: true, force: true});
+  });
+  assert.ok(file.readInto);
+  const backing = Buffer.alloc(16, 255);
+  assert.equal(await file.readInto(7, backing.subarray(3, 13)), 10);
+  assert.deepEqual(backing.subarray(0, 3), Buffer.alloc(3, 255));
+  assert.deepEqual(backing.subarray(3, 13), source.subarray(7, 17));
+  assert.deepEqual(backing.subarray(13), Buffer.alloc(3, 255));
+
+  const targets = Array.from({length: 4}, () => Buffer.alloc(8));
+  await Promise.all(targets.map((target, index) => file.readInto!(index * 32 + 1, target)));
+  targets.forEach((target, index) =>
+    assert.deepEqual(target, source.subarray(index * 32 + 1, index * 32 + 9)),
+  );
+  const [first, second] = await Promise.all([file.read(10, 9), file.read(100, 5)]);
+  first.fill(255);
+  assert.deepEqual(second, source.subarray(100, 105));
+  await assert.rejects(
+    file.readInto(125, Buffer.alloc(5)),
+    (error: unknown) =>
+      error instanceof TeamTilesetUploadError && error.code === 'TF_TILESET_LOCAL_FILE_CHANGED',
+  );
+});
 
 test('fixed part layout reaches the exact 4,000,000,000-byte boundary without allocating it', () => {
   const layout = createTeamTilesetPartLayout(maximumTeamTilesetBytes);
@@ -61,6 +100,152 @@ test('manifest hashing is deterministic and binds ordered MD5 and SHA-256 part e
   );
 });
 
+test('manifest hashing reuses one positioned-read buffer without changing part evidence', async () => {
+  const size = teamTilesetPartSize * 2 + 7;
+  const expected = await prepareTeamTilesetUpload(generatedFile(size));
+  const buffers = new Set<ArrayBufferLike>();
+  const lengths: number[] = [];
+  let allocatingReads = 0;
+  const file = {
+    ...generatedFile(size),
+    async read(position: number, count: number) {
+      allocatingReads += 1;
+      return new Uint8Array(count).fill(Math.floor(position / teamTilesetPartSize) % 251);
+    },
+    async readInto(position: number, target: Uint8Array) {
+      buffers.add(target.buffer);
+      lengths.push(target.byteLength);
+      target.fill(Math.floor(position / teamTilesetPartSize) % 251);
+      return target.byteLength;
+    },
+  };
+
+  const actual = await prepareTeamTilesetUpload(file);
+
+  assert.deepEqual(actual, expected);
+  assert.equal(allocatingReads, 0);
+  assert.equal(buffers.size, 1);
+  assert.deepEqual(lengths, [teamTilesetPartSize, teamTilesetPartSize, 7]);
+});
+
+test('HTTP part bodies avoid full-buffer copies and retain exact bytes and integrity headers', async () => {
+  await new Request('https://example.test', {method: 'PUT', body: 'warmup'}).body?.cancel();
+  const buffers = Array.from({length: 4}, (_, index) => Buffer.alloc(teamTilesetPartSize, index));
+  const requests: Request[] = [];
+  let allReady!: () => void;
+  let release!: () => void;
+  const ready = new Promise<void>((resolve) => {
+    allReady = resolve;
+  });
+  const barrier = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const transport = createHostedTeamTilesetUploadTransport({
+    apiOrigin: 'https://api.example.test',
+    credential: `tf_cap_${'a'.repeat(64)}`,
+    tilesetId,
+    fetch: (async (url, init) => {
+      const request = new Request(url, init);
+      const index = requests.push(request) - 1;
+      if (requests.length === buffers.length) allReady();
+      await barrier;
+      const bytes = new Uint8Array(await request.arrayBuffer());
+      assert.deepEqual(bytes, new Uint8Array(buffers[index]!));
+      assert.equal(request.headers.get('content-length'), String(teamTilesetPartSize));
+      const md5 = createHash('md5').update(bytes).digest('base64');
+      assert.equal(request.headers.get('content-md5'), md5);
+      return new Response(null, {
+        status: 200,
+        headers: {etag: Buffer.from(md5, 'base64').toString('hex')},
+      });
+    }) as typeof fetch,
+  });
+  const before = process.memoryUsage().arrayBuffers;
+  const pending = buffers.map((bytes, index) =>
+    transport.putPart(
+      {
+        expiresAt: new Date(Date.now() + 900_000).toISOString(),
+        headers: {
+          'Content-Length': String(bytes.byteLength),
+          'Content-MD5': createHash('md5').update(bytes).digest('base64'),
+        },
+        method: 'PUT',
+        partNumber: index + 1,
+        url: `https://private.example.test/part-${index}`,
+      },
+      bytes,
+    ),
+  );
+
+  await ready;
+  const additionalBytes = process.memoryUsage().arrayBuffers - before;
+  release();
+  await Promise.all(pending);
+
+  assert.ok(
+    additionalBytes < teamTilesetPartSize,
+    `Request preparation copied ${additionalBytes} bytes`,
+  );
+});
+
+test('real HTTP retries send complete bodies and retire each request signal', async (t) => {
+  const bytes = Buffer.alloc(128 * 1024 + 9, 7);
+  const md5 = createHash('md5').update(bytes).digest('base64');
+  const seen: Array<{length: number; md5: string; chunked: string | undefined}> = [];
+  const server = createServer(async (request, response) => {
+    const digest = createHash('md5');
+    let length = 0;
+    for await (const chunk of request) {
+      digest.update(chunk);
+      length += chunk.length;
+    }
+    seen.push({
+      length,
+      md5: digest.digest('base64'),
+      chunked: request.headers['transfer-encoding'],
+    });
+    response.writeHead(seen.length === 1 ? 503 : 200, {
+      etag: Buffer.from(md5, 'base64').toString('hex'),
+    });
+    response.end();
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        server.closeAllConnections();
+        server.close((error) => (error ? reject(error) : resolve()));
+      }),
+  );
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const signals: AbortSignal[] = [];
+  const transport = createHostedTeamTilesetUploadTransport({
+    apiOrigin: 'https://api.example.test',
+    credential: `tf_cap_${'a'.repeat(64)}`,
+    tilesetId,
+    fetch: (async (url, init) => {
+      signals.push(init!.signal!);
+      return globalThis.fetch(url, init);
+    }) as typeof fetch,
+  });
+  const authorization: TeamTilesetPartAuthorization = {
+    expiresAt: new Date(Date.now() + 900_000).toISOString(),
+    headers: {'Content-Length': String(bytes.length), 'Content-MD5': md5},
+    method: 'PUT',
+    partNumber: 1,
+    url: `http://127.0.0.1:${address.port}/part`,
+  };
+
+  assert.equal((await transport.putPart(authorization, bytes)).status, 503);
+  assert.equal((await transport.putPart(authorization, bytes)).status, 200);
+  assert.deepEqual(
+    seen,
+    Array.from({length: 2}, () => ({length: bytes.length, md5, chunked: undefined})),
+  );
+  assert.ok(signals.every((signal) => signal.aborted));
+});
+
 test('direct publication buffers no more than four fixed parts concurrently', async () => {
   const file = generatedFile(teamTilesetPartSize * 4 + 1);
   const upload = await prepareTeamTilesetUpload(file);
@@ -86,6 +271,48 @@ test('direct publication buffers no more than four fixed parts concurrently', as
 
   assert.equal(result.state, 'published');
   assert.equal(maximumActiveBytes, teamTilesetPartSize * 4);
+});
+
+test('positioned transfer buffers are reused only after their four owners finish', async () => {
+  const size = teamTilesetPartSize * 8 + 7;
+  const buffers = new Set<ArrayBufferLike>();
+  const active = new Set<ArrayBufferLike>();
+  let allocatingReads = 0;
+  let maximumActive = 0;
+  const file = {
+    ...generatedFile(size),
+    async read(position: number, count: number) {
+      allocatingReads += 1;
+      return new Uint8Array(count).fill(Math.floor(position / teamTilesetPartSize) % 251);
+    },
+    async readInto(position: number, target: Uint8Array) {
+      buffers.add(target.buffer);
+      target.fill(Math.floor(position / teamTilesetPartSize) % 251);
+      return target.byteLength;
+    },
+  };
+  const upload = await prepareTeamTilesetUpload(file);
+  buffers.clear();
+  const transport = transportFor(upload, {
+    async putPart(authorization, bytes) {
+      assert.ok(!active.has(bytes.buffer));
+      active.add(bytes.buffer);
+      maximumActive = Math.max(maximumActive, active.size);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      assert.equal(
+        createHash('md5').update(bytes).digest('base64'),
+        authorization.headers['Content-MD5'],
+      );
+      active.delete(bytes.buffer);
+      return {etag: md5Hex(authorization), status: 200};
+    },
+  });
+
+  await publishPreparedTeamTilesetUpload({file, tilesetId, transport, upload});
+
+  assert.equal(allocatingReads, 0);
+  assert.equal(buffers.size, 4);
+  assert.equal(maximumActive, 4);
 });
 
 test('transient part failure refreshes the signed URL before retry', async () => {

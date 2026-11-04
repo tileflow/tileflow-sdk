@@ -516,14 +516,9 @@ actor OfflineStoreCore {
       let token = UUID()
       revalidations[id] = token
       defer { if revalidations[id] == token { revalidations[id] = nil } }
-      var states: [OfflinePackRevalidation] = []
-      for download in plan.downloads {
-        guard let state = try? await client.revalidate(download.grant) else { break }
-        states.append(state)
-      }
-      guard revalidations[id] == token, states.count == plan.downloads.count,
-        var current = records[id], !current.removing, current.active?.number == active.number
-      else { continue }
+      guard let states = await revalidate(plan.downloads, client: client, region: id, token: token),
+        revalidations[id] == token, var current = records[id], !current.removing,
+        current.active?.number == active.number else { continue }
       var check = OfflineCheckRecord(
         state: "current", reason: nil, checkedAt: now.offlineMilliseconds, interval: 86_400)
       for state in states {
@@ -569,6 +564,20 @@ actor OfflineStoreCore {
         emitChanged(id)
       }
     }
+  }
+
+  /// Every grant must confirm access. A single denial settles the region even if another
+  /// partition is unreachable, in either request order.
+  private func revalidate(_ downloads: [OfflineDownload], client: OfflinePackClient, region: String, token: UUID)
+    async -> [OfflinePackRevalidation]? {
+    var confirmations: [OfflinePackRevalidation] = []
+    for download in downloads {
+      guard revalidations[region] == token else { return nil }
+      guard let state = try? await client.revalidate(download.grant) else { continue }
+      if case .notUpdatable = state { return [state] }
+      confirmations.append(state)
+    }
+    return confirmations.count == downloads.count ? confirmations : nil
   }
 
   /// The network returned: waiting downloads try again now and due regions are revalidated.

@@ -1135,6 +1135,8 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
     var unmeteredOnly = false
   }
 
+  enum RevalidationReply: Sendable { case unavailable, state(String) }
+  let revalidationReplies = LockedValue<[RevalidationReply]>([])
   let beforeRevalidationReply = LockedValue<(@Sendable () async -> Void)?>(nil)
   let refusesCreation = LockedValue(false)
   let refusesRevalidation = LockedValue(false)
@@ -1307,14 +1309,17 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
     guard isOnline else { throw URLError(.notConnectedToInternet) }
     let path = request.url!.path
     if path.hasSuffix("/revalidate") {
+      let scripted = revalidationReplies.withLock { $0.isEmpty ? nil : $0.removeFirst() }
+      if case .unavailable? = scripted { throw URLError(.timedOut) }
       if refusesRevalidation.withLock({ $0 }) { throw URLError(.timedOut) }
       let reply = locked { state in
+        let result = if case .state(let result)? = scripted { result } else { state.revalidationState }
         state.revalidations += 1
         let checked = Self.date(clock.withLock { $0 })
         let body =
-          state.revalidationState == "not_updatable"
+          result == "not_updatable"
           ? #"{"state":"not_updatable","reason":"credential_revoked","checkedAt":"\#(checked)"}"#
-          : #"{"state":"\#(state.revalidationState)","checkedAt":"\#(checked)","intervalSeconds":86400}"#
+          : #"{"state":"\#(result)","checkedAt":"\#(checked)","intervalSeconds":86400}"#
         return ResourcePayload(bytes: Data(body.utf8), status: 200, headers: [:])
       }
       if let gate = beforeRevalidationReply.withLock({ $0 }) { await gate() }

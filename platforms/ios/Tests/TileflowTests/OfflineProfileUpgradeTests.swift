@@ -105,12 +105,17 @@ extension OfflineStoreTests {
     service.revalidationState = "update_available"
     await native.core.checkForUpdates()
     try await native.setAutomaticUpdates(true)
-    service.clock.withLock { $0 += 38 * 86_400 }
     service.refusesRevalidation.withLock { $0 = true }
-    let started = await native.core.updateAutomatically(updateConditions)
-    XCTAssertTrue(started.isEmpty)
-    let region = await native.region(id: "area")
-    XCTAssertEqual(region?.expiryState, .expired)
+    let stages: [(TimeInterval, TileflowOfflineRegion.ExpiryState)] = [
+      (86_401, .valid), (37 * 86_400, .expired),
+    ]
+    for (advance, expiry) in stages {
+      service.clock.withLock { $0 += advance }
+      let started = await native.core.updateAutomatically(updateConditions)
+      XCTAssertTrue(started.isEmpty)
+      let region = await native.region(id: "area")
+      XCTAssertEqual(region?.expiryState, expiry)
+    }
     XCTAssertEqual(service.creationAttempts.withLock { $0 }, ["webview-v1"])
     XCTAssertNil(try record("area").pending)
     XCTAssertEqual(try record("area").active?.number, 1)
@@ -182,6 +187,101 @@ extension OfflineStoreTests {
     _ = try await waitFor(native, "area") { $0.state == .complete }
     XCTAssertEqual(service.profiles.last, "native-v1")
     XCTAssertNotEqual(try record("area").active?.number, old.number)
+  }
+
+  func testMultipartRevalidationNeedsAllGrantsForAnOfferAndOnlyOneForDenial() async throws {
+    let service = OfflineServiceStub()
+    let web = makeStore(service)
+    // Combine two verified downloads in the format written by clients that split the region.
+    var record: OfflineRegionRecord?
+    var requests: [OfflinePackRequest] = []
+    var downloads: [OfflineDownload] = []
+    var activity = Data()
+    for (i, theme) in ["light", "dark"].enumerated() {
+      let id = i == 0 ? "area" : "other"
+      var options = madrid()
+      options.content = .hosted(mapID: OfflineServiceStub.mapID, themes: [theme])
+      _ = try await web.loadRegion(id: id, options: options)
+      _ = try await waitFor(web, id) { $0.state == .complete }
+      if i == 0 { record = try self.record(id) }
+      let requestBody = try Data(contentsOf: layout.request(id, 1, pack: 0))
+      let response = try Data(contentsOf: layout.download(id, 1, download: 0))
+      let request = try XCTUnwrap(OfflinePackRequest(json: requestBody))
+      requests.append(request)
+      downloads.append(
+        try OfflinePackContract.download(response, request: request, allowsLoopbackHTTP: false))
+      activity.append(try Data(contentsOf: layout.progress(id, 1)))
+      if i > 0 {
+        try OfflineLayout.write(requestBody, to: layout.request("area", 1, pack: i))
+        try OfflineLayout.write(response, to: layout.download("area", 1, download: i))
+      }
+    }
+    var original = try XCTUnwrap(record)
+    let combined = OfflineVersionPlan.hosted(downloads: downloads, requests: requests)
+    original.active?.options = madrid().json
+    original.active?.downloads = 2
+    original.active?.packs = combined.packs.count
+    original.active?.resources = combined.resourceCount
+    original.active?.billable = combined.billable
+    original.active?.bytes = combined.bytes
+    try OfflineLayout.write(activity, to: layout.progress("area", 1))
+    try original.write(layout.record("area"))
+    let shared = makeStore(service, profile: .native)
+    try await shared.removeRegion(id: "other")
+    service.clock.withLock { $0 += 86_401 }
+
+    typealias Reply = OfflineServiceStub.RevalidationReply
+    let scenarios: [([Reply], String)] = [
+      ([.unavailable, .state("current")], "current"),
+      ([.state("update_available"), .unavailable], "current"),
+      ([.state("current"), .state("current")], "update_available"),
+      ([.state("not_updatable"), .unavailable], "not_updatable"),
+      ([.unavailable, .state("not_updatable")], "not_updatable"),
+    ]
+    for (replies, expected) in scenarios {
+      try original.write(layout.record("area"))
+      service.revalidationReplies.withLock { $0 = replies }
+      let reopened = makeStore(service, profile: .native)
+      await reopened.core.checkForUpdates()
+      let check = try XCTUnwrap(try self.record("area").check)
+      XCTAssertEqual(check.state, expected)
+      if expected != "update_available" {
+        XCTAssertEqual(check.validatedAt, original.check?.validatedAt)
+      }
+    }
+  }
+
+  func testReopeningFinishesOnlyTheRevokedAutomaticStagingVersion() async throws {
+    let service = OfflineServiceStub()
+    let web = makeStore(service)
+    _ = try await web.loadRegion(id: "area", options: madrid())
+    _ = try await waitFor(web, "area") { $0.state == .complete }
+    service.clock.withLock { $0 += 86_401 }
+    service.revalidationState = "update_available"
+    service.freezeAfter = service.downloads.count
+    let native = makeStore(service, profile: .native)
+    try await native.setAutomaticUpdates(true)
+    let started = await native.core.updateAutomatically(updateConditions)
+    XCTAssertEqual(started, ["area"])
+    try await native.pauseRegion(id: "area")
+    var interrupted = try record("area")
+    interrupted.check?.state = "not_updatable"
+    interrupted.check?.reason = "credential_revoked"
+    interrupted.pending?.state = .paused
+    // A paused, manually owned candidate is independent of an automatic upgrade.
+    interrupted.pending?.automatic = false
+    try interrupted.write(layout.record("area"))
+    let manual = makeStore(service, profile: .native)
+    _ = await manual.region(id: "area")
+    XCTAssertNotNil(try record("area").pending)
+    interrupted.pending?.automatic = true
+    try interrupted.write(layout.record("area"))
+    let reopened = makeStore(service, profile: .native)
+    let stored = await reopened.region(id: "area")
+    XCTAssertTrue(stored?.isAvailable == true)
+    XCTAssertEqual(stored?.updateState, .notUpdatable(reason: "credential_revoked"))
+    XCTAssertNil(try record("area").pending)
+    XCTAssertEqual(try record("area").active?.number, interrupted.active?.number)
   }
 
   func testRejectedPacksOrFullDiskKeepTheActiveWebVersionAfterRestart() async throws {

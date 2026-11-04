@@ -221,11 +221,17 @@ final class SceneTests: XCTestCase {
     let replaced = Task { try await waiters.wait(for: "a3", onCue: nil) }
     await Task.yield()
     waiters.retire(.cancelled)
+    let completed = try await replaced.value
+    XCTAssertFalse(completed)
+
+    let destroyed = Task { try await waiters.wait(for: "a4", onCue: nil) }
+    await Task.yield()
+    waiters.retire(.disposed)
     do {
-      _ = try await replaced.value
-      XCTFail("A replaced renderer's animation did not fail.")
+      _ = try await destroyed.value
+      XCTFail("A destroyed map must fail its pending animation.")
     } catch {
-      XCTAssertEqual(error as? TileflowMapError, .cancelled)
+      XCTAssertEqual(error as? TileflowMapError, .disposed)
     }
   }
 

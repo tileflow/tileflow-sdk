@@ -135,7 +135,10 @@ internal class AnimationWaiters {
         waiting.clear()
         cues.clear()
         ended.clear()
-        pending.forEach { it.resumeWithException(TileflowMapException(code)) }
+        pending.forEach {
+            if (code == TileflowErrorCode.CANCELLED) it.resume(false)
+            else it.resumeWithException(TileflowMapException(code))
+        }
     }
 }
 
@@ -413,17 +416,15 @@ public suspend fun TileflowMapView.animateLineProgress(
     )
         invalid()
     val engine = requireRenderer()
-    val started =
-        engine.call(
-            ProtocolContract.Method.ANIMATE_LINE_PROGRESS,
-            JSONObject()
-                .put("layers", JSONArray(layers))
-                .put("to", to.stateJson())
-                .put("duration", durationMillis),
-        )
-    // A new renderer draws the lines where the animation leads.
-    keepLineProgress(to, layers.toSet())
-    return awaitAnimation(started, engine, null)
+    return runAnimation(
+        ProtocolContract.Method.ANIMATE_LINE_PROGRESS,
+        JSONObject()
+            .put("layers", JSONArray(layers))
+            .put("to", to.stateJson())
+            .put("duration", durationMillis),
+        engine,
+        onCue = null,
+    ) { keepLineProgress(to, layers.toSet()) }
 }
 
 /**
@@ -438,18 +439,33 @@ public suspend fun TileflowMapView.play(
     val payload = shot.json()
     val engine = requireRenderer()
     endFollowing(dev.tileflow.sdk.location.TileflowFollowModeChangeReason.API)
-    val started = engine.call(ProtocolContract.Method.PLAY_SHOT, payload)
-    return awaitAnimation(started, engine, onCue)
+    return runAnimation(ProtocolContract.Method.PLAY_SHOT, payload, engine, onCue)
 }
 
-private suspend fun TileflowMapView.awaitAnimation(
-    started: Any,
+private suspend fun TileflowMapView.runAnimation(
+    method: ProtocolContract.Method,
+    payload: JSONObject,
     engine: MapEngine,
     onCue: ((String) -> Unit)?,
+    didStart: () -> Unit = {},
 ): Boolean {
+    val started = try {
+        engine.call(method, payload)
+    } catch (error: TileflowMapException) {
+        if (error.code != TileflowErrorCode.CANCELLED || readyEngine === engine) throw error
+        currentCoroutineContext().ensureActive()
+        if (isDestroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+        return false
+    }
+    if (isDestroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+    if (readyEngine !== engine) {
+        currentCoroutineContext().ensureActive()
+        return false
+    }
     val id =
         (started as? JSONObject)?.optString("animation")?.takeIf { it.isNotEmpty() }
             ?: throw TileflowMapException(TileflowErrorCode.RENDERER_FAILED)
+    didStart()
     try {
         return animations.wait(id, onCue)
     } catch (cancellation: CancellationException) {

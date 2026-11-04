@@ -299,37 +299,78 @@ class SceneTest {
         )
         assertFalse(shot.await())
         assertEquals(listOf("title"), cues)
-        val replaced = async { runCatching { waiters.wait("a3", null) } }
-        yield()
+        val replaced = async(start = CoroutineStart.UNDISPATCHED) { waiters.wait("a3", null) }
         waiters.retire(TileflowErrorCode.CANCELLED)
-        val error = replaced.await().exceptionOrNull() as TileflowMapException
-        assertEquals(TileflowErrorCode.CANCELLED, error.code)
+        assertFalse(replaced.await())
+
+        val destroyed = async(start = CoroutineStart.UNDISPATCHED) { runCatching { waiters.wait("a4", null) } }
+        waiters.retire(TileflowErrorCode.DISPOSED)
+        val error = destroyed.await().exceptionOrNull() as TileflowMapException
+        assertEquals(TileflowErrorCode.DISPOSED, error.code)
+    }
+
+    /** An application-facing map whose renderer acknowledgements can be delivered out of order. */
+    private class SceneReplyEngine(activity: Activity) : MapEngine {
+        val replies = Channel<CompletableDeferred<Any>>(Channel.UNLIMITED)
+        override val view = android.view.View(activity)
+        override val data = DataChannel()
+        override fun start() {}
+        override fun setVisible(visible: Boolean) {}
+        override fun retire(code: TileflowErrorCode) {}
+
+        override suspend fun call(
+            method: ProtocolContract.Method,
+            payload: Any,
+            references: List<DataChannel.Reference>,
+        ): Any {
+            val reply = CompletableDeferred<Any>()
+            replies.send(reply)
+            return reply.await()
+        }
+
+        fun install(map: TileflowMapView) {
+            org.robolectric.util.ReflectionHelpers.setField(map, "engine", this)
+            org.robolectric.util.ReflectionHelpers.setField(map, "initialized", true)
+        }
+    }
+
+    @Test
+    fun aLateShotAcknowledgementStaysWithItsRenderer(): Unit = runBlocking {
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val from = TileflowCamera(-3.7, 40.42, 13.0)
+        val to = TileflowCamera(-3.69, 40.42, 15.0)
+        val shot = TileflowShot(listOf(TileflowShot.Keyframe(0, from), TileflowShot.Keyframe(1000, to)))
+        for (destroy in listOf(false, true)) {
+            val map = TileflowMapView(activity)
+            val engine = SceneReplyEngine(activity)
+            engine.install(map)
+            try {
+                withTimeout(5_000) {
+                    val playing = async(start = CoroutineStart.UNDISPATCHED) { runCatching { map.play(shot) } }
+                    val reply = engine.replies.receive()
+                    if (destroy) map.destroy() else map.reload()
+                    reply.complete(JSONObject().put("animation", "old-renderer-shot"))
+                    val outcome = playing.await()
+                    if (destroy) {
+                        val error = outcome.exceptionOrNull() as TileflowMapException
+                        assertEquals(TileflowErrorCode.DISPOSED, error.code)
+                    } else {
+                        assertFalse(outcome.getOrThrow())
+                    }
+                }
+            } finally {
+                map.destroy()
+            }
+        }
     }
 
     @Test
     fun rejectedSceneRequestPreservesAnOverlappingAcceptedState(): Unit = runBlocking {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
         val map = TileflowMapView(activity)
-        val replies = Channel<CompletableDeferred<Any>>(Channel.UNLIMITED)
-        val engine = object : MapEngine {
-            override val view = android.view.View(activity)
-            override val data = DataChannel()
-            override fun start() {}
-            override fun setVisible(visible: Boolean) {}
-            override fun retire(code: TileflowErrorCode) {}
-            override suspend fun call(
-                method: ProtocolContract.Method,
-                payload: Any,
-                references: List<DataChannel.Reference>,
-            ): Any {
-                val reply = CompletableDeferred<Any>()
-                replies.send(reply)
-                return reply.await()
-            }
-        }
-        // Hold renderer replies independently, using the same public setters as the application.
-        org.robolectric.util.ReflectionHelpers.setField(map, "engine", engine)
-        org.robolectric.util.ReflectionHelpers.setField(map, "initialized", true)
+        val engine = SceneReplyEngine(activity)
+        engine.install(map)
+        val replies = engine.replies
         fun change(name: String, value: Double) = async(start = CoroutineStart.UNDISPATCHED) {
             runCatching { map.setStyleState(name, TileflowStyleValue.Number(value)) }
         }

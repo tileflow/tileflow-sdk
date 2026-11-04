@@ -132,7 +132,10 @@ final class AnimationWaiters {
     cues.removeAll()
     ended.removeAll()
     earlyCues.removeAll()
-    for continuation in pending { continuation.resume(throwing: error) }
+    for continuation in pending {
+      if error == .cancelled { continuation.resume(returning: false) }
+      else { continuation.resume(throwing: error) }
+    }
   }
 }
 
@@ -352,15 +355,15 @@ extension TileflowMapView {
       (0...60).contains(duration)
     else { throw TileflowMapError.invalidRequest }
     let engine = try requireRenderer()
-    let started = try await engine.call(
+    return try await runAnimation(
       .animateLineProgress,
       payload: .object([
         "layers": .array(layers.map(JSONValue.string)), "to": progress.stateWireValue,
         "duration": .number((duration * 1000).rounded()),
-      ]))
-    // A new renderer draws the lines where the animation leads.
-    keepLineProgress(progress, for: Set(layers))
-    return try await awaitAnimation(started, on: engine, onCue: nil)
+      ]), on: engine, onCue: nil
+    ) {
+      self.keepLineProgress(progress, for: Set(layers))
+    }
   }
 
   /// Plays a camera shot and returns true when it reaches its last keyframe, or false when a
@@ -373,21 +376,39 @@ extension TileflowMapView {
     let payload = try shot.wireValue()
     let engine = try requireRenderer()
     endFollowing(.api)
-    let started = try await engine.call(.playShot, payload: payload)
-    return try await awaitAnimation(started, on: engine, onCue: onCue)
+    return try await runAnimation(.playShot, payload: payload, on: engine, onCue: onCue)
   }
 
-  private func awaitAnimation(
-    _ started: JSONValue, on engine: any MapEngine, onCue: ((String) -> Void)?
+  private func runAnimation(
+    _ method: MapEngineCommand, payload: JSONValue, on engine: any MapEngine,
+    onCue: ((String) -> Void)?, didStart: () -> Void = {}
   ) async throws -> Bool {
+    let started: JSONValue
+    do {
+      started = try await engine.call(method, payload: payload)
+    } catch let error as TileflowMapError where error == .cancelled && readyEngine !== engine {
+      try Task.checkCancellation()
+      if isDestroyed { throw TileflowMapError.disposed }
+      return false
+    }
+    if isDestroyed { throw TileflowMapError.disposed }
+    guard readyEngine === engine else {
+      try Task.checkCancellation()
+      return false
+    }
     guard let id = started["animation"]?.string else { throw TileflowMapError.rendererFailed }
+    didStart()
     let waiters = animations
     return try await withTaskCancellationHandler {
-      try await waiters.wait(for: id, onCue: onCue)
+      try Task.checkCancellation()
+      let finished = try await waiters.wait(for: id, onCue: onCue)
+      try Task.checkCancellation()
+      return finished
     } onCancel: {
-      Task { @MainActor [weak engine] in
+      Task { @MainActor [weak self, weak engine] in
+        guard let engine, self?.readyEngine === engine else { return }
         waiters.abandon(id, with: CancellationError())
-        _ = try? await engine?.call(.stopAnimation, payload: .object(["animation": .string(id)]))
+        _ = try? await engine.call(.stopAnimation, payload: .object(["animation": .string(id)]))
       }
     }
   }

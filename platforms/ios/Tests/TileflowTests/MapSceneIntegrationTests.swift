@@ -290,3 +290,29 @@ extension MapIntegrationTests {
     try await capture(view, named: "tileflow-scene-features")
   }
 }
+
+extension NativeMapViewIntegrationTests {
+  func testReloadInterruptsAnActiveCameraShot() async throws {
+    try await requireMapFixture(Self.nativeManifest)
+    let source = TileflowMapSource(map: "city", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
+    let mounted = try await mountMap(source, engine: .native)
+    defer { mounted.close() }
+
+    let start = try await mounted.view.camera()
+    let end = TileflowCamera(longitude: -3.69, latitude: 40.42, zoom: 13)
+    let started = expectation(description: "The camera shot reached its first cue")
+    let playing = Task {
+      try await mounted.view.play(
+        TileflowShot(
+          keyframes: [.init(time: 0, camera: start), .init(time: 60, camera: end)],
+          cues: [.init(time: 0, id: "start")])
+      ) { cue in
+        if cue == "start" { started.fulfill() }
+      }
+    }
+    await fulfillment(of: [started], timeout: 5)
+    try mounted.view.reload()
+    let finished = try await playing.value
+    XCTAssertFalse(finished)
+  }
+}

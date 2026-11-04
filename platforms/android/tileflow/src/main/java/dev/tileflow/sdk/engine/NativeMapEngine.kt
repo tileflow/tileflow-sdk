@@ -512,14 +512,19 @@ internal class NativeMapEngine(
             if (retired) return@setStyle
             try {
                 runtimeStyle.restore(it, projected.style)
-            } catch (error: TileflowMapException) {
+                contentStyleLoaded = true
+                sceneAppearance.restore(projected.style)
+                sceneContent.restore(it, projected.style)
+            } catch (failure: Exception) {
+                contentStyleLoaded = false
+                val error = failure as? TileflowMapException ?: TileflowMapException(
+                    TileflowErrorCode.INVALID_REQUEST,
+                    TileflowErrorContext(message = "Application scene could not be restored to the new style."),
+                )
                 styleWaiters.toList().also { styleWaiters.clear() }.forEach { it.resume(error) }
                 callbacks.failed(error)
                 return@setStyle
             }
-            contentStyleLoaded = true
-            sceneAppearance.restore(projected.style)
-            sceneContent.restore(it,projected.style)
             styleDidLoad()
             styleWaiters.toList().also { styleWaiters.clear() }.forEach { it.resume(null) }
             reportContentReady()

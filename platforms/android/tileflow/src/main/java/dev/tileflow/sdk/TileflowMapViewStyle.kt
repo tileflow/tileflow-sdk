@@ -149,8 +149,7 @@ private suspend fun TileflowMapView.changeStyle(
     try {
         send(engine)
     } catch (error: Exception) {
-        if (readyEngine === engine || (error as? TileflowMapException)?.code == TileflowErrorCode.INVALID_REQUEST)
-            runtimeStyle.restore(previous)
+        runtimeStyle.restore(previous)
         throw error
     }
 }

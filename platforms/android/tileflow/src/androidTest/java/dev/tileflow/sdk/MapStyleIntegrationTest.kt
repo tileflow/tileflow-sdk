@@ -104,7 +104,9 @@ public class MapStyleIntegrationTest {
                 runBlocking {
                     withContext(Dispatchers.Main) {
                         val map = activity.views.single()
-                        activity.recorded.single().waitForLoads(1)
+                        val events = activity.recorded.single()
+                        events.waitForLoads(1)
+                        val loads = events.loads
                         val outcome = CompletableDeferred<Throwable?>()
                         val job = launch(start = CoroutineStart.UNDISPATCHED) {
                             outcome.complete(runCatching {
@@ -124,7 +126,13 @@ public class MapStyleIntegrationTest {
                                 assertTrue("Expected caller cancellation, got $failure", failure is CancellationException)
                                 assertTrue("Cancelled source was retained", !map.sourceExists(operation))
                             }
-                            "reload" -> assertEquals(TileflowErrorCode.CANCELLED, (failure as TileflowMapException).code)
+                            "reload" -> {
+                                assertEquals(TileflowErrorCode.CANCELLED, (failure as TileflowMapException).code)
+                                assertTrue("Retired renderer's source was retained", !map.sourceExists(operation))
+                                events.waitForLoads(loads + 1)
+                                val style = requireNotNull(activity.engine?.map?.style)
+                                assertTrue("Cancelled source reached the new renderer", style.getSource("__tileflow_source_$operation") == null)
+                            }
                             "destroy" -> assertEquals(TileflowErrorCode.DISPOSED, (failure as TileflowMapException).code)
                         }
                     }

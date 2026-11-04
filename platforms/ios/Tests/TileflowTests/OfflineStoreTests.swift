@@ -707,6 +707,23 @@ final class OfflineStoreTests: XCTestCase {
       "The application's load uses any allowed network")
   }
 
+  func testSelfHostedBuildFindsTheFamilyAndFontFacesBesideItsStyles() throws {
+    let url = URL(string: "https://maps.example.test/manifest.json")!
+    let generation = "https://cdn.example.test/artifacts/generations/g1"
+    let style = URL(string: "\(generation)/styles/city/light.json")!
+    let manifest = Data("""
+      {"maps":{"city":{"themes":{"light":{"styleUrl":"\(style)"}}}}}
+      """.utf8)
+    let plan = try OfflineSelfHosted.manifest(url, data: manifest, map: "city")
+    XCTAssertEqual(Set(plan.documents.map(\.absoluteString)), [url.absoluteString, "\(generation)/families/city.json"])
+
+    let fonts = Data("""
+      {"font-faces":{"Display":"../../fonts/display.ttf","Text":[{"url":"../../fonts/text.ttf"}]}}
+      """.utf8)
+    let files = try OfflineSelfHosted.documents(style: style, data: fonts)
+    XCTAssertEqual(Set(files.map(\.absoluteString)), [style.absoluteString, "\(generation)/fonts/display.ttf", "\(generation)/fonts/text.ttf"])
+  }
+
   func testSelfHostedRegionDownloadsItsManifestStylesFontsSpritesGlyphsAndTiles() async throws {
     let service = OfflineServiceStub()
     let store = makeStore(service)

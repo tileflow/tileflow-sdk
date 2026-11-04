@@ -1,6 +1,7 @@
 package dev.tileflow.sdk.offline
 
 import dev.tileflow.sdk.TileflowErrorContext
+import dev.tileflow.sdk.transport.MapResourceAddress
 import java.net.URI
 import java.net.URLEncoder
 import org.json.JSONArray
@@ -53,8 +54,13 @@ internal object OfflineSelfHosted {
         val documents = mutableListOf(url)
         for (name in themes.keys().asSequence().sorted()) {
             val theme = themes.optJSONObject(name) ?: continue
-            (theme.opt("styleUrl") as? String)?.let { resolve(it, url) }?.let {
-                if (it !in styles) styles.add(it)
+            (theme.opt("styleUrl") as? String)?.let { resolve(it, url) }?.let { style ->
+                if (style !in styles) {
+                    styles.add(style)
+                    val directory = style.path.substringBeforeLast('/').split('/')
+                    if (directory.takeLast(2) == listOf("styles", map))
+                        documents += URI(MapResourceAddress.familyUrl(style.toString(), map))
+                }
             }
             documents += fontFiles(theme.opt("fontFaces"), url)
         }
@@ -72,6 +78,17 @@ internal object OfflineSelfHosted {
                 ?: throw invalid("invalidStyle")
         val documents = mutableListOf(style)
         documents += fontFiles(value.optJSONObject("metadata")?.opt("tileflow:fontFaces"), style)
+        value.optJSONObject("font-faces")?.let { faces ->
+            for (name in faces.keys().asSequence().sorted()) {
+                when (val face = faces.opt(name)) {
+                    is String -> resolve(face, style)?.let(documents::add)
+                    is JSONArray -> for (index in 0 until face.length()) {
+                        val file = face.optJSONObject(index)?.opt("url") as? String ?: continue
+                        resolve(file, style)?.let(documents::add)
+                    }
+                }
+            }
+        }
         value.optJSONObject("sources")?.let { sources ->
             for (name in sources.keys().asSequence().sorted()) {
                 // TileJSON documents and GeoJSON data; tiles come from the region's tile sources.

@@ -449,8 +449,16 @@ function elevationTile() {
 // The city map built for the native renderer, under /native/. Its build starts now and is cached.
 const nativeBuild = createNativeBuildFixture({base, elevation: elevationTile()});
 nativeBuild.prepare().catch((error) => console.error(error));
+let nativeRequests = 0;
 const server = createServer((request, response) => {
   response.setHeader('Access-Control-Allow-Origin', '*');
+  if (request.url === '/__fixture/native-requests') {
+    response.setHeader('Content-Type', 'application/json');
+    response.setHeader('Cache-Control', 'no-store');
+    response.end(JSON.stringify({requests: nativeRequests}));
+    return;
+  }
+  if (/^\/(?:native|terrain|city)\//u.test(request.url ?? '')) nativeRequests++;
   if (hosted(request, response)) return;
   if (request.url === '/runtime-style/invalid-tiles.json') {
     // Keep the first source in flight while another style edit is submitted.

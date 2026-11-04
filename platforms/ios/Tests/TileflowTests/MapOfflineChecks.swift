@@ -229,8 +229,8 @@ extension XCTestCase {
     XCTAssertEqual(region?.state, .complete, "\(String(describing: region))")
   }
 
-  func fixtureCounters(reset: Bool = false) async throws -> [String: Int] {
-    var request = URLRequest(url: URL(string: "\(FixtureServer.origin)/__fixture/hosted")!)
+  func fixtureCounters(reset: Bool = false, fixture: String = "hosted") async throws -> [String: Int] {
+    var request = URLRequest(url: URL(string: "\(FixtureServer.origin)/__fixture/\(fixture)")!)
     request.httpMethod = reset ? "POST" : "GET"
     let (data, _) = try await URLSession.shared.data(for: request)
     let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] ?? [:]

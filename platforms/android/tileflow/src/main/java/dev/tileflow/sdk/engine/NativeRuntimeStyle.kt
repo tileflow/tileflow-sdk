@@ -336,6 +336,14 @@ internal class NativeRuntimeStyle(
         images = next
     }
 
+    fun image(name: String): Bitmap? = images[name]?.forTheme(currentTheme())
+
+    fun refreshImageVariants() {
+        val style = currentStyle() ?: return
+        for ((name, image) in images) if (image.variants.isNotEmpty())
+            style.addImage(name, image.forTheme(currentTheme()), image.sdf)
+    }
+
     fun restore(style: Style, document: JSONObject) {
         if (sources.values.any { style.getSource(it.id) != null } || layers.any { style.getLayer(it.id) != null } ||
             images.keys.any { style.getImage(it) != null }) styleInvalid("Application id already in style")

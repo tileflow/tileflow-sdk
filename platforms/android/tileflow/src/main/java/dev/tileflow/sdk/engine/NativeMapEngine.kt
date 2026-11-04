@@ -144,6 +144,27 @@ internal class NativeMapEngine(
             if (retired) throw TileflowMapException(retiredCode)
             return if (contentStyleLoaded) map?.style else null
         }
+    private val sceneClock = NativeSceneClock()
+    private val sceneAppearance = NativeSceneAppearance({ loadedStyle }, {
+        val camera = camera?.current ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
+        TileflowCoordinate(camera.longitude,camera.latitude)
+    }, ::sunPreset, sceneClock)
+    private val sceneContent = NativeSceneContent({ loadedStyle }, ::routeInks, runtimeStyle::image) { feature,message ->
+        if (reported.add(feature)) warnFeature(feature,message)
+    }
+    private val scenePlayer = NativeScenePlayer(sceneContent, sceneClock, { camera?.jump(it) },
+        { setBlend(it) }, { name,value -> if (!retired) callbacks.event(name,value) })
+
+    private fun sunPreset(): JSONObject? {
+        val family = family ?: return null
+        val current = blend
+        if (current != null) {
+            val values = current.themes.map { family.theme(it)?.optJSONObject("sun") ?: return null }
+            return NativeEvaluators.at(values,current.position,NativeEvaluators::mixSuns)
+        }
+        return shownTheme?.let { family.theme(it)?.optJSONObject("sun") }
+    }
+
     private val styleWaiters = mutableListOf<CancellableContinuation<Throwable?>>()
     private val renderWaiters = mutableListOf<CancellableContinuation<Unit>>()
 
@@ -198,7 +219,9 @@ internal class NativeMapEngine(
             reportContentReady()
             rendered()
         }
-        mapView.addOnDidBecomeIdleListener { if (!retired) runtimeStyle.confirmState() }
+        mapView.addOnDidBecomeIdleListener {
+            if (!retired) { runtimeStyle.confirmState(); sceneAppearance.confirmBoundaries() }
+        }
         mapView.addOnDidFailLoadingMapListener { message ->
             if (retired) return@addOnDidFailLoadingMapListener
             val failure =
@@ -282,6 +305,7 @@ internal class NativeMapEngine(
                         if (retired) throw TileflowMapException(retiredCode)
                         throw failure
                     }
+                    if (method == ProtocolContract.Method.SET_IMAGES) sceneContent.imagesChanged()
                     if (method == ProtocolContract.Method.ADD_SOURCE || method == ProtocolContract.Method.REMOVE_SOURCE) {
                         projection?.let { attribution.setStyle(it.style, (it.attributions + runtimeStyle.attributions).distinct()) }
                     }
@@ -308,9 +332,24 @@ internal class NativeMapEngine(
                     setViewMode(mode, request.optDouble("duration", 0.0) / 1000)
                     JSONObject.NULL
                 }
-                ProtocolContract.Method.SET_CONTENT ->
-                    if (isEmpty(payload, "annotations", "overlays")) JSONObject.NULL
-                    else unsupported(method)
+                ProtocolContract.Method.SET_SUN ->
+                    result(if (sceneAppearance.setSun(request ?: invalid())) "applied" else "superseded", currentTheme ?: "")
+                ProtocolContract.Method.SET_STYLE_STATE ->
+                    result(if (sceneAppearance.setState(request ?: invalid())) "applied" else "superseded", currentTheme ?: "")
+                ProtocolContract.Method.SET_BOUNDARY_VALUES -> {
+                    sceneAppearance.setBoundaries(request ?: invalid(),data)
+                    map.triggerRepaint()
+                    JSONObject.NULL
+                }
+                ProtocolContract.Method.SET_DEPTH_MARKERS -> sceneContent.setMarkers(request ?: invalid()).let { JSONObject.NULL }
+                ProtocolContract.Method.SET_CONTENT -> {
+                    sceneContent.setContent(request ?: invalid(),data)
+                    scenePlayer.stopLines()
+                    JSONObject.NULL
+                }
+                ProtocolContract.Method.ANIMATE_LINE_PROGRESS -> scenePlayer.animate(request ?: invalid())
+                ProtocolContract.Method.PLAY_SHOT -> scenePlayer.play(request ?: invalid())
+                ProtocolContract.Method.STOP_ANIMATION -> { scenePlayer.stop(request?.getString("animation") ?: invalid()); JSONObject.NULL }
                 // The view always tells a new engine its annotation layers and tracked points.
                 ProtocolContract.Method.SET_ANNOTATION_LAYERS ->
                     if (isEmpty(payload, "layers")) JSONObject.NULL else unsupported(method)
@@ -479,6 +518,8 @@ internal class NativeMapEngine(
                 return@setStyle
             }
             contentStyleLoaded = true
+            sceneAppearance.restore(projected.style)
+            sceneContent.restore(it,projected.style)
             styleDidLoad()
             styleWaiters.toList().also { styleWaiters.clear() }.forEach { it.resume(null) }
             reportContentReady()
@@ -597,6 +638,8 @@ internal class NativeMapEngine(
         main.removeCallbacksAndMessages(null)
         warnings.retire()
         creditReader.shutdownNow()
+        scenePlayer.retire()
+        sceneClock.retire()
         camera?.retire(code)
         gestures?.retire()
         val failure = TileflowMapException(code)
@@ -841,6 +884,12 @@ internal class NativeMapEngine(
             val moved = moved(current, at, if (hold) current.dominant else nearest)
             if (moved != null) {
                 blend = moved
+                if (current.dominant != moved.dominant) {
+                    runtimeStyle.refreshImageVariants()
+                    sceneContent.imagesChanged()
+                }
+                sceneAppearance.writeSun()
+                sceneContent.refreshInks()
                 applyEmphasis(emphasisStrength, featureData = true)
                 return result("applied", names[moved.dominant])
             }
@@ -1131,7 +1180,10 @@ internal class NativeMapEngine(
     private fun prepareCamera(map: MapLibreMap) {
         map.uiSettings.isCompassEnabled = false
         val emit: (String, JSONObject) -> Unit = { event, value ->
-            if (!retired) callbacks.event(event, value)
+            if (!retired) {
+                if (event == "cameraMoveStarted" && value.optString("reason") == "gesture") scenePlayer.stopShot()
+                callbacks.event(event, value)
+            }
         }
         val camera = NativeCamera(map, mapView, density, emit, ::warnPitch)
         this.camera = camera

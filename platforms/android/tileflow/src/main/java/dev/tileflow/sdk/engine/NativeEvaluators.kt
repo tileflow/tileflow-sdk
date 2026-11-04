@@ -415,17 +415,17 @@ internal object NativeEvaluators {
             )
     }
 
-    private fun mixedSunDirection(from: JSONObject, to: JSONObject, t: Double): Pair<Double, Double> {
+    private fun mixedSunDirection(from: JSONObject, to: JSONObject, t: Double): Pair<Double, Double> =
+        mixSunDirections(from.optDouble("azimuth", 0.0), from.optDouble("altitude", 0.0),
+            to.optDouble("azimuth", 0.0), to.optDouble("altitude", 0.0), t)
+
+    fun mixSunDirections(azimuthA: Double, altitudeA: Double, azimuthB: Double, altitudeB: Double, t: Double): Pair<Double, Double> {
         fun vector(azimuth: Double, altitude: Double): DoubleArray {
             val a = Math.toRadians(azimuth)
             val h = Math.toRadians(altitude)
             return doubleArrayOf(sin(a) * cos(h), cos(a) * cos(h), sin(h))
         }
 
-        val azimuthA = from.optDouble("azimuth", 0.0)
-        val azimuthB = to.optDouble("azimuth", 0.0)
-        val altitudeA = from.optDouble("altitude", 0.0)
-        val altitudeB = to.optDouble("altitude", 0.0)
         val a = vector(azimuthA, altitudeA)
         val b = vector(azimuthB, altitudeB)
         val azimuth = mixAzimuths(azimuthA, azimuthB, t)

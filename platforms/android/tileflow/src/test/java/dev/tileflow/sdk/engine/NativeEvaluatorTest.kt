@@ -22,6 +22,41 @@ class NativeEvaluatorTest {
         array?.let { list -> (0 until list.length()).map { list.getInt(it) } }
 
     @Test
+    fun apparentSunAndShotFramesMatchCore() {
+        for (item in objects("solar")) {
+            val location = item.getJSONArray("location")
+            val position = NativeSceneMath.sunPosition(item.getDouble("date"),location.getDouble(0),location.getDouble(1))
+            assertEquals(item.getJSONObject("position").getDouble("azimuth"),position.azimuth,1e-9)
+            assertEquals(item.getJSONObject("position").getDouble("altitude"),position.altitude,1e-9)
+            val sun = NativeSceneMath.resolvedSun(item.getJSONObject("preset"),position,"date")
+            assertMatches(item.getJSONObject("resolved"),sun,"solar")
+        }
+        for (item in objects("shots")) {
+            val shot = item.getJSONObject("shot")
+            val frames = shot.getJSONArray("keyframes").objects().map { frame ->
+                val camera = frame.getJSONObject("camera")
+                val center = camera.getJSONArray("center")
+                NativeSceneMath.ShotFrame(frame.getLong("at"),dev.tileflow.sdk.TileflowCamera(
+                    center.getDouble(0), center.getDouble(1),camera.getDouble("zoom"),
+                    camera.optDouble("bearing",0.0),camera.optDouble("pitch",0.0)),
+                    frame.optJSONObject("blend")?.getDouble("position"))
+            }
+            for (sample in item.getJSONArray("samples").objects()) {
+                val state = NativeSceneMath.shot(frames,sample.getLong("requestedAt"),shot.optString("easing") == "linear")
+                val expected = sample.getJSONObject("camera")
+                val camera = state.camera
+                assertEquals(sample.getLong("at"),state.at)
+                assertEquals(expected.getJSONArray("center").getDouble(0),camera.longitude,1e-9)
+                assertEquals(expected.getJSONArray("center").getDouble(1),camera.latitude,1e-9)
+                assertEquals(expected.getDouble("zoom"),camera.zoom,1e-9)
+                assertEquals(expected.getDouble("bearing"),camera.bearing,1e-9)
+                assertEquals(expected.getDouble("pitch"),camera.pitch,1e-9)
+                if (sample.has("blendPosition")) assertEquals(sample.getDouble("blendPosition"),requireNotNull(state.blend),1e-9)
+            }
+        }
+    }
+
+    @Test
     fun coloursMixInOkLab() {
         val cases = objects("colours")
         assertEquals(12, cases.size)

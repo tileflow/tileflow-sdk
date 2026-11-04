@@ -26,6 +26,7 @@ import dev.tileflow.sdk.offline.TileflowOfflineRegion
 import dev.tileflow.sdk.offline.TileflowOfflineRegionLoadOptions
 import dev.tileflow.sdk.offline.TileflowOfflineStore
 import dev.tileflow.sdk.offline.TileflowOfflineSwitch
+import dev.tileflow.sdk.offline.TileflowOfflineTileSource
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
@@ -43,6 +44,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -135,6 +137,53 @@ public class MapOfflineIntegrationTest {
     @Test
     public fun downloadedNativeThemesBlendWithoutANetwork() =
         hostedPackOfflineThenOnline(MapEngineKind.NATIVE, OfflinePackProfile.NATIVE)
+
+    @Test
+    public fun downloadedSelfHostedThemesBlendWithoutANetwork() {
+        OfflineMapHostActivity.kind = MapEngineKind.NATIVE
+        val manifest = "$ORIGIN/native/manifest.json"
+        requireFixture(manifest)
+        val cache = TileflowMapCache.get(context)
+        runBlocking { cache.clear() }
+        val store = store {
+            throw TileflowOfflineException(TileflowOfflineErrorCode.INVALID_CONFIGURATION)
+        }
+        download(
+            store,
+            "city",
+            TileflowOfflineRegionLoadOptions(
+                TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(-3.73, 40.39, -3.67, 40.45)),
+                TileflowOfflineContent.Manifest(
+                    manifest,
+                    "city",
+                    listOf(
+                        TileflowOfflineTileSource("tileflow", "$ORIGIN/city/{z}/{x}/{y}.mvt", maxZoom = 16),
+                        TileflowOfflineTileSource("tileflow-terrain", "$ORIGIN/terrain/{z}/{x}/{y}.png", maxZoom = 14),
+                    ),
+                ),
+                maxZoom = 16,
+            ),
+        )
+
+        val before = counters(fixture = "native-requests").getLong("requests")
+        TileflowOfflineSwitch.isNetworkEnabled = false
+        val map = show(TileflowMapSource("city", URI(manifest), allowsLoopbackHttp = true))
+        try {
+            runBlocking {
+                withContext(Dispatchers.Main) {
+                    val light = map.map.routeInks()
+                    map.map.setBlend(listOf("light", "dark"), 0.75)
+                    assertNotEquals(light.line, map.map.routeInks().line)
+                    val point = map.map.project(TileflowCoordinate(-3.7, 40.42))
+                    assertTrue(map.map.query(point.x, point.y).any { it.layer.startsWith("tileflow-buildings") })
+                }
+            }
+        } finally {
+            instrumentation.runOnMainSync { map.finish() }
+        }
+        assertEquals(before, counters(fixture = "native-requests").getLong("requests"))
+        assertEquals(0, runBlocking { cache.usage() }.entries)
+    }
 
     @Test
     public fun terrainZoomedPastItsDownloadedZoomsHasNoHolesOffline() =
@@ -373,9 +422,9 @@ public class MapOfflineIntegrationTest {
         }
     }
 
-    /** The fixture's Hosted counters, read directly, never through the switched-off client. */
-    private fun counters(reset: Boolean = false): JSONObject {
-        val connection = URL("$ORIGIN/__fixture/hosted").openConnection() as HttpURLConnection
+    /** The fixture's counters, read directly, never through the switched-off client. */
+    private fun counters(reset: Boolean = false, fixture: String = "hosted"): JSONObject {
+        val connection = URL("$ORIGIN/__fixture/$fixture").openConnection() as HttpURLConnection
         connection.requestMethod = if (reset) "POST" else "GET"
         return connection.inputStream.bufferedReader().use { JSONObject(it.readText()) }
     }

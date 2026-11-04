@@ -80,6 +80,13 @@ enum MapResourceAddress {
   static let host = "tileflow.invalid"
   private static let prefix = "https://\(host)/"
 
+  /// A self-hosted build keeps its family in the same generation as its theme styles.
+  static func familyURL(style: URL, map: String) -> URL? {
+    let segment = CharacterSet.urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))
+    guard let name = map.addingPercentEncoding(withAllowedCharacters: segment) else { return nil }
+    return URL(string: "../../families/\(name).json", relativeTo: style)?.absoluteURL
+  }
+
   /// The address of an absolute `http` or `https` URL, or nil for any other.
   static func encode(_ remote: String, context: String) -> String? {
     guard let separator = remote.range(of: "://") else { return nil }

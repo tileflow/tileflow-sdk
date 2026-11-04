@@ -113,7 +113,7 @@ final class NativeMapEngineTests: XCTestCase {
       store, id: "labels",
       options: TileflowOfflineRegionLoadOptions(
         geometry: .boundingBox(
-          TileflowBoundingBox(west: -3.705, south: 40.416, east: -3.695, north: 40.424)),
+          TileflowBoundingBox(west: -3.73, south: 40.39, east: -3.67, north: 40.45)),
         content: .hosted(mapID: Self.hostedFixtureMapID, themes: ["labels"]), minZoom: 13,
         maxZoom: 15))
     _ = try await fixtureCounters(reset: true)
@@ -180,6 +180,40 @@ final class NativeMapEngineTests: XCTestCase {
   func testDownloadedNativeThemesBlendWithoutANetwork() async throws {
     try await checkAHostedMapOpensFromItsPackOfflineAndRevalidatesItOnline(engine: .native, profile: .native)
     XCTAssertEqual(foreign.withLock { $0 }, [])
+  }
+
+  func testDownloadedSelfHostedThemesBlendWithoutANetwork() async throws {
+    let origin = FixtureServer.origin
+    let manifest = URL(string: "\(origin)/native/manifest.json")!
+    try await requireMapFixture(manifest)
+    await TileflowMapCache.clear()
+    let store = offlineMapStore(client: { throw TileflowOfflineError(.invalidConfiguration) })
+    try await downloadRegion(
+      store, id: "city",
+      options: .init(
+        geometry: .boundingBox(.init(west: -3.73, south: 40.39, east: -3.67, north: 40.45)),
+        content: .manifest(url: manifest, map: "city", sources: [
+          .init(id: "tileflow", template: "\(origin)/city/{z}/{x}/{y}.mvt", maxZoom: 16),
+          .init(id: "tileflow-terrain", template: "\(origin)/terrain/{z}/{x}/{y}.png", maxZoom: 14),
+        ]), maxZoom: 16))
+
+    let before = try await fixtureCounters(fixture: "native-requests")
+    TileflowOfflineSwitch.shared.isNetworkEnabled = false
+    let source = TileflowMapSource(map: "city", manifestURL: manifest, allowsLoopbackHTTP: true)
+    let map = try await mountMap(source, engine: .native)
+    defer { map.close() }
+    let light = try await map.view.routeInks()
+    try await map.view.setBlend(themes: ["light", "dark"], position: 0.75)
+    let blended = try await map.view.routeInks()
+    XCTAssertNotEqual(blended.line, light.line)
+    let center = try await map.view.project(.init(longitude: -3.7, latitude: 40.42))
+    let features = try await map.view.query(at: center)
+    XCTAssertTrue(features.contains { $0.layer.hasPrefix("tileflow-buildings") })
+    let after = try await fixtureCounters(fixture: "native-requests")
+    XCTAssertEqual(before, after)
+    XCTAssertEqual(foreign.withLock { $0 }, [])
+    let usage = await TileflowMapCache.usage()
+    XCTAssertEqual(usage.entries, 0)
   }
 
   func testTerrainZoomedPastItsDownloadedZoomsHasNoHolesOffline() async throws {

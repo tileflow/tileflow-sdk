@@ -56,11 +56,7 @@ struct NativeManifest: Sendable {
   func familyURL(styleURL: URL) -> URL? {
     switch representation {
     case .native: return family?.url
-    case .selfHosted:
-      guard let name = map.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
-        return nil
-      }
-      return URL(string: "../../families/\(name).json", relativeTo: styleURL)?.absoluteURL
+    case .selfHosted: return MapResourceAddress.familyURL(style: styleURL, map: map)
     case .webView: return nil
     }
   }

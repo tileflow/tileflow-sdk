@@ -42,6 +42,13 @@ enum OfflineSelfHosted {
         !styles.contains(style)
       {
         styles.append(style)
+        let directory = style.deletingLastPathComponent()
+        if directory.lastPathComponent == map,
+          directory.deletingLastPathComponent().lastPathComponent == "styles",
+          let family = MapResourceAddress.familyURL(style: style, map: map)
+        {
+          documents.append(family)
+        }
       }
       documents += fontFiles(theme["fontFaces"], against: url)
     }
@@ -59,6 +66,17 @@ enum OfflineSelfHosted {
     else { throw TileflowOfflineError(.invalidResponse, context: .init(reason: "invalidStyle")) }
     var documents = [url]
     documents += fontFiles(style["metadata"]?["tileflow:fontFaces"], against: url)
+    if case .object(let faces) = style["font-faces"] {
+      for name in faces.keys.sorted() {
+        switch faces[name] {
+        case .string(let file):
+          if let font = resolve(file, against: url) { documents.append(font) }
+        case .array(let files):
+          documents += files.compactMap { $0["url"]?.string.flatMap { resolve($0, against: url) } }
+        default: break
+        }
+      }
+    }
     if case .object(let sources) = style["sources"] {
       for name in sources.keys.sorted() {
         // TileJSON documents and GeoJSON data; tiles come from the region's tile sources.

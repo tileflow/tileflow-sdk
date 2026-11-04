@@ -1,6 +1,7 @@
 package dev.tileflow.sdk.transport
 
 import java.net.URI
+import java.net.URLEncoder
 import java.security.SecureRandom
 import java.util.Base64
 
@@ -63,6 +64,11 @@ internal object ResourceAddress {
 internal object MapResourceAddress {
     const val HOST = "tileflow.invalid"
     const val PREFIX = "https://$HOST/"
+
+    /** A self-hosted build keeps its family in the same generation as its theme styles. */
+    fun familyUrl(style: String, map: String): String =
+        resolve(style, "../../families/${URLEncoder.encode(map, "UTF-8").replace("+", "%20")}.json")
+
     private val absolute = Regex("^([A-Za-z][A-Za-z0-9+.-]*)://([^/?#]+)([^?#]*)(\\?[^#]*)?(#.*)?$")
     private val origin = Regex("^https?://[^/?#@\\s]+$")
     private val context = Regex("^[A-Za-z0-9_-]{22}$")

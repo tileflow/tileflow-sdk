@@ -290,11 +290,18 @@ public class AnnotationIntegrationTest {
         }
         val activity = show()
         onMap(activity) { map ->
+            until("the map activity owns the screen before compositor capture") {
+                activity.hasWindowFocus()
+            }
             map.jump(TileflowCamera(centre.longitude, centre.latitude, 13.0))
             val bounds = map.visibleBounds()
-            val markerIndex = 110
-            val viewColor = Color.rgb(19, 253, 139)
-            val circleColor = Color.rgb(243, 0, 247)
+            // The two references straddle the center. At least one stays fully visible at both
+            // ends of a pan, even if the compositor captures the display later than requested.
+            val references =
+                listOf(
+                    PanReference(105, Color.rgb(19, 253, 139), "#f300f7"),
+                    PanReference(114, Color.rgb(253, 151, 19), "#04dbf3"),
+                )
             val views =
                 (0 until 200).map { index ->
                     val coordinate =
@@ -304,7 +311,10 @@ public class AnnotationIntegrationTest {
                         )
                     val view =
                         View(activity).apply {
-                            setBackgroundColor(if (index == markerIndex) viewColor else Color.BLUE)
+                            setBackgroundColor(
+                                references.firstOrNull { it.index == index }?.viewColor
+                                    ?: Color.BLUE
+                            )
                         }
                     map.viewAnnotationManager.addViewAnnotation(
                         view,
@@ -320,35 +330,39 @@ public class AnnotationIntegrationTest {
             until("the views are placed") { views.all { it.first.visibility == View.VISIBLE } }
             val engine = map.readyEngine as dev.tileflow.sdk.engine.NativeMapEngine
             val projection = requireNotNull(engine.map).projection
-            val reference = views[markerIndex].second
-            map.addSource(
-                TileflowGeoJSONSource(
-                    "view-reference",
-                    TileflowGeoJSONData.Features(
-                        listOf(TileflowFeature("1", TileflowGeometry.Point(reference)))
-                    ),
-                )
-            )
-            map.addLayer(
-                TileflowCircleLayer("view-reference", "view-reference")
-                    .circleColor(TileflowColor.fromHex("#f300f7"))
-                    .circleRadius(10.0)
-            )
-            until("MapLibre draws the reference point") {
-                map.queryRenderedFeatures(
-                        options = TileflowRenderedQueryOptions(listOf("view-reference"))
+            for (ref in references) {
+                val coordinate = views[ref.index].second
+                map.addSource(
+                    TileflowGeoJSONSource(
+                        ref.id,
+                        TileflowGeoJSONData.Features(
+                            listOf(TileflowFeature("1", TileflowGeometry.Point(coordinate)))
+                        ),
                     )
-                    .isNotEmpty()
+                )
+                map.addLayer(
+                    TileflowCircleLayer(ref.id, ref.id)
+                        .circleColor(TileflowColor.fromHex(ref.circleHex))
+                        .circleRadius(10.0)
+                )
             }
-            val histories = mutableListOf<Double>()
+            until("MapLibre draws both reference points") {
+                map.queryRenderedFeatures(
+                        options = TileflowRenderedQueryOptions(references.map { it.id })
+                    )
+                    .size >= 2
+            }
             val physical = mutableListOf<Pair<Int, Double>>()
+            val directions = mutableSetOf<Boolean>()
+            var movingCaptures = 0
             val origin = IntArray(2).also(map::getLocationOnScreen)
+            val referenceCoordinate = views[references.first().index].second
             val row =
                 projection
                     .toScreenLocation(
                         org.maplibre.android.geometry.LatLng(
-                            reference.latitude,
-                            reference.longitude,
+                            referenceCoordinate.latitude,
+                            referenceCoordinate.longitude,
                         )
                     )
                     .y
@@ -368,7 +382,7 @@ public class AnnotationIntegrationTest {
                 org.maplibre.android.maps.MapView.OnDidFinishRenderingFrameListener { _, _, _ ->
                     val pose = projected()
                     finishedFrames.addFirst(pose)
-                    histories += pose[markerIndex * 2] + origin[0]
+                    for (ref in references) ref.history += pose[ref.index * 2] + origin[0]
                     if (finishedFrames.size > 2) finishedFrames.removeLast()
                 }
             val observer =
@@ -415,15 +429,16 @@ public class AnnotationIntegrationTest {
             try {
                 val width = bounds.east - bounds.west
                 kotlinx.coroutines.coroutineScope {
-                    for (shift in listOf(0.5, -0.5, 0.5, -0.5, 0.5, 0.0)) {
-                        histories.clear()
+                    val route = listOf(0.5, -0.5, 0.5, -0.5, 0.5, 0.0)
+                    for (shift in route + route) {
+                        references.forEach { it.history.clear() }
                         val capture =
                             async(Dispatchers.Default) {
                                 delay(230)
                                 val image =
                                     requireNotNull(instrumentation.uiAutomation.takeScreenshot())
                                 try {
-                                    markerCenters(image, row, viewColor, circleColor)
+                                    references.map { ref -> markerCenters(image, row, ref) }
                                 } finally {
                                     image.recycle()
                                 }
@@ -438,28 +453,26 @@ public class AnnotationIntegrationTest {
                             ),
                             durationMillis = 500,
                         )
-                        val (viewX, circleX) = capture.await()
-                        val delta = abs(viewX - circleX)
-                        val frame =
-                            histories.indices.minByOrNull { abs(histories[it] - circleX) }
-                                ?: error("No MapLibre frame")
-                        val distance =
-                            listOf(frame - 1, frame + 1)
-                                .filter { it in histories.indices }
-                                .maxOfOrNull { abs(histories[it] - histories[frame]) } ?: 0.0
-                        // A composed screenshot contains both the Android child and the MapLibre
-                        // circle. Allow only subpixel rasterization and one observed map-frame
-                        // step.
-                        val viewFrame =
-                            histories.indices.minByOrNull { abs(histories[it] - viewX) } ?: frame
-                        println(
-                            "Tileflow physical: native=$circleX view=$viewX, nearest frames $frame/$viewFrame, step=$distance, direction=${histories.last()-histories.first()}, frames=${histories.size}"
-                        )
-                        if (distance > 2)
-                            physical +=
-                                kotlin.math
-                                    .ceil((delta - 1.5).coerceAtLeast(0.0) / distance)
-                                    .toInt() to delta
+                        var moving = false
+                        val inner =
+                            (origin[0] + 36).toDouble()..(origin[0] + map.width - 36).toDouble()
+                        for ((ref, centers) in references.zip(capture.await())) {
+                            val (viewX, circleX) = centers
+                            if (circleX == null) continue
+                            if (viewX == null) {
+                                assertTrue(
+                                    "Map reference ${ref.id} lacks its view at $circleX",
+                                    circleX !in inner,
+                                )
+                                continue
+                            }
+                            val lag = ref.movingLag(viewX, circleX) ?: continue
+                            physical += lag
+                            moving = true
+                            directions += ref.history.last() > ref.history.first()
+                        }
+                        if (moving) movingCaptures++
+                        if (shift == 0.0 && movingCaptures >= 3 && directions.size == 2) break
                     }
                 }
             } finally {
@@ -472,11 +485,11 @@ public class AnnotationIntegrationTest {
             val p95 = sorted[((sorted.size - 1) * 0.95).toInt()]
             assertTrue(
                 "Too few independently captured moving frames: $physical",
-                physical.size >= 3,
+                movingCaptures >= 3 && directions.size == 2,
             )
             val worst = maxOf(sorted.last(), physical.maxOf { it.first })
             println(
-                "Tileflow: 200 view annotations, ${sorted.size} moving draws in ${elapsed} ms on ${Build.MODEL} (API ${Build.VERSION.SDK_INT}, $performanceMode): projection lag p50 ${sorted[sorted.size/2]}, p95 $p95, max $worst frames; composed marker samples=$physical"
+                "Tileflow: 200 view annotations, ${sorted.size} moving draws in ${elapsed} ms on ${Build.MODEL} (API ${Build.VERSION.SDK_INT}, $performanceMode): projection lag p50 ${sorted[sorted.size/2]}, p95 $p95, max $worst frames; $movingCaptures moving captures in both directions, composed marker samples=$physical"
             )
             assertEquals(200, overlay.trackedCount)
             if (performanceMode == "strict") {
@@ -487,18 +500,47 @@ public class AnnotationIntegrationTest {
                 assertEquals(final.x, child.translationX + child.width / 2f, 1.5f)
                 assertEquals(final.y, child.translationY + child.height / 2f, 1.5f)
             }
-            val targetX = map.project(reference).x + origin[0]
-            until("the composed markers reach the final camera position") {
+            val targetXs = references.map { map.project(views[it.index].second).x + origin[0] }
+            until("all composed markers reach the final camera position") {
                 val image = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
                 try {
-                    val (viewX, circleX) = markerCenters(image, row, viewColor, circleColor)
-                    abs(viewX - targetX) <= 1.5 && abs(circleX - viewX) <= 1.5
+                    references.zip(targetXs).all { (ref, targetX) ->
+                        val (viewX, circleX) = markerCenters(image, row, ref)
+                        viewX != null &&
+                            circleX != null &&
+                            abs(viewX - targetX) <= 1.5 &&
+                            abs(circleX - viewX) <= 1.5
+                    }
                 } finally {
                     image.recycle()
                 }
             }
             map.viewAnnotationManager.removeAllViewAnnotations()
             assertTrue(views.all { it.first.parent == null })
+        }
+    }
+
+    private class PanReference(val index: Int, val viewColor: Int, val circleHex: String) {
+        val id = "view-reference-$index"
+        val circleColor = Color.parseColor(circleHex)
+        val history = mutableListOf<Double>()
+
+        /** Measure every observable interior reference against its own MapLibre frames. */
+        fun movingLag(viewX: Double, circleX: Double): Pair<Int, Double>? {
+            if (
+                history.isEmpty() ||
+                    abs(circleX - history.first()) <= 2 ||
+                    abs(circleX - history.last()) <= 2
+            )
+                return null
+            val frame = history.indices.minBy { abs(history[it] - circleX) }
+            val step =
+                listOf(frame - 1, frame + 1)
+                    .filter { it in history.indices }
+                    .maxOfOrNull { abs(history[it] - history[frame]) } ?: return null
+            if (step <= 2) return null
+            val delta = abs(viewX - circleX)
+            return kotlin.math.ceil((delta - 1.5).coerceAtLeast(0.0) / step).toInt() to delta
         }
     }
 
@@ -509,14 +551,13 @@ public class AnnotationIntegrationTest {
     private fun markerCenters(
         image: android.graphics.Bitmap,
         row: Int,
-        viewColor: Int,
-        mapColor: Int,
-    ): Pair<Double, Double> {
+        ref: PanReference,
+    ): Pair<Double?, Double?> {
         val top = (row - 36).coerceAtLeast(0)
         val height = minOf(image.height - top, 73)
         val pixels = IntArray(image.width * height)
         image.getPixels(pixels, 0, image.width, 0, top, image.width, height)
-        fun center(color: Int): Double {
+        fun center(color: Int): Double? {
             var lo = image.width
             var hi = -1
             pixels.forEachIndexed { i, value ->
@@ -530,13 +571,15 @@ public class AnnotationIntegrationTest {
                     hi = maxOf(hi, x)
                 }
             }
+            // A clipped disk has no measurable center; the other reference stays in frame.
+            if (hi < lo || lo == 0 || hi == image.width - 1) return null
             assertTrue(
-                "Missing or ambiguous marker color ${Integer.toHexString(color)} in [$lo,$hi], row $row",
-                hi >= lo && hi - lo < 120,
+                "Ambiguous marker color ${Integer.toHexString(color)} in [$lo,$hi], row $row",
+                hi - lo < 120,
             )
             return (hi + lo) / 2.0
         }
-        return center(viewColor) to center(mapColor)
+        return center(ref.viewColor) to center(ref.circleColor)
     }
 
     @Test

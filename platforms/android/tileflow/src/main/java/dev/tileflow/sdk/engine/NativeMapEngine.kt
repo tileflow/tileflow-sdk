@@ -33,6 +33,8 @@ import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -138,7 +140,10 @@ internal class NativeMapEngine(
         { loadedStyle }, { currentTheme }, ::projectRuntimeSource, ::loadRuntimeGeoJSON
     )
     private val loadedStyle: Style?
-        get() = if (contentStyleLoaded) map?.style else null
+        get() {
+            if (retired) throw TileflowMapException(retiredCode)
+            return if (contentStyleLoaded) map?.style else null
+        }
     private val styleWaiters = mutableListOf<CancellableContinuation<Throwable?>>()
     private val renderWaiters = mutableListOf<CancellableContinuation<Unit>>()
 
@@ -268,7 +273,15 @@ internal class NativeMapEngine(
             return when (method) {
                 ProtocolContract.Method.INITIALIZE -> initialize(map, request ?: invalid())
                 in NativeRuntimeStyle.methods -> {
-                    val result = runtimeStyle.call(method, request ?: invalid(), data, map, mapView, density)
+                    val result = try {
+                        runtimeStyle.call(method, request ?: invalid(), data, map, mapView, density)
+                    } catch (failure: Exception) {
+                        // A blocking transport read may fail after its caller cancelled or the view
+                        // retired this generation. Preserve that lifecycle outcome for the facade.
+                        currentCoroutineContext().ensureActive()
+                        if (retired) throw TileflowMapException(retiredCode)
+                        throw failure
+                    }
                     if (method == ProtocolContract.Method.ADD_SOURCE || method == ProtocolContract.Method.REMOVE_SOURCE) {
                         projection?.let { attribution.setStyle(it.style, (it.attributions + runtimeStyle.attributions).distinct()) }
                     }
@@ -401,7 +414,7 @@ internal class NativeMapEngine(
         val projected = withContext(Dispatchers.IO) {
             project(JSONObject().put("sources", JSONObject().put("app", spec)), base)
         }
-        if (retired || resourceContext != owner) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+        if (retired || resourceContext != owner) throw TileflowMapException(retiredCode)
         val source = projected.style.getJSONObject("sources").getJSONObject("app")
         val urls = source.optJSONArray("tiles")?.items().orEmpty() + listOfNotNull(source.opt("url"))
         if (urls.isEmpty() || urls.any { value ->
@@ -413,7 +426,7 @@ internal class NativeMapEngine(
     private suspend fun loadRuntimeGeoJSON(url: String): String {
         NativeStyleSource.validateLocation(url, absolute = true)
         val bytes = withContext(Dispatchers.IO) { load(URI(url)) }
-        if (retired) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+        if (retired) throw TileflowMapException(retiredCode)
         if (bytes.size > ProtocolContract.MAXIMUM_DATA_BYTES) styleInvalid("GeoJSON is too large")
         return bytes.toString(Charsets.UTF_8)
     }

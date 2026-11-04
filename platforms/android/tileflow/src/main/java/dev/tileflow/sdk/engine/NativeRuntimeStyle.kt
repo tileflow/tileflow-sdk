@@ -55,6 +55,8 @@ internal class NativeRuntimeStyle(
 
     suspend fun call(method: Method, request: JSONObject, channel: DataChannel, map: MapLibreMap, view: MapView, density: Float): Any =
         mutations.withLock {
+            // The map may have retired while a previous source was loading.
+            currentStyle()
             try {
                 when (method) {
                     Method.ADD_SOURCE -> addSource(request, channel)

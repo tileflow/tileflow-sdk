@@ -9,12 +9,16 @@ import dev.tileflow.sdk.engine.NativeMapEngine
 import org.maplibre.android.maps.MapView
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -90,6 +94,45 @@ public class MapStyleIntegrationTest {
         val bitmap = Bitmap.createBitmap(24, 24, Bitmap.Config.ARGB_8888)
         Canvas(bitmap).drawCircle(12f, 12f, 8f, Paint().apply { color = android.graphics.Color.WHITE })
         return TileflowMapImage.fromBitmap("disc", bitmap, sdf = true)
+    }
+
+    @Test
+    public fun inFlightSourceReportsCallerCancellationAndRendererRetirement() {
+        for (operation in listOf("cancel", "reload", "destroy")) {
+            val activity = show()
+            try {
+                runBlocking {
+                    withContext(Dispatchers.Main) {
+                        val map = activity.views.single()
+                        activity.recorded.single().waitForLoads(1)
+                        val outcome = CompletableDeferred<Throwable?>()
+                        val job = launch(start = CoroutineStart.UNDISPATCHED) {
+                            outcome.complete(runCatching {
+                                map.addStyleSource(operation, JSONObject()
+                                    .put("type", "vector")
+                                    .put("url", "${Fixture.ORIGIN}/runtime-style/invalid-tiles.json"))
+                            }.exceptionOrNull())
+                        }
+                        when (operation) {
+                            "cancel" -> job.cancel()
+                            "reload" -> map.reload()
+                            "destroy" -> map.destroy()
+                        }
+                        val failure = withTimeout(10_000) { outcome.await() }
+                        when (operation) {
+                            "cancel" -> {
+                                assertTrue("Expected caller cancellation, got $failure", failure is CancellationException)
+                                assertTrue("Cancelled source was retained", !map.sourceExists(operation))
+                            }
+                            "reload" -> assertEquals(TileflowErrorCode.CANCELLED, (failure as TileflowMapException).code)
+                            "destroy" -> assertEquals(TileflowErrorCode.DISPOSED, (failure as TileflowMapException).code)
+                        }
+                    }
+                }
+            } finally {
+                instrumentation.runOnMainSync { activity.finish() }
+            }
+        }
     }
 
     @Test

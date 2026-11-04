@@ -1,4 +1,9 @@
-import {tileflowHazeFragment, tileflowHazeVertex, tileflowShadowLookup} from './scene-3d-shaders';
+import {
+  tileflowAmbientLight,
+  tileflowHazeFragment,
+  tileflowHazeVertex,
+  tileflowShadowLookup,
+} from './scene-3d-shaders';
 
 // Shaders of Tileflow's 3D buildings renderer (buildings-3d-browser.ts). Positions are in tile
 // units and projected with MapLibre's custom-layer projection; the shadow pass works in metres from
@@ -229,6 +234,7 @@ uniform float u_edge_width; // their width, in the drawing buffer's pixels
 uniform vec3 u_edge_colour; // the application's colour for them
 uniform float u_edge_own; // how much of them takes the application's colour, from 0 to 1
 ${nightLight}
+${tileflowAmbientLight}
 ${tileflowShadowLookup}
 ${tileflowHazeFragment}
 out vec4 fragColor;
@@ -273,11 +279,10 @@ vec3 styleColour(vec3 colour, vec3 normal) {
 }
 
 // A surface's light over the light a sunlit roof takes, in the map's colours: a sunlit roof keeps
-// its colour, a wall turned to a low sun glows, and shade takes the sky's colour. A wall sees half
-// the sky; broad daylight fill keeps facades luminous, while night has little bounced light.
+// its colour, a wall turned to a low sun glows, and shade takes the sky's colour.
 vec3 shade(vec3 normal, float lit) {
   float facing = dot(normal, u_sun_dir);
-  vec3 sky = u_sky_light * mix(mix(0.92, 0.5, u_night), 1.0, normal.z);
+  vec3 sky = ambientLight(u_sky_light, normal);
   vec3 light = sky + u_sun_light * max(facing, 0.0) * (1.0 - u_shadow * (1.0 - lit));
   vec3 roof = u_sky_light + u_sun_light * max(u_sun_dir.z, 0.0);
   return min(pow(light / max(roof, vec3(1e-4)), vec3(1.0 / 2.2)), vec3(1.7));

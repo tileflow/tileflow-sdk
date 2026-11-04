@@ -1,3 +1,12 @@
+// Ambient radiance already describes how dark the sky is. Preserve it at night instead of
+// halving it again on facades; surface orientation supplies only a gentle hemispheric falloff.
+// Ordinary buildings and map-shaded model roles use the same response.
+export const tileflowAmbientLight = `
+vec3 ambientLight(vec3 sky, vec3 normal) {
+  float up = clamp(normal.z, -1.0, 1.0);
+  return sky * (0.96 + 0.04 * up);
+}`;
+
 // Every receiver uses the same depth comparison: one hardware-filtered sample keeps
 // buildings, trees, placed models and the ground equally sharp.
 export const tileflowShadowLookup = `

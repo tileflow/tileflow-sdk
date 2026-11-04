@@ -74,7 +74,7 @@ const degrees = Math.PI / 180;
 /** An angle in degrees from 0 (inclusive) to 360 (exclusive). */
 export function normalizeTileflowAzimuth(azimuth: number): number {
   const turned = azimuth % 360;
-  return turned < 0 ? turned + 360 : turned === 0 ? 0 : turned;
+  return turned < 0 ? (turned + 360) % 360 : turned === 0 ? 0 : turned;
 }
 
 /**
@@ -214,8 +214,8 @@ export function resolveTileflowSun(
 }
 
 /**
- * A preset `t` of the way from `from` to `to`: the azimuth turns the short way round, colours mix
- * in OKLab, as theme blends mix paint colours, and numbers linearly.
+ * A preset `t` of the way from `from` to `to`: directions mix as unit vectors, colours mix in
+ * OKLab, as theme blends mix paint colours, and strengths linearly.
  */
 export function mixTileflowSunPresets(
   from: TileflowSunPreset,
@@ -228,8 +228,7 @@ export function mixTileflowSunPresets(
   const colour = (a: string, b: string) => mixTileflowColours(a, b, at) ?? (at < 0.5 ? a : b);
   const number = (a: number, b: number) => a + (b - a) * at;
   return Object.freeze({
-    azimuth: mixTileflowAzimuths(from.azimuth, to.azimuth, at),
-    altitude: number(from.altitude, to.altitude),
+    ...mixTileflowSunDirections(from, to, at),
     color: colour(from.color, to.color),
     intensity: number(from.intensity, to.intensity),
     shadowIntensity: number(from.shadowIntensity, to.shadowIntensity),
@@ -238,6 +237,34 @@ export function mixTileflowSunPresets(
       intensity: number(from.ambient.intensity, to.ambient.intensity),
     }),
   });
+}
+
+/**
+ * Mix directions in Cartesian space, then normalize: rotating the light does not independently
+ * ease its azimuth and elevation. Nearly opposite directions have no stable normalized midpoint;
+ * use the short angular path for that whole transition, including its midpoint.
+ */
+export function mixTileflowSunDirections(
+  from: Readonly<{azimuth: number; altitude: number}>,
+  to: Readonly<{azimuth: number; altitude: number}>,
+  t: number,
+): Readonly<{azimuth: number; altitude: number}> {
+  const at = clamp01(Number.isFinite(t) ? t : 0);
+  if (at === 0) return from;
+  if (at === 1) return to;
+  const a = tileflowSunDirection(from.azimuth, from.altitude);
+  const b = tileflowSunDirection(to.azimuth, to.altitude);
+  const azimuth = mixTileflowAzimuths(from.azimuth, to.azimuth, at);
+  if (a[0] * b[0] + a[1] * b[1] + a[2] * b[2] < -0.9995)
+    return {azimuth, altitude: from.altitude + (to.altitude - from.altitude) * at};
+  const x = a[0] + (b[0] - a[0]) * at;
+  const y = a[1] + (b[1] - a[1]) * at;
+  const z = a[2] + (b[2] - a[2]) * at;
+  const horizontal = Math.hypot(x, y);
+  return {
+    azimuth: horizontal < 1e-12 ? azimuth : normalizeTileflowAzimuth(Math.atan2(x, y) / degrees),
+    altitude: Math.atan2(z, horizontal) / degrees,
+  };
 }
 
 /** The preset at a blend position over the blended themes' presets, in blend order. */

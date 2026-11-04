@@ -908,9 +908,22 @@ async function auditPublicTarball(packageName, tarball, packedVersions, releaseC
       'Maps tarball is missing official-map notices.',
     );
     const sourceAssetRoot = join(repositoryRoot, 'packages', 'maps', 'assets');
+    // The manifest may leave out exact asset paths served from elsewhere, such as Streets' hosted
+    // climate image; every other source asset must ship.
+    const excludedAssetEntries = new Set(
+      manifest.files
+        .filter((entry) => entry.startsWith('!'))
+        .map((entry) => `package/${entry.slice(1)}`),
+    );
     const expectedAssetEntries = (await listFiles(sourceAssetRoot))
       .map((path) => `package/assets/${relative(sourceAssetRoot, path).replaceAll('\\', '/')}`)
+      .filter((entry) => !excludedAssetEntries.delete(entry))
       .sort();
+    assert.deepEqual(
+      [...excludedAssetEntries],
+      [],
+      'Maps manifest excludes paths that are not source asset files.',
+    );
     const packedAssetEntries = entries
       .filter((entry) => entry.startsWith('package/assets/') && !entry.endsWith('/'))
       .sort();

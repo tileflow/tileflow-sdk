@@ -122,7 +122,9 @@ public class NativeAttributionIntegrationTest {
                     val control = attribution(activity)
                     assertTrue(
                         "${control.entries}",
-                        control.entries.any { it.text == "Fixture City" },
+                        control.entries.any {
+                            it.text.startsWith("Fixture City") && it.text.endsWith("Climate")
+                        },
                     )
                     val density = map.resources.displayMetrics.density
                     val margin = (8 * density).toInt()

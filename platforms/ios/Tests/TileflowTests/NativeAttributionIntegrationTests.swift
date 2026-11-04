@@ -63,7 +63,10 @@ final class NativeAttributionIntegrationTests: XCTestCase {
     let control = try attribution(view)
     control.view.layoutIfNeeded()
     XCTAssertFalse(control.view.control.isHidden)
-    XCTAssertTrue(control.entries.contains { $0.text == "Fixture City" }, "\(control.entries)")
+    // The city's data credit, which Core joins with its climate underlay's.
+    XCTAssertTrue(
+      control.entries.contains { $0.text.hasPrefix("Fixture City") && $0.text.hasSuffix("Climate") },
+      "\(control.entries)")
     XCTAssertEqual(control.view.control.frame.maxY, 844 - 8, accuracy: 0.5)
 
     view.contentInsets = UIEdgeInsets(top: 0, left: 0, bottom: 300, right: 0)

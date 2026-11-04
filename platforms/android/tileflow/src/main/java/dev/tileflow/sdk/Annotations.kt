@@ -13,6 +13,8 @@ import org.json.JSONObject
  * @property id Identifies the annotation in its manager; the manager generates it.
  */
 public abstract class TileflowBaseAnnotation internal constructor(public val id: String) {
+    init { if (!annotationIdentifier.matches(id)) invalidAnnotation() }
+
     /** Whether a pan that starts on the annotation drags it instead of the map. */
     public var isDraggable: Boolean = false
 
@@ -296,7 +298,8 @@ public class TileflowPointAnnotationOptions {
         accessibilityLabel = label
     }
 
-    internal fun build(id: String): TileflowPointAnnotation =
+    /** Creates an annotation from these options without attaching it to a map. */
+    public fun build(id: String): TileflowPointAnnotation =
         TileflowPointAnnotation(id, point ?: invalidAnnotation()).also {
             it.iconImage = iconImage
             iconImageBitmap?.let { bitmap -> it.iconImageBitmap = bitmap }
@@ -376,7 +379,8 @@ public class TileflowCircleAnnotationOptions {
         accessibilityLabel = label
     }
 
-    internal fun build(id: String): TileflowCircleAnnotation =
+    /** Creates an annotation from these options without attaching it to a map. */
+    public fun build(id: String): TileflowCircleAnnotation =
         TileflowCircleAnnotation(id, point ?: invalidAnnotation()).also {
             it.circleRadius = circleRadius
             it.circleColor = circleColor
@@ -438,7 +442,8 @@ public class TileflowPolylineAnnotationOptions {
         accessibilityLabel = label
     }
 
-    internal fun build(id: String): TileflowPolylineAnnotation =
+    /** Creates an annotation from these options without attaching it to a map. */
+    public fun build(id: String): TileflowPolylineAnnotation =
         TileflowPolylineAnnotation(id, (points ?: invalidAnnotation()).also(::validLine)).also {
             it.lineColor = lineColor
             it.lineWidth = lineWidth
@@ -496,7 +501,8 @@ public class TileflowPolygonAnnotationOptions {
         accessibilityLabel = label
     }
 
-    internal fun build(id: String): TileflowPolygonAnnotation =
+    /** Creates an annotation from these options without attaching it to a map. */
+    public fun build(id: String): TileflowPolygonAnnotation =
         TileflowPolygonAnnotation(id, (points ?: invalidAnnotation()).also(::validRings)).also {
             it.fillColor = fillColor
             it.fillOpacity = fillOpacity
@@ -578,3 +584,5 @@ internal fun annotationHits(result: JSONObject): List<Pair<String, String>> {
         if (layer.isEmpty() || id.isEmpty()) null else layer to id
     }
 }
+
+internal val annotationIdentifier = Regex("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")

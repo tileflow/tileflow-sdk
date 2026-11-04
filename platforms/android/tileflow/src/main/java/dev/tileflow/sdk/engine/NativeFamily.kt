@@ -1,5 +1,10 @@
 package dev.tileflow.sdk.engine
 
+import dev.tileflow.sdk.bridge.DataChannel
+import dev.tileflow.sdk.transport.ResourceLoader
+import java.net.URI
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -39,6 +44,40 @@ internal class NativeFamily private constructor(val document: JSONObject) {
     }
 
     companion object {
+        /** Reads the family of the selected style, including the Hosted SHA-256 binding. */
+        suspend fun load(
+            manifest: NativeMapManifest,
+            style: String,
+            loader: ResourceLoader,
+            mismatch: (String) -> Unit = {},
+        ): NativeFamily? {
+            val url = manifest.familyUrl(style) ?: return null
+            val bytes =
+                withContext(Dispatchers.IO) {
+                    runCatching { loader.load(URI(url)) }
+                        .getOrNull()
+                        ?.takeIf { it.status == 200 }
+                        ?.bytes
+                } ?: return null
+            if (manifest.family?.second?.let { DataChannel.digest(bytes) != it } == true) {
+                mismatch(url)
+                return null
+            }
+            return runCatching { parse(JSONObject(String(bytes, Charsets.UTF_8))) }.getOrNull()
+        }
+
+        fun defaultRouteInks(scheme: String): JSONObject {
+            val dark = scheme == "dark"
+            return JSONObject()
+                .put("line", if (dark) "#60a5fa" else "#2563eb")
+                .put("casing", if (dark) "#0b1220" else "#1e3a8a")
+                .put("core", "#eff6ff")
+                .put("glow", if (dark) "#60a5fa" else "#2563eb")
+                .put("alternative", "#64748b")
+                .put("glowOpacity", if (dark) 0.4 else 0.16)
+                .put("coreOpacity", if (dark) 0.7 else 0.0)
+        }
+
         fun parse(document: JSONObject): NativeFamily? =
             document
                 .takeIf {
@@ -50,4 +89,5 @@ internal class NativeFamily private constructor(val document: JSONObject) {
     }
 }
 
-internal fun JSONArray.objects(): List<JSONObject> = (0 until length()).mapNotNull { optJSONObject(it) }
+internal fun JSONArray.objects(): List<JSONObject> =
+    (0 until length()).mapNotNull { optJSONObject(it) }

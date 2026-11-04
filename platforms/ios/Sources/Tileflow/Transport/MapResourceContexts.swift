@@ -30,6 +30,8 @@ final class MapResourceContexts: Sendable {
 
   private let routes = LockedValue<[String: MapResourceRoute]>([:])
 
+  var activeCount: Int { routes.withLock { $0.count } }
+
   /// Registers a map's route under a new context.
   func register(_ route: MapResourceRoute) -> String {
     let context = MapResourceAddress.newContext()

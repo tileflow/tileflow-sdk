@@ -1,13 +1,16 @@
 package dev.tileflow.sdk.transport
 
+import android.content.Context
 import android.os.SystemClock
 import dev.tileflow.sdk.LoadableMapSource
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowMapException
+import dev.tileflow.sdk.TileflowMapCache
 import dev.tileflow.sdk.hosted.HostedContract
 import dev.tileflow.sdk.hosted.HostedSession
 import dev.tileflow.sdk.hosted.ResourceReaction
 import dev.tileflow.sdk.offline.OfflineServingIndex
+import dev.tileflow.sdk.offline.OfflineReachability
 import dev.tileflow.sdk.offline.OfflineServingRule
 import java.io.ByteArrayInputStream
 import java.io.Closeable
@@ -482,3 +485,17 @@ internal val LoadableMapSource.grantScope: ResourceCacheScope?
         val mapId = mapId ?: return null
         return ResourceCacheScope.grant(endpoint.apiOrigin, mapId)
     }
+
+
+internal fun LoadableMapSource.makeSession(): HostedSession? =
+    if (hosted != null && mapId != null && surfaceId != null) HostedSession(hosted, mapId, surfaceId) else null
+
+internal fun LoadableMapSource.makeLoader(
+    context: Context, session: HostedSession?, onDeploymentSuperseded: (() -> Boolean)? = null,
+): ResourceLoader =
+    ResourceLoader(
+        policy, hosted = session, apiOrigin = hosted?.apiOrigin, publicMetadataUrls = publicMetadataUrls,
+        cache = TileflowMapCache.get(context).store, grantScope = grantScope,
+        offline = OfflineServingIndex.shared(context), reachable = { OfflineReachability.isReachable(context) },
+        onDeploymentSuperseded = onDeploymentSuperseded,
+    )

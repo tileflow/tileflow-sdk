@@ -291,24 +291,9 @@ internal constructor(
         )
 
     /** The layer's MapLibre JSON for the current annotations and manager values. */
-    internal fun layerJson(): JSONObject {
-        val used = items.values.flatMapTo(mutableSetOf()) { it.styleProperties().keys }
-        val layout = JSONObject()
-        val paint = JSONObject()
-        for (property in properties) {
-            if (property.name !in used) continue
-            val get = JSONArray().put("get").put(property.name)
-            val value =
-                if (property.fallback == null) get
-                else JSONArray().put("coalesce").put(get).put(fallbackJson(property.fallback))
-            (if (property.layout) layout else paint).put(property.name, value)
-        }
-        managerLayout().forEach { (name, value) -> layout.put(name, styleConstantJson(value)) }
-        return JSONObject().put("id", id).put("type", layerType).put("source", id).apply {
-            if (layout.length() > 0) put("layout", layout)
-            if (paint.length() > 0) put("paint", paint)
-        }
-    }
+    internal fun layerJson(): JSONObject = annotationLayer(
+        id, layerType, properties, items.values.flatMapTo(mutableSetOf()) { it.styleProperties().keys }, managerLayout(),
+    )
 
     private suspend fun flush(target: TileflowMapView) {
         val wanted = images()
@@ -405,16 +390,7 @@ internal constructor(id: String, config: TileflowAnnotationConfig, owner: Tilefl
         config,
         owner,
         "symbol",
-        listOf(
-            AnnotationProperty("icon-image", true, null),
-            AnnotationProperty("icon-anchor", true, "center"),
-            AnnotationProperty("icon-offset", true, listOf(0.0, 0.0)),
-            AnnotationProperty("icon-rotate", true, 0.0),
-            AnnotationProperty("icon-size", true, 1.0),
-            AnnotationProperty("symbol-sort-key", true, 0.0),
-            AnnotationProperty("icon-color", false, TileflowColor(0, 0, 0)),
-            AnnotationProperty("icon-opacity", false, 1.0),
-        ),
+        pointAnnotationProperties,
     ) {
     /** Whether an annotation shows where it collides with other symbols. */
     public var iconAllowOverlap: Boolean? = null
@@ -457,16 +433,7 @@ internal constructor(id: String, config: TileflowAnnotationConfig, owner: Tilefl
         config,
         owner,
         "circle",
-        listOf(
-            AnnotationProperty("circle-sort-key", true, 0.0),
-            AnnotationProperty("circle-radius", false, 5.0),
-            AnnotationProperty("circle-color", false, TileflowColor(0, 0, 0)),
-            AnnotationProperty("circle-opacity", false, 1.0),
-            AnnotationProperty("circle-stroke-color", false, TileflowColor(0, 0, 0)),
-            AnnotationProperty("circle-stroke-width", false, 0.0),
-            AnnotationProperty("circle-stroke-opacity", false, 1.0),
-            AnnotationProperty("circle-blur", false, 0.0),
-        ),
+        circleAnnotationProperties,
     ) {
     override fun build(
         options: TileflowCircleAnnotationOptions,
@@ -482,13 +449,7 @@ internal constructor(id: String, config: TileflowAnnotationConfig, owner: Tilefl
         config,
         owner,
         "line",
-        listOf(
-            AnnotationProperty("line-sort-key", true, 0.0),
-            AnnotationProperty("line-color", false, TileflowColor(0, 0, 0)),
-            AnnotationProperty("line-width", false, 1.0),
-            AnnotationProperty("line-opacity", false, 1.0),
-            AnnotationProperty("line-blur", false, 0.0),
-        ),
+        lineAnnotationProperties,
     ) {
     /** How every line of the manager ends. */
     public var lineCap: TileflowLineCap? = null
@@ -514,13 +475,7 @@ internal constructor(id: String, config: TileflowAnnotationConfig, owner: Tilefl
         config,
         owner,
         "fill",
-        listOf(
-            AnnotationProperty("fill-sort-key", true, 0.0),
-            AnnotationProperty("fill-color", false, TileflowColor(0, 0, 0)),
-            AnnotationProperty("fill-opacity", false, 1.0),
-            // Without its own outline colour, a polygon's outline takes its fill colour.
-            AnnotationProperty("fill-outline-color", false, FillColorFallback),
-        ),
+        polygonAnnotationProperties,
     ) {
     override fun build(
         options: TileflowPolygonAnnotationOptions,
@@ -566,4 +521,61 @@ internal class AnnotationLayer(
     }
 
     override fun json(): JSONObject = JSONObject(value.toString())
+}
+
+internal val pointAnnotationProperties = listOf(
+            AnnotationProperty("icon-image", true, null),
+            AnnotationProperty("icon-anchor", true, "center"),
+            AnnotationProperty("icon-offset", true, listOf(0.0, 0.0)),
+            AnnotationProperty("icon-rotate", true, 0.0),
+            AnnotationProperty("icon-size", true, 1.0),
+            AnnotationProperty("symbol-sort-key", true, 0.0),
+            AnnotationProperty("icon-color", false, TileflowColor(0, 0, 0)),
+            AnnotationProperty("icon-opacity", false, 1.0),
+        )
+
+internal val circleAnnotationProperties = listOf(
+            AnnotationProperty("circle-sort-key", true, 0.0),
+            AnnotationProperty("circle-radius", false, 5.0),
+            AnnotationProperty("circle-color", false, TileflowColor(0, 0, 0)),
+            AnnotationProperty("circle-opacity", false, 1.0),
+            AnnotationProperty("circle-stroke-color", false, TileflowColor(0, 0, 0)),
+            AnnotationProperty("circle-stroke-width", false, 0.0),
+            AnnotationProperty("circle-stroke-opacity", false, 1.0),
+            AnnotationProperty("circle-blur", false, 0.0),
+        )
+
+internal val lineAnnotationProperties = listOf(
+            AnnotationProperty("line-sort-key", true, 0.0),
+            AnnotationProperty("line-color", false, TileflowColor(0, 0, 0)),
+            AnnotationProperty("line-width", false, 1.0),
+            AnnotationProperty("line-opacity", false, 1.0),
+            AnnotationProperty("line-blur", false, 0.0),
+        )
+
+internal val polygonAnnotationProperties = listOf(
+            AnnotationProperty("fill-sort-key", true, 0.0),
+            AnnotationProperty("fill-color", false, TileflowColor(0, 0, 0)),
+            AnnotationProperty("fill-opacity", false, 1.0),
+            // Without its own outline colour, a polygon's outline takes its fill colour.
+            AnnotationProperty("fill-outline-color", false, FillColorFallback),
+        )
+
+internal fun annotationLayer(id: String, layerType: String, properties: List<AnnotationProperty>,
+    used: Set<String>, managerLayout: Map<String, Any> = emptyMap()): JSONObject {
+        val layout = JSONObject()
+        val paint = JSONObject()
+        for (property in properties) {
+            if (property.name !in used) continue
+            val get = JSONArray().put("get").put(property.name)
+            val value =
+                if (property.fallback == null) get
+                else JSONArray().put("coalesce").put(get).put(fallbackJson(property.fallback))
+            (if (property.layout) layout else paint).put(property.name, value)
+        }
+        managerLayout.forEach { (name, value) -> layout.put(name, styleConstantJson(value)) }
+        return JSONObject().put("id", id).put("type", layerType).put("source", id).apply {
+            if (layout.length() > 0) put("layout", layout)
+            if (paint.length() > 0) put("paint", paint)
+        }
 }

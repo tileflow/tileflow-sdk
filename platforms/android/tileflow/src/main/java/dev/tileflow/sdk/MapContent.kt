@@ -13,7 +13,7 @@ public data class TileflowAnnotation(
 ) {
     internal fun json(): JSONObject {
         if (
-            !Regex("^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$").matches(id) ||
+            !annotationIdentifier.matches(id) ||
                 title.isBlank() ||
                 title.length > 256 ||
                 coordinate.longitude !in -180.0..180.0 ||

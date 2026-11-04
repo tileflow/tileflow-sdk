@@ -38,6 +38,8 @@ import dev.tileflow.sdk.transport.MapPrewarmer
 import dev.tileflow.sdk.transport.ResourceLoader
 import dev.tileflow.sdk.transport.TileflowHttpClient
 import dev.tileflow.sdk.transport.grantScope
+import dev.tileflow.sdk.transport.makeLoader
+import dev.tileflow.sdk.transport.makeSession
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
@@ -1260,34 +1262,13 @@ constructor(
             pendingRemount = false
             // A new renderer starts shown; it is hidden after initialization if the view is not.
             rendererVisible = true
-            val endpoint = loadable.hosted
-            if (
-                hostedSession == null &&
-                    endpoint != null &&
-                    loadable.mapId != null &&
-                    loadable.surfaceId != null
-            ) {
-                hostedSession = HostedSession(endpoint, loadable.mapId, loadable.surfaceId)
-            }
+            if (hostedSession == null) hostedSession = loadable.makeSession()
             hostedSession?.setBackgrounded(!isVisibleToUser())
-            val resourceLoader =
-                ResourceLoader(
-                    loadable.policy,
-                    hosted = hostedSession,
-                    apiOrigin = endpoint?.apiOrigin,
-                    publicMetadataUrls = loadable.publicMetadataUrls,
-                    cache = TileflowMapCache.get(context).store,
-                    grantScope = loadable.grantScope,
-                    offline = OfflineServingIndex.shared(context),
-                    reachable = { OfflineReachability.isReachable(context) },
-                    onDeploymentSuperseded = {
-                        // A protected style belongs to a superseded deployment: reload once.
-                        automaticReloadAvailable.compareAndSet(true, false).also { reload ->
-                            if (reload)
-                                post { if (!destroyed && generation == current) remount() }
-                        }
-                    },
-                )
+            val resourceLoader = loadable.makeLoader(context, hostedSession) {
+                automaticReloadAvailable.compareAndSet(true, false).also { reload ->
+                    if (reload) post { if (!destroyed && generation == current) remount() }
+                }
+            }
             val callbacks =
                 MapEngineCallbacks(
                     ready = { readyEngine -> initialize(readyEngine, loadable, current) },

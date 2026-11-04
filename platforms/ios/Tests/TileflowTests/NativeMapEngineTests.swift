@@ -245,3 +245,148 @@ final class NativeMapEngineTests: XCTestCase {
     return total
   }
 }
+
+extension NativeMapEngineTests {
+  func testSnapshotsDrawHostedDataAppImagesAndCreditsOnlineAndFromPacks() async throws {
+    let mapID = Self.hostedFixtureMapID
+    try await requireMapFixture(URL(string: "\(FixtureServer.origin)/maps/\(mapID)/mobile/manifest.json")!)
+    let configuration = try fixtureConfiguration()
+    let source = TileflowMapSource.hosted(mapID: mapID, configuration: configuration)
+    let renderer = TileflowMapSnapshotter()
+    let center = TileflowCoordinate(longitude: -3.7, latitude: 40.42)
+    let options = TileflowMapSnapshotOptions(size: CGSize(width: 240, height: 160), camera: .init(
+      longitude: center.longitude, latitude: center.latitude, zoom: 15), theme: "day")
+    let flat = UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).image { context in
+      context.cgContext.setFillColor(UIColor.magenta.cgColor)
+      context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+    }
+    var circle = TileflowCircleAnnotation(id: "center", centerCoordinate: center)
+    circle.circleRadius = 14
+    circle.circleColor = "#00ff00"
+    var annotated = options
+    annotated.content.circles = [circle]
+    let features = Data(#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Point","coordinates":[-3.7,40.42]}}]}"#.utf8)
+    annotated.content.overlays = [try TileflowGeoJSONLayer(id: "route-ink", geoJSON: features, kind: .circle,
+      color: "#ff0000", size: 27, ink: .line)]
+    annotated.content.images = [.init(image: flat, coordinate: center, anchor: .topLeft,
+      size: CGSize(width: 16, height: 120))]
+
+    func check() async throws {
+      let plain = try await renderer.snapshot(source, options: options)
+      let image = try await renderer.snapshot(source, options: annotated)
+      XCTAssertEqual(image.cgImage?.width, 240)
+      XCTAssertEqual(image.cgImage?.height, 160)
+      let marker = try snapshotPixel(image, x: 124, y: 90)
+      XCTAssertTrue(marker.magenta, "App marker missing: \(marker)")
+      XCTAssertTrue(try snapshotPixel(image, x: 112, y: 80).green, "Circle missing")
+      let ink = try snapshotPixel(image, x: 98, y: 80)
+      XCTAssertTrue(ink.blue > 200 && ink.red < 70 && ink.greenValue < 140, "Theme ink missing: \(ink)")
+      XCTAssertFalse(try snapshotPixel(plain, x: 124, y: 90).magenta, "Unexpected app marker")
+      XCTAssertFalse(try snapshotPixel(plain, x: 112, y: 80).green, "Unexpected circle")
+      XCTAssertFalse(try snapshotPixel(image, x: 124, y: 159).magenta, "Marker covered attribution")
+    }
+    await TileflowMapCache.clear()
+    _ = try await fixtureCounters(reset: true)
+    try await check()
+    var doubleScale = annotated
+    doubleScale.size = .init(width: 120, height: 80)
+    doubleScale.scale = 2
+    let scaled = try await renderer.snapshot(source, options: doubleScale)
+    XCTAssertEqual(scaled.cgImage?.width, 240)
+    XCTAssertEqual(scaled.cgImage?.height, 160)
+    XCTAssertTrue(try snapshotPixel(scaled, x: 124, y: 90).magenta, "Scaled image missing")
+    XCTAssertFalse(try snapshotPixel(scaled, x: 124, y: 159).magenta, "Scaled image covered attribution")
+    let online = try await fixtureCounters()
+    XCTAssertGreaterThan(online["sessions"] ?? 0, 0)
+
+    let store = offlineMapStore(profile: .native, client: { try OfflinePackClient(configuration: configuration) })
+    try await downloadRegion(store, id: "snap", options: .init(geometry: .boundingBox(.init(
+      west: -3.73, south: 40.39, east: -3.67, north: 40.45)), content: .hosted(mapID: mapID, themes: ["day"]),
+      minZoom: 13, maxZoom: 15))
+    await TileflowMapCache.clear()
+    _ = try await fixtureCounters(reset: true)
+    TileflowOfflineSwitch.shared.isNetworkEnabled = false
+    defer { TileflowOfflineSwitch.shared.isNetworkEnabled = true }
+    try await check()
+    let offline = try await fixtureCounters()
+    for key in ["sessions", "downloads", "notModified", "sessionResources"] {
+      XCTAssertEqual(offline[key], 0, "Offline request for \(key)")
+    }
+  }
+
+  func testSnapshotCreditsFollowTheViewportAcrossTheAntimeridianAndRepeatedWorlds() {
+    func longitude(_ value: Double) -> Double { (value + 540).truncatingRemainder(dividingBy: 360) - 180 }
+    let crossing = SnapshotBounds.measure(width: 128, height: 64) { x, y in
+      .init(longitude: longitude(170 + 20 * x / 128), latitude: 20 - 10 * y / 64)
+    }
+    XCTAssertEqual(crossing, TileflowBounds(west: 170, south: 10, east: 190, north: 20))
+    let copies = SnapshotBounds.measure(width: 1024, height: 64) { x, y in
+      .init(longitude: longitude(-170 + 720 * x / 1024), latitude: 20 - 10 * y / 64)
+    }
+    XCTAssertEqual(copies.east - copies.west, 720, accuracy: 1e-8)
+    let horizon = SnapshotBounds.measure(width: 128, height: 64) { _, _ in
+      .init(longitude: .nan, latitude: .nan)
+    }
+    XCTAssertEqual(horizon, TileflowBounds(west: -180, south: -90, east: 180, north: 90))
+  }
+
+  func testSnapshotPhysicalSizeBoundsAndCancellation() async throws {
+    try TileflowMapSnapshotOptions(size: .init(width: 2048, height: 2048), scale: 2).validate()
+    for width in [0.0, 4096.1, .infinity, .nan, Double.greatestFiniteMagnitude] {
+      XCTAssertThrowsError(try TileflowMapSnapshotOptions(size: .init(width: width, height: 8)).validate()) { error in
+        XCTAssertEqual((error as? TileflowMapError)?.code, .invalidRequest)
+      }
+    }
+    let source = TileflowMapSource(map: "fixture", manifestURL: FixtureServer.manifest)
+    let task = Task {
+      try await TileflowMapSnapshotter().snapshot(source, options: .init(size: .init(width: 200, height: 100)))
+    }
+    task.cancel()
+    do { _ = try await task.value; XCTFail("The cancelled render returned an image") }
+    catch is CancellationError {}
+  }
+
+  func testCancellingTheSnapshotClosesItsPendingManifestRequest() async throws {
+    try await requireMapFixture(FixtureServer.manifest)
+    let base = "\(FixtureServer.origin)/__fixture/snapshot-delay/\(UUID().uuidString)"
+    let source = TileflowMapSource(map: "fixture", manifestURL: URL(string: base + "/manifest.json")!, allowsLoopbackHTTP: true)
+    let before = MapResourceContexts.shared.activeCount
+    let task = Task { try await TileflowMapSnapshotter().snapshot(source, options: .init(size: .init(width: 120, height: 80))) }
+    defer { task.cancel() }
+    func wait(for expected: String) async throws {
+      for _ in 0..<150 {
+        let (data, _) = try await URLSession.shared.data(from: URL(string: base + "/state")!)
+        let state = try JSONSerialization.jsonObject(with: data) as? [String: String]
+        if state?["state"] == expected { return }
+        try await Task.sleep(for: .milliseconds(30))
+      }
+      XCTFail("The manifest request did not reach its expected state: \(expected)")
+    }
+    try await wait(for: "loading")
+    XCTAssertEqual(MapResourceContexts.shared.activeCount, before + 1)
+    task.cancel()
+    do { _ = try await task.value; XCTFail("The cancelled render returned an image") }
+    catch is CancellationError {}
+    try await wait(for: "cancelled")
+    XCTAssertEqual(MapResourceContexts.shared.activeCount, before)
+  }
+
+  private struct SnapshotPixel {
+    let red: UInt8
+    let greenValue: UInt8
+    let blue: UInt8
+    var magenta: Bool { red > 210 && greenValue < 45 && blue > 210 }
+    var green: Bool { red < 45 && greenValue > 210 && blue < 45 }
+  }
+
+  private func snapshotPixel(_ image: UIImage, x: Int, y: Int) throws -> SnapshotPixel {
+    let source = try XCTUnwrap(image.cgImage?.cropping(to: CGRect(x: x, y: y, width: 1, height: 1)))
+    var bytes = [UInt8](repeating: 0, count: 4)
+    try bytes.withUnsafeMutableBytes { buffer in
+      let context = try XCTUnwrap(CGContext(data: buffer.baseAddress, width: 1, height: 1, bitsPerComponent: 8,
+        bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+      context.draw(source, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+    }
+    return SnapshotPixel(red: bytes[0], greenValue: bytes[1], blue: bytes[2])
+  }
+}

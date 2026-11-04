@@ -27,6 +27,7 @@ import dev.tileflow.sdk.offline.TileflowOfflineRegionLoadOptions
 import dev.tileflow.sdk.offline.TileflowOfflineStore
 import dev.tileflow.sdk.offline.TileflowOfflineSwitch
 import dev.tileflow.sdk.offline.TileflowOfflineTileSource
+import dev.tileflow.sdk.transport.MapResourceContexts
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
@@ -38,6 +39,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
@@ -183,6 +186,96 @@ public class MapOfflineIntegrationTest {
         }
         assertEquals(before, counters(fixture = "native-requests").getLong("requests"))
         assertEquals(0, runBlocking { cache.usage() }.entries)
+    }
+
+    @Test
+    public fun snapshotsDrawHostedDataAppImagesAndCreditsOnlineAndFromPacks() = runBlocking<Unit> {
+        requireFixture("$ORIGIN/maps/$HOSTED_MAP_ID/mobile/manifest.json")
+        val configuration = TileflowConfiguration(apiOrigin = URI(ORIGIN),
+            mapCredential = TileflowCredential("tf_public_" + "f".repeat(48)))
+        val source = TileflowMapSource.hosted(HOSTED_MAP_ID, configuration = configuration)
+        val renderer = TileflowMapSnapshotter(context)
+        val center = TileflowCoordinate(-3.7, 40.42)
+        val options = TileflowMapSnapshotOptions(240f, 160f,
+            camera = TileflowCamera(center.longitude, center.latitude, 15.0), theme = "day")
+        val marker = android.graphics.Bitmap.createBitmap(8, 8, android.graphics.Bitmap.Config.ARGB_8888)
+        marker.eraseColor(android.graphics.Color.MAGENTA)
+        val circle = TileflowCircleAnnotationOptions().withPoint(center).withCircleRadius(14.0)
+            .withCircleColor(TileflowColor(0, 255, 0)).build("center")
+        val features = """{"type":"FeatureCollection","features":[{"type":"Feature","properties":{},"geometry":{"type":"Point","coordinates":[-3.7,40.42]}}]}"""
+        val routeInk = TileflowGeoJSONLayer("route-ink", features, TileflowGeoJSONLayerKind.CIRCLE,
+            color = "#ff0000", size = 27.0, ink = TileflowRouteInk.LINE)
+        val content = TileflowMapSnapshotContent(circles = listOf(circle), overlays = listOf(routeInk), images = listOf(
+            TileflowSnapshotImage(marker, center, TileflowIconAnchor.TOP_LEFT, android.util.SizeF(16f, 120f))))
+        fun magenta(color: Int) = android.graphics.Color.red(color) > 210 &&
+            android.graphics.Color.blue(color) > 210 && android.graphics.Color.green(color) < 45
+        fun green(color: Int) = android.graphics.Color.green(color) > 210 &&
+            android.graphics.Color.red(color) < 45 && android.graphics.Color.blue(color) < 45
+        suspend fun checkImage() {
+            val plain = renderer.snapshot(source, options)
+            val image = renderer.snapshot(source, options.copy(content = content))
+            assertEquals(240, image.width)
+            assertEquals(160, image.height)
+            assertTrue("App image missing", magenta(image.getPixel(124, 90)))
+            assertTrue("Circle missing", green(image.getPixel(112, 80)))
+            val ink = image.getPixel(98,80)
+            assertTrue("Theme ink missing", android.graphics.Color.blue(ink) > 200 &&
+                android.graphics.Color.red(ink) < 70 && android.graphics.Color.green(ink) < 140)
+            assertTrue("Unexpected app image", !magenta(plain.getPixel(124,90)))
+            assertTrue("Unexpected circle", !green(plain.getPixel(112,80)))
+            assertTrue("Marker covered attribution", !magenta(image.getPixel(124,159)))
+        }
+        val cache = TileflowMapCache.get(context)
+        cache.clear()
+        counters(reset = true)
+        checkImage()
+        val doubleScale = renderer.snapshot(source, options.copy(width = 120f, height = 80f, scale = 2f, content = content))
+        assertEquals(240, doubleScale.width)
+        assertEquals(160, doubleScale.height)
+        assertTrue("Scaled marker missing", magenta(doubleScale.getPixel(124, 90)))
+        assertTrue("Scaled image covered attribution", !magenta(doubleScale.getPixel(124,159)))
+        assertTrue(counters().getInt("sessions") > 0)
+        val store = store(OfflinePackProfile.NATIVE) { OfflinePackClient(configuration) }
+        download(store, "snap", TileflowOfflineRegionLoadOptions(
+            TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(-3.73,40.39,-3.67,40.45)),
+            TileflowOfflineContent.Hosted(HOSTED_MAP_ID,listOf("day")), minZoom = 13, maxZoom = 15))
+        cache.clear()
+        counters(reset = true)
+        TileflowOfflineSwitch.isNetworkEnabled = false
+        checkImage()
+        val offline = counters()
+        for (key in listOf("sessions", "downloads", "notModified", "sessionResources"))
+            assertEquals("Offline request for $key",0,offline.getInt(key))
+    }
+
+    @Test
+    public fun snapshotBoundsArePhysicalAndCancellationClosesItsManifest() = runBlocking<Unit> {
+        TileflowMapSnapshotOptions(2048f, 2048f, 2f).validate()
+        for (width in listOf(0f, 4096.1f, Float.NaN, Float.POSITIVE_INFINITY, Float.MAX_VALUE)) {
+            val error = runCatching { TileflowMapSnapshotOptions(width, 8f).validate() }.exceptionOrNull()
+            assertEquals(TileflowErrorCode.INVALID_REQUEST, (error as? TileflowMapException)?.code)
+        }
+        requireFixture("$ORIGIN/manifest.json")
+        val base = "$ORIGIN/__fixture/snapshot-delay/${java.util.UUID.randomUUID()}"
+        val source = TileflowMapSource("fixture", URI("$base/manifest.json"), allowsLoopbackHttp = true)
+        val before = MapResourceContexts.activeCount
+        val pending = async { TileflowMapSnapshotter(context).snapshot(source, TileflowMapSnapshotOptions(120f, 80f)) }
+        suspend fun waitFor(expected: String) {
+            repeat(150) {
+                val state = JSONObject(URL("$base/state").readText()).getString("state")
+                if (state == expected) return
+                delay(30)
+            }
+            throw AssertionError("The pending manifest never reached $expected")
+        }
+        try {
+            waitFor("loading")
+            assertEquals(before + 1, MapResourceContexts.activeCount)
+            pending.cancelAndJoin()
+            assertTrue(pending.isCancelled)
+            waitFor("cancelled")
+            assertEquals(before, MapResourceContexts.activeCount)
+        } finally { pending.cancel() }
     }
 
     @Test

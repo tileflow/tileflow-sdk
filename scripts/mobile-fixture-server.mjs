@@ -449,9 +449,33 @@ function elevationTile() {
 // The city map built for the native renderer, under /native/. Its build starts now and is cached.
 const nativeBuild = createNativeBuildFixture({base, elevation: elevationTile()});
 nativeBuild.prepare().catch((error) => console.error(error));
+// Lets a snapshot test cancel a real in-flight manifest request before it receives a response.
+const pendingSnapshots = new Map();
+function delayedSnapshot(request, response) {
+  const match = /^\/__fixture\/snapshot-delay\/([a-zA-Z0-9-]+)\/(manifest\.json|state)$/u.exec(request.url ?? '');
+  if (!match) return false;
+  const [, id, file] = match;
+  response.setHeader('Cache-Control', 'no-store');
+  response.setHeader('Content-Type', 'application/json');
+  if (file === 'state') {
+    const state = pendingSnapshots.get(id) ?? 'waiting';
+    response.end(JSON.stringify({state}));
+    if (state === 'cancelled') pendingSnapshots.delete(id);
+  } else {
+    pendingSnapshots.set(id, 'loading');
+    const deadline = setTimeout(() => { response.writeHead(504); response.end('{}'); }, 20_000);
+    response.once('close', () => {
+      clearTimeout(deadline);
+      pendingSnapshots.set(id, response.writableEnded ? 'expired' : 'cancelled');
+      setTimeout(() => pendingSnapshots.delete(id), 30_000).unref();
+    });
+  }
+  return true;
+}
 let nativeRequests = 0;
 const server = createServer((request, response) => {
   response.setHeader('Access-Control-Allow-Origin', '*');
+  if (delayedSnapshot(request, response)) return;
   if (request.url === '/__fixture/native-requests') {
     response.setHeader('Content-Type', 'application/json');
     response.setHeader('Cache-Control', 'no-store');

@@ -508,19 +508,11 @@ public final class TileflowMapView: UIView {
     pendingRemount = false
     // A new document starts shown; it is hidden after initialization if the view is not.
     rendererVisible = true
-    if hostedSession == nil, let endpoint = loadable.hosted, let mapID = loadable.mapID,
-      let surfaceID = loadable.surfaceID
-    {
-      hostedSession = HostedSession(endpoint: endpoint, mapID: mapID, surfaceID: surfaceID)
-    }
+    if hostedSession == nil { hostedSession = loadable.makeSession() }
     hostedSession?.setBackgrounded(!isVisible)
-    let loader = ResourceLoader(
-      policy: loadable.policy, hosted: hostedSession, apiOrigin: loadable.hosted?.apiOrigin,
-      publicMetadataURLs: loadable.publicMetadataURLs,
-      cache: .shared, grantScope: loadable.grantScope, offline: .shared,
-      onDeploymentSuperseded: { [weak self] in
-        await self?.deploymentSuperseded(generation: current) ?? false
-      })
+    let loader = loadable.makeLoader(session: hostedSession) { [weak self] in
+      await self?.deploymentSuperseded(generation: current) ?? false
+    }
     let engine: any MapEngine
     if let runtime {
       engine = try WebViewMapEngine(

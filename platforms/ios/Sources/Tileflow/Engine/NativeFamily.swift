@@ -17,6 +17,38 @@ struct NativeFamily: Sendable {
     groups = document["blend"]?["groups"]?.array ?? []
   }
 
+  /// Reads the family that belongs to the selected style. Hosted discovery binds its bytes by SHA-256.
+  @MainActor
+  static func load(
+    _ manifest: NativeManifest, styleURL: URL, loader: any ResourceLoading,
+    mismatch: (URL) -> Void = { _ in }
+  ) async -> NativeFamily? {
+    guard let url = manifest.familyURL(styleURL: styleURL),
+      let payload = try? await loader.load(URLRequest(url: url)),
+      payload.status == 200
+    else { return nil }
+    if let revision = manifest.family?.revision, DataChannel.digest(payload.bytes) != revision {
+      mismatch(url)
+      return nil
+    }
+    guard let document = try? JSONDecoder().decode(JSONValue.self, from: payload.bytes) else {
+      return nil
+    }
+    return NativeFamily(document)
+  }
+
+  /// Core's route inks for a colour scheme, for maps without a family document.
+  static func defaultRouteInks(_ scheme: String) -> JSONValue {
+    let dark = scheme == "dark"
+    return .object([
+      "line": .string(dark ? "#60a5fa" : "#2563eb"),
+      "casing": .string(dark ? "#0b1220" : "#1e3a8a"),
+      "core": .string("#eff6ff"), "glow": .string(dark ? "#60a5fa" : "#2563eb"),
+      "alternative": .string("#64748b"), "glowOpacity": .number(dark ? 0.4 : 0.16),
+      "coreOpacity": .number(dark ? 0.7 : 0),
+    ])
+  }
+
   func index(of theme: String) -> Int? {
     themes.firstIndex { $0["name"]?.string == theme }
   }

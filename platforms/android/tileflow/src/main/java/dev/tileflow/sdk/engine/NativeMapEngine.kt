@@ -28,7 +28,6 @@ import dev.tileflow.sdk.transport.ResourceCacheScope
 import dev.tileflow.sdk.transport.ResourceLoader
 import dev.tileflow.sdk.transport.TileflowHttpClient
 import java.net.URI
-import java.security.MessageDigest
 import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CancellableContinuation
@@ -395,24 +394,13 @@ internal class NativeMapEngine(
                 val lookup: (String) -> IntRange? = { index.storedZooms(scope, it) }
                 lookup
             }
-        var read = withContext(Dispatchers.IO) { NativeManifest.read(source, ::load, fromPacks) }
+        val owner = preparation()
+        val prepared = withContext(Dispatchers.IO) { owner.map(source, theme, colorScheme, fromPacks) }
         if (retired) throw TileflowMapException(retiredCode)
-        var document = read.resolve(theme, colorScheme)
-        val (style, projected) =
-            try {
-                loadStyle(document.styleUrl)
-            } catch (error: TileflowMapException) {
-                if (!fromPacks || read.representation != NativeRepresentation.NATIVE) throw error
-                // An earlier session can leave the native manifest in the cache while the regions
-                // hold only the WebView profile's styles.
-                read =
-                    withContext(Dispatchers.IO) {
-                        NativeManifest.read(source, ::load, fromPacks = true, allowsNative = false)
-                    }
-                document = read.resolve(theme, colorScheme)
-                loadStyle(document.styleUrl)
-            }
-        manifest = read
+        val document = prepared.document
+        val style = prepared.style
+        val projected = prepared.projected
+        manifest = prepared.manifest
         family = loadFamily(document.styleUrl)
         if (retired) throw TileflowMapException(retiredCode)
         shownTheme = document.theme
@@ -433,28 +421,24 @@ internal class NativeMapEngine(
         return JSONObject.NULL
     }
 
-    private fun load(url: URI): ByteArray {
-        val payload = loader.load(url)
-        if (payload.status != 200) throw NativeResourceStatus(payload.status)
-        return payload.bytes
-    }
+    private fun load(url: URI): ByteArray = NativeMapPreparation.read(loader, url)
 
-    /** Reads a theme's style through the map's transport and projects it for this map. */
+    private fun preparation() = NativeMapPreparation(
+        resourceContext ?: throw TileflowMapException(TileflowErrorCode.NOT_READY),
+        ::load,
+        storedZooms,
+    )
+
     private suspend fun loadStyle(url: String): Pair<JSONObject, NativeStyleProjection> =
-        withContext(Dispatchers.IO) {
-            val style = NativeManifest.document(url, ::load, TileflowResourceKind.STYLE)
-            style to project(style, url)
-        }
+        withContext(Dispatchers.IO) { preparation().style(url) }
 
-    private fun project(style: JSONObject, url: String): NativeStyleProjection {
-        val context = resourceContext ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
-        return NativeStyleDocument.project(style, url, context, ::load, storedZooms)
-    }
+    private fun project(style: JSONObject, url: String): NativeStyleProjection =
+        preparation().project(style, url)
 
     private fun styleAddress(): String =
         currentTheme?.let { manifest?.theme(it)?.styleUrl } ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
 
-    /** All runtime resources follow the same resource policy, cache and offline rules as the authored style. */
+    /** Projects application tile sources through this map's resource context. */
     private suspend fun projectRuntimeSource(spec: JSONObject): Pair<JSONObject, NativeStyleProjection> {
         val base = styleAddress()
         val owner = resourceContext ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
@@ -485,29 +469,16 @@ internal class NativeMapEngine(
      */
     private suspend fun loadFamily(styleUrl: String): NativeFamily? {
         val manifest = manifest ?: return null
-        val url = manifest.familyUrl(styleUrl) ?: return null
-        val bytes =
-            withContext(Dispatchers.IO) {
-                runCatching { loader.load(URI(url)) }.getOrNull()?.takeIf { it.status == 200 }?.bytes
-            } ?: return null
-        manifest.family?.second?.let { revision ->
-            val digest =
-                MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") {
-                    "%02x".format(it)
-                }
-            if (digest != revision) {
-                warnings.warn(
-                    "resourceFailed",
-                    "The map's family document does not match its revision.",
-                    TileflowResourceKind.STYLE,
-                    runCatching { dev.tileflow.sdk.transport.ResourcePolicy.origin(URI(url)) }
-                        .getOrNull(),
-                    null,
-                )
-                return null
-            }
+        return NativeFamily.load(manifest, styleUrl, loader) { url ->
+            warnings.warn(
+                "resourceFailed",
+                "The map's family document does not match its revision.",
+                TileflowResourceKind.STYLE,
+                runCatching { dev.tileflow.sdk.transport.ResourcePolicy.origin(URI(url)) }
+                    .getOrNull(),
+                null,
+            )
         }
-        return runCatching { NativeFamily.parse(JSONObject(String(bytes, Charsets.UTF_8))) }.getOrNull()
     }
 
     /** Gives MapLibre a projected style; what the engine reads from it applies once it loads. */
@@ -854,15 +825,7 @@ internal class NativeMapEngine(
             blend?.let { family?.routeInks(it.themes, it.position) }
                 ?: shownTheme?.let { family?.routeInks(listOf(it)) }
         if (inks != null) return inks
-        val dark = colorScheme == "dark"
-        return JSONObject()
-            .put("line", if (dark) "#60a5fa" else "#2563eb")
-            .put("casing", if (dark) "#0b1220" else "#1e3a8a")
-            .put("core", "#eff6ff")
-            .put("glow", if (dark) "#60a5fa" else "#2563eb")
-            .put("alternative", "#64748b")
-            .put("glowOpacity", if (dark) 0.4 else 0.16)
-            .put("coreOpacity", if (dark) 0.7 else 0.0)
+        return NativeFamily.defaultRouteInks(colorScheme)
     }
 
     // Blends

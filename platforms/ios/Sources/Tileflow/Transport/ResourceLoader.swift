@@ -479,6 +479,20 @@ private final class RateLimitGate: @unchecked Sendable {
 }
 
 extension LoadableMapSource {
+  func makeSession() -> HostedSession? {
+    guard let hosted, let mapID, let surfaceID else { return nil }
+    return HostedSession(endpoint: hosted, mapID: mapID, surfaceID: surfaceID)
+  }
+
+  func makeLoader(
+    session: HostedSession?, onDeploymentSuperseded: (@Sendable () async -> Bool)? = nil
+  ) -> ResourceLoader {
+    ResourceLoader(
+      policy: policy, hosted: session, apiOrigin: hosted?.apiOrigin,
+      publicMetadataURLs: publicMetadataURLs, cache: .shared, grantScope: grantScope, offline: .shared,
+      onDeploymentSuperseded: onDeploymentSuperseded)
+  }
+
   /// The cache scope of resources this map receives with a grant.
   var grantScope: ResourceCacheScope? {
     guard let hosted, let mapID else { return nil }

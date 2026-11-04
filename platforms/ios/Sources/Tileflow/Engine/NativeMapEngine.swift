@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 import MapLibre
 import OSLog
@@ -383,25 +382,13 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       let offline = self.offline
       storedZooms = { template in await offline.storedZooms(template: template, scope: grantScope) }
     }
-    let discoveryMapID = payload["source"]?["discoveryMapId"]?.string
-    var manifest = try await Self.manifest(
-      map: map, manifestURL: manifestURL, discoveryMapID: discoveryMapID, fromPacks: fromPacks,
-      loader: loader)
-    var theme = try manifest.resolve(payload["theme"]?.string, colorScheme: colorScheme)
-    let loaded: ([String: Any], ProjectedStyle)
-    do {
-      loaded = try await loadStyle(theme.styleURL)
-    } catch where fromPacks && manifest.representation == .native {
-      // An earlier session can leave the native manifest in the cache while the regions hold
-      // only the WebView profile's styles.
-      manifest = try await Self.manifest(
-        map: map, manifestURL: manifestURL, discoveryMapID: discoveryMapID, fromPacks: true,
-        native: false, loader: loader)
-      theme = try manifest.resolve(payload["theme"]?.string, colorScheme: colorScheme)
-      loaded = try await loadStyle(theme.styleURL)
-    }
+    let preparation = NativeMapPreparation(loader: loader, context: context, storedZooms: storedZooms)
+    let prepared = try await preparation.map(
+      map, manifestURL: manifestURL, discoveryMapID: payload["source"]?["discoveryMapId"]?.string,
+      theme: payload["theme"]?.string, colorScheme: colorScheme, fromPacks: fromPacks)
+    let manifest = prepared.manifest
+    let theme = prepared.theme
     self.manifest = manifest
-    let (document, projected) = loaded
     family = await loadFamily(styleURL: theme.styleURL)
     await readDownloadedCredits()
     guard !retired, mapView != nil else { throw TileflowMapError.cancelled }
@@ -410,66 +397,28 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     camera?.jump(to: TileflowCamera(wire: payload["camera"]) ?? manifest.view)
     styleRequested = true
     contentPending = true
-    show(document, projected: projected)
+    show(prepared.document.value, projected: prepared.projected)
   }
 
   /// Reads a theme's style through the map's transport and projects it for this map.
   func loadStyle(_ url: URL) async throws -> ([String: Any], ProjectedStyle) {
     guard let context else { throw TileflowMapError.notReady }
-    let style = try await Self.read(url, kind: .style, loader: loader)
-    let projected = try await Self.project(
-      style, styleURL: url, context: context, loader: loader, storedZooms: storedZooms)
-    return (style.value, projected)
+    let preparation = NativeMapPreparation(loader: loader, context: context, storedZooms: storedZooms)
+    let (document, projected) = try await preparation.style(url)
+    return (document.value, projected)
   }
 
-  func project(_ style: [String: Any], styleURL: URL, context: String) async throws -> ProjectedStyle
-  {
-    try await Self.project(
-      StyleJSON(value: style), styleURL: styleURL, context: context, loader: loader,
-      storedZooms: storedZooms)
-  }
-
-  /// A JSON document read off the main actor. Foundation's JSON values are not `Sendable`; each
-  /// document has one owner at a time.
-  struct StyleJSON: @unchecked Sendable {
-    let value: [String: Any]
-  }
-
-  private nonisolated static func manifest(
-    map: String, manifestURL: URL, discoveryMapID: String?, fromPacks: Bool, native: Bool = true,
-    loader: any ResourceLoading
-  ) async throws -> NativeManifest {
-    try await NativeManifest.load(
-      map: map, manifestURL: manifestURL, discoveryMapID: discoveryMapID, fromPacks: fromPacks,
-      native: native, read: { url, kind in try await document(url, kind: kind, loader: loader) })
-  }
-
-  nonisolated static func read(_ url: URL, kind: TileflowResourceKind, loader: any ResourceLoading)
-    async throws -> StyleJSON
-  {
-    StyleJSON(value: try await document(url, kind: kind, loader: loader))
-  }
-
-  private nonisolated static func project(
-    _ style: StyleJSON, styleURL: URL, context: String, loader: any ResourceLoading,
-    storedZooms: NativeStyleDocument.StoredZooms?
-  ) async throws -> ProjectedStyle {
-    try await NativeStyleDocument.project(
-      style.value, styleURL: styleURL, context: context,
-      load: { url, kind in try await document(url, kind: kind, loader: loader) },
-      storedZooms: storedZooms)
+  func project(_ style: [String: Any], styleURL: URL, context: String) async throws -> ProjectedStyle {
+    try await NativeMapPreparation(loader: loader, context: context, storedZooms: storedZooms)
+      .project(.init(value: style), styleURL: styleURL)
   }
 
   /// Reads the map's family document, if it has one, and checks a Hosted document against the
   /// revision discovery gave. A map without it draws its themes but cannot blend them or apply an
   /// emphasis.
   private func loadFamily(styleURL: URL) async -> NativeFamily? {
-    guard let url = manifest?.familyURL(styleURL: styleURL),
-      let payload = try? await loader.load(URLRequest(url: url)), payload.status == 200
-    else { return nil }
-    if let revision = manifest?.family?.revision,
-      SHA256.hash(data: payload.bytes).map({ String(format: "%02x", $0) }).joined() != revision
-    {
+    guard let manifest else { return nil }
+    return await NativeFamily.load(manifest, styleURL: styleURL, loader: loader) { url in
       warnings.warn(
         .object([
           "code": .string("resourceFailed"),
@@ -478,12 +427,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
             "resource": .string("style"), "origin": .string(ResourcePolicy.origin(url)),
           ]),
         ]))
-      return nil
     }
-    guard let document = try? JSONDecoder().decode(JSONValue.self, from: payload.bytes) else {
-      return nil
-    }
-    return NativeFamily(document)
   }
 
   /// Gives MapLibre a projected style. What the engine reads from it applies once it loads.
@@ -500,21 +444,6 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   }
 
   /// Reads a JSON document of the map through its transport.
-  nonisolated static func document(
-    _ url: URL, kind: TileflowResourceKind, loader: any ResourceLoading
-  ) async throws -> [String: Any] {
-    let payload = try await loader.load(URLRequest(url: url))
-    guard payload.status == 200,
-      let value = try? JSONSerialization.jsonObject(with: payload.bytes) as? [String: Any]
-    else {
-      throw TileflowMapError(
-        .resourceFailed,
-        context: .init(
-          resource: kind, origin: ResourcePolicy.origin(url), status: payload.status))
-    }
-    return value
-  }
-
   /// A request of the map ended: failures become aggregated warnings, as the web runtime reports
   /// them. A tile the source does not have (`404`) is not a failure; an absent tile answers `204`.
   /// A failure that ends the map, such as an exhausted quota, is reported as the map's own.

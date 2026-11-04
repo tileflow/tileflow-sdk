@@ -210,19 +210,10 @@ extension NativeMapEngine {
       if let inks = family?.routeInks([name]) { return inks }
     case nil: break
     }
-    return Self.defaultRouteInks(colorScheme)
+    return NativeFamily.defaultRouteInks(colorScheme)
   }
 
-  /// Core's route inks for a colour scheme, for maps without a family document.
-  static func defaultRouteInks(_ scheme: String) -> JSONValue {
-    let dark = scheme == "dark"
-    return .object([
-      "line": .string(dark ? "#60a5fa" : "#2563eb"), "casing": .string(dark ? "#0b1220" : "#1e3a8a"),
-      "core": .string("#eff6ff"), "glow": .string(dark ? "#60a5fa" : "#2563eb"),
-      "alternative": .string("#64748b"), "glowOpacity": .number(dark ? 0.4 : 0.16),
-      "coreOpacity": .number(dark ? 0.7 : 0),
-    ])
-  }
+
 
   // MARK: Blends
 
@@ -320,7 +311,7 @@ extension NativeMapEngine {
     let plan = family.groups[group]
     let dominant = Int(position.rounded(.toNearestOrAwayFromZero))
     let url = try manifest.theme(themes[dominant]).styleURL
-    var style = try await Self.read(url, kind: .style, loader: loader).value
+    var style = try await NativeMapPreparation.read(url, kind: .style, loader: loader).value
     let layers = try NativeEvaluators.blendLayers(
       group: plan, selection: selection, position: position)
     style["layers"] = layers.map(\.foundation)

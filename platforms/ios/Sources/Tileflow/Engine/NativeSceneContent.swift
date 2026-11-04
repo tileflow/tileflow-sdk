@@ -79,7 +79,7 @@ final class NativeSceneContent {
     inks = engine.routeInks
   }
 
-  private static func validCollection(_ value: JSONValue) -> Bool {
+  static func validCollection(_ value: JSONValue) -> Bool {
     func box(_ value: JSONValue?) -> Bool {
       guard let value else { return true }
       guard let array = value.array, [4, 6].contains(array.count),
@@ -155,8 +155,10 @@ final class NativeSceneContent {
   }
 
   private func layer(_ overlay: Overlay, inks: JSONValue) -> JSONValue {
-    let d = overlay.definition
-    let id = overlay.id
+    Self.layer(overlay.id, definition: overlay.definition, progress: overlay.progress, inks: inks)
+  }
+
+  static func layer(_ id: String, definition d: JSONValue, progress: JSONValue?, inks: JSONValue) -> JSONValue {
     let kind = d["kind"]?.string ?? "line"
     let ink = d["ink"]?.string
     let color = ink.flatMap { inks[$0]?.string } ?? d["color"]?.string ?? "#e9573f"
@@ -171,7 +173,7 @@ final class NativeSceneContent {
     if kind == "line" {
       layer["layout"] = .object(["line-join": .string("round"), "line-cap": .string("round")])
       paint["line-width"] = d["size"]
-      if let state = overlay.progress {
+      if let state = progress {
         paint["line-gradient"] = Self.gradient(
           state, color: color, highlight: d["progress"]?["highlight"]?.string ?? color)
         paint["line-opacity"] = .number(opacity * (state["opacity"]?.number ?? 1))

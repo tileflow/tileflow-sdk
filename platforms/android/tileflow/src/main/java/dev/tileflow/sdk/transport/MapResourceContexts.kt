@@ -43,6 +43,7 @@ internal class MapResourceRoute(
  */
 internal object MapResourceContexts {
     private val routes = ConcurrentHashMap<String, MapResourceRoute>()
+    val activeCount: Int get() = routes.size
     private val main = Handler(Looper.getMainLooper())
 
     /**

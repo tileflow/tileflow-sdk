@@ -1142,6 +1142,13 @@ test('watches added, changed, removed, and newly effective local icon directorie
   });
   assert.equal(session.getState().status, 'ready');
   const initial = assetFingerprint(session);
+  async function changedAssets(previous: string): Promise<string> {
+    await waitForState(
+      session,
+      (state) => state.status === 'ready' && assetFingerprint(session) !== previous,
+    );
+    return assetFingerprint(session);
+  }
 
   const initialGeneration = session.getState().generation;
   await writeFile(join(cwd, 'icons-b', 'other.svg'), svg('#343434'));
@@ -1149,30 +1156,19 @@ test('watches added, changed, removed, and newly effective local icon directorie
   assert.equal(session.getState().generation, initialGeneration);
 
   await writeFile(join(cwd, 'icons-a', 'added.svg'), svg('#444444'));
-  await waitForState(session, (state) => state.status === 'ready' && state.generation >= 2);
-  const added = assetFingerprint(session);
-  assert.notEqual(added, initial);
+  const added = await changedAssets(initial);
 
   await writeFile(join(cwd, 'icons-a', 'pin.svg'), svg('#555555'));
-  await waitForState(session, (state) => state.status === 'ready' && state.generation >= 3);
-  const changed = assetFingerprint(session);
-  assert.notEqual(changed, added);
+  const changed = await changedAssets(added);
 
   await unlink(join(cwd, 'icons-a', 'pin.svg'));
-  await waitForState(session, (state) => state.status === 'ready' && state.generation >= 4);
-  assert.notEqual(assetFingerprint(session), changed);
+  const removed = await changedAssets(changed);
 
   await writeFile(join(cwd, 'tileflow.config.ts'), iconConfig('./icons-b'));
-  await waitForState(session, (state) => state.status === 'ready' && state.generation >= 5);
-  const switched = assetFingerprint(session);
+  const switched = await changedAssets(removed);
   await new Promise((resolveWait) => setTimeout(resolveWait, 250));
-  const switchedGeneration = session.getState().generation;
   await writeFile(join(cwd, 'icons-b', 'other.svg'), svg('#777777'));
-  await waitForState(
-    session,
-    (state) => state.status === 'ready' && state.generation > switchedGeneration,
-  );
-  assert.notEqual(assetFingerprint(session), switched);
+  await changedAssets(switched);
 });
 
 test('recovers from an initially invalid local font through fallback watch paths', async (t) => {

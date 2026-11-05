@@ -89,14 +89,16 @@ public class NativeMapInteractionsIntegrationTest {
         fun pois() = activity.events.count { it is TileflowMapEvent.PoiActivated }
         fun taps() = activity.events.count { it is TileflowMapEvent.Tap }
         val tapsBefore = taps()
+        assertEquals("A POI produces its activation without a background tap", 0, tapsBefore)
         val pins =
             map.annotations.createCircleAnnotationManager(TileflowAnnotationConfig("selectable"))
         val pin =
             pins.create(TileflowCircleAnnotationOptions().withPoint(center).withCircleRadius(16.0))
-        var consumed = 0
+        var annotatedTaps = 0
+        var takePress = true
         pins.addClickListener {
-            if (it.id == pin.id) consumed++
-            true
+            if (it.id == pin.id) annotatedTaps++
+            takePress
         }
         until("The manager draws its annotation over the POI") {
             native
@@ -104,9 +106,16 @@ public class NativeMapInteractionsIntegrationTest {
                 .isNotEmpty()
         }
         tap(map, point)
-        until("The annotation listener consumes the tap") { consumed == 1 }
+        until("The annotation listener consumes the tap") { annotatedTaps == 1 }
         assertEquals(1, pois())
         assertEquals(tapsBefore, taps())
+        takePress = false
+        delay(android.view.ViewConfiguration.getDoubleTapTimeout().toLong() + 30)
+        tap(map, point)
+        until("An annotation that declines the tap lets the POI activate") {
+            annotatedTaps == 2 && pois() == 2
+        }
+        assertEquals(0, taps())
         map.annotations.removeAnnotationManager(pins)
 
         val down = SystemClock.uptimeMillis()
@@ -122,11 +131,11 @@ public class NativeMapInteractionsIntegrationTest {
         until("Holding a POI delivers a long press") {
             activity.events.any { it is TileflowMapEvent.LongPress }
         }
-        assertEquals(1, pois())
+        assertEquals(2, pois())
         val background = TileflowPoint(point.x + 160f, point.y + 100f)
         tap(map, background)
         until("The background delivers an ordinary tap") { taps() > tapsBefore }
-        assertEquals(1, pois())
+        assertEquals(2, pois())
     }
 
     @Test

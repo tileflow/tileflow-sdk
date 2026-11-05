@@ -1473,7 +1473,10 @@ constructor(
             "longPress" -> {
                 if (annotations.dispatchPress(annotationHits(result), long = event == "longPress"))
                     return
-                if (event == "tap") result.optJSONObject("poi")?.let { receive("poiActivated", it, current) }
+                if (event == "tap") result.optJSONObject("poi")?.let {
+                    receive("poiActivated", it, current)
+                    return
+                }
             }
         }
         if (event == "animationEnded" || event == "shotCue") {

@@ -75,7 +75,7 @@ export type NativeMapOptions = Readonly<{
 export type NativeLayerPosition = Readonly<{
   aboveLayerId?: string;
   belowLayerId?: string;
-  index?: number;
+  slotIndex?: number;
   slot?: string;
 }>;
 

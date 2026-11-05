@@ -15,7 +15,7 @@ export type LayerProps<S> = Readonly<{
   maxZoomLevel?: number;
   aboveLayerID?: string;
   belowLayerID?: string;
-  layerIndex?: number;
+  slotIndex?: number;
   slot?: string;
   style?: S;
 }>;
@@ -44,7 +44,7 @@ function Layer({
   const position = {
     ...(props.aboveLayerID ? {aboveLayerId: props.aboveLayerID} : {}),
     ...(props.belowLayerID ? {belowLayerId: props.belowLayerID} : {}),
-    ...(props.layerIndex === undefined ? {} : {index: props.layerIndex}),
+    ...(props.slotIndex === undefined ? {} : {slotIndex: props.slotIndex}),
     ...(props.slot ? {slot: props.slot} : {}),
   };
   const committed = useCommittedValue({properties, position});

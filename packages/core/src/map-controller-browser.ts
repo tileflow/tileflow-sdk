@@ -49,8 +49,8 @@ export type TileflowRuntimeStyleMap = {
   addLayer(layer: never, beforeId?: string): unknown;
   moveLayer(id: string, beforeId?: string): unknown;
   removeLayer(id: string): unknown;
-  on(event: string, listener: (...args: never[]) => void): unknown;
-  off(event: string, listener: (...args: never[]) => void): unknown;
+  on(event: 'style.load' | 'render' | 'remove', listener: () => void): unknown;
+  off(event: 'style.load' | 'render' | 'remove', listener: () => void): unknown;
 };
 
 export type TileflowMapControllerBinding = {

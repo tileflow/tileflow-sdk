@@ -27,7 +27,7 @@
     "react-native.config.cjs",
     "LICENSE",
     "ios/Sources/*.swift",
-    "src/specs",
+    "src",
     "plugin"
   ],
   "scripts": {
@@ -42,6 +42,7 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
+      "react-native": "./src/index.ts",
       "import": "./dist/index.js",
       "default": "./dist/index.js"
     },
@@ -85,5 +86,6 @@
   },
   "dependencies": {
     "@types/geojson": "7946.0.16"
-  }
+  },
+  "react-native": "./src/index.ts"
 }

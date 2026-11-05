@@ -16,7 +16,7 @@ export type LayerProps<S> = Readonly<{
   aboveLayerID?: string;
   belowLayerID?: string;
   slotIndex?: number;
-  slot?: string;
+  slot?: string | null;
   style?: S;
 }>;
 
@@ -45,7 +45,7 @@ function Layer({
     ...(props.aboveLayerID ? {aboveLayerId: props.aboveLayerID} : {}),
     ...(props.belowLayerID ? {belowLayerId: props.belowLayerID} : {}),
     ...(props.slotIndex === undefined ? {} : {slotIndex: props.slotIndex}),
-    ...(props.slot ? {slot: props.slot} : {}),
+    ...(props.slot === undefined ? {} : {slot: props.slot}),
   };
   const committed = useCommittedValue({properties, position});
   const signature = JSON.stringify({properties, position});

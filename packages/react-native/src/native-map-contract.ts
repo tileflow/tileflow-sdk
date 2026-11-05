@@ -76,7 +76,7 @@ export type NativeLayerPosition = Readonly<{
   aboveLayerId?: string;
   belowLayerId?: string;
   slotIndex?: number;
-  slot?: string;
+  slot?: string | null;
 }>;
 
 export type NativeFeatureIdentifier = Readonly<{

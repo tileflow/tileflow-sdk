@@ -29,8 +29,9 @@ const publicSourceImplementations = [
   'packages/svelte/src/style-source.js',
   'packages/svelte/src/index.d.ts',
   'packages/react-native/src/contract.ts',
-  'packages/react-native/src/source-state.ts',
-  'packages/react-native/src/appearance.ts',
+  'packages/react-native/src/native-map-contract.ts',
+  'packages/react-native/src/map-input.ts',
+  'packages/react-native/src/map.tsx',
 ];
 
 test('positive framework consumers use manifest-backed Tileflow sources', async () => {

@@ -41,7 +41,7 @@ export type TileflowMapController = {
 /** Structural adapter implemented by the existing MapLibre map. */
 export type TileflowRuntimeStyleMap = {
   getStyle(): unknown;
-  isStyleLoaded?(): boolean | undefined;
+  isStyleLoaded?(): boolean | void;
   getSource(id: string): unknown;
   getLayer(id: string): unknown;
   addSource(id: string, source: never): unknown;

@@ -247,6 +247,7 @@ export {
   tileflowHostedSourceLimit,
   tileflowOverlayPlacements,
 } from './overlays';
+export type {TileflowLayerPositionContext} from './layer-position-context';
 export type {
   TileflowHostedSourceCollection,
   TileflowHostedTilesetSource,

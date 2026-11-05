@@ -1,5 +1,6 @@
 import {readTileflowCompilerProvenance} from './cartography/compiler-inspection';
 import {tileflowBandPlacementIndex, tileflowLayerSlots} from './cartography/contributions';
+import type {TileflowLayerPositionContext} from './layer-position-context';
 import {isTileflowPortableId} from './portable-identity';
 
 export const tileflowOverlayPlacements = [
@@ -163,13 +164,21 @@ export class TileflowOverlayCompilationError extends Error {
   readonly path: string;
   readonly phase = 'lowering' as const;
   readonly suggestion?: string;
+  readonly context?: TileflowLayerPositionContext;
 
-  constructor(code: string, path: string, message: string, suggestion?: string) {
+  constructor(
+    code: string,
+    path: string,
+    message: string,
+    suggestion?: string,
+    context?: TileflowLayerPositionContext,
+  ) {
     super(message);
     this.code = code;
     this.name = 'TileflowOverlayCompilationError';
     this.path = path;
     if (suggestion) this.suggestion = suggestion;
+    if (context) this.context = context;
   }
 }
 
@@ -264,6 +273,7 @@ export function insertTileflowOverlays(input: {
     }
 
     const layers = overlay.layers.map((layer, index) => {
+      assertAuthoredLayerPosition(layer, overlay.placement, `${path}.layers.${index}`);
       if (layerIds.has(layer.id)) {
         throw new TileflowOverlayCompilationError(
           'TF_OVERLAY_LAYER_ID_DUPLICATE',
@@ -298,6 +308,61 @@ export function insertTileflowOverlays(input: {
   }
 
   return {identities, layers};
+}
+
+function assertAuthoredLayerPosition(
+  layer: TileflowMapLibreOverlayLayer,
+  placement: TileflowOverlayPlacement,
+  path: string,
+): void {
+  for (const field of [
+    'slot',
+    'slotIndex',
+    'layerIndex',
+    'aboveLayerId',
+    'belowLayerId',
+    'aboveLayerID',
+    'belowLayerID',
+    'beforeId',
+  ]) {
+    if (!Object.hasOwn(layer, field)) continue;
+    const slot =
+      layer.slot === null ||
+      (typeof layer.slot === 'string' &&
+        tileflowOverlayPlacements.includes(layer.slot as TileflowOverlayPlacement))
+        ? (layer.slot as string | null)
+        : undefined;
+    const conflict = field === 'slot' && slot !== undefined && slot !== placement;
+    const fieldPath = `${path}.${field}`;
+    const corrections = [
+      {
+        code: 'useOverlayPlacement',
+        message: 'Set the overlay placement and order its layers array.',
+      },
+      {
+        code: 'removeRuntimePosition',
+        message: 'Remove the runtime positioning field from the authored layer.',
+      },
+    ];
+    throw new TileflowOverlayCompilationError(
+      conflict ? 'TF_LAYER_POSITION_CONFLICT' : 'TF_LAYER_POSITION_UNSUPPORTED',
+      fieldPath,
+      conflict
+        ? `Layer "${layer.id}" contradicts its overlay placement.`
+        : `Authored layer "${layer.id}" cannot use runtime positioning field "${field}".`,
+      corrections.map(({message}) => message).join(' '),
+      {
+        reason: conflict ? 'layerPositionConflict' : 'invalidLayerPosition',
+        operation: 'compileOverlay',
+        path: fieldPath,
+        layerId: layer.id,
+        ...(slot === undefined ? {} : {slot}),
+        referenceSlot: placement,
+        rule: conflict ? 'sameSlot' : 'authoredOverlayPlacement',
+        corrections,
+      },
+    );
+  }
 }
 
 export function isSafeLocalPmtilesPath(value: unknown): value is string {

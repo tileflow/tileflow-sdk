@@ -1,4 +1,5 @@
 import type {TileflowSourceRequirementsV1} from '../data/requirements';
+import {isLayerPositionContext, type TileflowLayerPositionContext} from '../layer-position-context';
 import type {MapLibreStyle} from '../types';
 import type {TileflowStyleInspection} from './compiler-inspection';
 import type {TileflowSemanticModuleName} from './domain-registry';
@@ -41,6 +42,7 @@ export type TileflowCompilationDiagnostic = Readonly<{
   severity: 'error' | 'warning';
   suggestion?: string;
   target?: string;
+  context?: TileflowLayerPositionContext;
 }>;
 
 export type TileflowCompilationDomainReport = Readonly<{
@@ -160,6 +162,7 @@ function diagnosticFromRecord(
   const severity = record.severity ?? record.level ?? inherited.severity ?? inherited.level;
   const suggestion = inheritedString(record, inherited, 'suggestion');
   const target = inheritedString(record, inherited, 'target');
+  const context = record.context ?? inherited.context;
   return {
     code: code ?? 'TILEFLOW_COMPILATION_FAILED',
     ...(domain ? {domain: domain as TileflowSemanticModuleName} : {}),
@@ -174,6 +177,7 @@ function diagnosticFromRecord(
     severity: severity === 'warning' ? 'warning' : 'error',
     ...(suggestion ? {suggestion} : {}),
     ...(target ? {target} : {}),
+    ...(isLayerPositionContext(context) ? {context} : {}),
   };
 }
 

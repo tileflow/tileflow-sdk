@@ -98,7 +98,7 @@ export type TileflowAuthoringManifestDomain = Readonly<{
 export type TileflowAuthoringManifest = Readonly<{
   compilation: Readonly<{
     diagnostic: Readonly<{
-      optional: readonly ['domain', 'path', 'suggestion', 'target'];
+      optional: readonly ['context', 'domain', 'path', 'suggestion', 'target'];
       phases: typeof tileflowCompilationPhases;
       required: readonly ['code', 'message', 'phase', 'severity'];
       severities: readonly ['error', 'warning'];
@@ -586,7 +586,7 @@ assertExpressionBuilderManifest();
 export const tileflowAuthoringManifest: TileflowAuthoringManifest = deepFreeze({
   compilation: {
     diagnostic: {
-      optional: ['domain', 'path', 'suggestion', 'target'],
+      optional: ['context', 'domain', 'path', 'suggestion', 'target'],
       phases: tileflowCompilationPhases,
       required: ['code', 'message', 'phase', 'severity'],
       severities: ['error', 'warning'],

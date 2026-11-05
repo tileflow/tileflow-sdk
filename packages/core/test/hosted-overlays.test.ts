@@ -355,3 +355,91 @@ test('map revision binds logical hosted identity but excludes the local archive 
   assert.equal(moved, first);
   assert.notEqual(rebound, first);
 });
+
+test('authored overlays reject conflicting slots before producing a style', () => {
+  const basemapLayers = [{id: 'water', type: 'fill'}];
+  const overlays = {
+    routes: maplibreOverlay({
+      source: 'stores',
+      placement: 'above-roads',
+      layers: [{id: 'route', type: 'circle', slot: 'above-labels'}],
+    }),
+  };
+  assert.throws(
+    () =>
+      insertTileflowOverlays({mapId: 'test-map', basemapLayers, overlays, sourceIds: ['stores']}),
+    (error: unknown) => {
+      const value = error as {code: string; path: string; context: Record<string, unknown>};
+      assert.equal(value.code, 'TF_LAYER_POSITION_CONFLICT');
+      assert.equal(value.path, 'map.test-map.overlays.routes.layers.0.slot');
+      assert.equal(value.context.reason, 'layerPositionConflict');
+      assert.equal(value.context.layerId, 'route');
+      assert.equal(value.context.slot, 'above-labels');
+      assert.equal(value.context.referenceSlot, 'above-roads');
+      return true;
+    },
+  );
+  assert.deepEqual(basemapLayers, [{id: 'water', type: 'fill'}]);
+});
+
+test('authored overlays reject runtime positioning fields instead of silently ignoring them', () => {
+  for (const key of [
+    'beforeId',
+    'aboveLayerId',
+    'belowLayerId',
+    'aboveLayerID',
+    'belowLayerID',
+    'slotIndex',
+    'layerIndex',
+    'slot',
+  ]) {
+    const value = key.endsWith('Index') ? 0 : key === 'slot' ? 'above-roads' : 'other';
+    assert.throws(
+      () =>
+        insertTileflowOverlays({
+          mapId: 'test-map',
+          basemapLayers: [],
+          sourceIds: ['stores'],
+          overlays: {
+            routes: maplibreOverlay({
+              source: 'stores',
+              placement: 'above-roads',
+              layers: [{id: 'route', type: 'circle', [key]: value}],
+            }),
+          },
+        }),
+      (error: unknown) => {
+        assert.equal((error as {code: string}).code, 'TF_LAYER_POSITION_UNSUPPORTED');
+        assert.equal(
+          (error as {path: string}).path,
+          `map.test-map.overlays.routes.layers.0.${key}`,
+        );
+        return true;
+      },
+    );
+  }
+});
+
+test('the compilation result retains the placement conflict context', () => {
+  const result = createStyleResult(
+    extendStreets({
+      sources: {stores},
+      overlays: {
+        routes: maplibreOverlay({
+          source: 'stores',
+          placement: 'above-roads',
+          layers: [{id: 'route', type: 'circle', slot: 'above-labels'}],
+        }),
+      },
+    }),
+    {preparedAssets},
+  );
+  assert.equal(result.ok, false);
+  const diagnostic = result.diagnostics[0] as unknown as {
+    code: string;
+    context: {reason: string; layerId: string};
+  };
+  assert.equal(diagnostic.code, 'TF_LAYER_POSITION_CONFLICT');
+  assert.equal(diagnostic.context.reason, 'layerPositionConflict');
+  assert.equal(diagnostic.context.layerId, 'route');
+});

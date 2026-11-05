@@ -1,0 +1,353 @@
+{
+  "schemaVersion": 1,
+  "rule": "sameSlot",
+  "rejections": [
+    {
+      "name": "add-above-another-slot",
+      "operation": "addLayer",
+      "layer": {
+        "id": "new-route",
+        "slot": "above-roads"
+      },
+      "reference": {
+        "id": "labels",
+        "slot": "above-labels"
+      },
+      "position": {
+        "aboveLayerId": "labels"
+      },
+      "error": {
+        "code": "invalidRequest",
+        "reason": "layerPositionConflict",
+        "path": "position.aboveLayerId"
+      }
+    },
+    {
+      "name": "move-below-another-slot",
+      "operation": "moveLayer",
+      "layer": {
+        "id": "new-route",
+        "slot": "above-roads"
+      },
+      "reference": {
+        "id": "labels",
+        "slot": "above-labels"
+      },
+      "position": {
+        "belowLayerId": "labels"
+      },
+      "error": {
+        "code": "invalidRequest",
+        "reason": "layerPositionConflict",
+        "path": "position.belowLayerId"
+      }
+    },
+    {
+      "name": "unslotted-does-not-adopt-reference-slot",
+      "operation": "addLayer",
+      "layer": {
+        "id": "new-route",
+        "slot": null
+      },
+      "reference": {
+        "id": "labels",
+        "slot": "above-labels"
+      },
+      "position": {
+        "aboveLayerId": "labels"
+      },
+      "error": {
+        "code": "invalidRequest",
+        "reason": "layerPositionConflict",
+        "path": "position.aboveLayerId"
+      }
+    }
+  ],
+  "correctionCodes": ["alignSlot", "referenceSameSlot"],
+  "indexScope": "applicationLayersInSameSlot",
+  "slotIndices": [
+    {
+      "name": "add-at-slot-start",
+      "operation": "addLayer",
+      "layers": [
+        {
+          "id": "roof-a",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-a",
+          "slot": "above-roads"
+        },
+        {
+          "id": "roof-b",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-b",
+          "slot": "above-roads"
+        }
+      ],
+      "layer": {
+        "id": "route",
+        "slot": "above-roads"
+      },
+      "position": {
+        "slotIndex": 0
+      },
+      "expectedOrder": ["route", "road-a", "road-b"]
+    },
+    {
+      "name": "add-at-slot-end",
+      "operation": "addLayer",
+      "layers": [
+        {
+          "id": "roof-a",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-a",
+          "slot": "above-roads"
+        },
+        {
+          "id": "roof-b",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-b",
+          "slot": "above-roads"
+        }
+      ],
+      "layer": {
+        "id": "route",
+        "slot": "above-roads"
+      },
+      "position": {
+        "slotIndex": 2
+      },
+      "expectedOrder": ["road-a", "road-b", "route"]
+    },
+    {
+      "name": "add-to-empty-slot",
+      "operation": "addLayer",
+      "layers": [
+        {
+          "id": "roof-a",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-a",
+          "slot": "above-roads"
+        },
+        {
+          "id": "roof-b",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-b",
+          "slot": "above-roads"
+        }
+      ],
+      "layer": {
+        "id": "labels",
+        "slot": "above-labels"
+      },
+      "position": {
+        "slotIndex": 0
+      },
+      "expectedOrder": ["labels"]
+    },
+    {
+      "name": "move-to-slot-start",
+      "operation": "moveLayer",
+      "layers": [
+        {
+          "id": "roof-a",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-a",
+          "slot": "above-roads"
+        },
+        {
+          "id": "roof-b",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-b",
+          "slot": "above-roads"
+        }
+      ],
+      "layer": {
+        "id": "road-b",
+        "slot": "above-roads"
+      },
+      "position": {
+        "slotIndex": 0
+      },
+      "expectedOrder": ["road-b", "road-a"]
+    },
+    {
+      "name": "move-to-slot-end",
+      "operation": "moveLayer",
+      "layers": [
+        {
+          "id": "roof-a",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-a",
+          "slot": "above-roads"
+        },
+        {
+          "id": "roof-b",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-b",
+          "slot": "above-roads"
+        }
+      ],
+      "layer": {
+        "id": "road-a",
+        "slot": "above-roads"
+      },
+      "position": {
+        "slotIndex": 1
+      },
+      "expectedOrder": ["road-b", "road-a"]
+    },
+    {
+      "name": "unslotted-index-counts-unslotted-peers",
+      "operation": "addLayer",
+      "layers": [
+        {
+          "id": "roof-a",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-a",
+          "slot": "above-roads"
+        },
+        {
+          "id": "roof-b",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-b",
+          "slot": "above-roads"
+        },
+        {
+          "id": "app-a",
+          "slot": null
+        }
+      ],
+      "layer": {
+        "id": "app-b",
+        "slot": null
+      },
+      "position": {
+        "slotIndex": 0
+      },
+      "expectedOrder": ["app-b", "app-a"]
+    },
+    {
+      "name": "add-negative-index-rejects",
+      "operation": "addLayer",
+      "layers": [
+        {
+          "id": "roof-a",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-a",
+          "slot": "above-roads"
+        },
+        {
+          "id": "roof-b",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-b",
+          "slot": "above-roads"
+        }
+      ],
+      "layer": {
+        "id": "route",
+        "slot": "above-roads"
+      },
+      "position": {
+        "slotIndex": -1
+      },
+      "error": {
+        "code": "invalidRequest"
+      },
+      "expectedOrder": ["road-a", "road-b"]
+    },
+    {
+      "name": "add-past-slot-end-rejects",
+      "operation": "addLayer",
+      "layers": [
+        {
+          "id": "roof-a",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-a",
+          "slot": "above-roads"
+        },
+        {
+          "id": "roof-b",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-b",
+          "slot": "above-roads"
+        }
+      ],
+      "layer": {
+        "id": "route",
+        "slot": "above-roads"
+      },
+      "position": {
+        "slotIndex": 3
+      },
+      "error": {
+        "code": "invalidRequest"
+      },
+      "expectedOrder": ["road-a", "road-b"]
+    },
+    {
+      "name": "move-index-excludes-moving-layer",
+      "operation": "moveLayer",
+      "layers": [
+        {
+          "id": "roof-a",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-a",
+          "slot": "above-roads"
+        },
+        {
+          "id": "roof-b",
+          "slot": "above-buildings"
+        },
+        {
+          "id": "road-b",
+          "slot": "above-roads"
+        }
+      ],
+      "layer": {
+        "id": "road-a",
+        "slot": "above-roads"
+      },
+      "position": {
+        "slotIndex": 2
+      },
+      "error": {
+        "code": "invalidRequest"
+      },
+      "expectedOrder": ["road-a", "road-b"]
+    }
+  ]
+}

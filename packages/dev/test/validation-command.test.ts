@@ -172,3 +172,39 @@ test('preserves semantic context and reports the owning module as domain', () =>
   assert.equal(unsafe.target, 'roads.primary?token=[redacted]');
   assert.doesNotMatch(serializeTileflowCommandDocument(unsafe), /tf_live_/u);
 });
+
+test('position failures preserve actionable context through the command document', () => {
+  const context = {
+    reason: 'layerPositionConflict',
+    operation: 'compileOverlay',
+    path: 'map.demo.overlays.routes.layers.0.slot',
+    layerId: 'route',
+    slot: 'above-labels',
+    referenceSlot: 'above-roads',
+    rule: 'sameSlot',
+    corrections: [{code: 'useOverlayPlacement', message: 'Choose the overlay placement.'}],
+    credential: `tf_live_${'x'.repeat(32)}`,
+  };
+  const document = createTileflowCommandFailureDocument(
+    'validate',
+    {
+      code: 'TF_LAYER_POSITION_CONFLICT',
+      phase: 'lowering',
+      message: 'Conflicting layer position.',
+      path: context.path,
+      context,
+    },
+    '/tmp/position-fixture',
+    {code: 'VALIDATION_FAILED', phase: 'validation'},
+  );
+  const saved = document.diagnostics[0] as unknown as {context: typeof context};
+  assert.equal(saved.context.reason, 'layerPositionConflict');
+  assert.equal(saved.context.layerId, 'route');
+  assert.equal(saved.context.referenceSlot, 'above-roads');
+  assert.deepEqual(
+    saved.context.corrections.map(({code}) => code),
+    ['useOverlayPlacement'],
+  );
+  assert.deepEqual((document as unknown as {context: unknown}).context, saved.context);
+  assert.doesNotMatch(serializeTileflowCommandDocument(document), /credential|tf_live_/);
+});

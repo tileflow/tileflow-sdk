@@ -1,8 +1,10 @@
 import {realpathSync} from 'node:fs';
 import {isAbsolute, relative, resolve, sep, win32} from 'node:path';
 import {compareCodeUnits} from '@tileflow/core';
+import type {TileflowLayerPositionContext} from '@tileflow/core';
 import {TileflowNativeCompatibilityError} from '@tileflow/core/native-profile';
 import {sanitizeDiagnosticSecrets} from './diagnostic-sanitization';
+import {readLayerPositionContext} from './position-diagnostics';
 
 export {sanitizeDiagnosticSecrets} from './diagnostic-sanitization';
 
@@ -31,6 +33,7 @@ export type TileflowStructuredDiagnostic = {
   suggestion: string;
   renderer?: 'native';
   profile?: 'native-v1';
+  context?: TileflowLayerPositionContext;
 };
 
 export type TileflowCommandSummary = TileflowStructuredDiagnostic & {
@@ -51,6 +54,7 @@ type TileflowDiagnosticDefaults = {
 };
 
 type RawDiagnostic = {
+  context?: unknown;
   code?: string;
   domain?: string;
   level?: string;
@@ -97,6 +101,8 @@ export function createTileflowStructuredDiagnostics(
     return error.issues.map((issue) => ({...issue}));
   }
   const inheritedCode = optionalField(error, 'code');
+  const inheritedContext =
+    error && typeof error === 'object' ? (error as Record<string, unknown>).context : undefined;
   const inheritedDomain =
     optionalField(error, 'domain') ??
     optionalField(error, 'owner') ??
@@ -132,12 +138,16 @@ export function createTileflowStructuredDiagnostics(
     const domain = sanitizeDiagnosticContext(issue.domain ?? issue.owner ?? inheritedDomain, cwd);
     const target = sanitizeDiagnosticContext(issue.target ?? inheritedTarget, cwd);
     const suggestion = issue.suggestion ?? inheritedSuggestion;
+    const context = readLayerPositionContext(issue.context ?? inheritedContext, (text) =>
+      boundText(sanitizeMessage(text, cwd), 300),
+    );
     return {
       phase,
       code,
       ...(domain ? {domain} : {}),
       path: boundText(sanitizePath(issue.path ?? inheritedPath ?? '', cwd), 300),
       ...(target ? {target} : {}),
+      ...(context ? {context} : {}),
       severity,
       message: boundText(sanitizeMessage(issue.message, cwd), 300),
       suggestion: suggestion
@@ -183,6 +193,7 @@ export function createTileflowCommandFailureDocument(
     message: primary.message,
     suggestion: primary.suggestion,
     diagnostics,
+    ...(primary.context ? {context: primary.context} : {}),
     ...(primary.renderer ? {renderer: primary.renderer, profile: primary.profile} : {}),
   };
 }
@@ -211,6 +222,7 @@ function getIssues(error: unknown): RawDiagnostic[] {
       if (typeof candidate.message !== 'string') return [];
       return [
         {
+          ...(candidate.context === undefined ? {} : {context: candidate.context}),
           ...(typeof candidate.code === 'string' ? {code: candidate.code} : {}),
           ...(typeof candidate.domain === 'string' ? {domain: candidate.domain} : {}),
           ...(typeof candidate.level === 'string' ? {level: candidate.level} : {}),

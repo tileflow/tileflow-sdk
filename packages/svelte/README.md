@@ -131,6 +131,58 @@ thin edges of 3D models stay continuous; other context attributes you pass are k
 The obsolete source fields `kind` and `style` are rejected. For a completely unmanaged map, use
 `maplibre-gl` directly rather than a Tileflow component.
 
+## Add sources and layers through a reference
+
+The component reference exposes `addSource`, `removeSource`, `addLayer`, `moveLayer`, and
+`removeLayer`. Each returns `Promise<void>` and waits for the map and any theme transition.
+Use the worker and CSS setup above:
+
+```svelte
+<script lang="ts">
+  import {TileflowMapError} from '@tileflow/core/browser';
+  import {TileflowMap, type TileflowMapRef} from '@tileflow/svelte';
+
+  let map: TileflowMapRef;
+
+  async function addPoints() {
+    try {
+      await map.addSource('app-points', {
+        type: 'geojson',
+        data: {
+          type: 'Feature',
+          geometry: {type: 'Point', coordinates: [-3.7038, 40.4168]},
+          properties: {},
+        },
+      });
+      await map.addLayer(
+        {
+          id: 'app-points',
+          type: 'circle',
+          source: 'app-points',
+          paint: {'circle-radius': 6, 'circle-color': '#e9573f'},
+        },
+        {slot: 'above-labels', slotIndex: 0},
+      );
+    } catch (error) {
+      if (error instanceof TileflowMapError) console.error(error.code, error.context);
+      else console.error(error);
+    }
+  }
+</script>
+
+<TileflowMap bind:this={map} source={{map: 'madrid'}} on:load={addPoints} />
+```
+
+These resources belong to this component's map and survive theme changes and blends. Replacing
+the source or unmounting the component rejects pending calls and removes its resources. Image mode
+rejects these operations. The existing `load` event still carries the raw MapLibre map in `detail`.
+
+`slotIndex` is a zero-based insertion index among application layers in the same slot; a move
+excludes the moving layer from that count. Use `aboveLayerId` or `belowLayerId` instead for relative
+placement within the same slot. Change the slot explicitly to cross that boundary. Remove dependent
+layers with `removeLayer` before calling `removeSource`; the reference cannot remove base-map
+resources. Validation failures expose `TileflowMapError.code` and actionable `context`.
+
 ## Add annotations and native popup UI
 
 Install the contract types used below:

@@ -8,6 +8,8 @@
     StyleSpecification,
   } from 'maplibre-gl';
   import {createEventDispatcher, onMount, tick} from 'svelte';
+  import {createTileflowMapReference} from './map-reference.js';
+  import type {TileflowMapRef} from './index.js';
   import {normalizeTileflowCaptureId} from '@tileflow/core/capture';
   import {
     createTileflowSessionController,
@@ -119,6 +121,32 @@
 
   let container: HTMLDivElement;
   let mapCaptureState: 'error' | 'idle' | 'loading' = 'loading';
+  const mapReference = createTileflowMapReference(mode === 'image', (error) => {
+    mapCaptureState = 'error';
+    console.error('Failed to restore Tileflow runtime sources and layers', error);
+  });
+  let refreshed = false;
+
+  export function addSource(...args: Parameters<TileflowMapRef['addSource']>) {
+    return mapReference.reference.addSource(...args);
+  }
+
+  export function removeSource(...args: Parameters<TileflowMapRef['removeSource']>) {
+    return mapReference.reference.removeSource(...args);
+  }
+
+  export function addLayer(...args: Parameters<TileflowMapRef['addLayer']>) {
+    return mapReference.reference.addLayer(...args);
+  }
+
+  export function moveLayer(...args: Parameters<TileflowMapRef['moveLayer']>) {
+    return mapReference.reference.moveLayer(...args);
+  }
+
+  export function removeLayer(...args: Parameters<TileflowMapRef['removeLayer']>) {
+    return mapReference.reference.removeLayer(...args);
+  }
+
   let imageSize: {height: number; width: number} | null = null;
   let imageResizeObserver: ResizeObserver | null = null;
   let mapInstance: MapLibreMap | null = null;
@@ -189,7 +217,14 @@
         : {defaultInteractionState: initialInteractionState}),
     });
   $: resolvedMode = resolveTileflowMapMode({mode});
-  $: assertTileflowMapStyleInputs({source, theme, timeOfDay, themeBlend, themeTransition});
+  $: {
+    try {
+      assertTileflowMapStyleInputs({source, theme, timeOfDay, themeBlend, themeTransition});
+    } catch (error) {
+      mapReference.fail(error instanceof Error ? error : new Error('Invalid Tileflow map inputs.'));
+      throw error;
+    }
+  }
   $: resolvedCaptureId = normalizeTileflowCaptureId(captureId);
   $: isImageMode = resolvedMode === 'image';
   $: mapName = source.map;
@@ -387,7 +422,8 @@
       unsubscribeSystemColorScheme?.();
       imageResizeObserver?.disconnect();
       try {
-        destroyMap();
+        mapReference.dispose();
+        destroyMap(false);
       } finally {
         interactionCoordinator.dispose();
       }
@@ -396,6 +432,9 @@
 
   async function refresh() {
     const runId = ++refreshRunId;
+    mapReference.start(isImageMode, refreshed);
+    refreshed = true;
+    destroyMap(false);
     await refreshManifest();
 
     if (!mounted || runId !== refreshRunId) {
@@ -415,17 +454,25 @@
     try {
       const manifest = await loadTileflowManifest(manifestUrl);
 
-      if (mounted && loadId === manifestLoadId) {
+      if (mounted && loadId === manifestLoadId && requestKey === manifestRequestKey) {
         const resolvedMap =
           manifest && mapName ? resolveTileflowManifestMap(manifest, mapName) : null;
         loadedManifestMap = resolvedMap;
         manifestResolutionState = resolvedMap ? 'ready' : 'error';
+        if (!resolvedMap) {
+          mapReference.fail(new Error(
+            'The Tileflow manifest could not resolve this map. Check source.map and source.manifestUrl.',
+          ));
+        }
       }
     } catch (error) {
-      if (mounted && loadId === manifestLoadId) {
+      if (mounted && loadId === manifestLoadId && requestKey === manifestRequestKey) {
         console.error('Failed to load Tileflow manifest', error);
         loadedManifestMap = null;
         manifestResolutionState = 'error';
+        mapReference.fail(
+          error instanceof Error ? error : new Error('Failed to load the Tileflow manifest.'),
+        );
       }
     }
   }
@@ -451,7 +498,8 @@
     updateImageSize();
   }
 
-  function destroyMap() {
+  function destroyMap(replaceController = mapInstance !== null || mapReference.failed) {
+    if (replaceController) mapReference.start(isImageMode, true);
     mapLoadId += 1;
     resourceLifetime?.abort();
     resourceLifetime = undefined;
@@ -538,7 +586,7 @@
     }
   }
 
-  async function recreateMap(runId: number) {
+  async function createMapForCurrentSource(runId: number) {
     destroyMap();
     mapCaptureState = 'loading';
     themeTransitionState = 'idle';
@@ -550,6 +598,9 @@
 
     activeRuntimeResource = runtimeStyle;
     if (!container || !runtimeStyle) {
+      if (runtimeResolutionState === 'error') {
+        mapReference.fail(new Error('No interactive style could be resolved. Check source and theme.'));
+      }
       return;
     }
 
@@ -588,6 +639,9 @@
         lifetime.abort();
         console.error('Failed to load the Tileflow map runtime', error);
         mapCaptureState = 'error';
+        mapReference.fail(
+          error instanceof Error ? error : new Error('Failed to load the Tileflow map runtime.'),
+        );
       }
       return;
     }
@@ -639,6 +693,7 @@
     });
 
     mapInstance = maplibreMap;
+    mapReference.current.attach(maplibreMap, prepared.style);
     attachTileflowAtmosphere(maplibreMap);
     attachTileflowNotices(maplibreMap);
     attachTileflowNauticalLights(maplibreMap);
@@ -854,6 +909,22 @@
     }
   }
 
+  async function recreateMap(runId: number) {
+    const pending = createMapForCurrentSource(runId);
+    const loadId = mapLoadId;
+    try {
+      await pending;
+    } catch (error) {
+      if (!mounted || runId !== refreshRunId || loadId !== mapLoadId) return;
+      mapReference.fail(
+        error instanceof Error ? error : new Error('Failed to initialize the Tileflow map.'),
+      );
+      destroyMap(false);
+      mapCaptureState = 'error';
+      console.error('Failed to initialize the Tileflow map', error);
+    }
+  }
+
   async function switchBlend() {
     const position = themeBlendPosition;
     if (!themeController || !blendStyles || position === undefined) return;
@@ -868,7 +939,18 @@
   }
 
   async function switchTheme() {
-    if (!themeController) return;
+    if (!themeController) {
+      if (
+        mapReference.failed &&
+        !isImageMode &&
+        !mapInstance &&
+        runtimeStyle &&
+        (!resourceLifetime || resourceLifetime.signal.aborted)
+      ) {
+        await recreateMap(refreshRunId);
+      }
+      return;
+    }
     if (themeBlend) {
       // The blend names its nearest theme; the blend itself is applied by switchBlend.
       if (runtimeStyle) activeRuntimeResource = runtimeStyle;

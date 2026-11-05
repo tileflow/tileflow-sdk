@@ -1,12 +1,13 @@
-import type {TileflowTimeOfDay} from '@tileflow/core/runtime';
 import type {Map as MapLibreMap, MapOptions as MapLibreMapOptions} from 'maplibre-gl';
 import type {Snippet, SvelteComponentTyped} from 'svelte';
+import type {TileflowMapController} from '@tileflow/core';
 import type {
   TileflowBrowserThemeBlendSelection,
   TileflowThemeTransition,
-  TileflowViewMode,
   TileflowThemeTransitionOptions,
+  TileflowViewMode,
 } from '@tileflow/core/browser';
+import type {TileflowTimeOfDay} from '@tileflow/core/runtime';
 import type {
   TileflowAnalytics,
   TileflowRuntimeSource,
@@ -25,6 +26,10 @@ import type {
 export type TileflowMapMode = 'interactive' | 'image';
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
 export type TileflowMapSource = TileflowRuntimeSource;
+export type TileflowMapRef = Pick<
+  TileflowMapController,
+  'addSource' | 'removeSource' | 'addLayer' | 'moveLayer' | 'removeLayer'
+>;
 export type TileflowMapLibreConfiguration = Readonly<{workerUrl: string}>;
 
 /** Configure the application-owned worker before mounting an interactive Tileflow map. */
@@ -119,6 +124,12 @@ export type TileflowMapProps<TAnnotation extends TileflowAnnotation = TileflowAn
 
 export default class TileflowMap<
   TAnnotation extends TileflowAnnotation = TileflowAnnotation,
-> extends SvelteComponentTyped<TileflowMapProps<TAnnotation>, {load: CustomEvent<MapLibreMap>}> {}
+> extends SvelteComponentTyped<TileflowMapProps<TAnnotation>, {load: CustomEvent<MapLibreMap>}> {
+  addSource: TileflowMapRef['addSource'];
+  removeSource: TileflowMapRef['removeSource'];
+  addLayer: TileflowMapRef['addLayer'];
+  moveLayer: TileflowMapRef['moveLayer'];
+  removeLayer: TileflowMapRef['removeLayer'];
+}
 
 export {TileflowMap};

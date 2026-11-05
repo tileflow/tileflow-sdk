@@ -109,11 +109,13 @@ import {
   resolveTileflowVueInteractionBindings,
   validateTileflowVueInteractionState,
 } from './interactions.js';
+import {createTileflowMapReference, type TileflowMapRef} from './map-reference.js';
 import {loadTileflowMapLibre} from './maplibre.js';
 import {assertTileflowMapStyleInputs, type TileflowMapStyleSourceProps} from './style-source.js';
 
 export {configureTileflowMapLibre} from './maplibre.js';
 export type {TileflowMapLibreConfiguration} from './maplibre.js';
+export type {TileflowMapRef} from './map-reference.js';
 
 export type TileflowMapMode = 'interactive' | 'image';
 export type TileflowMapOptions = Omit<MapLibreMapOptions, 'container' | 'style'>;
@@ -203,7 +205,7 @@ type PublicTileflowMapComponent = PublicTileflowMapStatics & {
     };
     $props: TileflowMapProps<TAnnotation>;
     $slots: TileflowMapSlots<TAnnotation>;
-  };
+  } & TileflowMapRef;
 };
 
 export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
@@ -260,7 +262,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     themeChange: (_transition: TileflowThemeTransition) => true,
     'update:interactionState': (_state: TileflowInteractionState) => true,
   },
-  setup(props, {attrs, emit, slots}) {
+  setup(props, {attrs, emit, slots, expose}) {
     const containerRef = ref<HTMLDivElement | null>(null);
     const loadedManifestMap = shallowRef<TileflowRuntimeManifestMap | null>(null);
     const manifestResolutionKey = ref('');
@@ -269,6 +271,11 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     const mapRef = shallowRef<MapLibreMap | null>(null);
     const systemColorScheme = ref<'dark' | 'light'>('light');
     const mapCaptureState = ref<'error' | 'idle' | 'loading'>('loading');
+    const mapReference = createTileflowMapReference(props.mode === 'image', (error) => {
+      mapCaptureState.value = 'error';
+      console.error('Failed to restore Tileflow runtime sources and layers', error);
+    });
+    expose(mapReference.reference);
     const themeTransitionState = ref<'error' | 'idle' | 'loading'>('idle');
     const activeRuntimeResource = shallowRef<unknown>(undefined);
     const interactionCaptureState = ref<'error' | 'idle' | 'loading'>('idle');
@@ -646,13 +653,20 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     };
 
     watchEffect(() => {
-      assertTileflowMapStyleInputs({
-        source: props.source,
-        theme: props.theme,
-        timeOfDay: props.timeOfDay,
-        themeBlend: props.themeBlend,
-        themeTransition: props.themeTransition,
-      });
+      try {
+        assertTileflowMapStyleInputs({
+          source: props.source,
+          theme: props.theme,
+          timeOfDay: props.timeOfDay,
+          themeBlend: props.themeBlend,
+          themeTransition: props.themeTransition,
+        });
+      } catch (error) {
+        mapReference.fail(
+          error instanceof Error ? error : new Error('Invalid Tileflow map inputs.'),
+        );
+        throw error;
+      }
     });
 
     watchEffect(() => {
@@ -675,17 +689,26 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       try {
         const manifest = await loadTileflowManifest(manifestUrl.value);
 
-        if (loadId === manifestLoadId) {
+        if (loadId === manifestLoadId && requestKey === manifestRequestKey.value) {
           const resolvedMap =
             manifest && mapName.value ? resolveTileflowManifestMap(manifest, mapName.value) : null;
           loadedManifestMap.value = resolvedMap;
           manifestResolutionState.value = resolvedMap ? 'ready' : 'error';
+          if (!resolvedMap)
+            mapReference.fail(
+              new Error(
+                'The Tileflow manifest could not resolve this map. Check source.map and source.manifestUrl.',
+              ),
+            );
         }
       } catch (error) {
-        if (loadId === manifestLoadId) {
+        if (loadId === manifestLoadId && requestKey === manifestRequestKey.value) {
           console.error('Failed to load Tileflow manifest', error);
           loadedManifestMap.value = null;
           manifestResolutionState.value = 'error';
+          mapReference.fail(
+            error instanceof Error ? error : new Error('Failed to load the Tileflow manifest.'),
+          );
         }
       }
     };
@@ -725,7 +748,8 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       },
     );
 
-    const destroyMap = () => {
+    const destroyMap = (replaceController = mapRef.value !== null || mapReference.failed) => {
+      if (replaceController) mapReference.start(isImageMode.value, true);
       mapLoadId += 1;
       resourceLifetime?.abort();
       resourceLifetime = undefined;
@@ -845,7 +869,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       }
     };
 
-    const recreateMap = async () => {
+    const createMapForCurrentSource = async () => {
       destroyMap();
       interactionOverlayFailed = false;
       settleInteractionReadiness();
@@ -859,6 +883,10 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
 
       activeRuntimeResource.value = runtimeStyle.value;
       if (!containerRef.value || !runtimeStyle.value) {
+        if (runtimeResolutionState.value === 'error')
+          mapReference.fail(
+            new Error('No interactive style could be resolved. Check source and theme.'),
+          );
         return;
       }
 
@@ -897,6 +925,9 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
           lifetime.abort();
           console.error('Failed to load the Tileflow map runtime', error);
           mapCaptureState.value = 'error';
+          mapReference.fail(
+            error instanceof Error ? error : new Error('Failed to load the Tileflow map runtime.'),
+          );
         }
         return;
       }
@@ -949,6 +980,7 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       });
 
       mapRef.value = map;
+      mapReference.current.attach(map, prepared.style);
       attachTileflowAtmosphere(map);
       attachTileflowNotices(map);
       attachTileflowNauticalLights(map);
@@ -1147,6 +1179,20 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
       }
     };
 
+    const recreateMap = () => {
+      const pending = createMapForCurrentSource();
+      const loadId = mapLoadId;
+      return pending.catch((error: unknown) => {
+        if (loadId !== mapLoadId) return;
+        mapReference.fail(
+          error instanceof Error ? error : new Error('Failed to initialize the Tileflow map.'),
+        );
+        destroyMap(false);
+        mapCaptureState.value = 'error';
+        console.error('Failed to initialize the Tileflow map', error);
+      });
+    };
+
     const switchBlend = () => {
       const themes = blendStyles.value;
       const position = props.themeBlend?.position;
@@ -1163,7 +1209,18 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     };
 
     const switchTheme = () => {
-      if (!themeController) return;
+      if (!themeController) {
+        if (
+          mapReference.failed &&
+          !isImageMode.value &&
+          !mapRef.value &&
+          runtimeStyle.value &&
+          (!resourceLifetime || resourceLifetime.signal.aborted)
+        ) {
+          void recreateMap();
+        }
+        return;
+      }
       if (props.themeBlend) {
         // The blend names its nearest theme; the blend itself is applied by switchBlend.
         if (runtimeStyle.value) activeRuntimeResource.value = runtimeStyle.value;
@@ -1246,15 +1303,30 @@ export const TileflowMap = defineComponent<RuntimeTileflowMapProps>({
     });
 
     onBeforeUnmount(() => {
+      manifestLoadId += 1;
       unsubscribeSystemColorScheme?.();
       imageResizeObserver?.disconnect();
-      destroyMap();
+      mapReference.dispose();
+      destroyMap(false);
       interactionCoordinator.dispose();
     });
 
     onUpdated(() => {
       syncCustomRenderers();
     });
+
+    watch(
+      () => [
+        props.source,
+        manifestRequestKey.value,
+        props.mode,
+        props.mapOptions,
+        props.interactive,
+        props.imageUrl,
+      ],
+      () => destroyMap(true),
+      {flush: 'sync'},
+    );
 
     watch(
       () => [props.imageUrl, props.mode, props.source],

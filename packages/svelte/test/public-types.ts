@@ -7,6 +7,8 @@ import TileflowMap, {
   type TileflowMapLibreConfiguration,
   type TileflowMapProps,
 } from '../src/index.js';
+// Component references expose the shared asynchronous runtime-style API.
+import type {TileflowMapRef} from '../src/index.js';
 
 const source = {map: 'main'};
 const mapLibreConfiguration = {
@@ -146,3 +148,25 @@ void [
   imageCallback,
   namedComponent,
 ];
+
+declare const runtimeRef: TileflowMapRef;
+const sourceAdded: Promise<void> = runtimeRef.addSource('points', {
+  type: 'geojson',
+  data: {type: 'FeatureCollection', features: []},
+});
+const layerAdded: Promise<void> = runtimeRef.addLayer(
+  {id: 'points', type: 'circle', source: 'points'},
+  {slot: 'above-labels', slotIndex: 0},
+);
+const layerMoved: Promise<void> = runtimeRef.moveLayer('points', {slot: null, slotIndex: 0});
+const layerRemoved: Promise<void> = runtimeRef.removeLayer('points');
+const sourceRemoved: Promise<void> = runtimeRef.removeSource('points');
+// @ts-expect-error Runtime layer ids are required.
+runtimeRef.addLayer({type: 'circle', source: 'points'});
+// @ts-expect-error The insertion index is numeric.
+runtimeRef.moveLayer('points', {slotIndex: 'first'});
+// @ts-expect-error The component owns controller disposal.
+runtimeRef.dispose();
+declare const componentRef: InstanceType<typeof TileflowMap>;
+const componentSourceAdded: Promise<void> = componentRef.addSource('points', {type: 'geojson'});
+void [sourceAdded, layerAdded, layerMoved, layerRemoved, sourceRemoved, componentSourceAdded];

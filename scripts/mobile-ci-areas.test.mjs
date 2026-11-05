@@ -44,6 +44,7 @@ test('selects mobile jobs from the paths that reach the runtime or a native host
     {...none, ios: true, android: true},
   );
   const all = {...embedded, reactNative: true};
+  assert.deepEqual(mobileAreas(['test-support/mobile/hosted/session-sequences.json']), all);
   assert.deepEqual(mobileAreas(['.github/workflows/ci.yml']), all);
   assert.deepEqual(mobileAreas(null), all);
 });

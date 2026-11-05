@@ -15,8 +15,8 @@ const outputs = await renderProtocol(contract, {
       ...(await resolveConfig(resolve(root, 'packages/mobile-runtime/src/contract.ts'))),
       parser: 'typescript',
     }),
-  sessionFixture: await read('packages/mobile-runtime/test/fixtures/native-session.json'),
-  sequenceFixture: await read('packages/mobile-runtime/test/fixtures/session-sequences.json'),
+  sessionFixture: await read('test-support/mobile/hosted/native-session.json'),
+  sequenceFixture: await read('test-support/mobile/hosted/session-sequences.json'),
 });
 const stale = [];
 for (const [path, content] of Object.entries(outputs)) {

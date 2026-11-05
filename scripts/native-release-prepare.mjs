@@ -108,7 +108,11 @@ if (!swiftReadme.includes(`https://github.com/${catalog.swift.repository}`)) {
 }
 await writeFile(join(swift, 'README.md'), swiftReadme);
 for (const platform of ['common', 'ios']) {
-  await cp(resolve(root, 'platforms/notices', platform, 'MapLibreNotices'), join(swift, 'MapLibreNotices'), {recursive: true});
+  await cp(
+    resolve(root, 'platforms/notices', platform, 'MapLibreNotices'),
+    join(swift, 'MapLibreNotices'),
+    {recursive: true},
+  );
 }
 await writeFile(join(swift, '.gitignore'), '.build/\n.swiftpm/\nxcuserdata/\n');
 

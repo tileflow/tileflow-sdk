@@ -14,9 +14,20 @@ const spec = JSON.parse(
   await readFile(resolve(dirname(specification), 'dist/latest.json'), 'utf8'),
 );
 const stale = [];
-for (const [path, content] of Object.entries(
-  renderStyle(spec, version, await readNativeStylePins(root)),
-)) {
+const outputs = renderStyle(spec, version, await readNativeStylePins(root));
+const positions = JSON.parse(
+  await readFile(resolve(root, 'platforms/style-position-fixtures.json'), 'utf8'),
+);
+const fixtures =
+  JSON.stringify({generatedFrom: 'platforms/style-position-fixtures.json', ...positions}, null, 2) +
+  '\n';
+for (const path of [
+  'platforms/ios/Tests/TileflowTests/Fixtures/Native/style-position-fixtures.json',
+  'platforms/android/tileflow/src/test/resources/style-position-fixtures.json',
+  'platforms/android/tileflow/src/androidTest/assets/style-position-fixtures.json',
+])
+  outputs[path] = fixtures;
+for (const [path, content] of Object.entries(outputs)) {
   if (process.argv.includes('--check')) {
     const current = await readFile(resolve(root, path), 'utf8').catch(() => undefined);
     if (current !== content) stale.push(path);

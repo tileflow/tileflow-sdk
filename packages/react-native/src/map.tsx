@@ -19,7 +19,7 @@ let nextInstance = 0;
 const defaultLocation: NativeUserLocation = {visible: false};
 
 function Appearance({props}: {props: MapViewProps}) {
-  useMapCommand('setBoundaryValues', {values: props.boundaryValues as JsonObject ?? null});
+  useMapCommand('setBoundaryValues', {values: props.boundaryValues as unknown as JsonObject ?? null});
   useMapCommand('setStyleState', {state: props.styleState ?? {}});
   useMapCommand('setSun', {sun: props.sun as JsonObject ?? null});
   useMapCommand('setEmphasis', {emphasis: props.emphasis as JsonObject ?? null});

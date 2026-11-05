@@ -39,6 +39,12 @@ export function createMapRef(map: MapController, style: StyleRegistry): MapViewR
         geometry: {type: 'box', box}, ...(filter ? {filter} : {}), ...(layerIds ? {layerIds} : {}),
       }));
     },
+    queryRenderedFeaturesInPolygon: async (points, filter, layerIds) => {
+      await style.synchronize();
+      return collection(await map.call('queryRenderedFeatures', {
+        geometry: {type: 'polygon', points}, ...(filter ? {filter} : {}), ...(layerIds ? {layerIds} : {}),
+      }));
+    },
     querySourceFeatures: async (sourceId, options) => {
       await style.synchronize();
       return collection(await map.call('querySourceFeatures', {
@@ -51,6 +57,7 @@ export function createMapRef(map: MapController, style: StyleRegistry): MapViewR
     removeFeatureState: async (target, key) => { await map.call('removeFeatureState', {...feature(target), ...(key ? {key} : {})}); },
     setBoundaryValues: async (values) => { await map.call('setBoundaryValues', {values: values as JsonObject | null}); },
     setStyleState: async (state) => { await map.call('setStyleState', {state}); },
+    setDepthMarkers: async (markers) => { await map.call('setDepthMarkers', {markers}); },
     setSun: async (sun, duration) => { await map.call('setSun', {sun: sun as JsonObject | null, ...(duration === undefined ? {} : {duration})}); },
     setEmphasis: async (emphasis, duration) => { await map.call('setEmphasis', {emphasis: emphasis as JsonObject | null, ...(duration === undefined ? {} : {duration})}); },
     getRouteInks: async () => await map.call('getRouteInks', {}) as JsonObject,

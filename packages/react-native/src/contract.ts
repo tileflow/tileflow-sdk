@@ -34,13 +34,17 @@ export type LocationEvent = Readonly<{
   timestamp: number;
 }>;
 export type FeatureIdentifier = Readonly<{sourceID: string; sourceLayerID?: string; id: string | number}>;
-export type BoundaryValues = Readonly<{
-  ids?: Readonly<Record<string, number | string>>;
-  refs?: Readonly<Record<string, number | string>>;
+export type BoundaryValues = (Readonly<{ids: Readonly<Record<string, number | string>>; refs?: never}> |
+  Readonly<{refs: Readonly<Record<string, number | string>>; ids?: never}>) & Readonly<{
   labels?: boolean;
   state?: string;
 }>;
 export type MapSun = Readonly<{azimuth: number; altitude: number}> | Readonly<{date: number; location?: Coordinate}>;
+export type DepthMarker = Readonly<{
+  id: string; coordinate: Coordinate; image: string; size: readonly [number, number];
+  alignment?: 'screen' | 'ground'; anchor?: 'center' | 'bottom'; offset?: ScreenPoint;
+  rotation?: number; altitude?: number; opacity?: number; occluded?: boolean;
+}>;
 export type MapEmphasis = Readonly<{recede?: Readonly<Record<string, number>>; labels?: number; keepArea?: JsonObject}>;
 export type MapShot = Readonly<{
   keyframes: readonly Readonly<{time: number; camera: CameraStop; blendPosition?: number}>[];
@@ -80,6 +84,7 @@ export interface MapViewRef {
   getZoom(): Promise<number>;
   queryRenderedFeaturesAtPoint(point: ScreenPoint, filter?: Expression, layerIDs?: readonly string[]): Promise<FeatureCollection>;
   queryRenderedFeaturesInRect(box: readonly [number, number, number, number], filter?: Expression, layerIDs?: readonly string[]): Promise<FeatureCollection>;
+  queryRenderedFeaturesInPolygon(points: readonly ScreenPoint[], filter?: Expression, layerIDs?: readonly string[]): Promise<FeatureCollection>;
   querySourceFeatures(sourceId: string, options?: Readonly<{sourceLayerID?: string; filter?: Expression}>): Promise<FeatureCollection>;
   setFeatureState(feature: FeatureIdentifier, state: StyleState): Promise<void>;
   getFeatureState(feature: FeatureIdentifier): Promise<StyleState>;
@@ -87,6 +92,7 @@ export interface MapViewRef {
   setBoundaryValues(values: BoundaryValues | null): Promise<void>;
   setStyleState(state: StyleState): Promise<void>;
   setSun(sun: MapSun | null, duration?: number): Promise<void>;
+  setDepthMarkers(markers: readonly DepthMarker[]): Promise<void>;
   setEmphasis(emphasis: MapEmphasis | null, duration?: number): Promise<void>;
   getRouteInks(): Promise<JsonObject>;
   animateLineProgress(layers: readonly string[], to: JsonObject, duration: number): Promise<boolean>;

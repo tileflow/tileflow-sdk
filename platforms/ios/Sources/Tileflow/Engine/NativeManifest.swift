@@ -82,7 +82,8 @@ struct NativeManifest: Sendable {
     if allowsNative, let native = profileURL(.native) {
       do {
         var manifest = try parse(
-          try await read(native, .manifest), map: map, url: native, representation: .native)
+          try await read(native, .manifest), map: map, url: native, representation: .native,
+          mapID: discoveryMapID)
         let family = (representations[Representation.native.rawValue] as? [String: Any])?["family"]
           as? [String: Any]
         if let url = (family?["url"] as? String).flatMap(URL.init(string:)) {
@@ -98,13 +99,29 @@ struct NativeManifest: Sendable {
       throw failure("This Map has no native representation.", .manifest)
     }
     return try parse(
-      try await read(webView, .manifest), map: map, url: webView, representation: .webView)
+      try await read(webView, .manifest), map: map, url: webView, representation: .webView,
+      mapID: discoveryMapID)
   }
 
   static func parse(
-    _ manifest: [String: Any], map: String, url: URL, representation: Representation
+    _ manifest: [String: Any], map: String, url: URL, representation: Representation,
+    mapID: String? = nil
   ) throws -> NativeManifest {
-    guard let maps = manifest["maps"] as? [String: Any], let entry = maps[map] as? [String: Any],
+    guard let maps = manifest["maps"] as? [String: Any] else {
+      throw failure("The map is not in the manifest.", .manifest)
+    }
+    let name: String
+    if let mapID {
+      let matches = maps.keys.filter { (maps[$0] as? [String: Any])?["mapId"] as? String == mapID }
+      guard matches.count == 1 else {
+        throw failure("The manifest must contain exactly one entry for the Map's identity.", .manifest)
+      }
+      name = matches[0]
+    } else {
+      name = map
+    }
+
+    guard let entry = maps[name] as? [String: Any],
       let themes = entry["themes"] as? [String: Any],
       let defaultTheme = entry["defaultTheme"] as? String
     else { throw failure("The map is not in the manifest.", .manifest) }
@@ -120,7 +137,7 @@ struct NativeManifest: Sendable {
     }
     let timeOfDay = (entry["timeOfDay"] as? [String: Any])?.compactMapValues(strings)
     return NativeManifest(
-      map: map, representation: representation,
+      map: name, representation: representation,
       catalog: .init(
         defaultTheme: defaultTheme, systemThemes: strings(entry["systemThemes"]),
         timeOfDay: timeOfDay, themes: Set(styles.keys)),

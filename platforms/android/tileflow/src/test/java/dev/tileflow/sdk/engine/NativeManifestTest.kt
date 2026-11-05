@@ -135,6 +135,56 @@ class NativeManifestTest {
         JSONObject().put("map", "map").put("manifestUrl", discovery).put("discoveryMapId", "map_1")
 
     @Test
+    fun hostedSelectsItsPublicIdentityAndKeepsItsAuthoredName() {
+        val family = "$origin/maps/map_1/native/families/main.json"
+        documents[discovery] = JSONObject(documents.getValue(discovery)).apply {
+            getJSONObject("representations").getJSONObject("native-v1")
+                .put("family", JSONObject().put("url", family).put("revision", "revision"))
+        }.toString()
+        documents[profile] = JSONObject().put("maps", JSONObject()
+            .put("map", JSONObject(map).put("mapId", "map_other"))
+            .put("main", JSONObject(map))).toString()
+
+        val manifest = NativeManifest.read(hostedSource(), ::load)
+        assertEquals("main", manifest.map)
+        assertEquals(NativeRepresentation.NATIVE, manifest.representation)
+        assertEquals("night", manifest.resolve("system", "dark").theme)
+        assertEquals("$origin/maps/map_1/native/v1/night.json", manifest.resolve("system", "dark").styleUrl)
+        assertEquals(family, manifest.familyUrl(manifest.resolve(null, "light").styleUrl))
+        assertEquals("revision", manifest.family?.second)
+    }
+
+    @Test
+    fun hostedRejectsMissingAndAmbiguousPublicIdentities() {
+        val missing = JSONObject(map).apply { remove("mapId") }
+        val other = JSONObject(map).put("mapId", "map_other")
+        for (maps in listOf(
+            JSONObject().put("map", missing),
+            JSONObject().put("map", other),
+            JSONObject().put("map", JSONObject(map)).put("main", JSONObject(map)),
+        )) {
+            documents[profile] = JSONObject().put("maps", maps).toString()
+            try {
+                NativeManifest.read(hostedSource(), ::load)
+                fail("A Hosted manifest without exactly one matching public identity opened")
+            } catch (error: TileflowMapException) {
+                assertEquals(TileflowErrorCode.RESOURCE_FAILED, error.code)
+                assertEquals(TileflowResourceKind.MANIFEST, error.context.resource)
+            }
+        }
+    }
+
+    @Test
+    fun selfHostedDoesNotSelectByPublicIdentity() {
+        try {
+            NativeManifest.read(JSONObject().put("map", "map_1").put("manifestUrl", selfHosted), ::load)
+            fail("A self-hosted source selected a public identity instead of its authored name")
+        } catch (error: TileflowMapException) {
+            assertEquals(TileflowErrorCode.RESOURCE_FAILED, error.code)
+        }
+    }
+
+    @Test
     fun aSelfHostedSourceIsItsManifest() {
         val document =
             NativeManifest.resolve(

@@ -134,6 +134,7 @@ internal object NativeManifest {
                     native,
                     NativeRepresentation.NATIVE,
                     familyUrl?.let { it to family.optString("revision").ifEmpty { null } },
+                    discoveryMapId,
                 )
             } catch (error: TileflowMapException) {
                 // Downloaded regions may hold the WebView profile only.
@@ -145,7 +146,8 @@ internal object NativeManifest {
         val webView =
             profile(NativeRepresentation.WEB_VIEW)
                 ?: throw failure(manifestUrl, message = "This Map has no native representation.")
-        return parse(document(webView, load), map, webView, NativeRepresentation.WEB_VIEW)
+        return parse(document(webView, load), map, webView, NativeRepresentation.WEB_VIEW,
+            mapId = discoveryMapId)
     }
 
     /**
@@ -165,9 +167,19 @@ internal object NativeManifest {
         url: String,
         representation: NativeRepresentation,
         family: Pair<String, String?>? = null,
+        mapId: String? = null,
     ): NativeMapManifest {
+        val maps = manifest.optJSONObject("maps")
+            ?: throw failure(url, message = "The map is not in its manifest.")
+        val name = if (mapId == null) map else {
+            maps.keys().asSequence()
+                .filter { maps.optJSONObject(it)?.optString("mapId") == mapId }
+                .toList().singleOrNull()
+                ?: throw failure(url, message = "The manifest must contain exactly one entry for the Map's identity.")
+        }
+
         val entry =
-            manifest.optJSONObject("maps")?.optJSONObject(map)
+            maps.optJSONObject(name)
                 ?: throw failure(url, message = "The map is not in its manifest.")
         val themes =
             entry.optJSONObject("themes") ?: throw failure(url, message = "The map has no themes.")
@@ -189,7 +201,7 @@ internal object NativeManifest {
                 }
             }
         return NativeMapManifest(
-            map,
+            name,
             representation,
             NativeEvaluators.ThemeCatalog(
                 entry.optString("defaultTheme").ifEmpty { styles.keys.firstOrNull() ?: "" },

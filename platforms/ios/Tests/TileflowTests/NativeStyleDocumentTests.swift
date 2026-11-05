@@ -7,6 +7,80 @@ import XCTest
 final class NativeStyleDocumentTests: XCTestCase {
   private let context = MapResourceAddress.newContext()
 
+  func testHostedManifestSelectsThePublicIdentityAndKeepsItsAuthoredName() async throws {
+    let entry: [String: Any] = [
+      "mapId": "map_requested", "defaultTheme": "day",
+      "systemThemes": ["light": "day", "dark": "night"],
+      "themes": ["day": ["styleUrl": "main/day.json"], "night": ["styleUrl": "main/night.json"]],
+    ]
+    var other = entry
+    other["mapId"] = "map_other"
+    let manifest = try await hostedManifest(["map": other, "main": entry])
+
+    XCTAssertEqual(manifest.map, "main")
+    XCTAssertEqual(manifest.representation, .native)
+    XCTAssertEqual(try manifest.resolve("system", colorScheme: "dark").styleURL.absoluteString,
+      "https://maps.test/native/main/night.json")
+    XCTAssertEqual(manifest.familyURL(styleURL: try manifest.theme("day").styleURL)?.absoluteString,
+      "https://maps.test/native/families/main.json")
+    XCTAssertEqual(manifest.family?.revision, "revision")
+  }
+
+  func testHostedManifestRejectsMissingAndAmbiguousPublicIdentities() async throws {
+    let entry: [String: Any] = [
+      "defaultTheme": "day", "themes": ["day": ["styleUrl": "day.json"]],
+    ]
+    var requested = entry
+    requested["mapId"] = "map_requested"
+    var other = entry
+    other["mapId"] = "map_other"
+
+    for maps in [["map": entry], ["map": other], ["map": requested, "main": requested]] {
+      do {
+        _ = try await hostedManifest(maps)
+        XCTFail("A Hosted manifest without exactly one matching public identity opened")
+      } catch let error as TileflowMapError {
+        XCTAssertEqual(error.code, .resourceFailed)
+        XCTAssertEqual(error.context.resource, .manifest)
+      }
+    }
+  }
+
+  func testSelfHostedManifestStillSelectsOnlyTheAuthoredName() async throws {
+    let url = URL(string: "https://maps.test/manifest.json")!
+    let document: [String: Any] = ["maps": ["main": [
+      "mapId": "different", "defaultTheme": "day", "themes": ["day": ["styleUrl": "day.json"]],
+    ]]]
+    let manifest = try await NativeManifest.load(
+      map: "main", manifestURL: url, discoveryMapID: nil, read: { _, _ in document })
+    XCTAssertEqual(manifest.map, "main")
+
+    do {
+      _ = try await NativeManifest.load(
+        map: "different", manifestURL: url, discoveryMapID: nil, read: { _, _ in document })
+      XCTFail("A self-hosted source selected a public identity instead of its authored name")
+    } catch let error as TileflowMapError {
+      XCTAssertEqual(error.code, .resourceFailed)
+    }
+  }
+
+  private func hostedManifest(_ maps: [String: Any]) async throws -> NativeManifest {
+    let discovery = URL(string: "https://maps.test/mobile/manifest.json")!
+    let profile = URL(string: "https://maps.test/native/manifest.json")!
+    return try await NativeManifest.load(
+      map: "map", manifestURL: discovery, discoveryMapID: "map_requested"
+    ) { url, _ in
+      if url == discovery {
+        return ["mapId": "map_requested", "representations": ["native-v1": [
+          "manifestUrl": profile.absoluteString,
+          "family": ["url": "https://maps.test/native/families/main.json", "revision": "revision"],
+        ]]]
+      }
+      XCTAssertEqual(url, profile)
+      return ["maps": maps]
+    }
+  }
+
   func testHostedWebOnlyDocumentsCanOpenFromAPackButNeverFromTheNetwork() async throws {
     let map = "city"
     let discovery = URL(string: "https://maps.test/maps/city/mobile/manifest.json")!
@@ -19,7 +93,9 @@ final class NativeStyleDocumentTests: XCTestCase {
         return ["mapId": map, "representations": ["webview-v1": ["manifestUrl": web.absoluteString]]]
       }
       XCTAssertEqual(url, web)
-      return ["maps": [map: ["defaultTheme": "day", "themes": ["day": ["styleUrl": "day.json"]]]]]
+      return ["maps": ["map": [
+        "mapId": map, "defaultTheme": "day", "themes": ["day": ["styleUrl": "day.json"]],
+      ]]]
     }
 
     do {
@@ -35,6 +111,7 @@ final class NativeStyleDocumentTests: XCTestCase {
     let stored = try await NativeManifest.load(
       map: map, manifestURL: discovery, discoveryMapID: map, fromPacks: true, read: read)
     XCTAssertEqual(stored.representation, .webView)
+    XCTAssertEqual(stored.map, "map")
     XCTAssertEqual(requests, [discovery, web])
     XCTAssertEqual(try stored.theme("day").styleURL, web.deletingLastPathComponent().appendingPathComponent("day.json"))
   }

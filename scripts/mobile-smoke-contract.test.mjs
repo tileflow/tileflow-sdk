@@ -141,8 +141,15 @@ test('packed contents reject missing declarations, workspace ranges and unsafe a
   const manifest = {
     name: '@tileflow/react-native',
     version: mobileVersions.package,
+    'react-native': './src/index.ts',
     codegenConfig: {name: 'TileflowReactNativeSpec', type: 'all', jsSrcsDir: 'src/specs'},
-    exports: {'.': {types: './dist/index.d.ts', default: './dist/index.js'}},
+    exports: {
+      '.': {
+        types: './dist/index.d.ts',
+        'react-native': './src/index.ts',
+        default: './dist/index.js',
+      },
+    },
   };
   const files = [
     'package.json',
@@ -158,6 +165,8 @@ test('packed contents reject missing declarations, workspace ranges and unsafe a
     'TileflowReactNative.podspec',
     'plugin/index.cjs',
     'plugin/transforms.cjs',
+    'src/index.ts',
+    'src/map.tsx',
     'src/specs/NativeTileflowMapModule.ts',
     'src/specs/NativeTileflowServices.ts',
     'src/specs/NativeTileflowOffline.ts',
@@ -165,6 +174,10 @@ test('packed contents reject missing declarations, workspace ranges and unsafe a
     'src/specs/TileflowMarkerViewNativeComponent.ts',
   ];
   assertPackedManifest(manifest, files);
+  assert.throws(
+    () => assertPackedManifest({...manifest, 'react-native': './dist/index.js'}, files),
+    codeIs('PACK_INVALID'),
+  );
   for (const name of [
     '@maplibre/maplibre-react-native',
     '@tileflow/core',

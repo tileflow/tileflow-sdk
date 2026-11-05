@@ -67,6 +67,7 @@ test('staged build and pack adapters use pnpm, fresh output and license inputs w
     'android/src/main/java/Fixture.kt',
     'ios/tileflow_post_install.rb',
     'ios/Fixture.mm',
+    'src/index.ts',
     'ios/Sources/Fixture.swift',
     'src/specs/NativeTileflowMapModule.ts',
     'src/specs/NativeTileflowServices.ts',
@@ -81,7 +82,14 @@ test('staged build and pack adapters use pnpm, fresh output and license inputs w
     const manifest = {
       name: `@tileflow/${name}`,
       version: '0.0.0-development',
-      exports: {'.': {types: './dist/index.d.ts', import: './dist/index.js'}},
+      'react-native': './src/index.ts',
+      exports: {
+        '.': {
+          types: './dist/index.d.ts',
+          'react-native': './src/index.ts',
+          import: './dist/index.js',
+        },
+      },
       codegenConfig: {name: 'TileflowReactNativeSpec', type: 'all', jsSrcsDir: 'src/specs'},
     };
     await writeFixture(

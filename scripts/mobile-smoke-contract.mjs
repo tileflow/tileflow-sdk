@@ -304,6 +304,7 @@ export function assertPackedManifest(manifest, files) {
       'ios/tileflow_post_install.rb',
       'plugin/index.cjs',
       'plugin/transforms.cjs',
+      'src/index.ts',
       'src/specs/NativeTileflowMapModule.ts',
       'src/specs/NativeTileflowServices.ts',
       'src/specs/NativeTileflowOffline.ts',
@@ -313,6 +314,8 @@ export function assertPackedManifest(manifest, files) {
     requireMobile(
       manifest.codegenConfig?.type === 'all' &&
         manifest.codegenConfig.jsSrcsDir === 'src/specs' &&
+        manifest['react-native'] === './src/index.ts' &&
+        manifest.exports?.['.']?.['react-native'] === './src/index.ts' &&
         dependencyGroups.every((group) =>
           ['@maplibre/maplibre-react-native', '@tileflow/core', '@tileflow/interactions'].every(
             (name) => manifest[group]?.[name] === undefined,
@@ -328,12 +331,7 @@ export function assertPackedManifest(manifest, files) {
   }
   requireMobile(
     required.every((name) => files.includes(name)) &&
-      files.every(
-        (name) =>
-          !/^(?:test|harness|node_modules|example)\//u.test(name) &&
-          // Codegen reads the TurboModule specs from the package; no other source is packed.
-          (!name.startsWith('src/') || name.startsWith('src/specs/')),
-      ),
+      files.every((name) => !/^(?:test|harness|node_modules|example)\//u.test(name)),
     'PACK_INVALID',
     'pack',
   );

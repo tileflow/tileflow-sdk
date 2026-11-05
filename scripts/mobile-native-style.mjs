@@ -161,6 +161,8 @@ struct NativeStyleProperty {
 }
 
 enum NativeStyleSpecification {
+  static let rendererVersion = ${JSON.stringify(pin)}
+
   private static let operators: Set<String> = [
     ${operatorLines.join(',\n    ')},
   ]

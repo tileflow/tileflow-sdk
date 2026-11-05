@@ -28,6 +28,12 @@ test('the generated style types are current with the renderer specification', as
     assert.equal(await readFile(resolve(root, path), 'utf8'), content, `Regenerate ${path}.`);
 });
 
+test('the Swift runtime version follows the selected native dependency pin', () => {
+  const selected = {...pins, ios: '7.0.1'};
+  const source = renderStyle(spec, version, selected)[outputs.swiftNative];
+  assert.ok(source.includes('static let rendererVersion = "7.0.1"'));
+});
+
 test('native property records distinguish constants, feature expressions and unsupported properties', () => {
   const {layers} = readSpecification(spec);
   for (const platform of ['ios', 'android']) {

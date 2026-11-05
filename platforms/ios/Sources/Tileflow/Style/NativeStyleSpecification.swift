@@ -15,6 +15,8 @@ struct NativeStyleProperty {
 }
 
 enum NativeStyleSpecification {
+  static let rendererVersion = "7.0.0"
+
   private static let operators: Set<String> = [
     "let", "var", "literal", "semiliteral", "array", "at",
     "in", "index-of", "slice", "case", "match", "coalesce",

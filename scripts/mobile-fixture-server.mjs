@@ -452,7 +452,9 @@ nativeBuild.prepare().catch((error) => console.error(error));
 // Lets a snapshot test cancel a real in-flight manifest request before it receives a response.
 const pendingSnapshots = new Map();
 function delayedSnapshot(request, response) {
-  const match = /^\/__fixture\/snapshot-delay\/([a-zA-Z0-9-]+)\/(manifest\.json|state)$/u.exec(request.url ?? '');
+  const match = /^\/__fixture\/snapshot-delay\/([a-zA-Z0-9-]+)\/(manifest\.json|state)$/u.exec(
+    request.url ?? '',
+  );
   if (!match) return false;
   const [, id, file] = match;
   response.setHeader('Cache-Control', 'no-store');
@@ -463,7 +465,10 @@ function delayedSnapshot(request, response) {
     if (state === 'cancelled') pendingSnapshots.delete(id);
   } else {
     pendingSnapshots.set(id, 'loading');
-    const deadline = setTimeout(() => { response.writeHead(504); response.end('{}'); }, 20_000);
+    const deadline = setTimeout(() => {
+      response.writeHead(504);
+      response.end('{}');
+    }, 20_000);
     response.once('close', () => {
       clearTimeout(deadline);
       pendingSnapshots.set(id, response.writableEnded ? 'expired' : 'cancelled');

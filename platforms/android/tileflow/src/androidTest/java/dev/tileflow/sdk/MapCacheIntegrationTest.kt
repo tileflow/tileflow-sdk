@@ -5,7 +5,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import dev.tileflow.sdk.engine.MapEngineKind
 import dev.tileflow.sdk.transport.ResourceCacheKey
 import dev.tileflow.sdk.transport.ResourceCacheRetention
 import dev.tileflow.sdk.transport.ResourceCacheScope
@@ -17,7 +16,6 @@ import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
-import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -33,7 +31,6 @@ public class CachedMapHostActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         map =
             TileflowMapView(this).apply {
-                engineKind = Companion.kind
                 // The tests query the middle of the view, where the camera's centre is drawn; the
                 // system bars and a display cutout would move it.
                 automaticallyAdjustsContentPadding = false
@@ -62,28 +59,14 @@ public class CachedMapHostActivity : ComponentActivity() {
 
     internal companion object {
         const val ORIGIN = "http://127.0.0.1:18645"
-        @Volatile var kind: MapEngineKind = MapEngineKind.WEB_VIEW
     }
 }
 
 /** Run with the online fixture server and `adb reverse tcp:18645 tcp:18645`. */
 @RunWith(AndroidJUnit4::class)
 public class MapCacheIntegrationTest {
-    @After
-    public fun tearDown() {
-        CachedMapHostActivity.kind = MapEngineKind.WEB_VIEW
-    }
-
     @Test
-    public fun secondMountShowsCachedPublicResourcesWithoutTheNetwork() =
-        cachedSecondMount(MapEngineKind.WEB_VIEW)
-
-    @Test
-    public fun secondMountShowsCachedPublicResourcesWithoutTheNetworkOnTheNativeEngine() =
-        cachedSecondMount(MapEngineKind.NATIVE)
-
-    private fun cachedSecondMount(kind: MapEngineKind) {
-        CachedMapHostActivity.kind = kind
+    public fun secondMountShowsCachedPublicResourcesWithoutTheNetwork() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val cache = TileflowMapCache.get(context)
@@ -99,13 +82,7 @@ public class MapCacheIntegrationTest {
             instrumentation.runOnMainSync { online.finish() }
         }
         val usage = runBlocking { cache.usage() }
-        if (kind == MapEngineKind.WEB_VIEW) {
-            assertTrue("Manifest, style, data and font: $usage", usage.entries >= 4)
-            assertTrue((usage.bytesByClass[TileflowResourceClass.GLYPHS] ?: 0) > 0)
-        } else {
-            // MapLibre Native does not load the style's web fonts.
-            assertTrue("Manifest, style and data: $usage", usage.entries >= 3)
-        }
+        assertTrue("Manifest, style and data: $usage", usage.entries >= 3)
         assertTrue((usage.bytesByClass[TileflowResourceClass.STYLE] ?: 0) > 0)
         // The fixture's other routes are no-store and never reach the disk.
         val uncached =

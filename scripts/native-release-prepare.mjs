@@ -1,11 +1,13 @@
 import {execFile} from 'node:child_process';
 import {createHash} from 'node:crypto';
-import {cp, mkdir, readdir, readFile, rm, writeFile} from 'node:fs/promises';
-import {isAbsolute, join, resolve} from 'node:path';
+import {cp, mkdir, readdir, readFile, writeFile} from 'node:fs/promises';
+import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
+import {readNativeStylePins} from './mobile-native-style.mjs';
 import {validateMavenRepository} from './native-maven-bundle.mjs';
 import {parseAlphaVersion, readNativeReleaseCatalog} from './native-release-config.mjs';
+import {assertNativeMapAssets} from './native-release-verify.mjs';
 
 const run = promisify(execFile);
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -50,7 +52,7 @@ const destination = resolve(output);
 await mkdir(destination); // Fail rather than replace a previous candidate.
 await writeFile(join(destination, 'INCOMPLETE'), 'Preparation has not completed.\n');
 
-/** Every non-ignored source file and its digest: the inputs of the embedded runtime and SDKs. */
+/** Hash all versioned and non-ignored source inputs. */
 async function sourceInventory() {
   const files = (
     await command('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'])
@@ -86,18 +88,16 @@ async function inventory(directory, prefix = '') {
   return files;
 }
 
-// Rebuild the embedded runtime from these inputs; never stage a runtime left by an earlier build.
-// Staging checks every resource digest. Consumers never run this build command.
-await command(process.execPath, ['scripts/mobile-hosted-fixtures.mjs', '--check']);
-await command(process.execPath, ['scripts/mobile-protocol-generate.mjs', '--check']);
-await command(process.execPath, ['scripts/mobile-style-generate.mjs', '--check']);
-await rm(resolve(root, 'packages/mobile-runtime/dist'), {recursive: true, force: true});
-await command('pnpm', ['exec', 'turbo', 'build', '--filter=@tileflow/mobile-runtime', '--force']);
-await command(process.execPath, ['scripts/mobile-runtime-stage.mjs']);
+await command('pnpm', ['native:check-generated']);
+const engines = await readNativeStylePins(root);
 const swift = join(destination, 'swift');
 await mkdir(swift);
-for (const path of ['Package.swift', 'Sources', 'Tests']) {
-  await cp(resolve(root, 'platforms/ios', path), join(swift, path), {recursive: true});
+for (const path of Object.keys(JSON.parse(buildInputs))) {
+  if (!/^platforms\/ios\/(?:Package\.swift$|(?:Sources|Tests)\/)/u.test(path)) continue;
+  const relative = path.slice('platforms/ios/'.length);
+  assertNativeMapAssets([relative]);
+  await mkdir(dirname(join(swift, relative)), {recursive: true});
+  await cp(resolve(root, path), join(swift, relative));
 }
 await cp(resolve(root, 'LICENSE'), join(swift, 'LICENSE'));
 const swiftReadme = await readFile(resolve(root, 'platforms/ios/distribution/README.md'), 'utf8');
@@ -132,20 +132,10 @@ const gradleOutput = await command(
 await writeFile(join(destination, 'android-build.log'), `${gradleOutput}\n`);
 // POM, Gradle metadata, sources and documentation must already meet Maven Central's requirements.
 await validateMavenRepository(maven, {catalog, version});
-const receipt = JSON.parse(
-  await readFile(resolve(root, 'packages/mobile-runtime/dist/receipt.json'), 'utf8'),
-);
 const mapArtifact = androidArtifacts.tileflow;
 const artifactPath = `${catalog.maven.group.replaceAll('.', '/')}/${mapArtifact}/${version}/${mapArtifact}-${version}.aar`;
-const aarReceipt = JSON.parse(
-  await command('/usr/bin/unzip', [
-    '-p',
-    join(maven, artifactPath),
-    'assets/tileflow/receipt.json',
-  ]),
-);
-if (JSON.stringify(receipt) !== JSON.stringify(aarReceipt))
-  throw new Error('Android runtime receipt differs.');
+const entries = await command('/usr/bin/unzip', ['-Z1', join(maven, artifactPath)]);
+assertNativeMapAssets(entries.split('\n'));
 if ((await sourceInventory()) !== buildInputs) {
   throw new Error('Source files changed while the candidate was built.');
 }
@@ -158,7 +148,7 @@ const provenance = {
   sourceRevision,
   sourceDirty,
   sourceInventorySha256: buildInputsSha256,
-  runtimeHash: receipt.runtimeHash,
+  engines,
 };
 await writeFile(join(swift, 'provenance.json'), `${JSON.stringify(provenance, null, 2)}\n`);
 const manifest = {
@@ -167,7 +157,7 @@ const manifest = {
   sourceRepository: provenance.sourceRepository,
   sourceRevision: provenance.sourceRevision,
   sourceDirty: provenance.sourceDirty,
-  runtime: receipt,
+  engines,
   swift: {path: 'swift', files: await inventory(swift)},
   android: {
     coordinate: `${catalog.maven.group}:${mapArtifact}:${version}`,
@@ -192,5 +182,5 @@ await writeFile(join(destination, 'candidate.json'), `${JSON.stringify(manifest,
 const {unlink} = await import('node:fs/promises');
 await unlink(join(destination, 'INCOMPLETE'));
 console.log(
-  `Prepared local SwiftPM and Maven candidate: ${destination}\nRuntime: ${receipt.runtimeHash}`,
+  `Prepared local SwiftPM and Maven candidate: ${destination}\nMapLibre Native: iOS ${engines.ios}, Android ${engines.android}`,
 );

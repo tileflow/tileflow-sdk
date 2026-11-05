@@ -253,7 +253,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
-      runtime: ${{ steps.areas.outputs.runtime }}
       ios: ${{ steps.areas.outputs.ios }}
       android: ${{ steps.areas.outputs.android }}
       react-native: ${{ steps.areas.outputs.reactNative }}
@@ -273,39 +272,6 @@ jobs:
           MOBILE_CI_BASE: ${{ github.event.merge_group.base_sha }}
         run: node scripts/mobile-ci-areas.mjs >> "$GITHUB_OUTPUT"
 
-  mobile-runtime:
-    name: Mobile runtime in Chromium and WebKit
-    needs: mobile-areas
-    if: needs.mobile-areas.outputs.runtime == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version: 24
-      - name: Prepare embedded runtime
-        run: |
-          corepack enable
-          corepack prepare pnpm@11.13.1 --activate
-          pnpm install --frozen-lockfile
-          pnpm native:runtime
-      - name: Check embedded runtime size budget
-        run: node scripts/mobile-runtime-size.mjs
-      - name: Cache exact Playwright browsers
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ runner.arch }}-1.62.1-chromium-headless-shell-1234-webkit-2336
-      - name: Provision pinned Chromium headless shell and WebKit
-        run: |
-          sudo "$(command -v node)" scripts/remove-runner-chrome-repositories.mjs
-          pnpm --filter @tileflow/mobile-runtime exec playwright install --with-deps --only-shell chromium webkit
-      - name: Smoke the embedded runtime with a stub native host
-        run: node scripts/mobile-runtime-smoke.mjs
-
   swift:
     name: Swift SDK on iOS Simulator
     needs: mobile-areas
@@ -323,12 +289,12 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-      - name: Prepare embedded runtime
+      - name: Verify native API and fixtures
         run: |
           corepack enable
           corepack prepare pnpm@11.13.1 --activate
           pnpm install --frozen-lockfile
-          pnpm native:runtime
+          pnpm native:check-generated
           # The fixture server builds its self-hosted native map with these packages.
           pnpm exec turbo build --filter=@tileflow/dev --filter=@tileflow/maps
       - name: Start fixture map server and pinned iPhone simulator
@@ -336,7 +302,6 @@ jobs:
           # Hosted macOS images enable Reduce Motion. These tests exercise animations,
           # cancellation and intermediate frames, so run them with motion enabled.
           defaults write com.apple.universalaccess reduceMotion -bool false
-          # UIKit and WebKit also read the UIKit accessibility preference domain.
           defaults write com.apple.Accessibility ReduceMotionEnabled -bool false
           swift -e 'import AppKit; precondition(!NSWorkspace.shared.accessibilityDisplayShouldReduceMotion, "Rendering tests require motion enabled")'
           nohup node scripts/mobile-fixture-server.mjs > "$RUNNER_TEMP/map-fixture.log" 2>&1 &
@@ -348,10 +313,7 @@ jobs:
       - name: Test on iOS Simulator
         run: |
           set -euo pipefail
-          # MapLibre Native draws with Metal on the hosted simulator, so its map tests run here.
-          # The web runtime's WebGL draws crash the hosted simulator's GPU process (see
-          # IntegrationTests/README.md), so only the suites the WebView draws are skipped.
-          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination "platform=iOS Simulator,id=$SIMULATOR_UDID,arch=arm64" -skip-testing:TileflowTests/MapIntegrationTests -skip-testing:TileflowTests/MapStyleIntegrationTests -resultBundlePath "$RUNNER_TEMP/TileflowSimulator.xcresult" | tee "$RUNNER_TEMP/swift-simulator-tests.log"
+          xcodebuild test -project platforms/ios/IntegrationTests/TileflowIntegration.xcodeproj -scheme TileflowIntegration -destination "platform=iOS Simulator,id=$SIMULATOR_UDID,arch=arm64" -resultBundlePath "$RUNNER_TEMP/TileflowSimulator.xcresult" | tee "$RUNNER_TEMP/swift-simulator-tests.log"
           ! grep -E "Test Case .* skipped" "$RUNNER_TEMP/swift-simulator-tests.log"
       - name: Test the service clients on iOS Simulator
         working-directory: platforms/ios
@@ -384,12 +346,12 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-      - name: Prepare embedded runtime
+      - name: Verify native API and fixtures
         run: |
           corepack enable
           corepack prepare pnpm@11.13.1 --activate
           pnpm install --frozen-lockfile
-          pnpm native:runtime
+          pnpm native:check-generated
       - name: Cache Gradle dependencies
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -414,30 +376,16 @@ jobs:
     if: needs.mobile-areas.outputs.android == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    env:
-      # Skips the WebView map tests whose timing budgets the hosted emulator cannot meet.
-      TILEFLOW_HOSTED_EMULATOR: 'true'
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Each Google APIs image ships a fixed System WebView. The connected script
-          # records it, and the WebView requirement test fails if it crosses the SDK minimum.
-          # Android 16 QPR2 (36.1) and 17 (37.0) images restart system_server after boot on the
-          # emulator's software GPU, so Android 16 carries the most recent usable WebView.
-          - name: Android 16, recent WebView
-            api: 36
-            image: '36'
-            webview: supported
-          - name: Android 15, minimum WebView 124
+          - name: Android 8
+            api: 26
+          - name: Android 15
             api: 35
-            image: '35'
-            webview: supported
-          - name: Android 14, WebView 113 rejected
-            api: 34
-            image: '34'
-            webview: rejected
-            arguments: -Pandroid.testInstrumentationRunnerArguments.class=dev.tileflow.sdk.WebViewRequirementIntegrationTest
+          - name: Android 16
+            api: 36
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -445,12 +393,12 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
-      - name: Prepare embedded runtime
+      - name: Verify native API and fixtures
         run: |
           corepack enable
           corepack prepare pnpm@11.13.1 --activate
           pnpm install --frozen-lockfile
-          pnpm native:runtime
+          pnpm native:check-generated
           # The fixture server builds its self-hosted native map with these packages.
           pnpm exec turbo build --filter=@tileflow/dev --filter=@tileflow/maps
       - name: Cache Gradle dependencies
@@ -480,7 +428,6 @@ jobs:
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: ${{ matrix.api }}
-          system-image-api-level: ${{ matrix.image }}
           target: google_apis
           arch: x86_64
           profile: pixel_6
@@ -488,7 +435,7 @@ jobs:
           ram-size: 4096M
           disk-size: 6000M
           emulator-options: -no-window -gpu swiftshader -no-snapshot -noaudio -no-boot-anim
-          # Camera, annotation and shot tests require motion; disabling it also requests reduced motion in WebView.
+          # Camera, annotation and shot tests require motion.
           disable-animations: false
           # Keep the Pixel 6 logical viewport while bounding software-GPU pixel work on hosted runners.
           # Keep the 200-view workload and functional assertions. Report latency on shared
@@ -499,12 +446,12 @@ jobs:
             adb shell settings put global window_animation_scale 0
             adb shell settings put global transition_animation_scale 0
             adb shell settings put global animator_duration_scale 1
-            bash scripts/mobile-android-connected.sh ${{ matrix.webview }} -Pandroid.testInstrumentationRunnerArguments.tileflowAnnotationPerformance=report ${{ matrix.arguments }}
+            bash scripts/mobile-android-connected.sh -Pandroid.testInstrumentationRunnerArguments.tileflowAnnotationPerformance=report
       - name: Upload Android test results
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: android-emulator-results-${{ matrix.image }}
+          name: android-emulator-results-${{ matrix.api }}
           path: |
             platforms/android/tileflow/build/reports/androidTests
             platforms/android/tileflow/build/outputs/androidTest-results
@@ -544,7 +491,6 @@ jobs:
       - capture-smoke
       - capture-public-tarball
       - mobile-areas
-      - mobile-runtime
       - swift
       - kotlin
       - android-emulator
@@ -560,8 +506,6 @@ jobs:
           VERIFY_RESULT: ${{ needs.verify.result }}
           VERIFY_HEAVY_RESULT: ${{ needs.verify-heavy.result }}
           MOBILE_AREAS_RESULT: ${{ needs.mobile-areas.result }}
-          MOBILE_RUNTIME_RESULT: ${{ needs.mobile-runtime.result }}
-          MOBILE_RUNTIME_SELECTED: ${{ needs.mobile-areas.outputs.runtime }}
           SWIFT_RESULT: ${{ needs.swift.result }}
           SWIFT_SELECTED: ${{ needs.mobile-areas.outputs.ios }}
           KOTLIN_RESULT: ${{ needs.kotlin.result }}
@@ -578,7 +522,6 @@ jobs:
           test "$MOBILE_AREAS_RESULT" = "success"
           # A mobile job may be skipped only because its change area was not selected.
           selected() { test "$1" = "success" || { test "$1" = "skipped" && test "$2" = "false"; }; }
-          selected "$MOBILE_RUNTIME_RESULT" "$MOBILE_RUNTIME_SELECTED"
           selected "$SWIFT_RESULT" "$SWIFT_SELECTED"
           selected "$KOTLIN_RESULT" "$ANDROID_SELECTED"
           selected "$ANDROID_EMULATOR_RESULT" "$ANDROID_SELECTED"

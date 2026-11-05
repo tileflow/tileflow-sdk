@@ -3,7 +3,7 @@ package dev.tileflow.sdk.model
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import java.security.SecureRandom
 import java.util.Base64
 import org.json.JSONObject
@@ -32,16 +32,16 @@ internal class MapPayloadStore {
     @Synchronized
     fun register(bytes: ByteArray, digest: String, contentType: String): Reference {
         if (retired) throw TileflowMapException(TileflowErrorCode.CANCELLED)
-        if (bytes.isEmpty() || bytes.size > ProtocolContract.MAXIMUM_DATA_BYTES)
-            throw tooLarge(ProtocolContract.MAXIMUM_DATA_BYTES)
+        if (bytes.isEmpty() || bytes.size > MapContract.MAXIMUM_DATA_BYTES)
+            throw tooLarge(MapContract.MAXIMUM_DATA_BYTES)
         identifiers[digest]?.let(entries::get)?.let {
             it.holds += 1
             return it.reference
         }
-        if (totalBytes + bytes.size > ProtocolContract.MAXIMUM_DATA_TOTAL_BYTES)
-            throw tooLarge(ProtocolContract.MAXIMUM_DATA_TOTAL_BYTES)
-        if (entries.size >= ProtocolContract.MAXIMUM_DATA_REFERENCES)
-            throw tooLarge(ProtocolContract.MAXIMUM_DATA_REFERENCES)
+        if (totalBytes + bytes.size > MapContract.MAXIMUM_DATA_TOTAL_BYTES)
+            throw tooLarge(MapContract.MAXIMUM_DATA_TOTAL_BYTES)
+        if (entries.size >= MapContract.MAXIMUM_DATA_REFERENCES)
+            throw tooLarge(MapContract.MAXIMUM_DATA_REFERENCES)
         val id =
             Base64.getUrlEncoder()
                 .withoutPadding()
@@ -83,7 +83,7 @@ internal class MapPayloadStore {
         private fun tooLarge(limit: Int) =
             TileflowMapException(
                 TileflowErrorCode.INVALID_REQUEST,
-                TileflowErrorContext.of(ProtocolContract.ErrorReason.DATA_TOO_LARGE, limit),
+                TileflowErrorContext.of(MapContract.ErrorReason.DATA_TOO_LARGE, limit),
             )
     }
 }

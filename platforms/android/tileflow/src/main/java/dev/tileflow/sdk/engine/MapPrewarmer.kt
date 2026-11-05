@@ -9,12 +9,12 @@ import dev.tileflow.sdk.transport.MapResourceContexts
 import dev.tileflow.sdk.transport.TileflowHttpClient
 import java.util.concurrent.atomic.AtomicBoolean
 
-/** Prepares shared resources and the selected renderer without mounting a map. */
+/** Prepares shared resources and MapLibre without mounting a map. */
 internal object MapPrewarmer {
     private val sharedStarted = AtomicBoolean()
 
     @MainThread
-    fun start(context: Context, kind: MapEngineKind) {
+    fun start(context: Context) {
         check(Looper.myLooper() == Looper.getMainLooper()) { "Call prewarm on the main thread." }
         val application = context.applicationContext ?: context
         if (sharedStarted.compareAndSet(false, true)) {
@@ -35,9 +35,6 @@ internal object MapPrewarmer {
                 .apply { isDaemon = true }
                 .start()
         }
-        when (kind) {
-            MapEngineKind.NATIVE -> MapResourceContexts.prewarm(application)
-            MapEngineKind.WEB_VIEW -> WebViewMapEngine.prewarm(application)
-        }
+        MapResourceContexts.prewarm(application)
     }
 }

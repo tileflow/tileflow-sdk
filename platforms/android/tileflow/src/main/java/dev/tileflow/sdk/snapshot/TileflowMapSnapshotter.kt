@@ -20,6 +20,7 @@ import dev.tileflow.sdk.engine.NativeStyleProjection
 import dev.tileflow.sdk.offline.OfflineReachability
 import dev.tileflow.sdk.offline.OfflineServingIndex
 import dev.tileflow.sdk.offline.OfflineServingRule
+import dev.tileflow.sdk.transport.MapLibreRuntime
 import dev.tileflow.sdk.transport.MapResourceContexts
 import dev.tileflow.sdk.transport.MapResourceRoute
 import dev.tileflow.sdk.transport.TileflowHttpClient
@@ -117,7 +118,7 @@ public class TileflowMapSnapshotter(context: Context) {
                             if (error == null) waiting.resume(Unit)
                             else
                                 waiting.resumeWithException(
-                                    TileflowMapException(TileflowErrorCode.RENDERER_FAILED)
+                                    error as? TileflowMapException ?: TileflowMapException(TileflowErrorCode.RENDERER_FAILED)
                                 )
                         }
                     }
@@ -183,7 +184,11 @@ public class TileflowMapSnapshotter(context: Context) {
                                 .zoom(camera.zoom)
                                 .build()
                         )
-                val snapshotter = MapSnapshotter(application, native)
+                val snapshotter = try {
+                    MapSnapshotter(application, native)
+                } catch (_: LinkageError) {
+                    throw MapLibreRuntime.unsupported("MapLibre could not create its native snapshotter.")
+                }
                 val result =
                     suspendCancellableCoroutine<MapSnapshot> { waiting ->
                         snapshotter.start(

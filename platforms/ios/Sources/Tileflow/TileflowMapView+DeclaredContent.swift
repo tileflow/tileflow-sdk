@@ -72,7 +72,7 @@ extension TileflowMapView {
     try MapContent(annotations: markers, overlays: content.overlays).validate()
     content.annotations = markers
     do {
-      if let engine = styleEngine { try await engine.setAnnotations(markers, overlays: content.overlays) }
+      if let engine = styleEngine { try await engine.setAnnotations(markers) }
     } catch {
       content.annotations = previous
       throw error

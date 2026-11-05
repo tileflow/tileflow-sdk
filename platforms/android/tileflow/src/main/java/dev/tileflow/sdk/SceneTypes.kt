@@ -2,7 +2,7 @@ package dev.tileflow.sdk
 
 import android.graphics.Bitmap
 import android.util.DisplayMetrics
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import java.io.ByteArrayOutputStream
 import java.time.Instant
 import org.json.JSONArray
@@ -334,13 +334,13 @@ constructor(
         )
             invalid()
         if ((listOf(this.data) + this.variants.values).any {
-                it.size > ProtocolContract.MAXIMUM_DATA_BYTES
+                it.size > MapContract.MAXIMUM_DATA_BYTES
             })
             throw TileflowMapException(
                 TileflowErrorCode.INVALID_REQUEST,
                 TileflowErrorContext.of(
-                    ProtocolContract.ErrorReason.DATA_TOO_LARGE,
-                    ProtocolContract.MAXIMUM_DATA_BYTES,
+                    MapContract.ErrorReason.DATA_TOO_LARGE,
+                    MapContract.MAXIMUM_DATA_BYTES,
                 ),
             )
     }

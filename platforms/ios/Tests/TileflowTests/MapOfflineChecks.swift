@@ -4,15 +4,14 @@ import XCTest
 
 @testable import Tileflow
 
-/// Offline and cache checks that draw the map, shared by both engines: `MapIntegrationTests` runs
-/// them with the WebView engine and `NativeMapEngineTests` with MapLibre Native.
+/// Offline and cache checks that mount a live map in the test host.
 @MainActor
 extension XCTestCase {
   static var hostedFixtureMapID: String { "map_offlinefixture01" }
 
   /// Downloads a region of the fixture map, then shows the map with the network switched off: every
   /// resource comes from the downloaded region, as in airplane mode.
-  func checkADownloadedRegionShowsTheMapWithoutTheNetwork(engine: MapEngineKind) async throws {
+  func checkADownloadedRegionShowsTheMapWithoutTheNetwork() async throws {
     let manifest = URL(string: "\(FixtureServer.origin)/cached/manifest.json")!
     try await requireMapFixture(manifest)
     // Nothing from earlier mounts may answer: only the region does.
@@ -28,7 +27,7 @@ extension XCTestCase {
     TileflowOfflineSwitch.shared.isNetworkEnabled = false
     defer { TileflowOfflineSwitch.shared.isNetworkEnabled = true }
     let source = TileflowMapSource(map: "fixture", manifestURL: manifest, allowsLoopbackHTTP: true)
-    let map = try await mountMap(source, engine: engine)
+    let map = try await mountMap(source)
     defer { map.close() }
     let features = try await map.view.query(
       at: CGPoint(x: map.view.bounds.midX, y: map.view.bounds.midY))
@@ -42,7 +41,7 @@ extension XCTestCase {
   /// the packs without a session and nothing reaches the network; online it starts its session and
   /// the packs' entries come back unchanged as 304.
   func checkAHostedMapOpensFromItsPackOfflineAndRevalidatesItOnline(
-    engine: MapEngineKind, profile: OfflinePackProfile = .webView
+    profile: OfflinePackProfile
   ) async throws
   {
     let discovery = URL(
@@ -50,7 +49,7 @@ extension XCTestCase {
     try await requireMapFixture(discovery)
     await TileflowMapCache.clear()
     let configuration = try fixtureConfiguration()
-    let opensLegacy = engine == .native && profile == .webView
+    let opensLegacy = profile == .webView
     let store = offlineMapStore(profile: profile, index: opensLegacy ? OfflineServingIndex() : .shared,
       client: { try OfflinePackClient(configuration: configuration) })
     _ = try await fixtureCounters(reset: true)
@@ -84,7 +83,7 @@ extension XCTestCase {
     TileflowOfflineSwitch.shared.isNetworkEnabled = false
     do {
       defer { TileflowOfflineSwitch.shared.isNetworkEnabled = true }
-      let map = try await mountMap(source, engine: engine)
+      let map = try await mountMap(source)
       defer { map.close() }
       if profile == .native {
         // Blending reads the family and both theme styles from the downloaded pack.
@@ -103,7 +102,7 @@ extension XCTestCase {
     XCTAssertEqual(usage.entries, 0, "Nothing came from the network")
 
     _ = try await fixtureCounters(reset: true)
-    let map = try await mountMap(source, engine: engine)
+    let map = try await mountMap(source)
     defer { map.close() }
     let online = try await fixtureCounters()
     XCTAssertEqual(online["sessions"], 1, "Online, the map starts its session")
@@ -115,7 +114,7 @@ extension XCTestCase {
   /// Downloads the fixture's Terrain theme with Terrain to z12, then shows it at z14.5 with the
   /// network switched off. Elevation tiles above z12 answer as online (`404`), so the renderer
   /// overzooms the z12 tiles: nothing is missing and no warning is reported.
-  func checkTerrainZoomedPastItsDownloadedZoomsHasNoHolesOffline(engine: MapEngineKind)
+  func checkTerrainZoomedPastItsDownloadedZoomsHasNoHolesOffline(profile: OfflinePackProfile)
     async throws
   {
     let discovery = URL(
@@ -123,7 +122,7 @@ extension XCTestCase {
     try await requireMapFixture(discovery)
     await TileflowMapCache.clear()
     let configuration = try fixtureConfiguration()
-    let store = offlineMapStore(client: { try OfflinePackClient(configuration: configuration) })
+    let store = offlineMapStore(profile: profile, client: { try OfflinePackClient(configuration: configuration) })
     try await downloadRegion(
       store, id: "terrain",
       options: TileflowOfflineRegionLoadOptions(
@@ -137,8 +136,7 @@ extension XCTestCase {
     defer { TileflowOfflineSwitch.shared.isNetworkEnabled = true }
     let map = try await mountMap(
       .hosted(mapID: Self.hostedFixtureMapID, configuration: configuration), theme: "terrain",
-      camera: TileflowCamera(longitude: -3.7, latitude: 40.42, zoom: 14.5, pitch: 45),
-      engine: engine)
+      camera: TileflowCamera(longitude: -3.7, latitude: 40.42, zoom: 14.5, pitch: 45))
     defer { map.close() }
     let features = try await map.view.query(
       at: CGPoint(x: map.view.bounds.midX, y: map.view.bounds.midY))
@@ -146,7 +144,14 @@ extension XCTestCase {
       features.contains { $0.layer == "buildings" }, "The packs did not render: \(features)")
     // Elevation tiles keep arriving after the content is ready.
     try await Task.sleep(nanoseconds: 3_000_000_000)
-    XCTAssertTrue(map.warnings().isEmpty, "Every tile answered: \(map.warnings())")
+    let warnings = map.warnings()
+    if profile == .webView {
+      XCTAssertTrue(warnings.isEmpty, "Every tile answered: \(warnings)")
+    } else {
+      XCTAssertEqual(warnings.map(\.error.context.feature), ["terrain3d"])
+      XCTAssertEqual(warnings.map(\.error.context.reason), ["featureUnavailable"])
+      XCTAssertEqual(warnings.map(\.occurrences), [1])
+    }
     let offline = try await fixtureCounters()
     XCTAssertEqual(offline["sessions"], 0)
     XCTAssertEqual(offline["downloads"], 0)
@@ -155,21 +160,20 @@ extension XCTestCase {
   }
 
   /// A second mount shows public resources the first stored, with the network switched off.
-  func checkSecondMountShowsCachedPublicResourcesWithoutTheNetwork(engine: MapEngineKind)
+  func checkSecondMountShowsCachedPublicResourcesWithoutTheNetwork()
     async throws
   {
     let manifest = URL(string: "\(FixtureServer.origin)/cached/manifest.json")!
     try await requireMapFixture(manifest)
     await TileflowMapCache.clear()
     let source = TileflowMapSource(map: "fixture", manifestURL: manifest, allowsLoopbackHTTP: true)
-    let online = try await mountMap(source, engine: engine)
+    let online = try await mountMap(source)
     online.close()
 
     let usage = await TileflowMapCache.usage()
     XCTAssertGreaterThanOrEqual(
-      usage.entries, engine == .webView ? 4 : 3, "Manifest, style, data and, for the web, font")
+      usage.entries, 3, "Manifest, style and data")
     XCTAssertGreaterThan(usage.bytesByClass[.style] ?? 0, 0)
-    if engine == .webView { XCTAssertGreaterThan(usage.bytesByClass[.glyphs] ?? 0, 0) }
     // The fixture's other routes are no-store and never reach the disk.
     let uncached = ResourceCacheKey(
       url: URL(string: "\(FixtureServer.origin)/manifest.json")!, scope: .shared)
@@ -179,7 +183,7 @@ extension XCTestCase {
 
     TileflowHTTPClient.shared.isNetworkEnabled = false
     defer { TileflowHTTPClient.shared.isNetworkEnabled = true }
-    let offline = try await mountMap(source, engine: engine)
+    let offline = try await mountMap(source)
     defer { offline.close() }
     let features = try await offline.view.query(
       at: CGPoint(x: offline.view.bounds.midX, y: offline.view.bounds.midY))
@@ -208,7 +212,7 @@ extension XCTestCase {
 
   /// A store of its own, downloading in the foreground, whose regions every map may use.
   func offlineMapStore(
-    profile: OfflinePackProfile = .webView, index: OfflineServingIndex = .shared,
+    profile: OfflinePackProfile = .native, index: OfflineServingIndex = .shared,
     client: @escaping @Sendable () throws -> OfflinePackClient
   ) -> TileflowOfflineStore
   {
@@ -252,13 +256,11 @@ extension XCTestCase {
   /// Mounts a map in a window of the host's scene and waits for its content. MapLibre draws only
   /// in a window on a screen.
   func mountMap(
-    _ source: TileflowMapSource, theme: String? = nil, camera: TileflowCamera? = nil,
-    engine: MapEngineKind
+    _ source: TileflowMapSource, theme: String? = nil, camera: TileflowCamera? = nil
   ) async throws -> MountedMap {
     let ready = expectation(description: "Map content loaded")
     ready.assertForOverFulfill = false
     let view = TileflowMapView(source: source, theme: theme, initialCamera: camera)
-    view.engineKind = engine
     // The checks query the middle of the view, where the camera's centre is drawn.
     view.automaticallyAdjustsContentInsets = false
     let mounted = MountedMap(view: view, window: MountedMap.sceneWindow())

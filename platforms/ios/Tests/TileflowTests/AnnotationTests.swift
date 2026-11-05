@@ -289,31 +289,22 @@ final class AnnotationTests: XCTestCase {
     let first = tracked.begin([a, b])
     let second = tracked.begin([b])
     // Positions of the earlier set still move its points while the later one is in flight.
-    XCTAssertTrue(tracked.apply(revision: first, positions: [1, 2, nil, nil]))
+    XCTAssertTrue(tracked.apply(revision: first, points: [CGPoint(x: 1, y: 2), nil]))
     XCTAssertEqual(tracked.positions[a], CGPoint(x: 1, y: 2))
     XCTAssertNil(tracked.positions[b])
-    XCTAssertFalse(tracked.apply(revision: first, positions: [1, 2]))
-    XCTAssertTrue(tracked.apply(revision: second, positions: [5, 6]))
+    XCTAssertFalse(tracked.apply(revision: first, points: [CGPoint(x: 1, y: 2)]))
+    XCTAssertTrue(tracked.apply(revision: second, points: [CGPoint(x: 5, y: 6)]))
     XCTAssertEqual(tracked.positions, [b: CGPoint(x: 5, y: 6)])
     // A set older than the newest applied one is gone.
-    XCTAssertFalse(tracked.apply(revision: first, positions: [1, 2, 3, 4]))
-    XCTAssertFalse(tracked.apply(revision: 99, positions: []))
-  }
-
-  func testLagStatisticsKeepTheLatestSamples() {
-    var lag = LagStatistics()
-    for value in 1...1200 { lag.add(Double(value)) }
-    XCTAssertEqual(lag.samples.count, 1000)
-    XCTAssertEqual(lag.maximum, 1200)
-    XCTAssertEqual(lag.percentile(0), 201)
-    XCTAssertEqual(lag.percentile(0.5) ?? 0, 700, accuracy: 1)
+    XCTAssertFalse(tracked.apply(revision: first, points: [CGPoint(x: 1, y: 2), CGPoint(x: 3, y: 4)]))
+    XCTAssertFalse(tracked.apply(revision: 99, points: []))
   }
 
   func testAnnotationsAskForTheEventsTheyNeed() {
     var subscriptions = EventSubscriptions()
-    XCTAssertNil(subscriptions.events[.trackedPointsMoved])
-    subscriptions.set(.annotations, [.trackedPointsMoved: 0, .annotationDragged: 0])
-    XCTAssertEqual(subscriptions.events[.trackedPointsMoved], 0)
+    subscriptions.set(.annotations, [.tap: 0, .longPress: 0, .annotationDragged: 0])
+    XCTAssertEqual(subscriptions.events[.tap], 0)
+    XCTAssertEqual(subscriptions.events[.longPress], 0)
     XCTAssertEqual(subscriptions.events[.annotationDragged], 0)
   }
 

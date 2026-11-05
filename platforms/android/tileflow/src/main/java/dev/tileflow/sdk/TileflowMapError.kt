@@ -1,6 +1,6 @@
 package dev.tileflow.sdk
 
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import org.json.JSONObject
 
 /**
@@ -46,7 +46,7 @@ public data class TileflowErrorContext(
     internal companion object {
         val NONE: TileflowErrorContext = TileflowErrorContext()
 
-        fun of(reason: ProtocolContract.ErrorReason, limit: Int? = null): TileflowErrorContext =
+        fun of(reason: MapContract.ErrorReason, limit: Int? = null): TileflowErrorContext =
             TileflowErrorContext(reason = reason.wireName, limit = limit)
     }
 }
@@ -71,7 +71,7 @@ public constructor(
         fun fromWire(value: JSONObject?): TileflowMapException {
             val raw = value?.optString("code")
             val code =
-                raw?.takeIf { it in ProtocolContract.RUNTIME_ERRORS }
+                raw?.takeIf { it in MapContract.RENDERER_ERRORS }
                     ?.let(TileflowErrorCode::fromWire)
                     ?: return TileflowMapException(TileflowErrorCode.RENDERER_FAILED)
             val context = value.optJSONObject("context")

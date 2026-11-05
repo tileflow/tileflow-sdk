@@ -142,6 +142,7 @@ class OfflineTest {
                         body.getInt("minZoom")..body.getInt("maxZoom"),
                         body.optInt("terrainMaxZoom", OfflineZooms.DEFAULT_TERRAIN_MAXIMUM),
                     ),
+                    profile = OfflinePackProfile.entries.single { it.wireName == body.getString("profile") },
                 )
             }
             if (item.has("canonical")) {
@@ -1031,6 +1032,7 @@ class OfflineTest {
             listOf("default"),
             TileflowOfflineGeometry.BoundingBox(TileflowBoundingBox(-3.71, 40.41, -3.69, 40.425)),
             OfflineZooms(10..14),
+            profile = OfflinePackProfile.WEB_VIEW,
         )[0]
 
     private fun createdDownload() =

@@ -4,80 +4,14 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Canvas
 import dev.tileflow.sdk.engine.AnnotationProjection
-import android.view.Choreographer
 import android.view.MotionEvent
 import android.view.View
 import android.view.accessibility.AccessibilityManager
 import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Button
 import android.widget.FrameLayout
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import kotlin.math.roundToInt
-import org.json.JSONArray
-import org.json.JSONObject
-
-/** Recent delays between the renderer drawing a frame and its positions reaching the views. */
-internal class TrackingLag(private val capacity: Int = 1000) {
-    private val samples = ArrayDeque<Double>()
-
-    fun record(milliseconds: Double) {
-        if (!milliseconds.isFinite()) return
-        samples.addLast(milliseconds)
-        if (samples.size > capacity) samples.removeFirst()
-    }
-
-    val count: Int
-        get() = samples.size
-
-    /** The value below which [share] of the samples lie, or null without samples. */
-    fun percentile(share: Double): Double? {
-        if (samples.isEmpty()) return null
-        val sorted = samples.sorted()
-        return sorted[((sorted.size - 1) * share).roundToInt()]
-    }
-
-    val maximum: Double?
-        get() = samples.maxOrNull()
-
-    fun clear() = samples.clear()
-}
-
-/** The positions of tracked points, keyed by what they track, matched by revision. */
-internal class TrackedPositions {
-    private val sets = LinkedHashMap<Int, List<Any>>()
-    val positions = HashMap<Any, FloatArray?>()
-
-    fun sent(revision: Int, keys: List<Any>) {
-        sets[revision] = keys
-    }
-
-    /**
-     * Applies a report in CSS pixels at [density]; false when its revision is unknown or older than
-     * a report already applied.
-     */
-    fun receive(revision: Int, values: JSONArray, density: Float): Boolean {
-        val keys = sets[revision] ?: return false
-        sets.keys.filter { it < revision }.forEach { sets.remove(it) }
-        if (values.length() != keys.size * 2) return false
-        keys.forEachIndexed { index, key ->
-            val x = values.opt(index * 2)
-            val y = values.opt(index * 2 + 1)
-            positions[key] =
-                if (x is Number && y is Number)
-                    floatArrayOf(x.toFloat() * density, y.toFloat() * density)
-                else null
-        }
-        return true
-    }
-
-    fun forget(keep: Set<Any>) {
-        positions.keys.retainAll(keep)
-    }
-
-    fun clear() {
-        sets.clear()
-    }
-}
 
 /**
  * The layer of native content over the renderer: view annotations, and while an accessibility
@@ -89,26 +23,16 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
     FrameLayout(context) {
     private val density = resources.displayMetrics.density
     private var manager: TileflowViewAnnotationManager? = null
-    internal val tracked = TrackedPositions()
-    private var revision = 0
+    internal val positions = HashMap<Any, FloatArray?>()
     private var sentPoints: List<Pair<Any, TileflowCoordinate>>? = null
-    private var sending = false
     private var native: AnnotationProjection? = null
     private var nativeInput = DoubleArray(0)
     private var nativePixels = DoubleArray(0)
-    private var frameRequested = false
-    private var latestSampleTime: Double? = null
     private val targets = LinkedHashMap<Pair<String, String>, AccessibilityTarget>()
     private val accessibility =
         context.getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
     private val explorationListener =
         AccessibilityManager.TouchExplorationStateChangeListener { annotationsChanged() }
-
-    /** Delays between a rendered frame and its positions on the views. */
-    val lag = TrackingLag()
-
-    /** Delays between a rendered frame and its positions reaching the main thread. */
-    val delivery = TrackingLag()
 
     /** Tracks labelled annotations without an accessibility service, for tests. */
     var forcesAccessibilityTracking = false
@@ -126,8 +50,6 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
     }
 
-    private val frameCallback = Choreographer.FrameCallback { applyPositions() }
-
     private val accessibilityTracked: Boolean
         get() = forcesAccessibilityTracking || accessibility.isTouchExplorationEnabled
 
@@ -138,8 +60,6 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
 
     override fun onDetachedFromWindow() {
         accessibility.removeTouchExplorationStateChangeListener(explorationListener)
-        if (frameRequested) Choreographer.getInstance().removeFrameCallback(frameCallback)
-        frameRequested = false
         super.onDetachedFromWindow()
     }
 
@@ -196,80 +116,45 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
                 map.annotations.accessible().map { (owner, annotation) ->
                     (owner.id to annotation.id) as Any to annotation.representative
                 }
-        return (views + labelled).take(ProtocolContract.MAXIMUM_TRACKED_POINTS)
+        return (views + labelled).take(MapContract.MAXIMUM_TRACKED_POINTS)
     }
 
     /** Something tracked changed: sends the points and refreshes accessibility targets. */
     fun annotationsChanged() {
         refreshTargets()
         val points = desiredPoints()
-        tracked.forget(points.map { it.first }.toSet())
+        positions.keys.retainAll(points.map { it.first }.toSet())
         if (points != sentPoints) send()
-        map.annotationsTrackingChanged(points.isNotEmpty())
-        requestFrame()
+        map.annotationSubscriptionsChanged()
+        invalidate()
     }
 
-    /** Sends the latest points, one request at a time. */
+    /** Give MapLibre the coordinates to project in each rendered frame. */
     private fun send() {
-        if (sending) return
-        val engine = map.readyEngine ?: return
+        val projection = map.readyEngine?.annotationProjection ?: return
         val points = desiredPoints()
         if (points == sentPoints) return
-        val synchronous = engine.annotationProjection
-        if (synchronous != null) {
-            native?.onFrame = null
-            native = synchronous
-            sentPoints = points
-            nativeInput = DoubleArray(points.size * 2)
-            nativePixels = DoubleArray(nativeInput.size)
-            points.forEachIndexed { index, point ->
-                nativeInput[index * 2] = point.second.latitude
-                nativeInput[index * 2 + 1] = point.second.longitude
-            }
-            synchronous.track(nativeInput)
-            synchronous.onFrame = if (points.isEmpty()) null else ({
-                applyPositions()
-                invalidate()
-            })
-            invalidate()
-            return
-        }
-        val current = ++revision
-        tracked.sent(current, points.map { it.first })
+        native?.onFrame = null
+        native = projection
         sentPoints = points
-        sending = true
-        map.launchOnView {
-            try {
-                engine.call(
-                    ProtocolContract.Method.SET_TRACKED_POINTS,
-                    JSONObject()
-                        .put("revision", current)
-                        .put(
-                            "points",
-                            JSONArray(
-                                points.map { (_, coordinate) ->
-                                    JSONArray().put(coordinate.longitude).put(coordinate.latitude)
-                                }
-                            ),
-                        ),
-                )
-            } catch (error: TileflowMapException) {
-                // A replaced renderer receives the points again when it is ready. Points an engine
-                // refuses are not sent to it again until they change.
-                if (map.readyEngine !== engine) return@launchOnView
-                if (error.code != TileflowErrorCode.INVALID_REQUEST) sentPoints = null
-            } finally {
-                sending = false
-            }
-            if (map.readyEngine === engine) send()
+        nativeInput = DoubleArray(points.size * 2)
+        nativePixels = DoubleArray(nativeInput.size)
+        points.forEachIndexed { index, point ->
+            nativeInput[index * 2] = point.second.latitude
+            nativeInput[index * 2 + 1] = point.second.longitude
         }
+        projection.track(nativeInput)
+        projection.onFrame = if (points.isEmpty()) null else ({
+            applyPositions()
+            invalidate()
+        })
+        invalidate()
     }
 
     /** A new renderer receives the points again. */
     fun rendererReady() {
         sentPoints = null
-        tracked.clear()
-        sending = false
+        positions.clear()
         send()
     }
 
@@ -277,29 +162,8 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
         native?.onFrame = null
         native?.track(DoubleArray(0))
         native = null
-        latestSampleTime = null
         sentPoints = null
-        sending = false
-        tracked.clear()
-    }
-
-    /** Positions the renderer reports after a frame; applied at the next display frame. */
-    fun receive(result: JSONObject) {
-        val values = result.optJSONArray("positions") ?: return
-        if (!tracked.receive(result.optInt("revision", -1), values, density)) return
-        latestSampleTime = result.optDouble("time").takeIf { it.isFinite() }
-        latestSampleTime?.let { delivery.record(System.currentTimeMillis() - it) }
-        requestFrame()
-    }
-
-    private fun requestFrame() {
-        if (native != null) {
-            invalidate()
-            return
-        }
-        if (frameRequested || !isAttachedToWindow) return
-        frameRequested = true
-        Choreographer.getInstance().postFrameCallback(frameCallback)
+        positions.clear()
     }
 
     override fun dispatchDraw(canvas: Canvas) {
@@ -315,29 +179,26 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
             val x = nativePixels[index * 2].toFloat()
             val y = nativePixels[index * 2 + 1].toFloat()
             if (x.isFinite() && y.isFinite()) {
-                val point = tracked.positions[key] ?: FloatArray(2).also { tracked.positions[key] = it }
+                val point = positions[key] ?: FloatArray(2).also { positions[key] = it }
                 point[0] = x
                 point[1] = y
-            } else tracked.positions[key] = null
+            } else positions[key] = null
         }
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
         // A view that measured a new size takes its place again.
-        requestFrame()
+        invalidate()
     }
 
     /** Moves the views to the newest positions and places the view annotations. */
     internal fun applyPositions() {
         native?.let(::projectNative)
-        frameRequested = false
-        latestSampleTime?.let { lag.record(System.currentTimeMillis() - it) }
-        latestSampleTime = null
         val owner = manager
         if (owner != null) placeViews(owner)
         for ((key, target) in targets) {
-            val position = tracked.positions[key]
+            val position = positions[key]
             if (position == null) {
                 target.visibility = GONE
                 continue
@@ -355,7 +216,7 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
         val placements =
             placeViewAnnotations(
                 entries.map { entry ->
-                    val position = tracked.positions[entry.view]
+                    val position = positions[entry.view]
                     PlacementInput(
                         entry.view,
                         position?.get(0),
@@ -468,9 +329,7 @@ internal class AnnotationOverlay(context: Context, private val map: TileflowMapV
         native?.onFrame = null
         native?.track(DoubleArray(0))
         native = null
-        if (frameRequested) Choreographer.getInstance().removeFrameCallback(frameCallback)
-        frameRequested = false
-        tracked.clear()
+        positions.clear()
     }
 
     /** What an accessibility service focuses and activates for a labelled annotation. */

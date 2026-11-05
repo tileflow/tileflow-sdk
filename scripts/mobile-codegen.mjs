@@ -28,4 +28,3 @@ export function documentation(text, indent, style) {
     ].join('\n');
   return rows.map((row) => `${indent}${middle} ${row}`).join('\n');
 }
-/** `requestTimeoutMs` → `requestTimeoutMilliseconds` in Swift, `REQUEST_TIMEOUT_MILLIS` in Kotlin. */

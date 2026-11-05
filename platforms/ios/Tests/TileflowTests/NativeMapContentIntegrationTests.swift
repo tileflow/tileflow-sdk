@@ -88,9 +88,6 @@ final class NativeMapContentIntegrationTests: XCTestCase {
     let center = TileflowCoordinate(longitude: -3.70, latitude: 40.42)
     let provider = TileflowSimulatedLocationProvider(
       route: [center, .init(longitude: -3.69, latitude: 40.42)], playsAutomatically: false)
-    let kind = TileflowMapView.defaultEngineKind
-    TileflowMapView.defaultEngineKind = .native
-    defer { TileflowMapView.defaultEngineKind = kind }
     let window = MountedMap.sceneWindow()
     window.rootViewController = UIHostingController(
       rootView: Screen(model: model, controller: controller, provider: provider))
@@ -229,9 +226,6 @@ final class NativeMapContentIntegrationTests: XCTestCase {
       route: [
         .init(longitude: -3.7, latitude: 40.42), .init(longitude: -3.69, latitude: 40.42),
       ], playsAutomatically: false)
-    let kind = TileflowMapView.defaultEngineKind
-    TileflowMapView.defaultEngineKind = .native
-    defer { TileflowMapView.defaultEngineKind = kind }
     let window = MountedMap.sceneWindow()
     window.rootViewController = UIHostingController(
       rootView: Screen(model: model, controller: controller, provider: provider))
@@ -260,7 +254,6 @@ final class NativeMapContentIntegrationTests: XCTestCase {
         map: "city", manifestURL: NativeMapViewIntegrationTests.nativeManifest,
         allowsLoopbackHTTP: true),
       initialCamera: .init(longitude: -3.7, latitude: 40.42, zoom: 14, bearing: 90))
-    view.engineKind = .native
     let events = NativeMapEvents()
     view.onEvent = events.receive
     let window = MountedMap.sceneWindow()

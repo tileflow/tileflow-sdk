@@ -1,6 +1,6 @@
 package dev.tileflow.sdk
 
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import dev.tileflow.sdk.location.TileflowLocationOptions
 import dev.tileflow.sdk.model.MapPayloadStore
 import dev.tileflow.sdk.transport.ResourceDigest
@@ -82,7 +82,7 @@ class MapContentTest {
                 {
                     TileflowGeoJSONLayer(
                         "a",
-                        "x".repeat(ProtocolContract.MAXIMUM_DATA_BYTES + 1),
+                        "x".repeat(MapContract.MAXIMUM_DATA_BYTES + 1),
                         TileflowGeoJSONLayerKind.FILL,
                     )
                 },

@@ -31,22 +31,22 @@ final class MapPayloadStore {
   /// Registers a payload for one request. Release the reference when the request settles.
   func register(_ bytes: Data, digest: String, contentType: String) throws -> Reference {
     guard !retired else { throw TileflowMapError.cancelled }
-    guard !bytes.isEmpty, bytes.count <= ProtocolContract.maximumDataBytes else {
+    guard !bytes.isEmpty, bytes.count <= MapContract.maximumDataBytes else {
       throw TileflowMapError(
-        .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataBytes)
+        .invalidRequest, reason: .dataTooLarge, limit: MapContract.maximumDataBytes)
     }
     if let id = identifiers[digest], var entry = entries[id] {
       entry.holds += 1
       entries[id] = entry
       return entry.reference
     }
-    guard totalBytes + bytes.count <= ProtocolContract.maximumDataTotalBytes else {
+    guard totalBytes + bytes.count <= MapContract.maximumDataTotalBytes else {
       throw TileflowMapError(
-        .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataTotalBytes)
+        .invalidRequest, reason: .dataTooLarge, limit: MapContract.maximumDataTotalBytes)
     }
-    guard entries.count < ProtocolContract.maximumDataReferences else {
+    guard entries.count < MapContract.maximumDataReferences else {
       throw TileflowMapError(
-        .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataReferences)
+        .invalidRequest, reason: .dataTooLarge, limit: MapContract.maximumDataReferences)
     }
     var random = SystemRandomNumberGenerator()
     let id = Data((0..<16).map { _ in UInt8.random(in: 0...255, using: &random) })

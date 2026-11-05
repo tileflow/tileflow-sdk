@@ -1,7 +1,7 @@
 package dev.tileflow.sdk
 
 import androidx.annotation.MainThread
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import dev.tileflow.sdk.engine.MapEngine
 import dev.tileflow.sdk.location.FollowModeState
 import dev.tileflow.sdk.location.TileflowDefaultLocationProvider
@@ -80,7 +80,7 @@ internal class MapLocation(private val view: TileflowMapView) : TileflowLocation
         sending = true
         view.launchOnView {
             try {
-                engine.call(ProtocolContract.Method.UPDATE_LOCATION, payload)
+                engine.call(MapContract.Method.UPDATE_LOCATION, payload)
             } catch (_: TileflowMapException) {
                 // A new renderer receives the latest values when it starts.
             } finally {
@@ -181,14 +181,14 @@ internal fun TileflowMapView.receiveFollowModeChanged(value: JSONObject) {
 /** Gives a new renderer the latest position, heading and follow mode. */
 internal suspend fun TileflowMapView.replayLocation(engine: MapEngine) {
     location.payload(includeLocation = true, includeHeading = true)?.let {
-        engine.call(ProtocolContract.Method.UPDATE_LOCATION, it)
+        engine.call(MapContract.Method.UPDATE_LOCATION, it)
     }
     if (location.follow.mode != TileflowFollowMode.NONE) {
         // A mode set before the first renderer still zooms in as it starts to follow.
         val entering = location.pendingEntry
         location.pendingEntry = false
         engine.call(
-            ProtocolContract.Method.SET_FOLLOW_MODE,
+            MapContract.Method.SET_FOLLOW_MODE,
             followPayload(entering, if (entering) 1000 else 0),
         )
     }
@@ -210,7 +210,7 @@ private fun TileflowMapView.sendFollowMode(
     val payload = followPayload(entering, durationMillis, bearing)
     launchOnView {
         try {
-            engine.call(ProtocolContract.Method.SET_FOLLOW_MODE, payload)
+            engine.call(MapContract.Method.SET_FOLLOW_MODE, payload)
         } catch (_: TileflowMapException) {
             // A new renderer receives the follow mode when it starts.
         }

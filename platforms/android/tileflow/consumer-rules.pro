@@ -16,3 +16,8 @@
 -keepclassmembers class org.maplibre.android.style.layers.Layer {
     public org.maplibre.android.style.layers.PropertyValue getVisibility();
 }
+
+# The SDK reads the installed AAR version at runtime, including in minified applications.
+-keepclassmembers class org.maplibre.android.BuildConfig {
+    public static final java.lang.String MAPLIBRE_VERSION_STRING;
+}

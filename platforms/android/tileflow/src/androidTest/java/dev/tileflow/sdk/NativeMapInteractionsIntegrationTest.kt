@@ -44,7 +44,6 @@ public class NativeMapInteractionsIntegrationTest {
             Intent(instrumentation.targetContext, SceneHostActivity::class.java)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra("map", "fixture")
-                .putExtra("nativeEngine", true)
         val activity = instrumentation.startActivitySync(intent) as SceneHostActivity
         try {
             assertTrue("Fixture map loaded", activity.loaded.await(30, TimeUnit.SECONDS))

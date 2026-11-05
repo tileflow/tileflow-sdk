@@ -7,7 +7,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import dev.tileflow.sdk.engine.MapEngineKind
 import dev.tileflow.sdk.engine.NativeMapEngine
 import java.io.File
 import java.net.URI
@@ -52,7 +51,6 @@ public class SceneHostActivity : ComponentActivity() {
             else TileflowViewMode.FLAT
         map =
             TileflowMapView(this).apply {
-                engineKind = if (intent.getBooleanExtra("nativeEngine", false)) MapEngineKind.NATIVE else MapEngineKind.WEB_VIEW
                 onEvent = {
                     events.add(it)
                     if (it == TileflowMapEvent.ContentReady) {
@@ -98,7 +96,6 @@ public class MapSceneIntegrationTest {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                 .putExtra("map", map)
                 .putExtra("viewMode", viewMode)
-                .putExtra("nativeEngine", true)
                 .putExtra(
                     "fixturePort",
                     InstrumentationRegistry.getArguments().getString("tileflowFixturePort")?.toInt()

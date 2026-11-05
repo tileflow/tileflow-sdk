@@ -367,8 +367,7 @@ internal class ResourceLoader(
             )
 
         /**
-         * The headers the renderer sees. The WebView must never cache: the native cache is the
-         * only one.
+         * Response headers for the renderer. The SDK controls resource caching.
          */
         fun rendererHeaders(
             headers: Map<String, String>,

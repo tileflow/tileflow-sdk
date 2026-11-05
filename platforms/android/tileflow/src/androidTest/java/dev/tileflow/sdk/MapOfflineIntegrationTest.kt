@@ -8,7 +8,6 @@ import androidx.test.platform.app.InstrumentationRegistry
 import dev.tileflow.configuration.TileflowBoundingBox
 import dev.tileflow.configuration.TileflowConfiguration
 import dev.tileflow.configuration.TileflowCredential
-import dev.tileflow.sdk.engine.MapEngineKind
 import dev.tileflow.sdk.offline.OfflineFetchRequest
 import dev.tileflow.sdk.offline.OfflineHttpFetcher
 import dev.tileflow.sdk.offline.OfflineLayout
@@ -64,7 +63,6 @@ public class OfflineMapHostActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         map =
             TileflowMapView(this).apply {
-                engineKind = Companion.kind
                 // The tests query the middle of the view, where the camera's centre is drawn; the
                 // system bars and a display cutout would move it.
                 automaticallyAdjustsContentPadding = false
@@ -92,7 +90,6 @@ public class OfflineMapHostActivity : ComponentActivity() {
         @Volatile var camera: TileflowCamera? = null
         /** The theme the map starts in, or null for its default. */
         @Volatile var theme: String? = null
-        @Volatile var kind: MapEngineKind = MapEngineKind.WEB_VIEW
     }
 }
 
@@ -111,7 +108,6 @@ public class MapOfflineIntegrationTest {
 
     @After
     public fun tearDown() {
-        OfflineMapHostActivity.kind = MapEngineKind.WEB_VIEW
         OfflineMapHostActivity.theme = null
         TileflowOfflineSwitch.isNetworkEnabled = true
         runBlocking {
@@ -122,28 +118,18 @@ public class MapOfflineIntegrationTest {
     }
 
     @Test
-    public fun aDownloadedRegionShowsTheMapWithoutTheNetwork() =
-        downloadedRegionWithoutTheNetwork(MapEngineKind.WEB_VIEW)
+    public fun aDownloadedRegionShowsTheMapWithoutTheNetwork() = downloadedRegionWithoutTheNetwork()
 
     @Test
-    public fun aDownloadedRegionShowsTheMapWithoutTheNetworkOnTheNativeEngine() =
-        downloadedRegionWithoutTheNetwork(MapEngineKind.NATIVE)
-
-    @Test
-    public fun aHostedMapOpensFromItsPackOfflineAndRevalidatesItOnline() =
-        hostedPackOfflineThenOnline(MapEngineKind.WEB_VIEW)
-
-    @Test
-    public fun aHostedMapOpensFromItsPackOfflineAndRevalidatesItOnlineOnTheNativeEngine() =
-        hostedPackOfflineThenOnline(MapEngineKind.NATIVE)
+    public fun aPreviousHostedPackOpensOfflineAndRevalidatesOnline() =
+        hostedPackOfflineThenOnline(OfflinePackProfile.WEB_VIEW)
 
     @Test
     public fun downloadedNativeThemesBlendWithoutANetwork() =
-        hostedPackOfflineThenOnline(MapEngineKind.NATIVE, OfflinePackProfile.NATIVE)
+        hostedPackOfflineThenOnline(OfflinePackProfile.NATIVE)
 
     @Test
     public fun downloadedSelfHostedThemesBlendWithoutANetwork() {
-        OfflineMapHostActivity.kind = MapEngineKind.NATIVE
         val manifest = "$ORIGIN/native/manifest.json"
         requireFixture(manifest)
         val cache = TileflowMapCache.get(context)
@@ -279,15 +265,9 @@ public class MapOfflineIntegrationTest {
     }
 
     @Test
-    public fun terrainZoomedPastItsDownloadedZoomsHasNoHolesOffline() =
-        terrainPastItsDownloadedZooms(MapEngineKind.WEB_VIEW)
+    public fun terrainZoomedPastItsDownloadedZoomsHasNoHolesOffline() = terrainPastItsDownloadedZooms()
 
-    @Test
-    public fun terrainZoomedPastItsDownloadedZoomsHasNoHolesOfflineOnTheNativeEngine() =
-        terrainPastItsDownloadedZooms(MapEngineKind.NATIVE)
-
-    private fun downloadedRegionWithoutTheNetwork(kind: MapEngineKind) {
-        OfflineMapHostActivity.kind = kind
+    private fun downloadedRegionWithoutTheNetwork() {
         val manifest = "$ORIGIN/cached/manifest.json"
         requireFixture(manifest)
         val cache = TileflowMapCache.get(context)
@@ -316,10 +296,8 @@ public class MapOfflineIntegrationTest {
     }
 
     private fun hostedPackOfflineThenOnline(
-        kind: MapEngineKind,
-        profile: OfflinePackProfile = OfflinePackProfile.WEB_VIEW,
+        profile: OfflinePackProfile,
     ) {
-        OfflineMapHostActivity.kind = kind
         requireFixture("$ORIGIN/maps/$HOSTED_MAP_ID/mobile/manifest.json")
         val cache = TileflowMapCache.get(context)
         runBlocking { cache.clear() }
@@ -385,8 +363,7 @@ public class MapOfflineIntegrationTest {
      * network switched off. Elevation tiles above z12 answer as online (`404`), so the renderer
      * overzooms the z12 tiles: nothing is missing and no warning is reported.
      */
-    private fun terrainPastItsDownloadedZooms(kind: MapEngineKind) {
-        OfflineMapHostActivity.kind = kind
+    private fun terrainPastItsDownloadedZooms() {
         requireFixture("$ORIGIN/maps/$HOSTED_MAP_ID/mobile/manifest.json")
         val cache = TileflowMapCache.get(context)
         runBlocking { cache.clear() }
@@ -409,12 +386,9 @@ public class MapOfflineIntegrationTest {
         counters(reset = true)
         TileflowOfflineSwitch.isNetworkEnabled = false
         OfflineMapHostActivity.camera = TileflowCamera(-3.7, 40.42, 14.5, pitch = 45.0)
-        // MapLibre Native draws the theme the map starts in; the web engine changes to it.
-        if (kind == MapEngineKind.NATIVE) OfflineMapHostActivity.theme = "terrain"
+        OfflineMapHostActivity.theme = "terrain"
         val map = show(TileflowMapSource.hosted(HOSTED_MAP_ID, configuration = configuration))
         try {
-            if (kind == MapEngineKind.WEB_VIEW)
-                runBlocking { withContext(Dispatchers.Main) { map.map.setTheme("terrain") } }
             // Elevation tiles keep arriving after the theme is shown.
             Thread.sleep(5_000)
             assertTrue("The packs did not render", rendered(map, "buildings"))

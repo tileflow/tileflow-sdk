@@ -1,6 +1,6 @@
 package dev.tileflow.sdk
 
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import dev.tileflow.sdk.location.TileflowLocationOptions
 import org.json.JSONObject
 
@@ -88,7 +88,7 @@ public data class TileflowEventOptions(
     val cameraUpdateIntervalMillis: Long = 0,
 ) {
     internal fun validate() {
-        if (cameraUpdateIntervalMillis !in 0..ProtocolContract.MAXIMUM_THROTTLE_MILLIS)
+        if (cameraUpdateIntervalMillis !in 0..MapContract.MAXIMUM_THROTTLE_MILLIS)
             throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
     }
 }
@@ -103,11 +103,8 @@ public data class TileflowEventOptions(
  * @property vegetation Shows or hides the map's 3D vegetation; null keeps what the map's design
  *   chooses.
  * @property location How the map shows the person's location; off by default.
- * @property antialias Multisampling, which smooths the thin edges of 3D buildings, trees and
- *   models. Changing it starts a new renderer.
- * @property validatesStyle Validates each style as the renderer loads it, reporting problems as
- *   warnings. Tileflow validates its styles when it builds them, so this is off by default.
- *   Changing it starts a new renderer.
+ * @property antialias Requests multisampling on supported renderers. MapLibre Android uses its
+ *   built-in edge smoothing.
  */
 public data class TileflowMapOptions(
     val viewMode: TileflowViewMode = TileflowViewMode.FLAT,
@@ -119,7 +116,6 @@ public data class TileflowMapOptions(
     val vegetation: Boolean? = null,
     val location: TileflowLocationOptions = TileflowLocationOptions(),
     val antialias: Boolean = true,
-    val validatesStyle: Boolean = false,
     /** Destination and minimum level for this map's diagnostic events. */
     val diagnostics: TileflowMapDiagnostics? = null,
 ) {
@@ -142,9 +138,6 @@ public data class TileflowMapOptions(
             .put("location", location.json())
 
     /** Options fixed for a renderer's lifetime. */
-    internal fun rendererJson(): JSONObject =
-        JSONObject().put("antialias", antialias).put("validateStyle", validatesStyle)
-
     internal fun validate() {
         events.validate()
         json()

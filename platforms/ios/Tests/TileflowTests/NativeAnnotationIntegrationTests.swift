@@ -16,7 +16,6 @@ final class NativeAnnotationIntegrationTests: XCTestCase {
         allowsLoopbackHTTP: true),
       initialCamera: .init(
         longitude: madrid.longitude, latitude: madrid.latitude, zoom: 14, bearing: 0, pitch: 0))
-    view.engineKind = .native
     view.automaticallyAdjustsContentInsets = false
     view.onEvent = events.receive
     let window = MountedMap.sceneWindow()

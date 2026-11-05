@@ -92,7 +92,7 @@ final class NativeMapAnnotations {
 
   func setLayers(_ request: JSONValue) throws {
     guard let values = request["layers"]?.array,
-      values.count <= ProtocolContract.maximumAnnotationLayers
+      values.count <= MapContract.maximumAnnotationLayers
     else { throw TileflowMapError.invalidRequest }
     let ids = values.compactMap(\.string)
     guard ids.count == values.count, Set(ids).count == ids.count else {
@@ -105,7 +105,7 @@ final class NativeMapAnnotations {
   func setTracking(_ request: JSONValue) throws {
     guard let id = request["revision"]?.number.flatMap(Int.init(exactly:)),
       (0...9_007_199_254_740_991).contains(id),
-      let points = request["points"]?.array, points.count <= ProtocolContract.maximumTrackedPoints
+      let points = request["points"]?.array, points.count <= MapContract.maximumTrackedPoints
     else { throw TileflowMapError.invalidRequest }
     let next = try points.map { point -> TileflowCoordinate in
       guard let coordinate = point.array, coordinate.count == 2, let lng = coordinate[0].number,

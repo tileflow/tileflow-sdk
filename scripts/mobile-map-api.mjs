@@ -9,15 +9,13 @@ const grouped = (value) =>
   String(value).length < 7 ? String(value) : String(value).replaceAll(/\B(?=(\d{3})+$)/gu, '_');
 /** An error's public documentation, specialized for a platform where its guidance differs. */
 const describe = (error, platform) => error.documentation?.[platform] ?? error.description;
-const runtimeErrors = (contract) =>
-  Object.keys(contract.errors).filter((code) => contract.errors[code].sources.includes('runtime'));
+const rendererErrors = (contract) =>
+  Object.keys(contract.errors).filter((code) => contract.errors[code].sources.includes('renderer'));
 
 function swiftContract(contract, banner) {
   const events = Object.keys(contract.events);
   return `${banner}
-enum ProtocolContract {
-  static let version = ${contract.version}
-  static let minimumVersion = ${contract.minimumVersion}
+enum MapContract {
 ${lines(Object.entries(contract.limits), ([name, value]) => `  static let ${swiftLimit(name)} = ${grouped(value)}`)}
 
   enum Method: String {
@@ -39,9 +37,9 @@ ${lines(events, (name) => `      case .${name}: ${contract.events[name].level ? 
 ${lines(Object.keys(contract.errorReasons), (name) => `    case ${name}`)}
   }
 
-  /// Error codes the renderer may send. Any other code from the renderer is a protocol fault.
-  static let runtimeErrors: Set<String> = [
-${lines(runtimeErrors(contract), (code) => `    "${code}",`)}
+  /// Error codes that can originate in the renderer.
+  static let rendererErrors: Set<String> = [
+${lines(rendererErrors(contract), (code) => `    "${code}",`)}
   ]
 }
 `;
@@ -98,13 +96,11 @@ ${swiftEnumeration('TileflowResourceKind', contract.resourceKinds)}
 function kotlinContract(contract, banner) {
   const events = Object.keys(contract.events);
   return `${banner}
-package dev.tileflow.sdk.bridge
+package dev.tileflow.sdk.model
 
 import dev.tileflow.sdk.TileflowEventLevel
 
-internal object ProtocolContract {
-    const val VERSION = ${contract.version}
-    const val MINIMUM_VERSION = ${contract.minimumVersion}
+internal object MapContract {
 ${lines(Object.entries(contract.limits), ([name, value]) => `    const val ${kotlinLimit(name)} = ${grouped(value)}${name.endsWith('Ms') ? 'L' : ''}`)}
 
     enum class Method(val wireName: String) {
@@ -123,10 +119,10 @@ ${lines(events, (name) => `        ${constantName(name)}("${name}", ${contract.e
 ${lines(Object.keys(contract.errorReasons), (name) => `        ${constantName(name)}("${name}"),`)}
     }
 
-    /** Error codes the renderer may send. Any other code from the renderer is a protocol fault. */
-    val RUNTIME_ERRORS: Set<String> =
+    /** Error codes that can originate in the renderer. */
+    val RENDERER_ERRORS: Set<String> =
         setOf(
-${lines(runtimeErrors(contract), (code) => `            "${code}",`)}
+${lines(rendererErrors(contract), (code) => `            "${code}",`)}
         )
 }
 `;
@@ -187,13 +183,110 @@ ${kotlinEnumeration('TileflowResourceKind', contract.resourceKinds, 'The kind of
 `;
 }
 
-export function renderMapApi(contract, banner) {
+const identifier = /^[a-z][A-Za-z0-9]*$/u;
+const integer = (value, minimum) => Number.isSafeInteger(value) && value >= minimum;
+
+/** Validate the vocabulary before generating either host. */
+export function validateMapApi(contract) {
+  const problems = [];
+  const fail = (message) => problems.push(message);
+  const limits = contract.limits ?? {};
+  for (const name of [
+    'maximumDataBytes',
+    'maximumDataTotalBytes',
+    'maximumDataReferences',
+    'maximumTrackedPoints',
+    'maximumAnnotationLayers',
+    'maximumThrottleMs',
+    'warningWindowMs',
+  ]) {
+    if (!integer(limits[name], 1)) fail(`limits.${name} must be a positive integer.`);
+  }
+  if (limits.maximumDataBytes > limits.maximumDataTotalBytes)
+    fail('limits.maximumDataBytes cannot exceed limits.maximumDataTotalBytes.');
+  const names = (label, values) => {
+    if (!Array.isArray(values) || values.length === 0) fail(`${label} must be a non-empty list.`);
+    else {
+      if (new Set(values).size !== values.length) fail(`${label} has duplicates.`);
+      for (const value of values)
+        if (typeof value !== 'string' || !identifier.test(value)) fail(`${label}: ${value}`);
+    }
+    return Array.isArray(values) ? values : [];
+  };
+  const described = (label, value) => {
+    const keys = names(label, Object.keys(value ?? {}));
+    for (const key of keys)
+      if (typeof value[key] !== 'string' || !value[key].endsWith('.'))
+        fail(`${label}.${key} needs a sentence of description.`);
+    return keys;
+  };
+  const methods = names('methods', contract.methods);
+  for (const required of ['initialize', 'setEvents', 'dispose'])
+    if (!methods.includes(required)) fail(`methods must include ${required}.`);
+  const levels = described('eventLevels', contract.eventLevels);
+  const events = names('events', Object.keys(contract.events ?? {}));
+  for (const name of events) {
+    const event = contract.events[name];
+    if (!event || typeof event !== 'object') {
+      fail(`events.${name} needs an event definition.`);
+      continue;
+    }
+    const keys = Object.keys(event).sort().join(',');
+    if (keys === 'delivery') {
+      if (event.delivery !== 'always') fail(`events.${name}.delivery must be "always".`);
+    } else if (keys !== 'level' || !levels.includes(event.level)) {
+      fail(`events.${name} needs one level from eventLevels, or delivery "always".`);
+    }
+  }
+  if (contract.events?.error?.delivery !== 'always')
+    fail('events.error must be delivered without a subscription.');
+  for (const level of levels)
+    if (!events.some((name) => contract.events[name]?.level === level))
+      fail(`eventLevels.${level} has no events.`);
+  described('cameraReasons', contract.cameraReasons);
+  described('resourceKinds', contract.resourceKinds);
+  described('errorReasons', contract.errorReasons);
+  const errors = names('errors', Object.keys(contract.errors ?? {}));
+  for (const code of errors) {
+    const error = contract.errors[code];
+    if (typeof error.recoverable !== 'boolean')
+      fail(`errors.${code}.recoverable must be a boolean.`);
+    if (
+      !Array.isArray(error.sources) ||
+      error.sources.length === 0 ||
+      error.sources.some((source) => !['host', 'renderer'].includes(source))
+    )
+      fail(`errors.${code}.sources must name host, renderer or both.`);
+    if (typeof error.description !== 'string' || !error.description.endsWith('.'))
+      fail(`errors.${code} needs a sentence of description.`);
+    for (const [platform, text] of Object.entries(error.documentation ?? {}))
+      if (
+        !['swift', 'kotlin'].includes(platform) ||
+        typeof text !== 'string' ||
+        !text.endsWith('.')
+      )
+        fail(`errors.${code}.documentation.${platform} must be a sentence for swift or kotlin.`);
+  }
+  for (const required of ['invalidRequest', 'unsupportedDevice', 'cancelled', 'disposed'])
+    if (!contract.errors?.[required]?.sources?.includes('renderer'))
+      fail(`errors.${required} must be available to the renderer.`);
+  return problems;
+}
+
+const banner =
+  '// Generated by scripts/mobile-map-api-generate.mjs. Edit platforms/map-api.json, then regenerate.\n';
+
+export function renderMapApi(contract) {
+  const problems = validateMapApi(contract);
+  if (problems.length) throw new Error(`Invalid map-api.json:\n${problems.join('\n')}`);
   return {
-    'platforms/ios/Sources/Tileflow/Bridge/ProtocolContract.swift': swiftContract(contract, banner),
-    'platforms/ios/Sources/Tileflow/ProtocolTypes.swift': swiftPublic(contract, banner),
-    'platforms/android/tileflow/src/main/java/dev/tileflow/sdk/bridge/ProtocolContract.kt':
+    'platforms/ios/Sources/Tileflow/Model/MapContract.swift': swiftContract(contract, banner),
+    'platforms/ios/Sources/Tileflow/MapTypes.swift': swiftPublic(contract, banner),
+    'platforms/android/tileflow/src/main/java/dev/tileflow/sdk/model/MapContract.kt':
       kotlinContract(contract, banner),
-    'platforms/android/tileflow/src/main/java/dev/tileflow/sdk/ProtocolTypes.kt':
-      kotlinPublic(contract, banner),
+    'platforms/android/tileflow/src/main/java/dev/tileflow/sdk/MapTypes.kt': kotlinPublic(
+      contract,
+      banner,
+    ),
   };
 }

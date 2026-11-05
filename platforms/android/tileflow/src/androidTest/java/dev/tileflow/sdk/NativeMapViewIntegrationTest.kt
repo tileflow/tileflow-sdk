@@ -12,10 +12,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.tileflow.configuration.TileflowConfiguration
 import dev.tileflow.configuration.TileflowCredential
-import dev.tileflow.sdk.engine.MapEngineKind
 import dev.tileflow.sdk.engine.NativeMapEngine
 import dev.tileflow.sdk.engine.NativeRepresentation
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URL
@@ -88,7 +87,6 @@ public class NativeViewHostActivity : ComponentActivity() {
             val events = NativeMapEvents()
             val view =
                 TileflowMapView(this).apply {
-                    if (!intent.getBooleanExtra("publicRenderer", false)) engineKind = MapEngineKind.NATIVE
                     onEvent = { events.events.add(it) }
                     setSource(source)
                     theme?.let { runBlocking { setTheme(it) } }
@@ -124,8 +122,7 @@ public class NativeViewHostActivity : ComponentActivity() {
  * The map view's integration checks on MapLibre Native: loading, theme changes, blends, emphasis,
  * the view mode, degradation warnings, renderer recovery, camera events, lifecycle and two maps at
  * once. They use the fixture's self-hosted map built for the native renderer
- * (`/native/manifest.json`) and its Hosted map's `native-v1` representation. There is no data
- * channel to a web process: what the WebView suite reads with JavaScript, these checks read from
+ * (`/native/manifest.json`) and its Hosted map's `native-v1` representation. Assertions read
  * the view and its engine.
  *
  * Run with the online fixture server and `adb reverse tcp:18645 tcp:<port>`.
@@ -160,10 +157,10 @@ public class NativeMapViewIntegrationTest {
         connection.inputStream.close()
     }
 
-    private fun show(publicRenderer: Boolean = false): NativeViewHostActivity {
+    private fun show(): NativeViewHostActivity {
         val intent =
             Intent(instrumentation.context, NativeViewHostActivity::class.java)
-                .putExtra("publicRenderer", publicRenderer)
+                
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         return instrumentation.startActivitySync(intent) as NativeViewHostActivity
     }
@@ -186,7 +183,7 @@ public class NativeMapViewIntegrationTest {
         try {
             runBlocking {
                 withContext(Dispatchers.Main) {
-                    val detached = TileflowMapView(activity).apply { engineKind = MapEngineKind.NATIVE }
+                    val detached = TileflowMapView(activity)
                     try {
                         val remote = JSONObject("""{"type":"geojson","data":"file:///private/points.geojson"}""")
                         val failure = runCatching { detached.addStyleSource("remote", remote) }.exceptionOrNull()
@@ -418,9 +415,9 @@ public class NativeMapViewIntegrationTest {
                     // A blend loads one style; moving it changes the live style without loading.
                     map.setBlend(listOf("light", "dark"), 0.5)
                     assertEquals("dark", engine.blend?.let { it.themes[it.dominant] })
-                    val loads = engine.received[ProtocolContract.Method.SET_BLEND] ?: 0
+                    val loads = engine.received[MapContract.Method.SET_BLEND] ?: 0
                     map.setBlend(listOf("light", "dark"), 0.2)
-                    assertEquals(loads + 1, engine.received[ProtocolContract.Method.SET_BLEND])
+                    assertEquals(loads + 1, engine.received[MapContract.Method.SET_BLEND])
                     assertEquals("light", engine.blend?.let { it.themes[it.dominant] })
                     assertNotEquals(darkInks.line, map.routeInks().line)
                     assertBuildings(map)
@@ -474,12 +471,7 @@ public class NativeMapViewIntegrationTest {
     }
 
     @Test
-    public fun streetsLoadsAtCityZoomWithItsHostedClimateLayer() = streetsWithClimate(publicRenderer = false)
-
-    @Test
-    public fun aPublicViewOpensStreetsAtZoom16WithClimate() = streetsWithClimate(publicRenderer = true)
-
-    private fun streetsWithClimate(publicRenderer: Boolean) {
+    public fun aPublicViewOpensStreetsAtZoom16WithClimate() {
         requireNativeFixture()
         val streets = TileflowMapSource(
             map = "streets",
@@ -487,7 +479,7 @@ public class NativeMapViewIntegrationTest {
             allowsLoopbackHttp = true,
         )
         NativeViewHostActivity.maps = listOf(streets to null)
-        val activity = show(publicRenderer)
+        val activity = show()
         try {
             runBlocking {
                 withContext(Dispatchers.Main) {
@@ -496,7 +488,7 @@ public class NativeMapViewIntegrationTest {
                     withTimeout(15_000) {
                         while (map.readyEngine == null && events.failures.isEmpty()) delay(50)
                     }
-                    assertTrue("Streets must open on MapLibre, selected ${map.engineKind}, errors ${events.failures}", map.readyEngine is NativeMapEngine)
+                    assertTrue("Streets must open on MapLibre, errors ${events.failures}", map.readyEngine is NativeMapEngine)
                     events.waitForLoads(1)
                     assertEquals(16.0, map.camera().zoom, .01)
                     val style = requireNotNull(activity.engine?.map?.style)
@@ -792,13 +784,10 @@ public class NativeMapViewIntegrationTest {
                         TileflowViewAnnotationOptions(center),
                     )
                     delay(1_500)
-                    val layers = engine.received[ProtocolContract.Method.SET_ANNOTATION_LAYERS] ?: 0
-                    val points = engine.received[ProtocolContract.Method.SET_TRACKED_POINTS] ?: 0
+                    val layers = engine.received[MapContract.Method.SET_ANNOTATION_LAYERS] ?: 0
                     assertTrue("$layers annotation layer requests", layers <= 3)
-                    assertTrue("$points tracked point requests", points <= 3)
                     delay(1_500)
-                    assertEquals(layers, engine.received[ProtocolContract.Method.SET_ANNOTATION_LAYERS] ?: 0)
-                    assertEquals(points, engine.received[ProtocolContract.Method.SET_TRACKED_POINTS] ?: 0)
+                    assertEquals(layers, engine.received[MapContract.Method.SET_ANNOTATION_LAYERS] ?: 0)
                 }
             }
         } finally {

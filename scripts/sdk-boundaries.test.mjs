@@ -121,6 +121,23 @@ test('public package sources respect the SDK responsibility graph', async () => 
   }
 });
 
+test('native map libraries have no browser rendering dependency', async () => {
+  const extensions = new Set(['.h', '.hpp', '.java', '.kt', '.m', '.mm', '.swift']);
+  const roots = ['platforms/ios/Sources/', 'platforms/android/tileflow/src/main/'];
+  const sources = await Promise.all(
+    roots.map((path) => listSourceFiles(new URL(path, workspaceRoot), extensions)),
+  );
+  const gradle = new URL('platforms/android/tileflow/build.gradle.kts', workspaceRoot);
+  const forbidden =
+    /\bimport\s+(?:WebKit|android(?:x)?\.webkit)\b|#\s*(?:import|include)\s*[<"]WebKit\/|\bandroid(?:x)?\.webkit[.:]/u;
+  const dependencies = [];
+  for (const file of [...sources.flat(), gradle]) {
+    if (forbidden.test(await readFile(file, 'utf8')))
+      dependencies.push(relative(workspaceRootPath, fileURLToPath(file)));
+  }
+  assert.deepEqual(dependencies.sort(), []);
+});
+
 test('declared runtime Tileflow dependencies respect the SDK responsibility graph', async () => {
   const packageNames = new Set(Object.keys(allowedTileflowDependencies));
 
@@ -201,12 +218,12 @@ async function readPackageManifest(packageName) {
   );
 }
 
-async function listSourceFiles(root) {
+async function listSourceFiles(root, extensions = sourceExtensions) {
   const files = [];
   for (const entry of await readdir(root, {withFileTypes: true})) {
     const url = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, root);
-    if (entry.isDirectory()) files.push(...(await listSourceFiles(url)));
-    else if (sourceExtensions.has(extname(entry.name))) files.push(url);
+    if (entry.isDirectory()) files.push(...(await listSourceFiles(url, extensions)));
+    else if (extensions.has(extname(entry.name))) files.push(url);
   }
   return files;
 }

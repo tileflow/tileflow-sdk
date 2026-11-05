@@ -1,6 +1,6 @@
 package dev.tileflow.sdk
 
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import dev.tileflow.sdk.model.MapPayloadStore
 import dev.tileflow.sdk.transport.ResourceDigest
 import org.json.JSONArray
@@ -109,12 +109,12 @@ private constructor(
         )
             throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
         progress?.validate()
-        if (bytes.isEmpty() || bytes.size > ProtocolContract.MAXIMUM_DATA_BYTES)
+        if (bytes.isEmpty() || bytes.size > MapContract.MAXIMUM_DATA_BYTES)
             throw TileflowMapException(
                 TileflowErrorCode.INVALID_REQUEST,
                 TileflowErrorContext.of(
-                    ProtocolContract.ErrorReason.DATA_TOO_LARGE,
-                    ProtocolContract.MAXIMUM_DATA_BYTES,
+                    MapContract.ErrorReason.DATA_TOO_LARGE,
+                    MapContract.MAXIMUM_DATA_BYTES,
                 ),
             )
     }
@@ -175,12 +175,12 @@ internal data class MapContent(
             throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
         annotations.forEach { it.json() }
         val total = overlays.distinctBy { it.digest }.sumOf { it.bytes.size.toLong() }
-        if (total > ProtocolContract.MAXIMUM_DATA_TOTAL_BYTES)
+        if (total > MapContract.MAXIMUM_DATA_TOTAL_BYTES)
             throw TileflowMapException(
                 TileflowErrorCode.INVALID_REQUEST,
                 TileflowErrorContext.of(
-                    ProtocolContract.ErrorReason.DATA_TOO_LARGE,
-                    ProtocolContract.MAXIMUM_DATA_TOTAL_BYTES,
+                    MapContract.ErrorReason.DATA_TOO_LARGE,
+                    MapContract.MAXIMUM_DATA_TOTAL_BYTES,
                 ),
             )
     }

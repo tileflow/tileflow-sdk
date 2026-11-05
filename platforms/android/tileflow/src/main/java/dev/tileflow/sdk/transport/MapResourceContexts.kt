@@ -101,7 +101,7 @@ internal object MapResourceContexts {
         installing = true
         val application = context.applicationContext ?: context
         try {
-            MapLibre.getInstance(application)
+            MapLibreRuntime.initialize(application)
             val previous = MapLibre.getModuleProvider()
             if (previous !is MapLibreModuleProvider)
                 MapLibre.setModuleProvider(MapLibreModuleProvider(previous))
@@ -122,6 +122,8 @@ internal object MapResourceContexts {
                         }
                     },
                 )
+        } catch (_: LinkageError) {
+            finish(MapLibreRuntime.unsupported("MapLibre could not start its native transport."))
         } catch (error: Exception) {
             finish(error)
         }

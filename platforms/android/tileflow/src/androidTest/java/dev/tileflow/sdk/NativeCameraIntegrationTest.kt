@@ -10,7 +10,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.ComposeView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import dev.tileflow.sdk.engine.MapEngineKind
 import dev.tileflow.sdk.engine.NativeMapEngine
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.CountDownLatch
@@ -25,7 +24,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -60,7 +58,7 @@ public class CameraStateHostActivity : ComponentActivity() {
 }
 
 /**
- * [CameraIntegrationTest] on MapLibre Native, with the fixture's city map built for the native
+ * Camera behaviour on MapLibre Native with the fixture's city map built for the native
  * renderer: movements and how they end, padding, limits, controls, gestures, touches, the steepest
  * pitch and a Compose camera state. Touches are motion events dispatched to the map view, as a
  * person's are.
@@ -69,20 +67,13 @@ public class CameraStateHostActivity : ComponentActivity() {
  */
 @RunWith(AndroidJUnit4::class)
 public class NativeCameraIntegrationTest {
-    private val initialEngineKind = TileflowMapView.defaultEngineKind
     private val centre = TileflowCoordinate(-3.70, 40.42)
 
     @Before
     public fun native() {
         Fixture.require("${Fixture.ORIGIN}/native/manifest.json")
-        CameraHostActivity.native = true
     }
 
-    @After
-    public fun webView() {
-        CameraHostActivity.native = false
-        TileflowMapView.defaultEngineKind = initialEngineKind
-    }
 
     private fun withMap(block: suspend CoroutineScope.(CameraHostActivity, TileflowMapView) -> Unit) {
         ActivityScenario.launch(CameraHostActivity::class.java).use { scenario ->
@@ -424,7 +415,6 @@ public class NativeCameraIntegrationTest {
 
     @Test
     public fun aCameraStateFollowsTheMapAndMovesItWithoutEchoes() {
-        TileflowMapView.defaultEngineKind = MapEngineKind.NATIVE
         ActivityScenario.launch(CameraStateHostActivity::class.java).use { scenario ->
             lateinit var activity: CameraStateHostActivity
             scenario.onActivity { activity = it }

@@ -4,12 +4,14 @@ import {readdir, readFile, writeFile} from 'node:fs/promises';
 import {isAbsolute, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
+import {readNativeStylePins} from './mobile-native-style.mjs';
 import {primaryFileNames, validateMavenRepository} from './native-maven-bundle.mjs';
 import {mavenArtifactDirectory, readNativeReleaseCatalog} from './native-release-config.mjs';
 
 // Checks shared by the release workflow and local dry runs: consumers built from a candidate carry
-// its exact embedded runtime, and an approved bundle is internally consistent.
+// the pinned native renderer, and an approved bundle is internally consistent.
 
+const root = fileURLToPath(new URL('../', import.meta.url));
 const run = promisify(execFile);
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
 
@@ -38,15 +40,12 @@ async function findDirectory(directory, name) {
   return null;
 }
 
-/** The runtime files a consumer ships must be the candidate's, byte for byte. */
-async function assertRuntime(files, runtime, where) {
-  const receipt = JSON.parse((await files('receipt.json')).toString('utf8'));
-  if (JSON.stringify(receipt) !== JSON.stringify(runtime)) {
-    throw new Error(`${where}: the embedded runtime receipt differs from the candidate.`);
-  }
-  for (const [name, digest] of Object.entries(runtime.files)) {
-    if (sha256(await files(name)) !== digest) throw new Error(`${where}: ${name} differs.`);
-  }
+/** Both package formats can retain ignored outputs from builds of the old renderer. */
+export function assertNativeMapAssets(entries) {
+  const retired =
+    /(?:^|\/)EmbeddedRuntime(?:\/|$)|^assets\/tileflow\/(?:index\.html|maplibre\.css|runtime\.js|receipt\.json|dependencies\.json|notices\.txt)$/u;
+  const stale = entries.find((entry) => retired.test(entry));
+  if (stale) throw new Error(`Unexpected embedded renderer resource: ${stale}`);
 }
 
 async function swiftExample(consumers, scheme) {
@@ -66,11 +65,19 @@ async function swiftExample(consumers, scheme) {
     derived,
     'CODE_SIGNING_ALLOWED=NO',
   ]);
-  // A URL dependency must resolve to the release tag, not to a local path.
+  const resolved = await readJson(
+    join(project, 'project.xcworkspace/xcshareddata/swiftpm/Package.resolved'),
+  );
+  const engine = resolved.pins?.find(
+    (item) =>
+      item.location.replace(/\.git$/u, '') ===
+      'https://github.com/maplibre/maplibre-gl-native-distribution',
+  );
+  if (engine?.state?.version !== candidate.engines.ios)
+    throw new Error(`${scheme}: unexpected MapLibre version ${engine?.state?.version}.`);
+
+  // A URL dependency must also resolve to the Tileflow release tag.
   if (/^(?:file|https):\/\//u.test(consumer.swiftPackage)) {
-    const resolved = await readJson(
-      join(project, 'project.xcworkspace/xcshareddata/swiftpm/Package.resolved'),
-    );
     // Xcode records a file URL as its path.
     const location = consumer.swiftPackage.replace(/^file:\/\//u, '');
     const pin = resolved.pins?.find((item) => item.location === location);
@@ -88,12 +95,10 @@ async function swiftExample(consumers, scheme) {
     }
   }
   const app = await findDirectory(join(derived, 'Build/Products'), `${scheme}.app`);
-  const runtime = app && (await findDirectory(app, 'EmbeddedRuntime'));
-  if (!runtime) throw new Error(`${scheme}: the app has no embedded runtime resources.`);
-  await assertRuntime((name) => readFile(join(runtime, name)), candidate.runtime, scheme);
-  console.log(
-    `${scheme} built from ${consumer.swiftPackage} with runtime ${candidate.runtime.runtimeHash}.`,
-  );
+  if (!app || !(await findDirectory(app, 'MapLibre.framework')))
+    throw new Error(`${scheme}: the app did not embed MapLibre.framework.`);
+  assertNativeMapAssets(await readdir(app, {recursive: true}));
+  console.log(`${scheme} built with MapLibre ${candidate.engines.ios}.`);
 }
 
 async function androidExample(consumers) {
@@ -117,19 +122,24 @@ async function androidExample(consumers) {
     }
   }
   const apk = join(android, 'example/build/outputs/apk/debug/example-debug.apk');
-  await assertRuntime(
-    async (name) =>
-      Buffer.from(
-        await command('/usr/bin/unzip', ['-p', apk, `assets/tileflow/${name}`], {
-          encoding: 'buffer',
-        }),
-      ),
-    candidate.runtime,
-    'Android example',
-  );
-  console.log(
-    `Android example built from ${consumer.mavenRepository} with runtime ${candidate.runtime.runtimeHash}.`,
-  );
+  const engine = 'org.maplibre.gl:android-sdk-opengl:';
+  const versions = dependencies
+    .split('\n')
+    .filter((line) => line.includes(engine))
+    .map((line) => line.split(engine)[1].trim().split(/\s+/u));
+  if (
+    !versions.length ||
+    versions.some(([version, next]) => version !== candidate.engines.android || next === '->')
+  )
+    throw new Error(
+      `The Android example did not resolve ${engine}${candidate.engines.android} exactly.`,
+    );
+
+  const entries = (await command('/usr/bin/unzip', ['-Z1', apk])).split('\n');
+  assertNativeMapAssets(entries);
+  if (!entries.some((entry) => /^lib\/[^/]+\/libmaplibre\.so$/u.test(entry)))
+    throw new Error('The Android example did not package libmaplibre.so.');
+  console.log(`Android example built with MapLibre ${candidate.engines.android}.`);
 }
 
 /** Everything in an approved bundle describes one version built from one clean revision. */
@@ -139,6 +149,7 @@ async function verifyBundle(release, version, sourceRevision) {
   const candidate = await readJson(join(release, 'candidate/candidate.json'));
   const swiftRelease = await readJson(join(release, 'swift-release/swift-release.json'));
   const provenance = await readJson(join(release, 'candidate/swift/provenance.json'));
+  const engines = await readNativeStylePins(root);
   const checks = [
     [plan.version, version, 'plan version'],
     [plan.sourceRevision, sourceRevision, 'plan source'],
@@ -148,10 +159,13 @@ async function verifyBundle(release, version, sourceRevision) {
     [provenance.version, version, 'Swift provenance version'],
     [provenance.sourceRevision, sourceRevision, 'Swift provenance source'],
     [provenance.sourceDirty, false, 'Swift provenance source state'],
-    [provenance.runtimeHash, candidate.runtime.runtimeHash, 'Swift provenance runtime'],
     [swiftRelease.version, version, 'Swift release version'],
     [swiftRelease.sourceRevision, sourceRevision, 'Swift release source'],
-    [swiftRelease.runtimeHash, candidate.runtime.runtimeHash, 'Swift release runtime'],
+    ...Object.entries(engines).flatMap(([platform, version]) => [
+      [candidate.engines?.[platform], version, `candidate ${platform} renderer`],
+      [provenance.engines?.[platform], version, `Swift provenance ${platform} renderer`],
+      [swiftRelease.engines?.[platform], version, `Swift release ${platform} renderer`],
+    ]),
   ];
   for (const [actual, expected, label] of checks) {
     if (actual !== expected) throw new Error(`${label} is ${actual}, expected ${expected}.`);
@@ -190,7 +204,7 @@ async function summary(release) {
     `## Native release ${candidate.version}`,
     '',
     `- Source: \`${candidate.sourceRevision}\``,
-    `- Embedded runtime: \`${candidate.runtime.runtimeHash}\``,
+    `- MapLibre Native: iOS ${candidate.engines.ios}, Android ${candidate.engines.android}`,
     `- Swift: https://github.com/${catalog.swift.repository} tag \`${candidate.version}\` at commit \`${swiftRelease.commit}\` (tree \`${swiftRelease.tree}\`, parent \`${swiftRelease.parent ?? 'none'}\`)`,
     `- Maven Central: ${Object.values(candidate.android.modules)
       .map((coordinate) => `\`${coordinate}\``)
@@ -208,7 +222,7 @@ async function receipt(release, bundleDigest, output) {
     sourceRepository: candidate.sourceRepository,
     sourceRevision: candidate.sourceRevision,
     bundleSha256: bundleDigest,
-    runtimeHash: candidate.runtime.runtimeHash,
+    engines: candidate.engines,
     swift: {
       repository: `https://github.com/${catalog.swift.repository}`,
       tag: candidate.version,

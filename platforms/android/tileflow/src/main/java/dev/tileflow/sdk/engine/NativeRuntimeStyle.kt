@@ -7,7 +7,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import dev.tileflow.sdk.TileflowLayerSlot
 import dev.tileflow.sdk.TileflowResourceKind
-import dev.tileflow.sdk.bridge.ProtocolContract.Method
+import dev.tileflow.sdk.model.MapContract.Method
 import dev.tileflow.sdk.model.MapPayloadStore
 import java.net.URI
 import kotlin.math.roundToInt

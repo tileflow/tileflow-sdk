@@ -15,7 +15,7 @@ import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.TileflowResourceKind
 import dev.tileflow.sdk.attribution.MapAttributionControl
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import dev.tileflow.sdk.model.MapPayloadStore
 import dev.tileflow.sdk.offline.OfflineReachability
 import dev.tileflow.sdk.offline.OfflineServingIndex
@@ -39,7 +39,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
-import org.maplibre.android.MapLibre
+import dev.tileflow.sdk.transport.MapLibreRuntime
 import org.maplibre.android.maps.MapLibreMap
 import org.maplibre.android.maps.MapView
 import org.maplibre.android.maps.Style
@@ -179,7 +179,7 @@ internal class NativeMapEngine(
         private set
 
     /** How many times the view sent each command, for diagnostics. */
-    internal val received = HashMap<ProtocolContract.Method, Int>()
+    internal val received = HashMap<MapContract.Method, Int>()
 
     override val view: FrameLayout
         get() = container
@@ -187,8 +187,12 @@ internal class NativeMapEngine(
     override val data: MapPayloadStore = MapPayloadStore()
 
     init {
-        MapLibre.getInstance(application)
-        mapView = MapView(context)
+        MapLibreRuntime.initialize(application)
+        mapView = try {
+            MapView(context)
+        } catch (_: LinkageError) {
+            throw MapLibreRuntime.unsupported("MapLibre could not create its native map on this device.")
+        }
         mapView.onCreate(null)
         container.addView(
             mapView,
@@ -241,8 +245,13 @@ internal class NativeMapEngine(
             awaitingContent = false
             callbacks.failed(failure)
         }
-        // A renderer that loses its graphics context is replaced, as a WebView whose process ended.
-        mapView.addOnRenderErrorListener { graphicsContextLost() }
+        // A lost graphics context retires this renderer.
+        mapView.addOnRenderErrorListener {
+            if (retired) return@addOnRenderErrorListener
+            if (map == null) {
+                callbacks.loadFailed(this, MapLibreRuntime.unsupported("MapLibre could not start its graphics context."))
+            } else graphicsContextLost()
+        }
     }
 
     override fun start() {
@@ -263,7 +272,7 @@ internal class NativeMapEngine(
             if (error != null) {
                 callbacks.loadFailed(
                     this,
-                    TileflowMapException(
+                    error as? TileflowMapException ?: TileflowMapException(
                         TileflowErrorCode.RENDERER_FAILED,
                         TileflowErrorContext(message = error.message),
                     ),
@@ -287,12 +296,12 @@ internal class NativeMapEngine(
     }
 
     override suspend fun updateContentAnnotations(annotations: JSONArray): Boolean {
-        call(ProtocolContract.Method.SET_CONTENT, JSONObject().put("annotations", annotations))
+        call(MapContract.Method.SET_CONTENT, JSONObject().put("annotations", annotations))
         return true
     }
 
     override suspend fun call(
-        method: ProtocolContract.Method,
+        method: MapContract.Method,
         payload: Any,
         references: List<MapPayloadStore.Reference>,
     ): Any {
@@ -302,7 +311,7 @@ internal class NativeMapEngine(
             received[method] = (received[method] ?: 0) + 1
             val request = payload as? JSONObject
             return when (method) {
-                ProtocolContract.Method.INITIALIZE -> initialize(map, request ?: invalid())
+                MapContract.Method.INITIALIZE -> initialize(map, request ?: invalid())
                 in NativeRuntimeStyle.methods -> {
                     val result = try {
                         runtimeStyle.call(method, request ?: invalid(), data, map, mapView, density)
@@ -313,23 +322,23 @@ internal class NativeMapEngine(
                         if (retired) throw TileflowMapException(retiredCode)
                         throw failure
                     }
-                    if (method == ProtocolContract.Method.SET_IMAGES) sceneContent.imagesChanged()
-                    if (method == ProtocolContract.Method.ADD_SOURCE || method == ProtocolContract.Method.REMOVE_SOURCE) {
+                    if (method == MapContract.Method.SET_IMAGES) sceneContent.imagesChanged()
+                    if (method == MapContract.Method.ADD_SOURCE || method == MapContract.Method.REMOVE_SOURCE) {
                         projection?.let { attribution.setStyle(it.style, (it.attributions + runtimeStyle.attributions).distinct()) }
                     }
                     result
                 }
-                ProtocolContract.Method.QUERY_AT_POINT -> query(map, point(request))
-                ProtocolContract.Method.SET_VISIBILITY -> JSONObject.NULL
-                ProtocolContract.Method.UPDATE_LOCATION -> {
+                MapContract.Method.QUERY_AT_POINT -> query(map, point(request))
+                MapContract.Method.SET_VISIBILITY -> JSONObject.NULL
+                MapContract.Method.UPDATE_LOCATION -> {
                     location?.update(request ?: invalid())
                     JSONObject.NULL
                 }
-                ProtocolContract.Method.SET_FOLLOW_MODE -> {
+                MapContract.Method.SET_FOLLOW_MODE -> {
                     location?.follow(request ?: invalid())
                     JSONObject.NULL
                 }
-                ProtocolContract.Method.SET_OPTIONS -> {
+                MapContract.Method.SET_OPTIONS -> {
                     attribution.place(request?.optString("attribution"), null)
                     request?.optString("viewMode")?.takeIf { it.isNotEmpty() }?.let {
                         setViewMode(it, 0.0)
@@ -338,27 +347,27 @@ internal class NativeMapEngine(
                     JSONObject.NULL
                 }
                 in CAMERA_COMMANDS -> cameraCommand(method, request)
-                ProtocolContract.Method.SET_THEME -> setTheme(request ?: invalid())
-                ProtocolContract.Method.SET_BLEND -> setBlend(request ?: invalid())
-                ProtocolContract.Method.GET_ROUTE_INKS -> routeInks()
-                ProtocolContract.Method.SET_EMPHASIS -> setEmphasis(request ?: invalid())
-                ProtocolContract.Method.SET_VIEW_MODE -> {
+                MapContract.Method.SET_THEME -> setTheme(request ?: invalid())
+                MapContract.Method.SET_BLEND -> setBlend(request ?: invalid())
+                MapContract.Method.GET_ROUTE_INKS -> routeInks()
+                MapContract.Method.SET_EMPHASIS -> setEmphasis(request ?: invalid())
+                MapContract.Method.SET_VIEW_MODE -> {
                     val mode = request?.optString("viewMode")
                     if (mode != "2d" && mode != "3d") invalid()
                     setViewMode(mode, request.optDouble("duration", 0.0) / 1000)
                     JSONObject.NULL
                 }
-                ProtocolContract.Method.SET_SUN ->
+                MapContract.Method.SET_SUN ->
                     result(if (sceneAppearance.setSun(request ?: invalid())) "applied" else "superseded", currentTheme ?: "")
-                ProtocolContract.Method.SET_STYLE_STATE ->
+                MapContract.Method.SET_STYLE_STATE ->
                     result(if (sceneAppearance.setState(request ?: invalid())) "applied" else "superseded", currentTheme ?: "")
-                ProtocolContract.Method.SET_BOUNDARY_VALUES -> {
+                MapContract.Method.SET_BOUNDARY_VALUES -> {
                     sceneAppearance.setBoundaries(request ?: invalid(),data)
                     map.triggerRepaint()
                     JSONObject.NULL
                 }
-                ProtocolContract.Method.SET_DEPTH_MARKERS -> sceneContent.setMarkers(request ?: invalid()).let { JSONObject.NULL }
-                ProtocolContract.Method.SET_CONTENT -> {
+                MapContract.Method.SET_DEPTH_MARKERS -> sceneContent.setMarkers(request ?: invalid()).let { JSONObject.NULL }
+                MapContract.Method.SET_CONTENT -> {
                     val value = request ?: invalid()
                     val owner = annotations ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
                     val simple = owner.simple(value)
@@ -369,16 +378,14 @@ internal class NativeMapEngine(
                     owner.setSimple(simple)
                     JSONObject.NULL
                 }
-                ProtocolContract.Method.ANIMATE_LINE_PROGRESS -> scenePlayer.animate(request ?: invalid())
-                ProtocolContract.Method.PLAY_SHOT -> scenePlayer.play(request ?: invalid())
-                ProtocolContract.Method.STOP_ANIMATION -> { scenePlayer.stop(request?.getString("animation") ?: invalid()); JSONObject.NULL }
-                // The view always tells a new engine its annotation layers and tracked points.
-                ProtocolContract.Method.SET_ANNOTATION_LAYERS -> {
+                MapContract.Method.ANIMATE_LINE_PROGRESS -> scenePlayer.animate(request ?: invalid())
+                MapContract.Method.PLAY_SHOT -> scenePlayer.play(request ?: invalid())
+                MapContract.Method.STOP_ANIMATION -> { scenePlayer.stop(request?.getString("animation") ?: invalid()); JSONObject.NULL }
+                // The view restores its annotation layers after each theme change.
+                MapContract.Method.SET_ANNOTATION_LAYERS -> {
                     annotations?.setLayers(request ?: invalid())
                     JSONObject.NULL
                 }
-                ProtocolContract.Method.SET_TRACKED_POINTS ->
-                    if (isEmpty(payload, "points")) JSONObject.NULL else unsupported(method)
                 else -> unsupported(method)
             }
         } finally {
@@ -475,7 +482,7 @@ internal class NativeMapEngine(
         NativeStyleSource.validateLocation(url, absolute = true)
         val bytes = withContext(Dispatchers.IO) { load(URI(url)) }
         if (retired) throw TileflowMapException(retiredCode)
-        if (bytes.size > ProtocolContract.MAXIMUM_DATA_BYTES) styleInvalid("GeoJSON is too large")
+        if (bytes.size > MapContract.MAXIMUM_DATA_BYTES) styleInvalid("GeoJSON is too large")
         return bytes.toString(Charsets.UTF_8)
     }
 
@@ -628,7 +635,7 @@ internal class NativeMapEngine(
      * while it is visible, otherwise when it is next shown.
      */
     internal fun graphicsContextLost() {
-        if (!retired) callbacks.rendererGone(this, ProtocolContract.ErrorReason.GRAPHICS_CONTEXT_LOST)
+        if (!retired) callbacks.rendererGone(this, MapContract.ErrorReason.GRAPHICS_CONTEXT_LOST)
     }
 
     override fun retire(code: TileflowErrorCode) {
@@ -1220,22 +1227,22 @@ internal class NativeMapEngine(
 
     /** The view follows the camera frame by frame only when it subscribes to `cameraMoved`. */
     private fun setEvents(events: JSONObject) {
-        camera?.followsFrames = events.has(ProtocolContract.Event.CAMERA_MOVED.wireName)
+        camera?.followsFrames = events.has(MapContract.Event.CAMERA_MOVED.wireName)
     }
 
-    private suspend fun cameraCommand(method: ProtocolContract.Method, request: JSONObject?): Any {
+    private suspend fun cameraCommand(method: MapContract.Method, request: JSONObject?): Any {
         val camera = camera ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
         return when (method) {
-            ProtocolContract.Method.GET_CAMERA -> camera.json
-            ProtocolContract.Method.MOVE_CAMERA -> camera.move(request ?: invalid())
-            ProtocolContract.Method.STOP_CAMERA -> {
+            MapContract.Method.GET_CAMERA -> camera.json
+            MapContract.Method.MOVE_CAMERA -> camera.move(request ?: invalid())
+            MapContract.Method.STOP_CAMERA -> {
                 camera.stop()
                 JSONObject.NULL
             }
-            ProtocolContract.Method.CAMERA_FOR_BOUNDS ->
+            MapContract.Method.CAMERA_FOR_BOUNDS ->
                 camera.fitted(request ?: invalid())?.let(NativeCamera::json) ?: JSONObject.NULL
-            ProtocolContract.Method.VISIBLE_BOUNDS -> camera.visibleBounds()
-            ProtocolContract.Method.PROJECT -> {
+            MapContract.Method.VISIBLE_BOUNDS -> camera.visibleBounds()
+            MapContract.Method.PROJECT -> {
                 val request = request ?: invalid()
                 val point =
                     camera.project(
@@ -1243,19 +1250,19 @@ internal class NativeMapEngine(
                     )
                 JSONObject().put("x", point.x.toDouble()).put("y", point.y.toDouble())
             }
-            ProtocolContract.Method.UNPROJECT -> {
+            MapContract.Method.UNPROJECT -> {
                 val request = request ?: invalid()
                 val coordinate = camera.unproject(request.getDouble("x"), request.getDouble("y"))
                 JSONObject()
                     .put("longitude", coordinate.longitude)
                     .put("latitude", coordinate.latitude)
             }
-            ProtocolContract.Method.SET_INSETS -> {
+            MapContract.Method.SET_INSETS -> {
                 camera.setPadding(request ?: invalid())
                 attribution.place(null, request)
                 JSONObject.NULL
             }
-            ProtocolContract.Method.SET_EVENTS -> {
+            MapContract.Method.SET_EVENTS -> {
                 request?.optJSONObject("events")?.let(::setEvents)
                 JSONObject.NULL
             }
@@ -1303,14 +1310,9 @@ internal class NativeMapEngine(
     }
 
     /** Whether every list [keys] names in the request is empty or absent. */
-    private fun isEmpty(payload: Any, vararg keys: String): Boolean {
-        val request = payload as? JSONObject ?: return false
-        return keys.all { (request.optJSONArray(it) ?: JSONArray()).length() == 0 }
-    }
-
     private fun invalid(): Nothing = throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
 
-    private fun unsupported(method: ProtocolContract.Method): Nothing =
+    private fun unsupported(method: MapContract.Method): Nothing =
         throw TileflowMapException(
             TileflowErrorCode.INVALID_REQUEST,
             TileflowErrorContext(
@@ -1325,15 +1327,15 @@ internal class NativeMapEngine(
         /** The commands the camera answers. */
         val CAMERA_COMMANDS =
             setOf(
-                ProtocolContract.Method.GET_CAMERA,
-                ProtocolContract.Method.MOVE_CAMERA,
-                ProtocolContract.Method.STOP_CAMERA,
-                ProtocolContract.Method.CAMERA_FOR_BOUNDS,
-                ProtocolContract.Method.VISIBLE_BOUNDS,
-                ProtocolContract.Method.PROJECT,
-                ProtocolContract.Method.UNPROJECT,
-                ProtocolContract.Method.SET_INSETS,
-                ProtocolContract.Method.SET_EVENTS,
+                MapContract.Method.GET_CAMERA,
+                MapContract.Method.MOVE_CAMERA,
+                MapContract.Method.STOP_CAMERA,
+                MapContract.Method.CAMERA_FOR_BOUNDS,
+                MapContract.Method.VISIBLE_BOUNDS,
+                MapContract.Method.PROJECT,
+                MapContract.Method.UNPROJECT,
+                MapContract.Method.SET_INSETS,
+                MapContract.Method.SET_EVENTS,
             )
         const val TEXT_OMITTED =
             "This map's labels have no glyphs or font faces native maps can draw, so they are left out."

@@ -366,6 +366,17 @@ test('Maven Central verification compares the served bytes with the approved fil
   );
 });
 
+test('native archives reject stale browser assets while accepting native map resources', async () => {
+  const {assertNativeMapAssets} = await import('./native-release-verify.mjs');
+  assertNativeMapAssets(['lib/arm64-v8a/libmaplibre.so', 'assets/tileflow/offline.json']);
+  for (const path of [
+    'assets/tileflow/runtime.js',
+    'assets/tileflow/receipt.json',
+    'Tileflow.bundle/EmbeddedRuntime/index.html',
+  ])
+    assert.throws(() => assertNativeMapAssets([path]), /embedded renderer/u);
+});
+
 test('the Swift release is one commit and tag pushed once, without force', async (t) => {
   const directory = await temporary(t);
   const remote = join(directory, 'tileflow-swift.git');
@@ -387,7 +398,7 @@ test('the Swift release is one commit and tag pushed once, without force', async
         version: releaseVersion,
         sourceRevision,
         sourceDirty: false,
-        runtime: {runtimeHash: 'a'.repeat(64)},
+        engines: {ios: '7.0.0', android: '13.7.1'},
         swift: {
           path: 'swift',
           files: Object.fromEntries(Object.keys(files).map((file) => [file, ''])),
@@ -403,6 +414,7 @@ test('the Swift release is one commit and tag pushed once, without force', async
     remote,
   });
   assert.equal(release.parent, null);
+  assert.deepEqual(release.engines, {ios: '7.0.0', android: '13.7.1'});
   const publish = (prepared, candidatePath) =>
     publishSwiftRelease({
       release: prepared,

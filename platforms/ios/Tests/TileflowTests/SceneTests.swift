@@ -130,14 +130,14 @@ final class SceneTests: XCTestCase {
 
   func testEssentialEventsIncludeThemeTransitionsAndAnimationEnds() {
     let events = EventSubscriptions(application: .init(level: .essential)).events
-    for event in [ProtocolContract.Event.themeTransition, .animationEnded, .shotCue] {
+    for event in [MapContract.Event.themeTransition, .animationEnded, .shotCue] {
       XCTAssertEqual(events[event], 0, "\(event)")
     }
   }
 
   func testANewRendererReceivesTheSceneAtOnceAndInOrder() throws {
     let state = SceneState()
-    func keep(_ method: ProtocolContract.Method, _ payload: JSONValue, name: String? = nil) {
+    func keep(_ method: MapContract.Method, _ payload: JSONValue, name: String? = nil) {
       let edit = state.begin(SceneCommand(method, payload: payload), stateName: name)
       state.finish(edit, accepted: true)
     }
@@ -189,7 +189,7 @@ final class SceneTests: XCTestCase {
   func testQueuedMarkersUseImagesAddedBeforeMountAndRecoverFromARejectedReplacement() async throws {
     let state = SceneState()
     let channel = MapPayloadStore()
-    func command(_ method: ProtocolContract.Method, _ value: String) -> SceneCommand {
+    func command(_ method: MapContract.Method, _ value: String) -> SceneCommand {
       SceneCommand(method, payload: .string(value))
     }
     state.queue(state.begin(command(.setDepthMarkers, "pin")))

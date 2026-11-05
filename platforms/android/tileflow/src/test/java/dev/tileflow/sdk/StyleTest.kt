@@ -1,11 +1,6 @@
 package dev.tileflow.sdk
 
 import android.app.Activity
-import android.webkit.WebView
-import dev.tileflow.sdk.bridge.MapBridge
-import dev.tileflow.sdk.bridge.ProtocolContract
-import dev.tileflow.sdk.engine.MapEngineKind
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
@@ -20,7 +15,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
@@ -237,7 +231,7 @@ class StyleTest {
     @Test
     fun invalidUpdateBeforeMountKeepsLastAcceptedLayer(): Unit = runBlocking {
         val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
-        val view = TileflowMapView(activity).apply { engineKind = MapEngineKind.NATIVE }
+        val view = TileflowMapView(activity)
         try {
             view.addSource(TileflowGeoJSONSource("places", TileflowGeoJSONData.Empty))
             val points = TileflowCircleLayer("points", "places")
@@ -300,81 +294,6 @@ class StyleTest {
             assertFalse(view.sourceExists("points"))
         } finally {
             view.destroy()
-        }
-    }
-
-    private fun output(id: String, build: JSONObject.() -> Unit): String =
-        JSONObject()
-            .put("protocolVersion", ProtocolContract.VERSION)
-            .put("instanceId", "view")
-            .put("generation", 1)
-            .put("requestId", id)
-            .apply(build)
-            .toString()
-
-    @Test
-    fun largePayloadsAndResultsTravelInParts(): Unit = runBlocking {
-        val webView = WebView(RuntimeEnvironment.getApplication())
-        val bridge = MapBridge("view", 1, "runtime-hash", webView, onHello = {}, onEvent = { _, _ -> })
-        bridge.receive(
-            JSONObject()
-                .put("protocolVersion", ProtocolContract.VERSION)
-                .put("instanceId", "view")
-                .put("generation", 1)
-                .put("event", "hello")
-                .put(
-                    "result",
-                    JSONObject()
-                        .put("runtimeHash", "runtime-hash")
-                        .put(
-                            "protocol",
-                            JSONObject()
-                                .put("minimum", ProtocolContract.VERSION)
-                                .put("maximum", ProtocolContract.VERSION)
-                                .put("selected", ProtocolContract.VERSION),
-                        ),
-                )
-                .toString()
-        )
-        try {
-            // A filter of 20,000 identifiers is far past a control message.
-            val layer =
-                TileflowCircleLayer("chosen", "points")
-                    .filter(
-                        TileflowExpression.inExpression(
-                            TileflowExpression.id(),
-                            TileflowExpression.literal((0 until 20_000).map { it.toDouble() }),
-                        )
-                    )
-            val added =
-                async(Dispatchers.Unconfined) {
-                    bridge.call(ProtocolContract.Method.ADD_LAYER, JSONObject().put("layer", layer.json()))
-                }
-            val sent = JSONObject(JSONObject("{\"m\":${shadowOf(webView).lastEvaluatedJavascript.removePrefix("window.tileflow.receive(").removeSuffix(");")}}").getString("m"))
-            val command = sent.getJSONObject("command")
-            assertFalse(command.has("payload"))
-            val reference = command.getJSONObject("payloadData")
-            val payload = String(bridge.data.payload(reference.getString("id"))!!.bytes)
-            assertEquals("chosen", JSONObject(payload).getJSONObject("layer").getString("id"))
-            bridge.receive(output(sent.getString("requestId")) { put("result", JSONObject.NULL) })
-            added.await()
-            assertTrue(bridge.data.isEmpty)
-            // A result past a control message is read in parts.
-            val result = JSONArray((0 until 3).map { JSONObject().put("id", it).put("name", "é $it") }).toString()
-            val parts = result.chunked(result.length / 2 + 1)
-            val queried =
-                async(Dispatchers.Unconfined) {
-                    bridge.call(ProtocolContract.Method.QUERY_SOURCE_FEATURES, JSONObject())
-                }
-            bridge.receive(output("2") { put("chunks", parts.size) })
-            parts.forEachIndexed { index, part ->
-                bridge.receive(output((3 + index).toString()) { put("result", part) })
-            }
-            val features = queried.await() as JSONArray
-            assertEquals(3, features.length())
-            assertEquals("é 2", features.getJSONObject(2).getString("name"))
-        } finally {
-            bridge.retire()
         }
     }
 }

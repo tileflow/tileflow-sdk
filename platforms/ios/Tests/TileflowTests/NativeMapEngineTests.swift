@@ -38,8 +38,7 @@ final class NativeMapEngineTests: XCTestCase {
     let map = try await mountMap(
       TileflowMapSource(
         map: "fixture", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true),
-      camera: TileflowCamera(longitude: -3.7, latitude: 40.42, zoom: 12, bearing: 30),
-      engine: .native)
+      camera: TileflowCamera(longitude: -3.7, latitude: 40.42, zoom: 12, bearing: 30))
     let view = map.view
     let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
     XCTAssertTrue(engine.view.isDescendant(of: view))
@@ -69,7 +68,7 @@ final class NativeMapEngineTests: XCTestCase {
     _ = try await fixtureCounters(reset: true)
     let map = try await mountMap(
       .hosted(mapID: Self.hostedFixtureMapID, configuration: try fixtureConfiguration()),
-      theme: "labels", engine: .native)
+      theme: "labels")
     defer { map.close() }
     let features = try await map.view.query(
       at: CGPoint(x: map.view.bounds.midX, y: map.view.bounds.midY))
@@ -110,8 +109,7 @@ final class NativeMapEngineTests: XCTestCase {
     answers.withLock { $0 = [] }
     TileflowOfflineSwitch.shared.isNetworkEnabled = false
     let map = try await mountMap(
-      .hosted(mapID: Self.hostedFixtureMapID, configuration: configuration), theme: "labels",
-      engine: .native)
+      .hosted(mapID: Self.hostedFixtureMapID, configuration: configuration), theme: "labels")
     defer { map.close() }
     let features = try await map.view.query(
       at: CGPoint(x: map.view.bounds.midX, y: map.view.bounds.midY))
@@ -158,17 +156,17 @@ final class NativeMapEngineTests: XCTestCase {
   // MARK: The offline and cache checks the WebView engine passes
 
   func testADownloadedRegionShowsTheMapWithoutTheNetwork() async throws {
-    try await checkADownloadedRegionShowsTheMapWithoutTheNetwork(engine: .native)
+    try await checkADownloadedRegionShowsTheMapWithoutTheNetwork()
     XCTAssertEqual(foreign.withLock { $0 }, [])
   }
 
   func testAHostedMapOpensFromItsPackOfflineAndRevalidatesItOnline() async throws {
-    try await checkAHostedMapOpensFromItsPackOfflineAndRevalidatesItOnline(engine: .native)
+    try await checkAHostedMapOpensFromItsPackOfflineAndRevalidatesItOnline(profile: .webView)
     XCTAssertEqual(foreign.withLock { $0 }, [])
   }
 
   func testDownloadedNativeThemesBlendWithoutANetwork() async throws {
-    try await checkAHostedMapOpensFromItsPackOfflineAndRevalidatesItOnline(engine: .native, profile: .native)
+    try await checkAHostedMapOpensFromItsPackOfflineAndRevalidatesItOnline(profile: .native)
     XCTAssertEqual(foreign.withLock { $0 }, [])
   }
 
@@ -190,7 +188,7 @@ final class NativeMapEngineTests: XCTestCase {
     let before = try await fixtureCounters(fixture: "native-requests")
     TileflowOfflineSwitch.shared.isNetworkEnabled = false
     let source = TileflowMapSource(map: "city", manifestURL: manifest, allowsLoopbackHTTP: true)
-    let map = try await mountMap(source, engine: .native)
+    let map = try await mountMap(source)
     defer { map.close() }
     let light = try await map.view.routeInks()
     try await map.view.setBlend(themes: ["light", "dark"], position: 0.75)
@@ -207,12 +205,17 @@ final class NativeMapEngineTests: XCTestCase {
   }
 
   func testTerrainZoomedPastItsDownloadedZoomsHasNoHolesOffline() async throws {
-    try await checkTerrainZoomedPastItsDownloadedZoomsHasNoHolesOffline(engine: .native)
+    try await checkTerrainZoomedPastItsDownloadedZoomsHasNoHolesOffline(profile: .native)
+    XCTAssertEqual(foreign.withLock { $0 }, [])
+  }
+
+  func testTerrainFromAStoredWebRegionStillOverzoomsOffline() async throws {
+    try await checkTerrainZoomedPastItsDownloadedZoomsHasNoHolesOffline(profile: .webView)
     XCTAssertEqual(foreign.withLock { $0 }, [])
   }
 
   func testSecondMountShowsCachedPublicResourcesWithoutTheNetwork() async throws {
-    try await checkSecondMountShowsCachedPublicResourcesWithoutTheNetwork(engine: .native)
+    try await checkSecondMountShowsCachedPublicResourcesWithoutTheNetwork()
     XCTAssertEqual(foreign.withLock { $0 }, [])
   }
 

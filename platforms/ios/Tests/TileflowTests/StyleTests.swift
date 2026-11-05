@@ -146,7 +146,6 @@ final class StyleTests: XCTestCase {
   func testInvalidUpdateBeforeMountKeepsLastAcceptedLayer() async throws {
     let view = TileflowMapView(source: TileflowMapSource(
       map: "fixture", manifestURL: URL(string: "https://maps.example/manifest.json")!))
-    view.engineKind = .native
     defer { view.destroy() }
     try await view.addSource(TileflowGeoJSONSource(id: "places", data: .empty))
     var layer = TileflowCircleLayer(id: "points", source: "places")

@@ -73,7 +73,7 @@ public final class TileflowMapSnapshotter {
     _ map: LoadableMapSource, options: TileflowMapSnapshotOptions, loader: ResourceLoader,
     route: SnapshotResources, owner: String
   ) async throws -> UIImage {
-    try await MapLibreNetwork.prepare()
+    try await MapLibreRuntime.prepare()
     let fromPacks =
       map.grantScope != nil
       && OfflineServingRule.hostedUsesPacks(

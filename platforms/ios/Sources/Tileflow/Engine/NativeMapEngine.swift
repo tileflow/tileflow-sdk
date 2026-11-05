@@ -8,7 +8,7 @@ import UIKit
 /// style for its context (``NativeStyleDocument``) and gives MapLibre the document, never a URL.
 /// MapLibre then requests every resource from ``MapLibreResourceProtocol``, which answers from the
 /// same transport: policy, credentials, Hosted session, cache, downloaded regions and the network
-/// switch apply as they do for the WebView engine.
+/// switch apply to every request.
 ///
 /// The map view is created only after MapLibre's network setup (``MapLibreNetwork``), and always
 /// with an inline style: created without one, MapLibre requests its demo style from the network.
@@ -26,7 +26,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   var onFailure: ((TileflowMapError) -> Void)?
   var onLoadFailure: ((TileflowMapError) -> Void)?
   var onExternalLink: ((URL) -> Void)?
-  var onRendererTerminated: ((ProtocolContract.ErrorReason) -> Void)?
+  var onRendererTerminated: ((MapContract.ErrorReason) -> Void)?
 
   let data = MapPayloadStore()
   let runtimeStyle = NativeRuntimeStyle()
@@ -110,7 +110,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   func start() {
     Task { @MainActor [weak self] in
       do {
-        try await MapLibreNetwork.prepare()
+        try await MapLibreRuntime.prepare()
       } catch {
         guard let self, !self.retired else { return }
         self.onLoadFailure?(error as? TileflowMapError ?? .invalidConfiguration)
@@ -138,7 +138,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     }
   }
 
-  func setAnnotations(_ annotations: [TileflowAnnotation], overlays: [TileflowGeoJSONLayer]) async throws {
+  func setAnnotations(_ annotations: [TileflowAnnotation]) async throws {
     guard !retired else { throw retirementError ?? TileflowMapError.disposed }
     guard mapView != nil else { throw TileflowMapError.notReady }
     let values = try annotations.map { try $0.wireValue() }
@@ -462,7 +462,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   }
 
   /// Reads a JSON document of the map through its transport.
-  /// A request of the map ended: failures become aggregated warnings, as the web runtime reports
+  /// A request of the map ended: failures become aggregated warnings. The engine reports
   /// them. A tile the source does not have (`404`) is not a failure; an absent tile answers `204`.
   /// A failure that ends the map, such as an exhausted quota, is reported as the map's own.
   private func received(_ outcome: MapResourceOutcome) {
@@ -691,7 +691,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 }
 
 /// Repeated warnings of one kind arrive as one event per second: the first at once, the rest with
-/// their count when the second ends, as the web runtime aggregates them.
+/// their count when the second ends.
 @MainActor
 final class MapWarningAggregator {
   private let report: (JSONValue) -> Void
@@ -716,7 +716,7 @@ final class MapWarningAggregator {
     }
     report(Self.counted(warning, 1))
     let timer = Task { [weak self] in
-      try? await Task.sleep(for: .milliseconds(ProtocolContract.warningWindowMilliseconds))
+      try? await Task.sleep(for: .milliseconds(MapContract.warningWindowMilliseconds))
       guard !Task.isCancelled else { return }
       self?.close(key)
     }

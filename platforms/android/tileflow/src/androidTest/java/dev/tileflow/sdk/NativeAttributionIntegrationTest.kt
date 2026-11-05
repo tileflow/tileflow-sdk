@@ -10,7 +10,6 @@ import dev.tileflow.configuration.TileflowCredential
 import dev.tileflow.sdk.attribution.MapAttributionControl
 import dev.tileflow.sdk.attribution.MapAttributionEntry
 import dev.tileflow.sdk.attribution.MapAttributionStrip
-import dev.tileflow.sdk.engine.MapEngineKind
 import dev.tileflow.sdk.engine.NativeMapEngine
 import dev.tileflow.sdk.engine.NativeRepresentation
 import dev.tileflow.sdk.offline.OfflineHttpFetcher
@@ -64,7 +63,6 @@ public class NativeAttributionIntegrationTest {
 
     @After
     public fun tearDown() {
-        OfflineMapHostActivity.kind = MapEngineKind.WEB_VIEW
         OfflineMapHostActivity.theme = null
         OfflineMapHostActivity.camera = null
         TileflowOfflineSwitch.isNetworkEnabled = true
@@ -76,7 +74,6 @@ public class NativeAttributionIntegrationTest {
     }
 
     private fun show(source: TileflowMapSource, theme: String? = null): OfflineMapHostActivity {
-        OfflineMapHostActivity.kind = MapEngineKind.NATIVE
         OfflineMapHostActivity.requested = source
         OfflineMapHostActivity.theme = theme
         val intent =

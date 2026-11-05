@@ -1,7 +1,7 @@
 package dev.tileflow.sdk.model
 
 import dev.tileflow.sdk.TileflowEventOptions
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import org.json.JSONObject
 
 /**
@@ -24,30 +24,30 @@ internal class EventSubscriptions(
         ANNOTATIONS,
     }
 
-    private val demands = mutableMapOf<Owner, Map<ProtocolContract.Event, Long>>()
+    private val demands = mutableMapOf<Owner, Map<MapContract.Event, Long>>()
 
     init {
         set(Owner.APPLICATION, demand(application))
         set(
             Owner.CAMERA,
             mapOf(
-                ProtocolContract.Event.CAMERA_MOVE_STARTED to 0L,
-                ProtocolContract.Event.CAMERA_MOVE_ENDED to 0L,
+                MapContract.Event.CAMERA_MOVE_STARTED to 0L,
+                MapContract.Event.CAMERA_MOVE_ENDED to 0L,
                 // The follow mode ends when a person moves the map, whatever the level.
-                ProtocolContract.Event.FOLLOW_MODE_CHANGED to 0L,
+                MapContract.Event.FOLLOW_MODE_CHANGED to 0L,
             ),
         )
         set(
             Owner.CONTROLS,
-            if (followCamera) mapOf(ProtocolContract.Event.CAMERA_MOVED to 0L) else emptyMap(),
+            if (followCamera) mapOf(MapContract.Event.CAMERA_MOVED to 0L) else emptyMap(),
         )
     }
 
-    fun set(owner: Owner, demand: Map<ProtocolContract.Event, Long>) {
+    fun set(owner: Owner, demand: Map<MapContract.Event, Long>) {
         demands[owner] = demand.filterKeys { it.level != null }
     }
 
-    val events: Map<ProtocolContract.Event, Long>
+    val events: Map<MapContract.Event, Long>
         get() =
             demands.values.fold(mutableMapOf()) { union, demand ->
                 demand.forEach { (event, throttle) ->
@@ -70,11 +70,11 @@ internal class EventSubscriptions(
 
     companion object {
         /** Every event up to the chosen level; camera updates take the chosen interval. */
-        fun demand(options: TileflowEventOptions): Map<ProtocolContract.Event, Long> =
-            ProtocolContract.Event.entries
+        fun demand(options: TileflowEventOptions): Map<MapContract.Event, Long> =
+            MapContract.Event.entries
                 .filter { event -> event.level?.let(options.level::includes) == true }
                 .associateWith { event ->
-                    if (event == ProtocolContract.Event.CAMERA_MOVED)
+                    if (event == MapContract.Event.CAMERA_MOVED)
                         options.cameraUpdateIntervalMillis
                     else 0L
                 }

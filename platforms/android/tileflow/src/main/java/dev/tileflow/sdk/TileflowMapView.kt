@@ -18,13 +18,11 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.findViewTreeLifecycleOwner
 import dev.tileflow.configuration.Tileflow
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import dev.tileflow.sdk.engine.MapEngine
 import dev.tileflow.sdk.engine.MapEngineCallbacks
 import dev.tileflow.sdk.attribution.MapAttributionView
-import dev.tileflow.sdk.engine.MapEngineKind
 import dev.tileflow.sdk.engine.NativeMapEngine
-import dev.tileflow.sdk.engine.WebViewMapEngine
 import dev.tileflow.sdk.hosted.HostedSession
 import dev.tileflow.sdk.location.TileflowFollowMode
 import dev.tileflow.sdk.location.TileflowFollowModeChangeReason
@@ -40,7 +38,6 @@ import dev.tileflow.sdk.transport.TileflowHttpClient
 import dev.tileflow.sdk.transport.grantScope
 import dev.tileflow.sdk.transport.makeLoader
 import dev.tileflow.sdk.transport.makeSession
-import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlinx.coroutines.sync.Mutex
@@ -97,12 +94,12 @@ constructor(
     /** The application images the scene holds. */
     internal var images: List<TileflowMapImage> = emptyList()
 
-    private var appearance: Pair<ProtocolContract.Method, JSONObject>? = null
+    private var appearance: Pair<MapContract.Method, JSONObject>? = null
     internal var content = MapContent()
     internal var declaredContent: MapContentCoordinator? = null
     private var contentRevision = 0
     /** What annotations ask the renderer to report. */
-    private var annotationDemand: Map<ProtocolContract.Event, Long> = emptyMap()
+    private var annotationDemand: Map<MapContract.Event, Long> = emptyMap()
     private var subscriptions = EventSubscriptions(options.events, options.controls.followCamera)
     /** The annotation layers the current renderer reports hits and drags for. */
     private var annotationLayersSent: List<String>? = null
@@ -115,18 +112,7 @@ constructor(
     /** What draws the current generation of the map. */
     private var engine: MapEngine? = null
 
-    /**
-     * Which engine draws the map. Internal: applications always use the default. Changing it
-     * replaces the current renderer.
-     */
-    internal var engineKind: MapEngineKind = defaultEngineKind
-        set(value) {
-            if (field == value) return
-            field = value
-            if (engine != null) remount()
-        }
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val instanceId = UUID.randomUUID().toString()
     private var generation = 0
     private var destroyed = false
     private var initialized = false
@@ -407,15 +393,14 @@ constructor(
         if (!destroyed) annotationOverlay.annotationsChanged()
     }
 
-    /** Whether points are tracked changed the events annotations need. */
-    internal fun annotationsTrackingChanged(tracking: Boolean) {
+    /** Annotation managers subscribe to taps, long presses and drags. */
+    internal fun annotationSubscriptionsChanged() {
         val demand = buildMap {
             if (!annotations.isEmpty) {
-                put(ProtocolContract.Event.TAP, 0L)
-                put(ProtocolContract.Event.LONG_PRESS, 0L)
-                put(ProtocolContract.Event.ANNOTATION_DRAGGED, 0L)
+                put(MapContract.Event.TAP, 0L)
+                put(MapContract.Event.LONG_PRESS, 0L)
+                put(MapContract.Event.ANNOTATION_DRAGGED, 0L)
             }
-            if (tracking) put(ProtocolContract.Event.TRACKED_POINTS_MOVED, 0L)
         }
         if (demand == annotationDemand) return
         annotationDemand = demand
@@ -432,7 +417,7 @@ constructor(
         scope.launch {
             try {
                 engine.call(
-                    ProtocolContract.Method.SET_EVENTS,
+                    MapContract.Method.SET_EVENTS,
                     JSONObject().put("events", JSONObject(sent)),
                 )
             } catch (_: TileflowMapException) {
@@ -454,7 +439,7 @@ constructor(
         scope.launch {
             try {
                 engine.call(
-                    ProtocolContract.Method.SET_ANNOTATION_LAYERS,
+                    MapContract.Method.SET_ANNOTATION_LAYERS,
                     JSONObject().put("layers", JSONArray(layers)),
                 )
                 if (this@TileflowMapView.engine === engine) annotationLayersSent = layers
@@ -545,7 +530,7 @@ constructor(
             scope.launch {
                 val sent =
                     try {
-                        engine.call(ProtocolContract.Method.SET_INSETS, insets.css(density))
+                        engine.call(MapContract.Method.SET_INSETS, insets.css(density))
                         true
                     } catch (_: TileflowMapException) {
                         false
@@ -682,7 +667,7 @@ constructor(
                 .put("colorScheme", colorScheme())
                 .put("duration", durationMillis)
         timeOfDay?.let { payload.put("timeOfDay", it.wireName) }
-        appearance = ProtocolContract.Method.SET_THEME to payload
+        appearance = MapContract.Method.SET_THEME to payload
         applyAppearance()
     }
 
@@ -703,7 +688,7 @@ constructor(
             throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
         }
         appearance =
-            ProtocolContract.Method.SET_BLEND to
+            MapContract.Method.SET_BLEND to
                 JSONObject()
                     .put("themes", JSONArray(themes))
                     .put("position", position)
@@ -723,14 +708,6 @@ constructor(
         }
         val previousSubscriptions = subscriptions
         adoptOptions(options)
-        // Antialiasing and style validation are fixed when a renderer starts.
-        if (
-            (options.antialias != previous.antialias ||
-                options.validatesStyle != previous.validatesStyle) && engine != null
-        ) {
-            remount()
-            return
-        }
         sendOptions(events = subscriptions != previousSubscriptions)
     }
 
@@ -754,10 +731,10 @@ constructor(
 
     private suspend fun sendOptions(events: Boolean) {
         val engine = engine?.takeIf { initialized } ?: return
-        engine.call(ProtocolContract.Method.SET_OPTIONS, options.json(rightToLeft))
+        engine.call(MapContract.Method.SET_OPTIONS, options.json(rightToLeft))
         if (events)
             engine.call(
-                ProtocolContract.Method.SET_EVENTS,
+                MapContract.Method.SET_EVENTS,
                 JSONObject().put("events", subscriptions.json()),
             )
     }
@@ -795,7 +772,7 @@ constructor(
 
     private suspend fun send(content: MapContent, engine: MapEngine) {
         val (payload, references) = content.json(engine.data)
-        engine.call(ProtocolContract.Method.SET_CONTENT, payload, references)
+        engine.call(MapContract.Method.SET_CONTENT, payload, references)
     }
 
     /**
@@ -818,7 +795,7 @@ constructor(
         val engine =
             engine?.takeIf { initialized }
                 ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
-        return cameraOrNull(engine.call(ProtocolContract.Method.GET_CAMERA))
+        return cameraOrNull(engine.call(MapContract.Method.GET_CAMERA))
             ?: throw TileflowMapException(TileflowErrorCode.RENDERER_FAILED)
     }
 
@@ -828,7 +805,7 @@ constructor(
         val point = cssPoint(x, y)
         if (!initialized) throw TileflowMapException(TileflowErrorCode.NOT_READY)
         val result =
-            engine?.call(ProtocolContract.Method.QUERY_AT_POINT, point) as? JSONArray
+            engine?.call(MapContract.Method.QUERY_AT_POINT, point) as? JSONArray
                 ?: throw TileflowMapException(TileflowErrorCode.RENDERER_FAILED)
         return (0 until result.length()).map { index ->
             val feature = result.getJSONObject(index)
@@ -870,7 +847,7 @@ constructor(
                 ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
         val point =
             engine.call(
-                ProtocolContract.Method.PROJECT,
+                MapContract.Method.PROJECT,
                 JSONObject()
                     .put("longitude", coordinate.longitude)
                     .put("latitude", coordinate.latitude),
@@ -888,7 +865,7 @@ constructor(
         val engine =
             engine?.takeIf { initialized }
                 ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
-        val coordinate = engine.call(ProtocolContract.Method.UNPROJECT, css) as JSONObject
+        val coordinate = engine.call(MapContract.Method.UNPROJECT, css) as JSONObject
         return TileflowCoordinate(
             coordinate.getDouble("longitude"),
             coordinate.getDouble("latitude"),
@@ -981,7 +958,7 @@ constructor(
         val engine = engine?.takeIf { initialized } ?: return
         scope.launch {
             try {
-                engine.call(ProtocolContract.Method.STOP_CAMERA)
+                engine.call(MapContract.Method.STOP_CAMERA)
             } catch (_: TileflowMapException) {
                 // A replaced renderer has no movement to stop.
             }
@@ -1004,7 +981,7 @@ constructor(
         val engine =
             engine?.takeIf { initialized }
                 ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
-        val result = engine.call(ProtocolContract.Method.CAMERA_FOR_BOUNDS, fit)
+        val result = engine.call(MapContract.Method.CAMERA_FOR_BOUNDS, fit)
         if (result == JSONObject.NULL) return null
         return cameraOrNull(result) ?: throw TileflowMapException(TileflowErrorCode.RENDERER_FAILED)
     }
@@ -1031,7 +1008,7 @@ constructor(
         val engine =
             engine?.takeIf { initialized }
                 ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
-        val result = engine.call(ProtocolContract.Method.VISIBLE_BOUNDS) as? JSONObject
+        val result = engine.call(MapContract.Method.VISIBLE_BOUNDS) as? JSONObject
         return try {
             result?.let(::boundsFrom)
         } catch (_: org.json.JSONException) {
@@ -1067,7 +1044,7 @@ constructor(
         val engine =
             engine?.takeIf { initialized }
                 ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
-        val result = engine.call(ProtocolContract.Method.MOVE_CAMERA, payload) as? JSONObject
+        val result = engine.call(MapContract.Method.MOVE_CAMERA, payload) as? JSONObject
         val completion = TileflowCameraAnimationResult.fromWire(result?.optString("completion"))
         val camera = cameraOrNull(result?.optJSONObject("camera"))
         if (completion == null || camera == null)
@@ -1152,7 +1129,7 @@ constructor(
         scope.launch {
             try {
                 engine?.call(
-                    ProtocolContract.Method.SET_VISIBILITY,
+                    MapContract.Method.SET_VISIBILITY,
                     JSONObject().put("visible", visible),
                 )
             } catch (_: TileflowMapException) {
@@ -1164,7 +1141,7 @@ constructor(
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         if (
-            destroyed || theme != "system" || appearance?.first == ProtocolContract.Method.SET_BLEND
+            destroyed || theme != "system" || appearance?.first == MapContract.Method.SET_BLEND
         )
             return
         scope.launch {
@@ -1282,10 +1259,6 @@ constructor(
                     ?: source
                         .loadable { Tileflow.configuration(context) }
                         .also { this.loadable = it }
-            val kind = engineKind
-            // The WebView engine checks the system WebView and its embedded runtime first.
-            val receipt =
-                if (kind == MapEngineKind.WEB_VIEW) WebViewMapEngine.prepare(context) else null
             TileflowDeviceProfile.current(context)
             generation += 1
             val current = generation
@@ -1334,20 +1307,7 @@ constructor(
                         }
                     },
                 )
-            val created =
-                when (kind) {
-                    MapEngineKind.WEB_VIEW ->
-                        WebViewMapEngine(
-                            context,
-                            instanceId,
-                            current,
-                            requireNotNull(receipt),
-                            resourceLoader,
-                            callbacks,
-                        )
-                    MapEngineKind.NATIVE ->
-                        NativeMapEngine(context, resourceLoader, loadable.grantScope, callbacks)
-                }
+            val created = NativeMapEngine(context, resourceLoader, loadable.grantScope, callbacks)
             engine = created
             addView(
                 created.view,
@@ -1371,7 +1331,7 @@ constructor(
             retireGeneration()
             emit(
                 TileflowMapEvent.Failed(
-                    (error as? TileflowMapException)?.code ?: TileflowErrorCode.MISSING_RUNTIME,
+                    (error as? TileflowMapException)?.code ?: TileflowErrorCode.RENDERER_FAILED,
                     (error as? TileflowMapException)?.context ?: TileflowErrorContext.NONE,
                 )
             )
@@ -1399,7 +1359,6 @@ constructor(
                         .put("colorScheme", colorScheme())
                         .put("interactive", true)
                         .put("options", options.json(rightToLeft))
-                        .put("renderer", options.rendererJson())
                         .put("events", subscriptions.json())
                         .put("insets", effectiveContentPadding.css(density))
                 val startingSubscriptions = subscriptions
@@ -1421,7 +1380,7 @@ constructor(
                             configuration.put("credits", JSONArray(credits.map { it.toJson() }))
                     }
                 }
-                readyEngine.call(ProtocolContract.Method.INITIALIZE, configuration)
+                readyEngine.call(MapContract.Method.INITIALIZE, configuration)
                 if (destroyed || generation != current) return@launch
                 initialized = true
                 rendererInsets = startingInsets
@@ -1445,7 +1404,7 @@ constructor(
                 annotationOverlay.rendererReady()
                 if (!rendererVisible)
                     readyEngine.call(
-                        ProtocolContract.Method.SET_VISIBILITY,
+                        MapContract.Method.SET_VISIBILITY,
                         JSONObject().put("visible", false),
                     )
                 readyForEvents = true
@@ -1483,10 +1442,6 @@ constructor(
             return
         }
         when (event) {
-            "trackedPointsMoved" -> {
-                annotationOverlay.receive(result)
-                return
-            }
             "annotationDragged" -> {
                 annotations.dispatchDrag(result)
                 return
@@ -1596,9 +1551,6 @@ constructor(
     }
 
     public companion object {
-        /** The engine new map views use. Internal: tests set it for the maps Compose creates. */
-        @Volatile internal var defaultEngineKind: MapEngineKind = MapEngineKind.NATIVE
-
         /**
          * Prepares the renderer, device profile, HTTP clients and resource cache before the first
          * map opens. Call it on the main thread, for example in `Application.onCreate` or before
@@ -1607,7 +1559,7 @@ constructor(
         @JvmStatic
         @MainThread
         public fun prewarm(context: Context) {
-            MapPrewarmer.start(context, defaultEngineKind)
+            MapPrewarmer.start(context)
         }
     }
 

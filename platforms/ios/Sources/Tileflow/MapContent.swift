@@ -76,9 +76,9 @@ public struct TileflowGeoJSONLayer: Sendable {
       occludedOpacity == 0 || (kind == .line && placement == .ground)
     else { throw TileflowMapError.invalidRequest }
     try progress?.validate()
-    guard !geoJSON.isEmpty, geoJSON.count <= ProtocolContract.maximumDataBytes else {
+    guard !geoJSON.isEmpty, geoJSON.count <= MapContract.maximumDataBytes else {
       throw TileflowMapError(
-        .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataBytes)
+        .invalidRequest, reason: .dataTooLarge, limit: MapContract.maximumDataBytes)
     }
     self.id = id
     self.kind = kind
@@ -127,9 +127,9 @@ struct MapContent: Sendable {
     {
       total += layer.geoJSON.count
     }
-    guard total <= ProtocolContract.maximumDataTotalBytes else {
+    guard total <= MapContract.maximumDataTotalBytes else {
       throw TileflowMapError(
-        .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataTotalBytes)
+        .invalidRequest, reason: .dataTooLarge, limit: MapContract.maximumDataTotalBytes)
     }
   }
 

@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {mobileAreas} from './mobile-ci-areas.mjs';
 
-test('selects mobile jobs from the paths that reach the runtime or a native host', () => {
-  const none = {runtime: false, ios: false, android: false, reactNative: false};
+test('selects the mobile hosts reached by each change', () => {
+  const none = {ios: false, android: false, reactNative: false};
   assert.deepEqual(mobileAreas([]), none);
   assert.deepEqual(mobileAreas(['packages/react/src/index.ts', 'docs/README.md']), none);
   assert.deepEqual(mobileAreas(['packages/react-native/src/map.tsx']), none);
@@ -29,21 +29,21 @@ test('selects mobile jobs from the paths that reach the runtime or a native host
     mobileAreas(['packages/react-native/android/src/main/java/dev/tileflow/reactnative/A.kt']),
     {...none, reactNative: true},
   );
-  const embedded = {runtime: true, ios: true, android: true, reactNative: false};
+  const native = {ios: true, android: true, reactNative: false};
   for (const path of [
     'packages/core/src/browser.ts',
-    'packages/mobile-runtime/src/map-runtime.ts',
+    'scripts/native-golden-generate.mjs',
     'scripts/mobile-fixture-server.mjs',
     'pnpm-lock.yaml',
   ])
-    assert.deepEqual(mobileAreas([path]), embedded, path);
+    assert.deepEqual(mobileAreas([path]), native, path);
   for (const path of ['packages/dev/src/artifacts.ts', 'packages/maps/src/index.ts'])
     assert.deepEqual(mobileAreas([path]), {...none, ios: true, android: true}, path);
   assert.deepEqual(
     mobileAreas(['platforms/ios/Tests/TileflowTests/Fixtures/Native/native-evaluators.json']),
     {...none, ios: true, android: true},
   );
-  const all = {...embedded, reactNative: true};
+  const all = {...native, reactNative: true};
   assert.deepEqual(mobileAreas(['test-support/mobile/hosted/session-sequences.json']), all);
   assert.deepEqual(mobileAreas(['platforms/map-api.json']), all);
   assert.deepEqual(mobileAreas(['.github/workflows/ci.yml']), all);

@@ -305,9 +305,9 @@ public struct TileflowMapImage: Sendable {
       variants.values.allSatisfy({ !$0.isEmpty })
     else { throw TileflowMapError.invalidRequest }
     let largest = ([data] + variants.values).map(\.count).max() ?? 0
-    guard largest <= ProtocolContract.maximumDataBytes else {
+    guard largest <= MapContract.maximumDataBytes else {
       throw TileflowMapError(
-        .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataBytes)
+        .invalidRequest, reason: .dataTooLarge, limit: MapContract.maximumDataBytes)
     }
     self.name = name
     self.pixelRatio = pixelRatio

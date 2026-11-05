@@ -24,8 +24,7 @@ let package = Package(
         "TileflowConfiguration", "TileflowStyleBridge",
         .product(name: "MapLibre", package: "maplibre-gl-native-distribution"),
       ],
-      path: "Sources/Tileflow",
-      resources: [.copy("EmbeddedRuntime")]
+      path: "Sources/Tileflow"
     ),
     .target(
       name: "TileflowStyleBridge",

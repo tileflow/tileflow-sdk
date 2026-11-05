@@ -19,22 +19,24 @@ import org.robolectric.annotation.Config
 class NativeManifestTest {
     private val origin = "https://api.tileflow.test"
     private val discovery = "$origin/maps/map_1/mobile/manifest.json"
-    private val profile = "$origin/maps/map_1/mobile/webview-v1/manifest.json"
+    private val profile = "$origin/maps/map_1/native/manifest.json"
+    private val legacy = "$origin/maps/map_1/mobile/webview-v1/manifest.json"
     private val selfHosted = "https://maps.example.test/manifest.json"
     private val map =
         """{"mapId":"map_1","defaultTheme":"day","systemThemes":{"light":"day","dark":"night"},
             "view":{"center":[-3.7,40.42],"zoom":15.5,"bearing":10,"pitch":20},
             "timeOfDay":{"day":{"day":"day","dusk":"dusk","night":"night"}},
             "themes":{"day":{"styleUrl":"v1/day.json","colorScheme":"light"},
-                      "night":{"styleUrl":"$origin/maps/map_1/mobile/webview-v1/v1/night.json",
+                      "night":{"styleUrl":"$origin/maps/map_1/native/v1/night.json",
                                "colorScheme":"dark"},
                       "dusk":{"styleUrl":"v1/dusk.json","colorScheme":"dark"}}}"""
     private val documents =
         mutableMapOf(
             discovery to
                 """{"version":1,"mapId":"map_1","deploymentVersion":1,
-                    "representations":{"webview-v1":{"manifestUrl":"$profile"}}}""",
+                    "representations":{"native-v1":{"manifestUrl":"$profile"}}}""",
             profile to """{"version":1,"maps":{"map":$map}}""",
+            legacy to """{"version":1,"maps":{"map":$map}}""",
             selfHosted to """{"version":1,"maps":{"city":$map}}""",
         )
 
@@ -53,13 +55,35 @@ class NativeManifestTest {
         )
 
     @Test
+    fun onlineDiscoveryRequiresANativeRepresentationButAPreviousPackStillOpens() {
+        documents[discovery] =
+            """{"version":1,"mapId":"map_1","representations":{"webview-v1":{"manifestUrl":"$legacy"}}}"""
+        val requests = mutableListOf<URI>()
+        val read = { uri: URI -> requests.add(uri); load(uri) }
+
+        try {
+            NativeManifest.read(hostedSource(), read)
+            fail("An online map without a native representation opened")
+        } catch (error: TileflowMapException) {
+            assertEquals(TileflowErrorCode.RESOURCE_FAILED, error.code)
+            assertEquals(TileflowResourceKind.MANIFEST, error.context.resource)
+        }
+        assertEquals(listOf(URI(discovery)), requests)
+
+        requests.clear()
+        val packed = NativeManifest.read(hostedSource(), read, fromPacks = true)
+        assertEquals(NativeRepresentation.WEB_VIEW, packed.representation)
+        assertEquals(listOf(URI(discovery), URI(legacy)), requests)
+    }
+
+    @Test
     fun aHostedMapReadsDiscoveryThenItsProfileManifest() {
         val document = hosted(null)
         assertEquals("day", document.theme)
-        assertEquals("$origin/maps/map_1/mobile/webview-v1/v1/day.json", document.styleUrl)
+        assertEquals("$origin/maps/map_1/native/v1/day.json", document.styleUrl)
         assertEquals(TileflowCamera(-3.7, 40.42, 15.5, 10.0, 20.0), document.view)
         assertEquals("night", hosted("night").theme)
-        assertEquals("$origin/maps/map_1/mobile/webview-v1/v1/night.json", hosted("night").styleUrl)
+        assertEquals("$origin/maps/map_1/native/v1/night.json", hosted("night").styleUrl)
     }
 
     @Test
@@ -84,7 +108,7 @@ class NativeManifestTest {
         val family = "$origin/maps/map_1/native/family/v1.json"
         documents[discovery] =
             """{"version":1,"mapId":"map_1","deploymentVersion":1,"representations":{
-                "webview-v1":{"manifestUrl":"$profile"},
+                "webview-v1":{"manifestUrl":"$legacy"},
                 "native-v1":{"manifestUrl":"$native","family":{"url":"$family","revision":"abc"}}}}"""
         documents[native] =
             """{"version":2,"maps":{"map":${JSONObject(map).put("themes", JSONObject()

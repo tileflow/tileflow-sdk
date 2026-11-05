@@ -68,19 +68,7 @@ public class LocationIntegrationTest {
     }
 
     @Test
-    public fun aSimulatedRouteMovesThePuckAndTheCameraThatFollowsIt() = route()
-
-    @Test
-    public fun aNativeMapFollowsTheSimulatedRouteAndRestoresThePuck() {
-        CameraHostActivity.native = true
-        try {
-            route()
-        } finally {
-            CameraHostActivity.native = false
-        }
-    }
-
-    private fun route() {
+    public fun aSimulatedRouteFollowsTheCameraAndRestoresThePuck() {
         ActivityScenario.launch(CameraHostActivity::class.java).use { scenario ->
             lateinit var activity: CameraHostActivity
             scenario.onActivity { activity = it }

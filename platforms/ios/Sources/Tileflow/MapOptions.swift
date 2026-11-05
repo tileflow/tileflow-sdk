@@ -70,7 +70,7 @@ public struct TileflowEventOptions: Equatable, Sendable {
 
   func validate() throws {
     guard
-      (0...Double(ProtocolContract.maximumThrottleMilliseconds) / 1000)
+      (0...Double(MapContract.maximumThrottleMilliseconds) / 1000)
         .contains(cameraUpdateInterval)
     else { throw TileflowMapError.invalidRequest }
   }

@@ -1,6 +1,6 @@
 package dev.tileflow.sdk
 
-import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapContract
 import dev.tileflow.sdk.model.EventSubscriptions
 import dev.tileflow.sdk.model.MapPayloadStore
 import dev.tileflow.sdk.transport.ResourceDigest
@@ -51,8 +51,7 @@ public class MapContractTest {
         assertEquals(
             setOf(
                 TileflowErrorCode.INVALID_SOURCE,
-                TileflowErrorCode.MISSING_RUNTIME,
-                TileflowErrorCode.INCOMPATIBLE_RUNTIME,
+                TileflowErrorCode.UNSUPPORTED_DEVICE,
                 TileflowErrorCode.INVALID_REQUEST,
                 TileflowErrorCode.DISPOSED,
                 TileflowErrorCode.CREDENTIAL_REJECTED,
@@ -64,7 +63,7 @@ public class MapContractTest {
             ),
             TileflowErrorCode.entries.filterNot { it.isRecoverable }.toSet(),
         )
-        for (code in ProtocolContract.RUNTIME_ERRORS) assertNotNull(
+        for (code in MapContract.RENDERER_ERRORS) assertNotNull(
             code,
             TileflowErrorCode.fromWire(code),
         )
@@ -97,22 +96,21 @@ public class MapContractTest {
         )
         // The SDK follows every movement at any level, and every frame while controls follow it.
         val sdk = EventSubscriptions(TileflowEventOptions()).events
-        assertEquals(0L, sdk[ProtocolContract.Event.CAMERA_MOVE_STARTED])
-        assertNull(sdk[ProtocolContract.Event.CAMERA_MOVED])
+        assertEquals(0L, sdk[MapContract.Event.CAMERA_MOVE_STARTED])
+        assertNull(sdk[MapContract.Event.CAMERA_MOVED])
         val following =
             EventSubscriptions(TileflowEventOptions(TileflowEventLevel.CONTINUOUS, 250), true)
-        assertEquals(0L, following.events[ProtocolContract.Event.CAMERA_MOVED])
+        assertEquals(0L, following.events[MapContract.Event.CAMERA_MOVED])
         assertNotEquals(EventSubscriptions(), following)
         assertEquals(EventSubscriptions(), EventSubscriptions())
         // Several owners share an event at the shortest interval any of them asks for.
         val shared = EventSubscriptions(TileflowEventOptions(TileflowEventLevel.CONTINUOUS, 1000))
         shared.set(
             EventSubscriptions.Owner.APPLICATION,
-            mapOf(ProtocolContract.Event.CAMERA_MOVED to 50L, ProtocolContract.Event.HELLO to 0L),
+            mapOf(MapContract.Event.CAMERA_MOVED to 50L),
         )
-        assertEquals(50L, shared.events[ProtocolContract.Event.CAMERA_MOVED])
-        assertNull(shared.events[ProtocolContract.Event.HELLO])
-        for (interval in listOf(-1L, ProtocolContract.MAXIMUM_THROTTLE_MILLIS + 1)) {
+        assertEquals(50L, shared.events[MapContract.Event.CAMERA_MOVED])
+        for (interval in listOf(-1L, MapContract.MAXIMUM_THROTTLE_MILLIS + 1)) {
             assertThrows(TileflowMapException::class.java) {
                 TileflowEventOptions(cameraUpdateIntervalMillis = interval).validate()
             }
@@ -141,7 +139,7 @@ public class MapContractTest {
         channel.release(listOf(third, third))
         assertTrue(channel.isEmpty)
 
-        val large = ByteArray(ProtocolContract.MAXIMUM_DATA_BYTES)
+        val large = ByteArray(MapContract.MAXIMUM_DATA_BYTES)
         val held = channel.register(large, "a", "application/octet-stream")
         channel.register(large, "b", "application/octet-stream")
         val error =
@@ -150,10 +148,10 @@ public class MapContractTest {
             }
         assertEquals(TileflowErrorCode.INVALID_REQUEST, error.code)
         assertEquals("dataTooLarge", error.context.reason)
-        assertEquals(ProtocolContract.MAXIMUM_DATA_TOTAL_BYTES, error.context.limit)
+        assertEquals(MapContract.MAXIMUM_DATA_TOTAL_BYTES, error.context.limit)
         channel.release(listOf(held))
         assertThrows(TileflowMapException::class.java) {
-            channel.register(ByteArray(ProtocolContract.MAXIMUM_DATA_BYTES + 1), "c", "x")
+            channel.register(ByteArray(MapContract.MAXIMUM_DATA_BYTES + 1), "c", "x")
         }
         channel.retire()
         assertTrue(channel.isEmpty)

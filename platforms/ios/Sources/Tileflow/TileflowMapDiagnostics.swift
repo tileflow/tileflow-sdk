@@ -53,7 +53,7 @@ public final class TileflowMapDiagnostics: Equatable, Sendable {
     if let diagnostics {
       diagnostics.record(event)
     } else if case .warning(let warning) = event,
-      warning.error.context.reason == ProtocolContract.ErrorReason.featureUnavailable.rawValue
+      warning.error.context.reason == MapContract.ErrorReason.featureUnavailable.rawValue
     {
       let feature = knownFeature(warning.error.context.feature) ?? "unrecognized"
       logger.warning("Native map feature unavailable (\(feature, privacy: .public)).")

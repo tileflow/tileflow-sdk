@@ -36,6 +36,12 @@ final class NativeAnnotationIntegrationTests: XCTestCase {
 
   private enum WaitError: Error { case timedOut }
 
+  func testVoiceOverReachesAnnotationsInReadingOrderWithTheirActions() async throws {
+    let (view, window, _) = try await mounted()
+    defer { view.destroy(); window.isHidden = true }
+    try await checkAnnotationRotor(on: view)
+  }
+
   func testContentMarkersActivateUpdateAndReplay() async throws {
     let (view, window, events) = try await mounted()
     defer {

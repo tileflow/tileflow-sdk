@@ -97,30 +97,6 @@ final class MapStyleIntegrationTests: XCTestCase {
     return (intervals[intervals.count / 2], intervals[Int(Double(intervals.count - 1) * 0.95)])
   }
 
-  /// Points on a grid around the fixture map, each with a numeric identifier and a rank.
-  static func points(_ count: Int) -> Data {
-    var text = #"{"type":"FeatureCollection","features":["#
-    text.reserveCapacity(count * 120)
-    for index in 0..<count {
-      if index > 0 { text += "," }
-      let longitude = -3.9 + Double(index % 400) / 1000
-      let latitude = 40.3 + Double(index / 400) / 1000
-      text +=
-        #"{"type":"Feature","id":\#(index),"properties":{"rank":\#(index % 10)},"geometry":{"type":"Point","coordinates":[\#(longitude),\#(latitude)]}}"#
-    }
-    return Data((text + "]}").utf8)
-  }
-
-  /// A white disc on transparency: a signed distance field the layer recolours.
-  static func sdfDisc() throws -> TileflowMapImage {
-    let renderer = UIGraphicsImageRenderer(size: CGSize(width: 24, height: 24))
-    let image = renderer.image { context in
-      UIColor.white.setFill()
-      context.cgContext.fillEllipse(in: CGRect(x: 4, y: 4, width: 16, height: 16))
-    }
-    return try TileflowMapImage(name: "disc", image: image, sdf: true)
-  }
-
   func testHundredThousandClusteredPointsSurviveAThemeChangeAndANewRenderer() async throws {
     let (view, loads, failures) = try await show()
     defer { view.destroy() }
@@ -133,7 +109,7 @@ final class MapStyleIntegrationTests: XCTestCase {
       String(format: "frames while panning without points p50 %.1f / p95 %.1f ms", baseP50, baseP95))
     try await view.move(
       to: TileflowCamera(longitude: -3.7, latitude: 40.42, zoom: 9), animation: .none)
-    let data = Self.points(100_000)
+    let data = MapTestFixtures.points(100_000)
     let addSource = try await elapsed {
       try await view.addSource(
         TileflowGeoJSONSource(
@@ -157,7 +133,7 @@ final class MapStyleIntegrationTests: XCTestCase {
     var heat = TileflowHeatmapLayer(id: "heat", source: "points")
     heat.maxZoom = 9
     try await view.addLayer(heat, position: .below("clusters"))
-    try await view.addImage(Self.sdfDisc())
+    try await view.addImage(MapTestFixtures.sdfDisc())
     var marks = TileflowSymbolLayer(id: "marks", source: "points")
     marks.filter = .not(.has("point_count"))
     marks.iconImage = "disc"

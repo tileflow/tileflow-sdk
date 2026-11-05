@@ -75,6 +75,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   /// What the map shows: one theme, or a blend.
   var shown: NativeAppearance?
   /// The style document MapLibre loads or shows, with what the engine reads from it.
+  private(set) var poiCatalog: NativePoiCatalog?
   var document: NativeStyleDocument.Shown?
   var appearanceRevision = 0
   var viewMode = "2d"
@@ -507,6 +508,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     updateApplicationResources()
     runtimeStyle.configure(theme: shown?.theme, metadata: style["metadata"] as? [String: Any])
     document = NativeStyleDocument.Shown(style, omitted: projected.omitted)
+    poiCatalog = NativePoiCatalog(style: style)
     styleLoaded = false
     mapView.styleJSON = projected.json
   }
@@ -591,30 +593,58 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
 
   // MARK: Queries
 
-  /// Rendered features at a point, topmost first. MapLibre's features carry no layer, so the
-  /// engine asks layer by layer.
-  private func features(at point: CGPoint) -> [JSONValue] {
-    guard let mapView, let layers = mapView.style?.layers else { return [] }
-    var result: [JSONValue] = []
-    for layer in layers.reversed() {
-      guard let vector = layer as? MLNVectorStyleLayer, layer.isVisible else { continue }
-      let features = mapView.visibleFeatures(
-        at: point, styleLayerIdentifiers: [layer.identifier])
-      for feature in features {
-        let id: JSONValue
-        switch feature.identifier {
-        case let text as String: id = .string(text)
-        case let number as NSNumber: id = .string(number.stringValue)
-        default: id = .null
-        }
-        result.append(
-          .object([
-            "id": id, "source": .string(vector.sourceIdentifier ?? ""),
-            "layer": .string(layer.identifier),
-          ]))
+  /// MapLibre identifies a hit's layer only when queried by layer. Visit in the rendered order.
+  private func visitHits(
+    at point: CGPoint, layers include: (MLNVectorStyleLayer) -> Bool,
+    until found: (MLNVectorStyleLayer, any MLNFeature) -> Bool
+  ) {
+    guard let map = mapView, let style = map.style else { return }
+    for case let layer as MLNVectorStyleLayer in style.layers.reversed()
+    where layer.isVisible && include(layer) {
+      for feature in map.visibleFeatures(at: point, styleLayerIdentifiers: [layer.identifier]) {
+        if found(layer, feature) { return }
       }
     }
+  }
+
+  func features(at point: CGPoint) -> [JSONValue] {
+    var result: [JSONValue] = []
+    visitHits(at: point, layers: { _ in true }) { layer, feature in
+      let id: JSONValue
+      switch feature.identifier {
+      case let text as String: id = .string(text)
+      case let number as NSNumber: id = .string(number.stringValue)
+      default: id = .null
+      }
+      result.append(
+        .object([
+          "id": id, "source": .string(layer.sourceIdentifier ?? ""),
+          "layer": .string(layer.identifier),
+        ]))
+      return result.count == 50
+    }
     return result
+  }
+
+  func poi(at point: CGPoint, coordinate: JSONValue) -> JSONValue? {
+    guard styleLoaded, let catalog = poiCatalog, let style = mapView?.style,
+      catalog.layers.allSatisfy({ id, entry in
+        guard let layer = style.layer(withIdentifier: id) as? MLNVectorStyleLayer else {
+          return false
+        }
+        let sourceLayer = layer.sourceLayerIdentifier.flatMap { $0.isEmpty ? nil : $0 }
+        return layer.sourceIdentifier == entry.source && sourceLayer == entry.sourceLayer
+      })
+    else { return nil }
+    var winner: NativePoiCatalog.Match?
+    visitHits(at: point, layers: { catalog.layers[$0.identifier] != nil }) { layer, feature in
+      if let entry = catalog.layers[layer.identifier] {
+        catalog.consider(
+          layer: entry, id: feature.identifier, properties: feature.attributes, winner: &winner)
+      }
+      return winner != nil && winner?.id == nil
+    }
+    return winner?.payload(coordinate: coordinate)
   }
 
   static func point(_ payload: JSONValue) throws -> CGPoint {

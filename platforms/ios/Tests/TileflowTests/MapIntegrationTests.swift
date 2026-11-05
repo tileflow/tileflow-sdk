@@ -227,7 +227,7 @@ final class MapIntegrationTests: XCTestCase {
     XCTAssertEqual(changes.last?.camera.zoom ?? 0, 14, accuracy: 0.01)
 
     // A 5 MiB layer travels over the data channel and renders.
-    let geoJSON = BridgeWebKitTests.geoJSON(bytes: 5 * 1024 * 1024)
+    let geoJSON = MapTestFixtures.geoJSON(bytes: 5 * 1024 * 1024)
     let started = ContinuousClock.now
     try await view.setContent(
       layers: [try .init(id: "selection", geoJSON: geoJSON.data, kind: .circle, size: 3)])

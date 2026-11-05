@@ -110,7 +110,7 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     try await events.waitForLoads(1)
     try await view.addSource(
       TileflowGeoJSONSource(
-        id: "points", data: .geoJSON(MapStyleIntegrationTests.points(100_000)), cluster: true,
+        id: "points", data: .geoJSON(MapTestFixtures.points(100_000)), cluster: true,
         clusterRadius: 50, clusterProperties: ["rankSum": .sum(.get("rank"))]))
 
     var clusters = TileflowCircleLayer(id: "clusters", source: "points")
@@ -129,7 +129,7 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     var heat = TileflowHeatmapLayer(id: "heat", source: "points")
     heat.maxZoom = 9
     try await view.addLayer(heat, position: .below("clusters"))
-    try await view.addImage(MapStyleIntegrationTests.sdfDisc())
+    try await view.addImage(MapTestFixtures.sdfDisc())
     var marks = TileflowSymbolLayer(id: "marks", source: "points")
     marks.filter = .not(.has("point_count"))
     marks.iconImage = "disc"
@@ -962,6 +962,160 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     XCTAssertEqual(events.failures.first?.code, .rendererFailed)
     XCTAssertEqual(events.failures.first?.context.reason, "graphicsContextLost")
     XCTAssertEqual(events.failures.first?.isRecoverable, true)
+  }
+
+  func testLargeOverlayRendersAndSurvivesInvalidGeoJSONThemeAndReload() async throws {
+    let source = TileflowMapSource(
+      map: "fixture", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true)
+    let view = TileflowMapView(
+      source: source,
+      initialCamera: .init(
+        longitude: Self.center.longitude, latitude: Self.center.latitude, zoom: 14))
+    view.engineKind = .native
+    let events = NativeMapEvents(), window = mount(view, events: events)
+    defer { view.destroy(); window.isHidden = true }
+    try await events.waitForLoads(1)
+    let data = MapTestFixtures.geoJSON(bytes: 5 * 1024 * 1024).data
+    XCTAssertGreaterThanOrEqual(data.count, 5 * 1024 * 1024)
+    let selection = try TileflowGeoJSONLayer(id: "selection", geoJSON: data, kind: .circle, size: 3)
+    try await view.setContent(layers: [selection])
+    func assertDrawn(line: UInt = #line) async throws {
+      let point = try await view.project(Self.center)
+      for _ in 0..<100 {
+        if try await view.query(at: point).contains(where: {
+          $0.layer == "__tileflow_app_selection"
+        }) {
+          return
+        }
+        try await Task.sleep(for: .milliseconds(50))
+      }
+      XCTFail("The selection was not drawn", line: line)
+    }
+    try await assertDrawn()
+    do {
+      try await view.setContent(layers: [
+        try .init(id: "broken", geoJSON: Data(#"{"type":"Feature"}"#.utf8), kind: .fill)
+      ])
+      XCTFail("The renderer accepted invalid GeoJSON")
+    } catch let error as TileflowMapError {
+      XCTAssertEqual(error, .invalidRequest)
+      XCTAssertEqual(error.context.reason, "invalidGeoJSON")
+      XCTAssertEqual(error.context.resource, .data)
+    }
+    try await assertDrawn()
+    try await view.setTheme("dark")
+    try await assertDrawn()
+    try view.reload()
+    try await events.waitForLoads(2)
+    try await assertDrawn()
+    XCTAssertTrue(events.failures.isEmpty, "\(events.failures)")
+  }
+
+  func testPointQueryKeepsTheTopFiftyRenderedFeatures() async throws {
+    let view = TileflowMapView(
+      source: .init(map: "fixture", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true),
+      initialCamera: .init(
+        longitude: Self.center.longitude, latitude: Self.center.latitude, zoom: 14))
+    view.engineKind = .native
+    let events = NativeMapEvents(), window = mount(view, events: events)
+    defer { view.destroy(); window.isHidden = true }
+    try await events.waitForLoads(1)
+    func circles(_ id: String, ids: [Int]) throws -> TileflowGeoJSONLayer {
+      let features: [[String: Any]] = ids.map {
+        [
+          "type": "Feature", "id": $0, "properties": [:],
+          "geometry": [
+            "type": "Point", "coordinates": [Self.center.longitude, Self.center.latitude],
+          ],
+        ]
+      }
+      return try .init(
+        id: id,
+        geoJSON: JSONSerialization.data(withJSONObject: [
+          "type": "FeatureCollection", "features": features,
+        ]), kind: .circle, size: 8)
+    }
+    try await view.setContent(layers: [
+      try circles("crowd", ids: Array(0..<80)), try circles("front", ids: [99]),
+    ])
+    let point = try await view.project(Self.center)
+    var hits: [TileflowRenderedFeature] = []
+    for _ in 0..<100 {
+      hits = try await view.query(at: point)
+      if hits.count >= 50 { break }
+      try await Task.sleep(for: .milliseconds(50))
+    }
+    XCTAssertEqual(hits.count, 50)
+    XCTAssertEqual(hits.first?.id, "99")
+    XCTAssertEqual(hits.first?.layer, "__tileflow_app_front")
+    XCTAssertTrue(hits.dropFirst().allSatisfy { $0.layer == "__tileflow_app_crowd" })
+  }
+
+  func testTappingASemanticPointActivatesItsPublishedPOI() async throws {
+    let view = TileflowMapView(
+      source: .init(map: "fixture", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true),
+      initialCamera: .init(
+        longitude: Self.center.longitude, latitude: Self.center.latitude, zoom: 14))
+    view.engineKind = .native
+    let events = NativeMapEvents(), window = mount(view, events: events)
+    defer { view.destroy(); window.isHidden = true }
+    var selections: [TileflowPoiSelection] = [], taps: [TileflowMapTouch] = [],
+      holds: [TileflowMapTouch] = []
+    view.onEvent = { event in
+      events.receive(event)
+      if case .poiActivated(let selection) = event { selections.append(selection) }
+      if case .tap(let touch) = event { taps.append(touch) }
+      if case .longPress(let touch) = event { holds.append(touch) }
+    }
+    try await events.waitForLoads(1)
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+    let map = try XCTUnwrap(engine.mapView), gestures = try XCTUnwrap(engine.gestures)
+    let point = try await view.project(Self.center)
+    try await waitUntil { !map.visibleFeatures(at: point, styleLayerIdentifiers: ["poi"]).isEmpty }
+    let pressed = CGPoint(x: point.x + 1, y: point.y + 1)
+    var consumed = true, annotationTaps = 0
+    let manager = view.annotations.makeCircleAnnotationManager(id: "nearby")
+    var circle = TileflowCircleAnnotation(id: "pin", centerCoordinate: Self.center)
+    circle.circleRadius = 12
+    circle.tapHandler = { _ in
+      annotationTaps += 1; return consumed
+    }
+    manager.annotations = [circle]
+    try await waitUntil { engine.mapAnnotations.hits(at: pressed).first?["id"] == .string("pin") }
+    gestures.tapped(FakeTap(point: pressed))
+    XCTAssertEqual(annotationTaps, 1)
+    XCTAssertTrue(selections.isEmpty && taps.isEmpty)
+    consumed = false
+    gestures.tapped(FakeTap(point: pressed))
+    XCTAssertEqual(annotationTaps, 2)
+    let selection = try XCTUnwrap(selections.first)
+    XCTAssertEqual(selections.count, 1)
+    XCTAssertEqual(selection.id, "42")
+    XCTAssertEqual(selection.name, "Tileflow")
+    XCTAssertEqual(selection.category, "food-drink")
+    let coordinate = try await view.unproject(pressed)
+    XCTAssertEqual(selection.coordinate.longitude, coordinate.longitude, accuracy: 0.000001)
+    XCTAssertEqual(selection.coordinate.latitude, coordinate.latitude, accuracy: 0.000001)
+    XCTAssertTrue(taps.isEmpty, "A POI tap must not also reach the map")
+    gestures.pressed(FakeLongPress(point: pressed))
+    XCTAssertEqual(holds.count, 1)
+    XCTAssertEqual(holds.first?.point, pressed)
+    let background = CGPoint(x: 15, y: 90)
+    gestures.tapped(FakeTap(point: background))
+    XCTAssertEqual(selections.count, 1)
+    XCTAssertEqual(taps.map(\.point), [background])
+
+    try await view.setTheme("dark")
+    try await waitUntil { !map.visibleFeatures(at: pressed, styleLayerIdentifiers: ["poi"]).isEmpty }
+    gestures.tapped(FakeTap(point: pressed))
+    try view.reload()
+    try await events.waitForLoads(2)
+    let replacement = try XCTUnwrap(view.engine as? NativeMapEngine)
+    let newMap = try XCTUnwrap(replacement.mapView)
+    try await waitUntil { !newMap.visibleFeatures(at: pressed, styleLayerIdentifiers: ["poi"]).isEmpty }
+    try XCTUnwrap(replacement.gestures).tapped(FakeTap(point: pressed))
+    XCTAssertEqual(selections.map(\.id), ["42", "42", "42"])
+    XCTAssertEqual(taps.map(\.point), [background])
   }
 
   func testEventLevelsAndCameraReasons() async throws {

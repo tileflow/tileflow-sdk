@@ -6,6 +6,35 @@ import XCTest
 /// The fixture is produced by the service's own planner, cover and routes; the corridor fixture
 /// pins the SDK's corridor rings so both platforms plan the same packs.
 final class OfflineTests: XCTestCase {
+  /// A transfer stopped part-way, as when the system ends the app or the network drops, resumes
+  /// from the system's resume data with `Range` and `If-Range` instead of starting again.
+  @MainActor
+  func testAnInterruptedTransferResumesFromWhereItStopped() async throws {
+    let url = URL(string: "\(FixtureServer.origin)/__fixture/resumable")!
+    try await requireMapFixture(
+      URL(string: "\(FixtureServer.origin)/maps/\(Self.hostedFixtureMapID)/mobile/manifest.json")!)
+    _ = try await fixtureCounters(reset: true)
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
+      "offline-resume-\(UUID().uuidString)", isDirectory: true)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fetcher = OfflineURLSessionFetcher(
+      configuration: .ephemeral, directory: root.appendingPathComponent("transfers"))
+    let request = OfflineFetchRequest(
+      id: "resume/1/pack", url: url, headers: [:], allowsExpensiveNetworkAccess: true,
+      destination: root.appendingPathComponent("pack"))
+    do {
+      _ = try await fetcher.fetch(request)
+      XCTFail("The first transfer stops part-way")
+    } catch {}
+    let response = try await fetcher.fetch(request)
+    XCTAssertEqual(response.status, 200)
+    let body = try Data(contentsOf: root.appendingPathComponent("pack"))
+    XCTAssertEqual(body.count, 2 * 1024 * 1024)
+    XCTAssertTrue(body.enumerated().allSatisfy { $0.element == UInt8(($0.offset * 31) % 251) })
+    let counters = try await fixtureCounters()
+    XCTAssertEqual(counters["ranges"], 1, "The second transfer asked for the rest only")
+  }
+
   func testTileCoverMatchesTheService() throws {
     for item in try contract()["coverage"] as! [[String: Any]] {
       let name = item["name"] as! String

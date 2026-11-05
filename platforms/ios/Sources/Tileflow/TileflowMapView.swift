@@ -667,6 +667,11 @@ public final class TileflowMapView: UIView {
     controlsView.camera = camera
   }
 
+  private static func poiSelection(_ value: JSONValue) -> TileflowPoiSelection? {
+    guard let bytes = try? JSONEncoder().encode(value) else { return nil }
+    return try? JSONDecoder().decode(TileflowPoiSelection.self, from: bytes)
+  }
+
   private func receive(_ event: String, _ value: JSONValue, generation current: Int) {
     if event == "contentReady", !readyForEvents {
       pendingReadyEvent = true
@@ -681,11 +686,7 @@ public final class TileflowMapView: UIView {
         onEvent?(.annotationActivated(id: id, coordinate: coordinate))
       }
     case "poiActivated":
-      if let bytes = try? JSONEncoder().encode(value),
-        let selection = try? JSONDecoder().decode(TileflowPoiSelection.self, from: bytes)
-      {
-        onEvent?(.poiActivated(selection))
-      }
+      if let selection = Self.poiSelection(value) { onEvent?(.poiActivated(selection)) }
     case "loading": onEvent?(.loading)
     case "contentReady":
       if let camera = TileflowCamera(wire: value["camera"]) { observe(camera) }
@@ -702,7 +703,11 @@ public final class TileflowMapView: UIView {
       if let touch = TileflowMapTouch(wire: value),
         !annotationTouch(value, touch: touch, longPress: false)
       {
-        onEvent?(.tap(touch))
+        if let selection = value["poi"].flatMap(Self.poiSelection) {
+          onEvent?(.poiActivated(selection))
+        } else {
+          onEvent?(.tap(touch))
+        }
       }
     case "longPress":
       if let touch = TileflowMapTouch(wire: value),

@@ -14,6 +14,26 @@ final class AnnotationTests: XCTestCase {
   }
   private let madrid = TileflowCoordinate(longitude: -3.7, latitude: 40.42)
 
+  func testAControllerKeepsItsAnnotationsForTheMapItAttachesTo() async throws {
+    let controller = TileflowMapController()
+    let pins = controller.annotations.makePointAnnotationManager(id: "pins")
+    pins.annotations = [TileflowPointAnnotation(coordinate: madrid)]
+    let marker = TileflowViewAnnotation(coordinate: madrid, view: UIView())
+    controller.viewAnnotations.add(marker)
+    let view = TileflowMapView(
+      source: TileflowMapSource(
+        map: "fixture", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true))
+    defer { view.destroy() }
+    try controller.attach(view)
+    XCTAssertTrue(view.annotations === controller.annotations)
+    XCTAssertTrue(view.viewAnnotations === controller.viewAnnotations)
+    for _ in 0..<100 where !view.layerExists("pins") { try await Task.sleep(for: .milliseconds(50)) }
+    XCTAssertTrue(view.layerExists("pins"))
+    controller.detach(view)
+    XCTAssertFalse(view.annotations === controller.annotations)
+    XCTAssertTrue(view.viewAnnotations.annotations.isEmpty)
+  }
+
   func testAnchorsPlaceTheViewAroundItsPointWithMapboxOffsets() {
     let size = CGSize(width: 40, height: 20)
     let point = CGPoint(x: 100, y: 100)

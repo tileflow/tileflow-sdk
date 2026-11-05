@@ -1,6 +1,5 @@
 import Foundation
 import UIKit
-import WebKit
 import XCTest
 
 @testable import Tileflow
@@ -179,7 +178,7 @@ final class MapConfigurationTests: XCTestCase {
       window.isHidden = true
     }
     XCTAssertEqual(failures, [.missingCredential])
-    XCTAssertFalse(view.subviews.contains { $0 is WKWebView })
+    XCTAssertNil(view.engine)
     XCTAssertThrowsError(try view.reload()) {
       XCTAssertEqual($0 as? TileflowMapError, .missingCredential)
     }

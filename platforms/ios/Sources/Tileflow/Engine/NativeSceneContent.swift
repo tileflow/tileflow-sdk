@@ -69,7 +69,10 @@ final class NativeSceneContent {
       } else {
         guard let geometry = try? JSONDecoder().decode(JSONValue.self, from: payload.bytes),
           Self.validCollection(geometry)
-        else { throw TileflowMapError(.invalidRequest, reason: .invalidGeoJSON) }
+        else {
+          throw TileflowMapError(.invalidRequest, context: .init(
+            reason: ProtocolContract.ErrorReason.invalidGeoJSON.rawValue, resource: .data))
+        }
         source = try NativeRuntimeStyle.inlineSource(
           id, bytes: payload.bytes, lineMetrics: measured)
       }

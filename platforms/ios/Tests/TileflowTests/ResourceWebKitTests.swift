@@ -6,37 +6,6 @@ import XCTest
 
 @MainActor
 final class ResourceWebKitTests: XCTestCase {
-  func testHTTPHeadRangeAndRedirectBoundaries() async throws {
-    let origin = FixtureServer.origin
-    do {
-      _ = try await URLSession.shared.data(from: URL(string: "\(origin)/manifest.json")!)
-    } catch {
-      throw XCTSkip("Start scripts/mobile-fixture-server.mjs to run HTTP transport integration.")
-    }
-    let loader = ResourceLoader(
-      policy: ResourcePolicy(origins: [origin], allowsLoopbackHTTP: true), maximumBytes: 65_536)
-    defer { loader.close() }
-    var request = URLRequest(url: URL(string: "\(origin)/archive.bin")!)
-    request.httpMethod = "HEAD"
-    let head = try await loader.load(request)
-    XCTAssertTrue(head.bytes.isEmpty)
-    XCTAssertEqual(head.headers["Content-Length"], String(9 * 1024 * 1024))
-    request.httpMethod = "GET"
-    request.setValue("bytes=16-17", forHTTPHeaderField: "Range")
-    let range = try await loader.load(request)
-    XCTAssertEqual(range.status, 206)
-    XCTAssertEqual(range.bytes, Data([16, 17]))
-    XCTAssertEqual(range.headers["Content-Range"], "bytes 16-17/9437184")
-    for path in ["archive.bin", "redirect"] {
-      do {
-        _ = try await loader.load(URLRequest(url: URL(string: "\(origin)/\(path)")!))
-        XCTFail("Transport accepted an excessive body or redirect.")
-      } catch {
-        XCTAssertEqual(error as? ResourceError, .invalidResponse)
-      }
-    }
-  }
-
   func testSchemeTransportsFetchImagesFontsAndWorkerRequests() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)

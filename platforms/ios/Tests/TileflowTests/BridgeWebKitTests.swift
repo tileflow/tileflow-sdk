@@ -184,7 +184,7 @@ final class BridgeWebKitTests: XCTestCase {
     let (stub, failure) = try await stub()
     defer { stub.close() }
     XCTAssertNil(failure)
-    let geoJSON = Self.geoJSON(bytes: 5 * 1024 * 1024)
+    let geoJSON = MapTestFixtures.geoJSON(bytes: 5 * 1024 * 1024)
     var timings: [String: [Duration]] = [:]
     func measure(_ label: String, _ work: () async throws -> Void) async rethrows {
       let started = ContinuousClock.now
@@ -262,22 +262,6 @@ final class BridgeWebKitTests: XCTestCase {
 
   private static func milliseconds(_ duration: Duration) -> Double {
     Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1e15
-  }
-
-  /// A FeatureCollection of points of at least `bytes`.
-  static func geoJSON(bytes: Int) -> (data: Data, features: Int) {
-    var text = #"{"type":"FeatureCollection","features":["#
-    var count = 0
-    while text.utf8.count < bytes {
-      if count > 0 { text += "," }
-      let longitude = -3.75 + Double(count % 1000) / 10_000
-      let latitude = 40.40 + Double(count / 1000) / 1000
-      text +=
-        #"{"type":"Feature","id":\#(count),"properties":{"name":"Point \#(count)","rank":\#(count % 7)},"geometry":{"type":"Point","coordinates":[\#(longitude),\#(latitude)]}}"#
-      count += 1
-    }
-    text += "]}"
-    return (Data(text.utf8), count)
   }
 }
 

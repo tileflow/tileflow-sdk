@@ -1,0 +1,385 @@
+{
+  "schemaVersion": 1,
+  "lookups": {
+    "madrid": [
+      {
+        "id": 100,
+        "class": "region",
+        "class_tier": "primary",
+        "admin_level": 4,
+        "iso_3166_1": "ES",
+        "iso_3166_2": "ES-MD",
+        "nuts": "ES30",
+        "ref": "ES-MD",
+        "wikidata": "Q5756",
+        "name": "Comunidad de Madrid"
+      },
+      {
+        "id": 100,
+        "class": "province_or_county",
+        "class_tier": "primary",
+        "admin_level": 6,
+        "iso_3166_1": "ES",
+        "iso_3166_2": "ES-MD",
+        "nuts": "ES30",
+        "ref": "ES:INE:28",
+        "wikidata": "Q5756",
+        "name": "Madrid"
+      },
+      {
+        "id": 101,
+        "class": "municipality",
+        "class_tier": "primary",
+        "admin_level": 8,
+        "iso_3166_1": "ES",
+        "ref": "ES:INE:28079",
+        "wikidata": "Q2807",
+        "name": "Madrid"
+      },
+      {
+        "id": 108,
+        "class": "municipality",
+        "class_tier": "primary",
+        "admin_level": 8,
+        "iso_3166_1": "ES",
+        "ref": "ES:INE:28092",
+        "wikidata": "Q19960",
+        "name": "Móstoles, \"Madrid\"\r\nCentro"
+      },
+      {
+        "id": 109,
+        "class": "district",
+        "class_tier": "primary",
+        "admin_level": 9,
+        "iso_3166_1": "ES",
+        "ref": "ES:INE:28079:01",
+        "wikidata": "Q19960",
+        "name": "Centro"
+      },
+      {
+        "id": 110,
+        "class": "district",
+        "class_tier": "secondary",
+        "admin_level": 9,
+        "iso_3166_1": "ES",
+        "wikidata": "Q0"
+      }
+    ]
+  },
+  "cases": [
+    {
+      "name": "numeric IDs normalize to safe integers, with stable last-wins order",
+      "rows": [
+        {"key": " 0x2A ", "value": 1},
+        {"key": 3, "value": "three"},
+        {"key": "﻿0b101010﻿", "value": null},
+        {"key": "0o52", "value": "last"},
+        {"key": ".3e1", "value": 4},
+        {"key": 9007199254740991, "value": 5},
+        {"key": "9007199254740992", "value": 6},
+        {"key": 9007199254740992, "value": 7},
+        {"key": -1, "value": 8},
+        {"key": 1.25, "value": 9},
+        {"key": "0x1p0", "value": 10},
+        {"key": "1d", "value": 11},
+        {"key": " ", "value": 12},
+        {"key": "-0", "value": 13}
+      ],
+      "options": {"joinBy": "id"},
+      "expected": {
+        "ambiguous": [],
+        "duplicates": [42, 3],
+        "joinBy": "id",
+        "rows": [
+          {"key": 42, "value": "last"},
+          {"key": 3, "value": 4},
+          {"key": 9007199254740991, "value": 5},
+          {"key": 0, "value": 13}
+        ],
+        "unmatched": ["9007199254740992", 9007199254740992, -1, 1.25, "0x1p0", "1d", " "]
+      }
+    },
+    {
+      "name": "direct refs preserve case, normalize whitespace and ignore empty classes",
+      "rows": [
+        {"key": "  ref-a ", "value": 1},
+        {"key": "REF-A", "value": 2},
+        {"key": "ref-a", "value": null},
+        {"key": 5, "value": 3},
+        {"key": "", "value": 4}
+      ],
+      "options": {"joinBy": "ref", "to": "ref", "classes": []},
+      "expected": {
+        "ambiguous": [],
+        "duplicates": ["ref-a"],
+        "joinBy": "ref",
+        "rows": [
+          {"key": "ref-a", "value": null},
+          {"key": "REF-A", "value": 2}
+        ],
+        "unmatched": [5, ""]
+      }
+    },
+    {
+      "name": "one ID across two classes emits both refs",
+      "lookup": "madrid",
+      "rows": [{"key": " es-md ", "value": "active"}],
+      "options": {"joinBy": "iso_3166_2", "to": "ref"},
+      "expected": {
+        "ambiguous": [],
+        "duplicates": [],
+        "joinBy": "ref",
+        "rows": [
+          {"key": "ES-MD", "value": "active"},
+          {"key": "ES:INE:28", "value": "active"}
+        ],
+        "unmatched": []
+      }
+    },
+    {
+      "name": "one ID across two classes is unambiguous",
+      "lookup": "madrid",
+      "rows": [{"key": " es-md ", "value": 1}],
+      "options": {"joinBy": "iso_3166_2"},
+      "expected": {
+        "ambiguous": [],
+        "duplicates": [],
+        "joinBy": "id",
+        "rows": [{"key": 100, "value": 1}],
+        "unmatched": []
+      }
+    },
+    {
+      "name": "class filter restricts a code to one class",
+      "lookup": "madrid",
+      "rows": [{"key": " es-md ", "value": 1}],
+      "options": {"joinBy": "iso_3166_2", "to": "ref", "classes": ["province_or_county"]},
+      "expected": {
+        "ambiguous": [],
+        "duplicates": [],
+        "joinBy": "ref",
+        "rows": [{"key": "ES:INE:28", "value": 1}],
+        "unmatched": []
+      }
+    },
+    {
+      "name": "an empty class filter matches nothing",
+      "lookup": "madrid",
+      "rows": [
+        {"key": " es-md ", "value": 1},
+        {"key": "ES-MD", "value": 2}
+      ],
+      "options": {"joinBy": "iso_3166_2", "classes": []},
+      "expected": {
+        "ambiguous": [],
+        "duplicates": ["ES-MD"],
+        "joinBy": "id",
+        "rows": [],
+        "unmatched": [" es-md ", "ES-MD"]
+      }
+    },
+    {
+      "name": "Wikidata distinguishes duplicate, unmatched and ambiguous keys",
+      "lookup": "madrid",
+      "rows": [
+        {"key": " q2807 ", "value": 1},
+        {"key": "q19960", "value": 2},
+        {"key": " q19960 ", "value": 3},
+        {"key": "Q2807", "value": null},
+        {"key": " q-missing ", "value": 4},
+        {"key": "Q-MISSING", "value": 5}
+      ],
+      "options": {"joinBy": "wikidata"},
+      "expected": {
+        "ambiguous": ["q19960", " q19960 "],
+        "duplicates": ["Q19960", "Q2807", "Q-MISSING"],
+        "joinBy": "id",
+        "rows": [{"key": 101, "value": null}],
+        "unmatched": [" q-missing ", "Q-MISSING"]
+      }
+    },
+    {
+      "name": "a match without the target ref is unmatched",
+      "lookup": "madrid",
+      "rows": [{"key": " q0 ", "value": 1}],
+      "options": {"joinBy": "wikidata", "to": "ref"},
+      "expected": {
+        "ambiguous": [],
+        "duplicates": [],
+        "joinBy": "ref",
+        "rows": [],
+        "unmatched": [" q0 "]
+      }
+    },
+    {
+      "name": "country codes normalize and multiple IDs are ambiguous",
+      "lookup": "madrid",
+      "rows": [
+        {"key": " es ", "value": 1},
+        {"key": " es ", "value": 2},
+        {"key": " pt ", "value": 3}
+      ],
+      "options": {"joinBy": "iso_3166_1"},
+      "expected": {
+        "ambiguous": [" es ", " es "],
+        "duplicates": ["ES"],
+        "joinBy": "id",
+        "rows": [],
+        "unmatched": [" pt "]
+      }
+    },
+    {
+      "name": "NUTS codes normalize",
+      "lookup": "madrid",
+      "rows": [{"key": " es30 ", "value": 1}],
+      "options": {"joinBy": "nuts"},
+      "expected": {
+        "ambiguous": [],
+        "duplicates": [],
+        "joinBy": "id",
+        "rows": [{"key": 100, "value": 1}],
+        "unmatched": []
+      }
+    },
+    {
+      "name": "ref lookup keeps case and trims whitespace",
+      "lookup": "madrid",
+      "rows": [
+        {"key": " ES:INE:28079 ", "value": 1},
+        {"key": "es:ine:28079", "value": 2}
+      ],
+      "options": {"joinBy": "ref"},
+      "expected": {
+        "ambiguous": [],
+        "duplicates": [],
+        "joinBy": "id",
+        "rows": [{"key": 101, "value": 1}],
+        "unmatched": ["es:ine:28079"]
+      }
+    },
+    {
+      "name": "ID lookup resolves normalized numeric string to a ref",
+      "lookup": "madrid",
+      "rows": [{"key": " 1.01e2 ", "value": 1}],
+      "options": {"joinBy": "id", "to": "ref"},
+      "expected": {
+        "ambiguous": [],
+        "duplicates": [],
+        "joinBy": "ref",
+        "rows": [{"key": "ES:INE:28079", "value": 1}],
+        "unmatched": []
+      }
+    },
+    {
+      "name": "CSV supports CRLF, escaped quotes, embedded newlines and extra columns",
+      "csv": "id,class,class_tier,admin_level,iso_3166_1,iso_3166_2,nuts,ref,wikidata,name,ignored\r\n100,region,primary,4,ES,ES-MD,ES30,ES-MD,Q5756,Comunidad de Madrid,skip\r\n100,province_or_county,primary,6,ES,ES-MD,ES30,ES:INE:28,Q5756,Madrid,skip\r\n101,municipality,primary,8,ES,,,ES:INE:28079,Q2807,Madrid,skip\r\n108,municipality,primary,8,ES,,,ES:INE:28092,Q19960,\"Móstoles, \"\"Madrid\"\"\r\nCentro\",skip\r\n109,district,primary,9,ES,,,ES:INE:28079:01,Q19960,Centro,skip\r\n110,district,secondary,9,ES,,,,Q0,,skip",
+      "rows": [{"key": " q19960 ", "value": 4}],
+      "options": {"joinBy": "wikidata", "classes": ["municipality"]},
+      "parsed": [
+        {
+          "id": 100,
+          "class": "region",
+          "class_tier": "primary",
+          "admin_level": 4,
+          "iso_3166_1": "ES",
+          "iso_3166_2": "ES-MD",
+          "nuts": "ES30",
+          "ref": "ES-MD",
+          "wikidata": "Q5756",
+          "name": "Comunidad de Madrid"
+        },
+        {
+          "id": 100,
+          "class": "province_or_county",
+          "class_tier": "primary",
+          "admin_level": 6,
+          "iso_3166_1": "ES",
+          "iso_3166_2": "ES-MD",
+          "nuts": "ES30",
+          "ref": "ES:INE:28",
+          "wikidata": "Q5756",
+          "name": "Madrid"
+        },
+        {
+          "id": 101,
+          "class": "municipality",
+          "class_tier": "primary",
+          "admin_level": 8,
+          "iso_3166_1": "ES",
+          "ref": "ES:INE:28079",
+          "wikidata": "Q2807",
+          "name": "Madrid"
+        },
+        {
+          "id": 108,
+          "class": "municipality",
+          "class_tier": "primary",
+          "admin_level": 8,
+          "iso_3166_1": "ES",
+          "ref": "ES:INE:28092",
+          "wikidata": "Q19960",
+          "name": "Móstoles, \"Madrid\"\r\nCentro"
+        },
+        {
+          "id": 109,
+          "class": "district",
+          "class_tier": "primary",
+          "admin_level": 9,
+          "iso_3166_1": "ES",
+          "ref": "ES:INE:28079:01",
+          "wikidata": "Q19960",
+          "name": "Centro"
+        },
+        {
+          "id": 110,
+          "class": "district",
+          "class_tier": "secondary",
+          "admin_level": 9,
+          "iso_3166_1": "ES",
+          "wikidata": "Q0"
+        }
+      ],
+      "expected": {
+        "ambiguous": [],
+        "duplicates": [],
+        "joinBy": "id",
+        "rows": [{"key": 108, "value": 4}],
+        "unmatched": []
+      }
+    },
+    {
+      "name": "invalid CSV row width",
+      "csv": "id,class\n1",
+      "rows": [{"key": "ES", "value": 1}],
+      "options": {"joinBy": "iso_3166_1"},
+      "error": "Boundaries lookup CSV row 2 has 1 fields; expected 2."
+    },
+    {
+      "name": "unterminated CSV quote",
+      "csv": "id,class\n1,\"region",
+      "rows": [{"key": "ES", "value": 1}],
+      "options": {"joinBy": "iso_3166_1"},
+      "error": "Boundaries lookup CSV ends inside a quoted field."
+    },
+    {
+      "name": "invalid lookup ID",
+      "lookup": [{"id": -1, "class": "region"}],
+      "rows": [{"key": "ES", "value": 1}],
+      "options": {"joinBy": "iso_3166_1"},
+      "error": "Boundaries lookup row has an invalid id: -1."
+    },
+    {
+      "name": "invalid lookup class",
+      "lookup": [{"id": 1, "class": "unknown"}],
+      "rows": [{"key": "ES", "value": 1}],
+      "options": {"joinBy": "iso_3166_1"},
+      "error": "Unknown Boundaries class: unknown."
+    },
+    {
+      "name": "indirect joins require a lookup",
+      "rows": [{"key": "ES", "value": 1}],
+      "options": {"joinBy": "iso_3166_1"},
+      "error": "Joining rows by iso_3166_1 to id requires the Boundaries lookup table."
+    }
+  ]
+}

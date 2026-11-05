@@ -9,7 +9,7 @@ require 'pathname'
 #     tileflow_post_install(installer)
 #   end
 #
-# It only adds Swift package references and products to the pod targets. It never installs a
+# It adds Swift package products to the pod and embeds their renderer in consuming apps. It never installs a
 # shell phase or changes a pin. Release builds use the Tileflow Swift package at the version this
 # package pins; set TILEFLOW_SWIFT_PACKAGE_PATH to a local package, such as a native candidate or
 # this repository's platforms/ios, to build against it instead.
@@ -40,6 +40,30 @@ def tileflow_post_install(installer, swift_package_path: ENV['TILEFLOW_SWIFT_PAC
 			paths = Array(config.build_settings['SWIFT_INCLUDE_PATHS'] || '$(inherited)')
 			search = '${SYMROOT}/${CONFIGURATION}${EFFECTIVE_PLATFORM_NAME}/'
 			config.build_settings['SWIFT_INCLUDE_PATHS'] = paths + [search] unless paths.include?(search)
+		end
+	end
+	tileflow_embed_renderer(installer)
+end
+
+# CocoaPods' static library does not propagate SwiftPM's dynamic framework embedding to the app.
+# Copy the framework SwiftPM already resolved and built; its package remains the only version pin.
+def tileflow_embed_renderer(installer)
+	installer.aggregate_targets.each do |aggregate|
+		next unless aggregate.pod_targets.any? { |pod| pod.root_spec.name == 'TileflowReactNative' }
+		aggregate.user_targets.each do |target|
+			next unless target.product_type == 'com.apple.product-type.application'
+			project = target.project
+			framework = project.files.find do |file|
+				file.path == 'MapLibre.framework' && file.source_tree == 'BUILT_PRODUCTS_DIR'
+			end
+			framework ||= project.frameworks_group.new_file('MapLibre.framework', :built_products)
+			phase = target.copy_files_build_phases.find { |copy| copy.name == 'Embed Tileflow Renderer' }
+			phase ||= target.new_copy_files_build_phase('Embed Tileflow Renderer')
+			phase.dst_subfolder_spec = '10'
+			phase.dst_path = ''
+			file = phase.files.find { |copy| copy.file_ref == framework } || phase.add_file_reference(framework)
+			file.settings = { 'ATTRIBUTES' => %w[CodeSignOnCopy RemoveHeadersOnCopy] }
+			project.save
 		end
 	end
 end

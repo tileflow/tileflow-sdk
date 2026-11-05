@@ -38,8 +38,8 @@ importers:
         specifier: 5.3.0
         version: 5.3.0
       '@fontsource/noto-sans-tc':
-        specifier: 5.3.0
-        version: 5.3.0
+        specifier: 5.3.1
+        version: 5.3.1
       '@fontsource/noto-sans-thai':
         specifier: 5.3.0
         version: 5.3.0
@@ -906,8 +906,8 @@ packages:
   '@fontsource/noto-sans-sc@5.3.0':
     resolution: {integrity: sha512-HeqIlGm0+ohOKxZLuHj1qW6r6avHH0OWdKERAcSDI0RQ+MXrteuLKA+M+5eOA8rYy0MFvOR5AT0fQo2rUkye0Q==}
 
-  '@fontsource/noto-sans-tc@5.3.0':
-    resolution: {integrity: sha512-+0MguVH2vIxkVJLiaMHVKHk+yJZmZvMU9d8z88JdUx8C2CgMLOtm7WNloi3HYlvCNy7TpuvjIUvh5iiGp6INxQ==}
+  '@fontsource/noto-sans-tc@5.3.1':
+    resolution: {integrity: sha512-kiOTKRnkEV4dsMqfmIuH3TnkYp5Rqq2f4LgAArx0Y5eVzCebU2TgWup5TWCWWSk28nBf4mgunLTyQP+xQ74gcQ==}
 
   '@fontsource/noto-sans-thai@5.3.0':
     resolution: {integrity: sha512-ngqUyvDukkZUHypQbUJvUdAeYa2aYZsyeDTsdqMudf7GK2F2TK19OZ5kbo+37qsBtkNpmAMhEObQnWnzPqzKUw==}
@@ -4110,7 +4110,7 @@ snapshots:
 
   '@fontsource/noto-sans-sc@5.3.0': {}
 
-  '@fontsource/noto-sans-tc@5.3.0': {}
+  '@fontsource/noto-sans-tc@5.3.1': {}
 
   '@fontsource/noto-sans-thai@5.3.0': {}
 

@@ -171,8 +171,8 @@ internal class NativeMapSession(
 
     private suspend fun setUserLocation(input: JSONObject) {
         val visible = MapValues.boolean(input, "visible", false)
-        val consumes = visible || MapValues.boolean(input, "emitsUpdates", false)
-        val follows = consumes && MapValues.boolean(input, "followUserLocation", false)
+        val follows = MapValues.boolean(input, "followUserLocation", false)
+        val consumes = visible || MapValues.boolean(input, "emitsUpdates", false) || follows
         val mode = when (MapValues.optionalString(input, "followUserMode") ?: "normal") {
             "normal" -> TileflowFollowMode.POSITION
             "compass" -> TileflowFollowMode.HEADING

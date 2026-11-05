@@ -41,6 +41,10 @@ class NativeMapSessionTest {
             session.call("setUserLocation", JSONObject("""{"visible":false,"emitsUpdates":true}"""))
             assertTrue(map.options.location.enabled)
             assertFalse(map.options.location.showsPuck)
+            session.call("setUserLocation", JSONObject("""{"visible":false,"emitsUpdates":false,"followUserLocation":true}"""))
+            assertTrue(map.options.location.enabled)
+            assertFalse(map.options.location.showsPuck)
+            assertEquals(dev.tileflow.sdk.location.TileflowFollowMode.POSITION, map.followMode)
             session.call("setUserLocation", JSONObject("""{"visible":false,"emitsUpdates":false}"""))
             assertFalse(map.options.location.enabled)
         } finally { session.destroy() }

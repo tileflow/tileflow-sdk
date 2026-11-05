@@ -42,6 +42,7 @@ enum MapContract {
     case setAnnotationLayers
     case setTrackedPoints
     case addSource
+    case updateSource
     case removeSource
     case setGeoJSONSourceData
     case updateGeoJSONSource

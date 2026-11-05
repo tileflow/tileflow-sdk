@@ -41,6 +41,7 @@
     "setAnnotationLayers",
     "setTrackedPoints",
     "addSource",
+    "updateSource",
     "removeSource",
     "setGeoJSONSourceData",
     "updateGeoJSONSource",

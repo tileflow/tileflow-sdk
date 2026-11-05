@@ -46,6 +46,7 @@ internal object MapContract {
         SET_ANNOTATION_LAYERS("setAnnotationLayers"),
         SET_TRACKED_POINTS("setTrackedPoints"),
         ADD_SOURCE("addSource"),
+        UPDATE_SOURCE("updateSource"),
         REMOVE_SOURCE("removeSource"),
         SET_GEO_JSON_SOURCE_DATA("setGeoJSONSourceData"),
         UPDATE_GEO_JSON_SOURCE("updateGeoJSONSource"),

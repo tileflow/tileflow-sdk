@@ -161,7 +161,10 @@ export class StyleRegistry {
         continue;
       }
       if (desired.signature !== entry.applied.signature) {
-        await this.map.call('updateLayer', {properties: desired.properties});
+        const slot = entry.applied.position?.slot;
+        await this.map.call('updateLayer', {
+          properties: {...desired.properties, ...(slot ? {slot} : {})},
+        });
         entry.applied = {
           ...entry.applied,
           properties: desired.properties,
@@ -169,7 +172,10 @@ export class StyleRegistry {
         };
       }
       if (desired.positionSignature !== entry.applied.positionSignature) {
-        await this.map.call('moveLayer', {id, position: desired.position ?? {}});
+        await this.map.call('moveLayer', {
+          id,
+          position: {...desired.position, slot: desired.position?.slot ?? null},
+        });
         entry.applied = desired;
       }
     }

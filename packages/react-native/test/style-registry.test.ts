@@ -162,3 +162,43 @@ test('source configuration patches preserve its id, data and dependent layers', 
   assert.deepEqual(calls[3]?.payload, {id: 'data', properties: {clusterRadius: null}});
   assert.equal(calls.filter((call) => call.method === 'addLayer').length, 1);
 });
+
+test('paint updates retain the acknowledged native layer slot', async () => {
+  const {style, calls} = harness();
+  const owner = Symbol();
+  style.layer(
+    'dots',
+    owner,
+    {id: 'dots', type: 'circle', source: 'data', paint: {'circle-radius': 4}},
+    {slot: 'above-roads'},
+  );
+  await style.synchronize();
+  style.layer(
+    'dots',
+    owner,
+    {id: 'dots', type: 'circle', source: 'data', paint: {'circle-radius': 8}},
+    {slot: 'above-roads'},
+  );
+  await style.synchronize();
+  assert.equal(
+    (
+      calls.find((call) => call.method === 'updateLayer')?.payload.properties as Record<
+        string,
+        unknown
+      >
+    ).slot,
+    'above-roads',
+  );
+});
+
+test('removing a declarative slot explicitly restores the unslotted position', async () => {
+  const {style, calls} = harness();
+  const owner = Symbol();
+  const layer = {id: 'dots', type: 'circle', source: 'data'};
+  style.layer('dots', owner, layer, {slot: 'above-roads'});
+  await style.synchronize();
+  style.layer('dots', owner, layer);
+  await style.synchronize();
+  const move = calls.find((call) => call.method === 'moveLayer');
+  assert.equal((move?.payload.position as Record<string, unknown>).slot, null);
+});

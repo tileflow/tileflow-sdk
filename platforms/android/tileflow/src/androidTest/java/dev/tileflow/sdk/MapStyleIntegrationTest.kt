@@ -211,7 +211,7 @@ public class MapStyleIntegrationTest {
                             )
                     )
                     map.addLayer(
-                        TileflowHeatmapLayer("heat", "points").maxZoom(9.0),
+                        TileflowHeatmapLayer("heat", "points").maxZoom(9.0).slot(TileflowLayerSlot.ABOVE_LABELS),
                         TileflowLayerPosition.Below("clusters"),
                     )
                     map.addImage(disc())

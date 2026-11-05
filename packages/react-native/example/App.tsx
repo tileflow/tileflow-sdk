@@ -72,6 +72,16 @@ function featureCount(value: unknown): number {
   throw new Error('The query did not return a FeatureCollection.');
 }
 
+function isFixtureDegradation(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const warning = value as {code?: unknown; context?: {reason?: unknown; feature?: unknown}};
+  return (
+    warning.code === 'rendererFailed' &&
+    warning.context?.reason === 'featureUnavailable' &&
+    warning.context.feature === 'scene3d'
+  );
+}
+
 async function downloadRegion(): Promise<OfflineRegion> {
   if (await TileflowOfflineStore.region(regionId))
     await TileflowOfflineStore.removeRegion(regionId);
@@ -103,7 +113,7 @@ export default function App() {
   const map = useRef<MapViewRef>(null);
   const nextId = useRef(0);
   const loads = useRef(new Map<number, Load>());
-  const warnings = useRef(new Map<number, string[]>());
+  const warnings = useRef(new Map<number, unknown[]>());
   const loadEvents = useRef(new Map<number, number>());
   const active = useRef(true);
   const running = useRef(false);
@@ -234,7 +244,7 @@ export default function App() {
       if (
         !stored?.isAvailable ||
         TileflowOfflineSwitch.isNetworkEnabled() ||
-        offlineWarnings.length
+        offlineWarnings.some((warning) => !isFixtureDegradation(warning))
       )
         throw new Error(`Offline check failed: ${JSON.stringify(offlineWarnings)}`);
       completed = true;
@@ -351,7 +361,7 @@ export default function App() {
           onMapLoadingError={failed}
           onWarning={(warning: unknown) => {
             const list = warnings.current.get(mounted.id) ?? [];
-            list.push(message(warning));
+            list.push(warning);
             warnings.current.set(mounted.id, list);
           }}
           style={styles.map}

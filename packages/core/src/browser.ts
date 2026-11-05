@@ -10,7 +10,7 @@ import {
 import type {TileflowWorldRequestBridge} from './fair-use-browser';
 import {
   beginTileflowRuntimeStyleChange,
-  composeTileflowRuntimeStyle,
+  prepareTileflowRuntimeStyleApplication,
   stripTileflowRuntimeStyle,
 } from './map-controller-browser';
 import {isTileflowThemeName} from './portable-identity-rules';
@@ -2388,6 +2388,7 @@ function applyMapStyle(
   const releaseRuntime = beginTileflowRuntimeStyleChange(map);
   return new Promise((resolve, reject) => {
     let settled = false;
+    let runtimeApplication: ReturnType<typeof prepareTileflowRuntimeStyleApplication> | undefined;
     const cleanup = () => {
       clearTimeout(timeout);
       map.off('style.load', handleLoad);
@@ -2398,6 +2399,11 @@ function applyMapStyle(
       if (settled) return;
       settled = true;
       cleanup();
+      try {
+        runtimeApplication?.finish();
+      } catch (failure) {
+        error ??= normalizeThemeTransitionError(failure, 'Application resource ownership changed.');
+      }
       releaseRuntime();
       if (error) reject(error);
       else resolve();
@@ -2431,11 +2437,9 @@ function applyMapStyle(
         options?: {diff?: boolean; validate?: boolean},
       ) => unknown;
       // A theme's style is compiled, and validated, when its map is built.
-      setStyle.call(
-        map,
-        typeof style === 'string' ? style : composeTileflowRuntimeStyle(map, style),
-        {diff: true, validate: false},
-      );
+      runtimeApplication =
+        typeof style === 'string' ? undefined : prepareTileflowRuntimeStyleApplication(map, style);
+      setStyle.call(map, runtimeApplication?.style ?? style, {diff: true, validate: false});
       // MapLibre emits no style.load for an empty diff. The live transition's
       // first style may already match the map, even while camera tiles load.
       handleRenderedStyle();

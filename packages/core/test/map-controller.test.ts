@@ -83,9 +83,9 @@ function mock() {
     emit(event: string, value?: unknown) {
       for (const listener of listeners.get(event) ?? []) listener(value);
     },
-    replace(next: MapLibreStyle) {
+    replace(next: MapLibreStyle, notify = true) {
       style = clone(next);
-      for (const listener of listeners.get('style.load') ?? []) listener();
+      if (notify) for (const listener of listeners.get('style.load') ?? []) listener();
     },
   };
 }
@@ -177,7 +177,10 @@ test('owns only registered resources and composes before style replacement', asy
     composed.layers.map((layer) => layer.id),
     ['ground', 'route', 'base-labels'],
   );
-  map.replace(composed);
+  const {prepareTileflowRuntimeStyleApplication} = await import('../src/map-controller-browser');
+  const application = prepareTileflowRuntimeStyleApplication(map, destination);
+  map.replace(application.style);
+  application.finish();
   await controller.moveLayer('route', {slot: null});
   assert.deepEqual(
     map.getStyle().layers.map((layer) => layer.id),
@@ -377,4 +380,151 @@ test('keeps the renderer-normalized definition across theme replacement', async 
   await controller.moveLayer('route', {slot: null});
   assert.deepEqual(errors, []);
   controller.dispose();
+});
+
+test('identical external replacement remains external on dispose', async () => {
+  const map = mock();
+  const errors: Error[] = [];
+  const controller = createTileflowMapController({map, onError: (error) => errors.push(error)});
+  await controller.addSource('points', source);
+  await controller.addLayer({id: 'route', type: 'circle', source: 'points'});
+  const ownSource = map.getSource('points');
+  const ownLayer = map.getLayer('route');
+  const replacement = map.getStyle();
+  map.replace(replacement);
+  assert.notEqual(map.getSource('points'), ownSource);
+  assert.notEqual(map.getLayer('route'), ownLayer);
+  controller.dispose();
+  assert.deepEqual(
+    map.getStyle(),
+    replacement,
+    'dispose must preserve externally replaced resources',
+  );
+});
+
+test('theme composition rejects externally replaced resources', async () => {
+  const map = mock();
+  const controller = createTileflowMapController({map});
+  await controller.addSource('points', source);
+  await controller.addLayer({id: 'route', type: 'circle', source: 'points'});
+  map.removeLayer('route');
+  map.removeSource('points');
+  map.addSource('points', {type: 'geojson', data: {type: 'Point', coordinates: [1, 2]}});
+  map.addLayer({id: 'route', type: 'circle', source: 'points', paint: {'circle-radius': 30}});
+  assert.throws(
+    () => composeTileflowRuntimeStyle(map, base()),
+    (error: unknown) =>
+      error instanceof TileflowMapError && error.context.reason === 'sourceOwnershipChanged',
+  );
+  controller.dispose();
+});
+
+test('applying a theme preserves externally replaced resources', async () => {
+  const {createTileflowThemeController} = await import('../src/browser');
+  const map = Object.assign(mock(), {
+    setStyle(style: MapLibreStyle) {
+      this.loaded = false;
+      queueMicrotask(() => {
+        this.loaded = true;
+        this.replace(style);
+      });
+    },
+  });
+  const controller = createTileflowMapController({map});
+  await controller.addSource('points', source);
+  await controller.addLayer({id: 'route', type: 'circle', source: 'points'});
+  const themes = createTileflowThemeController({
+    map: map as never,
+    initial: {theme: 'light', style: base()},
+    loadFonts: async () => {},
+  });
+  map.removeLayer('route');
+  map.removeSource('points');
+  const foreignSource = {type: 'geojson', data: {type: 'Point', coordinates: [1, 2]}};
+  map.addSource('points', foreignSource);
+  map.addLayer({id: 'route', type: 'circle', source: 'points', paint: {'circle-radius': 30}});
+  const result = await themes.setTheme(
+    {theme: 'dark', style: {...base(), name: 'dark'}},
+    {transition: {duration: 0}},
+  );
+  assert.equal(result.status, 'failed', 'foreign resource ownership must stop setStyle');
+  assert.deepEqual(map.getStyle().sources.points, foreignSource);
+  themes.dispose();
+  controller.dispose();
+});
+
+test('transition preparation does not strip foreign replacements from a live snapshot', async () => {
+  const {stripTileflowRuntimeStyle} = await import('../src/map-controller-browser');
+  const map = mock();
+  const controller = createTileflowMapController({map});
+  await controller.addSource('points', source);
+  await controller.addLayer({id: 'route', type: 'circle', source: 'points'});
+  map.removeLayer('route');
+  map.addLayer({id: 'route', type: 'circle', source: 'points'});
+  const snapshot = map.getStyle();
+  assert.throws(
+    () => stripTileflowRuntimeStyle(map, snapshot),
+    (error: unknown) =>
+      error instanceof TileflowMapError && error.context.reason === 'layerOwnershipChanged',
+  );
+  assert.deepEqual(map.getStyle(), snapshot);
+  map.removeLayer('route');
+  controller.dispose();
+});
+
+test('a failed own style application may restore its newly created resource identities', async () => {
+  const {createTileflowThemeController} = await import('../src/browser');
+  const map = Object.assign(mock(), {
+    setStyle(style: MapLibreStyle) {
+      this.loaded = false;
+      queueMicrotask(() => {
+        this.loaded = true;
+        this.replace(style, style.name !== 'broken');
+        if (style.name === 'broken')
+          this.emit('error', {error: new Error('Rejected after resource installation')});
+      });
+    },
+  });
+  const errors: Error[] = [];
+  const controller = createTileflowMapController({map, onError: (error) => errors.push(error)});
+  await controller.addSource('points', source);
+  await controller.addLayer({id: 'route', type: 'circle', source: 'points'});
+  const firstSource = map.getSource('points');
+  const firstLayer = map.getLayer('route');
+  const themes = createTileflowThemeController({
+    map: map as never,
+    initial: {theme: 'light', style: base()},
+    loadFonts: async () => {},
+  });
+  const result = await themes.setTheme(
+    {theme: 'broken', style: {...base(), name: 'broken'}},
+    {transition: {duration: 0}},
+  );
+  assert.equal(result.status, 'failed');
+  assert.equal(map.getStyle().name, 'base');
+  assert.notEqual(map.getSource('points'), firstSource);
+  assert.notEqual(map.getLayer('route'), firstLayer);
+  await controller.moveLayer('route', {slot: null});
+  assert.deepEqual(errors, []);
+  themes.dispose();
+  controller.dispose();
+});
+
+test('a completed application token cannot claim a later identical external reload', async () => {
+  const {prepareTileflowRuntimeStyleApplication} = await import('../src/map-controller-browser');
+  const map = mock();
+  const errors: Error[] = [];
+  const controller = createTileflowMapController({map, onError: (error) => errors.push(error)});
+  await controller.addSource('points', source);
+  await controller.addLayer({id: 'route', type: 'circle', source: 'points'});
+  const application = prepareTileflowRuntimeStyleApplication(map, {...base(), name: 'dark'});
+  map.replace(application.style);
+  application.finish();
+  const ownSource = map.getSource('points');
+  const replacement = map.getStyle();
+  map.replace(replacement);
+  assert.notEqual(map.getSource('points'), ownSource);
+  assert.equal((errors[0] as TileflowMapError).context.reason, 'sourceOwnershipChanged');
+  controller.dispose();
+  assert.deepEqual(map.getStyle(), replacement);
 });

@@ -66,13 +66,17 @@ type Layer = {
   slot: TileflowOverlayPlacement | null;
 };
 type Pending = {run(): void; resolve(): void; reject(error: unknown): void};
+type StyleApplication = {style: MapLibreStyle; finish(): void};
 type Runtime = {
+  application(style: MapLibreStyle): StyleApplication;
   compose(style: MapLibreStyle): MapLibreStyle;
   strip(style: MapLibreStyle): MapLibreStyle;
   begin(): void;
   end(): void;
 };
 const runtimes = new WeakMap<object, Runtime>();
+const applicationMetadataKey = 'tileflow:runtime-style-application';
+let nextRuntime = 0;
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const invalid = (reason: string, message?: string): never => {
   throw new TileflowMapError('invalidRequest', {
@@ -265,6 +269,8 @@ export function createTileflowMapControllerBinding(
   const installedSources = new Map<string, unknown>();
   const installedLayers = new Map<string, unknown>();
   let base: MapLibreStyle | undefined;
+  const applicationPrefix = `${++nextRuntime}:`;
+  let nextApplication = 0;
   const report = (error: unknown) =>
     (options.onError ?? console.error)(error instanceof Error ? error : new Error(String(error)));
   const ready = () =>
@@ -336,13 +342,20 @@ export function createTileflowMapControllerBinding(
     return strip(current);
   }
   function strip(style: MapLibreStyle): MapLibreStyle {
+    assertOwnership();
+    const metadata = {...style.metadata};
+    const token = metadata[applicationMetadataKey];
+    if (typeof token === 'string' && token.startsWith(applicationPrefix))
+      delete metadata[applicationMetadataKey];
     return {
       ...style,
+      ...(style.metadata ? {metadata} : {}),
       sources: Object.fromEntries(Object.entries(style.sources).filter(([id]) => !sources.has(id))),
       layers: style.layers.filter((layer) => !layers.some((own) => own.id === layer.id)),
     };
   }
   function compose(style: MapLibreStyle): MapLibreStyle {
+    assertOwnership();
     for (const id of sources.keys())
       if (Object.hasOwn(style.sources, id))
         invalid('sourceAlreadyExists', `The destination style already owns source "${id}".`);
@@ -366,6 +379,60 @@ export function createTileflowMapControllerBinding(
     }
     return combined;
   }
+  function application(style: MapLibreStyle): StyleApplication {
+    const composed = compose(style);
+    const token = `${applicationPrefix}${++nextApplication}`;
+    const submitted = {
+      ...composed,
+      metadata: {...composed.metadata, [applicationMetadataKey]: token},
+    };
+    locks += 1;
+    let finished = false;
+    return {
+      style: submitted,
+      finish() {
+        if (finished) return;
+        finished = true;
+        try {
+          if (!map || terminal) return;
+          const current = styleOf(map);
+          const isOwnApplication = current?.metadata?.[applicationMetadataKey] === token;
+          // Only this submitted generation may introduce new renderer identities. Definitions
+          // alone never prove ownership of a resource from an external style replacement.
+          for (const [id, installed] of installedSources) {
+            const replacement = map.getSource(id);
+            if (!replacement || replacement === installed) continue;
+            if (!isOwnApplication || !equivalent(current?.sources[id], sources.get(id)))
+              invalid('sourceOwnershipChanged');
+          }
+          for (const [id, installed] of installedLayers) {
+            const replacement = map.getLayer(id);
+            if (!replacement || replacement === installed) continue;
+            const expected = layers.find((layer) => layer.id === id)?.definition;
+            if (
+              !isOwnApplication ||
+              !equivalent(
+                current?.layers.find((layer) => layer.id === id),
+                expected,
+              )
+            )
+              invalid('layerOwnershipChanged');
+          }
+          for (const id of sources.keys()) {
+            const installed = map.getSource(id);
+            if (installed) installedSources.set(id, installed);
+          }
+          for (const layer of layers) {
+            const installed = map.getLayer(layer.id);
+            if (installed) installedLayers.set(layer.id, installed);
+          }
+        } finally {
+          locks = Math.max(0, locks - 1);
+          if (!locks) sync();
+        }
+      },
+    };
+  }
   function beforeLayer(layer: Layer, order: Layer[], style: MapLibreStyle): string | undefined {
     const combined = composeFor(order, style);
     const index = combined.findIndex((item) => item.id === layer.id);
@@ -385,16 +452,9 @@ export function createTileflowMapControllerBinding(
     if (!map || terminal || locks || restoring || !styleOf(map)) return;
     restoring = true;
     try {
+      assertOwnership();
       const current = styleOf(map)!;
-      // External style replacement may omit our resources; never claim a conflicting resource.
-      for (const [id, definition] of sources) {
-        if (map.getSource(id) && !equivalent(current.sources[id], definition))
-          invalid('sourceAlreadyExists');
-      }
-      for (const layer of layers) {
-        const existing = current.layers.find((item) => item.id === layer.id);
-        if (existing && !equivalent(existing, layer.definition)) invalid('layerAlreadyExists');
-      }
+      // External reloads can remove owned resources. Existing foreign identities are rejected.
       base = strip(current);
       for (const [id, definition] of sources)
         if (!map.getSource(id)) map.addSource(id, json(definition) as never);
@@ -549,6 +609,7 @@ export function createTileflowMapControllerBinding(
       map = next;
       base = initialStyle;
       runtimes.set(next, {
+        application,
         compose,
         strip,
         begin() {
@@ -600,4 +661,12 @@ export function beginTileflowRuntimeStyleChange(map: object): () => void {
       runtime?.end();
     }
   };
+}
+
+/** Attribute new identities only to this exact Core style submission. */
+export function prepareTileflowRuntimeStyleApplication(
+  map: object,
+  style: MapLibreStyle,
+): StyleApplication {
+  return runtimes.get(map)?.application(style) ?? {style, finish() {}};
 }

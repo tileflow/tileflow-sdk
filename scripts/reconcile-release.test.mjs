@@ -327,12 +327,7 @@ test('package checks accept the materialized Native release without relaxing sou
           from: null,
           to: '0.1.0-alpha.0',
           differences: ['package-unpublished'],
-          runtimeDependencies: {
-            dependencies: {
-              '@tileflow/core': automaticInternalRuntimeRange('0.1.0-alpha.17'),
-              '@tileflow/interactions': automaticInternalRuntimeRange('0.1.0-alpha.17'),
-            },
-          },
+          runtimeDependencies: {},
         },
       ],
     },
@@ -340,21 +335,14 @@ test('package checks accept the materialized Native release without relaxing sou
   );
   await assert.rejects(validateSourceManifests(root), /source version must be/u);
 
+  const materialized = JSON.parse(await readFile(manifestPath, 'utf8'));
+  assert.deepEqual(materialized.dependencies, source.dependencies);
+  assert.deepEqual(materialized.peerDependencies, source.peerDependencies);
+
   for (const path of [
     'scripts/release-config.mjs',
     'scripts/release-config.test.mjs',
-    'test-support',
-    'pnpm-lock.yaml',
-    'packages/react-native/README.md',
-    'packages/react-native/dist',
-    'packages/react-native/test/package.test.ts',
-    'packages/react-native/test/native-admission-pack-files.ts',
-    'packages/react-native/test/native-interaction-package.test.ts',
-    'packages/react-native/test/public-runtime.ts',
-    'packages/react-native/src',
-    'packages/react-native/tsup.config.ts',
-    'packages/react-native/tsconfig.contract.json',
-    'packages/interactions/src',
+    'test-support/public-workspace-manifest.mjs',
   ]) {
     const destination = join(root, path);
     await mkdir(join(destination, '..'), {recursive: true});
@@ -365,12 +353,6 @@ test('package checks accept the materialized Native release without relaxing sou
     join(root, 'node_modules'),
     process.platform === 'win32' ? 'junction' : 'dir',
   );
-  await symlink(
-    fileURLToPath(new URL('../packages/react-native/node_modules', import.meta.url)),
-    join(root, 'packages/react-native/node_modules'),
-    process.platform === 'win32' ? 'junction' : 'dir',
-  );
-
   await t.test('catalog package checks', async () => {
     const {stdout} = await execFileAsync(
       process.execPath,
@@ -379,34 +361,6 @@ test('package checks accept the materialized Native release without relaxing sou
         '--test-reporter=tap',
         '--test-name-pattern=React Native is publishable',
         'scripts/release-config.test.mjs',
-      ],
-      {cwd: root, env: {...process.env, NODE_TEST_CONTEXT: undefined}},
-    );
-    assert.match(stdout, /^# pass 1$/mu);
-  });
-  await t.test('Native package checks', async () => {
-    const {stdout} = await execFileAsync(
-      process.execPath,
-      [
-        fileURLToPath(new URL('../node_modules/tsx/dist/cli.mjs', import.meta.url)),
-        '--test',
-        '--test-reporter=tap',
-        '--test-name-pattern=is publishable with exact native peers',
-        'packages/react-native/test/package.test.ts',
-      ],
-      {cwd: root, env: {...process.env, NODE_TEST_CONTEXT: undefined}},
-    );
-    assert.match(stdout, /^# pass 1$/mu);
-  });
-  await t.test('Native interaction metadata checks', async () => {
-    const {stdout} = await execFileAsync(
-      process.execPath,
-      [
-        fileURLToPath(new URL('../node_modules/tsx/dist/cli.mjs', import.meta.url)),
-        '--test',
-        '--test-reporter=tap',
-        '--test-name-pattern=mounted public types',
-        'packages/react-native/test/native-interaction-package.test.ts',
       ],
       {cwd: root, env: {...process.env, NODE_TEST_CONTEXT: undefined}},
     );

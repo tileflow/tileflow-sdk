@@ -111,7 +111,6 @@ try {
         private: true,
         type: 'module',
         dependencies: {
-          '@maplibre/maplibre-react-native': mobileVersions.maplibre,
           expo: mobileVersions.expo,
           react: mobileVersions.react,
           'react-dom': mobileVersions.react,

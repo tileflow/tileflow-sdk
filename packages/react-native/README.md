@@ -33,11 +33,20 @@ export function StoreMap() {
   return (
     <MapView source={{mapId: 'map_0123456789abcdef'}} style={{flex: 1}}>
       <Camera centerCoordinate={[-3.7038, 40.4168]} zoomLevel={16} />
-      <GeoJSONSource id="stores" shape={{
-        type: 'FeatureCollection',
-        features: [{type: 'Feature', id: 'sol', properties: {},
-          geometry: {type: 'Point', coordinates: [-3.7038, 40.4168]}}],
-      }}>
+      <GeoJSONSource
+        id="stores"
+        shape={{
+          type: 'FeatureCollection',
+          features: [
+            {
+              type: 'Feature',
+              id: 'sol',
+              properties: {},
+              geometry: {type: 'Point', coordinates: [-3.7038, 40.4168]},
+            },
+          ],
+        }}
+      >
         <CircleLayer id="store-points" style={{circleRadius: 7, circleColor: '#e9573f'}} />
       </GeoJSONSource>
     </MapView>

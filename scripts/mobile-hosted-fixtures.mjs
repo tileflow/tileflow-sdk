@@ -8,10 +8,7 @@ const ios = 'platforms/ios/Tests/TileflowTests/Fixtures';
 const android = 'platforms/android/tileflow/src/test/resources';
 const files = {
   'native-session.json': [`${ios}/native-session.json`, `${android}/native-session.json`],
-  'session-sequences.json': [
-    `${ios}/session-sequences.json`,
-    `${android}/session-sequences.json`,
-  ],
+  'session-sequences.json': [`${ios}/session-sequences.json`, `${android}/session-sequences.json`],
 };
 const stale = [];
 

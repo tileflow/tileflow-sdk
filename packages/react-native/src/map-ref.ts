@@ -95,9 +95,12 @@ export function createMapRef(map: MapController, style: StyleRegistry): MapViewR
       await style.synchronize();
       await map.call('setFeatureState', {...feature(target), state});
     },
-    getFeatureState: async (target) =>
-      (await map.call('getFeatureState', feature(target))) as StyleState,
+    getFeatureState: async (target) => {
+      await style.synchronize();
+      return (await map.call('getFeatureState', feature(target))) as StyleState;
+    },
     removeFeatureState: async (target, key) => {
+      await style.synchronize();
       await map.call('removeFeatureState', {...feature(target), ...(key ? {key} : {})});
     },
     setBoundaryValues: async (values) => {

@@ -118,7 +118,7 @@ test('the AppDelegate registers the background task and forwards background sess
   assert.equal(plugin.appDelegate(appDelegate, plugin.settings({}, {})), appDelegate);
 });
 
-test('the Podfile calls the Tileflow hook after MapLibre React Native', () => {
+test('the Podfile calls the Tileflow hook after React Native', () => {
   const podfile = `  post_install do |installer|
     react_native_post_install(
       installer,
@@ -130,10 +130,7 @@ test('the Podfile calls the Tileflow hook after MapLibre React Native', () => {
     podfile,
     plugin.settings({ios: {swiftPackagePath: '/sdk/swift'}}, {}),
   );
-  assert.match(
-    changed,
-    /\)\n {4}\$MLRN\.post_install\(installer\)\n {4}tileflow_post_install\(installer\)\n/u,
-  );
+  assert.match(changed, /\)\n {4}tileflow_post_install\(installer\)\n/u);
   assert.match(changed, /^ENV\['TILEFLOW_SWIFT_PACKAGE_PATH'\] \|\|= "\/sdk\/swift"\n/u);
   assert.equal(
     plugin.podfile(changed, plugin.settings({ios: {swiftPackagePath: '/sdk/swift'}}, {})),
@@ -196,4 +193,57 @@ test('Android apps target at least API 26', () => {
     ),
     '28',
   );
+});
+
+test('nested plugin props cannot carry credentials into Expo app config', () => {
+  for (const props of [
+    {ios: {mapCredential: credential}},
+    {android: {apiKey: credential}},
+    {offline: {token: credential}},
+    {ios: {swiftPackagePath: credential}},
+    {android: {nativeVersion: credential}},
+  ]) {
+    assert.throws(() => plugin.settings(props, {}), /environment variables/u);
+  }
+  const props = {offline: {backgroundUpdates: true}, ios: {swiftPackagePath: '/native/swift'}};
+  const before = JSON.stringify(props);
+  plugin.settings(props, env);
+  assert.equal(JSON.stringify(props), before);
+  assert.equal(JSON.stringify(props).includes(credential), false);
+});
+
+test('native configuration migration removes the retired map admission arrays', () => {
+  const config = plugin.settings({}, env);
+  const plist = plugin.infoPlist({TileflowMobileConfiguration: ['credential=stale']}, config);
+  assert.equal(plist.TileflowMobileConfiguration, undefined);
+  assert.equal(plist.TileflowMapCredential, credential);
+  const xml = plugin.stringsXml(
+    {
+      resources: {
+        'string-array': [
+          {$: {name: 'tileflow_mobile_configuration'}, item: ['credential=stale']},
+          {$: {name: 'application_values'}, item: ['retained']},
+        ],
+      },
+    },
+    config,
+  );
+  assert.deepEqual(xml.resources['string-array'], [
+    {$: {name: 'application_values'}, item: ['retained']},
+  ]);
+});
+
+test('Podfile integration uses Tileflow after the React Native hook', () => {
+  const source = `post_install do |installer|
+  react_native_post_install(
+    installer,
+    config[:reactNativePath]
+  )
+  $MLRN.post_install(installer)
+end
+`;
+  const result = plugin.podfile(source, plugin.settings({}, {}));
+  assert.doesNotMatch(result, /\$MLRN/u);
+  assert.equal(result.match(/tileflow_post_install\(installer\)/gu)?.length, 1);
+  assert.equal(plugin.podfile(result, plugin.settings({}, {})), result);
 });

@@ -74,10 +74,6 @@ export async function packMobilePackages(context, repository, pnpm) {
   ]) {
     await copyMobileInputs(join(sourceRoot, file), join(stage, file));
   }
-  await copyMobileInputs(
-    join(sourceRoot, 'packages/core/reference/modules-api-reference.json'),
-    join(stage, 'packages/core/reference/modules-api-reference.json'),
-  );
   for (const file of ['LICENSE', 'scripts/package-license.mjs'])
     await readMobileFile(sourceRoot, join(sourceRoot, file));
   await stagePackageLicenseInputs({root: sourceRoot, stagingRoot: stage});

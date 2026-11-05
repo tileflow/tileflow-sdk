@@ -98,7 +98,6 @@ async function consumerFixture(root, kind, defect) {
           ios: {podspecPath: join(nativeRoot, 'TileflowReactNative.podspec')},
         },
       },
-      '@maplibre/maplibre-react-native': {platforms: {android: {}, ios: {}}},
     },
   };
   if (defect === 'android-discovery')
@@ -206,7 +205,7 @@ for (const kind of ['expo', 'bare']) {
       assert.doesNotMatch(JSON.stringify(result.receipt), /file:|workspace:|\/tmp\//u);
       assert.equal(JSON.stringify(result.receipt).includes(root), false);
       const podfile = await readFile(join(f.directory, 'ios', 'Podfile'), 'utf8');
-      assert.equal(podfile.match(/\$MLRN\.post_install/g)?.length, 1);
+      assert.doesNotMatch(podfile, /\$MLRN/u);
       assert.equal(podfile.match(/tileflow_post_install/g)?.length, 1);
       if (kind === 'expo')
         await assert.rejects(access(join(f.directory, 'App.js')), {code: 'ENOENT'});

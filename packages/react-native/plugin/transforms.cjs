@@ -21,19 +21,42 @@ const MARK = '// @tileflow/react-native';
  * Reads and checks the plugin's props and the credentials of the environment. Credentials are
  * never props: Expo embeds the app config, plugin props included, where JavaScript can read it.
  */
-function settings(props = {}, env = process.env) {
+function checkedProps(props, allowed, section = '') {
   if (typeof props !== 'object' || props === null || Array.isArray(props)) {
-    throw new Error('@tileflow/react-native: the plugin props must be an object.');
+    throw new Error(`@tileflow/react-native: ${section || 'plugin props'} must be an object.`);
   }
-  for (const key of Object.keys(props)) {
-    if (/credential|token|key|secret/iu.test(key)) {
+  for (const [key, value] of Object.entries(props)) {
+    if (
+      /credential|token|key|secret/iu.test(key) ||
+      (typeof value === 'string' && /tf_(?:public|native|live)_/u.test(value))
+    ) {
       throw new Error(
-        `@tileflow/react-native: "${key}" cannot be a plugin prop. Set credentials in the ` +
-          'TILEFLOW_*_CREDENTIAL environment variables when you run prebuild; Expo embeds plugin ' +
-          'props in the app, where JavaScript can read them.',
+        '@tileflow/react-native: set credentials in TILEFLOW_*_CREDENTIAL environment variables; ' +
+          'Expo exposes plugin props to JavaScript.',
       );
     }
-    if (!PROPS.has(key)) throw new Error(`@tileflow/react-native: unknown plugin prop "${key}".`);
+    if (!allowed.has(key))
+      throw new Error(
+        `@tileflow/react-native: unknown plugin prop "${section ? section + '.' : ''}${key}".`,
+      );
+  }
+  return props;
+}
+
+function settings(props = {}, env = process.env) {
+  checkedProps(props, PROPS);
+  const offline = checkedProps(props.offline ?? {}, new Set(['backgroundUpdates']), 'offline');
+  const ios = checkedProps(props.ios ?? {}, new Set(['swiftPackagePath']), 'ios');
+  const android = checkedProps(
+    props.android ?? {},
+    new Set(['mavenRepository', 'nativeVersion']),
+    'android',
+  );
+  if (offline.backgroundUpdates !== undefined && typeof offline.backgroundUpdates !== 'boolean')
+    throw new Error('@tileflow/react-native: offline.backgroundUpdates must be a boolean.');
+  for (const [key, value] of Object.entries({...ios, ...android})) {
+    if (value !== undefined && (typeof value !== 'string' || !value.trim()))
+      throw new Error(`@tileflow/react-native: ${key} must be a non-empty string.`);
   }
   const apiOrigin = props.apiOrigin ?? DEFAULT_API_ORIGIN;
   let origin;
@@ -66,14 +89,13 @@ function settings(props = {}, env = process.env) {
     }
     credentials.push({variable, plist, resource, value});
   }
-  const offline = props.offline ?? {};
   return {
     apiOrigin: origin.origin,
     credentials,
     backgroundUpdates: offline.backgroundUpdates === true,
-    swiftPackagePath: props.ios?.swiftPackagePath,
-    mavenRepository: props.android?.mavenRepository,
-    nativeVersion: props.android?.nativeVersion,
+    swiftPackagePath: ios.swiftPackagePath,
+    mavenRepository: android.mavenRepository,
+    nativeVersion: android.nativeVersion,
   };
 }
 
@@ -81,13 +103,7 @@ function infoPlist(plist, config) {
   const next = {...plist, [API_ORIGIN[0]]: config.apiOrigin};
   for (const [, key] of CREDENTIALS) delete next[key];
   for (const credential of config.credentials) next[credential.plist] = credential.value;
-  // The current MapLibre-based Map reads its Hosted configuration from this array.
-  const map = config.credentials.find(({plist: key}) => key === 'TileflowMapCredential');
-  if (map) {
-    next.TileflowMobileConfiguration = [`apiOrigin=${config.apiOrigin}`, `credential=${map.value}`];
-  } else {
-    delete next.TileflowMobileConfiguration;
-  }
+  delete next.TileflowMobileConfiguration;
   if (config.backgroundUpdates) {
     const tasks = new Set(next.BGTaskSchedulerPermittedIdentifiers ?? []);
     tasks.add(BACKGROUND_TASK);
@@ -111,13 +127,6 @@ function stringsXml(xml, config) {
   const arrays = (resources['string-array'] ?? []).filter(
     (item) => item.$?.name !== 'tileflow_mobile_configuration',
   );
-  const map = config.credentials.find(({resource}) => resource === 'tileflow_map_credential');
-  if (map) {
-    arrays.push({
-      $: {name: 'tileflow_mobile_configuration', translatable: 'false'},
-      item: [`apiOrigin=${config.apiOrigin}`, `credential=${map.value}`],
-    });
-  }
   const next = {...resources, string: strings};
   if (arrays.length > 0) next['string-array'] = arrays;
   else delete next['string-array'];
@@ -159,26 +168,18 @@ function appDelegate(source, config) {
   return `${next.slice(0, close)}\n${hook}${next.slice(close)}`;
 }
 
-/** Adds `tileflow_post_install(installer)` after MapLibre React Native's hook in the Podfile. */
+/** Links the native Tileflow products after React Native's Podfile setup. */
 function podfile(source, config) {
-  let next = source;
+  let next = source.replace(/^[ \t]*\$MLRN\.post_install\(installer\)[ \t]*\r?\n/gmu, '');
   if (!next.includes('tileflow_post_install(installer)')) {
-    const mlrn = /^(\s*)\$MLRN\.post_install\(installer\)\n/mu;
-    const reactNative = /^(\s*)react_native_post_install\([\s\S]*?\n\s*\)\n/mu;
-    if (mlrn.test(next)) {
-      next = next.replace(
-        mlrn,
-        (line, indent) => `${line}${indent}tileflow_post_install(installer)\n`,
-      );
-    } else if (reactNative.test(next)) {
-      next = next.replace(
-        reactNative,
-        (block, indent) =>
-          `${block}${indent}$MLRN.post_install(installer)\n${indent}tileflow_post_install(installer)\n`,
-      );
-    } else {
+    const reactNative = /^([ \t]*)react_native_post_install\([\s\S]*?\n[ \t]*\)\n/mu;
+    if (!reactNative.test(next)) {
       throw new Error('@tileflow/react-native: the Podfile has no react_native_post_install call.');
     }
+    next = next.replace(
+      reactNative,
+      (block, indent) => `${block}${indent}tileflow_post_install(installer)\n`,
+    );
   }
   const line = /^ENV\['TILEFLOW_SWIFT_PACKAGE_PATH'\] \|\|= .*\n/mu;
   next = next.replace(line, '');

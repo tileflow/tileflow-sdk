@@ -10,7 +10,6 @@
     "start": "expo start --dev-client"
   },
   "dependencies": {
-    "@maplibre/maplibre-react-native": "11.5.0",
     "@tileflow/react-native": "link:..",
     "expo": "55.0.32",
     "react": "19.2.0",

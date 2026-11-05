@@ -11,7 +11,6 @@ export const mobileVersions = Object.freeze({
   // The 0.83.10 template pins these independently of the init executable.
   consumerCli: '20.0.0',
   react: '19.2.0',
-  maplibre: '11.5.0',
   typescript: '6.0.3',
   reactTypes: '19.2.17',
   gradle: '9.0.0',
@@ -20,7 +19,7 @@ export const mobileVersions = Object.freeze({
   ndk: '27.1.12297006',
   hermesBytecode: 96,
 });
-export const mobilePackages = Object.freeze(['core', 'interactions', 'react-native']);
+export const mobilePackages = Object.freeze(['react-native']);
 export const mobileConsumers = Object.freeze(['expo', 'bare']);
 const packageNames = new Set(mobilePackages.map((name) => `@tileflow/${name}`));
 const dependencyGroups = [
@@ -60,13 +59,13 @@ const messages = Object.freeze({
   WORKSPACE_UNSAFE:
     'An input or output escapes the owned workspace or contains an unsupported file type.',
   STAGING_INVALID:
-    'Package staging no longer matches the three-package development/release contract.',
+    'Package staging no longer matches the React Native development/release contract.',
   PACK_INVALID: 'A packed package has invalid identity, files, exports or workspace dependencies.',
   TEMPLATE_INVALID: 'The pinned template metadata or native integration anchors changed.',
   INSTALL_INVALID:
     'A consumer did not install the exact packed packages and selected direct dependencies.',
   AUTOLINK_INVALID:
-    'Tileflow or MapLibre was not discovered at the expected installed native package path.',
+    'Tileflow was not discovered at its installed native package path, or a legacy renderer remains.',
   BINARY_INVALID: 'A Release output or its expected Hermes bytecode could not be verified.',
   CLEANUP_FAILED:
     'The owned workspace could not be safely removed. No successful result is recorded.',
@@ -233,7 +232,6 @@ export function createConsumerManifest(kind, template, tarballs, directory) {
   Object.assign(manifest.dependencies, {
     react: mobileVersions.react,
     'react-native': mobileVersions.reactNative,
-    '@maplibre/maplibre-react-native': mobileVersions.maplibre,
     ...(kind === 'expo' ? {expo: mobileVersions.expo} : {}),
   });
   Object.assign(manifest.devDependencies, {
@@ -305,9 +303,22 @@ export function assertPackedManifest(manifest, files) {
       'TileflowReactNative.podspec',
       'ios/tileflow_post_install.rb',
       'plugin/index.cjs',
+      'plugin/transforms.cjs',
+      'src/specs/NativeTileflowMapModule.ts',
+      'src/specs/NativeTileflowServices.ts',
+      'src/specs/NativeTileflowOffline.ts',
+      'src/specs/TileflowMapViewNativeComponent.ts',
+      'src/specs/TileflowMarkerViewNativeComponent.ts',
     );
     requireMobile(
-      files.some((name) => name.startsWith('android/src/') && name.endsWith('.kt')) &&
+      manifest.codegenConfig?.type === 'all' &&
+        manifest.codegenConfig.jsSrcsDir === 'src/specs' &&
+        dependencyGroups.every((group) =>
+          ['@maplibre/maplibre-react-native', '@tileflow/core', '@tileflow/interactions'].every(
+            (name) => manifest[group]?.[name] === undefined,
+          ),
+        ) &&
+        files.some((name) => name.startsWith('android/src/') && name.endsWith('.kt')) &&
         files.some((name) => name.startsWith('ios/') && name.endsWith('.mm')) &&
         files.some((name) => name.startsWith('ios/Sources/') && name.endsWith('.swift')) &&
         files.some((name) => name.startsWith('src/specs/') && name.endsWith('.ts')),
@@ -378,7 +389,7 @@ export function assertAutolinking(document, platform, installedRoot, kind) {
     );
   }
   requireMobile(
-    document.dependencies?.['@maplibre/maplibre-react-native']?.platforms?.[platform],
+    document.dependencies?.['@maplibre/maplibre-react-native'] === undefined,
     'AUTOLINK_INVALID',
     kind,
   );
@@ -392,10 +403,7 @@ export function addIosPostInstallHooks(podfile) {
     'TEMPLATE_INVALID',
     'templates',
   );
-  return podfile.replace(
-    anchor,
-    '$1\n    $MLRN.post_install(installer)\n    tileflow_post_install(installer)',
-  );
+  return podfile.replace(anchor, '$1\n    tileflow_post_install(installer)');
 }
 export function assertHermesBytecode(bytes) {
   // Hermes BytecodeFileHeader: uint64 magic, uint32 version, 20-byte source hash, uint32 length.
@@ -408,19 +416,35 @@ export function assertHermesBytecode(bytes) {
   );
   return {format: 'hermes-bytecode', version: bytes.readUInt32LE(8)};
 }
-export const mobileAppSource = `import {Map, TileflowOfflineStore, TileflowSearch, type OfflineRegionLoadOptions} from '@tileflow/react-native';
+export const mobileAppSource = `import {MapView, Camera, GeoJSONSource, CircleLayer, TileflowOfflineStore, TileflowSearch, type OfflineRegionLoadOptions, type MapViewRef} from '@tileflow/react-native';
+import {useRef} from 'react';
 
 const region: OfflineRegionLoadOptions = {
-	geometry: {type: 'boundingBox', west: -3.71, south: 40.41, east: -3.69, north: 40.43},
-	content: {type: 'hosted', mapId: 'map_0123456789abcdef', themes: ['day']},
+  geometry: {type: 'boundingBox', west: -3.71, south: 40.41, east: -3.69, north: 40.43},
+  content: {type: 'hosted', mapId: 'map_0123456789abcdef', themes: ['day']},
 };
+const shape = {type: 'FeatureCollection' as const, features: [{
+  type: 'Feature' as const, id: 'smoke-point', properties: {name: 'Fixture'},
+  geometry: {type: 'Point' as const, coordinates: [-3.7, 40.42]},
+}]};
 
 export async function prepare() {
-	await TileflowOfflineStore.estimateRegion(region);
-	return TileflowSearch.geocode({query: 'Puerta del Sol', limit: 1});
+  await TileflowOfflineStore.estimateRegion(region);
+  return TileflowSearch.geocode({query: 'Puerta del Sol', limit: 1});
 }
 
 export default function App() {
-	return <Map source={{map: 'smoke', manifestUrl: 'https://example.invalid/tileflow/native/manifest.json'}} theme="light" style={{flex: 1}} />;
+  const map = useRef<MapViewRef>(null);
+  const inspect = async () => {
+    await map.current?.querySourceFeatures('smoke-points');
+    await map.current?.queryRenderedFeaturesAtPoint([160, 240], undefined, ['smoke-dots']);
+  };
+  return <MapView ref={map} source={{map: 'smoke', manifestUrl: 'https://example.invalid/tileflow/native/manifest.json'}}
+    theme="light" onDidFinishLoadingMap={inspect} style={{flex: 1}}>
+    <Camera defaultSettings={{centerCoordinate: [-3.7, 40.42], zoomLevel: 16}} />
+    <GeoJSONSource id="smoke-points" shape={shape}>
+      <CircleLayer id="smoke-dots" style={{circleRadius: 12, circleColor: '#ff0066'}} />
+    </GeoJSONSource>
+  </MapView>;
 }
 `;

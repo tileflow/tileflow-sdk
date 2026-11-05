@@ -101,8 +101,8 @@ explicitly.
 
 ## Opt-in packed mobile checks
 
-Use these opt-in checks for Expo and React Native Community consumers built from Core,
-Interactions and React Native tarballs:
+Use these opt-in checks for Expo and React Native Community consumers built from the
+React Native tarball and a local native SDK candidate:
 
 ```sh
 pnpm run smoke:mobile:packed

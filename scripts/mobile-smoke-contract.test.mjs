@@ -39,10 +39,7 @@ const source = {
   name: '@tileflow/react-native',
   version: '0.0.0-development',
   private: true,
-  dependencies: {
-    '@tileflow/core': 'workspace:>=0.1.0-alpha.16 <0.1.0-beta.0',
-    '@tileflow/interactions': 'workspace:*',
-  },
+  dependencies: {},
 };
 const template = {
   name: 'HelloWorld',
@@ -62,8 +59,7 @@ test('staging materializes alpha versions and ranges without mutating developmen
   assert.deepEqual(source, original);
   assert.equal(staged.version, '0.1.0-alpha.16');
   assert.equal(staged.private, true);
-  assert.equal(staged.dependencies['@tileflow/core'], '>=0.1.0-alpha.16 <0.1.0-beta.0');
-  assert.equal(staged.dependencies['@tileflow/interactions'], '0.1.0-alpha.16');
+  assert.deepEqual(staged.dependencies, {});
   assert.throws(
     () => stageMobileManifest({...source, dependencies: {'@tileflow/other': 'workspace:*'}}),
     codeIs('STAGING_INVALID'),
@@ -90,7 +86,7 @@ test('workspace packing selects official pnpm, never npm pack', () => {
     '/owned/packs',
     '--json',
   ]);
-  assert.deepEqual(mobilePackages, ['core', 'interactions', 'react-native']);
+  assert.deepEqual(mobilePackages, ['react-native']);
 });
 
 test('consumer matrix distinguishes the generator from the CLI pinned by the bare template', () => {
@@ -98,7 +94,7 @@ test('consumer matrix distinguishes the generator from the CLI pinned by the bar
   assert.equal(mobileVersions.expoTemplate, '55.0.43');
   assert.equal(mobileVersions.reactNative, '0.83.10');
   assert.equal(mobileVersions.react, '19.2.0');
-  assert.equal(mobileVersions.maplibre, '11.5.0');
+  assert.equal(mobileVersions.maplibre, undefined);
   assert.equal(mobileVersions.generatorCli, '20.2.0');
   assert.equal(mobileVersions.consumerCli, '20.0.0');
   assertTemplateManifest('bare', template);
@@ -115,8 +111,12 @@ test('consumer matrix distinguishes the generator from the CLI pinned by the bar
     path: `/owned/packs/${name}.tgz`,
   }));
   const consumer = createConsumerManifest('bare', template, tarballs, '/owned/consumers/bare');
-  assert.equal(consumer.dependencies['@tileflow/core'], 'file:../../packs/core.tgz');
-  assert.equal(consumer.dependencies['@maplibre/maplibre-react-native'], '11.5.0');
+  assert.equal(
+    consumer.dependencies['@tileflow/react-native'],
+    'file:../../packs/react-native.tgz',
+  );
+  assert.equal(consumer.dependencies['@tileflow/core'], undefined);
+  assert.equal(consumer.dependencies['@maplibre/maplibre-react-native'], undefined);
   assert.equal(consumer.devDependencies['@react-native-community/cli'], '20.0.0');
   assert.equal(consumer.devDependencies.typescript, '6.0.3');
   assert.equal(template.devDependencies.typescript, '^5.8.3');
@@ -129,10 +129,7 @@ test('consumer matrix distinguishes the generator from the CLI pinned by the bar
     ),
   );
   assert.ok(expoAutolinkingArguments('ios').includes('react-native-config'));
-  assert.match(
-    mobileAppSource,
-    /import \{Map, TileflowOfflineStore, TileflowSearch, type OfflineRegionLoadOptions\} from '@tileflow\/react-native'/u,
-  );
+  assert.match(mobileAppSource, /MapView, Camera, GeoJSONSource, CircleLayer/u);
   assert.match(
     mobileAppSource,
     /manifestUrl: 'https:\/\/example.invalid\/tileflow\/native\/manifest.json'/u,
@@ -142,12 +139,50 @@ test('consumer matrix distinguishes the generator from the CLI pinned by the bar
 
 test('packed contents reject missing declarations, workspace ranges and unsafe archive entries', () => {
   const manifest = {
-    name: '@tileflow/core',
+    name: '@tileflow/react-native',
     version: mobileVersions.package,
+    codegenConfig: {name: 'TileflowReactNativeSpec', type: 'all', jsSrcsDir: 'src/specs'},
     exports: {'.': {types: './dist/index.d.ts', default: './dist/index.js'}},
   };
-  const files = ['package.json', 'LICENSE', 'dist/index.js', 'dist/index.d.ts'];
+  const files = [
+    'package.json',
+    'LICENSE',
+    'dist/index.js',
+    'dist/index.d.ts',
+    'react-native.config.cjs',
+    'android/build.gradle',
+    'android/src/main/Fixture.kt',
+    'ios/tileflow_post_install.rb',
+    'ios/Fixture.mm',
+    'ios/Sources/Fixture.swift',
+    'TileflowReactNative.podspec',
+    'plugin/index.cjs',
+    'plugin/transforms.cjs',
+    'src/specs/NativeTileflowMapModule.ts',
+    'src/specs/NativeTileflowServices.ts',
+    'src/specs/NativeTileflowOffline.ts',
+    'src/specs/TileflowMapViewNativeComponent.ts',
+    'src/specs/TileflowMarkerViewNativeComponent.ts',
+  ];
   assertPackedManifest(manifest, files);
+  for (const name of [
+    '@maplibre/maplibre-react-native',
+    '@tileflow/core',
+    '@tileflow/interactions',
+  ])
+    assert.throws(
+      () => assertPackedManifest({...manifest, dependencies: {[name]: '1.0.0'}}, files),
+      codeIs('PACK_INVALID'),
+    );
+  assert.throws(
+    () =>
+      assertPackedManifest(
+        {...manifest, codegenConfig: {...manifest.codegenConfig, type: 'modules'}},
+        files,
+      ),
+    codeIs('PACK_INVALID'),
+  );
+
   assert.throws(() => assertPackedManifest(manifest, files.slice(0, -1)), codeIs('PACK_INVALID'));
   assert.throws(
     () => assertPackedManifest({...manifest, dependencies: {x: 'workspace:*'}}, files),
@@ -201,7 +236,6 @@ test('absolute packed Android sourceDir and missing Community CLI discovery are 
           ios: {podspecPath: `${root}/TileflowReactNative.podspec`},
         },
       },
-      '@maplibre/maplibre-react-native': {platforms: {android: {}, ios: {}}},
     },
   };
   for (const kind of ['expo', 'bare'])
@@ -221,10 +255,7 @@ test('only the documented post-install hooks and Release build entry points are 
   const podfile =
     'post_install do |installer|\n  react_native_post_install(\n    installer,\n    config[:reactNativePath]\n  )\nend\n';
   const patched = addIosPostInstallHooks(podfile);
-  assert.match(
-    patched,
-    /\)\n[ ]{4}\$MLRN.post_install\(installer\)\n[ ]{4}tileflow_post_install\(installer\)/u,
-  );
+  assert.match(patched, /\)\n[ ]{4}tileflow_post_install\(installer\)/u);
   assert.throws(() => addIosPostInstallHooks(patched), codeIs('TEMPLATE_INVALID'));
   assert.ok(androidReleaseArguments().includes(':app:assembleRelease'));
   assert.ok(androidReleaseArguments().includes('--no-daemon'));

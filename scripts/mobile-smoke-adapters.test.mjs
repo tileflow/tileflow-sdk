@@ -52,7 +52,6 @@ test('staged build and pack adapters use pnpm, fresh output and license inputs w
     'pnpm-lock.yaml',
     'pnpm-workspace.yaml',
     'tsconfig.base.json',
-    'packages/core/reference/modules-api-reference.json',
   ]) {
     await writeFixture(join(repository, file), '{}\n');
   }
@@ -69,8 +68,13 @@ test('staged build and pack adapters use pnpm, fresh output and license inputs w
     'ios/tileflow_post_install.rb',
     'ios/Fixture.mm',
     'ios/Sources/Fixture.swift',
-    'src/specs/NativeFixture.ts',
+    'src/specs/NativeTileflowMapModule.ts',
+    'src/specs/NativeTileflowServices.ts',
+    'src/specs/NativeTileflowOffline.ts',
+    'src/specs/TileflowMapViewNativeComponent.ts',
+    'src/specs/TileflowMarkerViewNativeComponent.ts',
     'plugin/index.cjs',
+    'plugin/transforms.cjs',
     'TileflowReactNative.podspec',
   ];
   for (const name of mobilePackages) {
@@ -78,14 +82,7 @@ test('staged build and pack adapters use pnpm, fresh output and license inputs w
       name: `@tileflow/${name}`,
       version: '0.0.0-development',
       exports: {'.': {types: './dist/index.d.ts', import: './dist/index.js'}},
-      ...(name === 'react-native'
-        ? {
-            dependencies: {
-              '@tileflow/core': 'workspace:>=0.1.0-alpha.16 <0.1.0-beta.0',
-              '@tileflow/interactions': 'workspace:*',
-            },
-          }
-        : {}),
+      codegenConfig: {name: 'TileflowReactNativeSpec', type: 'all', jsSrcsDir: 'src/specs'},
     };
     await writeFixture(
       join(repository, 'packages', name, 'package.json'),
@@ -171,7 +168,7 @@ test('staged build and pack adapters use pnpm, fresh output and license inputs w
       assert.ok(packed.tarballs.every(({identity}) => /^[a-f0-9]{64}$/u.test(identity.sha256)));
       assert.equal(
         calls.filter(([command, operation]) => command === 'pnpm' && operation === 'pack').length,
-        3,
+        1,
       );
       assert.equal(
         calls.some(([command]) => command === 'npm'),
@@ -353,7 +350,7 @@ for (const kind of ['expo', 'bare']) {
               await writeMobileFile(
                 root,
                 join(consumer.directory, 'ios', 'Podfile.lock'),
-                'TileflowReactNative (0.1.0-alpha.16)\nMapLibreReactNative (11.5.0)\n',
+                'TileflowReactNative (0.1.0-alpha.16)\n',
               );
               return output();
             }

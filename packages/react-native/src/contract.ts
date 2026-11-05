@@ -108,7 +108,7 @@ export type MapShot = Readonly<{
 
 export type MapViewProps = ViewProps &
   NativeAppearance &
-  Omit<NativeMapOptions, 'cameraLimits' | 'eventLevel' | 'contentInset'> & {
+  Omit<NativeMapOptions, 'initialCamera' | 'cameraLimits' | 'eventLevel' | 'contentInset'> & {
     source: MapSource;
     children?: ReactNode;
     contentInset?: number | readonly number[] | CameraPadding;

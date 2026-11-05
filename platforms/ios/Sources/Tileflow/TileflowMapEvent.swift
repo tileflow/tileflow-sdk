@@ -45,13 +45,17 @@ public struct TileflowCameraChange: Equatable, Sendable {
   public let camera: TileflowCamera
   public let reason: TileflowCameraChangeReason
   public let phase: TileflowCameraChangePhase
+  /// Visible bounds sampled with this camera frame, when the renderer provides them.
+  public let bounds: TileflowBounds?
 
   public init(
-    camera: TileflowCamera, reason: TileflowCameraChangeReason, phase: TileflowCameraChangePhase
+    camera: TileflowCamera, reason: TileflowCameraChangeReason, phase: TileflowCameraChangePhase,
+    bounds: TileflowBounds? = nil
   ) {
     self.camera = camera
     self.reason = reason
     self.phase = phase
+    self.bounds = bounds
   }
 
   /// Whether the camera has settled.

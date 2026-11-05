@@ -40,12 +40,15 @@ public enum TileflowLayerPosition: Sendable, Equatable {
   case above(String)
   /// Directly below an application layer.
   case below(String)
+  /// Zero-based position among application layers in the same slot.
+  case at(Int)
 
   var wireValue: JSONValue? {
     switch self {
     case .default: nil
     case .above(let id): .object(["above": .string(id)])
     case .below(let id): .object(["below": .string(id)])
+    case .at(let index): .object(["index": .number(Double(index))])
     }
   }
 }

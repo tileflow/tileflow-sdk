@@ -34,7 +34,8 @@ final class ProtocolTests: XCTestCase {
       Set(TileflowMapError.Code.allCases.filter { !$0.isRecoverable }.map(\.rawValue)),
       [
         "invalidSource", "unsupportedDevice", "invalidRequest", "disposed", "credentialRejected",
-        "accessDenied", "quotaExceeded", "sessionRejected", "missingCredential", "invalidConfiguration",
+        "accessDenied", "quotaExceeded", "sessionRejected", "missingCredential",
+        "invalidConfiguration",
       ])
     for code in MapContract.rendererErrors {
       XCTAssertNotNil(TileflowMapError.Code(rawValue: code), code)
@@ -77,6 +78,25 @@ final class ProtocolTests: XCTestCase {
     XCTAssertNil(shared.events[.error])
     XCTAssertThrowsError(try TileflowEventOptions(cameraUpdateInterval: -1).validate())
     XCTAssertThrowsError(try TileflowEventOptions(cameraUpdateInterval: 61).validate())
+  }
+
+  func testCameraEventsRetainBoundsFromTheirFrame() throws {
+    let camera: JSONValue = .object([
+      "longitude": .number(179), "latitude": .number(20), "zoom": .number(3),
+      "bearing": .number(45), "pitch": .number(30),
+    ])
+    let frame: JSONValue = .object([
+      "camera": camera, "reason": .string("gesture"),
+      "bounds": .object([
+        "west": .number(170), "south": .number(10), "east": .number(-170), "north": .number(30),
+      ]),
+    ])
+    let change = try XCTUnwrap(TileflowMapView.cameraChange("cameraMoved", frame))
+    XCTAssertEqual(change.bounds, TileflowBounds(west: 170, south: 10, east: -170, north: 30))
+    let old = try XCTUnwrap(
+      TileflowMapView.cameraChange(
+        "cameraMoved", .object(["camera": camera, "reason": .string("api")])))
+    XCTAssertNil(old.bounds)
   }
 
   func testCameraEventsCarryPhaseAndReason() {

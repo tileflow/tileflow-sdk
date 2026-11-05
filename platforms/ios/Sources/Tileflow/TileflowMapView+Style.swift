@@ -257,11 +257,12 @@ extension TileflowMapView {
     try await updateFeatures(sourceId, add: features, remove: [])
   }
 
-  /// Replaces features of a GeoJSON source by identifier.
-  public func updateGeoJSONSourceFeatures(sourceId: String, features: [TileflowFeature])
-    async throws
-  {
-    try await updateFeatures(sourceId, add: features, remove: [])
+  /// Atomically removes identifiers and upserts features. Upserts win when an identifier occurs
+  /// in both lists. A rejected update preserves the previous source.
+  public func updateGeoJSONSourceFeatures(
+    sourceId: String, features: [TileflowFeature], removeFeatureIds: [String] = []
+  ) async throws {
+    try await updateFeatures(sourceId, add: features, remove: removeFeatureIds)
   }
 
   /// Removes features of a GeoJSON source by identifier; unknown identifiers are ignored.
@@ -276,7 +277,9 @@ extension TileflowMapView {
     defer { styleEdits.release() }
 
     let index = try geoJSONSource(sourceId)
-    if case .url = runtimeStyle.sources[index].geoJSON?.base { throw TileflowMapError.invalidRequest }
+    if case .url = runtimeStyle.sources[index].geoJSON?.base {
+      throw TileflowMapError.invalidRequest
+    }
     guard !add.isEmpty || !remove.isEmpty else { return }
     guard remove.allSatisfy({ !$0.isEmpty && $0.count <= 128 }) else {
       throw TileflowMapError.invalidRequest
@@ -355,7 +358,8 @@ extension TileflowMapView {
   }
 
   func insertStyleLayer(_ layer: RuntimeStyle.Layer, position: TileflowLayerPosition) async throws {
-    let id = layer.id, json = layer.json
+    let id = layer.id
+    let json = layer.json
     try Self.validateIdentifier(id)
     guard !layerExists(id), runtimeStyle.layers.count < 1024 else {
       throw TileflowMapError.invalidRequest
@@ -364,6 +368,7 @@ extension TileflowMapView {
       throw TileflowMapError(.invalidRequest, reason: .unknownSource)
     }
     var record = layer
+    let position = try Self.relativePosition(position, in: runtimeStyle.layers, slot: record.slot)
     let at = try insertionIndex(for: position, slot: &record.slot)
     let fixed = record
     if styleEngine == nil { try NativeRuntimeStyle.validateQueuedLayer(fixed) }
@@ -408,19 +413,25 @@ extension TileflowMapView {
 
   /// Moves a layer relative to the application's other layers; ``TileflowLayerPosition/default``
   /// puts it on top of its slot.
-  public func moveLayer(_ id: String, position: TileflowLayerPosition) async throws {
+  public func moveLayer(
+    _ id: String, position: TileflowLayerPosition, slot: TileflowLayerSlot? = nil
+  ) async throws {
     try await styleEdits.acquire()
     defer { styleEdits.release() }
-    try await positionStyleLayer(id, position: position)
+    try await positionStyleLayer(id, position: position, slot: slot)
   }
 
-  func positionStyleLayer(_ id: String, position: TileflowLayerPosition) async throws {
+  func positionStyleLayer(
+    _ id: String, position: TileflowLayerPosition, slot: TileflowLayerSlot? = nil
+  ) async throws {
     guard let index = runtimeStyle.layers.firstIndex(where: { $0.id == id }) else {
       throw TileflowMapError(.invalidRequest, reason: .unknownLayer)
     }
     var record = runtimeStyle.layers[index]
+    if let slot { record.slot = slot }
     var rest = runtimeStyle.layers
     rest.remove(at: index)
+    let position = try Self.relativePosition(position, in: rest, slot: record.slot)
     if case .above(let other) = position, other == id { throw TileflowMapError.invalidRequest }
     if case .below(let other) = position, other == id { throw TileflowMapError.invalidRequest }
     let at = try Self.insertionIndex(in: rest, for: position, slot: &record.slot)
@@ -542,7 +553,8 @@ extension TileflowMapView {
     if let value = try geometry.wireValue() { payload["geometry"] = value }
     if let layers = options.layerIds { payload["layers"] = .array(layers.map(JSONValue.string)) }
     if let filter = options.filter { payload["filter"] = filter.json }
-    return try Self.features(try await styleRenderer().call(.queryRenderedFeatures, payload: .object(payload)))
+    return try Self.features(
+      try await styleRenderer().call(.queryRenderedFeatures, payload: .object(payload)))
   }
 
   /// Features of a source in the tiles the map has loaded, whether or not they are drawn. A
@@ -558,7 +570,8 @@ extension TileflowMapView {
       payload["sourceLayers"] = .array(layers.map(JSONValue.string))
     }
     if let filter = options.filter { payload["filter"] = filter.json }
-    return try Self.features(try await styleRenderer().call(.querySourceFeatures, payload: .object(payload)))
+    return try Self.features(
+      try await styleRenderer().call(.querySourceFeatures, payload: .object(payload)))
   }
 
   /// The clusters and points one level below a cluster of a clustering GeoJSON source.
@@ -574,7 +587,9 @@ extension TileflowMapView {
   {
     guard (1...100_000).contains(limit), offset >= 0 else { throw TileflowMapError.invalidRequest }
     return try Self.features(
-      try await cluster(sourceId, clusterId, "leaves", ["limit": .number(Double(limit)), "offset": .number(Double(offset))]))
+      try await cluster(
+        sourceId, clusterId, "leaves",
+        ["limit": .number(Double(limit)), "offset": .number(Double(offset))]))
   }
 
   /// The zoom level at which a cluster splits into its children.
@@ -645,6 +660,16 @@ extension TileflowMapView {
     return index
   }
 
+  private static func relativePosition(
+    _ position: TileflowLayerPosition, in layers: [RuntimeStyle.Layer], slot: TileflowLayerSlot?
+  ) throws -> TileflowLayerPosition {
+    guard case .at(let index) = position else { return position }
+    let matching = layers.filter { $0.slot == slot }
+    guard (0...matching.count).contains(index) else { throw TileflowMapError.invalidRequest }
+    if index < matching.count { return .below(matching[index].id) }
+    return matching.last.map { .above($0.id) } ?? .default
+  }
+
   private func insertionIndex(for position: TileflowLayerPosition, slot: inout TileflowLayerSlot?)
     throws -> Int
   {
@@ -657,6 +682,9 @@ extension TileflowMapView {
   ) throws -> Int {
     switch position {
     case .default: return layers.count
+    case .at:
+      return try insertionIndex(
+        in: layers, for: relativePosition(position, in: layers, slot: slot), slot: &slot)
     case .above(let id), .below(let id):
       guard let index = layers.firstIndex(where: { $0.id == id }) else {
         throw TileflowMapError(.invalidRequest, reason: .unknownLayer)
@@ -668,12 +696,15 @@ extension TileflowMapView {
   }
 
   /// A source's MapLibre specification without its data, and the GeoJSON it starts with.
-  static func sourceWire(_ source: any TileflowSource) throws -> ([String: JSONValue], GeoJSONLog?) {
+  static func sourceWire(_ source: any TileflowSource) throws -> ([String: JSONValue], GeoJSONLog?)
+  {
     func zooms(_ value: inout [String: JSONValue], _ minZoom: Double?, _ maxZoom: Double?) {
       if let minZoom { value["minzoom"] = .number(minZoom) }
       if let maxZoom { value["maxzoom"] = .number(maxZoom) }
     }
-    func tiled(_ type: String, _ tiles: TileflowTiles, _ bounds: TileflowBounds?, _ attribution: String?)
+    func tiled(
+      _ type: String, _ tiles: TileflowTiles, _ bounds: TileflowBounds?, _ attribution: String?
+    )
       -> [String: JSONValue]
     {
       var value: [String: JSONValue] = ["type": .string(type)]
@@ -699,7 +730,9 @@ extension TileflowMapView {
       if source.cluster { value["cluster"] = .bool(true) }
       if let radius = source.clusterRadius { value["clusterRadius"] = .number(radius) }
       if let zoom = source.clusterMaxZoom { value["clusterMaxZoom"] = .number(zoom) }
-      if let points = source.clusterMinPoints { value["clusterMinPoints"] = .number(Double(points)) }
+      if let points = source.clusterMinPoints {
+        value["clusterMinPoints"] = .number(Double(points))
+      }
       if !source.clusterProperties.isEmpty {
         value["clusterProperties"] = .object(source.clusterProperties.mapValues(\.json))
       }
@@ -764,12 +797,15 @@ extension TileflowMapView {
     case .url(let url): return (.object(["url": .string(url.absoluteString)]), [])
     case .empty: return (.object(["empty": .bool(true)]), [])
     case .bytes(let bytes, let digest):
-      let reference = try channel.register(bytes, digest: digest, contentType: "application/geo+json")
+      let reference = try channel.register(
+        bytes, digest: digest, contentType: "application/geo+json")
       return (reference.wireValue, [reference])
     }
   }
 
-  private func sendAddSource(_ record: RuntimeStyle.Source, through engine: any MapEngine) async throws {
+  private func sendAddSource(_ record: RuntimeStyle.Source, through engine: any MapEngine)
+    async throws
+  {
     var spec = record.spec
     var references: [MapPayloadStore.Reference] = []
     if let log = record.geoJSON {

@@ -9,16 +9,15 @@ final class SceneTests: XCTestCase {
   private let geoJSON = Data(#"{"type":"FeatureCollection","features":[]}"#.utf8)
 
   func testRendererOptionsStayOutOfTheLiveOptionsAndVegetationFollowsTheMap() throws {
-    let options = TileflowMapOptions(vegetation: false, antialias: false, validatesStyle: true)
+    let options = TileflowMapOptions(vegetation: false, antialias: false)
     let wire = try options.wireValue(rightToLeft: false)
     XCTAssertEqual(wire["vegetation"]?.bool, false)
-    // Antialiasing and validation start a new renderer; they never reach setOptions.
+    // The native renderer manages antialiasing.
     XCTAssertNil(wire["antialias"])
     XCTAssertNil(wire["validatesStyle"])
     let defaults = try TileflowMapOptions().wireValue(rightToLeft: false)
     XCTAssertNil(defaults["vegetation"]?.bool)
     XCTAssertTrue(TileflowMapOptions().antialias)
-    XCTAssertFalse(TileflowMapOptions().validatesStyle)
   }
 
   func testLayersTakeRouteInksPlacementAndProgressOnlyWhereTheyApply() throws {

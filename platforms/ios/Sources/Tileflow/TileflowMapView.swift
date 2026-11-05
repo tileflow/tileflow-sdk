@@ -163,7 +163,8 @@ public final class TileflowMapView: UIView {
 
   public override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
     let target = super.hitTest(point, with: event)
-    guard let shouldReceiveTouch, target !== controlsView, target?.isDescendant(of: controlsView) != true
+    guard let shouldReceiveTouch, target !== controlsView,
+      target?.isDescendant(of: controlsView) != true
     else { return target }
     // The attribution always receives its touches, as the native controls do.
     var view = target
@@ -266,13 +267,6 @@ public final class TileflowMapView: UIView {
     controlsView.controls = options.controls
     controlsView.locationShown = options.location.enabled
     locationOptionsChanged(from: previous.location)
-    // Antialiasing and style validation are fixed when a renderer starts.
-    if options.antialias != previous.antialias || options.validatesStyle != previous.validatesStyle,
-      engine != nil
-    {
-      remount()
-      return
-    }
     try await sendOptions(events: subscriptions != previousSubscriptions)
   }
 
@@ -310,7 +304,9 @@ public final class TileflowMapView: UIView {
   }
 
   private var rightToLeft: Bool { effectiveUserInterfaceLayoutDirection == .rightToLeft }
-  private var wireOptions: JSONValue { get throws { try options.wireValue(rightToLeft: rightToLeft) } }
+  private var wireOptions: JSONValue {
+    get throws { try options.wireValue(rightToLeft: rightToLeft) }
+  }
 
   private func applyAppearance() async throws {
     guard initialized, let engine, let appearance else { return }
@@ -557,7 +553,9 @@ public final class TileflowMapView: UIView {
   }
 
   /// Gives a ready engine the map, then everything the application asked for.
-  private func initialize(_ engine: any MapEngine, loadable: LoadableMapSource, generation current: Int)
+  private func initialize(
+    _ engine: any MapEngine, loadable: LoadableMapSource, generation current: Int
+  )
     async
   {
     do {
@@ -575,10 +573,6 @@ public final class TileflowMapView: UIView {
         "theme": theme.map(JSONValue.string) ?? .null,
         "colorScheme": .string(colorScheme), "interactive": .bool(true),
         "options": try wireOptions,
-        "renderer": .object([
-          "antialias": .bool(options.antialias),
-          "validateStyle": .bool(options.validatesStyle),
-        ]),
         "events": subscriptions.wireValue,
         "insets": Self.wire(effectiveContentInsets),
       ]
@@ -745,7 +739,9 @@ public final class TileflowMapView: UIView {
       let camera = try? JSONDecoder().decode(TileflowCamera.self, from: bytes),
       (try? camera.validate()) != nil
     else { return nil }
-    return TileflowCameraChange(camera: camera, reason: reason, phase: phase)
+    return TileflowCameraChange(
+      camera: camera, reason: reason, phase: phase,
+      bounds: value["bounds"].flatMap { TileflowBounds(wire: $0) })
   }
 
   /// Pending calls fail with `cancelled` when a renderer is replaced, `disposed` when destroyed.

@@ -107,6 +107,13 @@ final class NativeCamera {
     ])
   }
 
+  private func eventFrame(reason: String) -> JSONValue {
+    .object([
+      "camera": wire, "reason": .string(reason),
+      "bounds": visibleBounds.flatMap { try? $0.wireValue() } ?? .null,
+    ])
+  }
+
   /// The region the view shows, as the web describes it: longitudes within [-180, 180], an east
   /// edge west of the west edge across the antimeridian, and the whole world when the view is wider.
   var visibleBounds: TileflowBounds? {
@@ -161,18 +168,18 @@ final class NativeCamera {
 
   func shotStarted() {
     stop()
-    emit("cameraMoveStarted", .object(["camera": wire, "reason": .string("api")]))
+    emit("cameraMoveStarted", eventFrame(reason: "api"))
   }
 
   func shotFrame(_ frame: TileflowCamera) {
     quiet = true
     jump(to: frame)
     quiet = false
-    if followsFrames { emit("cameraMoved", .object(["camera": wire, "reason": .string("api")])) }
+    if followsFrames { emit("cameraMoved", eventFrame(reason: "api")) }
   }
 
   func shotEnded() {
-    emit("cameraMoveEnded", .object(["camera": wire, "reason": .string("api")]))
+    emit("cameraMoveEnded", eventFrame(reason: "api"))
   }
 
   /// Runs one movement the view asked for and answers with how it ended and where the camera is.
@@ -344,11 +351,18 @@ final class NativeCamera {
   func locationChange(_ change: () -> Void) { issue("location", change) }
 
   /// Uses the same zoom, inset and event conventions as movements the application requests.
-  func moveForLocation(to target: TileflowCamera, duration: TimeInterval, completion: (() -> Void)? = nil) {
-    guard let mapView, let native = mapCamera(target) else { completion?(); return }
+  func moveForLocation(
+    to target: TileflowCamera, duration: TimeInterval, completion: (() -> Void)? = nil
+  ) {
+    guard let mapView, let native = mapCamera(target) else {
+      completion?()
+      return
+    }
     locationChange {
-      mapView.setCamera(native, withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : duration,
-        animationTimingFunction: CAMediaTimingFunction(name: .linear), completionHandler: completion)
+      mapView.setCamera(
+        native, withDuration: UIAccessibility.isReduceMotionEnabled ? 0 : duration,
+        animationTimingFunction: CAMediaTimingFunction(name: .linear), completionHandler: completion
+      )
     }
   }
 
@@ -500,10 +514,11 @@ final class NativeCamera {
     if gesture, issuer == nil { end(.interrupted) }
     // Heading callbacks can arrive from the location manager after the original delegate call.
     let tracking = mapView.map { $0.userTrackingMode != .none } ?? false
-    changeReason = gesture ? "gesture" : issuer ?? movement?.reason ?? (tracking ? "location" : "system")
+    changeReason =
+      gesture ? "gesture" : issuer ?? movement?.reason ?? (tracking ? "location" : "system")
     if !isMoving {
       isMoving = true
-      emit("cameraMoveStarted", .object(["camera": wire, "reason": .string(changeReason)]))
+      emit("cameraMoveStarted", eventFrame(reason: changeReason))
     }
     track(change)
   }
@@ -516,7 +531,7 @@ final class NativeCamera {
     }
     track(change)
     guard followsFrames else { return }
-    emit("cameraMoved", .object(["camera": wire, "reason": .string(changeReason)]))
+    emit("cameraMoved", eventFrame(reason: changeReason))
   }
 
   func didChange(_ change: MLNCameraChangeReason) {
@@ -532,7 +547,7 @@ final class NativeCamera {
     endedGestures.removeAll()
     if isMoving {
       isMoving = false
-      emit("cameraMoveEnded", .object(["camera": wire, "reason": .string(changeReason)]))
+      emit("cameraMoveEnded", eventFrame(reason: changeReason))
     }
     // Something other than the engine cancelled the transition: a person touched the map, or
     // MapLibre moved the camera for another reason.
@@ -601,10 +616,13 @@ enum NativeCameraMath {
     -> TileflowBounds
   {
     let width = east - west
-    guard width < 360 else { return TileflowBounds(west: -180, south: south, east: 180, north: north) }
+    guard width < 360 else {
+      return TileflowBounds(west: -180, south: south, east: 180, north: north)
+    }
     let start = wrap(west)
     let end = start + width
-    return TileflowBounds(west: start, south: south, east: end > 180 ? end - 360 : end, north: north)
+    return TileflowBounds(
+      west: start, south: south, east: end > 180 ? end - 360 : end, north: north)
   }
 
   /// The centre after zooming by `delta` levels while `anchor` stays where it is on screen.

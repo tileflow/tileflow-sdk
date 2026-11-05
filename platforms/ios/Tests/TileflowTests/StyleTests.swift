@@ -45,11 +45,15 @@ final class StyleTests: XCTestCase {
     symbol.textField = .expression(.get("name"))
     symbol.textFont = .constant(["Noto Sans Regular"])
     symbol.textVariableAnchorOffset = .constant(
-      TileflowTextAnchorOffsets([.init(anchor: .top, offset: [0, 1]), .init(anchor: .left, offset: [1, 0])]))
+      TileflowTextAnchorOffsets([
+        .init(anchor: .top, offset: [0, 1]), .init(anchor: .left, offset: [1, 0]),
+      ]))
     symbol.iconImage = "pin"
     symbol.iconColor = "#ffffff"
     let encoded = try JSONValue.encoded(symbol)
-    XCTAssertEqual(text(encoded["layout"]?["text-variable-anchor-offset"] ?? .null), #"["top",[0,1],"left",[1,0]]"#)
+    XCTAssertEqual(
+      text(encoded["layout"]?["text-variable-anchor-offset"] ?? .null),
+      #"["top",[0,1],"left",[1,0]]"#)
     XCTAssertEqual(encoded["layout"]?["icon-image"]?.string, "pin")
     XCTAssertEqual(encoded["paint"]?["icon-color"]?.string, "rgba(255, 255, 255, 1.0)")
     let background = TileflowBackgroundLayer(id: "tint")
@@ -62,13 +66,17 @@ final class StyleTests: XCTestCase {
     XCTAssertEqual(text(TileflowExpression.sum(1, .get("count")).json), #"["+",1,["get","count"]]"#)
     XCTAssertEqual(text(TileflowExpression.not(.has("name")).json), #"["!",["has","name"]]"#)
     XCTAssertEqual(
-      text(TileflowExpression.switchCase(.boolean(.featureState("selected"), false), "#f00", "#00f").json),
+      text(
+        TileflowExpression.switchCase(.boolean(.featureState("selected"), false), "#f00", "#00f")
+          .json),
       ##"["case",["boolean",["feature-state","selected"],false],"#f00","#00f"]"##)
     XCTAssertEqual(
       text(TileflowExpression.inExpression("a", .literal(["a", "b"])).json),
       #"["in","a",["literal",["a","b"]]]"#)
     XCTAssertEqual(text(TileflowExpression.literal([1, 2]).json), #"["literal",[1,2]]"#)
-    XCTAssertEqual(text(TileflowExpression(TileflowColor(hex: "#11223380")!).json), #""rgba(17, 34, 51, 0.502)""#)
+    XCTAssertEqual(
+      text(TileflowExpression(TileflowColor(hex: "#11223380")!).json), #""rgba(17, 34, 51, 0.502)""#
+    )
     let parsed = try TileflowExpression(json: #"["step",["get","point_count"],20,100,30]"#)
     XCTAssertEqual(parsed, .step(.get("point_count"), 20, 100, 30))
     XCTAssertThrowsError(try TileflowExpression(json: "not json"))
@@ -82,7 +90,9 @@ final class StyleTests: XCTestCase {
 
   func testSourcesTravelInMapLibreForm() throws {
     var points = TileflowGeoJSONSource(
-      id: "points", data: .features([TileflowFeature(id: "7", geometry: .point(.init(longitude: 1, latitude: 2)))]),
+      id: "points",
+      data: .features([TileflowFeature(id: "7", geometry: .point(.init(longitude: 1, latitude: 2)))]
+      ),
       cluster: true, clusterRadius: 40, clusterProperties: ["total": .sum(.get("count"))])
     points.generateId = true
     let (spec, log) = try TileflowMapView.sourceWire(points)
@@ -95,16 +105,26 @@ final class StyleTests: XCTestCase {
     guard case .bytes(let data, _) = log?.base else { return XCTFail("Inline data") }
     let collection = try json(String(decoding: data, as: UTF8.self))
     // A whole-number identifier travels as a number, which feature state needs.
-    XCTAssertEqual(collection["features"].flatMap { if case .array(let items) = $0 { items.first?["id"] } else { nil } }?.number, 7)
-    var vector = TileflowVectorSource(id: "roads", tiles: .templates(["https://tiles.example/{z}/{x}/{y}.pbf"]))
+    XCTAssertEqual(
+      collection["features"].flatMap {
+        if case .array(let items) = $0 { items.first?["id"] } else { nil }
+      }?.number, 7)
+    var vector = TileflowVectorSource(
+      id: "roads", tiles: .templates(["https://tiles.example/{z}/{x}/{y}.pbf"]))
     vector.maxZoom = 14
     vector.promoteId = "osm_id"
     XCTAssertEqual(
       text(.object(try TileflowMapView.sourceWire(vector).0)),
-      text(try json(#"{"type":"vector","tiles":["https://tiles.example/{z}/{x}/{y}.pbf"],"maxzoom":14,"promoteId":"osm_id"}"#)))
-    let dem = TileflowRasterDEMSource(id: "dem", tiles: .tileJSON(URL(string: "https://dem.example/tiles.json")!), encoding: .terrarium)
+      text(
+        try json(
+          #"{"type":"vector","tiles":["https://tiles.example/{z}/{x}/{y}.pbf"],"maxzoom":14,"promoteId":"osm_id"}"#
+        )))
+    let dem = TileflowRasterDEMSource(
+      id: "dem", tiles: .tileJSON(URL(string: "https://dem.example/tiles.json")!),
+      encoding: .terrarium)
     XCTAssertEqual(try TileflowMapView.sourceWire(dem).0["encoding"]?.string, "terrarium")
-    let image = TileflowImageSource(id: "plan", url: URL(string: "https://img.example/plan.png")!, coordinates: [])
+    let image = TileflowImageSource(
+      id: "plan", url: URL(string: "https://img.example/plan.png")!, coordinates: [])
     XCTAssertThrowsError(try TileflowMapView.sourceWire(image))
   }
 
@@ -127,10 +147,16 @@ final class StyleTests: XCTestCase {
   }
 
   func testFeatureUpdatesCompactIntoData() throws {
-    let base = Data(#"{"type":"FeatureCollection","features":[{"type":"Feature","id":1,"properties":{},"geometry":null},{"type":"Feature","id":2,"properties":{},"geometry":null}]}"#.utf8)
+    let base = Data(
+      #"{"type":"FeatureCollection","features":[{"type":"Feature","id":1,"properties":{},"geometry":null},{"type":"Feature","id":2,"properties":{},"geometry":null}]}"#
+        .utf8)
     let updates = [
-      GeoJSONLog.Update(add: Data(#"[{"type":"Feature","id":3,"properties":{},"geometry":null}]"#.utf8), remove: ["1"]),
-      GeoJSONLog.Update(add: Data(#"[{"type":"Feature","id":2,"properties":{"v":2},"geometry":null}]"#.utf8), remove: []),
+      GeoJSONLog.Update(
+        add: Data(#"[{"type":"Feature","id":3,"properties":{},"geometry":null}]"#.utf8),
+        remove: ["1"]),
+      GeoJSONLog.Update(
+        add: Data(#"[{"type":"Feature","id":2,"properties":{"v":2},"geometry":null}]"#.utf8),
+        remove: []),
     ]
     let compacted = try XCTUnwrap(GeoJSONLog.compact(base: base, updates: updates, promoteId: nil))
     let value = try json(String(decoding: compacted, as: UTF8.self))
@@ -138,14 +164,19 @@ final class StyleTests: XCTestCase {
     XCTAssertEqual(features.compactMap { $0["id"]?.number }, [2, 3])
     XCTAssertEqual(features[0]["properties"]?["v"]?.number, 2)
     // Promoted identifiers key the features instead.
-    let promoted = Data(#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"ref":"a"},"geometry":null}]}"#.utf8)
-    XCTAssertNotNil(GeoJSONLog.compact(base: promoted, updates: [.init(add: nil, remove: ["a"])], promoteId: "ref"))
+    let promoted = Data(
+      #"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"ref":"a"},"geometry":null}]}"#
+        .utf8)
+    XCTAssertNotNil(
+      GeoJSONLog.compact(
+        base: promoted, updates: [.init(add: nil, remove: ["a"])], promoteId: "ref"))
     XCTAssertNil(GeoJSONLog.compact(base: promoted, updates: [], promoteId: nil))
   }
 
   func testInvalidUpdateBeforeMountKeepsLastAcceptedLayer() async throws {
-    let view = TileflowMapView(source: TileflowMapSource(
-      map: "fixture", manifestURL: URL(string: "https://maps.example/manifest.json")!))
+    let view = TileflowMapView(
+      source: TileflowMapSource(
+        map: "fixture", manifestURL: URL(string: "https://maps.example/manifest.json")!))
     defer { view.destroy() }
     try await view.addSource(TileflowGeoJSONSource(id: "places", data: .empty))
     var layer = TileflowCircleLayer(id: "points", source: "places")
@@ -165,9 +196,72 @@ final class StyleTests: XCTestCase {
     XCTAssertEqual(view.runtimeStyle.layers.first?.json["paint"]?["circle-radius"]?.number, 12)
   }
 
+  func testLayerIndexesStayWithinTheirSlotAndSurviveReload() async throws {
+    let view = TileflowMapView(
+      source: TileflowMapSource(
+        map: "fixture", manifestURL: URL(string: "https://maps.example/manifest.json")!))
+    defer { view.destroy() }
+    try await view.addSource(TileflowGeoJSONSource(id: "points", data: .empty))
+    var a = TileflowCircleLayer(id: "a", source: "points")
+    a.slot = .belowLabels
+    var road = TileflowCircleLayer(id: "road", source: "points")
+    road.slot = .aboveRoads
+    var b = TileflowCircleLayer(id: "b", source: "points")
+    b.slot = .belowLabels
+    try await view.addLayer(a)
+    try await view.addLayer(road)
+    try await view.addLayer(b, position: .at(0))
+    XCTAssertEqual(
+      view.runtimeStyle.layers.filter { $0.slot == .belowLabels }.map(\.id), ["b", "a"])
+    try await view.moveLayer("b", position: .at(1))
+    XCTAssertEqual(
+      view.runtimeStyle.layers.filter { $0.slot == .belowLabels }.map(\.id), ["a", "b"])
+    do {
+      try await view.moveLayer("b", position: .at(2))
+      XCTFail("An index outside the slot was accepted")
+    } catch let error as TileflowMapError { XCTAssertEqual(error, .invalidRequest) }
+    try view.reload()
+    XCTAssertEqual(
+      view.runtimeStyle.layers.filter { $0.slot == .belowLabels }.map(\.id), ["a", "b"])
+    XCTAssertEqual(view.runtimeStyle.layers.first { $0.id == "road" }?.slot, .aboveRoads)
+  }
+
+  func testGeoJSONUpdatesAddAndRemoveAtomically() async throws {
+    let view = TileflowMapView(
+      source: TileflowMapSource(
+        map: "fixture", manifestURL: URL(string: "https://maps.example/manifest.json")!))
+    defer { view.destroy() }
+    try await view.addSource(
+      TileflowGeoJSONSource(
+        id: "points",
+        data: .features([
+          TileflowFeature(id: "1", geometry: .point(.init(longitude: 1, latitude: 2)))
+        ])))
+    do {
+      try await view.updateGeoJSONSourceFeatures(
+        sourceId: "points", features: [TileflowFeature(geometry: nil)], removeFeatureIds: ["1"])
+      XCTFail("The invalid replacement removed existing data")
+    } catch let error as TileflowMapError { XCTAssertEqual(error, .invalidRequest) }
+    XCTAssertEqual(view.runtimeStyle.sources.first?.geoJSON?.updates.count, 0)
+    try await view.updateGeoJSONSourceFeatures(
+      sourceId: "points",
+      features: [
+        TileflowFeature(id: "2", geometry: .point(.init(longitude: 3, latitude: 4)))
+      ], removeFeatureIds: ["1"])
+    let log = try XCTUnwrap(view.runtimeStyle.sources.first?.geoJSON)
+    XCTAssertEqual(log.updates.count, 1)
+    XCTAssertEqual(log.updates.first?.remove, ["1"])
+    guard case .bytes(let base, _) = log.base else { return XCTFail("Missing base") }
+    let compacted = try XCTUnwrap(
+      GeoJSONLog.compact(base: base, updates: log.updates, promoteId: nil))
+    let features = try json(String(decoding: compacted, as: UTF8.self))["features"]?.array
+    XCTAssertEqual(features?.compactMap { $0["id"]?.number }, [2])
+  }
+
   func testTheViewKeepsLayersInOrderAndRefusesUnknownNames() async throws {
     let view = TileflowMapView(
-      source: TileflowMapSource(map: "fixture", manifestURL: URL(string: "https://maps.example/manifest.json")!))
+      source: TileflowMapSource(
+        map: "fixture", manifestURL: URL(string: "https://maps.example/manifest.json")!))
     defer { view.destroy() }
     try await view.addSource(TileflowGeoJSONSource(id: "points", data: .empty))
     do {
@@ -179,11 +273,14 @@ final class StyleTests: XCTestCase {
     var top = TileflowCircleLayer(id: "top", source: "points")
     top.slot = .belowLabels
     try await view.addLayer(top)
-    try await view.addLayer(TileflowHeatmapLayer(id: "heat", source: "points"), position: .below("top"))
-    try await view.addLayer(TileflowCircleLayer(id: "over", source: "points"), position: .above("heat"))
+    try await view.addLayer(
+      TileflowHeatmapLayer(id: "heat", source: "points"), position: .below("top"))
+    try await view.addLayer(
+      TileflowCircleLayer(id: "over", source: "points"), position: .above("heat"))
     XCTAssertEqual(view.runtimeStyle.layers.map(\.id), ["heat", "over", "top"])
     // A layer placed relative to another takes its slot.
-    XCTAssertEqual(view.runtimeStyle.layers.map(\.slot), [.belowLabels, .belowLabels, .belowLabels])
+    XCTAssertEqual(
+      view.runtimeStyle.layers.map(\.slot), [.belowLabels, .belowLabels, .belowLabels])
     try await view.moveLayer("heat", position: .above("top"))
     XCTAssertEqual(view.runtimeStyle.layers.map(\.id), ["over", "top", "heat"])
     try await view.setFeatureState(sourceId: "points", featureId: "4", state: ["selected": true])

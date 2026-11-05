@@ -92,13 +92,9 @@ public struct TileflowMapOptions: Equatable, Sendable {
   public var vegetation: Bool?
   /// How the map shows the person's location; off by default.
   public var location: TileflowLocationOptions = .init()
-  /// Multisampling, which smooths the thin edges of 3D buildings, trees and models. Changing it
-  /// starts a new renderer.
+  /// Rendering preference retained for source compatibility. MapLibre Native 7.0.0 manages
+  /// its antialiasing and exposes no per-map multisampling control.
   public var antialias: Bool = true
-  /// Validates each style as the renderer loads it, reporting problems as warnings. Tileflow
-  /// validates its styles when it builds them, so this is off by default. Changing it starts a
-  /// new renderer.
-  public var validatesStyle: Bool = false
   /// Destination and minimum level for this map's diagnostic events.
   public var diagnostics: TileflowMapDiagnostics?
 
@@ -107,7 +103,7 @@ public struct TileflowMapOptions: Equatable, Sendable {
     gestures: TileflowGestures = .init(), controls: TileflowMapControls = .init(),
     cameraLimits: TileflowCameraLimits = .init(), events: TileflowEventOptions = .init(),
     vegetation: Bool? = nil, location: TileflowLocationOptions = .init(), antialias: Bool = true,
-    validatesStyle: Bool = false, diagnostics: TileflowMapDiagnostics? = nil
+    diagnostics: TileflowMapDiagnostics? = nil
   ) {
     self.viewMode = viewMode
     self.quality = quality
@@ -118,7 +114,6 @@ public struct TileflowMapOptions: Equatable, Sendable {
     self.vegetation = vegetation
     self.location = location
     self.antialias = antialias
-    self.validatesStyle = validatesStyle
     self.diagnostics = diagnostics
   }
 

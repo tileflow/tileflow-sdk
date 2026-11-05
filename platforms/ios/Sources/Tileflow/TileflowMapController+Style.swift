@@ -37,11 +37,12 @@ extension TileflowMapController {
     try await attached().addGeoJSONSourceFeatures(sourceId: sourceId, features: features)
   }
 
-  /// See ``TileflowMapView/updateGeoJSONSourceFeatures(sourceId:features:)``.
-  public func updateGeoJSONSourceFeatures(sourceId: String, features: [TileflowFeature])
-    async throws
-  {
-    try await attached().updateGeoJSONSourceFeatures(sourceId: sourceId, features: features)
+  /// See ``TileflowMapView/updateGeoJSONSourceFeatures(sourceId:features:removeFeatureIds:)``.
+  public func updateGeoJSONSourceFeatures(
+    sourceId: String, features: [TileflowFeature], removeFeatureIds: [String] = []
+  ) async throws {
+    try await attached().updateGeoJSONSourceFeatures(
+      sourceId: sourceId, features: features, removeFeatureIds: removeFeatureIds)
   }
 
   /// See ``TileflowMapView/removeGeoJSONSourceFeatures(sourceId:featureIds:)``.
@@ -66,9 +67,11 @@ extension TileflowMapController {
     try await attached().updateLayer(properties: properties)
   }
 
-  /// See ``TileflowMapView/moveLayer(_:position:)``.
-  public func moveLayer(_ id: String, position: TileflowLayerPosition) async throws {
-    try await attached().moveLayer(id, position: position)
+  /// See ``TileflowMapView/moveLayer(_:position:slot:)``.
+  public func moveLayer(
+    _ id: String, position: TileflowLayerPosition, slot: TileflowLayerSlot? = nil
+  ) async throws {
+    try await attached().moveLayer(id, position: position, slot: slot)
   }
 
   /// See ``TileflowMapView/removeLayer(_:)``.

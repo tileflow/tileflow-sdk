@@ -7,9 +7,8 @@ import Foundation
 /// `tileflow build --renderer native` writes, and its family document is the build's
 /// `families/<map>.json`. A Hosted source names its mobile discovery document, whose `native-v1`
 /// representation names the native manifest and the deployment's family document with its
-/// revision. While Hosted deployments and downloaded regions may still hold only the WebView
-/// profile, the engine reads `webview-v1` when discovery announces no native representation, or
-/// when a map that opens from its downloaded regions finds no native manifest there.
+/// revision. A downloaded region may still contain an older `webview-v1` manifest and style;
+/// the engine can translate them while opening the map offline.
 struct NativeManifest: Sendable {
   struct Theme: Sendable {
     let name: String
@@ -95,7 +94,7 @@ struct NativeManifest: Sendable {
         guard fromPacks, profileURL(.webView) != nil else { throw error }
       }
     }
-    guard let webView = profileURL(.webView) else {
+    guard fromPacks, let webView = profileURL(.webView) else {
       throw failure("This Map has no native representation.", .manifest)
     }
     return try parse(

@@ -7,6 +7,38 @@ import XCTest
 final class NativeStyleDocumentTests: XCTestCase {
   private let context = MapResourceAddress.newContext()
 
+  func testHostedWebOnlyDocumentsCanOpenFromAPackButNeverFromTheNetwork() async throws {
+    let map = "city"
+    let discovery = URL(string: "https://maps.test/maps/city/mobile/manifest.json")!
+    let web = discovery.deletingLastPathComponent().appendingPathComponent("webview-v1/manifest.json")
+    var requests: [URL] = []
+
+    func read(_ url: URL, _: TileflowResourceKind) async throws -> [String: Any] {
+      requests.append(url)
+      if url == discovery {
+        return ["mapId": map, "representations": ["webview-v1": ["manifestUrl": web.absoluteString]]]
+      }
+      XCTAssertEqual(url, web)
+      return ["maps": [map: ["defaultTheme": "day", "themes": ["day": ["styleUrl": "day.json"]]]]]
+    }
+
+    do {
+      _ = try await NativeManifest.load(map: map, manifestURL: discovery, discoveryMapID: map, read: read)
+      XCTFail("Online discovery must announce a native profile")
+    } catch let error as TileflowMapError {
+      XCTAssertEqual(error, .resourceFailed)
+      XCTAssertEqual(error.context.resource, .manifest)
+    }
+    XCTAssertEqual(requests, [discovery])
+
+    requests.removeAll()
+    let stored = try await NativeManifest.load(
+      map: map, manifestURL: discovery, discoveryMapID: map, fromPacks: true, read: read)
+    XCTAssertEqual(stored.representation, .webView)
+    XCTAssertEqual(requests, [discovery, web])
+    XCTAssertEqual(try stored.theme("day").styleURL, web.deletingLastPathComponent().appendingPathComponent("day.json"))
+  }
+
   func testAddressesKeepTheEnginesSubstitutionsInThePathBeforeTheQuery() throws {
     XCTAssertEqual(context.count, 22)
     XCTAssertNotEqual(context, MapResourceAddress.newContext())

@@ -17,6 +17,7 @@ export default defineConfig(async () => {
     platform: 'browser',
     dts: true,
     splitting: false,
+    noExternal: ['@maplibre/maplibre-gl-style-spec'],
     define: {
       TILEFLOW_CAMERA_TILE_WORKER_SOURCE: JSON.stringify(
         await readFile('dist/worker/camera-tile-worker.global.js', 'utf8'),

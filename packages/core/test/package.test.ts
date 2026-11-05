@@ -84,6 +84,7 @@ test('ships notices for every third-party component embedded in the browser entr
     'buffer <https://github.com/feross/buffer>',
     'TypeScript helper code',
     'meshoptimizer 1.3.0',
+    '@maplibre/maplibre-gl-style-spec 24.8.5',
   ]) {
     assert.equal(notices.includes(requiredNotice), true, `missing notice for ${requiredNotice}`);
   }

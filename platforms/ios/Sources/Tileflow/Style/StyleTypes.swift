@@ -36,9 +36,9 @@ public enum TileflowLayerSlot: String, Sendable, Equatable, CaseIterable {
 public enum TileflowLayerPosition: Sendable, Equatable {
   /// On top of the layers of its slot.
   case `default`
-  /// Directly above an application layer.
+  /// Directly above an application layer in the same slot.
   case above(String)
-  /// Directly below an application layer.
+  /// Directly below an application layer in the same slot.
   case below(String)
   /// Zero-based insertion position among application layers in this slot, excluding a layer
   /// being moved. Valid values are zero through that count, inclusive.

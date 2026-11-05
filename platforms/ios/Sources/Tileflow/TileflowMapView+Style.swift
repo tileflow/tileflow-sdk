@@ -310,17 +310,18 @@ extension TileflowMapView {
 
   func replaceStyleData(_ sourceId: String, base: GeoJSONLog.Base) async throws {
     let index = try geoJSONSource(sourceId)
-    try await changeStyle({ style in
-      let promoteId = style.sources[index].geoJSON?.promoteId
-      let revision = (style.sources[index].geoJSON?.revision ?? 0) + 1
-      style.sources[index].geoJSON = GeoJSONLog(
-        base: base, promoteId: promoteId, revision: revision)
-    }) { engine in
+    var next = runtimeStyle.sources[index]
+    next.geoJSON = GeoJSONLog(base: base, promoteId: next.geoJSON?.promoteId,
+      revision: (next.geoJSON?.revision ?? 0) + 1)
+    if styleEngine == nil { try NativeRuntimeStyle.validateQueuedSource(next) }
+    if let engine = styleEngine {
       let (value, references) = try Self.geoJSONWire(base, channel: engine.data)
       _ = try await engine.call(
         .setGeoJSONSourceData, payload: .object(["id": .string(sourceId), "data": value]),
         data: references)
     }
+    guard !isDestroyed else { throw TileflowMapError.disposed }
+    runtimeStyle.sources[index] = next
   }
 
   /// Adds features to a GeoJSON source, or replaces those whose identifier it holds, without
@@ -372,6 +373,12 @@ extension TileflowMapView {
         .invalidRequest, reason: .dataTooLarge, limit: MapContract.maximumDataBytes)
     }
     let update = GeoJSONLog.Update(add: bytes, remove: remove)
+    if styleEngine == nil, runtimeStyle.sources[index].spec["cluster"] == .bool(true), !add.isEmpty {
+      let base = try Self.geoJSONBase(.features(add)).0
+      let candidate = RuntimeStyle.Source(id: sourceId, spec: runtimeStyle.sources[index].spec,
+        geoJSON: GeoJSONLog(base: base, promoteId: promoteId))
+      try NativeRuntimeStyle.validateQueuedSource(candidate)
+    }
     try await changeStyle({ style in
       style.sources[index].geoJSON?.updates.append(update)
       style.sources[index].geoJSON?.updateBytes +=
@@ -384,8 +391,8 @@ extension TileflowMapView {
 
   // MARK: Layers
 
-  /// Adds a layer of the application's runtime style. A layer placed above or below another takes
-  /// that layer's slot; otherwise it goes on top of its own slot.
+  /// Adds an application layer. Relative placement requires the same slot; the default is the
+  /// top of the layer's own slot.
   public func addLayer(_ layer: any TileflowLayer, position: TileflowLayerPosition = .default)
     async throws
   {

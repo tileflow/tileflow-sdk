@@ -34,6 +34,55 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     TileflowMapSource(map: "city", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
   }
 
+  func testClusterGuardsCoverRemoteDataAndDeltasBeforeNativeMutation() async throws {
+    try await requireNativeFixture()
+    let events = NativeMapEvents()
+    let view = TileflowMapView(source: citySource)
+    let window = mount(view, events: events)
+    defer { view.destroy(); window.isHidden = true }
+    try await events.waitForLoads(1)
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+    let style = try XCTUnwrap(engine.mapView?.style)
+    let mixedURL = URL(string: FixtureServer.origin + "/data.json")!
+    func rejects(_ work: () async throws -> Void) async {
+      do { try await work(); XCTFail("Clustered non-point data reached the renderer") }
+      catch let error as TileflowMapError {
+        XCTAssertEqual(error, .invalidRequest)
+        XCTAssertEqual(error.context.reason, "invalidGeoJSON")
+        XCTAssertEqual(error.context.rule, "pointFeatures")
+      } catch { XCTFail("Unexpected error: \(error)") }
+    }
+    await rejects {
+      try await view.addSource(id: "remote-invalid", properties: [
+        "type": "geojson", "cluster": true, "data": mixedURL.absoluteString,
+      ])
+    }
+    XCTAssertFalse(view.sourceExists("remote-invalid"))
+    XCTAssertNil(style.source(withIdentifier: "__tileflow_source_remote-invalid"))
+    let point = TileflowFeature(id: "p", geometry: .point(Self.center))
+    try await view.addSource(TileflowGeoJSONSource(id: "guarded", data: .features([point]), cluster: true))
+    try await view.addLayer(TileflowCircleLayer(id: "guarded-circles", source: "guarded"))
+    try await view.setFeatureState(sourceId: "guarded", featureId: "p", state: ["selected": true])
+    let original = try XCTUnwrap(style.source(withIdentifier: "__tileflow_source_guarded"))
+    await rejects { try await view.setGeoJSONSourceData("guarded", data: .url(mixedURL)) }
+    await rejects {
+      try await view.updateGeoJSONSourceFeatures(sourceId: "guarded", features: [
+        TileflowFeature(id: "line", geometry: .lineString([Self.center, .init(longitude: -3.69, latitude: 40.43)])),
+      ], removeFeatureIds: ["p"])
+    }
+    XCTAssertTrue(style.source(withIdentifier: "__tileflow_source_guarded") === original)
+    XCTAssertNotNil(style.layer(withIdentifier: "__tileflow_layer_guarded-circles"))
+    let state = try await view.featureState(sourceId: "guarded", featureId: "p")
+    XCTAssertEqual(state, ["selected": true])
+    try await view.updateSource(id: "guarded", properties: ["filter": ["==", ["geometry-type"], "Point"]])
+    try await view.setGeoJSONSourceData("guarded", data: .url(mixedURL))
+    let filtered = try XCTUnwrap(engine.runtimeStyle.sources["guarded"]?.shape as? MLNShapeCollectionFeature)
+    XCTAssertEqual(filtered.shapes.count, 1)
+    XCTAssertTrue(filtered.shapes.allSatisfy { $0 is MLNPointFeature })
+    await rejects { try await view.updateSource(id: "guarded", properties: ["filter": NSNull()]) }
+    XCTAssertNotNil(view.runtimeStyle.sources.first { $0.id == "guarded" }?.spec["filter"])
+  }
+
   func testSlotIndexesSurviveThemeAndRendererReplacement() async throws {
     try await requireNativeFixture()
     let events = NativeMapEvents()

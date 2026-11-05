@@ -9,7 +9,10 @@ extension NativeRuntimeStyle {
   static func validateQueuedSource(_ source: RuntimeStyle.Source) throws {
     try validateSource(source.spec)
     if case .url(let url) = source.geoJSON?.base { try validateAddress(url.absoluteString) }
-    if case .bytes(let bytes, _) = source.geoJSON?.base { _ = try shape(bytes) }
+    if case .bytes(let bytes, _) = source.geoJSON?.base {
+      var item = Source(id: source.id, spec: source.spec)
+      try setBytes(bytes, on: &item)
+    }
   }
 
   static func validateSourceLayers(_ spec: [String: JSONValue], layers: [JSONValue]) throws {
@@ -321,7 +324,8 @@ extension NativeRuntimeStyle {
     let promote = source.spec["promoteId"]?.string
     let generate = source.spec["generateId"]?.bool == true
     let filter = source.spec["filter"]
-    if promote != nil || generate || filter != nil {
+    let clustered = source.spec["cluster"]?.bool == true
+    if promote != nil || generate || filter != nil || clustered {
       guard let object = try? JSONSerialization.jsonObject(with: bytes) as? [String: Any] else {
         throw TileflowMapError.invalidRequest
       }
@@ -359,11 +363,19 @@ extension NativeRuntimeStyle {
           else { throw TileflowMapError.invalidRequest }
           if !include { continue }
         }
+        if clustered, (feature["geometry"] as? [String: Any])?["type"] as? String != "Point" {
+          throw TileflowMapError(.invalidRequest, context: .init(
+            reason: MapContract.ErrorReason.invalidGeoJSON.rawValue,
+            message: "Clustered GeoJSON sources require Point geometries after filtering.",
+            rule: "pointFeatures"))
+        }
         prepared.append(feature)
       }
-      bytes = try JSONSerialization.data(withJSONObject: [
-        "type": "FeatureCollection", "features": prepared,
-      ])
+      if promote != nil || generate || filter != nil || object["type"] as? String != "FeatureCollection" {
+        bytes = try JSONSerialization.data(withJSONObject: [
+          "type": "FeatureCollection", "features": prepared,
+        ])
+      }
     }
     source.shape = try shape(bytes)
     source.features = nil

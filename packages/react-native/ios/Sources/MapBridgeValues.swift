@@ -333,6 +333,9 @@ enum MapBridgeValues {
       context["corrections"] = error.context.corrections.map { ["code": $0.code, "message": $0.message] }
     }
     if !context.isEmpty { info["context"] = context }
-    return BridgeFailure(code: error.code.rawValue, message: "Map operation failed (\(error.code.rawValue)).", info: info)
+    let message = error.context.reason == "invalidGeoJSON" && error.context.rule == "pointFeatures"
+      ? error.context.message : nil
+    return BridgeFailure(code: error.code.rawValue,
+      message: message ?? "Map operation failed (\(error.code.rawValue)).", info: info)
   }
 }

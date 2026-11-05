@@ -46,8 +46,8 @@ public enum TileflowPuckBearing: String, Sendable {
 /// How the map shows the person's location.
 ///
 /// The renderer draws the location as a puck with a circle of its accuracy, an optional direction
-/// indicator, and a grey dot once the latest position is older than ``staleAfter``. Showing the
-/// location starts the map's location provider while the map is visible; the provider measures
+/// indicator, and a grey dot once the latest position is older than ``staleAfter``. Enabling the
+/// provider starts measurements while the map is visible, even with a hidden puck. It measures
 /// only when the application has access (see ``TileflowLocationPermissions``).
 public struct TileflowLocationOptions: Equatable, Sendable {
   /// Consumes positions while the map is visible and follows them when a follow mode is set.

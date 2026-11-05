@@ -78,7 +78,7 @@ extension TileflowLocationConsumer {
 /// A source of positions and headings for maps.
 ///
 /// A provider delivers on the main actor to every consumer it holds. It should measure only while
-/// it has consumers: a map adds itself while it shows the location and is visible, and removes
+/// it has consumers: a visible map adds itself while location is enabled, even with a hidden puck, and removes
 /// itself otherwise. A new consumer receives the latest known position at once, if there is one.
 /// ``TileflowDefaultLocationProvider`` measures the device; ``TileflowSimulatedLocationProvider``
 /// replays a route.

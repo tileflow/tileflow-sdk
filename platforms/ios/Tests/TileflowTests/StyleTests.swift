@@ -13,10 +13,14 @@ final class StyleTests: XCTestCase {
     try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
   }
 
+  private func positionFixtures() throws -> JSONValue {
+    let url = try XCTUnwrap(Bundle.module.url(
+      forResource: "style-position-fixtures", withExtension: "json", subdirectory: "Fixtures/Native"))
+    return try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url))
+  }
+
   func testRelativePositionsRejectOtherSlotsWithoutChangingTheStyle() async throws {
-    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-      .appendingPathComponent("../../../../platforms/style-position-fixtures.json")
-    let fixture = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url))
+    let fixture = try positionFixtures()
     for item in try XCTUnwrap(fixture["rejections"]?.array) {
       let view = TileflowMapView(source: .init(map: "fixture",
         manifestURL: URL(string: "https://maps.example/manifest.json")!))
@@ -84,9 +88,7 @@ final class StyleTests: XCTestCase {
   }
 
   func testSlotIndexesMatchSharedCasesAndPreserveOtherSlots() async throws {
-    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
-      .appendingPathComponent("../../../../platforms/style-position-fixtures.json")
-    let fixture = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url))
+    let fixture = try positionFixtures()
     for item in try XCTUnwrap(fixture["slotIndices"]?.array) {
       let view = TileflowMapView(source: .init(map: "fixture",
         manifestURL: URL(string: "https://maps.example/manifest.json")!))
@@ -113,6 +115,48 @@ final class StyleTests: XCTestCase {
         item["expectedOrder"]?.array?.compactMap(\.string))
       XCTAssertEqual(view.runtimeStyle.layers.filter { $0.slot != next.slot && $0.id != next.id }.map(\.id), otherSlots)
     }
+  }
+
+  func testClusteredSourcesRejectNonPointsAfterFilteringWithoutKeepingRejectedEdits() async throws {
+    let view = TileflowMapView(source: .init(map: "fixture",
+      manifestURL: URL(string: "https://maps.example/manifest.json")!))
+    defer { view.destroy() }
+    let point = TileflowFeature(id: "p", geometry: .point(.init(longitude: 1, latitude: 2)))
+    let line = TileflowFeature(id: "l", geometry: .lineString([
+      .init(longitude: 1, latitude: 2), .init(longitude: 2, latitude: 3),
+    ]))
+    func rejects(_ work: () async throws -> Void) async {
+      do { try await work(); XCTFail("Clustered non-point data was accepted") }
+      catch let error as TileflowMapError {
+        XCTAssertEqual(error, .invalidRequest)
+        XCTAssertEqual(error.context.reason, "invalidGeoJSON")
+        XCTAssertFalse(error.context.message?.isEmpty ?? true)
+      } catch { XCTFail("Unexpected error: \(error)") }
+    }
+    await rejects {
+      try await view.addSource(TileflowGeoJSONSource(id: "invalid", data: .features([point, line]), cluster: true))
+    }
+    XCTAssertFalse(view.sourceExists("invalid"))
+    try await view.addSource(TileflowGeoJSONSource(id: "points", data: .features([point]), cluster: true))
+    let original = view.runtimeStyle.sources.first { $0.id == "points" }?.geoJSON?.base
+    await rejects { try await view.setGeoJSONSourceData("points", data: .features([point, line])) }
+    XCTAssertEqual(view.runtimeStyle.sources.first { $0.id == "points" }?.geoJSON?.base, original)
+    try await view.setGeoJSONSourceData("points", data: .features([point]))
+    await rejects {
+      try await view.updateGeoJSONSourceFeatures(sourceId: "points", features: [line], removeFeatureIds: ["p"])
+    }
+    XCTAssertEqual(view.runtimeStyle.sources.first { $0.id == "points" }?.geoJSON?.updates.count, 0)
+
+    try await view.addSource(TileflowGeoJSONSource(id: "mixed", data: .features([point, line])))
+    await rejects { try await view.updateSource(id: "mixed", properties: ["cluster": true]) }
+    XCTAssertNotEqual(view.runtimeStyle.sources.first { $0.id == "mixed" }?.spec["cluster"], .bool(true))
+    try await view.updateSource(id: "mixed", properties: [
+      "cluster": true, "filter": ["==", ["geometry-type"], "Point"],
+    ])
+    try await view.setGeoJSONSourceData("mixed", data: .features([point, line]))
+    try await view.updateGeoJSONSourceFeatures(sourceId: "mixed", features: [line])
+    await rejects { try await view.updateSource(id: "mixed", properties: ["filter": NSNull()]) }
+    XCTAssertNotNil(view.runtimeStyle.sources.first { $0.id == "mixed" }?.spec["filter"])
   }
 
   func testGeneratedLayersEncodeMapLibreJSON() throws {

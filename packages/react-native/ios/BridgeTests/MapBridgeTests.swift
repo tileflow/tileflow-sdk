@@ -78,6 +78,13 @@ final class MapBridgeTests: XCTestCase {
     XCTAssertEqual(try context.string("reason"), "featureUnavailable")
     XCTAssertEqual(try context.string("feature"), "scene3d")
     XCTAssertNil(failure.info["feature"])
+    let pointExplanation = "Point geometries are required."
+    let geometry = MapBridgeValues.failure(TileflowMapError(.invalidRequest,
+      context: .init(reason: "invalidGeoJSON", message: pointExplanation, rule: "pointFeatures")))
+    XCTAssertEqual(geometry.message, pointExplanation)
+    let privateError = MapBridgeValues.failure(TileflowMapError(.resourceFailed,
+      context: .init(message: "https://private.example/?token=private-test-token")))
+    XCTAssertFalse(privateError.message.contains("private-test-token"))
   }
 
   func testMultiplePositionsReturnAnActionableStructuredError() throws {

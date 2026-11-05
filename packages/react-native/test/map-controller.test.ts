@@ -94,3 +94,13 @@ test('a load failure rejects queued work while explicit reload and permission re
     ['reload', 'requestLocationPermission'],
   );
 });
+
+test('non-finite arguments are rejected without turning them into null', async () => {
+  const {controller, calls} = harness();
+  controller.attach(12);
+  controller.receive('mount-a', 'contentReady', {});
+  for (const zoomLevel of [NaN, Infinity, -Infinity]) {
+    await assert.rejects(controller.call('setCamera', {zoomLevel}), {code: 'invalidRequest'});
+  }
+  assert.deepEqual(calls, []);
+});

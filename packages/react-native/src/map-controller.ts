@@ -71,7 +71,11 @@ export class MapController {
     if (this.failure && !immediate) return Promise.reject(this.failure);
     let encoded: string;
     try {
-      encoded = JSON.stringify(payload);
+      encoded = JSON.stringify(payload, (_key, value: unknown) => {
+        if (typeof value === 'number' && !Number.isFinite(value))
+          throw new Error('Map arguments require finite numbers.');
+        return value;
+      });
     } catch {
       return Promise.reject(
         new TileflowMapError({

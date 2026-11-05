@@ -192,6 +192,7 @@ test('native browser guard excludes dependency artifacts and comments', async (t
     ['platforms/android/tileflow/build/generated/Bridge.kt', 'import android.webkit.WebView'],
     ['platforms/android/.gradle/caches/Bridge.kt', 'import android.webkit.WebView'],
     ['packages/react-native/node_modules/vendor/Bridge.mm', '@import WebKit;'],
+    ['packages/react-native/example/.expo/web/cache/Generated.swift', 'import WebKit'],
   ];
   for (const [path, text] of files) {
     const file = new URL(path, root);
@@ -237,6 +238,7 @@ async function nativeBrowserDependencies(root) {
     '.build',
     '.cache',
     '.cxx',
+    '.expo',
     '.gradle',
     '.kotlin',
     '.swiftpm',

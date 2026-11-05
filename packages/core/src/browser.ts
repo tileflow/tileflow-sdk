@@ -8,6 +8,11 @@ import {
   type TileflowDynamicImageMap,
 } from './dynamic-style-images';
 import type {TileflowWorldRequestBridge} from './fair-use-browser';
+import {
+  beginTileflowRuntimeStyleChange,
+  composeTileflowRuntimeStyle,
+  stripTileflowRuntimeStyle,
+} from './map-controller-browser';
 import {isTileflowThemeName} from './portable-identity-rules';
 import {type TileflowRouteInks, tileflowRouteInksAt, tileflowStyleRouteInks} from './route-inks';
 import {
@@ -77,6 +82,21 @@ import {
   waitForTileflowThemeGeometry,
 } from './theme-preparation-browser';
 import type {MapLibreStyle} from './types';
+
+export {
+  createTileflowMapControllerBinding,
+  createTileflowMapController,
+  TileflowMapError,
+} from './map-controller-browser';
+export type {
+  TileflowMapController,
+  TileflowMapControllerBinding,
+  TileflowRuntimeStyleMap,
+  TileflowLayerPosition,
+  TileflowRuntimeSourceDefinition,
+  TileflowRuntimeLayerDefinition,
+  TileflowMapErrorContext,
+} from './map-controller-browser';
 
 export type {TileflowColorOverrides} from './color-program-runtime';
 
@@ -1379,6 +1399,18 @@ export function createTileflowThemeController(options: {
     runId: number,
     target: Target,
   ): Promise<TileflowThemeTransitionResult> {
+    const releaseRuntime = beginTileflowRuntimeStyleChange(options.map);
+    try {
+      return await applyTargetLocked(runId, target);
+    } finally {
+      releaseRuntime();
+    }
+  }
+
+  async function applyTargetLocked(
+    runId: number,
+    target: Target,
+  ): Promise<TileflowThemeTransitionResult> {
     const targetTheme = targetThemeOf(target);
     if (disposed || runId !== requestId) return {status: 'superseded', theme: targetTheme};
     // A new style waits while the map's WebGL context is lost (see whenContextAvailable).
@@ -1525,7 +1557,10 @@ export function createTileflowThemeController(options: {
   async function prepareGeometry(from: MapLibreStyle, to: MapLibreStyle, runId: number) {
     const getStyle = options.map.getStyle;
     const displayed = typeof getStyle === 'function' ? getStyle.call(options.map) : undefined;
-    const preparation = prepareTileflowThemeGeometry(displayed ?? from, to);
+    const preparation = prepareTileflowThemeGeometry(
+      stripTileflowRuntimeStyle(options.map, displayed ?? from),
+      to,
+    );
     if (!preparation) return !disposed && runId === requestId;
     await applyMapStyle(options.map, preparation.style, timeoutMs);
     const ready = await waitForTileflowThemeGeometry(
@@ -2350,6 +2385,7 @@ function applyMapStyle(
   style: MapLibreStyle | string,
   timeoutMs: number,
 ): Promise<void> {
+  const releaseRuntime = beginTileflowRuntimeStyleChange(map);
   return new Promise((resolve, reject) => {
     let settled = false;
     const cleanup = () => {
@@ -2362,6 +2398,7 @@ function applyMapStyle(
       if (settled) return;
       settled = true;
       cleanup();
+      releaseRuntime();
       if (error) reject(error);
       else resolve();
     };
@@ -2394,7 +2431,11 @@ function applyMapStyle(
         options?: {diff?: boolean; validate?: boolean},
       ) => unknown;
       // A theme's style is compiled, and validated, when its map is built.
-      setStyle.call(map, style, {diff: true, validate: false});
+      setStyle.call(
+        map,
+        typeof style === 'string' ? style : composeTileflowRuntimeStyle(map, style),
+        {diff: true, validate: false},
+      );
       // MapLibre emits no style.load for an empty diff. The live transition's
       // first style may already match the map, even while camera tiles load.
       handleRenderedStyle();

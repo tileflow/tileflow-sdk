@@ -820,3 +820,11 @@ export {
 export {isTileflowTimeOfDay, tileflowTimesOfDay} from './time-of-day';
 export type {TileflowTimeOfDay, TileflowTimeOfDayVariants} from './time-of-day';
 export type {TileflowCameraOptions} from './camera';
+
+export type {
+  TileflowMapController,
+  TileflowLayerPosition,
+  TileflowRuntimeSourceDefinition,
+  TileflowRuntimeLayerDefinition,
+  TileflowMapErrorContext,
+} from './map-controller-browser';

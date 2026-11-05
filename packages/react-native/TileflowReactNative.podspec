@@ -19,20 +19,8 @@ Pod::Spec.new do |s|
 	s.frameworks = 'Foundation', 'UIKit'
 	s.libraries = 'c++'
 	s.dependency 'React-Core', '0.83.10'
-	# The Map's surface integration consumes only the private native view/camera headers of the
-	# pinned MapLibre React Native peer, which the app installs. It is not a pod dependency: that pod
-	# defines no module, and this pod's Swift would then need modular headers everywhere.
-	# No Tileflow native header is promoted to a public CocoaPods header.
-	s.pod_target_xcconfig = {
-		'DEFINES_MODULE' => 'YES',
-		'HEADER_SEARCH_PATHS' => '$(inherited) "${PODS_ROOT}/Headers/Private" "${PODS_ROOT}/Headers/Private/MapLibreReactNative"'
-	}
-	# MapLibre and the Tileflow Swift SDK are exact Swift package products, linked by
-	# tileflow_post_install(installer) from the app's Podfile.
+	s.pod_target_xcconfig = { 'DEFINES_MODULE' => 'YES' }
+	# Swift package products are linked by the app's tileflow_post_install hook.
 	install_modules_dependencies(s)
 
-	s.test_spec 'Admission' do |tests|
-		tests.source_files = 'ios/Tests/*.mm'
-		tests.requires_app_host = true
-	end
 end

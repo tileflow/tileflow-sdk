@@ -2,11 +2,10 @@ require 'json'
 require 'pathname'
 
 # Links the exact Swift package products the TileflowReactNative pod uses. Call it from the app's
-# Podfile post_install, after React Native's and MapLibre React Native's own hooks:
+# Podfile post_install, after React Native's hook:
 #
 #   post_install do |installer|
 #     react_native_post_install(installer, ...)
-#     $MLRN.post_install(installer)
 #     tileflow_post_install(installer)
 #   end
 #
@@ -17,7 +16,6 @@ require 'pathname'
 TILEFLOW_SWIFT_PRODUCTS = %w[Tileflow TileflowServices].freeze
 
 def tileflow_post_install(installer, swift_package_path: ENV['TILEFLOW_SWIFT_PACKAGE_PATH'])
-	tileflow_native_admission_post_install(installer)
 	project = installer.pods_project
 	targets = tileflow_pod_targets(project)
 	package = JSON.parse(File.read(File.join(__dir__, '..', 'package.json')))
@@ -85,28 +83,5 @@ def tileflow_link_product(project, target, reference, name)
 		file = project.new(Xcodeproj::Project::Object::PBXBuildFile)
 		file.product_ref = product
 		phase.files << file
-	end
-end
-
-# Links the MapLibre Native product that MapLibre React Native already references to the pod, for
-# the current Map's network admission.
-def tileflow_native_admission_post_install(installer)
-	project = installer.pods_project
-	url = 'https://github.com/maplibre/maplibre-gl-native-distribution'
-	version = '6.31.0'
-	refs = project.root_object.package_references.select do |reference|
-		reference.respond_to?(:repositoryURL) && reference.repositoryURL == url
-	end
-	raise 'Run MapLibre React Native post_install before Tileflow' unless refs.length == 1
-	reference = refs.first
-	requirement = reference.requirement.transform_keys(&:to_s)
-	unless requirement == { 'kind' => 'exactVersion', 'version' => version }
-		raise 'Tileflow requires the exact MapLibre Native 6.31.0 SPM product'
-	end
-	if defined?($MLRN_NATIVE_VERSION) && $MLRN_NATIVE_VERSION.to_s != version
-		raise 'Conflicting MapLibre Native version for Tileflow'
-	end
-	tileflow_pod_targets(project).each do |target|
-		tileflow_link_product(project, target, reference, 'MapLibre')
 	end
 end

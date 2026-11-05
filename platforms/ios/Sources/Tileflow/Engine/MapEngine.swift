@@ -82,7 +82,7 @@ protocol MapEngine: AnyObject, Sendable {
   var view: UIView { get }
   /// Payloads that requests refer to, such as GeoJSON or images. A request releases its own when
   /// it ends; retiring the engine releases everything.
-  var data: DataChannel { get }
+  var data: MapPayloadStore { get }
   /// The engine accepts `initialize`.
   var onReady: (() -> Void)? { get set }
   /// An event and its value.
@@ -102,7 +102,7 @@ protocol MapEngine: AnyObject, Sendable {
   /// Starts loading. ``onReady`` follows.
   func start()
   /// Sends a command. Cancelling the calling task cancels it in the engine as well.
-  func call(_ command: MapEngineCommand, payload: JSONValue, data: [DataChannel.Reference])
+  func call(_ command: MapEngineCommand, payload: JSONValue, data: [MapPayloadStore.Reference])
     async throws -> JSONValue
   /// Updates the map's simple markers while application overlays keep drawing.
   func setAnnotations(_ annotations: [TileflowAnnotation], overlays: [TileflowGeoJSONLayer]) async throws

@@ -59,7 +59,7 @@ final class OfflineServingTests: XCTestCase {
     // The tag names the body as the route serves it, compressed.
     XCTAssertEqual(
       request.value(forHTTPHeaderField: "If-None-Match"),
-      "\"\(DataChannel.digest(OfflinePackBuilder.gzip(tileBody)))\"")
+      "\"\(ResourceDigest.sha256(OfflinePackBuilder.gzip(tileBody)))\"")
   }
 
   func testAnUnreachableServiceFallsBackToThePack() async throws {
@@ -199,10 +199,10 @@ final class OfflineServingTests: XCTestCase {
     let metadata = ResourceCacheMetadata(
       url: url, status: 200,
       headers: [
-        "ETag": "\"\(DataChannel.digest(body))\"", "Cache-Control": "private, no-cache",
+        "ETag": "\"\(ResourceDigest.sha256(body))\"", "Cache-Control": "private, no-cache",
         "Content-Type": "application/octet-stream",
       ], responseTime: Date(), protected: scope != .shared,
-      body: (body.count, DataChannel.digest(body)))
+      body: (body.count, ResourceDigest.sha256(body)))
     XCTAssertTrue(
       cache.write(
         ResourceCacheKey(url: url, scope: scope), retention: .pinned, metadata: metadata, body: body

@@ -6,12 +6,12 @@ import WebKit
 final class ResourceSchemeHandler: NSObject, WKURLSchemeHandler {
   private let loader: any ResourceLoading
   private let runtimeRoot: URL
-  private let data: DataChannel?
+  private let data: MapPayloadStore?
   private var operations: [ObjectIdentifier: Task<Void, Never>] = [:]
   private var retired = false
   var onFailure: ((TileflowMapError) -> Void)?
 
-  init(loader: any ResourceLoading, runtimeRoot: URL, data: DataChannel? = nil) {
+  init(loader: any ResourceLoading, runtimeRoot: URL, data: MapPayloadStore? = nil) {
     self.loader = loader
     self.runtimeRoot = runtimeRoot
     self.data = data

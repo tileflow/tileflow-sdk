@@ -27,7 +27,7 @@ struct NativeFamily: Sendable {
       let payload = try? await loader.load(URLRequest(url: url)),
       payload.status == 200
     else { return nil }
-    if let revision = manifest.family?.revision, DataChannel.digest(payload.bytes) != revision {
+    if let revision = manifest.family?.revision, ResourceDigest.sha256(payload.bytes) != revision {
       mismatch(url)
       return nil
     }

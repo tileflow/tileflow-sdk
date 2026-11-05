@@ -35,7 +35,7 @@ final class MapBridge: NSObject, WKScriptMessageHandler {
   let generation: Int
   let runtimeHash: String
   /// Payloads this generation's requests carry; the transport serves them to the renderer.
-  let data: DataChannel
+  let data: MapPayloadStore
   weak var webView: WKWebView?
   var onHello: (() -> Void)?
   var onEvent: ((String, JSONValue) -> Void)?
@@ -49,7 +49,7 @@ final class MapBridge: NSObject, WKScriptMessageHandler {
 
   private var ready: Bool { version != nil }
 
-  init(instanceID: String, generation: Int, runtimeHash: String, data: DataChannel = .init()) {
+  init(instanceID: String, generation: Int, runtimeHash: String, data: MapPayloadStore = .init()) {
     self.instanceID = instanceID
     self.generation = generation
     self.runtimeHash = runtimeHash
@@ -135,7 +135,7 @@ final class MapBridge: NSObject, WKScriptMessageHandler {
   /// than one is read in parts, up to the data channel's limit.
   func call(
     _ method: ProtocolContract.Method, payload: JSONValue = .null,
-    data references: [DataChannel.Reference] = []
+    data references: [MapPayloadStore.Reference] = []
   ) async throws -> JSONValue {
     defer { data.release(references) }
     let (id, reply) = try await send(method, payload: payload)
@@ -168,7 +168,7 @@ final class MapBridge: NSObject, WKScriptMessageHandler {
     }
     sequence += 1
     let id = String(sequence)
-    var carried: [DataChannel.Reference] = []
+    var carried: [MapPayloadStore.Reference] = []
     defer { data.release(carried) }
     let text: String
     if let small = try Self.message(
@@ -180,7 +180,7 @@ final class MapBridge: NSObject, WKScriptMessageHandler {
       // The payload's JSON goes on the data channel; the renderer reads it before the command.
       let bytes = try JSONEncoder().encode(payload)
       let reference = try data.register(
-        bytes, digest: DataChannel.digest(bytes), contentType: "application/json")
+        bytes, digest: ResourceDigest.sha256(bytes), contentType: "application/json")
       carried = [reference]
       guard
         let deferred = try Self.message(

@@ -165,7 +165,7 @@ final class NativeMapScene {
     var rows: [String: JSONValue] = [:]
 
     init() {}
-    @MainActor init(request: JSONValue, data: DataChannel) throws {
+    @MainActor init(request: JSONValue, data: MapPayloadStore) throws {
       guard let values = request["values"], values != .null else { return }
       guard values["joinBy"] == .string("id"), let id = values["rows"]?["id"]?.string,
         let bytes = data.payload(id)?.bytes,
@@ -186,7 +186,7 @@ final class NativeMapScene {
     }
   }
 
-  func setBoundaries(_ request: JSONValue, data: DataChannel) throws {
+  func setBoundaries(_ request: JSONValue, data: MapPayloadStore) throws {
     let next = try BoundaryRows(request: request, data: data)
     let previous = boundaryValues
     boundaryValues = next

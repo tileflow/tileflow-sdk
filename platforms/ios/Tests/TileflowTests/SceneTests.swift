@@ -26,7 +26,7 @@ final class SceneTests: XCTestCase {
       id: "route-line", geoJSON: geoJSON, kind: .line, ink: .line, placement: .ground,
       occludedOpacity: 0.35, progress: TileflowLineProgress(end: 0.25, highlight: "#ffffff"))
     let value = route.wireValue(
-      data: DataChannel.Reference(id: "data", byteLength: 1, sha256: "digest"))
+      data: MapPayloadStore.Reference(id: "data", byteLength: 1, sha256: "digest"))
     XCTAssertEqual(value["ink"]?.string, "line")
     XCTAssertEqual(value["placement"]?.string, "ground")
     XCTAssertEqual(value["occludedOpacity"]?.number, 0.35)
@@ -153,7 +153,7 @@ final class SceneTests: XCTestCase {
       [.setImages, .setDepthMarkers, .setSun, .setStyleState, .setStyleState])
     XCTAssertEqual(state.replay.compactMap(\.stateName), ["night", "traffic"])
     let sun = try XCTUnwrap(state.replay.first { $0.command.method == .setSun }?.command)
-    let channel = DataChannel()
+    let channel = MapPayloadStore()
     let (replayed, _) = try sun.build(channel, true)
     XCTAssertEqual(replayed["duration"]?.number, 0)
     let (sent, _) = try sun.build(channel, false)
@@ -188,7 +188,7 @@ final class SceneTests: XCTestCase {
 
   func testQueuedMarkersUseImagesAddedBeforeMountAndRecoverFromARejectedReplacement() async throws {
     let state = SceneState()
-    let channel = DataChannel()
+    let channel = MapPayloadStore()
     func command(_ method: ProtocolContract.Method, _ value: String) -> SceneCommand {
       SceneCommand(method, payload: .string(value))
     }

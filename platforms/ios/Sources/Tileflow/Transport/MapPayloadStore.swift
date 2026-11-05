@@ -1,14 +1,9 @@
-import CryptoKit
 import Foundation
 
-/// Payloads too large for protocol messages, such as GeoJSON, served to one renderer generation
-/// through the native transport at `tileflow://data/<id>`.
-///
-/// A request registers its payloads before it is sent and releases them when it settles, so data
-/// lives only while the renderer may read it. Identifiers are random and single-generation; equal
-/// payloads in flight share one entry. Retiring the generation releases everything.
+/// Payloads held for one renderer generation. Requests share bytes by digest and release their
+/// references when they finish. Retiring the renderer discards all of its outstanding payloads.
 @MainActor
-final class DataChannel {
+final class MapPayloadStore {
   struct Reference: Hashable, Sendable {
     let id: String
     let byteLength: Int
@@ -32,11 +27,6 @@ final class DataChannel {
   private var identifiers: [String: String] = [:]
   private var totalBytes = 0
   private var retired = false
-
-  /// The SHA-256 digest the renderer verifies, in lowercase hexadecimal.
-  nonisolated static func digest(_ bytes: Data) -> String {
-    SHA256.hash(data: bytes).map { String(format: "%02x", $0) }.joined()
-  }
 
   /// Registers a payload for one request. Release the reference when the request settles.
   func register(_ bytes: Data, digest: String, contentType: String) throws -> Reference {
@@ -85,9 +75,9 @@ final class DataChannel {
     }
   }
 
-  /// The payload the transport serves, or nil once released.
   func reference(_ id: String) -> Reference? { entries[id]?.reference }
 
+  /// Bytes and media type while a request still holds the payload.
   func payload(_ id: String) -> (bytes: Data, contentType: String)? {
     guard !retired, let entry = entries[id] else { return nil }
     return (entry.bytes, entry.contentType)

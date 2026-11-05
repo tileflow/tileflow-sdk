@@ -90,10 +90,10 @@ public struct TileflowGeoJSONLayer: Sendable {
     self.occludedOpacity = occludedOpacity
     self.progress = progress
     self.geoJSON = geoJSON
-    self.digest = DataChannel.digest(geoJSON)
+    self.digest = ResourceDigest.sha256(geoJSON)
   }
 
-  func wireValue(data: DataChannel.Reference) -> JSONValue {
+  func wireValue(data: MapPayloadStore.Reference) -> JSONValue {
     var value: [String: JSONValue] = [
       "id": .string(id), "data": data.wireValue, "kind": .string(kind.rawValue),
       "color": .string(color), "size": .number(size), "opacity": .number(opacity),
@@ -136,10 +136,10 @@ struct MapContent: Sendable {
   /// The command payload, with each distinct layer's GeoJSON registered on the data channel. The
   /// caller releases the references when the request settles.
   @MainActor
-  func wireValue(data channel: DataChannel) throws -> (JSONValue, [DataChannel.Reference]) {
+  func wireValue(data channel: MapPayloadStore) throws -> (JSONValue, [MapPayloadStore.Reference]) {
     try validate()
     let annotations = try annotations.map { try $0.wireValue() }
-    var references: [DataChannel.Reference] = []
+    var references: [MapPayloadStore.Reference] = []
     do {
       let overlays = try overlays.map { layer in
         let reference = try channel.register(

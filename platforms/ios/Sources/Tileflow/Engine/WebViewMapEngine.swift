@@ -20,7 +20,7 @@ final class WebViewMapEngine: NSObject, MapEngine, WKNavigationDelegate, WKUIDel
   private var retired = false
 
   var view: UIView { webView }
-  var data: DataChannel { bridge.data }
+  var data: MapPayloadStore { bridge.data }
 
   /// Reads the embedded runtime's receipt once per process and starts verifying its files off the
   /// main thread. A missing or modified runtime fails here, before a generation starts.
@@ -35,7 +35,7 @@ final class WebViewMapEngine: NSObject, MapEngine, WKNavigationDelegate, WKUIDel
     runtime: (root: URL, receipt: EmbeddedRuntime.Receipt), instanceID: String, generation: Int,
     loader: any ResourceLoading, frame: CGRect
   ) throws {
-    let data = DataChannel()
+    let data = MapPayloadStore()
     let handler = ResourceSchemeHandler(loader: loader, runtimeRoot: runtime.root, data: data)
     let bridge = MapBridge(
       instanceID: instanceID, generation: generation, runtimeHash: runtime.receipt.runtimeHash,
@@ -77,7 +77,7 @@ final class WebViewMapEngine: NSObject, MapEngine, WKNavigationDelegate, WKUIDel
     loadRuntime()
   }
 
-  func call(_ command: MapEngineCommand, payload: JSONValue, data: [DataChannel.Reference])
+  func call(_ command: MapEngineCommand, payload: JSONValue, data: [MapPayloadStore.Reference])
     async throws -> JSONValue
   {
     try await bridge.call(command, payload: payload, data: data)

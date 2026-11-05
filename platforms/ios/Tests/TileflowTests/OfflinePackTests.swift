@@ -30,7 +30,7 @@ final class OfflinePackTests: XCTestCase {
       ])
     let file = write(pack)
     let (digest, index) = try OfflinePackFormat.verify(file, bytes: pack.count, kind: .tiles)
-    XCTAssertEqual(digest, DataChannel.digest(pack.prefix(pack.count - 32)))
+    XCTAssertEqual(digest, ResourceDigest.sha256(pack.prefix(pack.count - 32)))
     XCTAssertEqual(Data(hex: digest), pack.suffix(32))
     XCTAssertEqual(index.entries.count, 2)
     let entry = try XCTUnwrap(index.entries["12/2005/1544"])
@@ -403,7 +403,7 @@ final class OfflinePlatformFixture: NativeHTTPTransporting, OfflineResourceFetch
     } else if url.hasSuffix("/mobile/manifest.json") {
       let body = Data("{}".utf8)
       response = OfflineFetchResponse(
-        status: 200, headers: ["ETag": "\"\(DataChannel.digest(body))\""], body: body,
+        status: 200, headers: ["ETag": "\"\(ResourceDigest.sha256(body))\""], body: body,
         wireBytes: body.count, wireSHA256: nil)
     } else {
       response = OfflineFetchResponse(

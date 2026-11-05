@@ -104,7 +104,7 @@ final class BridgeWebKitTests: XCTestCase {
       </script>
       """
     try Data(script.utf8).write(to: root.appendingPathComponent("index.html"))
-    let data = DataChannel()
+    let data = MapPayloadStore()
     let handler = ResourceSchemeHandler(loader: NoLoader(), runtimeRoot: root, data: data)
     let bridge = MapBridge(instanceID: "stub", generation: 1, runtimeHash: "stub", data: data)
     let configuration = WKWebViewConfiguration()

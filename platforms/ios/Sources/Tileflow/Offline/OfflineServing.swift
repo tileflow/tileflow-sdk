@@ -330,7 +330,7 @@ final class OfflineServingIndex: Sendable {
         return StoredResource(
           metadata: ResourceCacheMetadata(
             url: key.url, status: tiles.absentStatus, headers: [:], responseTime: Date(),
-            protected: true, body: (0, DataChannel.digest(Data()))), body: Data())
+            protected: true, body: (0, ResourceDigest.sha256(Data()))), body: Data())
       }
     }
     return nil
@@ -362,9 +362,9 @@ final class OfflineServingIndex: Sendable {
       metadata: ResourceCacheMetadata(
         url: url, status: 200,
         headers: [
-          "Content-Type": entry.contentType, "ETag": "\"\(DataChannel.digest(raw))\"",
+          "Content-Type": entry.contentType, "ETag": "\"\(ResourceDigest.sha256(raw))\"",
           "Cache-Control": "private, no-cache",
-        ], responseTime: Date(), protected: true, body: (body.count, DataChannel.digest(body))),
+        ], responseTime: Date(), protected: true, body: (body.count, ResourceDigest.sha256(body))),
       body: body)
   }
 

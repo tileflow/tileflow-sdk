@@ -5,7 +5,7 @@ import Foundation
 struct SceneCommand {
   let method: ProtocolContract.Method
   /// The payload and the data it carries; `replaying` applies it at once, without a transition.
-  let build: @MainActor (DataChannel, _ replaying: Bool) throws -> (JSONValue, [DataChannel.Reference])
+  let build: @MainActor (MapPayloadStore, _ replaying: Bool) throws -> (JSONValue, [MapPayloadStore.Reference])
 
   init(_ method: ProtocolContract.Method, payload: JSONValue) {
     self.method = method
@@ -14,7 +14,7 @@ struct SceneCommand {
 
   init(
     _ method: ProtocolContract.Method,
-    build: @escaping @MainActor (DataChannel, Bool) throws -> (JSONValue, [DataChannel.Reference])
+    build: @escaping @MainActor (MapPayloadStore, Bool) throws -> (JSONValue, [MapPayloadStore.Reference])
   ) {
     self.method = method
     self.build = build
@@ -254,11 +254,11 @@ extension TileflowMapView {
     if let labels = emphasis.labels { request["labels"] = .number(labels) }
     let fixed = request
     let keep = emphasis.keepArea
-    let digest = keep.map(DataChannel.digest)
+    let digest = keep.map(ResourceDigest.sha256)
     try await sendScene(
       SceneCommand(.setEmphasis) { channel, replaying in
         var value = fixed
-        var references: [DataChannel.Reference] = []
+        var references: [MapPayloadStore.Reference] = []
         if let keep, let digest {
           let reference = try channel.register(
             keep, digest: digest, contentType: "application/geo+json")
@@ -317,7 +317,7 @@ extension TileflowMapView {
       throw TileflowMapError(
         .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataBytes)
     }
-    let digest = DataChannel.digest(rows)
+    let digest = ResourceDigest.sha256(rows)
     try await sendScene(
       SceneCommand(.setBoundaryValues) { channel, _ in
         let reference = try channel.register(rows, digest: digest, contentType: "application/json")
@@ -337,21 +337,21 @@ extension TileflowMapView {
       throw TileflowMapError.invalidRequest
     }
     let payloads = images.flatMap { [$0.data] + $0.variants.values }
-    let total = Dictionary(payloads.map { (DataChannel.digest($0), $0.count) }, uniquingKeysWith: { a, _ in a })
+    let total = Dictionary(payloads.map { (ResourceDigest.sha256($0), $0.count) }, uniquingKeysWith: { a, _ in a })
       .values.reduce(0, +)
     guard total <= ProtocolContract.maximumDataTotalBytes,
-      Set(payloads.map(DataChannel.digest)).count <= ProtocolContract.maximumDataReferences
+      Set(payloads.map(ResourceDigest.sha256)).count <= ProtocolContract.maximumDataReferences
     else {
       throw TileflowMapError(
         .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataTotalBytes)
     }
     try await sendScene(
         SceneCommand(.setImages) { channel, _ in
-          var references: [DataChannel.Reference] = []
+          var references: [MapPayloadStore.Reference] = []
           do {
             let register = { (bytes: Data) throws -> JSONValue in
               let reference = try channel.register(
-                bytes, digest: DataChannel.digest(bytes), contentType: "application/octet-stream")
+                bytes, digest: ResourceDigest.sha256(bytes), contentType: "application/octet-stream")
               references.append(reference)
               return reference.wireValue
             }

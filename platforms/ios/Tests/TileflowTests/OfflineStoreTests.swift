@@ -158,7 +158,7 @@ final class OfflineStoreTests: XCTestCase {
         ResourceCacheKey(url: url, scope: .shared), retention: .ambient,
         metadata: ResourceCacheMetadata(
           url: url, status: 200, headers: ["Cache-Control": "max-age=60"], responseTime: Date(),
-          protected: false, body: (body.count, DataChannel.digest(body))), body: body))
+          protected: false, body: (body.count, ResourceDigest.sha256(body))), body: body))
     // The disk is full until the map cache is cleared.
     let store = makeStore(service, available: { cache.usage().bytes > 0 ? 1024 : nil })
     try await store.loadRegion(id: "madrid", options: madrid())
@@ -980,7 +980,7 @@ final class OfflineStoreTests: XCTestCase {
 
   func testVerificationAcceptsTheWireOrTheDecodedBody() {
     let body = Data("tile".utf8)
-    let digest = DataChannel.digest(body)
+    let digest = ResourceDigest.sha256(body)
     let resource = OfflinePlannedResource(
       key: ResourceCacheKey(url: URL(string: "https://a.test/t/1/2/3.pbf")!, scope: .shared),
       bytes: 4, sha256: nil)
@@ -1356,7 +1356,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
       let body = self.body(url, state: state)
       state.publicURLs.insert(url)
       publicResources.append([
-        "kind": kind, "url": url, "bytes": body.count, "sha256": DataChannel.digest(body),
+        "kind": kind, "url": url, "bytes": body.count, "sha256": ResourceDigest.sha256(body),
       ])
     }
     file("discovery", "\(Self.mapPath)/manifest.json")
@@ -1586,7 +1586,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
             status: 200, headers: headers, body: Data(), wireBytes: data.count, wireSHA256: nil))
       }
       let body = self.body(url, state: state)
-      let etag = "\"\(DataChannel.digest(body))\""
+      let etag = "\"\(ResourceDigest.sha256(body))\""
       if request.headers["If-None-Match"] == etag {
         return record(
           OfflineFetchResponse(

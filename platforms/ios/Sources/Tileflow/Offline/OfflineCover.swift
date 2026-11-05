@@ -149,7 +149,7 @@ struct OfflineCover: Hashable, Sendable {
   }
 
   /// The SHA-256 of ``text`` in lowercase hexadecimal, as the manifest and grant carry it.
-  var sha256: String { DataChannel.digest(Data(text.utf8)) }
+  var sha256: String { ResourceDigest.sha256(Data(text.utf8)) }
 
   /// The entry for `anchor`, if the cover lists one.
   func entry(_ anchor: OfflineTileID) -> Entry? {

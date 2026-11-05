@@ -754,11 +754,11 @@ extension TileflowMapView {
       throw TileflowMapError(
         .invalidRequest, reason: .dataTooLarge, limit: ProtocolContract.maximumDataBytes)
     }
-    return (.bytes(bytes, digest: DataChannel.digest(bytes)), bytes.count)
+    return (.bytes(bytes, digest: ResourceDigest.sha256(bytes)), bytes.count)
   }
 
-  static func geoJSONWire(_ base: GeoJSONLog.Base, channel: DataChannel) throws
-    -> (JSONValue, [DataChannel.Reference])
+  static func geoJSONWire(_ base: GeoJSONLog.Base, channel: MapPayloadStore) throws
+    -> (JSONValue, [MapPayloadStore.Reference])
   {
     switch base {
     case .url(let url): return (.object(["url": .string(url.absoluteString)]), [])
@@ -771,7 +771,7 @@ extension TileflowMapView {
 
   private func sendAddSource(_ record: RuntimeStyle.Source, through engine: any MapEngine) async throws {
     var spec = record.spec
-    var references: [DataChannel.Reference] = []
+    var references: [MapPayloadStore.Reference] = []
     if let log = record.geoJSON {
       let (value, registered) = try Self.geoJSONWire(log.base, channel: engine.data)
       spec["data"] = value
@@ -786,10 +786,10 @@ extension TileflowMapView {
     async throws
   {
     var payload: [String: JSONValue] = ["id": .string(source)]
-    var references: [DataChannel.Reference] = []
+    var references: [MapPayloadStore.Reference] = []
     if let add = update.add {
       let reference = try engine.data.register(
-        add, digest: DataChannel.digest(add), contentType: "application/json")
+        add, digest: ResourceDigest.sha256(add), contentType: "application/json")
       references.append(reference)
       payload["add"] = reference.wireValue
     }
@@ -838,7 +838,7 @@ extension TileflowMapView {
       if current.revision == revision, current.updates.count >= updates.count,
         let compacted, compacted.count <= ProtocolContract.maximumDataBytes
       {
-        current.base = .bytes(compacted, digest: DataChannel.digest(compacted))
+        current.base = .bytes(compacted, digest: ResourceDigest.sha256(compacted))
         current.updates.removeFirst(updates.count)
         current.updateBytes = current.updates.reduce(0) {
           $0 + ($1.add?.count ?? 0) + $1.remove.reduce(0) { $0 + $1.utf8.count }

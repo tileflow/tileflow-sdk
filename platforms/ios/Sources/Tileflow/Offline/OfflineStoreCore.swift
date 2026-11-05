@@ -1164,7 +1164,7 @@ actor OfflineStoreCore {
     do {
       response = try await dependencies.fetcher.fetch(
         OfflineFetchRequest(
-          id: "plan/" + DataChannel.digest(Data(url.absoluteString.utf8)), url: url, headers: [:],
+          id: "plan/" + ResourceDigest.sha256(Data(url.absoluteString.utf8)), url: url, headers: [:],
           allowsExpensiveNetworkAccess: true))
     } catch is CancellationError {
       throw CancellationError()
@@ -1257,7 +1257,7 @@ actor OfflineStoreCore {
 
   private static func unit(_ planned: OfflinePlannedPack, _ plan: OfflineVersionPlan) -> String {
     let manifest = plan.downloads[planned.download].manifest
-    let request = DataChannel.digest(plan.requests[planned.download].body)
+    let request = ResourceDigest.sha256(plan.requests[planned.download].body)
     return
       "\(request)\n\(planned.pack.url.absoluteString)\n\(planned.release ?? "d\(manifest.deploymentVersion)")"
   }
@@ -1351,7 +1351,7 @@ actor OfflineStoreCore {
   private func planKey(_ id: String, _ number: Int) -> String { "\(id)\n\(number)" }
 
   private func transferPrefix(_ id: String, _ number: Int) -> String {
-    "\(DataChannel.digest(Data(id.utf8)).prefix(16))/\(number)/"
+    "\(ResourceDigest.sha256(Data(id.utf8)).prefix(16))/\(number)/"
   }
 
   private func snapshot(_ record: OfflineRegionRecord) -> TileflowOfflineRegion? {

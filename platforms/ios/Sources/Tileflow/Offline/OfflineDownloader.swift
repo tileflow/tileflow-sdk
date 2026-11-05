@@ -27,7 +27,7 @@ struct OfflinePlannedPack: Sendable {
     self.download = download
     self.pack = pack
     self.release = release
-    key = DataChannel.digest(Data("\(download)\n\(pack.id)".utf8))
+    key = ResourceDigest.sha256(Data("\(download)\n\(pack.id)".utf8))
   }
 }
 
@@ -448,7 +448,7 @@ struct OfflineDownloader: Sendable {
         return .outcome(
           .fail(TileflowOfflineError(.invalidResponse, context: .init(reason: "resourceTooLarge"))))
       }
-      let digest = DataChannel.digest(response.body)
+      let digest = ResourceDigest.sha256(response.body)
       let bytes = Int64(resource.bytes ?? response.body.count)
       let received = OfflineStoredEntry(bytes: bytes, transferred: true)
       if stored?.metadata.bodySHA256 == digest { return .stored(received) }
@@ -533,7 +533,7 @@ struct OfflineDownloader: Sendable {
     guard let bytes = resource.bytes else { return true }
     let expected = resource.sha256 ?? tag
     if response.body.count == bytes,
-      expected.map({ $0 == DataChannel.digest(response.body) }) ?? true
+      expected.map({ $0 == ResourceDigest.sha256(response.body) }) ?? true
     {
       return true
     }

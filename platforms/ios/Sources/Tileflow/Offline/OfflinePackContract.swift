@@ -16,7 +16,7 @@ struct OfflinePackGrant: Sendable, Hashable, CustomStringConvertible, CustomDebu
   }
 
   /// A short, stable name for the grant that reveals nothing of it.
-  var tag: String { String(DataChannel.digest(Data(value.utf8)).prefix(12)) }
+  var tag: String { String(ResourceDigest.sha256(Data(value.utf8)).prefix(12)) }
 
   var description: String { "OfflinePackGrant(tf_offline_v2…)" }
   var debugDescription: String { description }

@@ -158,54 +158,10 @@ final class ProtocolTests: XCTestCase {
     }
   }
 
-  func testDataChannelBoundsSharesAndReleasesPayloads() throws {
-    let channel = DataChannel()
-    let bytes = Data("{\"type\":\"FeatureCollection\",\"features\":[]}".utf8)
-    let digest = DataChannel.digest(bytes)
-    XCTAssertEqual(digest.count, 64)
-    let first = try channel.register(bytes, digest: digest, contentType: "application/geo+json")
-    let second = try channel.register(bytes, digest: digest, contentType: "application/geo+json")
-    // Equal payloads in flight share one entry and stay until every request releases them.
-    XCTAssertEqual(first, second)
-    XCTAssertGreaterThanOrEqual(first.id.count, 22)
-    XCTAssertEqual(channel.payload(first.id)?.bytes, bytes)
-    channel.release([first])
-    XCTAssertNotNil(channel.payload(first.id))
-    channel.release([second])
-    XCTAssertNil(channel.payload(first.id))
-    XCTAssertTrue(channel.isEmpty)
-    // Identifiers are not reused.
-    let third = try channel.register(bytes, digest: digest, contentType: "application/geo+json")
-    XCTAssertNotEqual(third.id, first.id)
-    channel.release([third, third])
-    XCTAssertTrue(channel.isEmpty)
-
-    let large = Data(count: ProtocolContract.maximumDataBytes)
-    let held = try channel.register(large, digest: "a", contentType: "application/octet-stream")
-    _ = try channel.register(large, digest: "b", contentType: "application/octet-stream")
-    XCTAssertThrowsError(
-      try channel.register(bytes, digest: digest, contentType: "application/geo+json")
-    ) { error in
-      XCTAssertEqual(error as? TileflowMapError, .invalidRequest)
-      XCTAssertEqual((error as? TileflowMapError)?.context.reason, "dataTooLarge")
-      XCTAssertEqual(
-        (error as? TileflowMapError)?.context.limit, ProtocolContract.maximumDataTotalBytes)
-    }
-    channel.release([held])
-    XCTAssertThrowsError(
-      try channel.register(
-        Data(count: ProtocolContract.maximumDataBytes + 1), digest: "c", contentType: "x"))
-    channel.retire()
-    XCTAssertTrue(channel.isEmpty)
-    XCTAssertThrowsError(try channel.register(bytes, digest: digest, contentType: "x")) {
-      XCTAssertEqual($0 as? TileflowMapError, .cancelled)
-    }
-  }
-
   func testLayersCheckTheirParametersAndLeaveGeoJSONToTheRenderer() throws {
     let text = #"{"type":"FeatureCollection","features":[]}"#
     let layer = try TileflowGeoJSONLayer(id: "content", geoJSON: Data(text.utf8), kind: .fill)
-    XCTAssertEqual(layer.digest, DataChannel.digest(Data(text.utf8)))
+    XCTAssertEqual(layer.digest, ResourceDigest.sha256(Data(text.utf8)))
     for invalid in [
       { try TileflowGeoJSONLayer(id: "../style", geoJSON: Data(text.utf8), kind: .fill) },
       { try TileflowGeoJSONLayer(id: "a", geoJSON: Data(text.utf8), kind: .fill, color: "red") },
@@ -221,7 +177,7 @@ final class ProtocolTests: XCTestCase {
       }
     }
     // Layers sharing data register it once.
-    let channel = DataChannel()
+    let channel = MapPayloadStore()
     let content = MapContent(
       overlays: [
         layer, try TileflowGeoJSONLayer(id: "outline", geoJSON: Data(text.utf8), kind: .line),

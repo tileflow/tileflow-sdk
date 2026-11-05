@@ -429,7 +429,7 @@ final class ResourceCacheTests: XCTestCase {
     return cache.write(
       key, retention: retention,
       metadata: metadata(
-        for: key.url, headers: headers, body: (body.count, DataChannel.digest(body))),
+        for: key.url, headers: headers, body: (body.count, ResourceDigest.sha256(body))),
       body: body)
   }
 }

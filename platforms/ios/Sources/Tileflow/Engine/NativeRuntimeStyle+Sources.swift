@@ -249,7 +249,7 @@ extension NativeRuntimeStyle {
   }
 
   static func prepareSource(
-    _ request: JSONValue, channel: DataChannel, styleURL: URL,
+    _ request: JSONValue, channel: MapPayloadStore, styleURL: URL,
     load: @MainActor (URL) async throws -> Data,
     project: @MainActor ([String: Any], URL) async throws -> ProjectedStyle
   ) async throws -> Source {
@@ -285,7 +285,7 @@ extension NativeRuntimeStyle {
   }
 
   static func geoJSONBytes(
-    _ data: JSONValue, channel: DataChannel, styleURL: URL,
+    _ data: JSONValue, channel: MapPayloadStore, styleURL: URL,
     load: @MainActor (URL) async throws -> Data
   ) async throws -> Data {
     if let id = data["id"]?.string, let payload = channel.payload(id) { return payload.bytes }
@@ -432,7 +432,7 @@ extension NativeRuntimeStyle {
     return true
   }
 
-  func updateFeatures(_ request: JSONValue, channel: DataChannel, in style: MLNStyle?) throws {
+  func updateFeatures(_ request: JSONValue, channel: MapPayloadStore, in style: MLNStyle?) throws {
     guard let id = request["id"]?.string, var item = sources[id], let shape = item.shape else {
       throw TileflowMapError.invalidRequest
     }

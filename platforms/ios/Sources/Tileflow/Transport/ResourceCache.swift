@@ -54,7 +54,7 @@ enum ResourceCacheScope: Hashable, Sendable {
   case grant(String)
 
   static func grant(apiOrigin: URL, mapID: String) -> ResourceCacheScope {
-    let digest = DataChannel.digest(Data("\(ResourcePolicy.origin(apiOrigin))\n\(mapID)".utf8))
+    let digest = ResourceDigest.sha256(Data("\(ResourcePolicy.origin(apiOrigin))\n\(mapID)".utf8))
     return .grant(String(digest.prefix(32)))
   }
 
@@ -89,7 +89,7 @@ struct ResourceCacheKey: Hashable, Sendable {
     self.url = url
     self.scope = scope
     resourceClass = .classify(url)
-    digest = DataChannel.digest(Data(url.absoluteString.utf8))
+    digest = ResourceDigest.sha256(Data(url.absoluteString.utf8))
   }
 
   /// `<scope>/<class>/<first two digest characters>/<digest>`.
@@ -186,7 +186,7 @@ enum ResourceCacheEntryFormat {
       metadata.url == url.absoluteString, metadata.bodyLength == bodyLength
     else { throw ResourceCacheError.corrupted }
     let body = data.subdata(in: 0..<bodyLength)
-    guard DataChannel.digest(body) == metadata.bodySHA256 else {
+    guard ResourceDigest.sha256(body) == metadata.bodySHA256 else {
       throw ResourceCacheError.corrupted
     }
     return StoredResource(metadata: metadata, body: body)

@@ -28,7 +28,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
   var onExternalLink: ((URL) -> Void)?
   var onRendererTerminated: ((ProtocolContract.ErrorReason) -> Void)?
 
-  let data = DataChannel()
+  let data = MapPayloadStore()
   let runtimeStyle = NativeRuntimeStyle()
   lazy var mapLocation = NativeMapLocation(self)
   lazy var scene = NativeMapScene(self)
@@ -145,7 +145,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     mapAnnotations.setPins(try NativeMapAnnotations.pins(in: .object(["annotations": .array(values)])))
   }
 
-  func call(_ command: MapEngineCommand, payload: JSONValue, data: [DataChannel.Reference])
+  func call(_ command: MapEngineCommand, payload: JSONValue, data: [MapPayloadStore.Reference])
     async throws -> JSONValue
   {
     defer { self.data.release(data) }

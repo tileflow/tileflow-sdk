@@ -37,7 +37,7 @@ struct OfflineLayout: Sendable {
   }
 
   func region(_ id: String) -> URL {
-    regions.appendingPathComponent(DataChannel.digest(Data(id.utf8)), isDirectory: true)
+    regions.appendingPathComponent(ResourceDigest.sha256(Data(id.utf8)), isDirectory: true)
   }
   func record(_ id: String) -> URL { region(id).appendingPathComponent("region.json") }
   func version(_ id: String, _ number: Int) -> URL {

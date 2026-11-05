@@ -37,7 +37,7 @@ public struct TileflowMapSnapshotContent: Sendable {
         || !polylines.isEmpty || !polygons.isEmpty
     else { return (original, [:]) }
     let content = MapContent(annotations: annotations, overlays: overlays)
-    let channel = DataChannel()
+    let channel = MapPayloadStore()
     let (wire, references) = try content.wireValue(data: channel)
     defer { channel.release(references) }
     guard var style = try JSONSerialization.jsonObject(with: Data(original.utf8)) as? [String: Any],

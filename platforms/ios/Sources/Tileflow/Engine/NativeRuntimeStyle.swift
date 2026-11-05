@@ -103,7 +103,7 @@ final class NativeRuntimeStyle {
     return authored
   }
 
-  func setImages(_ request: JSONValue, channel: DataChannel, style: MLNStyle?) throws {
+  func setImages(_ request: JSONValue, channel: MapPayloadStore, style: MLNStyle?) throws {
     guard let entries = request["images"]?.array else { throw TileflowMapError.invalidRequest }
     var next: [String: Image] = [:]
     for entry in entries {

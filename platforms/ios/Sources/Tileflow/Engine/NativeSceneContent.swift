@@ -41,7 +41,7 @@ final class NativeSceneContent {
 
   /// Returns whether the overlays changed. A pin edit leaves installed layers and their active
   /// line animations alone. Data-channel handles are temporary; compare their verified digests.
-  func setContent(_ request: JSONValue, data: DataChannel) throws -> Bool {
+  func setContent(_ request: JSONValue, data: MapPayloadStore) throws -> Bool {
     guard let definitions = request["overlays"]?.array else {
       throw TileflowMapError.invalidRequest
     }

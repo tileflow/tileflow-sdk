@@ -46,7 +46,7 @@ enum EmbeddedRuntime {
       let (root, receipt) = try receipt()
       for (name, expected) in receipt.files {
         let data = try Data(contentsOf: root.appendingPathComponent(name), options: .mappedIfSafe)
-        guard DataChannel.digest(data) == expected else {
+        guard ResourceDigest.sha256(data) == expected else {
           throw TileflowMapError.incompatibleRuntime
         }
       }
@@ -56,23 +56,6 @@ enum EmbeddedRuntime {
     }
     outcome.withLock { $0 = result }
     try result.get()
-  }
-}
-
-extension TileflowMapView {
-  /// Prepares what every map needs before the first one is shown: verifies the embedded renderer,
-  /// reads the device profile, opens the shared HTTP client and resource cache, and starts
-  /// WebKit's helper processes. Call it early, for example at launch or before navigating to a
-  /// screen with a map; calling it again does nothing. Maps work without it, but the first one
-  /// then pays these costs while it loads.
-  public static func prewarm() {
-    _ = EmbeddedRuntime.verification
-    Task.detached(priority: .utility) {
-      _ = TileflowDeviceProfile.current
-      _ = TileflowHTTPClient.shared
-      _ = ResourceCacheStore.shared
-    }
-    WebKitPrewarmer.shared.start()
   }
 }
 

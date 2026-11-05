@@ -1,6 +1,6 @@
-import type {Spec, MapMethod} from './specs/NativeTileflowMapModule';
-import type {MapCommandPayloads} from './native-map-contract';
 import {mapError, retiredMap, TileflowMapError} from './map-error';
+import type {MapCommandPayloads} from './native-map-contract';
+import type {MapMethod, Spec} from './specs/NativeTileflowMapModule';
 
 type Request = {start: () => void; reject: (error: Error) => void};
 
@@ -39,7 +39,9 @@ export class MapController {
     this.flush();
   }
 
-  get isDisposed(): boolean { return this.disposed; }
+  get isDisposed(): boolean {
+    return this.disposed;
+  }
 
   subscribe(listener: (type: string, payload: unknown) => void): () => void {
     this.listeners.add(listener);
@@ -71,9 +73,13 @@ export class MapController {
     try {
       encoded = JSON.stringify(payload);
     } catch {
-      return Promise.reject(new TileflowMapError({
-        code: 'invalidRequest', message: 'Map arguments must contain JSON values.', recoverable: false,
-      }));
+      return Promise.reject(
+        new TileflowMapError({
+          code: 'invalidRequest',
+          message: 'Map arguments must contain JSON values.',
+          recoverable: false,
+        }),
+      );
     }
     return new Promise((resolve, reject) => {
       const request: Request = {
@@ -90,17 +96,24 @@ export class MapController {
             reject(error);
             return;
           }
-          void native.then((response) => {
-            if (!this.pending.has(request)) return;
-            if (this.disposed || this.tag !== tag) throw retiredMap();
-            try {
-              resolve(JSON.parse(response) as unknown);
-            } catch {
-              reject(new TileflowMapError({
-                code: 'rendererFailed', message: 'The native map returned an invalid response.', recoverable: true,
-              }));
-            }
-          }).catch((error: unknown) => reject(mapError(error))).finally(() => this.pending.delete(request));
+          void native
+            .then((response) => {
+              if (!this.pending.has(request)) return;
+              if (this.disposed || this.tag !== tag) throw retiredMap();
+              try {
+                resolve(JSON.parse(response) as unknown);
+              } catch {
+                reject(
+                  new TileflowMapError({
+                    code: 'rendererFailed',
+                    message: 'The native map returned an invalid response.',
+                    recoverable: true,
+                  }),
+                );
+              }
+            })
+            .catch((error: unknown) => reject(mapError(error)))
+            .finally(() => this.pending.delete(request));
         },
       };
       this.pending.add(request);

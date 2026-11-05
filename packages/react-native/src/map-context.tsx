@@ -1,10 +1,15 @@
 import {createContext, useContext, useLayoutEffect, useRef} from 'react';
-import type {MapController} from './map-controller';
-import type {StyleRegistry} from './style-registry';
 import type {CameraProps} from './contract';
-import type {MapMethod} from './specs/NativeTileflowMapModule';
-import type {MapCommandPayloads, NativeImage, NativePointAnnotation, NativeUserLocation} from './native-map-contract';
+import type {MapController} from './map-controller';
 import {mapError} from './map-error';
+import type {
+  MapCommandPayloads,
+  NativeImage,
+  NativePointAnnotation,
+  NativeUserLocation,
+} from './native-map-contract';
+import type {MapMethod} from './specs/NativeTileflowMapModule';
+import type {StyleRegistry} from './style-registry';
 
 export class MapCollection<T> {
   private readonly values = new Map<symbol, readonly T[]>();
@@ -12,8 +17,13 @@ export class MapCollection<T> {
   private revision = 0;
   private signature: string | undefined;
 
-  constructor(private readonly map: MapController, private readonly apply: (values: readonly T[]) => Promise<unknown>) {
-    map.subscribe((type) => { if (type === 'contentReady') this.schedule(); });
+  constructor(
+    private readonly map: MapController,
+    private readonly apply: (values: readonly T[]) => Promise<unknown>,
+  ) {
+    map.subscribe((type) => {
+      if (type === 'contentReady') this.schedule();
+    });
   }
 
   set(owner: symbol, values?: readonly T[]): void {
@@ -61,7 +71,9 @@ export function useMap(): MapContextValue {
 
 export function useCommittedValue<T>(value: T): {current: T} {
   const reference = useRef(value);
-  useLayoutEffect(() => { reference.current = value; });
+  useLayoutEffect(() => {
+    reference.current = value;
+  });
   return reference;
 }
 
@@ -74,6 +86,8 @@ export function useMapCommand<M extends MapMethod>(method: M, value: MapCommandP
     void controller.call(method, committed.current).catch((error: unknown) => {
       if (active && !controller.isDisposed) controller.report(mapError(error));
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [controller, method, signature, committed]);
 }

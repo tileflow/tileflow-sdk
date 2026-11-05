@@ -1,9 +1,9 @@
 import {useContext, useLayoutEffect, useState} from 'react';
-import {SourceContext, useCommittedValue, useMap} from './map-context';
+import type * as Style from './style-spec';
+import type {Expression} from './contract';
 import {layerStyle} from './layer-input';
 import type {LayerType} from './layer-input';
-import type {Expression} from './contract';
-import type * as Style from './style-spec';
+import {SourceContext, useCommittedValue, useMap} from './map-context';
 import {mapError} from './map-error';
 
 export type LayerProps<S> = Readonly<{
@@ -20,13 +20,20 @@ export type LayerProps<S> = Readonly<{
   style?: S;
 }>;
 
-function Layer({type, props}: {type: LayerType; props: LayerProps<Readonly<Record<string, unknown>>>}) {
+function Layer({
+  type,
+  props,
+}: {
+  type: LayerType;
+  props: LayerProps<Readonly<Record<string, unknown>>>;
+}) {
   const {controller, style} = useMap();
   const inheritedSource = useContext(SourceContext);
   const [owner] = useState(() => Symbol());
   const source = props.sourceID ?? inheritedSource;
   const properties = {
-    id: props.id, type,
+    id: props.id,
+    type,
     ...(source && type !== 'background' ? {source} : {}),
     ...(props.sourceLayerID ? {'source-layer': props.sourceLayerID} : {}),
     ...(props.filter ? {filter: props.filter} : {}),
@@ -43,20 +50,43 @@ function Layer({type, props}: {type: LayerType; props: LayerProps<Readonly<Recor
   const committed = useCommittedValue({properties, position});
   const signature = JSON.stringify({properties, position});
   useLayoutEffect(() => {
-    try { style.layer(props.id, owner, committed.current.properties, committed.current.position); }
-    catch (error) { controller.report(mapError(error)); }
+    try {
+      style.layer(props.id, owner, committed.current.properties, committed.current.position);
+    } catch (error) {
+      controller.report(mapError(error));
+    }
     return () => style.removeLayer(props.id, owner);
   }, [controller, style, props.id, owner, signature, committed]);
   return null;
 }
 
-export function FillLayer(props: LayerProps<Style.FillLayerStyle>) { return <Layer type="fill" props={props} />; }
-export function LineLayer(props: LayerProps<Style.LineLayerStyle>) { return <Layer type="line" props={props} />; }
-export function SymbolLayer(props: LayerProps<Style.SymbolLayerStyle>) { return <Layer type="symbol" props={props} />; }
-export function CircleLayer(props: LayerProps<Style.CircleLayerStyle>) { return <Layer type="circle" props={props} />; }
-export function HeatmapLayer(props: LayerProps<Style.HeatmapLayerStyle>) { return <Layer type="heatmap" props={props} />; }
-export function FillExtrusionLayer(props: LayerProps<Style.FillExtrusionLayerStyle>) { return <Layer type="fill-extrusion" props={props} />; }
-export function RasterLayer(props: LayerProps<Style.RasterLayerStyle>) { return <Layer type="raster" props={props} />; }
-export function HillshadeLayer(props: LayerProps<Style.HillshadeLayerStyle>) { return <Layer type="hillshade" props={props} />; }
-export function ColorReliefLayer(props: LayerProps<Style.ColorReliefLayerStyle>) { return <Layer type="color-relief" props={props} />; }
-export function BackgroundLayer(props: LayerProps<Style.BackgroundLayerStyle>) { return <Layer type="background" props={props} />; }
+export function FillLayer(props: LayerProps<Style.FillLayerStyle>) {
+  return <Layer type="fill" props={props} />;
+}
+export function LineLayer(props: LayerProps<Style.LineLayerStyle>) {
+  return <Layer type="line" props={props} />;
+}
+export function SymbolLayer(props: LayerProps<Style.SymbolLayerStyle>) {
+  return <Layer type="symbol" props={props} />;
+}
+export function CircleLayer(props: LayerProps<Style.CircleLayerStyle>) {
+  return <Layer type="circle" props={props} />;
+}
+export function HeatmapLayer(props: LayerProps<Style.HeatmapLayerStyle>) {
+  return <Layer type="heatmap" props={props} />;
+}
+export function FillExtrusionLayer(props: LayerProps<Style.FillExtrusionLayerStyle>) {
+  return <Layer type="fill-extrusion" props={props} />;
+}
+export function RasterLayer(props: LayerProps<Style.RasterLayerStyle>) {
+  return <Layer type="raster" props={props} />;
+}
+export function HillshadeLayer(props: LayerProps<Style.HillshadeLayerStyle>) {
+  return <Layer type="hillshade" props={props} />;
+}
+export function ColorReliefLayer(props: LayerProps<Style.ColorReliefLayerStyle>) {
+  return <Layer type="color-relief" props={props} />;
+}
+export function BackgroundLayer(props: LayerProps<Style.BackgroundLayerStyle>) {
+  return <Layer type="background" props={props} />;
+}

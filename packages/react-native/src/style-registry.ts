@@ -1,9 +1,14 @@
-import type {JsonObject, JsonValue, NativeLayerPosition} from './native-map-contract';
 import type {MapController} from './map-controller';
 import {mapError, TileflowMapError} from './map-error';
+import type {JsonObject, JsonValue, NativeLayerPosition} from './native-map-contract';
 
 type Source = {properties: JsonObject; fields: Readonly<Record<string, string>>};
-type Layer = {properties: JsonObject; position?: NativeLayerPosition; signature: string; positionSignature: string};
+type Layer = {
+  properties: JsonObject;
+  position?: NativeLayerPosition;
+  signature: string;
+  positionSignature: string;
+};
 type Entry<T> = {owner: symbol; desired?: T; applied?: T};
 
 function invalid(message: string): TileflowMapError {
@@ -19,28 +24,40 @@ export class StyleRegistry {
   private running: Promise<void> | null = null;
 
   constructor(private readonly map: MapController) {
-    map.subscribe((type) => { if (type === 'contentReady') this.schedule(); });
+    map.subscribe((type) => {
+      if (type === 'contentReady') this.schedule();
+    });
   }
 
   source(id: string, owner: symbol, properties: JsonObject): void {
     this.set(this.sources, id, owner, {
-      properties, fields: Object.fromEntries(Object.entries(properties).map(([key, value]) => [key, JSON.stringify(value)])),
+      properties,
+      fields: Object.fromEntries(
+        Object.entries(properties).map(([key, value]) => [key, JSON.stringify(value)]),
+      ),
     });
   }
 
   layer(id: string, owner: symbol, properties: JsonObject, position?: NativeLayerPosition): void {
     this.set(this.layers, id, owner, {
-      properties, ...(position ? {position} : {}), signature: JSON.stringify(properties),
+      properties,
+      ...(position ? {position} : {}),
+      signature: JSON.stringify(properties),
       positionSignature: JSON.stringify(position ?? {}),
     });
   }
 
-  removeSource(id: string, owner: symbol): void { this.remove(this.sources, id, owner); }
-  removeLayer(id: string, owner: symbol): void { this.remove(this.layers, id, owner); }
+  removeSource(id: string, owner: symbol): void {
+    this.remove(this.sources, id, owner);
+  }
+  removeLayer(id: string, owner: symbol): void {
+    this.remove(this.layers, id, owner);
+  }
 
   private set<T>(entries: Map<string, Entry<T>>, id: string, owner: symbol, value: T): void {
     const entry = entries.get(id);
-    if (entry?.desired && entry.owner !== owner) throw invalid('A map declaration already uses this id.');
+    if (entry?.desired && entry.owner !== owner)
+      throw invalid('A map declaration already uses this id.');
     if (entry) {
       entry.owner = owner;
       entry.desired = value;
@@ -105,14 +122,25 @@ export class StyleRegistry {
         await this.map.call('addSource', {id, properties: desired.properties});
       } else {
         const properties: Record<string, JsonValue> = {};
-        for (const key of new Set([...Object.keys(entry.applied.fields), ...Object.keys(desired.fields)])) {
-          if (entry.applied.fields[key] !== desired.fields[key]) properties[key] = desired.properties[key] ?? null;
+        for (const key of new Set([
+          ...Object.keys(entry.applied.fields),
+          ...Object.keys(desired.fields),
+        ])) {
+          if (entry.applied.fields[key] !== desired.fields[key])
+            properties[key] = desired.properties[key] ?? null;
         }
         const changed = Object.keys(properties);
         if (changed.length === 0) continue;
-        if (changed.length === 1 && changed[0] === 'data' && desired.properties.type === 'geojson') {
+        if (
+          changed.length === 1 &&
+          changed[0] === 'data' &&
+          desired.properties.type === 'geojson'
+        ) {
           const data = properties.data;
-          if (typeof data !== 'string' && (typeof data !== 'object' || data === null || Array.isArray(data)))
+          if (
+            typeof data !== 'string' &&
+            (typeof data !== 'object' || data === null || Array.isArray(data))
+          )
             throw invalid('GeoJSON data must be an object or URL.');
           await this.map.call('setGeoJSONSourceData', {id, data: data as JsonObject | string});
         } else {
@@ -126,14 +154,19 @@ export class StyleRegistry {
       if (!desired) continue;
       if (!entry.applied) {
         await this.map.call('addLayer', {
-          properties: desired.properties, ...(desired.position ? {position: desired.position} : {}),
+          properties: desired.properties,
+          ...(desired.position ? {position: desired.position} : {}),
         });
         entry.applied = desired;
         continue;
       }
       if (desired.signature !== entry.applied.signature) {
         await this.map.call('updateLayer', {properties: desired.properties});
-        entry.applied = {...entry.applied, properties: desired.properties, signature: desired.signature};
+        entry.applied = {
+          ...entry.applied,
+          properties: desired.properties,
+          signature: desired.signature,
+        };
       }
       if (desired.positionSignature !== entry.applied.positionSignature) {
         await this.map.call('moveLayer', {id, position: desired.position ?? {}});

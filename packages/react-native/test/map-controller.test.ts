@@ -5,9 +5,16 @@ import type {Spec} from '../src/specs/NativeTileflowMapModule';
 
 function harness(call: Spec['call'] = async () => 'null') {
   const calls: Parameters<Spec['call']>[] = [];
-  const controller = new MapController('mount-a', () => ({
-    call: async (...args) => { calls.push(args); return call(...args); },
-  }), () => {});
+  const controller = new MapController(
+    'mount-a',
+    () => ({
+      call: async (...args) => {
+        calls.push(args);
+        return call(...args);
+      },
+    }),
+    () => {},
+  );
   return {controller, calls};
 }
 
@@ -25,7 +32,10 @@ test('commands wait for this mount and its ready event', async () => {
 test('an in-flight animation does not delay a newer movement', async () => {
   let finish: (value: string) => void = () => {};
   const {controller, calls} = harness(async (_tag, _id, _method, payload) => {
-    if (JSON.parse(payload).zoomLevel === 5) return new Promise((resolve) => { finish = resolve; });
+    if (JSON.parse(payload).zoomLevel === 5)
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
     return 'null';
   });
   controller.attach(12);
@@ -71,9 +81,16 @@ test('a load failure rejects queued work while explicit reload and permission re
   const {controller, calls} = harness();
   controller.attach(12);
   const pending = assert.rejects(controller.call('getCamera', {}), {code: 'accessDenied'});
-  controller.receive('mount-a', 'failed', {code: 'accessDenied', message: 'Unavailable', recoverable: false});
+  controller.receive('mount-a', 'failed', {
+    code: 'accessDenied',
+    message: 'Unavailable',
+    recoverable: false,
+  });
   await pending;
   await controller.call('reload', {});
   await controller.call('requestLocationPermission', {});
-  assert.deepEqual(calls.map((args) => args[2]), ['reload', 'requestLocationPermission']);
+  assert.deepEqual(
+    calls.map((args) => args[2]),
+    ['reload', 'requestLocationPermission'],
+  );
 });

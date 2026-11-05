@@ -1,8 +1,26 @@
 export {MapView} from './map';
 export {Camera} from './camera';
 export {GeoJSONSource, VectorSource, RasterSource, RasterDemSource, ImageSource} from './sources';
-export type {GeoJSONSourceProps, GeoJSONSourceRef, VectorSourceProps, RasterSourceProps, RasterDemSourceProps, ImageSourceProps} from './sources';
-export {FillLayer, LineLayer, SymbolLayer, CircleLayer, HeatmapLayer, FillExtrusionLayer, RasterLayer, HillshadeLayer, ColorReliefLayer, BackgroundLayer} from './layers';
+export type {
+  GeoJSONSourceProps,
+  GeoJSONSourceRef,
+  VectorSourceProps,
+  RasterSourceProps,
+  RasterDemSourceProps,
+  ImageSourceProps,
+} from './sources';
+export {
+  FillLayer,
+  LineLayer,
+  SymbolLayer,
+  CircleLayer,
+  HeatmapLayer,
+  FillExtrusionLayer,
+  RasterLayer,
+  HillshadeLayer,
+  ColorReliefLayer,
+  BackgroundLayer,
+} from './layers';
 export type {LayerProps} from './layers';
 export type * from './style-spec';
 export {Images} from './images';

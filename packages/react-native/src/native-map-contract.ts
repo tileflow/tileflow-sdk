@@ -49,7 +49,9 @@ export type CameraState = Readonly<{
 export type NativeAppearance = Readonly<{
   theme?: string;
   timeOfDay?: 'day' | 'dawn' | 'dusk' | 'night';
-  themeBlend?: Readonly<{from: string; to: string; mix: number}> | Readonly<{themes: readonly string[]; position: number; hold?: boolean}>;
+  themeBlend?:
+    | Readonly<{from: string; to: string; mix: number}>
+    | Readonly<{themes: readonly string[]; position: number; hold?: boolean}>;
   themeTransition?: Readonly<{duration: number}>;
   viewMode?: '2d' | '3d';
 }>;

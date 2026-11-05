@@ -23,11 +23,18 @@ export class TileflowMapError extends Error {
 
 export function mapError(value: unknown): TileflowMapError {
   if (value instanceof TileflowMapError) return value;
-  const raw = typeof value === 'object' && value !== null ? value as Record<string, unknown> : {};
+  const raw = typeof value === 'object' && value !== null ? (value as Record<string, unknown>) : {};
   const info = nativeErrorInfo(value) ?? raw;
-  const code = typeof info.code === 'string' ? info.code : typeof raw.code === 'string' ? raw.code : 'rendererFailed';
-  const context = typeof info.context === 'object' && info.context !== null
-    ? info.context as Record<string, unknown> : undefined;
+  const code =
+    typeof info.code === 'string'
+      ? info.code
+      : typeof raw.code === 'string'
+        ? raw.code
+        : 'rendererFailed';
+  const context =
+    typeof info.context === 'object' && info.context !== null
+      ? (info.context as Record<string, unknown>)
+      : undefined;
   return new TileflowMapError({
     code,
     message: nativeErrorMessage(value, 'The native map operation failed.'),
@@ -36,6 +43,9 @@ export function mapError(value: unknown): TileflowMapError {
   });
 }
 
-export const retiredMap = () => new TileflowMapError({
-  code: 'disposed', message: 'The map is no longer mounted.', recoverable: false,
-});
+export const retiredMap = () =>
+  new TileflowMapError({
+    code: 'disposed',
+    message: 'The map is no longer mounted.',
+    recoverable: false,
+  });

@@ -1,6 +1,6 @@
 import SwiftUI
 import Tileflow
-import TileflowServiceContent
+import TileflowServices
 
 @main
 struct TileflowExampleApp: App {

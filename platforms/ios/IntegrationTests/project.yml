@@ -31,12 +31,18 @@ targets:
         excludes:
           - Fixtures
       - TestBundle.swift
+      - ServiceContentTests.swift
+      - ../Tests/TileflowServiceTests/ServiceStub.swift
+      - path: ../Tests/TileflowServiceTests/Fixtures/service-contract.json
+        buildPhase: resources
       - path: ../Tests/TileflowTests/Fixtures
         type: folder
         buildPhase: resources
     dependencies:
       - target: TileflowTestHost
       - package: Tileflow
+      - package: Tileflow
+        product: TileflowServices
 schemes:
   TileflowIntegration:
     build:

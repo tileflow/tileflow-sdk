@@ -3,7 +3,6 @@ import CryptoKit
 import XCTest
 
 @testable import Tileflow
-@testable import TileflowConfiguration
 
 /// The pack format: what a verified pack must be, how its entries are read, and how tile
 /// addresses map to packs and back.

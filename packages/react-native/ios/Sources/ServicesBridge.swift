@@ -1,9 +1,5 @@
 import Foundation
-import TileflowConfiguration
-import TileflowElevation
-import TileflowGeoIP
-import TileflowRouting
-import TileflowSearch
+import TileflowServices
 
 /// The native service clients a bridge call uses. Tests give clients a stub session.
 struct ServiceClients: Sendable {

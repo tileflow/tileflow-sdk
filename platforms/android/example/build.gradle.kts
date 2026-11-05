@@ -25,10 +25,7 @@ kotlin { jvmToolchain(17) }
 
 dependencies {
     implementation(project(":tileflow"))
-    implementation(project(":tileflow-configuration"))
-    implementation(project(":tileflow-search"))
-    implementation(project(":tileflow-routing"))
-    implementation(project(":tileflow-service-content"))
+    implementation(project(":tileflow-services"))
     implementation("androidx.activity:activity-compose:1.10.1")
     // Activity result launchers registered by activities need Fragment 1.3 or later, which the
     // activity library alone does not bring.

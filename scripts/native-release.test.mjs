@@ -7,6 +7,7 @@ import {join} from 'node:path';
 import test from 'node:test';
 import {fileURLToPath} from 'node:url';
 import {promisify} from 'node:util';
+import {readNativeStylePins} from './mobile-native-style.mjs';
 import {
   centralPortal,
   centralReleaseState,
@@ -27,6 +28,10 @@ import {
   validateNativeReleaseCatalog,
 } from './native-release-config.mjs';
 import {mavenVersions} from './native-release-plan.mjs';
+import {
+  assertAndroidCandidateDependencies,
+  assertServicesOnlyConsumer,
+} from './native-release-verify.mjs';
 import {prepareSwiftRelease, publishSwiftRelease} from './native-swift-release.mjs';
 import {readPublicReleaseBlockers} from './public-release-interlock.mjs';
 
@@ -34,6 +39,7 @@ const run = promisify(execFile);
 const root = fileURLToPath(new URL('../', import.meta.url));
 const catalog = await readNativeReleaseCatalog();
 const version = '0.1.0-alpha.3';
+const engines = await readNativeStylePins(root);
 const digest = (algorithm, bytes) => createHash(algorithm).update(bytes).digest('hex');
 
 async function temporary(t) {
@@ -64,13 +70,56 @@ function pom(artifactId, overrides = {}) {
     ${field('connection', 'scm:git:https://github.com/tileflow/tileflow-sdk.git')}
     <developerConnection>scm:git:ssh://git@github.com/tileflow/tileflow-sdk.git</developerConnection>
   </scm>
-  <dependencies>${overrides.dependencies ?? ''}</dependencies>
+  ${overrides.management ?? ''}
+  <dependencies>${overrides.dependencies ?? pomDependencies(artifactId)}</dependencies>
 </project>
 `;
 }
 
-const dependency = (groupId, artifactId, dependencyVersion) =>
-  `<dependency><groupId>${groupId}</groupId><artifactId>${artifactId}</artifactId><version>${dependencyVersion}</version></dependency>`;
+const dependency = (
+  groupId,
+  artifactId,
+  dependencyVersion,
+  {scope = 'compile', optional = false} = {},
+) =>
+  `<dependency><groupId>${groupId}</groupId><artifactId>${artifactId}</artifactId><version>${dependencyVersion}</version><scope>${scope}</scope><optional>${optional}</optional></dependency>`;
+
+function moduleDependencies(artifactId, usage) {
+  if (artifactId === 'tileflow-foundation') return [];
+  const values = [
+    {group: 'dev.tileflow', module: 'tileflow-foundation', version: {requires: version}},
+  ];
+  if (artifactId === 'tileflow' && usage === 'java-runtime')
+    values.push({
+      group: 'org.maplibre.gl',
+      module: 'android-sdk-opengl',
+      version: {requires: engines.android},
+    });
+  return values;
+}
+
+function pomDependencies(artifactId) {
+  return moduleDependencies(artifactId, 'java-runtime')
+    .map((item) =>
+      dependency(item.group, item.module, item.version.requires, {
+        scope: item.group === 'org.maplibre.gl' ? 'runtime' : 'compile',
+      }),
+    )
+    .join('');
+}
+
+function moduleDocument(artifactId, files = []) {
+  return {
+    formatVersion: '1.1',
+    component: {group: 'dev.tileflow', module: artifactId, version},
+    variants: ['java-api', 'java-runtime'].map((usage) => ({
+      name: usage,
+      attributes: {'org.gradle.category': 'library', 'org.gradle.usage': usage},
+      dependencies: moduleDependencies(artifactId, usage),
+      files,
+    })),
+  };
+}
 
 /** A Gradle-shaped unsigned candidate repository for every catalog artifact. */
 async function candidateRepository(directory) {
@@ -90,26 +139,19 @@ async function candidateRepository(directory) {
     files.set(
       moduleName,
       Buffer.from(
-        JSON.stringify({
-          formatVersion: '1.1',
-          component: {group: 'dev.tileflow', module: artifactId, version},
-          variants: [
+        JSON.stringify(
+          moduleDocument(artifactId, [
             {
-              name: 'releaseRuntimeElements',
-              files: [
-                {
-                  name: aar,
-                  url: aar,
-                  size: files.get(aar).length,
-                  sha512: digest('sha512', files.get(aar)),
-                  sha256: digest('sha256', files.get(aar)),
-                  sha1: digest('sha1', files.get(aar)),
-                  md5: digest('md5', files.get(aar)),
-                },
-              ],
+              name: aar,
+              url: aar,
+              size: files.get(aar).length,
+              sha512: digest('sha512', files.get(aar)),
+              sha256: digest('sha256', files.get(aar)),
+              sha1: digest('sha1', files.get(aar)),
+              md5: digest('md5', files.get(aar)),
             },
-          ],
-        }),
+          ]),
+        ),
       ),
     );
     for (const [name, bytes] of files) {
@@ -138,7 +180,7 @@ test('the release catalog matches the Gradle libraries that publish', async () =
   const modules = catalog.maven.publications.map((item) => item.module);
   assert.deepEqual([...publishing].sort(), [...modules].sort());
   assert.ok(modules.every((module) => included.includes(module)));
-  assert.equal(catalog.maven.publications[0].artifactId, 'tileflow-sdk');
+  assert.equal(catalog.maven.publications[0].artifactId, 'tileflow');
   assert.throws(
     () => validateNativeReleaseCatalog({...catalog, initialVersion: '1.0.0'}),
     /initialVersion/u,
@@ -173,7 +215,7 @@ test('reads published Maven versions and treats a missing artifact as unpublishe
     baseUrl: 'https://repository.test',
     fetch: async (url) => {
       requested.push(url);
-      if (url.includes('/tileflow-sdk/')) {
+      if (url.includes('/tileflow/')) {
         return new Response(
           '<metadata><versioning><versions><version>0.1.0-alpha.0</version><version>0.1.0-alpha.1</version></versions></versioning></metadata>',
         );
@@ -190,26 +232,26 @@ test('reads published Maven versions and treats a missing artifact as unpublishe
 });
 
 test('POMs must carry the metadata Maven Central requires and exact release dependencies', () => {
-  const options = {catalog, artifactId: 'tileflow-search', version};
-  assert.deepEqual(validatePom(pom('tileflow-search'), options), []);
+  const options = {catalog, artifactId: 'tileflow-services', version, engines};
+  assert.deepEqual(validatePom(pom('tileflow-services'), options), []);
   assert.deepEqual(
     validatePom(
-      pom('tileflow-search', {
-        dependencies: dependency('dev.tileflow', 'tileflow-configuration', version),
+      pom('tileflow-services', {
+        dependencies: dependency('dev.tileflow', 'tileflow-foundation', version),
       }),
       options,
     ),
     [],
   );
   const problems = (overrides) =>
-    validatePom(pom('tileflow-search', overrides), options).join('\n');
+    validatePom(pom('tileflow-services', overrides), options).join('\n');
   assert.match(problems({developers: null}), /developers need a name/u);
   assert.match(problems({connection: null}), /scm connection is required/u);
   assert.match(problems({version: '0.1.0-alpha.2'}), /version must be 0\.1\.0-alpha\.3/u);
   assert.match(problems({name: 'Search'}), /name must match/u);
   assert.match(
-    problems({dependencies: dependency('dev.tileflow', 'tileflow-configuration', '0.1.0-alpha.2')}),
-    /tileflow-configuration must use 0\.1\.0-alpha\.3/u,
+    problems({dependencies: dependency('dev.tileflow', 'tileflow-foundation', '0.1.0-alpha.2')}),
+    /tileflow-foundation must use 0\.1\.0-alpha\.3/u,
   );
   assert.match(
     problems({dependencies: dependency('dev.tileflow', 'tileflow-internal', version)}),
@@ -227,12 +269,8 @@ test('POMs must carry the metadata Maven Central requires and exact release depe
 
 test('Gradle module metadata must describe the exact released files', () => {
   const bytes = Buffer.from('aar bytes');
-  const name = `tileflow-search-${version}.aar`;
-  const metadata = (file) =>
-    JSON.stringify({
-      component: {group: 'dev.tileflow', module: 'tileflow-search', version},
-      variants: [{name: 'release', files: [file]}],
-    });
+  const name = `tileflow-services-${version}.aar`;
+  const metadata = (file) => JSON.stringify(moduleDocument('tileflow-services', [file]));
   const file = {
     name,
     url: name,
@@ -241,13 +279,95 @@ test('Gradle module metadata must describe the exact released files', () => {
     sha256: digest('sha256', bytes),
     sha512: digest('sha512', bytes),
   };
-  const options = {catalog, artifactId: 'tileflow-search', version};
+  const options = {catalog, artifactId: 'tileflow-services', version, engines};
   assert.deepEqual(validateModuleMetadata(metadata(file), new Map([[name, bytes]]), options), []);
   assert.match(
     validateModuleMetadata(metadata({...file, size: 1}), new Map([[name, bytes]]), options).join(),
     /digests differ/u,
   );
   assert.match(validateModuleMetadata(metadata(file), new Map(), options).join(), /missing/u);
+});
+
+test('publication dependencies include foundation and the pinned renderer only where required', () => {
+  for (const artifactId of ['tileflow', 'tileflow-services', 'tileflow-foundation']) {
+    const options = {catalog, artifactId, version, engines};
+    assert.deepEqual(validatePom(pom(artifactId), options), []);
+    const absent = validatePom(pom(artifactId, {dependencies: ''}), options);
+    assert.equal(absent.length === 0, artifactId === 'tileflow-foundation', artifactId);
+  }
+  const options = {catalog, artifactId: 'tileflow', version, engines};
+  const check = (dependencies) => validatePom(pom('tileflow', {dependencies}), options).join('\n');
+  const foundation = dependency('dev.tileflow', 'tileflow-foundation', version);
+  assert.match(check(foundation), /android-sdk-opengl.*required/u);
+  assert.match(
+    check(
+      foundation +
+        dependency('org.maplibre.gl', 'android-sdk-opengl', '13.6.1', {scope: 'runtime'}),
+    ),
+    /android-sdk-opengl.*must use/u,
+  );
+  assert.match(
+    check(pomDependencies('tileflow') + dependency('dev.tileflow', 'tileflow-services', version)),
+    /tileflow-services.*not allowed/u,
+  );
+  for (const [scope, optional] of [
+    ['runtime', false],
+    ['test', false],
+    ['compile', true],
+  ])
+    assert.match(
+      check(dependency('dev.tileflow', 'tileflow-foundation', version, {scope, optional})),
+      /tileflow-foundation/u,
+    );
+  for (const artifactId of ['tileflow-services', 'tileflow-foundation'])
+    assert.match(
+      validatePom(
+        pom(artifactId, {
+          dependencies:
+            pomDependencies(artifactId) +
+            dependency('org.maplibre.gl', 'android-sdk-opengl', engines.android, {
+              scope: 'runtime',
+            }),
+        }),
+        {...options, artifactId},
+      ).join(),
+      /android-sdk-opengl.*not allowed/u,
+    );
+  for (const value of ['', '${library.version}', 'latest.integration'])
+    assert.match(
+      check(pomDependencies('tileflow') + dependency('com.example', 'transport', value)),
+      /non-exact/u,
+    );
+});
+
+test('Gradle variants preserve the publication dependency graph and exact versions', () => {
+  const options = {catalog, artifactId: 'tileflow', version, engines};
+  const document = moduleDocument('tileflow');
+  const check = (value) =>
+    validateModuleMetadata(JSON.stringify(value), new Map(), options).join('\n');
+  assert.equal(check(document), '');
+  assert.match(check({...document, variants: []}), /java-api|java-runtime/u);
+  for (const index of [0, 1]) {
+    const value = structuredClone(document);
+    value.variants[index].dependencies = [];
+    assert.match(check(value), /tileflow-foundation.*required/u);
+  }
+  for (const field of ['requires', 'strictly', 'prefers']) {
+    const value = structuredClone(document);
+    value.variants[1].dependencies[1].version[field] = '13.6.1';
+    assert.match(check(value), /android-sdk-opengl.*must use/u);
+  }
+  const leaked = moduleDocument('tileflow-services');
+  leaked.variants[1].dependencies.push(
+    ...document.variants[1].dependencies.filter((item) => item.group === 'org.maplibre.gl'),
+  );
+  assert.match(
+    validateModuleMetadata(JSON.stringify(leaked), new Map(), {
+      ...options,
+      artifactId: 'tileflow-services',
+    }).join(),
+    /android-sdk-opengl.*not allowed/u,
+  );
 });
 
 test('the Central bundle signs and checksums every file and zips them deterministically', async (t) => {
@@ -260,6 +380,7 @@ test('the Central bundle signs and checksums every file and zips them determinis
       repository,
       catalog,
       version,
+      engines,
       staging: join(directory, `${name}-staging`),
       output: join(directory, `${name}.zip`),
       sign: async (path) => {
@@ -282,12 +403,12 @@ test('the Central bundle signs and checksums every file and zips them determinis
   assert.equal(entries.length, files * 6);
   assert.ok(entries.every((entry) => entry.startsWith('dev/tileflow/')));
   assert.ok(!entries.some((entry) => entry.includes('maven-metadata')));
-  const aar = `dev/tileflow/tileflow-sdk/${version}/tileflow-sdk-${version}.aar`;
+  const aar = `dev/tileflow/tileflow/${version}/tileflow-${version}.aar`;
   const {stdout: sha1} = await run('unzip', ['-p', join(directory, 'first.zip'), `${aar}.sha1`]);
   assert.equal(sha1, digest('sha1', await readFile(join(repository, aar))));
   await run('unzip', ['-tq', join(directory, 'first.zip')]);
 
-  await writeFile(join(repository, 'dev/tileflow/tileflow-sdk/notes.txt'), 'unexpected');
+  await writeFile(join(repository, 'dev/tileflow/tileflow/notes.txt'), 'unexpected');
   await assert.rejects(bundle('third'), /Unexpected file in Maven repository/u);
 });
 
@@ -315,7 +436,7 @@ test('the Central Portal client uses the user token and stops on rejected deploy
     fetch: async (url, init) => {
       calls.push({url, method: init.method, authorization: init.headers.authorization});
       if (url.includes('/published?')) {
-        return Response.json({published: url.includes('name=tileflow-sdk')});
+        return Response.json({published: new URL(url).searchParams.get('name') === 'tileflow'});
       }
       if (url.includes('/status?')) {
         return Response.json({deploymentState: states.shift(), errors: {pom: ['missing scm']}});
@@ -324,11 +445,11 @@ test('the Central Portal client uses the user token and stops on rejected deploy
     },
   });
   assert.equal(calls.length, 0);
-  assert.equal(await portal.published('dev.tileflow', 'tileflow-sdk', version), true);
+  assert.equal(await portal.published('dev.tileflow', 'tileflow', version), true);
   assert.equal(calls[0].authorization, `Bearer ${Buffer.from('user:secret').toString('base64')}`);
   assert.equal(
     calls[0].url,
-    `https://portal.test/api/v1/publisher/published?namespace=dev.tileflow&name=tileflow-sdk&version=${version}`,
+    `https://portal.test/api/v1/publisher/published?namespace=dev.tileflow&name=tileflow&version=${version}`,
   );
   await assert.rejects(
     waitForDeployment(portal, 'deployment', 'VALIDATED', {timeoutMs: 10_000, intervalMs: 1}),
@@ -507,4 +628,175 @@ test('the native release workflow confines credentials to the approved publish j
 test('the native interlock file, when present, is a valid blocker list', async () => {
   const document = await readPublicReleaseBlockers(root, 'NATIVE_RELEASE_BLOCKERS.json');
   if (document) assert.ok(document.blockers.length > 0);
+});
+
+test('service consumer checks catch map targets, renderer binaries and unresolved Foundation', () => {
+  const dependencies = `+--- dev.tileflow:tileflow-services:${version}
+\--- dev.tileflow:tileflow-foundation:${version}`;
+  const candidate = {
+    android: {
+      modules: Object.fromEntries(
+        catalog.maven.publications.map(({module, artifactId}) => [
+          module,
+          `dev.tileflow:${artifactId}:${version}`,
+        ]),
+      ),
+    },
+  };
+  assertAndroidCandidateDependencies(dependencies, candidate, [
+    'tileflow-services',
+    'tileflow-foundation',
+  ]);
+  for (const value of [
+    `dev.tileflow:tileflow-services:${version}`,
+    dependencies.replace(`tileflow-foundation:${version}`, 'tileflow-foundation:0.1.0-alpha.1'),
+    dependencies + `\n\--- dev.tileflow:tileflow-foundation:${version} -> 0.1.0-alpha.4`,
+  ])
+    assert.throws(
+      () =>
+        assertAndroidCandidateDependencies(value, candidate, [
+          'tileflow-services',
+          'tileflow-foundation',
+        ]),
+      /resolve.*exactly/u,
+    );
+
+  const services = {dependencies, entries: ['classes.dex'], linkage: ''};
+  assert.doesNotThrow(() => assertServicesOnlyConsumer(services));
+  assert.doesNotThrow(() =>
+    assertServicesOnlyConsumer({
+      dependencies:
+        "Resolved package MapLibre at 7.0.0\nTarget 'TileflowServices' in project 'Tileflow'",
+      entries: ['ServicesExample'],
+      linkage: '/System/Library/Frameworks/UIKit.framework/UIKit',
+    }),
+  );
+  for (const patch of [
+    {dependencies: "Target 'Tileflow' in project 'Tileflow'"},
+    {dependencies: "Target 'MapLibre' in project 'MapLibre'"},
+    {dependencies: dependencies + '\norg.maplibre.gl:android-sdk-opengl:13.7.1'},
+    {dependencies: dependencies + `\ndev.tileflow:tileflow:${version}`},
+    {entries: ['Frameworks/MapLibre.framework/MapLibre']},
+    {entries: ['lib/arm64-v8a/libmaplibre.so']},
+    {linkage: '@rpath/MapLibre.framework/MapLibre'},
+    {linkage: 'Lorg/maplibre/android/maps/MapView;'},
+  ])
+    assert.throws(() => assertServicesOnlyConsumer({...services, ...patch}), /map renderer/u);
+});
+
+test('candidate consumers bind map and service products to the candidate package graph', async (t) => {
+  const directory = await temporary(t);
+  const candidate = join(directory, 'candidate');
+  await mkdir(join(candidate, 'swift'), {recursive: true});
+  const modules = Object.fromEntries(
+    catalog.maven.publications.map(({module, artifactId}) => [
+      module,
+      `dev.tileflow:${artifactId}:${version}`,
+    ]),
+  );
+  await writeFile(
+    join(candidate, 'candidate.json'),
+    JSON.stringify({
+      schemaVersion: 1,
+      version,
+      engines,
+      swift: {path: 'swift'},
+      android: {coordinate: modules.tileflow, modules},
+    }),
+  );
+  const consumers = join(directory, 'consumers');
+  await run(process.execPath, ['scripts/native-consumers-prepare.mjs', candidate, consumers], {
+    cwd: root,
+  });
+  const services = await readFile(join(consumers, 'android/services/build.gradle.kts'), 'utf8');
+  assert.match(
+    services,
+    new RegExp(
+      `implementation\\("dev\\.tileflow:tileflow-services:${version.replaceAll('.', '\\.')}"\\)`,
+      'u',
+    ),
+  );
+  assert.doesNotMatch(services, /project\(|dev\.tileflow:tileflow:|org\.maplibre/u);
+  assert.match(
+    await readFile(join(consumers, 'android/settings.gradle.kts'), 'utf8'),
+    /include\(":example", ":services"\)/u,
+  );
+  const swift = await readFile(join(consumers, 'ios-services/project.yml'), 'utf8');
+  assert.match(swift, /product: TileflowServices/u);
+  assert.ok(swift.includes(JSON.stringify(join(candidate, 'swift'))));
+  assert.doesNotMatch(swift, /product: Tileflow\n|product: MapLibre/u);
+  const integration = await readFile(join(consumers, 'ios-integration/project.yml'), 'utf8');
+  assert.ok(
+    integration.includes(join(candidate, 'swift/Tests/TileflowServiceTests/ServiceStub.swift')),
+  );
+  assert.ok(
+    integration.includes(
+      join(candidate, 'swift/Tests/TileflowServiceTests/Fixtures/service-contract.json'),
+    ),
+  );
+  assert.ok(
+    (await readFile(join(consumers, 'ios-integration/ServiceContentTests.swift'), 'utf8')).length,
+  );
+  assert.doesNotMatch(integration, /\.\.\//u);
+});
+
+test('versionless Compose dependencies require an explicit exact Compose platform in each format', () => {
+  const options = {catalog, artifactId: 'tileflow', version, engines};
+  const modules = [
+    ['androidx.compose.ui', 'ui'],
+    ['androidx.compose.runtime', 'runtime'],
+    ['androidx.compose.foundation', 'foundation-layout'],
+  ];
+  const dependencies =
+    pomDependencies('tileflow') +
+    modules
+      .map(
+        ([group, module]) =>
+          `<dependency><groupId>${group}</groupId><artifactId>${module}</artifactId><scope>compile</scope></dependency>`,
+      )
+      .join('');
+  const bom = (pin) => `<dependencyManagement><dependencies><dependency>
+    <groupId>androidx.compose</groupId><artifactId>compose-bom</artifactId><version>${pin}</version>
+    <type>pom</type><scope>import</scope></dependency></dependencies></dependencyManagement>`;
+  assert.deepEqual(
+    validatePom(pom('tileflow', {dependencies, management: bom('2025.08.01')}), options),
+    [],
+  );
+  assert.match(
+    validatePom(pom('tileflow', {dependencies}), options).join(),
+    /androidx.compose.*non-exact/u,
+  );
+  assert.match(
+    validatePom(pom('tileflow', {dependencies, management: bom('latest.release')}), options).join(),
+    /non-exact/u,
+  );
+  assert.match(
+    validatePom(
+      pom('tileflow', {
+        dependencies: dependencies + dependency('com.example', 'ui', ''),
+        management: bom('2025.08.01'),
+      }),
+      options,
+    ).join(),
+    /com.example:ui.*non-exact/u,
+  );
+
+  const document = moduleDocument('tileflow');
+  for (const variant of document.variants)
+    variant.dependencies.push(
+      {
+        group: 'androidx.compose',
+        module: 'compose-bom',
+        version: {requires: '2025.08.01'},
+        attributes: {'org.gradle.category': 'platform'},
+        endorseStrictVersions: true,
+      },
+      ...modules.map(([group, module]) => ({group, module})),
+    );
+  const check = (value) => validateModuleMetadata(JSON.stringify(value), new Map(), options);
+  assert.deepEqual(check(document), []);
+  document.variants[1].dependencies = document.variants[1].dependencies.filter(
+    (item) => item.module !== 'compose-bom',
+  );
+  assert.match(check(document).join(), /androidx.compose.*non-exact/u);
 });

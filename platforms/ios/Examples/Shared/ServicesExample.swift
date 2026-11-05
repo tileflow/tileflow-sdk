@@ -1,6 +1,6 @@
 import Foundation
 import Tileflow
-import TileflowServiceContent
+import TileflowServices
 
 /// Whether Search and Routing have a credential, from the Info.plist or ``configureExample()``.
 func servicesConfigured() -> Bool {

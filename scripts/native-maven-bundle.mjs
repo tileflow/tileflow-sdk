@@ -5,6 +5,7 @@ import {tmpdir} from 'node:os';
 import {dirname, isAbsolute, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {crc32, deflateRawSync} from 'node:zlib';
+import {readNativeStylePins} from './mobile-native-style.mjs';
 import {
   mavenArtifactDirectory,
   parseAlphaVersion,
@@ -73,8 +74,75 @@ const text = (element, ...path) => {
   return current?.text.trim() ?? '';
 };
 
+/** Required edges of the published packages, checked in both Maven and Gradle metadata. */
+function validateDependencies(dependencies, {catalog, artifactId, version, engines}, usage) {
+  const required = [];
+  if (artifactId === 'tileflow' || artifactId === 'tileflow-services')
+    required.push({
+      group: catalog.maven.group,
+      module: 'tileflow-foundation',
+      version,
+      scope: 'compile',
+    });
+  if (artifactId === 'tileflow' && usage !== 'java-api')
+    required.push({
+      group: 'org.maplibre.gl',
+      module: 'android-sdk-opengl',
+      version: engines?.android,
+      scope: 'runtime',
+    });
+
+  const problems = [];
+  const composePlatform = dependencies.some(
+    (item) =>
+      item.platform &&
+      item.group === 'androidx.compose' &&
+      item.module === 'compose-bom' &&
+      item.versions.length > 0,
+  );
+  const published = new Set(catalog.maven.publications.map((item) => item.artifactId));
+  for (const item of dependencies) {
+    const coordinate = `${item.group}:${item.module}`;
+    const expected = required.find(
+      (entry) => entry.group === item.group && entry.module === item.module,
+    );
+    if (item.group === catalog.maven.group && !published.has(item.module))
+      problems.push(`${coordinate} is not a published artifact of this release.`);
+    if ((item.group === catalog.maven.group || item.group === 'org.maplibre.gl') && !expected)
+      problems.push(`${coordinate} is not allowed in ${artifactId} ${usage}.`);
+    const managed = composePlatform && item.group?.startsWith('androidx.compose.');
+    if (
+      (!item.versions.length && !managed) ||
+      item.versions.some(
+        (value) =>
+          typeof value !== 'string' || !value || /SNAPSHOT|[\s$[\]()+,]|^latest\./u.test(value),
+      ) ||
+      new Set(item.versions).size > 1 ||
+      item.rejects
+    )
+      problems.push(`${coordinate} has a non-exact version ${item.versions.join(', ')}.`);
+    if (
+      expected &&
+      (!expected.version || item.versions.some((value) => value !== expected.version))
+    )
+      problems.push(`${coordinate} must use ${expected.version ?? 'the pinned native renderer'}.`);
+    if (expected && (item.optional || (usage === 'pom' && item.scope !== expected.scope)))
+      problems.push(`${coordinate} must be a required ${expected.scope} dependency.`);
+  }
+  for (const item of required) {
+    const count = dependencies.filter(
+      (entry) => entry.group === item.group && entry.module === item.module,
+    ).length;
+    if (count !== 1)
+      problems.push(
+        `${item.group}:${item.module} is required exactly once in ${artifactId} ${usage}.`,
+      );
+  }
+  return problems.map((message) => `${artifactId}: ${message}`);
+}
+
 /** Central Portal POM requirements plus the coordinates this release must carry. */
-export function validatePom(source, {catalog, artifactId, version}) {
+export function validatePom(source, {catalog, artifactId, version, engines}) {
   const problems = [];
   const document = parseXml(source);
   const project = child(document, 'project');
@@ -104,25 +172,27 @@ export function validatePom(source, {catalog, artifactId, version}) {
   }
   require(!child(project, 'repositories'), 'repositories are not allowed.');
   require(!child(project, 'pluginRepositories'), 'pluginRepositories are not allowed.');
-  const published = new Set(catalog.maven.publications.map((item) => item.artifactId));
-  for (const dependency of children(child(project, 'dependencies'), 'dependency')) {
-    const coordinate = `${text(dependency, 'groupId')}:${text(dependency, 'artifactId')}`;
-    const dependencyVersion = text(dependency, 'version');
-    if (text(dependency, 'groupId') === catalog.maven.group) {
-      require(published.has(
-        text(dependency, 'artifactId'),
-      ), `${coordinate} is not a published artifact of this release.`);
-      require(dependencyVersion === version, `${coordinate} must use ${version}.`);
-    }
-    require(!/SNAPSHOT|[[\]()+,]|^latest\./u.test(
-      dependencyVersion,
-    ), `${coordinate} has a non-exact version ${dependencyVersion}.`);
-  }
+  const dependencies = [
+    ...children(child(project, 'dependencies'), 'dependency'),
+    ...children(child(child(project, 'dependencyManagement'), 'dependencies'), 'dependency').filter(
+      (item) => text(item, 'type') === 'pom' && text(item, 'scope') === 'import',
+    ),
+  ].map((item) => ({
+    group: text(item, 'groupId'),
+    module: text(item, 'artifactId'),
+    versions: text(item, 'version') ? [text(item, 'version')] : [],
+    scope: text(item, 'scope') || 'compile',
+    optional: text(item, 'optional') === 'true',
+    platform: text(item, 'type') === 'pom' && text(item, 'scope') === 'import',
+  }));
+  problems.push(
+    ...validateDependencies(dependencies, {catalog, artifactId, version, engines}, 'pom'),
+  );
   return problems;
 }
 
 /** Gradle module metadata must describe these exact files, sizes and digests. */
-export function validateModuleMetadata(source, files, {catalog, artifactId, version}) {
+export function validateModuleMetadata(source, files, {catalog, artifactId, version, engines}) {
   const problems = [];
   let metadata;
   try {
@@ -138,7 +208,27 @@ export function validateModuleMetadata(source, files, {catalog, artifactId, vers
   ) {
     problems.push(`${artifactId}: Gradle module metadata names another component.`);
   }
+  const usages = new Set();
   for (const variant of metadata.variants ?? []) {
+    const usage = variant.attributes?.['org.gradle.usage'];
+    if (
+      variant.attributes?.['org.gradle.category'] === 'library' &&
+      ['java-api', 'java-runtime'].includes(usage)
+    ) {
+      usages.add(usage);
+      const dependencies = (variant.dependencies ?? []).map((item) => ({
+        group: item.group,
+        module: item.module,
+        platform: item.attributes?.['org.gradle.category'] === 'platform',
+        versions: ['requires', 'strictly', 'prefers'].flatMap((field) =>
+          item.version?.[field] === undefined ? [] : [item.version[field]],
+        ),
+        rejects: item.version?.rejects?.length > 0 || item.version?.rejectAll === true,
+      }));
+      problems.push(
+        ...validateDependencies(dependencies, {catalog, artifactId, version, engines}, usage),
+      );
+    }
     if (variant['available-at']) {
       problems.push(`${artifactId}: variant ${variant.name} points to another module.`);
     }
@@ -156,6 +246,8 @@ export function validateModuleMetadata(source, files, {catalog, artifactId, vers
       }
     }
   }
+  for (const usage of ['java-api', 'java-runtime'])
+    if (!usages.has(usage)) problems.push(`${artifactId}: missing ${usage} library variant.`);
   return problems;
 }
 
@@ -176,6 +268,8 @@ async function listFiles(directory, prefix = '') {
  */
 export async function validateMavenRepository(directory, options) {
   const {catalog, version, signed = false, verifySignature} = options;
+  const engines =
+    options.engines ?? (await readNativeStylePins(fileURLToPath(new URL('../', import.meta.url))));
   if (!parseAlphaVersion(version) && !signed && !/^0\.0\.0-/u.test(version)) {
     throw new Error(`Unexpected candidate version ${version}.`);
   }
@@ -219,6 +313,7 @@ export async function validateMavenRepository(directory, options) {
           catalog,
           artifactId: publication.artifactId,
           version,
+          engines,
         }),
       );
     }
@@ -229,6 +324,7 @@ export async function validateMavenRepository(directory, options) {
           catalog,
           artifactId: publication.artifactId,
           version,
+          engines,
         }),
       );
     }
@@ -414,12 +510,13 @@ export async function createCentralBundle({
   repository,
   catalog,
   version,
+  engines,
   staging,
   output,
   sign,
   verifySignature,
 }) {
-  const primaries = (await validateMavenRepository(repository, {catalog, version})).filter(
+  const primaries = (await validateMavenRepository(repository, {catalog, version, engines})).filter(
     (path) => !path.endsWith('.asc') && !checksumAlgorithms.some((a) => path.endsWith(`.${a}`)),
   );
   await mkdir(staging);
@@ -437,6 +534,7 @@ export async function createCentralBundle({
     catalog,
     version,
     signed: true,
+    engines,
     verifySignature,
   });
   const entries = [];

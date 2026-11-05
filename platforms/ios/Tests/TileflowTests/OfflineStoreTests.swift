@@ -2,7 +2,6 @@ import CryptoKit
 import XCTest
 
 @testable import Tileflow
-@testable import TileflowConfiguration
 
 /// End-to-end store tests against an in-process Hosted service: downloads are created, their packs
 /// downloaded, verified, stored, served in place, updated and removed.

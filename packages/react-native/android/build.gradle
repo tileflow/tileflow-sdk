@@ -49,11 +49,8 @@ dependencies {
 	implementation("org.maplibre.gl:android-sdk-${nativeVariant}:13.6.1") { version { strictly '13.6.1' } }
 	implementation('com.squareup.okhttp3:okhttp:4.12.0') { version { strictly '4.12.0' } }
 	implementation('org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2')
-	implementation("dev.tileflow:tileflow-sdk:${tileflowVersion}") { version { strictly tileflowVersion } }
-	implementation("dev.tileflow:tileflow-search:${tileflowVersion}") { version { strictly tileflowVersion } }
-	implementation("dev.tileflow:tileflow-routing:${tileflowVersion}") { version { strictly tileflowVersion } }
-	implementation("dev.tileflow:tileflow-elevation:${tileflowVersion}") { version { strictly tileflowVersion } }
-	implementation("dev.tileflow:tileflow-geoip:${tileflowVersion}") { version { strictly tileflowVersion } }
+	implementation("dev.tileflow:tileflow:${tileflowVersion}") { version { strictly tileflowVersion } }
+	implementation("dev.tileflow:tileflow-services:${tileflowVersion}") { version { strictly tileflowVersion } }
 	testImplementation 'junit:junit:4.13.2'
 	testImplementation 'org.robolectric:robolectric:4.14.1'
 	testImplementation 'com.squareup.okhttp3:mockwebserver:4.12.0'

@@ -1,11 +1,8 @@
 import Foundation
-import TileflowConfiguration
+@testable import TileflowFoundation
 import XCTest
 
-@testable import TileflowElevation
-@testable import TileflowGeoIP
-@testable import TileflowRouting
-@testable import TileflowSearch
+@testable import TileflowServices
 
 /// Every operation against the shared wire contract: the canonical typed request must encode to
 /// the documented body and the recorded answer must decode.

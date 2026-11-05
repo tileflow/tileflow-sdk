@@ -1,9 +1,5 @@
 import Foundation
-import TileflowConfiguration
-import TileflowElevation
-import TileflowGeoIP
-import TileflowRouting
-import TileflowSearch
+import TileflowServices
 import XCTest
 
 @testable import TileflowReactNativeBridge

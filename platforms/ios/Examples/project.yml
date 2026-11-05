@@ -23,7 +23,7 @@ targets:
     dependencies:
       - package: Tileflow
       - package: Tileflow
-        product: TileflowServiceContent
+        product: TileflowServices
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.tileflow.examples.uikit
@@ -36,7 +36,7 @@ targets:
     dependencies:
       - package: Tileflow
       - package: Tileflow
-        product: TileflowServiceContent
+        product: TileflowServices
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.tileflow.examples.swiftui

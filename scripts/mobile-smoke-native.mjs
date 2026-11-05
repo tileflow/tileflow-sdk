@@ -15,6 +15,8 @@ import {
   readMobileJson,
   writeMobileFile,
 } from './mobile-smoke-workspace.mjs';
+import {primaryFileNames} from './native-maven-bundle.mjs';
+import {readNativeReleaseCatalog} from './native-release-config.mjs';
 
 /**
  * The native SDK candidate the consumers build against, from TILEFLOW_NATIVE_CANDIDATE: a
@@ -43,11 +45,32 @@ export async function readNativeCandidate(context) {
     !/^[0-9A-Za-z.-]+$/u.test(version)
   )
     throw missing();
-  for (const path of [
-    join(swift, 'Package.swift'),
-    join(maven, 'dev', 'tileflow', 'tileflow-sdk', version, `tileflow-sdk-${version}.pom`),
-  ]) {
+  try {
+    await stat(join(directory, 'INCOMPLETE'));
+    throw missing();
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw missing();
+  }
+  const catalog = await readNativeReleaseCatalog();
+  const paths = [join(swift, 'Package.swift')];
+  if (Object.keys(receipt.android?.modules ?? {}).length !== catalog.maven.publications.length)
+    throw missing();
+  for (const {module, artifactId} of catalog.maven.publications) {
+    const coordinate = `${catalog.maven.group}:${artifactId}:${version}`;
+    if (
+      receipt.android.modules[module] !== coordinate ||
+      (module === 'tileflow' && receipt.android.coordinate !== coordinate)
+    )
+      throw missing();
+    paths.push(
+      ...primaryFileNames(artifactId, version).map((name) =>
+        join(maven, catalog.maven.group.replaceAll('.', '/'), artifactId, version, name),
+      ),
+    );
+  }
+  for (const path of paths) {
     try {
+      await assertOwnedPath(directory, path);
       if (!(await stat(path)).isFile()) throw missing();
     } catch {
       throw missing();

@@ -48,12 +48,53 @@ export function assertNativeMapAssets(entries) {
   if (stale) throw new Error(`Unexpected embedded renderer resource: ${stale}`);
 }
 
+/** Service consumers must compile and link without the map targets or renderer artifacts. */
+export function assertServicesOnlyConsumer({dependencies, entries, linkage = ''}) {
+  const forbiddenTargets = /\bTarget ['"](?:MapLibre|Tileflow|TileflowStyleBridge)['"] in project/u;
+  const forbiddenCoordinates = /org\.maplibre\.gl:|dev\.tileflow:tileflow(?:-sdk)?:/u;
+  if (forbiddenTargets.test(dependencies) || forbiddenCoordinates.test(dependencies))
+    throw new Error('The services consumer depends on the native map renderer.');
+  if (
+    entries.some((entry) =>
+      /(?:^|\/)(?:MapLibre\.framework|libmaplibre\.so)(?:\/|$)/u.test(entry),
+    ) ||
+    /MapLibre\.framework|libmaplibre\.so|Lorg\/maplibre\/android\//u.test(linkage)
+  )
+    throw new Error('The services consumer contains or links the native map renderer.');
+  assertNativeMapAssets(entries);
+}
+
+/** A candidate's transitive Foundation must resolve even when the app declares only Services. */
+export function assertAndroidCandidateDependencies(dependencies, candidate, modules) {
+  for (const name of modules) {
+    const coordinate = candidate.android.modules[name];
+    if (!coordinate) throw new Error(`The candidate has no artifact for :${name}.`);
+    const prefix = coordinate.slice(0, coordinate.lastIndexOf(':') + 1);
+    const version = coordinate.slice(prefix.length);
+    const resolutions = dependencies
+      .split('\n')
+      .filter((line) => line.includes(prefix))
+      .map((line) => line.split(prefix)[1].trim().split(/\s+/u));
+    if (
+      !resolutions.length ||
+      resolutions.some(([resolved, next]) => resolved !== version || next === '->')
+    )
+      throw new Error(`The Android consumer did not resolve ${coordinate} exactly.`);
+  }
+}
+
 async function swiftExample(consumers, scheme) {
   const consumer = await readJson(join(consumers, 'candidate.json'));
   const candidate = await readJson(join(consumer.candidate, 'candidate.json'));
-  const project = join(consumers, 'ios/TileflowExamples.xcodeproj');
+  const servicesOnly = scheme === 'ServicesExample';
+  const project = join(
+    consumers,
+    servicesOnly
+      ? 'ios-services/TileflowServicesConsumer.xcodeproj'
+      : 'ios/TileflowExamples.xcodeproj',
+  );
   const derived = join(consumers, `derived-${scheme}`);
-  await command('xcodebuild', [
+  const dependencies = await command('xcodebuild', [
     'build',
     '-project',
     project,
@@ -73,7 +114,7 @@ async function swiftExample(consumers, scheme) {
       item.location.replace(/\.git$/u, '') ===
       'https://github.com/maplibre/maplibre-gl-native-distribution',
   );
-  if (engine?.state?.version !== candidate.engines.ios)
+  if (!servicesOnly && engine?.state?.version !== candidate.engines.ios)
     throw new Error(`${scheme}: unexpected MapLibre version ${engine?.state?.version}.`);
 
   // A URL dependency must also resolve to the Tileflow release tag.
@@ -95,33 +136,48 @@ async function swiftExample(consumers, scheme) {
     }
   }
   const app = await findDirectory(join(derived, 'Build/Products'), `${scheme}.app`);
-  if (!app || !(await findDirectory(app, 'MapLibre.framework')))
-    throw new Error(`${scheme}: the app did not embed MapLibre.framework.`);
-  assertNativeMapAssets(await readdir(app, {recursive: true}));
-  console.log(`${scheme} built with MapLibre ${candidate.engines.ios}.`);
+  if (!app) throw new Error(`${scheme}: the app was not built.`);
+  const entries = await readdir(app, {recursive: true});
+  if (servicesOnly) {
+    if (!/Target ['"]TileflowServices['"] in project/u.test(dependencies))
+      throw new Error('The services consumer did not build TileflowServices.');
+    const linkage = await command('/usr/bin/otool', ['-L', join(app, scheme)]);
+    assertServicesOnlyConsumer({dependencies, entries, linkage});
+    console.log('Swift Services built without the map renderer.');
+  } else {
+    if (!(await findDirectory(app, 'MapLibre.framework')))
+      throw new Error(`${scheme}: the app did not embed MapLibre.framework.`);
+    assertNativeMapAssets(entries);
+    console.log(`${scheme} built with MapLibre ${candidate.engines.ios}.`);
+  }
 }
 
-async function androidExample(consumers) {
+async function androidExample(consumers, module = 'example') {
   const consumer = await readJson(join(consumers, 'candidate.json'));
   const candidate = await readJson(join(consumer.candidate, 'candidate.json'));
   const android = join(consumers, 'android');
-  await command('./gradlew', [':example:assembleDebug', '--console=plain'], {cwd: android});
+  await command('./gradlew', [`:${module}:assembleDebug`, '--console=plain'], {cwd: android});
   const dependencies = await command(
     './gradlew',
-    [':example:dependencies', '--configuration', 'debugRuntimeClasspath', '--console=plain'],
+    [`:${module}:dependencies`, '--configuration', 'debugRuntimeClasspath', '--console=plain'],
     {cwd: android},
   );
-  if (!dependencies.includes(candidate.android.coordinate)) {
-    throw new Error(`The Android example does not use ${candidate.android.coordinate}.`);
+  const servicesOnly = module === 'services';
+  assertAndroidCandidateDependencies(
+    dependencies,
+    candidate,
+    servicesOnly
+      ? ['tileflow-services', 'tileflow-foundation']
+      : Object.keys(candidate.android.modules),
+  );
+  const apk = join(android, module, `build/outputs/apk/debug/${module}-debug.apk`);
+  const entries = (await command('/usr/bin/unzip', ['-Z1', apk])).split('\n');
+  if (servicesOnly) {
+    const dex = await command('/usr/bin/unzip', ['-p', apk, 'classes*.dex'], {encoding: 'buffer'});
+    assertServicesOnlyConsumer({dependencies, entries, linkage: dex.toString('latin1')});
+    console.log('Android Services built without the map renderer.');
+    return;
   }
-  for (const coordinate of Object.values(candidate.android.modules)) {
-    const module = coordinate.slice(0, coordinate.lastIndexOf(':') + 1);
-    const lines = dependencies.split('\n').filter((line) => line.includes(module));
-    if (lines.some((line) => !line.includes(coordinate) || line.includes(`${coordinate} -> `))) {
-      throw new Error(`The Android example resolved another version of ${module.slice(0, -1)}.`);
-    }
-  }
-  const apk = join(android, 'example/build/outputs/apk/debug/example-debug.apk');
   const engine = 'org.maplibre.gl:android-sdk-opengl:';
   const versions = dependencies
     .split('\n')
@@ -135,7 +191,6 @@ async function androidExample(consumers) {
       `The Android example did not resolve ${engine}${candidate.engines.android} exactly.`,
     );
 
-  const entries = (await command('/usr/bin/unzip', ['-Z1', apk])).split('\n');
   assertNativeMapAssets(entries);
   if (!entries.some((entry) => /^lib\/[^/]+\/libmaplibre\.so$/u.test(entry)))
     throw new Error('The Android example did not package libmaplibre.so.');
@@ -180,7 +235,7 @@ async function verifyBundle(release, version, sourceRevision) {
       throw new Error(`Maven file ${path} differs from the candidate inventory.`);
     }
   }
-  await validateMavenRepository(join(release, 'candidate/maven'), {catalog, version});
+  await validateMavenRepository(join(release, 'candidate/maven'), {catalog, version, engines});
   console.log(`Release bundle ${version} is consistent with ${sourceRevision}.`);
 }
 
@@ -248,7 +303,10 @@ async function main() {
     return result;
   };
   if (subcommand === 'swift-example') await swiftExample(path('--consumers'), value('--scheme'));
+  else if (subcommand === 'swift-services')
+    await swiftExample(path('--consumers'), 'ServicesExample');
   else if (subcommand === 'android-example') await androidExample(path('--consumers'));
+  else if (subcommand === 'android-services') await androidExample(path('--consumers'), 'services');
   else if (subcommand === 'bundle') {
     await verifyBundle(path('--release'), value('--version'), value('--source-revision'));
   } else if (subcommand === 'summary') process.stdout.write(await summary(path('--release')));
@@ -256,7 +314,7 @@ async function main() {
     await receipt(path('--release'), value('--bundle-digest'), path('--output'));
   } else {
     throw new Error(
-      'Usage: native-release-verify.mjs swift-example|android-example|bundle|summary|receipt [options]',
+      'Usage: native-release-verify.mjs swift-example|swift-services|android-example|android-services|bundle|summary|receipt [options]',
     );
   }
 }

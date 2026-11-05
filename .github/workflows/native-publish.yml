@@ -270,6 +270,7 @@ jobs:
           "$XCODEGEN" generate --quiet --spec "$consumers/ios/project.yml"
           node scripts/native-release-verify.mjs swift-example --consumers "$consumers" --scheme UIKitExample
           node scripts/native-release-verify.mjs swift-example --consumers "$consumers" --scheme SwiftUIExample
+          node scripts/native-release-verify.mjs swift-services --consumers "$consumers"
 
       - name: Run the integration tests from the release tag on iOS Simulator
         shell: bash
@@ -298,6 +299,8 @@ jobs:
           set -euo pipefail
           export JAVA_HOME="$JAVA_HOME_17_arm64"
           node scripts/native-release-verify.mjs android-example \
+            --consumers "$RUNNER_TEMP/native-verify/consumers"
+          node scripts/native-release-verify.mjs android-services \
             --consumers "$RUNNER_TEMP/native-verify/consumers"
 
       - name: Create the release bundle

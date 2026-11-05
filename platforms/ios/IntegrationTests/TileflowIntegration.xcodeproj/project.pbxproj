@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		00289D1B4C4E5F2D871EB08F /* NativeEvaluatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55EBEAC678E6BCD7405A24C8 /* NativeEvaluatorTests.swift */; };
 		01669A25488FDB843A26B226 /* NativeMapViewIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 808A9F338B0741E97666C63E /* NativeMapViewIntegrationTests.swift */; };
+		0E83AF35A9AED3462865F2CB /* ServiceStub.swift in Sources */ = {isa = PBXBuildFile; fileRef = B256C80B61A6F967B2514581 /* ServiceStub.swift */; };
 		0F408D6D1ADEDCAC3AA85BE0 /* OfflineStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FA53D431BDFC97A1DFB2346 /* OfflineStoreTests.swift */; };
 		1858449358C2857350926ACB /* TestBundle.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D9BCD4B594AC77133EC596 /* TestBundle.swift */; };
 		21CA8BBB2F2AFE32B0923BF1 /* OfflineServingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 207B64FB19BDA4FAC6A2A430 /* OfflineServingTests.swift */; };
@@ -18,6 +19,7 @@
 		4ED773D788ABA9DF08882047 /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = 31CC6D94C1045B22AD7833C0 /* Fixtures */; };
 		54E2A89BD326E71031AAEEE5 /* NativeMapCameraIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9181EFB75DF0019A93B3D631 /* NativeMapCameraIntegrationTests.swift */; };
 		57BC2B5DB43D8CA1B9747503 /* OfflinePackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 927F8C72E0A307CC92921917 /* OfflinePackTests.swift */; };
+		5AF4BD09B1DC138585D1A228 /* TileflowServices in Frameworks */ = {isa = PBXBuildFile; productRef = DECCEFFED526FA54DDC68C9A /* TileflowServices */; };
 		5BA40CEA634DEAE7E688AC83 /* SceneTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 113918A3BD759C2E418A20A6 /* SceneTests.swift */; };
 		5E1118CA14E354F3D9A54D25 /* HTTPTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3EAF552BDAD1240BAEC59A0 /* HTTPTransportTests.swift */; };
 		5F7F4F6802161AC81ABF774D /* NativeStyleDocumentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 549BE5C0298FAB0FD00D345B /* NativeStyleDocumentTests.swift */; };
@@ -36,11 +38,13 @@
 		A1E7632A655D251C23F633DB /* MapConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8971705707273BE7E1E670CB /* MapConfigurationTests.swift */; };
 		A483240D42D8BF77C39F6A3A /* AttributionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBB4DCE6B056109B3F246047 /* AttributionTests.swift */; };
 		AE6ED09789B0317957601DC2 /* MapOfflineChecks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52A184BF6A95C7B0FF07E5CC /* MapOfflineChecks.swift */; };
+		AF1CA00F0ADA0C0204427D7F /* service-contract.json in Resources */ = {isa = PBXBuildFile; fileRef = 24AEF27FDB1F30125D98B5D1 /* service-contract.json */; };
 		B3843A4DCF09AD45FF0F3C8E /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD3905513AF87C616C6FD063 /* AppDelegate.swift */; };
 		B887598655FF59DDEF6D0DDC /* MapPrewarmTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A702F762DD5F624B6836566 /* MapPrewarmTests.swift */; };
 		C6CAA4425CD48E65C49F032A /* NativeLocationIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DD188362EA206DCDCA2C5F9 /* NativeLocationIntegrationTests.swift */; };
 		D665C97471C31CBD61AEFBC6 /* MapAnnotationAccessibilityChecks.swift in Sources */ = {isa = PBXBuildFile; fileRef = 664A50F8A4B2195EAF20CA52 /* MapAnnotationAccessibilityChecks.swift */; };
 		DF66124101DB4E78367B1E10 /* MapTestFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0DD6B154807CDBD5D78CB989 /* MapTestFixtures.swift */; };
+		E399A335FC67011682D19E6C /* ServiceContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3BA2DF81C5A6309629D6C7D /* ServiceContentTests.swift */; };
 		EAD977152C71BA419DC8D365 /* ResourceCacheTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A09E62F0FBA99F013CD565BC /* ResourceCacheTests.swift */; };
 		ED84A35F02C9639B99B1BB5F /* OfflineProfileUpgradeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A580638AAD5B18D4C97F7676 /* OfflineProfileUpgradeTests.swift */; };
 		F32D8EE7431D8348CA80CBAB /* OfflineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D737ABB575F1DE63D148934A /* OfflineTests.swift */; };
@@ -63,6 +67,7 @@
 		109C7D06683E789B360AD995 /* AnnotationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationTests.swift; sourceTree = "<group>"; };
 		113918A3BD759C2E418A20A6 /* SceneTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneTests.swift; sourceTree = "<group>"; };
 		207B64FB19BDA4FAC6A2A430 /* OfflineServingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineServingTests.swift; sourceTree = "<group>"; };
+		24AEF27FDB1F30125D98B5D1 /* service-contract.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "service-contract.json"; sourceTree = "<group>"; };
 		279E2C397B88A6E4E6B1AD71 /* TileflowTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = TileflowTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		31CC6D94C1045B22AD7833C0 /* Fixtures */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fixtures; path = ../Tests/TileflowTests/Fixtures; sourceTree = SOURCE_ROOT; };
 		524A19CCE59FD8CA0E776B3A /* TileflowTestHost.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = TileflowTestHost.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -88,6 +93,8 @@
 		A580638AAD5B18D4C97F7676 /* OfflineProfileUpgradeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OfflineProfileUpgradeTests.swift; sourceTree = "<group>"; };
 		A99CC988D29E9A7F1F66ADBE /* NativeMapContentIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMapContentIntegrationTests.swift; sourceTree = "<group>"; };
 		AF434C1BA4135D3176A91EC6 /* NativeCameraTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCameraTests.swift; sourceTree = "<group>"; };
+		B256C80B61A6F967B2514581 /* ServiceStub.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceStub.swift; sourceTree = "<group>"; };
+		B3BA2DF81C5A6309629D6C7D /* ServiceContentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServiceContentTests.swift; sourceTree = "<group>"; };
 		BBB4DCE6B056109B3F246047 /* AttributionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttributionTests.swift; sourceTree = "<group>"; };
 		C297E53EA59E0CA35597FFF5 /* NativeAnnotationIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAnnotationIntegrationTests.swift; sourceTree = "<group>"; };
 		C3EAF552BDAD1240BAEC59A0 /* HTTPTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HTTPTransportTests.swift; sourceTree = "<group>"; };
@@ -108,12 +115,22 @@
 			buildActionMask = 2147483647;
 			files = (
 				6DEE0C81397D5A1AB84818E1 /* Tileflow in Frameworks */,
+				5AF4BD09B1DC138585D1A228 /* TileflowServices in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0B065DD1217FE3F7CBD3C8C7 /* Fixtures */ = {
+			isa = PBXGroup;
+			children = (
+				24AEF27FDB1F30125D98B5D1 /* service-contract.json */,
+			);
+			name = Fixtures;
+			path = ../Tests/TileflowServiceTests/Fixtures;
+			sourceTree = "<group>";
+		};
 		59917ED7642427EED0225F91 /* TileflowTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -162,8 +179,11 @@
 			children = (
 				FD3905513AF87C616C6FD063 /* AppDelegate.swift */,
 				31CC6D94C1045B22AD7833C0 /* Fixtures */,
+				B3BA2DF81C5A6309629D6C7D /* ServiceContentTests.swift */,
 				D2D9BCD4B594AC77133EC596 /* TestBundle.swift */,
+				0B065DD1217FE3F7CBD3C8C7 /* Fixtures */,
 				B3650C6D511E71A91DBF1A03 /* Packages */,
+				F2782EC4812CDED51E10DB5A /* TileflowServiceTests */,
 				59917ED7642427EED0225F91 /* TileflowTests */,
 				F15A3D074D818EBC8C48FE7E /* Products */,
 			);
@@ -186,6 +206,15 @@
 			name = Products;
 			sourceTree = "<group>";
 		};
+		F2782EC4812CDED51E10DB5A /* TileflowServiceTests */ = {
+			isa = PBXGroup;
+			children = (
+				B256C80B61A6F967B2514581 /* ServiceStub.swift */,
+			);
+			name = TileflowServiceTests;
+			path = ../Tests/TileflowServiceTests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -205,6 +234,7 @@
 			name = TileflowTests;
 			packageProductDependencies = (
 				3043EB9EEA97885BF60FEC54 /* Tileflow */,
+				DECCEFFED526FA54DDC68C9A /* TileflowServices */,
 			);
 			productName = TileflowTests;
 			productReference = 279E2C397B88A6E4E6B1AD71 /* TileflowTests.xctest */;
@@ -267,6 +297,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4ED773D788ABA9DF08882047 /* Fixtures in Resources */,
+				AF1CA00F0ADA0C0204427D7F /* service-contract.json in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -319,6 +350,8 @@
 				EAD977152C71BA419DC8D365 /* ResourceCacheTests.swift in Sources */,
 				6635850031DE4A7A64EF79D7 /* ResourcePolicyTests.swift in Sources */,
 				5BA40CEA634DEAE7E688AC83 /* SceneTests.swift in Sources */,
+				E399A335FC67011682D19E6C /* ServiceContentTests.swift in Sources */,
+				0E83AF35A9AED3462865F2CB /* ServiceStub.swift in Sources */,
 				8DB7B9D18A359F232EB5A682 /* StyleTests.swift in Sources */,
 				1858449358C2857350926ACB /* TestBundle.swift in Sources */,
 			);
@@ -583,6 +616,10 @@
 		3043EB9EEA97885BF60FEC54 /* Tileflow */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Tileflow;
+		};
+		DECCEFFED526FA54DDC68C9A /* TileflowServices */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TileflowServices;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

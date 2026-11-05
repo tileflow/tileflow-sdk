@@ -19,15 +19,12 @@ alphas (`0.1.0-alpha.N`); pin one exactly, because an alpha may change the API. 
 
 Then add the products you use to your target:
 
-| Product                  | Contents                                                     |
-| ------------------------ | ------------------------------------------------------------ |
-| `Tileflow`               | Map views for UIKit and SwiftUI with the embedded renderer   |
-| `TileflowConfiguration`  | Configuration, credentials and app identity for the services |
-| `TileflowSearch`         | Geocoding, reverse geocoding, autocomplete and nearby places |
-| `TileflowRouting`        | Routes, isochrones, matrices, map matching and nearest roads |
-| `TileflowElevation`      | Point heights, batches, profiles and GPX reading             |
-| `TileflowGeoIP`          | Approximate location of the device's network connection      |
-| `TileflowServiceContent` | Draws service answers on a Tileflow map                      |
+| Product            | Contents                                                                         |
+| ------------------ | -------------------------------------------------------------------------------- |
+| `Tileflow`         | Native maps for UIKit and SwiftUI, offline regions, location and drawing helpers |
+| `TileflowServices` | Search, Routing, Elevation and GeoIP clients                                     |
+
+Both products expose shared configuration and result types. Import the products your app uses.
 
 Configuration and usage are described in the
 [source repository](https://github.com/tileflow/tileflow-sdk/tree/main/platforms).

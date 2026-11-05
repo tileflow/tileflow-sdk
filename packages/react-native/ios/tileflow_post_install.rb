@@ -14,7 +14,7 @@ require 'pathname'
 # shell phase or changes a pin. Release builds use the Tileflow Swift package at the version this
 # package pins; set TILEFLOW_SWIFT_PACKAGE_PATH to a local package, such as a native candidate or
 # this repository's platforms/ios, to build against it instead.
-TILEFLOW_SWIFT_PRODUCTS = %w[Tileflow TileflowSearch TileflowRouting TileflowElevation TileflowGeoIP].freeze
+TILEFLOW_SWIFT_PRODUCTS = %w[Tileflow TileflowServices].freeze
 
 def tileflow_post_install(installer, swift_package_path: ENV['TILEFLOW_SWIFT_PACKAGE_PATH'])
 	tileflow_native_admission_post_install(installer)

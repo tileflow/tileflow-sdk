@@ -6,12 +6,7 @@ let package = Package(
   platforms: [.iOS(.v16)],
   products: [
     .library(name: "Tileflow", targets: ["Tileflow"]),
-    .library(name: "TileflowConfiguration", targets: ["TileflowConfiguration"]),
-    .library(name: "TileflowSearch", targets: ["TileflowSearch"]),
-    .library(name: "TileflowRouting", targets: ["TileflowRouting"]),
-    .library(name: "TileflowElevation", targets: ["TileflowElevation"]),
-    .library(name: "TileflowGeoIP", targets: ["TileflowGeoIP"]),
-    .library(name: "TileflowServiceContent", targets: ["TileflowServiceContent"]),
+    .library(name: "TileflowServices", targets: ["TileflowServices"]),
   ],
   dependencies: [
     // MapLibre Native draws maps. The version is exact: each upgrade is a reviewed change.
@@ -21,7 +16,7 @@ let package = Package(
     .target(
       name: "Tileflow",
       dependencies: [
-        "TileflowConfiguration", "TileflowStyleBridge",
+        "TileflowFoundation", "TileflowStyleBridge",
         .product(name: "MapLibre", package: "maplibre-gl-native-distribution"),
       ],
       path: "Sources/Tileflow"
@@ -31,25 +26,10 @@ let package = Package(
       dependencies: [.product(name: "MapLibre", package: "maplibre-gl-native-distribution")],
       path: "Sources/TileflowStyleBridge"
     ),
-    .target(name: "TileflowConfiguration", path: "Sources/TileflowConfiguration"),
+    .target(name: "TileflowFoundation", path: "Sources/TileflowFoundation"),
     .target(
-      name: "TileflowSearch", dependencies: ["TileflowConfiguration"],
-      path: "Sources/TileflowSearch"),
-    .target(
-      name: "TileflowRouting", dependencies: ["TileflowConfiguration"],
-      path: "Sources/TileflowRouting"),
-    .target(
-      name: "TileflowElevation", dependencies: ["TileflowConfiguration"],
-      path: "Sources/TileflowElevation"),
-    .target(
-      name: "TileflowGeoIP", dependencies: ["TileflowConfiguration"],
-      path: "Sources/TileflowGeoIP"),
-    .target(
-      name: "TileflowServiceContent",
-      dependencies: [
-        "Tileflow", "TileflowSearch", "TileflowRouting", "TileflowElevation", "TileflowGeoIP",
-      ],
-      path: "Sources/TileflowServiceContent"),
+      name: "TileflowServices", dependencies: ["TileflowFoundation"],
+      path: "Sources/TileflowServices"),
     .testTarget(
       name: "TileflowTests",
       dependencies: ["Tileflow"],
@@ -58,12 +38,9 @@ let package = Package(
     ),
     .testTarget(
       name: "TileflowServiceTests",
-      dependencies: [
-        "TileflowConfiguration", "TileflowSearch", "TileflowRouting", "TileflowElevation",
-        "TileflowGeoIP", "TileflowServiceContent",
-      ],
+      dependencies: ["TileflowServices", "TileflowFoundation"],
       path: "Tests/TileflowServiceTests",
-      resources: [.copy("Fixtures")]
+      resources: [.process("Fixtures")]
     ),
   ]
 )

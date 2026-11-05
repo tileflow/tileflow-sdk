@@ -31,6 +31,9 @@ android {
     }
     sourceSets["main"].assets.srcDirs("../../notices/common", "../../notices/android")
 
+    sourceSets["test"].java.srcDir("../tileflow-foundation/src/testShared/java")
+    sourceSets["test"].resources.srcDir("../../ios/Tests/TileflowServiceTests/Fixtures")
+
     // The offline and marine fixtures are shared with the Swift tests.
     sourceSets["test"].resources.srcDir("../../ios/Tests/TileflowTests/Fixtures/Offline")
     sourceSets["test"].resources.srcDir("../../ios/Tests/TileflowTests/Fixtures/Marine")
@@ -44,7 +47,7 @@ android {
 kotlin { jvmToolchain(17) }
 
 dependencies {
-    api(project(":tileflow-configuration"))
+    api(project(":tileflow-foundation"))
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     // MapLibre Native with OpenGL ES, pinned exactly: every upgrade is a reviewed change.
     implementation(mapLibre)

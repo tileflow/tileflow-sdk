@@ -12,10 +12,7 @@ let package = Package(
       name: "TileflowReactNativeBridge",
       dependencies: [
         .product(name: "Tileflow", package: "Tileflow"),
-        .product(name: "TileflowSearch", package: "Tileflow"),
-        .product(name: "TileflowRouting", package: "Tileflow"),
-        .product(name: "TileflowElevation", package: "Tileflow"),
-        .product(name: "TileflowGeoIP", package: "Tileflow"),
+        .product(name: "TileflowServices", package: "Tileflow"),
       ],
       path: "ios/Sources",
       swiftSettings: [.swiftLanguageMode(.v5)]
@@ -24,7 +21,7 @@ let package = Package(
       name: "TileflowReactNativeBridgeTests",
       dependencies: ["TileflowReactNativeBridge"],
       path: "ios/BridgeTests",
-      
+
       swiftSettings: [.swiftLanguageMode(.v5)]
     ),
   ]

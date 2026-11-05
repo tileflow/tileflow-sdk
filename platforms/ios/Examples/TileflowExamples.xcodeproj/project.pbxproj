@@ -8,9 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		04B279F9AD7A9F41CC10828A /* AnnotationsExample.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDC66C875F6044DD189AC5F6 /* AnnotationsExample.swift */; };
-		2B7898FF2F2E7C11AAFAB77E /* TileflowServiceContent in Frameworks */ = {isa = PBXBuildFile; productRef = 3D8ADC51B6BCA42362206C86 /* TileflowServiceContent */; };
+		2B7898FF2F2E7C11AAFAB77E /* TileflowServices in Frameworks */ = {isa = PBXBuildFile; productRef = 6C4452C4CF31EF6499E919BC /* TileflowServices */; };
 		47BA81FF43F801C507256086 /* ExampleSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0E92D1C209ECD47EF11072D /* ExampleSource.swift */; };
-		5B7E65A578753466BE119FBB /* TileflowServiceContent in Frameworks */ = {isa = PBXBuildFile; productRef = 47883B1658F540134F77151E /* TileflowServiceContent */; };
+		5B7E65A578753466BE119FBB /* TileflowServices in Frameworks */ = {isa = PBXBuildFile; productRef = CED33DBA3A2D708684C08CEB /* TileflowServices */; };
 		66A494DE3C05DDA5156D31BE /* Tileflow in Frameworks */ = {isa = PBXBuildFile; productRef = 8202C66F0697784E9CFC622E /* Tileflow */; };
 		682B83757E2F67D2BDC472FF /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 534A245A6CD0F455E58B820B /* App.swift */; };
 		6E7F65BEDB02574636821D8B /* App.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D211D65A453C900BFB07BCA /* App.swift */; };
@@ -45,7 +45,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				66A494DE3C05DDA5156D31BE /* Tileflow in Frameworks */,
-				2B7898FF2F2E7C11AAFAB77E /* TileflowServiceContent in Frameworks */,
+				2B7898FF2F2E7C11AAFAB77E /* TileflowServices in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -54,7 +54,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				E8801F7E367FC9EF127B1BA8 /* Tileflow in Frameworks */,
-				5B7E65A578753466BE119FBB /* TileflowServiceContent in Frameworks */,
+				5B7E65A578753466BE119FBB /* TileflowServices in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -135,7 +135,7 @@
 			name = SwiftUIExample;
 			packageProductDependencies = (
 				2660A6566B3ED55AB8EBAE7C /* Tileflow */,
-				47883B1658F540134F77151E /* TileflowServiceContent */,
+				CED33DBA3A2D708684C08CEB /* TileflowServices */,
 			);
 			productName = SwiftUIExample;
 			productReference = 82EA1E3E7E4C71573D04A877 /* SwiftUIExample.app */;
@@ -155,7 +155,7 @@
 			name = UIKitExample;
 			packageProductDependencies = (
 				8202C66F0697784E9CFC622E /* Tileflow */,
-				3D8ADC51B6BCA42362206C86 /* TileflowServiceContent */,
+				6C4452C4CF31EF6499E919BC /* TileflowServices */,
 			);
 			productName = UIKitExample;
 			productReference = BB6B28F907F19E9726E63270 /* UIKitExample.app */;
@@ -466,17 +466,17 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = Tileflow;
 		};
-		3D8ADC51B6BCA42362206C86 /* TileflowServiceContent */ = {
+		6C4452C4CF31EF6499E919BC /* TileflowServices */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = TileflowServiceContent;
-		};
-		47883B1658F540134F77151E /* TileflowServiceContent */ = {
-			isa = XCSwiftPackageProductDependency;
-			productName = TileflowServiceContent;
+			productName = TileflowServices;
 		};
 		8202C66F0697784E9CFC622E /* Tileflow */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = Tileflow;
+		};
+		CED33DBA3A2D708684C08CEB /* TileflowServices */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TileflowServices;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

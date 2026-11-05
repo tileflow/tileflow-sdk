@@ -1,5 +1,5 @@
 import Foundation
-import TileflowConfiguration
+import TileflowServices
 
 // Values as they cross the React Native bridge: Foundation objects from JavaScript in, Foundation
 // objects for JavaScript out. Nothing here imports React, so the conversions are tested on their

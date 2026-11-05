@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict';
-import {access, mkdir, mkdtemp, readFile, rm, writeFile} from 'node:fs/promises';
+import {access, mkdir, mkdtemp, readFile, realpath, rm, writeFile} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {dirname, join} from 'node:path';
 import test from 'node:test';
 import {mobilePackages, mobileVersions} from './mobile-smoke-contract.mjs';
-import {buildMobileAndroid, buildMobileIos} from './mobile-smoke-native.mjs';
+import {buildMobileAndroid, buildMobileIos, readNativeCandidate} from './mobile-smoke-native.mjs';
 import {packMobilePackages} from './mobile-smoke-pack.mjs';
 import {
   createMobileContext,
@@ -200,15 +200,60 @@ async function nativeCandidate(root) {
     schemaVersion: 1,
     version: '0.0.0-local.1',
     swift: {path: 'swift'},
+    android: {
+      coordinate: 'dev.tileflow:tileflow:0.0.0-local.1',
+      modules: Object.fromEntries(
+        ['tileflow', 'tileflow-services', 'tileflow-foundation'].map((name) => [
+          name,
+          `dev.tileflow:${name}:0.0.0-local.1`,
+        ]),
+      ),
+    },
   });
   await writeMobileFile(root, join(directory, 'swift', 'Package.swift'), '// Fixture.\n');
-  await writeMobileFile(
-    root,
-    join(directory, 'maven/dev/tileflow/tileflow-sdk/0.0.0-local.1/tileflow-sdk-0.0.0-local.1.pom'),
-    '<project/>\n',
-  );
+  for (const artifact of ['tileflow', 'tileflow-services', 'tileflow-foundation']) {
+    for (const suffix of ['.pom', '.aar', '.module', '-sources.jar', '-javadoc.jar'])
+      await writeMobileFile(
+        root,
+        join(
+          directory,
+          'maven/dev/tileflow',
+          artifact,
+          '0.0.0-local.1',
+          `${artifact}-0.0.0-local.1${suffix}`,
+        ),
+        'Fixture.\n',
+      );
+  }
   return directory;
 }
+
+test('native smoke requires all three complete candidate artifacts at the declared version', async (t) => {
+  const root = await realpath(await fixtureParent(t));
+  const directory = await nativeCandidate(root);
+  const context = {env: {TILEFLOW_NATIVE_CANDIDATE: directory}};
+  assert.equal((await readNativeCandidate(context)).version, '0.0.0-local.1');
+  for (const artifact of ['tileflow', 'tileflow-services', 'tileflow-foundation']) {
+    const file = join(
+      directory,
+      'maven/dev/tileflow',
+      artifact,
+      '0.0.0-local.1',
+      `${artifact}-0.0.0-local.1.aar`,
+    );
+    await rm(file);
+    await assert.rejects(readNativeCandidate(context), {code: 'PREREQUISITE_MISSING'});
+    await writeFile(file, 'Fixture.\n');
+  }
+  await writeFile(join(directory, 'INCOMPLETE'), 'Building.\n');
+  await assert.rejects(readNativeCandidate(context), {code: 'PREREQUISITE_MISSING'});
+  await rm(join(directory, 'INCOMPLETE'));
+  const file = join(directory, 'candidate.json');
+  const receipt = JSON.parse(await readFile(file, 'utf8'));
+  receipt.android.modules['tileflow-services'] = 'dev.tileflow:tileflow-services:0.0.0-old.1';
+  await writeFile(file, JSON.stringify(receipt));
+  await assert.rejects(readNativeCandidate(context), {code: 'PREREQUISITE_MISSING'});
+});
 
 for (const kind of ['expo', 'bare']) {
   test(`${kind} Android adapter checks Release APK metadata and embedded Hermes`, async (t) => {

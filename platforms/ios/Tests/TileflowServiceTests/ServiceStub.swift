@@ -1,6 +1,8 @@
 import Foundation
-import TileflowConfiguration
 import XCTest
+
+@testable import TileflowFoundation
+@testable import TileflowServices
 
 /// Serves canned answers to an ephemeral session, records every request and never touches the
 /// network.
@@ -99,7 +101,7 @@ struct ServiceContract {
 
   static let shared: ServiceContract = {
     let url = Bundle.module.url(
-      forResource: "service-contract", withExtension: "json", subdirectory: "Fixtures")!
+      forResource: "service-contract", withExtension: "json")!
     return ServiceContract(json: try! ServiceJSON.parse(Data(contentsOf: url)))
   }()
 

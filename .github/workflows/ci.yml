@@ -363,7 +363,7 @@ jobs:
         working-directory: platforms/android
         run: |
           export JAVA_HOME="$JAVA_HOME_17_X64"
-          modules="tileflow tileflow-configuration tileflow-search tileflow-routing tileflow-elevation tileflow-geoip tileflow-service-content"
+          modules="tileflow tileflow-services tileflow-foundation"
           tasks=()
           for module in $modules; do
             tasks+=(":$module:testDebugUnitTest" ":$module:lintRelease" ":$module:publishReleasePublicationToCandidateRepository")

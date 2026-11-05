@@ -151,6 +151,8 @@
     "scene": "The map's 3D scene could not be loaded; the map continues without it.",
     "invalidImage": "An application image could not be decoded, or its variants differ in size.",
     "unknownLayer": "A request names an application layer that the map does not hold.",
+    "invalidLayerPosition": "A layer position combines incompatible options or names an index outside its slot.",
+    "layerPositionConflict": "A relative layer position references a layer in a different slot.",
     "unknownSource": "A request names an application source that the map does not hold.",
     "featureUnavailable": "The map holds something this renderer does not draw; the rest of the map continues. The context's feature names the capability."
   },

@@ -116,6 +116,8 @@ enum MapContract {
     case scene
     case invalidImage
     case unknownLayer
+    case invalidLayerPosition
+    case layerPositionConflict
     case unknownSource
     case featureUnavailable
   }

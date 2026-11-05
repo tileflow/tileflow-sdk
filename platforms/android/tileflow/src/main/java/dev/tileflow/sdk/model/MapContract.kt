@@ -99,6 +99,8 @@ internal object MapContract {
         SCENE("scene"),
         INVALID_IMAGE("invalidImage"),
         UNKNOWN_LAYER("unknownLayer"),
+        INVALID_LAYER_POSITION("invalidLayerPosition"),
+        LAYER_POSITION_CONFLICT("layerPositionConflict"),
         UNKNOWN_SOURCE("unknownSource"),
         FEATURE_UNAVAILABLE("featureUnavailable"),
     }

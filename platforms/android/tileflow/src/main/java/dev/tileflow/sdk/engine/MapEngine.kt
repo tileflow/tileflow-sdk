@@ -4,8 +4,8 @@ import android.view.View
 import dev.tileflow.sdk.RuntimeStyle
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowMapException
-import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapPayloadStore
 import java.net.URI
 import org.json.JSONArray
 import org.json.JSONObject
@@ -85,7 +85,7 @@ internal interface MapEngine {
      * Payloads that requests refer to, such as GeoJSON and images. A request releases its own
      * when it ends; retiring the engine releases the rest.
      */
-    val data: DataChannel
+    val data: MapPayloadStore
 
     /** Native renderers can project all tracked points synchronously at Android draw time. */
     val annotationProjection: AnnotationProjection?
@@ -101,7 +101,7 @@ internal interface MapEngine {
     suspend fun call(
         method: ProtocolContract.Method,
         payload: Any = JSONObject.NULL,
-        references: List<DataChannel.Reference> = emptyList(),
+        references: List<MapPayloadStore.Reference> = emptyList(),
     ): Any
 
     /** Whether the map is on screen; a hidden engine stops drawing. */

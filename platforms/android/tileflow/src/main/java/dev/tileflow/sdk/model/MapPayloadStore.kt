@@ -1,23 +1,18 @@
-package dev.tileflow.sdk.bridge
+package dev.tileflow.sdk.model
 
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
-import java.security.MessageDigest
+import dev.tileflow.sdk.bridge.ProtocolContract
 import java.security.SecureRandom
 import java.util.Base64
 import org.json.JSONObject
 
 /**
- * Payloads too large for protocol messages, such as GeoJSON, served to one renderer generation
- * through the native transport at `https://tileflow.invalid/data/<id>`.
- *
- * A request registers its payloads before it is sent and releases them when it settles, so data
- * lives only while the renderer may read it. Identifiers are random and single-generation; equal
- * payloads in flight share one entry. Retiring the generation releases everything. The bridge
- * registers on the UI thread while WebView reads on its own threads, so access is synchronized.
+ * Payloads held by one map generation while its commands run. Equal digests share one entry;
+ * references are random and stay valid until their last request releases them or the map retires.
  */
-internal class DataChannel {
+internal class MapPayloadStore {
     data class Reference(val id: String, val byteLength: Int, val sha256: String) {
         fun json(): JSONObject =
             JSONObject().put("id", id).put("byteLength", byteLength).put("sha256", sha256)
@@ -71,8 +66,7 @@ internal class DataChannel {
     }
 
     /** The payload the transport serves, or null once released. */
-    @Synchronized
-    fun payload(id: String): Payload? = if (retired) null else entries[id]?.payload
+    @Synchronized fun payload(id: String): Payload? = if (retired) null else entries[id]?.payload
 
     val isEmpty: Boolean
         @Synchronized get() = entries.isEmpty()
@@ -86,12 +80,6 @@ internal class DataChannel {
     }
 
     companion object {
-        /** The SHA-256 digest the renderer verifies, in lowercase hexadecimal. */
-        fun digest(bytes: ByteArray): String =
-            MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") {
-                "%02x".format(it)
-            }
-
         private fun tooLarge(limit: Int) =
             TileflowMapException(
                 TileflowErrorCode.INVALID_REQUEST,

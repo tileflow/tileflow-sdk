@@ -13,9 +13,9 @@ import androidx.webkit.WebViewFeature
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.WebViewRequirement
-import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.MapBridge
 import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapPayloadStore
 import dev.tileflow.sdk.transport.EmbeddedRuntime
 import dev.tileflow.sdk.transport.ResourceAddress
 import dev.tileflow.sdk.transport.ResourceClient
@@ -46,7 +46,7 @@ internal class WebViewMapEngine(
     override val view: WebView
         get() = webView
 
-    override val data: DataChannel
+    override val data: MapPayloadStore
         get() = bridge.data
 
     init {
@@ -68,7 +68,7 @@ internal class WebViewMapEngine(
                 generation,
                 receipt.runtimeHash,
                 webView,
-                DataChannel(),
+                MapPayloadStore(),
                 onHello = { callbacks.ready(this) },
                 onEvent = callbacks.event,
                 onFailure = callbacks.failed,
@@ -132,7 +132,7 @@ internal class WebViewMapEngine(
     override suspend fun call(
         method: ProtocolContract.Method,
         payload: Any,
-        references: List<DataChannel.Reference>,
+        references: List<MapPayloadStore.Reference>,
     ): Any = bridge.call(method, payload, references)
 
     override fun setVisible(visible: Boolean) {

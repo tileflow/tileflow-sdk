@@ -18,7 +18,7 @@ import androidx.work.workDataOf
 import dev.tileflow.configuration.Tileflow
 import dev.tileflow.sdk.TileflowMapCache
 import dev.tileflow.sdk.transport.ResourceCacheStore
-import dev.tileflow.sdk.transport.sha256Hex
+import dev.tileflow.sdk.transport.ResourceDigest
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -335,7 +335,7 @@ internal class OfflineWorkRunner(private val context: Context) : OfflineRunner {
     }
 
     companion object {
-        fun name(id: String) = "dev.tileflow.offline." + sha256Hex(id.toByteArray()).take(32)
+        fun name(id: String) = "dev.tileflow.offline." + ResourceDigest.sha256(id.toByteArray()).take(32)
     }
 }
 

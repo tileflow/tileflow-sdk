@@ -1,7 +1,7 @@
 package dev.tileflow.sdk.offline
 
 import dev.tileflow.sdk.TileflowErrorContext
-import dev.tileflow.sdk.transport.sha256Hex
+import dev.tileflow.sdk.transport.ResourceDigest
 import java.util.Base64
 import org.json.JSONArray
 
@@ -61,7 +61,7 @@ internal data class OfflineCover(
 
     /** The SHA-256 of [text] in lowercase hexadecimal, as the manifest and grant carry it. */
     val sha256: String
-        get() = sha256Hex(text.toByteArray(Charsets.UTF_8))
+        get() = ResourceDigest.sha256(text.toByteArray(Charsets.UTF_8))
 
     /** The entry for [anchor], if the cover lists one. */
     fun entry(anchor: OfflineTileId): Entry? {

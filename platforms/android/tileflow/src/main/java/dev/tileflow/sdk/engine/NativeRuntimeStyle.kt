@@ -7,8 +7,8 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import dev.tileflow.sdk.TileflowLayerSlot
 import dev.tileflow.sdk.TileflowResourceKind
-import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.ProtocolContract.Method
+import dev.tileflow.sdk.model.MapPayloadStore
 import java.net.URI
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
@@ -53,7 +53,7 @@ internal class NativeRuntimeStyle(
     fun classify(url: URI): TileflowResourceKind? =
         projections.firstNotNullOfOrNull { it.classify(url).takeUnless { kind -> kind == TileflowResourceKind.OTHER } }
 
-    suspend fun call(method: Method, request: JSONObject, channel: DataChannel, map: MapLibreMap, view: MapView, density: Float): Any =
+    suspend fun call(method: Method, request: JSONObject, channel: MapPayloadStore, map: MapLibreMap, view: MapView, density: Float): Any =
         mutations.withLock {
             // The map may have retired while a previous source was loading.
             currentStyle()
@@ -81,7 +81,7 @@ internal class NativeRuntimeStyle(
             JSONObject.NULL
         }
 
-    private suspend fun addSource(request: JSONObject, channel: DataChannel) {
+    private suspend fun addSource(request: JSONObject, channel: MapPayloadStore) {
         val name = request.getString("id")
         if (name in sources) styleInvalid(name)
         val spec = JSONObject(request.getJSONObject("source").toString())
@@ -113,7 +113,7 @@ internal class NativeRuntimeStyle(
         sources[name] = source
     }
 
-    private suspend fun geometry(ref: JSONObject, channel: DataChannel, spec: JSONObject): String {
+    private suspend fun geometry(ref: JSONObject, channel: MapPayloadStore, spec: JSONObject): String {
         val raw = NativeStyleSource.data(ref, channel) ?: readData(ref.getString("url"))
         return withContext(Dispatchers.Default) { NativeStyleSource.edit(raw, spec, null, emptySet(), normalize = true) }
     }
@@ -127,13 +127,13 @@ internal class NativeRuntimeStyle(
         projections = sources.values.mapNotNull { it.projection }
     }
 
-    private suspend fun replaceData(request: JSONObject, channel: DataChannel) {
+    private suspend fun replaceData(request: JSONObject, channel: MapPayloadStore) {
         val source = geoSource(request)
         val data = geometry(request.getJSONObject("data"), channel, source.spec)
         setData(source, data)
     }
 
-    private suspend fun editData(request: JSONObject, channel: DataChannel) {
+    private suspend fun editData(request: JSONObject, channel: MapPayloadStore) {
         val source = geoSource(request)
         val original = source.geoJSON ?: styleInvalid("Missing GeoJSON")
         val updates = request.optJSONObject("add")?.let {
@@ -288,7 +288,7 @@ internal class NativeRuntimeStyle(
         }
     }
 
-    private suspend fun setImages(list: JSONArray, channel: DataChannel) {
+    private suspend fun setImages(list: JSONArray, channel: MapPayloadStore) {
         val next = linkedMapOf<String, Image>()
         for (item in list.objects()) {
             val name = item.getString("name")

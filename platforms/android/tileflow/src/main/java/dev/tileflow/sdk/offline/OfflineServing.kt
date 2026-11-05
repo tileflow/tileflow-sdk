@@ -8,8 +8,8 @@ import dev.tileflow.sdk.transport.ResourceCacheMetadata
 import dev.tileflow.sdk.transport.ResourceCacheRetention
 import dev.tileflow.sdk.transport.ResourceCacheScope
 import dev.tileflow.sdk.transport.ResourceCacheStore
+import dev.tileflow.sdk.transport.ResourceDigest
 import dev.tileflow.sdk.transport.StoredResource
-import dev.tileflow.sdk.transport.sha256Hex
 import dev.tileflow.sdk.transport.TileflowHttpClient
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -380,7 +380,7 @@ internal class OfflineServingIndex {
                         System.currentTimeMillis(),
                         true,
                         0,
-                        sha256Hex(ByteArray(0)),
+                        ResourceDigest.sha256(ByteArray(0)),
                     ),
                     ByteArray(0),
                 )
@@ -416,13 +416,13 @@ internal class OfflineServingIndex {
                 200,
                 mapOf(
                     "Content-Type" to entry.contentType,
-                    "ETag" to "\"${sha256Hex(raw)}\"",
+                    "ETag" to "\"${ResourceDigest.sha256(raw)}\"",
                     "Cache-Control" to "private, no-cache",
                 ),
                 System.currentTimeMillis(),
                 true,
                 body.size,
-                sha256Hex(body),
+                ResourceDigest.sha256(body),
             ),
             body,
         )

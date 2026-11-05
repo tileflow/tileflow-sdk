@@ -3,7 +3,7 @@ package dev.tileflow.sdk.engine
 import com.google.gson.JsonNull
 import com.google.gson.JsonObject
 import dev.tileflow.sdk.TileflowCoordinate
-import dev.tileflow.sdk.bridge.DataChannel
+import dev.tileflow.sdk.model.MapPayloadStore
 import kotlin.math.round
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -149,7 +149,7 @@ internal class NativeSceneAppearance(
             )
     }
 
-    suspend fun setBoundaries(request: JSONObject, channel: DataChannel) {
+    suspend fun setBoundaries(request: JSONObject, channel: MapPayloadStore) {
         val revision = ++boundaryRevision
         val values = request.optJSONObject("values")
         val next =

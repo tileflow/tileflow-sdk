@@ -13,9 +13,9 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.webkit.WebViewCompat
 import dev.tileflow.sdk.TileflowGeoJSONLayerKind.CIRCLE
-import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.MapBridge
 import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapPayloadStore
 import dev.tileflow.sdk.transport.ResourceAddress
 import dev.tileflow.sdk.transport.ResourceClient
 import dev.tileflow.sdk.transport.ResourceLoader
@@ -133,7 +133,7 @@ public class BridgeIntegrationTest {
     ): Stub {
         val view = WebView(activity)
         view.settings.javaScriptEnabled = true
-        val data = DataChannel()
+        val data = MapPayloadStore()
         val resources =
             ResourceClient(
                 activity.assets,

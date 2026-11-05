@@ -10,10 +10,10 @@ import dev.tileflow.sdk.transport.ResourceCacheMetadata
 import dev.tileflow.sdk.transport.ResourceCacheRetention
 import dev.tileflow.sdk.transport.ResourceCacheScope
 import dev.tileflow.sdk.transport.ResourceCacheStore
+import dev.tileflow.sdk.transport.ResourceDigest
 import dev.tileflow.sdk.transport.ResourceLoader
 import dev.tileflow.sdk.transport.ResourcePayload
 import dev.tileflow.sdk.transport.ResourcePolicy
-import dev.tileflow.sdk.transport.sha256Hex
 import java.io.File
 import java.io.IOException
 import java.net.URI
@@ -82,7 +82,7 @@ class OfflineServingTest {
         val request = resources.requests.single()
         assertNotNull(request.header("X-Tileflow-Native-Grant"))
         // The tag names the body as the route serves it, compressed.
-        assertEquals("\"${sha256Hex(tileGzip)}\"", request.header("If-None-Match"))
+        assertEquals("\"${ResourceDigest.sha256(tileGzip)}\"", request.header("If-None-Match"))
     }
 
     @Test
@@ -180,14 +180,14 @@ class OfflineServingTest {
                 url,
                 200,
                 mapOf(
-                    "ETag" to "\"${sha256Hex(body)}\"",
+                    "ETag" to "\"${ResourceDigest.sha256(body)}\"",
                     "Cache-Control" to "private, no-cache",
                     "Content-Type" to "application/octet-stream",
                 ),
                 System.currentTimeMillis(),
                 scope != ResourceCacheScope.Shared,
                 body.size,
-                sha256Hex(body),
+                ResourceDigest.sha256(body),
             )
         assertTrue(
             cache.write(ResourceCacheKey(url, scope), ResourceCacheRetention.PINNED, metadata, body)

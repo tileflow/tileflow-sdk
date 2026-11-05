@@ -13,9 +13,6 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import org.json.JSONObject
 
-internal fun sha256Hex(bytes: ByteArray): String =
-    MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-
 /** Classifies a resource by its URL alone, so a lookup always finds what a store placed. */
 internal fun TileflowResourceClass.Companion.classify(url: URI): TileflowResourceClass {
     val path = (url.rawPath ?: "").lowercase()
@@ -67,7 +64,7 @@ internal sealed class ResourceCacheScope {
     companion object {
         fun grant(apiOrigin: URI, mapId: String): ResourceCacheScope =
             Grant(
-                sha256Hex("${ResourcePolicy.origin(apiOrigin)}\n$mapId".toByteArray()).take(32)
+                ResourceDigest.sha256("${ResourcePolicy.origin(apiOrigin)}\n$mapId".toByteArray()).take(32)
             )
     }
 }
@@ -95,7 +92,7 @@ internal data class ResourceCacheKey(val url: URI, val scope: ResourceCacheScope
     val resourceClass = TileflowResourceClass.classify(url)
 
     /** SHA-256 of the ASCII URL, in lowercase hexadecimal. */
-    val digest = sha256Hex(url.toASCIIString().toByteArray())
+    val digest = ResourceDigest.sha256(url.toASCIIString().toByteArray())
 
     /** `<scope>/<class>/<first two digest characters>/<digest>`. */
     val relativePath = "${scope.directory}/${resourceClass.directory}/${digest.take(2)}/$digest"
@@ -226,7 +223,7 @@ internal object ResourceCacheEntryFormat {
         if (metadata.url != expecting.toASCIIString() || metadata.bodyLength != bodyLength)
             throw ResourceCacheCorruptedException()
         val body = data.copyOfRange(0, bodyLength)
-        if (sha256Hex(body) != metadata.bodySha256) throw ResourceCacheCorruptedException()
+        if (ResourceDigest.sha256(body) != metadata.bodySha256) throw ResourceCacheCorruptedException()
         return StoredResource(metadata, body)
     }
 }

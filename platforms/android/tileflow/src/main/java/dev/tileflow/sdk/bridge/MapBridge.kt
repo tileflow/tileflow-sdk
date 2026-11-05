@@ -4,6 +4,8 @@ import android.webkit.WebView
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
+import dev.tileflow.sdk.model.MapPayloadStore
+import dev.tileflow.sdk.transport.ResourceDigest
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -24,7 +26,7 @@ internal class MapBridge(
     private val runtimeHash: String,
     private val webView: WebView,
     /** Payloads this generation's requests carry; the transport serves them to the renderer. */
-    val data: DataChannel = DataChannel(),
+    val data: MapPayloadStore = MapPayloadStore(),
     private val onHello: (MapBridge) -> Unit,
     private val onEvent: (String, JSONObject) -> Unit,
     /** The handshake failed: the renderer is not usable in this generation. */
@@ -135,7 +137,7 @@ internal class MapBridge(
     suspend fun call(
         method: ProtocolContract.Method,
         payload: Any = JSONObject.NULL,
-        references: List<DataChannel.Reference> = emptyList(),
+        references: List<MapPayloadStore.Reference> = emptyList(),
     ): Any {
         try {
             val (id, reply) = send(method, payload)
@@ -168,7 +170,7 @@ internal class MapBridge(
         if (pending.size >= ProtocolContract.MAXIMUM_PENDING_REQUESTS)
             throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
         val id = (++sequence).toString()
-        var carried = emptyList<DataChannel.Reference>()
+        var carried = emptyList<MapPayloadStore.Reference>()
         try {
             val message =
                 message(negotiated, id, command(method).put("payload", payload))
@@ -176,7 +178,7 @@ internal class MapBridge(
                         // The payload's JSON goes on the data channel; the renderer reads it first.
                         val bytes = payload.toString().toByteArray(Charsets.UTF_8)
                         val reference =
-                            data.register(bytes, DataChannel.digest(bytes), "application/json")
+                            data.register(bytes, ResourceDigest.sha256(bytes), "application/json")
                         carried = listOf(reference)
                         message(negotiated, id, command(method).put("payloadData", reference.json()))
                             ?: throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)

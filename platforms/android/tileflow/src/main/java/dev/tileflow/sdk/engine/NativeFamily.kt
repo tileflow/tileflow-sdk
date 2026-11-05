@@ -1,6 +1,6 @@
 package dev.tileflow.sdk.engine
 
-import dev.tileflow.sdk.bridge.DataChannel
+import dev.tileflow.sdk.transport.ResourceDigest
 import dev.tileflow.sdk.transport.ResourceLoader
 import java.net.URI
 import kotlinx.coroutines.Dispatchers
@@ -59,7 +59,7 @@ internal class NativeFamily private constructor(val document: JSONObject) {
                         ?.takeIf { it.status == 200 }
                         ?.bytes
                 } ?: return null
-            if (manifest.family?.second?.let { DataChannel.digest(bytes) != it } == true) {
+            if (manifest.family?.second?.let { ResourceDigest.sha256(bytes) != it } == true) {
                 mismatch(url)
                 return null
             }

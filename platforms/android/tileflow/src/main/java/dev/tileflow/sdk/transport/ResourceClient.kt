@@ -7,7 +7,7 @@ import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import dev.tileflow.sdk.TileflowMapException
-import dev.tileflow.sdk.bridge.DataChannel
+import dev.tileflow.sdk.model.MapPayloadStore
 import java.io.ByteArrayInputStream
 import java.net.URI
 
@@ -17,7 +17,7 @@ internal class ResourceClient(
     private val onExternalLink: (URI) -> Unit,
     private val onFailure: (TileflowMapException) -> Unit,
     /** The generation's data channel, served at `/data/<id>`. */
-    private val data: DataChannel? = null,
+    private val data: MapPayloadStore? = null,
     private val onProcessGone: () -> Unit,
 ) : WebViewClient() {
     override fun shouldInterceptRequest(

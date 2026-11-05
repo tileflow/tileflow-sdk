@@ -15,8 +15,8 @@ import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.TileflowResourceKind
 import dev.tileflow.sdk.attribution.MapAttributionControl
-import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapPayloadStore
 import dev.tileflow.sdk.offline.OfflineReachability
 import dev.tileflow.sdk.offline.OfflineServingIndex
 import dev.tileflow.sdk.offline.OfflineServingRule
@@ -184,7 +184,7 @@ internal class NativeMapEngine(
     override val view: FrameLayout
         get() = container
 
-    override val data: DataChannel = DataChannel()
+    override val data: MapPayloadStore = MapPayloadStore()
 
     init {
         MapLibre.getInstance(application)
@@ -294,7 +294,7 @@ internal class NativeMapEngine(
     override suspend fun call(
         method: ProtocolContract.Method,
         payload: Any,
-        references: List<DataChannel.Reference>,
+        references: List<MapPayloadStore.Reference>,
     ): Any {
         try {
             if (retired) throw TileflowMapException(retiredCode)

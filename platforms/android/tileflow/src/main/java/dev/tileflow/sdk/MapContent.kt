@@ -1,7 +1,8 @@
 package dev.tileflow.sdk
 
-import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapPayloadStore
+import dev.tileflow.sdk.transport.ResourceDigest
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -119,7 +120,7 @@ private constructor(
     }
 
     /** Identifies the data, so layers that share it, or keep it across updates, send it once. */
-    internal val digest: String = knownDigest ?: DataChannel.digest(bytes)
+    internal val digest: String = knownDigest ?: ResourceDigest.sha256(bytes)
 
     /** The same layer drawing another stretch of its line, sharing its data. */
     internal fun withProgress(next: TileflowLineProgress?): TileflowGeoJSONLayer =
@@ -137,7 +138,7 @@ private constructor(
             next,
         )
 
-    internal fun json(data: DataChannel.Reference): JSONObject =
+    internal fun json(data: MapPayloadStore.Reference): JSONObject =
         JSONObject()
             .put("id", id)
             .put("data", data.json())
@@ -188,10 +189,10 @@ internal data class MapContent(
      * The command payload, with each distinct layer's GeoJSON registered on the data channel. The
      * caller releases the references when the request settles.
      */
-    fun json(channel: DataChannel): Pair<JSONObject, List<DataChannel.Reference>> {
+    fun json(channel: MapPayloadStore): Pair<JSONObject, List<MapPayloadStore.Reference>> {
         validate()
         val annotations = JSONArray(annotations.map { it.json() })
-        val references = mutableListOf<DataChannel.Reference>()
+        val references = mutableListOf<MapPayloadStore.Reference>()
         try {
             val overlays =
                 JSONArray(

@@ -7,8 +7,8 @@ import dev.tileflow.sdk.transport.ResourceCacheMetadata
 import dev.tileflow.sdk.transport.ResourceCacheRetention
 import dev.tileflow.sdk.transport.ResourceCacheScope
 import dev.tileflow.sdk.transport.ResourceCacheStore
+import dev.tileflow.sdk.transport.ResourceDigest
 import dev.tileflow.sdk.transport.ResourcePolicy
-import dev.tileflow.sdk.transport.sha256Hex
 import java.io.File
 import java.io.IOException
 import java.net.URI
@@ -50,7 +50,7 @@ internal class OfflinePlannedPack(
      * Names the pack in the version's progress log: a corridor's downloads may list one pack id
      * with different covers.
      */
-    val key: String = sha256Hex("$download\n${pack.id}".toByteArray())
+    val key: String = ResourceDigest.sha256("$download\n${pack.id}".toByteArray())
 }
 
 /** A version's packs, resources and the authority to download them. */
@@ -486,7 +486,7 @@ internal class OfflineDownloader(
         return when {
             response.status == 200 -> {
                 if (!verify(response, resource)) return Result.Mismatch
-                val digest = offlineDigest(response.body)
+                val digest = ResourceDigest.sha256(response.body)
                 val bytes = resource.bytes ?: response.body.size.toLong()
                 val received = OfflineStoredEntry(bytes, transferred = true)
                 if (stored?.metadata?.bodySha256 == digest) return Result.Stored(received)
@@ -650,7 +650,7 @@ internal class OfflineDownloader(
             val expected = resource.sha256 ?: tag
             if (
                 response.body.size.toLong() == bytes &&
-                    (expected == null || expected == offlineDigest(response.body))
+                    (expected == null || expected == ResourceDigest.sha256(response.body))
             )
                 return true
             val encoding = response.headers["Content-Encoding"]?.lowercase()

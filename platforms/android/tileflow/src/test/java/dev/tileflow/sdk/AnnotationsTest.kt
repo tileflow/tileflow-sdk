@@ -6,8 +6,8 @@ import android.os.Looper
 import android.view.View
 import android.view.ViewGroup
 import android.view.accessibility.AccessibilityNodeInfo
-import dev.tileflow.sdk.bridge.EventSubscriptions
 import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.EventSubscriptions
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals

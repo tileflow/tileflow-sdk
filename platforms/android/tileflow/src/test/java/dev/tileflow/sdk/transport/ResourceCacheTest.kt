@@ -418,7 +418,7 @@ class ResourceCacheTest {
         headers: Map<String, String> = mapOf("Cache-Control" to "max-age=60"),
     ): Boolean {
         val body = ByteArray(count) { (it % 251).toByte() }
-        return cache.write(key, retention, metadata(key.url, body.size, sha256Hex(body), headers), body)
+        return cache.write(key, retention, metadata(key.url, body.size, ResourceDigest.sha256(body), headers), body)
     }
 }
 

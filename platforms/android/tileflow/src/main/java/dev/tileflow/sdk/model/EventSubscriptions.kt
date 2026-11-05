@@ -1,6 +1,7 @@
-package dev.tileflow.sdk.bridge
+package dev.tileflow.sdk.model
 
 import dev.tileflow.sdk.TileflowEventOptions
+import dev.tileflow.sdk.bridge.ProtocolContract
 import org.json.JSONObject
 
 /**

@@ -6,7 +6,7 @@ import dev.tileflow.sdk.transport.ResourceCacheKey
 import dev.tileflow.sdk.transport.ResourceCacheRetention
 import dev.tileflow.sdk.transport.ResourceCacheScope
 import dev.tileflow.sdk.transport.ResourceCacheStore
-import dev.tileflow.sdk.transport.sha256Hex
+import dev.tileflow.sdk.transport.ResourceDigest
 import java.io.File
 import java.net.URI
 import java.util.UUID
@@ -1392,7 +1392,7 @@ internal class OfflineStoreCore(
             try {
                 fetcher.fetch(
                     OfflineFetchRequest(
-                        "plan/" + sha256Hex(url.toASCIIString().toByteArray()),
+                        "plan/" + ResourceDigest.sha256(url.toASCIIString().toByteArray()),
                         url,
                         emptyMap(),
                     )
@@ -1500,7 +1500,7 @@ internal class OfflineStoreCore(
 
     private fun unit(planned: OfflinePlannedPack, plan: OfflineVersionPlan): String {
         val manifest = plan.downloads[planned.download].manifest
-        val request = sha256Hex(plan.requests[planned.download].body)
+        val request = ResourceDigest.sha256(plan.requests[planned.download].body)
         val release = planned.release ?: "d${manifest.deploymentVersion}"
         return "$request\n${planned.pack.url.toASCIIString()}\n$release"
     }
@@ -1601,7 +1601,7 @@ internal class OfflineStoreCore(
     private fun planKey(id: String, number: Int) = "$id\n$number"
 
     private fun transferPrefix(id: String, number: Int) =
-        "${sha256Hex(id.toByteArray()).take(16)}/$number/"
+        "${ResourceDigest.sha256(id.toByteArray()).take(16)}/$number/"
 
     private fun snapshot(record: OfflineRegionRecord): TileflowOfflineRegion? {
         if (record.removing) return null

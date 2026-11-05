@@ -8,7 +8,7 @@ import dev.tileflow.sdk.RuntimeStyle
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
-import dev.tileflow.sdk.bridge.DataChannel
+import dev.tileflow.sdk.model.MapPayloadStore
 import dev.tileflow.sdk.transport.MapResourceAddress
 import java.io.StringReader
 import java.net.URI
@@ -187,7 +187,7 @@ internal class NativeStyleSource(
                 uri.rawAuthority != null && uri.userInfo != null) styleInvalid("Invalid resource URL")
         }
 
-        fun data(reference: JSONObject, channel: DataChannel): String? = when {
+        fun data(reference: JSONObject, channel: MapPayloadStore): String? = when {
             reference.opt("empty") == true -> EMPTY
             reference.has("url") -> null
             else -> channel.payload(reference.optString("id"))?.bytes?.toString(Charsets.UTF_8) ?: styleInvalid("Unknown data")

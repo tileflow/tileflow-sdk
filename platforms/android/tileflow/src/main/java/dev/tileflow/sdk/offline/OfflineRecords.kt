@@ -3,7 +3,7 @@ package dev.tileflow.sdk.offline
 import dev.tileflow.configuration.TileflowBoundingBox
 import dev.tileflow.configuration.TileflowPosition
 import dev.tileflow.sdk.TileflowErrorContext
-import dev.tileflow.sdk.transport.sha256Hex
+import dev.tileflow.sdk.transport.ResourceDigest
 import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
@@ -37,7 +37,7 @@ internal class OfflineLayout(val root: File) {
     val settings = File(root, "settings.json")
     val packs = OfflinePackStore(File(root, "packs"))
 
-    fun region(id: String) = File(regions, sha256Hex(id.toByteArray()))
+    fun region(id: String) = File(regions, ResourceDigest.sha256(id.toByteArray()))
 
     fun record(id: String) = File(region(id), "region.json")
 

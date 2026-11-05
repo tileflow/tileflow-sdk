@@ -3,10 +3,10 @@ package dev.tileflow.sdk
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.Color
-import dev.tileflow.sdk.bridge.DataChannel
-import dev.tileflow.sdk.bridge.EventSubscriptions
 import dev.tileflow.sdk.bridge.ProtocolContract
 import dev.tileflow.sdk.engine.MapEngine
+import dev.tileflow.sdk.model.EventSubscriptions
+import dev.tileflow.sdk.model.MapPayloadStore
 import java.time.Instant
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineStart
@@ -63,7 +63,7 @@ class SceneTest {
                 occludedOpacity = 0.35,
                 progress = TileflowLineProgress(end = 0.25, highlight = "#ffffff"),
             )
-        val json = route.json(DataChannel.Reference("data", 1, "digest"))
+        val json = route.json(MapPayloadStore.Reference("data", 1, "digest"))
         assertEquals("line", json.getString("ink"))
         assertEquals("ground", json.getString("placement"))
         assertEquals(0.35, json.getDouble("occludedOpacity"), 0.0)
@@ -261,7 +261,7 @@ class SceneTest {
             state.replay.map { it.command.method },
         )
         assertEquals(listOf("night", "traffic"), state.replay.mapNotNull { it.stateName })
-        val channel = DataChannel()
+        val channel = MapPayloadStore()
         val sun = state.replay.single { it.command.method == ProtocolContract.Method.SET_SUN }.command
         assertEquals(0, sun.build(channel, true).first.getInt("duration"))
         assertEquals(450, sun.build(channel, false).first.getInt("duration"))
@@ -316,7 +316,7 @@ class SceneTest {
     ) : MapEngine {
         val replies = Channel<CompletableDeferred<Any>>(Channel.UNLIMITED)
         override val view = android.view.View(activity)
-        override val data = DataChannel()
+        override val data = MapPayloadStore()
         override fun start() {}
         override fun setVisible(visible: Boolean) {}
         override fun retire(code: TileflowErrorCode) {}
@@ -324,7 +324,7 @@ class SceneTest {
         override suspend fun call(
             method: ProtocolContract.Method,
             payload: Any,
-            references: List<DataChannel.Reference>,
+            references: List<MapPayloadStore.Reference>,
         ): Any {
             try {
                 respond?.let { return it(method, payload) }

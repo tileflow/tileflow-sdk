@@ -3,7 +3,6 @@ package dev.tileflow.sdk.offline
 import dev.tileflow.sdk.transport.NetworkUnavailableException
 import dev.tileflow.sdk.transport.ResourceCacheStore
 import dev.tileflow.sdk.transport.TileflowHttpClient
-import dev.tileflow.sdk.transport.sha256Hex
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
@@ -231,4 +230,3 @@ internal class OfflineHttpFetcher(
 internal class OfflineTooLargeException : IOException("The resource is too large to store.")
 
 /** SHA-256 in lowercase hexadecimal. */
-internal fun offlineDigest(bytes: ByteArray): String = sha256Hex(bytes)

@@ -1,8 +1,9 @@
 package dev.tileflow.sdk
 
-import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.ProtocolContract
 import dev.tileflow.sdk.engine.MapEngine
+import dev.tileflow.sdk.model.MapPayloadStore
+import dev.tileflow.sdk.transport.ResourceDigest
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlinx.coroutines.CancellableContinuation
@@ -20,7 +21,7 @@ import org.json.JSONObject
  */
 internal class SceneCommand(
     val method: ProtocolContract.Method,
-    val build: (DataChannel, replaying: Boolean) -> Pair<JSONObject, List<DataChannel.Reference>>,
+    val build: (MapPayloadStore, replaying: Boolean) -> Pair<JSONObject, List<MapPayloadStore.Reference>>,
 ) {
     constructor(
         method: ProtocolContract.Method,
@@ -282,7 +283,7 @@ public suspend fun TileflowMapView.setEmphasis(
             (keep != null && (keep.isEmpty() || keep.size > ProtocolContract.MAXIMUM_DATA_BYTES))
     )
         invalid()
-    val digest = keep?.let(DataChannel::digest)
+    val digest = keep?.let(ResourceDigest::sha256)
     val fixed = JSONObject()
     if (emphasis.recede.isNotEmpty())
         fixed.put(
@@ -295,7 +296,7 @@ public suspend fun TileflowMapView.setEmphasis(
     sendScene(
         SceneCommand(ProtocolContract.Method.SET_EMPHASIS) { channel, replaying ->
             val value = JSONObject(fixed.toString())
-            val references = mutableListOf<DataChannel.Reference>()
+            val references = mutableListOf<MapPayloadStore.Reference>()
             if (keep != null && digest != null) {
                 val reference = channel.register(keep, digest, "application/geo+json")
                 references += reference
@@ -361,7 +362,7 @@ public suspend fun TileflowMapView.setBoundaryValues(values: TileflowBoundaryVal
                 ProtocolContract.MAXIMUM_DATA_BYTES,
             ),
         )
-    val digest = DataChannel.digest(rows)
+    val digest = ResourceDigest.sha256(rows)
     sendScene(
         SceneCommand(ProtocolContract.Method.SET_BOUNDARY_VALUES) { channel, _ ->
             val reference = channel.register(rows, digest, "application/json")
@@ -377,7 +378,7 @@ public suspend fun TileflowMapView.setBoundaryValues(values: TileflowBoundaryVal
 public suspend fun TileflowMapView.setImages(images: List<TileflowMapImage>) {
     if (images.size > 64 || images.map { it.name }.toSet().size != images.size) invalid()
     val payloads = images.flatMap { listOf(it.data) + it.variants.values }
-    val distinct = payloads.associateBy(DataChannel::digest)
+    val distinct = payloads.associateBy(ResourceDigest::sha256)
     if (
         distinct.values.sumOf { it.size.toLong() } > ProtocolContract.MAXIMUM_DATA_TOTAL_BYTES ||
             distinct.size > ProtocolContract.MAXIMUM_DATA_REFERENCES
@@ -392,11 +393,11 @@ public suspend fun TileflowMapView.setImages(images: List<TileflowMapImage>) {
     val kept = images.toList()
     sendScene(
         SceneCommand(ProtocolContract.Method.SET_IMAGES) { channel, _ ->
-            val references = mutableListOf<DataChannel.Reference>()
+            val references = mutableListOf<MapPayloadStore.Reference>()
             try {
                 fun register(bytes: ByteArray): JSONObject =
                     channel
-                        .register(bytes, DataChannel.digest(bytes), "application/octet-stream")
+                        .register(bytes, ResourceDigest.sha256(bytes), "application/octet-stream")
                         .also { references += it }
                         .json()
                 val value =

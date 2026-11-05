@@ -1,8 +1,9 @@
 package dev.tileflow.sdk
 
-import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.ProtocolContract
 import dev.tileflow.sdk.location.TileflowLocationOptions
+import dev.tileflow.sdk.model.MapPayloadStore
+import dev.tileflow.sdk.transport.ResourceDigest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -71,7 +72,7 @@ class MapContentTest {
     @Test
     fun layersCheckTheirParametersAndLeaveGeoJSONToTheRenderer() {
         val layer = TileflowGeoJSONLayer("content", text, TileflowGeoJSONLayerKind.FILL)
-        assertEquals(DataChannel.digest(text.toByteArray()), layer.digest)
+        assertEquals(ResourceDigest.sha256(text.toByteArray()), layer.digest)
         for (invalid in
             listOf(
                 { TileflowGeoJSONLayer("../style", text, TileflowGeoJSONLayerKind.FILL) },
@@ -93,7 +94,7 @@ class MapContentTest {
 
     @Test
     fun layersSharingDataRegisterItOnce() {
-        val channel = DataChannel()
+        val channel = MapPayloadStore()
         val content =
             MapContent(
                 overlays =
@@ -110,7 +111,7 @@ class MapContentTest {
             overlays.getJSONObject(0).getJSONObject("data").getString("id"),
         )
         assertEquals(
-            DataChannel.digest(text.toByteArray()),
+            ResourceDigest.sha256(text.toByteArray()),
             overlays.getJSONObject(1).getJSONObject("data").getString("sha256"),
         )
         channel.release(references)

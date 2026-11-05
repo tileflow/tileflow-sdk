@@ -16,8 +16,8 @@ import dev.tileflow.sdk.transport.ResourceCacheMetadata
 import dev.tileflow.sdk.transport.ResourceCacheRetention
 import dev.tileflow.sdk.transport.ResourceCacheScope
 import dev.tileflow.sdk.transport.ResourceCacheStore
+import dev.tileflow.sdk.transport.ResourceDigest
 import dev.tileflow.sdk.transport.ResourcePayload
-import dev.tileflow.sdk.transport.sha256Hex
 import java.io.File
 import java.io.IOException
 import java.net.URI
@@ -211,7 +211,7 @@ class OfflineStoreTest {
                     System.currentTimeMillis(),
                     false,
                     body.size,
-                    sha256Hex(body),
+                    ResourceDigest.sha256(body),
                 ),
                 body,
             )
@@ -1268,7 +1268,7 @@ class OfflineStoreTest {
     @Test
     fun verificationAcceptsTheWireOrTheDecodedBody() {
         val body = "tile".toByteArray()
-        val digest = sha256Hex(body)
+        val digest = ResourceDigest.sha256(body)
         val resource =
             OfflinePlannedResource(
                 ResourceCacheKey(URI("https://a.test/t/1/2/3.pbf"), ResourceCacheScope.Shared),

@@ -2,8 +2,8 @@ package dev.tileflow.sdk.offline
 
 import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.hosted.HostedContract
+import dev.tileflow.sdk.transport.ResourceDigest
 import dev.tileflow.sdk.transport.ResourcePolicy
-import dev.tileflow.sdk.transport.sha256Hex
 import java.net.URI
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
@@ -28,7 +28,7 @@ internal class OfflinePackGrant private constructor(val value: String) {
 
     /** A short, stable name for the grant that reveals nothing of it. */
     val tag: String
-        get() = sha256Hex(value.toByteArray()).take(12)
+        get() = ResourceDigest.sha256(value.toByteArray()).take(12)
 
     companion object {
         private val pattern = Regex("^tf_offline_v2\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+$")

@@ -3,8 +3,8 @@ package dev.tileflow.sdk.offline
 import dev.tileflow.sdk.transport.NativeHTTPTransporting
 import dev.tileflow.sdk.transport.ResourceCacheKey
 import dev.tileflow.sdk.transport.ResourceCacheScope
+import dev.tileflow.sdk.transport.ResourceDigest
 import dev.tileflow.sdk.transport.ResourcePayload
-import dev.tileflow.sdk.transport.sha256Hex
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
@@ -240,7 +240,7 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
                     .put("kind", kind)
                     .put("url", url)
                     .put("bytes", body.size)
-                    .put("sha256", sha256Hex(body))
+                    .put("sha256", ResourceDigest.sha256(body))
             )
         }
         file("discovery", "$MAP_PATH/manifest.json")
@@ -559,7 +559,7 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
             )
         }
         val body = body(url)
-        val etag = "\"${sha256Hex(body)}\""
+        val etag = "\"${ResourceDigest.sha256(body)}\""
         if (headers["If-None-Match"] == etag)
             return record(OfflineFetchResponse(304, mapOf("ETag" to etag), ByteArray(0), 0, null))
         if (url.startsWith("https://tiles.example.com/streets/") && "/14/" in url)
@@ -575,7 +575,7 @@ internal class OfflineServiceStub : NativeHTTPTransporting, OfflineResourceFetch
                 ),
                 body,
                 body.size.toLong(),
-                sha256Hex(body),
+                ResourceDigest.sha256(body),
             )
         )
     }
@@ -653,7 +653,7 @@ internal class OfflinePlatformFixture : NativeHTTPTransporting, OfflineResourceF
                 }
                 url.endsWith("/mobile/manifest.json") -> {
                     val body = "{}".toByteArray()
-                    OfflineFetchResponse(200, mapOf("ETag" to "\"${sha256Hex(body)}\""), body, 2, sha256Hex(body))
+                    OfflineFetchResponse(200, mapOf("ETag" to "\"${ResourceDigest.sha256(body)}\""), body, 2, ResourceDigest.sha256(body))
                 }
                 else -> OfflineFetchResponse(404, emptyMap(), ByteArray(0), 0, null)
             }

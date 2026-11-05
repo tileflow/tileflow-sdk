@@ -1,8 +1,9 @@
 package dev.tileflow.sdk
 
-import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.ProtocolContract
 import dev.tileflow.sdk.engine.MapEngine
+import dev.tileflow.sdk.model.MapPayloadStore
+import dev.tileflow.sdk.transport.ResourceDigest
 import kotlin.math.abs
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -743,13 +744,13 @@ internal fun geoJSONBase(data: TileflowGeoJSONData): GeoJSONLog.Base {
                 ProtocolContract.MAXIMUM_DATA_BYTES,
             ),
         )
-    return GeoJSONLog.Base.Bytes(bytes, DataChannel.digest(bytes))
+    return GeoJSONLog.Base.Bytes(bytes, ResourceDigest.sha256(bytes))
 }
 
 private fun geoJSONWire(
     base: GeoJSONLog.Base,
-    channel: DataChannel,
-): Pair<JSONObject, List<DataChannel.Reference>> =
+    channel: MapPayloadStore,
+): Pair<JSONObject, List<MapPayloadStore.Reference>> =
     when (base) {
         is GeoJSONLog.Base.Url -> JSONObject().put("url", base.url) to emptyList()
         GeoJSONLog.Base.Empty -> JSONObject().put("empty", true) to emptyList()
@@ -761,7 +762,7 @@ private fun geoJSONWire(
 
 private suspend fun MapEngine.addSource(record: RuntimeStyle.Source) {
     val spec = JSONObject(record.spec.toString())
-    var references = emptyList<DataChannel.Reference>()
+    var references = emptyList<MapPayloadStore.Reference>()
     record.geoJSON?.let { log ->
         val (value, registered) = geoJSONWire(log.base, data)
         spec.put("data", value)
@@ -776,9 +777,9 @@ private suspend fun MapEngine.addSource(record: RuntimeStyle.Source) {
 
 internal suspend fun MapEngine.sendUpdate(update: GeoJSONLog.Update, source: String) {
     val payload = JSONObject().put("id", source)
-    val references = mutableListOf<DataChannel.Reference>()
+    val references = mutableListOf<MapPayloadStore.Reference>()
     update.add?.let { bytes ->
-        val reference = data.register(bytes, DataChannel.digest(bytes), "application/json")
+        val reference = data.register(bytes, ResourceDigest.sha256(bytes), "application/json")
         references += reference
         payload.put("add", reference.json())
     }
@@ -812,7 +813,7 @@ private fun TileflowMapView.compactIfNeeded(source: RuntimeStyle.Source) {
             ) {
                 val rest = current.updates.drop(log.updates.size)
                 current.copy(
-                    base = GeoJSONLog.Base.Bytes(compacted, DataChannel.digest(compacted)),
+                    base = GeoJSONLog.Base.Bytes(compacted, ResourceDigest.sha256(compacted)),
                     updates = rest,
                     updateBytes = rest.sumOf { (it.add?.size ?: 0).toLong() + it.remove.sumOf { id -> id.length } },
                     compacting = false,

@@ -18,7 +18,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.findViewTreeLifecycleOwner
 import dev.tileflow.configuration.Tileflow
-import dev.tileflow.sdk.bridge.EventSubscriptions
 import dev.tileflow.sdk.bridge.ProtocolContract
 import dev.tileflow.sdk.engine.MapEngine
 import dev.tileflow.sdk.engine.MapEngineCallbacks
@@ -31,6 +30,7 @@ import dev.tileflow.sdk.location.TileflowFollowMode
 import dev.tileflow.sdk.location.TileflowFollowModeChangeReason
 import dev.tileflow.sdk.location.TileflowLocation
 import dev.tileflow.sdk.location.TileflowLocationProvider
+import dev.tileflow.sdk.model.EventSubscriptions
 import dev.tileflow.sdk.offline.OfflineReachability
 import dev.tileflow.sdk.offline.OfflineServingIndex
 import dev.tileflow.sdk.offline.OfflineServingRule

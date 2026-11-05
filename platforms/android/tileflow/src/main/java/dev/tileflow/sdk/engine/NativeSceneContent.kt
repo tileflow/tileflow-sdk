@@ -5,8 +5,8 @@ import android.util.DisplayMetrics
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowErrorContext
 import dev.tileflow.sdk.TileflowMapException
-import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.model.MapPayloadStore
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -45,7 +45,7 @@ internal class NativeSceneContent(
     private var revision = 0
     private val markerSourceId = "__tileflow_depth_points"
 
-    suspend fun setContent(request: JSONObject, data: DataChannel) {
+    suspend fun setContent(request: JSONObject, data: MapPayloadStore) {
         val run = ++revision
         val previous = overlays.associateBy { it.name }
         val candidates =

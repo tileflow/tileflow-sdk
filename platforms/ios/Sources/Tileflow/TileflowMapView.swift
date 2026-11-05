@@ -25,7 +25,7 @@ public final class TileflowMapView: UIView {
   /// The current generation's engine, while one is loaded.
   private(set) var engine: (any MapEngine)?
   /// The engine new map views use. Internal: tests set it for the maps SwiftUI creates.
-  static var defaultEngineKind: MapEngineKind = .webView
+  static var defaultEngineKind: MapEngineKind = .native
   /// Which engine draws the next generation. Changing it replaces the current one.
   var engineKind: MapEngineKind = TileflowMapView.defaultEngineKind {
     didSet {

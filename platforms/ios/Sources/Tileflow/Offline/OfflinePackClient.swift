@@ -61,7 +61,7 @@ struct OfflinePackRequest: Sendable, Hashable {
   ///   body holds more bytes, than the service accepts.
   static func requests(
     mapID: String, themes requested: [String], geometry: TileflowOfflineGeometry,
-    zooms: OfflineZooms, profile: OfflinePackProfile = .webView
+    zooms: OfflineZooms, profile: OfflinePackProfile = .native
   ) throws -> [OfflinePackRequest] {
     guard HostedContract.matches(mapID, #"^map_[A-Za-z0-9_-]{16}$"#) else {
       throw TileflowOfflineError.options("invalidMapID")

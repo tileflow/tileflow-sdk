@@ -18,6 +18,13 @@ final class OfflineStoreTests: XCTestCase {
     try? FileManager.default.removeItem(at: directory)
   }
 
+  func testNewHostedPlanRequestsTheNativeProfileByDefault() async throws {
+    let service = OfflineServiceStub()
+    let store = makeStore(service)
+    _ = try await store.estimateRegion(madrid())
+    XCTAssertEqual(service.profiles, ["native-v1"])
+  }
+
   func testHostedRegionDownloadsVerifiedPacksAndWorksOffline() async throws {
     let service = OfflineServiceStub()
     let store = makeStore(service)
@@ -241,7 +248,7 @@ final class OfflineStoreTests: XCTestCase {
       changed,
       [
         "\(OfflineServiceStub.origin)/v1/offline/documents/style.tfpack", service.changedPackURL,
-        "\(OfflineServiceStub.origin)/maps/\(OfflineServiceStub.mapID)/mobile/webview-v1/manifest.json",
+        "\(OfflineServiceStub.origin)/maps/\(OfflineServiceStub.mapID)/native/manifest.json",
       ])
     XCTAssertTrue(
       update.filter { $0.status == 304 }.allSatisfy { $0.headers["If-None-Match"] != nil })
@@ -1029,7 +1036,7 @@ final class OfflineStoreTests: XCTestCase {
     sleeps: LockedValue<[TimeInterval]>? = nil, concurrency: Int = 8,
     fetcher: (any OfflineResourceFetching)? = nil, index: OfflineServingIndex? = nil,
     available: (@Sendable () -> Int64?)? = nil, scheduler: OfflineSchedulerStub? = nil,
-    conditions: LockedValue<OfflineUpdateConditions>? = nil, profile: OfflinePackProfile = .webView
+    conditions: LockedValue<OfflineUpdateConditions>? = nil, profile: OfflinePackProfile? = nil
   ) -> TileflowOfflineStore {
     let cache =
       root == "offline"
@@ -1042,23 +1049,24 @@ final class OfflineStoreTests: XCTestCase {
       apiOrigin: URL(string: "https://api.tileflow.test")!,
       mapCredential: TileflowCredential("tf_public_" + String(repeating: "a", count: 48)))
     let clock = service.clock
-    return TileflowOfflineStore(
-      dependencies: OfflineStoreCore.Dependencies(
-        layout: OfflineLayout(root: directory.appendingPathComponent(root, isDirectory: true)),
-        cache: cache, fetcher: fetcher ?? service,
-        client: {
-          try OfflinePackClient(
-            configuration: configuration, transport: service,
-            now: { Date(timeIntervalSince1970: clock.withLock { $0 }) })
-        },
-        availableBytes: available ?? { space?.withLock { $0 } ?? nil }, index: index,
-        reserveBytes: 4096, profile: profile,
-        concurrency: concurrency, now: { Date(timeIntervalSince1970: clock.withLock { $0 }) },
-        sleep: { delay in
-          sleeps?.withLock { $0.append(delay) }
-          try await Task.sleep(nanoseconds: 2_000_000)
-        }, scheduler: scheduler,
-        conditions: { conditions?.withLock { $0 } ?? .unavailable }))
+    var dependencies = OfflineStoreCore.Dependencies(
+      layout: OfflineLayout(root: directory.appendingPathComponent(root, isDirectory: true)),
+      cache: cache, fetcher: fetcher ?? service,
+      client: {
+        try OfflinePackClient(
+          configuration: configuration, transport: service,
+          now: { Date(timeIntervalSince1970: clock.withLock { $0 }) })
+      },
+      availableBytes: available ?? { space?.withLock { $0 } ?? nil }, index: index,
+      reserveBytes: 4096,
+      concurrency: concurrency, now: { Date(timeIntervalSince1970: clock.withLock { $0 }) },
+      sleep: { delay in
+        sleeps?.withLock { $0.append(delay) }
+        try await Task.sleep(nanoseconds: 2_000_000)
+      }, scheduler: scheduler,
+      conditions: { conditions?.withLock { $0 } ?? .unavailable })
+    if let profile { dependencies.profile = profile }
+    return TileflowOfflineStore(dependencies: dependencies)
   }
 
   private func watchedFetcher(
@@ -1230,7 +1238,17 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
 
   private static var mapPath: String { "\(origin)/maps/\(mapID)/mobile" }
 
-  var styleURL: String { "\(Self.mapPath)/webview-v1/v\(locked { $0.deployment })/light.json" }
+  private static func profilePath(_ profile: String) -> String {
+    profile == OfflinePackProfile.native.rawValue
+      ? "\(origin)/maps/\(mapID)/native" : "\(mapPath)/webview-v1"
+  }
+
+  var styleURL: String {
+    locked { state in
+      let profile = state.profiles.last ?? OfflinePackProfile.native.rawValue
+      return "\(Self.profilePath(profile))/v\(state.deployment)/light.json"
+    }
+  }
   var template: String { Self.template(locked { $0.release }) }
 
   static func template(_ release: Int) -> String {
@@ -1281,7 +1299,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
   // MARK: Bodies
 
   private func body(_ url: String, state: State) -> Data {
-    if url.hasSuffix("/webview-v1/manifest.json") {
+    if url.hasSuffix("/webview-v1/manifest.json") || url.hasSuffix("/native/manifest.json") {
       return Data("\(url)#\(state.changes["profile"] ?? 1)".utf8)
     }
     if url == "https://tiles.example.com/manifest.json" {
@@ -1360,8 +1378,7 @@ final class OfflineServiceStub: NativeHTTPTransporting, OfflineResourceFetching,
       ])
     }
     file("discovery", "\(Self.mapPath)/manifest.json")
-    let profilePath = request.profile == OfflinePackProfile.native.rawValue
-      ? "\(Self.origin)/maps/\(request.mapID)/native" : "\(Self.mapPath)/webview-v1"
+    let profilePath = Self.profilePath(request.profile)
     file("profile", "\(profilePath)/manifest.json")
 
     var packs: [[String: Any]] = []

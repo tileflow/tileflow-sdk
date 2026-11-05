@@ -7,6 +7,12 @@ import XCTest
 
 @MainActor
 final class MapIntegrationTests: XCTestCase {
+  override func setUp() async throws {
+    let previous = TileflowMapView.defaultEngineKind
+    TileflowMapView.defaultEngineKind = .webView
+    addTeardownBlock { @MainActor in TileflowMapView.defaultEngineKind = previous }
+  }
+
   func testOnlineMapLoadsChangesThemeAndRetires() async throws {
     let manifest = FixtureServer.manifest
     do {

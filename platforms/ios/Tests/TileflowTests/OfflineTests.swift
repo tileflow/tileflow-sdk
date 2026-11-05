@@ -95,7 +95,7 @@ final class OfflineTests: XCTestCase {
           mapID: body["mapId"] as! String, themes: body["themes"] as! [String],
           geometry: .boundingBox(
             TileflowBoundingBox(west: box[0], south: box[1], east: box[2], north: box[3])),
-          zooms: zooms)
+          zooms: zooms, profile: .webView)
       }
       switch (item["canonical"], name) {
       case (let canonical?, _):
@@ -769,7 +769,7 @@ private func createdRequest() throws -> OfflinePackRequest {
     mapID: "map_offlinefixture00", themes: ["default"],
     geometry: .boundingBox(
       TileflowBoundingBox(west: -3.71, south: 40.41, east: -3.69, north: 40.425)),
-    zooms: OfflineZooms(range: 10...14))[0]
+    zooms: OfflineZooms(range: 10...14), profile: .webView)[0]
 }
 
 private func createdDownload() throws -> OfflineDownload {

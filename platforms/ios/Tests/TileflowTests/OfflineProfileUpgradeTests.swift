@@ -19,7 +19,7 @@ extension OfflineStoreTests {
 
   func testAStoredWebRegionOffersASeparatelyVerifiedNativeUpgrade() async throws {
     let service = OfflineServiceStub()
-    let web = makeStore(service)
+    let web = makeStore(service, profile: .webView)
     _ = try await web.loadRegion(id: "area", options: madrid())
     _ = try await waitFor(web, "area") { $0.state == .complete }
     service.clock.withLock { $0 += 86_401 }
@@ -80,7 +80,7 @@ extension OfflineStoreTests {
 
   func testAPausedWebGrantRenewsWithItsOriginalProfileInANativeStore() async throws {
     let service = OfflineServiceStub()
-    let web = makeStore(service)
+    let web = makeStore(service, profile: .webView)
     service.freezeAfter = 0
     _ = try await web.loadRegion(id: "paused", options: madrid())
     try await web.pauseRegion(id: "paused")
@@ -97,7 +97,7 @@ extension OfflineStoreTests {
 
   func testExpiredAuthorizationCannotStartANativeUpgradeAfterAFailedCheck() async throws {
     let service = OfflineServiceStub()
-    let web = makeStore(service)
+    let web = makeStore(service, profile: .webView)
     _ = try await web.loadRegion(id: "area", options: madrid())
     _ = try await waitFor(web, "area") { $0.state == .complete }
     let native = makeStore(service, profile: .native)
@@ -147,7 +147,7 @@ extension OfflineStoreTests {
 
   func testDeniedAccessRetainsTheWebRegionAndStopsItsAutomaticNativeUpgrade() async throws {
     let service = OfflineServiceStub()
-    let web = makeStore(service)
+    let web = makeStore(service, profile: .webView)
     _ = try await web.loadRegion(id: "area", options: madrid())
     _ = try await waitFor(web, "area") { $0.state == .complete }
     let native = makeStore(service, profile: .native)
@@ -191,7 +191,7 @@ extension OfflineStoreTests {
 
   func testMultipartRevalidationNeedsAllGrantsForAnOfferAndOnlyOneForDenial() async throws {
     let service = OfflineServiceStub()
-    let web = makeStore(service)
+    let web = makeStore(service, profile: .webView)
     // Combine two verified downloads in the format written by clients that split the region.
     var record: OfflineRegionRecord?
     var requests: [OfflinePackRequest] = []
@@ -253,7 +253,7 @@ extension OfflineStoreTests {
 
   func testReopeningFinishesOnlyTheRevokedAutomaticStagingVersion() async throws {
     let service = OfflineServiceStub()
-    let web = makeStore(service)
+    let web = makeStore(service, profile: .webView)
     _ = try await web.loadRegion(id: "area", options: madrid())
     _ = try await waitFor(web, "area") { $0.state == .complete }
     service.clock.withLock { $0 += 86_401 }
@@ -286,7 +286,7 @@ extension OfflineStoreTests {
 
   func testRejectedPacksOrFullDiskKeepTheActiveWebVersionAfterRestart() async throws {
     let service = OfflineServiceStub()
-    let web = makeStore(service)
+    let web = makeStore(service, profile: .webView)
     _ = try await web.loadRegion(id: "area", options: madrid())
     _ = try await waitFor(web, "area") { $0.state == .complete }
     let old = try XCTUnwrap(try record("area").active)

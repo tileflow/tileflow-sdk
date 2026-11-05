@@ -137,7 +137,7 @@ final class OfflinePackTests: XCTestCase {
               apiOrigin: URL(string: "https://api.tileflow.test")!,
               mapCredential: TileflowCredential("tf_public_" + String(repeating: "c", count: 48))),
             transport: service, now: { OfflinePlatformFixture.now })
-        }, availableBytes: { nil }, index: index, reserveBytes: 4096,
+        }, availableBytes: { nil }, index: index, reserveBytes: 4096, profile: .webView,
         now: { OfflinePlatformFixture.now }))
     let options = TileflowOfflineRegionLoadOptions(
       geometry: .boundingBox(
@@ -364,7 +364,7 @@ final class OfflinePlatformFixture: NativeHTTPTransporting, OfflineResourceFetch
       mapID: Self.mapID, themes: ["default"],
       geometry: .boundingBox(
         TileflowBoundingBox(west: -3.71, south: 40.41, east: -3.69, north: 40.425)),
-      zooms: OfflineZooms(range: 10...14))[0]
+      zooms: OfflineZooms(range: 10...14), profile: .webView)[0]
     return try OfflinePackContract.download(
       Data(contentsOf: packFixture("release-\(release)/create-response.json")), request: request,
       allowsLoopbackHTTP: false

@@ -877,22 +877,25 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     }
   }
 
-  func testStreetsLoadsAtCityZoomWithItsHostedClimateLayer() async throws {
+  func testPublicMapViewLoadsStreetsAtCityZoomWithItsHostedClimateLayer() async throws {
     try await requireNativeFixture()
     let events = NativeMapEvents()
     let source = TileflowMapSource(
       map: "streets", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
     let view = TileflowMapView(source: source)
-    view.engineKind = .native
     let window = mount(view, events: events)
     defer {
       view.destroy()
       window.isHidden = true
     }
 
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine, "The public map view must mount MapLibre")
     try await events.waitForLoads(1)
     let camera = try await view.camera()
-    let style = try XCTUnwrap((view.engine as? NativeMapEngine)?.mapView?.style)
+    XCTAssertEqual(camera.zoom, 16, accuracy: 0.01)
+    let mapView = try XCTUnwrap(engine.mapView)
+    XCTAssertTrue(mapView.isDescendant(of: view))
+    let style = try XCTUnwrap(mapView.style)
     let climate = try XCTUnwrap(
       style.layer(withIdentifier: "tileflow-global-landcover-underlay") as? MLNRasterStyleLayer)
     XCTAssertGreaterThan(camera.zoom, Double(climate.maximumZoomLevel))

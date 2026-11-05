@@ -27,6 +27,7 @@ final class MapStyleIntegrationTests: XCTestCase {
       source: TileflowMapSource(
         map: "fixture", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true),
       initialCamera: TileflowCamera(longitude: -3.7, latitude: 40.42, zoom: 9))
+    view.engineKind = .webView
     var loads = 0
     var failures: [TileflowMapError] = []
     view.onEvent = { event in

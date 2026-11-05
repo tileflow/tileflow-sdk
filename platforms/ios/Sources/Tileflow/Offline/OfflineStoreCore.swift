@@ -41,7 +41,7 @@ actor OfflineStoreCore {
     var index: OfflineServingIndex? = nil
     /// Space a download leaves free on the device.
     var reserveBytes: Int64 = 64 * 1024 * 1024
-    var profile: OfflinePackProfile = .webView
+    var profile: OfflinePackProfile = .native
     var concurrency = 64
     /// Packs transferred at once.
     var packConcurrency = 4

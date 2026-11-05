@@ -54,7 +54,10 @@ internal fun parseMapEvent(
                     "cameraMoved" -> TileflowCameraChangePhase.MOVING
                     else -> TileflowCameraChangePhase.ENDED
                 }
-            TileflowMapEvent.CameraChanged(TileflowCameraChange(camera, reason, phase))
+            val bounds = result.optJSONObject("bounds")?.let {
+                TileflowBounds(it.getDouble("west"), it.getDouble("south"), it.getDouble("east"), it.getDouble("north"))
+            }
+            TileflowMapEvent.CameraChanged(TileflowCameraChange(camera, reason, phase, bounds))
         }
         "tap" -> TileflowMapEvent.Tap(coordinate(), point())
         "longPress" -> TileflowMapEvent.LongPress(coordinate(), point())

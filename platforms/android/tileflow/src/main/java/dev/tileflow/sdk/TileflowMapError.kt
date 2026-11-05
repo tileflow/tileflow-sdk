@@ -29,11 +29,13 @@ public data class TileflowErrorContext(
     val message: String? = null,
     val count: Int? = null,
     val feature: String? = null,
+    val rule: String? = null,
 ) {
     override fun toString(): String =
         listOfNotNull(
                 reason?.let { "reason: $it" },
                 feature?.let { "feature: $it" },
+                rule?.let { "rule: $it" },
                 resource?.let { "resource: ${it.wireName}" },
                 origin?.let { "origin: $it" },
                 status?.let { "status: $it" },
@@ -91,6 +93,7 @@ public constructor(
                     limit = integer("limit"),
                     message = text(value, "message")?.take(512),
                     feature = text(context, "feature")?.take(64),
+                    rule = text(context, "rule")?.take(64),
                 ),
             )
         }

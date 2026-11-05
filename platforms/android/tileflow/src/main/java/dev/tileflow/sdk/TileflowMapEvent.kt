@@ -98,10 +98,12 @@ public enum class TileflowCameraChangePhase {
     ENDED,
 }
 
-public data class TileflowCameraChange(
+public data class TileflowCameraChange @JvmOverloads constructor(
     val camera: TileflowCamera,
     val reason: TileflowCameraChangeReason,
     val phase: TileflowCameraChangePhase,
+    /** The visible region captured with the camera; absent on older event producers. */
+    val bounds: TileflowBounds? = null,
 ) {
     /** Whether the camera has settled. */
     public val isFinal: Boolean

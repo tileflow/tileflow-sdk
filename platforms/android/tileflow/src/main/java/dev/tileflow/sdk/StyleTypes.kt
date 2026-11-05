@@ -50,6 +50,9 @@ public sealed interface TileflowLayerPosition {
     /** On top of the layers of its slot. */
     public data object Default : TileflowLayerPosition
 
+    /** Index among application layers in the same slot, starting at zero. */
+    public data class AtSlotIndex(val slotIndex: Int) : TileflowLayerPosition
+
     /** Directly above an application layer. */
     public data class Above(val layerId: String) : TileflowLayerPosition
 
@@ -60,6 +63,7 @@ public sealed interface TileflowLayerPosition {
 internal fun TileflowLayerPosition.json(): JSONObject? =
     when (this) {
         TileflowLayerPosition.Default -> null
+        is TileflowLayerPosition.AtSlotIndex -> JSONObject().put("slotIndex", slotIndex)
         is TileflowLayerPosition.Above -> JSONObject().put("above", layerId)
         is TileflowLayerPosition.Below -> JSONObject().put("below", layerId)
     }

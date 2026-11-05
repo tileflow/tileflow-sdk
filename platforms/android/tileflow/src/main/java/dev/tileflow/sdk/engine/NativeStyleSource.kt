@@ -1,13 +1,14 @@
 package dev.tileflow.sdk.engine
 
+import dev.tileflow.sdk.TileflowErrorContext
+import dev.tileflow.sdk.TileflowErrorCode
+import dev.tileflow.sdk.TileflowMapException
+
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.google.gson.stream.JsonReader
 import dev.tileflow.sdk.GeoJSONLog
 import dev.tileflow.sdk.RuntimeStyle
-import dev.tileflow.sdk.TileflowErrorCode
-import dev.tileflow.sdk.TileflowErrorContext
-import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.model.MapPayloadStore
 import dev.tileflow.sdk.transport.MapResourceAddress
 import java.io.StringReader
@@ -110,7 +111,11 @@ internal class NativeStyleSource(
             validate(source.spec)
             val data = source.geoJSON?.base
             if (data is GeoJSONLog.Base.Url) validateLocation(data.url, absolute = true)
-            if (data is GeoJSONLog.Base.Bytes) validateGeoJSON(data.bytes.toString(Charsets.UTF_8))
+            if (data is GeoJSONLog.Base.Bytes) {
+                val text = data.bytes.toString(Charsets.UTF_8)
+                validateGeoJSON(text)
+                validateClusterGeometry(text, source.spec)
+            }
         }
 
         fun validate(spec: JSONObject) {
@@ -248,11 +253,31 @@ internal class NativeStyleSource(
         }
 
         /** Maps selected identifiers while streaming the base collection, keeping feature order and other entries. */
+        fun invalidClusterGeometry(): Nothing = throw TileflowMapException(
+            TileflowErrorCode.INVALID_REQUEST,
+            TileflowErrorContext(reason = "invalidGeoJSON", rule = "pointFeatures", message = "Clustered GeoJSON sources require Point geometries after filtering."),
+        )
+
+        fun validateClusterGeometry(text: String, spec: JSONObject) {
+            if (!spec.optBoolean("cluster")) return
+            fun point(feature: JSONObject): Boolean = feature.optString("type") == "Feature" &&
+                feature.optJSONObject("geometry")?.optString("type") == "Point"
+            val value = JSONObject(text)
+            val valid = when (value.optString("type")) {
+                "Point" -> true
+                "Feature" -> point(value)
+                "FeatureCollection" -> value.optJSONArray("features")?.items()?.all { it is JSONObject && point(it) } == true
+                else -> false
+            }
+            if (!valid) invalidClusterGeometry()
+        }
+
         fun edit(text: String, spec: JSONObject, added: JSONArray?, removed: Set<String>, normalize: Boolean = false): String {
             val promotion = spec.opt("promoteId") as? String
             val generate = spec.optBoolean("generateId")
             if (normalize && promotion == null && !generate) {
                 validateGeoJSON(text)
+                validateClusterGeometry(text, spec)
                 return text
             }
             val pending = linkedMapOf<String, JsonObject>()
@@ -299,7 +324,7 @@ internal class NativeStyleSource(
                 if (key !in removed) append(pending.remove(key) ?: feature)
             }
             pending.values.forEach(::append)
-            return output.append("]}").toString()
+            return output.append("]}").toString().also { validateClusterGeometry(it, spec) }
         }
     }
 }

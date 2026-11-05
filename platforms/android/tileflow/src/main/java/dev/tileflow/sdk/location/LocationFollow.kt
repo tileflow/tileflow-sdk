@@ -62,12 +62,14 @@ public enum class TileflowPuckBearing {
  * @property followZoom The camera zooms in to at least this level when it starts to follow; null
  *   keeps the zoom.
  */
-public data class TileflowLocationOptions(
+public data class TileflowLocationOptions @JvmOverloads constructor(
     val enabled: Boolean = false,
     val puckBearing: TileflowPuckBearing = TileflowPuckBearing.NONE,
     val showsAccuracy: Boolean = true,
     val staleAfterMillis: Long = 30_000,
     val followZoom: Double? = 15.0,
+    /** Draws the indicator while [enabled] controls consumption and following. */
+    val showsPuck: Boolean = true,
 ) {
     internal fun json(): JSONObject {
         if (
@@ -77,6 +79,7 @@ public data class TileflowLocationOptions(
             throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
         return JSONObject()
             .put("enabled", enabled)
+            .put("showsPuck", showsPuck)
             .put("bearing", puckBearing.name.lowercase())
             .put("accuracy", showsAccuracy)
             .put("staleAfterMs", staleAfterMillis)

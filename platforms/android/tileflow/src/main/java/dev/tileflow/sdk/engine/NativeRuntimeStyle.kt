@@ -60,6 +60,7 @@ internal class NativeRuntimeStyle(
             try {
                 when (method) {
                     Method.ADD_SOURCE -> addSource(request, channel)
+                    Method.UPDATE_SOURCE -> updateSource(request, channel)
                     Method.REMOVE_SOURCE -> removeSource(request.getString("id"))
                     Method.SET_GEO_JSON_SOURCE_DATA -> replaceData(request, channel)
                     Method.UPDATE_GEO_JSON_SOURCE -> editData(request, channel)
@@ -81,9 +82,7 @@ internal class NativeRuntimeStyle(
             JSONObject.NULL
         }
 
-    private suspend fun addSource(request: JSONObject, channel: MapPayloadStore) {
-        val name = request.getString("id")
-        if (name in sources) styleInvalid(name)
+    private suspend fun prepareSource(request: JSONObject, channel: MapPayloadStore, previous: NativeStyleSource? = null): NativeStyleSource {
         val spec = JSONObject(request.getJSONObject("source").toString())
         NativeStyleSource.validate(spec)
         val type = spec.getString("type")
@@ -91,19 +90,30 @@ internal class NativeRuntimeStyle(
         var projected = spec
         var data: String? = null
         if (type == "geojson") {
-            val ref = spec.getJSONObject("data")
-            data = geometry(ref, channel, spec)
+            data = if (request.optBoolean("preserveData")) {
+                val held = previous?.geoJSON ?: styleInvalid("Missing GeoJSON")
+                if (previous.spec.opt("promoteId") != spec.opt("promoteId") ||
+                    previous.spec.optBoolean("generateId") != spec.optBoolean("generateId"))
+                    withContext(Dispatchers.Default) { NativeStyleSource.edit(held, spec, null, emptySet(), normalize = true) }
+                else held
+            } else geometry(spec.getJSONObject("data"), channel, spec)
             spec.remove("data")
         } else {
             val result = project(spec)
             projected = result.first
             prepared = result.second
         }
-        val source = NativeStyleSource(name, projected, data, prepared)
+        return NativeStyleSource(request.getString("id"), projected, data, prepared)
+    }
+
+    private suspend fun addSource(request: JSONObject, channel: MapPayloadStore) {
+        val name = request.getString("id")
+        if (name in sources) styleInvalid(name)
+        val source = prepareSource(request, channel)
         val style = currentStyle()
         if (style?.getSource(source.id) != null) styleInvalid(name)
         val old = projections
-        projections = old + listOfNotNull(prepared)
+        projections = old + listOfNotNull(source.projection)
         try {
             style?.addSource(source.make())
         } catch (error: Exception) {
@@ -111,6 +121,50 @@ internal class NativeRuntimeStyle(
             throw error
         }
         sources[name] = source
+    }
+
+    private suspend fun updateSource(request: JSONObject, channel: MapPayloadStore) {
+        val name = request.getString("id")
+        val previous = sources[name] ?: styleInvalid(name)
+        val next = prepareSource(request, channel, previous)
+        val affected = layers.filter { it.source == name }
+        affected.forEach { validateSourceFor(it, next) }
+        if (next.type == "geojson" && previous.type == "geojson" && next.spec.toString() == previous.spec.toString()) {
+            setData(previous, next.geoJSON!!)
+            return
+        }
+        val style = currentStyle()
+        val oldProjections = projections
+        projections = sources.values.mapNotNull { if (it.name == name) next.projection else it.projection }
+        try {
+            if (style != null) {
+                val native = next.make()
+                val replacements = affected.map { it to it.make() }
+                var sourceRemoved = false
+                try {
+                    affected.asReversed().forEach { if (!style.removeLayer(it.id)) styleInvalid(it.id) }
+                    if (!style.removeSource(previous.id)) styleInvalid(previous.id)
+                    sourceRemoved = true
+                    style.addSource(native)
+                    replacements.forEach { (layer, replacement) -> insert(style, layer, replacement, layers) }
+                } catch (failure: Exception) {
+                    affected.asReversed().forEach { if (style.getLayer(it.id) != null) style.removeLayer(it.id) }
+                    if (sourceRemoved) {
+                        if (style.getSource(previous.id) != null) style.removeSource(previous.id)
+                        style.addSource(previous.make())
+                    }
+                    affected.forEach { insert(style, it, it.make(), layers) }
+                    pendingState += states.keys.filter { it.source == name }
+                    states.filterKeys { it.source == name }.forEach { (target, value) -> applyState(style, previous, target, value) }
+                    throw failure
+                }
+            }
+            sources[name] = next
+            pendingState += states.keys.filter { it.source == name }
+        } catch (failure: Exception) {
+            projections = oldProjections
+            throw failure
+        }
     }
 
     private suspend fun geometry(ref: JSONObject, channel: MapPayloadStore, spec: JSONObject): String {
@@ -195,12 +249,12 @@ internal class NativeRuntimeStyle(
         layers.addAll(next)
     }
 
-    private fun validateSourceFor(layer: NativeStyleLayer) {
+    private fun validateSourceFor(layer: NativeStyleLayer, replacement: NativeStyleSource? = null) {
         if (layer.type == "background") {
             if (layer.source != null) styleInvalid("Background layer cannot name a source")
             return
         }
-        val source = sources[layer.source] ?: styleInvalid("Unknown source")
+        val source = replacement?.takeIf { it.name == layer.source } ?: sources[layer.source] ?: styleInvalid("Unknown source")
         val valid = when (layer.type) {
             "hillshade", "color-relief" -> source.type == "raster-dem"
             "raster" -> source.type in setOf("raster", "image")
@@ -377,7 +431,7 @@ internal class NativeRuntimeStyle(
     }
 
     companion object {
-        val methods = setOf(Method.ADD_SOURCE, Method.REMOVE_SOURCE, Method.SET_GEO_JSON_SOURCE_DATA,
+        val methods = setOf(Method.ADD_SOURCE, Method.UPDATE_SOURCE, Method.REMOVE_SOURCE, Method.SET_GEO_JSON_SOURCE_DATA,
             Method.UPDATE_GEO_JSON_SOURCE, Method.ADD_LAYER, Method.UPDATE_LAYER, Method.MOVE_LAYER, Method.REMOVE_LAYER,
             Method.SET_FEATURE_STATE, Method.GET_FEATURE_STATE, Method.REMOVE_FEATURE_STATE, Method.SET_IMAGES,
             Method.QUERY_RENDERED_FEATURES, Method.QUERY_SOURCE_FEATURES, Method.QUERY_CLUSTER)

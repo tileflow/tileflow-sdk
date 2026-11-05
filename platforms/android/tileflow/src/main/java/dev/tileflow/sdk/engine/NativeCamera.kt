@@ -469,6 +469,9 @@ internal class NativeCamera(
 
     // MapLibre's camera changes
 
+    private fun cameraEvent(): JSONObject =
+        JSONObject().put("camera", json).put("bounds", visibleBounds()).put("reason", changeReason)
+
     private fun started(reason: Int) {
         if (retired) return
         changeReason =
@@ -479,14 +482,14 @@ internal class NativeCamera(
             } else issuer ?: movement?.reason ?: if (followsLocation) "location" else "system"
         if (isMoving) return
         isMoving = true
-        emit("cameraMoveStarted", JSONObject().put("camera", json).put("reason", changeReason))
+        emit("cameraMoveStarted", cameraEvent())
     }
 
     private fun moved() {
         if (retired) return
         if (limits.bounds != null) updateBounds()
         if (!followsFrames || !isMoving) return
-        emit("cameraMoved", JSONObject().put("camera", json).put("reason", changeReason))
+        emit("cameraMoved", cameraEvent())
     }
 
     private fun idle() {
@@ -494,7 +497,7 @@ internal class NativeCamera(
         if (limits.bounds != null) updateBounds()
         if (isMoving) {
             isMoving = false
-            emit("cameraMoveEnded", JSONObject().put("camera", json).put("reason", changeReason))
+            emit("cameraMoveEnded", cameraEvent())
         }
         // A zoom from a double tap ends as the camera settles.
         if ("zoom" in gestures && !zooming) gestureEnded("zoom")

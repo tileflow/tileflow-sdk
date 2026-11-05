@@ -56,6 +56,54 @@ public class NativeLocationIntegrationTest {
     }
 
     @Test
+    public fun aHiddenPuckKeepsReceivingFixesAndFollowingUntilConsumptionStops() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val activity = instrumentation.startActivitySync(
+            Intent(instrumentation.targetContext, SceneHostActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("map", "appearance")
+        ) as SceneHostActivity
+        try {
+            assertTrue(activity.loaded.await(30, TimeUnit.SECONDS))
+            runBlocking { withContext(Dispatchers.Main) {
+                val map = activity.map
+                val provider = Provider()
+                val options = TileflowLocationOptions(enabled = true, showsPuck = true, followZoom = null)
+                map.locationProvider = provider
+                map.setOptions(map.options.copy(location = options))
+                map.followMode = TileflowFollowMode.POSITION
+                val consumer = requireNotNull(provider.consumer)
+                val first = TileflowLocation(TileflowCoordinate(-3.70, 40.42), horizontalAccuracy = 4.0)
+                consumer.locationUpdated(first)
+                until("hidden location follows the supplied fix") {
+                    map.latestLocation == first && abs(map.camera().longitude - first.coordinate.longitude) < 0.00001
+                }
+                val native = map.readyEngine as NativeMapEngine
+                val renderer = requireNotNull(native.map)
+                until("the initial puck is rendered before hiding") {
+                    val point = map.project(first.coordinate)
+                    !map.isMoving && renderer.queryRenderedFeatures(android.graphics.PointF(point.x, point.y), LocationComponentConstants.FOREGROUND_LAYER).isNotEmpty()
+                }
+                map.setOptions(map.options.copy(location = options.copy(showsPuck = false)))
+                until("hidden puck has no rendered indicator") {
+                    val point = map.project(first.coordinate)
+                    renderer.queryRenderedFeatures(android.graphics.PointF(point.x, point.y), LocationComponentConstants.FOREGROUND_LAYER).isEmpty()
+                }
+                assertSame(consumer, provider.consumer)
+                val next = first.copy(coordinate = TileflowCoordinate(-3.699, 40.421))
+                consumer.locationUpdated(next)
+                until("hidden location still receives updates") { map.latestLocation == next }
+                map.setOptions(map.options.copy(location = options.copy(showsPuck = true)))
+                until("the current puck is visible again") {
+                    val point = map.project(next.coordinate)
+                    renderer.queryRenderedFeatures(android.graphics.PointF(point.x, point.y), LocationComponentConstants.FOREGROUND_LAYER).isNotEmpty()
+                }
+                map.setOptions(map.options.copy(location = options.copy(enabled = false)))
+                assertEquals(null, provider.consumer)
+            } }
+        } finally { instrumentation.runOnMainSync { activity.finish() } }
+    }
+
+    @Test
     public fun theProviderOwnsTheFixBearingAccuracyAndAgeAcrossStyles() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val activity =

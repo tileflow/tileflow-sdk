@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.ImageView
 import dev.tileflow.sdk.TileflowCamera
+import dev.tileflow.sdk.TileflowCameraUpdate
 import dev.tileflow.sdk.TileflowCoordinate
 import dev.tileflow.sdk.TileflowErrorCode
 import dev.tileflow.sdk.TileflowErrorContext
@@ -435,14 +436,50 @@ internal class NativeMapEngine(
             attribution.setDownloaded(obligations, regional)
         }
         configureCamera(options)
-        val start =
-            options.optJSONObject("camera")?.let(::cameraOrNull) ?: document.view
+        val restored = options.optJSONObject("camera")?.let(::cameraOrNull)
+        var start = restored ?: document.view
+        if (restored == null && (options.has("cameraUpdate") || options.has("cameraBounds"))) {
+            val value = options.optJSONObject("cameraUpdate")
+            val center = value?.optJSONObject("center")
+            val update = TileflowCameraUpdate(
+                center?.let { TileflowCoordinate(it.getDouble("longitude"), it.getDouble("latitude")) },
+                value?.opt("zoom")?.let { it as? Number }?.toDouble(),
+                value?.opt("bearing")?.let { it as? Number }?.toDouble(),
+                value?.opt("pitch")?.let { it as? Number }?.toDouble(),
+            )
+            val authored = start ?: TileflowCamera(0.0, 0.0, 0.0)
+            val bounds = options.optJSONObject("cameraBounds")
+            start = if (bounds == null) update.appliedTo(authored) else {
+                awaitViewport()
+                val fit = JSONObject().put("bounds", bounds)
+                    .put("padding", options.optJSONObject("cameraPadding") ?: JSONObject())
+                    .put("bearing", update.bearing ?: authored.bearing)
+                    .put("pitch", update.pitch ?: authored.pitch)
+                update.zoom?.let { fit.put("maxZoom", it) }
+                camera?.fitted(fit) ?: throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
+            }
+        }
         start?.let { camera?.jump(it) }
         awaitingContent = true
         contentStyleLoaded = false
         loaded = false
         show(map, style, projected)
         return JSONObject.NULL
+    }
+
+    private suspend fun awaitViewport() {
+        if (mapView.width > 0 && mapView.height > 0) return
+        kotlinx.coroutines.suspendCancellableCoroutine<Unit> { waiting ->
+            lateinit var listener: android.view.View.OnLayoutChangeListener
+            listener = android.view.View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+                if (mapView.width > 0 && mapView.height > 0) {
+                    mapView.removeOnLayoutChangeListener(listener)
+                    if (waiting.isActive) waiting.resumeWith(Result.success(Unit))
+                }
+            }
+            mapView.addOnLayoutChangeListener(listener)
+            waiting.invokeOnCancellation { mapView.removeOnLayoutChangeListener(listener) }
+        }
     }
 
     private fun load(url: URI): ByteArray = NativeMapPreparation.read(loader, url)

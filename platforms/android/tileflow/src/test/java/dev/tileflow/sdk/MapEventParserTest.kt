@@ -47,6 +47,16 @@ public class MapEventParserTest {
     }
 
     @Test
+    public fun cameraBoundsAreAnOptionalSnapshotOfTheSameEvent() {
+        val value = JSONObject("""{"camera":$camera,"reason":"api","bounds":{"west":170,"south":-2,"east":-170,"north":3}}""")
+        val event = parseMapEvent("cameraMoved", value) as TileflowMapEvent.CameraChanged
+        value.getJSONObject("bounds").put("north", 8)
+        assertEquals(TileflowBounds(170.0, -2.0, -170.0, 3.0), event.change.bounds)
+        value.remove("bounds")
+        assertNull((parseMapEvent("cameraMoved", value) as TileflowMapEvent.CameraChanged).change.bounds)
+    }
+
+    @Test
     public fun cameraEventsCarryPhaseAndReason() {
         val started =
             parseMapEvent(

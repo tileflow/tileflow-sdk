@@ -17,6 +17,10 @@ public suspend fun TileflowMapController.addStyleLayer(
     position: TileflowLayerPosition = TileflowLayerPosition.Default,
 ): Unit = attached().addStyleLayer(properties, position)
 
+/** See [TileflowMapView.updateSource]. */
+public suspend fun TileflowMapController.updateSource(id: String, properties: JSONObject): Unit =
+    attached().updateSource(id, properties)
+
 /** See [TileflowMapView.removeSource]. */
 public suspend fun TileflowMapController.removeSource(id: String): Unit =
     attached().removeSource(id)
@@ -38,10 +42,12 @@ public suspend fun TileflowMapController.addGeoJSONSourceFeatures(
 ): Unit = attached().addGeoJSONSourceFeatures(sourceId, features)
 
 /** See [TileflowMapView.updateGeoJSONSourceFeatures]. */
+@JvmOverloads
 public suspend fun TileflowMapController.updateGeoJSONSourceFeatures(
     sourceId: String,
     features: List<TileflowFeature>,
-): Unit = attached().updateGeoJSONSourceFeatures(sourceId, features)
+    removeFeatureIds: List<String> = emptyList(),
+): Unit = attached().updateGeoJSONSourceFeatures(sourceId, features, removeFeatureIds)
 
 /** See [TileflowMapView.removeGeoJSONSourceFeatures]. */
 public suspend fun TileflowMapController.removeGeoJSONSourceFeatures(
@@ -64,8 +70,12 @@ public suspend fun TileflowMapController.updateStyleLayer(properties: JSONObject
     attached().updateStyleLayer(properties)
 
 /** See [TileflowMapView.moveLayer]. */
-public suspend fun TileflowMapController.moveLayer(id: String, position: TileflowLayerPosition): Unit =
-    attached().moveLayer(id, position)
+@JvmOverloads
+public suspend fun TileflowMapController.moveLayer(
+    id: String,
+    position: TileflowLayerPosition,
+    slot: TileflowLayerSlot? = null,
+): Unit = attached().moveLayer(id, position, slot)
 
 /** See [TileflowMapView.removeLayer]. */
 public suspend fun TileflowMapController.removeLayer(id: String): Unit = attached().removeLayer(id)

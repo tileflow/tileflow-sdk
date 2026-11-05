@@ -48,6 +48,7 @@ internal class NativeMapLocation(
     private val checkAge = Runnable { decorate() }
     private var activated = false
     private var enabled = false
+    private var showsPuck = true
     private var accuracy = true
     private var bearing = "none"
     private var staleAfter = 30_000L
@@ -59,13 +60,14 @@ internal class NativeMapLocation(
 
     private var appearance: Colours? = null
 
-    private data class Indicators(val mode: Int, val course: Float?, val colours: Colours)
+    private data class Indicators(val mode: Int, val course: Float?, val colours: Colours, val visible: Boolean)
 
     private var indicators: Indicators? = null
 
     fun options(value: JSONObject?) {
         if (value == null) return
         enabled = value.getBoolean("enabled")
+        showsPuck = value.optBoolean("showsPuck", true)
         accuracy = value.getBoolean("accuracy")
         bearing = value.getString("bearing")
         staleAfter = value.getLong("staleAfterMs")
@@ -190,12 +192,16 @@ internal class NativeMapLocation(
         // GPS render mode removes the accuracy ring. Its compass symbol supports an independent
         // course.
         val mode = if (direction == null) RenderMode.NORMAL else RenderMode.COMPASS
-        val next = Indicators(mode, direction?.takeIf { bearing == "course" }, colours)
+        val next = Indicators(mode, direction?.takeIf { bearing == "course" }, colours, showsPuck)
         val style = map.style ?: return
-        if (next == indicators) return
+        if (showsPuck && next == indicators) return
         indicators = next
         if (component.renderMode != mode) component.renderMode = mode
+        for (id in listOf(LocationComponentConstants.FOREGROUND_LAYER, LocationComponentConstants.BACKGROUND_LAYER, LocationComponentConstants.SHADOW_LAYER)) {
+            style.getLayer(id)?.setProperties(PropertyFactory.visibility(if (showsPuck) Property.VISIBLE else Property.NONE))
+        }
         val cone = style.getLayerAs<SymbolLayer>(LocationComponentConstants.BEARING_LAYER)
+        cone?.setProperties(PropertyFactory.visibility(if (showsPuck && direction != null) Property.VISIBLE else Property.NONE))
         if (direction != null) {
             cone?.setProperties(
                 if (bearing == "heading")
@@ -208,7 +214,7 @@ internal class NativeMapLocation(
             .getLayer(LocationComponentConstants.ACCURACY_LAYER)
             ?.setProperties(
                 PropertyFactory.visibility(
-                    if (colours.accuracy) Property.VISIBLE else Property.NONE
+                    if (showsPuck && colours.accuracy) Property.VISIBLE else Property.NONE
                 )
             )
     }
@@ -280,7 +286,7 @@ internal class NativeMapLocation(
 
     /** Public layer identifiers stay stable across renderers. */
     fun query(point: PointF, result: JSONArray) {
-        if (!activated || !component.isLocationComponentEnabled) return
+        if (!activated || !component.isLocationComponentEnabled || !showsPuck) return
         fun add(layer: String, suffix: String) {
             if (map.queryRenderedFeatures(point, layer).isNotEmpty())
                 result.put(

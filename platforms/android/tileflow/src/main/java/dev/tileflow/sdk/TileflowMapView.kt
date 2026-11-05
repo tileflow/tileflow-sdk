@@ -113,6 +113,8 @@ constructor(
     private var engine: MapEngine? = null
 
     private var scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var initialCameraUpdate: JSONObject? = null
+    private var initialCameraFit: JSONObject? = null
     private var generation = 0
     private var destroyed = false
     private var initialized = false
@@ -634,7 +636,33 @@ constructor(
         }
     }
 
+    /**
+     * Starts with an update to the authored camera before style loading. With bounds, center must
+     * be absent and zoom caps the fitted zoom. [initialCameraPadding] is extra bounds padding.
+     * A restored camera takes priority over these initial values.
+     */
+    @JvmOverloads
+    public fun setSource(
+        source: TileflowMapSource,
+        initialCameraUpdate: TileflowCameraUpdate,
+        initialCameraBounds: TileflowBounds? = null,
+        initialCameraPadding: TileflowEdgeInsets = TileflowEdgeInsets.ZERO,
+    ) {
+        val update = initialCameraUpdate.json()
+        if ((initialCameraBounds != null && initialCameraUpdate.center != null) ||
+            (initialCameraBounds == null && initialCameraPadding != TileflowEdgeInsets.ZERO))
+            throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST)
+        val fit = initialCameraBounds?.let {
+            fitJson(it, initialCameraPadding, initialCameraUpdate.bearing, initialCameraUpdate.pitch, initialCameraUpdate.zoom)
+        }
+        setSource(source, null, update.takeIf { it.length() > 0 }, fit)
+    }
+
     public fun setSource(source: TileflowMapSource, initialCamera: TileflowCamera? = null) {
+        setSource(source, initialCamera, null, null)
+    }
+
+    private fun setSource(source: TileflowMapSource, initialCamera: TileflowCamera?, update: JSONObject?, fit: JSONObject?) {
         check(!destroyed) { "The map is destroyed." }
         if (source == this.source) return
         source.validate()
@@ -643,6 +671,8 @@ constructor(
         loadable = null
         retireGeneration()
         this.source = source
+        initialCameraUpdate = update
+        initialCameraFit = fit
         if (initialCamera != null) observe(initialCamera)
         resetRecovery()
         if (attached) mount()
@@ -1364,6 +1394,13 @@ constructor(
                 val startingSubscriptions = subscriptions
                 val startingInsets = effectiveContentPadding
                 camera?.let { configuration.put("camera", it.json()) }
+                if (camera == null) {
+                    initialCameraUpdate?.let { configuration.put("cameraUpdate", it) }
+                    initialCameraFit?.let {
+                        configuration.put("cameraBounds", it.getJSONObject("bounds"))
+                        configuration.put("cameraPadding", it.getJSONObject("padding"))
+                    }
+                }
                 // A Hosted map opened from downloaded regions shows their credits.
                 loadable.grantScope?.let { grantScope ->
                     if (

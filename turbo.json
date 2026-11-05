@@ -14,6 +14,7 @@
       "dependsOn": ["^build"],
       "inputs": [
         "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/platforms/map-api.json",
         "$TURBO_ROOT$/scripts/mobile-runtime-build.mjs",
         "$TURBO_ROOT$/scripts/mobile-runtime-notices.mjs",
         "$TURBO_ROOT$/LICENSE"

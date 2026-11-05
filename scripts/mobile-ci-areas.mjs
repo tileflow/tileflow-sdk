@@ -5,6 +5,7 @@ import {fileURLToPath} from 'node:url';
 // when it changes something that reaches the embedded runtime, a native host or the React Native
 // native modules; pushes and manual runs always run every job.
 const hostedSessionFixtures = 'test-support/mobile/hosted/';
+const mapApi = 'platforms/map-api.json';
 const runtimeInputs = [
   '.github/workflows/ci.yml',
   'LICENSE',
@@ -17,6 +18,7 @@ const runtimeInputs = [
   'packages/mobile-runtime/',
   'scripts/mobile-',
   hostedSessionFixtures,
+  mapApi,
 ];
 // The fixture server builds its native map with @tileflow/dev from an official map.
 const nativeFixtureInputs = ['packages/dev/', 'packages/maps/'];
@@ -41,6 +43,7 @@ const areaInputs = {
     'platforms/android/gradlew',
     'test-support/react-native-',
     hostedSessionFixtures,
+    mapApi,
   ],
 };
 

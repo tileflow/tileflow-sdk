@@ -141,7 +141,7 @@ if (javascript.split(hashPlaceholder).length !== 2)
 const hash = createHash('sha256').update(javascript);
 for (const name of ['index.html', 'maplibre.css', 'notices.txt', 'dependencies.json'])
   hash.update(await readFile(resolve(output, name)));
-hash.update(await readFile(resolve(packageRoot, 'protocol.json')));
+hash.update(await readFile(resolve(root, 'platforms/map-api.json')));
 const runtimeHash = hash.digest('hex');
 await writeFile(resolve(output, 'runtime.js'), javascript.replace(hashPlaceholder, runtimeHash));
 const files = {};
@@ -154,7 +154,7 @@ for (const name of [
 ]) {
   files[name] = digest(await readFile(resolve(output, name)));
 }
-const protocol = JSON.parse(await readFile(resolve(packageRoot, 'protocol.json'), 'utf8'));
+const protocol = JSON.parse(await readFile(resolve(root, 'platforms/map-api.json'), 'utf8'));
 const maplibre = JSON.parse(await readFile(resolve(maplibreRoot, 'package.json'), 'utf8'));
 const receipt = {
   version: 1,

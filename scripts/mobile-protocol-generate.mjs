@@ -4,11 +4,11 @@ import {fileURLToPath} from 'node:url';
 import {format, resolveConfig} from 'prettier';
 import {renderProtocol} from './mobile-protocol.mjs';
 
-// Writes the protocol for the embedded runtime, Swift and Kotlin from protocol.json. `--check`
+// Writes the protocol for the embedded runtime, Swift and Kotlin from platforms/map-api.json. `--check`
 // fails instead when a generated file differs, so hosts and runtime cannot drift.
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = (path) => readFile(resolve(root, path), 'utf8');
-const contract = JSON.parse(await read('packages/mobile-runtime/protocol.json'));
+const contract = JSON.parse(await read('platforms/map-api.json'));
 const outputs = await renderProtocol(contract, {
   typescript: async (source) =>
     format(source, {

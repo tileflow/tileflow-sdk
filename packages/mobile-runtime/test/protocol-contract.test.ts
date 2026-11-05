@@ -9,7 +9,7 @@ import {renderProtocol, validateProtocol} from '../../../scripts/mobile-protocol
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const read = (path: string) => readFile(resolve(root, path), 'utf8');
-const contract = JSON.parse(await read('packages/mobile-runtime/protocol.json'));
+const contract = JSON.parse(await read('platforms/map-api.json'));
 const render = async (value: unknown) =>
   renderProtocol(value, {
     typescript: async (source: string) =>
@@ -105,5 +105,5 @@ test('generated names follow each platform convention', () => {
 test('an invalid contract is never rendered', async () => {
   const value = clone();
   value.version = 0;
-  await assert.rejects(render(value), /Invalid protocol\.json/u);
+  await assert.rejects(render(value), /Invalid map-api\.json/u);
 });

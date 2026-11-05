@@ -258,6 +258,45 @@ final class StyleTests: XCTestCase {
     XCTAssertEqual(features?.compactMap { $0["id"]?.number }, [2])
   }
 
+  func testSourcePatchesPreserveFeatureEditsLayersAndStateAndRejectInvalidChanges() async throws {
+    let view = TileflowMapView(source: .init(
+      map: "fixture", manifestURL: URL(string: "https://maps.example/manifest.json")!))
+    defer { view.destroy() }
+    func feature(_ id: String, _ name: String) -> TileflowFeature {
+      TileflowFeature(id: id, geometry: .point(.init(longitude: 1, latitude: 2)),
+        properties: ["name": .string(name)])
+    }
+    try await view.addSource(TileflowGeoJSONSource(
+      id: "points", data: .features([feature("a", "Original"), feature("b", "Removed")]),
+      cluster: true, clusterRadius: 40))
+    try await view.addLayer(TileflowCircleLayer(id: "circles", source: "points"))
+    try await view.setFeatureState(sourceId: "points", featureId: "a", state: ["selected": true])
+    try await view.updateGeoJSONSourceFeatures(
+      sourceId: "points", features: [feature("a", "Updated"), feature("c", "Added")],
+      removeFeatureIds: ["b"])
+    try await view.updateSource(id: "points", properties: ["clusterRadius": 80])
+    let updated = try XCTUnwrap(view.runtimeStyle.sources.first)
+    XCTAssertEqual(updated.spec["clusterRadius"], .number(80))
+    guard case .bytes(let bytes, _) = updated.geoJSON?.base else { return XCTFail("Missing data") }
+    let features = try json(String(decoding: bytes, as: UTF8.self))["features"]?.array ?? []
+    XCTAssertEqual(features.compactMap { $0["id"]?.string }, ["a", "c"])
+    XCTAssertEqual(features.compactMap { $0["properties"]?["name"]?.string }, ["Updated", "Added"])
+    XCTAssertEqual(view.runtimeStyle.layers.map(\.id), ["circles"])
+    let state = try await view.featureState(sourceId: "points", featureId: "a")
+    XCTAssertEqual(state, ["selected": true])
+
+    do {
+      try await view.updateSource(id: "points", properties: ["clusterRadius": -1])
+      XCTFail("Invalid patch replaced the source")
+    } catch let error as TileflowMapError { XCTAssertEqual(error, .invalidRequest) }
+    XCTAssertEqual(view.runtimeStyle.sources.first?.spec, updated.spec)
+    XCTAssertEqual(view.runtimeStyle.sources.first?.geoJSON?.base, updated.geoJSON?.base)
+    try await view.updateSource(id: "points", properties: ["clusterRadius": NSNull()])
+    XCTAssertNil(view.runtimeStyle.sources.first?.spec["clusterRadius"])
+    try view.reload()
+    XCTAssertEqual(view.runtimeStyle.sources.first?.geoJSON?.base, updated.geoJSON?.base)
+  }
+
   func testTheViewKeepsLayersInOrderAndRefusesUnknownNames() async throws {
     let view = TileflowMapView(
       source: TileflowMapSource(

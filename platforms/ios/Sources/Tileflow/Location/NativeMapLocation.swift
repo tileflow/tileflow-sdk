@@ -19,6 +19,7 @@ final class NativeMapLocation {
   let manager = NativeLocationManager()
   private var puck: NativeLocationPuck?
   private var enabled = false
+  private var showsPuck = true
   private var visible = true
   private var bearing = TileflowPuckBearing.none
   private var accuracy = true
@@ -56,6 +57,7 @@ final class NativeMapLocation {
   func setOptions(_ value: JSONValue?) {
     let wasEnabled = enabled
     enabled = value?["enabled"]?.bool ?? false
+    showsPuck = value?["showsPuck"]?.bool ?? true
     bearing = value?["bearing"]?.string.flatMap(TileflowPuckBearing.init(rawValue:)) ?? .none
     accuracy = value?["accuracy"]?.bool ?? true
     staleAfter = (value?["staleAfterMs"]?.number ?? 30_000) / 1000
@@ -80,7 +82,7 @@ final class NativeMapLocation {
     if bearing == .heading { direction = manager.heading?.trueHeading }
     if bearing == .course, let course = fix?.course, course >= 0 { direction = course }
     return .init(
-      accuracy: accuracy ? radius : nil, direction: direction,
+      showsPuck: showsPuck, accuracy: accuracy ? radius : nil, direction: direction,
       stale: fix.map { -$0.timestamp.timeIntervalSinceNow >= staleAfter } ?? false)
   }
 

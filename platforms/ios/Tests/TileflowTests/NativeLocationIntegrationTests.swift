@@ -8,6 +8,27 @@ import XCTest
 final class NativeLocationIntegrationTests: XCTestCase {
   let center = TileflowCoordinate(longitude: -3.70, latitude: 40.42)
 
+  func testHiddenPuckKeepsNativeLocationsWithoutRequestingPermission() async throws {
+    let provider = LocationInput(at: center, age: 0, course: 1, heading: 24)
+    let (view, window, _) = try await mount(provider, location: .init(enabled: true, showsPuck: false))
+    defer { view.destroy(); window.isHidden = true }
+    let map = try XCTUnwrap((view.engine as? NativeMapEngine)?.mapView)
+    try await until("Hidden location did not reach MapLibre") {
+      map.userLocation?.location != nil && map.userLocation.flatMap { map.view(for: $0) } != nil
+    }
+    let puck = try XCTUnwrap(map.userLocation.flatMap { map.view(for: $0) } as? NativeLocationPuck)
+    XCTAssertTrue(puck.layer.sublayers?.allSatisfy(\.isHidden) == true)
+    XCTAssertFalse(map.shouldRequestAuthorizationToUseLocationServices)
+    provider.emit(age: 0, accuracy: 34)
+    try await until("Hidden indicator stopped consuming positions") { view.latestLocation?.horizontalAccuracy == 34 }
+    var options = view.options
+    options.location.enabled = false
+    try await view.setOptions(options)
+    provider.emit(age: 0, accuracy: 48)
+    try await Task.sleep(for: .milliseconds(80))
+    XCTAssertNotEqual(view.latestLocation?.horizontalAccuracy, 48)
+  }
+
   private func mount(
     _ provider: any TileflowLocationProvider, zoom: Double = 14,
     location: TileflowLocationOptions = .init(enabled: true)

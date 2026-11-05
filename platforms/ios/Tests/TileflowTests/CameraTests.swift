@@ -184,3 +184,39 @@ final class CameraTests: XCTestCase {
     XCTAssertNil(view.hitTest(CGPoint(x: 10, y: 400), with: nil))
   }
 }
+@MainActor
+final class InitialCameraTests: XCTestCase {
+  func testPartialCameraPreservesTheAuthoredCenterAndRestoredCameraWins() throws {
+    let map = TileflowMapView(
+      source: .init(map: "fixture", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true),
+      initialCameraUpdate: .init(zoom: 16),
+      initialCameraPadding: .init(top: 10, left: 20, bottom: 30, right: 40))
+    defer { map.destroy() }
+
+    XCTAssertEqual(try map.startingCamera()["cameraUpdate"], .object(["zoom": .number(16)]))
+    XCTAssertNil(try map.startingCamera()["camera"])
+    XCTAssertEqual(map.contentInsets.left, 20)
+    let restored = TileflowCamera(longitude: 2, latitude: 40, zoom: 9)
+    map.initialCamera = restored
+    XCTAssertEqual(try map.startingCamera(), ["camera": try .encoded(restored)])
+  }
+
+  func testInitialBoundsRejectACenterAndRetainFitPadding() throws {
+    let bounds = TileflowBounds(west: -4, south: 40, east: -3, north: 41)
+    let map = TileflowMapView(
+      source: .init(map: "fixture", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true),
+      initialCameraUpdate: .init(center: .init(longitude: 0, latitude: 0)),
+      initialCameraBounds: bounds)
+    defer { map.destroy() }
+    XCTAssertThrowsError(try map.startingCamera())
+
+    let fit = TileflowMapView(
+      source: map.source, initialCameraUpdate: .init(zoom: 14, bearing: 30, pitch: 25),
+      initialCameraBounds: bounds,
+      initialCameraPadding: .init(top: 10, left: 20, bottom: 30, right: 40))
+    defer { fit.destroy() }
+    XCTAssertEqual(try fit.startingCamera()["cameraBounds"], try .encoded(bounds))
+    XCTAssertEqual(try fit.startingCamera()["cameraPadding"]?["left"], .number(20))
+    XCTAssertEqual(fit.contentInsets, .zero)
+  }
+}

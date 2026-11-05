@@ -2,6 +2,10 @@ import CoreGraphics
 import Foundation
 
 extension TileflowMapController {
+  public func updateSource(id: String, properties: [String: Any]) async throws {
+    try await attached().updateSource(id: id, properties: properties)
+  }
+
   /// See ``TileflowMapView/addSource(_:)``.
   public func addSource(_ source: any TileflowSource) async throws {
     try await attached().addSource(source)

@@ -34,6 +34,90 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     TileflowMapSource(map: "city", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
   }
 
+  func testPartialInitialCameraLoadsBeforeStyleAndBoundsUseTheViewport() async throws {
+    try await requireNativeFixture()
+    let events = NativeMapEvents()
+    let view = TileflowMapView(source: citySource, initialCameraUpdate: .init(zoom: 15))
+    let window = mount(view, events: events)
+    var beforeStyle: [TileflowCamera] = []
+    view.onEvent = { [weak view] event in
+      events.receive(event)
+      if case .cameraChanged(let change) = event, change.isFinal,
+        (view?.engine as? NativeMapEngine)?.styleLoaded == false {
+        beforeStyle.append(change.camera)
+      }
+    }
+    defer { view.destroy(); window.isHidden = true }
+    try await events.waitForLoads(1)
+    let camera = try await view.camera()
+    XCTAssertEqual(camera.longitude, Self.center.longitude, accuracy: 0.001)
+    XCTAssertEqual(camera.latitude, Self.center.latitude, accuracy: 0.001)
+    XCTAssertEqual(camera.zoom, 15, accuracy: 0.001)
+    XCTAssertTrue(beforeStyle.contains { abs($0.zoom - 15) < 0.01 })
+
+    let expected = TileflowBounds(west: -3.72, south: 40.40, east: -3.68, north: 40.44)
+    let framedEvents = NativeMapEvents()
+    let framed = TileflowMapView(source: citySource, initialCameraUpdate: .init(zoom: 13),
+      initialCameraBounds: expected, initialCameraPadding: .init(top: 40, left: 20, bottom: 70, right: 30))
+    let framedWindow = mount(framed, events: framedEvents)
+    defer { framed.destroy(); framedWindow.isHidden = true }
+    try await framedEvents.waitForLoads(1)
+    let actual = try await framed.visibleBounds()
+    XCTAssertLessThanOrEqual(actual.west, expected.west)
+    XCTAssertGreaterThanOrEqual(actual.east, expected.east)
+    XCTAssertLessThanOrEqual(actual.south, expected.south)
+    XCTAssertGreaterThanOrEqual(actual.north, expected.north)
+    let fitCamera = try await framed.camera()
+    XCTAssertLessThanOrEqual(fitCamera.zoom, 13)
+  }
+
+  func testSourceReconstructionPreservesEditsStateAndLayersAndRollsBackFailedData() async throws {
+    try await requireNativeFixture()
+    let events = NativeMapEvents()
+    let view = TileflowMapView(source: citySource)
+    let window = mount(view, events: events)
+    defer { view.destroy(); window.isHidden = true }
+    try await events.waitForLoads(1)
+    func feature(_ id: String, _ name: String) -> TileflowFeature {
+      .init(id: id, geometry: .point(Self.center), properties: ["name": .string(name)])
+    }
+    try await view.addSource(TileflowGeoJSONSource(id: "editable",
+      data: .features([feature("a", "Original"), feature("b", "Removed")]), cluster: true, clusterRadius: 40))
+    try await view.addLayer(TileflowCircleLayer(id: "editable-circles", source: "editable"))
+    try await view.setFeatureState(sourceId: "editable", featureId: "a", state: ["selected": true])
+    try await view.updateGeoJSONSourceFeatures(sourceId: "editable",
+      features: [feature("a", "Updated"), feature("c", "Added")], removeFeatureIds: ["b"])
+    let engine = try XCTUnwrap(view.engine as? NativeMapEngine)
+    let style = try XCTUnwrap(engine.mapView?.style)
+    let before = try XCTUnwrap(style.source(withIdentifier: "__tileflow_source_editable"))
+    try await view.updateSource(id: "editable", properties: ["clusterRadius": 80, "clusterMaxZoom": 17])
+    let after = try XCTUnwrap(style.source(withIdentifier: "__tileflow_source_editable") as? MLNShapeSource)
+    XCTAssertFalse(before === after)
+    XCTAssertNotNil(style.layer(withIdentifier: "__tileflow_layer_editable-circles"))
+    func ids() -> [String] {
+      let shape = engine.runtimeStyle.sources["editable"]?.shape as? MLNShapeCollectionFeature
+      return shape?.shapes.compactMap { $0.identifier as? String } ?? []
+    }
+    XCTAssertEqual(ids(), ["a", "c"])
+    try await waitUntil { after.featureState(featureID: "a")?["selected"] as? Bool == true }
+    do {
+      try await view.updateSource(id: "editable", properties: ["data": FixtureServer.origin + "/missing.geojson"])
+      XCTFail("A failed data load replaced the source")
+    } catch {}
+    XCTAssertTrue(style.source(withIdentifier: "__tileflow_source_editable") === after)
+    XCTAssertEqual(ids(), ["a", "c"])
+    XCTAssertEqual(view.runtimeStyle.sources.first { $0.id == "editable" }?.spec["clusterRadius"], .number(80))
+    try await view.updateSource(id: "editable", properties: ["filter": ["==", ["get", "name"], "Updated"]])
+    XCTAssertEqual(ids(), ["a"])
+    try await view.updateSource(id: "editable", properties: ["filter": NSNull()])
+    XCTAssertEqual(ids(), ["a", "c"])
+    try await view.setTheme("dark")
+    XCTAssertEqual(ids(), ["a", "c"])
+    XCTAssertTrue(view.layerExists("editable-circles"))
+    let state = try await view.featureState(sourceId: "editable", featureId: "a")
+    XCTAssertEqual(state, ["selected": true])
+  }
+
   func testNativeWarningsKeepStyleMessagesOutOfTheSystemLog() async throws {
     try await requireNativeFixture()
     let events = NativeMapEvents()

@@ -11,6 +11,7 @@ final class NativeLocationPuck: MLNUserLocationAnnotationView {
   private var state = State()
 
   struct State {
+    var showsPuck = true
     var accuracy: Double?
     var direction: Double?
     var stale = false
@@ -43,6 +44,9 @@ final class NativeLocationPuck: MLNUserLocationAnnotationView {
 
   func apply(_ state: State) {
     self.state = state
+    ground.isHidden = !state.showsPuck
+    dot.isHidden = !state.showsPuck
+    accessibilityElementsHidden = !state.showsPuck
     update()
   }
 

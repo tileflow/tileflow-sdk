@@ -91,9 +91,13 @@ struct GeoJSONLog {
   }
 
   /// The base and updates applied in order: a FeatureCollection keyed as MapLibre keys features.
-  static func compact(base: Data?, updates: [Update], promoteId: String?) -> Data? {
-    var order: [String] = []
-    var features: [String: Any] = [:]
+  static func compact(
+    base: Data?, updates: [Update], promoteId: String?, generateId: Bool = false,
+    preservingUnidentified: Bool = false
+  ) -> Data? {
+    enum Identity: Hashable { case feature(String), anonymous(Int) }
+    var order: [Identity] = []
+    var features: [Identity: Any] = [:]
     func key(_ feature: [String: Any]) -> String? {
       let id = promoteId.map { (feature["properties"] as? [String: Any])?[$0] } ?? feature["id"]
       switch id {
@@ -103,27 +107,47 @@ struct GeoJSONLog {
       default: return nil
       }
     }
-    func add(_ feature: Any) -> Bool {
-      guard let feature = feature as? [String: Any], let id = key(feature) else { return false }
+    var anonymous = 0
+    func add(_ value: Any, index: Int) -> Bool {
+      guard var feature = value as? [String: Any] else { return false }
+      if let promoteId {
+        feature["id"] = (feature["properties"] as? [String: Any])?[promoteId]
+      } else if generateId, feature["id"] == nil {
+        feature["id"] = index
+      }
+      let id: Identity
+      if let named = key(feature) { id = .feature(named) } else {
+        guard preservingUnidentified else { return false }
+        id = .anonymous(anonymous)
+        anonymous += 1
+      }
       if features[id] == nil { order.append(id) }
       features[id] = feature
       return true
     }
     if let base {
-      guard let value = try? JSONSerialization.jsonObject(with: base) as? [String: Any],
-        let list = value["features"] as? [Any], list.allSatisfy(add)
-      else { return nil }
+      guard let value = try? JSONSerialization.jsonObject(with: base) as? [String: Any] else {
+        return nil
+      }
+      let list: [Any]
+      switch value["type"] as? String {
+      case "FeatureCollection":
+        guard let features = value["features"] as? [Any] else { return nil }
+        list = features
+      case "Feature": list = [value]
+      default: list = [["type": "Feature", "geometry": value, "properties": [:]]]
+      }
+      for (index, feature) in list.enumerated() where !add(feature, index: index) { return nil }
     }
     for update in updates {
-      let removed = Set(update.remove)
+      let removed = Set(update.remove.map(Identity.feature))
       if !removed.isEmpty {
         order.removeAll { removed.contains($0) }
         for id in removed { features.removeValue(forKey: id) }
       }
       if let added = update.add {
-        guard let list = try? JSONSerialization.jsonObject(with: added) as? [Any],
-          list.allSatisfy(add)
-        else { return nil }
+        guard let list = try? JSONSerialization.jsonObject(with: added) as? [Any] else { return nil }
+        for (index, feature) in list.enumerated() where !add(feature, index: index) { return nil }
       }
     }
     let collection: [String: Any] = [
@@ -146,6 +170,10 @@ extension TileflowMapView {
 
   /// Adds a style-spec source supplied as JSON. Inline GeoJSON uses the same data channel as a typed source.
   public func addSource(id: String, properties: [String: Any]) async throws {
+    try await addSource(Self.sourceRecord(id: id, properties: properties))
+  }
+
+  private static func sourceRecord(id: String, properties: [String: Any]) throws -> RuntimeStyle.Source {
     var properties = properties
     guard let type = properties["type"] as? String,
       ["geojson", "vector", "raster", "raster-dem", "image"].contains(type)
@@ -174,8 +202,54 @@ extension TileflowMapView {
     guard JSONSerialization.isValidJSONObject(properties) else {
       throw TileflowMapError.invalidRequest
     }
-    try await addSource(
-      .init(id: id, spec: properties.mapValues(JSONValue.init(foundation:)), geoJSON: log))
+    return .init(id: id, spec: properties.mapValues(JSONValue.init(foundation:)), geoJSON: log)
+  }
+
+  /// Updates source properties. Omitted fields remain; null removes an optional field. Layers,
+  /// feature edits and state survive reconstruction. A rejected update leaves the source intact.
+  public func updateSource(id: String, properties: [String: Any]) async throws {
+    try await styleEdits.acquire()
+    defer { styleEdits.release() }
+    guard !isDestroyed else { throw TileflowMapError.disposed }
+    guard let index = runtimeStyle.sources.firstIndex(where: { $0.id == id }) else {
+      throw TileflowMapError(.invalidRequest, reason: .unknownSource)
+    }
+    let previous = runtimeStyle.sources[index]
+    var merged = previous.spec.mapValues(\.foundation)
+    for (key, value) in properties {
+      if value is NSNull { merged.removeValue(forKey: key) } else { merged[key] = value }
+    }
+    var next = try Self.sourceRecord(id: id, properties: merged)
+    if properties["data"] == nil, var log = previous.geoJSON, next.geoJSON != nil {
+      if !log.updates.isEmpty {
+        let base: Data? = if case .bytes(let data, _) = log.base { data } else { nil }
+        let updates = log.updates
+        let promoteId = log.promoteId
+        let generateId = previous.spec["generateId"]?.bool == true
+        let materialized = await Task.detached(priority: .userInitiated) {
+          GeoJSONLog.compact(base: base, updates: updates, promoteId: promoteId,
+            generateId: generateId, preservingUnidentified: true)
+        }.value
+        try Task.checkCancellation()
+        guard let materialized else { throw TileflowMapError.invalidRequest }
+        log.base = try Self.geoJSONBase(.geoJSON(materialized)).0
+        log.updates = []
+        log.updateBytes = 0
+      }
+      log.promoteId = next.spec["promoteId"]?.string
+      log.revision += 1
+      log.compacting = false
+      next.geoJSON = log
+    }
+    next.geoJSON?.revision = (previous.geoJSON?.revision ?? 0) + 1
+    try NativeRuntimeStyle.validateQueuedSource(next)
+    try NativeRuntimeStyle.validateSourceLayers(
+      next.spec, layers: runtimeStyle.layers.filter { $0.json["source"]?.string == id }.map(\.json))
+    if let engine = styleEngine {
+      try await sendSource(next, method: .updateSource, through: engine)
+    }
+    guard !isDestroyed else { throw TileflowMapError.disposed }
+    runtimeStyle.sources[index] = next
   }
 
   private static let geoJSONTypes: Set<String> = [
@@ -806,6 +880,12 @@ extension TileflowMapView {
   private func sendAddSource(_ record: RuntimeStyle.Source, through engine: any MapEngine)
     async throws
   {
+    try await sendSource(record, method: .addSource, through: engine)
+  }
+
+  private func sendSource(
+    _ record: RuntimeStyle.Source, method: MapEngineCommand, through engine: any MapEngine
+  ) async throws {
     var spec = record.spec
     var references: [MapPayloadStore.Reference] = []
     if let log = record.geoJSON {
@@ -814,7 +894,7 @@ extension TileflowMapView {
       references = registered
     }
     _ = try await engine.call(
-      .addSource, payload: .object(["id": .string(record.id), "source": .object(spec)]),
+      method, payload: .object(["id": .string(record.id), "source": .object(spec)]),
       data: references)
   }
 
@@ -862,9 +942,10 @@ extension TileflowMapView {
     let updates = log.updates
     let revision = log.revision
     let promoteId = log.promoteId
+    let generateId = runtimeStyle.sources[index].spec["generateId"]?.bool == true
     Task { @MainActor [weak self] in
       let compacted = await Task.detached(priority: .utility) {
-        GeoJSONLog.compact(base: base, updates: updates, promoteId: promoteId)
+        GeoJSONLog.compact(base: base, updates: updates, promoteId: promoteId, generateId: generateId)
       }.value
       guard let self,
         let index = self.runtimeStyle.sources.firstIndex(where: { $0.id == sourceId }),

@@ -157,7 +157,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     case .initialize:
       try await initialize(payload)
       return .null
-    case .addSource, .addLayer, .moveLayer, .updateLayer, .removeSource, .removeLayer,
+    case .addSource, .updateSource, .addLayer, .moveLayer, .updateLayer, .removeSource, .removeLayer,
       .setGeoJSONSourceData, .updateGeoJSONSource, .setFeatureState, .removeFeatureState,
       .queryRenderedFeatures, .querySourceFeatures, .queryCluster, .setImages:
       // A TileJSON request may suspend. Apply later layer and source commands in submission order.
@@ -247,17 +247,21 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     -> JSONValue
   {
     switch command {
-    case .addSource, .setGeoJSONSourceData:
+    case .addSource, .updateSource, .setGeoJSONSourceData:
       guard let theme = shown?.theme, let url = manifest?.styles[theme], let context else {
         throw TileflowMapError.notReady
       }
-      if command == .addSource {
+      if command == .addSource || command == .updateSource {
         let source = try await NativeRuntimeStyle.prepareSource(
           request, channel: data, styleURL: url, load: loadApplicationData,
           project: { [self] in try await project($0, styleURL: $1, context: context) })
         try Task.checkCancellation()
         if let error = retirementError { throw error }
-        try runtimeStyle.addSource(source, in: loadedStyle)
+        if command == .addSource {
+          try runtimeStyle.addSource(source, in: loadedStyle)
+        } else {
+          try runtimeStyle.updateSource(source, in: loadedStyle)
+        }
         updateApplicationResources()
       } else {
         guard let value = request["data"], let id = request["id"]?.string else {
@@ -411,7 +415,7 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     guard !retired, mapView != nil else { throw TileflowMapError.cancelled }
     shown = .theme(theme.name)
     configureCamera(payload)
-    camera?.jump(to: TileflowCamera(wire: payload["camera"]) ?? manifest.view)
+    try camera?.start(from: manifest.view, configuration: payload)
     styleRequested = true
     contentPending = true
     show(prepared.document.value, projected: prepared.projected)

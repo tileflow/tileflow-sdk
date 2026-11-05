@@ -84,6 +84,26 @@ final class NativeCamera {
 
   // MARK: Reading
 
+  /// Resolve the initial view before MapLibre receives the style, including city-zoom sources.
+  func start(from authored: TileflowCamera, configuration: JSONValue) throws {
+    if let restored = TileflowCamera(wire: configuration["camera"]) {
+      jump(to: restored)
+      return
+    }
+    let update = configuration["cameraUpdate"] ?? .object([:])
+    let partial = try target(of: .object(["target": update]), from: authored)
+    jump(to: partial)
+    if let bounds = configuration["cameraBounds"] {
+      var fit: [String: JSONValue] = [
+        "bounds": bounds, "padding": configuration["cameraPadding"] ?? .object([:]),
+        "bearing": .number(partial.bearing), "pitch": .number(partial.pitch),
+      ]
+      if let zoom = update["zoom"] { fit["maxZoom"] = zoom }
+      guard let fitted = fitted(.object(fit)) else { throw TileflowMapError.invalidRequest }
+      jump(to: fitted)
+    }
+  }
+
   /// The camera in the SDK's form. MapLibre's direction runs from 0 to 360; the SDK's bearing runs
   /// from -180 to 180, as on the web.
   var current: TileflowCamera? {

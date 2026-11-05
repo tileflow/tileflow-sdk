@@ -110,7 +110,8 @@ final class LocationTests: XCTestCase {
     XCTAssertEqual(
       try TileflowLocationOptions(enabled: true, puckBearing: .course, staleAfter: 10).wireValue(),
       .object([
-        "enabled": .bool(true), "bearing": .string("course"), "accuracy": .bool(true),
+        "enabled": .bool(true), "showsPuck": .bool(true),
+        "bearing": .string("course"), "accuracy": .bool(true),
         "staleAfterMs": .number(10_000),
       ]))
     XCTAssertThrowsError(try TileflowLocationOptions(staleAfter: 0.5).wireValue())
@@ -118,6 +119,36 @@ final class LocationTests: XCTestCase {
     var options = TileflowMapOptions()
     options.location = .init(enabled: true)
     XCTAssertEqual(try options.wireValue(rightToLeft: false)["location"]?["enabled"], .bool(true))
+  }
+
+  func testHiddenPuckKeepsTheRequestedLocationConsumerUntilDisabled() async throws {
+    let provider = TileflowSimulatedLocationProvider(route: route, playsAutomatically: false)
+    let view = TileflowMapView(
+      source: .init(map: "fixture", manifestURL: FixtureServer.manifest, allowsLoopbackHTTP: true),
+      options: .init(location: .init(enabled: true, showsPuck: false)))
+    defer { view.destroy() }
+    view.locationProvider = provider
+    let window = UIWindow(frame: CGRect(x: 0, y: 0, width: 200, height: 200))
+    window.addSubview(view)
+
+    XCTAssertEqual(try view.options.location.wireValue()["showsPuck"], .bool(false))
+    let hidden = provider.advance(by: 1)
+    XCTAssertEqual(view.latestLocation, hidden)
+
+    var options = view.options
+    options.location.enabled = false
+    try await view.setOptions(options)
+    let stopped = view.latestLocation
+    provider.advance(by: 1)
+    XCTAssertEqual(view.latestLocation, stopped)
+
+    options.location.enabled = true
+    try await view.setOptions(options)
+    XCTAssertEqual(view.latestLocation, provider.latestLocation)
+    view.removeFromSuperview()
+    let paused = view.latestLocation
+    provider.advance(by: 1)
+    XCTAssertEqual(view.latestLocation, paused)
   }
 
   func testTheFollowModeAnswersPeopleAndTheApplication() {

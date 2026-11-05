@@ -50,8 +50,10 @@ public enum TileflowPuckBearing: String, Sendable {
 /// location starts the map's location provider while the map is visible; the provider measures
 /// only when the application has access (see ``TileflowLocationPermissions``).
 public struct TileflowLocationOptions: Equatable, Sendable {
-  /// Shows the location and follows it when a follow mode is set.
+  /// Consumes positions while the map is visible and follows them when a follow mode is set.
   public var enabled: Bool
+  /// Draws the location indicator. Hidden indicators still consume positions when enabled.
+  public var showsPuck: Bool
   public var puckBearing: TileflowPuckBearing
   /// Draws a circle of the position's accuracy around the puck.
   public var showsAccuracy: Bool
@@ -61,10 +63,12 @@ public struct TileflowLocationOptions: Equatable, Sendable {
   public var followZoom: Double?
 
   public init(
-    enabled: Bool = false, puckBearing: TileflowPuckBearing = .none, showsAccuracy: Bool = true,
+    enabled: Bool = false, showsPuck: Bool = true,
+    puckBearing: TileflowPuckBearing = .none, showsAccuracy: Bool = true,
     staleAfter: TimeInterval = 30, followZoom: Double? = 15
   ) {
     self.enabled = enabled
+    self.showsPuck = showsPuck
     self.puckBearing = puckBearing
     self.showsAccuracy = showsAccuracy
     self.staleAfter = staleAfter
@@ -75,7 +79,8 @@ public struct TileflowLocationOptions: Equatable, Sendable {
     guard (1...3600).contains(staleAfter), followZoom.map({ (0...24).contains($0) }) ?? true
     else { throw TileflowMapError.invalidRequest }
     return .object([
-      "enabled": .bool(enabled), "bearing": .string(puckBearing.rawValue),
+      "enabled": .bool(enabled), "showsPuck": .bool(showsPuck),
+      "bearing": .string(puckBearing.rawValue),
       "accuracy": .bool(showsAccuracy), "staleAfterMs": .number((staleAfter * 1000).rounded()),
     ])
   }

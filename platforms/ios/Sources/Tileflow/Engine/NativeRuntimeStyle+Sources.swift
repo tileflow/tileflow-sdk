@@ -12,6 +12,21 @@ extension NativeRuntimeStyle {
     if case .bytes(let bytes, _) = source.geoJSON?.base { _ = try shape(bytes) }
   }
 
+  static func validateSourceLayers(_ spec: [String: JSONValue], layers: [JSONValue]) throws {
+    let type = spec["type"]?.string
+    for layer in layers {
+      let allowed: Set<String>
+      switch layer["type"]?.string {
+      case "raster": allowed = ["raster", "image"]
+      case "hillshade", "color-relief": allowed = ["raster-dem"]
+      default: allowed = ["geojson", "vector"]
+      }
+      guard type.map(allowed.contains) == true,
+        layer["source-layer"] == nil || type == "vector"
+      else { throw TileflowMapError.invalidRequest }
+    }
+  }
+
   static func validateAddress(_ text: String) throws {
     let trimmed = text.hasPrefix("pmtiles://") ? String(text.dropFirst(10)) : text
     let resolved = MapResourceAddress.resolve(trimmed, against: "https://fixture.invalid/")
@@ -362,6 +377,87 @@ extension NativeRuntimeStyle {
       throw TileflowMapError.invalidRequest
     }
     sources[item.id] = item
+  }
+
+  /// Stage source and layers first, then swap synchronously. Never expose half an update.
+  func updateSource(_ item: Source, in style: MLNStyle?) throws {
+    guard let previous = sources[item.id] else { throw TileflowMapError.invalidRequest }
+    let dependent = layers.filter { $0.json["source"]?.string == item.id }
+    try Self.validateSourceLayers(item.spec, layers: dependent.map(\.json))
+    let source = try makeSource(item)
+    let replacements = try dependent.map {
+      try Self.makeLayer($0.json, source: source, identifier: layerID($0.id))
+    }
+    guard let style else {
+      sources[item.id] = item
+      return
+    }
+    guard let installed = style.source(withIdentifier: sourceID(item.id)) else {
+      throw TileflowMapError.invalidRequest
+    }
+    if previous.spec == item.spec, let shapeSource = installed as? MLNShapeSource {
+      shapeSource.shape = item.shape
+      sources[item.id] = item
+      return
+    }
+    if let image = installed as? MLNImageSource, let nextImage = source as? MLNImageSource {
+      let oldURL = image.url
+      let oldCoordinates = image.coordinates
+      guard TFStylePerform({
+        image.coordinates = nextImage.coordinates
+        image.url = nextImage.url
+      }) else {
+        _ = TFStylePerform {
+          image.coordinates = oldCoordinates
+          image.url = oldURL
+        }
+        throw TileflowMapError.invalidRequest
+      }
+      sources[item.id] = item
+      return
+    }
+    let oldLayers = try dependent.map { layer -> MLNStyleLayer in
+      guard let native = style.layer(withIdentifier: layerID(layer.id)) else {
+        throw TileflowMapError.invalidRequest
+      }
+      return native
+    }
+    func remove(_ layers: [MLNStyleLayer], source: MLNSource) {
+      for layer in layers.reversed() where style.layer(withIdentifier: layer.identifier) != nil {
+        style.removeLayer(layer)
+      }
+      if style.source(withIdentifier: source.identifier) != nil { style.removeSource(source) }
+    }
+    func install(_ native: [MLNStyleLayer], source: MLNSource) -> Bool {
+      TFStylePerform {
+        style.addSource(source)
+        for (definition, layer) in zip(dependent, native) {
+          if let before = self.beforeLayer(definition, in: style) {
+            style.insertLayer(layer, below: before)
+          } else { style.addLayer(layer) }
+        }
+      }
+    }
+    remove(oldLayers, source: installed)
+    do {
+      guard install(replacements, source: source) else { throw TileflowMapError.invalidRequest }
+      try restoreSourceState(item.id, in: style)
+    } catch {
+      remove(replacements, source: source)
+      guard install(oldLayers, source: installed) else { throw TileflowMapError.rendererFailed }
+      try restoreSourceState(item.id, in: style)
+      throw error
+    }
+    sources[item.id] = item
+  }
+
+  private func restoreSourceState(_ id: String, in style: MLNStyle) throws {
+    for (target, features) in states where target.hasPrefix(id + "\n") {
+      let sourceLayer = String(target.dropFirst(id.count + 1))
+      for (feature, values) in features {
+        try applyState(sourceID: id, sourceLayer: sourceLayer, feature: feature, values: values, in: style)
+      }
+    }
   }
 
   func replaceData(_ bytes: Data, source id: String, in style: MLNStyle?) throws {

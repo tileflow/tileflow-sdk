@@ -41,6 +41,9 @@ public final class TileflowMapView: UIView {
   private var pendingRemount = false
   /// The camera the renderer last reported, or the one to start the next renderer at.
   var initialCamera: TileflowCamera?
+  private var initialCameraUpdate: TileflowCameraUpdate?
+  private var initialCameraBounds: TileflowBounds?
+  private var initialCameraPadding = UIEdgeInsets.zero
   /// A camera the application asked for while no renderer could move, and how many it asked for.
   var requestedCamera: (camera: TileflowCamera, count: Int)?
   /// The current source with its configuration read, kept with its Hosted session.
@@ -135,6 +138,40 @@ public final class TileflowMapView: UIView {
   ) {
     self.init(
       source: .hosted(mapID: mapID), theme: theme, initialCamera: initialCamera, options: options)
+  }
+
+  /// Applies a partial camera to the authored view before loading the style. Bounds use the
+  /// measured viewport; zoom caps their fit. A restored camera takes precedence on reload.
+  public convenience init(
+    source: TileflowMapSource, theme: String? = nil,
+    initialCameraUpdate: TileflowCameraUpdate, initialCameraBounds: TileflowBounds? = nil,
+    initialCameraPadding: UIEdgeInsets = .zero, options: TileflowMapOptions = .init()
+  ) {
+    self.init(source: source, theme: theme, options: options)
+    self.initialCameraUpdate = initialCameraUpdate
+    self.initialCameraBounds = initialCameraBounds
+    self.initialCameraPadding = initialCameraPadding
+    if initialCameraBounds == nil { contentInsets = initialCameraPadding }
+  }
+
+  func startingCamera() throws -> [String: JSONValue] {
+    if let initialCamera { return ["camera": try .encoded(initialCamera)] }
+    guard let update = initialCameraUpdate else { return [:] }
+    let edges = [initialCameraPadding.top, initialCameraPadding.left,
+      initialCameraPadding.bottom, initialCameraPadding.right]
+    guard edges.allSatisfy({ $0.isFinite && $0 >= 0 }) else {
+      throw TileflowMapError.invalidRequest
+    }
+    var result = ["cameraUpdate": try update.wireValue()]
+    if let bounds = initialCameraBounds {
+      guard update.center == nil, (-180...180).contains(bounds.west),
+        (-180...180).contains(bounds.east), (-90...90).contains(bounds.south),
+        (-90...90).contains(bounds.north), bounds.south <= bounds.north
+      else { throw TileflowMapError.invalidRequest }
+      result["cameraBounds"] = try .encoded(bounds)
+      result["cameraPadding"] = Self.wire(initialCameraPadding)
+    }
+    return result
   }
 
   @available(*, unavailable)
@@ -577,7 +614,7 @@ public final class TileflowMapView: UIView {
         "insets": Self.wire(effectiveContentInsets),
       ]
       let startingInsets = effectiveContentInsets
-      if let camera = initialCamera { configuration["camera"] = try .encoded(camera) }
+      configuration.merge(try startingCamera()) { $1 }
       // A Hosted map opened from downloaded regions shows their regional credits.
       if let scope = loadable.grantScope,
         OfflineServingRule.hostedUsesPacks(

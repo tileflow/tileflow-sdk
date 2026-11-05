@@ -50,6 +50,11 @@ const cases = [
     options: {joinBy: 'ref', to: 'ref', classes: []},
   },
   {
+    name: 'refs preserve distinct Unicode spellings',
+    rows: rows(['é', 1], ['e\u0301', 2], ['é', 3]),
+    options: {joinBy: 'ref', to: 'ref'},
+  },
+  {
     name: 'one ID across two classes emits both refs',
     lookup: 'madrid',
     rows: rows([' es-md ', 'active']),

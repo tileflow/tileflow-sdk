@@ -29,6 +29,23 @@ export {PointAnnotation, MarkerView} from './annotations';
 export type {MarkerViewProps} from './annotations';
 export {UserLocation} from './user-location';
 export {TileflowMapError} from './map-error';
+export {
+  joinBoundaryRows,
+  createBoundaryLookup,
+  parseBoundaryLookupCsv,
+} from './generated/boundary-join';
+export type {
+  JoinBoundaryRowsOptions,
+  TileflowBoundaryCode,
+  TileflowBoundaryFeatureKey,
+  TileflowBoundaryJoinResult,
+  TileflowBoundaryLookup,
+  TileflowBoundaryLookupRow,
+  TileflowBoundaryRow,
+  TileflowBoundaryValue,
+  TileflowBoundaryValues,
+} from './generated/boundary-join';
+export type {TileflowBoundaryClass, TileflowBoundaryClassTier} from './generated/boundary-schema';
 export type * from './contract';
 export {
   configuredServices,

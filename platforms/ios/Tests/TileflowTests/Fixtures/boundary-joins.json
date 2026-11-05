@@ -121,6 +121,25 @@
       }
     },
     {
+      "name": "refs preserve distinct Unicode spellings",
+      "rows": [
+        {"key": "é", "value": 1},
+        {"key": "é", "value": 2},
+        {"key": "é", "value": 3}
+      ],
+      "options": {"joinBy": "ref", "to": "ref"},
+      "expected": {
+        "ambiguous": [],
+        "duplicates": ["é"],
+        "joinBy": "ref",
+        "rows": [
+          {"key": "é", "value": 3},
+          {"key": "é", "value": 2}
+        ],
+        "unmatched": []
+      }
+    },
+    {
       "name": "one ID across two classes emits both refs",
       "lookup": "madrid",
       "rows": [{"key": " es-md ", "value": "active"}],

@@ -326,16 +326,43 @@ async function assertInstalledPeerVersions(consumerDirectory, manifest, scenario
   }
 }
 
+function referenceTypeConsumer() {
+  return `export function exerciseReference(map: TileflowMapRef): readonly Promise<void>[] {
+  const addedSource: Promise<void> = map.addSource('app-points', {
+    type: 'geojson', data: {type: 'FeatureCollection', features: []},
+  });
+  const addedLayer: Promise<void> = map.addLayer(
+    {id: 'app-dots', type: 'circle', source: 'app-points'},
+    {slot: 'above-labels', slotIndex: 0},
+  );
+  const movedLayer: Promise<void> = map.moveLayer('app-dots', {slot: null, slotIndex: 0});
+  const removedLayer: Promise<void> = map.removeLayer('app-dots');
+  const removedSource: Promise<void> = map.removeSource('app-points');
+  return [addedSource, addedLayer, movedLayer, removedLayer, removedSource];
+}
+
+export function invalidReferenceCalls(map: TileflowMapRef) {
+  // @ts-expect-error The component owns its controller lifetime.
+  map.dispose();
+  // @ts-expect-error A slot insertion index is numeric.
+  map.moveLayer('app-dots', {slotIndex: 'first'});
+}
+`;
+}
+
 async function verifyReact(directory) {
   await writeTypeScriptConfig(directory, ['consumer.tsx'], ['geojson']);
   await writeFile(
     join(directory, 'consumer.tsx'),
-    `import {Map} from '@tileflow/react';
+    `import {createRef} from 'react';
+import {Map, type TileflowMapRef} from '@tileflow/react';
 import {StaticMap} from '@tileflow/react/static';
 
-export const interactive = <Map source={{map: 'main'}} center={[0, 0]} zoom={2} />;
+export const mapRef = createRef<TileflowMapRef>();
+export const interactive = <Map ref={mapRef} source={{map: 'main'}} center={[0, 0]} zoom={2} />;
 export const image = <Map source={{map: 'main'}} mode="image" imageUrl="https://example.com/map.png" />;
 export const staticMap = <StaticMap map="main" theme="light" camera={{type: 'center', center: [0, 0], zoom: 2}} size={{width: 256, height: 256}} imageUrl="https://example.com/static.png" />;
+${referenceTypeConsumer()}
 `,
   );
   await runTypeScript(directory);
@@ -359,11 +386,17 @@ async function verifyVue(directory) {
   await writeTypeScriptConfig(directory, ['consumer.ts'], ['geojson']);
   await writeFile(
     join(directory, 'consumer.ts'),
-    `import {h} from 'vue';
-import {TileflowMap, type TileflowMapProps} from '@tileflow/vue';
+    `import {h, ref} from 'vue';
+import {TileflowMap, type TileflowMapProps, type TileflowMapRef} from '@tileflow/vue';
 
 const props = {source: {map: 'main'}, mode: 'image' as const, imageUrl: 'https://example.com/map.png'} satisfies TileflowMapProps;
 export const image = h(TileflowMap, props);
+export const mapRef = ref<TileflowMapRef | null>(null);
+export const interactive = h(TileflowMap, {ref: mapRef, source: {map: 'main'}});
+export function instanceReference(instance: InstanceType<typeof TileflowMap>): TileflowMapRef {
+  return instance;
+}
+${referenceTypeConsumer()}
 `,
   );
   await runTypeScript(directory);
@@ -385,10 +418,14 @@ async function verifySvelte(directory) {
   await writeTypeScriptConfig(directory, ['consumer.ts'], ['geojson']);
   await writeFile(
     join(directory, 'consumer.ts'),
-    `import TileflowMap, {type TileflowMapProps} from '@tileflow/svelte';
+    `import TileflowMap, {type TileflowMapProps, type TileflowMapRef} from '@tileflow/svelte';
 
 export const component = TileflowMap;
 export const props = {source: {map: 'main'}, mode: 'image' as const, imageUrl: 'https://example.com/map.png'} satisfies TileflowMapProps;
+export function instanceReference(instance: InstanceType<typeof TileflowMap>): TileflowMapRef {
+  return instance;
+}
+${referenceTypeConsumer()}
 `,
   );
   await runTypeScript(directory);
@@ -403,7 +440,12 @@ const componentUrl = import.meta.resolve('@tileflow/svelte/TileflowMap.svelte');
 const source = await readFile(fileURLToPath(componentUrl), 'utf8');
 const processed = await preprocess(source, sveltePreprocess({typescript: {tsconfigFile: false}}), {filename: 'TileflowMap.svelte'});
 const component = compile(processed.code, {filename: 'TileflowMap.svelte', generate: 'server'});
-const consumer = compile(\`<script>import TileflowMap from '@tileflow/svelte';<\\/script><TileflowMap source={{map: 'main'}} mode="image" imageUrl="https://example.com/map.png" />\`, {filename: 'Consumer.svelte', generate: 'server'});
+const consumerSource = \`<script lang="ts">
+import TileflowMap, {type TileflowMapRef} from '@tileflow/svelte';
+let map: TileflowMapRef | undefined;
+<\\/script><TileflowMap bind:this={map} source={{map: 'main'}} mode="image" imageUrl="https://example.com/map.png" />\`;
+const processedConsumer = await preprocess(consumerSource, sveltePreprocess({typescript: {tsconfigFile: false}}), {filename: 'Consumer.svelte'});
+const consumer = compile(processedConsumer.code, {filename: 'Consumer.svelte', generate: 'server'});
 if (!component.js?.code || !consumer.js?.code) throw new Error('Svelte consumer compilation produced no JavaScript');
 `,
   );

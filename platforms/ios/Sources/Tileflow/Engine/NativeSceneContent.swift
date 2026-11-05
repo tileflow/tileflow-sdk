@@ -18,6 +18,7 @@ final class NativeSceneContent {
   private var overlays = NativeRuntimeStyle(.overlays)
   private var markers = NativeRuntimeStyle(.markers)
   private var items: [String: Overlay] = [:]
+  private var overlayDefinitions: [JSONValue] = []
   private var markerDefinitions: [JSONValue] = []
   private var markerImages: [String: UIImage] = [:]
   private var inks: JSONValue?
@@ -38,10 +39,20 @@ final class NativeSceneContent {
       theme: engine.shown?.theme, metadata: engine.document?.style["metadata"] as? [String: Any])
   }
 
-  func setContent(_ request: JSONValue, data: DataChannel) throws {
+  /// Returns whether the overlays changed. A pin edit leaves installed layers and their active
+  /// line animations alone. Data-channel handles are temporary; compare their verified digests.
+  func setContent(_ request: JSONValue, data: DataChannel) throws -> Bool {
     guard let definitions = request["overlays"]?.array else {
       throw TileflowMapError.invalidRequest
     }
+    let normalized: [JSONValue] = try definitions.map { json in
+      guard case .object(var fields) = json, let handle = json["data"]?["id"]?.string,
+        let reference = data.reference(handle), reference.wireValue == json["data"]
+      else { throw TileflowMapError.invalidRequest }
+      fields["data"] = .string(reference.sha256)
+      return .object(fields)
+    }
+    guard normalized != overlayDefinitions else { return false }
     let next = NativeRuntimeStyle(.overlays)
     configure(next)
     var desired: [String: Overlay] = [:]
@@ -77,6 +88,8 @@ final class NativeSceneContent {
       warnOcclusion()
     }
     inks = engine.routeInks
+    overlayDefinitions = normalized
+    return true
   }
 
   static func validCollection(_ value: JSONValue) -> Bool {

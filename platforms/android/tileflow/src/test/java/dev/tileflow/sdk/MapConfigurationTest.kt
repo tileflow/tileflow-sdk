@@ -4,6 +4,7 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.res.Resources
+import android.os.Looper
 import android.webkit.WebView
 import dev.tileflow.configuration.Tileflow
 import dev.tileflow.configuration.TileflowConfiguration
@@ -17,6 +18,7 @@ import org.junit.runner.RunWith
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLog
 
@@ -31,6 +33,33 @@ class MapConfigurationTest {
     private val credential = "tf_public_" + "a".repeat(48)
     private val otherCredential = "tf_public_" + "c".repeat(48)
     private val servicesCredential = "tf_public_" + "b".repeat(48)
+
+    @Test
+    fun rejectedDeclarativeContentReachesTheMapAndItsDiagnosticSink() = runBlocking {
+        val events = mutableListOf<TileflowMapEvent>()
+        val logs = mutableListOf<TileflowMapDiagnostics.Entry>()
+        val options = TileflowMapOptions(diagnostics = TileflowMapDiagnostics(sink = logs::add))
+        val map = TileflowMapView(RuntimeEnvironment.getApplication())
+        try {
+            map.onEvent = events::add
+            map.setOptions(options)
+            val content = MapContentCoordinator(map)
+            val duplicate = TileflowGeoJSONSource("duplicate", TileflowGeoJSONData.Empty)
+            val declarations = TileflowMapContentBuilder().apply {
+                source(duplicate)
+                source(duplicate)
+            }
+            content.submit(declarations, options)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(
+                listOf(TileflowErrorCode.INVALID_REQUEST),
+                events.filterIsInstance<TileflowMapEvent.Failed>().map { it.code },
+            )
+            assertEquals(listOf(TileflowErrorCode.INVALID_REQUEST), logs.map { it.code })
+        } finally {
+            map.destroy()
+        }
+    }
 
     @Test
     fun mapDiagnosticsFilterEventsAndKeepCredentialsOutOfTheSink() = runBlocking {

@@ -30,6 +30,7 @@
 		65BCBE913C4CF3F58425C21D /* HostedSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F49D434E75F4048A9225B213 /* HostedSessionTests.swift */; };
 		6635850031DE4A7A64EF79D7 /* ResourcePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 781558E72B328421145D89FD /* ResourcePolicyTests.swift */; };
 		6DEE0C81397D5A1AB84818E1 /* Tileflow in Frameworks */ = {isa = PBXBuildFile; productRef = 3043EB9EEA97885BF60FEC54 /* Tileflow */; };
+		6EADE922D9E042CD0F0EA711 /* NativeMapContentIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A99CC988D29E9A7F1F66ADBE /* NativeMapContentIntegrationTests.swift */; };
 		70A0C5F8DC9F48A515DA2098 /* CameraTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7BEBE8CB1F75686A0207071F /* CameraTests.swift */; };
 		71114A3754B2EB586DC2202B /* LocationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D18786EA197852817C88C29 /* LocationTests.swift */; };
 		74D3A913BF84726CBE62A8D4 /* MapIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7718876CC6A93CE6A5EA82C /* MapIntegrationTests.swift */; };
@@ -91,6 +92,7 @@
 		961C75D1BB95CFA2271FD05A /* FixtureServer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureServer.swift; sourceTree = "<group>"; };
 		9C5AC78C408492798F46C3C3 /* MapSceneIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapSceneIntegrationTests.swift; sourceTree = "<group>"; };
 		A09E62F0FBA99F013CD565BC /* ResourceCacheTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResourceCacheTests.swift; sourceTree = "<group>"; };
+		A99CC988D29E9A7F1F66ADBE /* NativeMapContentIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeMapContentIntegrationTests.swift; sourceTree = "<group>"; };
 		AF434C1BA4135D3176A91EC6 /* NativeCameraTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCameraTests.swift; sourceTree = "<group>"; };
 		B7718876CC6A93CE6A5EA82C /* MapIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MapIntegrationTests.swift; sourceTree = "<group>"; };
 		BBB4DCE6B056109B3F246047 /* AttributionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AttributionTests.swift; sourceTree = "<group>"; };
@@ -147,6 +149,7 @@
 				55EBEAC678E6BCD7405A24C8 /* NativeEvaluatorTests.swift */,
 				8DD188362EA206DCDCA2C5F9 /* NativeLocationIntegrationTests.swift */,
 				9181EFB75DF0019A93B3D631 /* NativeMapCameraIntegrationTests.swift */,
+				A99CC988D29E9A7F1F66ADBE /* NativeMapContentIntegrationTests.swift */,
 				CC42FC72087C287C71C2AEA0 /* NativeMapEngineTests.swift */,
 				808A9F338B0741E97666C63E /* NativeMapViewIntegrationTests.swift */,
 				ED3D8D4ACF53A2216FF492FF /* NativeOfflineElevationTests.swift */,
@@ -318,6 +321,7 @@
 				00289D1B4C4E5F2D871EB08F /* NativeEvaluatorTests.swift in Sources */,
 				C6CAA4425CD48E65C49F032A /* NativeLocationIntegrationTests.swift in Sources */,
 				54E2A89BD326E71031AAEEE5 /* NativeMapCameraIntegrationTests.swift in Sources */,
+				6EADE922D9E042CD0F0EA711 /* NativeMapContentIntegrationTests.swift in Sources */,
 				62028ABD75997C1E740722E7 /* NativeMapEngineTests.swift in Sources */,
 				01669A25488FDB843A26B226 /* NativeMapViewIntegrationTests.swift in Sources */,
 				F7E5C8CF191D1976DD97220C /* NativeOfflineElevationTests.swift in Sources */,

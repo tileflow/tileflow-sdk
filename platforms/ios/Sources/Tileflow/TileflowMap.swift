@@ -21,6 +21,7 @@ public struct TileflowMap: UIViewRepresentable {
   public var onEvent: (TileflowMapEvent) -> Void
   private var camera: Binding<TileflowCamera>?
   private var followMode: Binding<TileflowFollowMode>?
+  private var declarations: [TileflowMapContentElement] = []
   private var locationProvider: (any TileflowLocationProvider)?
 
   public init(
@@ -55,6 +56,14 @@ public struct TileflowMap: UIViewRepresentable {
       source: source, theme: theme, initialCamera: camera.wrappedValue, options: options,
       contentInsets: contentInsets, controller: controller, onEvent: onEvent)
     self.camera = camera
+  }
+
+  /// Declares map content by id. A changed layer is updated in place. Removing a declaration
+  /// removes its item; the map keeps content owned by the controller. Errors arrive in `onEvent`.
+  public func content(@TileflowMapContentBuilder _ content: () -> [TileflowMapContentElement]) -> Self {
+    var map = self
+    map.declarations = content()
+    return map
   }
 
   /// Leaves a touch that begins where `predicate` returns false, in the map's coordinates, to the
@@ -111,7 +120,9 @@ public struct TileflowMap: UIViewRepresentable {
     if let mode = followMode?.wrappedValue { view.followMode = mode }
     context.coordinator.followMode = followMode?.wrappedValue
     context.coordinator.theme = theme
-    context.coordinator.options = options
+    view.declarativeContent = context.coordinator.content
+    context.coordinator.content.start(with: options)
+    context.coordinator.content.update(declarations, options: options, on: view)
     context.coordinator.camera = camera?.wrappedValue
     context.coordinator.bind(controller, to: view)
     return view
@@ -170,14 +181,7 @@ public struct TileflowMap: UIViewRepresentable {
         }
       }
     }
-    if context.coordinator.options != options {
-      context.coordinator.options = options
-      Task { @MainActor [weak view] in
-        do { try await view?.setOptions(options) } catch {
-          view?.report(propertyError: error)
-        }
-      }
-    }
+    context.coordinator.content.update(declarations, options: options, on: view)
   }
 
   public func makeCoordinator() -> Coordinator { Coordinator() }
@@ -187,7 +191,7 @@ public struct TileflowMap: UIViewRepresentable {
     private var controller: TileflowMapController?
     /// The prop values last applied, not the view's current state.
     fileprivate var theme: String?
-    fileprivate var options: TileflowMapOptions?
+    fileprivate let content = MapContentCoordinator()
     /// The camera the binding and the map last agreed on.
     fileprivate var camera: TileflowCamera?
     /// The follow mode the binding and the map last agreed on.
@@ -201,6 +205,7 @@ public struct TileflowMap: UIViewRepresentable {
   }
 
   public static func dismantleUIView(_ view: TileflowMapView, coordinator: Coordinator) {
+    coordinator.content.stop()
     coordinator.bind(nil, to: view)
     view.destroy()
   }

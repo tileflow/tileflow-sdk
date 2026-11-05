@@ -2,6 +2,7 @@ package dev.tileflow.sdk
 
 import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.ProtocolContract
+import dev.tileflow.sdk.location.TileflowLocationOptions
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -14,6 +15,58 @@ import org.robolectric.annotation.Config
 @Config(manifest = Config.NONE, sdk = [34])
 class MapContentTest {
     private val text = """{"type":"FeatureCollection","features":[]}"""
+
+    @Test
+    fun aNewDeclarationObservesEditsToTheSameFeatureList() {
+        val features = mutableListOf<TileflowFeature>()
+        val source = TileflowGeoJSONSource("places", TileflowGeoJSONData.Features(features))
+        val block = TileflowMapContentBuilder().apply { source(source) }
+        val before = DeclaredMapContent(block)
+        features += TileflowFeature("id", TileflowGeometry.Point(TileflowCoordinate(1.0, 2.0)))
+        val after = DeclaredMapContent(block, before)
+        assertTrue(!before.matches(after))
+    }
+
+    @Test
+    fun declaredIdsAreUniquePerKindAndOnlyOneLocationCanOwnTheMap() {
+        val source = TileflowGeoJSONSource("one", TileflowGeoJSONData.Empty)
+        val layer = TileflowCircleLayer("one", "one")
+        val marker = TileflowAnnotation("one", TileflowCoordinate(0.0, 0.0), "First")
+        val location = TileflowLocationOptions(enabled = true)
+        val builder =
+            TileflowMapContentBuilder().apply {
+                source(source)
+                layer(layer)
+                annotation(marker)
+                location(location)
+            }
+        val content = DeclaredMapContent(builder)
+        assertTrue(
+            content.sources.containsKey("one") &&
+                content.layers.containsKey("one") &&
+                content.markers.single() == marker
+        )
+        for (duplicate in
+            listOf<TileflowMapContentBuilder.() -> Unit>(
+                { source(source) },
+                { layer(layer) },
+                { annotation(marker) },
+                { location(location) },
+            )) {
+            val invalid =
+                TileflowMapContentBuilder().apply {
+                    source(source)
+                    layer(layer)
+                    annotation(marker)
+                    location(location)
+                    duplicate()
+                }
+            assertEquals(
+                TileflowErrorCode.INVALID_REQUEST,
+                assertThrows(TileflowMapException::class.java) { DeclaredMapContent(invalid) }.code,
+            )
+        }
+    }
 
     @Test
     fun layersCheckTheirParametersAndLeaveGeoJSONToTheRenderer() {

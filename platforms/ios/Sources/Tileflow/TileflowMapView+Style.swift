@@ -186,7 +186,10 @@ extension TileflowMapView {
   private func addSource(_ record: RuntimeStyle.Source) async throws {
     try await styleEdits.acquire()
     defer { styleEdits.release() }
+    try await insertStyleSource(record)
+  }
 
+  func insertStyleSource(_ record: RuntimeStyle.Source) async throws {
     try Self.validateIdentifier(record.id)
     guard !sourceExists(record.id) else { throw TileflowMapError.invalidRequest }
     if styleEngine == nil { try engineKind.validateQueued(record) }
@@ -199,7 +202,10 @@ extension TileflowMapView {
   public func removeSource(_ id: String) async throws {
     try await styleEdits.acquire()
     defer { styleEdits.release() }
+    try await deleteStyleSource(id)
+  }
 
+  func deleteStyleSource(_ id: String) async throws {
     guard runtimeStyle.sources.contains(where: { $0.id == id }) else {
       throw TileflowMapError(.invalidRequest, reason: .unknownSource)
     }
@@ -224,8 +230,12 @@ extension TileflowMapView {
     try await styleEdits.acquire()
     defer { styleEdits.release() }
 
-    let index = try geoJSONSource(sourceId)
     let (base, _) = try Self.geoJSONBase(data)
+    try await replaceStyleData(sourceId, base: base)
+  }
+
+  func replaceStyleData(_ sourceId: String, base: GeoJSONLog.Base) async throws {
+    let index = try geoJSONSource(sourceId)
     try await changeStyle({ style in
       let promoteId = style.sources[index].geoJSON?.promoteId
       let revision = (style.sources[index].geoJSON?.revision ?? 0) + 1
@@ -341,7 +351,11 @@ extension TileflowMapView {
   {
     try await styleEdits.acquire()
     defer { styleEdits.release() }
+    try await insertStyleLayer(.init(id: id, json: json, slot: slot), position: position)
+  }
 
+  func insertStyleLayer(_ layer: RuntimeStyle.Layer, position: TileflowLayerPosition) async throws {
+    let id = layer.id, json = layer.json
     try Self.validateIdentifier(id)
     guard !layerExists(id), runtimeStyle.layers.count < 1024 else {
       throw TileflowMapError.invalidRequest
@@ -349,7 +363,7 @@ extension TileflowMapView {
     if let source = json["source"]?.string, !sourceExists(source) {
       throw TileflowMapError(.invalidRequest, reason: .unknownSource)
     }
-    var record = RuntimeStyle.Layer(id: id, json: json, slot: slot)
+    var record = layer
     let at = try insertionIndex(for: position, slot: &record.slot)
     let fixed = record
     if styleEngine == nil { try engineKind.validateQueued(fixed) }
@@ -374,7 +388,10 @@ extension TileflowMapView {
   private func updateLayer(_ layer: RuntimeStyle.Layer) async throws {
     try await styleEdits.acquire()
     defer { styleEdits.release() }
+    try await replaceStyleLayer(layer)
+  }
 
+  func replaceStyleLayer(_ layer: RuntimeStyle.Layer) async throws {
     guard let index = runtimeStyle.layers.firstIndex(where: { $0.id == layer.id }) else {
       throw TileflowMapError(.invalidRequest, reason: .unknownLayer)
     }
@@ -394,7 +411,10 @@ extension TileflowMapView {
   public func moveLayer(_ id: String, position: TileflowLayerPosition) async throws {
     try await styleEdits.acquire()
     defer { styleEdits.release() }
+    try await positionStyleLayer(id, position: position)
+  }
 
+  func positionStyleLayer(_ id: String, position: TileflowLayerPosition) async throws {
     guard let index = runtimeStyle.layers.firstIndex(where: { $0.id == id }) else {
       throw TileflowMapError(.invalidRequest, reason: .unknownLayer)
     }
@@ -422,7 +442,10 @@ extension TileflowMapView {
   public func removeLayer(_ id: String) async throws {
     try await styleEdits.acquire()
     defer { styleEdits.release() }
+    try await deleteStyleLayer(id)
+  }
 
+  func deleteStyleLayer(_ id: String) async throws {
     guard runtimeStyle.layers.contains(where: { $0.id == id }) else {
       throw TileflowMapError(.invalidRequest, reason: .unknownLayer)
     }
@@ -600,7 +623,7 @@ extension TileflowMapView {
     return items.map(TileflowQueriedFeature.init(wire:))
   }
 
-  private static func featureTarget(_ source: String, _ sourceLayer: String?, _ id: String)
+  static func featureTarget(_ source: String, _ sourceLayer: String?, _ id: String)
     -> [String: JSONValue]
   {
     var value: [String: JSONValue] = ["source": .string(source), "id": TileflowFeature.wireID(id)]
@@ -759,7 +782,7 @@ extension TileflowMapView {
       data: references)
   }
 
-  private func sendUpdate(_ update: GeoJSONLog.Update, source: String, through engine: any MapEngine)
+  func sendUpdate(_ update: GeoJSONLog.Update, source: String, through engine: any MapEngine)
     async throws
   {
     var payload: [String: JSONValue] = ["id": .string(source)]

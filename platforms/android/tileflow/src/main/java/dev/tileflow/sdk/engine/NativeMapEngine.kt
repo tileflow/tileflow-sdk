@@ -285,6 +285,11 @@ internal class NativeMapEngine(
         }
     }
 
+    override suspend fun updateContentAnnotations(annotations: JSONArray): Boolean {
+        call(ProtocolContract.Method.SET_CONTENT, JSONObject().put("annotations", annotations))
+        return true
+    }
+
     override suspend fun call(
         method: ProtocolContract.Method,
         payload: Any,
@@ -356,9 +361,11 @@ internal class NativeMapEngine(
                     val value = request ?: invalid()
                     val owner = annotations ?: throw TileflowMapException(TileflowErrorCode.NOT_READY)
                     val simple = owner.simple(value)
-                    sceneContent.setContent(value,data)
+                    if (value.has("overlays")) {
+                        sceneContent.setContent(value, data)
+                        scenePlayer.stopLines()
+                    }
                     owner.setSimple(simple)
-                    scenePlayer.stopLines()
                     JSONObject.NULL
                 }
                 ProtocolContract.Method.ANIMATE_LINE_PROGRESS -> scenePlayer.animate(request ?: invalid())

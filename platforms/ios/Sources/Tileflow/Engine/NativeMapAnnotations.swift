@@ -4,7 +4,7 @@ import UIKit
 /// Annotation interaction and frame projection owned by one MapLibre renderer.
 @MainActor
 final class NativeMapAnnotations {
-  struct Pin {
+  struct Pin: Equatable {
     let id: String
     let title: String
     let color: UIColor
@@ -56,8 +56,8 @@ final class NativeMapAnnotations {
     for id in buttons.keys where !next.contains(id) {
       buttons.removeValue(forKey: id)?.removeFromSuperview()
     }
-    pins.removeAll(keepingCapacity: true)
-    for pin in definitions {
+    pins = pins.filter { next.contains($0.key) }
+    for pin in definitions where pins[pin.id] != pin {
       let button: MarkerButton
       if let existing = buttons[pin.id] {
         button = existing

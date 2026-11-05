@@ -86,6 +86,8 @@ final class DataChannel {
   }
 
   /// The payload the transport serves, or nil once released.
+  func reference(_ id: String) -> Reference? { entries[id]?.reference }
+
   func payload(_ id: String) -> (bytes: Data, contentType: String)? {
     guard !retired, let entry = entries[id] else { return nil }
     return (entry.bytes, entry.contentType)

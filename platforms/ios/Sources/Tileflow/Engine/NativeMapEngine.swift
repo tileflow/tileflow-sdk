@@ -137,6 +137,13 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
     }
   }
 
+  func setAnnotations(_ annotations: [TileflowAnnotation], overlays: [TileflowGeoJSONLayer]) async throws {
+    guard !retired else { throw retirementError ?? TileflowMapError.disposed }
+    guard mapView != nil else { throw TileflowMapError.notReady }
+    let values = try annotations.map { try $0.wireValue() }
+    mapAnnotations.setPins(try NativeMapAnnotations.pins(in: .object(["annotations": .array(values)])))
+  }
+
   func call(_ command: MapEngineCommand, payload: JSONValue, data: [DataChannel.Reference])
     async throws -> JSONValue
   {
@@ -210,9 +217,8 @@ final class NativeMapEngine: NSObject, MapEngine, MLNMapViewDelegate {
       return .null
     case .setContent:
       let pins = try NativeMapAnnotations.pins(in: payload)
-      try sceneContent.setContent(payload, data: self.data)
+      if try sceneContent.setContent(payload, data: self.data) { sceneAnimations.stopLines() }
       mapAnnotations.setPins(pins)
-      sceneAnimations.stopLines()
       return .null
     case .setDepthMarkers:
       guard let markers = payload["markers"]?.array else { throw TileflowMapError.invalidRequest }

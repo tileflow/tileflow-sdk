@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="tileflow_pan_north" type="id" />
+    <item name="tileflow_pan_south" type="id" />
+    <item name="tileflow_pan_east" type="id" />
+    <item name="tileflow_pan_west" type="id" />
+    <item name="tileflow_zoom_in" type="id" />
+    <item name="tileflow_zoom_out" type="id" />
+    <string name="tileflow_interactive_map">Interactive map</string>
+    <string name="tileflow_map_camera">%1$s, latitude %2$.4f, longitude %3$.4f, zoom %4$.1f</string>
+    <string name="tileflow_pan_north">Pan north</string>
+    <string name="tileflow_pan_south">Pan south</string>
+    <string name="tileflow_pan_east">Pan east</string>
+    <string name="tileflow_pan_west">Pan west</string>
+    <string name="tileflow_zoom_in">Zoom in</string>
+    <string name="tileflow_zoom_out">Zoom out</string>
+</resources>

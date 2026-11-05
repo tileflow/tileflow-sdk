@@ -44,6 +44,7 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.abs
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -97,7 +98,8 @@ constructor(
     internal var images: List<TileflowMapImage> = emptyList()
 
     private var appearance: Pair<ProtocolContract.Method, JSONObject>? = null
-    private var content = MapContent()
+    internal var content = MapContent()
+    internal var declaredContent: MapContentCoordinator? = null
     private var contentRevision = 0
     /** What annotations ask the renderer to report. */
     private var annotationDemand: Map<ProtocolContract.Event, Long> = emptyMap()
@@ -222,6 +224,7 @@ constructor(
 
     /** Native views over the renderer: view annotations and accessibility targets. */
     internal val annotationOverlay = AnnotationOverlay(context, this)
+    internal val accessibilitySummary = MapAccessibilitySummary(this)
 
     /**
      * The map's annotation managers: points, circles, polylines and polygons drawn by the map that
@@ -343,6 +346,7 @@ constructor(
             }
         }
         controlsView.recenter.setOnClickListener { recenterTapped() }
+        addView(accessibilitySummary, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         // Annotation views lie over the renderer and under the native controls.
         addView(
             annotationOverlay,
@@ -708,23 +712,17 @@ constructor(
         applyAppearance()
     }
 
-    public suspend fun setOptions(options: TileflowMapOptions) {
-        if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
-        options.validate()
+    public suspend fun setOptions(options: TileflowMapOptions): Unit =
+        styleEdits.withLock { replaceOptions(options) }
+
+    internal suspend fun replaceOptions(options: TileflowMapOptions) {
         val previous = this.options
         if (previous.diagnostics !== options.diagnostics && previous.copy(diagnostics = options.diagnostics) == options) {
             this.options = options
             return
         }
         val previousSubscriptions = subscriptions
-        this.options = options
-        subscriptions =
-            EventSubscriptions(options.events, options.controls.followCamera).also {
-                it.set(EventSubscriptions.Owner.ANNOTATIONS, annotationDemand)
-            }
-        controlsView.controls = options.controls
-        controlsView.locationShown = options.location.enabled
-        locationOptionsChanged(previous)
+        adoptOptions(options)
         // Antialiasing and style validation are fixed when a renderer starts.
         if (
             (options.antialias != previous.antialias ||
@@ -734,6 +732,21 @@ constructor(
             return
         }
         sendOptions(events = subscriptions != previousSubscriptions)
+    }
+
+    /** Before attaching, Compose can configure the renderer that the view will create. */
+    internal fun adoptOptions(options: TileflowMapOptions) {
+        if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
+        options.validate()
+        val previous = this.options
+        this.options = options
+        subscriptions =
+            EventSubscriptions(options.events, options.controls.followCamera).also {
+                it.set(EventSubscriptions.Owner.ANNOTATIONS, annotationDemand)
+            }
+        controlsView.controls = options.controls
+        controlsView.locationShown = options.location.enabled
+        locationOptionsChanged(previous)
     }
 
     private val rightToLeft: Boolean
@@ -758,19 +771,26 @@ constructor(
     public suspend fun setContent(
         annotations: List<TileflowAnnotation> = emptyList(),
         layers: List<TileflowGeoJSONLayer> = emptyList(),
-    ) {
+    ): Unit = styleEdits.withLock { replaceContent(MapContent(annotations.toList(), layers.toList())) }
+
+    internal suspend fun replaceContent(next: MapContent, markersOnly: Boolean = false) {
         if (destroyed) throw TileflowMapException(TileflowErrorCode.DISPOSED)
-        val next = MapContent(annotations.toList(), layers.toList())
         next.validate()
         val previous = content
         val revision = ++contentRevision
         content = next
         try {
-            if (initialized) engine?.let { send(next, it) }
+            if (initialized) engine?.let { renderer ->
+                val updated = markersOnly && renderer.updateContentAnnotations(
+                    JSONArray(next.annotations.map { it.json() })
+                )
+                if (!updated) send(next, renderer)
+            }
         } catch (error: Exception) {
             if (contentRevision == revision) content = previous
             throw error
         }
+        declaredContent?.ownersChanged()
     }
 
     private suspend fun send(content: MapContent, engine: MapEngine) {
@@ -1336,6 +1356,16 @@ constructor(
             )
             forwardLifecycle()
             created.start()
+            // A replacement SurfaceView can already have its final size while the Compose host
+            // still holds the retired surface's draw pass. Schedule a fresh pass for the new child.
+            if (declaredContent != null && isLaidOut) {
+                post {
+                    if (engine === created) {
+                        requestLayout()
+                        postInvalidateOnAnimation()
+                    }
+                }
+            }
             updateVisibility()
         } catch (error: Exception) {
             retireGeneration()
@@ -1396,7 +1426,7 @@ constructor(
                 initialized = true
                 rendererInsets = startingInsets
                 updateInsets()
-                replay { send(content, readyEngine) }
+                replay { styleEdits.withLock { send(content, readyEngine) } }
                 if (appearance != null) replay { applyAppearance() }
                 else if (theme != startingTheme) replay { setTheme(theme) }
                 if (options != startingOptions)
@@ -1408,6 +1438,8 @@ constructor(
                 replay { replayScene(readyEngine) }
                 replay { replayStyle(readyEngine) }
                 replay { replayLocation(readyEngine) }
+                declaredContent?.rendererReady()
+                if (destroyed || generation != current) return@launch
                 annotationLayersSent = null
                 sendAnnotationLayers()
                 annotationOverlay.rendererReady()

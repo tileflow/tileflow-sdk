@@ -7,6 +7,7 @@ import dev.tileflow.sdk.TileflowMapException
 import dev.tileflow.sdk.bridge.DataChannel
 import dev.tileflow.sdk.bridge.ProtocolContract
 import java.net.URI
+import org.json.JSONArray
 import org.json.JSONObject
 
 /** Which engine draws a map. Internal: applications always get the default. */
@@ -74,6 +75,9 @@ internal class MapEngineCallbacks(
  * [MapEngineArea] names each command's area.
  */
 internal interface MapEngine {
+    /** Updates only the pins if this engine can do so independently of scene overlays. */
+    suspend fun updateContentAnnotations(annotations: JSONArray): Boolean = false
+
     /** The view that shows the map, placed under the annotation overlay and the controls. */
     val view: View
 

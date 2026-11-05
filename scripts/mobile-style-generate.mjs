@@ -5,13 +5,10 @@ import {fileURLToPath} from 'node:url';
 import {readNativeStylePins} from './mobile-native-style.mjs';
 import {renderStyle} from './mobile-style.mjs';
 
-// Writes the typed runtime style of the Swift and Kotlin SDKs from the MapLibre style specification
-// that the embedded renderer's MapLibre GL JS depends on. `--check` fails instead when a generated
-// file differs, so the native style types always match the renderer's specification.
+// Generate the native style types from the same specification as the map compiler.
 const root = fileURLToPath(new URL('../', import.meta.url));
-const runtime = createRequire(resolve(root, 'packages/mobile-runtime/package.json'));
-const maplibre = createRequire(runtime.resolve('maplibre-gl/package.json'));
-const specification = maplibre.resolve('@maplibre/maplibre-gl-style-spec/package.json');
+const compiler = createRequire(resolve(root, 'packages/dev/package.json'));
+const specification = compiler.resolve('@maplibre/maplibre-gl-style-spec/package.json');
 const {version} = JSON.parse(await readFile(specification, 'utf8'));
 const spec = JSON.parse(
   await readFile(resolve(dirname(specification), 'dist/latest.json'), 'utf8'),

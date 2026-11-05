@@ -4,6 +4,7 @@ import {fileURLToPath} from 'node:url';
 // Mobile jobs run on simulators, emulators and desktop engines. A pull request pays for them only
 // when it changes something that reaches the embedded runtime, a native host or the React Native
 // native modules; pushes and manual runs always run every job.
+const hostedSessionFixtures = 'test-support/mobile/hosted/';
 const runtimeInputs = [
   '.github/workflows/ci.yml',
   'LICENSE',
@@ -15,6 +16,7 @@ const runtimeInputs = [
   'packages/interactions/',
   'packages/mobile-runtime/',
   'scripts/mobile-',
+  hostedSessionFixtures,
 ];
 // The fixture server builds its native map with @tileflow/dev from an official map.
 const nativeFixtureInputs = ['packages/dev/', 'packages/maps/'];
@@ -38,6 +40,7 @@ const areaInputs = {
     'platforms/android/gradle/',
     'platforms/android/gradlew',
     'test-support/react-native-',
+    hostedSessionFixtures,
   ],
 };
 

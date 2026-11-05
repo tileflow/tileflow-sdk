@@ -262,10 +262,10 @@ class StyleTest {
                     as TileflowMapException
             assertEquals("unknownSource", unknown.context.reason)
             view.addLayer(TileflowCircleLayer("top", "points").slot(TileflowLayerSlot.BELOW_LABELS))
-            view.addLayer(TileflowHeatmapLayer("heat", "points"), TileflowLayerPosition.Below("top"))
-            view.addLayer(TileflowCircleLayer("over", "points"), TileflowLayerPosition.Above("heat"))
+            view.addLayer(TileflowHeatmapLayer("heat", "points").slot(TileflowLayerSlot.BELOW_LABELS), TileflowLayerPosition.Below("top"))
+            view.addLayer(TileflowCircleLayer("over", "points").slot(TileflowLayerSlot.BELOW_LABELS), TileflowLayerPosition.Above("heat"))
             assertEquals(listOf("heat", "over", "top"), view.runtimeStyle.layers.map { it.id })
-            // A layer placed relative to another takes its slot.
+            // Relative layers explicitly share their slot.
             assertEquals(
                 List(3) { TileflowLayerSlot.BELOW_LABELS },
                 view.runtimeStyle.layers.map { it.slot },

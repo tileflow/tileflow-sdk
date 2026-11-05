@@ -70,11 +70,16 @@ public suspend fun TileflowMapController.updateStyleLayer(properties: JSONObject
     attached().updateStyleLayer(properties)
 
 /** See [TileflowMapView.moveLayer]. */
-@JvmOverloads
 public suspend fun TileflowMapController.moveLayer(
     id: String,
     position: TileflowLayerPosition,
-    slot: TileflowLayerSlot? = null,
+): Unit = attached().moveLayer(id, position)
+
+/** An explicit null moves the layer outside the authored slots. */
+public suspend fun TileflowMapController.moveLayer(
+    id: String,
+    position: TileflowLayerPosition,
+    slot: TileflowLayerSlot?,
 ): Unit = attached().moveLayer(id, position, slot)
 
 /** See [TileflowMapView.removeLayer]. */

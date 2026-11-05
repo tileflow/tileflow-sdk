@@ -380,8 +380,8 @@ private suspend fun TileflowMapView.updateFeatures(
 // Layers
 
 /**
- * Adds a layer of the application's runtime style. A layer placed above or below another takes that
- * layer's slot; otherwise it goes on top of its own slot.
+ * Adds a layer of the application's runtime style. A layer placed above or below another must share
+ * that layer's slot; otherwise it goes on top of its own slot.
  */
 public suspend fun TileflowMapView.addLayer(
     layer: TileflowLayer,
@@ -405,7 +405,7 @@ private fun styleLayer(properties: JSONObject): RuntimeStyle.Layer {
     val type = json.opt("type")
     if (type !in layerTypes) invalid()
     if (if (type == "background") json.has("source") else json.opt("source") !is String) invalid()
-    val slot = json.remove("slot")?.let { name ->
+    val slot = json.remove("slot")?.takeUnless { it == JSONObject.NULL }?.let { name ->
         TileflowLayerSlot.entries.firstOrNull { it.wireName == name } ?: invalid()
     }
     return RuntimeStyle.Layer(id, json, slot)
@@ -425,7 +425,7 @@ internal suspend fun TileflowMapView.insertStyleLayer(layer: RuntimeStyle.Layer,
     if (!STYLE_ID.matches(id) || layerExists(id) || runtimeStyle.layers.size >= 1024) invalid()
     if (json.has("source") && !sourceExists(json.getString("source")))
         invalid(MapContract.ErrorReason.UNKNOWN_SOURCE)
-    val (at, slot, resolved) = insertion(runtimeStyle.layers, position, requestedSlot)
+    val (at, slot, resolved) = insertion(runtimeStyle.layers, position, requestedSlot, id, "addLayer")
     val record = RuntimeStyle.Layer(id, json, slot)
     if (styleEngine == null) NativeStyleLayer(record.json, record.slot).validate()
     changeStyle({ layers.add(at, record) }) { engine ->
@@ -467,14 +467,19 @@ internal suspend fun TileflowMapView.replaceStyleLayer(layer: RuntimeStyle.Layer
  * Moves a layer relative to the application's other layers; [TileflowLayerPosition.Default] puts
  * it on top of its slot.
  */
-@JvmOverloads
 public suspend fun TileflowMapView.moveLayer(
     id: String,
     position: TileflowLayerPosition,
-    slot: TileflowLayerSlot? = null,
-): Unit = styleEdits.withLock { positionStyleLayer(id, position, slot) }
+): Unit = styleEdits.withLock { positionStyleLayer(id, position) }
 
-internal suspend fun TileflowMapView.positionStyleLayer(id: String, position: TileflowLayerPosition, slotOverride: TileflowLayerSlot? = null) {
+/** An explicit null moves the layer outside the authored slots. */
+public suspend fun TileflowMapView.moveLayer(
+    id: String,
+    position: TileflowLayerPosition,
+    slot: TileflowLayerSlot?,
+): Unit = styleEdits.withLock { positionStyleLayer(id, position, slot, true) }
+
+internal suspend fun TileflowMapView.positionStyleLayer(id: String, position: TileflowLayerPosition, slotOverride: TileflowLayerSlot? = null, overridesSlot: Boolean = false) {
     val index = runtimeStyle.layers.indexOfFirst { it.id == id }
     if (index < 0) invalid(MapContract.ErrorReason.UNKNOWN_LAYER)
     if (
@@ -484,7 +489,7 @@ internal suspend fun TileflowMapView.positionStyleLayer(id: String, position: Ti
         invalid()
     val record = runtimeStyle.layers[index]
     val rest = runtimeStyle.layers.toMutableList().apply { removeAt(index) }
-    val (at, slot, resolved) = insertion(rest, position, slotOverride ?: record.slot)
+    val (at, slot, resolved) = insertion(rest, position, if (overridesSlot) slotOverride else record.slot, id, "moveLayer")
     val moved = RuntimeStyle.Layer(record.id, record.json, slot)
     changeStyle({
         layers.removeAt(index)
@@ -710,24 +715,43 @@ private fun insertion(
     layers: List<RuntimeStyle.Layer>,
     position: TileflowLayerPosition,
     slot: TileflowLayerSlot?,
+    layerId: String,
+    operation: String,
 ): Triple<Int, TileflowLayerSlot?, TileflowLayerPosition> {
     val reference =
         when (position) {
             TileflowLayerPosition.Default -> return Triple(layers.size, slot, position)
             is TileflowLayerPosition.AtSlotIndex -> {
                 val siblings = layers.filter { it.slot == slot }
-                if (position.slotIndex !in 0..siblings.size) invalid()
+                if (position.slotIndex !in 0..siblings.size) throw TileflowMapException(
+                    TileflowErrorCode.INVALID_REQUEST,
+                    TileflowErrorContext(reason = MapContract.ErrorReason.INVALID_LAYER_POSITION.wireName,
+                        operation = operation, path = "position.slotIndex", layerId = layerId,
+                        slot = slot?.wireName, rule = "indexRange", limit = siblings.size, count = position.slotIndex,
+                        corrections = listOf(TileflowErrorCorrection("chooseSlotIndex", "Choose an index within this slot's application layers."))),
+                )
                 val resolved = siblings.getOrNull(position.slotIndex)?.let { TileflowLayerPosition.Below(it.id) }
                     ?: siblings.lastOrNull()?.let { TileflowLayerPosition.Above(it.id) }
                     ?: TileflowLayerPosition.Default
-                return insertion(layers, resolved, slot)
+                return insertion(layers, resolved, slot, layerId, operation)
             }
             is TileflowLayerPosition.Above -> position.layerId
             is TileflowLayerPosition.Below -> position.layerId
         }
     val index = layers.indexOfFirst { it.id == reference }
-    if (index < 0) invalid(MapContract.ErrorReason.UNKNOWN_LAYER)
-    return Triple(if (position is TileflowLayerPosition.Above) index + 1 else index, layers[index].slot, position)
+    val path = if (position is TileflowLayerPosition.Above) "position.aboveLayerId" else "position.belowLayerId"
+    if (index < 0) throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST,
+        TileflowErrorContext(reason = MapContract.ErrorReason.UNKNOWN_LAYER.wireName, operation = operation,
+            path = path, layerId = layerId, referenceLayerId = reference, slot = slot?.wireName,
+            rule = "knownReference", corrections = listOf(TileflowErrorCorrection("referenceExistingLayer", "Reference an existing application layer."))))
+    val referenceSlot = layers[index].slot
+    if (slot != referenceSlot) throw TileflowMapException(TileflowErrorCode.INVALID_REQUEST,
+        TileflowErrorContext(reason = MapContract.ErrorReason.LAYER_POSITION_CONFLICT.wireName, operation = operation,
+            path = path, layerId = layerId, referenceLayerId = reference, slot = slot?.wireName,
+            referenceSlot = referenceSlot?.wireName, rule = "sameSlot", corrections = listOf(
+                TileflowErrorCorrection("alignSlot", "Choose the reference layer's slot."),
+                TileflowErrorCorrection("referenceSameSlot", "Reference a layer in the same slot."))))
+    return Triple(if (position is TileflowLayerPosition.Above) index + 1 else index, slot, position)
 }
 
 /** A source's MapLibre specification without its data, and the GeoJSON it starts with. */

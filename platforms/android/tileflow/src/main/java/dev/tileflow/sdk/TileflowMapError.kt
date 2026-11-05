@@ -3,6 +3,8 @@ package dev.tileflow.sdk
 import dev.tileflow.sdk.model.MapContract
 import org.json.JSONObject
 
+public data class TileflowErrorCorrection(val code: String, val message: String)
+
 /**
  * Diagnostic detail for a failure, warning or rejected call. It never holds a URL path, query or
  * credential; a resource is identified by its kind and origin only.
@@ -30,6 +32,13 @@ public data class TileflowErrorContext(
     val count: Int? = null,
     val feature: String? = null,
     val rule: String? = null,
+    val operation: String? = null,
+    val path: String? = null,
+    val layerId: String? = null,
+    val referenceLayerId: String? = null,
+    val slot: String? = null,
+    val referenceSlot: String? = null,
+    val corrections: List<TileflowErrorCorrection> = emptyList(),
 ) {
     override fun toString(): String =
         listOfNotNull(
@@ -94,6 +103,20 @@ public constructor(
                     message = text(value, "message")?.take(512),
                     feature = text(context, "feature")?.take(64),
                     rule = text(context, "rule")?.take(64),
+                    operation = text(context, "operation"),
+                    path = text(context, "path"),
+                    layerId = text(context, "layerId"),
+                    referenceLayerId = text(context, "referenceLayerId"),
+                    slot = text(context, "slot"),
+                    referenceSlot = text(context, "referenceSlot"),
+                    corrections = context?.optJSONArray("corrections")?.let { values ->
+                        (0 until values.length()).mapNotNull { index ->
+                            val value = values.optJSONObject(index)
+                            val code = text(value, "code") ?: return@mapNotNull null
+                            val message = text(value, "message") ?: return@mapNotNull null
+                            TileflowErrorCorrection(code, message)
+                        }
+                    } ?: emptyList(),
                 ),
             )
         }

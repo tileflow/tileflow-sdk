@@ -25,6 +25,49 @@ class NativeSourceUpdateIntegrationTest {
     }
 
     @Test
+    fun slotOrderChangesTheFrameAndSurvivesThemeAndReload() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val activity = instrumentation.startActivitySync(
+            Intent(instrumentation.targetContext, SceneHostActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK).putExtra("map", "appearance")
+        ) as SceneHostActivity
+        try {
+            assertTrue(activity.loaded.await(30, TimeUnit.SECONDS))
+            runBlocking { withContext(Dispatchers.Main) {
+                val map = activity.map
+                val origin = TileflowCoordinate(-3.70, 40.42)
+                map.jump(TileflowCamera(origin.longitude, origin.latitude, 14.0))
+                map.addSource(TileflowGeoJSONSource("stack", TileflowGeoJSONData.GeoJSON("""{"type":"Feature","id":1,"geometry":{"type":"Point","coordinates":[-3.70,40.42]},"properties":{}}""")))
+                for ((id, color) in listOf("red" to "#ff0000", "blue" to "#0000ff"))
+                    map.addStyleLayer(JSONObject("""{"id":"$id","type":"circle","source":"stack","slot":"above-labels","paint":{"circle-radius":16,"circle-color":"$color"}}"""))
+                suspend fun frame(red: Boolean) {
+                    until {
+                        val renderer = (map.readyEngine as NativeMapEngine).map!!
+                        val point = map.project(origin)
+                        val image = suspendCancellableCoroutine<android.graphics.Bitmap> { waiting ->
+                            renderer.snapshot { if (waiting.isActive) waiting.resumeWith(Result.success(it)) }
+                        }
+                        try {
+                            val color = image.getPixel(point.x.toInt(), point.y.toInt())
+                            if (red) Color.red(color) > 240 && Color.blue(color) < 20
+                            else Color.blue(color) > 240 && Color.red(color) < 20
+                        } finally { image.recycle() }
+                    }
+                }
+                frame(false)
+                map.moveLayer("red", TileflowLayerPosition.AtSlotIndex(1))
+                frame(true)
+                map.setTheme("dark")
+                frame(true)
+                val loads = activity.loads.size
+                map.reload()
+                until { activity.loads.size > loads }
+                frame(true)
+            } }
+        } finally { instrumentation.runOnMainSync { activity.finish() } }
+    }
+
+    @Test
     fun rebuildingASourcePreservesEditsStateAndLayersAndRollsBackFailure() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val activity = instrumentation.startActivitySync(

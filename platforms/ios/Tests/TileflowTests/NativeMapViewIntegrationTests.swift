@@ -34,6 +34,54 @@ final class NativeMapViewIntegrationTests: XCTestCase {
     TileflowMapSource(map: "city", manifestURL: Self.nativeManifest, allowsLoopbackHTTP: true)
   }
 
+  func testSlotIndexesSurviveThemeAndRendererReplacement() async throws {
+    try await requireNativeFixture()
+    let events = NativeMapEvents()
+    let view = TileflowMapView(source: citySource)
+    let window = mount(view, events: events)
+    defer { view.destroy(); window.isHidden = true }
+    try await events.waitForLoads(1)
+    try await view.addSource(TileflowGeoJSONSource(id: "ordering", data: .features([
+      TileflowFeature(id: "center", geometry: .point(Self.center)),
+    ])))
+    for (id, slot) in [("a", TileflowLayerSlot.aboveLabels), ("label", .aboveRoads), ("b", .aboveLabels)] {
+      var layer = TileflowCircleLayer(id: id, source: "ordering")
+      layer.slot = slot
+      layer.circleRadius = id == "label" ? 0 : 18
+      layer.circleColor = id == "a" ? "#ff0000" : "#0000ff"
+      try await view.addLayer(layer)
+    }
+    var inserted = TileflowCircleLayer(id: "c", source: "ordering")
+    inserted.slot = .aboveLabels
+    inserted.circleRadius = 0
+    try await view.addLayer(inserted, position: .atSlotIndex(1))
+    func order() -> [String] {
+      ((view.engine as? NativeMapEngine)?.mapView?.style?.layers ?? [])
+        .map(\.identifier).filter { $0.hasPrefix("__tileflow_layer_") }
+        .map { String($0.dropFirst("__tileflow_layer_".count)) }
+    }
+    let pixel = view.convert(try await view.project(Self.center), to: window)
+    func painted(_ color: UInt32) async throws {
+      try await waitUntil {
+        PixelReader(NativeOfflineElevationTests.snapshot(window)).matches(pixel, color)
+      }
+    }
+    XCTAssertEqual(order(), ["label", "a", "c", "b"])
+    try await painted(0x0000ff)
+    try await view.moveLayer("a", position: .atSlotIndex(2))
+    XCTAssertEqual(order(), ["label", "c", "b", "a"])
+    try await painted(0xff0000)
+    try await view.moveLayer("a", position: .atSlotIndex(0), slot: nil)
+    XCTAssertEqual(order(), ["label", "c", "b", "a"])
+    try await view.setTheme("dark")
+    XCTAssertEqual(order(), ["label", "c", "b", "a"])
+    try await painted(0xff0000)
+    try view.reload()
+    try await events.waitForLoads(2)
+    XCTAssertEqual(order(), ["label", "c", "b", "a"])
+    try await painted(0xff0000)
+  }
+
   func testPartialInitialCameraLoadsBeforeStyleAndBoundsUseTheViewport() async throws {
     try await requireNativeFixture()
     let events = NativeMapEvents()
@@ -236,6 +284,7 @@ final class NativeMapViewIntegrationTests: XCTestCase {
       .switchCase(.boolean(.featureState("selected"), false), "#ff0000", "#11b4da"))
     try await view.addLayer(point)
     var heat = TileflowHeatmapLayer(id: "heat", source: "points")
+    heat.slot = .aboveLabels
     heat.maxZoom = 9
     try await view.addLayer(heat, position: .below("clusters"))
     try await view.addImage(MapTestFixtures.sdfDisc())
@@ -374,7 +423,7 @@ final class NativeMapViewIntegrationTests: XCTestCase {
       "type": "raster", "id": "photo", "source": "overlay", "minzoom": 23,
     ])
 
-    try await view.moveLayer("photo", position: .below("fill"))
+    try await view.moveLayer("photo", position: .below("fill"), slot: .belowLabels)
     let order = style.layers.map(\.identifier)
     XCTAssertLessThan(
       try XCTUnwrap(order.firstIndex(of: "__tileflow_layer_photo")),

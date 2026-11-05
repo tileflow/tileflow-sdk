@@ -49,13 +49,19 @@ enum MapBridgeOperations {
     case "addLayer":
       var properties = try input.object("properties").values
       let position = try input.optionalObject("position")
-      if let slot = try position?.optionalString("slot") { properties["slot"] = slot }
-      try await map.addLayer(properties: properties, position: MapBridgeValues.position(position))
+      if position?.values.keys.contains("slot") == true { properties["slot"] = position?.values["slot"] }
+      try await map.addLayer(properties: properties, position: MapBridgeValues.position(position,
+        layerId: properties["id"] as? String))
     case "updateLayer": try await map.updateLayer(properties: input.object("properties").values)
     case "moveLayer":
       let position = try input.object("position")
-      try await map.moveLayer(input.string("id"), position: MapBridgeValues.position(position),
-        slot: position.choice("slot", TileflowLayerSlot.self))
+      let placement = try MapBridgeValues.position(position, layerId: input.string("id"), operation: "moveLayer")
+      if position.values.keys.contains("slot") {
+        try await map.moveLayer(input.string("id"), position: placement,
+          slot: position.choice("slot", TileflowLayerSlot.self))
+      } else {
+        try await map.moveLayer(input.string("id"), position: placement)
+      }
     case "removeLayer": try await map.removeLayer(input.string("id"))
     case "setFeatureState":
       try await map.setFeatureState(sourceId: input.string("sourceId"), sourceLayer: input.optionalString("sourceLayer"),

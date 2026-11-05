@@ -70,6 +70,32 @@ final class MapBridgeTests: XCTestCase {
     XCTAssertThrowsError(try MapBridgeValues.animation(BridgeObject(["animationDuration": -1])))
   }
 
+  func testWarningsPreserveDiagnosticContextForConsoleAndRecovery() throws {
+    let failure = MapBridgeValues.failure(TileflowMapError(.rendererFailed,
+      context: .init(reason: "featureUnavailable", feature: "scene3d")))
+    XCTAssertEqual(failure.code, "rendererFailed")
+    let context = try BridgeObject(failure.info["context"])
+    XCTAssertEqual(try context.string("reason"), "featureUnavailable")
+    XCTAssertEqual(try context.string("feature"), "scene3d")
+    XCTAssertNil(failure.info["feature"])
+  }
+
+  func testMultiplePositionsReturnAnActionableStructuredError() throws {
+    do {
+      _ = try MapBridgeValues.position(BridgeObject(["aboveLayerId": "a", "slotIndex": 1]))
+      XCTFail("Two positions were accepted")
+    } catch {
+      let failure = MapBridgeValues.failure(error)
+      XCTAssertEqual(failure.code, "invalidRequest")
+      let context = try BridgeObject(failure.info["context"])
+      XCTAssertEqual(try context.string("reason"), "invalidLayerPosition")
+      XCTAssertEqual(try context.string("path"), "position")
+      XCTAssertEqual(try context.string("rule"), "onePosition")
+      let correction = try BridgeObject(context.array("corrections")[0])
+      XCTAssertEqual(try correction.string("code"), "chooseOnePosition")
+    }
+  }
+
   func testBlendListsAndTransitionDurationsReachNativeUnits() throws {
     let blend = try MapBridgeValues.blend(BridgeObject([
       "themes": ["dawn", "day", "night"], "position": 1.5, "hold": true,
@@ -108,6 +134,21 @@ final class MapBridgeTests: XCTestCase {
       resolve: { _ in XCTFail("Retired call resolved") },
       reject: { code, _, _ in XCTAssertEqual(code, "disposed"); rejected.fulfill() })
     await fulfillment(of: [rejected], timeout: 1)
+  }
+
+  func testChangingReactTagRetiresCallsEvenWhenTheInstanceStringIsReused() throws {
+    let host = TFMapHostView(frame: CGRect(x: 0, y: 0, width: 390, height: 844))
+    defer { host.dispose() }
+    let source = try MapBridgeValues.json(fixture.object("sources").object("manifest").values)
+    host.update(reactTag: 100, instanceID: "reused", sourceJSON: source,
+      appearanceJSON: "{}", optionsJSON: "{}")
+    let generation = host.generation
+    let retired = try XCTUnwrap(host.map)
+    host.update(reactTag: 101, instanceID: "reused", sourceJSON: source,
+      appearanceJSON: "{}", optionsJSON: "{}")
+    XCTAssertThrowsError(try host.checkGeneration(generation))
+    XCTAssertTrue(retired.isDestroyed)
+    XCTAssertFalse(retired === host.map)
   }
 
   func testHiddenLocationKeepsConsumptionEnabledUntilUnsubscribed() async throws {

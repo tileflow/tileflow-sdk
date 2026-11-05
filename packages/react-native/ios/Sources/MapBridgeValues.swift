@@ -169,14 +169,21 @@ enum MapBridgeValues {
     return try TileflowExpression(json: json(value))
   }
 
-  static func position(_ input: BridgeObject?) throws -> TileflowLayerPosition {
+  static func position(
+    _ input: BridgeObject?, layerId: String? = nil, operation: String = "addLayer"
+  ) throws -> TileflowLayerPosition {
     guard let input else { return .default }
-    guard ["aboveLayerId", "belowLayerId", "index"].filter(input.has).count <= 1 else {
-      throw BridgeArgumentError(path: "position", expected: "one relative position")
+    guard Set(input.values.keys).isSubset(of: ["aboveLayerId", "belowLayerId", "slotIndex", "slot"]),
+      ["aboveLayerId", "belowLayerId", "slotIndex"].filter(input.has).count <= 1 else {
+      throw TileflowMapError(.invalidRequest, context: .init(
+        reason: "invalidLayerPosition", operation: operation, path: "position",
+        layerId: layerId, slot: try input.optionalString("slot"), rule: "onePosition",
+        corrections: [.init(code: "chooseOnePosition",
+          message: "Choose one of aboveLayerId, belowLayerId or slotIndex.")]))
     }
     if let above = try input.optionalString("aboveLayerId") { return .above(above) }
     if let below = try input.optionalString("belowLayerId") { return .below(below) }
-    if let index = try input.optionalInt("index") { return .at(index) }
+    if let index = try input.optionalInt("slotIndex") { return .atSlotIndex(index) }
     return .default
   }
 
@@ -304,10 +311,28 @@ enum MapBridgeValues {
     }
     let error = error as? TileflowMapError ?? (error is CancellationError ? .cancelled : .resourceFailed)
     var info: [String: Any] = ["recoverable": error.isRecoverable]
-    if let reason = error.context.reason { info["reason"] = reason }
-    if let feature = error.context.feature { info["feature"] = feature }
-    if let resource = error.context.resource { info["resource"] = resource.rawValue }
-    if let status = error.context.status { info["status"] = status }
+    var context: [String: Any] = [:]
+    if let reason = error.context.reason { context["reason"] = reason }
+    if let feature = error.context.feature { context["feature"] = feature }
+    if let resource = error.context.resource { context["resource"] = resource.rawValue }
+    if let status = error.context.status { context["status"] = status }
+    if let limit = error.context.limit { context["limit"] = limit }
+    if let count = error.context.count { context["count"] = count }
+    if let operation = error.context.operation { context["operation"] = operation }
+    if let path = error.context.path { context["path"] = path }
+    if let layerId = error.context.layerId { context["layerId"] = layerId }
+    if let reference = error.context.referenceLayerId { context["referenceLayerId"] = reference }
+    if let rule = error.context.rule { context["rule"] = rule }
+    if error.context.operation != nil {
+      context["slot"] = error.context.slot as Any? ?? NSNull()
+    }
+    if error.context.referenceLayerId != nil {
+      context["referenceSlot"] = error.context.referenceSlot as Any? ?? NSNull()
+    }
+    if !error.context.corrections.isEmpty {
+      context["corrections"] = error.context.corrections.map { ["code": $0.code, "message": $0.message] }
+    }
+    if !context.isEmpty { info["context"] = context }
     return BridgeFailure(code: error.code.rawValue, message: "Map operation failed (\(error.code.rawValue)).", info: info)
   }
 }

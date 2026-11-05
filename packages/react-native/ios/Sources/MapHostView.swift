@@ -48,8 +48,11 @@ public final class TFMapHostView: UIView {
   @objc(updateWithReactTag:instanceId:sourceJSON:appearanceJSON:optionsJSON:)
   public func update(reactTag: Double, instanceID: String, sourceJSON: String, appearanceJSON: String, optionsJSON: String) {
     guard let tag = Int(exactly: reactTag), tag > 0, !instanceID.isEmpty else { return }
-    if self.instanceID != instanceID { retireMap(); self.instanceID = instanceID }
     let nextKey = Key(tag: tag, instance: instanceID)
+    if self.instanceID != instanceID || key.map({ $0 != nextKey }) == true {
+      retireMap()
+      self.instanceID = instanceID
+    }
     if key != nextKey {
       unregister()
       key = nextKey

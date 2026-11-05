@@ -13,6 +13,108 @@ final class StyleTests: XCTestCase {
     try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
   }
 
+  func testRelativePositionsRejectOtherSlotsWithoutChangingTheStyle() async throws {
+    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("../../../../platforms/style-position-fixtures.json")
+    let fixture = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url))
+    for item in try XCTUnwrap(fixture["rejections"]?.array) {
+      let view = TileflowMapView(source: .init(map: "fixture",
+        manifestURL: URL(string: "https://maps.example/manifest.json")!))
+      defer { view.destroy() }
+      try await view.addSource(TileflowGeoJSONSource(id: "points", data: .empty))
+      var reference = TileflowCircleLayer(id: item["reference"]?["id"]?.string ?? "", source: "points")
+      reference.slot = item["reference"]?["slot"]?.string.flatMap(TileflowLayerSlot.init(rawValue:))
+      try await view.addLayer(reference)
+      var layer = TileflowCircleLayer(id: item["layer"]?["id"]?.string ?? "", source: "points")
+      layer.slot = item["layer"]?["slot"]?.string.flatMap(TileflowLayerSlot.init(rawValue:))
+      let operation = item["operation"]?.string ?? ""
+      if operation == "moveLayer" { try await view.addLayer(layer) }
+      let original = view.runtimeStyle.layers.map { ($0.id, $0.slot) }
+      let position: TileflowLayerPosition = item["position"]?["aboveLayerId"] != nil
+        ? .above(reference.id) : .below(reference.id)
+      do {
+        if operation == "moveLayer" { try await view.moveLayer(layer.id, position: position) }
+        else { try await view.addLayer(layer, position: position) }
+        XCTFail("Accepted cross-slot position: \(item["name"]?.string ?? "")")
+      } catch let error as TileflowMapError {
+        XCTAssertEqual(error.code.rawValue, item["error"]?["code"]?.string)
+        XCTAssertEqual(error.context.reason, item["error"]?["reason"]?.string)
+        XCTAssertEqual(error.context.path, item["error"]?["path"]?.string)
+        XCTAssertEqual(error.context.operation, operation)
+        XCTAssertEqual(error.context.layerId, layer.id)
+        XCTAssertEqual(error.context.referenceLayerId, reference.id)
+        XCTAssertEqual(error.context.slot, layer.slot?.rawValue)
+        XCTAssertEqual(error.context.referenceSlot, reference.slot?.rawValue)
+        XCTAssertEqual(error.context.rule, fixture["rule"]?.string)
+        XCTAssertEqual(error.context.corrections.map(\.code), fixture["correctionCodes"]?.array?.compactMap(\.string))
+        XCTAssertTrue(error.context.corrections.allSatisfy { !$0.message.isEmpty })
+      }
+      XCTAssertEqual(view.runtimeStyle.layers.map(\.id), original.map(\.0))
+      XCTAssertEqual(view.runtimeStyle.layers.map(\.slot), original.map(\.1))
+    }
+  }
+
+  func testPositionErrorsIdentifyTheInvalidFieldAndCorrection() async throws {
+    let view = TileflowMapView(source: .init(map: "fixture",
+      manifestURL: URL(string: "https://maps.example/manifest.json")!))
+    defer { view.destroy() }
+    try await view.addSource(TileflowGeoJSONSource(id: "points", data: .empty))
+    try await view.addLayer(TileflowCircleLayer(id: "first", source: "points"))
+    for (position, reason, path, rule, correction) in [
+      (TileflowLayerPosition.above("missing"), "unknownLayer", "position.aboveLayerId", "knownReference", "referenceExistingLayer"),
+      (.atSlotIndex(2), "invalidLayerPosition", "position.slotIndex", "indexRange", "chooseSlotIndex"),
+    ] {
+      do {
+        try await view.addLayer(TileflowCircleLayer(id: "next", source: "points"), position: position)
+        XCTFail("Invalid position was accepted")
+      } catch let error as TileflowMapError {
+        XCTAssertEqual(error.context.reason, reason)
+        XCTAssertEqual(error.context.operation, "addLayer")
+        XCTAssertEqual(error.context.path, path)
+        XCTAssertEqual(error.context.layerId, "next")
+        XCTAssertEqual(error.context.rule, rule)
+        XCTAssertEqual(error.context.corrections.map(\.code), [correction])
+        if path == "position.slotIndex" {
+          XCTAssertEqual(error.context.limit, 1)
+          XCTAssertEqual(error.context.count, 2)
+        }
+      }
+      XCTAssertEqual(view.runtimeStyle.layers.map(\.id), ["first"])
+    }
+  }
+
+  func testSlotIndexesMatchSharedCasesAndPreserveOtherSlots() async throws {
+    let url = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+      .appendingPathComponent("../../../../platforms/style-position-fixtures.json")
+    let fixture = try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: url))
+    for item in try XCTUnwrap(fixture["slotIndices"]?.array) {
+      let view = TileflowMapView(source: .init(map: "fixture",
+        manifestURL: URL(string: "https://maps.example/manifest.json")!))
+      defer { view.destroy() }
+      try await view.addSource(TileflowGeoJSONSource(id: "points", data: .empty))
+      func layer(_ value: JSONValue) throws -> TileflowCircleLayer {
+        var layer = TileflowCircleLayer(id: try XCTUnwrap(value["id"]?.string), source: "points")
+        layer.slot = value["slot"]?.string.flatMap(TileflowLayerSlot.init(rawValue:))
+        return layer
+      }
+      for value in try XCTUnwrap(item["layers"]?.array) { try await view.addLayer(layer(value)) }
+      let next = try layer(XCTUnwrap(item["layer"]))
+      let otherSlots = view.runtimeStyle.layers.filter { $0.slot != next.slot && $0.id != next.id }.map(\.id)
+      let position = TileflowLayerPosition.atSlotIndex(try XCTUnwrap(item["position"]?["slotIndex"]?.number.flatMap(Int.init(exactly:))))
+      do {
+        if item["operation"]?.string == "moveLayer" {
+          try await view.moveLayer(next.id, position: position, slot: next.slot)
+        } else { try await view.addLayer(next, position: position) }
+        XCTAssertNil(item["error"], "Accepted invalid index")
+      } catch let error as TileflowMapError {
+        XCTAssertEqual(error.code.rawValue, item["error"]?["code"]?.string)
+      }
+      XCTAssertEqual(view.runtimeStyle.layers.filter { $0.slot == next.slot }.map(\.id),
+        item["expectedOrder"]?.array?.compactMap(\.string))
+      XCTAssertEqual(view.runtimeStyle.layers.filter { $0.slot != next.slot && $0.id != next.id }.map(\.id), otherSlots)
+    }
+  }
+
   func testGeneratedLayersEncodeMapLibreJSON() throws {
     var layer = TileflowCircleLayer(id: "points", source: "places")
     layer.sourceLayer = "poi"
@@ -210,14 +312,14 @@ final class StyleTests: XCTestCase {
     b.slot = .belowLabels
     try await view.addLayer(a)
     try await view.addLayer(road)
-    try await view.addLayer(b, position: .at(0))
+    try await view.addLayer(b, position: .atSlotIndex(0))
     XCTAssertEqual(
       view.runtimeStyle.layers.filter { $0.slot == .belowLabels }.map(\.id), ["b", "a"])
-    try await view.moveLayer("b", position: .at(1))
+    try await view.moveLayer("b", position: .atSlotIndex(1))
     XCTAssertEqual(
       view.runtimeStyle.layers.filter { $0.slot == .belowLabels }.map(\.id), ["a", "b"])
     do {
-      try await view.moveLayer("b", position: .at(2))
+      try await view.moveLayer("b", position: .atSlotIndex(2))
       XCTFail("An index outside the slot was accepted")
     } catch let error as TileflowMapError { XCTAssertEqual(error, .invalidRequest) }
     try view.reload()
@@ -312,12 +414,14 @@ final class StyleTests: XCTestCase {
     var top = TileflowCircleLayer(id: "top", source: "points")
     top.slot = .belowLabels
     try await view.addLayer(top)
-    try await view.addLayer(
-      TileflowHeatmapLayer(id: "heat", source: "points"), position: .below("top"))
-    try await view.addLayer(
-      TileflowCircleLayer(id: "over", source: "points"), position: .above("heat"))
+    var heat = TileflowHeatmapLayer(id: "heat", source: "points")
+    heat.slot = .belowLabels
+    try await view.addLayer(heat, position: .below("top"))
+    var over = TileflowCircleLayer(id: "over", source: "points")
+    over.slot = .belowLabels
+    try await view.addLayer(over, position: .above("heat"))
     XCTAssertEqual(view.runtimeStyle.layers.map(\.id), ["heat", "over", "top"])
-    // A layer placed relative to another takes its slot.
+    // Relative positions keep the explicitly selected slot.
     XCTAssertEqual(
       view.runtimeStyle.layers.map(\.slot), [.belowLabels, .belowLabels, .belowLabels])
     try await view.moveLayer("heat", position: .above("top"))

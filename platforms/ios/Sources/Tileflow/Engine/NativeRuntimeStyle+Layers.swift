@@ -231,13 +231,39 @@ extension NativeRuntimeStyle {
           throw TileflowMapError.invalidRequest
         }
         var slot = request["slot"]?.string.flatMap(TileflowLayerSlot.init(rawValue:))
+        if method == .moveLayer, request["slot"] == nil { slot = prior?.slot }
         var index = method == .updateLayer ? (at ?? layers.count) : layers.count
         if let position = request["position"] {
-          guard let relative = (position["above"] ?? position["below"])?.string,
-            let ref = layers.firstIndex(where: { $0.id == relative })
-          else { throw TileflowMapError.invalidRequest }
-          slot = layers[ref].slot
-          index = position["above"] != nil ? ref + 1 : ref
+          guard ["above", "below", "slotIndex"].filter({ position[$0] != nil }).count == 1 else {
+            throw TileflowMapError(.invalidRequest, context: .init(
+              reason: MapContract.ErrorReason.invalidLayerPosition.rawValue,
+              operation: method.rawValue, path: "position", layerId: id, slot: slot?.rawValue,
+              rule: "onePosition", corrections: [.init(code: "chooseOnePosition",
+                message: "Choose one of aboveLayerId, belowLayerId or slotIndex.")]))
+          }
+          if let raw = position["slotIndex"] {
+            let matching = layers.indices.filter { layers[$0].slot == slot }
+            let requested = raw.number.flatMap(Int.init(exactly:))
+            guard let requested, (0...matching.count).contains(requested) else {
+              throw TileflowMapError.invalidSlotIndex(operation: method.rawValue, layerId: id,
+                slot: slot, index: requested, count: matching.count)
+            }
+            index = requested < matching.count ? matching[requested] : matching.last.map { $0 + 1 } ?? layers.count
+          } else {
+            guard let relative = (position["above"] ?? position["below"])?.string else {
+              throw TileflowMapError.invalidRequest
+            }
+            guard let ref = layers.firstIndex(where: { $0.id == relative }) else {
+              throw TileflowMapError.missingLayerReference(operation: method.rawValue, layerId: id,
+                reference: relative, slot: slot, above: position["above"] != nil)
+            }
+            guard slot == layers[ref].slot else {
+              throw TileflowMapError.layerPositionConflict(
+                operation: method.rawValue, layerId: id, referenceLayerId: relative,
+                slot: slot, referenceSlot: layers[ref].slot, above: position["above"] != nil)
+            }
+            index = position["above"] != nil ? ref + 1 : ref
+          }
         }
         let record = Layer(id: id, json: json, slot: slot)
         layers.insert(record, at: index)

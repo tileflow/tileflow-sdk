@@ -73,9 +73,13 @@ extension TileflowMapController {
 
   /// See ``TileflowMapView/moveLayer(_:position:slot:)``.
   public func moveLayer(
-    _ id: String, position: TileflowLayerPosition, slot: TileflowLayerSlot? = nil
+    _ id: String, position: TileflowLayerPosition, slot: TileflowLayerSlot?
   ) async throws {
     try await attached().moveLayer(id, position: position, slot: slot)
+  }
+
+  public func moveLayer(_ id: String, position: TileflowLayerPosition) async throws {
+    try await attached().moveLayer(id, position: position)
   }
 
   /// See ``TileflowMapView/removeLayer(_:)``.

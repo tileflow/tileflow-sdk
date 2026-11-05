@@ -412,7 +412,7 @@ extension TileflowMapView {
       type == "background" ? properties["source"] == nil : properties["source"] is String
     else { throw TileflowMapError.invalidRequest }
     var slot: TileflowLayerSlot?
-    if let value = properties.removeValue(forKey: "slot") {
+    if let value = properties.removeValue(forKey: "slot"), !(value is NSNull) {
       guard let name = value as? String, let parsed = TileflowLayerSlot(rawValue: name) else {
         throw TileflowMapError.invalidRequest
       }
@@ -441,14 +441,16 @@ extension TileflowMapView {
     if let source = json["source"]?.string, !sourceExists(source) {
       throw TileflowMapError(.invalidRequest, reason: .unknownSource)
     }
-    var record = layer
-    let position = try Self.relativePosition(position, in: runtimeStyle.layers, slot: record.slot)
-    let at = try insertionIndex(for: position, slot: &record.slot)
+    let record = layer
+    let position = try Self.relativePosition(position, in: runtimeStyle.layers, slot: record.slot,
+      layerId: id, operation: "addLayer")
+    let at = try Self.insertionIndex(in: runtimeStyle.layers, for: position,
+      slot: record.slot, layerId: id, operation: "addLayer")
     let fixed = record
     if styleEngine == nil { try NativeRuntimeStyle.validateQueuedLayer(fixed) }
     try await changeStyle({ $0.layers.insert(fixed, at: at) }) { engine in
       var payload: [String: JSONValue] = ["layer": json]
-      if let slot = fixed.slot, position == .default { payload["slot"] = .string(slot.rawValue) }
+      payload["slot"] = fixed.slot.map { .string($0.rawValue) } ?? .null
       if let position = position.wireValue { payload["position"] = position }
       _ = try await engine.call(.addLayer, payload: .object(payload))
     }
@@ -487,16 +489,23 @@ extension TileflowMapView {
 
   /// Moves a layer relative to the application's other layers; ``TileflowLayerPosition/default``
   /// puts it on top of its slot.
+  public func moveLayer(_ id: String, position: TileflowLayerPosition) async throws {
+    try await styleEdits.acquire()
+    defer { styleEdits.release() }
+    try await positionStyleLayer(id, position: position)
+  }
+
+  /// Changes the slot explicitly; nil moves to the unslotted group.
   public func moveLayer(
-    _ id: String, position: TileflowLayerPosition, slot: TileflowLayerSlot? = nil
+    _ id: String, position: TileflowLayerPosition, slot: TileflowLayerSlot?
   ) async throws {
     try await styleEdits.acquire()
     defer { styleEdits.release() }
-    try await positionStyleLayer(id, position: position, slot: slot)
+    try await positionStyleLayer(id, position: position, slot: .some(slot))
   }
 
   func positionStyleLayer(
-    _ id: String, position: TileflowLayerPosition, slot: TileflowLayerSlot? = nil
+    _ id: String, position: TileflowLayerPosition, slot: TileflowLayerSlot?? = nil
   ) async throws {
     guard let index = runtimeStyle.layers.firstIndex(where: { $0.id == id }) else {
       throw TileflowMapError(.invalidRequest, reason: .unknownLayer)
@@ -505,10 +514,12 @@ extension TileflowMapView {
     if let slot { record.slot = slot }
     var rest = runtimeStyle.layers
     rest.remove(at: index)
-    let position = try Self.relativePosition(position, in: rest, slot: record.slot)
+    let position = try Self.relativePosition(position, in: rest, slot: record.slot,
+      layerId: id, operation: "moveLayer")
     if case .above(let other) = position, other == id { throw TileflowMapError.invalidRequest }
     if case .below(let other) = position, other == id { throw TileflowMapError.invalidRequest }
-    let at = try Self.insertionIndex(in: rest, for: position, slot: &record.slot)
+    let at = try Self.insertionIndex(in: rest, for: position, slot: record.slot,
+      layerId: id, operation: "moveLayer")
     let moved = record
     try await changeStyle({ style in
       style.layers.remove(at: index)
@@ -517,9 +528,8 @@ extension TileflowMapView {
       var payload: [String: JSONValue] = ["id": .string(id)]
       if let wire = position.wireValue {
         payload["position"] = wire
-      } else if let slot = moved.slot {
-        payload["slot"] = .string(slot.rawValue)
       }
+      payload["slot"] = moved.slot.map { .string($0.rawValue) } ?? .null
       _ = try await engine.call(.moveLayer, payload: .object(payload))
     }
   }
@@ -735,35 +745,41 @@ extension TileflowMapView {
   }
 
   private static func relativePosition(
-    _ position: TileflowLayerPosition, in layers: [RuntimeStyle.Layer], slot: TileflowLayerSlot?
+    _ position: TileflowLayerPosition, in layers: [RuntimeStyle.Layer], slot: TileflowLayerSlot?,
+    layerId: String, operation: String
   ) throws -> TileflowLayerPosition {
-    guard case .at(let index) = position else { return position }
+    guard case .atSlotIndex(let index) = position else { return position }
     let matching = layers.filter { $0.slot == slot }
-    guard (0...matching.count).contains(index) else { throw TileflowMapError.invalidRequest }
+    guard (0...matching.count).contains(index) else {
+      throw TileflowMapError.invalidSlotIndex(operation: operation, layerId: layerId,
+        slot: slot, index: index, count: matching.count)
+    }
     if index < matching.count { return .below(matching[index].id) }
     return matching.last.map { .above($0.id) } ?? .default
   }
 
-  private func insertionIndex(for position: TileflowLayerPosition, slot: inout TileflowLayerSlot?)
-    throws -> Int
-  {
-    try Self.insertionIndex(in: runtimeStyle.layers, for: position, slot: &slot)
-  }
-
   private static func insertionIndex(
     in layers: [RuntimeStyle.Layer], for position: TileflowLayerPosition,
-    slot: inout TileflowLayerSlot?
+    slot: TileflowLayerSlot?, layerId: String, operation: String
   ) throws -> Int {
     switch position {
     case .default: return layers.count
-    case .at:
+    case .atSlotIndex:
       return try insertionIndex(
-        in: layers, for: relativePosition(position, in: layers, slot: slot), slot: &slot)
+        in: layers, for: relativePosition(position, in: layers, slot: slot,
+          layerId: layerId, operation: operation),
+        slot: slot, layerId: layerId, operation: operation)
     case .above(let id), .below(let id):
       guard let index = layers.firstIndex(where: { $0.id == id }) else {
-        throw TileflowMapError(.invalidRequest, reason: .unknownLayer)
+        let above = if case .above = position { true } else { false }
+        throw TileflowMapError.missingLayerReference(operation: operation, layerId: layerId,
+          reference: id, slot: slot, above: above)
       }
-      slot = layers[index].slot
+      guard slot == layers[index].slot else {
+        let above = if case .above = position { true } else { false }
+        throw TileflowMapError.layerPositionConflict(operation: operation, layerId: layerId,
+          referenceLayerId: id, slot: slot, referenceSlot: layers[index].slot, above: above)
+      }
       if case .above = position { return index + 1 }
       return index
     }

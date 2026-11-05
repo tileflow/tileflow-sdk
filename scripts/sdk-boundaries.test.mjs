@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import {readdir, readFile} from 'node:fs/promises';
+import {mkdir, mkdtemp, readdir, readFile, rm, writeFile} from 'node:fs/promises';
+import {tmpdir} from 'node:os';
 import {dirname, extname, join, relative, resolve, sep} from 'node:path';
 import test from 'node:test';
-import {fileURLToPath} from 'node:url';
+import {fileURLToPath, pathToFileURL} from 'node:url';
 import {packageDirectories} from './release-config.mjs';
 
 const workspaceRoot = new URL('../', import.meta.url);
@@ -121,22 +122,171 @@ test('public package sources respect the SDK responsibility graph', async () => 
   }
 });
 
-test('native map libraries have no browser rendering dependency', async () => {
-  const extensions = new Set(['.h', '.hpp', '.java', '.kt', '.m', '.mm', '.swift']);
-  const roots = ['platforms/ios/Sources/', 'platforms/android/tileflow/src/main/'];
-  const sources = await Promise.all(
-    roots.map((path) => listSourceFiles(new URL(path, workspaceRoot), extensions)),
-  );
-  const gradle = new URL('platforms/android/tileflow/build.gradle.kts', workspaceRoot);
-  const forbidden =
-    /\bimport\s+(?:WebKit|android(?:x)?\.webkit)\b|#\s*(?:import|include)\s*[<"]WebKit\/|\bandroid(?:x)?\.webkit[.:]/u;
-  const dependencies = [];
-  for (const file of [...sources.flat(), gradle]) {
-    if (forbidden.test(await readFile(file, 'utf8')))
-      dependencies.push(relative(workspaceRootPath, fileURLToPath(file)));
-  }
-  assert.deepEqual(dependencies.sort(), []);
+test('native sources and targets have no browser rendering dependency', async () => {
+  assert.deepEqual(await nativeBrowserDependencies(workspaceRoot), []);
 });
+
+test('native browser guard detects source imports and target linkage', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-native-boundary-'));
+  t.after(() => rm(directory, {recursive: true, force: true}));
+  const root = pathToFileURL(directory + sep);
+  const files = [
+    ['platforms/ios/Sources/Imported.swift', '@preconcurrency import WebKit'],
+    ['platforms/ios/Sources/ImportedClass.swift', 'import class WebKit.WKWebView'],
+    ['platforms/ios/Sources/Bridge.m', '@import WebKit;'],
+    ['platforms/ios/Sources/Bridge.h', '# include <WebKit/WKWebView.h>'],
+    ['platforms/ios/Sources/Bridge.mm', '#import "WebKit/WebKit.h"'],
+    ['platforms/ios/Sources/module.modulemap', 'module Bridge { link framework "WebKit" }'],
+    ['platforms/ios/Sources/module.map', 'module Bridge { link framework "WebKit" }'],
+    ['platforms/ios/Sources/Bridge.cxx', '#include <WebKit/WKWebView.h>'],
+    ['platforms/ios/Package.swift', 'let settings: [LinkerSetting] = [.linkedFramework("WebKit")]'],
+    ['platforms/ios/Package@swift-6.0.swift', '.target(name: "Bridge", dependencies: ["WebKit"])'],
+    [
+      'platforms/ios/App.xcodeproj/project.pbxproj',
+      'path = System/Library/Frameworks/WebKit.framework;',
+    ],
+    [
+      'platforms/ios/project.yml',
+      'targets:\n  Tileflow:\n    dependencies:\n      - sdk: WebKit.framework',
+    ],
+    ['platforms/ios/Link.xcconfig', 'OTHER_LDFLAGS = $(inherited) -weak_framework WebKit'],
+    ['packages/react-native/Tileflow.podspec', "spec.frameworks = 'WebKit'"],
+    ['test-support/host/Host.swift', 'import WebKit'],
+    ['platforms/android/tileflow/src/main/Browser.kt', 'val view: android.webkit.WebView? = null'],
+    ['platforms/android/tileflow-search/src/main/Browser.java', 'import android.webkit.WebView;'],
+    ['packages/react-native/android/build.gradle', 'implementation "androidx.webkit:webkit:1.0.0"'],
+    [
+      'platforms/android/gradle/libs.versions.toml',
+      'browser = { module = "androidx.webkit:webkit", version = "1.0.0" }',
+    ],
+  ];
+  for (const [path, text] of files) {
+    const file = new URL(path, root);
+    await mkdir(new URL('./', file), {recursive: true});
+    await writeFile(file, text);
+    await t.test(path, async () => {
+      try {
+        assert.deepEqual(await nativeBrowserDependencies(root), [path]);
+      } finally {
+        await rm(file);
+      }
+    });
+  }
+});
+
+test('native browser guard excludes dependency artifacts and comments', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'tileflow-native-boundary-'));
+  t.after(() => rm(directory, {recursive: true, force: true}));
+  const root = pathToFileURL(directory + sep);
+  const files = [
+    ['platforms/ios/Sources/Map.swift', 'import MapLibre\n// import WebKit\n/* @import WebKit; */'],
+    [
+      'platforms/ios/Package.swift',
+      '.product(name: "MapLibre", package: "maplibre-gl-native-distribution")',
+    ],
+    ['platforms/ios/project.yml', 'dependencies:\n  - sdk: MapLibre.framework # formerly WebKit'],
+    ['platforms/ios/.build/checkouts/Vendor/Package.swift', '.linkedFramework("WebKit")'],
+    ['platforms/ios/Pods/Vendor/Bridge.m', '@import WebKit;'],
+    ['platforms/ios/MapLibre.xcframework/Headers/Bridge.h', '#import <WebKit/WebKit.h>'],
+    ['platforms/ios/vendor/Bridge.swift', 'import WebKit'],
+    ['platforms/android/tileflow/build/generated/Bridge.kt', 'import android.webkit.WebView'],
+    ['platforms/android/.gradle/caches/Bridge.kt', 'import android.webkit.WebView'],
+    ['packages/react-native/node_modules/vendor/Bridge.mm', '@import WebKit;'],
+  ];
+  for (const [path, text] of files) {
+    const file = new URL(path, root);
+    await mkdir(new URL('./', file), {recursive: true});
+    await writeFile(file, text);
+  }
+  assert.deepEqual(await nativeBrowserDependencies(root), []);
+});
+
+async function nativeBrowserDependencies(root) {
+  const sources = new Set([
+    '.c',
+    '.cc',
+    '.cpp',
+    '.cxx',
+    '.h',
+    '.hh',
+    '.hpp',
+    '.hxx',
+    '.inc',
+    '.java',
+    '.kt',
+    '.m',
+    '.mm',
+    '.swift',
+  ]);
+  const targets = new Set([
+    '.cmake',
+    '.def',
+    '.gradle',
+    '.kts',
+    '.modulemap',
+    '.pbxproj',
+    '.podspec',
+    '.toml',
+    '.xcconfig',
+    '.yaml',
+    '.yml',
+  ]);
+  const targetNames = /^(?:Package(?:@swift-[\d.]+)?\.swift|CMakeLists\.txt|module\.map)$/u;
+  const excluded = new Set([
+    '.git',
+    '.build',
+    '.cache',
+    '.cxx',
+    '.gradle',
+    '.kotlin',
+    '.swiftpm',
+    '.turbo',
+    'build',
+    'dist',
+    'node_modules',
+    'Pods',
+    'Carthage',
+    'DerivedData',
+    'vendor',
+    'third_party',
+  ]);
+  const sourceImport =
+    /\bimport\s+(?:(?:class|enum|func|let|protocol|struct|typealias|var)\s+)?(?:WebKit|android(?:x)?\.webkit)\b|#\s*(?:import|include)\s*[<"]WebKit[/.]|\bandroid(?:x)?\.webkit[.:]/u;
+  const targetDependency = /\b(?:WebKit|android(?:x)?\.webkit)\b/u;
+  const dependencies = [];
+
+  async function visit(directory) {
+    for (const entry of await readdir(directory, {withFileTypes: true})) {
+      if (excluded.has(entry.name) || /\.(?:xcframework|framework)$/u.test(entry.name)) continue;
+      const file = new URL(entry.name + (entry.isDirectory() ? '/' : ''), directory);
+      if (entry.isDirectory()) {
+        await visit(file);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+
+      const extension = extname(entry.name).toLowerCase();
+      const target = targets.has(extension) || targetNames.test(entry.name);
+      if (!target && !sources.has(extension)) continue;
+
+      const hashComments =
+        ['.podspec', '.toml', '.yaml', '.yml', '.cmake'].includes(extension) ||
+        entry.name === 'CMakeLists.txt';
+      const text = (await readFile(file, 'utf8')).replace(
+        /"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|\/\/[^\n]*|\/\*[\s\S]*?\*\/|#[^\n]*/gu,
+        (part) =>
+          part.startsWith('//') || part.startsWith('/*') || (hashComments && part.startsWith('#'))
+            ? ' '
+            : part,
+      );
+      if ((target ? targetDependency : sourceImport).test(text))
+        dependencies.push(portableRelative(fileURLToPath(root), fileURLToPath(file)));
+    }
+  }
+
+  await visit(root);
+  return dependencies.sort();
+}
 
 test('declared runtime Tileflow dependencies respect the SDK responsibility graph', async () => {
   const packageNames = new Set(Object.keys(allowedTileflowDependencies));

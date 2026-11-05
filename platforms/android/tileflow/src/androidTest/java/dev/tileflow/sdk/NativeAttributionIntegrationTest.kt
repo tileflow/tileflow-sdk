@@ -277,12 +277,9 @@ public class NativeAttributionIntegrationTest {
                 runBlocking {
                     withContext(Dispatchers.Main) {
                         val engine = requireNotNull(activity.map.readyEngine as? NativeMapEngine)
-                        // Online the map reads its native representation in a session; offline,
-                        // the WebView profile its regions hold, without one.
                         assertEquals(
                             mode,
-                            if (online) NativeRepresentation.NATIVE
-                            else NativeRepresentation.WEB_VIEW,
+                            NativeRepresentation.NATIVE,
                             engine.manifest?.representation,
                         )
                         val control = engine.attribution

@@ -100,7 +100,16 @@ export type MapEmphasis = Readonly<{
   keepArea?: JsonObject;
 }>;
 export type MapShot = Readonly<{
-  keyframes: readonly Readonly<{time: number; camera: CameraStop; blendPosition?: number}>[];
+  keyframes: readonly Readonly<{
+    time: number;
+    camera: Readonly<{
+      centerCoordinate: Coordinate;
+      zoomLevel: number;
+      heading?: number;
+      pitch?: number;
+    }>;
+    blendPosition?: number;
+  }>[];
   themes?: readonly string[];
   easing?: 'linear' | 'smooth';
   cues?: readonly Readonly<{time: number; id: string}>[];

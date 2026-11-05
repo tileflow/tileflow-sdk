@@ -343,14 +343,14 @@ public final class TFMapHostView: UIView {
   func setUserLocation(_ input: BridgeObject, generation: Int) async throws {
     let map = try requireMap(generation)
     let visible = try input.bool("visible", default: false)
-    let consumes = try visible || input.bool("emitsUpdates", default: false)
+    let follows = try input.bool("followUserLocation", default: false)
+    let consumes = try visible || input.bool("emitsUpdates", default: false) || follows
     var next = options
     next.location.enabled = consumes
     next.location.showsPuck = visible
     next.location.puckBearing = try input.bool("followsCourse", default: false) ? .course :
       (input.bool("showsUserHeadingIndicator", default: false) ? .heading : .none)
     next.location.followZoom = try input.optionalDouble("followZoomLevel")
-    let follows = try consumes && input.bool("followUserLocation", default: false)
     let padding = try follows ? (input.optionalObject("followPadding").map { try MapBridgeValues.padding($0) } ?? baseInsets) : baseInsets
     let pitch = try input.optionalDouble("followPitch")
     let mode: TileflowFollowMode

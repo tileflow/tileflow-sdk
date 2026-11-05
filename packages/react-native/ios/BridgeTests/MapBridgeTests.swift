@@ -169,6 +169,15 @@ final class MapBridgeTests: XCTestCase {
     XCTAssertFalse(host.map?.options.location.showsPuck == true)
     try await host.setUserLocation(BridgeObject(["visible": false, "emitsUpdates": false]), generation: host.generation)
     XCTAssertFalse(host.map?.options.location.enabled == true)
+    try await host.setUserLocation(BridgeObject([
+      "visible": false, "emitsUpdates": false, "followUserLocation": true,
+    ]), generation: host.generation)
+    XCTAssertTrue(host.map?.options.location.enabled == true)
+    XCTAssertFalse(host.map?.options.location.showsPuck == true)
+    XCTAssertEqual(host.map?.followMode, .position)
+    try await host.setUserLocation(BridgeObject(["visible": false]), generation: host.generation)
+    XCTAssertFalse(host.map?.options.location.enabled == true)
+    XCTAssertEqual(host.map?.followMode, TileflowFollowMode.none)
   }
 
   func testMarkerKeepsTheApplicationViewAndRegularChildrenStayAboveTheMap() throws {

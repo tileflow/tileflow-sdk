@@ -261,6 +261,58 @@ function assertCommandContract(document: CommandDocument, command: string): void
   }
 }
 
+test('validate --json preserves the overlay position conflict and its corrections', async (t) => {
+  const directory = await createDirectoryFixture(t);
+  await writeFile(
+    join(directory, 'tileflow.config.ts'),
+    `import {defineMap, defineTheme, hostedTileset, maplibreOverlay} from '@tileflow/core';
+import {streetsThemes} from '@tileflow/maps';
+export default defineMap({
+  id: 'fixture', version: 1,
+  modules: {poi: {type: 'poi', icons: false}},
+  glyphs: {kind: 'url', url: 'https://example.test/fonts/{fontstack}/{range}.pbf',
+    fontStacks: ['Noto Sans Regular', 'Noto Sans Bold']},
+  defaultTheme: 'light',
+  themes: {light: defineTheme(streetsThemes.light, {id: 'light', version: 1, colorScheme: 'light'})},
+  sources: {routes: hostedTileset({attribution: 'Synthetic routes',
+    local: './routes.pmtiles', tileset: 'routes'})},
+  overlays: {routes: maplibreOverlay({source: 'routes', placement: 'above-roads',
+    layers: [{id: 'route', type: 'circle', slot: 'above-labels'}]})}
+});
+`,
+  );
+
+  const result = await runCli(directory, ['validate', '--json'], 'no-secret');
+  assert.equal(result.code, 1, result.stderr);
+  assert.equal(result.stdout, '');
+  const document = JSON.parse(result.stderr) as CommandDocument & {
+    context: {
+      reason: string;
+      operation: string;
+      layerId: string;
+      slot: string;
+      referenceSlot: string;
+      rule: string;
+      corrections: Array<{code: string; message: string}>;
+    };
+  };
+  assert.equal(document.code, 'TF_LAYER_POSITION_CONFLICT', result.stderr);
+  assert.match(document.path, /overlays\.routes\.layers\.0\.slot$/u);
+  assert.equal(document.context.reason, 'layerPositionConflict');
+  assert.equal(document.context.operation, 'compileOverlay');
+  assert.equal(document.context.layerId, 'route');
+  assert.equal(document.context.slot, 'above-labels');
+  assert.equal(document.context.referenceSlot, 'above-roads');
+  assert.equal(document.context.rule, 'sameSlot');
+  assert.deepEqual(
+    document.context.corrections.map(({code}) => code),
+    ['useOverlayPlacement', 'removeRuntimePosition'],
+  );
+  assert.ok(document.context.corrections.every(({message}) => message.length > 0));
+  assert.deepEqual((document.diagnostics[0] as typeof document).context, document.context);
+  assert.doesNotMatch(result.stderr, new RegExp(escapeRegExp(directory), 'u'));
+});
+
 async function createDirectoryFixture(t: TestContext): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), 'tileflow-ai-commands-'));
   await linkWorkspacePackages(directory);
